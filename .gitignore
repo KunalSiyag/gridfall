@@ -1,0 +1,11 @@
+# Godot editor cache and import artifacts
+.godot/
+*.translation
+override.cfg
+
+# Recordings and Python caches
+*.avi
+trailer/
+__pycache__/
+*.pyc
+.env

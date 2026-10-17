@@ -1,0 +1,51 @@
+[gd_scene load_steps=11 format=3]
+
+[ext_resource type="Script" path="res://scripts/main.gd" id="1_main"]
+[ext_resource type="Environment" path="res://scenes/main-environment.tres" id="2_env"]
+[ext_resource type="Script" path="res://scripts/sim/city_sim.gd" id="3_sim"]
+[ext_resource type="Script" path="res://scripts/audio_director.gd" id="4_audio"]
+[ext_resource type="Script" path="res://scripts/world/city_view.gd" id="5_view"]
+[ext_resource type="Script" path="res://scripts/world/camera_controller.gd" id="6_cam"]
+[ext_resource type="Script" path="res://scripts/ui/city_hud.gd" id="7_hud"]
+[ext_resource type="Script" path="res://scripts/ai/gmi_client.gd" id="8_client"]
+[ext_resource type="Script" path="res://scripts/ai/city_brain.gd" id="9_brain"]
+
+[node name="Main" type="Node3D"]
+script = ExtResource("1_main")
+
+[node name="CitySim" type="Node" parent="."]
+script = ExtResource("3_sim")
+
+[node name="GmiClient" type="Node" parent="."]
+script = ExtResource("8_client")
+
+[node name="CityBrain" type="Node" parent="."]
+script = ExtResource("9_brain")
+
+[node name="AudioDirector" type="Node" parent="."]
+script = ExtResource("4_audio")
+
+[node name="CityView" type="Node3D" parent="."]
+script = ExtResource("5_view")
+
+[node name="View" type="Node3D" parent="."]
+transform = Transform3D(0.707107, -0.40558, 0.579228, 0, 0.819152, 0.573576, -0.707107, -0.40558, 0.579228, 15.5, 0, 15.5)
+script = ExtResource("6_cam")
+
+[node name="Camera" type="Camera3D" parent="View"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 52)
+environment = ExtResource("2_env")
+fov = 22.0
+far = 400.0
+
+[node name="Sun" type="DirectionalLight3D" parent="."]
+transform = Transform3D(-0.422618, -0.694272, 0.582563, 0, 0.642788, 0.766044, -0.906308, 0.323744, -0.271654, 0, 0, 0)
+light_color = Color(0.98, 0.95, 0.9, 1)
+light_energy = 1.15
+shadow_enabled = true
+shadow_opacity = 0.85
+shadow_blur = 1.2
+directional_shadow_max_distance = 90.0
+
+[node name="HUD" type="CanvasLayer" parent="."]
+script = ExtResource("7_hud")

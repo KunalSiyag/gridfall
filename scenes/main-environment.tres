@@ -1,0 +1,53 @@
+[gd_resource type="Environment" format=3]
+
+[sub_resource type="ProceduralSkyMaterial" id="ProceduralSkyMaterial_gridfall"]
+sky_top_color = Color(0.32, 0.5, 0.78, 1)
+sky_horizon_color = Color(0.7, 0.78, 0.86, 1)
+ground_bottom_color = Color(0.2, 0.22, 0.2, 1)
+ground_horizon_color = Color(0.6, 0.66, 0.7, 1)
+
+[sub_resource type="Sky" id="Sky_gridfall"]
+sky_material = SubResource("ProceduralSkyMaterial_gridfall")
+
+[resource]
+background_mode = 2
+sky = SubResource("Sky_gridfall")
+ambient_light_source = 3
+ambient_light_color = Color(0.72, 0.80, 0.92, 1)
+ambient_light_sky_contribution = 1.0
+ambient_light_energy = 1.0
+reflected_light_source = 2
+tonemap_mode = 4
+tonemap_exposure = 1.0
+tonemap_white = 6.0
+ssr_enabled = false
+ssao_enabled = true
+ssao_radius = 0.35
+ssao_intensity = 1.6
+ssao_power = 1.4
+ssao_detail = 0.6
+ssao_horizon = 0.06
+ssao_sharpness = 0.98
+ssao_light_affect = 0.15
+ssil_enabled = true
+ssil_radius = 1.5
+ssil_intensity = 0.7
+ssil_sharpness = 0.98
+ssil_normal_rejection = 1.0
+glow_enabled = true
+glow_intensity = 0.55
+glow_strength = 0.9
+glow_bloom = 0.04
+glow_blend_mode = 1
+glow_hdr_threshold = 1.15
+fog_enabled = true
+fog_mode = 0
+fog_light_color = Color(0.62, 0.7, 0.8, 1)
+fog_light_energy = 1.0
+fog_density = 0.0045
+fog_aerial_perspective = 0.55
+fog_sky_affect = 0.25
+adjustment_enabled = true
+adjustment_brightness = 1.0
+adjustment_contrast = 1.05
+adjustment_saturation = 1.08

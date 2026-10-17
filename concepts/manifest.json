@@ -1,0 +1,39 @@
+{
+  "project": "GridFall",
+  "model": "hy-image-v3.5-preview",
+  "style_lock": "Cohesive game art direction concept sheet for 'GridFall', a stylized isometric 3D sci-fi city crisis simulation in Godot 4.7. Clean geometric low-poly architectural forms with chamfered edges, matte dark basalt slate (#131722) and brushed titanium (#D6DFEB) surfaces, accented by sharp emissive neon strips in electric cyan (#00F0FF), solar amber (#FFB800), relay violet (#B44CFF), bio emerald (#10E88A), and blackout crimson (#FF2E54). Crisp studio concept art presentation on a dark blueprint grid background, high contrast, no watermarks, sharp clean edges.",
+  "sheets": [
+    {
+      "id": "01_environment_mood",
+      "title": "Environment & Blackout Lighting Mood Board",
+      "path": "/home/kunalsiyag/Ambassador/Gmi_Cloud/gridfall/concepts/01_environment_mood.png",
+      "bytes": 2987020,
+      "elapsed_s": 20.51,
+      "model": "hy-image-v3.5-preview"
+    },
+    {
+      "id": "02_crisis_buildings_sheet",
+      "title": "Crisis Landmark Buildings Turnaround Sheet",
+      "path": "/home/kunalsiyag/Ambassador/Gmi_Cloud/gridfall/concepts/02_crisis_buildings_sheet.png",
+      "bytes": 2560671,
+      "elapsed_s": 20.31,
+      "model": "hy-image-v3.5-preview"
+    },
+    {
+      "id": "03_resident_avatars_sheet",
+      "title": "Multi-Model AI Resident Characters & Portraits",
+      "path": "/home/kunalsiyag/Ambassador/Gmi_Cloud/gridfall/concepts/03_resident_avatars_sheet.png",
+      "bytes": 2971349,
+      "elapsed_s": 16.76,
+      "model": "hy-image-v3.5-preview"
+    },
+    {
+      "id": "04_shader_and_hud_sheet",
+      "title": "Grid Shaders, VFX & Broadcast HUD Reference",
+      "path": "/home/kunalsiyag/Ambassador/Gmi_Cloud/gridfall/concepts/04_shader_and_hud_sheet.png",
+      "bytes": 2002695,
+      "elapsed_s": 18.26,
+      "model": "hy-image-v3.5-preview"
+    }
+  ]
+}

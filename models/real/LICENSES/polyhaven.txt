@@ -1,0 +1,76 @@
+GridFall realistic asset library - third-party content
+
+All assets below come from Poly Haven (https://polyhaven.com) and are licensed CC0 1.0
+(public domain, https://creativecommons.org/publicdomain/zero/1.0/). No attribution is
+required; they are listed here for provenance. Geometry for buildings, roads, vehicles and
+people was modelled procedurally by tools/blender/make_realistic_city.py and uses these
+textures. textures/real/water_normal.png and the embedded solar-cell texture are procedurally
+generated (not Poly Haven).
+
+Textures (https://polyhaven.com/a/<id>):
+  red_brick_03
+  brick_wall_006
+  brown_brick_02
+  red_bricks_04
+  beige_wall_001
+  white_plaster_02
+  plaster_grey_04
+  painted_plaster_wall
+  concrete_wall_008
+  concrete_slab_wall
+  concrete_wall_004
+  rectangular_facade_tiles_02
+  concrete_floor_02
+  brown_planks_05
+  clay_roof_tiles_02
+  grey_roof_tiles
+  roof_slates_02
+  grey_roof_01
+  bitumen
+  corrugated_iron_02
+  corrugated_iron
+  factory_wall
+  box_profile_metal_sheet
+  container_side
+  rusty_metal_02
+  painted_metal_shutter
+  metal_plate
+  gravel_floor
+  brown_planks_03
+  wood_planks
+  bark_brown_02
+  bark_platanus
+  gravel
+  rocks_ground_02
+  leafy_grass
+  concrete_pavement
+  asphalt_01
+  dirt
+
+Leaf atlases taken from these plant models (used to compose foliage cards):
+  jacaranda_tree
+  tree_small_02
+  island_tree_02
+  searsia_lucida
+
+Models (fetched; decimated copies with 512 px textures are embedded where noted):
+  street_lamp_01
+  street_lamp_02
+  fire_hydrant  -> props/hydrant
+  metal_trash_can  -> props/trash_bin
+  painted_wooden_bench  -> props/bench_park
+  concrete_road_barrier  -> props/barrier_concrete
+  exterior_aircon_unit  -> props/aircon_unit
+  utility_box_01  -> props/utility_box
+  planter_box_01  -> props/planter_box
+  shrub_03
+  rock_07  -> props/rock_boulder
+  wooden_picnic_table  -> props/picnic_table
+  modular_street_seating
+
+Procedural (no third-party content): all vehicles (models/real/vehicles), all people
+(models/real/people), road pieces, and every building / zone mesh.
+
+HDRIs:
+  kloofendal_48d_partly_cloudy_puresky  -> env/sky.hdr
+  modern_buildings_night  -> env/sky_night.hdr

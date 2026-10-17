@@ -1,0 +1,171 @@
+# GridFall — a SimCity-style city run by GMI Cloud AI
+
+**GridFall** is a 3D SimCity-style city builder made with **Godot 4.7 (Forward+)**, **Blender**, **GMI Cloud** inference and **ACE-Step 1.5** audio. You don't build the city. Five autonomous AI mayors do, each running on a different GMI Cloud model. Every other layer of the city also has a GMI model behind it. You watch, inspect and intervene.
+
+GridFall was built with [Factory](https://factory.ai)'s Droid coding agent, which wrote the Godot code, the Blender asset pipeline and the tests. Every mayor, resident and city agent runs on [GMI Cloud](https://www.gmicloud.ai) inference.
+
+## The AI city
+
+| Role | Model | What it does |
+| --- | --- | --- |
+| Mayor Argon-4 (NW Civic Campus) | `google/gemini-4-argon` | Utility-first planner |
+| Mayor DeepSeek-V4 (NE Tech Corridor) | `deepseek-ai/DeepSeek-V4-Flash-0731` | Systems engineer |
+| Mayor Kimi-K3 (Central Plaza) | `moonshotai/kimi-k3` | Coalition builder |
+| Mayor Qwen-3.8 (SW Eco Quarter) | `Qwen/Qwen3.8-Max` | Fiscal pragmatist |
+| Mayor Grok-4.5 (SE Boomtown) | `x-ai/grok-4.5` | Growth maximalist |
+| Citizen Voices | `MiniMaxAI/MiniMax-M3` | Residents react to their real tile data |
+| GridFall Gazette | `XiaomiMiMo/MiMo-V2.6-Flash` | Daily newspaper and editorial |
+| Council Speaker | `openai/gpt-6-luna` | Rules on ordinances the mayors propose and vote on |
+| Chaos Director | `deepseek-ai/DeepSeek-V4-Pro` | Picks disasters that test real weaknesses |
+| Grid Operator | `google/gemini-3.8-flash` | Sets the power load-shedding priority |
+| Street Inspector | `MiniMaxAI/MiniMax-M3` | Click any tile; whoever is standing there tells you what's wrong |
+
+Once per in-game day, each mayor gets an ASCII map of its district, district and city stats, open lots, its open construction sites, land it can annex, yesterday's results, other mayors' posts, letters from its residents, the Gazette headline, open proposals and any player decree. It replies with JSON: a private thought, a public post, a mood, up to 7 actions (road, zone, build, bulldoze, taxes, emergency, grant, annex), an ordinance proposal and votes. The simulation checks every action and rejects invalid ones with a reason.
+
+## Simulation
+
+- **World:** the founding city is 32×32 tiles (x,y 0..31) with a river, forests and five districts, inside a 96×96 world (x,y -32..63) of unclaimed woods, lakes and the river. Mayors **annex** unclaimed 16×16 plots that border their district; each plot costs more than the last ($2500, then +$750). Per-tick systems only process claimed land plus a 3-tile margin, so the wider world costs little.
+- **Zoning:** R/C/I demand and density growth (levels 1–3). Growth depends on road access, power, water, land value and taxes.
+- **Utilities:** a power network that flows through roads and buildings, with load shedding; coal, solar and wind power (wind is stronger near water or the map edge); water pumps (stronger near the river); sewage capacity; garbage collection through landfills (a waste shortage adds pollution and lowers happiness).
+- **Services:** police, fire, hospital, school and parks, each with a coverage radius.
+- **Big projects:** stadium (leisure coverage), train station (transit cuts traffic by up to 40%), university (wide school coverage), and airport (jobs plus commercial and industrial demand, but it pollutes). Each mayor has a favorite project once its city passes 900 residents.
+- **City maps:** traffic, pollution, crime, land value and happiness.
+- **Economy:** a budget for each district (taxes, upkeep, ordinance costs), plus 10 citywide ordinances.
+- **Disasters:** 8 types (fire, blackout, sewage burst, gridlock, smog, earthquake, flood, tornado).
+- **Staged construction:** see below.
+- Time speeds: pause, 1x, 2x, 4x, 8x. A day waits for the mayors' GMI calls (up to 75s).
+- Save and load to `user://gridfall_save.json`.
+
+## Residents
+
+About 100 named residents (one per ~10 people) each have a job, skills, traits, a household, a home, savings and a memory. Their GMI minds (`scripts/ai/resident_minds.gd`, batched) decide each day whether to go to work, how to commute, where to spend, what to do in the evening (including helping neighbours or protesting at city hall) and whether to move away. Traffic, wages, sales tax and moods come from those decisions instead of fixed formulas.
+
+Incidents (fires, broken water mains, downed power lines, crashes, quakes...) never end on a timer: they stay broken until residents with the right skills and paid city crews put in enough repair work. Residents write to their mayor, and the mayor reads those letters the next day. Click a person in the city, or use the People tab, to read their mind.
+
+## Staged construction
+
+Nothing appears instantly once people live in the city. Every build order opens a **construction site** (`+` on the AI map) that goes through stages:
+
+| Site | Stages |
+| --- | --- |
+| Service buildings | clearing → excavation → foundation → frame → finishing (solar, wind and landfill skip excavation; parks are clearing → landscaping) |
+| Zoned lots (private developers) | houses: foundation → frame → finishing; shops/factories: excavation → foundation → frame → finishing; towers rebuild from the foundation; smaller upgrades add a frame and facade around the building while people keep living there |
+| Roads / bridges | clearing → grading → paving / piling → decking → paving |
+| Demolition (bulldoze) | demolition → hauling (trees: clearing; rubble: hauling) |
+
+The paid contractor puts `CREW_RATE` work points into every open site each tick. A police station takes about a day, an airport about four. Residents with construction skills (construction workers, civil engineers, electricians, water engineers) spend their working day on the nearest site and roughly double its pace; they are paid a day rate, remember what they helped build, and show up in the tile inspector's crew list. A building does nothing until it is finished. Sites survive save/load.
+
+The view draws each stage with a fenced dirt lot, an excavated pit with spoil heaps, a wet concrete slab with formwork and rebar, a rising concrete frame (floor by floor), scaffolding with safety netting around the finishing building, and a floodlight. Animated procedural machines work the sites: excavators, JCB-style backhoe loaders, tipping dump trucks, cement mixers with turning drums, tower cranes with slewing jibs and moving trolleys, bulldozers and road rollers.
+
+Founding builds made before anyone lives in the city, and runs with residents off, are still instant. `CitySim.construction_mode` can force `"staged"` or `"instant"`.
+
+## City life
+
+- Zone lots pick from a library of houses, apartments, shops, offices, skyscrapers, warehouses and plants for each density level (`models/zones/<r|c|i><level>/`). Built lots get trees, benches, lamps, hydrants, planters, bins and billboards.
+- Bus stops appear on straight roads next to homes and shops. Buses stop there and also run out of train stations.
+- Delivery trucks run from industry, and garbage trucks from landfills.
+- Every disaster sends a crew: fire trucks, ambulances and police drive the road network from the nearest station to the event with sirens flashing, stay until it ends, then leave.
+- Boats sail the river. Airports run a plane that takes off, circles the city and lands again; hospitals get a circling helicopter when the model is present.
+- Wind farm rotors spin and rooftop beacons blink.
+
+## Rendering
+
+- Realistic models in `models/real/` (zones, service buildings, roads, props, vehicles, people) are used whenever they exist, with the Kenney and earlier Blender models as fallbacks.
+- HDRI sky that blends day, dusk and a procedural starry night; a 24-hour day/night cycle (`scripts/world/sky_director.gd`) drives the sun, fog, exposure, lit windows and street lamps with pools of light.
+- PBR grass, dirt, asphalt and sidewalk (Poly Haven CC0), a water shader with moving normals and fresnel, ACES tonemapping, SSAO, SSIL, glow and aerial-perspective fog.
+
+## Player controls
+
+- **Top bar:** day, population, jobs, funds, happiness, the RCI demand meter, power/water/sewage load, GMI call status, speed, Save/Load/New, Live GMI toggle, Mute.
+- **Overlays tab:** 3D data views for power, water, pollution, crime, land value, traffic, happiness, services and districts.
+- **Disasters tab:** arm a disaster, then click the map. There is also a random target option and "Restore all".
+- **Powers tab:** send a decree to all mayors, grant funds, and override ordinances.
+- **Mayor cards (bottom):** click a card to focus that district and read its latest thought, post and action results.
+- **Right panel:** Mayor, Gazette, City Hall (council, operator, chaos, citizens), Inspect, GMI Log, Feed.
+- **Keys:** WASD pan, mouse wheel zoom, right-drag rotate, `C` recenter, `Space` pause, `1`–`4` speed, `Esc` cancel an armed disaster, `F5` save, `F9` load.
+
+## GMI inference and fallbacks
+
+`scripts/ai/gmi_client.gd` calls `https://api.gmi-serving.com/v1/chat/completions`. The API key comes from `GMI_API_KEY` or from the GMI entry in `~/.factory/settings.json`. Hybrid reasoning models get per-model settings so they answer instead of spending the whole token budget on reasoning: DeepSeek and Kimi get `thinking: disabled`, Qwen gets `enable_thinking: false`, and Grok gets `reasoning_effort: low`.
+
+Each call falls back in this order:
+
+1. Live GMI response.
+2. Replay cache: real recorded responses in `data/gmi_replay_cache.json` (22 days are included), nearest day for the same agent.
+3. Heuristic fallback for that role.
+
+The source of every call (live, cache or heuristic) is shown on the mayor cards and in the GMI Log.
+
+The replay cache was recorded before wind farms, landfills and the big projects existed. On a replayed day, a mayor therefore also borrows at most one of those builds from its heuristic planner, and only when the district can still afford it after the replayed actions.
+
+```bash
+GRIDFALL_OFFLINE=1   # never call GMI (replay cache + heuristics)
+GRIDFALL_RECORD=1    # write live responses into data/gmi_replay_cache.json
+GRIDFALL_SPEED=4     # starting game speed
+GRIDFALL_RESIDENTS=0 # no AI residents (old formula behaviour, instant construction)
+LIVE_RESIDENTS=30    # residents_live test: how many residents call GMI (default 30)
+GRIDFALL_HOUR=21.5   # freeze the clock at this hour (e.g. for night screenshots)
+```
+
+## Running
+
+```bash
+# Play
+godot --path .
+
+# Headless smoke test (offline: 6 days, quake + crews, overlays, inspector, save/load round trip)
+GRIDFALL_SMOKE_TEST=1 godot --headless --path .
+
+# Photo tour: grow the city offline, then save landmark, dusk, night, construction and fire shots
+# (GRIDFALL_PHOTO_SHOWCASE=1 also builds any missing big project first)
+GRIDFALL_PHOTO_DIR=/tmp/gf_photos GRIDFALL_PHOTO_DAYS=12 godot --path . --resolution 1600x900
+
+# Trailer: a ~30 s 1080p clip with captions and a ticker of live GMI mayor calls
+# (grows a city offline once, then records with Movie Maker and encodes an MP4 for X)
+tools/record_trailer.sh trailer/gridfall_trailer.mp4
+# Sim unit test and a live two-day brain test
+godot --headless --path . -s tools/tests/sim_test.gd
+godot --headless --path . -s tools/tests/buildings_test.gd
+godot --headless --path . -s tools/tests/residents_test.gd      # residents, incidents, save/load
+godot --headless --path . -s tools/tests/expansion_test.gd      # annexation and the 96x96 world
+godot --headless --path . -s tools/tests/construction_test.gd   # staged construction and crews
+godot --headless --path . -s tools/tests/brain_live_test.gd
+LIVE_RESIDENTS=10 godot --headless --path . -s tools/tests/residents_live.gd
+
+# Rebuild the realistic models (procedural Blender + Poly Haven CC0 textures) and validate them
+blender --background --python /abs/path/to/tools/blender/make_realistic_city.py -- all
+blender --background --python /abs/path/to/tools/blender/validate_real.py
+
+# Rebuild the Blender GLB assets (includes coal plant, water tower, police, fire, hospital, school, apartment tower, factory)
+blender --background --python /abs/path/to/tools/blender/make_gridfall_assets.py -- all
+
+# Re-import the Kenney CC0 kits into models/zones, models/props and models/vehicles
+blender --background --python /abs/path/to/tools/blender/import_kits.py
+```
+
+## Code map
+
+- `scripts/sim/sim_defs.gd`: rules, costs, ordinances, disasters, mayors, support agents.
+- `scripts/sim/city_sim.gd`: tile simulation, actions, annexation, construction sites, disasters and incidents, summaries for the AI, save/load.
+- `scripts/sim/residents.gd`: the resident population, their days, jobs, money, incident help and construction crews.
+- `scripts/ai/resident_minds.gd`: batched GMI minds for residents.
+- `scripts/ai/gmi_client.gd`: GMI HTTP client, JSON extraction, replay cache, call log.
+- `scripts/ai/city_brain.gd`: prompts and the daily schedule for all GMI agents.
+- `scripts/world/city_view.gd`: 3D renderer (roads chosen by neighbor mask, buildings by density, services, props, bus stops, cars, pedestrians, effects, overlays, click to inspect).
+- `scripts/world/city_life.gd`: buses, trucks, emergency crews, boats and aircraft.
+- `scripts/world/construction_kit.gd`: construction site stages and the animated machines.
+- `scripts/world/resident_avatars.gd`: residents as walking and driving people you can click.
+- `scripts/world/sky_director.gd`: day/night cycle and sky.
+- `scripts/ui/city_hud.gd`: HUD.
+- `scripts/main.gd`: wiring, save/load, smoke test.
+- `scripts/cinematic.gd`: the scripted trailer (camera path, captions, live GMI ticker).
+
+## Asset credits
+
+Building, prop and vehicle models in `models/zones`, `models/props` and `models/vehicles` are adapted from Kenney asset kits (CC0). See `models/LICENSES/`. The realistic set in `models/real/` is procedural Blender geometry with Poly Haven CC0 textures, HDRIs and a few embedded Poly Haven models; see `models/real/LICENSES/polyhaven.txt`.
+
+## Assets from earlier GridFall versions
+
+- `concepts/*.png`: `hy-image-v3.5-preview` concept sheets made with `tools/gmi/generate_concepts.py`.
+- `sounds/music/*.wav`: ACE-Step 1.5 stems (96 BPM nominal, 122 BPM crisis). `audio_director.gd` crossfades between them based on blackouts and active disasters.
+- The original 8-tick crisis episode player (`episode_player.gd`, `gridfall_world.gd`, `gridfall_hud.gd`, `tools/gmi/run_episode.py`) is still in the repo but is no longer used by the main scene.
