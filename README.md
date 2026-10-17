@@ -163,6 +163,10 @@ blender --background --python /abs/path/to/tools/blender/import_kits.py
 - `scripts/main.gd`: wiring, save/load, smoke test.
 - `scripts/cinematic.gd`: the scripted trailer (camera path, captions, live GMI ticker).
 
+## License
+
+GridFall's code is released under the [MIT License](LICENSE). Third-party assets keep their own licenses, listed below.
+
 ## Asset credits
 
 Building, prop and vehicle models in `models/zones`, `models/props` and `models/vehicles` are adapted from Kenney asset kits (CC0). See `models/LICENSES/`. The realistic set in `models/real/` is procedural Blender geometry with Poly Haven CC0 textures, HDRIs and a few embedded Poly Haven models; see `models/real/LICENSES/polyhaven.txt`.
