@@ -639,7 +639,7 @@ func _send_decree() -> void:
 
 func _random_disaster() -> void:
 	var spots: Array[int] = []
-	for i in range(D.W * D.H):
+	for i in sim.active:
 		if D.is_zone(sim.kind[i]) and sim.level[i] > 0:
 			spots.append(i)
 	var keys: Array = D.DISASTERS.keys()

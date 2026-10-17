@@ -24,7 +24,7 @@ Once per in-game day, each mayor gets an ASCII map of its district, district and
 
 ## Simulation
 
-- **World:** the founding city is 32×32 tiles (x,y 0..31) with a river, forests and five districts, inside a 96×96 world (x,y -32..63) of unclaimed woods, lakes and the river. Mayors **annex** unclaimed 16×16 plots that border their district; each plot costs more than the last ($2500, then +$750). Per-tick systems only process claimed land plus a 3-tile margin, so the wider world costs little.
+- **World:** the founding city is 32×32 tiles (x,y 0..31) with a river, forests and five districts, inside a 192×192 frontier (x,y -80..111) of unclaimed woods, lakes and the river. Mayors **annex** unclaimed 16×16 plots that border their district; each plot costs a little more than the last ($1500, then +$400). Surveyors map land up to two plots beyond claimed territory; the frontier past that sits under a haze that lifts as the city grows. Per-tick systems and most view passes only touch claimed land plus a 3-tile margin, trees are drawn in chunks that switch to low-poly stand-ins far from the camera, so the bigger world costs little. Saves from the old 96×96 world load into the same place in the bigger one.
 - **Zoning:** R/C/I demand and density growth (levels 1–3). Growth depends on road access, power, water, land value and taxes.
 - **Utilities:** a power network that flows through roads and buildings, with load shedding; coal, solar and wind power (wind is stronger near water or the map edge); water pumps (stronger near the river); sewage capacity; garbage collection through landfills (a waste shortage adds pollution and lowers happiness).
 - **Services:** police, fire, hospital, school and parks, each with a coverage radius.
@@ -53,7 +53,9 @@ Nothing appears instantly once people live in the city. Every build order opens 
 | Roads / bridges | clearing → grading → paving / piling → decking → paving |
 | Demolition (bulldoze) | demolition → hauling (trees: clearing; rubble: hauling) |
 
-The paid contractor puts `CREW_RATE` work points into every open site each tick. A police station takes about a day, an airport about four. Residents with construction skills (construction workers, civil engineers, electricians, water engineers) spend their working day on the nearest site and roughly double its pace; they are paid a day rate, remember what they helped build, and show up in the tile inspector's crew list. A building does nothing until it is finished. Sites survive save/load.
+The paid contractor puts `CREW_RATE` work points into every open site each tick (4 ticks a day). With contractors alone a park takes about a day, a road a day, a bridge 2.5 days, a police station 3, a hospital 4, a coal plant 9, a stadium 12 and an airport 15. Private developers take about 2 days for houses and 6 for a tower, and run at most `MAX_ZONE_SITES` (10) sites per district at once. Residents with construction skills (construction workers, civil engineers, electricians, water engineers) spend their working day on the nearest site; together they can add up to `HELPER_CAP` (60%) of a contractor shift per tick. They are paid a day rate, remember what they helped build, and show up in the tile inspector's crew list. A building does nothing until it is finished. Sites survive save/load.
+
+Progress shows continuously, not stage by stage: the view runs each site forward between ticks at its recent work rate, and each stage changes as work goes in. Trees come down and stumps are pulled, the pit widens and the spoil heaps grow, rebar goes in before the slab is poured across, the frame rises floor by floor, safety netting rolls up, asphalt is laid end to end, bridge piers rise, and demolished buildings sink into a growing rubble pile that is then hauled away.
 
 The view draws each stage with a fenced dirt lot, an excavated pit with spoil heaps, a wet concrete slab with formwork and rebar, a rising concrete frame (floor by floor), scaffolding with safety netting around the finishing building, and a floodlight. Animated procedural machines work the sites: excavators, JCB-style backhoe loaders, tipping dump trucks, cement mixers with turning drums, tower cranes with slewing jibs and moving trolleys, bulldozers and road rollers.
 
@@ -73,6 +75,7 @@ Founding builds made before anyone lives in the city, and runs with residents of
 - Realistic models in `models/real/` (zones, service buildings, roads, props, vehicles, people) are used whenever they exist, with the Kenney and earlier Blender models as fallbacks.
 - HDRI sky that blends day, dusk and a procedural starry night; a 24-hour day/night cycle (`scripts/world/sky_director.gd`) drives the sun, fog, exposure, lit windows and street lamps with pools of light.
 - PBR grass, dirt, asphalt and sidewalk (Poly Haven CC0), a water shader with moving normals and fresnel, ACES tonemapping, SSAO, SSIL, glow and aerial-perspective fog.
+- Model materials are tuned at load: roofs, brick, concrete, plaster, stone, wood and paving are matte (the source textures marked them fully metallic, which made roofs mirror the sky), sheet metal is semi-matte, and glass and chrome keep a soft sheen.
 
 ## Player controls
 
@@ -127,7 +130,7 @@ tools/record_trailer.sh trailer/gridfall_trailer.mp4
 godot --headless --path . -s tools/tests/sim_test.gd
 godot --headless --path . -s tools/tests/buildings_test.gd
 godot --headless --path . -s tools/tests/residents_test.gd      # residents, incidents, save/load
-godot --headless --path . -s tools/tests/expansion_test.gd      # annexation and the 96x96 world
+godot --headless --path . -s tools/tests/expansion_test.gd      # annexation, survey, old-save migration, 192x192 world
 godot --headless --path . -s tools/tests/construction_test.gd   # staged construction and crews
 godot --headless --path . -s tools/tests/brain_live_test.gd
 LIVE_RESIDENTS=10 godot --headless --path . -s tools/tests/residents_live.gd

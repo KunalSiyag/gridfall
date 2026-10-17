@@ -2,12 +2,13 @@ class_name GridFallCamera
 extends Node3D
 ## Isometric camera rig for GridFall: WASD pan, mouse wheel zoom, drag pan, middle/right rotate.
 
+const D := preload("res://scripts/sim/sim_defs.gd")
 const WORLD_CENTER := Vector3(15.5, 0.0, 13.5)
 const MIN_ZOOM := 7.0
-const MAX_ZOOM := 150.0
+const MAX_ZOOM := 230.0
 const DEFAULT_ZOOM := 62.0
-const MIN_COORD := -32.0
-const MAX_COORD := 63.0
+const MIN_COORD := D.X0 * 1.0
+const MAX_COORD := (D.X0 + D.W - 1) * 1.0
 const PAN_SPEED := 14.0
 
 var target_position: Vector3 = WORLD_CENTER

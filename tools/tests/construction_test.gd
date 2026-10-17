@@ -39,7 +39,7 @@ func _init() -> void:
 	check(sim.tile_char(pi) == "+", "the map shows + for the site")
 	var stages_seen: Dictionary = {}
 	var t := 0
-	while sim.sites.has(pi) and t < 40:
+	while sim.sites.has(pi) and t < 120:
 		stages_seen[sim.site_stage_name(sim.sites[pi])] = true
 		sim.step_tick()
 		t += 1
@@ -58,7 +58,7 @@ func _init() -> void:
 	check(open_hospital, "hospital site is open")
 	check(str(sim.district_summary(0)["under_construction"]).contains("Hospital"), "district summary lists the open site for the mayor")
 
-	# Roads: a land road is paved after ~2 ticks.
+	# Roads: a land road is paved after about a day (ROAD_TICKS).
 	var ry := -1
 	for y in range(1, 15):
 		var clear := true
@@ -74,8 +74,8 @@ func _init() -> void:
 	check(bool(rr["ok"]) and sim.kind[D.idx(3, ry)] == D.SITE, "road order opens road sites")
 	var again := sim.apply_action(0, {"type": "road", "x": 1, "y": ry, "x2": 5, "y2": ry})
 	check(not bool(again["ok"]), "re-ordering a road under construction is a no-op")
-	var road_t := ticks_until(sim, func() -> bool: return sim.kind[D.idx(3, ry)] == D.ROAD, 6)
-	check(road_t >= 2 and road_t <= 4, "road opens after %d ticks" % road_t)
+	var road_t := ticks_until(sim, func() -> bool: return sim.kind[D.idx(3, ry)] == D.ROAD, 12)
+	check(road_t >= D.ROAD_TICKS - 1 and road_t <= D.ROAD_TICKS + 1, "road opens after %d ticks" % road_t)
 
 	# Bridges: find a water tile in some district next to its land.
 	var bridge := -1
@@ -88,8 +88,8 @@ func _init() -> void:
 	if bridge >= 0:
 		var br := sim.apply_action(owner, {"type": "road", "x": D.tx(bridge), "y": D.ty(bridge)})
 		check(bool(br["ok"]) and str(sim.sites[bridge]["plan"]) == "bridge", "a road over water is built as a bridge (%s)" % str(br))
-		var bt := ticks_until(sim, func() -> bool: return sim.kind[bridge] == D.ROAD, 10)
-		check(bt >= 4 and bt <= 6, "the bridge takes longer (%d ticks)" % bt)
+		var bt := ticks_until(sim, func() -> bool: return sim.kind[bridge] == D.ROAD, 20)
+		check(bt >= D.BRIDGE_TICKS - 1 and bt <= D.BRIDGE_TICKS + 1, "the bridge takes longer (%d ticks)" % bt)
 	else:
 		check(false, "found a river tile for a bridge")
 
@@ -99,8 +99,8 @@ func _init() -> void:
 	check(bool(dr["ok"]) and sim.kind[pi] == D.SITE and str(sim.sites[pi]["plan"]) == "demolish", "bulldozing a building sends a demolition crew")
 	var dd := sim.apply_action(0, {"type": "bulldoze", "x": D.tx(pi), "y": D.ty(pi)})
 	check(sim.sites.has(pi) and not bool(dd["ok"]), "bulldozing again does not skip the demolition (%s)" % str(dd))
-	var dt := ticks_until(sim, func() -> bool: return sim.kind[pi] == D.EMPTY, 10)
-	check(dt >= 2, "demolition and hauling take %d ticks" % dt)
+	var dt := ticks_until(sim, func() -> bool: return sim.kind[pi] == D.EMPTY, 20)
+	check(dt >= 7, "demolition and hauling take %d ticks" % dt)
 
 	# Zone growth goes through developer sites.
 	var acts := [
@@ -112,7 +112,7 @@ func _init() -> void:
 	for a: Dictionary in acts:
 		sim.apply_action(0, a)
 	var zone_site_seen := false
-	for _k in range(40):
+	for _k in range(80):
 		sim.step_tick()
 		for s: Dictionary in sim.sites.values():
 			zone_site_seen = zone_site_seen or str(s["type"]) == "zone"
@@ -153,7 +153,7 @@ func _init() -> void:
 	var st := D.idx(int(r4.get("x", -99)), int(r4.get("y", -99)))
 	var stadium_t := 0
 	var crew: Dictionary = {}
-	while sim.sites.has(st) and stadium_t < 80:
+	while sim.sites.has(st) and stadium_t < 200:
 		crew = (sim.sites[st]["crew"] as Dictionary).duplicate()
 		sim.step_tick()
 		stadium_t += 1

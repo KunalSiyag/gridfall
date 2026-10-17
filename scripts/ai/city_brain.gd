@@ -161,8 +161,8 @@ RULES
 - The people are AI residents with their own minds. They choose whether to go to work, how to commute, where to spend, whether to help fix what breaks, whether to protest, and whether to move away. Unhappy residents leave, which empties homes and shrinks your tax base. Incidents (fires, broken water mains, downed power lines, crashes...) stay broken until residents and paid crews put in enough repair work.
 - Daily income = income tax on what your residents earned plus sales tax on what they spent in your shops, plus industry. Upkeep = buildings + roads + share of ordinances. Taxes above ~9% slow growth and anger residents. You cannot go below -$2000.
 - Costs: road $10/tile ($50 on water), zone $5/tile, bulldoze $5/tile, emergency crews $300.
-- Construction takes time. A build order opens a construction site (+ on the map, listed under under_construction) that your paid contractors work through in stages: clearing, excavation, foundation, frame, finishing. A building does nothing until it is finished: a police station takes about 1 day, a coal plant about 2, a stadium about 3, an airport about 4. Roads open after under a day, bridges after about a day and a half. Private developers build zoned lots up the same way. Residents who are construction workers, electricians or engineers join nearby sites and finish them faster. Bulldozing sends a demolition crew. Never order a building again while its site is still open.
-- The city can grow: the founding city covers x,y 0..31 inside a wider world (x,y -32..63) of unclaimed woods, lakes and the river. You may annex an unclaimed 16x16 plot that borders your district (LAND YOU CAN ANNEX lists them with prices); the price rises with each plot you add. New land is empty: it needs roads connected to the city, power and zoning before anyone lives there.
+- Construction takes time. A build order opens a construction site (+ on the map, listed under under_construction) that your paid contractors work through in stages: clearing, excavation, foundation, frame, finishing. A building does nothing until it is finished: a park takes about 1 day, a police station about 3, a hospital about 4, a coal plant about 9, a stadium about 12, an airport about 15. Roads open after about a day, bridges after about 2.5 days. Private developers build zoned lots up the same way (houses about 2 days, towers about 6) and only run about 10 sites per district at once. Residents who are construction workers, electricians or engineers join nearby sites and finish them faster, but never more than about 1.6x. Plan ahead: order power and water before you need them. Bulldozing sends a demolition crew. Never order a building again while its site is still open.
+- The city can grow: the founding city covers x,y 0..31 inside a wide frontier (x,y """ + "%d..%d" % [D.X0, D.X0 + D.W - 1] + """) of unclaimed woods, lakes and the river. You may annex an unclaimed 16x16 plot that borders your district (LAND YOU CAN ANNEX lists them with prices); the price rises with each plot you add. Land is cheap, so keep claiming plots ahead of demand: surveyors map the frontier further out as the city grows. New land is empty: it needs roads connected to the city, power and zoning before anyone lives there.
 ACTIONS (max 7 per day). Coordinates are absolute world coordinates x,y and must be inside your district (except annex).
  {"type":"road","x":X,"y":Y,"x2":X2,"y2":Y2}  straight or L-shaped (horizontal leg first), max 16 tiles
  {"type":"zone","zone":"R|C|I","x":X,"y":Y,"w":W,"h":H}  rectangle up to 6x6 on empty or forest land, top-left corner at x,y
@@ -416,9 +416,9 @@ func _heuristic_mayor(mi: int) -> Dictionary:
 		funds -= 20
 	if zoned > 0:
 		notes.append("zoning %s where demand is strongest" % str(order[0]))
-	if lots.size() < 8:
+	if lots.size() < 16:
 		var plot := _best_annex(mi)
-		if not plot.is_empty() and funds > int(plot["cost"]) + 2500:
+		if not plot.is_empty() and funds > int(plot["cost"]) + 2000:
 			actions.append({"type": "annex", "x": int(plot["x"]), "y": int(plot["y"])})
 			funds -= int(plot["cost"])
 			notes.append("annexing new land to the %s" % _direction_of(mi, plot))
@@ -673,7 +673,7 @@ func _heuristic_chaos() -> Dictionary:
 	var types := ["fire", "gridlock", "smog", "sewage_burst", "blackout"]
 	var t: String = types[sim.rng.randi_range(0, types.size() - 1)]
 	var spots: Array[int] = []
-	for i in range(D.W * D.H):
+	for i in sim.active:
 		if D.is_zone(sim.kind[i]) and sim.level[i] > 0:
 			spots.append(i)
 	if spots.is_empty():

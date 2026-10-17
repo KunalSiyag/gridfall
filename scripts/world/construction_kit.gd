@@ -15,6 +15,7 @@ var view: Node
 var _mats: Dictionary = {}
 var _meshes: Dictionary = {}
 var _anims: Array[Dictionary] = []
+var _site_root: Node3D
 
 
 func _init(p_view: Node) -> void:
@@ -452,10 +453,12 @@ func build_site(holder: Node3D, s: Dictionary, stage: String, f: float, ctx: Dic
 	var root := Node3D.new()
 	root.name = "Site"
 	holder.add_child(root)
+	_site_root = root
 	var h := int(ctx.get("h", 0))
 	var ph := float(h % 628) * 0.01
 	if str(s["type"]) == "road":
-		_road_site(root, stage, f, ctx, ph)
+		_road_site(root, stage, ctx, ph)
+		_apply_progress(root, f)
 		return root
 	var plan := str(s["plan"])
 	var overlay := plan == "zone_up"
@@ -468,23 +471,38 @@ func build_site(holder: Node3D, s: Dictionary, stage: String, f: float, ctx: Dic
 		_fence(root, h)
 	match stage:
 		"clearing":
+			# Standing trees come down first, then the stumps get grubbed out.
+			var trees := _group(root, "Trees")
+			var stumps := _group(root, "Stumps")
 			for k in range(4):
 				var a := float((h >> k) % 360) * 0.0175
-				cyl(root, 0.018, 0.03, Vector3(cos(a) * 0.3, 0.015, sin(a) * 0.3), "bark")
-			mound(root, 0.12, 0.05, Vector3(0.22, 0.0, 0.2), "soil")
+				var p := Vector3(cos(a) * 0.3, 0, sin(a) * 0.3)
+				cyl(stumps, 0.018, 0.03, p + Vector3(0, 0.015, 0), "bark")
+				var tree := _group(trees, "Tree")
+				tree.position = p
+				cyl(tree, 0.012, 0.12, Vector3(0, 0.06, 0), "bark")
+				mound(tree, 0.06, 0.07, Vector3(0, 0.15, 0), "leaf")
+			track(trees, "hide", 0.0, 0.55)
+			track(stumps, "hide", 0.45, 1.0)
+			track(mound(root, 0.12, 0.05, Vector3(0.22, 0.0, 0.2), "soil"), "sy", 0.0, 1.0, 0.3, 1.4)
 			var dz := machine("bulldozer", root, Vector3(-0.1, 0, -0.05), 0.0)
 			shuttle(dz, Vector3.RIGHT, 0.18, 0.5, ph)
 			machine("dump_truck", root, Vector3(0.18, 0, -0.3), PI, ph)
 		"excavation":
-			box(root, Vector3(foot.x, 0.004, foot.y), Vector3(0, 0.012, 0), "soil_dark", Vector3.ZERO, false)
+			# The pit widens and the spoil heaps grow as the digger works.
+			track(box(root, Vector3(foot.x, 0.004, foot.y), Vector3(0, 0.012, 0), "soil_dark", Vector3.ZERO, false), "sxz", 0.0, 1.0, 0.2, 1.0)
+			var berms := _group(root, "Berms")
 			for side in [-1.0, 1.0]:
-				box(root, Vector3(foot.x + 0.06, 0.035, 0.05), Vector3(0, 0.017, side * (foot.y * 0.5 + 0.02)), "soil")
-				box(root, Vector3(0.05, 0.035, foot.y + 0.06), Vector3(side * (foot.x * 0.5 + 0.02), 0.017, 0), "soil")
-			mound(root, 0.13, 0.08, Vector3(0.33, 0.0, 0.33), "soil")
+				box(berms, Vector3(foot.x + 0.06, 0.035, 0.05), Vector3(0, 0.017, side * (foot.y * 0.5 + 0.02)), "soil")
+				box(berms, Vector3(0.05, 0.035, foot.y + 0.06), Vector3(side * (foot.x * 0.5 + 0.02), 0.017, 0), "soil")
+			track(berms, "sy", 0.0, 1.0, 0.15, 1.0)
+			track(mound(root, 0.13, 0.08, Vector3(0.33, 0.0, 0.33), "soil"), "sy", 0.0, 1.0, 0.25, 1.3)
 			machine("excavator", root, Vector3(-0.3, 0.03, -0.18), 0.0, ph)
 			machine("dump_truck", root, Vector3(0.3, 0, -0.33), PI * 0.5, ph)
 		"foundation":
-			box(root, Vector3(foot.x, 0.03, foot.y), Vector3(0, 0.015, 0), "concrete_wet")
+			# Rebar goes in first, then the slab is poured across the formwork.
+			track(box(root, Vector3(foot.x, 0.03, foot.y), Vector3(0, 0.015, 0), "concrete_wet"), "sx", 0.4, 1.0, 0.0, 1.0)
+			var bars := _group(root, "Rebar")
 			for side in [-1.0, 1.0]:
 				box(root, Vector3(foot.x + 0.02, 0.045, 0.012), Vector3(0, 0.022, side * foot.y * 0.5), "timber", Vector3.ZERO, false)
 				box(root, Vector3(0.012, 0.045, foot.y + 0.02), Vector3(side * foot.x * 0.5, 0.022, 0), "timber", Vector3.ZERO, false)
@@ -492,7 +510,8 @@ func build_site(holder: Node3D, s: Dictionary, stage: String, f: float, ctx: Dic
 				for gz in range(3):
 					var p := Vector3((float(gx) - 1.0) * foot.x * 0.4, 0.06, (float(gz) - 1.0) * foot.y * 0.4)
 					for o in [Vector3(-0.008, 0, -0.008), Vector3(0.008, 0, 0.008)]:
-						box(root, Vector3(0.004, 0.07, 0.004), p + o, "rebar", Vector3.ZERO, false)
+						box(bars, Vector3(0.004, 0.07, 0.004), p + o, "rebar", Vector3.ZERO, false)
+			track(bars, "reveal", 0.0, 0.45)
 			machine("mixer", root, Vector3(0.28, 0, 0.36), PI, ph)
 			machine("backhoe", root, Vector3(-0.32, 0, -0.34), 0.4, ph)
 		"frame":
@@ -501,7 +520,7 @@ func build_site(holder: Node3D, s: Dictionary, stage: String, f: float, ctx: Dic
 				box(root, Vector3(foot.x, 0.03, foot.y), Vector3(0, 0.015, 0), "concrete")
 			_frame(root, foot, base_h, maxf(height, base_h + FLOOR_H), f)
 			if overlay:
-				_scaffold(root, foot, height, 0.0)
+				_scaffold(root, foot, height, false)
 			machine("mixer", root, Vector3(0.3, 0, 0.4), PI, ph)
 			if not big:
 				machine("backhoe", root, Vector3(-0.34, 0, 0.38), 0.0, ph)
@@ -509,38 +528,43 @@ func build_site(holder: Node3D, s: Dictionary, stage: String, f: float, ctx: Dic
 			var target: Node3D = ctx.get("target", null)
 			if target != null:
 				root.add_child(target)
-			_scaffold(root, foot, height, f)
+			_scaffold(root, foot, height, true)
 			if not overlay:
 				machine("dump_truck", root, Vector3(0.32, 0, 0.4), PI, ph + 2.0)
 		"landscaping":
-			box(root, Vector3(0.6, 0.006, 0.4), Vector3(-0.05, 0.012, 0.08), "grass", Vector3.ZERO, false)
+			track(box(root, Vector3(0.6, 0.006, 0.4), Vector3(-0.05, 0.012, 0.08), "grass", Vector3.ZERO, false), "sxz", 0.0, 0.7, 0.15, 1.0)
+			var planted := _group(root, "Planting")
 			for k in range(5):
 				var p := Vector3(float((h >> (k * 3)) % 7) * 0.1 - 0.3, 0, float((h >> (k * 2)) % 7) * 0.1 - 0.3)
-				cyl(root, 0.008, 0.08, p + Vector3(0, 0.04, 0), "bark")
-				mound(root, 0.035, 0.04, p + Vector3(0, 0.09, 0), "leaf")
+				var tree := _group(planted, "Tree")
+				tree.position = p
+				cyl(tree, 0.008, 0.08, Vector3(0, 0.04, 0), "bark")
+				mound(tree, 0.035, 0.04, Vector3(0, 0.09, 0), "leaf")
+			track(planted, "reveal", 0.2, 1.0)
 			machine("backhoe", root, Vector3(0.2, 0, -0.28), PI * 0.8, ph)
 		"demolition":
 			var old: Node3D = ctx.get("old", null)
 			if old != null:
 				root.add_child(old)
-				old.scale = Vector3(old.scale.x, old.scale.y * (1.0 - 0.75 * f), old.scale.z)
 				old.rotation.z = 0.04
-			mound(root, 0.22, 0.03 + 0.08 * f, Vector3(0.12, 0, 0.1), "concrete")
+				track(old, "sy", 0.0, 1.0, 1.0, 0.25)
+			track(mound(root, 0.22, 0.11, Vector3(0.12, 0, 0.1), "concrete"), "sy", 0.0, 1.0, 0.27, 1.0)
 			var ex := machine("excavator", root, Vector3(-0.36, 0, -0.3), 0.6, ph)
 			view.call("_add_smoke", ex, Color(0.6, 0.55, 0.48))
 			machine("dump_truck", root, Vector3(0.3, 0, -0.38), PI * 0.5, ph)
 		"hauling":
-			var left := maxf(0.15, 1.0 - f)
-			var pile := mound(root, 0.26, 0.1 * left, Vector3(0.05, 0, 0.05), "concrete")
-			pile.name = "Pile"
+			track(mound(root, 0.26, 0.1, Vector3(0.05, 0, 0.05), "concrete"), "sy", 0.0, 1.0, 1.0, 0.15)
+			var debris := _group(root, "Debris")
 			for k in range(5):
-				box(root, Vector3(0.08, 0.04, 0.06), Vector3(float((h >> k) % 5) * 0.09 - 0.2, 0.03, float((h >> (k + 2)) % 5) * 0.09 - 0.2), "rebar" if k == 0 else "concrete", Vector3(0, float(k), 0.3))
+				box(debris, Vector3(0.08, 0.04, 0.06), Vector3(float((h >> k) % 5) * 0.09 - 0.2, 0.03, float((h >> (k + 2)) % 5) * 0.09 - 0.2), "rebar" if k == 0 else "concrete", Vector3(0, float(k), 0.3))
+			track(debris, "hide", 0.1, 0.9)
 			machine("backhoe", root, Vector3(-0.3, 0, 0.32), -0.6, ph)
 			machine("dump_truck", root, Vector3(0.32, 0, -0.32), PI * 0.6, ph)
 	if big and stage in ["frame", "finishing"]:
 		tower_crane(root, Vector3(-foot.x * 0.5 - 0.1, 0, -foot.y * 0.5 - 0.1), clampf(height / MS + 9.0, 18.0, 40.0), float(h % 6), ph)
 	if not overlay or stage == "frame":
 		_floodlight(root, Vector3(foot.x * 0.5 + 0.06, 0, -foot.y * 0.5 - 0.06))
+	_apply_progress(root, f)
 	return root
 
 
@@ -555,9 +579,54 @@ func update_site(holder: Node3D, f: float) -> void:
 		var show := clampi(int(ceil(float(n) * maxf(f, 0.05))), 1, n)
 		for k in range(n):
 			(frame.get_child(k) as Node3D).visible = k < show
-	var pile := site.get_node_or_null("Pile") as Node3D
-	if pile != null:
-		pile.scale.y = maxf(0.15, 1.0 - f) * 0.1 / 0.26
+	_apply_progress(site, f)
+
+
+func _group(p: Node3D, n: String) -> Node3D:
+	var g := Node3D.new()
+	g.name = n
+	p.add_child(g)
+	return g
+
+
+## Ties part of the site being built to stage progress. Between f0 and f1 the node scales
+## from a to b times its built size ("sx", "sy", "sxz"), or shows ("reveal") / removes
+## ("hide") its children one by one.
+func track(n: Node3D, mode: String, f0 := 0.0, f1 := 1.0, a := 0.0, b := 1.0) -> Node3D:
+	var list: Array = _site_root.get_meta("progress", [])
+	list.append({"n": n, "m": mode, "f0": f0, "f1": f1, "a": a, "b": b, "s0": n.scale})
+	_site_root.set_meta("progress", list)
+	return n
+
+
+func _apply_progress(site: Node3D, f: float) -> void:
+	for p: Dictionary in site.get_meta("progress", []):
+		var n: Variant = p["n"]
+		if not is_instance_valid(n):
+			continue
+		var node := n as Node3D
+		var t := clampf((f - float(p["f0"])) / maxf(float(p["f1"]) - float(p["f0"]), 0.001), 0.0, 1.0)
+		# Never scale to zero: a degenerate basis upsets culling and transforms.
+		var v := maxf(lerpf(float(p["a"]), float(p["b"]), t), 0.02)
+		var s0: Vector3 = p["s0"]
+		match str(p["m"]):
+			"sx":
+				node.scale = Vector3(s0.x * v, s0.y, s0.z)
+				node.visible = v > 0.03
+			"sy":
+				node.scale = Vector3(s0.x, s0.y * v, s0.z)
+			"sz":
+				node.scale = Vector3(s0.x, s0.y, s0.z * v)
+			"sxz":
+				node.scale = Vector3(s0.x * v, s0.y, s0.z * v)
+			"reveal", "hide":
+				var c := node.get_child_count()
+				var gone := int(floor(float(c) * t))
+				var shown := c - gone if str(p["m"]) == "hide" else int(ceil(float(c) * t))
+				for k in range(c):
+					var child := node.get_child(k) as Node3D
+					if child != null:
+						child.visible = k >= gone if str(p["m"]) == "hide" else k < shown
 
 
 func _ground(root: Node3D, stage: String) -> void:
@@ -623,7 +692,7 @@ func _frame(root: Node3D, foot: Vector2, base_h: float, top_h: float, f: float) 
 
 
 ## Steel tube scaffold round the footprint; green netting drops away as finishing progresses.
-func _scaffold(root: Node3D, foot: Vector2, height: float, f: float) -> void:
+func _scaffold(root: Node3D, foot: Vector2, height: float, roll_net: bool) -> void:
 	var sc := Node3D.new()
 	sc.name = "Scaffold"
 	root.add_child(sc)
@@ -642,23 +711,36 @@ func _scaffold(root: Node3D, foot: Vector2, height: float, f: float) -> void:
 			box(sc, Vector3(hx * 2.0, 0.006, 0.006), Vector3(0, y, side * hz), "steel", Vector3.ZERO, false)
 			box(sc, Vector3(0.006, 0.006, hz * 2.0), Vector3(side * hx, y, 0), "steel", Vector3.ZERO, false)
 			box(sc, Vector3(hx * 2.0, 0.004, 0.03), Vector3(0, y - 0.003, side * (hz + 0.012)), "timber", Vector3.ZERO, false)
-	var net_h := top * (1.0 - f * 0.85)
-	if net_h > 0.02:
-		box(sc, Vector3(hx * 2.0, net_h, 0.003), Vector3(0, top - net_h * 0.5, hz + 0.004), "net", Vector3.ZERO, false)
-		box(sc, Vector3(0.003, net_h, hz * 2.0), Vector3(hx + 0.004, top - net_h * 0.5, 0), "net", Vector3.ZERO, false)
+	# Netting hangs from the top lift and is rolled up as the facade is finished.
+	var net := _group(sc, "Net")
+	net.position.y = top
+	box(net, Vector3(hx * 2.0, top, 0.003), Vector3(0, -top * 0.5, hz + 0.004), "net", Vector3.ZERO, false)
+	box(net, Vector3(0.003, top, hz * 2.0), Vector3(hx + 0.004, -top * 0.5, 0), "net", Vector3.ZERO, false)
+	if roll_net:
+		track(net, "sy", 0.0, 1.0, 1.0, 0.15)
 
 
-func _road_site(root: Node3D, stage: String, f: float, ctx: Dictionary, ph: float) -> void:
+## Fresh asphalt laid from one end of the tile to the other as paving progresses.
+func _paving(root: Node3D, w: float, t: float, y: float) -> void:
+	var lay := _group(root, "Asphalt")
+	lay.position = Vector3(0, y, -0.5)
+	box(lay, Vector3(w, t, 1.0), Vector3(0, 0, 0.5), "asphalt_fresh", Vector3.ZERO, false)
+	track(lay, "sz", 0.0, 1.0, 0.05, 1.0)
+
+
+func _road_site(root: Node3D, stage: String, ctx: Dictionary, ph: float) -> void:
 	# Pieces are laid out running north-south; east-west roads turn the whole site.
 	if str(ctx.get("axis", "z")) == "x":
 		root.rotation.y = PI * 0.5
 	var water := bool(ctx.get("water", false))
 	if water:
-		var piers := 1.0 if stage != "piling" else maxf(0.25, f)
 		for z in [-0.28, 0.28]:
 			for x in [-0.22, 0.22]:
-				var ph_h := 0.32 * piers
-				cyl(root, 0.035, ph_h, Vector3(x, -0.3 + ph_h * 0.5, z), "concrete")
+				var pier := _group(root, "Pier")
+				pier.position = Vector3(x, -0.3, z)
+				cyl(pier, 0.035, 0.32, Vector3(0, 0.16, 0), "concrete")
+				if stage == "piling":
+					track(pier, "sy", 0.0, 1.0, 0.25, 1.0)
 		if stage == "piling":
 			box(root, Vector3(0.03, 0.55, 0.03), Vector3(0.0, 0.2, 0.0), "paint")
 			box(root, Vector3(0.05, 0.08, 0.05), Vector3(0.0, 0.35, 0.0), "paint_dark")
@@ -666,7 +748,7 @@ func _road_site(root: Node3D, stage: String, f: float, ctx: Dictionary, ph: floa
 		else:
 			box(root, Vector3(0.62, 0.05, 1.0), Vector3(0, 0.0, 0), "concrete")
 			if stage == "paving":
-				box(root, Vector3(0.5, 0.012, f), Vector3(0, 0.031, -0.5 + f * 0.5), "asphalt_fresh", Vector3.ZERO, false)
+				_paving(root, 0.5, 0.012, 0.031)
 				var rl := machine("roller", root, Vector3(0, 0.025, 0), -PI * 0.5, ph)
 				shuttle(rl, Vector3.BACK, 0.3, 0.6, ph)
 			else:
@@ -688,6 +770,6 @@ func _road_site(root: Node3D, stage: String, f: float, ctx: Dictionary, ph: floa
 			shuttle(dz2, Vector3.BACK, 0.3, 0.4, ph)
 			mound(root, 0.06, 0.03, Vector3(-0.2, 0, 0.3), "gravel")
 		"paving":
-			box(root, Vector3(0.56, 0.008, maxf(0.05, f)), Vector3(0, 0.014, -0.5 + maxf(0.05, f) * 0.5), "asphalt_fresh", Vector3.ZERO, false)
+			_paving(root, 0.56, 0.008, 0.014)
 			var rl2 := machine("roller", root, Vector3(0, 0, -0.1), -PI * 0.5, ph)
 			shuttle(rl2, Vector3.BACK, 0.25, 0.7, ph)

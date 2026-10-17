@@ -214,11 +214,11 @@ func _run_photo_tour(dir: String) -> void:
 		await get_tree().create_timer(1.0).timeout
 	var shots: Array = [["overview", Vector3(15.5, 0, 13.5), 62.0]]
 	for k: int in [D.AIRPORT, D.WIND, D.STADIUM, D.TRAIN, D.UNIVERSITY, D.LANDFILL]:
-		for i in range(D.W * D.H):
+		for i in sim.active:
 			if sim.kind[i] == k:
 				shots.append([str(D.KIND_NAMES[k]).to_snake_case(), Vector3(D.tx(i), 0, D.ty(i)), 16.0])
 				break
-	for i in range(D.W * D.H):
+	for i in sim.active:
 		if sim.kind[i] == D.ZONE_C and sim.level[i] >= 3:
 			shots.append(["downtown", Vector3(D.tx(i), 0, D.ty(i)), 18.0])
 			break
@@ -352,7 +352,7 @@ func _print_residents(tag: String) -> void:
 	var hot := 0
 	var roads := 0
 	var tmax := 0.0
-	for i in range(D.W * D.H):
+	for i in sim.active:
 		if sim.kind[i] == D.ROAD:
 			roads += 1
 			tmax = maxf(tmax, sim.traffic[i])

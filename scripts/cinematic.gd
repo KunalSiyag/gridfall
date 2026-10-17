@@ -253,7 +253,7 @@ func _find_downtown() -> Vector3:
 	var sim: CitySim = main.sim
 	var best := -1
 	var best_l := -1
-	for i in range(D.W * D.H):
+	for i in sim.active:
 		if sim.kind[i] == D.ZONE_C and sim.level[i] > best_l:
 			best_l = sim.level[i]
 			best = i

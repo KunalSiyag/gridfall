@@ -58,7 +58,7 @@ func setup(p_sim: CitySim, p_view: Node3D) -> void:
 	_water_root = _root("Boats")
 	_air_root = _root("Aircraft")
 	_water_tiles.clear()
-	for i in range(D.W * D.H):
+	for i in sim.active:
 		if sim.terrain[i] == D.WATER:
 			_water_tiles.append(Vector2i(D.tx(i), D.ty(i)))
 	for _b in range(clampi(_water_tiles.size() / 18, 0, 5)):
@@ -175,7 +175,7 @@ func _attach_sirens(a: Dictionary, kind: String) -> void:
 
 func _roads_near(kind: int) -> Array[Vector2i]:
 	var out: Array[Vector2i] = []
-	for i in range(D.W * D.H):
+	for i in sim.active:
 		if sim.kind[i] != kind:
 			continue
 		var p := Vector2i(D.tx(i), D.ty(i))
@@ -265,7 +265,7 @@ func _bfs(start: Vector2i, goal: Vector2i) -> Array:
 func _nearest_road(x: int, y: int) -> Vector2i:
 	var best := D.NO_TILE
 	var bd := 1 << 30
-	for i in range(D.W * D.H):
+	for i in sim.active:
 		if sim.kind[i] != D.ROAD:
 			continue
 		var d := absi(D.tx(i) - x) + absi(D.ty(i) - y)
@@ -277,7 +277,7 @@ func _nearest_road(x: int, y: int) -> Vector2i:
 
 func _count(kind: int, min_level: int = 0) -> int:
 	var n := 0
-	for i in range(D.W * D.H):
+	for i in sim.active:
 		if sim.kind[i] == kind and sim.level[i] >= min_level:
 			n += 1
 	return n
@@ -468,7 +468,7 @@ func _update_boats(delta: float) -> void:
 func _sync_aircraft() -> void:
 	var airports: Array[Vector2i] = []
 	var hospitals: Array[Vector2i] = []
-	for i in range(D.W * D.H):
+	for i in sim.active:
 		if sim.kind[i] == D.AIRPORT:
 			airports.append(Vector2i(D.tx(i), D.ty(i)))
 		elif sim.kind[i] == D.HOSPITAL:

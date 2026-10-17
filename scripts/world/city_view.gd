@@ -45,6 +45,11 @@ const REAL_SCALE := 0.9
 const REAL_ROADS := {"straight": R + "roads/road_straight.glb", "lights": R + "roads/road_straight_lights.glb", "corner": R + "roads/road_corner.glb", "tee": R + "roads/road_tee.glb", "cross": R + "roads/road_cross.glb", "end": R + "roads/road_end.glb", "bridge": R + "roads/road_bridge.glb"}
 const LEAF_TEXTURE := R + "buildings/hospital_leafcluster_round.png"
 const TREE_PROPS := ["tree_oak", "tree_round", "tree_birch", "tree_poplar", "tree_conifer"]
+## Trees are batched in square chunks so far chunks can switch to low-poly stand-ins and a
+## cleared forest only rebuilds its own chunk. TREE_RING tiles of woods surround the world.
+const TREE_CHUNK := 48
+const TREE_RING := 12
+const TREE_NEAR := 120.0
 ## Window glass tints: warm homes, cool offices, a dimmer warm, and mostly dark rooms.
 const WINDOW_TINTS := [Color(1.0, 0.76, 0.46), Color(0.84, 0.91, 1.0), Color(1.0, 0.86, 0.62), Color(1.0, 0.70, 0.40)]
 const WINDOW_GLOW := [3.4, 2.8, 1.9, 0.3]
@@ -61,6 +66,9 @@ var camera: Camera3D
 var overlay_mode: String = "none"
 
 var _scenes: Dictionary = {}
+var _tuned: Dictionary = {}
+const MATTE_PREFIXES := ["Roof", "Brick", "Concrete", "Plaster", "Stone", "Trim_Stone", "Sidewalk", "Curb", "Asphalt", "Dirt", "Grass", "Gravel", "Rock", "Turf", "Wood", "Deck", "Siding", "Court", "Track", "Coal", "Garbage"]
+const SHEET_METAL_PREFIXES := ["Metal_Corrugated", "Metal_Cladding", "Metal_Plate", "Metal_Rusty", "Shutter", "Container"]
 var _tile_nodes: Dictionary = {}
 var _prev_kind := PackedInt32Array()
 var _prev_level := PackedInt32Array()
@@ -97,10 +105,14 @@ var _lamp_mat: StandardMaterial3D
 var _water_mat: ShaderMaterial
 var _tex_mats: Dictionary = {}
 var _real_roads: bool = false
-var _tree_layers: Array[Dictionary] = []
-var _tree_kit_count: int = 0
+## Tree models, one Array of mesh parts per kit, plus a low-poly stand-in for distant chunks.
+var _tree_kits: Array = []
+var _far_tree_parts: Array = []
+var _trees_root: Node3D
+## Tree chunk (Vector2i) -> its MultiMeshInstance3D layers; dirty chunks rebuild next frame.
+var _tree_chunks: Dictionary = {}
+var _dirty_tree_chunks: Dictionary = {}
 var _pool_mat: StandardMaterial3D
-var _trees_dirty: bool = false
 var _territory_root: Node3D
 var kit: ConstructionKit
 var _site_timer: float = 0.0
@@ -179,8 +191,58 @@ func _mk_root(n: String) -> Node3D:
 
 func _scene(path: String) -> PackedScene:
 	if not _scenes.has(path):
-		_scenes[path] = load(path) if ResourceLoader.exists(path) else null
+		var ps: PackedScene = load(path) if ResourceLoader.exists(path) else null
+		if ps != null:
+			_tune_materials(ps)
+		_scenes[path] = ps
 	return _scenes[path]
+
+
+## The realistic GLBs pack ARM maps whose blue (metal) channel the importer reads as fully
+## metallic, so roofs, brick and concrete mirrored the sky. Glass and bare metal were also
+## mirror-smooth. Fix each shared material once, by name, when its scene first loads.
+func _tune_materials(ps: PackedScene) -> void:
+	var root := ps.instantiate()
+	for n in root.find_children("*", "MeshInstance3D", true, false):
+		var mesh := (n as MeshInstance3D).mesh
+		if mesh == null:
+			continue
+		for s in range(mesh.get_surface_count()):
+			var m := mesh.surface_get_material(s) as BaseMaterial3D
+			if m == null or _tuned.has(m.get_instance_id()):
+				continue
+			_tuned[m.get_instance_id()] = true
+			_tune_material(m)
+	root.free()
+
+
+static func _tune_material(m: BaseMaterial3D) -> void:
+	var nm := m.resource_name
+	for p: String in MATTE_PREFIXES:
+		if nm.begins_with(p):
+			m.metallic = 0.0
+			m.metallic_texture = null
+			m.metallic_specular = 0.3
+			# Their scanned roughness still reads as glossy from above; flat matte suits them.
+			if nm.begins_with("Roof") or nm.begins_with("Gravel") or nm.begins_with("Asphalt") or nm.begins_with("Sidewalk"):
+				m.roughness_texture = null
+				m.roughness = 0.92
+			return
+	for p: String in SHEET_METAL_PREFIXES:
+		if nm.begins_with(p):
+			m.metallic = 0.35
+			m.roughness_texture = null
+			m.roughness = 0.72
+			return
+	if nm == "Solar_Panel":
+		m.metallic = 0.3
+	elif nm.begins_with("Glass") or nm.begins_with("WindowLit"):
+		m.metallic = minf(m.metallic, 0.3)
+		m.roughness = maxf(m.roughness, 0.14)
+	elif nm == "Chrome":
+		m.roughness = maxf(m.roughness, 0.25)
+	elif nm in ["Metal_Galv", "Frame_Alu", "Metal_Dark"]:
+		m.roughness = maxf(m.roughness, 0.5)
 
 
 func _inst(path: String) -> Node3D:
@@ -263,6 +325,24 @@ func _tiles_mesh(pred: Callable, y: float, size: float) -> ArrayMesh:
 	return st.commit()
 
 
+## One flat quad per tile rect (rects in tile coordinates, edges on tile borders).
+func _rects_mesh(rects: Array[Rect2i], y: float) -> ArrayMesh:
+	if rects.is_empty():
+		return ArrayMesh.new()
+	var st := SurfaceTool.new()
+	st.begin(Mesh.PRIMITIVE_TRIANGLES)
+	st.set_normal(Vector3.UP)
+	for r in rects:
+		var a := Vector3(r.position.x - 0.5, y, r.position.y - 0.5)
+		var b := Vector3(r.end.x - 0.5, y, r.position.y - 0.5)
+		var d := Vector3(r.end.x - 0.5, y, r.end.y - 0.5)
+		var c := Vector3(r.position.x - 0.5, y, r.end.y - 0.5)
+		for v: Vector3 in [a, b, d, a, d, c]:
+			st.set_uv(Vector2(v.x, v.z))
+			st.add_vertex(v)
+	return st.commit()
+
+
 ## Poly Haven ground material with world-space tiling; falls back to a flat colour.
 func _pbr(name: String, fallback: Color, scale: float, tint: Color = Color.WHITE) -> StandardMaterial3D:
 	var key := "%s_%.2f_%s" % [name, scale, tint.to_html()]
@@ -340,9 +420,9 @@ func _make_icon_multimesh(col: Color) -> MultiMeshInstance3D:
 ## Trees are city-wide multimeshes, one per tree-model part, covering the wilderness ring around
 ## the map and every forest tile. Real Blender tree props are preferred over procedural crowns.
 func _build_trees() -> void:
-	for layer: Dictionary in _tree_layers:
-		(layer["mmi"] as Node).queue_free()
-	_tree_layers.clear()
+	_tree_chunks.clear()
+	_dirty_tree_chunks.clear()
+	_trees_root = _mk_root("Trees")
 	var kits: Array = []
 	for tree_name in TREE_PROPS:
 		var path := R + "props/%s.glb" % tree_name
@@ -358,18 +438,8 @@ func _build_trees() -> void:
 			kits.append(parts)
 	if kits.is_empty():
 		kits.append(_procedural_tree_parts())
-	_tree_kit_count = kits.size()
-	for ki in range(kits.size()):
-		for p: Dictionary in kits[ki]:
-			var mm := MultiMesh.new()
-			mm.transform_format = MultiMesh.TRANSFORM_3D
-			mm.mesh = p["mesh"]
-			var mmi := MultiMeshInstance3D.new()
-			mmi.multimesh = mm
-			if p.get("mat") != null:
-				mmi.material_override = p["mat"]
-			add_child(mmi)
-			_tree_layers.append({"kit": ki, "mmi": mmi, "xform": p["xform"]})
+	_tree_kits = kits
+	_far_tree_parts = _low_poly_tree_parts()
 
 
 func _collect_meshes(n: Node, xf: Transform3D, out: Array) -> void:
@@ -420,13 +490,49 @@ func _procedural_tree_parts() -> Array:
 	]
 
 
+## Cheap trees for chunks far from the camera: a few-sided trunk and crown, no shadows.
+func _low_poly_tree_parts() -> Array:
+	var trunk := CylinderMesh.new()
+	trunk.top_radius = 0.02
+	trunk.bottom_radius = 0.03
+	trunk.height = 0.26
+	trunk.radial_segments = 5
+	trunk.rings = 1
+	trunk.material = _mat("bark", Color(0.27, 0.2, 0.14))
+	var crown := SphereMesh.new()
+	crown.radius = 0.19
+	crown.height = 0.4
+	crown.radial_segments = 7
+	crown.rings = 4
+	crown.material = _mat("far_crown", Color(0.17, 0.3, 0.11))
+	return [
+		{"mesh": trunk, "xform": Transform3D(Basis(), Vector3(0, 0.13, 0))},
+		{"mesh": crown, "xform": Transform3D(Basis(), Vector3(0, 0.38, 0))},
+	]
+
+
+func _tree_chunk_of(x: int, y: int) -> Vector2i:
+	return Vector2i(floori(float(x - D.X0 + TREE_RING) / TREE_CHUNK), floori(float(y - D.Y0 + TREE_RING) / TREE_CHUNK))
+
+
+## Rebuilds every tree chunk: the forest tiles of the world plus a ring of woods beyond its edge.
 func _refresh_trees() -> void:
-	_trees_dirty = false
+	var lo := _tree_chunk_of(D.X0 - TREE_RING, D.Y0 - TREE_RING)
+	var hi := _tree_chunk_of(D.X0 + D.W + TREE_RING - 1, D.Y0 + D.H + TREE_RING - 1)
+	for cy in range(lo.y, hi.y + 1):
+		for cx in range(lo.x, hi.x + 1):
+			_refresh_tree_chunk(Vector2i(cx, cy))
+	_dirty_tree_chunks.clear()
+
+
+func _refresh_tree_chunk(c: Vector2i) -> void:
 	var by_kit: Array = []
-	for _k in range(maxi(1, _tree_kit_count)):
+	for _k in range(maxi(1, _tree_kits.size())):
 		by_kit.append([])
-	for gx in range(D.X0 - 12, D.X0 + D.W + 12):
-		for gz in range(D.Y0 - 12, D.Y0 + D.H + 12):
+	var x0 := D.X0 - TREE_RING + c.x * TREE_CHUNK
+	var z0 := D.Y0 - TREE_RING + c.y * TREE_CHUNK
+	for gx in range(x0, mini(x0 + TREE_CHUNK, D.X0 + D.W + TREE_RING)):
+		for gz in range(z0, mini(z0 + TREE_CHUNK, D.Y0 + D.H + TREE_RING)):
 			var inside := D.in_bounds(gx, gz)
 			var h := absi(gx * 73856093 ^ gz * 19349663)
 			var n := 0
@@ -434,6 +540,8 @@ func _refresh_trees() -> void:
 				n = 4 if sim.kind[D.idx(gx, gz)] == D.FOREST else 0
 			else:
 				var ring := maxi(maxi(D.X0 - gx, gx - D.X0 - D.W + 1), maxi(D.Y0 - gz, gz - D.Y0 - D.H + 1))
+				if ring > TREE_RING:
+					continue
 				n = 3 if ring <= 4 else (1 if h % 3 != 0 else 0)
 			for t in range(n):
 				var hh := (h >> (t * 4)) & 0xffff
@@ -442,13 +550,51 @@ func _refresh_trees() -> void:
 				var sc := 1.0 + float(hh % 7) * 0.1
 				var yaw := Basis(Vector3.UP, float(hh % 13) / 13.0 * TAU).scaled(Vector3.ONE * sc)
 				(by_kit[(hh >> 3) % by_kit.size()] as Array).append(Transform3D(yaw, Vector3(gx + ox * 0.85, 0.0, gz + oz * 0.85)))
-	for layer: Dictionary in _tree_layers:
-		var spots: Array = by_kit[int(layer["kit"])]
-		var mm := (layer["mmi"] as MultiMeshInstance3D).multimesh
-		var part: Transform3D = layer["xform"]
-		mm.instance_count = spots.size()
-		for k in range(spots.size()):
-			mm.set_instance_transform(k, (spots[k] as Transform3D) * part)
+	for n: Node in _tree_chunks.get(c, []):
+		n.queue_free()
+	var layers: Array = []
+	var every: Array = []
+	for ki in range(_tree_kits.size()):
+		var spots: Array = by_kit[ki]
+		every.append_array(spots)
+		if spots.is_empty():
+			continue
+		for p: Dictionary in _tree_kits[ki]:
+			layers.append(_tree_layer(p, spots, 0.0, TREE_NEAR))
+	if not every.is_empty():
+		for p: Dictionary in _far_tree_parts:
+			layers.append(_tree_layer(p, every, TREE_NEAR, 0.0))
+	_tree_chunks[c] = layers
+
+
+## One part of one tree kit for a chunk. The layer sits at the chunk centre so visibility range
+## distances are measured per chunk.
+func _tree_layer(part: Dictionary, spots: Array, begin: float, end: float) -> MultiMeshInstance3D:
+	var centre := Vector3.ZERO
+	for t: Transform3D in spots:
+		centre += t.origin
+	centre /= float(spots.size())
+	var mm := MultiMesh.new()
+	mm.transform_format = MultiMesh.TRANSFORM_3D
+	mm.mesh = part["mesh"]
+	mm.instance_count = spots.size()
+	var xf: Transform3D = part["xform"]
+	for k in range(spots.size()):
+		var t: Transform3D = spots[k]
+		mm.set_instance_transform(k, Transform3D(t.basis, t.origin - centre) * xf)
+	var mmi := MultiMeshInstance3D.new()
+	mmi.multimesh = mm
+	mmi.position = centre
+	if part.get("mat") != null:
+		mmi.material_override = part["mat"]
+	mmi.visibility_range_begin = begin
+	mmi.visibility_range_begin_margin = 6.0 if begin > 0.0 else 0.0
+	mmi.visibility_range_end = end
+	mmi.visibility_range_end_margin = 6.0 if end > 0.0 else 0.0
+	if begin > 0.0:
+		mmi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	_trees_root.add_child(mmi)
+	return mmi
 
 func _build_district_borders() -> void:
 	for d in range(D.MAYORS.size()):
@@ -480,7 +626,7 @@ func _rebuild_territory(_mi: int) -> void:
 	var edges: Array = []
 	for _d in range(D.MAYORS.size()):
 		edges.append([])
-	for i in range(D.W * D.H):
+	for i in sim.active:
 		var d := sim.district[i]
 		if d < 0:
 			continue
@@ -514,11 +660,40 @@ func _rebuild_territory(_mi: int) -> void:
 			mmi.material_override = _mat("border", col, 1.6, 0.8)
 			mmi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 			_territory_root.add_child(mmi)
+	# Surveyed but unclaimed plots are dimmed; the unsurveyed frontier (and the woods beyond the
+	# world edge) sits under a haze that lifts plot by plot as the city grows towards it.
+	var surveyed := {}
+	for p: Vector2i in sim.surveyed_plots():
+		surveyed[p] = true
+	var dim: Array[Rect2i] = []
+	var haze: Array[Rect2i] = []
+	var plo := D.plot_of(D.X0, D.Y0)
+	var phi := D.plot_of(D.X0 + D.W - 1, D.Y0 + D.H - 1)
+	for py in range(plo.y, phi.y + 1):
+		for px in range(plo.x, phi.x + 1):
+			var p := Vector2i(px, py)
+			if sim.plot_claimed(p):
+				continue
+			if surveyed.has(p):
+				dim.append(D.plot_rect(p))
+			else:
+				haze.append(D.plot_rect(p))
+	var e := TREE_RING + 4
+	haze.append(Rect2i(D.X0 - e, D.Y0 - e, D.W + 2 * e, e))
+	haze.append(Rect2i(D.X0 - e, D.Y0 + D.H, D.W + 2 * e, e))
+	haze.append(Rect2i(D.X0 - e, D.Y0, e, D.H))
+	haze.append(Rect2i(D.X0 + D.W, D.Y0, e, D.H))
 	var wild := MeshInstance3D.new()
-	wild.mesh = _tiles_mesh(func(i: int) -> bool: return sim.district[i] < 0, 0.05, 1.0)
+	wild.mesh = _rects_mesh(dim, 0.05)
 	wild.material_override = _mat("wilds", Color(0.05, 0.07, 0.1), 0.0, 0.32)
 	wild.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	_territory_root.add_child(wild)
+	var fog := MeshInstance3D.new()
+	fog.name = "FrontierHaze"
+	fog.mesh = _rects_mesh(haze, 1.1)
+	fog.material_override = _mat("frontier_haze", Color(0.7, 0.76, 0.84), 0.0, 0.62)
+	fog.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	_territory_root.add_child(fog)
 	var marked := {}
 	for mi in range(D.MAYORS.size()):
 		for p: Dictionary in sim.annexable_plots(mi):
@@ -603,7 +778,7 @@ func _label(text: String, size: int, col: Color) -> Label3D:
 # ------------------------------------------------------------------ tiles
 
 func rebuild_all(animate: bool) -> void:
-	for i in range(D.W * D.H):
+	for i in sim.active:
 		_build_tile(i, animate)
 	_refresh_status()
 	_sync_events()
@@ -708,8 +883,9 @@ func _build_tile(i: int, animate: bool) -> void:
 		_tile_nodes.erase(i)
 	bus_stops.erase(i)
 	if k == D.FOREST or was_kind == D.FOREST:
-		_trees_dirty = true
-	if k == D.EMPTY:
+		_dirty_tree_chunks[_tree_chunk_of(x, y)] = true
+	# Woods are drawn by the tree chunks; only a burning forest needs its own node.
+	if k == D.EMPTY or (k == D.FOREST and sim.burning[i] == 0):
 		return
 	var holder := Node3D.new()
 	holder.position = Vector3(x, 0.0, y)
@@ -895,8 +1071,11 @@ func _build_site(i: int, holder: Node3D, s: Dictionary, h: int, existing: Node3D
 	_register_animated(root)
 
 
+## Stage progress, run forward through the current tick at the site's recent work rate so
+## crews visibly advance between sim ticks instead of jumping once per tick.
 func _stage_fraction(s: Dictionary) -> float:
-	return clampf(float(s["progress"]) / maxf(float(s["stage_work"]), 0.01), 0.0, 1.0)
+	var p := float(s["progress"]) + float(s.get("rate", 0.0)) * sim.tick_phase()
+	return clampf(p / maxf(float(s["stage_work"]), 0.01), 0.0, 1.0)
 
 
 func _animate_sites(delta: float) -> void:
@@ -904,7 +1083,7 @@ func _animate_sites(delta: float) -> void:
 		return
 	kit.animate(delta, _time)
 	_site_timer += delta
-	if _site_timer < 0.4:
+	if _site_timer < 0.15:
 		return
 	_site_timer = 0.0
 	for i: int in sim.sites.keys():
@@ -1153,8 +1332,8 @@ func _window_material(v: int) -> StandardMaterial3D:
 		for t: Color in WINDOW_TINTS:
 			var m := StandardMaterial3D.new()
 			m.albedo_color = Color(0.15, 0.19, 0.25)
-			m.metallic = 0.6
-			m.roughness = 0.08
+			m.metallic = 0.3
+			m.roughness = 0.14
 			m.emission_enabled = true
 			m.emission = t
 			_window_mats.append(m)
@@ -1297,7 +1476,7 @@ func _refresh_status() -> void:
 	var wm := _water_icons.multimesh
 	var pc := 0
 	var wc := 0
-	for i in range(D.W * D.H):
+	for i in sim.active:
 		var k := sim.kind[i]
 		var needs := (D.is_zone(k) and sim.level[i] > 0) or (D.is_service(k) and k != D.PARK and not D.is_power_plant(k))
 		if not needs:
@@ -1353,7 +1532,7 @@ func _refresh_overlay() -> void:
 		lo = minf(lo, v)
 		hi = maxf(hi, v)
 	var span := maxf(hi - lo, 0.05)
-	for i in range(D.W * D.H):
+	for i in sim.active:
 		var k := sim.kind[i]
 		var c := Color(0, 0, 0, 0)
 		var h := 0.0
@@ -1568,7 +1747,7 @@ func _road_neighbors(p: Vector2i) -> Array[Vector2i]:
 
 func _random_road(near_kind: int = -1) -> Vector2i:
 	for _a in range(40):
-		var i := randi() % (D.W * D.H)
+		var i := sim.active[randi() % sim.active.size()]
 		if sim.kind[i] != D.ROAD:
 			continue
 		var p := Vector2i(D.tx(i), D.ty(i))
@@ -1684,8 +1863,10 @@ func _process(delta: float) -> void:
 	if sim == null:
 		return
 	_time += delta
-	if _trees_dirty:
-		_refresh_trees()
+	if not _dirty_tree_chunks.is_empty():
+		for c: Vector2i in _dirty_tree_chunks.keys():
+			_refresh_tree_chunk(c)
+		_dirty_tree_chunks.clear()
 	_update_population(delta)
 	_status_timer += delta
 	if _status_timer > 0.6:

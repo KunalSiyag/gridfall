@@ -72,13 +72,19 @@ var _event_seq: int = 0
 var _changed: Dictionary = {}
 var _district_rects: Dictionary = {}
 ## Tiles the per-tick systems process: claimed land plus a small margin. Unclaimed wilds hold no
-## roads or buildings, so skipping them keeps a 96x96 world as cheap as the founding city.
+## roads or buildings, so skipping them keeps a 192x192 world as cheap as the founding city.
 var active := PackedInt32Array()
 ## Open construction sites: tile -> site. "auto" stages construction whenever residents run the
 ## city; "staged" / "instant" force it either way.
 var sites: Dictionary = {}
 var construction_mode: String = "auto"
 var _site_seq: int = 0
+## Surveyed plots (Vector2i -> true), rebuilt with the active area.
+var _surveyed: Dictionary = {}
+## Set by from_dict when the save used an older world layout: {w, h, x0, y0} of that layout,
+## so other systems (residents) can move their saved tile indices across with remap_index.
+var load_remap: Dictionary = {}
+var _wet2 := PackedByteArray()
 
 
 func _ready() -> void:
@@ -88,6 +94,8 @@ func _ready() -> void:
 
 func new_city(seed_value: int) -> void:
 	city_seed = seed_value
+	load_remap = {}
+	_wet2 = PackedByteArray()
 	rng.seed = seed_value
 	var n := D.W * D.H
 	kind = _ints(n)
@@ -212,6 +220,43 @@ func _rebuild_active() -> void:
 		for x in range(r.position.x, r.end.x):
 			active[k] = D.idx(x, y)
 			k += 1
+	_rebuild_survey()
+
+
+## A plot is claimed once any of its tiles belongs to a district (annexation takes whole plots;
+## the founding city's districts split its plots between them).
+func plot_claimed(p: Vector2i) -> bool:
+	var r := D.plot_rect(p)
+	for y in [r.position.y, r.end.y - 1]:
+		for x in [r.position.x, r.end.x - 1]:
+			if D.in_bounds(x, y) and district[D.idx(x, y)] >= 0:
+				return true
+	return false
+
+
+func _rebuild_survey() -> void:
+	_surveyed.clear()
+	var lo := D.plot_of(D.X0, D.Y0)
+	var hi := D.plot_of(D.X0 + D.W - 1, D.Y0 + D.H - 1)
+	var o := owned_rect()
+	var plo := D.plot_of(o.position.x, o.position.y)
+	var phi := D.plot_of(o.end.x - 1, o.end.y - 1)
+	for py in range(plo.y, phi.y + 1):
+		for px in range(plo.x, phi.x + 1):
+			if not plot_claimed(Vector2i(px, py)):
+				continue
+			for sy in range(maxi(py - D.SURVEY_RANGE, lo.y), mini(py + D.SURVEY_RANGE, hi.y) + 1):
+				for sx in range(maxi(px - D.SURVEY_RANGE, lo.x), mini(px + D.SURVEY_RANGE, hi.x) + 1):
+					_surveyed[Vector2i(sx, sy)] = true
+
+
+## Whether tile x,y lies on surveyed land (claimed or within SURVEY_RANGE plots of it).
+func is_surveyed(x: int, y: int) -> bool:
+	return _surveyed.has(D.plot_of(x, y))
+
+
+func surveyed_plots() -> Array:
+	return _surveyed.keys()
 
 
 ## Union of all districts: the developed part of the world.
@@ -235,13 +280,21 @@ func annex_cost(mi: int) -> int:
 ## Plots that are entirely unclaimed and share an edge with land district mi already owns.
 func annexable_plots(mi: int) -> Array:
 	var out: Array = []
+	var b := district_rect(mi)
+	if b.size.x <= 0:
+		return out
+	# Only plots next to the district's bounding box can touch it, so the search stays small
+	# however large the world is.
 	var pmin := D.plot_of(D.X0, D.Y0)
 	var pmax := D.plot_of(D.X0 + D.W - 1, D.Y0 + D.H - 1)
-	for py in range(pmin.y, pmax.y + 1):
-		for px in range(pmin.x, pmax.x + 1):
+	var lo := D.plot_of(b.position.x - 1, b.position.y - 1)
+	var hi := D.plot_of(b.end.x, b.end.y)
+	for py in range(maxi(lo.y, pmin.y), mini(hi.y, pmax.y) + 1):
+		for px in range(maxi(lo.x, pmin.x), mini(hi.x, pmax.x) + 1):
 			var r := D.plot_rect(Vector2i(px, py))
+			if not _plot_touches(r, mi):
+				continue
 			var free := true
-			var touches := false
 			var counts := {"land": 0, "water": 0, "forest": 0}
 			for y in range(r.position.y, r.end.y):
 				for x in range(r.position.x, r.end.x):
@@ -255,18 +308,20 @@ func annexable_plots(mi: int) -> Array:
 						counts["forest"] = int(counts["forest"]) + 1
 					else:
 						counts["land"] = int(counts["land"]) + 1
-					if not touches:
-						for dv: Vector2i in [Vector2i(0, -1), Vector2i(1, 0), Vector2i(0, 1), Vector2i(-1, 0)]:
-							var nx := x + dv.x
-							var ny := y + dv.y
-							if D.in_bounds(nx, ny) and district[D.idx(nx, ny)] == mi:
-								touches = true
-								break
 				if not free:
 					break
-			if free and touches:
+			if free:
 				out.append({"px": px, "py": py, "x": r.position.x, "y": r.position.y, "w": D.PLOT, "h": D.PLOT, "cost": annex_cost(mi), "open_land": counts["land"], "forest": counts["forest"], "water": counts["water"]})
 	return out
+
+
+## Whether district mi owns a tile just outside one of the edges of plot rect r.
+func _plot_touches(r: Rect2i, mi: int) -> bool:
+	for t in range(D.PLOT):
+		for p: Vector2i in [Vector2i(r.position.x + t, r.position.y - 1), Vector2i(r.position.x + t, r.end.y), Vector2i(r.position.x - 1, r.position.y + t), Vector2i(r.end.x, r.position.y + t)]:
+			if D.in_bounds(p.x, p.y) and district[D.idx(p.x, p.y)] == mi:
+				return true
+	return false
 
 
 
@@ -636,6 +691,21 @@ func _compute_utilities() -> void:
 
 
 func _near_water(x: int, y: int, r: int) -> bool:
+	# Terrain never changes after generation, so the common radius-2 answer is cached per tile
+	# (0 unknown, 1 dry, 2 near water).
+	if r == 2:
+		if _wet2.size() != D.W * D.H:
+			_wet2 = PackedByteArray()
+			_wet2.resize(D.W * D.H)
+			_wet2.fill(0)
+		var i := D.idx(x, y)
+		if _wet2[i] == 0:
+			_wet2[i] = 2 if _scan_water(x, y, 2) else 1
+		return _wet2[i] == 2
+	return _scan_water(x, y, r)
+
+
+func _scan_water(x: int, y: int, r: int) -> bool:
 	for dy in range(-r, r + 1):
 		for dx in range(-r, r + 1):
 			var nx := x + dx
@@ -1028,6 +1098,7 @@ func _compute_stats() -> void:
 
 
 func _grow_zones() -> void:
+	var open_sites := zone_site_counts()
 	for i in active:
 		var k := kind[i]
 		if not D.is_zone(k) or burning[i] > 0 or terrain[i] == D.WATER or sites.has(i):
@@ -1078,7 +1149,9 @@ func _grow_zones() -> void:
 		var p_grow := 0.10 + 0.40 * maxf(dem, 0.0) + 0.25 * desir
 		if dem > -0.05 and l < max_lvl and rng.randf() < p_grow * 0.5:
 			if staged():
-				_start_zone_site(i, k, l + 1)
+				if int(open_sites[district[i]]) < D.MAX_ZONE_SITES:
+					_start_zone_site(i, k, l + 1)
+					open_sites[district[i]] = int(open_sites[district[i]]) + 1
 			else:
 				_set_level(i, l + 1)
 		elif (dem < -0.35 or l > max_lvl) and l > 0 and rng.randf() < 0.06:
@@ -1117,7 +1190,7 @@ func _start_site(i: int, type: String, mi: int, target_kind: int, target_level: 
 		"id": _site_seq, "i": i, "x": D.tx(i), "y": D.ty(i), "type": type, "plan": plan, "owner": mi,
 		"from_kind": kind[i], "from_level": level[i], "target_kind": target_kind, "target_level": target_level,
 		"stages": stages, "stage": 0, "progress": 0.0, "stage_work": float(maxi(ticks, 1)) * D.CREW_RATE / float(stages.size()),
-		"crew": {}, "label": label, "start_tick": global_tick(),
+		"crew": {}, "label": label, "start_tick": global_tick(), "rate": D.CREW_RATE, "tick_work": D.CREW_RATE,
 	}
 	sites[i] = s
 	if type != "zone":
@@ -1131,13 +1204,11 @@ func _start_site(i: int, type: String, mi: int, target_kind: int, target_level: 
 
 func _start_zone_site(i: int, k: int, target: int) -> void:
 	var plan := "zone_up"
-	var ticks := 4
 	if target == 1:
 		plan = "zone_house" if k == D.ZONE_R else "zone_new"
-		ticks = 3 if k == D.ZONE_R else 4
 	elif target >= 3:
 		plan = "zone_tower"
-		ticks = 6
+	var ticks := int(D.ZONE_SITE_TICKS[plan])
 	var what: String = {D.ZONE_R: ["Houses", "Apartments", "Apartment tower"], D.ZONE_C: ["Shops", "Office block", "Office tower"], D.ZONE_I: ["Workshop", "Factory", "Heavy plant"]}[k][clampi(target - 1, 0, 2)]
 	_start_site(i, "zone", district[i], k, target, plan, ticks, what)
 
@@ -1147,7 +1218,14 @@ func add_site_work(i: int, amount: float, who: String) -> bool:
 	if not sites.has(i):
 		return false
 	var s: Dictionary = sites[i]
+	if who != _contractor(s):
+		var used := float(s.get("helper_work", 0.0))
+		amount = minf(amount, maxf(D.HELPER_CAP * D.CREW_RATE - used, 0.0))
+		s["helper_work"] = used + amount
+	if amount <= 0.0:
+		return false
 	s["progress"] = float(s["progress"]) + amount
+	s["tick_work"] = float(s.get("tick_work", 0.0)) + amount
 	var crew: Dictionary = s["crew"]
 	crew[who] = float(crew.get(who, 0.0)) + amount
 	while float(s["progress"]) >= float(s["stage_work"]):
@@ -1210,7 +1288,12 @@ func _construction_tick() -> void:
 			sites.erase(i)
 			_mark(i)
 			continue
+		# Last tick's total work (contractor plus residents) lets the view animate between ticks.
+		s["rate"] = float(s.get("tick_work", D.CREW_RATE))
+		s["tick_work"] = 0.0
+		s["helper_work"] = 0.0
 		if burning[i] > 0 or disabled_until.has(i):
+			s["rate"] = 0.0
 			continue
 		add_site_work(i, D.CREW_RATE, _contractor(s))
 
@@ -1225,6 +1308,22 @@ func finish_all_sites() -> void:
 			sites.erase(i)
 	_recompute_all()
 	_flush_changes(true)
+
+
+## 0..1 progress through the current growth tick, so views can interpolate between ticks.
+func tick_phase() -> float:
+	return clampf(_time_accum / (D.BASE_DAY_SECONDS / float(D.GROWTH_TICKS_PER_DAY)), 0.0, 1.0)
+
+
+## Open developer (zone) sites per district.
+func zone_site_counts() -> Array:
+	var out: Array = []
+	out.resize(mayors.size())
+	out.fill(0)
+	for s: Dictionary in sites.values():
+		if str(s["type"]) == "zone" and int(s["owner"]) >= 0 and int(s["owner"]) < out.size():
+			out[int(s["owner"])] = int(out[int(s["owner"])]) + 1
+	return out
 
 
 ## 0..1 completion of a site across all its stages.
@@ -1465,10 +1564,10 @@ func _act_road(mi: int, a: Dictionary) -> Dictionary:
 		for i in to_build:
 			var wet := terrain[i] == D.WATER
 			bridges += 1 if wet else 0
-			_start_site(i, "road", mi, D.ROAD, 0, "bridge" if wet else "road", 5 if wet else 3, "Bridge" if wet else "Road")
+			_start_site(i, "road", mi, D.ROAD, 0, "bridge" if wet else "road", D.BRIDGE_TICKS if wet else D.ROAD_TICKS, "Bridge" if wet else "Road")
 		var note := " including %d bridge spans" % bridges if bridges > 0 else ""
 		_log("%s's road crews started %d tiles of road%s." % [mayors[mi]["name"], to_build.size(), note], "build")
-		return {"ok": true, "reason": "road construction started on %d tiles%s (open in about %s)" % [to_build.size(), note, "a day and a half" if bridges > 0 else "under a day"], "cost": cost}
+		return {"ok": true, "reason": "road construction started on %d tiles%s (open in about %s with contractors alone)" % [to_build.size(), note, "two and a half days" if bridges > 0 else "a day"], "cost": cost}
 	for i in to_build:
 		kind[i] = D.ROAD
 		level[i] = 0
@@ -1588,7 +1687,7 @@ func _act_bulldoze(mi: int, a: Dictionary) -> Dictionary:
 		sites.erase(i)
 		if staged() and k != D.SITE and not (D.is_zone(k) and level[i] == 0):
 			var plan := "clear" if k == D.FOREST else ("haul" if k == D.RUBBLE else "demolish")
-			var ticks := 1 if plan == "clear" else (2 if plan == "haul" else (2 + level[i] if D.is_zone(k) else 4))
+			var ticks := 2 if plan == "clear" else (4 if plan == "haul" else (4 + 2 * level[i] if D.is_zone(k) else 8))
 			var what := "rubble" if k == D.RUBBLE else ("trees" if k == D.FOREST else str(D.KIND_NAMES[k]).replace("_", " "))
 			_start_site(i, "demolish", mi, D.EMPTY, 0, plan, ticks, "Clearing " + what if plan != "demolish" else "Demolition of " + what)
 			crews += 1
@@ -1758,7 +1857,7 @@ func trigger_disaster(type_name: String, x: int, y: int, source: String = "playe
 			ev["radius"] = 6
 		"earthquake":
 			ev["radius"] = 10
-			for i in range(D.W * D.H):
+			for i in active:
 				var d := Vector2(float(D.tx(i) - x), float(D.ty(i) - y)).length()
 				if d > 10.0:
 					continue
@@ -1774,7 +1873,7 @@ func trigger_disaster(type_name: String, x: int, y: int, source: String = "playe
 						_mark(i)
 		"flood":
 			ev["radius"] = 8
-			for i in range(D.W * D.H):
+			for i in active:
 				var tx := D.tx(i)
 				var ty := D.ty(i)
 				if terrain[i] == D.WATER or Vector2(float(tx - x), float(ty - y)).length() > 8.0:
@@ -2104,7 +2203,8 @@ func tile_report(x: int, y: int) -> Dictionary:
 
 func to_dict() -> Dictionary:
 	return {
-		"version": 2, "seed": city_seed, "day": day, "tick_in_day": tick_in_day,
+		"version": 3, "seed": city_seed, "day": day, "tick_in_day": tick_in_day,
+		"world": {"w": D.W, "h": D.H, "x0": D.X0, "y0": D.Y0},
 		"kind": Array(kind), "level": Array(level), "terrain": Array(terrain), "burning": Array(burning), "district": Array(district),
 		"mayors": mayors.duplicate(true), "ordinances": ordinances.duplicate(), "events": events.duplicate(true),
 		"disabled_until": disabled_until.duplicate(), "grid_priority": grid_priority.duplicate(), "broken_roads": broken_roads.duplicate(),
@@ -2114,21 +2214,37 @@ func to_dict() -> Dictionary:
 
 
 func from_dict(data: Dictionary) -> bool:
-	# Version 1 saves predate the 96x96 world and are not converted.
-	if int(data.get("version", 0)) != 2:
+	# Version 1 saves predate the 96x96 world and are not converted. Version 2 saves (96x96)
+	# are placed into the bigger world; the fresh wilds generated around them stay.
+	var version := int(data.get("version", 0))
+	if version != 2 and version != 3:
 		return false
 	new_city(int(data.get("seed", 7)))
 	var n := D.W * D.H
+	var world: Dictionary = data.get("world", D.LEGACY_WORLD)
+	var src := {"w": int(world.get("w", 96)), "h": int(world.get("h", 96)), "x0": int(world.get("x0", -32)), "y0": int(world.get("y0", -32))}
+	var same := int(src["w"]) == D.W and int(src["h"]) == D.H and int(src["x0"]) == D.X0 and int(src["y0"]) == D.Y0
 	var k_arr: Array = data.get("kind", [])
-	if k_arr.size() != n:
+	var d_arr: Array = data.get("district", [])
+	var src_n := int(src["w"]) * int(src["h"])
+	if k_arr.size() != src_n or d_arr.size() != src_n:
 		return false
-	kind = PackedInt32Array(k_arr)
-	level = PackedInt32Array(data.get("level", []))
-	terrain = PackedInt32Array(data.get("terrain", []))
-	burning = PackedInt32Array(data.get("burning", []))
-	district = PackedInt32Array(data.get("district", []))
+	if same:
+		kind = PackedInt32Array(k_arr)
+		level = PackedInt32Array(data.get("level", []))
+		terrain = PackedInt32Array(data.get("terrain", []))
+		burning = PackedInt32Array(data.get("burning", []))
+		district = PackedInt32Array(d_arr)
+	else:
+		load_remap = src
+		kind = _place_tiles(k_arr, kind)
+		level = _place_tiles(data.get("level", []), level)
+		terrain = _place_tiles(data.get("terrain", []), terrain)
+		burning = _place_tiles(data.get("burning", []), burning)
+		district = _place_tiles(d_arr, district)
 	if district.size() != n:
 		return false
+	_wet2 = PackedByteArray()
 	_rebuild_active()
 	day = int(data.get("day", 1))
 	tick_in_day = int(data.get("tick_in_day", 0))
@@ -2138,16 +2254,19 @@ func from_dict(data: Dictionary) -> bool:
 	ordinances = data.get("ordinances", {})
 	events.clear()
 	for ev in data.get("events", []):
-		events.append(ev as Dictionary)
+		var e: Dictionary = ev
+		if not load_remap.is_empty():
+			e["tiles"] = (e.get("tiles", []) as Array).map(func(t: Variant) -> int: return remap_index(int(t)))
+		events.append(e)
 	disabled_until.clear()
 	var du: Dictionary = data.get("disabled_until", {})
 	for key in du.keys():
-		disabled_until[int(key)] = int(du[key])
+		disabled_until[remap_index(int(key))] = int(du[key])
 	grid_priority = data.get("grid_priority", [2, 0, 1, 3, 4])
 	broken_roads.clear()
 	var br: Dictionary = data.get("broken_roads", {})
 	for key in br.keys():
-		broken_roads[int(key)] = int(br[key])
+		broken_roads[remap_index(int(key))] = int(br[key])
 	history.clear()
 	for h in data.get("history", []):
 		history.append(h as Dictionary)
@@ -2160,8 +2279,11 @@ func from_dict(data: Dictionary) -> bool:
 		var s: Dictionary = (v as Dictionary).duplicate(true)
 		for key in ["id", "i", "x", "y", "owner", "from_kind", "from_level", "target_kind", "target_level", "stage", "start_tick"]:
 			s[key] = int(s.get(key, 0))
+		s["i"] = D.idx(int(s["x"]), int(s["y"]))
 		s["progress"] = float(s.get("progress", 0.0))
 		s["stage_work"] = float(s.get("stage_work", D.CREW_RATE))
+		s["rate"] = float(s.get("rate", D.CREW_RATE))
+		s["tick_work"] = float(s.get("tick_work", D.CREW_RATE))
 		sites[int(s["i"])] = s
 	_site_seq = int(data.get("site_seq", sites.size()))
 	for i in range(n):
@@ -2170,6 +2292,28 @@ func from_dict(data: Dictionary) -> bool:
 	_recompute_all()
 	_flush_changes(true)
 	return true
+
+
+## Copies a saved per-tile array from the load_remap layout onto base (the current world).
+func _place_tiles(src: Array, base: PackedInt32Array) -> PackedInt32Array:
+	var out := base.duplicate()
+	var w := int(load_remap["w"])
+	for k in range(mini(src.size(), w * int(load_remap["h"]))):
+		var x := k % w + int(load_remap["x0"])
+		var y := k / w + int(load_remap["y0"])
+		if D.in_bounds(x, y):
+			out[D.idx(x, y)] = int(src[k])
+	return out
+
+
+## Moves a tile index saved in an older world layout to the current one (-1 if it falls outside).
+func remap_index(i: int) -> int:
+	if load_remap.is_empty() or i < 0:
+		return i
+	var w := int(load_remap["w"])
+	var x := i % w + int(load_remap["x0"])
+	var y := i / w + int(load_remap["y0"])
+	return D.idx(x, y) if D.in_bounds(x, y) else -1
 
 
 # ---------------------------------------------------------------- helpers

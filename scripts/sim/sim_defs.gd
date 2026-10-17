@@ -2,17 +2,22 @@ class_name SimDefs
 extends RefCounted
 ## Static rules, costs, and catalogs for the GridFall city simulation.
 
-## Founding city size; the world around it is three times wider in each direction.
+## Founding city size; the world around it is six times wider in each direction.
 const CORE := 32
-const W := 96
-const H := 96
-const X0 := -32
-const Y0 := -32
+const W := 192
+const H := 192
+const X0 := -80
+const Y0 := -80
 const PLOT := 16
 ## "No tile" marker: -1 is a real coordinate in the wider world.
 const NO_TILE := Vector2i(-99999, -99999)
-const ANNEX_BASE_COST := 2500
-const ANNEX_STEP_COST := 750
+const ANNEX_BASE_COST := 1500
+const ANNEX_STEP_COST := 400
+## Plots within this many plots of claimed land are surveyed: mapped and shown clearly. The
+## frontier beyond stays in haze until the city grows towards it.
+const SURVEY_RANGE := 2
+## Layout of saves written before the world grew to 192x192.
+const LEGACY_WORLD := {"w": 96, "h": 96, "x0": -32, "y0": -32}
 const GROWTH_TICKS_PER_DAY := 4
 const BASE_DAY_SECONDS := 12.0
 const START_FUNDS := 12000
@@ -88,6 +93,15 @@ const MAX_ACTIONS_PER_DAY := 7
 ## contractor; residents with construction skills add more. A site needs (ticks * CREW_RATE)
 ## points in total, split evenly across its stages.
 const CREW_RATE := 10.0
+## Contractor-only build times in growth ticks (4 ticks = 1 day). Resident crews shorten them.
+const ROAD_TICKS := 4
+const BRIDGE_TICKS := 10
+const ZONE_SITE_TICKS := {"zone_house": 8, "zone_new": 10, "zone_up": 14, "zone_tower": 24}
+## Resident helpers can add at most this share of a contractor shift to one site per tick, so
+## a keen neighbourhood speeds a job up without building a stadium in a weekend.
+const HELPER_CAP := 0.6
+## Private developers in one district only take on this many zone sites at a time.
+const MAX_ZONE_SITES := 10
 const SITE_STAGES := {
 	"build": ["clearing", "excavation", "foundation", "frame", "finishing"],
 	"light": ["clearing", "foundation", "frame", "finishing"],
@@ -201,7 +215,7 @@ const MAP_LEGEND := ". empty land, ^ forest (zoning clears it), ~ water, = road,
 
 
 ## The founding city keeps coordinates 0..31 so recorded mayor actions and saves stay valid;
-## the wider world runs from X0/Y0 (-32) to 63 and is opened up plot by plot through annexation.
+## the wider world runs from X0/Y0 (-80) to 111 and is opened up plot by plot through annexation.
 static func idx(x: int, y: int) -> int:
 	return (y - Y0) * W + (x - X0)
 
@@ -241,8 +255,9 @@ static func is_service(kind: int) -> bool:
 ## Contractor-only build time in growth ticks (4 per day) for a service building.
 static func build_ticks(key: String) -> int:
 	if key == "park":
-		return 2
-	return clampi(2 + int(BUILDINGS[key]["cost"]) / 400, 3, 16)
+		return 4
+	# A police station takes ~3 days, a stadium ~12 and the airport ~15.
+	return clampi(4 + int(BUILDINGS[key]["cost"]) / 90, 10, 60)
 
 
 static func is_power_plant(kind: int) -> bool:

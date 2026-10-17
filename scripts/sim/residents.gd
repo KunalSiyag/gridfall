@@ -506,9 +506,9 @@ func rent_for(r: Dictionary) -> int:
 ## One resident is a fraction of a contractor crew (CREW_RATE per tick), but a few local
 ## builders working the morning and midday shifts roughly double a site's pace.
 func build_amount(r: Dictionary) -> float:
-	var amount := 6.0
+	var amount := 1.5
 	if str(r["job_title"]) in ["construction worker", "civil engineer"]:
-		amount = 8.0
+		amount = 2.5
 	var traits: Array = r["traits"]
 	if traits.has("hardworking"):
 		amount *= 1.3
@@ -1157,6 +1157,9 @@ func from_dict(d: Dictionary) -> void:
 		var r: Dictionary = v
 		for k in ["home", "work", "at", "age", "helping", "help_eta", "help_ticks", "broke_days", "arrived", "spent", "plan_day", "wage", "site", "last_site"]:
 			r[k] = int(r.get(k, -1 if k in ["work", "helping", "site", "last_site"] else 0))
+		if sim != null:
+			for k in ["home", "work", "at", "site", "last_site"]:
+				r[k] = sim.remap_index(int(r[k]))
 		r["route"] = []
 		people.append(r)
 	departed.clear()
