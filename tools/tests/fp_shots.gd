@@ -101,7 +101,8 @@ static func _intersection(sim: CitySim, col: CollisionWorld) -> Dictionary:
 	return _pose(col, pos, look, 3.0)
 
 
-## The densest commercial lot (level >= 2, ties by land value) with a frontage, from its sidewalk.
+## The densest commercial lot (level >= 2, ties by land value) with a frontage, seen from the far
+## sidewalk of its frontage road (the near one is 3.6 m from the facade, so only a wall shows).
 static func _downtown(sim: CitySim, dir: CityDirectory, col: CollisionWorld) -> Dictionary:
 	var best := -1
 	for i in sim.active:
@@ -109,7 +110,11 @@ static func _downtown(sim: CitySim, dir: CityDirectory, col: CollisionWorld) -> 
 			continue
 		if best < 0 or sim.level[i] > sim.level[best] or (sim.level[i] == sim.level[best] and sim.land_value[i] > sim.land_value[best]):
 			best = i
-	return _facing(sim, dir, col, best, 15.0)
+	if best < 0:
+		return {}
+	var f := dir.frontage(best)
+	var to := Vector3(D.tx(best) - D.tx(f), 0, D.ty(best) - D.ty(f))
+	return _pose(col, Vector3(D.tx(f), 0, D.ty(f)) - to * WS.SIDEWALK_CENTER, to, 15.0)
 
 
 ## A park with a frontage, else the first forest tile next to a road.

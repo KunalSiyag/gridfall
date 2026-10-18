@@ -196,7 +196,9 @@ func _refresh_status() -> void:
 		mood = float(ctx.residents.sentiment.get("mood", 0.0)) * 10.0
 	var clock := ctx.sky.clock_text() if ctx.sky != null else "--:--"
 	var ts := ctx.mode.time_scale if ctx.mode != null else 1
-	_status.text = "Day %d · %s · Pop %s · Mood %.1f/10 · $%s · %dx" % [sim.day, clock, _thousands(int(sim.stats.get("population", 0))), mood, _thousands(sim.total_funds()), ts]
+	var funds := sim.total_funds()
+	var money := ("-$" if funds < 0 else "$") + _thousands(absi(funds))
+	_status.text = "Day %d · %s · Pop %s · Mood %.1f/10 · %s · %dx" % [sim.day, clock, _thousands(int(sim.stats.get("population", 0))), mood, money, ts]
 
 
 func _on_ping(world_pos: Vector3, reason: String) -> void:
