@@ -1,0 +1,275 @@
+extends SceneTree
+## S0 core (docs/fp/S0-foundation.md §17.3): kit fixtures, the feature registry, CollisionWorld
+## ground / surface / blocking / raycast, FpPlayer walking and save round trip, FpContext modals,
+## FpHud slots and AP.load_scene. Movement asserts against collision.boxes(), never building_aabb.
+
+const K := preload("res://tools/tests/fp_kit.gd")
+const D := preload("res://scripts/sim/sim_defs.gd")
+const WS := preload("res://scripts/fp/world_scale.gd")
+const AP := preload("res://scripts/fp/asset_paths.gd")
+const REGISTRY := preload("res://scripts/fp/fp_features.gd")
+const DT := 1.0 / 60.0
+
+var fails: Array[String] = []
+
+
+func _init() -> void:
+	# The root joins the tree after the first frame; nodes need get_tree() (pause, tweens).
+	await process_frame
+	var ctx := K.make_ctx(get_root(), {"view": true, "grow": true})
+	_check_fixtures(ctx)
+	_check_registry(ctx)
+	_check_ground(ctx)
+	_check_walk(ctx)
+	_check_blocking(ctx)
+	_check_context(ctx)
+	_check_assets()
+	K.finish(self, "FP_CORE_TEST", fails)
+
+
+func _check_fixtures(ctx: FpContext) -> void:
+	var sim := ctx.sim
+	var people := ctx.residents
+	K.check(fails, people.people.size() >= 5, "fixture: at least 5 residents (%d)" % people.people.size())
+	var commuter := false
+	for r: Dictionary in people.people:
+		if int(r["at"]) == int(r["home"]) and int(r["work"]) >= 0:
+			commuter = true
+	K.check(fails, commuter, "fixture: a resident at home with a job")
+	var shop := false
+	for i in sim.active:
+		if sim.kind[i] == D.ZONE_C and sim.level[i] > 0 and not ctx.directory.business_name(i).is_empty():
+			shop = true
+	K.check(fails, shop, "fixture: a named C lot")
+	K.check(fails, not ctx.view.bus_stops.is_empty(), "fixture: a bus stop (%d)" % ctx.view.bus_stops.size())
+	var pieces := {}
+	for i in sim.active:
+		if sim.kind[i] == D.ROAD:
+			pieces[str(RoadTopology.piece(RoadTopology.mask(sim, D.tx(i), D.ty(i)))[0])] = true
+	for p: String in ["corner", "tee", "cross", "straight", "end"]:
+		K.check(fails, pieces.has(p), "fixture: a %s road piece" % p)
+
+
+func _check_registry(ctx: FpContext) -> void:
+	var ids := {}
+	var ok := true
+	for e: Dictionary in REGISTRY.FEATURES:
+		var path := str(e["path"])
+		var script: GDScript = load(path) if ResourceLoader.exists(path) else null
+		var f: Variant = script.new() if script != null else null
+		var good: bool = f is FpFeature and (f as FpFeature).feature_id() == str(e["id"]) and not ids.has(str(e["id"]))
+		if not good:
+			ok = false
+			print("  bad registry entry %s" % str(e))
+		ids[str(e["id"])] = true
+		if f is Node:
+			(f as Node).free()
+	K.check(fails, ok and ids.size() == 9, "all 9 registry entries load as FpFeatures with matching unique ids")
+	var feat := K.make_feature(ctx, "traffic")
+	K.check(fails, feat != null and feat.is_inside_tree() and ctx.feature("traffic") == feat, "make_feature puts the feature in the tree and ctx.features")
+	var st: Dictionary = feat.self_test() if feat != null else {}
+	K.check(fails, bool(st.get("ok", false)), "stub self_test is ok")
+
+
+func _check_ground(ctx: FpContext) -> void:
+	var sim := ctx.sim
+	var col := ctx.collision
+	var straight := _straight_road(sim, false)
+	K.check(fails, straight >= 0, "a straight road tile exists")
+	if straight >= 0:
+		var m := RoadTopology.mask(sim, D.tx(straight), D.ty(straight))
+		var c := Vector3(D.tx(straight), 0, D.ty(straight))
+		var side := RoadTopology.run_right(m) * WS.SIDEWALK_CENTER
+		K.check(fails, is_equal_approx(col.ground_height(c), WS.ASPHALT_TOP), "road centre is asphalt height")
+		K.check(fails, is_equal_approx(col.ground_height(c + side), WS.SIDEWALK_TOP) and is_equal_approx(col.ground_height(c - side), WS.SIDEWALK_TOP), "sidewalk at 0.4 is SIDEWALK_TOP")
+		K.check(fails, col.surface_at(c) == "asphalt" and col.surface_at(c + side) == "sidewalk", "surface_at: asphalt centre, sidewalk edge")
+		var sp := RoadTopology.sidewalk_point(sim, straight, 1)
+		K.check(fails, is_equal_approx(col.ground_height(sp), WS.SIDEWALK_TOP), "sidewalk_point is on the sidewalk")
+	var water := -1
+	var end_tile := -1
+	var grass := -1
+	var lot := -1
+	for i in sim.active:
+		var k := sim.kind[i]
+		if water < 0 and sim.terrain[i] == D.WATER and k != D.ROAD:
+			water = i
+		if end_tile < 0 and k == D.ROAD and sim.terrain[i] != D.WATER and RoadTopology.arms(RoadTopology.mask(sim, D.tx(i), D.ty(i))).size() == 1:
+			end_tile = i
+		if grass < 0 and (k == D.EMPTY or k == D.PARK) and sim.terrain[i] != D.WATER:
+			grass = i
+		if lot < 0 and D.is_zone(k) and sim.level[i] > 0:
+			lot = i
+	K.check(fails, water >= 0 and is_nan(ctx.collision.ground_height(_centre(water))) and col.surface_at(_centre(water)) == "water", "non-road water is unwalkable")
+	K.check(fails, end_tile >= 0, "an end road tile exists")
+	if end_tile >= 0:
+		var arm := Vector2(RoadTopology.arms(RoadTopology.mask(sim, D.tx(end_tile), D.ty(end_tile)))[0])
+		var o := -arm * WS.END_CIRCLE_OFFSET
+		var island := _centre(end_tile) + Vector3(o.x, 0, o.y)
+		var ring := _centre(end_tile) + Vector3(o.x, 0, o.y) + Vector3(-arm.y, 0, arm.x) * 0.25
+		K.check(fails, is_equal_approx(col.ground_height(island), WS.SIDEWALK_TOP) and col.surface_at(island) == "sidewalk", "the cul-de-sac island is raised")
+		K.check(fails, is_equal_approx(col.ground_height(ring), WS.ASPHALT_TOP), "the turning circle is asphalt")
+	K.check(fails, grass >= 0 and col.surface_at(_centre(grass)) == "grass" and is_equal_approx(col.ground_height(_centre(grass)), WS.GROUND_Y), "empty land and parks are grass")
+	K.check(fails, lot >= 0 and col.surface_at(_centre(lot)) == "lot", "developed lots are lot surface")
+	var corner := -1
+	for i in sim.active:
+		if sim.kind[i] == D.ROAD and str(RoadTopology.piece(RoadTopology.mask(sim, D.tx(i), D.ty(i)))[0]) == "corner":
+			corner = i
+			break
+	if corner >= 0:
+		var am := RoadTopology.arms(RoadTopology.mask(sim, D.tx(corner), D.ty(corner)))
+		var cc := (Vector2(am[0]) + Vector2(am[1])) * 0.5
+		var on_arc := cc - cc.normalized() * 0.5
+		K.check(fails, RoadTopology.is_carriageway(RoadTopology.mask(sim, D.tx(corner), D.ty(corner)), on_arc), "corner carriageway follows the arc")
+		K.check(fails, not RoadTopology.is_carriageway(RoadTopology.mask(sim, D.tx(corner), D.ty(corner)), -cc * 0.9), "corner outer sidewalk is not carriageway")
+
+
+func _check_walk(ctx: FpContext) -> void:
+	var p := ctx.player
+	var straight := _straight_road(ctx.sim, true)
+	K.check(fails, straight >= 0, "a straight road with straight neighbours exists")
+	if straight < 0:
+		return
+	var m := RoadTopology.mask(ctx.sim, D.tx(straight), D.ty(straight))
+	var run := RoadTopology.run_dir(m)
+	var start := RoadTopology.sidewalk_point(ctx.sim, straight, 1) - run * 0.1
+	p.teleport(start, rad_to_deg(atan2(-run.x, -run.z)))
+	K.check(fails, p.forward().distance_to(run) < 1e-4, "teleport yaw faces along the run")
+	var tiles: Array = []
+	ctx.bus.player_tile_changed.connect(func(x: int, y: int) -> void: tiles.append(Vector2i(x, y)))
+	var p0 := p.position
+	for _k in range(180):
+		p.simulate(Vector2(0, 1), false, DT)
+	var moved := Vector2(p.position.x - p0.x, p.position.z - p0.z).length()
+	K.check(fails, absf(moved - WS.WALK * 3.0) <= WS.WALK * 3.0 * 0.15, "3 s of walking covers %.4f (expected %.4f +-15%%)" % [moved, WS.WALK * 3.0])
+	K.check(fails, absf(p.position.y - ctx.collision.ground_height(p.position)) < 0.002, "the feet stay on the sidewalk")
+	var p1 := p.position
+	for _k in range(60):
+		p.simulate(Vector2(0, 1), true, DT)
+	var ran := Vector2(p.position.x - p1.x, p.position.z - p1.z).length()
+	K.check(fails, ran > WS.WALK * 1.5, "sprinting is faster than walking (%.4f in 1 s)" % ran)
+	p.teleport(start, rad_to_deg(atan2(-run.x, -run.z)))
+	ctx.push_modal(&"test")
+	var p2 := p.position
+	for _k in range(180):
+		p.simulate(Vector2(0, 1), false, DT)
+	ctx.pop_modal(&"test")
+	K.check(fails, Vector2(p.position.x - p2.x, p.position.z - p2.z).length() < 1e-6, "with a modal pushed the same calls move nothing")
+	var d0 := p.to_dict()
+	var saved := JSON.parse_string(JSON.stringify(d0)) as Dictionary
+	var here := p.position
+	var yaw_deg := rad_to_deg(p.yaw)
+	p.teleport(here + Vector3(2, 0, 2), 33.0)
+	p.from_dict(saved)
+	K.check(fails, p.position.distance_to(here) < 1e-4 and absf(rad_to_deg(p.yaw) - yaw_deg) < 0.01, "to_dict/from_dict round-trips position and yaw")
+	p.from_dict({})
+	var sp: Dictionary = ctx.mode.spawn_point()
+	K.check(fails, p.position.distance_to(sp["pos"]) < 1e-4, "from_dict({}) spawns at spawn_point")
+	K.check(fails, not tiles.is_empty(), "player_tile_changed fired (%d)" % tiles.size())
+
+
+func _check_blocking(ctx: FpContext) -> void:
+	var sim := ctx.sim
+	var col := ctx.collision
+	var p := ctx.player
+	var target := -1
+	for i in sim.active:
+		if D.is_zone(sim.kind[i]) and sim.level[i] > 0 and not sim.sites.has(i) and ctx.directory.frontage(i) >= 0 and not col.boxes(i).is_empty():
+			target = i
+			break
+	K.check(fails, target >= 0, "a building with a frontage exists")
+	if target < 0:
+		return
+	var f := ctx.directory.frontage(target)
+	var dir := Vector3(D.tx(target) - D.tx(f), 0, D.ty(target) - D.ty(f))
+	var start := Vector3(D.tx(f), 0, D.ty(f)) + dir * WS.SIDEWALK_CENTER
+	p.teleport(start, rad_to_deg(atan2(-dir.x, -dir.z)))
+	var r := WS.PLAYER_RADIUS * 0.99
+	var inside := false
+	for _k in range(300):
+		p.simulate(Vector2(0, 1), true, DT)
+		for dz in range(-1, 2):
+			for dx in range(-1, 2):
+				var x := roundi(p.position.x) + dx
+				var y := roundi(p.position.z) + dz
+				if not D.in_bounds(x, y):
+					continue
+				for b: AABB in col.boxes(D.idx(x, y)):
+					if b.grow(r).has_point(p.position):
+						inside = true
+	var travelled := Vector2(p.position.x - start.x, p.position.z - start.z).length()
+	K.check(fails, not inside and travelled > 0.01, "walking into a building for 5 s never enters its boxes (stopped after %.3f)" % travelled)
+	p.teleport(start, rad_to_deg(atan2(-dir.x, -dir.z)))
+	var hit := col.raycast(p.eye_position(), dir, WS.INTERACT_RANGE)
+	K.check(fails, bool(hit["hit"]) and str(hit["kind"]) == "building" and int(hit["tile"]) == target and float(hit["dist"]) <= WS.INTERACT_RANGE, "raycast from the sidewalk hits the building (%s)" % str(hit))
+	var down := col.raycast(p.eye_position(), Vector3(0.3, -1, 0), 1.0)
+	K.check(fails, bool(down["hit"]) and str(down["kind"]) == "ground", "raycast down hits the ground")
+	K.check(fails, col.is_blocked(Vector3(D.tx(target), WS.LOT_TOP, D.ty(target)), WS.PLAYER_RADIUS), "a building centre is blocked")
+
+
+func _check_context(ctx: FpContext) -> void:
+	var events: Array = []
+	ctx.bus.modal_changed.connect(func(a: bool) -> void: events.append(a))
+	ctx.push_modal(&"a")
+	ctx.push_modal(&"b")
+	ctx.pop_modal(&"a")
+	K.check(fails, ctx.is_modal() and ctx.has_modal(&"b") and ctx.modal_count() == 1, "modal stack counts owners")
+	ctx.pop_modal(&"b")
+	K.check(fails, events == [true, false] and not ctx.is_modal(), "modal_changed fires on 0->1 and 1->0 only")
+	var hud := ctx.hud
+	var slots_ok := true
+	for n: String in FpHud.SLOTS:
+		slots_ok = slots_ok and hud.slot(n) != null
+	K.check(fails, slots_ok, "FpHud has all six slots")
+	hud.set_hud_visible(false)
+	var hidden := not hud.slot("top_bar").visible and hud.slot("overlay").visible and not hud.is_hud_visible()
+	hud.set_hud_visible(true)
+	K.check(fails, hidden and hud.slot("top_bar").visible, "set_hud_visible hides every slot but the overlay")
+	ctx.bus.toast.emit("Grok-4.5 says hello", "info")
+	K.check(fails, hud.slot("toasts").get_child(0).get_child_count() == 1, "a bus toast shows in the toasts slot")
+	var mode := ctx.mode
+	var scales: Array = []
+	ctx.bus.time_scale_changed.connect(func(s: int) -> void: scales.append(s))
+	mode.set_time_scale(3)
+	K.check(fails, mode.time_scale == 2 or mode.time_scale == 4, "set_time_scale snaps to 1/2/4/8 (%d)" % mode.time_scale)
+	mode.set_time_scale(8)
+	mode.step_time_scale(1)
+	K.check(fails, mode.time_scale == 8 and ctx.sim.speed == 8, "step_time_scale clamps at 8x")
+	mode.step_time_scale(-1)
+	K.check(fails, mode.time_scale == 4 and scales.back() == 4, "step_time_scale steps down")
+	mode.set_time_scale(1)
+	mode.set_paused(true)
+	K.check(fails, paused and ctx.has_modal(&"pause"), "set_paused pauses the tree and pushes the pause modal")
+	mode.set_paused(false)
+	K.check(fails, not paused and not ctx.is_modal(), "unpausing pops the modal")
+	ctx.sim.set_speed(0)
+	mode.apply_settings({"fov": 80.0, "quality": "high"})
+	K.check(fails, is_equal_approx(ctx.player.camera.fov, 80.0) and mode.settings_log.size() == 1, "apply_settings reaches the player camera")
+
+
+func _check_assets() -> void:
+	K.check(fails, AP.load_scene("res://models/real/street/does_not_exist.glb") == null, "AP.load_scene returns null for a missing path")
+	K.check(fails, AP.load_scene("res://icon.png") == null, "AP.load_scene returns null for a non-scene resource")
+	K.check(fails, AP.load_scene("res://models/real/roads/road_straight.glb") != null, "AP.load_scene loads an existing GLB")
+	K.check(fails, AP.first_existing(["res://nope.glb", "res://models/real/roads/road_cross.glb"]) == "res://models/real/roads/road_cross.glb", "AP.first_existing skips missing paths")
+
+
+## A straight (N-S or E-W) land road tile; with `long`, also with road on both ends of its run.
+func _straight_road(sim: CitySim, long: bool) -> int:
+	for i in sim.active:
+		if sim.kind[i] != D.ROAD or sim.terrain[i] == D.WATER:
+			continue
+		var m := RoadTopology.mask(sim, D.tx(i), D.ty(i))
+		if m != RoadTopology.NS and m != RoadTopology.EW:
+			continue
+		if not long:
+			return i
+		var run := RoadTopology.run_dir(m)
+		var a := D.idx(D.tx(i) + int(run.x) * 2, D.ty(i) + int(run.z) * 2)
+		var b := D.idx(D.tx(i) - int(run.x) * 2, D.ty(i) - int(run.z) * 2)
+		if sim.kind[a] == D.ROAD and sim.kind[b] == D.ROAD:
+			return i
+	return -1
+
+
+func _centre(i: int) -> Vector3:
+	return Vector3(D.tx(i), 0, D.ty(i))
