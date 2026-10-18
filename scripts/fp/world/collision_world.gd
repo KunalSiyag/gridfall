@@ -1,14 +1,17 @@
 class_name CollisionWorld
 extends Node
-## Analytic first-person collision: walkable ground height per point, building boxes per tile
-## (from CityView.building_aabb), water. Deterministic and headless-safe.
+## Analytic first-person collision: walkable ground height per point, blocking boxes per tile
+## (CityView.building_aabb plus the construction kit's site_boxes), water. Deterministic and
+## headless-safe.
 
 const D := preload("res://scripts/sim/sim_defs.gd")
 const WS := preload("res://scripts/fp/world_scale.gd")
 
 var ctx: FpContext
-## Tile index -> cached merged blocking box (AABB() when the tile has none).
+## Tile index -> cached Array[AABB] of blocking boxes (empty when the tile has none).
 var _boxes: Dictionary = {}
+## Tile index -> cached merged bound of those boxes (AABB() when none).
+var _bounds: Dictionary = {}
 
 
 ## Stores the context; boxes are computed lazily from ctx.view.
@@ -19,16 +22,19 @@ func setup(p_ctx: FpContext) -> void:
 ## Drops every cached box (after view.setup).
 func rebuild_all() -> void:
 	_boxes.clear()
+	_bounds.clear()
 
 
-## Invalidates tile i's cached box.
+## Invalidates tile i's cached boxes.
 func on_tile_built(i: int, _holder: Node3D) -> void:
 	_boxes.erase(i)
+	_bounds.erase(i)
 
 
-## Invalidates tile i's cached box.
+## Invalidates tile i's cached boxes.
 func on_tile_cleared(i: int) -> void:
 	_boxes.erase(i)
+	_bounds.erase(i)
 
 
 ## Tile index at a world point (round x/z, D.idx) or -1 outside the world.
@@ -81,8 +87,9 @@ func surface_at(p: Vector3) -> String:
 	return "lot"
 
 
-## True if a circle of `radius` at p (feet) intersects a building box or unwalkable ground.
-## Boxes are grown by radius in xz (a square, so it agrees with tests that grow AABBs).
+## True if a circle of `radius` at p (feet) intersects a blocking box of the 3x3 tiles around p
+## or unwalkable ground. Boxes are grown by radius in xz (a square, so it agrees with tests that
+## grow AABBs).
 func is_blocked(p: Vector3, radius: float) -> bool:
 	if is_nan(ground_height(p)):
 		return true
@@ -92,11 +99,11 @@ func is_blocked(p: Vector3, radius: float) -> bool:
 		for dx in range(-1, 2):
 			if not D.in_bounds(cx + dx, cz + dz):
 				continue
-			var b := box(D.idx(cx + dx, cz + dz))
-			if b.size.x <= 0.0 or p.y >= b.end.y:
-				continue
-			if p.x > b.position.x - radius and p.x < b.end.x + radius and p.z > b.position.z - radius and p.z < b.end.z + radius:
-				return true
+			for b: AABB in boxes(D.idx(cx + dx, cz + dz)):
+				if p.y >= b.end.y:
+					continue
+				if p.x > b.position.x - radius and p.x < b.end.x + radius and p.z > b.position.z - radius and p.z < b.end.z + radius:
+					return true
 	return false
 
 
@@ -122,7 +129,7 @@ func move_and_slide(from: Vector3, motion: Vector3, radius: float) -> Vector3:
 			continue
 		var d1 := _overlaps(c, radius)
 		var ok := true
-		for i: int in d1.keys():
+		for i: Vector2i in d1.keys():
 			if not d0.has(i) or float(d1[i]) > float(d0[i]) + 1e-9:
 				ok = false
 				break
@@ -153,8 +160,8 @@ func nearest_free(p: Vector3, radius: float, max_dist: float) -> Vector3:
 	return Vector3(NAN, NAN, NAN)
 
 
-## Tile index -> how far p sits inside that tile's box grown by radius (distance to its nearest
-## side in xz), for every box a circle of `radius` at p overlaps (the is_blocked rule).
+## Vector2i(tile, box index) -> how far p sits inside that box grown by radius (distance to its
+## nearest side in xz), for every box a circle of `radius` at p overlaps (the is_blocked rule).
 func _overlaps(p: Vector3, radius: float) -> Dictionary:
 	var out := {}
 	var cx := roundi(p.x)
@@ -164,16 +171,18 @@ func _overlaps(p: Vector3, radius: float) -> Dictionary:
 			if not D.in_bounds(cx + dx, cz + dz):
 				continue
 			var i := D.idx(cx + dx, cz + dz)
-			var b := box(i)
-			if b.size.x <= 0.0 or p.y >= b.end.y:
-				continue
-			var depth := minf(minf(p.x - (b.position.x - radius), b.end.x + radius - p.x), minf(p.z - (b.position.z - radius), b.end.z + radius - p.z))
-			if depth > 0.0:
-				out[i] = depth
+			var list := boxes(i)
+			for k in range(list.size()):
+				var b := list[k]
+				if p.y >= b.end.y:
+					continue
+				var depth := minf(minf(p.x - (b.position.x - radius), b.end.x + radius - p.x), minf(p.z - (b.position.z - radius), b.end.z + radius - p.z))
+				if depth > 0.0:
+					out[Vector2i(i, k)] = depth
 	return out
 
 
-## Ray against building boxes (tile DDA, ≤ max_dist) and the ground.
+## Ray against each tile's blocking boxes (tile DDA, ≤ max_dist) and the ground.
 ## {"hit": bool, "pos": Vector3, "normal": Vector3, "tile": int, "kind": "building"|"ground", "dist": float}
 func raycast(origin: Vector3, dir: Vector3, max_dist: float) -> Dictionary:
 	var miss := {"hit": false, "pos": Vector3.ZERO, "normal": Vector3.ZERO, "tile": -1, "kind": "", "dist": max_dist}
@@ -205,8 +214,7 @@ func raycast(origin: Vector3, dir: Vector3, max_dist: float) -> Dictionary:
 		var seg_end := minf(minf(t_max_x, t_max_z), max_dist)
 		var i := D.idx(gx, gz) if D.in_bounds(gx, gz) else -1
 		if i >= 0:
-			var b := box(i)
-			if b.size.x > 0.0:
+			for b: AABB in boxes(i):
 				var hit := _ray_box(origin, d, b)
 				if not hit.is_empty() and float(hit["t"]) < best_t and float(hit["t"]) <= max_dist:
 					best_t = float(hit["t"])
@@ -235,13 +243,26 @@ func raycast(origin: Vector3, dir: Vector3, max_dist: float) -> Dictionary:
 	return best
 
 
-## Blocking bodies on tile i for movement, world space. S0 returns [box(i)] when box(i) has a size,
-## else []. A replaces it with per-part bodies (at most 4 per building) plus a site box.
+## Blocking bodies of tile i for movement, world space, cached until the tile is rebuilt (the
+## cached array itself is returned: read it, never modify it). S0: the building's
+## view.building_aabb(i) when it has one, plus every view.site_boxes(i) part (hoarding segments,
+## machines, crane mast, ...), which can reach into neighbouring tiles. A replaces the building
+## box with per-part bodies (at most 4 per building) and keeps the site parts.
 func boxes(i: int) -> Array[AABB]:
+	var cached: Variant = _boxes.get(i)
+	if cached != null:
+		return cached
 	var out: Array[AABB] = []
-	var b := box(i)
-	if b.size.x > 0.0:
-		out.append(b)
+	if i < 0:
+		return out
+	if ctx != null and ctx.view != null:
+		var b := ctx.view.building_aabb(i)
+		if b.size.x > 0.0:
+			out.append(b)
+		for s: AABB in ctx.view.site_boxes(i):
+			if s.size.x > 0.0 and s.size.z > 0.0:
+				out.append(s)
+	_boxes[i] = out
 	return out
 
 
@@ -250,17 +271,13 @@ func boxes(i: int) -> Array[AABB]:
 func box(i: int) -> AABB:
 	if i < 0:
 		return AABB()
-	var cached: Variant = _boxes.get(i)
+	var cached: Variant = _bounds.get(i)
 	if cached != null:
 		return cached
 	var b := AABB()
-	if ctx != null and ctx.view != null and ctx.sim != null:
-		b = ctx.view.building_aabb(i)
-		if ctx.sim.sites.has(i):
-			var s := ctx.view.site_bounds(i)
-			if s.size.x > 0.0:
-				b = s if b.size.x <= 0.0 else b.merge(s)
-	_boxes[i] = b
+	for a: AABB in boxes(i):
+		b = a if b.size.x <= 0.0 else b.merge(a)
+	_bounds[i] = b
 	return b
 
 

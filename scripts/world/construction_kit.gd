@@ -16,6 +16,13 @@ var _mats: Dictionary = {}
 var _meshes: Dictionary = {}
 var _anims: Array[Dictionary] = []
 var _site_root: Node3D
+## Parts of the site being built that block a walker: {"n": Node3D, "arms": bool, "box": AABB in
+## n's frame (optional; else the bounds of n's meshes), "anims": the part's own _anims entries,
+## "sweep": Vector3 (shuttle travel, n's parent frame), "kind": machine kind}. build_site bakes
+## them into the Site root's `colliders` meta.
+var _solids: Array[Dictionary] = []
+## Machine kind -> its swept bounds in the machine's frame (machines are built the same every time).
+var _machine_bounds: Dictionary = {}
 
 
 func _init(p_view: Node) -> void:
@@ -235,6 +242,7 @@ func machine(kind: String, parent: Node3D, pos: Vector3, yaw: float, phase := 0.
 	var b := Node3D.new()
 	b.scale = Vector3.ONE * MS
 	root.add_child(b)
+	var a0 := _anims.size()
 	match kind:
 		"excavator":
 			_excavator(b, phase)
@@ -248,12 +256,16 @@ func machine(kind: String, parent: Node3D, pos: Vector3, yaw: float, phase := 0.
 			_bulldozer(b)
 		"roller":
 			_roller(b)
+	_solids.append({"n": root, "arms": false, "anims": _anims.slice(a0), "kind": kind})
 	return root
 
 
 ## Sends a machine back and forth along dir (holder space) by amp tiles.
 func shuttle(m: Node3D, dir: Vector3, amp: float, speed: float, phase := 0.0) -> void:
 	_anim(m, "shuttle", m.position, amp, speed, phase, dir.normalized())
+	for e: Dictionary in _solids:
+		if e["n"] == m:
+			e["sweep"] = dir.normalized() * amp
 	var drum := m.find_child("Drum", true, false) as Node3D
 	if drum != null:
 		_anim(drum, "roll", 0.75, amp, speed, phase)
@@ -402,6 +414,9 @@ func tower_crane(parent: Node3D, pos: Vector3, h_m: float, yaw: float, phase := 
 	b.scale = Vector3.ONE * MS
 	root.add_child(b)
 	box(b, Vector3(4.0, 1.0, 4.0), Vector3(0, 0.5, 0), "concrete")
+	# Only the base and the mast block a walker; the jib slews far overhead.
+	solid_box(b, AABB(Vector3(-2.0, 0.0, -2.0), Vector3(4.0, 1.0, 4.0)))
+	solid_box(b, AABB(Vector3(-0.9, 0.0, -0.9), Vector3(1.8, h_m + 1.0, 1.8)))
 	for cx in [-0.8, 0.8]:
 		for cz in [-0.8, 0.8]:
 			box(b, Vector3(0.18, h_m, 0.18), Vector3(cx, h_m * 0.5, cz), "paint")
@@ -454,10 +469,12 @@ func build_site(holder: Node3D, s: Dictionary, stage: String, f: float, ctx: Dic
 	root.name = "Site"
 	holder.add_child(root)
 	_site_root = root
+	_solids.clear()
 	var h := int(ctx.get("h", 0))
 	var ph := float(h % 628) * 0.01
 	if str(s["type"]) == "road":
 		_road_site(root, stage, ctx, ph)
+		_bake_colliders(root)
 		_apply_progress(root, f)
 		return root
 	var plan := str(s["plan"])
@@ -484,7 +501,7 @@ func build_site(holder: Node3D, s: Dictionary, stage: String, f: float, ctx: Dic
 				mound(tree, 0.06, 0.07, Vector3(0, 0.15, 0), "leaf")
 			track(trees, "hide", 0.0, 0.55)
 			track(stumps, "hide", 0.45, 1.0)
-			track(mound(root, 0.12, 0.05, Vector3(0.22, 0.0, 0.2), "soil"), "sy", 0.0, 1.0, 0.3, 1.4)
+			solid(track(mound(root, 0.12, 0.05, Vector3(0.22, 0.0, 0.2), "soil"), "sy", 0.0, 1.0, 0.3, 1.4))
 			var dz := machine("bulldozer", root, Vector3(-0.1, 0, -0.05), 0.0)
 			shuttle(dz, Vector3.RIGHT, 0.18, 0.5, ph)
 			machine("dump_truck", root, Vector3(0.18, 0, -0.3), PI, ph)
@@ -495,17 +512,17 @@ func build_site(holder: Node3D, s: Dictionary, stage: String, f: float, ctx: Dic
 			for side in [-1.0, 1.0]:
 				box(berms, Vector3(foot.x + 0.06, 0.035, 0.05), Vector3(0, 0.017, side * (foot.y * 0.5 + 0.02)), "soil")
 				box(berms, Vector3(0.05, 0.035, foot.y + 0.06), Vector3(side * (foot.x * 0.5 + 0.02), 0.017, 0), "soil")
-			track(berms, "sy", 0.0, 1.0, 0.15, 1.0)
-			track(mound(root, 0.13, 0.08, Vector3(0.33, 0.0, 0.33), "soil"), "sy", 0.0, 1.0, 0.25, 1.3)
+			solid(track(berms, "sy", 0.0, 1.0, 0.15, 1.0))
+			solid(track(mound(root, 0.13, 0.08, Vector3(0.33, 0.0, 0.33), "soil"), "sy", 0.0, 1.0, 0.25, 1.3))
 			machine("excavator", root, Vector3(-0.3, 0.03, -0.18), 0.0, ph)
 			machine("dump_truck", root, Vector3(0.3, 0, -0.33), PI * 0.5, ph)
 		"foundation":
 			# Rebar goes in first, then the slab is poured across the formwork.
-			track(box(root, Vector3(foot.x, 0.03, foot.y), Vector3(0, 0.015, 0), "concrete_wet"), "sx", 0.4, 1.0, 0.0, 1.0)
+			solid(track(box(root, Vector3(foot.x, 0.03, foot.y), Vector3(0, 0.015, 0), "concrete_wet"), "sx", 0.4, 1.0, 0.0, 1.0))
 			var bars := _group(root, "Rebar")
 			for side in [-1.0, 1.0]:
-				box(root, Vector3(foot.x + 0.02, 0.045, 0.012), Vector3(0, 0.022, side * foot.y * 0.5), "timber", Vector3.ZERO, false)
-				box(root, Vector3(0.012, 0.045, foot.y + 0.02), Vector3(side * foot.x * 0.5, 0.022, 0), "timber", Vector3.ZERO, false)
+				solid(box(root, Vector3(foot.x + 0.02, 0.045, 0.012), Vector3(0, 0.022, side * foot.y * 0.5), "timber", Vector3.ZERO, false))
+				solid(box(root, Vector3(0.012, 0.045, foot.y + 0.02), Vector3(side * foot.x * 0.5, 0.022, 0), "timber", Vector3.ZERO, false))
 			for gx in range(3):
 				for gz in range(3):
 					var p := Vector3((float(gx) - 1.0) * foot.x * 0.4, 0.06, (float(gz) - 1.0) * foot.y * 0.4)
@@ -517,7 +534,7 @@ func build_site(holder: Node3D, s: Dictionary, stage: String, f: float, ctx: Dic
 		"frame":
 			var base_h := float(ctx.get("base_height", 0.0)) if overlay else 0.0
 			if not overlay:
-				box(root, Vector3(foot.x, 0.03, foot.y), Vector3(0, 0.015, 0), "concrete")
+				solid(box(root, Vector3(foot.x, 0.03, foot.y), Vector3(0, 0.015, 0), "concrete"))
 			_frame(root, foot, base_h, maxf(height, base_h + FLOOR_H), f)
 			if overlay:
 				_scaffold(root, foot, height, false)
@@ -528,6 +545,7 @@ func build_site(holder: Node3D, s: Dictionary, stage: String, f: float, ctx: Dic
 			var target: Node3D = ctx.get("target", null)
 			if target != null:
 				root.add_child(target)
+				solid(target)
 			_scaffold(root, foot, height, true)
 			if not overlay:
 				machine("dump_truck", root, Vector3(0.32, 0, 0.4), PI, ph + 2.0)
@@ -547,13 +565,13 @@ func build_site(holder: Node3D, s: Dictionary, stage: String, f: float, ctx: Dic
 			if old != null:
 				root.add_child(old)
 				old.rotation.z = 0.04
-				track(old, "sy", 0.0, 1.0, 1.0, 0.25)
-			track(mound(root, 0.22, 0.11, Vector3(0.12, 0, 0.1), "concrete"), "sy", 0.0, 1.0, 0.27, 1.0)
+				solid(track(old, "sy", 0.0, 1.0, 1.0, 0.25))
+			solid(track(mound(root, 0.22, 0.11, Vector3(0.12, 0, 0.1), "concrete"), "sy", 0.0, 1.0, 0.27, 1.0))
 			var ex := machine("excavator", root, Vector3(-0.36, 0, -0.3), 0.6, ph)
 			view.call("_add_smoke", ex, Color(0.6, 0.55, 0.48))
 			machine("dump_truck", root, Vector3(0.3, 0, -0.38), PI * 0.5, ph)
 		"hauling":
-			track(mound(root, 0.26, 0.1, Vector3(0.05, 0, 0.05), "concrete"), "sy", 0.0, 1.0, 1.0, 0.15)
+			solid(track(mound(root, 0.26, 0.1, Vector3(0.05, 0, 0.05), "concrete"), "sy", 0.0, 1.0, 1.0, 0.15))
 			var debris := _group(root, "Debris")
 			for k in range(5):
 				box(debris, Vector3(0.08, 0.04, 0.06), Vector3(float((h >> k) % 5) * 0.09 - 0.2, 0.03, float((h >> (k + 2)) % 5) * 0.09 - 0.2), "rebar" if k == 0 else "concrete", Vector3(0, float(k), 0.3))
@@ -564,6 +582,7 @@ func build_site(holder: Node3D, s: Dictionary, stage: String, f: float, ctx: Dic
 		tower_crane(root, Vector3(-foot.x * 0.5 - 0.1, 0, -foot.y * 0.5 - 0.1), clampf(height / MS + 9.0, 18.0, 40.0), float(h % 6), ph)
 	if not overlay or stage == "frame":
 		_floodlight(root, Vector3(foot.x * 0.5 + 0.06, 0, -foot.y * 0.5 - 0.06))
+	_bake_colliders(root)
 	_apply_progress(root, f)
 	return root
 
@@ -587,6 +606,138 @@ func _group(p: Node3D, n: String) -> Node3D:
 	g.name = n
 	p.add_child(g)
 	return g
+
+
+## Marks n (all its meshes, at their built size) as a part of the site being built that blocks a
+## walker. Without `arms`, subtrees named "Boom" (the swinging digger and backhoe arms) are left
+## out. Colliders are baked once per build and do not follow progress, so parts that progress
+## hides or reveals one by one (felled trees, stumps, rebar, debris, planting) are not marked; the
+## frame is, since its first floor always stands. Every new blocking part must be marked.
+func solid(n: Node3D, arms := true) -> Node3D:
+	_solids.append({"n": n, "arms": arms})
+	return n
+
+
+## Marks an explicit blocking box, given in n's frame (the crane's base and mast, not its jib).
+func solid_box(n: Node3D, local: AABB) -> void:
+	_solids.append({"n": n, "box": local})
+
+
+## Holder-space AABB of one `colliders` entry: the box of its corners, rotated by yaw about +Y
+## around `pos`, the centre of its base.
+static func collider_aabb(c: Dictionary) -> AABB:
+	var size: Vector3 = c["size"]
+	var local := AABB(Vector3(-size.x * 0.5, 0.0, -size.z * 0.5), size)
+	return Transform3D(Basis(Vector3.UP, float(c.get("yaw", 0.0))), c["pos"] as Vector3) * local
+
+
+## Writes the marked parts to the Site root's `colliders` meta, in holder space and at their full
+## built size (before progress scales them): [{"shape": "box", "pos": Vector3 (centre of the base),
+## "size": Vector3, "yaw": float}]. A shuttling machine's box is stretched over its whole run.
+func _bake_colliders(root: Node3D) -> void:
+	var holder := root.get_parent()
+	var out: Array[Dictionary] = []
+	for e: Dictionary in _solids:
+		var n: Variant = e["n"]
+		if not is_instance_valid(n):
+			continue
+		var node := n as Node3D
+		var local: AABB
+		if e.has("box"):
+			local = e["box"]
+		elif e.has("kind") and _machine_bounds.has(e["kind"]):
+			local = _machine_bounds[e["kind"]]
+		else:
+			local = _swept_bounds(node, bool(e.get("arms", true)), e.get("anims", []))
+			if e.has("kind"):
+				_machine_bounds[e["kind"]] = local
+		if local.size == Vector3.ZERO:
+			continue
+		var t := _to_holder(node, holder)
+		# Box the part in a frame turned by its yaw, so any tilt (a toppling building) stays inside.
+		var yaw := atan2(-t.basis.x.z, t.basis.x.x)
+		var unyaw := Basis(Vector3.UP, -yaw)
+		var box_y := (Transform3D(unyaw, Vector3.ZERO) * t) * local
+		var sweep: Vector3 = e.get("sweep", Vector3.ZERO)
+		if sweep != Vector3.ZERO:
+			var w := unyaw * (_to_holder(node.get_parent() as Node3D, holder).basis * sweep)
+			var reach := Vector3(absf(w.x), 0.0, absf(w.z))
+			box_y = AABB(box_y.position - reach, box_y.size + reach * 2.0)
+		var c := Basis(Vector3.UP, yaw) * box_y.get_center()
+		out.append({"shape": "box", "pos": Vector3(c.x, box_y.position.y, c.z), "size": box_y.size, "yaw": yaw})
+	root.set_meta("colliders", out)
+	_solids.clear()
+
+
+## Transform from n's frame to the holder's (the product of the transforms in between).
+static func _to_holder(n: Node3D, holder: Node) -> Transform3D:
+	var t := Transform3D.IDENTITY
+	var x: Node = n
+	while x != null and x != holder:
+		if x is Node3D:
+			t = (x as Node3D).transform * t
+		x = x.get_parent()
+	return t
+
+
+## Bounds of n's meshes in n's frame over the poses its own animations reach: a spinning part as
+## the cylinder it turns through, swinging and tipping parts ("yaw", "pitch", "tip") sampled
+## across their range. Transforms are restored afterwards.
+static func _swept_bounds(n: Node3D, arms: bool, anims: Array) -> AABB:
+	var spin: Array[Node] = []
+	var swing: Array[Dictionary] = []
+	for a: Dictionary in anims:
+		if not is_instance_valid(a["node"]):
+			continue
+		if str(a["type"]) == "spin":
+			spin.append(a["node"])
+		elif str(a["type"]) in ["yaw", "pitch", "tip"]:
+			swing.append(a)
+	var out := _mesh_bounds(n, arms, spin)
+	if swing.is_empty() or out.size == Vector3.ZERO:
+		return out
+	var saved: Array[Transform3D] = []
+	for a: Dictionary in swing:
+		saved.append((a["node"] as Node3D).transform)
+	for k in range(9):
+		var s := float(k) / 4.0 - 1.0
+		for a: Dictionary in swing:
+			var node := a["node"] as Node3D
+			var v := float(a["base"]) + float(a["amp"]) * (maxf(0.0, s) if str(a["type"]) == "tip" else s)
+			if str(a["type"]) == "yaw":
+				node.rotation.y = v
+			else:
+				node.rotation.z = v
+		out = out.merge(_mesh_bounds(n, arms, spin))
+	for j in range(swing.size()):
+		(swing[j]["node"] as Node3D).transform = saved[j]
+	return out
+
+
+## Bounds of every mesh under n, in n's frame (size zero when none); without `arms`, "Boom"
+## subtrees are skipped. A node in `spin` turns about its local Y, so its subtree counts as the
+## square around the circle its corners sweep.
+static func _mesh_bounds(n: Node3D, arms: bool, spin: Array[Node] = []) -> AABB:
+	var out := AABB()
+	var mi := n as MeshInstance3D
+	if mi != null and mi.mesh != null:
+		out = mi.mesh.get_aabb()
+	for ch in n.get_children():
+		var c3 := ch as Node3D
+		if c3 == null or (not arms and ch.name == &"Boom"):
+			continue
+		var b := _mesh_bounds(c3, arms, spin)
+		if b.size == Vector3.ZERO:
+			continue
+		if spin.has(ch):
+			var r := 0.0
+			for x: float in [b.position.x, b.end.x]:
+				for z: float in [b.position.z, b.end.z]:
+					r = maxf(r, Vector2(x, z).length())
+			b = AABB(Vector3(-r, b.position.y, -r), Vector3(2.0 * r, b.size.y, 2.0 * r))
+		var a := c3.transform * b
+		out = a if out.size == Vector3.ZERO else out.merge(a)
+	return out
 
 
 ## Ties part of the site being built to stage progress. Between f0 and f1 the node scales
@@ -648,14 +799,14 @@ func _fence(root: Node3D, h: int) -> void:
 		if k == gate:
 			var half := Vector3(along.x * 0.35, along.y, along.z * 0.35)
 			var off := Vector3(0.3, 0, 0) if k % 2 == 0 else Vector3(0, 0, 0.3)
-			box(root, half, pos - off, "hoarding", Vector3.ZERO, false)
-			box(root, half, pos + off, "hoarding", Vector3.ZERO, false)
+			solid(box(root, half, pos - off, "hoarding", Vector3.ZERO, false))
+			solid(box(root, half, pos + off, "hoarding", Vector3.ZERO, false))
 		else:
-			box(root, along, pos, "hoarding", Vector3.ZERO, false)
+			solid(box(root, along, pos, "hoarding", Vector3.ZERO, false))
 
 
 func _floodlight(root: Node3D, pos: Vector3) -> void:
-	box(root, Vector3(0.012, 0.42, 0.012), pos + Vector3(0, 0.21, 0), "steel", Vector3.ZERO, false)
+	solid(box(root, Vector3(0.012, 0.42, 0.012), pos + Vector3(0, 0.21, 0), "steel", Vector3.ZERO, false))
 	var head := box(root, Vector3(0.05, 0.025, 0.03), pos + Vector3(0, 0.43, 0), "paint_dark", Vector3.ZERO, false)
 	var bulb := box(root, Vector3(0.045, 0.006, 0.026), pos + Vector3(0, 0.416, 0), "white", Vector3.ZERO, false)
 	bulb.name = "Bulb_site"
@@ -667,6 +818,7 @@ func _frame(root: Node3D, foot: Vector2, base_h: float, top_h: float, f: float) 
 	var frame := Node3D.new()
 	frame.name = "Frame"
 	root.add_child(frame)
+	solid(frame)
 	var floors := maxi(1, int(round((top_h - base_h) / FLOOR_H)))
 	var fh := (top_h - base_h) / float(floors)
 	var g := 3 if foot.x > 0.55 else 2
@@ -696,6 +848,7 @@ func _scaffold(root: Node3D, foot: Vector2, height: float, roll_net: bool) -> vo
 	var sc := Node3D.new()
 	sc.name = "Scaffold"
 	root.add_child(sc)
+	solid(sc)
 	var hx := foot.x * 0.5 + 0.035
 	var hz := foot.y * 0.5 + 0.035
 	var top := height + 0.04
@@ -742,7 +895,7 @@ func _road_site(root: Node3D, stage: String, ctx: Dictionary, ph: float) -> void
 				if stage == "piling":
 					track(pier, "sy", 0.0, 1.0, 0.25, 1.0)
 		if stage == "piling":
-			box(root, Vector3(0.03, 0.55, 0.03), Vector3(0.0, 0.2, 0.0), "paint")
+			solid(box(root, Vector3(0.03, 0.55, 0.03), Vector3(0.0, 0.2, 0.0), "paint"))
 			box(root, Vector3(0.05, 0.08, 0.05), Vector3(0.0, 0.35, 0.0), "paint_dark")
 			machine("backhoe", root, Vector3(0.0, 0.0, -0.42), -PI * 0.5, ph)
 		else:
@@ -760,7 +913,7 @@ func _road_site(root: Node3D, stage: String, ctx: Dictionary, ph: float) -> void
 	strip.material_override = view.call("_pbr", "dirt", Color(0.38, 0.3, 0.22), 1.0) if stage == "clearing" else mat("gravel")
 	for z in [-0.46, 0.46]:
 		for x in [-0.36, 0.36]:
-			cyl(root, 0.012, 0.035, Vector3(x, 0.018, z), "cone", Vector3.ZERO, 0.002)
+			solid(cyl(root, 0.012, 0.035, Vector3(x, 0.018, z), "cone", Vector3.ZERO, 0.002))
 	match stage:
 		"clearing":
 			var dz := machine("bulldozer", root, Vector3(0, 0, 0), -PI * 0.5, ph)
@@ -768,7 +921,7 @@ func _road_site(root: Node3D, stage: String, ctx: Dictionary, ph: float) -> void
 		"grading":
 			var dz2 := machine("bulldozer", root, Vector3(0.08, 0, 0), -PI * 0.5, ph)
 			shuttle(dz2, Vector3.BACK, 0.3, 0.4, ph)
-			mound(root, 0.06, 0.03, Vector3(-0.2, 0, 0.3), "gravel")
+			solid(mound(root, 0.06, 0.03, Vector3(-0.2, 0, 0.3), "gravel"))
 		"paving":
 			_paving(root, 0.56, 0.008, 0.014)
 			var rl2 := machine("roller", root, Vector3(0, 0, -0.1), -PI * 0.5, ph)

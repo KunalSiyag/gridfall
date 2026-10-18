@@ -151,11 +151,18 @@ func _unhandled_input(event: InputEvent) -> void:
 	if not input_enabled or ctx == null or ctx.is_modal():
 		return
 	if event is InputEventMouseMotion and Input.mouse_mode == Input.MOUSE_MODE_CAPTURED:
-		var rel := (event as InputEventMouseMotion).relative
-		yaw = wrapf(yaw - rel.x * _sensitivity, -PI, PI)
-		var limit := deg_to_rad(WS.PITCH_LIMIT_DEG)
-		pitch = clampf(pitch - rel.y * _sensitivity * (-1.0 if _invert_y else 1.0), -limit, limit)
-		_apply_rotation()
+		mouse_look(event as InputEventMouseMotion)
+
+
+## Turns the view by a mouse motion at mouse_sensitivity radians per screen pixel. Reads
+## screen_relative: `relative` is scaled by the window's content-scale stretch (canvas_items,
+## 1600x900 base), so look speed would change with the window size.
+func mouse_look(event: InputEventMouseMotion) -> void:
+	var rel := event.screen_relative
+	yaw = wrapf(yaw - rel.x * _sensitivity, -PI, PI)
+	var limit := deg_to_rad(WS.PITCH_LIMIT_DEG)
+	pitch = clampf(pitch - rel.y * _sensitivity * (-1.0 if _invert_y else 1.0), -limit, limit)
+	_apply_rotation()
 
 
 func _apply_settings(s: Dictionary) -> void:

@@ -1262,32 +1262,34 @@ func building_aabb(i: int) -> AABB:
 	return holder.transform * ((holder.get_meta("building_xform") as Transform3D) * local)
 
 
-## World-space bounds of the building a construction site on tile i will become (scaffolds, hoardings
-## and machines stay inside it), from _model_bounds(target_kind, target_level, h) at the tile centre.
-## A demolition in its "demolition" stage gives the old building's bounds (the kit still draws it).
-## AABB() when tile i has no site, for road and bridge works (a gravel strip, not a building) and
-## for the other demolition stages and plans (hauling, clearing).
+## World-space blocking boxes of the construction site drawn on tile i, one per entry of the
+## `colliders` meta that ConstructionKit.build_site writes on the holder's "Site" node before
+## tile_built fires: hoarding segments (with the gate gap), machine bodies (stretched over their
+## shuttle run, without the swinging arms), the crane's base and mast, the floodlight pole, slabs,
+## formwork, berms, mounds, the frame, the scaffold and the old or finished building. Each entry is
+## a box yawed about +Y; this returns the box of its rotated corners. Parts can reach past the
+## tile (a tower crane's base up to 0.2 u into the neighbours). [] when no site is drawn on tile i.
+func site_boxes(i: int) -> Array[AABB]:
+	var out: Array[AABB] = []
+	var holder: Node3D = _tile_nodes.get(i, null)
+	if holder == null or not is_instance_valid(holder):
+		return out
+	var site := holder.get_node_or_null("Site") as Node3D
+	if site == null:
+		return out
+	for c: Dictionary in site.get_meta("colliders", []):
+		out.append(holder.transform * ConstructionKit.collider_aabb(c))
+	return out
+
+
+## Merged world-space bound of site_boxes(i): contains every blocking part the construction kit
+## drew for the site on tile i, and can reach past the tile. AABB() when no site is drawn. For
+## movement use site_boxes(i): this bound also covers the gaps between parts (the hoarding gate).
 func site_bounds(i: int) -> AABB:
-	var site: Dictionary = sim.sites.get(i, {})
-	if site.is_empty():
-		return AABB()
-	var x := D.tx(i)
-	var y := D.ty(i)
-	var h := absi(x * 73856093 ^ y * 19349663)
 	var b := AABB()
-	match str(site["type"]):
-		"road":
-			return AABB()
-		"demolish":
-			if str(site["plan"]) != "demolish" or sim.site_stage_name(site) != "demolition":
-				return AABB()
-			var fk := int(site["from_kind"])
-			b = _model_bounds(fk, maxi(int(site["from_level"]), 1), h)
-			if D.is_zone(fk):
-				b = Transform3D(Basis(Vector3.UP, deg_to_rad(float((h % 4) * 90))), Vector3.ZERO) * b
-		_:
-			b = _model_bounds(int(site["target_kind"]), int(site["target_level"]), h)
-	return AABB(b.position + Vector3(x, 0, y), b.size)
+	for a: AABB in site_boxes(i):
+		b = a if b.size == Vector3.ZERO else b.merge(a)
+	return b
 
 
 ## The Node3D holding everything drawn on tile i, or null.

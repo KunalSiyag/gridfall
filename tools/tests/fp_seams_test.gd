@@ -2,8 +2,9 @@ extends SceneTree
 ## S0 seams in legacy files (docs/fp/S0-foundation.md §15): CitySim day length, tick_seconds,
 ## set_day_seconds, set_tick_phase and skip_to_next_day; Residents resident_said / trip_started and
 ## de-branded resident text; mayor display names, D.debrand and de-branded brain prompts; CityView
-## world_rebuilt / tile_built / tile_cleared / in_setup, building_aabb, site_bounds, set_fp_mode
-## hiding (bubbles and quake shake included); and the 18 FP input actions.
+## world_rebuilt / tile_built / tile_cleared / in_setup, building_aabb, site_boxes / site_bounds
+## (the construction kit's `colliders`), set_fp_mode hiding (bubbles and quake shake included); and
+## the 18 FP input actions.
 
 const K := preload("res://tools/tests/fp_kit.gd")
 const D := preload("res://scripts/sim/sim_defs.gd")
@@ -14,6 +15,8 @@ const ACTIONS := [
 	"hud_toggle", "quick_save", "quick_load",
 ]
 const BRANDS := ["Argon", "DeepSeek", "Kimi", "Qwen", "Grok"]
+## Site groups the kit shows or removes one by one with progress; it marks none of them as solid.
+const PROGRESS_GROUPS := [&"Trees", &"Stumps", &"Rebar", &"Debris", &"Planting"]
 
 var fails: Array[String] = []
 
@@ -270,8 +273,8 @@ func _check_view(sim: CitySim, view: CityView) -> void:
 	K.check(fails, road_ok, "road tiles have no building_aabb")
 	var holder := view.tile_holder(_first_zone(sim))
 	K.check(fails, holder != null and str(holder.get_meta("building_path", "")).begins_with("res://"), "zone holders carry building_path meta")
-	# site_bounds: the future building on build and zone sites, the old building while a demolition
-	# is in its "demolition" stage, nothing on road works and nowhere without a site.
+	# site_boxes: the kit's blocking parts on every drawn site (build, road works, demolition), and
+	# every drawn part a walker can bump into lies inside one of them; site_bounds is their merge.
 	var mode := sim.construction_mode
 	sim.construction_mode = "staged"
 	sim.mayors[0]["treasury"] = int(sim.mayors[0]["treasury"]) + 20000
@@ -287,31 +290,42 @@ func _check_view(sim: CitySim, view: CityView) -> void:
 	sim.construction_mode = mode
 	var seen := {"build": 0, "road": 0, "demolition": 0}
 	var bad: Array[String] = []
+	var parts := 0
 	for i: int in sim.sites.keys():
 		var st: Dictionary = sim.sites[i]
-		var b := view.site_bounds(i)
 		var t := str(st["type"])
 		if t == "road":
 			seen["road"] += 1
-			if b.size != Vector3.ZERO:
-				bad.append("road site %d has %s" % [i, b])
 		elif t == "demolish":
-			var demo := str(st["plan"]) == "demolish" and sim.site_stage_name(st) == "demolition"
-			if demo:
+			if str(st["plan"]) == "demolish" and sim.site_stage_name(st) == "demolition":
 				seen["demolition"] += 1
-			var inside := b.position.x >= D.tx(i) - 0.5 - 1e-4 and b.end.x <= D.tx(i) + 0.5 + 1e-4 and b.position.z >= D.ty(i) - 0.5 - 1e-4 and b.end.z <= D.ty(i) + 0.5 + 1e-4
-			if demo != (b.size.x > 0.0) or (demo and not inside):
-				bad.append("demolish site %d (%s, %s) has %s" % [i, st["plan"], sim.site_stage_name(st), b])
 		else:
 			seen["build"] += 1
-			if b.size.x <= 0.0:
-				bad.append("%s site %d is empty" % [t, i])
+		var site_holder := view.tile_holder(i)
+		var site: Node3D = site_holder.get_node_or_null("Site") as Node3D if site_holder != null else null
+		var boxes := view.site_boxes(i)
+		if site == null or boxes.is_empty():
+			bad.append("%s site %d: Site node %s, %d boxes" % [t, i, site != null, boxes.size()])
+			continue
+		var merged := AABB()
+		for b: AABB in boxes:
+			merged = b if merged.size == Vector3.ZERO else merged.merge(b)
+		if not view.site_bounds(i).is_equal_approx(merged):
+			bad.append("%s site %d: site_bounds %s is not the merge %s" % [t, i, view.site_bounds(i), merged])
+		# Bridge works stand in water, which nobody walks on.
+		if sim.terrain[i] == D.WATER:
+			continue
+		var c := Vector3(D.tx(i), 0, D.ty(i))
+		for a: AABB in _walker_parts(site):
+			parts += 1
+			if not _covered_xz(a, boxes):
+				bad.append("%s/%s site %d: part x[%.3f,%.3f] z[%.3f,%.3f] in no box" % [t, sim.site_stage_name(st), i, a.position.x - c.x, a.end.x - c.x, a.position.z - c.z, a.end.z - c.z])
 	var off := 0
 	for i in sim.active:
-		if not sim.sites.has(i) and view.site_bounds(i).size != Vector3.ZERO:
+		if not sim.sites.has(i) and (not view.site_boxes(i).is_empty() or view.site_bounds(i).size != Vector3.ZERO):
 			off += 1
-	K.check(fails, seen["build"] > 0 and seen["road"] > 0 and seen["demolition"] > 0, "site fixtures: a build, a road and a demolition site (%s)" % str(seen))
-	K.check(fails, bad.is_empty() and off == 0, "site_bounds: building sites and demolitions only (%s, %d off-site)" % [str(bad), off])
+	K.check(fails, seen["build"] > 0 and seen["road"] > 0 and seen["demolition"] > 0 and parts > 0, "site fixtures: a build, a road and a demolition site (%s, %d parts)" % [str(seen), parts])
+	K.check(fails, bad.is_empty() and off == 0, "site_boxes cover every drawn part a walker can bump into (%s, %d off-site)" % [str(bad.slice(0, 6)), off])
 	# set_fp_mode hides the orbit layers and restores them.
 	var changes: Array = []
 	view.fp_mode_changed.connect(func(on: bool) -> void: changes.append(on))
@@ -368,6 +382,33 @@ func _bubble_shown(sim: CitySim, view: CityView, line: String) -> bool:
 	r["say"] = line
 	view.avatars.call("_process", 0.016)
 	return (a["bubble"] as Label3D).visible
+
+
+## World AABBs of the visible meshes under a Site node that a walker can bump into: at least
+## STEP_HEIGHT tall and starting below head height. Machine arms ("Boom") and the progress groups
+## are left out, as in ConstructionKit.solid().
+func _walker_parts(site: Node3D) -> Array[AABB]:
+	var out: Array[AABB] = []
+	var stack: Array[Node] = [site]
+	while not stack.is_empty():
+		var n: Node = stack.pop_back()
+		var mi := n as MeshInstance3D
+		if mi != null and mi.mesh != null and mi.is_visible_in_tree():
+			var a := mi.global_transform * mi.mesh.get_aabb()
+			if a.size.y >= WS.STEP_HEIGHT and a.position.y < WS.PLAYER_HEIGHT:
+				out.append(a)
+		for ch in n.get_children():
+			if ch.name != &"Boom" and not PROGRESS_GROUPS.has(ch.name):
+				stack.append(ch)
+	return out
+
+
+## True when one of boxes contains a in x and z.
+func _covered_xz(a: AABB, boxes: Array[AABB]) -> bool:
+	for b: AABB in boxes:
+		if a.position.x >= b.position.x - 1e-4 and a.end.x <= b.end.x + 1e-4 and a.position.z >= b.position.z - 1e-4 and a.end.z <= b.end.z + 1e-4:
+			return true
+	return false
 
 
 func _first_zone(sim: CitySim) -> int:

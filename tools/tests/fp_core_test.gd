@@ -1,8 +1,9 @@
 extends SceneTree
 ## S0 core (docs/fp/S0-foundation.md §17.3): kit fixtures, the feature registry, CollisionWorld
-## ground / surface / blocking / raycast, walking out of a box that appeared underfoot,
-## nearest_free, FpPlayer walking and save round trip, FpContext modals, FpHud slots and
-## AP.load_scene. Movement asserts against collision.boxes(), never building_aabb.
+## ground / surface / blocking / raycast, construction sites blocking at their hoarding, walking
+## out of a box that appeared underfoot, nearest_free, FpPlayer walking, mouse look under a window
+## stretch and save round trip, FpContext modals, FpHud slots and AP.load_scene. Movement asserts
+## against collision.boxes(), never building_aabb.
 
 const K := preload("res://tools/tests/fp_kit.gd")
 const D := preload("res://scripts/sim/sim_defs.gd")
@@ -14,6 +15,15 @@ const DT := 1.0 / 60.0
 var fails: Array[String] = []
 
 
+## Records the mouse motions the root viewport delivers (after its stretch transform).
+class MotionRecorder extends Node:
+	var got: Array[InputEventMouseMotion] = []
+
+	func _unhandled_input(event: InputEvent) -> void:
+		if event is InputEventMouseMotion:
+			got.append(event as InputEventMouseMotion)
+
+
 func _init() -> void:
 	# The root joins the tree after the first frame; nodes need get_tree() (pause, tweens).
 	await process_frame
@@ -22,10 +32,12 @@ func _init() -> void:
 	_check_registry(ctx)
 	_check_ground(ctx)
 	_check_walk(ctx)
+	await _check_mouse_look(ctx)
 	_check_blocking(ctx)
 	_check_context(ctx)
 	_check_assets()
 	_check_trapped(ctx)
+	_check_site(ctx)
 	K.finish(self, "FP_CORE_TEST", fails)
 
 
@@ -169,6 +181,46 @@ func _check_walk(ctx: FpContext) -> void:
 	K.check(fails, not tiles.is_empty(), "player_tile_changed fired (%d)" % tiles.size())
 
 
+## Look speed is mouse_sensitivity radians per screen pixel whatever the window stretch: the same
+## 100 x 40 px motion, delivered through the root viewport at three content-scale factors, turns
+## the player by exactly px * sensitivity (the stretched `relative` differs between them).
+func _check_mouse_look(ctx: FpContext) -> void:
+	var p := ctx.player
+	var win := get_root()
+	var factor0 := win.content_scale_factor
+	var rec := MotionRecorder.new()
+	win.add_child(rec)
+	var sens := float(ctx.settings.get("mouse_sensitivity", WS.MOUSE_SENSITIVITY))
+	var px := Vector2(100.0, 40.0)
+	var rels: Array[Vector2] = []
+	var exact := true
+	for f: float in [1.0, 2.0, 0.5]:
+		win.content_scale_factor = f
+		await process_frame
+		var ev := InputEventMouseMotion.new()
+		ev.relative = px
+		ev.screen_relative = px
+		rec.got.clear()
+		win.push_input(ev)
+		if rec.got.is_empty():
+			exact = false
+			print("  no motion delivered at content_scale_factor %.1f" % f)
+			continue
+		var got: InputEventMouseMotion = rec.got.back()
+		rels.append(got.relative)
+		p.teleport(p.position, 0.0, 0.0, false)
+		p.mouse_look(got)
+		var dyaw := -p.yaw
+		var dpitch := -p.pitch
+		if not (is_equal_approx(dyaw, px.x * sens) and is_equal_approx(dpitch, px.y * sens)):
+			exact = false
+			print("  factor %.1f: relative %s turned yaw %.5f pitch %.5f (expected %.5f, %.5f)" % [f, str(got.relative), dyaw, dpitch, px.x * sens, px.y * sens])
+	win.content_scale_factor = factor0
+	rec.free()
+	K.check(fails, rels.size() == 3 and not rels[0].is_equal_approx(rels[1]), "fixture: the window stretch scales `relative` (%s)" % str(rels))
+	K.check(fails, exact, "mouse look turns px * sensitivity at every window stretch")
+
+
 func _check_blocking(ctx: FpContext) -> void:
 	var sim := ctx.sim
 	var col := ctx.collision
@@ -245,6 +297,73 @@ func _check_trapped(ctx: FpContext) -> void:
 	K.check(fails, moved > -1e-6, "backing deeper into the house is refused (moved %.5f)" % moved)
 	var q := col.nearest_free(_centre(lot), WS.PLAYER_RADIUS, 2.0)
 	K.check(fails, not is_nan(q.x) and not col.is_blocked(q, WS.PLAYER_RADIUS) and Vector2(q.x - D.tx(lot), q.z - D.ty(lot)).length() < 1.0, "nearest_free finds a free point next to the house (%s)" % str(q))
+
+
+## A construction site blocks where the kit draws it: walking at a hoarding side without the gate
+## stops at the hoarding (0.474 from the centre, 1 m outside the future building's 0.423), and the
+## feet never enter a collision box on the way. Runs last: it starts sites on open lots.
+func _check_site(ctx: FpContext) -> void:
+	var sim := ctx.sim
+	var col := ctx.collision
+	var p := ctx.player
+	var mode := sim.construction_mode
+	sim.construction_mode = "staged"
+	var lots: Array = sim.open_lots(0, 12)
+	var builds := ["police", "school", "fire_station"]
+	for k in range(mini(lots.size(), builds.size())):
+		sim.mayors[0]["treasury"] = int(sim.mayors[0]["treasury"]) + 50000
+		sim.apply_action(0, {"type": "build", "building": builds[k], "x": int(lots[k][0]), "y": int(lots[k][1])})
+	sim.step_tick()
+	sim.construction_mode = mode
+	var r := WS.PLAYER_RADIUS
+	# Hoarding segments at ±0.47, 0.008 thick; side k of ConstructionKit._fence, gate side h % 4.
+	var face := 0.474
+	var sides := [Vector3(0, 0, -1), Vector3(1, 0, 0), Vector3(0, 0, 1), Vector3(-1, 0, 0)]
+	var walks := 0
+	var stops: Array[String] = []
+	var ok := true
+	for i: int in sim.sites.keys():
+		if walks >= 4:
+			break
+		if str((sim.sites[i] as Dictionary)["type"]) != "build" or sim.terrain[i] == D.WATER or ctx.view.site_boxes(i).is_empty():
+			continue
+		var c := _centre(i)
+		var gate := absi(D.tx(i) * 73856093 ^ D.ty(i) * 19349663) % 4
+		for k in range(4):
+			var dir: Vector3 = sides[k]
+			var start := c + dir * 0.66
+			start.y = col.ground_height(start)
+			if k == gate or is_nan(start.y) or col.is_blocked(start, r):
+				continue
+			p.teleport(start, rad_to_deg(atan2(dir.x, dir.z)))
+			var inside := false
+			for _s in range(150):
+				p.simulate(Vector2(0, 1), true, DT)
+				inside = inside or _in_boxes(col, p.position, r * 0.99)
+			var out := (p.position - c).dot(dir)
+			stops.append("%.3f" % out)
+			if inside or out < face + r * 0.99 or out > face + r + 0.02:
+				ok = false
+				print("  site %d side %d: stopped %.4f from the centre (hoarding face %.3f + r), inside a box: %s" % [i, k, out, face, inside])
+			walks += 1
+			if walks >= 4:
+				break
+	K.check(fails, walks > 0, "fixture: a fenced build site with a free approach to a side without the gate")
+	K.check(fails, ok, "walking at a site's hoarding stops at the hoarding (%s)" % ", ".join(stops))
+
+
+## True when p lies in a collision box (grown by r) of the 3x3 tiles around it.
+func _in_boxes(col: CollisionWorld, p: Vector3, r: float) -> bool:
+	for dz in range(-1, 2):
+		for dx in range(-1, 2):
+			var x := roundi(p.x) + dx
+			var y := roundi(p.z) + dz
+			if not D.in_bounds(x, y):
+				continue
+			for b: AABB in col.boxes(D.idx(x, y)):
+				if b.grow(r).has_point(p):
+					return true
+	return false
 
 
 func _check_context(ctx: FpContext) -> void:

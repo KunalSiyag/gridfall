@@ -64,7 +64,7 @@ Line numbers refer to commit `611d727` (the base of `fp/integration`). Before yo
 
 ### 2.2 Edited files (S0 seam hunks only, listed in §15)
 
-`scripts/main.gd`, `project.godot` (`[input]` only), `scripts/world/city_view.gd`, `scripts/sim/residents.gd`, `scripts/sim/city_sim.gd`, `scripts/sim/sim_defs.gd`, `scripts/ai/city_brain.gd`, `scripts/ai/resident_minds.gd` (one line), `scripts/world/resident_avatars.gd` (one line), `scripts/world/sky_director.gd` (one line).
+`scripts/main.gd`, `project.godot` (`[input]` only), `scripts/world/city_view.gd`, `scripts/world/construction_kit.gd` (the site `colliders` meta, §15.1), `scripts/sim/residents.gd`, `scripts/sim/city_sim.gd`, `scripts/sim/sim_defs.gd`, `scripts/ai/city_brain.gd`, `scripts/ai/resident_minds.gd` (one line), `scripts/world/resident_avatars.gd` (one line), `scripts/world/sky_director.gd` (one line).
 
 S0 does **not** edit `scenes/main.tscn`. The FP nodes are created in code, so `main.tscn` keeps the orbit `View/Camera` as its only camera. The cinematic and the photo tour depend on that.
 
@@ -828,7 +828,7 @@ func from_dict(d: Dictionary) -> void   # {} -> ctx.mode.spawn_point()
 S0 behaviour:
 
 - **Camera.** `camera = Camera3D.new()` at `position.y = WS.EYE`, with `near = WS.CAMERA_NEAR`, `far = WS.CAMERA_FAR` and `fov = ctx.settings.fov`. Set `camera.environment = ctx.env`, which is the **same resource** as `Main.camera.environment`, so SkyDirector's sky, fog, ambient and exposure changes apply. Then `camera.make_current()`.
-- **Look.** In `_unhandled_input` handle `InputEventMouseMotion` when `Input.mouse_mode == MOUSE_MODE_CAPTURED` and `not ctx.is_modal()`: `yaw -= rel.x * sens` and `pitch -= rel.y * sens * (-1 if invert_y else 1)`.
+- **Look.** In `_unhandled_input` handle `InputEventMouseMotion` when `Input.mouse_mode == MOUSE_MODE_CAPTURED` and `not ctx.is_modal()` by calling the public `mouse_look(event)`: `yaw -= rel.x * sens` and `pitch -= rel.y * sens * (-1 if invert_y else 1)`, where `rel` is `event.screen_relative`, never `event.relative`. The root window stretches (`canvas_items`, 1600×900 base, `expand`), and Godot scales `relative` by the inverse stretch: a 100 px move measured 0.352 rad at 1000×600 and 0.44 rad at 800×450 instead of 0.22, and 2500 px in the 64×64 headless window. `screen_relative` is the unscaled pixel delta, so `mouse_sensitivity` stays radians per screen pixel at every window size.
 - **Move.** When `input_enabled`, `_process` reads `Input.get_vector("move_left", "move_right", "move_back", "move_forward")`, `Input.is_action_pressed("sprint")`, `"crouch"` and `"jump"`, and calls `simulate(...)`; when `input_enabled` is false, `_process` does not move the player at all (tests and tours drive `simulate()` or `teleport()` themselves). The modal gate lives inside `simulate`. Speed is `WALK` or `RUN`. Velocity approaches the target at `ACCEL`.
 - **Collide.** `new_pos = ctx.collision.move_and_slide(position, velocity * delta, WS.PLAYER_RADIUS)`, then clamp to the world rect `[X0 − 0.5 + r, X0 + W − 0.5 − r]`.
 - **Ground.** `position.y` approaches `collision.ground_height(position)` at 20 /s. Snap it when the gap is above `0.05`. S0 has **no step limit, no jump and no crouch**; A adds them.
@@ -904,7 +904,7 @@ S0 ground model, using `i = tile_at(p)` and `lp = (p.x − tx, p.z − ty)`:
 | `WATER` terrain that is not a road | `NAN` (blocked) |
 | anything else (`EMPTY`, `FOREST`, `SITE`, level-0 zones, out of world) | `GROUND_Y` |
 
-Building blocking: `box(i)` comes from `ctx.view.building_aabb(i)`, or from `ctx.view.site_bounds(i)` on construction sites, and is cached per tile; `boxes(i)` is `[box(i)]`. `is_blocked` checks the 3×3 tiles around `p`. The point is blocked if, in xz, the circle overlaps any box in `boxes(j)` grown by `radius`, and `p.y < box.end.y`. Note that the real-model AABB includes the 0.94 lot slab, so in S0 the player cannot step onto lots at all. A refines this with per-surface body boxes (see `slices/A-player.md`) or H's `ColBox_<n>` proxies.
+Building blocking: `boxes(i)` is `ctx.view.building_aabb(i)` (when non-empty) followed by every box of `ctx.view.site_boxes(i)` (the construction kit's parts: hoarding segments, machines, the crane mast, …; §15.1), cached per tile until `tile_built` / `tile_cleared`; `box(i)` is their merged bound. Site parts can reach into a neighbouring tile (a crane base stands up to 0.2 u past the tile edge), which the 3×3 search covers. `is_blocked` checks the 3×3 tiles around `p`. The point is blocked if, in xz, the circle overlaps any box in `boxes(j)` grown by `radius`, and `p.y < box.end.y`; `_overlaps` and the walk-out rule key each box by `Vector2i(tile, index)`, and `raycast` tests each box. Note that the real-model AABB includes the 0.94 lot slab, so in S0 the player cannot step onto lots at all. A refines this with per-surface body boxes (see `slices/A-player.md`) or H's `ColBox_<n>` proxies.
 
 **Boxes can appear under the player.** The player may stand on empty land or a level-0 lot, and the sim can open a site or level the lot up under them. Two rules keep them free, and A keeps both when it replaces the internals: `move_and_slide` lets a player who already overlaps a box move as long as the move enters no new box and does not go deeper (depth = distance to the nearest side of the grown box), and FpMode's `_on_tile_built` (§7.1) moves the player to `nearest_free` when a tile within one of theirs is rebuilt around them. `fp_core_test` and the FP smoke cover both.
 
@@ -1139,32 +1139,33 @@ func building_aabb(i: int) -> AABB:
 	var local := _local_bounds(path)
 	return holder.transform * ((holder.get_meta("building_xform") as Transform3D) * local)
 
-## World-space bounds of the building a construction site on tile i will become (scaffolds, hoardings
-## and machines stay inside it), from _model_bounds(target_kind, target_level, h) at the tile centre.
-## A demolition in its "demolition" stage gives the old building's bounds (the kit still draws it).
-## AABB() when tile i has no site, for road and bridge works (a gravel strip, not a building) and
-## for the other demolition stages and plans (hauling, clearing).
+## World-space blocking boxes of the construction site drawn on tile i, one per entry of the
+## `colliders` meta that ConstructionKit.build_site writes on the holder's "Site" node before
+## tile_built fires: hoarding segments (with the gate gap), machine bodies (stretched over their
+## shuttle run, without the swinging arms), the crane's base and mast, the floodlight pole, slabs,
+## formwork, berms, mounds, the frame, the scaffold and the old or finished building. Each entry is
+## a box yawed about +Y; this returns the box of its rotated corners. Parts can reach past the
+## tile (a tower crane's base up to 0.2 u into the neighbours). [] when no site is drawn on tile i.
+func site_boxes(i: int) -> Array[AABB]:
+	var out: Array[AABB] = []
+	var holder: Node3D = _tile_nodes.get(i, null)
+	if holder == null or not is_instance_valid(holder):
+		return out
+	var site := holder.get_node_or_null("Site") as Node3D
+	if site == null:
+		return out
+	for c: Dictionary in site.get_meta("colliders", []):
+		out.append(holder.transform * ConstructionKit.collider_aabb(c))
+	return out
+
+## Merged world-space bound of site_boxes(i): contains every blocking part the construction kit
+## drew for the site on tile i, and can reach past the tile. AABB() when no site is drawn. For
+## movement use site_boxes(i): this bound also covers the gaps between parts (the hoarding gate).
 func site_bounds(i: int) -> AABB:
-	var site: Dictionary = sim.sites.get(i, {})
-	if site.is_empty():
-		return AABB()
-	var x := D.tx(i)
-	var y := D.ty(i)
-	var h := absi(x * 73856093 ^ y * 19349663)
 	var b := AABB()
-	match str(site["type"]):
-		"road":
-			return AABB()
-		"demolish":
-			if str(site["plan"]) != "demolish" or sim.site_stage_name(site) != "demolition":
-				return AABB()
-			var fk := int(site["from_kind"])
-			b = _model_bounds(fk, maxi(int(site["from_level"]), 1), h)
-			if D.is_zone(fk):
-				b = Transform3D(Basis(Vector3.UP, deg_to_rad(float((h % 4) * 90))), Vector3.ZERO) * b
-		_:
-			b = _model_bounds(int(site["target_kind"]), int(site["target_level"]), h)
-	return AABB(b.position + Vector3(x, 0, y), b.size)
+	for a: AABB in site_boxes(i):
+		b = a if b.size == Vector3.ZERO else b.merge(a)
+	return b
 
 ## The Node3D holding everything drawn on tile i, or null.
 func tile_holder(i: int) -> Node3D:
@@ -1177,7 +1178,15 @@ func set_camera(c: Camera3D) -> void:
 		avatars.camera = c
 ```
 
-Road sites used to get `_model_bounds`' fallback box (0.7 × 0.3 × 0.7, a 6 m wall over a gravel strip with cones), and demolitions got the same box instead of the old building, which the kit draws only in the `demolition` stage (`_build_site`, `ctx["old"]`). A stage change re-marks the tile, so `tile_built` refreshes the cached collision box. A may add explicit roadworks barriers.
+**Site colliders come from what the kit draws** (fix round 2). An earlier `site_bounds` returned the future building's `_model_bounds` (±0.423 for a real lot) and claimed that hoardings, scaffolds and machines stay inside it. They do not: the hoarding stands at ±0.47 (0.008 thick) with the ground slab at ±0.49, the scaffold at `foot/2 + 0.035` plus boards, the tower crane at `(−foot/2 − 0.1, −foot/2 − 0.1)` and the floodlight outside the footprint, and a probe measured machines up to 3.8 m outside it. So `ConstructionKit` (G1's file; S0 adds this seam) marks every blocking part it draws with `solid(node)` (or `solid_box(node, local_aabb)` for the crane's base and mast, not its jib), and `build_site` bakes them, before `_apply_progress`, into the Site root's meta:
+
+```gdscript
+site.set_meta("colliders", [{"shape": "box", "pos": Vector3, "size": Vector3, "yaw": float}])
+# pos: centre of the box's base, holder-local; size: full extents in the box's own frame; yaw:
+# radians about +Y. ConstructionKit.collider_aabb(entry) gives its holder-space AABB.
+```
+
+The rules: each part is boxed at its full built size in a frame turned by its yaw (tilted parts stay inside); a machine is boxed over the poses its own animations reach (the mixer drum as the cylinder it spins through, the dump-truck bed tipped, the excavator house slewed) and stretched over its `shuttle` run, without its `Boom` arm; parts that progress shows or hides one by one (felled trees, stumps, rebar, debris, planting) are not marked, because colliders are baked once per build. Road works now block at their cones, machines and piling rig (a gravel strip is walkable), and every demolition stage blocks at its machines and rubble mounds. A stage change re-marks the tile, so `tile_built` refreshes the cached collision boxes. A probe over 820 staged-site samples (builds, zone growth, demolitions, road works, with animation running) found no drawn part a walker can bump into (≥ `STEP_HEIGHT` tall, starting below `PLAYER_HEIGHT`) outside every box.
 
 A probe confirmed that `Transform3D * AABB` yields the box of the transformed corners, which is exact for the 90° yaws used here, and that an instanced scene root carries its `scene_file_path`. CityView and `Tiles` stay at identity, so CityView-local space is world space. G1 must keep it that way.
 
@@ -1502,9 +1511,9 @@ Every `tools/tests/fp_*_test.gd` follows the same shape: `extends SceneTree`, ru
 | File | Asserts |
 |---|---|
 | `fp_world_scale_test.gd` | `WS.M * WS.TILE_M == 1`; `EYE == 1.65 * M`; `CURB_RISE == SIDEWALK_TOP - ASPHALT_TOP`; `LANE_OFFSET == ROAD_HALF / 2`; `abs(VEHICLE_SCALE * 1.2 - 1) < 1e-6`. Parses `res://tools/blender/realcity/roads.py` (`ZA =`, `ZS =`, `HW =`) and `core.py` (`M = 1.0 / 20.0`), and checks they equal `ASPHALT_TOP`, `SIDEWALK_TOP`, `ROAD_HALF` and `M`. `ZM` is an expression (`ZM = ZA + 0.0003`, `roads.py:26`), so the test parses `ZM = ZA + <n>` and checks `abs((MARKING_TOP − ASPHALT_TOP) − n) < 1e-9`. This is a drift detector, and H must keep it passing. |
-| `fp_seams_test.gd` | Headless, seed 7, with a view. `sim.day_seconds == 12` and `tick_seconds() == 3`; at 1200, `tick_seconds() == 300` and `day_progress` scales. `set_day_seconds` keeps `day_progress` (12 → 1200 → 12, a pending 240 s FP accumulator becomes 2.4 s); `set_tick_phase` sets and clamps. `skip_to_next_day()` leaves `tick_in_day == 0`, `day + 1` and `day_progress() < 0.01`. `apply_plan` with `{"say": "Hi"}` emits `resident_said(id, "Hi", "say")`; `_post_message` emits `"letter"` while `messages.size() < 300` (and also at 300+); `apply_plan` and `respond` with branded `say`, `thought`, `mood_reason` and `message_to_mayor` emit and store de-branded text; the mayor prompt with a branded resident letter and id-keyed votes carries no brand word and no quoted mayor id, `_votes_by_name` keys by display name, and `brain.from_dict` of a branded save de-brands proposals, posts, thoughts, the Gazette and the council statement; `_go` to a different tile emits `trip_started` with `from == old at`, and a resident whose `plan.commute == "stay_home"` sent on a non-work trip longer than 6 tiles emits mode `"walk"`. Every `sim.mayors[i].name` equals `D.MAYORS[i].display` after `new_city`, and after `from_dict` of a dict whose mayors carry brand names. `owner_name(D.idx(5, 5))` is a display name. `D.debrand` cases. View: `world_rebuilt` fires once per `setup`; `tile_built` fires once per holder (count equals `_tile_nodes.size()` after setup), and `in_setup` is true inside those emissions and false inside `world_rebuilt`; `building_aabb` of every zone tile at level > 0 is non-empty, sits inside `[x − 0.5, x + 0.5]`, and has `position.y ≈ 0`; road tiles return size zero. `site_bounds` (staged mode: a police build, a one-tile road and a bulldozed district-0 zone building, then one tick; each fixture asserted) is non-empty on build and zone sites, empty on road sites, non-empty and inside the tile exactly while a `demolish` plan is in its `demolition` stage, and empty on every tile without a site. `set_fp_mode(true)` hides `_labels_root`, `_territory_root`, both icon multimeshes and every mayor root, zeroes a pending `_shake`, sets `avatars.fp_hidden` and keeps a fresh resident bubble hidden, emits `fp_mode_changed(true)` once, and `set_fp_mode(true)` again emits nothing; a quake triggered in FP queues no shake; `set_fp_mode(false)` restores the layers and bubbles. `set_overlay("power")` in FP leaves `_tiles_root.visible` true. `tile_cleared` fires when a built tile is bulldozed to `EMPTY` (use `sim.apply_action` bulldoze, then tick until the demolition site finishes, or set `kind` directly and call `view._on_tiles_changed`). The 18 input actions exist. |
+| `fp_seams_test.gd` | Headless, seed 7, with a view. `sim.day_seconds == 12` and `tick_seconds() == 3`; at 1200, `tick_seconds() == 300` and `day_progress` scales. `set_day_seconds` keeps `day_progress` (12 → 1200 → 12, a pending 240 s FP accumulator becomes 2.4 s); `set_tick_phase` sets and clamps. `skip_to_next_day()` leaves `tick_in_day == 0`, `day + 1` and `day_progress() < 0.01`. `apply_plan` with `{"say": "Hi"}` emits `resident_said(id, "Hi", "say")`; `_post_message` emits `"letter"` while `messages.size() < 300` (and also at 300+); `apply_plan` and `respond` with branded `say`, `thought`, `mood_reason` and `message_to_mayor` emit and store de-branded text; the mayor prompt with a branded resident letter and id-keyed votes carries no brand word and no quoted mayor id, `_votes_by_name` keys by display name, and `brain.from_dict` of a branded save de-brands proposals, posts, thoughts, the Gazette and the council statement; `_go` to a different tile emits `trip_started` with `from == old at`, and a resident whose `plan.commute == "stay_home"` sent on a non-work trip longer than 6 tiles emits mode `"walk"`. Every `sim.mayors[i].name` equals `D.MAYORS[i].display` after `new_city`, and after `from_dict` of a dict whose mayors carry brand names. `owner_name(D.idx(5, 5))` is a display name. `D.debrand` cases. View: `world_rebuilt` fires once per `setup`; `tile_built` fires once per holder (count equals `_tile_nodes.size()` after setup), and `in_setup` is true inside those emissions and false inside `world_rebuilt`; `building_aabb` of every zone tile at level > 0 is non-empty, sits inside `[x − 0.5, x + 0.5]`, and has `position.y ≈ 0`; road tiles return size zero. `site_boxes` (staged mode: a police build, a one-tile road and a bulldozed district-0 zone building, then one tick; each fixture asserted) is non-empty on every drawn site, road works included; `site_bounds` equals their merge; every visible mesh under the Site node that is ≥ `STEP_HEIGHT` tall and starts below `PLAYER_HEIGHT` (outside `Boom` arms and the progress groups) lies in xz inside one of the boxes; and both are empty on every tile without a site. `set_fp_mode(true)` hides `_labels_root`, `_territory_root`, both icon multimeshes and every mayor root, zeroes a pending `_shake`, sets `avatars.fp_hidden` and keeps a fresh resident bubble hidden, emits `fp_mode_changed(true)` once, and `set_fp_mode(true)` again emits nothing; a quake triggered in FP queues no shake; `set_fp_mode(false)` restores the layers and bubbles. `set_overlay("power")` in FP leaves `_tiles_root.visible` true. `tile_cleared` fires when a built tile is bulldozed to `EMPTY` (use `sim.apply_action` bulldoze, then tick until the demolition site finishes, or set `kind` directly and call `view._on_tiles_changed`). The 18 input actions exist. |
 | `fp_directory_test.gd` | Two directories on the same seed agree on every road tile in `sim.active`; a different seed changes at least one name. In the 32×32 core, distinct rows give distinct street names and distinct columns give distinct avenue names. Every `ZONE_C` / `ZONE_I` lot at level > 0 has a non-empty `business_name`. Every lot with a road neighbour has a non-empty `address` matching `^\d+ .+ (Street\|Avenue)$`. `frontage()` is a 4-neighbour ROAD. `frontage_yaw` is in {0, 90, 180, −90}. City Hall's `landmark_name` is `"GridFall City Hall"`. No output contains `Argon`, `DeepSeek`, `Kimi`, `Qwen`, `Grok`, `GMI` or a mayor display surname. 1,000 calls of `place_label` take under 50 ms (report only). |
-| `fp_core_test.gd` | Uses `make_ctx(root, {"view": true, "grow": true})` (headless `FpPlayer` and `CollisionWorld`). **Fixtures:** asserts every fixture listed in §17.2 (≥ 5 residents, ≥ 1 resident at home with `work >= 0`, ≥ 1 C lot with a non-empty `business_name`, ≥ 1 `view.bus_stops` entry, ≥ 1 corner, tee and cross mask). Every registry path exists and loads as an `FpFeature` with a matching `feature_id()`, and ids are unique. `make_feature` puts the feature inside the tree. `ground_height` on a straight road gives `ASPHALT_TOP` at the centre and `SIDEWALK_TOP` at offset 0.4, `NAN` on a non-road water tile, and `SIDEWALK_TOP` on an end tile's island. `surface_at` follows the §12 table on a road centre, a sidewalk, a park or empty tile and a lot. Calling `player.simulate(Vector2(0, 1), false, 1/60.0)` 180 times (3 s) along a sidewalk moves the player `WALK * 3 ± 15%`, after the acceleration ramp; with `ctx.push_modal(&"test")` the same calls move nothing. Walking into a building for 5 s never lands the feet inside any `collision.boxes(i)` grown by `PLAYER_RADIUS * 0.99` (never `building_aabb`). `raycast` from the sidewalk toward that building hits `kind == "building"` within `INTERACT_RANGE`. `player.to_dict` → `from_dict` round-trips the position (ε 1e-4) and yaw (ε 0.01°). `AP.load_scene` returns null for a missing path and for a non-scene resource. **Trapped:** the player stands at the centre of an empty lot with a frontage; the lot becomes `ZONE_R` level 1 (`view._on_tiles_changed`), so the player is now blocked; 5 s of sprinting toward the frontage gets them out; just inside the front face, backing into the house moves them no deeper; `nearest_free` from the lot centre returns an unblocked point within 1 u. |
+| `fp_core_test.gd` | Uses `make_ctx(root, {"view": true, "grow": true})` (headless `FpPlayer` and `CollisionWorld`). **Fixtures:** asserts every fixture listed in §17.2 (≥ 5 residents, ≥ 1 resident at home with `work >= 0`, ≥ 1 C lot with a non-empty `business_name`, ≥ 1 `view.bus_stops` entry, ≥ 1 corner, tee and cross mask). Every registry path exists and loads as an `FpFeature` with a matching `feature_id()`, and ids are unique. `make_feature` puts the feature inside the tree. `ground_height` on a straight road gives `ASPHALT_TOP` at the centre and `SIDEWALK_TOP` at offset 0.4, `NAN` on a non-road water tile, and `SIDEWALK_TOP` on an end tile's island. `surface_at` follows the §12 table on a road centre, a sidewalk, a park or empty tile and a lot. Calling `player.simulate(Vector2(0, 1), false, 1/60.0)` 180 times (3 s) along a sidewalk moves the player `WALK * 3 ± 15%`, after the acceleration ramp; with `ctx.push_modal(&"test")` the same calls move nothing. Walking into a building for 5 s never lands the feet inside any `collision.boxes(i)` grown by `PLAYER_RADIUS * 0.99` (never `building_aabb`). `raycast` from the sidewalk toward that building hits `kind == "building"` within `INTERACT_RANGE`. `player.to_dict` → `from_dict` round-trips the position (ε 1e-4) and yaw (ε 0.01°). `AP.load_scene` returns null for a missing path and for a non-scene resource. **Mouse look:** a 100 × 40 px `InputEventMouseMotion` pushed through the root viewport at `content_scale_factor` 1, 2 and 0.5 arrives with a different stretched `relative` each time, and `player.mouse_look(event)` turns yaw and pitch by exactly `px * mouse_sensitivity` each time. **Sites** (last, it starts sites on open lots): three staged builds, one tick; from 0.66 u outside a hoarding side without the gate (`h % 4`), 2.5 s of sprinting toward the centre stops the feet at `0.474 + PLAYER_RADIUS` (± 0.02), never inside any `collision.boxes(j)` grown by `PLAYER_RADIUS * 0.99`. **Trapped:** the player stands at the centre of an empty lot with a frontage; the lot becomes `ZONE_R` level 1 (`view._on_tiles_changed`), so the player is now blocked; 5 s of sprinting toward the frontage gets them out; just inside the front face, backing into the house moves them no deeper; `nearest_free` from the lot centre returns an unblocked point within 1 u. |
 
 ### 17.4 `tools/tests/fp_smoke.gd` (FP headless smoke; `extends Node`, `run(main)`)
 
@@ -1720,7 +1729,7 @@ Run all of these from the worktree root.
 | D-S0-18 | **Movement collides against `CollisionWorld.boxes(i)`; picking uses `view.building_aabb(i)`.** Every movement test asserts against `boxes()`. | A must be free to tighten bodies without breaking S0's tests; the full AABB keeps place cards reachable. |
 | D-S0-19 | **`fp_kit.make_ctx` builds a complete context** (brain, sky, stub mode, player, HUD, optional render/audio, injectable client) and an optional scripted growth recipe with asserted fixtures. | Slice tests otherwise dereference null fields or test an empty city. |
 | D-S0-20 | **`WS` ends with one marked section per slice**; a slice adds constants only inside its own. | Parallel appends at the end of one file always conflict in git. |
-| D-S0-21 | **New seams beyond ARCHITECTURE §4:** `CityView.site_bounds`, `in_setup`, `fp_mode_changed`; `CityDirectory.planned_name`; `GameBus.card_action`; `AP.load_scene` and node-name prefixes; `RoadTopology` end island; the early `view.fp_mode` flag in `main.gd`; the `trip_started` mode normalisation; two de-branding lines in `city_brain.gd` (639, 800). | Each one removes a guess or a crash that a reviewer found in a slice contract. |
+| D-S0-21 | **New seams beyond ARCHITECTURE §4:** `CityView.site_boxes` / `site_bounds` and the construction kit's `colliders` meta on the Site node (§15.1), `in_setup`, `fp_mode_changed`; `CityDirectory.planned_name`; `GameBus.card_action`; `AP.load_scene` and node-name prefixes; `RoadTopology` end island; the early `view.fp_mode` flag in `main.gd`; the `trip_started` mode normalisation; two de-branding lines in `city_brain.gd` (639, 800). | Each one removes a guess or a crash that a reviewer found in a slice contract. |
 | D-S0-22 | **The gate re-imports whenever imports or assets are newer than a stamp**, and fails on loader errors. | A warm worktree must never pass tests with missing assets after H or G2 merges. |
 
 ---
