@@ -191,7 +191,7 @@ func _on_moved(r: Dictionary) -> void:
 	var route: Array = r.get("route", [])
 	a["route"] = route.duplicate()
 	a["t"] = 0.0
-	var tick_len := D.BASE_DAY_SECONDS / float(D.GROWTH_TICKS_PER_DAY) / float(maxi(sim.speed, 1))
+	var tick_len := sim.tick_seconds() / float(maxi(sim.speed, 1))
 	var duration := clampf(tick_len * 0.85, 0.6, 2.8)
 	a["speed"] = maxf(1.0, float(route.size() - 1)) / duration
 	var driving := str(r.get("mode", "walk")) in ["car", "bus"] and route.size() > 6 and a["car"] != null

@@ -46,6 +46,9 @@ var cov_transit := PackedFloat32Array()
 var day: int = 1
 var tick_in_day: int = 0
 var speed: int = 1
+## Real seconds per game day at speed 1. Orbit and tests keep SimDefs.BASE_DAY_SECONDS (12);
+## first person sets WS.FP_DAY_SECONDS (1200). Not saved: the view mode sets it at boot.
+var day_seconds: float = D.BASE_DAY_SECONDS
 var waiting_for_ai: bool = false
 var day_gate: Callable = Callable()
 var rng := RandomNumberGenerator.new()
@@ -131,8 +134,9 @@ func new_city(seed_value: int) -> void:
 	log_lines.clear()
 	mayors.clear()
 	for m in D.MAYORS:
+		## "name" is the mayor's human display name; "id" and "model" stay for the API.
 		mayors.append({
-			"id": m["id"], "name": m["name"], "model": m["model"], "color": m["color"],
+			"id": m["id"], "name": m["display"], "model": m["model"], "color": m["color"],
 			"treasury": D.START_FUNDS, "tax_r": 9, "tax_c": 9, "tax_i": 9,
 			"last_income": 0, "last_upkeep": 0, "actions_ok": 0, "actions_rejected": 0,
 			"pop": 0, "jobs": 0, "happiness": 0.5, "annexed": 0,
@@ -380,7 +384,7 @@ func _process(delta: float) -> void:
 		_begin_day()
 		return
 	_time_accum += delta * float(speed)
-	var tick_len := D.BASE_DAY_SECONDS / float(D.GROWTH_TICKS_PER_DAY)
+	var tick_len := tick_seconds()
 	var guard := 0
 	while _time_accum >= tick_len and guard < 8 and not waiting_for_ai:
 		_time_accum -= tick_len
@@ -389,8 +393,26 @@ func _process(delta: float) -> void:
 
 
 func day_progress() -> float:
-	var tick_len := D.BASE_DAY_SECONDS / float(D.GROWTH_TICKS_PER_DAY)
+	var tick_len := tick_seconds()
 	return clampf((float(tick_in_day) + _time_accum / tick_len) / float(D.GROWTH_TICKS_PER_DAY), 0.0, 1.0)
+
+
+## Real seconds per growth tick at speed 1.
+func tick_seconds() -> float:
+	return day_seconds / float(D.GROWTH_TICKS_PER_DAY)
+
+
+## Runs the rest of today's growth ticks synchronously so the next day starts at dawn
+## (FP "skip to morning"). Stops early if the day gate holds the boundary. Returns true when
+## the new day has started.
+func skip_to_next_day() -> bool:
+	var n := D.GROWTH_TICKS_PER_DAY - tick_in_day
+	for _k in range(n):
+		if waiting_for_ai:
+			break
+		step_tick()
+	_time_accum = 0.0
+	return not waiting_for_ai
 
 
 func step_tick() -> void:
@@ -1312,7 +1334,7 @@ func finish_all_sites() -> void:
 
 ## 0..1 progress through the current growth tick, so views can interpolate between ticks.
 func tick_phase() -> float:
-	return clampf(_time_accum / (D.BASE_DAY_SECONDS / float(D.GROWTH_TICKS_PER_DAY)), 0.0, 1.0)
+	return clampf(_time_accum / tick_seconds(), 0.0, 1.0)
 
 
 ## Open developer (zone) sites per district.
@@ -2251,6 +2273,8 @@ func from_dict(data: Dictionary) -> bool:
 	mayors.clear()
 	for m in data.get("mayors", []):
 		mayors.append(m as Dictionary)
+	for mi in range(mini(mayors.size(), D.MAYORS.size())):
+		mayors[mi]["name"] = D.MAYORS[mi]["display"]
 	ordinances = data.get("ordinances", {})
 	events.clear()
 	for ev in data.get("events", []):

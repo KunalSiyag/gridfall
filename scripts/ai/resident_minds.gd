@@ -167,7 +167,7 @@ func _city_context() -> Dictionary:
 		var states: Array = brain.get("mayor_state") if brain != null else []
 		if mi < states.size():
 			said = str((states[mi] as Dictionary).get("post", ""))
-		mayors.append({"district": mi, "mayor": D.MAYORS[mi]["name"], "income_tax_pct": int(sim.mayors[mi]["tax_r"]), "said_yesterday": said})
+		mayors.append({"district": mi, "mayor": D.MAYORS[mi]["display"], "income_tax_pct": int(sim.mayors[mi]["tax_r"]), "said_yesterday": D.debrand(said)})
 	var headline := ""
 	if brain != null:
 		headline = str((brain.get("last_paper") as Dictionary).get("headline", ""))

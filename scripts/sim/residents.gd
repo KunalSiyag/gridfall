@@ -9,6 +9,12 @@ signal resident_arrived(r: Dictionary)
 signal resident_departed(r: Dictionary, reason: String)
 signal resident_moved(r: Dictionary)
 signal day_ready(day: int)
+## A resident spoke out loud or wrote to their mayor. kind: "say" (daily plan line), "react"
+## (incident reaction line), "letter" (message to the mayor). text is never empty.
+signal resident_said(id: String, text: String, kind: String)
+## A resident set off from tile from_i to tile to_i (sim arrival is instant; the view animates
+## the trip). mode: car | bus | bike | walk.
+signal trip_started(id: String, from_i: int, to_i: int, mode: String)
 
 const D := preload("res://scripts/sim/sim_defs.gd")
 const MAX_RESIDENTS := 100
@@ -675,6 +681,8 @@ func apply_plan(r: Dictionary, d: Dictionary, source: String, model: String) -> 
 	r["complaint"] = _pick(str(d.get("complaint", "none")).to_lower(), COMPLAINTS, "none")
 	r["thought"] = str(d.get("thought", "")).left(220)
 	r["say"] = str(d.get("say", "")).left(90)
+	if not str(r["say"]).strip_edges().is_empty():
+		resident_said.emit(str(r["id"]), str(r["say"]), "say")
 	r["source"] = source
 	r["model"] = model
 	r["plan_day"] = sim.day
@@ -697,6 +705,8 @@ func respond(r: Dictionary, ev: Dictionary, d: Dictionary, source: String, model
 	if not th.is_empty():
 		r["thought"] = th
 	r["say"] = str(d.get("say", "")).left(90)
+	if not str(r["say"]).strip_edges().is_empty():
+		resident_said.emit(str(r["id"]), str(r["say"]), "react")
 	r["reaction"] = action
 	r["reaction_thought"] = th
 	r["reaction_event"] = ev["label"]
@@ -734,6 +744,7 @@ func _post_message(r: Dictionary, text: String, kind: String) -> void:
 	})
 	if messages.size() > 300:
 		messages.pop_front()
+	resident_said.emit(str(r["id"]), text, "letter")
 
 
 func _set_mood(r: Dictionary, v: Variant) -> void:
@@ -1013,8 +1024,15 @@ func _go(r: Dictionary, to: int, state: String) -> bool:
 	r["state"] = state
 	var p: Dictionary = r.get("plan", {})
 	r["mode"] = str(p.get("commute", "car")) if state == "work" else ("walk" if route.size() <= 6 else str(p.get("commute", "car")))
+	if from != to:
+		trip_started.emit(str(r["id"]), from, to, _trip_mode(str(r["mode"])))
 	resident_moved.emit(r)
 	return true
+
+
+## The trip_started mode for a commute value: car, bus, bike or walk (anything else walks).
+func _trip_mode(m: String) -> String:
+	return m if m in ["car", "bus", "bike", "walk"] else "walk"
 
 
 func route_between(a: int, b: int) -> Array:

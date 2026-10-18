@@ -11,6 +11,8 @@ const SKY_SHADER := "res://shaders/sky_blend.gdshader"
 ## Above this speed a day lasts under 3 seconds, so the cycle holds at midday instead of strobing.
 const MAX_CYCLE_SPEED := 4
 const HOLD_HOUR := 13.0
+## Days shorter than this many real seconds hold at HOLD_HOUR instead of strobing.
+const MIN_CYCLE_DAY_SECONDS := 3.0
 
 var sim: CitySim
 var env: Environment
@@ -51,7 +53,7 @@ func setup(p_sim: CitySim, p_env: Environment, p_sun: DirectionalLight3D, p_view
 func _target_hour() -> float:
 	if fixed_hour >= 0.0:
 		return fixed_hour
-	if sim == null or sim.speed > MAX_CYCLE_SPEED:
+	if sim == null or sim.day_seconds / float(maxi(sim.speed, 1)) < MIN_CYCLE_DAY_SECONDS:
 		return HOLD_HOUR
 	return fmod(6.0 + sim.day_progress() * 24.0, 24.0)
 

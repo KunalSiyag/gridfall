@@ -168,29 +168,29 @@ const SKILL_LABELS := {
 ## Five autonomous AI mayors, each powered by a different GMI Cloud model.
 const MAYORS := [
 	{
-		"id": "argon", "name": "Argon-4", "model": "google/gemini-4-argon", "color": "#FFB800",
+		"id": "argon", "name": "Argon-4", "display": "Ada Okafor", "model": "google/gemini-4-argon", "color": "#FFB800",
 		"district": "Northwest Civic Campus", "style": "Utility-first planner",
-		"persona": "You are Argon-4, a meticulous civic planner. You build reliable power, water, and sewage first, keep taxes moderate, and love parks and schools.",
+		"persona": "You are Ada Okafor, mayor of the Northwest Civic Campus and a meticulous civic planner. You build reliable power, water, and sewage first, keep taxes moderate, and love parks and schools.",
 	},
 	{
-		"id": "deepseek", "name": "DeepSeek-V4", "model": "deepseek-ai/DeepSeek-V4-Flash-0731", "color": "#00F0FF",
+		"id": "deepseek", "name": "DeepSeek-V4", "display": "Viktor Han", "model": "deepseek-ai/DeepSeek-V4-Flash-0731", "color": "#00F0FF",
 		"district": "Northeast Tech Corridor", "style": "Systems engineer",
-		"persona": "You are DeepSeek-V4, a first-principles systems engineer. You optimize road grids, industrial output, and traffic flow, and you quantify every trade-off.",
+		"persona": "You are Viktor Han, mayor of the Northeast Tech Corridor and a first-principles systems engineer. You optimize road grids, industrial output, and traffic flow, and you quantify every trade-off.",
 	},
 	{
-		"id": "kimi", "name": "Kimi-K3", "model": "moonshotai/kimi-k3", "color": "#B44CFF",
+		"id": "kimi", "name": "Kimi-K3", "display": "Mei Kimura", "model": "moonshotai/kimi-k3", "color": "#B44CFF",
 		"district": "Central Plaza", "style": "Coalition builder",
-		"persona": "You are Kimi-K3, the coalition mayor of the central plaza. You prioritize citizen happiness, commerce, safety, and you broker deals between the other mayors.",
+		"persona": "You are Mei Kimura, the coalition mayor of the Central Plaza. You prioritize citizen happiness, commerce, safety, and you broker deals between the other mayors.",
 	},
 	{
-		"id": "qwen", "name": "Qwen-3.8", "model": "Qwen/Qwen3.8-Max", "color": "#10E88A",
+		"id": "qwen", "name": "Qwen-3.8", "display": "Rosa Quintero", "model": "Qwen/Qwen3.8-Max", "color": "#10E88A",
 		"district": "Southwest Eco Quarter", "style": "Fiscal pragmatist",
-		"persona": "You are Qwen-3.8, a fiscally careful pragmatist. You balance budgets, grow steadily, prefer clean energy, and avoid debt.",
+		"persona": "You are Rosa Quintero, mayor of the Southwest Eco Quarter and a fiscally careful pragmatist. You balance budgets, grow steadily, prefer clean energy, and avoid debt.",
 	},
 	{
-		"id": "grok", "name": "Grok-4.5", "model": "x-ai/grok-4.5", "color": "#FF2E54",
+		"id": "grok", "name": "Grok-4.5", "display": "Duke Granger", "model": "x-ai/grok-4.5", "color": "#FF2E54",
 		"district": "Southeast Boomtown", "style": "Growth maximalist",
-		"persona": "You are Grok-4.5, a witty, aggressive growth maximalist. You chase population and tax revenue, tolerate pollution, mock red tape, and take bold bets.",
+		"persona": "You are Duke Granger, mayor of the Southeast Boomtown and a witty, aggressive growth maximalist. You chase population and tax revenue, tolerate pollution, mock red tape, and take bold bets.",
 	},
 ]
 
@@ -276,6 +276,49 @@ static func mayor_index(mayor_id: String) -> int:
 		if str(MAYORS[i]["id"]) == mayor_id:
 			return i
 	return -1
+
+
+## Human display name of mayor mi ("" when out of range).
+static func mayor_display(mi: int) -> String:
+	if mi < 0 or mi >= MAYORS.size():
+		return ""
+	return str(MAYORS[mi]["display"])
+
+
+## Compiled once: per mayor [brand-with-suffix RegEx, bare-word RegEx].
+static var _debrand_res: Array = []
+
+
+## Replaces model branding in free text (LLM output, replay cache, old saves) with display names:
+## model ids (D.MAYORS[*].model) and brand names (D.MAYORS[*].name, also with a trailing ".x" or
+## "-Flash" style suffix) become the display name; a bare brand word (Argon|DeepSeek|Kimi|Qwen|Grok,
+## case-sensitive, whole word) becomes "Mayor <Surname>".
+static func debrand(text: String) -> String:
+	if text.is_empty():
+		return text
+	if _debrand_res.is_empty():
+		for m: Dictionary in MAYORS:
+			var brand := str(m["name"])
+			var word := brand.get_slice("-", 0)
+			var full := RegEx.create_from_string("\\b%s(?:\\.\\d+)*(?:-(?:[A-Z][A-Za-z0-9]*|\\d[A-Za-z0-9.]*))*\\b" % _regex_escape(brand))
+			var bare := RegEx.create_from_string("\\b%s\\b" % _regex_escape(word))
+			_debrand_res.append([full, bare])
+	var out := text
+	for m: Dictionary in MAYORS:
+		out = out.replace(str(m["model"]), str(m["display"]))
+	for k in range(MAYORS.size()):
+		out = (_debrand_res[k][0] as RegEx).sub(out, str(MAYORS[k]["display"]), true)
+	for k in range(MAYORS.size()):
+		var display := str(MAYORS[k]["display"])
+		out = (_debrand_res[k][1] as RegEx).sub(out, "Mayor " + display.get_slice(" ", display.get_slice_count(" ") - 1), true)
+	return out
+
+
+static func _regex_escape(s: String) -> String:
+	var out := ""
+	for c in s:
+		out += ("\\" + c) if c in ".^$*+?()[]{}|\\-/" else c
+	return out
 
 
 ## Founding district layout: center 10x10 block for Kimi; four corner quadrants for the rest.

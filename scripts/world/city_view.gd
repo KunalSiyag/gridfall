@@ -7,6 +7,15 @@ extends Node3D
 signal tile_clicked(x: int, y: int)
 signal tile_hovered(x: int, y: int)
 signal resident_clicked(id: String)
+## Tile i's holder was (re)built; holder is the Node3D under Tiles that owns all of its nodes.
+## Fires for every holder, including the full build inside setup().
+signal tile_built(i: int, holder: Node3D)
+## Tile i lost its holder and nothing replaced it (cleared to empty land or unburnt woods).
+signal tile_cleared(i: int)
+## setup() finished: every tile, CityLife and the avatars exist again.
+signal world_rebuilt()
+## fp_mode changed value (set_fp_mode with a different value). Not emitted by the boot-time field set.
+signal fp_mode_changed(on: bool)
 
 const D := preload("res://scripts/sim/sim_defs.gd")
 const M := "res://models/"
@@ -117,9 +126,16 @@ var _territory_root: Node3D
 var kit: ConstructionKit
 var _site_timer: float = 0.0
 var _bounds_cache: Dictionary = {}
+## True while setup() runs (from its first line until just before world_rebuilt.emit()). tile_built
+## listeners that do per-tile work skip it while in_setup and do one full pass on world_rebuilt.
+var in_setup: bool = false
+## Street-level presentation: hides builder aids and the AI presentation layer, stops ambient
+## traffic, picking and camera shake. Persists across setup().
+var fp_mode: bool = false
 
 
 func setup(p_sim: CitySim, p_camera: Camera3D) -> void:
+	in_setup = true
 	sim = p_sim
 	camera = p_camera
 	for c in get_children():
@@ -180,6 +196,51 @@ func setup(p_sim: CitySim, p_camera: Camera3D) -> void:
 		)
 		sim.event_ended.connect(func(_ev: Dictionary) -> void: _sync_events())
 		sim.territory_changed.connect(_rebuild_territory)
+	_apply_fp_visibility()
+	in_setup = false
+	world_rebuilt.emit()
+
+
+## S0 version: toggles visibility. G1 extends it: on a real change it also rebuilds the FP-only
+## geometry synchronously (trees, tiles) and emits world_rebuilt (see slices/G1-streetscape.md).
+func set_fp_mode(on: bool) -> void:
+	var changed := on != fp_mode
+	fp_mode = on
+	_apply_fp_visibility()
+	if changed:
+		fp_mode_changed.emit(on)
+
+
+## Shows or hides the orbit-only layers for fp_mode (S0 §15.1): labels, territory, overlays, icons,
+## cursor, mayor bots, event labels and the ambient Kenney cars and pedestrians.
+func _apply_fp_visibility() -> void:
+	if _labels_root == null:
+		return
+	var orbit := not fp_mode
+	_labels_root.visible = orbit
+	if _territory_root != null:
+		_territory_root.visible = orbit
+	_power_icons.visible = orbit
+	_water_icons.visible = orbit
+	if _cursor != null and fp_mode:
+		_cursor.visible = false
+	for av: Dictionary in _avatars:
+		(av["root"] as Node3D).visible = orbit
+	for id: int in _event_nodes.keys():
+		for c in (_event_nodes[id] as Node3D).get_children():
+			if c.has_meta("orbit_only"):
+				(c as Node3D).visible = orbit
+	_cars_root.visible = orbit
+	_peds_root.visible = orbit
+	if fp_mode:
+		for list: Array in [_cars, _peds]:
+			for a: Dictionary in list:
+				(a["node"] as Node3D).queue_free()
+			list.clear()
+		if overlay_mode != "none":
+			set_overlay("none")
+	elif not in_setup:
+		_refresh_status()
 
 
 func _mk_root(n: String) -> Node3D:
@@ -599,7 +660,7 @@ func _tree_layer(part: Dictionary, spots: Array, begin: float, end: float) -> Mu
 func _build_district_borders() -> void:
 	for d in range(D.MAYORS.size()):
 		var lbl := Label3D.new()
-		lbl.text = "%s\n%s" % [D.MAYORS[d]["name"], D.MAYORS[d]["district"]]
+		lbl.text = "%s\n%s" % [D.MAYORS[d]["display"], D.MAYORS[d]["district"]]
 		lbl.font_size = 64
 		lbl.outline_size = 14
 		lbl.pixel_size = 0.006
@@ -619,6 +680,7 @@ func _rebuild_territory(_mi: int) -> void:
 	_territory_root = Node3D.new()
 	_territory_root.name = "Territory"
 	add_child(_territory_root)
+	_territory_root.visible = not fp_mode
 	var strip_h := BoxMesh.new()
 	strip_h.size = Vector3(1.0, 0.02, 0.05)
 	var strip_v := BoxMesh.new()
@@ -750,7 +812,7 @@ func _build_avatars() -> void:
 		ring.position.y = 0.03
 		ring.material_override = _mat("ring", col, 2.5)
 		root.add_child(ring)
-		var name_lbl := _label("%s" % D.MAYORS[d]["name"], 34, col.lightened(0.3))
+		var name_lbl := _label("%s" % D.MAYORS[d]["display"], 34, col.lightened(0.3))
 		name_lbl.position = Vector3(0, 1.05, 0)
 		root.add_child(name_lbl)
 		var bubble := _label("", 28, Color(1, 1, 1))
@@ -878,6 +940,7 @@ func _build_tile(i: int, animate: bool) -> void:
 	var was_level := _prev_level[i]
 	_prev_kind[i] = k
 	_prev_level[i] = l
+	var had := _tile_nodes.has(i)
 	if _tile_nodes.has(i):
 		(_tile_nodes[i] as Node3D).queue_free()
 		_tile_nodes.erase(i)
@@ -886,6 +949,8 @@ func _build_tile(i: int, animate: bool) -> void:
 		_dirty_tree_chunks[_tree_chunk_of(x, y)] = true
 	# Woods are drawn by the tree chunks; only a burning forest needs its own node.
 	if k == D.EMPTY or (k == D.FOREST and sim.burning[i] == 0):
+		if had:
+			tile_cleared.emit(i)
 		return
 	var holder := Node3D.new()
 	holder.position = Vector3(x, 0.0, y)
@@ -1024,6 +1089,9 @@ func _build_tile(i: int, animate: bool) -> void:
 							light.omni_range = 1.2
 							light.light_energy = 0.8
 							beacon.add_child(light)
+	if model != null and k != D.ROAD:
+		holder.set_meta("building_path", model.scene_file_path)
+		holder.set_meta("building_xform", model.transform)   # final transform, before the grow tween
 	if model != null:
 		_register_animated(model)
 		_dress_windows(model, h)
@@ -1039,6 +1107,7 @@ func _build_tile(i: int, animate: bool) -> void:
 		var tw := create_tween()
 		tw.tween_property(model, "scale", target_scale, 0.55).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
 		_dust_puff(Vector3(x, 0.1, y))
+	tile_built.emit(i, holder)
 
 
 ## Draws an open construction site: kit stage visuals sized to the building it will become.
@@ -1156,6 +1225,13 @@ func _model_bounds(k: int, l: int, h: int) -> AABB:
 	var path := _model_path(k, l, h)
 	if path.is_empty():
 		return AABB(Vector3(-0.35, 0, -0.35), Vector3(0.7, 0.3, 0.7))
+	var b := _local_bounds(path)
+	var sc := _model_scale(path, D.is_zone(k), h)
+	return AABB(b.position * sc, b.size * sc)
+
+
+## Unscaled bounds of a model file in its own space, cached per file.
+func _local_bounds(path: String) -> AABB:
 	if not _bounds_cache.has(path):
 		var bb := AABB(Vector3(-0.35, 0, -0.35), Vector3(0.7, 0.5, 0.7))
 		var n := _inst(path)
@@ -1167,9 +1243,46 @@ func _model_bounds(k: int, l: int, h: int) -> AABB:
 				bb = a if e == parts[0] else bb.merge(a)
 			n.free()
 		_bounds_cache[path] = bb
-	var b: AABB = _bounds_cache[path]
-	var sc := _model_scale(path, D.is_zone(k), h)
-	return AABB(b.position * sc, b.size * sc)
+	return _bounds_cache[path]
+
+
+## World-space bounds of the building model on tile i (zone or service); AABB() (size zero) when the
+## tile has no building model: roads, rubble, sites without a model, empty land, woods.
+func building_aabb(i: int) -> AABB:
+	var holder: Node3D = _tile_nodes.get(i, null)
+	if holder == null or not is_instance_valid(holder) or not holder.has_meta("building_path"):
+		return AABB()
+	var path := str(holder.get_meta("building_path"))
+	if path.is_empty():
+		return AABB()
+	var local := _local_bounds(path)
+	return holder.transform * ((holder.get_meta("building_xform") as Transform3D) * local)
+
+
+## World-space bounds of the building a construction site on tile i will become (scaffolds, hoardings
+## and machines stay inside it); AABB() when tile i has no site. Built from
+## _model_bounds(target_kind, target_level, h) placed at the tile centre.
+func site_bounds(i: int) -> AABB:
+	var site: Dictionary = sim.sites.get(i, {})
+	if site.is_empty():
+		return AABB()
+	var x := D.tx(i)
+	var y := D.ty(i)
+	var h := absi(x * 73856093 ^ y * 19349663)
+	var b := _model_bounds(int(site["target_kind"]), int(site["target_level"]), h)
+	return AABB(b.position + Vector3(x, 0, y), b.size)
+
+
+## The Node3D holding everything drawn on tile i, or null.
+func tile_holder(i: int) -> Node3D:
+	return _tile_nodes.get(i, null)
+
+
+## Camera used for picking, shake and avatar picking (orbit rig camera or the FP camera).
+func set_camera(c: Camera3D) -> void:
+	camera = c
+	if avatars != null:
+		avatars.camera = c
 
 ## Zone models for a density level: the hand-made defaults plus every GLB in models/zones/<r|c|i><level>/.
 func _zone_options(k: int, l: int) -> Array:
@@ -1472,6 +1585,8 @@ func _dust_puff(pos: Vector3) -> void:
 # ------------------------------------------------------------------ status, overlays
 
 func _refresh_status() -> void:
+	if fp_mode:
+		return
 	var pm := _power_icons.multimesh
 	var wm := _water_icons.multimesh
 	var pc := 0
@@ -1495,6 +1610,8 @@ func _refresh_status() -> void:
 
 
 func set_overlay(mode: String) -> void:
+	if fp_mode and mode != "none":
+		return
 	overlay_mode = mode
 	_overlay_mm.visible = mode != "none"
 	# Data views hide the buildings so the value columns read clearly, like SimCity's info layers.
@@ -1675,9 +1792,13 @@ func _make_event_fx(ev: Dictionary) -> Node3D:
 	ring.position.y = 0.05
 	ring.material_override = _mat("evring", col, 2.5, 0.8)
 	ring.set_meta("pulse", true)
+	ring.set_meta("orbit_only", true)
+	ring.visible = not fp_mode
 	root.add_child(ring)
 	var lbl := _label("%s\n(%s)" % [ev["label"], ev.get("source", "")], 34, col.lightened(0.35))
 	lbl.position.y = 2.6
+	lbl.set_meta("orbit_only", true)
+	lbl.visible = not fp_mode
 	root.add_child(lbl)
 	return root
 
@@ -1708,6 +1829,8 @@ func show_mayor_thinking(mi: int) -> void:
 
 
 func show_citizen_voices(voices: Array) -> void:
+	if fp_mode:
+		return
 	for b in _bubbles:
 		if is_instance_valid(b["node"]):
 			(b["node"] as Node3D).queue_free()
@@ -1867,7 +1990,8 @@ func _process(delta: float) -> void:
 		for c: Vector2i in _dirty_tree_chunks.keys():
 			_refresh_tree_chunk(c)
 		_dirty_tree_chunks.clear()
-	_update_population(delta)
+	if not fp_mode:
+		_update_population(delta)
 	_status_timer += delta
 	if _status_timer > 0.6:
 		_status_timer = 0.0
@@ -1921,17 +2045,18 @@ func _process(delta: float) -> void:
 		for c in holder.get_children():
 			if c is OmniLight3D and c.has_meta("flicker"):
 				(c as OmniLight3D).light_energy = 2.0 + randf() * 1.2
-	if _shake > 0.0 and camera != null:
-		_shake = maxf(0.0, _shake - delta)
-		camera.h_offset = randf_range(-0.25, 0.25) * _shake
-		camera.v_offset = randf_range(-0.25, 0.25) * _shake
-	elif camera != null:
-		camera.h_offset = 0.0
-		camera.v_offset = 0.0
+	if not fp_mode:
+		if _shake > 0.0 and camera != null:
+			_shake = maxf(0.0, _shake - delta)
+			camera.h_offset = randf_range(-0.25, 0.25) * _shake
+			camera.v_offset = randf_range(-0.25, 0.25) * _shake
+		elif camera != null:
+			camera.h_offset = 0.0
+			camera.v_offset = 0.0
 
 
 func _unhandled_input(event: InputEvent) -> void:
-	if _cursor == null:
+	if fp_mode or _cursor == null:
 		return
 	if event is InputEventMouseButton:
 		var mb := event as InputEventMouseButton
