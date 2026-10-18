@@ -209,18 +209,18 @@ func _mayor_user_prompt(mi: int, day: int) -> String:
 		lines.append("YOUR RESIDENTS (each named resident speaks for about %d people): %s" % [int(sim.people.share), JSON.stringify(sim.people.district_mood(mi))])
 		for msg: Variant in sim.people.messages_for(mi, 6):
 			var md: Dictionary = msg
-			lines.append("RESIDENT %s (%s, mood %d/10) WRITES TO YOU: \"%s\"" % [md["name"], md["job"], int(md["mood"]), md["text"]])
+			lines.append("RESIDENT %s (%s, mood %d/10) WRITES TO YOU: \"%s\"" % [md["name"], md["job"], int(md["mood"]), D.debrand(str(md["text"]))])
 	else:
 		for v: Variant in last_voices:
 			var vd: Dictionary = v
 			if int(vd.get("district", -1)) == mi:
-				lines.append("A RESIDENT SAYS: \"%s\"" % vd.get("thought", ""))
+				lines.append("A RESIDENT SAYS: \"%s\"" % D.debrand(str(vd.get("thought", ""))))
 	if not last_paper.is_empty():
 		lines.append("TODAY'S GAZETTE HEADLINE: " + str(last_paper.get("headline", "")))
 	if not proposals.is_empty():
 		var pl: Array[String] = []
 		for key: String in proposals.keys():
-			pl.append("%s (proposed by %s, votes %s)" % [key, proposals[key]["by"], JSON.stringify(proposals[key]["votes"])])
+			pl.append("%s (proposed by %s, votes %s)" % [key, proposals[key]["by"], JSON.stringify(_votes_by_name(proposals[key]["votes"]))])
 		lines.append("PENDING ORDINANCE PROPOSALS (vote yes/no): " + "; ".join(PackedStringArray(pl)))
 	lines.append("ACTIVE ORDINANCES: " + JSON.stringify(sim.ordinances.keys()))
 	if not decree.is_empty() and sim.day - decree_day <= 1:
@@ -623,15 +623,7 @@ func _run_news(day: int) -> void:
 	var user := "Day %d front page.\nRecent events and statements:\n%s\nCity trend (last days): %s\nCity now: %s" % [day, "\n".join(PackedStringArray(feed)) if not feed.is_empty() else "(quiet day)", JSON.stringify(hist), JSON.stringify(sim.city_summary())]
 	var res: Dictionary = await client.chat_json("news", "gazette", str(agent["model"]), sys, user, day, 1000, 40.0, _heuristic_news.bind(feed))
 	var paper: Dictionary = res["data"].duplicate(true)
-	for key: String in ["headline", "editorial"]:
-		if paper.has(key):
-			paper[key] = D.debrand(str(paper[key]))
-	if typeof(paper.get("stories")) == TYPE_ARRAY:
-		for st: Variant in paper["stories"]:
-			if typeof(st) == TYPE_DICTIONARY:
-				for key: String in ["title", "body"]:
-					if (st as Dictionary).has(key):
-						(st as Dictionary)[key] = D.debrand(str((st as Dictionary)[key]))
+	_debrand_paper(paper)
 	paper["day"] = day
 	paper["source"] = res["source"]
 	last_paper = paper
@@ -734,11 +726,11 @@ func _run_council(day: int) -> void:
 	var agent: Dictionary = D.SUPPORT_AGENTS["council"]
 	var plist: Array = []
 	for key: String in proposals.keys():
-		plist.append({"key": key, "label": D.ORDINANCES[key]["label"], "effect": D.ORDINANCES[key]["desc"], "daily_cost": D.ORDINANCES[key]["cost"], "proposed_by": proposals[key]["by"], "votes": proposals[key]["votes"]})
+		plist.append({"key": key, "label": D.ORDINANCES[key]["label"], "effect": D.ORDINANCES[key]["desc"], "daily_cost": D.ORDINANCES[key]["cost"], "proposed_by": proposals[key]["by"], "votes": _votes_by_name(proposals[key]["votes"])})
 	var active: Array = []
 	for key: String in sim.ordinances.keys():
 		active.append({"key": key, "label": D.ORDINANCES[key]["label"], "since_day": sim.ordinances[key]})
-	var sys := "You are the Speaker of the GridFall City Council. Five AI mayors vote on ordinances; you rule on each proposal. Majority (3+ yes of 5) normally passes; with only 2 yes you may pass it only if city data strongly supports it. You may also repeal one active ordinance that no longer pays off. Reply ONLY JSON: {\"enact\":[keys],\"repeal\":[keys],\"statement\":\"<=220 chars ruling explained to citizens\"}"
+	var sys := "You are the Speaker of the GridFall City Council. Five elected mayors vote on ordinances; you rule on each proposal. Majority (3+ yes of 5) normally passes; with only 2 yes you may pass it only if city data strongly supports it. You may also repeal one active ordinance that no longer pays off. Reply ONLY JSON: {\"enact\":[keys],\"repeal\":[keys],\"statement\":\"<=220 chars ruling explained to citizens\"}"
 	var user := "Day %d. Proposals: %s\nActive: %s\nCity: %s" % [day, JSON.stringify(plist), JSON.stringify(active), JSON.stringify(sim.city_summary())]
 	var res: Dictionary = await client.chat_json("council", "speaker", str(agent["model"]), sys, user, day, 900, 40.0, _heuristic_council)
 	var data: Dictionary = res["data"]
@@ -759,9 +751,25 @@ func _run_council(day: int) -> void:
 			rejected.append(key)
 	for key in enacted + rejected:
 		proposals.erase(key)
-	var ruling := {"day": day, "enacted": enacted, "repealed": repealed, "rejected": rejected, "statement": str(data.get("statement", "")).left(240), "source": res["source"]}
+	var ruling := {"day": day, "enacted": enacted, "repealed": repealed, "rejected": rejected, "statement": D.debrand(str(data.get("statement", ""))).left(240), "source": res["source"]}
 	last_council = ruling
 	council_ruled.emit(ruling)
+
+
+## A proposal's votes keyed by mayor display name instead of mayor id, for prompts: the ids are the
+## lowercase brand words (argon, deepseek ...), which D.debrand does not catch.
+func _votes_by_name(votes: Variant) -> Dictionary:
+	var out := {}
+	if typeof(votes) != TYPE_DICTIONARY:
+		return out
+	for key: Variant in (votes as Dictionary).keys():
+		var who := str(key)
+		for m: Dictionary in D.MAYORS:
+			if str(m["id"]) == who:
+				who = str(m["display"])
+				break
+		out[who] = (votes as Dictionary)[key]
+	return out
 
 
 func _yes_votes(key: String) -> int:
@@ -875,3 +883,41 @@ func from_dict(d: Dictionary) -> void:
 	while complaints.size() < D.MAYORS.size():
 		complaints.append({})
 	client.from_dict(d.get("client", {}))
+	_debrand_restored()
+
+
+## De-brands a Gazette front page in place: headline, editorial, and each story's title and body.
+func _debrand_paper(paper: Dictionary) -> void:
+	for key: String in ["headline", "editorial"]:
+		if paper.has(key):
+			paper[key] = D.debrand(str(paper[key]))
+	if typeof(paper.get("stories")) == TYPE_ARRAY:
+		for st: Variant in paper["stories"]:
+			if typeof(st) == TYPE_DICTIONARY:
+				for key: String in ["title", "body"]:
+					if (st as Dictionary).has(key):
+						(st as Dictionary)[key] = D.debrand(str((st as Dictionary)[key]))
+
+
+## Saves from before the display names carry brand names in text that feeds the prompts and the
+## HUDs: proposal authors, mayor posts, thoughts and log entries, the Gazette and the council ruling.
+func _debrand_restored() -> void:
+	for key: Variant in proposals.keys():
+		if typeof(proposals[key]) == TYPE_DICTIONARY:
+			var pr: Dictionary = proposals[key]
+			pr["by"] = D.debrand(str(pr.get("by", "")))
+	for ms: Dictionary in mayor_state:
+		ms["post"] = D.debrand(str(ms.get("post", "")))
+		if typeof(ms.get("thoughts")) == TYPE_ARRAY:
+			var th: Array = ms["thoughts"]
+			for k in range(th.size()):
+				th[k] = D.debrand(str(th[k]))
+		if typeof(ms.get("log")) == TYPE_ARRAY:
+			for e: Variant in ms["log"]:
+				if typeof(e) == TYPE_DICTIONARY:
+					for key: String in ["thought", "post"]:
+						if (e as Dictionary).has(key):
+							(e as Dictionary)[key] = D.debrand(str((e as Dictionary)[key]))
+	_debrand_paper(last_paper)
+	if last_council.has("statement"):
+		last_council["statement"] = D.debrand(str(last_council["statement"]))

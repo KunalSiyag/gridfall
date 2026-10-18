@@ -1,7 +1,8 @@
 extends SceneTree
 ## S0 core (docs/fp/S0-foundation.md §17.3): kit fixtures, the feature registry, CollisionWorld
-## ground / surface / blocking / raycast, FpPlayer walking and save round trip, FpContext modals,
-## FpHud slots and AP.load_scene. Movement asserts against collision.boxes(), never building_aabb.
+## ground / surface / blocking / raycast, walking out of a box that appeared underfoot,
+## nearest_free, FpPlayer walking and save round trip, FpContext modals, FpHud slots and
+## AP.load_scene. Movement asserts against collision.boxes(), never building_aabb.
 
 const K := preload("res://tools/tests/fp_kit.gd")
 const D := preload("res://scripts/sim/sim_defs.gd")
@@ -24,6 +25,7 @@ func _init() -> void:
 	_check_blocking(ctx)
 	_check_context(ctx)
 	_check_assets()
+	_check_trapped(ctx)
 	K.finish(self, "FP_CORE_TEST", fails)
 
 
@@ -204,6 +206,45 @@ func _check_blocking(ctx: FpContext) -> void:
 	var down := col.raycast(p.eye_position(), Vector3(0.3, -1, 0), 1.0)
 	K.check(fails, bool(down["hit"]) and str(down["kind"]) == "ground", "raycast down hits the ground")
 	K.check(fails, col.is_blocked(Vector3(D.tx(target), WS.LOT_TOP, D.ty(target)), WS.PLAYER_RADIUS), "a building centre is blocked")
+
+
+## A building appears on the empty lot the player stands on: the player must still walk out.
+func _check_trapped(ctx: FpContext) -> void:
+	var sim := ctx.sim
+	var col := ctx.collision
+	var p := ctx.player
+	var lot := -1
+	for i in sim.active:
+		if sim.kind[i] == D.EMPTY and sim.terrain[i] != D.WATER and not sim.sites.has(i) and ctx.directory.frontage(i) >= 0 and col.boxes(i).is_empty():
+			lot = i
+			break
+	K.check(fails, lot >= 0, "fixture: an empty lot with a frontage road")
+	if lot < 0:
+		return
+	var f := ctx.directory.frontage(lot)
+	var out := Vector3(D.tx(f) - D.tx(lot), 0, D.ty(f) - D.ty(lot))
+	p.teleport(_centre(lot), rad_to_deg(atan2(-out.x, -out.z)))
+	K.check(fails, not col.is_blocked(p.position, WS.PLAYER_RADIUS), "the empty lot is free to stand on")
+	sim.kind[lot] = D.ZONE_R
+	sim.level[lot] = 1
+	ctx.view.call("_on_tiles_changed", PackedInt32Array([lot]))
+	K.check(fails, col.is_blocked(p.position, WS.PLAYER_RADIUS), "a house built on the lot now surrounds the player")
+	for _k in range(300):
+		p.simulate(Vector2(0, 1), true, DT)
+	K.check(fails, not col.is_blocked(p.position, WS.PLAYER_RADIUS), "the player walks out of the new house (at %s)" % str(p.position))
+	# Just inside the front face, backing into the house goes no deeper.
+	var b := col.box(lot).grow(WS.PLAYER_RADIUS)
+	var c := _centre(lot)
+	var face := (b.end.x - c.x if out.x > 0.0 else c.x - b.position.x) if out.x != 0.0 else (b.end.z - c.z if out.z > 0.0 else c.z - b.position.z)
+	var near := c + out * (face - 0.02)
+	p.teleport(near, rad_to_deg(atan2(-out.x, -out.z)))
+	K.check(fails, col.is_blocked(p.position, WS.PLAYER_RADIUS), "a point just inside the front face is blocked")
+	for _k in range(30):
+		p.simulate(Vector2(0, -1), false, DT)
+	var moved := Vector2(p.position.x - near.x, p.position.z - near.z).dot(Vector2(out.x, out.z))
+	K.check(fails, moved > -1e-6, "backing deeper into the house is refused (moved %.5f)" % moved)
+	var q := col.nearest_free(_centre(lot), WS.PLAYER_RADIUS, 2.0)
+	K.check(fails, not is_nan(q.x) and not col.is_blocked(q, WS.PLAYER_RADIUS) and Vector2(q.x - D.tx(lot), q.z - D.ty(lot)).length() < 1.0, "nearest_free finds a free point next to the house (%s)" % str(q))
 
 
 func _check_context(ctx: FpContext) -> void:

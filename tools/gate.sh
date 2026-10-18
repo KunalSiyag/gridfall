@@ -167,8 +167,22 @@ if [ "$MODE" = "render" ]; then
 			done
 		done
 		[ "$missing" -eq 0 ] || set_last_result "FAIL(photos)"
+		# D11 targets 1600x900; a window manager may open the window smaller than --resolution.
+		if [ "$missing" -eq 0 ] && ! grep -qE '^FP_PHOTO: DONE .* size=1600x900' "$GATE_LOG_DIR/fp_photo.log"; then
+			echo "gate: photos were not taken at 1600x900: $(grep -E '^FP_PHOTO: DONE' "$GATE_LOG_DIR/fp_photo.log")" >&2
+			set_last_result "FAIL(size)"
+		fi
 	fi
+	before=${#RESULTS[@]}
 	run_step fp_bench "FPBENCH: DONE" 400 1 -- "DISPLAY=$DISP" "FPBENCH_DIR=$BENCH_DIR" -- --path . --resolution 1600x900 --audio-driver Dummy -s tools/tests/fp_bench.gd
+	if [ ${#RESULTS[@]} -gt "$before" ] && [ "${RESULTS[$before]}" = "PASS" ]; then
+		rows=$(grep -cE '^FPBENCH \{' "$GATE_LOG_DIR/fp_bench.log")
+		good=$(grep -cE '^FPBENCH \{.*"viewport":"1600x900"' "$GATE_LOG_DIR/fp_bench.log")
+		if [ "$rows" -eq 0 ] || [ "$rows" -ne "$good" ]; then
+			echo "gate: fp_bench measured $good of $rows rows at 1600x900" >&2
+			set_last_result "FAIL(size)"
+		fi
+	fi
 fi
 
 echo
@@ -183,13 +197,13 @@ if [ "$MODE" = "render" ]; then
 		echo "FPBENCH (report-only)"
 		grep -E '^FPBENCH \{' "$GATE_LOG_DIR/fp_bench.log" | sed 's/^FPBENCH //' | python3 -I -c '
 import json, sys
-print("%-20s %7s %8s %8s %8s %7s %8s" % ("label", "fps", "avg", "p99", "max", "draws", "vram_mb"))
+print("%-20s %7s %8s %8s %8s %7s %8s %10s" % ("label", "fps", "avg", "p99", "max", "draws", "vram_mb", "viewport"))
 for line in sys.stdin:
     try:
         r = json.loads(line)
     except ValueError:
         continue
-    print("%-20s %7s %8s %8s %8s %7s %8s" % (r.get("label"), r.get("fps"), r.get("avg_ms"), r.get("p99_ms"), r.get("max_ms"), int(r.get("draws", 0)), r.get("vram_mb")))
+    print("%-20s %7s %8s %8s %8s %7s %8s %10s" % (r.get("label"), r.get("fps"), r.get("avg_ms"), r.get("p99_ms"), r.get("max_ms"), int(r.get("draws", 0)), r.get("vram_mb"), r.get("viewport")))
 '
 	fi
 	echo "photos: $PHOTO_DIR"

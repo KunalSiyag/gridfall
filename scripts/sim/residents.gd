@@ -674,19 +674,19 @@ func apply_plan(r: Dictionary, d: Dictionary, source: String, model: String) -> 
 	}
 	r["plan"] = p
 	_set_mood(r, d.get("mood", r["mood"]))
-	r["mood_reason"] = str(d.get("mood_reason", "")).left(100)
+	r["mood_reason"] = D.debrand(str(d.get("mood_reason", ""))).left(100)
 	r["intent"] = _pick(str(d.get("intent", "stay")), INTENTS, "stay")
 	r["recommend"] = clampf(_num(d.get("recommend"), float(r["recommend"])), 0.0, 10.0)
 	r["approve"] = clampf(_num(d.get("approve_mayor"), float(r["approve"])), 0.0, 10.0)
 	r["complaint"] = _pick(str(d.get("complaint", "none")).to_lower(), COMPLAINTS, "none")
-	r["thought"] = str(d.get("thought", "")).left(220)
-	r["say"] = str(d.get("say", "")).left(90)
+	r["thought"] = D.debrand(str(d.get("thought", ""))).left(220)
+	r["say"] = D.debrand(str(d.get("say", ""))).left(90)
 	if not str(r["say"]).strip_edges().is_empty():
 		resident_said.emit(str(r["id"]), str(r["say"]), "say")
 	r["source"] = source
 	r["model"] = model
 	r["plan_day"] = sim.day
-	var msg := str(d.get("message_to_mayor", "")).strip_edges().left(180)
+	var msg := D.debrand(str(d.get("message_to_mayor", ""))).strip_edges().left(180)
 	r["message"] = msg
 	if not msg.is_empty() and msg.to_lower() not in ["none", "n/a", "-"]:
 		_post_message(r, msg, "daily")
@@ -701,10 +701,10 @@ func respond(r: Dictionary, ev: Dictionary, d: Dictionary, source: String, model
 	var action := _pick(str(d.get("action", "ignore")).to_lower(), ACTIONS, "ignore")
 	if d.has("mood"):
 		_set_mood(r, d["mood"])
-	var th := str(d.get("thought", "")).left(200)
+	var th := D.debrand(str(d.get("thought", ""))).left(200)
 	if not th.is_empty():
 		r["thought"] = th
-	r["say"] = str(d.get("say", "")).left(90)
+	r["say"] = D.debrand(str(d.get("say", ""))).left(90)
 	if not str(r["say"]).strip_edges().is_empty():
 		resident_said.emit(str(r["id"]), str(r["say"]), "react")
 	r["reaction"] = action
@@ -731,7 +731,7 @@ func respond(r: Dictionary, ev: Dictionary, d: Dictionary, source: String, model
 			_remember(r, "got away from " + where)
 		"avoid":
 			_remember(r, "stayed clear of " + where)
-	var msg := str(d.get("message_to_mayor", "")).strip_edges().left(180)
+	var msg := D.debrand(str(d.get("message_to_mayor", ""))).strip_edges().left(180)
 	if not msg.is_empty() and msg.to_lower() not in ["none", "n/a", "-"]:
 		_post_message(r, msg, "incident")
 	return action

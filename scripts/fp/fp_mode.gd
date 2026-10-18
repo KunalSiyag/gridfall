@@ -12,7 +12,7 @@ const DEFAULT_SETTINGS := {
 	"quality": "medium", "show_hud": true, "music_volume_db": 0.0, "sfx_volume_db": 0.0,
 }
 ## Save keys FpMode owns; a feature id must not use them.
-const RESERVED_KEYS := ["version", "player", "time_scale"]
+const RESERVED_KEYS := ["version", "player", "time_scale", "day_phase"]
 const SAVE_VERSION := 1
 
 var ctx: FpContext
@@ -70,6 +70,8 @@ func setup(main: Node3D) -> void:
 	ctx.collision = collision
 	var world := Node3D.new()
 	world.name = "World"
+	# FpMode runs while paused; the world (agents, emitters, posters) must freeze with the tree.
+	world.process_mode = Node.PROCESS_MODE_PAUSABLE
 	add_child(world)
 	ctx.world_root = world
 	player = FpPlayer.new()
@@ -104,6 +106,7 @@ func setup(main: Node3D) -> void:
 	ctx.view.world_rebuilt.connect(_on_world_rebuilt)
 	ctx.view.tile_built.connect(collision.on_tile_built)
 	ctx.view.tile_cleared.connect(collision.on_tile_cleared)
+	ctx.view.tile_built.connect(_on_tile_built)
 	bus.modal_changed.connect(func(_a: bool) -> void: _update_mouse_mode())
 	_set_up = true
 	_on_world_rebuilt()
@@ -127,6 +130,8 @@ func teardown() -> void:
 			ctx.view.tile_built.disconnect(collision.on_tile_built)
 		if ctx.view.tile_cleared.is_connected(collision.on_tile_cleared):
 			ctx.view.tile_cleared.disconnect(collision.on_tile_cleared)
+		if ctx.view.tile_built.is_connected(_on_tile_built):
+			ctx.view.tile_built.disconnect(_on_tile_built)
 	if hud != null:
 		hud.queue_free()
 		hud = null
@@ -138,9 +143,12 @@ func teardown() -> void:
 		Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
 
 
-## Save section, see S0 §6.4.
+## Save section, see S0 §6.4. day_phase is how far the current 300 s growth tick has run (0..1):
+## the sim saves only whole ticks, which would rewind the FP clock by up to 6 game hours.
 func to_dict() -> Dictionary:
 	var d := {"version": SAVE_VERSION, "player": player.to_dict() if player != null else {}, "time_scale": time_scale}
+	if ctx != null and ctx.sim != null:
+		d["day_phase"] = ctx.sim.tick_phase()
 	for f in _feature_list():
 		var id := f.feature_id()
 		if id.is_empty() or id in RESERVED_KEYS:
@@ -151,10 +159,15 @@ func to_dict() -> Dictionary:
 	return d
 
 
-## Restores the save section. {} means a fresh city: player at spawn_point(), features reset.
+## Restores the save section. {} means a fresh city: player at spawn_point(), features reset,
+## and the tick phase at 0 (also for saves without day_phase).
 func from_dict(d: Dictionary) -> void:
+	if ctx != null and ctx.sim != null:
+		var ph: Variant = d.get("day_phase", 0.0)
+		ctx.sim.set_tick_phase(float(ph) if typeof(ph) in [TYPE_INT, TYPE_FLOAT] else 0.0)
 	if player != null:
 		player.from_dict(d.get("player", {}) if typeof(d.get("player")) == TYPE_DICTIONARY else {})
+		unstick_player()
 	if d.has("time_scale"):
 		set_time_scale(int(d["time_scale"]))
 	for f in _feature_list():
@@ -267,6 +280,28 @@ func spawn_point() -> Dictionary:
 	var g := collision.ground_height(pos) if collision != null else NAN
 	pos.y = g if not is_nan(g) else 0.0
 	return {"pos": pos, "yaw": yaw}
+
+
+## Moves the player out of any building or site box they stand in (one can appear on the lot they
+## stand on) to the nearest free point, else to the spawn point. True if the player was moved.
+func unstick_player() -> bool:
+	if player == null or collision == null or not collision.is_blocked(player.position, WS.PLAYER_RADIUS):
+		return false
+	var p := collision.nearest_free(player.position, WS.PLAYER_RADIUS, 2.0)
+	if is_nan(p.x):
+		p = spawn_point()["pos"]
+	player.teleport(p, rad_to_deg(player.yaw), rad_to_deg(player.pitch))
+	return true
+
+
+func _on_tile_built(i: int, _holder: Node3D) -> void:
+	if ctx.view.in_setup or player == null:
+		return
+	var pt := player.tile()
+	if pt < 0 or absi(D.tx(i) - D.tx(pt)) > 1 or absi(D.ty(i) - D.ty(pt)) > 1:
+		return
+	if unstick_player() and bus != null:
+		bus.toast.emit("Moved you clear of new construction.", "info")
 
 
 func _on_world_rebuilt() -> void:

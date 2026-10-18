@@ -47,7 +47,8 @@ var day: int = 1
 var tick_in_day: int = 0
 var speed: int = 1
 ## Real seconds per game day at speed 1. Orbit and tests keep SimDefs.BASE_DAY_SECONDS (12);
-## first person sets WS.FP_DAY_SECONDS (1200). Not saved: the view mode sets it at boot.
+## first person sets WS.FP_DAY_SECONDS (1200). Not saved: the view mode sets it at boot. Change it
+## through set_day_seconds() while a day is running, so the time of day stays put.
 var day_seconds: float = D.BASE_DAY_SECONDS
 var waiting_for_ai: bool = false
 var day_gate: Callable = Callable()
@@ -400,6 +401,22 @@ func day_progress() -> float:
 ## Real seconds per growth tick at speed 1.
 func tick_seconds() -> float:
 	return day_seconds / float(D.GROWTH_TICKS_PER_DAY)
+
+
+## Changes the day length and rescales the time already accumulated toward the next tick, so
+## day_progress() and tick_phase() are unchanged (a raw switch from a 1200 s to a 12 s day would
+## leave up to a whole 300 s tick pending and run dozens of ticks at once).
+func set_day_seconds(s: float) -> void:
+	if s <= 0.0:
+		return
+	if day_seconds > 0.0:
+		_time_accum *= s / day_seconds
+	day_seconds = s
+
+
+## Sets how far the current growth tick has run (0..1), e.g. when a save restores the time of day.
+func set_tick_phase(p: float) -> void:
+	_time_accum = clampf(p, 0.0, 1.0) * tick_seconds()
 
 
 ## Runs the rest of today's growth ticks synchronously so the next day starts at dawn

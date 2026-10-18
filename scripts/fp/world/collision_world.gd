@@ -101,20 +101,76 @@ func is_blocked(p: Vector3, radius: float) -> bool:
 
 
 ## Moves from `from` by `motion` (y ignored), sliding along blockers. S0: try full move, else x-only,
-## else z-only, else stay. Returns the new feet position (y unchanged).
+## else z-only, else stay. When `from` already overlaps a box (a building or site appeared where
+## the player stands), a candidate is also accepted if it enters no new box and goes no deeper into
+## the ones it overlaps, so the player can always walk out. Returns the new feet position (y unchanged).
 func move_and_slide(from: Vector3, motion: Vector3, radius: float) -> Vector3:
 	var full := Vector3(from.x + motion.x, from.y, from.z + motion.z)
 	if not is_blocked(full, radius):
 		return full
-	if motion.x != 0.0:
-		var xo := Vector3(from.x + motion.x, from.y, from.z)
-		if not is_blocked(xo, radius):
-			return xo
-	if motion.z != 0.0:
-		var zo := Vector3(from.x, from.y, from.z + motion.z)
-		if not is_blocked(zo, radius):
-			return zo
+	var xo := Vector3(from.x + motion.x, from.y, from.z)
+	if motion.x != 0.0 and not is_blocked(xo, radius):
+		return xo
+	var zo := Vector3(from.x, from.y, from.z + motion.z)
+	if motion.z != 0.0 and not is_blocked(zo, radius):
+		return zo
+	var d0 := _overlaps(from, radius)
+	if d0.is_empty():
+		return from
+	for c: Vector3 in [full, xo, zo]:
+		if c == from or is_nan(ground_height(c)):
+			continue
+		var d1 := _overlaps(c, radius)
+		var ok := true
+		for i: int in d1.keys():
+			if not d0.has(i) or float(d1[i]) > float(d0[i]) + 1e-9:
+				ok = false
+				break
+		if ok:
+			return c
 	return from
+
+
+## The closest point to p (xz, y on the ground) where a circle of `radius` is not blocked, searched
+## on rings 1 m apart out to max_dist; Vector3(NAN, NAN, NAN) when there is none.
+func nearest_free(p: Vector3, radius: float, max_dist: float) -> Vector3:
+	if not is_blocked(p, radius):
+		return p
+	var step := 1.0 * WS.M
+	var rings := ceili(max_dist / step)
+	for k in range(1, rings + 1):
+		var r := step * float(k)
+		var n := maxi(8, ceili(TAU * r / step))
+		for j in range(n):
+			var a := TAU * float(j) / float(n)
+			var q := Vector3(p.x + cos(a) * r, p.y, p.z + sin(a) * r)
+			var g := ground_height(q)
+			if is_nan(g):
+				continue
+			q.y = g
+			if not is_blocked(q, radius):
+				return q
+	return Vector3(NAN, NAN, NAN)
+
+
+## Tile index -> how far p sits inside that tile's box grown by radius (distance to its nearest
+## side in xz), for every box a circle of `radius` at p overlaps (the is_blocked rule).
+func _overlaps(p: Vector3, radius: float) -> Dictionary:
+	var out := {}
+	var cx := roundi(p.x)
+	var cz := roundi(p.z)
+	for dz in range(-1, 2):
+		for dx in range(-1, 2):
+			if not D.in_bounds(cx + dx, cz + dz):
+				continue
+			var i := D.idx(cx + dx, cz + dz)
+			var b := box(i)
+			if b.size.x <= 0.0 or p.y >= b.end.y:
+				continue
+			var depth := minf(minf(p.x - (b.position.x - radius), b.end.x + radius - p.x), minf(p.z - (b.position.z - radius), b.end.z + radius - p.z))
+			if depth > 0.0:
+				out[i] = depth
+	return out
 
 
 ## Ray against building boxes (tile DDA, ≤ max_dist) and the ground.

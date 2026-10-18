@@ -1,8 +1,10 @@
 extends Node
 ## First-person headless smoke (docs/fp/S0-foundation.md §17.4), run inside Main through
 ## GRIDFALL_FP_SMOKE=1: grows a city offline, then checks the FP wiring, time controls, walking,
-## blocking, no camera yank, directory, de-branding, HUD, pause, save/load, every feature's
-## self_test and the orbit round trip. Failures are collected; prints FP_SMOKE: PASS|FAIL.
+## blocking, no camera yank, directory, de-branding, HUD, pause (the world freezes), save/load
+## (time of day included), getting out of a box that appears underfoot, hidden resident bubbles,
+## every feature's self_test and the orbit round trip (no tick burst). Failures are collected;
+## prints FP_SMOKE: PASS|FAIL.
 
 const D := preload("res://scripts/sim/sim_defs.gd")
 const WS := preload("res://scripts/fp/world_scale.gd")
@@ -148,10 +150,14 @@ func run(p_main: Node) -> void:
 	# 10. Pause.
 	fp.set_paused(true)
 	check(get_tree().paused and ctx.is_modal() and pauses.has(true), "set_paused(true) pauses the tree and pushes a modal")
+	check(not ctx.world_root.can_process() and not fp.player.can_process() and fp.hud.can_process(), "paused: world_root and the player freeze, the HUD runs")
 	fp.set_paused(false)
-	check(not get_tree().paused and not ctx.is_modal(), "unpause")
-	# 11. Save and load.
+	check(not get_tree().paused and not ctx.is_modal() and ctx.world_root.can_process(), "unpause")
+	# 11. Save and load (with the time of day inside the current 300 s tick).
+	sim.set_tick_phase(0.4)
+	var progress := sim.day_progress()
 	main.save_game(SAVE)
+	sim.set_tick_phase(0.9)
 	var saved: Variant = JSON.parse_string(FileAccess.get_file_as_string(SAVE))
 	var has_pos := typeof(saved) == TYPE_DICTIONARY and typeof((saved as Dictionary).get("fp", {}).get("player", {}).get("pos")) == TYPE_ARRAY
 	check(has_pos, "the save carries fp.player.pos")
@@ -163,9 +169,27 @@ func run(p_main: Node) -> void:
 	check(p.position.distance_to(here) < 0.01, "load restores the player (%s vs %s)" % [p.position, here])
 	check(world_ready > ready0, "world_ready fired again on load")
 	check(view.fp_mode and view.camera == fp.player.camera and get_viewport().get_camera_3d() == fp.player.camera, "after load the FP camera is still in charge")
+	check(absf(sim.day_progress() - progress) < 0.01, "load restores the time of day (%.4f vs %.4f)" % [sim.day_progress(), progress])
+	# 11b. A box appearing underfoot never traps the player.
+	var hall_c := Vector3(D.tx(hall), 0, D.ty(hall))
+	p.teleport(hall_c, 0.0)
+	var trapped := fp.collision.is_blocked(p.position, WS.PLAYER_RADIUS)
+	view.tile_built.emit(hall, view.tile_holder(hall))
+	check(trapped and not fp.collision.is_blocked(p.position, WS.PLAYER_RADIUS) and p.position.distance_to(hall_c) < 2.0, "tile_built next to the player moves them clear (to %s)" % str(p.position))
+	if front >= 0:
+		var outd := Vector3(D.tx(front) - D.tx(hall), 0, D.ty(front) - D.ty(hall))
+		p.teleport(hall_c, rad_to_deg(atan2(-outd.x, -outd.z)))
+		for _k in range(600):
+			p.simulate(Vector2(0, 1), true, DT)
+		check(not fp.collision.is_blocked(p.position, WS.PLAYER_RADIUS), "the player can walk out of a box they stand in (to %s)" % str(p.position))
+	p.teleport(here, 0.0)
 	# 12. Feature self-tests.
 	for _k in range(30):
 		await get_tree().process_frame
+	var labels := _visible_labels(view)
+	var bubbles := _visible_labels(view.avatars) if view.avatars != null else 0
+	print("FP_SMOKE: visible Label3D under CityView: %d (resident bubbles %d)" % [labels, bubbles])
+	check(view.avatars == null or not view.avatars.fp_hidden or bubbles == 0, "resident speech bubbles stay hidden while avatars.fp_hidden")
 	for e: Dictionary in REGISTRY.FEATURES:
 		var f := ctx.feature(str(e["id"]))
 		var res: Dictionary = f.self_test() if f != null else {"ok": false, "detail": "missing"}
@@ -176,8 +200,18 @@ func run(p_main: Node) -> void:
 	for _k in range(60):
 		await get_tree().process_frame
 	var npings := pings.size()
+	# 30 s of real play at 8x leaves most of a 300 s tick pending; the 12 s orbit day must not
+	# drain it as dozens of ticks.
+	fp.set_time_scale(8)
+	sim.set_tick_phase(0.8)
+	var progress0 := sim.day_progress()
+	var tick0 := sim.global_tick()
 	main.exit_fp()
-	await get_tree().process_frame
+	check(absf(sim.day_progress() - progress0) < 1e-4, "exit_fp keeps the time of day (%.4f vs %.4f)" % [sim.day_progress(), progress0])
+	for _k in range(10):
+		await get_tree().process_frame
+	var speed_btns: Dictionary = main.hud.get("_speed_btns")
+	check(sim.global_tick() - tick0 <= 1 and sim.speed == 1 and (speed_btns[1] as Button).button_pressed, "after exit_fp: %d ticks in 10 frames, orbit speed %d shown" % [sim.global_tick() - tick0, sim.speed])
 	check(main.fp == null and main.view_mode == "orbit" and get_viewport().get_camera_3d() == main.camera and main.hud.visible and not view.fp_mode and is_equal_approx(sim.day_seconds, 12.0), "exit_fp returns to the orbit view")
 	main.enter_fp()
 	await get_tree().process_frame
@@ -209,6 +243,13 @@ func _orbit_layers_hidden(view: CityView) -> bool:
 		if (av["root"] as Node3D).visible:
 			return false
 	return true
+
+
+func _visible_labels(n: Node) -> int:
+	var c := 1 if n is Label3D and (n as Label3D).is_visible_in_tree() else 0
+	for k in n.get_children():
+		c += _visible_labels(k)
+	return c
 
 
 func _find_kind(sim: CitySim, k: int) -> int:

@@ -191,7 +191,7 @@ func setup(p_sim: CitySim, p_camera: Camera3D) -> void:
 		sim.tiles_changed.connect(_on_tiles_changed)
 		sim.event_started.connect(func(ev: Dictionary) -> void:
 			_sync_events()
-			if str(ev["type"]) == "earthquake":
+			if str(ev["type"]) == "earthquake" and not fp_mode:
 				_shake = 1.2
 		)
 		sim.event_ended.connect(func(_ev: Dictionary) -> void: _sync_events())
@@ -217,6 +217,9 @@ func _apply_fp_visibility() -> void:
 	if _labels_root == null:
 		return
 	var orbit := not fp_mode
+	_shake = 0.0
+	if avatars != null:
+		avatars.fp_hidden = fp_mode
 	_labels_root.visible = orbit
 	if _territory_root != null:
 		_territory_root.visible = orbit
@@ -660,7 +663,7 @@ func _tree_layer(part: Dictionary, spots: Array, begin: float, end: float) -> Mu
 func _build_district_borders() -> void:
 	for d in range(D.MAYORS.size()):
 		var lbl := Label3D.new()
-		lbl.text = "%s\n%s" % [D.MAYORS[d]["display"], D.MAYORS[d]["district"]]
+		lbl.text = "%s\n%s" % [D.MAYORS[d]["name"], D.MAYORS[d]["district"]]
 		lbl.font_size = 64
 		lbl.outline_size = 14
 		lbl.pixel_size = 0.006
@@ -812,7 +815,7 @@ func _build_avatars() -> void:
 		ring.position.y = 0.03
 		ring.material_override = _mat("ring", col, 2.5)
 		root.add_child(ring)
-		var name_lbl := _label("%s" % D.MAYORS[d]["display"], 34, col.lightened(0.3))
+		var name_lbl := _label("%s" % D.MAYORS[d]["name"], 34, col.lightened(0.3))
 		name_lbl.position = Vector3(0, 1.05, 0)
 		root.add_child(name_lbl)
 		var bubble := _label("", 28, Color(1, 1, 1))
@@ -1260,8 +1263,10 @@ func building_aabb(i: int) -> AABB:
 
 
 ## World-space bounds of the building a construction site on tile i will become (scaffolds, hoardings
-## and machines stay inside it); AABB() when tile i has no site. Built from
-## _model_bounds(target_kind, target_level, h) placed at the tile centre.
+## and machines stay inside it), from _model_bounds(target_kind, target_level, h) at the tile centre.
+## A demolition in its "demolition" stage gives the old building's bounds (the kit still draws it).
+## AABB() when tile i has no site, for road and bridge works (a gravel strip, not a building) and
+## for the other demolition stages and plans (hauling, clearing).
 func site_bounds(i: int) -> AABB:
 	var site: Dictionary = sim.sites.get(i, {})
 	if site.is_empty():
@@ -1269,7 +1274,19 @@ func site_bounds(i: int) -> AABB:
 	var x := D.tx(i)
 	var y := D.ty(i)
 	var h := absi(x * 73856093 ^ y * 19349663)
-	var b := _model_bounds(int(site["target_kind"]), int(site["target_level"]), h)
+	var b := AABB()
+	match str(site["type"]):
+		"road":
+			return AABB()
+		"demolish":
+			if str(site["plan"]) != "demolish" or sim.site_stage_name(site) != "demolition":
+				return AABB()
+			var fk := int(site["from_kind"])
+			b = _model_bounds(fk, maxi(int(site["from_level"]), 1), h)
+			if D.is_zone(fk):
+				b = Transform3D(Basis(Vector3.UP, deg_to_rad(float((h % 4) * 90))), Vector3.ZERO) * b
+		_:
+			b = _model_bounds(int(site["target_kind"]), int(site["target_level"]), h)
 	return AABB(b.position + Vector3(x, 0, y), b.size)
 
 

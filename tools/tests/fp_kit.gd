@@ -27,7 +27,9 @@ const GROW_CAP_TICKS := 120
 
 
 ## CitySim(new_city(seed)) + Residents (+ ResidentMinds when minds = true) + a GmiClient (the
-## injected client, else a new offline one with live_enabled = false), all under root.
+## injected client, else a new offline one with live_enabled = false), all under root. An injected
+## client keeps the live_enabled and api_key it came with: GmiClient._ready (run by add_child) would
+## otherwise force live off under GRIDFALL_OFFLINE=1 and load the real key into the fake.
 ## Returns {"sim", "people", "minds", "client"}.
 static func make_sim(root: Node, seed: int = 7, minds: bool = false, client: GmiClient = null) -> Dictionary:
 	var sim: CitySim = (load("res://scripts/sim/city_sim.gd") as GDScript).new()
@@ -39,7 +41,12 @@ static func make_sim(root: Node, seed: int = 7, minds: bool = false, client: Gmi
 		c = (load("res://scripts/ai/gmi_client.gd") as GDScript).new()
 		c.name = "GmiClient"
 	if not c.is_inside_tree():
+		var live := c.live_enabled
+		var key := c.api_key
 		root.add_child(c)
+		if client != null:
+			c.live_enabled = live
+			c.api_key = key
 	if client == null:
 		c.live_enabled = false
 	var people: Residents = (load("res://scripts/sim/residents.gd") as GDScript).new()
@@ -110,12 +117,23 @@ static func make_ctx(root: Node, opts: Dictionary = {}) -> FpContext:
 	ctx.residents = s["people"]
 	ctx.minds = s["minds"]
 	ctx.client = s["client"]
-	# 2. growth, before the brain and the view exist.
+	# 2. growth, before the brain and the view exist. Always offline: with an injected client the
+	# minds talk to an offline stand-in (same replay cache) meanwhile, so the recipe stays
+	# probe-verified and the fake sees no call before the test starts.
+	var stand_in: GmiClient = null
+	if ctx.minds != null and o["client"] != null and (bool(o["grow"]) or int(o["ticks"]) > 0):
+		stand_in = (load("res://scripts/ai/gmi_client.gd") as GDScript).new()
+		stand_in.live_enabled = false
+		stand_in.replay_cache = ctx.client.replay_cache
+		ctx.minds.client = stand_in
 	if bool(o["grow"]):
 		grow(ctx.sim, ctx.residents, maxi(int(o["ticks"]), 40))
 	elif int(o["ticks"]) > 0:
 		ctx.sim.start()
 		ticks(ctx.sim, int(o["ticks"]))
+	if stand_in != null:
+		ctx.minds.client = ctx.client
+		stand_in.free()
 	# 3. brain.
 	var brain: CityBrain = (load("res://scripts/ai/city_brain.gd") as GDScript).new()
 	brain.name = "CityBrain"
@@ -173,6 +191,7 @@ static func make_ctx(root: Node, opts: Dictionary = {}) -> FpContext:
 		ctx.view.tile_cleared.connect(col.on_tile_cleared)
 	var world := Node3D.new()
 	world.name = "World"
+	world.process_mode = Node.PROCESS_MODE_PAUSABLE
 	kit.add_child(world)
 	ctx.world_root = world
 	var features := Node3D.new()

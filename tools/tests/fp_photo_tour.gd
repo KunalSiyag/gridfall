@@ -5,13 +5,17 @@ extends Node
 
 const SHOTS := preload("res://tools/tests/fp_shots.gd")
 const REGISTRY := preload("res://scripts/fp/fp_features.gd")
-## Seconds to let growth-time toasts and resident speech bubbles fade before the first shot.
+## Seconds to let growth-time toasts fade before the first shot.
 const SETTLE_SECONDS := 7.5
+## Shot size (D11). Some window managers open the window smaller than --resolution, so the tour
+## sets it and prints the real size on the DONE line (the gate checks it).
+const TARGET_SIZE := Vector2i(1600, 900)
 
 
 ## Grows the city, then walks the shot list. dir is the output folder.
 func run(main: Node, dir: String) -> void:
 	DirAccess.make_dir_recursive_absolute(dir)
+	get_tree().root.size = TARGET_SIZE
 	var sim: CitySim = main.sim
 	var fp: FpMode = main.fp
 	sim.start()
@@ -56,10 +60,19 @@ func run(main: Node, dir: String) -> void:
 		if f != null and not str(s.get("restore", "")).is_empty():
 			f.call(str(s["restore"]))
 		var p := player.position
-		print("FP_PHOTO: shot %s pos=(%.3f,%.3f,%.3f) yaw=%.1f" % [s["name"], p.x, p.y, p.z, float(s.get("yaw", 0.0))])
-	print("FP_PHOTO: DONE n=%d day=%d pop=%d" % [shots.size(), sim.day, int(sim.stats["population"])])
+		print("FP_PHOTO: shot %s pos=(%.3f,%.3f,%.3f) yaw=%.1f labels=%d" % [s["name"], p.x, p.y, p.z, float(s.get("yaw", 0.0)), _visible_labels(main.view)])
+	var size := get_tree().root.size
+	print("FP_PHOTO: DONE n=%d day=%d pop=%d size=%dx%d" % [shots.size(), sim.day, int(sim.stats["population"]), size.x, size.y])
 	main.audio._exit_tree()
 	get_tree().quit(0)
+
+
+## Visible Label3Ds under the city view (FP shows none until a slice adds street-level text).
+func _visible_labels(n: Node) -> int:
+	var c := 1 if n is Label3D and (n as Label3D).is_visible_in_tree() else 0
+	for k in n.get_children():
+		c += _visible_labels(k)
+	return c
 
 
 func _save(dir: String, shot_name: String) -> void:

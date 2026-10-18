@@ -17,6 +17,8 @@ var sim: CitySim
 var people: Residents
 var camera: Camera3D
 var selected: String = ""
+## Set by CityView in first person (S0 seam): speech bubbles stay hidden until slice E restyles them.
+var fp_hidden: bool = false
 var _avatars: Dictionary = {}
 var _people_scenes: Array = []
 var _car_scenes: Array = []
@@ -231,7 +233,7 @@ func _process(delta: float) -> void:
 				a["bubble_t"] = 7.0
 		if float(a["bubble_t"]) > 0.0:
 			a["bubble_t"] = float(a["bubble_t"]) - delta
-		var show_bubble := float(a["bubble_t"]) > 0.0 and root.visible and _bubbles < MAX_BUBBLES
+		var show_bubble := float(a["bubble_t"]) > 0.0 and root.visible and _bubbles < MAX_BUBBLES and not fp_hidden
 		(a["bubble"] as Label3D).visible = show_bubble
 		if show_bubble:
 			_bubbles += 1

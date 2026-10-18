@@ -79,6 +79,12 @@ Founding builds made before anyone lives in the city, and runs with residents of
 
 ## Player controls
 
+`godot --path .` starts in **first person** at street level. Set `GRIDFALL_VIEW=orbit` to play the orbit city builder with the full HUD described below.
+
+- **First person:** WASD or the arrow keys walk, Shift runs, mouse to look (click to capture the pointer), `]` and `[` change time speed (1x, 2x, 4x, 8x), `T` skips to the next morning, `Esc` pauses, `F1` hides the HUD, `F5` saves, `F9` loads.
+
+The orbit view (`GRIDFALL_VIEW=orbit`):
+
 - **Top bar:** day, population, jobs, funds, happiness, the RCI demand meter, power/water/sewage load, GMI call status, speed, Save/Load/New, Live GMI toggle, Mute.
 - **Overlays tab:** 3D data views for power, water, pollution, crime, land value, traffic, happiness, services and districts.
 - **Disasters tab:** arm a disaster, then click the map. There is also a random target option and "Restore all".
@@ -108,13 +114,28 @@ GRIDFALL_SPEED=4     # starting game speed
 GRIDFALL_RESIDENTS=0 # no AI residents (old formula behaviour, instant construction)
 LIVE_RESIDENTS=30    # residents_live test: how many residents call GMI (default 30)
 GRIDFALL_HOUR=21.5   # freeze the clock at this hour (e.g. for night screenshots)
+GRIDFALL_VIEW=orbit  # play the legacy orbit view with the full CityHud (default: first person)
+GRIDFALL_MOUSE=free  # first person: never capture the mouse pointer
+GRIDFALL_FP_SMOKE=1  # headless first-person smoke test (see Running)
+GRIDFALL_FP_PHOTO_DIR=/tmp/gf_fp  # first-person photo tour: save eye-level shots to this folder
 ```
 
 ## Running
 
 ```bash
-# Play
+# Play (first person; add GRIDFALL_VIEW=orbit for the orbit view and CityHud)
 godot --path .
+GRIDFALL_VIEW=orbit godot --path .
+
+# The gate: parse check and unit tests (quick), plus the orbit and first-person smokes (full),
+# or the windowed first-person photo tour and perf report (render). Runs offline in temp user dirs.
+tools/gate.sh quick
+tools/gate.sh full
+tools/gate.sh render
+
+# First-person headless smoke and photo tour
+GRIDFALL_FP_SMOKE=1 godot --headless --path .
+GRIDFALL_FP_PHOTO_DIR=/tmp/gf_fp GRIDFALL_PHOTO_DAYS=6 godot --path . --resolution 1600x900
 
 # Headless smoke test (offline: 6 days, quake + crews, overlays, inspector, save/load round trip)
 GRIDFALL_SMOKE_TEST=1 godot --headless --path .

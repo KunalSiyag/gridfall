@@ -303,6 +303,14 @@ static func debrand(text: String) -> String:
 			var full := RegEx.create_from_string("\\b%s(?:\\.\\d+)*(?:-(?:[A-Z][A-Za-z0-9]*|\\d[A-Za-z0-9.]*))*\\b" % _regex_escape(brand))
 			var bare := RegEx.create_from_string("\\b%s\\b" % _regex_escape(word))
 			_debrand_res.append([full, bare])
+	# Fast path: every pattern below contains a model id or a bare brand word.
+	var hit := false
+	for m: Dictionary in MAYORS:
+		if text.contains(str(m["model"])) or text.contains(str(m["name"]).get_slice("-", 0)):
+			hit = true
+			break
+	if not hit:
+		return text
 	var out := text
 	for m: Dictionary in MAYORS:
 		out = out.replace(str(m["model"]), str(m["display"]))

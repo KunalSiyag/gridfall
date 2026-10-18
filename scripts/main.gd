@@ -24,6 +24,8 @@ const WS := preload("res://scripts/fp/world_scale.gd")
 var fp: FpMode = null
 ## "orbit" or "fp"; tools and saves can read it.
 var view_mode: String = "orbit"
+## Orbit sim speed to restore on exit_fp() (1 when first person was entered before the sim ran).
+var _orbit_speed: int = 1
 
 
 func _ready() -> void:
@@ -258,7 +260,8 @@ func enter_fp() -> void:
 	hud.visible = false
 	hud.process_mode = Node.PROCESS_MODE_DISABLED
 	view.set_fp_mode(true)
-	sim.day_seconds = WS.FP_DAY_SECONDS
+	_orbit_speed = sim.speed if sim.speed > 0 else 1
+	sim.set_day_seconds(WS.FP_DAY_SECONDS)
 	fp = FpMode.new()
 	fp.name = "FpMode"
 	add_child(fp)
@@ -283,7 +286,9 @@ func exit_fp() -> void:
 	camera_rig.set_process_unhandled_input(true)
 	hud.process_mode = Node.PROCESS_MODE_INHERIT
 	hud.visible = true
-	sim.day_seconds = D.BASE_DAY_SECONDS
+	sim.set_day_seconds(D.BASE_DAY_SECONDS)
+	sim.set_speed(_orbit_speed)
+	hud.set_speed_display(_orbit_speed)
 	get_tree().paused = false
 	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
 	view_mode = "orbit"
@@ -298,13 +303,13 @@ func grow_offline(days: int, cap_ms: int) -> void:
 	var was_sliced: Variant = sim.get("sliced")
 	if was_sliced == true:
 		sim.set("sliced", false)
-	sim.day_seconds = D.BASE_DAY_SECONDS
+	sim.set_day_seconds(D.BASE_DAY_SECONDS)
 	sim.set_speed(16)
 	var t0 := Time.get_ticks_msec()
 	while sim.day < days and Time.get_ticks_msec() - t0 < cap_ms:
 		await get_tree().process_frame
 	sim.set_speed(0)
-	sim.day_seconds = saved_day_seconds
+	sim.set_day_seconds(saved_day_seconds)
 	if was_sliced == true:
 		sim.set("sliced", true)
 	if view.has_method("flush_rebuild_queue"):

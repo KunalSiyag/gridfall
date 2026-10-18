@@ -1,8 +1,9 @@
 extends SceneTree
-## S0 seams in legacy files (docs/fp/S0-foundation.md §15): CitySim day length, tick_seconds and
-## skip_to_next_day; Residents resident_said / trip_started; mayor display names and D.debrand;
-## CityView world_rebuilt / tile_built / tile_cleared / in_setup, building_aabb, site_bounds,
-## set_fp_mode hiding; and the 18 FP input actions.
+## S0 seams in legacy files (docs/fp/S0-foundation.md §15): CitySim day length, tick_seconds,
+## set_day_seconds, set_tick_phase and skip_to_next_day; Residents resident_said / trip_started and
+## de-branded resident text; mayor display names, D.debrand and de-branded brain prompts; CityView
+## world_rebuilt / tile_built / tile_cleared / in_setup, building_aabb, site_bounds, set_fp_mode
+## hiding (bubbles and quake shake included); and the 18 FP input actions.
 
 const K := preload("res://tools/tests/fp_kit.gd")
 const D := preload("res://scripts/sim/sim_defs.gd")
@@ -27,6 +28,7 @@ func _init() -> void:
 	_check_time(sim)
 	_check_names(sim)
 	_check_debrand()
+	_check_brain(sim, people, ctx.brain)
 	_check_residents(sim, people)
 	_check_view(sim, view)
 	for a: String in ACTIONS:
@@ -48,6 +50,19 @@ func _check_time(sim: CitySim) -> void:
 	K.check(fails, is_equal_approx(p12, 0.125) and is_equal_approx(p1200, 0.125), "day_progress scales with day_seconds (%.3f, %.3f)" % [p12, p1200])
 	K.check(fails, is_equal_approx(sim.tick_phase(), 0.5), "tick_phase scales with day_seconds")
 	sim.day_seconds = D.BASE_DAY_SECONDS
+	# set_day_seconds keeps the time of day: no pending 300 s tick drained against a 3 s tick.
+	sim.tick_in_day = 2
+	sim.set("_time_accum", 1.5)
+	var before := sim.day_progress()
+	sim.set_day_seconds(WS.FP_DAY_SECONDS)
+	K.check(fails, is_equal_approx(sim.day_progress(), before) and is_equal_approx(float(sim.get("_time_accum")), 150.0), "set_day_seconds(1200) keeps day_progress (%.4f vs %.4f)" % [sim.day_progress(), before])
+	sim.set("_time_accum", 240.0)
+	sim.set_day_seconds(D.BASE_DAY_SECONDS)
+	K.check(fails, is_equal_approx(float(sim.get("_time_accum")), 2.4) and is_equal_approx(sim.tick_phase(), 0.8), "set_day_seconds(12) rescales a pending FP tick to under one orbit tick")
+	sim.set_tick_phase(0.25)
+	var q := sim.tick_phase()
+	sim.set_tick_phase(3.0)
+	K.check(fails, is_equal_approx(q, 0.25) and is_equal_approx(sim.tick_phase(), 1.0), "set_tick_phase sets and clamps the phase")
 	sim.set("_time_accum", saved_accum)
 	sim.tick_in_day = tick0
 	if sim.tick_in_day == 0:
@@ -97,6 +112,59 @@ func _check_debrand() -> void:
 		K.check(fails, got == str(c[1]), "debrand(%s) -> %s" % [c[0], got])
 
 
+func _check_brain(sim: CitySim, people: Residents, brain: CityBrain) -> void:
+	var r: Dictionary = {}
+	for p: Dictionary in people.people:
+		if sim.district[int(p["home"])] == 0:
+			r = p
+			break
+	K.check(fails, not r.is_empty(), "a resident lives in district 0")
+	if r.is_empty():
+		return
+	# An old save's branded letter, and vote keys that are the lowercase brand ids.
+	people.messages.append({"id": r["id"], "name": r["name"], "job": r["job_title"], "mood": 5, "district": 0, "day": sim.day, "text": "DeepSeek, where do we dump trash?", "kind": "daily"})
+	brain.proposals["clean_air_act"] = {"by": "Ada Okafor", "day": sim.day, "votes": {"argon": "yes", "grok": "no"}}
+	var prompt: String = brain.call("_mayor_user_prompt", 0, sim.day)
+	K.check(fails, prompt.contains("Mayor Han, where do we dump trash?") and prompt.contains("Ada Okafor") and not _branded(prompt) and not _has_ids(prompt), "the mayor prompt carries no brand words or mayor ids%s" % ("" if not _branded(prompt) and not _has_ids(prompt) else ": " + _brand_context(prompt)))
+	var votes: Dictionary = brain.call("_votes_by_name", {"argon": "yes", "grok": "no"})
+	K.check(fails, votes == {"Ada Okafor": "yes", "Duke Granger": "no"}, "votes are keyed by display name in prompts (%s)" % str(votes))
+	# from_dict normalises an old save's branded state.
+	var saved := brain.to_dict()
+	saved["proposals"] = {"curfew": {"by": "Kimi-K3", "day": 1, "votes": {"kimi": "yes"}}}
+	(saved["mayor_state"][0] as Dictionary)["post"] = "Qwen-3.8 is wrong"
+	(saved["mayor_state"][0] as Dictionary)["thoughts"] = ["Day 1: Grok is loud"]
+	saved["last_paper"] = {"headline": "Argon-4 wins", "stories": [{"title": "DeepSeek-V4 sulks", "body": "Kimi agrees"}], "editorial": "Grok-4.5 rules"}
+	saved["last_council"] = {"statement": "Qwen and Grok voted no"}
+	brain.from_dict(JSON.parse_string(JSON.stringify(saved)))
+	var restored := JSON.stringify([brain.proposals, brain.mayor_state[0]["post"], brain.mayor_state[0]["thoughts"], brain.last_paper, brain.last_council])
+	K.check(fails, not _branded(restored) and str(brain.proposals["curfew"]["by"]) == "Mei Kimura", "brain.from_dict de-brands restored text%s" % ("" if not _branded(restored) else ": " + _brand_context(restored)))
+	brain.proposals.clear()
+	people.messages.pop_back()
+
+
+func _branded(t: String) -> bool:
+	for w: String in BRANDS:
+		if RegEx.create_from_string("\\b%s\\b" % w).search(t) != null:
+			return true
+	return false
+
+
+## Mayor ids (the lowercase brand words) as JSON keys or values.
+func _has_ids(t: String) -> bool:
+	for m: Dictionary in D.MAYORS:
+		if t.contains("\"%s\"" % str(m["id"])):
+			return true
+	return false
+
+
+func _brand_context(t: String) -> String:
+	for w: String in BRANDS + ["\"argon\"", "\"deepseek\"", "\"kimi\"", "\"qwen\"", "\"grok\""]:
+		var k := t.find(w)
+		if k >= 0:
+			return t.substr(maxi(0, k - 60), 140)
+	return ""
+
+
 func _check_residents(sim: CitySim, people: Residents) -> void:
 	var said: Array = []
 	var trips: Array = []
@@ -122,6 +190,15 @@ func _check_residents(sim: CitySim, people: Residents) -> void:
 	said.clear()
 	people.call("_post_message", r, "Still here", "daily")
 	K.check(fails, said.size() == 1 and str(said[0][2]) == "letter", "_post_message emits at 300+ messages too")
+	# Resident LLM text is de-branded at the source (the replay cache carries brand names).
+	said.clear()
+	people.apply_plan(r, {"say": "Argon's doing right by us.", "thought": "Grok-4.5 talks a lot", "mood_reason": "Qwen fixed the pipes", "message_to_mayor": "DeepSeek, where do we dump trash?"}, "test", "")
+	var texts: Array = said.map(func(e: Array) -> String: return str(e[1]))
+	K.check(fails, said.size() == 2 and texts.has("Mayor Okafor's doing right by us.") and texts.has("Mayor Han, where do we dump trash?"), "apply_plan de-brands say and letters (%s)" % str(texts))
+	K.check(fails, not _branded(str(r["thought"])) and not _branded(str(r["mood_reason"])) and not _branded(str(r["message"])), "apply_plan de-brands thought, mood_reason and message")
+	said.clear()
+	people.respond(r, {"id": 9999, "label": "Test Fire", "x": 5, "y": 5}, {"say": "Kimi will fix it", "thought": "Qwen-3.8 is slow", "action": "ignore"}, "test", "")
+	K.check(fails, said.size() == 1 and str(said[0][1]) == "Mayor Kimura will fix it" and not _branded(str(r["thought"])), "respond de-brands say and thought (%s)" % str(said))
 	# _go to a different tile emits trip_started with from == the old position.
 	var walker: Dictionary = {}
 	var target := -1
@@ -193,36 +270,68 @@ func _check_view(sim: CitySim, view: CityView) -> void:
 	K.check(fails, road_ok, "road tiles have no building_aabb")
 	var holder := view.tile_holder(_first_zone(sim))
 	K.check(fails, holder != null and str(holder.get_meta("building_path", "")).begins_with("res://"), "zone holders carry building_path meta")
-	# site_bounds: non-empty on every open site, empty elsewhere.
+	# site_bounds: the future building on build and zone sites, the old building while a demolition
+	# is in its "demolition" stage, nothing on road works and nowhere without a site.
 	var mode := sim.construction_mode
 	sim.construction_mode = "staged"
-	sim.mayors[0]["treasury"] = int(sim.mayors[0]["treasury"]) + 5000
+	sim.mayors[0]["treasury"] = int(sim.mayors[0]["treasury"]) + 20000
 	var lots: Array = sim.open_lots(0, 10)
-	if not lots.is_empty():
+	if lots.size() >= 2:
 		sim.apply_action(0, {"type": "build", "building": "police", "x": int(lots[0][0]), "y": int(lots[0][1])})
+		sim.apply_action(0, {"type": "road", "x": int(lots[1][0]), "y": int(lots[1][1]), "x2": int(lots[1][0]), "y2": int(lots[1][1])})
+	for i in sim.active:
+		if D.is_zone(sim.kind[i]) and sim.level[i] > 0 and sim.district[i] == 0 and not sim.sites.has(i):
+			sim.apply_action(0, {"type": "bulldoze", "x": D.tx(i), "y": D.ty(i)})
+			break
 	sim.step_tick()
 	sim.construction_mode = mode
-	var sites_ok := not sim.sites.is_empty()
+	var seen := {"build": 0, "road": 0, "demolition": 0}
+	var bad: Array[String] = []
 	for i: int in sim.sites.keys():
-		sites_ok = sites_ok and view.site_bounds(i).size.x > 0.0
+		var st: Dictionary = sim.sites[i]
+		var b := view.site_bounds(i)
+		var t := str(st["type"])
+		if t == "road":
+			seen["road"] += 1
+			if b.size != Vector3.ZERO:
+				bad.append("road site %d has %s" % [i, b])
+		elif t == "demolish":
+			var demo := str(st["plan"]) == "demolish" and sim.site_stage_name(st) == "demolition"
+			if demo:
+				seen["demolition"] += 1
+			var inside := b.position.x >= D.tx(i) - 0.5 - 1e-4 and b.end.x <= D.tx(i) + 0.5 + 1e-4 and b.position.z >= D.ty(i) - 0.5 - 1e-4 and b.end.z <= D.ty(i) + 0.5 + 1e-4
+			if demo != (b.size.x > 0.0) or (demo and not inside):
+				bad.append("demolish site %d (%s, %s) has %s" % [i, st["plan"], sim.site_stage_name(st), b])
+		else:
+			seen["build"] += 1
+			if b.size.x <= 0.0:
+				bad.append("%s site %d is empty" % [t, i])
 	var off := 0
 	for i in sim.active:
 		if not sim.sites.has(i) and view.site_bounds(i).size != Vector3.ZERO:
 			off += 1
-	K.check(fails, sites_ok and off == 0, "site_bounds covers %d sites and nothing else" % sim.sites.size())
+	K.check(fails, seen["build"] > 0 and seen["road"] > 0 and seen["demolition"] > 0, "site fixtures: a build, a road and a demolition site (%s)" % str(seen))
+	K.check(fails, bad.is_empty() and off == 0, "site_bounds: building sites and demolitions only (%s, %d off-site)" % [str(bad), off])
 	# set_fp_mode hides the orbit layers and restores them.
 	var changes: Array = []
 	view.fp_mode_changed.connect(func(on: bool) -> void: changes.append(on))
+	view.set("_shake", 1.2)
 	view.set_fp_mode(true)
 	K.check(fails, changes == [true], "set_fp_mode(true) emits fp_mode_changed once")
+	K.check(fails, is_zero_approx(float(view.get("_shake"))), "entering FP drops a pending quake shake")
+	K.check(fails, view.avatars != null and view.avatars.fp_hidden, "FP sets avatars.fp_hidden")
+	K.check(fails, _bubble_shown(sim, view, "Testing the bubble one") == false, "FP hides resident speech bubbles")
 	K.check(fails, _orbit_layers_visible(view) == 0, "FP hides labels, territory, icons, cursor and mayor bots")
 	view.set_fp_mode(true)
 	K.check(fails, changes == [true], "set_fp_mode(true) again emits nothing")
 	view.set_overlay("power")
 	var tiles_root: Node3D = view.get("_tiles_root")
 	K.check(fails, tiles_root.visible and view.overlay_mode == "none", "set_overlay(power) is ignored in FP")
+	sim.trigger_disaster("earthquake", 16, 16, "player", "seams test")
+	K.check(fails, is_zero_approx(float(view.get("_shake"))), "a quake in FP queues no camera shake")
 	view.set_fp_mode(false)
 	K.check(fails, changes == [true, false], "set_fp_mode(false) emits fp_mode_changed(false)")
+	K.check(fails, not view.avatars.fp_hidden and _bubble_shown(sim, view, "Testing the bubble two"), "orbit shows resident speech bubbles again")
 	K.check(fails, _orbit_layers_visible(view) == 4 + D.MAYORS.size(), "orbit restores the hidden layers")
 	# tile_cleared: a built tile cleared to empty land.
 	var cleared: Array = []
@@ -248,6 +357,17 @@ func _orbit_layers_visible(view: CityView) -> int:
 	if cursor != null and cursor.visible:
 		n += 100
 	return n
+
+
+## Makes the first resident's avatar visible, gives them a new line, runs one avatar frame and
+## returns whether the bubble shows.
+func _bubble_shown(sim: CitySim, view: CityView, line: String) -> bool:
+	var r: Dictionary = sim.people.people[0]
+	var a: Dictionary = view.avatars.call("_avatar", r)
+	(a["root"] as Node3D).visible = true
+	r["say"] = line
+	view.avatars.call("_process", 0.016)
+	return (a["bubble"] as Label3D).visible
 
 
 func _first_zone(sim: CitySim) -> int:

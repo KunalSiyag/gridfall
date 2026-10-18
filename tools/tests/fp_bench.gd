@@ -6,6 +6,9 @@ extends SceneTree
 ## Report-only: it always quits 0.
 
 const SHOTS := preload("res://tools/tests/fp_shots.gd")
+## D11 measures at 1600x900. Some window managers open the window smaller than --resolution, so
+## the bench sets the size itself and reports the real one in every row (the gate checks it).
+const TARGET_SIZE := Vector2i(1600, 900)
 
 var main: Node
 var out_dir := ""
@@ -47,6 +50,7 @@ func _measure(label: String, secs: float) -> Dictionary:
 		"vram_mb": snappedf(Performance.get_monitor(Performance.RENDER_VIDEO_MEM_USED) / 1048576.0, 0.1),
 		"nodes": Performance.get_monitor(Performance.OBJECT_NODE_COUNT),
 		"hitches_over_33ms": times.filter(func(t: float) -> bool: return t > 33.3).size(),
+		"viewport": "%dx%d" % [get_root().size.x, get_root().size.y],
 	}
 	print("FPBENCH ", JSON.stringify(r))
 	return r
@@ -65,6 +69,8 @@ func _init() -> void:
 	get_root().add_child(main)
 	for _i in range(5):
 		await process_frame
+	# After boot: a size set in _init, before the window is up, is overridden by the window manager.
+	get_root().size = TARGET_SIZE
 	var fp: FpMode = main.fp
 	var sim: CitySim = main.sim
 	if fp == null:
@@ -83,6 +89,7 @@ func _init() -> void:
 	var street: Dictionary = SHOTS.find(sim, fp.directory, fp.collision)[0]
 	player.teleport(street["pos"], float(street["yaw"]), float(street["pitch"]))
 	print("FPBENCH street at %s yaw %.1f" % [str(player.position), float(street["yaw"])])
+	get_root().size = TARGET_SIZE
 	for _i in range(60):
 		await process_frame
 	await _measure("street_eye_hud", 4.0)
@@ -95,7 +102,7 @@ func _init() -> void:
 	player.teleport(street["pos"], float(street["yaw"]), float(street["pitch"]))
 	# Two growth ticks through the normal _process path: the stall slice F must remove.
 	var saved_day := sim.day_seconds
-	sim.day_seconds = 12.0
+	sim.set_day_seconds(12.0)
 	sim.set_speed(1)
 	await _measure("street_tick", 6.5)
 	sim.set_speed(0)
@@ -103,7 +110,7 @@ func _init() -> void:
 	sim.set_speed(1)
 	await _measure("street_day_end", 6.5)
 	sim.set_speed(0)
-	sim.day_seconds = saved_day
+	sim.set_day_seconds(saved_day)
 	print("FPBENCH: DONE")
 	main.audio._exit_tree()
 	quit(0)

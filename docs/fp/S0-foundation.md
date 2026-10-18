@@ -443,7 +443,7 @@ func exit_fp() -> void
 func grow_offline(days: int, cap_ms: int) -> void   # coroutine
 ```
 
-`grow_offline` body: `client.set_live(false)`. Save `sim.day_seconds` and `var was_sliced = sim.get("sliced")` (F's flag; `null` before F lands). If it is true, `sim.set("sliced", false)`, because sliced mode runs one tick per job and would starve growth. Set `sim.day_seconds = D.BASE_DAY_SECONDS` and `sim.set_speed(16)`. Loop awaiting `get_tree().process_frame` until `sim.day >= days` or the cap is hit. Then `sim.set_speed(0)`, restore `sim.day_seconds`, restore `sliced` when it was true, and drain the view: `if view.has_method("flush_rebuild_queue"): view.call("flush_rebuild_queue")` (G1's queue, §15.1). `fp.time_scale` is not touched; consumers that need the live sim rate read `sim.speed` (D-S0-1).
+`grow_offline` body: `client.set_live(false)`. Save `sim.day_seconds` and `var was_sliced = sim.get("sliced")` (F's flag; `null` before F lands). If it is true, `sim.set("sliced", false)`, because sliced mode runs one tick per job and would starve growth. Call `sim.set_day_seconds(D.BASE_DAY_SECONDS)` and `sim.set_speed(16)`. Loop awaiting `get_tree().process_frame` until `sim.day >= days` or the cap is hit. Then `sim.set_speed(0)`, restore the day length with `sim.set_day_seconds(saved)`, restore `sliced` when it was true, and drain the view: `if view.has_method("flush_rebuild_queue"): view.call("flush_rebuild_queue")` (G1's queue, §15.1). `fp.time_scale` is not touched; consumers that need the live sim rate read `sim.speed` (D-S0-1).
 
 ### 6.3 `enter_fp()` and `exit_fp()`, step by step
 
@@ -453,7 +453,7 @@ func grow_offline(days: int, cap_ms: int) -> void   # coroutine
 2. Disable the orbit rig with the same three calls cinematic uses (`cinematic.gd:49-51`): `camera_rig.set_process(false)`, `camera_rig.set_process_input(false)`, `camera_rig.set_process_unhandled_input(false)`.
 3. Run `hud.visible = false` and `hud.process_mode = Node.PROCESS_MODE_DISABLED`. This stops CityHud's `_process` and its hotkeys (Space, Esc, 1–4, F5, F9 at `city_hud.gd:600-625`). Its signal connections still fire, so `focus_tile_requested` coming from `_on_chaos` reaches `focus()`, which emits a ping.
 4. Call `view.set_fp_mode(true)` (§15.1). At boot the field is already true (§6.1 early flag), so this only re-applies visibility; it emits `fp_mode_changed` only on a real change.
-5. `sim.day_seconds = WS.FP_DAY_SECONDS`.
+5. Remember the orbit speed (`_orbit_speed = sim.speed`, or 1 when the sim has not started yet), then `sim.set_day_seconds(WS.FP_DAY_SECONDS)`. Every day-length change goes through `set_day_seconds` (§15.3), which rescales the pending tick time so the time of day does not jump.
 6. `fp = FpMode.new(); fp.name = "FpMode"; add_child(fp); fp.setup(self)` (§7).
 7. `view.set_camera(fp.player.camera)`. The FP camera already shares the Environment (§11) and is current.
 
@@ -462,7 +462,7 @@ func grow_offline(days: int, cap_ms: int) -> void   # coroutine
 1. `fp.teardown()` then `fp.queue_free()`, and set `fp = null`.
 2. `view.set_fp_mode(false)` and `view.set_camera(camera)`, then `camera.make_current()`.
 3. Turn the three rig process flags back on, then `hud.process_mode = Node.PROCESS_MODE_INHERIT` and `hud.visible = true`.
-4. `sim.day_seconds = D.BASE_DAY_SECONDS`, `get_tree().paused = false`, `Input.mouse_mode = Input.MOUSE_MODE_VISIBLE`, and `view_mode = "orbit"`.
+4. `sim.set_day_seconds(D.BASE_DAY_SECONDS)`, then `sim.set_speed(_orbit_speed)` and `hud.set_speed_display(_orbit_speed)` (the FP time scale does not carry over), `get_tree().paused = false`, `Input.mouse_mode = Input.MOUSE_MODE_VISIBLE`, and `view_mode = "orbit"`. A raw `day_seconds` write here would leave up to one 300 s FP tick pending against a 3 s orbit tick, and `city_sim._process` would drain it eight ticks per frame (a probe saw 84 ticks, 21 game days, in 40 frames).
 
 ### 6.4 Save format
 
@@ -471,10 +471,12 @@ func grow_offline(days: int, cap_ms: int) -> void   # coroutine
   "fp": { "version": 1,
           "player": {"pos": [x, y, z], "yaw": deg, "pitch": deg},
           "time_scale": 1,
+          "day_phase": 0.42,
           "<feature_id>": { ...feature.to_dict()... } } }
 ```
 
-- `version`, `player` and `time_scale` are reserved keys. A feature id must not use them.
+- `version`, `player`, `time_scale` and `day_phase` are reserved keys. A feature id must not use them.
+- `day_phase` is `sim.tick_phase()` at save time. The sim saves only whole ticks, and an FP tick is 300 s (6 game hours), so without it a load rewinds the clock to the last tick boundary. `from_dict` calls `sim.set_tick_phase(day_phase)`, or `set_tick_phase(0)` when the key is missing (fresh city, old save).
 - A feature whose `to_dict()` returns `{}` is left out.
 - An orbit save has no `"fp"` key. Loading it in FP spawns the player at the spawn point. Loading an FP save in orbit ignores the `"fp"` key.
 
@@ -539,13 +541,13 @@ func spawn_point() -> Dictionary   # {"pos": Vector3, "yaw": float(deg)}
 2. Create `bus` (GameBus, `"Bus"`) and `directory` (`CityDirectory.new(); directory.setup(main.sim)`).
 3. Create `ctx` and fill every field in §8.
 4. Create `collision` (`"Collision"`), call `collision.setup(ctx)`, then set `ctx.collision`.
-5. Create `world_root` (`Node3D "World"`), then `player` (`FpPlayer "Player"`, `process_mode = PROCESS_MODE_PAUSABLE`), then `player.setup(ctx)`. The player builds its camera, shares the Environment, and makes the camera current.
+5. Create `world_root` (`Node3D "World"`, `process_mode = PROCESS_MODE_PAUSABLE`: FpMode itself is ALWAYS, so without it every in-world node a slice puts there would keep running while paused, against D-S0-2), then `player` (`FpPlayer "Player"`, `process_mode = PROCESS_MODE_PAUSABLE`), then `player.setup(ctx)`. The player builds its camera, shares the Environment, and makes the camera current.
 6. Create `hud` (`FpHud "FpHud"`) and call `hud.setup(ctx)`.
 7. Create `Node3D "Features"` (`PROCESS_MODE_PAUSABLE`). For each entry in `REGISTRY.FEATURES`, in order:
    - If `ResourceLoader.exists(path)` is false, call `push_warning` and skip the entry.
    - Otherwise `var f: FpFeature = (load(path) as GDScript).new()`, `f.name = id`, `features_node.add_child(f)`, `ctx.features[id] = f`.
    - Then, in a **second loop**, call `f.setup(ctx)` on every feature. That way setup code can already see its sibling features in `ctx.features`.
-8. Connect `ctx.view.world_rebuilt` to `_on_world_rebuilt`, and `ctx.view.tile_built` / `tile_cleared` to `collision.on_tile_built` / `on_tile_cleared`.
+8. Connect `ctx.view.world_rebuilt` to `_on_world_rebuilt`, and `ctx.view.tile_built` / `tile_cleared` to `collision.on_tile_built` / `on_tile_cleared`. Then connect `tile_built` to `_on_tile_built` (after the collision handler, so the box cache is already invalidated): outside `view.in_setup`, when the tile is within one tile of the player's, it calls `unstick_player()`, which moves the player to `collision.nearest_free(pos, PLAYER_RADIUS, 2.0)` (else the spawn point) if they now stand inside a box, and toasts "Moved you clear of new construction.". `from_dict` also calls `unstick_player()` after restoring the player.
 9. Call `_on_world_rebuilt()` once now, because the view was already built before FP existed. Then `from_dict({})` to spawn the player.
 
 `_on_world_rebuilt()`:
@@ -861,8 +863,13 @@ func surface_at(p: Vector3) -> String
 ## True if a circle of `radius` at p (feet) intersects a building box or unwalkable ground.
 func is_blocked(p: Vector3, radius: float) -> bool
 ## Moves from `from` by `motion` (y ignored), sliding along blockers. S0: try full move, else x-only,
-## else z-only, else stay. Returns the new feet position (y unchanged).
+## else z-only, else stay. When `from` already overlaps a box (a building or site appeared where
+## the player stands), a candidate is also accepted if it enters no new box and goes no deeper into
+## the ones it overlaps, so the player can always walk out. Returns the new feet position (y unchanged).
 func move_and_slide(from: Vector3, motion: Vector3, radius: float) -> Vector3
+## The closest point to p (xz, y on the ground) where a circle of `radius` is not blocked, searched
+## on rings 1 m apart out to max_dist; Vector3(NAN, NAN, NAN) when there is none.
+func nearest_free(p: Vector3, radius: float, max_dist: float) -> Vector3
 ## Ray against building boxes (tile DDA, ≤ max_dist) and the ground.
 ## {"hit": bool, "pos": Vector3, "normal": Vector3, "tile": int, "kind": "building"|"ground", "dist": float}
 func raycast(origin: Vector3, dir: Vector3, max_dist: float) -> Dictionary
@@ -898,6 +905,8 @@ S0 ground model, using `i = tile_at(p)` and `lp = (p.x − tx, p.z − ty)`:
 | anything else (`EMPTY`, `FOREST`, `SITE`, level-0 zones, out of world) | `GROUND_Y` |
 
 Building blocking: `box(i)` comes from `ctx.view.building_aabb(i)`, or from `ctx.view.site_bounds(i)` on construction sites, and is cached per tile; `boxes(i)` is `[box(i)]`. `is_blocked` checks the 3×3 tiles around `p`. The point is blocked if, in xz, the circle overlaps any box in `boxes(j)` grown by `radius`, and `p.y < box.end.y`. Note that the real-model AABB includes the 0.94 lot slab, so in S0 the player cannot step onto lots at all. A refines this with per-surface body boxes (see `slices/A-player.md`) or H's `ColBox_<n>` proxies.
+
+**Boxes can appear under the player.** The player may stand on empty land or a level-0 lot, and the sim can open a site or level the lot up under them. Two rules keep them free, and A keeps both when it replaces the internals: `move_and_slide` lets a player who already overlaps a box move as long as the move enters no new box and does not go deeper (depth = distance to the nearest side of the grown box), and FpMode's `_on_tile_built` (§7.1) moves the player to `nearest_free` when a tile within one of theirs is rebuilt around them. `fp_core_test` and the FP smoke cover both.
 
 Performance: `is_blocked` costs at most 9 dictionary lookups and allocates nothing per frame.
 
@@ -1131,8 +1140,10 @@ func building_aabb(i: int) -> AABB:
 	return holder.transform * ((holder.get_meta("building_xform") as Transform3D) * local)
 
 ## World-space bounds of the building a construction site on tile i will become (scaffolds, hoardings
-## and machines stay inside it); AABB() when tile i has no site. Built from
-## _model_bounds(target_kind, target_level, h) (1155-1172) placed at the tile centre.
+## and machines stay inside it), from _model_bounds(target_kind, target_level, h) at the tile centre.
+## A demolition in its "demolition" stage gives the old building's bounds (the kit still draws it).
+## AABB() when tile i has no site, for road and bridge works (a gravel strip, not a building) and
+## for the other demolition stages and plans (hauling, clearing).
 func site_bounds(i: int) -> AABB:
 	var site: Dictionary = sim.sites.get(i, {})
 	if site.is_empty():
@@ -1140,7 +1151,19 @@ func site_bounds(i: int) -> AABB:
 	var x := D.tx(i)
 	var y := D.ty(i)
 	var h := absi(x * 73856093 ^ y * 19349663)
-	var b := _model_bounds(int(site["target_kind"]), int(site["target_level"]), h)
+	var b := AABB()
+	match str(site["type"]):
+		"road":
+			return AABB()
+		"demolish":
+			if str(site["plan"]) != "demolish" or sim.site_stage_name(site) != "demolition":
+				return AABB()
+			var fk := int(site["from_kind"])
+			b = _model_bounds(fk, maxi(int(site["from_level"]), 1), h)
+			if D.is_zone(fk):
+				b = Transform3D(Basis(Vector3.UP, deg_to_rad(float((h % 4) * 90))), Vector3.ZERO) * b
+		_:
+			b = _model_bounds(int(site["target_kind"]), int(site["target_level"]), h)
 	return AABB(b.position + Vector3(x, 0, y), b.size)
 
 ## The Node3D holding everything drawn on tile i, or null.
@@ -1153,6 +1176,8 @@ func set_camera(c: Camera3D) -> void:
 	if avatars != null:
 		avatars.camera = c
 ```
+
+Road sites used to get `_model_bounds`' fallback box (0.7 × 0.3 × 0.7, a 6 m wall over a gravel strip with cones), and demolitions got the same box instead of the old building, which the kit draws only in the `demolition` stage (`_build_site`, `ctx["old"]`). A stage change re-marks the tile, so `tile_built` refreshes the cached collision box. A may add explicit roadworks barriers.
 
 A probe confirmed that `Transform3D * AABB` yields the box of the transformed corners, which is exact for the 90° yaws used here, and that an instanced scene root carries its `scene_file_path`. CityView and `Tiles` stay at identity, so CityView-local space is world space. G1 must keep it that way.
 
@@ -1186,11 +1211,12 @@ func set_fp_mode(on: bool) -> void:
 | 7 | Mayor robots, their rings, name labels and bubbles | `_build_avatars` 729–763, animated 1877–1892 | `(av["root"] as Node3D).visible = not fp_mode` for every entry in `_avatars`; `show_mayor_decision` and `show_mayor_thinking` keep working on hidden nodes |
 | 8 | Event label (`"<label>\n(<source>)"`, y 2.6) and the pulsing event ring | `_make_event_fx` 1667–1681 | `ring.set_meta("orbit_only", true)`, `lbl.set_meta("orbit_only", true)`, each with `.visible = not fp_mode`; `_apply_fp_visibility` toggles every `orbit_only` child of `_event_nodes` |
 | 9 | Ambient Kenney cars and capsule pedestrians | `_spawn_agent` / `_update_population` 1763–1857, called at 1870 | line 1870 becomes `if not fp_mode: _update_population(delta)`; `_apply_fp_visibility` frees the existing `_cars` and `_peds` nodes and clears both lists when entering FP; `_cars_root` and `_peds_root` visible only in orbit |
-| 10 | Earthquake camera shake (±0.25 u = 5 m) | 1924–1930 | wrap the block in `if not fp_mode:` |
+| 10 | Earthquake camera shake (±0.25 u = 5 m) | 1924–1930 | wrap the block in `if not fp_mode:`; the `event_started` handler sets `_shake = 1.2` only when not `fp_mode`, and `_apply_fp_visibility` zeroes `_shake`, so a quake felt in FP never shakes the orbit camera after `exit_fp()` |
+| 11 | Resident speech bubbles (billboard Label3D, `pixel_size 0.0035`, 420 px wide: about 29 m of text at street level) | `resident_avatars.gd:137-146`, shown at 234-235 | `_apply_fp_visibility` sets `avatars.fp_hidden = fp_mode`; the bubble line ANDs `not fp_hidden` (§15.6). The avatars themselves stay visible. E restyles the bubbles for street level and then owns the rule |
 
-These stay **visible** in FP. G1 restyles them for street level: tiles, ground, water, trees, construction sites, fires and smoke, smog, flood and tornado FX, light pools, CityLife fleets, resident avatars.
+These stay **visible** in FP. G1 restyles them for street level: tiles, ground, water, trees, construction sites, fires and smoke, smog, flood and tornado FX, light pools, CityLife fleets, resident avatars (not their bubbles, #11).
 
-**Display names.** Line 602 becomes `lbl.text = "%s\n%s" % [D.MAYORS[d]["display"], D.MAYORS[d]["district"]]`. Line 753 becomes `_label("%s" % D.MAYORS[d]["display"], ...)`.
+**Display names.** Lines 602 and 753 keep `D.MAYORS[d]["name"]`, the brand label. Both labels exist only in orbit (FP hides `_labels_root` and every mayor root), and D-S0-7 keeps orbit and the cinematic branded: the cinematic's "mayors" shot is captioned "Each one a different model" and frames these labels.
 
 ### 15.2 `scripts/sim/residents.gd` (owned by F)
 
@@ -1216,6 +1242,8 @@ Emission points:
 
 `_trip_mode(m)` returns `m if m in ["car", "bus", "bike", "walk"] else "walk"`. Line 1015 copies `plan.commute` for long non-work trips, and `COMMUTES` includes `"stay_home"` (`residents.gd:23`), so without it a stay-home commuter walking to the park would emit `"stay_home"`. `r["mode"]` itself is unchanged.
 
+**De-branding at the source (D-S0-8).** The tracked replay cache has branded resident text (91 thoughts, 85 letters, 29 mood reasons and 3 say lines on seed 7), and these fields reach FP bubbles, chat, letters and the mayor prompts. `apply_plan` wraps `mood_reason`, `thought`, `say` and `message_to_mayor` in `D.debrand(...)` before `.left(n)`; `respond` does the same for `thought`, `say` and `message_to_mayor`. So `resident_said`, `messages` and the resident card never carry a brand word. F keeps these wraps.
+
 `apply_plan` runs in batches of 10, so roughly 100 `say` lines arrive within seconds once a day. Consumers must queue them (C drips them out). No other code may emit these two signals.
 
 ### 15.3 `scripts/sim/city_sim.gd` (owned by F)
@@ -1235,6 +1263,19 @@ Add after `day_progress()` (391–393):
 func tick_seconds() -> float:
 	return day_seconds / float(D.GROWTH_TICKS_PER_DAY)
 
+## Changes the day length and rescales the time already accumulated toward the next tick, so
+## day_progress() and tick_phase() are unchanged.
+func set_day_seconds(s: float) -> void:
+	if s <= 0.0:
+		return
+	if day_seconds > 0.0:
+		_time_accum *= s / day_seconds
+	day_seconds = s
+
+## Sets how far the current growth tick has run (0..1), e.g. when a save restores the time of day.
+func set_tick_phase(p: float) -> void:
+	_time_accum = clampf(p, 0.0, 1.0) * tick_seconds()
+
 ## Runs the rest of today's growth ticks synchronously so the next day starts at dawn
 ## (FP "skip to morning"). Stops early if the day gate holds the boundary. Returns true when
 ## the new day has started.
@@ -1247,6 +1288,8 @@ func skip_to_next_day() -> bool:
 	_time_accum = 0.0
 	return not waiting_for_ai
 ```
+
+Code that changes the day length while a day runs (`main.gd` `enter_fp`, `exit_fp`, `grow_offline`; `fp_bench`) calls `set_day_seconds`, never a raw `day_seconds =` write: the accumulator holds up to one tick of real time, and a 300 s FP tick left pending against a 3 s orbit tick runs as dozens of ticks in a few frames. FpMode's save section restores the phase with `set_tick_phase` (§6.4).
 
 Every `BASE_DAY_SECONDS` read site (there are exactly four in the repo):
 
@@ -1317,11 +1360,16 @@ Implementation notes:
 | 639 | The heuristic Gazette editorial `"Five AI mayors, one power grid. Somebody will have to share."` becomes `"Five mayors, one power grid. Somebody will have to share."` |
 | 800 | In the inspector system prompt, `"in a SimCity-style city run by AI mayors"` becomes `"in a SimCity-style city run by five elected mayors"` |
 | 805 | Wrap the mayor post: `D.debrand(str(mayor_state[...].get("post", "")))` |
+| 212, 217 | Wrap the resident letter text and the citizen thought: `D.debrand(str(md["text"]))`, `D.debrand(str(vd.get("thought", "")))`. Residents now de-brand at the source (§15.2); this covers letters restored from old saves. |
+| 223, 737 | Proposal votes are keyed by mayor id, and the ids are the lowercase brand words (`argon`, `deepseek` ...), which `D.debrand` does not catch. Serialise them into the mayor and council prompts through `_votes_by_name(votes)`, which keys them by display name (`{"Ada Okafor": "yes"}`). The stored keys stay ids (`_yes_votes`, the heuristic). |
+| `_run_council` | The council system prompt says `"Five elected mayors vote on ordinances"` (was "Five AI mayors"), and the ruling's `statement` is de-branded before `.left(240)`: C shows it to players. |
+| `from_dict` | Ends with `_debrand_restored()`: de-brands `proposals[*].by`, each `mayor_state` post, thoughts and log entries (`thought`, `post`), `last_paper` (through the shared `_debrand_paper`, also used by `_run_news`) and `last_council.statement`, so old saves feed no brand words to the prompts or the HUDs. |
 
 ### 15.6 One-line seams in other files
 
 - **`scripts/ai/resident_minds.gd:170`:** `"mayor": D.MAYORS[mi]["display"]`, and `"said_yesterday": D.debrand(said)`.
 - **`scripts/world/resident_avatars.gd:194`:** see §15.3.
+- **`scripts/world/resident_avatars.gd`, bubbles:** `## Set by CityView in first person (S0 seam): speech bubbles stay hidden until slice E restyles them.` `var fp_hidden: bool = false`, and the bubble line becomes `var show_bubble := float(a["bubble_t"]) > 0.0 and root.visible and _bubbles < MAX_BUBBLES and not fp_hidden`. CityView sets it in `_apply_fp_visibility` (§15.1 #11). When E moves the bubbles to street-level anchors (`slices/E-traffic.md`), E decides whether to keep honouring the flag and files a request to move `fp_seams_test`'s bubble check into its own test.
 - **`scripts/world/sky_director.gd:54`:** `if sim == null or sim.day_seconds / float(maxi(sim.speed, 1)) < MIN_CYCLE_DAY_SECONDS:`. Add `const MIN_CYCLE_DAY_SECONDS := 3.0` below line 13, documented as `## Days shorter than this many real seconds hold at HOLD_HOUR instead of strobing.` Keep `MAX_CYCLE_SPEED`. This is exactly today's behaviour in orbit: 12 / 5 = 2.4 holds and 12 / 4 = 3.0 cycles. In FP at 8× the day lasts 150 s, so the sky cycles and does not freeze at 13:00.
 
 ### 15.7 Every use of a model-derived mayor name, and what happens to it
@@ -1335,9 +1383,9 @@ Implementation notes:
 | `residents.gd:788, 1131` | resident memory and card (prompts) | fixed automatically |
 | `city_brain.gd:155, 185, 202, 267, 268, 276-277, 292, 621, 624-626, 639, 651, 692, 693, 800, 805` | prompts, posts, day feed, Gazette | §15.5 |
 | `resident_minds.gd:170` | resident plan prompt | §15.6 |
-| `city_view.gd:602, 753` | world labels (orbit only after the FP hide) | display (§15.1) |
+| `city_view.gd:602, 753` | world labels (orbit only after the FP hide) | **stay the brand label** (§15.1, D-S0-7) |
 | `main.gd:306` | stdout print | fixed automatically |
-| `city_hud.gd:347, 356, 439, 446, 849, 850, 930, 948, 1060, 1099, 1105` | **orbit CityHud only** | **unchanged by decision** (§23 D-S0-7). B's FpHud must use display names only. |
+| `city_hud.gd:347, 356, 439, 446, 849, 850, 930, 948, 1060, 1099, 1105` | **orbit CityHud only** | **brand labels unchanged by decision** (§23 D-S0-7). The log, the Gazette and the posts now say "Ada Okafor" / "Mayor Okafor" (D-S0-6, D-S0-8), so the mayor inspector (`_render_mayor`) adds a `Mayor <display> · <district> · <style>` line and each mayor card gets the tooltip `Mayor <display> · <district>`, linking both names. B's FpHud must use display names only. |
 | `cinematic.gd:266-267` | trailer stdout | unchanged |
 | `gridfall_hud.gd:298, 437` | dead code | unchanged |
 | `data/gmi_replay_cache.json` (brand names in posts and Gazette text) | chat, posters | `D.debrand` at the source (§15.5) and again at display in C, D and B |
@@ -1399,7 +1447,9 @@ This is a port of the scratch tool (`.../scratchpad/tools/parse_all.gd`):
 const GROW_ACTIONS := [ ...the nine actions at residents_test.gd:29-37, verbatim...,
 	{"type": "road", "x": 9, "y": 12, "x2": 4, "y2": 14} ]   # L-leg: corner at (4,12), tee at (10,12)
 ## CitySim(new_city(seed)) + Residents (+ ResidentMinds when minds = true) + a GmiClient (the
-## injected client, else a new offline one with live_enabled = false), all under root.
+## injected client, else a new offline one with live_enabled = false), all under root. An injected
+## client keeps the live_enabled and api_key it came with: GmiClient._ready (run by add_child) would
+## otherwise force live off under GRIDFALL_OFFLINE=1 and load the real key into the fake.
 ## Returns {"sim", "people", "minds", "client"}.
 static func make_sim(root: Node, seed: int = 7, minds: bool = false, client: GmiClient = null) -> Dictionary
 ## Applies GROW_ACTIONS through sim.apply_action(0, a), calls sim.start(), then step_tick()s until
@@ -1430,12 +1480,12 @@ static func finish(tree: SceneTree, token: String, fails: Array) -> void
 | Step | Field | What |
 |---|---|---|
 | 1 | `sim`, `residents`, `minds`, `client` | `make_sim(root, seed, minds, opts.client)`. An injected client (C's and D's counting fakes) is in place **before** anything below is set up. |
-| 2 | (growth) | if `grow`: `grow(sim, residents, max(opts.ticks, 40))`; else if `ticks > 0`: `sim.start()` then `ticks(sim, ticks)`. Growth runs **before** the brain and the view exist: no mayor acts during it (so the recipe stays probe-verified) and there are no per-tick rebuilds. |
+| 2 | (growth) | if `grow`: `grow(sim, residents, max(opts.ticks, 40))`; else if `ticks > 0`: `sim.start()` then `ticks(sim, ticks)`. Growth runs **before** the brain and the view exist: no mayor acts during it (so the recipe stays probe-verified) and there are no per-tick rebuilds. Growth is always offline: with an injected client and minds, the minds talk to an offline stand-in `GmiClient` (sharing the injected client's replay cache) during growth and get the injected client back afterwards, so a counting fake sees **no** `live_json` call before the test starts (a probe counted 27 before this rule). A fake's `live_enabled = true` survives `make_ctx`; tests no longer need to set it afterwards. |
 | 3 | `brain` | `CityBrain` under root, `setup(sim, client)`, `brain.minds = minds`, and `minds.plans_done.connect(brain.residents_spoke)` when minds exist. From here on its listeners are live: a test that ticks through a day boundary sees offline mayors act. |
 | 4 | `view` | if `view`: `make_view(root, sim)`; else null. |
 | 5 | `env`, `sun` | if `render`: a current `Camera3D` whose `environment` is `scenes/main-environment.tres` loaded with `ResourceLoader.CACHE_MODE_IGNORE` (a private copy), and a `DirectionalLight3D` with the `main.tscn` Sun values. Else both null. |
 | 6 | `sky` | `SkyDirector` under root, `setup(sim, env, sun, view)` (headless-safe with nulls, `sky_director.gd:25-46`). Always present, so `sky.clock_text()` works. |
-| 7 | `bus`, `directory`, `collision`, `world_root` | `GameBus`, `CityDirectory.setup(sim)`, `CollisionWorld.setup(ctx)` + `rebuild_all()` when a view exists, `Node3D "World"`. |
+| 7 | `bus`, `directory`, `collision`, `world_root` | `GameBus`, `CityDirectory.setup(sim)`, `CollisionWorld.setup(ctx)` + `rebuild_all()` when a view exists, `Node3D "World"` (`PROCESS_MODE_PAUSABLE`, as in FpMode). |
 | 8 | `mode` | a **stub** `FpMode.new()` added under the kit root but never `setup()`: `ctx`, `bus`, `collision`, `directory` fields set, `time_scale = 1`, `paused = false`. Its `set_time_scale`, `step_time_scale`, `set_paused` and `apply_settings` work (they only touch `sim`, the tree pause, `ctx` modals, `settings_log` and the bus); `spawn_point()` works when a view or roads exist. |
 | 9 | `player` | if `player`: `make_player(ctx)`. |
 | 10 | `hud` | if `hud`: `FpHud` under the kit root, `setup(ctx)`. |
@@ -1452,9 +1502,9 @@ Every `tools/tests/fp_*_test.gd` follows the same shape: `extends SceneTree`, ru
 | File | Asserts |
 |---|---|
 | `fp_world_scale_test.gd` | `WS.M * WS.TILE_M == 1`; `EYE == 1.65 * M`; `CURB_RISE == SIDEWALK_TOP - ASPHALT_TOP`; `LANE_OFFSET == ROAD_HALF / 2`; `abs(VEHICLE_SCALE * 1.2 - 1) < 1e-6`. Parses `res://tools/blender/realcity/roads.py` (`ZA =`, `ZS =`, `HW =`) and `core.py` (`M = 1.0 / 20.0`), and checks they equal `ASPHALT_TOP`, `SIDEWALK_TOP`, `ROAD_HALF` and `M`. `ZM` is an expression (`ZM = ZA + 0.0003`, `roads.py:26`), so the test parses `ZM = ZA + <n>` and checks `abs((MARKING_TOP − ASPHALT_TOP) − n) < 1e-9`. This is a drift detector, and H must keep it passing. |
-| `fp_seams_test.gd` | Headless, seed 7, with a view. `sim.day_seconds == 12` and `tick_seconds() == 3`; at 1200, `tick_seconds() == 300` and `day_progress` scales. `skip_to_next_day()` leaves `tick_in_day == 0`, `day + 1` and `day_progress() < 0.01`. `apply_plan` with `{"say": "Hi"}` emits `resident_said(id, "Hi", "say")`; `_post_message` emits `"letter"` while `messages.size() < 300` (and also at 300+); `_go` to a different tile emits `trip_started` with `from == old at`, and a resident whose `plan.commute == "stay_home"` sent on a non-work trip longer than 6 tiles emits mode `"walk"`. Every `sim.mayors[i].name` equals `D.MAYORS[i].display` after `new_city`, and after `from_dict` of a dict whose mayors carry brand names. `owner_name(D.idx(5, 5))` is a display name. `D.debrand` cases. View: `world_rebuilt` fires once per `setup`; `tile_built` fires once per holder (count equals `_tile_nodes.size()` after setup), and `in_setup` is true inside those emissions and false inside `world_rebuilt`; `building_aabb` of every zone tile at level > 0 is non-empty, sits inside `[x − 0.5, x + 0.5]`, and has `position.y ≈ 0`; road tiles return size zero. `site_bounds` is non-empty on every tile in `sim.sites` (place a build action and tick once) and empty elsewhere. `set_fp_mode(true)` hides `_labels_root`, `_territory_root`, both icon multimeshes and every mayor root, emits `fp_mode_changed(true)` once, and `set_fp_mode(true)` again emits nothing; `set_fp_mode(false)` restores them. `set_overlay("power")` in FP leaves `_tiles_root.visible` true. `tile_cleared` fires when a built tile is bulldozed to `EMPTY` (use `sim.apply_action` bulldoze, then tick until the demolition site finishes, or set `kind` directly and call `view._on_tiles_changed`). The 18 input actions exist. |
+| `fp_seams_test.gd` | Headless, seed 7, with a view. `sim.day_seconds == 12` and `tick_seconds() == 3`; at 1200, `tick_seconds() == 300` and `day_progress` scales. `set_day_seconds` keeps `day_progress` (12 → 1200 → 12, a pending 240 s FP accumulator becomes 2.4 s); `set_tick_phase` sets and clamps. `skip_to_next_day()` leaves `tick_in_day == 0`, `day + 1` and `day_progress() < 0.01`. `apply_plan` with `{"say": "Hi"}` emits `resident_said(id, "Hi", "say")`; `_post_message` emits `"letter"` while `messages.size() < 300` (and also at 300+); `apply_plan` and `respond` with branded `say`, `thought`, `mood_reason` and `message_to_mayor` emit and store de-branded text; the mayor prompt with a branded resident letter and id-keyed votes carries no brand word and no quoted mayor id, `_votes_by_name` keys by display name, and `brain.from_dict` of a branded save de-brands proposals, posts, thoughts, the Gazette and the council statement; `_go` to a different tile emits `trip_started` with `from == old at`, and a resident whose `plan.commute == "stay_home"` sent on a non-work trip longer than 6 tiles emits mode `"walk"`. Every `sim.mayors[i].name` equals `D.MAYORS[i].display` after `new_city`, and after `from_dict` of a dict whose mayors carry brand names. `owner_name(D.idx(5, 5))` is a display name. `D.debrand` cases. View: `world_rebuilt` fires once per `setup`; `tile_built` fires once per holder (count equals `_tile_nodes.size()` after setup), and `in_setup` is true inside those emissions and false inside `world_rebuilt`; `building_aabb` of every zone tile at level > 0 is non-empty, sits inside `[x − 0.5, x + 0.5]`, and has `position.y ≈ 0`; road tiles return size zero. `site_bounds` (staged mode: a police build, a one-tile road and a bulldozed district-0 zone building, then one tick; each fixture asserted) is non-empty on build and zone sites, empty on road sites, non-empty and inside the tile exactly while a `demolish` plan is in its `demolition` stage, and empty on every tile without a site. `set_fp_mode(true)` hides `_labels_root`, `_territory_root`, both icon multimeshes and every mayor root, zeroes a pending `_shake`, sets `avatars.fp_hidden` and keeps a fresh resident bubble hidden, emits `fp_mode_changed(true)` once, and `set_fp_mode(true)` again emits nothing; a quake triggered in FP queues no shake; `set_fp_mode(false)` restores the layers and bubbles. `set_overlay("power")` in FP leaves `_tiles_root.visible` true. `tile_cleared` fires when a built tile is bulldozed to `EMPTY` (use `sim.apply_action` bulldoze, then tick until the demolition site finishes, or set `kind` directly and call `view._on_tiles_changed`). The 18 input actions exist. |
 | `fp_directory_test.gd` | Two directories on the same seed agree on every road tile in `sim.active`; a different seed changes at least one name. In the 32×32 core, distinct rows give distinct street names and distinct columns give distinct avenue names. Every `ZONE_C` / `ZONE_I` lot at level > 0 has a non-empty `business_name`. Every lot with a road neighbour has a non-empty `address` matching `^\d+ .+ (Street\|Avenue)$`. `frontage()` is a 4-neighbour ROAD. `frontage_yaw` is in {0, 90, 180, −90}. City Hall's `landmark_name` is `"GridFall City Hall"`. No output contains `Argon`, `DeepSeek`, `Kimi`, `Qwen`, `Grok`, `GMI` or a mayor display surname. 1,000 calls of `place_label` take under 50 ms (report only). |
-| `fp_core_test.gd` | Uses `make_ctx(root, {"view": true, "grow": true})` (headless `FpPlayer` and `CollisionWorld`). **Fixtures:** asserts every fixture listed in §17.2 (≥ 5 residents, ≥ 1 resident at home with `work >= 0`, ≥ 1 C lot with a non-empty `business_name`, ≥ 1 `view.bus_stops` entry, ≥ 1 corner, tee and cross mask). Every registry path exists and loads as an `FpFeature` with a matching `feature_id()`, and ids are unique. `make_feature` puts the feature inside the tree. `ground_height` on a straight road gives `ASPHALT_TOP` at the centre and `SIDEWALK_TOP` at offset 0.4, `NAN` on a non-road water tile, and `SIDEWALK_TOP` on an end tile's island. `surface_at` follows the §12 table on a road centre, a sidewalk, a park or empty tile and a lot. Calling `player.simulate(Vector2(0, 1), false, 1/60.0)` 180 times (3 s) along a sidewalk moves the player `WALK * 3 ± 15%`, after the acceleration ramp; with `ctx.push_modal(&"test")` the same calls move nothing. Walking into a building for 5 s never lands the feet inside any `collision.boxes(i)` grown by `PLAYER_RADIUS * 0.99` (never `building_aabb`). `raycast` from the sidewalk toward that building hits `kind == "building"` within `INTERACT_RANGE`. `player.to_dict` → `from_dict` round-trips the position (ε 1e-4) and yaw (ε 0.01°). `AP.load_scene` returns null for a missing path and for a non-scene resource. |
+| `fp_core_test.gd` | Uses `make_ctx(root, {"view": true, "grow": true})` (headless `FpPlayer` and `CollisionWorld`). **Fixtures:** asserts every fixture listed in §17.2 (≥ 5 residents, ≥ 1 resident at home with `work >= 0`, ≥ 1 C lot with a non-empty `business_name`, ≥ 1 `view.bus_stops` entry, ≥ 1 corner, tee and cross mask). Every registry path exists and loads as an `FpFeature` with a matching `feature_id()`, and ids are unique. `make_feature` puts the feature inside the tree. `ground_height` on a straight road gives `ASPHALT_TOP` at the centre and `SIDEWALK_TOP` at offset 0.4, `NAN` on a non-road water tile, and `SIDEWALK_TOP` on an end tile's island. `surface_at` follows the §12 table on a road centre, a sidewalk, a park or empty tile and a lot. Calling `player.simulate(Vector2(0, 1), false, 1/60.0)` 180 times (3 s) along a sidewalk moves the player `WALK * 3 ± 15%`, after the acceleration ramp; with `ctx.push_modal(&"test")` the same calls move nothing. Walking into a building for 5 s never lands the feet inside any `collision.boxes(i)` grown by `PLAYER_RADIUS * 0.99` (never `building_aabb`). `raycast` from the sidewalk toward that building hits `kind == "building"` within `INTERACT_RANGE`. `player.to_dict` → `from_dict` round-trips the position (ε 1e-4) and yaw (ε 0.01°). `AP.load_scene` returns null for a missing path and for a non-scene resource. **Trapped:** the player stands at the centre of an empty lot with a frontage; the lot becomes `ZONE_R` level 1 (`view._on_tiles_changed`), so the player is now blocked; 5 s of sprinting toward the frontage gets them out; just inside the front face, backing into the house moves them no deeper; `nearest_free` from the lot centre returns an unblocked point within 1 u. |
 
 ### 17.4 `tools/tests/fp_smoke.gd` (FP headless smoke; `extends Node`, `run(main)`)
 
@@ -1520,7 +1570,7 @@ Shots that cannot be found fall back to the `street` pose with their own name. T
 
 `fp_photo_tour.gd` (`extends Node`, `run(main, dir)`):
 
-1. `DirAccess.make_dir_recursive_absolute(dir)`. Then `main.sim.start()`, then `await main.grow_offline(int(env GRIDFALL_PHOTO_DAYS or 6), 240000)`.
+1. `DirAccess.make_dir_recursive_absolute(dir)` and `get_tree().root.size = TARGET_SIZE` (`Vector2i(1600, 900)`, D11): on this machine's display the window opens at 1280×660 despite `--resolution 1600x900`. Then `main.sim.start()`, then `await main.grow_offline(int(env GRIDFALL_PHOTO_DAYS or 6), 240000)`.
 2. Keep the sim paused (speed 0) so no disaster interrupts the tour. Set `main.fp.player.input_enabled = false`.
 3. `shots = fp_shots.find(...)` plus every feature's `photo_shots()`.
 4. For each shot:
@@ -1530,22 +1580,22 @@ Shots that cannot be found fall back to the `street` pose with their own name. T
    - Save `<dir>/<name>_hud.png`.
    - `hud.set_hud_visible(false)`, wait 2 frames and `frame_post_draw`, save `<dir>/<name>.png`, then `set_hud_visible(true)`.
    - If the shot has `"restore"`, call it.
-   - Print `FP_PHOTO: shot <name> pos=(x,y,z) yaw=<deg>`.
-5. Print `FP_PHOTO: DONE n=<shots> day=<d> pop=<p>`. Then `main.audio._exit_tree()` and `quit(0)`.
+   - Print `FP_PHOTO: shot <name> pos=(x,y,z) yaw=<deg> labels=<n>`, where n counts the visible Label3Ds under CityView (report-only; S0 shows none).
+5. Print `FP_PHOTO: DONE n=<shots> day=<d> pop=<p> size=<w>x<h>` (the real root size). Then `main.audio._exit_tree()` and `quit(0)`.
 
 ### 17.6 `tools/tests/fp_bench.gd` (perf report; owned by G2 after S0)
 
 This is a port of `.../scratchpad/tools/fp_bench.gd`, with these changes:
 
-1. Before instantiating `main.tscn`, call `OS.set_environment("GRIDFALL_VIEW", "fp")`. Then `sim.start()` and `await main.grow_offline(env FPBENCH_DAYS or 6, 120000)`.
+1. Set `get_root().size = TARGET_SIZE` (`Vector2i(1600, 900)`, D11; the window can open smaller than `--resolution`) after the boot frames and again after placing the player, never in `_init` before the window is up (the window manager overrides that). Before instantiating `main.tscn`, call `OS.set_environment("GRIDFALL_VIEW", "fp")`. Then `sim.start()` and `await main.grow_offline(env FPBENCH_DAYS or 6, 120000)`.
 2. Place the player with `fp_shots.find(...)` (`street`).
 3. Measure 4 s each:
    - `street_eye_hud`.
    - `street_eye_nohud`, using `hud.set_hud_visible(false)`.
    - `street_cross_nohud`, after turning 90°.
-   - `street_tick`: set `sim.day_seconds = 12.0` and `sim.set_speed(1)` for 6.5 s, so two ticks run through the normal `_process` path, then restore. This is the stall the F slice must remove.
+   - `street_tick`: `sim.set_day_seconds(12.0)` and `sim.set_speed(1)` for 6.5 s, so two ticks run through the normal `_process` path, then restore. This is the stall the F slice must remove.
    - `street_day_end`: the same, after setting `sim.tick_in_day = 3`, so the window contains a day end and a day start (the 690 ms boundary measured in `tick_split.log`).
-4. Each measurement prints `FPBENCH {json}` with the scratch fields (`avg_ms`, `p50_ms`, `p99_ms`, `max_ms`, `gpu_ms`, `rcpu_ms`, `draws`, `objects`, `prims`, `vram_mb`, `nodes`, `hitches_over_33ms`). Finish with `FPBENCH: DONE` and `quit(0)`. It is report-only.
+4. Each measurement prints `FPBENCH {json}` with the scratch fields (`avg_ms`, `p50_ms`, `p99_ms`, `max_ms`, `gpu_ms`, `rcpu_ms`, `draws`, `objects`, `prims`, `vram_mb`, `nodes`, `hitches_over_33ms`) plus `viewport` (`"<w>x<h>"`, the real root size). Finish with `FPBENCH: DONE` and `quit(0)`. It is report-only.
 5. Save `bench_street.png` to `FPBENCH_DIR`.
 
 ---
@@ -1582,8 +1632,8 @@ Behaviour:
 | render | `fp_photo` (heavy) | `DISPLAY=${DISPLAY:-:1} GRIDFALL_FP_PHOTO_DIR=$GATE_LOG_DIR/photos GRIDFALL_PHOTO_DAYS=6` / `--path . --resolution 1600x900 --audio-driver Dummy` | `FP_PHOTO: DONE` | 400 |
 | render | `fp_bench` (heavy) | `DISPLAY=… FPBENCH_DIR=$GATE_LOG_DIR/bench` / `--path . --resolution 1600x900 --audio-driver Dummy -s tools/tests/fp_bench.gd` | `FPBENCH: DONE` | 400 |
 
-   `render` does not include quick or full. After `fp_photo` passes, the gate also checks that 16 PNGs exist (`<shot>.png` and `<shot>_hud.png` for the 8 named shots). If any are missing the step becomes `FAIL(photos)`.
-7. **Summary.** A fixed-width table: `STEP | RESULT | SECS | LOG`. For `render`, also print the `FPBENCH` JSON lines as a table (label, fps, avg, p99, max, draws, vram_mb). The perf numbers are **report-only**. Print the photo directory path. The last line is `GATE <mode>: PASS` or `GATE <mode>: FAIL (<n> failed)`.
+   `render` does not include quick or full. After `fp_photo` passes, the gate also checks that 16 PNGs exist (`<shot>.png` and `<shot>_hud.png` for the 8 named shots). If any are missing the step becomes `FAIL(photos)`. If the `FP_PHOTO: DONE` line does not say `size=1600x900`, the step becomes `FAIL(size)`. After `fp_bench` passes, every `FPBENCH {json}` row must carry `"viewport":"1600x900"`, else the step becomes `FAIL(size)`: D11's budgets are for 1600×900, and on this machine's display the window opened at 1280×660 (41 % fewer pixels) until the scripts set the size themselves.
+7. **Summary.** A fixed-width table: `STEP | RESULT | SECS | LOG`. For `render`, also print the `FPBENCH` JSON lines as a table (label, fps, avg, p99, max, draws, vram_mb, viewport). The perf numbers are **report-only**. Print the photo directory path. The last line is `GATE <mode>: PASS` or `GATE <mode>: FAIL (<n> failed)`.
 8. **Exit code.** 0 iff every step passed; 1 otherwise; 2 on bad usage.
 
 The live tests (`brain_live_test`, `residents_live`, `dump_prompts`) are never run.
@@ -1605,7 +1655,7 @@ Run all of these from the worktree root.
    - T skips to morning.
    - Esc pauses and shows the pause card. F5 and F9 save and load. F1 hides the HUD.
    - A fire or quake never moves the camera.
-5. `GRIDFALL_VIEW=orbit` under the same command boots today's orbit game, CityHud included, with no visible change.
+5. `GRIDFALL_VIEW=orbit` under the same command boots today's orbit game, CityHud included, with no visible change except the name links: mayor and district labels, cards and the cinematic keep the brand names (D-S0-7), the log, Gazette, posts and resident text use display names (D-S0-6, D-S0-8), and the mayor inspector line and card tooltips connect the two.
 6. `git diff --stat fp/integration...` touches only the files in §2. Within the edited legacy files, only the hunks in §15 and §6.2 appear: `git diff -U0` on each file is reviewable against this spec.
 7. `grep -rn "focus_world_point" scripts/main.gd` shows only the `focus()` body and the orbit-only modes (`_run_photo_tour`).
 8. `grep -rn "BASE_DAY_SECONDS" scripts` shows only `sim_defs.gd:22`, the default in `city_sim.gd`, `grow_offline` and `exit_fp`.
@@ -1656,8 +1706,8 @@ Run all of these from the worktree root.
 | D-S0-4 | **The FP smoke, photo tour and bench live in `tools/tests/`.** Main loads them at runtime with `load()` (not `preload`). | This matches the ARCHITECTURE ownership row, and nothing test-only is preloaded into the game. |
 | D-S0-5 | **Spawn on City Hall's frontage sidewalk**, facing the hall. | It is deterministic, central, and always exists in a new city. |
 | D-S0-6 | **`sim.mayors[i]["name"]` becomes the display name** in new cities and on load. `D.MAYORS[i]["name"]` stays the brand label, and `display` is new. | One choke point de-brands every log line, report and prompt that reads `sim.mayors`, and saves keep their shape. |
-| D-S0-7 | **The orbit CityHud and the cinematic keep model branding.** | D6 keeps CityHud only for orbit, as the legacy GMI showcase. Every FP surface uses display names. |
-| D-S0-8 | **`D.debrand()` runs at the LLM source** (mayor post and thought, Gazette) and again at display in B, C and D. | The tracked replay cache contains brand names, and it must not be rewritten (D9). |
+| D-S0-7 | **The orbit CityHud, the orbit world labels (`city_view.gd` district and mayor-bot labels) and the cinematic keep model branding.** The mayor inspector and card tooltips add `Mayor <display>` so both names are linked. | D6 keeps CityHud only for orbit, as the legacy GMI showcase. Every FP surface uses display names. |
+| D-S0-8 | **`D.debrand()` runs at the LLM source** (mayor post and thought, Gazette, council statement, resident say, thought, mood reason and letters, restored brain state) and again at display in B, C and D. | The tracked replay cache contains brand names, and it must not be rewritten (D9). |
 | D-S0-9 | **Street names come from row and column coordinates**, with band qualifiers outside the core. They are never derived from connectivity. | Names never change as the city grows, which posters, chat and saves rely on. |
 | D-S0-10 | **`CityDirectory.frontage()` is the single rule for which street a lot faces.** G1 orients buildings with `frontage_yaw()`. | Addresses, shop signs, posters and building fronts all agree. |
 | D-S0-11 | **Feature hooks `pick()`, `self_test()` and `photo_shots()` are added to `FpFeature`**, beyond the lifecycle in ARCHITECTURE §3. | Interaction, the smoke and the tour can then grow inside slice-owned files, without anyone editing shared files. |
