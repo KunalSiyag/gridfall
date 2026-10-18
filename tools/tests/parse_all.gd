@@ -22,7 +22,12 @@ func _init() -> void:
 	_walk("res://tools", files)
 	var bad: Array = []
 	var t0 := Time.get_ticks_msec()
+	# Reloading the running script with CACHE_MODE_IGNORE swaps the bytecode under the executing
+	# _init (an internal VM error); it compiled already, since it is running.
+	var me: String = (get_script() as Script).resource_path
 	for p: String in files:
+		if p == me:
+			continue
 		var s := ResourceLoader.load(p, "", ResourceLoader.CACHE_MODE_IGNORE) as GDScript
 		if s == null or not s.can_instantiate():
 			bad.append(p)
