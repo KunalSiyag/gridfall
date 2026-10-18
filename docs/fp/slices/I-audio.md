@@ -8,7 +8,7 @@ The city sounds alive and **positional**:
 
 - Engines rise and fall as cars pass, and horns sound when traffic stalls.
 - Sirens doppler past toward incidents. Construction clanks near sites.
-- Your footsteps change between asphalt, sidewalk, grass and bridge.
+- Your footsteps change between asphalt, sidewalk, grass and bridge, and land exactly when your character's feet hit the ground (third person is the default, D13: you see every step).
 - Area beds cross-fade as you walk: traffic hum downtown, birds in parks, water by the river, and a quieter residential bed.
 - The music ducks under the street sound in first person, and a soft blip marks new chat lines.
 - In orbit mode everything sounds as it does today, except that the blackout tick no longer repeats on every call (§2).
@@ -27,7 +27,7 @@ The city sounds alive and **positional**:
 |---|---|
 | S0 `WS` | `AUDIO_UNIT_SIZE` (0.5 u = 10 m, the `unit_size` of every `AudioStreamPlayer3D`), `M`, `TRAFFIC_RADIUS` |
 | `FpContext` | `player` (the FP camera is the listener automatically, because it is current), `collision.surface_at(p)` (mapping in S0 §12: a park tile is `"grass"`), `directory`, `sim`, `view`, `settings` (`music_volume_db`, `sfx_volume_db`), `world_root`, `features` (E's `traffic.agents_near(p, r)` for engine emitters, when present: fields `id`, `pos`, `vel`, `speed`, `kind`, `stalled_s`) |
-| `FpPlayer` | a `stepped(surface: String, pos: Vector3)` signal (A adds it). Until A lands, I polls the player's distance travelled and calls `surface_at` itself every `0.7 * M` of horizontal travel. |
+| `FpPlayer` | a `stepped(surface: String, pos: Vector3)` signal (A adds it). Once the hero animates (A's stage A2, on HC's bodies), A fires it on the locomotion clip's **foot contacts**: HC phase-aligns every loop so the left heel strikes at t = 0 and the right at half the cycle, so the signal follows the visible stride and cadence (walk, jog, run, crouch-walk, landing) in both cameras; `pos` is the contact foot's ground point. Before that, A fires it every `0.7 * M` of travel. Until A lands at all, I polls the player's distance travelled and calls `surface_at` itself every `0.7 * M` of horizontal travel. |
 | `GameBus` | listens to `chat_posted` (blip), `ping` (`event:*` gives an alert stinger), `toast` (`alert` kind), `pause_changed` (pause the bus), `settings_changed` (volumes), `conversation_changed` (duck ambience −6 dB while talking), `player_tile_changed` (area bed selection), `time_scale_changed` |
 | `CitySim` | `event_started` / `event_ended` (siren and fire emitters at the event), `site_started` / `site_finished` (construction loops), `traffic[i]`, `kind`, `terrain`, `is_surveyed`, `night` (via `SkyDirector.night`) |
 | `CityView` | `tile_built` / `tile_cleared` (register site, fountain and coal-plant emitters; skip while `in_setup`), `world_rebuilt`, `life` (crew vehicles' positions while E is absent), `flush_rebuild_queue()` (tests) |
@@ -93,9 +93,12 @@ Settings map `music_volume_db` to `Music` and `sfx_volume_db` to `SFX` and `Ambi
 
 ### 5. Footsteps (`footsteps.gd`)
 
+- **Timing follows the hero's locomotion phase when available.** When `FpPlayer` has the `stepped` signal, I plays exactly one step per emission and stops polling (never both, so no doubled steps); the cadence then matches the animation, including the faster run cadence (a landing is one more contact). Only without the signal does I fall back to the distance poll.
 - The surface comes from `stepped(surface, pos)`, or from polling.
+- Alternate left and right variants per step (a stride has two contacts).
 - Use 4–6 variations per surface: asphalt, sidewalk, grass, dirt, bridge, lot. Pick them with a seeded RNG, with ±8% pitch.
-- Play them on a non-positional player at −14 dB on the `SFX` bus. Running is louder and faster; crouching is quieter.
+- Play them on a non-positional player at −14 dB on the `SFX` bus. Running is louder and faster; crouching is quieter. In third person the listener (the current camera) sits about 3.2 m behind the hero, so a non-positional step still reads as "my feet"; keep it non-positional in both cameras.
+- Optional, after E's stage E2: footsteps for T0 residents within 6 m, positional, at most 4 at once, triggered by E at the same foot-contact phases.
 
 ### 6. UI
 
@@ -148,7 +151,8 @@ Total size must be at most 8 MB. The ACE-Step tool is optional and needs the GPU
 
 **Footsteps.**
 - `surface_at` on a road centre gives the `asphalt` variants, on the sidewalk the `sidewalk` variants, and on a park tile `grass`.
-- Simulated travel of `10 * 0.7 * M` produces 10 steps (±1).
+- Simulated travel of `10 * 0.7 * M` produces 10 steps (±1) when the player has no `stepped` signal (polling).
+- With a stub player that has `stepped`, 8 emissions produce exactly 8 steps, alternating left and right variants, and walking the same distance with no emission produces none (polling is off).
 
 **Ambience.** Moving the stub player next to a water tile makes the `river` weight the largest after 3 s simulated.
 

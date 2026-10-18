@@ -1,6 +1,6 @@
 # Slice G2: Render performance
 
-Branch `fp/G2-renderperf`, branched from `fp/integration` after S0. Read ARCHITECTURE D11, S0 §§15.1, 17.6 and 18. In `understand.md`, read "3D CITY RENDERER", the perf_hotspots sections and CRITIC (a)#3. The current baseline is in `.../scratchpad/logs/fp_bench.log`.
+Branch `fp/G2-renderperf`, branched from `fp/integration` after S0. Read ARCHITECTURE D11 and D13, S0 §§15.1, 17.6 and 18. In `understand.md`, read "3D CITY RENDERER", the perf_hotspots sections and CRITIC (a)#3. The current baseline is in `.../scratchpad/logs/fp_bench.log`.
 
 ## Goal (what the player sees)
 
@@ -13,7 +13,7 @@ The measurements say the bottleneck is **draw calls and render CPU** (5.3k draws
 - `scripts/fp/render/**` (entry point `render_opt_feature.gd`, id `render_opt`; `hlod.gd`, `occluders.gd`, `quality.gd`, …)
 - `project.godot` `[rendering]` section only
 - `tools/optimize_imports.py` (new). Every slice may **run** it on its own files (`--apply <paths>`); only G2 edits it.
-- The parameters inside `*.import` files under `models/**` (`compress/mode`, `mipmaps/generate`, `compress/normal_map`, …). Do not change the texture or model *contents*. Import parameters elsewhere belong to the slice that owns the assets: G1 for `textures/real/**` and `env/**`, D for `assets/posters/**`, I for `sounds/fp/**`. Reimport rewrites each file's `[remap]` section, so two slices editing the same `.import` file always conflict; this split prevents it.
+- The parameters inside `*.import` files under `models/**` (`compress/mode`, `mipmaps/generate`, `compress/normal_map`, …), **except `models/characters/**`**, whose `.import` files HC owns (D13, T-D5: the retarget settings are content). Do not change the texture or model *contents*. Import parameters elsewhere belong to the slice that owns the assets: G1 for `textures/real/**` and `env/**`, D for `assets/posters/**`, I for `sounds/fp/**`. Reimport rewrites each file's `[remap]` section, so two slices editing the same `.import` file always conflict; this split prevents it.
 - `tools/tests/fp_bench.gd`, inherited from S0
 - `tools/tests/fp_renderperf_test.gd`
 
@@ -28,6 +28,8 @@ The measurements say the bottleneck is **draw calls and render CPU** (5.3k draws
 | `GameBus` | listens to `quality_changed(preset)`, `settings_changed`, `world_ready` |
 | S0 `WS` | `VIS_BUILDING`, `VIS_PROP`, `VIS_PERSON`, `VIS_CAR`, `VIS_SITE_PART`, `CAMERA_FAR`. G2 owns the **values** of `VIS_*` (S0 §4.3). |
 | F | `CitySim.slice_stats()` (bench report, when present) |
+| E (stage E2) | `traffic.anim_stats()` → `{"t0", "t1", "t2", "t3", "anim_us", "char_draws"}` (bench report) |
+| S0 (D13) | `mode.apply_settings({"camera_mode": …}, false)`: switch the camera for a bench label without saving the player's settings |
 | G1 | the light profile owns the Environment and Sun values; G2 only sets viewport, `RenderingServer` and project quality knobs |
 
 ## Seams G2 may request
@@ -127,15 +129,23 @@ Then run one heavy `godot --headless --path . --import` under the lock and commi
 
 **Scope and paths.** `--apply` and `--check` take optional path arguments, so another slice can apply the settings to its own files; with no arguments they cover `models/**` (G2's) and **report** (never rewrite) other owners' files. The settings for `textures/real/**` and `env/**` (mipmaps on; ground textures VRAM-compressed) are listed in the script so G1 can apply them to its files.
 
+**Character allow-list (D13).** `models/characters/**` belongs to HC. The script keeps an explicit allow-list for that tree:
+- On `*.glb.import` there it never rewrites, adds or drops `_subresources`, any `retarget/*` key (bone map, bone renamer, rest fixer, `normalize_position_tracks`, track removal), `nodes/use_name_suffixes`, `animation/fps` or `meshes/generate_lods`. Parse and re-emit only the keys it changes; a round trip of an untouched file must be byte-identical.
+- It may set texture keys (VRAM compression, mipmaps, normal-map flag) on the texture imports there, and only with explicit paths (`--apply models/characters/...`), which HC runs.
+- With no arguments, `--check` and `--apply` skip `models/characters/**` entirely; `--report` includes it in the VRAM estimate.
+- Test: a copy of a character `.glb.import` with retarget subresources survives `--apply` byte-identical, and `--check` exits 0 on it.
+
 **Merge order.** `optimize_imports.py` lands with G2. G2 merges **before H**; H rebases and runs `--apply` on its re-exported `models/real/**` files (H's step 6.1). Whatever the order, after every merge the integrator runs `python3 -I tools/optimize_imports.py --check` when the script exists; on failure, `--apply`, a heavy `--import` under the lock, commit, then `tools/gate.sh full` (ARCHITECTURE §7).
 
 **Optional stretch: texture dedupe.** 1,595 extracted textures exist, but only 145 are unique by md5. Remap duplicates through the `.glb.import` `_subresources` or an import script to a shared `res://materials/lib/`. Do it only if it is reversible and passes `validate_real.py` (coordinate with H).
 
 ### 4. Bench (`tools/tests/fp_bench.gd`)
 
-- Keep S0's labels (including `street_day_end` and the `p50_ms` field) and add `street_eye_nohud_low`, `_medium` and `_high`.
+- Keep S0's labels (including `street_day_end` and the `p50_ms` field) and add `street_eye_nohud_low`, `_medium` and `_high`. S0 forces first person at the start (`apply_settings({"camera_mode": "first"}, false)`), so these stay comparable with the S0 baseline.
+- **Third-person street shot (D13).** Add `street_tps_nohud` (Medium): the same street pose, `apply_settings({"camera_mode": "third"}, false)`, 60 frames to settle (A's blend is 0.35 s), then measure; switch back to first person afterwards. Save `bench_street_tps.png` next to `bench_street.png`. Until A1 merges the label still runs (the setting is ignored) and the row says `"camera":"first"`; record the active mode in each row (`"camera": settings.camera_mode`).
+- **Animated people.** In the street rows, report `traffic.anim_stats()` when E provides it (`anim_us`, tier counts, `char_draws`), and the hero's AnimationTree cost when A exposes it. The gate's bench runs the debug editor binary, which overstates GDScript and animation costs; for the budget decision measure once more with a release export template and `low_processor_mode_sleep_usec = 0`, one run at a time under the lock, and report both.
 - Report the F stats (`slice_stats`) during `street_tick` and `street_day_end`.
-- Add `FPBENCH_ENFORCE=1`. When it is set, the bench fails with `FPBENCH: FAIL <reason>` if `street_eye_nohud` (Medium) has p50 > 16.7 ms, p99 > 33 ms, draws > 2,000 or VRAM > 1,536 MB. The 2,000 draws include E's agents (budget 500) and G1's furniture.
+- Add `FPBENCH_ENFORCE=1`. When it is set, the bench fails with `FPBENCH: FAIL <reason>` if `street_eye_nohud` (Medium) has p50 > 16.7 ms, p99 > 33 ms, draws > 2,000 or VRAM > 1,536 MB. The 2,000 draws include E's agents (budget 500) and G1's furniture. After A1 merges, `street_tps_nohud` is enforced with the same targets, plus (after E2) `anim_us ≤ 1,500` and `char_draws ≤ 150`.
 - Without that env var it stays report-only, which is how the gate runs it.
 
 ### 5. Feature (`render_opt_feature.gd`)
@@ -177,10 +187,13 @@ Then run one heavy `godot --headless --path . --import` under the lock and commi
 
 **Import compliance.** The test runs `OS.execute("python3", ["-I", ProjectSettings.globalize_path("res://tools/optimize_imports.py"), "--check"])`, which must exit 0 for `models/**`. Use `python3 -I` and pass absolute paths as arguments.
 
-**Gate, render mode.** `tools/gate.sh render` shows `street_eye_nohud` improving against the S0 baseline. Attach the before and after FPBENCH tables. Hand-off target: Medium preset with p50 ≤ 16.7 ms, p99 ≤ 33 ms, draws < 2,000 and VRAM ≤ 1.5 GB (report). If the target is missed, list the remaining top costs.
+**Character imports.** `--check` exits 0 with HC's `models/characters/**` files present, and `--apply` with no arguments leaves every file under `models/characters/` byte-identical (hash before and after).
+
+**Gate, render mode.** `tools/gate.sh render` shows `street_eye_nohud` improving against the S0 baseline, and `street_tps_nohud` within 10 % of it (the hero adds a few draws; the third-person camera sees more ground and sky). Attach the before and after FPBENCH tables. Hand-off target: Medium preset with p50 ≤ 16.7 ms, p99 ≤ 33 ms, draws < 2,000 and VRAM ≤ 1.5 GB (report). If the target is missed, list the remaining top costs.
 
 ## Performance budget
 
+- **Animated people (TPS_PLAN T9, measured here, spent by E and A):** at most **1.5 ms per frame** of animation CPU for residents and walkers, at most **150 character draws** (inside E's 500), the hero's AnimationTree at most **0.1 ms**, and about **120 MB of VRAM** for HC's 38 resident bodies plus the hero (BC compressed with mips) inside D11's 1.5 GB. If the measured Rocketbox cost (52 mapped tracks) exceeds it, report the numbers and ask E to lower the T1 cap and rates.
 - The post-pass costs at most **0.3 ms per tile**, and an impostor chunk rebuild at most 4 ms. Rebuilds are debounced to one chunk per frame.
 - At most about 1,500 occluder boxes (the number of buildings in a fully built core), in one `ArrayOccluder3D` per chunk.
 - The preset switch re-applies from cached lists over frames, at most 3 ms per frame (no single 100 ms+ stall).

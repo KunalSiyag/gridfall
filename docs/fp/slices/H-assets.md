@@ -1,12 +1,11 @@
 # Slice H: Assets
 
-Branch `fp/H-assets`, branched from `fp/integration` after S0. Read ARCHITECTURE D1 and D10, S0 §4 (scale) and §4.4 (`asset_paths.gd`). In `understand.md`, read "LOOK & ASSETS" and CRITIC (d), which covers the scale verdicts and the door defect. The pipeline is `tools/blender/make_realistic_city.py` plus `tools/blender/realcity/*.py`, validated by `tools/blender/validate_real.py`.
+Branch `fp/H-assets`, branched from `fp/integration` after S0. Read ARCHITECTURE D1, D10 and D13, S0 §4 (scale) and §4.4 (`asset_paths.gd`). In `understand.md`, read "LOOK & ASSETS" and CRITIC (d), which covers the scale verdicts and the door defect. The pipeline is `tools/blender/make_realistic_city.py` plus `tools/blender/realcity/*.py`, validated by `tools/blender/validate_real.py`.
 
 ## Goal (what the player sees)
 
-Close-up assets that hold up at eye level:
+Close-up assets that hold up at eye level and over the hero's shoulder:
 
-- **People** are rigged and animated: they walk, idle, run, talk and sit, instead of being static mid-stride mannequins.
 - **Cars** are true 1.0× size, with wheels that spin and see-through tinted glass, plus headlights, tail lights and brake lights.
 - **Street hardware:** traffic lights, pedestrian signals, street-name signs, stop and yield signs, curb ramps at crosswalks, bike racks, parking meters and "For lease" boards.
 - **Poster carriers:** a bus shelter, a billboard, a wall poster frame and a construction hoarding. Each has a real UV'd poster surface.
@@ -14,11 +13,13 @@ Close-up assets that hold up at eye level:
 
 Every asset is validated, and every consumer falls back gracefully when a file is missing.
 
+**People are no longer H's (D13, T-D4).** The procedural rigged people of the old §1 are dropped: the trial looked "stiff, crouched, clay-figure" at 2–4 m, which the third-person camera shows constantly. Slice HC builds every person (hero, residents, crowd) from Microsoft Rocketbox and Quaternius (`docs/fp/slices/HC-characters.md`). H keeps the legacy `models/real/people/person_{a..h}.glb` untouched: they are the fallback when a character file is missing and A's placeholder hero until HC lands.
+
 ## Owned files (exclusive)
 
 - `tools/blender/**`, including `realcity/*.py`, `make_realistic_city.py`, `validate_real.py` and `render_real.py`.
 - `models/real/**`, both the GLBs and their extracted textures. Import **parameters** belong to G2: when you regenerate files, run `python3 -I tools/optimize_imports.py --apply <your paths>` **if the script exists** (G2 merges before H; H rebases onto it, ARCHITECTURE §7), so its settings survive. New `.import` files start with default parameters and would fail G2's `--check` otherwise.
-- `scripts/fp/asset_paths.gd`, the path list only. Add constants freely; never rename the S0 ones.
+- `scripts/fp/asset_paths.gd`, the path list only, **except HC's marked `# --- HC characters ---` section** at the end of the file (D13). Add constants freely outside it; never rename the S0 ones. `PEOPLE_RIGGED_DIR` stays as a constant (S0 names are never renamed) but is retired: nothing produces or reads it.
 - `tools/polyhaven_fetch.py`. G1 may add one HDRI entry; accept it.
 - `tools/tests/fp_assets_test.gd`.
 
@@ -27,8 +28,8 @@ Every asset is validated, and every consumer falls back gracefully when a file i
 | From | API |
 |---|---|
 | S0 `WS` | `M` (= `core.M`, 1/20), `PERSON_H` (1.75 m), `VEHICLE_V2_SCALE` (1.0), `ROAD_HALF`, `SIDEWALK_TOP`, `ASPHALT_TOP`, `LAMP_HEIGHT`, `LOT_FOOTPRINT`, `CURB_FURNITURE`, `FRONT_FURNITURE`. `fp_world_scale_test` parses `roads.py` `ZA` / `ZS` / `HW`, the `ZM = ZA + <n>` expression, and `core.py` `M`; **do not change those authoring constants or the form of the `ZM` line.** |
-| S0 `AP` | every constant in S0 §4.4 is a delivery target, including the node-name prefixes `POSTER_NODE_PREFIX`, `POSTER_SPOT_PREFIX`, `DOOR_SPOT_PREFIX`, `COLBOX_PREFIX`, and `PERSON_ANIMS` / `PERSON_LOOPING` / `WHEEL_NODES` / `BIKE_WHEEL_NODES` |
-| Consumers (contracts to honour) | E: `PEOPLE_RIGGED_DIR` (animations `AP.PERSON_ANIMS`), `VEHICLES_V2_DIR` (`AP.WHEEL_NODES`, `Seat_Driver`, light surfaces, `<name>_lod1.glb`), `TRAFFIC_LIGHT` (with `SignText_A` / `SignText_B`), `PED_SIGNAL`, `STOP_SIGN`, `YIELD_SIGN`, `BICYCLE`, `Door_<n>` empties. G1: `STREET_SIGN`, `BUS_SHELTER`, `BILLBOARD_POSTER`, `CROSSWALK_RAMP`, `BIKE_RACK`, `PARKING_METER`, `LEASE_SIGN`, door fix. D: `BILLBOARD_POSTER`, `BUS_SHELTER`, `POSTER_FRAME`, `HOARDING`, `LEASE_SIGN` (`Poster_<n>` nodes), `PosterSpot_<n>` empties on zone and building walls. A and G2: `ColBox_<n>` empties (optional). |
+| S0 `AP` | every constant in S0 §4.4 is a delivery target, including the node-name prefixes `POSTER_NODE_PREFIX`, `POSTER_SPOT_PREFIX`, `DOOR_SPOT_PREFIX`, `COLBOX_PREFIX`, and `WHEEL_NODES` / `BIKE_WHEEL_NODES`. Not H's: `PEOPLE_RIGGED_DIR` (retired), `PERSON_ANIMS` / `PERSON_LOOPING` (now HC's animation-library contract) and HC's section. |
+| Consumers (contracts to honour) | E: `VEHICLES_V2_DIR` (`AP.WHEEL_NODES`, `Seat_Driver`, light surfaces, `<name>_lod1.glb`), `TRAFFIC_LIGHT` (with `SignText_A` / `SignText_B`), `PED_SIGNAL`, `STOP_SIGN`, `YIELD_SIGN`, `BICYCLE`, `Door_<n>` empties. G1: `STREET_SIGN`, `BUS_SHELTER`, `BILLBOARD_POSTER`, `CROSSWALK_RAMP`, `BIKE_RACK`, `PARKING_METER`, `LEASE_SIGN`, door fix. D: `BILLBOARD_POSTER`, `BUS_SHELTER`, `POSTER_FRAME`, `HOARDING`, `LEASE_SIGN` (`Poster_<n>` nodes), `PosterSpot_<n>` empties on zone and building walls. A and G2: `ColBox_<n>` empties (optional). |
 
 ## Seams H may request
 
@@ -36,21 +37,13 @@ Every asset is validated, and every consumer falls back gracefully when a file i
 
 ## Deliverables: the GLBs and their target paths
 
-Run every build headless with `blender --background --python tools/blender/make_realistic_city.py -- <category|key>`. Blender is a flatpak and cannot see `/tmp`, so keep scratch output under `$HOME` or a gitignored folder in the repo. Seeds stay `crc32(key)` for existing keys; a **new key that re-builds a legacy asset** (`people_rigged/person_a`, `vehicles_v2/sedan_blue`, …) seeds with the crc32 of its **legacy** key (`people/person_a`, `vehicles/sedan_blue`), so identities and palettes match (`make_realistic_city.py:59`). Register the new categories in `registry()`: `street`, `people_rigged` and `vehicles_v2`.
+Run every build headless with `blender --background --python tools/blender/make_realistic_city.py -- <category|key>`. Blender is a flatpak and cannot see `/tmp`, so keep scratch output under `$HOME` or a gitignored folder in the repo. Seeds stay `crc32(key)` for existing keys; a **new key that re-builds a legacy asset** (`vehicles_v2/sedan_blue`, …) seeds with the crc32 of its **legacy** key (`vehicles/sedan_blue`), so identities and palettes match (`make_realistic_city.py:59`). Register the new categories in `registry()`: `street` and `vehicles_v2`.
 
 **Named parts survive the merge.** `build()` merges all geometry into `<name>_body` and `<name>_foliage` (`make_realistic_city.py:63-64`). Every node-name contract below (`Poster_<n>`, `Wheel_*`, `Signal_*`, `Walk_0`, `SignText_*`, `PosterSpot_<n>`, `Door_<n>`, `ColBox_<n>`, `Seat_Driver`) is created as its own object **outside** that merge (the way `part()` already builds `Bulb_<n>`, `roads.py:146`), so it reaches the GLB as its own node.
 
-### 1. Rigged people: `models/real/people_rigged/person_{a..h}.glb` (8 files)
+### 1. People: superseded (D13, T-D4)
 
-- Same identities and palettes as `people/person_{a..h}`.
-- **Real scale:** 1.75 m = 0.0875 u, at a game scale of 1.0. The front faces Godot +Z.
-- An armature of at least 15 bones: hips, spine, chest, neck, head, and for each side the upper arm, forearm, hand, thigh, shin and foot.
-- **Rigid skinning, one mesh.** `people.py` pushes every part into one `c.mb` (`people.py:38-100`), which `build()` merges into `<name>_body`; there are no part objects to parent, and bone-parented part objects would export one node (one draw call) per part. Instead, when building each part, put its vertices in a vertex group named after its bone at weight 1.0, and give the merged mesh one Armature modifier. The exporter's `export_apply` excludes Armature modifiers, so the skin survives. The result is **one skinned `MeshInstance3D` with at most 6 surfaces**. Deterministic and headless-safe (no automatic weights).
-- **Neutral rest pose.** The legacy people are built mid-stride (`people.py:4`); the rigged ones are built standing (legs straight, arms down) so the animations start from a neutral bind pose.
-- **Animations.** Blender actions named `idle-loop` (3 s), `walk-loop` (1.0 s, 1.4 m/s stride), `run-loop` (0.7 s), `talk-loop` (2 s gesture) and `sit` (a pose), authored procedurally with keyframes. glTF has no loop flag; with `nodes/use_name_suffixes=true` Godot should set `LOOP_LINEAR` on `-loop` clips and strip the suffix, giving exactly `AP.PERSON_ANIMS`. **Verify on 4.7.2** in `fp_assets_test`. If the suffix is not stripped, change `AP.PERSON_ANIMS` to the suffixed names (H owns the list) and tell E, who then sets `loop_mode` at runtime; the test checks whichever contract is in `AP`. Import parameters stay G2's (`person_a.glb.import` has `_subresources={}`).
-- Materials keep the recolour contract: `Shirt`, `Pants`, `Skin`, `Hair`, `Shoes` (plus `Hat` and `Bag`).
-- At most 4,000 tris and at most 6 materials.
-- The legacy `people/` files stay untouched.
+H builds no people. Rigged, animated people come from slice HC (`models/characters/**`). Do not create `models/real/people_rigged/`, and leave `tools/blender/realcity/people.py` and the legacy `models/real/people/` outputs unchanged.
 
 ### 2. Vehicles at 1.0×: `models/real/vehicles_v2/<name>.glb`
 
@@ -62,7 +55,7 @@ Run every build headless with `blender --background --python tools/blender/make_
 - Separate light surfaces with the materials `Light_Head`, `Light_Tail`, `Light_Brake`, `Light_Indicator_L` and `Light_Indicator_R`.
 - Emergency vehicles keep `Siren_0` and `Siren_1`. Wheels touch y = 0 and the front faces +Z.
 - At most 9,000 tris and at most 8 materials.
-- **LOD variants for E's batching:** `<name>_lod1.glb` next to each vehicle (and `people_rigged/person_<x>_lod1.glb`, unrigged, standing): a **single material** (an atlas or vertex colours), wheels merged and static, at most 1,500 tris. E draws them as one MultiMesh per model beyond 2 u; without them 60 cars × 8 materials plus 80 people × 5 is about 960 draws before shadows.
+- **LOD variants for E's batching:** `<name>_lod1.glb` next to each vehicle: a **single material** (an atlas or vertex colours), wheels merged and static, at most 1,500 tris. E draws them as one MultiMesh per model beyond 2 u; without them 60 cars × 8 materials is about 480 draws before shadows. (People LODs are HC's `<Name>_lod1.glb`.)
 - The legacy `vehicles/` files stay untouched.
 
 ### 3. The street kit: `models/real/street/`
@@ -91,13 +84,13 @@ Sizes are in metres; divide by 20 for units. The front faces +Z, the base sits a
 - **Name the leaf, not the material family.** Today `Door_*` materials are also used for shutters (`zones_res.py:27, 196, 219-220`) and sign lettering (`zones_ind.py:101, 216`), and some doors use `Glass_Shop` (`zones_ind.py:32`, `zones_com.py:237`); in house_bungalow, `Door_Black` spans 0.08 because it is the shutters. Rename the leaf materials `DoorLeaf_*` and the shutter materials `Shutter_*` (lettering keeps its name).
 - **Door empties.** Emit one `Door_<n>` empty per doorway (`AP.DOOR_SPOT_PREFIX`): at the bottom centre of the opening, +Z pointing out of the building, `scale.y` = leaf height. E (walk-in targets) and A can use them.
 - **Poster spots.** Emit `PosterSpot_<n>` empties (`AP.POSTER_SPOT_PREFIX`) on blank walls of every zone and building model (at least one on the facade that faces +Z where a blank 1.2 × 1.8 m area exists): +Z out of the wall, `scale` = poster size in units. D places wall posters on them.
+- **Baked parked cars.** `arch.parked_car` builds blocky primitive cars that read as toys at street level and over the hero's shoulder (G1 must-fix 13, seen in `/tmp/claude-1000/gf-gate-s0-render2/photos/residential.png`). It is called from `zones_res.py` (houses, under carports), `zones_com.py`, `zones_ind.py`, `services.py` and `indkit.py` (parking lots). On the same re-export, rebuild that one function from the `vehicles_v2` body generator at 1.0× (same `color` palette, merged into the model, no wheel nodes), so every call site improves at once; if that breaks a zone budget, drop the calls on the R houses (`zones_res.py:100, 180, 208`) and keep the lots' cars.
 - Re-export `models/real/zones/**` and `models/real/buildings/**`, keeping the file names, footprints (≤ 0.94), storey heights (FH 0.15, OFH 0.17) and material names (`WindowLit*`, `Bulb*`, `Beacon`, `Rotor_*`, `Floodlight_*`, `StackTop_*`). G1's night system and the validators depend on those names.
 - Optional collision proxies: `ColBox_<n>` **empties** (`AP.COLBOX_PREFIX`; position = box centre, scale = half extents, no mesh, no name suffix) for the body, porch and awnings. **Never** `-colonly` meshes: with `nodes/use_name_suffixes=true` the importer turns them into `StaticBody3D` + `CollisionShape3D` in every instance, orbit included, which breaks ARCHITECTURE D2.
 
 ### 5. `validate_real.py` updates
 
 - **New categories.**
-  - `people_rigged`: height 0.08–0.095 at scale 1.0; an armature of at least 15 bones; one skinned mesh object; all actions present (`idle-loop`, `walk-loop`, `run-loop`, `talk-loop`, `sit`); the recolour materials present.
   - `vehicles_v2`: length 0.17–0.65 and width ≤ 0.13 for road vehicles (a sedan is about 0.2375 u and a bus about 0.6 u); wheels on y = 0; the 4 `Wheel_*` objects (the bicycle: `Wheel_F`, `Wheel_R`, exempt from the length rule), each wheel's origin within **0.001** of its mesh bounds centre; `Light_Head` faces +Z; each `_lod1` has one material.
   - `street`: footprint ≤ 0.25, except `bus_shelter` (≤ 0.2 × 0.08), `billboard` and `hoarding` (≤ 0.36) and `traffic_light` (≤ 0.3 along X); every `Poster_<n>` object has one surface, material `Poster`, UVs within [0, 1] ± 1e-4 and a +Z normal; every `SignFace` UV set within [0, 1] ± 1e-4; required parts (`traffic_light`: `Signal_Red_*`, `Signal_Amber_*`, `Signal_Green_*`, `SignText_A`, `SignText_B`; `street_sign`: `SignText_A`, `SignText_B`; `hoarding`: `Poster_0`, `Poster_1`).
 - **Door rule.** Every zone and building model has at least one `Door_<n>` empty, each with `scale.y ≥ 0.1`; every `DoorLeaf_*` surface is at least 0.1 u tall. No object name ends in `-colonly` (or another physics suffix).
@@ -105,7 +98,6 @@ Sizes are in metres; divide by 20 for units. The front faces +Z, the base sits a
 
   | Category | Tris | MB |
   |---|---|---|
-  | `people_rigged` | 4,000 | 1.0 |
   | `vehicles_v2` | 9,000 | 1.5 |
   | `street` | 3,000 | 0.8 |
 
@@ -122,8 +114,7 @@ Sizes are in metres; divide by 20 for units. The front faces +Z, the base sits a
 
 1. **Blender validation** (not part of the gate, since it needs Blender): `blender --background --python tools/blender/validate_real.py -- --json $HOME/.cache/gridfall_validate.json` prints a `SUMMARY` with 0 flagged models. Attach the summary line to the hand-off.
 2. **`tools/tests/fp_assets_test.gd`**, token `FP_ASSETS_TEST: PASS`, headless Godot:
-   - Every `AP` constant path that exists loads through `AP.load_scene()` as a PackedScene and instantiates without errors. Print the list of missing ones; missing is allowed, but the hand-off must list zero missing.
-   - Each `people_rigged/*.glb` has a `Skeleton3D`, exactly one skinned `MeshInstance3D` with at most 6 surfaces, and an `AnimationPlayer` that contains every `AP.PERSON_ANIMS` entry; every `AP.PERSON_LOOPING` clip has `loop_mode == LOOP_LINEAR` (this is the 4.7.2 suffix check). The mesh AABB height is 0.08–0.095.
+   - Every `AP` constant path that exists loads through `AP.load_scene()` as a PackedScene and instantiates without errors. Print the list of missing ones; missing is allowed, but the hand-off must list zero missing among H's paths (`PEOPLE_RIGGED_DIR` and HC's section are excluded).
    - Each `vehicles_v2` road vehicle has the 4 `AP.WHEEL_NODES` (the bicycle `AP.BIKE_WHEEL_NODES`), with each wheel's origin within 0.001 of its mesh AABB centre. The sedan length is 0.21–0.25 and the bus 0.55–0.65. Each `_lod1` exists and has one material.
    - **Poster nodes, checked per node:** billboard `Poster_0` local AABB 0.34 × 0.15 ± 0.005; hoarding has `Poster_0` and `Poster_1`; bus shelter, poster frame and lease sign have `Poster_0`; each is a `MeshInstance3D` with one surface, UVs within [0, 1] and a +Z normal.
    - `traffic_light` has `Signal_Red_0`, `Signal_Amber_0`, `Signal_Green_0`, `SignText_A` and `SignText_B`, and its mast reaches x ≤ −0.25.
@@ -136,7 +127,6 @@ Sizes are in metres; divide by 20 for units. The front faces +Z, the base sits a
 
 | Category | Tris | Materials |
 |---|---|---|
-| People (rigged) | ≤ 4,000 | ≤ 6, sharing 512² textures |
 | Vehicles | ≤ 9,000 | ≤ 8 |
 | `_lod1` variants | ≤ 1,500 | 1 |
 | Street props | ≤ 3,000 | ≤ 3 base materials, **plus** the functional ones their contracts require: `Poster*`, `SignFace`, `Signal_*`, `Walk` / `DontWalk`, `Lamp_Glow`, `Bulb*` (the traffic light alone needs `Signal_Red`, `Signal_Amber`, `Signal_Green`, `Walk`, `DontWalk` and a housing) |
@@ -146,10 +136,8 @@ Sizes are in metres; divide by 20 for units. The front faces +Z, the base sits a
 
 ## Risks
 
-- **Automatic weights.** They fail on the tube meshes. Use rigid vertex-group skinning (weight 1.0 per part, one Armature modifier), which is deterministic and headless.
 - **Re-export churn.** Re-exporting zones regenerates hundreds of extracted textures and `.import` files, a large diff. Do it once, at the end, after a dry run in a scratch copy under `$HOME`.
-- **glTF animation export.** The exporter needs the actions on NLA tracks or `export_animations=True` with `export_nla_strips`. Verify in Godot that `AnimationPlayer` lists the clips.
-- **Licences.** Everything is procedural (own work) or Poly Haven (CC0). Do not import Mixamo or other non-CC0 content.
+- **Licences.** Everything H makes is procedural (own work) or Poly Haven (CC0). Do not import Mixamo or other third-party content into `models/real/**`. The MIT (Rocketbox) and CC0 (Quaternius) exception of T-D1 applies only to HC's `models/characters/**`, with its licence files.
 
 ## Do NOT touch
 
@@ -157,3 +145,4 @@ Sizes are in metres; divide by 20 for units. The front faces +Z, the base sits a
 - `project.godot`, and the `.import` *parameters* (use G2's script).
 - `textures/real` contents (G1).
 - The legacy Kenney `models/*.glb` and `models/blender/*`.
+- HC's `tools/characters/**`, `models/characters/**` and HC's section of `scripts/fp/asset_paths.gd`.

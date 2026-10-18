@@ -493,9 +493,14 @@ extends Node3D
 const WS := preload("res://scripts/fp/world_scale.gd")
 const REGISTRY := preload("res://scripts/fp/fp_features.gd")
 const SETTINGS_PATH := "user://gridfall_fp_settings.json"
+## camera_mode is "third" (over-the-shoulder, the default for play, D13) or "first"; "fov" is the
+## first-person FOV and "tps_fov" the third-person one; shoulder is 1 (right) or -1 (left); hero
+## is "m" or "f". fp_kit.make_ctx overrides camera_mode to "first" unless a test asks otherwise.
 const DEFAULT_SETTINGS := {
 	"mouse_sensitivity": 0.0022, "invert_y": false, "fov": 72.0, "head_bob": true,
 	"quality": "medium", "show_hud": true, "music_volume_db": 0.0, "sfx_volume_db": 0.0,
+	"camera_mode": "third", "tps_fov": 60.0, "tps_distance_m": 3.2, "shoulder": 1,
+	"auto_shoulder": false, "hero": "m",
 }
 
 var ctx: FpContext
@@ -528,9 +533,10 @@ func skip_to_morning() -> void
 ## Pauses the whole SceneTree (get_tree().paused). The FpHud and FpMode keep running. Emits bus.pause_changed.
 func set_paused(p: bool) -> void
 ## Appends patch to settings_log, merges it into ctx.settings, saves SETTINGS_PATH (skipped when
-## setup() never ran, as in fp_kit's stub mode), emits bus.settings_changed(settings) and, if
-## "quality" changed, bus.quality_changed(preset).
-func apply_settings(patch: Dictionary) -> void
+## setup() never ran, as in fp_kit's stub mode, or when persist is false, as for the photo tour's
+## and fp_bench's camera override), emits bus.settings_changed(settings) and, if "quality" changed,
+## bus.quality_changed(preset).
+func apply_settings(patch: Dictionary, persist: bool = true) -> void
 ## Feet position and yaw for a fresh player: the sidewalk in front of City Hall (see §7.3).
 func spawn_point() -> Dictionary   # {"pos": Vector3, "yaw": float(deg)}
 ```
@@ -1434,7 +1440,27 @@ Separate several events with a newline followed by `, `, as in the existing bloc
 
 Every special-key value above was probe-verified in Godot 4.7.2, including `KEY_F5 = 4194336` and `KEY_F9 = 4194340`.
 
-S0 adds no gamepad bindings. A requests them if needed. The FP smoke asserts `InputMap.has_action()` for all 18 actions.
+S0 adds no gamepad bindings for these. A requests them if needed. The FP smoke asserts `InputMap.has_action()` for all 18 actions.
+
+**Camera actions (D13, added with the third-person decision).** Eight more actions, appended after `quick_load`:
+
+| Action | Binding | Dead zone |
+|---|---|---|
+| `view_toggle` | V 86/118 | 0.5 |
+| `shoulder_swap` | Q 81/113 | 0.5 |
+| `zoom_in` | mouse wheel up (`button_index` 4) | 0.5 |
+| `zoom_out` | mouse wheel down (`button_index` 5) | 0.5 |
+| `look_left` / `look_right` | gamepad right stick X (`axis` 2), −1 / +1 | 0.15 |
+| `look_up` / `look_down` | gamepad right stick Y (`axis` 3), −1 / +1 | 0.15 |
+
+The mouse-button and joypad events use Godot 4.7.2's own serialization (probe: `var_to_str` of each event), with `"device":-1`:
+
+```
+Object(InputEventMouseButton,"resource_local_to_scene":false,"resource_name":"","device":-1,"window_id":0,"alt_pressed":false,"shift_pressed":false,"ctrl_pressed":false,"meta_pressed":false,"button_mask":0,"position":Vector2(0, 0),"global_position":Vector2(0, 0),"factor":1.0,"button_index":<4|5>,"canceled":false,"pressed":false,"double_click":false,"script":null)
+Object(InputEventJoypadMotion,"resource_local_to_scene":false,"resource_name":"","device":-1,"axis":<2|3>,"axis_value":<-1.0|1.0>,"script":null)
+```
+
+V, Q, the wheel and the right stick are bound to no other game action (the orbit camera reads the wheel directly, `camera_controller.gd:79-81`, and is disabled on foot). `view_toggle`, `shoulder_swap` and `zoom_*` are discrete (rule D-S0-17); `look_*` is analog and polled with `Input.get_vector`. `fp_core_test` asserts the eight actions, their bindings, their exclusivity and the 0.15 dead zone.
 
 ---
 
@@ -1471,7 +1497,9 @@ static func ticks(sim: CitySim, n: int) -> void
 static func make_view(root: Node, sim: CitySim) -> CityView
 ## An FpContext wired for unit tests without Main. See the field table below.
 ## opts (defaults): {"seed": 7, "minds": false, "grow": false, "ticks": 0, "view": false,
-##   "render": false, "player": true, "hud": true, "audio": false, "client": null}
+##   "render": false, "player": true, "hud": true, "audio": false, "client": null,
+##   "camera_mode": "first"}. camera_mode overrides FpMode's play default ("third", D13), so every
+##   test runs in first person unless it passes "third".
 static func make_ctx(root: Node, opts: Dictionary = {}) -> FpContext
 ## A headless FpPlayer (input_enabled = false) under the kit root; sets ctx.player and
 ## ctx.mode.player, teleports to spawn_point(). make_ctx calls it when opts.player is true.
@@ -1499,7 +1527,7 @@ static func finish(tree: SceneTree, token: String, fails: Array) -> void
 | 9 | `player` | if `player`: `make_player(ctx)`. |
 | 10 | `hud` | if `hud`: `FpHud` under the kit root, `setup(ctx)`. |
 | 11 | `audio` | if `audio`: a `GridFallAudioDirector` under root. |
-| — | `settings` | a copy of `FpMode.DEFAULT_SETTINGS`. |
+| — | `settings` | a copy of `FpMode.DEFAULT_SETTINGS` with `camera_mode = opts.camera_mode` (`"first"` by default, D13). |
 | — | `main` | always null in unit tests. Code that calls `ctx.main` null-guards it. |
 
 **Fixtures of the grown kit city** (seed 7, `grow`, 40 ticks, offline, no minds; measured with a headless probe): 45 residents (36 at home with a job), 16 R lots and 7 C lots at level > 0, road masks include a corner (mask 6 at (4,12)), tees (masks 7, 13) and crosses (mask 15, 4 tiles), and one bus-stop tile. **No billboard is guaranteed**: tests that need one (D) add it themselves (see `slices/D-posters.md`). `fp_core_test` asserts these fixtures, so a recipe change that loses one fails S0's own gate first. Without `grow`, the kit city has 0 population (a probe at 32 and 40 ticks: pop 0, no R or C lots, no corners).
@@ -1579,7 +1607,7 @@ Shots that cannot be found fall back to the `street` pose with their own name. T
 
 `fp_photo_tour.gd` (`extends Node`, `run(main, dir)`):
 
-1. `DirAccess.make_dir_recursive_absolute(dir)` and `get_tree().root.size = TARGET_SIZE` (`Vector2i(1600, 900)`, D11): on this machine's display the window opens at 1280×660 despite `--resolution 1600x900`. Then `main.sim.start()`, then `await main.grow_offline(int(env GRIDFALL_PHOTO_DAYS or 6), 240000)`.
+1. `DirAccess.make_dir_recursive_absolute(dir)` and `get_tree().root.size = TARGET_SIZE` (`Vector2i(1600, 900)`, D11): on this machine's display the window opens at 1280×660 despite `--resolution 1600x900`. Then `main.fp.apply_settings({"camera_mode": "first"}, false)` (the base shots are eye-level; not saved, D13), `main.sim.start()`, then `await main.grow_offline(int(env GRIDFALL_PHOTO_DAYS or 6), 240000)`. Third-person shots come from features' `photo_shots()` with their own `prepare` / `restore` (A's `tps_*`).
 2. Keep the sim paused (speed 0) so no disaster interrupts the tour. Set `main.fp.player.input_enabled = false`.
 3. `shots = fp_shots.find(...)` plus every feature's `photo_shots()`.
 4. For each shot:
@@ -1597,7 +1625,7 @@ Shots that cannot be found fall back to the `street` pose with their own name. T
 This is a port of `.../scratchpad/tools/fp_bench.gd`, with these changes:
 
 1. Set `get_root().size = TARGET_SIZE` (`Vector2i(1600, 900)`, D11; the window can open smaller than `--resolution`) after the boot frames and again after placing the player, never in `_init` before the window is up (the window manager overrides that). Before instantiating `main.tscn`, call `OS.set_environment("GRIDFALL_VIEW", "fp")`. Then `sim.start()` and `await main.grow_offline(env FPBENCH_DAYS or 6, 120000)`.
-2. Place the player with `fp_shots.find(...)` (`street`).
+2. Right after the boot frames, `fp.apply_settings({"camera_mode": "first"}, false)` so every label stays comparable with the S0 baseline (D13; G2 adds its own third-person label). Place the player with `fp_shots.find(...)` (`street`).
 3. Measure 4 s each:
    - `street_eye_hud`.
    - `street_eye_nohud`, using `hud.set_hud_visible(false)`.
@@ -1731,6 +1759,7 @@ Run all of these from the worktree root.
 | D-S0-20 | **`WS` ends with one marked section per slice**; a slice adds constants only inside its own. | Parallel appends at the end of one file always conflict in git. |
 | D-S0-21 | **New seams beyond ARCHITECTURE §4:** `CityView.site_boxes` / `site_bounds` and the construction kit's `colliders` meta on the Site node (§15.1), `in_setup`, `fp_mode_changed`; `CityDirectory.planned_name`; `GameBus.card_action`; `AP.load_scene` and node-name prefixes; `RoadTopology` end island; the early `view.fp_mode` flag in `main.gd`; the `trip_started` mode normalisation; two de-branding lines in `city_brain.gd` (639, 800). | Each one removes a guess or a crash that a reviewer found in a slice contract. |
 | D-S0-22 | **The gate re-imports whenever imports or assets are newer than a stamp**, and fails on loader errors. | A warm worktree must never pass tests with missing assets after H or G2 merges. |
+| D-S0-23 | **Third-person hooks (ARCHITECTURE D13).** `DEFAULT_SETTINGS` gains `camera_mode: "third"`, `tps_fov`, `tps_distance_m`, `shoulder`, `auto_shoulder` and `hero`; `project.godot` gains `view_toggle`, `shoulder_swap`, `zoom_in` / `zoom_out` and `look_*` (§16); `fp_kit.make_ctx` defaults `camera_mode` to `"first"`; `apply_settings(patch, persist := true)` with `persist = false` for scripted overrides; the photo tour and `fp_bench` force first person with it. S0's `FpPlayer` ignores the camera settings until A implements them. | Interactive play is third person, but every existing test, baseline shot and bench label keeps its first-person meaning; a scripted override must never rewrite the player's saved camera choice. |
 
 ---
 

@@ -1,6 +1,6 @@
 # Slice E: Traffic and pedestrians
 
-Branch `fp/E-traffic`, branched from `fp/integration` after S0. Read ARCHITECTURE D1, D2 and D8, S0 §§4, 5, 9, 10 and 15.2–15.3, and the research section "MOVING LIFE" in `understand.md`.
+Branch `fp/E-traffic`, branched from `fp/integration` after S0. Read ARCHITECTURE D1, D2, D8 and D13, S0 §§4, 5, 9, 10 and 15.2–15.3, and the research section "MOVING LIFE" in `understand.md`.
 
 ## Goal (what the player sees)
 
@@ -8,7 +8,7 @@ Streets that behave like streets:
 
 - Cars drive in right-hand lanes at 30–50 km/h, follow each other, stop at red lights and yield at T-junctions.
 - The cars belong to residents. Priya the nurse leaves home in her own car at the time her mind chose, drives the real road route to the hospital, parks at the curb and walks in.
-- Pedestrians walk the sidewalks and cross at zebras.
+- Pedestrians walk the sidewalks and cross at zebras. They are realistic, animated people (HC's Rocketbox bodies): a nurse in scrubs, a builder in a hard hat, office workers, a few on the phone or carrying a box, pairs stopping to chat. Until HC lands they are the legacy static people.
 - Buses stop at shelters. Fire trucks and ambulances run to incidents with sirens.
 - Everyone stops for you. Look at a car and you see who is driving it, and where they are going.
 
@@ -31,7 +31,8 @@ Streets that behave like streets:
 | `CityDirectory` | `frontage(i)` (curb parking spot and door side), `street_name`, `place_label` (driver card destination text) |
 | `FpContext` | `player` (position, for yielding and the spawn ring), `player_position()` (falls back to the spawn point), `world_root`, `collision.ground_height` |
 | `GameBus` | listens to `conversation_changed(id, active)` (stop the agent and face the player), `pause_changed`; no emits required |
-| `AP` (H) | `load_scene()`, `PEOPLE_RIGGED_DIR` (`AP.PERSON_ANIMS`), `VEHICLES_V2_DIR` (`AP.WHEEL_NODES`, `AP.BIKE_WHEEL_NODES`, `<name>_lod1.glb` variants), `TRAFFIC_LIGHT` (`Signal_Red_*`, `Signal_Amber_*`, `Signal_Green_*`, `SignText_A` / `SignText_B`), `STOP_SIGN`, `YIELD_SIGN`, `PED_SIGNAL`, `Door_<n>` empties (`AP.DOOR_SPOT_PREFIX`); fall back to the legacy GLBs when they are missing |
+| `AP` (HC, stage E2) | `CHAR_ROSTER` (`roster.json`: bodies, groups, genders, job pools, `name_gender`, `rest_height_m`), `CHAR_BODIES_DIR` (`<Name>.glb` and `<Name>_lod1.glb`), `CHAR_LIB_M` / `CHAR_LIB_F` (shared libraries; clip names bare, including `AP.PERSON_ANIMS`, `walk_fast`, `idle_look`, `idle_wait`, `phone`, `phone_idle`, `carry`, `talk_2`, `fold_arms`; `speed_mps` meta). `PEOPLE_RIGGED_DIR` is retired (D13, T-D4): H no longer builds rigged people. Until HC lands, people are the legacy `AP.PEOPLE_LEGACY_DIR` GLBs. |
+| `AP` (H) | `load_scene()`, `VEHICLES_V2_DIR` (`AP.WHEEL_NODES`, `AP.BIKE_WHEEL_NODES`, `<name>_lod1.glb` variants), `TRAFFIC_LIGHT` (`Signal_Red_*`, `Signal_Amber_*`, `Signal_Green_*`, `SignText_A` / `SignText_B`), `STOP_SIGN`, `YIELD_SIGN`, `PED_SIGNAL`, `Door_<n>` empties (`AP.DOOR_SPOT_PREFIX`); fall back to the legacy GLBs when they are missing |
 
 ## Seams E provides to others (part of E's contract)
 
@@ -56,12 +57,16 @@ func blockers_near(p: Vector3, r: float) -> Array
 ## The traffic-light pole on cross tile i at corner (0..3 = NE, SE, SW, NW), or null. G1 mounts the
 ## street-name blades on the NE pole (H's SignText_A / SignText_B empties).
 func light_pole(i: int, corner: int) -> Node3D
-## Live anchor (world, head height) of resident id while E draws them, for the speech bubble.
+## Live anchor (world, head height) of resident id while E draws them: the speech bubble, and A's
+## conversation two-shot (the NPC head). With HC bodies it is the Head bone's world position.
 func anchor_of(id: String) -> Vector3
 ## CityLife.external hooks (deliverable 5).
 func spawn_fleet(kind: String, start: Vector2i) -> void
 func dispatch_crew(kind: String, station: Vector2i, target: Vector2i) -> void
 func vehicle_counts() -> Dictionary
+## Animated-people stats for G2's bench (stage E2): {"t0": int, "t1": int, "t2": int, "t3": int,
+##   "anim_us": float (time in E's manual advance() round robin this frame), "char_draws": int}
+func anim_stats() -> Dictionary
 ```
 
 Existing APIs that must keep working, in orbit **and** in FP:
@@ -75,7 +80,8 @@ Existing APIs that must keep working, in orbit **and** in FP:
 - F: a `Residents.trip_purpose(r) -> String` helper, or a purpose argument on `trip_started`. Until then, derive the purpose from `r.state`.
 - F: car ownership (`r.car`). Until then, every resident whose commute is `car` owns one, and the model is picked by `hash(id)`.
 - G1: a `parking` meta on lots (curb slot), plus lane-marking ground truth if road GLBs change. Cross-tile corners: E owns all four light corners and G1 mounts its blades on E's NE pole (`light_pole`); record the agreement in `docs/fp/requests/E-G1-corners.md`.
-- H: rigged people, `vehicles_v2` (plus single-material `<name>_lod1.glb`), the traffic-light GLB (5.5 m mast along local −X), stop and yield signs, pedestrian signals.
+- H: `vehicles_v2` (plus single-material `<name>_lod1.glb`), the traffic-light GLB (5.5 m mast along local −X), stop and yield signs, pedestrian signals.
+- HC: the character roster, bodies, far LODs and animation libraries (deliverable 9). Rigged people no longer come from H (D13).
 
 ## Deliverables
 
@@ -129,12 +135,12 @@ Use packed arrays, or one small Dictionary per agent pooled from a free list. No
 - Yaw follows the lane tangent.
 - Vehicles are scaled `WS.VEHICLE_SCALE` (legacy GLBs) or `VEHICLE_V2_SCALE` (H). People are scaled `WS.PEOPLE_SCALE` in FP.
 - When wheel nodes exist (`AP.WHEEL_NODES`, or `AP.BIKE_WHEEL_NODES` on the bicycle), spin them at `v / wheel_radius`.
-- **Draw calls.** Full models only within 2 u of the player; beyond, one `MultiMeshInstance3D` per H `<name>_lod1.glb` model (single material, static wheels), filled each frame from the agent arrays. With the legacy multi-material GLBs (sedan_blue 11 materials, person_a 5), 60 cars and 80 people would cost about 960 draws before shadows.
+- **Draw calls.** Vehicles: full models only within 2 u of the player; beyond, one `MultiMeshInstance3D` per H `<name>_lod1.glb` model (single material, static wheels), filled each frame from the agent arrays. People follow the LOD tiers of deliverable 9 (HC bodies) or, before HC, the same 2 u rule with the legacy GLBs. With the legacy multi-material GLBs (sedan_blue 11 materials, person_a 5), 60 cars and 80 people would cost about 960 draws before shadows.
 
 **Pedestrians.**
 - They walk sidewalk polylines with centrelines inside `WS.PED_BAND` ([0.355, 0.405] from the road centreline) at `PED_WALK` (±15% per person), with feet on `SIDEWALK_TOP`. Lamps and signs stand in `CURB_FURNITURE` and shelters, racks and meters in `FRONT_FURNITURE`, so the band is clear except for the two small posts baked into lit straights at model-local (±0.4, ±0.2) (`roads.py:168-169`), which walkers sidestep.
 - They cross only on zebra bands during their walk phase, or at tees when no car is within 2 s.
-- They keep 0.6 m from each other (pushing apart on a spatial hash), sidestep the player, and play the walk and idle clips when rigged.
+- They keep 0.6 m from each other (pushing apart on a spatial hash), sidestep the player, and play the walk and idle clips when rigged (HC bodies, deliverable 9).
 
 **Time.**
 - Agent motion uses `delta * float(ctx.sim.speed)`, sub-stepped to a maximum of 1/30 s per step, so fast-forward looks fast-forwarded. In FP `time_scale == sim.speed` (D-S0-1), but `grow_offline` sets `sim.speed` to 16 directly and the photo tour holds speed 0, and `ctx.mode` is a stub in unit tests; `sim.speed` is right in all three.
@@ -204,6 +210,40 @@ Edge cases:
 - `{"parked": {resident_id: [tile, slot]}}` (cast both back to int on load).
 - Agents in flight are not saved. On load, residents appear at their `r.at` (inside or parked), and ambient traffic is filled synchronously (deliverable 6).
 
+### 9. Animated people from HC's roster (D13; TPS_PLAN §1.10–1.11)
+
+**Placeholder, then wire.** Stage E1 (this branch) builds everything above with the legacy static people (`AP.PEOPLE_LEGACY_DIR`, scaled `WS.PEOPLE_SCALE` in FP) and merges without `models/characters/**`. Stage E2 (TPS_PLAN T8, a follow-up branch `fp/E2-people` after HC3 merges) swaps in HC's bodies, libraries and the LOD tiers below. Every code path keeps the legacy fallback when `AP.CHAR_ROSTER` is missing.
+
+**Assignment** (HC supplies the data, E applies it):
+- **Gender:** `roster.json`'s `name_gender[first_name]`; names it omits (Quinn, Sami, Wren, …) fall back to `crc32(id) & 1`.
+- **Body:** the pool for the resident's `job_title` (HC's job pools) intersected with that gender; if empty, the casual pool for the gender. Index by `crc32(resident_id) % n`, so a resident looks the same in every run and after save/load. Never the two hero avatars.
+- **Height:** `CharacterRoot.scale = WS.M * (h_target / rest_height_m)`, with `h_target` = 1.75 m × (1.00 male | 0.95 female) × a jitter in [0.97, 1.03] from `crc32(resident_id)` (1.61–1.80 m). Never scale the skeleton itself. This replaces `WS.PEOPLE_SCALE` for HC bodies.
+- **Library:** the gender's `AP.CHAR_LIB_M` / `AP.CHAR_LIB_F` as the default library `""`, `root_motion_track = %GeneralSkeleton:Root` (clips play in place; E owns displacement).
+- **Playback rate:** `speed_scale = v / (speed_mps × h_target / 1.75)` from the clip's `speed_mps` meta, so feet do not slide.
+
+**Ambient pedestrian variety** (reusing the 38 resident bodies):
+- body mix 60 % casual, 25 % business, 15 % uniforms (police, medical, trades), seeded per agent from `sim.city_seed`;
+- the height jitter above;
+- walking speed U(1.15, 1.50) m/s with the playback rate matched to it;
+- an idle variant (`idle`, `idle_look`, `idle_wait`) and a random phase offset per agent;
+- 10 % carry (`carry` while walking), 8 % phone (`phone` while walking or `phone_idle` standing), 5 % stop to talk in pairs (`talk` / `talk_2` facing each other, 10–40 s, at a sidewalk spot outside `PED_BAND`'s flow, then resume).
+- Named residents on foot use the same rules with their own job body.
+
+**LOD tiers** for animated people (10 % hysteresis on each boundary):
+
+| Tier | Distance, cap | Node | Update rate | Shadows |
+|---|---|---|---|---|
+| T0 | ≤ 12 m, max 8 | Body GLB + `AnimationTree` (StateMachine, crossfades); `LookAtModifier3D` allowed for at most 6 NPCs (the conversation partner looks at the player) | every frame | on |
+| T1 | 12–30 m, max 40 | Body GLB + `AnimationPlayer`, `callback_mode_process = MANUAL`, `advance(acc)` round robin, `play(name, 0.25)` crossfades, `speed_scale = v / speed_mps` | 30 Hz to 20 m, 15 Hz to 30 m | to 20 m |
+| T2 | 30–60 m | Same as T1 | 10 Hz | off |
+| T3 | 60–80 m (`VIS_PERSON`) | `<Name>_lod1.glb` in one `MultiMeshInstance3D` per avatar (2 surfaces) | static pose | off |
+
+- **Off screen:** `active = false` and no `advance()` (frustum test against `ctx.player.camera`, which is the third-person camera when that is active).
+- **Pools:** body instances are pooled per avatar name and re-skinned to a new agent on reuse (reset the mixer, set the library once); never instantiate in a burst of more than 4 bodies per frame.
+- **Budget:** ≤ **1.5 ms per frame** of animation CPU (`anim_stats().anim_us` plus the T0 AnimationTree time) and ≤ **150 character draws** (T0 + T1 ≈ 48 bodies × 3 surfaces, shadows extra), inside the 500 agent draws of the performance budget below.
+- **Benchmark caveat.** The micro-benchmark gave about 28 µs per AnimationPlayer update and about 50 µs per AnimationTree update on a 17-bone rig with the machine at load 40+. G2 re-measures with Rocketbox's 52 mapped tracks in `fp_bench` (release build, `low_processor_mode_sleep_usec = 0`); lower the T1 cap and rates if the budget is exceeded.
+- **v2:** a bone-texture baked MultiMesh for T2 and T3 (built in Godot at load).
+
 ## Acceptance tests
 
 `tools/tests/fp_traffic_test.gd`, token `FP_TRAFFIC_TEST: PASS`. It uses `fp_kit.make_ctx(root, {"view": true, "grow": true})` (the kit's headless player is `ctx.player`) and `make_feature(ctx, "traffic")`. Time is driven with `feature.step(dt)` (a test hook) at 1/30 s, with `sim.speed == 1`. Before the trip tests it sets `sim.day_seconds = WS.FP_DAY_SECONDS` (visual trips are skipped at 12 s days) and `feature.jitter_enabled = false`.
@@ -243,7 +283,13 @@ Edge cases:
 - With the player in a lane 1.0 u ahead of a car at `CAR_CITY`, the car stops with its AABB at least `PLAYER_RADIUS + 1.5 * M` from the player.
 - No car's AABB (not its origin) ever comes within `PLAYER_RADIUS` of the player.
 
-**Conversation.** `conversation_changed(id, true)` stops the agent within 2 s.
+**Conversation.** `conversation_changed(id, true)` stops the agent within 2 s, it turns to face the player, and `anchor_of(id)` stays within `0.1 * M` of its head while it stands.
+
+**People (stage E2; skipped with a printed note while `AP.CHAR_ROSTER` is missing).**
+- The same resident id gets the same body in two fresh runs and after `to_dict` → `from_dict`; no resident or ambient walker uses a hero avatar; a nurse resident's body is from the medical pool (or casual when the pool is empty for that gender).
+- Every HC body's world AABB height is 0.080–0.090 u (1.61–1.80 m).
+- With 80 walkers spread over 0–80 m, the tier counts respect the caps (T0 ≤ 8, T1 ≤ 40), T3 bodies are MultiMesh instances, off-screen mixers are inactive, and `anim_stats().char_draws ≤ 150`.
+- A walker at 1.30 m/s has `speed_scale` within 2 % of `1.30 / (speed_mps × h_target / 1.75)`.
 
 **Fleets.** After `on_world_rebuilt`, `view.life.external` and `view.avatars.external` are the feature; a second `view.setup()` followed by `world_rebuilt` re-attaches them to the new instances; `teardown()` clears them. An event present before the rebuild gets a crew dispatched through E.
 
@@ -262,7 +308,8 @@ Edge cases:
 
 - At most **2.5 ms per frame** of GDScript with 60 cars and 80 pedestrians active within `TRAFFIC_RADIUS`.
 - At most 0.5 ms for an incremental lane graph rebuild per changed tile. A full rebuild of 600 road tiles takes at most 60 ms, once.
-- Agent draw calls: at most **500**, counted inside G2's 2,000 total. Full models within 2 u only; beyond, one MultiMesh per `lod1` model (§3). Shared materials and pooled instances, with `visibility_range_end` (`VIS_CAR` for cars, `VIS_PERSON` for people) and no shadows beyond 3 u. Until H's `lod1` files exist, cap full-detail agents at 40 and report the draw count in the hand-off.
+- Agent draw calls: at most **500**, counted inside G2's 2,000 total, of which animated people at most **150**. Vehicles: full models within 2 u only; beyond, one MultiMesh per `lod1` model (§3). People: the tiers of deliverable 9.
+- Animated people (stage E2): at most **1.5 ms per frame** of animation CPU. Shared materials and pooled instances, with `visibility_range_end` (`VIS_CAR` for cars, `VIS_PERSON` for people) and no shadows beyond 3 u. Until H's `lod1` files exist, cap full-detail agents at 40 and report the draw count in the hand-off.
 - Routing: resident trips cost O(route length); at most 4 A\* builds per frame for ambient cars and crews. A morning burst of 100 trips at 16× stays under 5 ms per frame.
 - No physics nodes.
 

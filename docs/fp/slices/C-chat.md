@@ -1,6 +1,6 @@
 # Slice C: Global chat and conversations
 
-Branch `fp/C-chat`, branched from `fp/integration` after S0. Read ARCHITECTURE D5, D9 and D12, then S0 §§8, 9, 13, 14 and 15.2. Copy the reply validators from `residents.gd:661-727` (`apply_plan`, `respond`).
+Branch `fp/C-chat`, branched from `fp/integration` after S0. Read ARCHITECTURE D5, D9, D12 and D13, then S0 §§8, 9, 13, 14 and 15.2. Copy the reply validators from `residents.gd:661-727` (`apply_plan`, `respond`).
 
 ## Goal (what the player sees)
 
@@ -8,7 +8,7 @@ The whole city talks to you and to itself, in a Clash of Clans-style global chat
 
 - Residents gossip about real events, and mayors post. The Gazette headline is pinned. Incidents arrive as system cards. Residents reply to each other and to you.
 - Press Enter to type. A couple of residents answer you.
-- Walk up to someone and press E to talk face to face. Their reply comes from their own mind, using their job, mood, memories and what is happening nearby.
+- Walk up to someone and press E to talk face to face. The camera eases into an over-the-shoulder two-shot of you and them (A's camera, driven by C's `conversation_changed`), your character turns to them and looks at their face. Their reply comes from their own mind, using their job, mood, memories and what is happening nearby.
 - No model names appear, and no "AI" telemetry.
 
 ## Owned files (exclusive)
@@ -39,6 +39,24 @@ The whole city talks to you and to itself, in a Clash of Clans-style global chat
   - an optional `heard_in_town` list on `card()`.
 - B: `chat_slot` geometry changes, and whether to show an unread dot on the minimap.
 - E: on `conversation_changed(id, true)` the resident's agent stops and faces the player. E implements it; C only emits.
+- A: on `conversation_changed(id, true)` the camera blends to the two-shot and the hero faces the resident; on `(id, false)` it blends back. A implements it; C only emits.
+
+## Seams C provides
+
+**`conversation_changed(resident_id, active)` is C's signal: C is its only emitter** (D13). A (the two-shot camera, the hero facing and head look), E (stop the agent, face the player) and I (duck the ambience) consume it, so its timing is a contract:
+
+- Emit `(id, true)` in the same frame as `push_modal(&"talk")`, **before** the dialogue panel becomes visible, so the camera blend (0.6 s) starts with the panel's fade-in.
+- Emit exactly **one** `(id, false)` for every `(id, true)`, on every close path: Goodbye, Esc, the resident leaving (`find(id)` returns `{}`), the distance rule, `bus.world_ready` and `from_dict()`. Never two `true`s in a row; a new conversation first closes the old one (`false`, then `true`).
+- Emit it only for a resident the player can see: the talk target A delivered (`talk_requested` comes from A's pick, so E's `anchor_of(id)` has a head to frame).
+- C never moves `player.camera` or the player itself.
+- **Layout for the two-shot.** The talk panel stays at bottom-centre (600×220) and leaves the upper 60 % of the screen clear: A frames both heads there. No full-screen dim behind the dialogue; at most a soft bottom gradient.
+
+On `chat_feature.gd`, for A's optional reverse shot:
+
+```gdscript
+## True while the talk dialogue's free-text LineEdit has focus (the player is typing a line).
+func is_typing() -> bool
+```
 
 ## Deliverables
 
@@ -191,7 +209,7 @@ Free text up to 140 characters is also allowed.
 
 **Offline.** A deterministic heuristic reply from `say`, `thought`, `mood_reason` and the topic. Live answers go into ChatterMinds' own LRU (§3), never into `GmiClient`.
 
-**Closing.** The conversation ends on Goodbye, on Esc, when `find(id)` returns `{}`, on `world_ready`, or when the **player** is more than `2 * WS.TALK_RANGE` from `anchor`. Resident movement is ignored: the `&"talk"` modal freezes the player, legacy avatars cover a trip at up to about 140 m/s (`resident_avatars.gd:193-195`), `position_of` jumps to the tile centre when the resident goes indoors (`resident_avatars.gd:313-324`), and E only stops its agent "within 2 s". Then emit `conversation_changed(id, false)` and pop the modal. (The distance rule matters when a test or a future slice moves the player while talking.)
+**Closing.** The conversation ends on Goodbye, on Esc, when `find(id)` returns `{}`, on `world_ready`, or when the **player** is more than `2 * WS.TALK_RANGE` from `anchor` (measured from the player's feet, never the camera: in third person the camera is metres away). Resident movement is ignored: the `&"talk"` modal freezes the player, legacy avatars cover a trip at up to about 140 m/s (`resident_avatars.gd:193-195`), `position_of` jumps to the tile centre when the resident goes indoors (`resident_avatars.gd:313-324`), and E only stops its agent "within 2 s". Then emit `conversation_changed(id, false)` and pop the modal. (The distance rule matters when a test or a future slice moves the player while talking.)
 
 **Ask someone here.** On `bus.card_action("ask_here", tile)` (B's place-card button; C does **not** listen to `interact_requested`, which B's card already handles): call `brain.inspect_tile(x, y)`, at most 1 call per 20 s of `now_ms`, and show `says` in the talk dialogue. Ignore `inspector_answered` payloads with `pending: true` (it emits twice, `city_brain.gd:806` and `815`) and payloads whose `x`, `y` differ from the request. Run the display filter on `says` (the heuristic text contains `"(x,y)"`, `city_brain.gd:833`). Label the speaker with the role name, never `"Street Inspector"` or the model.
 
@@ -237,6 +255,7 @@ The feed exposes `pump(dt_seconds)` for tests, so time is simulated deterministi
 - **Budget, ambient.** With the counting client and 10 simulated minutes unpaused with no input, chatter calls are 10 ± 1. With `pause_changed(true)` for 5 minutes, there are 0 calls.
 - **Budget, player.** 3 player messages within 5 s make 1 call (coalesced). 3 messages 15 s apart make 3 calls.
 - **Budget, talk.** A conversation with 5 player lines makes exactly 5 talk calls. Teleporting the player 0.31 u from the anchor (more than `2 * TALK_RANGE` = 0.3) ends it and emits `conversation_changed(id, false)`; moving the resident does not.
+- **Conversation signal (D13).** Opening a conversation emits `conversation_changed(id, true)` once, in the frame `&"talk"` is pushed and before the panel is visible. Every close path (Goodbye, Esc, resident removed, distance, `world_ready`, `from_dict({})`) emits exactly one `(id, false)`; opening a second conversation while one is open emits `(old, false)` then `(new, true)`. Across the whole test, `true` and `false` emissions alternate per id. `is_typing()` is true only while the talk LineEdit has focus.
 - **Talk robustness.** Removing the resident from `residents.people` mid-conversation ends it on the next turn with no error. Emitting `bus.world_ready` with the panel input focused and a conversation open closes both, emits `conversation_changed(id, false)` and leaves `ctx.is_modal()` false.
 - **Esc.** With the chat LineEdit focused, an Esc key event closes the panel, pops `&"chat"` and is marked handled (FpMode's pause does not toggle).
 - **Ask someone here.** `card_action("ask_here", tile)` makes one `inspect_tile` call; a second within 20 s makes none; the `pending: true` emission adds nothing; the shown text has no coordinates.
