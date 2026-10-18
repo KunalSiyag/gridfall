@@ -19,7 +19,7 @@ A calm, glanceable HUD with no AI or model branding anywhere:
 
 ## Owned files (exclusive)
 
-- `scripts/fp/ui/**` **except** `scripts/fp/ui/chat_panel*`, which C owns. This includes S0's `fp_hud.gd`: keep `class_name FpHud`, the `SLOTS` names, `slot()`, `set_hud_visible()`, `is_hud_visible()` and `show_toast()`. The `chat_slot` geometry is shared with C; change it only by agreement, recorded in `docs/fp/requests/`.
+- `scripts/fp/ui/**` **except** `scripts/fp/ui/chat_panel*`, which C owns. This includes S0's `fp_hud.gd`: keep `class_name FpHud`, `setup(ctx)` (FpMode and `fp_kit` call it), `layer = 10` with `PROCESS_MODE_ALWAYS` (the smoke checks the HUD runs while paused), the `SLOTS` names, `slot()`, `set_hud_visible()`, `is_hud_visible()` and `show_toast()`. S0's `fp_core_test` reads toasts only through `slot("toasts")`: within 10 frames of `bus.toast`, some `Label` or `RichTextLabel` under that slot shows the de-branded text. S0's FP smoke (which B may not edit) reads the top bar only through `slot("top_bar")`: the visible `Label`s and `RichTextLabel`s under it must together show `Day <n>` (the smoke polls for up to 1 s, so a 0.25 s refresh is fine), and none of them, visible or not, may carry a brand word. Nothing else in the placeholders is a contract. The `chat_slot` geometry is shared with C; change it only by agreement, recorded in `docs/fp/requests/`.
 - `scripts/fp/ui/hud_widgets_feature.gd` (feature id `hud_widgets`).
 - `tools/tests/fp_hud_test.gd`.
 - New UI assets under `ui/fp/**` (icons, shaders). Fonts are reused from `res://fonts/`.

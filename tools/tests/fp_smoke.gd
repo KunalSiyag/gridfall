@@ -132,12 +132,20 @@ func run(p_main: Node) -> void:
 		names_ok = names_ok and str(sim.mayors[i]["name"]) == str(D.MAYORS[i]["display"])
 	check(names_ok, "sim mayors carry display names")
 	check(D.debrand("Argon-4") == "Ada Okafor", "debrand(Argon-4)")
-	await get_tree().process_frame
-	var status := fp.hud.status_text()
+	# Reads the top bar through the slot API only (B replaces the placeholder label with chips):
+	# the visible text must name the day within 1 s, and no text under the bar may carry a brand.
+	var bar := fp.hud.slot("top_bar")
+	var status := ""
+	for _k in range(20):
+		await get_tree().create_timer(0.05).timeout
+		status = _bar_text(bar, true)
+		if status.contains("Day"):
+			break
+	var all_text := _bar_text(bar, false)
 	var branded := false
 	for w: String in BRANDS:
-		branded = branded or status.contains(w)
-	check(status.contains("Day") and not branded, "the status line is unbranded (%s)" % status)
+		branded = branded or all_text.contains(w)
+	check(status.contains("Day") and not branded, "the top bar is unbranded and shows the day (%s)" % status)
 	# 9. HUD.
 	var slots_ok := true
 	for n: String in FpHud.SLOTS:
@@ -243,6 +251,20 @@ func _orbit_layers_hidden(view: CityView) -> bool:
 		if (av["root"] as Node3D).visible:
 			return false
 	return true
+
+
+## The text of every Label and RichTextLabel under n, joined with " | " (visible ones only when
+## visible_only is set).
+func _bar_text(n: Node, visible_only: bool) -> String:
+	var parts: PackedStringArray = []
+	for c: Node in n.find_children("*", "Control", true, false):
+		if visible_only and not (c as Control).is_visible_in_tree():
+			continue
+		if c is Label:
+			parts.append((c as Label).text)
+		elif c is RichTextLabel:
+			parts.append((c as RichTextLabel).get_parsed_text())
+	return " | ".join(parts)
 
 
 func _visible_labels(n: Node) -> int:

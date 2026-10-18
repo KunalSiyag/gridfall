@@ -9,6 +9,12 @@ const WS := preload("res://scripts/fp/world_scale.gd")
 ## Rate (1/s) at which the feet follow the ground height; gaps above GROUND_SNAP snap at once.
 const GROUND_FOLLOW := 20.0
 const GROUND_SNAP := 0.05
+## Longest frame _process hands to simulate(), in seconds. A sim tick stall can freeze a frame for
+## 0.7-2.7 s; the player then moves one 10 fps frame's worth instead of lurching ahead.
+const MAX_FRAME_DELTA := 0.1
+## Upper bound on collision sub-steps per simulate() call (each moves at most PLAYER_RADIUS, so
+## the bound is only reached by steps longer than 4096 radii, about 61 u).
+const MAX_SUBSTEPS := 4096
 
 var ctx: FpContext
 var camera: Camera3D
@@ -95,8 +101,11 @@ func snap_to_ground() -> void:
 ## wish: x = strafe right, y = forward, each -1..1. While ctx.is_modal(), simulate itself zeroes
 ## wish and jump (gravity and ground snap still run), so tests and _process behave the same.
 ## S0 ignores crouch and jump; A implements them without changing the signature.
+## Any delta is safe: the step is split so that no collision sub-step moves farther than
+## PLAYER_RADIUS (move_and_slide tests only the destination, and a 0.008 u hoarding grown by the
+## radius is 0.038 u thick), and a velocity component whose move was blocked drops to zero.
 func simulate(wish: Vector2, sprint: bool, delta: float, _crouch: bool = false, _jump: bool = false) -> void:
-	if ctx == null or ctx.collision == null or delta <= 0.0:
+	if ctx == null or ctx.collision == null or not (delta > 0.0) or not is_finite(delta):
 		return
 	if ctx.is_modal():
 		wish = Vector2.ZERO
@@ -105,20 +114,40 @@ func simulate(wish: Vector2, sprint: bool, delta: float, _crouch: bool = false, 
 	var fwd := Vector3(-sin(yaw), 0.0, -cos(yaw))
 	var right := Vector3(cos(yaw), 0.0, -sin(yaw))
 	var target := (right * wish.x + fwd * wish.y) * (WS.RUN if sprint else WS.WALK)
-	var flat := Vector3(velocity.x, 0.0, velocity.z).move_toward(target, WS.ACCEL * delta)
-	velocity = Vector3(flat.x, 0.0, flat.z)
-	var p := ctx.collision.move_and_slide(position, velocity * delta, WS.PLAYER_RADIUS)
+	# move_toward never leaves the band between the current speed and the target speed.
+	var top := maxf(Vector2(velocity.x, velocity.z).length(), target.length())
+	var n := clampi(ceili(top * delta / WS.PLAYER_RADIUS), 1, MAX_SUBSTEPS)
+	var h := delta / float(n)
+	for _s in range(n):
+		_step(target, h)
+	_update_tile()
+
+
+## One collision sub-step of at most PLAYER_RADIUS: accelerate toward target, slide, clamp to the
+## world, zero the velocity on a blocked axis, follow the ground.
+func _step(target: Vector3, h: float) -> void:
+	var flat := Vector3(velocity.x, 0.0, velocity.z).move_toward(target, WS.ACCEL * h)
+	var motion := flat * h
+	# Built exactly as move_and_slide builds its full move, so an axis it applied compares equal.
+	var full := Vector3(position.x + motion.x, position.y, position.z + motion.z)
+	var p := ctx.collision.move_and_slide(position, motion, WS.PLAYER_RADIUS)
 	var r := WS.PLAYER_RADIUS
-	p.x = clampf(p.x, D.X0 - 0.5 + r, D.X0 + D.W - 0.5 - r)
-	p.z = clampf(p.z, D.Y0 - 0.5 + r, D.Y0 + D.H - 0.5 - r)
+	var cx := clampf(p.x, D.X0 - 0.5 + r, D.X0 + D.W - 0.5 - r)
+	var cz := clampf(p.z, D.Y0 - 0.5 + r, D.Y0 + D.H - 0.5 - r)
+	if p.x != full.x or cx != p.x:
+		flat.x = 0.0
+	if p.z != full.z or cz != p.z:
+		flat.z = 0.0
+	p.x = cx
+	p.z = cz
+	velocity = Vector3(flat.x, 0.0, flat.z)
 	var g := ctx.collision.ground_height(p)
 	if not is_nan(g):
 		if absf(g - p.y) > GROUND_SNAP:
 			p.y = g
 		else:
-			p.y = lerpf(p.y, g, minf(1.0, GROUND_FOLLOW * delta))
+			p.y = lerpf(p.y, g, minf(1.0, GROUND_FOLLOW * h))
 	position = p
-	_update_tile()
 
 
 ## Save section: {"pos": [x, y, z], "yaw": deg, "pitch": deg}.
@@ -144,7 +173,7 @@ func _process(delta: float) -> void:
 	if not input_enabled or ctx == null:
 		return
 	var wish := Input.get_vector("move_left", "move_right", "move_back", "move_forward")
-	simulate(wish, Input.is_action_pressed("sprint"), delta, Input.is_action_pressed("crouch"), Input.is_action_pressed("jump"))
+	simulate(wish, Input.is_action_pressed("sprint"), minf(delta, MAX_FRAME_DELTA), Input.is_action_pressed("crouch"), Input.is_action_pressed("jump"))
 
 
 func _unhandled_input(event: InputEvent) -> void:

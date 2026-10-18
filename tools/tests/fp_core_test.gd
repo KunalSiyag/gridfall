@@ -34,7 +34,7 @@ func _init() -> void:
 	_check_walk(ctx)
 	await _check_mouse_look(ctx)
 	_check_blocking(ctx)
-	_check_context(ctx)
+	await _check_context(ctx)
 	_check_assets()
 	_check_trapped(ctx)
 	_check_site(ctx)
@@ -322,6 +322,9 @@ func _check_site(ctx: FpContext) -> void:
 	var walks := 0
 	var stops: Array[String] = []
 	var ok := true
+	var pushing := true
+	var long_ok := true
+	var long_steps := 0
 	for i: int in sim.sites.keys():
 		if walks >= 4:
 			break
@@ -345,11 +348,43 @@ func _check_site(ctx: FpContext) -> void:
 			if inside or out < face + r * 0.99 or out > face + r + 0.02:
 				ok = false
 				print("  site %d side %d: stopped %.4f from the centre (hoarding face %.3f + r), inside a box: %s" % [i, k, out, face, inside])
+			# Pushing into the hoarding does not keep the run speed.
+			var push := -p.velocity.dot(dir)
+			if push > WS.RUN * 0.25:
+				pushing = false
+				print("  site %d side %d: still pushing at %.4f u/s after stopping" % [i, k, push])
+			# Long frames (sim tick stalls of 0.7 s and 2.7 s were measured in FP play): single
+			# steps while pressed against the hoarding, then one from a standing start at the run-up.
+			for st: Array in [[0.25, false], [0.7, false], [2.72, false], [2.72, true]]:
+				var dt: float = st[0]
+				if st[1]:
+					p.teleport(start, rad_to_deg(atan2(dir.x, dir.z)))
+				p.simulate(Vector2(0, 1), true, dt)
+				var o := (p.position - c).dot(dir)
+				if _in_boxes(col, p.position, r * 0.99) or o < face + r * 0.99:
+					long_ok = false
+					print("  site %d side %d: one %.2f s step (%s) ended %.4f from the centre, past the hoarding" % [i, k, dt, "standing start" if st[1] else "pressed", o])
+				long_steps += 1
 			walks += 1
 			if walks >= 4:
 				break
 	K.check(fails, walks > 0, "fixture: a fenced build site with a free approach to a side without the gate")
 	K.check(fails, ok, "walking at a site's hoarding stops at the hoarding (%s)" % ", ".join(stops))
+	K.check(fails, pushing, "a blocked axis drops its velocity: pushing into the hoarding keeps under a quarter of RUN")
+	K.check(fails, long_steps > 0 and long_ok, "one long simulate() step (0.25, 0.7 and 2.72 s, %d steps) never tunnels through a hoarding" % long_steps)
+
+
+## The text of the first Label or RichTextLabel under n whose text contains needle ("" when none).
+func _slot_text(n: Node, needle: String) -> String:
+	for c: Node in n.find_children("*", "Control", true, false):
+		var t := ""
+		if c is Label:
+			t = (c as Label).text
+		elif c is RichTextLabel:
+			t = (c as RichTextLabel).get_parsed_text()
+		if t.contains(needle):
+			return t
+	return ""
 
 
 ## True when p lies in a collision box (grown by r) of the 3x3 tiles around it.
@@ -384,8 +419,19 @@ func _check_context(ctx: FpContext) -> void:
 	var hidden := not hud.slot("top_bar").visible and hud.slot("overlay").visible and not hud.is_hud_visible()
 	hud.set_hud_visible(true)
 	K.check(fails, hidden and hud.slot("top_bar").visible, "set_hud_visible hides every slot but the overlay")
+	# Through the slot API only (B replaces the toast placeholder): some label under the toasts slot
+	# shows the text within 10 frames, de-branded.
 	ctx.bus.toast.emit("Grok-4.5 says hello", "info")
-	K.check(fails, hud.slot("toasts").get_child(0).get_child_count() == 1, "a bus toast shows in the toasts slot")
+	var toast := ""
+	for _k in range(10):
+		toast = _slot_text(hud.slot("toasts"), "says hello")
+		if not toast.is_empty():
+			break
+		await process_frame
+	var branded := false
+	for w: String in ["Argon", "DeepSeek", "Kimi", "Qwen", "Grok"]:
+		branded = branded or toast.contains(w)
+	K.check(fails, not toast.is_empty() and not branded, "a bus toast shows in the toasts slot, de-branded (%s)" % toast)
 	var mode := ctx.mode
 	var scales: Array = []
 	ctx.bus.time_scale_changed.connect(func(s: int) -> void: scales.append(s))

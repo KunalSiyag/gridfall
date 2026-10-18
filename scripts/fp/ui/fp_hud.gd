@@ -107,11 +107,6 @@ func show_toast(text: String, kind: String = "info") -> void:
 	_toasts.append({"label": l, "t": TOAST_SECONDS})
 
 
-## The status line placeholder's current text (tests read it).
-func status_text() -> String:
-	return _status.text if _status != null else ""
-
-
 func _process(delta: float) -> void:
 	_status_t += delta
 	if _status_t >= STATUS_PERIOD:
