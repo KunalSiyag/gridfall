@@ -18,6 +18,9 @@ func run(main: Node, dir: String) -> void:
 	get_tree().root.size = TARGET_SIZE
 	var sim: CitySim = main.sim
 	var fp: FpMode = main.fp
+	# The S0 baselines are eye-level shots: first person, not saved to the player's settings (D13).
+	# Third-person shots come from feature photo_shots() with their own prepare / restore.
+	fp.apply_settings({"camera_mode": "first"}, false)
 	sim.start()
 	var days := int(OS.get_environment("GRIDFALL_PHOTO_DAYS")) if OS.has_environment("GRIDFALL_PHOTO_DAYS") else 6
 	await main.grow_offline(days, 240000)

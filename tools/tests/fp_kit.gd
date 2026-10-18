@@ -22,6 +22,7 @@ const GROW_ACTIONS := [
 const DEFAULT_OPTS := {
 	"seed": 7, "minds": false, "grow": false, "ticks": 0, "view": false,
 	"render": false, "player": true, "hud": true, "audio": false, "client": null,
+	"camera_mode": "first",
 }
 const GROW_CAP_TICKS := 120
 
@@ -99,7 +100,9 @@ static func make_view(root: Node, sim: CitySim) -> CityView:
 
 ## An FpContext wired for unit tests without Main (S0 §17.2 field table).
 ## opts (defaults): {"seed": 7, "minds": false, "grow": false, "ticks": 0, "view": false,
-##   "render": false, "player": true, "hud": true, "audio": false, "client": null}
+##   "render": false, "player": true, "hud": true, "audio": false, "client": null,
+##   "camera_mode": "first"}. camera_mode overrides FpMode's play default ("third", D13), so every
+##   test runs in first person unless it passes "third".
 ## Call it after `await process_frame` in a SceneTree test's _init, so root is inside the tree.
 static func make_ctx(root: Node, opts: Dictionary = {}) -> FpContext:
 	if not root.is_inside_tree():
@@ -111,6 +114,7 @@ static func make_ctx(root: Node, opts: Dictionary = {}) -> FpContext:
 	root.add_child(kit)
 	var ctx := FpContext.new()
 	ctx.settings = FpMode.DEFAULT_SETTINGS.duplicate(true)
+	ctx.settings["camera_mode"] = str(o["camera_mode"])
 	# 1. sim, residents, minds, client (an injected client is in place before anything else).
 	var s := make_sim(kit, int(o["seed"]), bool(o["minds"]), o["client"])
 	ctx.sim = s["sim"]

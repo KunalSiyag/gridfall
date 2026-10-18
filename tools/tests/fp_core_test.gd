@@ -2,8 +2,8 @@ extends SceneTree
 ## S0 core (docs/fp/S0-foundation.md §17.3): kit fixtures, the feature registry, CollisionWorld
 ## ground / surface / blocking / raycast, construction sites blocking at their hoarding, walking
 ## out of a box that appeared underfoot, nearest_free, FpPlayer walking, mouse look under a window
-## stretch and save round trip, FpContext modals, FpHud slots and AP.load_scene. Movement asserts
-## against collision.boxes(), never building_aabb.
+## stretch and save round trip, FpContext modals, FpHud slots, AP.load_scene and the third-person
+## settings and input hooks. Movement asserts against collision.boxes(), never building_aabb.
 
 const K := preload("res://tools/tests/fp_kit.gd")
 const D := preload("res://scripts/sim/sim_defs.gd")
@@ -38,6 +38,7 @@ func _init() -> void:
 	_check_assets()
 	_check_trapped(ctx)
 	_check_site(ctx)
+	_check_camera_hooks(ctx)
 	K.finish(self, "FP_CORE_TEST", fails)
 
 
@@ -457,6 +458,67 @@ func _check_assets() -> void:
 	K.check(fails, AP.load_scene("res://icon.png") == null, "AP.load_scene returns null for a non-scene resource")
 	K.check(fails, AP.load_scene("res://models/real/roads/road_straight.glb") != null, "AP.load_scene loads an existing GLB")
 	K.check(fails, AP.first_existing(["res://nope.glb", "res://models/real/roads/road_cross.glb"]) == "res://models/real/roads/road_cross.glb", "AP.first_existing skips missing paths")
+
+
+## Third-person hooks (D13, TPS_PLAN T1): the camera settings and their defaults, the kit's
+## first-person override, a non-persistent settings patch, and the eight camera input actions.
+func _check_camera_hooks(ctx: FpContext) -> void:
+	var want := {"camera_mode": "third", "tps_fov": 60.0, "tps_distance_m": 3.2, "shoulder": 1, "auto_shoulder": false, "hero": "m"}
+	var defaults_ok := true
+	for k: String in want.keys():
+		var v: Variant = FpMode.DEFAULT_SETTINGS.get(k, null)
+		defaults_ok = defaults_ok and v != null and typeof(v) == typeof(want[k]) and v == want[k]
+	K.check(fails, defaults_ok, "DEFAULT_SETTINGS has the third-person keys and defaults %s" % str(want))
+	K.check(fails, str(ctx.settings.get("camera_mode", "")) == "first" and is_equal_approx(float(ctx.settings.get("tps_fov", 0.0)), 60.0) and str(ctx.settings.get("hero", "")) == "m", "fp_kit runs tests in first person and keeps the other camera defaults (%s)" % str(ctx.settings.get("camera_mode")))
+	var third := K.make_ctx(get_root(), {"camera_mode": "third", "player": false, "hud": false})
+	K.check(fails, str(third.settings.get("camera_mode", "")) == "third" and str(FpMode.DEFAULT_SETTINGS["camera_mode"]) == "third", "make_ctx honours opts.camera_mode without changing DEFAULT_SETTINGS")
+	third.world_root.get_parent().queue_free()
+	var mode := ctx.mode
+	var seen: Array = []
+	var on_settings := func(st: Dictionary) -> void: seen.append(str(st.get("camera_mode", "")))
+	ctx.bus.settings_changed.connect(on_settings)
+	var logged := mode.settings_log.size()
+	mode.apply_settings({"camera_mode": "third"}, false)
+	K.check(fails, str(ctx.settings["camera_mode"]) == "third" and seen == ["third"] and mode.settings_log.size() == logged + 1, "apply_settings(patch, false) merges, logs and emits settings_changed")
+	mode.apply_settings({"camera_mode": "first"}, false)
+	ctx.bus.settings_changed.disconnect(on_settings)
+	var key := func(pk: Key) -> InputEvent:
+		var e := InputEventKey.new()
+		e.physical_keycode = pk
+		e.pressed = true
+		return e
+	var wheel := func(b: MouseButton) -> InputEvent:
+		var e := InputEventMouseButton.new()
+		e.button_index = b
+		e.pressed = true
+		return e
+	var stick := func(axis: JoyAxis, v: float) -> InputEvent:
+		var e := InputEventJoypadMotion.new()
+		e.axis = axis
+		e.axis_value = v
+		return e
+	var binds := {
+		"view_toggle": key.call(KEY_V), "shoulder_swap": key.call(KEY_Q),
+		"zoom_in": wheel.call(MOUSE_BUTTON_WHEEL_UP), "zoom_out": wheel.call(MOUSE_BUTTON_WHEEL_DOWN),
+		"look_left": stick.call(JOY_AXIS_RIGHT_X, -1.0), "look_right": stick.call(JOY_AXIS_RIGHT_X, 1.0),
+		"look_up": stick.call(JOY_AXIS_RIGHT_Y, -1.0), "look_down": stick.call(JOY_AXIS_RIGHT_Y, 1.0),
+	}
+	var bound := true
+	var exclusive := true
+	for a: String in binds.keys():
+		var ev: InputEvent = binds[a]
+		bound = bound and InputMap.has_action(a) and ev.is_action_pressed(a) and is_equal_approx(ev.get_action_strength(a), 1.0)
+		for other: StringName in InputMap.get_actions():
+			if str(other) != a and not str(other).begins_with("ui_") and ev.is_action_pressed(other):
+				exclusive = false
+				print("    %s also triggers %s" % [a, other])
+	K.check(fails, bound, "the camera actions exist and fire on V, Q, the wheel and the right stick")
+	K.check(fails, exclusive, "V, Q, the wheel and the right stick trigger no other game action")
+	var dz := true
+	for a: String in ["look_left", "look_right", "look_up", "look_down"]:
+		dz = dz and is_equal_approx(InputMap.action_get_deadzone(a), 0.15)
+	var half: InputEventJoypadMotion = stick.call(JOY_AXIS_RIGHT_X, -0.1)
+	K.check(fails, dz and not half.is_action_pressed("look_left"), "the right-stick look actions use a 0.15 dead zone")
 
 
 ## A straight (N-S or E-W) land road tile; with `long`, also with road on both ends of its run.

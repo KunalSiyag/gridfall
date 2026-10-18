@@ -78,6 +78,8 @@ func _init() -> void:
 		print("FPBENCH: DONE")
 		quit(0)
 		return
+	# Keep the first-person baselines comparable: eye-level camera, not saved (D13).
+	fp.apply_settings({"camera_mode": "first"}, false)
 	# Main's play boot already called sim.start(); grow on top of it.
 	var days := int(OS.get_environment("FPBENCH_DAYS")) if OS.has_environment("FPBENCH_DAYS") else 6
 	var tg := Time.get_ticks_msec()

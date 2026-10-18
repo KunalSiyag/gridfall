@@ -7,9 +7,14 @@ const D := preload("res://scripts/sim/sim_defs.gd")
 const WS := preload("res://scripts/fp/world_scale.gd")
 const REGISTRY := preload("res://scripts/fp/fp_features.gd")
 const SETTINGS_PATH := "user://gridfall_fp_settings.json"
+## camera_mode is "third" (over-the-shoulder, the default for play, D13) or "first"; "fov" is the
+## first-person FOV and "tps_fov" the third-person one; shoulder is 1 (right) or -1 (left); hero
+## is "m" or "f". fp_kit.make_ctx overrides camera_mode to "first" unless a test asks otherwise.
 const DEFAULT_SETTINGS := {
 	"mouse_sensitivity": 0.0022, "invert_y": false, "fov": 72.0, "head_bob": true,
 	"quality": "medium", "show_hud": true, "music_volume_db": 0.0, "sfx_volume_db": 0.0,
+	"camera_mode": "third", "tps_fov": 60.0, "tps_distance_m": 3.2, "shoulder": 1,
+	"auto_shoulder": false, "hero": "m",
 }
 ## Save keys FpMode owns; a feature id must not use them.
 const RESERVED_KEYS := ["version", "player", "time_scale", "day_phase"]
@@ -227,16 +232,17 @@ func set_paused(p: bool) -> void:
 
 
 ## Appends patch to settings_log, merges it into ctx.settings, saves SETTINGS_PATH (skipped when
-## setup() never ran, as in fp_kit's stub mode), emits bus.settings_changed(settings) and, if
-## "quality" changed, bus.quality_changed(preset).
-func apply_settings(patch: Dictionary) -> void:
+## setup() never ran, as in fp_kit's stub mode, or when persist is false, as for the photo tour's
+## and fp_bench's camera override), emits bus.settings_changed(settings) and, if "quality" changed,
+## bus.quality_changed(preset).
+func apply_settings(patch: Dictionary, persist: bool = true) -> void:
 	settings_log.append(patch.duplicate(true))
 	if ctx == null:
 		return
 	var old_quality := str(ctx.settings.get("quality", ""))
 	for k: Variant in patch.keys():
 		ctx.settings[k] = patch[k]
-	if _set_up:
+	if _set_up and persist:
 		_save_settings()
 	if bus != null:
 		bus.settings_changed.emit(ctx.settings)
