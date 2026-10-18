@@ -19,6 +19,11 @@ var _crisis: float = 0.0
 var residents: Residents
 var minds: ResidentMinds
 var sky: SkyDirector
+const WS := preload("res://scripts/fp/world_scale.gd")
+## First-person composition (null in orbit mode). Built by enter_fp(), freed by exit_fp().
+var fp: FpMode = null
+## "orbit" or "fp"; tools and saves can read it.
+var view_mode: String = "orbit"
 
 
 func _ready() -> void:
@@ -34,6 +39,7 @@ func _ready() -> void:
 	brain.setup(sim, client)
 	_setup_people()
 	minds.plans_done.connect(brain.residents_spoke)
+	view.fp_mode = wants_fp()
 	view.setup(sim, camera)
 	hud.setup(sim, brain, client)
 	sky = SkyDirector.new()
@@ -49,7 +55,7 @@ func _ready() -> void:
 			return
 		view.avatars.select(id)
 		if not id.is_empty():
-			camera_rig.focus_world_point(view.avatars.position_of(id), 14.0)
+			focus(view.avatars.position_of(id), 14.0, "resident:" + id)
 	)
 	view.tile_hovered.connect(func(x: int, y: int) -> void: hud.set_hover(x, y))
 	hud.speed_requested.connect(func(s: int) -> void:
@@ -58,7 +64,7 @@ func _ready() -> void:
 	)
 	hud.overlay_requested.connect(func(mode: String) -> void: view.set_overlay(mode))
 	hud.focus_district_requested.connect(_focus_district)
-	hud.focus_tile_requested.connect(func(x: int, y: int) -> void: camera_rig.focus_world_point(Vector3(x, 0, y), 30.0))
+	hud.focus_tile_requested.connect(func(x: int, y: int) -> void: focus(Vector3(x, 0, y), 30.0, "tile"))
 	hud.save_requested.connect(save_game)
 	hud.load_requested.connect(load_game)
 	hud.new_city_requested.connect(new_game)
@@ -76,7 +82,7 @@ func _ready() -> void:
 	)
 	sim.event_started.connect(func(ev: Dictionary) -> void:
 		audio.play_sfx("res://sounds/gridlock_alert.wav", -6.0)
-		camera_rig.focus_world_point(Vector3(int(ev["x"]), 0, int(ev["y"])), 34.0)
+		focus(Vector3(int(ev["x"]), 0, int(ev["y"])), 34.0, "event:" + str(ev["type"]))
 		_update_mood()
 	)
 	sim.event_ended.connect(func(_ev: Dictionary) -> void: _update_mood())
@@ -97,11 +103,31 @@ func _ready() -> void:
 	if OS.has_environment("GRIDFALL_PHOTO_DIR"):
 		_run_photo_tour(OS.get_environment("GRIDFALL_PHOTO_DIR"))
 		return
+	var fp_smoke := OS.get_environment("GRIDFALL_FP_SMOKE") == "1"
+	var fp_photo := OS.get_environment("GRIDFALL_FP_PHOTO_DIR")
+	if wants_fp():
+		enter_fp()
+	if fp_smoke:
+		var smoke: Node = (load("res://tools/tests/fp_smoke.gd") as GDScript).new()
+		smoke.name = "FpSmoke"
+		add_child(smoke)
+		smoke.call("run", self)
+		return
+	if not fp_photo.is_empty():
+		var tour: Node = (load("res://tools/tests/fp_photo_tour.gd") as GDScript).new()
+		tour.name = "FpPhotoTour"
+		add_child(tour)
+		tour.call("run", self, fp_photo)
+		return
 	sim.start()
 	var start_speed := int(OS.get_environment("GRIDFALL_SPEED")) if OS.has_environment("GRIDFALL_SPEED") else 1
-	sim.set_speed(start_speed)
-	hud.set_speed_display(start_speed)
-	hud.toast("Five GMI mayors are drafting their first plans...")
+	if fp != null:
+		fp.set_time_scale(start_speed)
+		notify("Welcome to GridFall. WASD to walk, Enter to chat, M for the map, Esc to pause.")
+	else:
+		sim.set_speed(start_speed)
+		hud.set_speed_display(start_speed)
+		hud.toast("Five GMI mayors are drafting their first plans...")
 
 
 func _process(delta: float) -> void:
@@ -125,28 +151,30 @@ func _setup_people() -> void:
 func _focus_district(mi: int) -> void:
 	var b := sim.district_rect(mi)
 	var c := Vector2(b.position) + Vector2(b.size) * 0.5 - Vector2(0.5, 0.5)
-	camera_rig.focus_world_point(Vector3(c.x, 0, c.y), 36.0)
+	focus(Vector3(c.x, 0, c.y), 36.0, "district:%d" % mi)
 
 
 func save_game(path: String = SAVE_PATH) -> void:
 	var data := {"sim": sim.to_dict(), "brain": brain.to_dict(), "client": client.to_dict(), "residents": residents.to_dict(), "minds": minds.to_dict(), "saved_at": Time.get_datetime_string_from_system()}
+	if fp != null:
+		data["fp"] = fp.to_dict()
 	var f := FileAccess.open(path, FileAccess.WRITE)
 	if f == null:
-		hud.toast("Save failed: cannot write " + path)
+		notify("Save failed: cannot write " + path, "alert")
 		return
 	f.store_string(JSON.stringify(data))
 	f.close()
 	client.flush_cache()
-	hud.toast("City saved (Day %d)" % sim.day)
+	notify("City saved (Day %d)" % sim.day, "success")
 
 
 func load_game(path: String = SAVE_PATH) -> bool:
 	if not FileAccess.file_exists(path):
-		hud.toast("No saved city yet (press Save first)")
+		notify("No saved city yet (press Save first)", "alert")
 		return false
 	var parsed: Variant = JSON.parse_string(FileAccess.get_file_as_string(path))
 	if typeof(parsed) != TYPE_DICTIONARY or not sim.from_dict((parsed as Dictionary).get("sim", {})):
-		hud.toast("Save file is invalid")
+		notify("Save file is invalid", "alert")
 		return false
 	var d: Dictionary = parsed
 	brain.from_dict(d.get("brain", {}))
@@ -155,15 +183,18 @@ func load_game(path: String = SAVE_PATH) -> bool:
 	residents.from_dict(d.get("residents", {}))
 	minds.from_dict(d.get("minds", {}))
 	sim._recompute_all()
-	view.setup(sim, camera)
+	view.setup(sim, active_camera())
 	hud.setup(sim, brain, client)
 	hud.setup_people(residents, minds)
+	if fp != null:
+		var fd: Variant = d.get("fp", {})
+		fp.from_dict(fd if typeof(fd) == TYPE_DICTIONARY else {})
 	sim.waiting_for_ai = false
 	# Mid-day saves already have today's mayor decisions applied; only a boundary save needs a fresh day.
 	if sim.tick_in_day == 0:
 		sim.start()
 	_update_mood()
-	hud.toast("Loaded city from Day %d" % sim.day)
+	notify("Loaded city from Day %d" % sim.day, "success")
 	return true
 
 
@@ -171,12 +202,113 @@ func new_game() -> void:
 	sim.new_city(randi() % 100000)
 	brain.setup(sim, client)
 	_setup_people()
-	view.setup(sim, camera)
+	view.setup(sim, active_camera())
 	hud.setup(sim, brain, client)
 	hud.setup_people(residents, minds)
+	if fp != null:
+		fp.from_dict({})
 	sim.start()
 	_update_mood()
-	hud.toast("A new GridFall has been founded")
+	notify("A new GridFall has been founded", "success")
+
+
+## True when this run will play in first person: no legacy tool mode (cinematic, orbit smoke,
+## orbit photo tour) is selected, and either an FP tool mode is or GRIDFALL_VIEW is not "orbit".
+## Mirrors the boot ladder in _ready(), so the early view flag and enter_fp() always agree.
+static func wants_fp() -> bool:
+	if OS.get_environment("GRIDFALL_CINEMATIC") in ["prep", "record"]:
+		return false
+	if OS.get_environment("GRIDFALL_SMOKE_TEST") == "1" or OS.has_environment("GRIDFALL_PHOTO_DIR"):
+		return false
+	return OS.get_environment("GRIDFALL_FP_SMOKE") == "1" or OS.has_environment("GRIDFALL_FP_PHOTO_DIR") or OS.get_environment("GRIDFALL_VIEW") != "orbit"
+
+
+## Draws attention to a world point. Orbit: moves the camera rig (old behaviour).
+## First person: never teleports; emits GameBus.ping(p, reason) for the HUD and minimap.
+## reason: "event:<type>" | "resident:<id>" | "tile" | "district:<mi>" | "" .
+func focus(p: Vector3, dist: float, reason: String = "") -> void:
+	if fp != null:
+		fp.bus.ping.emit(p, reason)
+		return
+	camera_rig.focus_world_point(p, dist)
+
+
+## Player-facing notice: CityHud toast in orbit, GameBus.toast in first person.
+## kind: "info" | "alert" | "success" | "system".
+func notify(text: String, kind: String = "info") -> void:
+	if fp != null:
+		fp.bus.toast.emit(text, kind)
+	else:
+		hud.toast(text)
+
+
+## The camera the city view should use for picking and shake.
+func active_camera() -> Camera3D:
+	return fp.player.camera if fp != null else camera
+
+
+## Switches to first person (S0 §6.3). Safe to call twice.
+func enter_fp() -> void:
+	if fp != null:
+		return
+	view_mode = "fp"
+	camera_rig.set_process(false)
+	camera_rig.set_process_input(false)
+	camera_rig.set_process_unhandled_input(false)
+	hud.visible = false
+	hud.process_mode = Node.PROCESS_MODE_DISABLED
+	view.set_fp_mode(true)
+	sim.day_seconds = WS.FP_DAY_SECONDS
+	fp = FpMode.new()
+	fp.name = "FpMode"
+	add_child(fp)
+	fp.setup(self)
+	view.set_camera(fp.player.camera)
+
+
+## Back to the orbit view and CityHud (used by B's "Quit to orbit"). Safe to call twice.
+## It frees FpHud, so a caller inside an FP node's signal (a Button's pressed) must use
+## ctx.main.call_deferred("exit_fp"); a locked object cannot be freed mid-emit.
+func exit_fp() -> void:
+	if fp == null:
+		return
+	fp.teardown()
+	fp.queue_free()
+	fp = null
+	view.set_fp_mode(false)
+	view.set_camera(camera)
+	camera.make_current()
+	camera_rig.set_process(true)
+	camera_rig.set_process_input(true)
+	camera_rig.set_process_unhandled_input(true)
+	hud.process_mode = Node.PROCESS_MODE_INHERIT
+	hud.visible = true
+	sim.day_seconds = D.BASE_DAY_SECONDS
+	get_tree().paused = false
+	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
+	view_mode = "orbit"
+
+
+## Grows the city offline at full speed with the legacy 12 s day, for tests and tours, then restores
+## the current day length and speed 0. The caller must have called sim.start(). Returns when
+## sim.day >= days or after cap_ms of wall clock time.
+func grow_offline(days: int, cap_ms: int) -> void:
+	client.set_live(false)
+	var saved_day_seconds := sim.day_seconds
+	var was_sliced: Variant = sim.get("sliced")
+	if was_sliced == true:
+		sim.set("sliced", false)
+	sim.day_seconds = D.BASE_DAY_SECONDS
+	sim.set_speed(16)
+	var t0 := Time.get_ticks_msec()
+	while sim.day < days and Time.get_ticks_msec() - t0 < cap_ms:
+		await get_tree().process_frame
+	sim.set_speed(0)
+	sim.day_seconds = saved_day_seconds
+	if was_sliced == true:
+		sim.set("sliced", true)
+	if view.has_method("flush_rebuild_queue"):
+		view.call("flush_rebuild_queue")
 
 
 ## Grows a city offline for the cinematic trailer and saves it at a day boundary, so the
