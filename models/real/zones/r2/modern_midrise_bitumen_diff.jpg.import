@@ -3,9 +3,10 @@
 importer="texture"
 type="CompressedTexture2D"
 uid="uid://dmv1l0guho72f"
-path="res://.godot/imported/modern_midrise_bitumen_diff.jpg-8926d29f576aa820a77f136c182f7152.ctex"
+path.s3tc="res://.godot/imported/modern_midrise_bitumen_diff.jpg-8926d29f576aa820a77f136c182f7152.s3tc.ctex"
 metadata={
-"vram_texture": false
+"imported_formats": ["s3tc_bptc"],
+"vram_texture": true
 }
 generator_parameters={
 "md5": "b6d7c3096bc68eba624ec450f01b9294"
@@ -14,11 +15,11 @@ generator_parameters={
 [deps]
 
 source_file="res://models/real/zones/r2/modern_midrise_bitumen_diff.jpg"
-dest_files=["res://.godot/imported/modern_midrise_bitumen_diff.jpg-8926d29f576aa820a77f136c182f7152.ctex"]
+dest_files=["res://.godot/imported/modern_midrise_bitumen_diff.jpg-8926d29f576aa820a77f136c182f7152.s3tc.ctex"]
 
 [params]
 
-compress/mode=0
+compress/mode=2
 compress/high_quality=false
 compress/lossy_quality=0.7
 compress/uastc_level=0

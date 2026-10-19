@@ -1,0 +1,10 @@
+# Developer tools for checks, hooks and tests: tools/checks/*.py, .pre-commit-config.yaml, pytest.
+# Exact pins; Dependabot (.github/dependabot.yml) proposes updates after a 7-day cooldown.
+#   python3 -m venv ~/.venvs/gridfall-tools
+#   ~/.venvs/gridfall-tools/bin/pip install -r tools/requirements-dev.txt
+gdtoolkit==4.5.0
+pre-commit==4.7.0
+pytest==9.1.1
+pytest-cov==7.1.0
+PyYAML==6.0.3
+actionlint-py==1.7.12.25

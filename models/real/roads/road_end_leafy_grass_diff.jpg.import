@@ -3,9 +3,10 @@
 importer="texture"
 type="CompressedTexture2D"
 uid="uid://txcywr87gtvl"
-path="res://.godot/imported/road_end_leafy_grass_diff.jpg-3a9bc226c4763ef347637e666be00c3f.ctex"
+path.s3tc="res://.godot/imported/road_end_leafy_grass_diff.jpg-3a9bc226c4763ef347637e666be00c3f.s3tc.ctex"
 metadata={
-"vram_texture": false
+"imported_formats": ["s3tc_bptc"],
+"vram_texture": true
 }
 generator_parameters={
 "md5": "5289ac4c3bf240f677f5b31118faf1da"
@@ -14,11 +15,11 @@ generator_parameters={
 [deps]
 
 source_file="res://models/real/roads/road_end_leafy_grass_diff.jpg"
-dest_files=["res://.godot/imported/road_end_leafy_grass_diff.jpg-3a9bc226c4763ef347637e666be00c3f.ctex"]
+dest_files=["res://.godot/imported/road_end_leafy_grass_diff.jpg-3a9bc226c4763ef347637e666be00c3f.s3tc.ctex"]
 
 [params]
 
-compress/mode=0
+compress/mode=2
 compress/high_quality=false
 compress/lossy_quality=0.7
 compress/uastc_level=0

@@ -3,9 +3,10 @@
 importer="texture"
 type="CompressedTexture2D"
 uid="uid://cgfd3fffkt6mo"
-path="res://.godot/imported/boat_fishing_corrugated_iron_arm.jpg-7744266f87462868ad013e9ee14fdecf.ctex"
+path.s3tc="res://.godot/imported/boat_fishing_corrugated_iron_arm.jpg-7744266f87462868ad013e9ee14fdecf.s3tc.ctex"
 metadata={
-"vram_texture": false
+"imported_formats": ["s3tc_bptc"],
+"vram_texture": true
 }
 generator_parameters={
 "md5": "f4e64b3490b6c330feebc15b878cfe5e"
@@ -14,11 +15,11 @@ generator_parameters={
 [deps]
 
 source_file="res://models/real/vehicles/boat_fishing_corrugated_iron_arm.jpg"
-dest_files=["res://.godot/imported/boat_fishing_corrugated_iron_arm.jpg-7744266f87462868ad013e9ee14fdecf.ctex"]
+dest_files=["res://.godot/imported/boat_fishing_corrugated_iron_arm.jpg-7744266f87462868ad013e9ee14fdecf.s3tc.ctex"]
 
 [params]
 
-compress/mode=0
+compress/mode=2
 compress/high_quality=false
 compress/lossy_quality=0.7
 compress/uastc_level=0

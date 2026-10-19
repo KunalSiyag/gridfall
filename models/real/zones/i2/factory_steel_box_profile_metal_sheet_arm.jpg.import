@@ -3,9 +3,10 @@
 importer="texture"
 type="CompressedTexture2D"
 uid="uid://dvqtj564dltf3"
-path="res://.godot/imported/factory_steel_box_profile_metal_sheet_arm.jpg-5ed9251c6d2498e74770593b2a84f998.ctex"
+path.s3tc="res://.godot/imported/factory_steel_box_profile_metal_sheet_arm.jpg-5ed9251c6d2498e74770593b2a84f998.s3tc.ctex"
 metadata={
-"vram_texture": false
+"imported_formats": ["s3tc_bptc"],
+"vram_texture": true
 }
 generator_parameters={
 "md5": "0f118da8e371ec3bea04a7e1703de1f3"
@@ -14,11 +15,11 @@ generator_parameters={
 [deps]
 
 source_file="res://models/real/zones/i2/factory_steel_box_profile_metal_sheet_arm.jpg"
-dest_files=["res://.godot/imported/factory_steel_box_profile_metal_sheet_arm.jpg-5ed9251c6d2498e74770593b2a84f998.ctex"]
+dest_files=["res://.godot/imported/factory_steel_box_profile_metal_sheet_arm.jpg-5ed9251c6d2498e74770593b2a84f998.s3tc.ctex"]
 
 [params]
 
-compress/mode=0
+compress/mode=2
 compress/high_quality=false
 compress/lossy_quality=0.7
 compress/uastc_level=0

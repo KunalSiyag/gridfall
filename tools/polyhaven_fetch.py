@@ -79,6 +79,7 @@ EMBEDDED = {
 HDRIS = {
     "kloofendal_48d_partly_cloudy_puresky": "sky.hdr",
     "modern_buildings_night": "sky_night.hdr",
+    "qwantani_dusk_2_puresky": "sky_dusk.hdr",
 }
 
 

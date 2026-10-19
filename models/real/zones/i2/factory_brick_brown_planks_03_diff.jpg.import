@@ -3,9 +3,10 @@
 importer="texture"
 type="CompressedTexture2D"
 uid="uid://b7anshmpy81ds"
-path="res://.godot/imported/factory_brick_brown_planks_03_diff.jpg-9aa5660b733ed425a8ae06c749e4d9af.ctex"
+path.s3tc="res://.godot/imported/factory_brick_brown_planks_03_diff.jpg-9aa5660b733ed425a8ae06c749e4d9af.s3tc.ctex"
 metadata={
-"vram_texture": false
+"imported_formats": ["s3tc_bptc"],
+"vram_texture": true
 }
 generator_parameters={
 "md5": "7e7d5f4ff0e8ab502f477c39e6fb5f3c"
@@ -14,11 +15,11 @@ generator_parameters={
 [deps]
 
 source_file="res://models/real/zones/i2/factory_brick_brown_planks_03_diff.jpg"
-dest_files=["res://.godot/imported/factory_brick_brown_planks_03_diff.jpg-9aa5660b733ed425a8ae06c749e4d9af.ctex"]
+dest_files=["res://.godot/imported/factory_brick_brown_planks_03_diff.jpg-9aa5660b733ed425a8ae06c749e4d9af.s3tc.ctex"]
 
 [params]
 
-compress/mode=0
+compress/mode=2
 compress/high_quality=false
 compress/lossy_quality=0.7
 compress/uastc_level=0

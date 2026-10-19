@@ -3,9 +3,10 @@
 importer="texture"
 type="CompressedTexture2D"
 uid="uid://bxhyi0rp7apmr"
-path="res://.godot/imported/road_cross_concrete_wall_004_nor_gl.jpg-f6f09de5e2011d2399a8312b419cbed5.ctex"
+path.s3tc="res://.godot/imported/road_cross_concrete_wall_004_nor_gl.jpg-f6f09de5e2011d2399a8312b419cbed5.s3tc.ctex"
 metadata={
-"vram_texture": false
+"imported_formats": ["s3tc_bptc"],
+"vram_texture": true
 }
 generator_parameters={
 "md5": "3b0ea8d4ccb82d09db96bbc1237ce557"
@@ -14,17 +15,17 @@ generator_parameters={
 [deps]
 
 source_file="res://models/real/roads/road_cross_concrete_wall_004_nor_gl.jpg"
-dest_files=["res://.godot/imported/road_cross_concrete_wall_004_nor_gl.jpg-f6f09de5e2011d2399a8312b419cbed5.ctex"]
+dest_files=["res://.godot/imported/road_cross_concrete_wall_004_nor_gl.jpg-f6f09de5e2011d2399a8312b419cbed5.s3tc.ctex"]
 
 [params]
 
-compress/mode=0
+compress/mode=2
 compress/high_quality=false
 compress/lossy_quality=0.7
 compress/uastc_level=0
 compress/rdo_quality_loss=0.0
 compress/hdr_compression=1
-compress/normal_map=0
+compress/normal_map=1
 compress/channel_pack=0
 mipmaps/generate=true
 mipmaps/limit=-1

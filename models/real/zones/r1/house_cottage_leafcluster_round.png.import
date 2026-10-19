@@ -3,9 +3,10 @@
 importer="texture"
 type="CompressedTexture2D"
 uid="uid://13k2p1j8u53x"
-path="res://.godot/imported/house_cottage_leafcluster_round.png-27157a4e1c43969557dd4ba79693d0aa.ctex"
+path.s3tc="res://.godot/imported/house_cottage_leafcluster_round.png-27157a4e1c43969557dd4ba79693d0aa.s3tc.ctex"
 metadata={
-"vram_texture": false
+"imported_formats": ["s3tc_bptc"],
+"vram_texture": true
 }
 generator_parameters={
 "md5": "211a0a3103a022e13d026903ac21b083"
@@ -14,11 +15,11 @@ generator_parameters={
 [deps]
 
 source_file="res://models/real/zones/r1/house_cottage_leafcluster_round.png"
-dest_files=["res://.godot/imported/house_cottage_leafcluster_round.png-27157a4e1c43969557dd4ba79693d0aa.ctex"]
+dest_files=["res://.godot/imported/house_cottage_leafcluster_round.png-27157a4e1c43969557dd4ba79693d0aa.s3tc.ctex"]
 
 [params]
 
-compress/mode=0
+compress/mode=2
 compress/high_quality=false
 compress/lossy_quality=0.7
 compress/uastc_level=0

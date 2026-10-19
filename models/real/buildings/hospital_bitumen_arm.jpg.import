@@ -3,9 +3,10 @@
 importer="texture"
 type="CompressedTexture2D"
 uid="uid://cjuy03td8ci5c"
-path="res://.godot/imported/hospital_bitumen_arm.jpg-8622f90fc2c5037bef4e0a92a0c447ce.ctex"
+path.s3tc="res://.godot/imported/hospital_bitumen_arm.jpg-8622f90fc2c5037bef4e0a92a0c447ce.s3tc.ctex"
 metadata={
-"vram_texture": false
+"imported_formats": ["s3tc_bptc"],
+"vram_texture": true
 }
 generator_parameters={
 "md5": "4b2d48c5e4823e3214e7a4db914af61b"
@@ -14,11 +15,11 @@ generator_parameters={
 [deps]
 
 source_file="res://models/real/buildings/hospital_bitumen_arm.jpg"
-dest_files=["res://.godot/imported/hospital_bitumen_arm.jpg-8622f90fc2c5037bef4e0a92a0c447ce.ctex"]
+dest_files=["res://.godot/imported/hospital_bitumen_arm.jpg-8622f90fc2c5037bef4e0a92a0c447ce.s3tc.ctex"]
 
 [params]
 
-compress/mode=0
+compress/mode=2
 compress/high_quality=false
 compress/lossy_quality=0.7
 compress/uastc_level=0

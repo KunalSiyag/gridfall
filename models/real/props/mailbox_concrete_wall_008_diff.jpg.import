@@ -3,9 +3,10 @@
 importer="texture"
 type="CompressedTexture2D"
 uid="uid://2k3v4xv76m3t"
-path="res://.godot/imported/mailbox_concrete_wall_008_diff.jpg-10b0e2c8d0448dd59dd2ba213c7c940b.ctex"
+path.s3tc="res://.godot/imported/mailbox_concrete_wall_008_diff.jpg-10b0e2c8d0448dd59dd2ba213c7c940b.s3tc.ctex"
 metadata={
-"vram_texture": false
+"imported_formats": ["s3tc_bptc"],
+"vram_texture": true
 }
 generator_parameters={
 "md5": "b0f10da5a9326fc38d8df2f6d81e8daa"
@@ -14,11 +15,11 @@ generator_parameters={
 [deps]
 
 source_file="res://models/real/props/mailbox_concrete_wall_008_diff.jpg"
-dest_files=["res://.godot/imported/mailbox_concrete_wall_008_diff.jpg-10b0e2c8d0448dd59dd2ba213c7c940b.ctex"]
+dest_files=["res://.godot/imported/mailbox_concrete_wall_008_diff.jpg-10b0e2c8d0448dd59dd2ba213c7c940b.s3tc.ctex"]
 
 [params]
 
-compress/mode=0
+compress/mode=2
 compress/high_quality=false
 compress/lossy_quality=0.7
 compress/uastc_level=0

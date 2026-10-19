@@ -1,0 +1,21 @@
+name: Chore / tech debt
+description: Refactor, cleanup, dependency or tooling work with no user-facing change.
+title: "chore: "
+labels: ["type/chore", "needs-triage"]
+body:
+  - type: textarea
+    id: what
+    attributes:
+      label: What needs doing
+    validations:
+      required: true
+  - type: textarea
+    id: why
+    attributes:
+      label: Why now
+      description: Link TODOs, failing checks or the code-quality report if relevant.
+  - type: input
+    id: files
+    attributes:
+      label: Main files
+      placeholder: scripts/world/city_view.gd

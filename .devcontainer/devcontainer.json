@@ -1,0 +1,25 @@
+{
+  "name": "GridFall",
+  "build": {
+    "dockerfile": "Dockerfile",
+    "context": ".."
+  },
+  "remoteUser": "ubuntu",
+  "containerEnv": {
+    "GODOT": "/usr/local/bin/godot",
+    "GRIDFALL_OFFLINE": "1"
+  },
+  "postCreateCommand": "pre-commit install --hook-type pre-commit --hook-type pre-push && python tools/checks/run_all.py --fast",
+  "customizations": {
+    "vscode": {
+      "extensions": [
+        "geequlim.godot-tools",
+        "ms-python.python",
+        "github.vscode-github-actions"
+      ],
+      "settings": {
+        "python.defaultInterpreterPath": "/home/ubuntu/.venvs/gridfall-tools/bin/python"
+      }
+    }
+  }
+}

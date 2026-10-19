@@ -3,9 +3,10 @@
 importer="texture"
 type="CompressedTexture2D"
 uid="uid://bfna44oje8v08"
-path="res://.godot/imported/tree_birch_bark_platanus_diff.jpg-5a1e7e9a82e71ed24af6d14fb2c5fbee.ctex"
+path.s3tc="res://.godot/imported/tree_birch_bark_platanus_diff.jpg-5a1e7e9a82e71ed24af6d14fb2c5fbee.s3tc.ctex"
 metadata={
-"vram_texture": false
+"imported_formats": ["s3tc_bptc"],
+"vram_texture": true
 }
 generator_parameters={
 "md5": "bd7d557e09a64f0ed1338d39dc34892d"
@@ -14,11 +15,11 @@ generator_parameters={
 [deps]
 
 source_file="res://models/real/props/tree_birch_bark_platanus_diff.jpg"
-dest_files=["res://.godot/imported/tree_birch_bark_platanus_diff.jpg-5a1e7e9a82e71ed24af6d14fb2c5fbee.ctex"]
+dest_files=["res://.godot/imported/tree_birch_bark_platanus_diff.jpg-5a1e7e9a82e71ed24af6d14fb2c5fbee.s3tc.ctex"]
 
 [params]
 
-compress/mode=0
+compress/mode=2
 compress/high_quality=false
 compress/lossy_quality=0.7
 compress/uastc_level=0

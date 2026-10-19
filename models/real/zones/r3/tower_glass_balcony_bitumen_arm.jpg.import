@@ -3,9 +3,10 @@
 importer="texture"
 type="CompressedTexture2D"
 uid="uid://cw2ifdyqhn4x8"
-path="res://.godot/imported/tower_glass_balcony_bitumen_arm.jpg-7940c5669a09c9222890f57a37f32f2b.ctex"
+path.s3tc="res://.godot/imported/tower_glass_balcony_bitumen_arm.jpg-7940c5669a09c9222890f57a37f32f2b.s3tc.ctex"
 metadata={
-"vram_texture": false
+"imported_formats": ["s3tc_bptc"],
+"vram_texture": true
 }
 generator_parameters={
 "md5": "4b2d48c5e4823e3214e7a4db914af61b"
@@ -14,11 +15,11 @@ generator_parameters={
 [deps]
 
 source_file="res://models/real/zones/r3/tower_glass_balcony_bitumen_arm.jpg"
-dest_files=["res://.godot/imported/tower_glass_balcony_bitumen_arm.jpg-7940c5669a09c9222890f57a37f32f2b.ctex"]
+dest_files=["res://.godot/imported/tower_glass_balcony_bitumen_arm.jpg-7940c5669a09c9222890f57a37f32f2b.s3tc.ctex"]
 
 [params]
 
-compress/mode=0
+compress/mode=2
 compress/high_quality=false
 compress/lossy_quality=0.7
 compress/uastc_level=0

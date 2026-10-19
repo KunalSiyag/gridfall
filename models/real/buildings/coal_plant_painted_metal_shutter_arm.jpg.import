@@ -3,9 +3,10 @@
 importer="texture"
 type="CompressedTexture2D"
 uid="uid://dhq1v4tkbwfh3"
-path="res://.godot/imported/coal_plant_painted_metal_shutter_arm.jpg-2402af2f249578c2dc00557d1fb13079.ctex"
+path.s3tc="res://.godot/imported/coal_plant_painted_metal_shutter_arm.jpg-2402af2f249578c2dc00557d1fb13079.s3tc.ctex"
 metadata={
-"vram_texture": false
+"imported_formats": ["s3tc_bptc"],
+"vram_texture": true
 }
 generator_parameters={
 "md5": "37ddb7d8b1c3af24185b3468cc297c65"
@@ -14,11 +15,11 @@ generator_parameters={
 [deps]
 
 source_file="res://models/real/buildings/coal_plant_painted_metal_shutter_arm.jpg"
-dest_files=["res://.godot/imported/coal_plant_painted_metal_shutter_arm.jpg-2402af2f249578c2dc00557d1fb13079.ctex"]
+dest_files=["res://.godot/imported/coal_plant_painted_metal_shutter_arm.jpg-2402af2f249578c2dc00557d1fb13079.s3tc.ctex"]
 
 [params]
 
-compress/mode=0
+compress/mode=2
 compress/high_quality=false
 compress/lossy_quality=0.7
 compress/uastc_level=0

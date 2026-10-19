@@ -3,9 +3,10 @@
 importer="texture"
 type="CompressedTexture2D"
 uid="uid://bomke2qftljtc"
-path="res://.godot/imported/school_solar_cells_arm.jpg-e6b48c1a3eb9779c12e8e160c99b47b7.ctex"
+path.s3tc="res://.godot/imported/school_solar_cells_arm.jpg-e6b48c1a3eb9779c12e8e160c99b47b7.s3tc.ctex"
 metadata={
-"vram_texture": false
+"imported_formats": ["s3tc_bptc"],
+"vram_texture": true
 }
 generator_parameters={
 "md5": "881934dcd91c4c381b7b8880b36c3c47"
@@ -14,11 +15,11 @@ generator_parameters={
 [deps]
 
 source_file="res://models/real/buildings/school_solar_cells_arm.jpg"
-dest_files=["res://.godot/imported/school_solar_cells_arm.jpg-e6b48c1a3eb9779c12e8e160c99b47b7.ctex"]
+dest_files=["res://.godot/imported/school_solar_cells_arm.jpg-e6b48c1a3eb9779c12e8e160c99b47b7.s3tc.ctex"]
 
 [params]
 
-compress/mode=0
+compress/mode=2
 compress/high_quality=false
 compress/lossy_quality=0.7
 compress/uastc_level=0

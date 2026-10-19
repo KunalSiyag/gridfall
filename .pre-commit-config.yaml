@@ -1,0 +1,73 @@
+# pre-commit hooks (https://pre-commit.com). Install once per clone:
+#   ~/.venvs/gridfall-tools/bin/pre-commit install --hook-type pre-commit --hook-type pre-push
+# Run everything by hand: pre-commit run --all-files
+# Hooks only check, except end-of-file-fixer and trailing-whitespace, which fix the tooling files
+# listed under &tooling and nothing else (game sources are never rewritten). The local hooks wrap
+# tools/checks/*.py, which compare
+# against tools/checks/baselines/ so only new findings fail. additional_dependencies pins must
+# match tools/requirements-dev.txt (tools/checks/workflows.py enforces it).
+default_install_hook_types: [pre-commit, pre-push]
+default_stages: [pre-commit]
+repos:
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v6.0.0
+    hooks:
+      - id: check-added-large-files
+        args: [--maxkb=12288]
+      - id: check-yaml
+      - id: check-json
+      - id: check-toml
+      - id: check-merge-conflict
+      - id: detect-private-key
+      - id: check-executables-have-shebangs
+        files: ^tools/.*\.sh$
+      - id: end-of-file-fixer
+        args: []
+        files: &tooling ^(\.github/|\.devcontainer/|tools/checks/|tools/pytests/|tools/(gen_api_docs|changelog)\.py$|tools/(export|release)\.sh$|tools/requirements.*\.txt$|\.pre-commit-config\.yaml$|pyproject\.toml$|gdlintrc$|gdformatrc$|\.gitattributes$|\.godot-version$|VERSION$|export_presets\.cfg$)
+        exclude: ^tools/checks/baselines/
+      - id: trailing-whitespace
+        files: *tooling
+        exclude: ^tools/checks/baselines/
+  - repo: local
+    hooks:
+      - id: gdlint
+        name: gdlint (new findings only)
+        entry: python tools/checks/lint.py
+        language: python
+        additional_dependencies: [gdtoolkit==4.5.0]
+        files: \.gd$
+      - id: gdformat
+        name: gdformat --check (new and formatted files)
+        entry: python tools/checks/format.py
+        language: python
+        additional_dependencies: [gdtoolkit==4.5.0]
+        files: \.gd$
+      - id: complexity
+        name: cyclomatic complexity
+        entry: python tools/checks/complexity.py
+        language: python
+        files: \.gd$
+      - id: todo-policy
+        name: TODO/FIXME must link an issue
+        entry: python tools/checks/todo_scan.py
+        language: python
+        files: \.(gd|py|sh|gdshader|ya?ml|cfg)$
+      - id: large-files
+        name: no files over 12 MB
+        entry: python tools/checks/large_files.py
+        language: python
+      - id: repo-checks
+        name: repo checks (dead code, duplicates, boundaries, test map, flags, deps, AGENTS.md, workflows, API docs)
+        entry: python tools/checks/run_all.py --fast --skip complexity,todo_scan,large_files
+        language: python
+        additional_dependencies: [PyYAML==6.0.3, actionlint-py==1.7.12.25]
+        pass_filenames: false
+        files: \.(gd|py|tscn|tres|json|md|ya?ml|txt|cfg|godot)$|^gdlintrc$
+      - id: pytest
+        name: pytest (tools/checks, tools/ops; coverage >= 80%)
+        entry: python -m pytest
+        language: python
+        additional_dependencies: [pytest==9.1.1, pytest-cov==7.1.0, PyYAML==6.0.3, gdtoolkit==4.5.0]
+        pass_filenames: false
+        stages: [pre-push]
+        files: ^(tools/|pyproject\.toml$)

@@ -3,9 +3,10 @@
 importer="texture"
 type="CompressedTexture2D"
 uid="uid://dejytxdj3r7s1"
-path="res://.godot/imported/house_c_colormap.png-94e30c60c44d87b528b13e9014567ae3.ctex"
+path.s3tc="res://.godot/imported/house_c_colormap.png-94e30c60c44d87b528b13e9014567ae3.s3tc.ctex"
 metadata={
-"vram_texture": false
+"imported_formats": ["s3tc_bptc"],
+"vram_texture": true
 }
 generator_parameters={
 "md5": "75a02bdbe531f1d377e96bcd8cd9ec50"
@@ -14,11 +15,11 @@ generator_parameters={
 [deps]
 
 source_file="res://models/zones/r1/house_c_colormap.png"
-dest_files=["res://.godot/imported/house_c_colormap.png-94e30c60c44d87b528b13e9014567ae3.ctex"]
+dest_files=["res://.godot/imported/house_c_colormap.png-94e30c60c44d87b528b13e9014567ae3.s3tc.ctex"]
 
 [params]
 
-compress/mode=0
+compress/mode=2
 compress/high_quality=false
 compress/lossy_quality=0.7
 compress/uastc_level=0

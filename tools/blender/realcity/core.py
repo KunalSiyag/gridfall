@@ -165,6 +165,9 @@ LEAF_MATS = {
 # small/distant surfaces: base colour only (keeps GLBs small)
 LITE = {"Bark", "Bark_Platanus", "Paint_White", "Paint_Yellow", "Wood_Dark"}
 
+# materials whose explicit UVs are exact (palette atlas swatches, 0..1 poster and sign faces): no random offset
+EXACT_UV = {"Car_Atlas", "Poster", "SignFace"}
+
 _mat_cache = {}
 _img_cache = {}
 
@@ -198,6 +201,9 @@ def material(name, override=None):
     `override` lets one GLB give a name (e.g. WindowLit) the look of another spec."""
     if name in _mat_cache:
         return _mat_cache[name]
+    if name == "Car_Atlas" and override is None:
+        import atlas
+        return atlas.material()
     spec = override or MATS.get(name)
     if spec is None:
         spec = MATS["Glass"]
@@ -265,6 +271,15 @@ def material(name, override=None):
         if "coat" in extra:
             b.inputs["Coat Weight"].default_value = extra["coat"]
             b.inputs["Coat Roughness"].default_value = 0.03
+        if "alpha" in extra:
+            # exported as glTF alphaMode BLEND (see validate_real.py for the check)
+            b.inputs["Alpha"].default_value = extra["alpha"]
+            try:
+                m.surface_render_method = "BLENDED"
+            except Exception:
+                pass
+        if extra.get("double"):
+            m.use_backface_culling = False
         m.diffuse_color = (col[0], col[1], col[2], 1)
     _mat_cache[name] = m
     return m
@@ -476,6 +491,9 @@ class MB:
             me.materials.append(material(m))
         uvl = me.uv_layers.new(name="UVMap")
         offs = {m: ((rnd.random(), rnd.random()) if uv_offset is None else uv_offset) for m in mats}
+        for m in mats:
+            if m in EXACT_UV:
+                offs[m] = (0.0, 0.0)
         for pi, (idx, m, smooth, uvs) in enumerate(self.f):
             poly = me.polygons[pi]
             poly.material_index = mats.index(m)

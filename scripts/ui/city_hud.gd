@@ -423,6 +423,8 @@ func _build_dock() -> void:
 		card.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 		card.mouse_filter = Control.MOUSE_FILTER_STOP
 		card.mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
+		# Logs, the Gazette and posts name mayors by display name; the card keeps the model brand.
+		card.tooltip_text = "Mayor %s · %s" % [m["display"], m["district"]]
 		card.gui_input.connect(func(ev: InputEvent) -> void:
 			if ev is InputEventMouseButton and (ev as InputEventMouseButton).pressed and (ev as InputEventMouseButton).button_index == MOUSE_BUTTON_LEFT:
 				select_mayor(mi)
@@ -847,7 +849,7 @@ func _render_mayor() -> void:
 	var sm: Dictionary = sim.mayors[mi]
 	var e: Dictionary = _mayor_entries[mi]
 	var t := "[font_size=20][color=%s][b]%s[/b][/color][/font_size]\n" % [m["color"], m["name"]]
-	t += "[color=#9AB]%s · %s\nModel: %s[/color]\n" % [m["district"], m["style"], m["model"]]
+	t += "[color=#9AB]Mayor %s · %s · %s\nModel: %s[/color]\n" % [m["display"], m["district"], m["style"], m["model"]]
 	t += "Treasury [b]$%s[/b]  ·  income $%d  ·  upkeep $%d\n" % [_fmt(int(sm["treasury"])), int(sm["last_income"]), int(sm["last_upkeep"])]
 	t += "Taxes R%d C%d I%d  ·  pop %s  ·  jobs %s\n" % [int(sm["tax_r"]), int(sm["tax_c"]), int(sm["tax_i"]), _fmt(int(sm["pop"])), _fmt(int(sm["jobs"]))]
 	t += "Actions accepted %d · rejected %d\n\n" % [int(sm["actions_ok"]), int(sm["actions_rejected"])]

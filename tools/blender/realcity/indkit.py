@@ -367,7 +367,7 @@ def car_park(c, x0, y0, x1, y1, n, rz=0.0, fill=0.7, along="x"):
             mb.box2(xx - 0.0012, y0 + 0.004, 0.0055, xx + 0.0012, y1 - 0.004, 0.0058, "Paint_White", skip=("-z",))
         for i in range(n):
             if c.rnd.random() < fill:
-                parked_car(c, x0 + (i + 0.5) * bw, (y0 + y1) / 2, rz=rz)
+                parked_car(c, x0 + (i + 0.5) * bw, (y0 + y1) / 2, rz=rz, max_len=y1 - y0 - 0.01, z=0.0055)
     else:
         bw = (y1 - y0) / n
         for i in range(n + 1):
@@ -375,7 +375,7 @@ def car_park(c, x0, y0, x1, y1, n, rz=0.0, fill=0.7, along="x"):
             mb.box2(x0 + 0.004, yy - 0.0012, 0.0055, x1 - 0.004, yy + 0.0012, 0.0058, "Paint_White", skip=("-z",))
         for i in range(n):
             if c.rnd.random() < fill:
-                parked_car(c, (x0 + x1) / 2, y0 + (i + 0.5) * bw, rz=rz)
+                parked_car(c, (x0 + x1) / 2, y0 + (i + 0.5) * bw, rz=rz, max_len=x1 - x0 - 0.01, z=0.0055)
 
 
 def fence_line(c, pts, h=0.04, mat="Metal_Galv"):

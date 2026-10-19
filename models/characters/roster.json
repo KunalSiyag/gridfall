@@ -1,0 +1,1525 @@
+{
+ "version": 1,
+ "note": "HC roster (docs/fp/slices/HC-characters.md). Skeletons are metric: CharacterRoot.scale = WS.M * h_target / rest_height_m, where rest_height_m is the stature to the skull top (eye height * 1.0647; aabb_height_m adds hair and hats). Pick a resident body from job_pools[job] filtered by gender, else casual_pools[gender], index crc32(resident_id) % n; name_gender misses fall back to crc32(id) & 1.",
+ "heroes": {
+  "m": "Male_Adult_06",
+  "f": "Female_Adult_04"
+ },
+ "bodies": {
+  "Male_Adult_06": {
+   "name": "Male_Adult_06",
+   "group": "hero",
+   "gender": "m",
+   "id": "m011",
+   "parts": [
+    "body",
+    "head",
+    "opacity"
+   ],
+   "rest_height_m": 1.7951,
+   "aabb_height_m": 1.8313,
+   "eye_m": 1.686,
+   "feet_m": -0.0008,
+   "hip_m": 0.8952,
+   "tris": 7456,
+   "surfaces": 3,
+   "bytes": 2377728,
+   "path": "res://models/characters/bodies/Male_Adult_06.glb",
+   "lod1": {
+    "tris": 1439,
+    "surfaces": 2,
+    "bytes": 73195,
+    "path": "res://models/characters/bodies/Male_Adult_06_lod1.glb"
+   },
+   "seconds": 2.1
+  },
+  "Female_Adult_04": {
+   "name": "Female_Adult_04",
+   "group": "hero",
+   "gender": "f",
+   "id": "f004",
+   "parts": [
+    "body",
+    "head",
+    "opacity"
+   ],
+   "rest_height_m": 1.7164,
+   "aabb_height_m": 1.7659,
+   "eye_m": 1.6121,
+   "feet_m": -0.0037,
+   "hip_m": 0.9233,
+   "tris": 8880,
+   "surfaces": 3,
+   "bytes": 1982485,
+   "path": "res://models/characters/bodies/Female_Adult_04.glb",
+   "lod1": {
+    "tris": 1440,
+    "surfaces": 2,
+    "bytes": 80326,
+    "path": "res://models/characters/bodies/Female_Adult_04_lod1.glb"
+   },
+   "seconds": 2.0
+  },
+  "Male_Adult_01": {
+   "name": "Male_Adult_01",
+   "group": "casual",
+   "gender": "m",
+   "id": "m002",
+   "parts": [
+    "body",
+    "head",
+    "opacity"
+   ],
+   "rest_height_m": 1.7951,
+   "aabb_height_m": 1.8237,
+   "eye_m": 1.686,
+   "feet_m": -0.0009,
+   "hip_m": 0.8952,
+   "tris": 7440,
+   "surfaces": 3,
+   "bytes": 1017180,
+   "path": "res://models/characters/bodies/Male_Adult_01.glb",
+   "lod1": {
+    "tris": 1440,
+    "surfaces": 2,
+    "bytes": 77889,
+    "path": "res://models/characters/bodies/Male_Adult_01_lod1.glb"
+   },
+   "seconds": 1.6
+  },
+  "Male_Adult_02": {
+   "name": "Male_Adult_02",
+   "group": "casual",
+   "gender": "m",
+   "id": "m003",
+   "parts": [
+    "body",
+    "head",
+    "opacity"
+   ],
+   "rest_height_m": 1.7951,
+   "aabb_height_m": 1.8227,
+   "eye_m": 1.686,
+   "feet_m": -0.0009,
+   "hip_m": 0.8952,
+   "tris": 7312,
+   "surfaces": 3,
+   "bytes": 947162,
+   "path": "res://models/characters/bodies/Male_Adult_02.glb",
+   "lod1": {
+    "tris": 1439,
+    "surfaces": 2,
+    "bytes": 70084,
+    "path": "res://models/characters/bodies/Male_Adult_02_lod1.glb"
+   },
+   "seconds": 1.4
+  },
+  "Male_Adult_03": {
+   "name": "Male_Adult_03",
+   "group": "casual",
+   "gender": "m",
+   "id": "m004",
+   "parts": [
+    "body",
+    "head",
+    "opacity"
+   ],
+   "rest_height_m": 1.7951,
+   "aabb_height_m": 1.8072,
+   "eye_m": 1.686,
+   "feet_m": -0.0009,
+   "hip_m": 0.8952,
+   "tris": 7200,
+   "surfaces": 3,
+   "bytes": 1205002,
+   "path": "res://models/characters/bodies/Male_Adult_03.glb",
+   "lod1": {
+    "tris": 1439,
+    "surfaces": 2,
+    "bytes": 72389,
+    "path": "res://models/characters/bodies/Male_Adult_03_lod1.glb"
+   },
+   "seconds": 1.3
+  },
+  "Male_Adult_04": {
+   "name": "Male_Adult_04",
+   "group": "casual",
+   "gender": "m",
+   "id": "m006",
+   "parts": [
+    "body",
+    "head",
+    "opacity"
+   ],
+   "rest_height_m": 1.7951,
+   "aabb_height_m": 1.8686,
+   "eye_m": 1.686,
+   "feet_m": -0.0007,
+   "hip_m": 0.8952,
+   "tris": 8684,
+   "surfaces": 3,
+   "bytes": 1080932,
+   "path": "res://models/characters/bodies/Male_Adult_04.glb",
+   "lod1": {
+    "tris": 1439,
+    "surfaces": 2,
+    "bytes": 74611,
+    "path": "res://models/characters/bodies/Male_Adult_04_lod1.glb"
+   },
+   "seconds": 1.3
+  },
+  "Male_Adult_08": {
+   "name": "Male_Adult_08",
+   "group": "casual",
+   "gender": "m",
+   "id": "m014",
+   "parts": [
+    "body",
+    "head",
+    "opacity"
+   ],
+   "rest_height_m": 1.7951,
+   "aabb_height_m": 1.8257,
+   "eye_m": 1.686,
+   "feet_m": -0.0009,
+   "hip_m": 0.8952,
+   "tris": 7364,
+   "surfaces": 3,
+   "bytes": 1027133,
+   "path": "res://models/characters/bodies/Male_Adult_08.glb",
+   "lod1": {
+    "tris": 1440,
+    "surfaces": 2,
+    "bytes": 71744,
+    "path": "res://models/characters/bodies/Male_Adult_08_lod1.glb"
+   },
+   "seconds": 1.3
+  },
+  "Male_Adult_12": {
+   "name": "Male_Adult_12",
+   "group": "casual",
+   "gender": "m",
+   "id": "m007",
+   "parts": [
+    "body",
+    "head"
+   ],
+   "rest_height_m": 1.7951,
+   "aabb_height_m": 1.8069,
+   "eye_m": 1.686,
+   "feet_m": -0.0009,
+   "hip_m": 0.8952,
+   "tris": 6722,
+   "surfaces": 2,
+   "bytes": 674102,
+   "path": "res://models/characters/bodies/Male_Adult_12.glb",
+   "lod1": {
+    "tris": 1440,
+    "surfaces": 2,
+    "bytes": 75008,
+    "path": "res://models/characters/bodies/Male_Adult_12_lod1.glb"
+   },
+   "seconds": 1.1
+  },
+  "Male_Adult_15": {
+   "name": "Male_Adult_15",
+   "group": "casual",
+   "gender": "m",
+   "id": "m204",
+   "parts": [
+    "body",
+    "head"
+   ],
+   "rest_height_m": 1.7951,
+   "aabb_height_m": 1.8186,
+   "eye_m": 1.686,
+   "feet_m": -0.0009,
+   "hip_m": 0.8952,
+   "tris": 7292,
+   "surfaces": 2,
+   "bytes": 744100,
+   "path": "res://models/characters/bodies/Male_Adult_15.glb",
+   "lod1": {
+    "tris": 1440,
+    "surfaces": 2,
+    "bytes": 73918,
+    "path": "res://models/characters/bodies/Male_Adult_15_lod1.glb"
+   },
+   "seconds": 1.1
+  },
+  "Male_Adult_18": {
+   "name": "Male_Adult_18",
+   "group": "casual",
+   "gender": "m",
+   "id": "m023",
+   "parts": [
+    "body",
+    "head"
+   ],
+   "rest_height_m": 1.7951,
+   "aabb_height_m": 1.8133,
+   "eye_m": 1.686,
+   "feet_m": -0.0008,
+   "hip_m": 0.8952,
+   "tris": 6434,
+   "surfaces": 2,
+   "bytes": 562175,
+   "path": "res://models/characters/bodies/Male_Adult_18.glb",
+   "lod1": {
+    "tris": 1440,
+    "surfaces": 2,
+    "bytes": 68176,
+    "path": "res://models/characters/bodies/Male_Adult_18_lod1.glb"
+   },
+   "seconds": 1.1
+  },
+  "Female_Adult_01": {
+   "name": "Female_Adult_01",
+   "group": "casual",
+   "gender": "f",
+   "id": "f001",
+   "parts": [
+    "body",
+    "head",
+    "opacity"
+   ],
+   "rest_height_m": 1.7164,
+   "aabb_height_m": 1.7433,
+   "eye_m": 1.6121,
+   "feet_m": -0.0046,
+   "hip_m": 0.9233,
+   "tris": 8732,
+   "surfaces": 3,
+   "bytes": 1048406,
+   "path": "res://models/characters/bodies/Female_Adult_01.glb",
+   "lod1": {
+    "tris": 1440,
+    "surfaces": 2,
+    "bytes": 77872,
+    "path": "res://models/characters/bodies/Female_Adult_01_lod1.glb"
+   },
+   "seconds": 1.3
+  },
+  "Female_Adult_02": {
+   "name": "Female_Adult_02",
+   "group": "casual",
+   "gender": "f",
+   "id": "f002",
+   "parts": [
+    "body",
+    "head",
+    "opacity"
+   ],
+   "rest_height_m": 1.7164,
+   "aabb_height_m": 1.7352,
+   "eye_m": 1.6121,
+   "feet_m": -0.0046,
+   "hip_m": 0.9233,
+   "tris": 8940,
+   "surfaces": 3,
+   "bytes": 1085277,
+   "path": "res://models/characters/bodies/Female_Adult_02.glb",
+   "lod1": {
+    "tris": 1440,
+    "surfaces": 2,
+    "bytes": 79172,
+    "path": "res://models/characters/bodies/Female_Adult_02_lod1.glb"
+   },
+   "seconds": 1.2
+  },
+  "Female_Adult_03": {
+   "name": "Female_Adult_03",
+   "group": "casual",
+   "gender": "f",
+   "id": "f003",
+   "parts": [
+    "body",
+    "head",
+    "opacity"
+   ],
+   "rest_height_m": 1.7164,
+   "aabb_height_m": 1.7389,
+   "eye_m": 1.6121,
+   "feet_m": -0.0001,
+   "hip_m": 0.9233,
+   "tris": 8880,
+   "surfaces": 3,
+   "bytes": 1263543,
+   "path": "res://models/characters/bodies/Female_Adult_03.glb",
+   "lod1": {
+    "tris": 1439,
+    "surfaces": 2,
+    "bytes": 96597,
+    "path": "res://models/characters/bodies/Female_Adult_03_lod1.glb"
+   },
+   "seconds": 1.3
+  },
+  "Female_Adult_05": {
+   "name": "Female_Adult_05",
+   "group": "casual",
+   "gender": "f",
+   "id": "f005",
+   "parts": [
+    "body",
+    "head",
+    "opacity"
+   ],
+   "rest_height_m": 1.7164,
+   "aabb_height_m": 1.7362,
+   "eye_m": 1.6121,
+   "feet_m": -0.0003,
+   "hip_m": 0.9233,
+   "tris": 8288,
+   "surfaces": 3,
+   "bytes": 1079714,
+   "path": "res://models/characters/bodies/Female_Adult_05.glb",
+   "lod1": {
+    "tris": 1440,
+    "surfaces": 2,
+    "bytes": 77988,
+    "path": "res://models/characters/bodies/Female_Adult_05_lod1.glb"
+   },
+   "seconds": 1.2
+  },
+  "Female_Adult_06": {
+   "name": "Female_Adult_06",
+   "group": "casual",
+   "gender": "f",
+   "id": "f202",
+   "parts": [
+    "body",
+    "head",
+    "opacity"
+   ],
+   "rest_height_m": 1.7164,
+   "aabb_height_m": 1.7363,
+   "eye_m": 1.6121,
+   "feet_m": -0.0017,
+   "hip_m": 0.9233,
+   "tris": 6992,
+   "surfaces": 3,
+   "bytes": 1001459,
+   "path": "res://models/characters/bodies/Female_Adult_06.glb",
+   "lod1": {
+    "tris": 1440,
+    "surfaces": 2,
+    "bytes": 73137,
+    "path": "res://models/characters/bodies/Female_Adult_06_lod1.glb"
+   },
+   "seconds": 1.4
+  },
+  "Female_Adult_08": {
+   "name": "Female_Adult_08",
+   "group": "casual",
+   "gender": "f",
+   "id": "f008",
+   "parts": [
+    "body",
+    "head",
+    "opacity"
+   ],
+   "rest_height_m": 1.7164,
+   "aabb_height_m": 1.7349,
+   "eye_m": 1.6121,
+   "feet_m": -0.0004,
+   "hip_m": 0.9233,
+   "tris": 8276,
+   "surfaces": 3,
+   "bytes": 1077722,
+   "path": "res://models/characters/bodies/Female_Adult_08.glb",
+   "lod1": {
+    "tris": 1440,
+    "surfaces": 2,
+    "bytes": 76305,
+    "path": "res://models/characters/bodies/Female_Adult_08_lod1.glb"
+   },
+   "seconds": 1.5
+  },
+  "Female_Adult_12": {
+   "name": "Female_Adult_12",
+   "group": "casual",
+   "gender": "f",
+   "id": "f012",
+   "parts": [
+    "body",
+    "head",
+    "opacity"
+   ],
+   "rest_height_m": 1.7164,
+   "aabb_height_m": 1.7267,
+   "eye_m": 1.6121,
+   "feet_m": -0.0005,
+   "hip_m": 0.9233,
+   "tris": 8774,
+   "surfaces": 3,
+   "bytes": 1020849,
+   "path": "res://models/characters/bodies/Female_Adult_12.glb",
+   "lod1": {
+    "tris": 1440,
+    "surfaces": 2,
+    "bytes": 76699,
+    "path": "res://models/characters/bodies/Female_Adult_12_lod1.glb"
+   },
+   "seconds": 1.5
+  },
+  "Female_Adult_14": {
+   "name": "Female_Adult_14",
+   "group": "casual",
+   "gender": "f",
+   "id": "f017",
+   "parts": [
+    "body",
+    "head",
+    "opacity"
+   ],
+   "rest_height_m": 1.7164,
+   "aabb_height_m": 1.7438,
+   "eye_m": 1.6121,
+   "feet_m": -0.0046,
+   "hip_m": 0.9233,
+   "tris": 8724,
+   "surfaces": 3,
+   "bytes": 1163328,
+   "path": "res://models/characters/bodies/Female_Adult_14.glb",
+   "lod1": {
+    "tris": 1439,
+    "surfaces": 2,
+    "bytes": 78122,
+    "path": "res://models/characters/bodies/Female_Adult_14_lod1.glb"
+   },
+   "seconds": 1.8
+  },
+  "Business_Female_01": {
+   "name": "Business_Female_01",
+   "group": "business",
+   "gender": "f",
+   "id": "f014",
+   "parts": [
+    "body",
+    "head",
+    "opacity"
+   ],
+   "rest_height_m": 1.7164,
+   "aabb_height_m": 1.7404,
+   "eye_m": 1.6121,
+   "feet_m": -0.0005,
+   "hip_m": 0.9233,
+   "tris": 8966,
+   "surfaces": 3,
+   "bytes": 1102655,
+   "path": "res://models/characters/bodies/Business_Female_01.glb",
+   "lod1": {
+    "tris": 1440,
+    "surfaces": 2,
+    "bytes": 75112,
+    "path": "res://models/characters/bodies/Business_Female_01_lod1.glb"
+   },
+   "seconds": 2.5
+  },
+  "Business_Female_02": {
+   "name": "Business_Female_02",
+   "group": "business",
+   "gender": "f",
+   "id": "f015",
+   "parts": [
+    "body",
+    "head",
+    "glasses",
+    "opacity"
+   ],
+   "rest_height_m": 1.7164,
+   "aabb_height_m": 1.7288,
+   "eye_m": 1.6121,
+   "feet_m": 0.0002,
+   "hip_m": 0.9233,
+   "tris": 8640,
+   "surfaces": 4,
+   "bytes": 1498420,
+   "path": "res://models/characters/bodies/Business_Female_02.glb",
+   "lod1": {
+    "tris": 1439,
+    "surfaces": 2,
+    "bytes": 77871,
+    "path": "res://models/characters/bodies/Business_Female_02_lod1.glb"
+   },
+   "seconds": 1.8
+  },
+  "Business_Male_01": {
+   "name": "Business_Male_01",
+   "group": "business",
+   "gender": "m",
+   "id": "m005",
+   "parts": [
+    "body",
+    "head",
+    "opacity"
+   ],
+   "rest_height_m": 1.7951,
+   "aabb_height_m": 1.8065,
+   "eye_m": 1.686,
+   "feet_m": -0.0009,
+   "hip_m": 0.8952,
+   "tris": 7435,
+   "surfaces": 3,
+   "bytes": 1067450,
+   "path": "res://models/characters/bodies/Business_Male_01.glb",
+   "lod1": {
+    "tris": 1439,
+    "surfaces": 2,
+    "bytes": 68659,
+    "path": "res://models/characters/bodies/Business_Male_01_lod1.glb"
+   },
+   "seconds": 1.3
+  },
+  "Business_Male_02": {
+   "name": "Business_Male_02",
+   "group": "business",
+   "gender": "m",
+   "id": "m008",
+   "parts": [
+    "body",
+    "head",
+    "opacity"
+   ],
+   "rest_height_m": 1.7951,
+   "aabb_height_m": 1.8233,
+   "eye_m": 1.686,
+   "feet_m": -0.0009,
+   "hip_m": 0.8952,
+   "tris": 7448,
+   "surfaces": 3,
+   "bytes": 918807,
+   "path": "res://models/characters/bodies/Business_Male_02.glb",
+   "lod1": {
+    "tris": 1440,
+    "surfaces": 2,
+    "bytes": 69042,
+    "path": "res://models/characters/bodies/Business_Male_02_lod1.glb"
+   },
+   "seconds": 1.9
+  },
+  "Business_Male_07": {
+   "name": "Business_Male_07",
+   "group": "business",
+   "gender": "m",
+   "id": "m018",
+   "parts": [
+    "body",
+    "head"
+   ],
+   "rest_height_m": 1.7951,
+   "aabb_height_m": 1.7959,
+   "eye_m": 1.686,
+   "feet_m": -0.0009,
+   "hip_m": 0.8952,
+   "tris": 6722,
+   "surfaces": 2,
+   "bytes": 705266,
+   "path": "res://models/characters/bodies/Business_Male_07.glb",
+   "lod1": {
+    "tris": 1440,
+    "surfaces": 2,
+    "bytes": 73645,
+    "path": "res://models/characters/bodies/Business_Male_07_lod1.glb"
+   },
+   "seconds": 1.5
+  },
+  "Police_Male_01": {
+   "name": "Police_Male_01",
+   "group": "police",
+   "gender": "m",
+   "id": "m220",
+   "parts": [
+    "body",
+    "head",
+    "equipment"
+   ],
+   "rest_height_m": 1.7951,
+   "aabb_height_m": 1.8115,
+   "eye_m": 1.686,
+   "feet_m": -0.0034,
+   "hip_m": 0.8952,
+   "tris": 8140,
+   "surfaces": 3,
+   "bytes": 925322,
+   "path": "res://models/characters/bodies/Police_Male_01.glb",
+   "lod1": {
+    "tris": 1439,
+    "surfaces": 2,
+    "bytes": 73985,
+    "path": "res://models/characters/bodies/Police_Male_01_lod1.glb"
+   },
+   "seconds": 2.0
+  },
+  "Police_Male_05": {
+   "name": "Police_Male_05",
+   "group": "police",
+   "gender": "m",
+   "id": "m169",
+   "parts": [
+    "body",
+    "head"
+   ],
+   "rest_height_m": 1.7951,
+   "aabb_height_m": 1.8551,
+   "eye_m": 1.686,
+   "feet_m": -0.0009,
+   "hip_m": 0.8952,
+   "tris": 7694,
+   "surfaces": 2,
+   "bytes": 776177,
+   "path": "res://models/characters/bodies/Police_Male_05.glb",
+   "lod1": {
+    "tris": 1439,
+    "surfaces": 2,
+    "bytes": 76503,
+    "path": "res://models/characters/bodies/Police_Male_05_lod1.glb"
+   },
+   "seconds": 4.1
+  },
+  "Security_Female_01": {
+   "name": "Security_Female_01",
+   "group": "police",
+   "gender": "f",
+   "id": "f170",
+   "parts": [
+    "body",
+    "head",
+    "hat"
+   ],
+   "rest_height_m": 1.7164,
+   "aabb_height_m": 1.7388,
+   "eye_m": 1.6121,
+   "feet_m": -0.0009,
+   "hip_m": 0.9233,
+   "tris": 8426,
+   "surfaces": 3,
+   "bytes": 817873,
+   "path": "res://models/characters/bodies/Security_Female_01.glb",
+   "lod1": {
+    "tris": 1440,
+    "surfaces": 2,
+    "bytes": 74690,
+    "path": "res://models/characters/bodies/Security_Female_01_lod1.glb"
+   },
+   "seconds": 3.1
+  },
+  "Medical_Female_01": {
+   "name": "Medical_Female_01",
+   "group": "medical",
+   "gender": "f",
+   "id": "f152",
+   "parts": [
+    "body",
+    "head",
+    "opacity"
+   ],
+   "rest_height_m": 1.7164,
+   "aabb_height_m": 1.7388,
+   "eye_m": 1.6121,
+   "feet_m": -0.0028,
+   "hip_m": 0.9233,
+   "tris": 8328,
+   "surfaces": 3,
+   "bytes": 993637,
+   "path": "res://models/characters/bodies/Medical_Female_01.glb",
+   "lod1": {
+    "tris": 1440,
+    "surfaces": 2,
+    "bytes": 74748,
+    "path": "res://models/characters/bodies/Medical_Female_01_lod1.glb"
+   },
+   "seconds": 3.0
+  },
+  "Medical_Female_02": {
+   "name": "Medical_Female_02",
+   "group": "medical",
+   "gender": "f",
+   "id": "f153",
+   "parts": [
+    "body",
+    "head",
+    "opacity",
+    "stetoskop"
+   ],
+   "rest_height_m": 1.7164,
+   "aabb_height_m": 1.7333,
+   "eye_m": 1.6121,
+   "feet_m": -0.0035,
+   "hip_m": 0.9233,
+   "tris": 8880,
+   "surfaces": 4,
+   "bytes": 1105224,
+   "path": "res://models/characters/bodies/Medical_Female_02.glb",
+   "lod1": {
+    "tris": 1440,
+    "surfaces": 2,
+    "bytes": 74493,
+    "path": "res://models/characters/bodies/Medical_Female_02_lod1.glb"
+   },
+   "seconds": 2.2
+  },
+  "Medical_Male_02": {
+   "name": "Medical_Male_02",
+   "group": "medical",
+   "gender": "m",
+   "id": "m154",
+   "parts": [
+    "body",
+    "head",
+    "opacity"
+   ],
+   "rest_height_m": 1.7951,
+   "aabb_height_m": 1.8306,
+   "eye_m": 1.686,
+   "feet_m": -0.0001,
+   "hip_m": 0.8952,
+   "tris": 7514,
+   "surfaces": 3,
+   "bytes": 1156929,
+   "path": "res://models/characters/bodies/Medical_Male_02.glb",
+   "lod1": {
+    "tris": 1439,
+    "surfaces": 2,
+    "bytes": 77102,
+    "path": "res://models/characters/bodies/Medical_Male_02_lod1.glb"
+   },
+   "seconds": 4.2
+  },
+  "Medical_Male_04": {
+   "name": "Medical_Male_04",
+   "group": "medical",
+   "gender": "m",
+   "id": "m162",
+   "parts": [
+    "body",
+    "head",
+    "protection"
+   ],
+   "rest_height_m": 1.7951,
+   "aabb_height_m": 1.8195,
+   "eye_m": 1.686,
+   "feet_m": -0.0024,
+   "hip_m": 0.8952,
+   "tris": 8240,
+   "surfaces": 3,
+   "bytes": 830795,
+   "path": "res://models/characters/bodies/Medical_Male_04.glb",
+   "lod1": {
+    "tris": 1439,
+    "surfaces": 2,
+    "bytes": 70218,
+    "path": "res://models/characters/bodies/Medical_Male_04_lod1.glb"
+   },
+   "seconds": 3.4
+  },
+  "Fire_Male_03": {
+   "name": "Fire_Male_03",
+   "group": "fire",
+   "gender": "m",
+   "id": "m134",
+   "parts": [
+    "body",
+    "head",
+    "helmet"
+   ],
+   "rest_height_m": 1.7951,
+   "aabb_height_m": 1.8575,
+   "eye_m": 1.686,
+   "feet_m": -0.0009,
+   "hip_m": 0.8952,
+   "tris": 8645,
+   "surfaces": 3,
+   "bytes": 932130,
+   "path": "res://models/characters/bodies/Fire_Male_03.glb",
+   "lod1": {
+    "tris": 1440,
+    "surfaces": 2,
+    "bytes": 77973,
+    "path": "res://models/characters/bodies/Fire_Male_03_lod1.glb"
+   },
+   "seconds": 3.3
+  },
+  "Fire_Male_01": {
+   "name": "Fire_Male_01",
+   "group": "fire",
+   "gender": "m",
+   "id": "m138",
+   "parts": [
+    "body",
+    "head",
+    "helmet"
+   ],
+   "rest_height_m": 1.7951,
+   "aabb_height_m": 1.8575,
+   "eye_m": 1.686,
+   "feet_m": -0.0009,
+   "hip_m": 0.8952,
+   "tris": 8551,
+   "surfaces": 3,
+   "bytes": 887564,
+   "path": "res://models/characters/bodies/Fire_Male_01.glb",
+   "lod1": {
+    "tris": 1440,
+    "surfaces": 2,
+    "bytes": 73632,
+    "path": "res://models/characters/bodies/Fire_Male_01_lod1.glb"
+   },
+   "seconds": 3.2
+  },
+  "Construction_Male_04": {
+   "name": "Construction_Male_04",
+   "group": "trades",
+   "gender": "m",
+   "id": "m103",
+   "parts": [
+    "body",
+    "head",
+    "helmet",
+    "tools"
+   ],
+   "rest_height_m": 1.7951,
+   "aabb_height_m": 1.8467,
+   "eye_m": 1.686,
+   "feet_m": -0.0009,
+   "hip_m": 0.8952,
+   "tris": 8879,
+   "surfaces": 4,
+   "bytes": 928048,
+   "path": "res://models/characters/bodies/Construction_Male_04.glb",
+   "lod1": {
+    "tris": 1440,
+    "surfaces": 2,
+    "bytes": 76109,
+    "path": "res://models/characters/bodies/Construction_Male_04_lod1.glb"
+   },
+   "seconds": 3.4
+  },
+  "Construction_Male_02": {
+   "name": "Construction_Male_02",
+   "group": "trades",
+   "gender": "m",
+   "id": "m101",
+   "parts": [
+    "body",
+    "head",
+    "helmet"
+   ],
+   "rest_height_m": 1.7951,
+   "aabb_height_m": 1.8424,
+   "eye_m": 1.686,
+   "feet_m": -0.0009,
+   "hip_m": 0.8952,
+   "tris": 8152,
+   "surfaces": 3,
+   "bytes": 802888,
+   "path": "res://models/characters/bodies/Construction_Male_02.glb",
+   "lod1": {
+    "tris": 1439,
+    "surfaces": 2,
+    "bytes": 73134,
+    "path": "res://models/characters/bodies/Construction_Male_02_lod1.glb"
+   },
+   "seconds": 3.2
+  },
+  "Construction_Male_07": {
+   "name": "Construction_Male_07",
+   "group": "trades",
+   "gender": "m",
+   "id": "m107",
+   "parts": [
+    "body",
+    "head",
+    "helmet"
+   ],
+   "rest_height_m": 1.7951,
+   "aabb_height_m": 1.8388,
+   "eye_m": 1.686,
+   "feet_m": -0.0009,
+   "hip_m": 0.8952,
+   "tris": 8058,
+   "surfaces": 3,
+   "bytes": 763378,
+   "path": "res://models/characters/bodies/Construction_Male_07.glb",
+   "lod1": {
+    "tris": 1440,
+    "surfaces": 2,
+    "bytes": 74164,
+    "path": "res://models/characters/bodies/Construction_Male_07_lod1.glb"
+   },
+   "seconds": 2.2
+  },
+  "Construction_Female_01": {
+   "name": "Construction_Female_01",
+   "group": "trades",
+   "gender": "f",
+   "id": "f101",
+   "parts": [
+    "body",
+    "head",
+    "helmet"
+   ],
+   "rest_height_m": 1.7164,
+   "aabb_height_m": 1.7724,
+   "eye_m": 1.6121,
+   "feet_m": -0.0009,
+   "hip_m": 0.9233,
+   "tris": 8662,
+   "surfaces": 3,
+   "bytes": 807982,
+   "path": "res://models/characters/bodies/Construction_Female_01.glb",
+   "lod1": {
+    "tris": 1440,
+    "surfaces": 2,
+    "bytes": 79986,
+    "path": "res://models/characters/bodies/Construction_Female_01_lod1.glb"
+   },
+   "seconds": 2.7
+  },
+  "Chef_Female_01": {
+   "name": "Chef_Female_01",
+   "group": "service",
+   "gender": "f",
+   "id": "f110",
+   "parts": [
+    "body",
+    "head"
+   ],
+   "rest_height_m": 1.7164,
+   "aabb_height_m": 1.7334,
+   "eye_m": 1.6121,
+   "feet_m": -0.0005,
+   "hip_m": 0.9233,
+   "tris": 7460,
+   "surfaces": 2,
+   "bytes": 711477,
+   "path": "res://models/characters/bodies/Chef_Female_01.glb",
+   "lod1": {
+    "tris": 1439,
+    "surfaces": 2,
+    "bytes": 74756,
+    "path": "res://models/characters/bodies/Chef_Female_01_lod1.glb"
+   },
+   "seconds": 2.2
+  },
+  "Delivery_Male_01": {
+   "name": "Delivery_Male_01",
+   "group": "service",
+   "gender": "m",
+   "id": "m112",
+   "parts": [
+    "body",
+    "head"
+   ],
+   "rest_height_m": 1.7951,
+   "aabb_height_m": 1.8161,
+   "eye_m": 1.686,
+   "feet_m": -0.0009,
+   "hip_m": 0.8952,
+   "tris": 6800,
+   "surfaces": 2,
+   "bytes": 815076,
+   "path": "res://models/characters/bodies/Delivery_Male_01.glb",
+   "lod1": {
+    "tris": 1439,
+    "surfaces": 2,
+    "bytes": 77892,
+    "path": "res://models/characters/bodies/Delivery_Male_01_lod1.glb"
+   },
+   "seconds": 2.1
+  },
+  "Gardener_Male_01": {
+   "name": "Gardener_Male_01",
+   "group": "service",
+   "gender": "m",
+   "id": "m106",
+   "parts": [
+    "body",
+    "head",
+    "opacity"
+   ],
+   "rest_height_m": 1.7951,
+   "aabb_height_m": 1.8124,
+   "eye_m": 1.686,
+   "feet_m": -0.0009,
+   "hip_m": 0.8952,
+   "tris": 7470,
+   "surfaces": 3,
+   "bytes": 1127180,
+   "path": "res://models/characters/bodies/Gardener_Male_01.glb",
+   "lod1": {
+    "tris": 1440,
+    "surfaces": 2,
+    "bytes": 72520,
+    "path": "res://models/characters/bodies/Gardener_Male_01_lod1.glb"
+   },
+   "seconds": 2.6
+  },
+  "Wood_Male_01": {
+   "name": "Wood_Male_01",
+   "group": "service",
+   "gender": "m",
+   "id": "m110",
+   "parts": [
+    "body",
+    "head"
+   ],
+   "rest_height_m": 1.7951,
+   "aabb_height_m": 1.8138,
+   "eye_m": 1.686,
+   "feet_m": -0.0009,
+   "hip_m": 0.8952,
+   "tris": 7108,
+   "surfaces": 2,
+   "bytes": 781915,
+   "path": "res://models/characters/bodies/Wood_Male_01.glb",
+   "lod1": {
+    "tris": 1439,
+    "surfaces": 2,
+    "bytes": 77677,
+    "path": "res://models/characters/bodies/Wood_Male_01_lod1.glb"
+   },
+   "seconds": 4.6
+  }
+ },
+ "groups": {
+  "hero": [
+   "Male_Adult_06",
+   "Female_Adult_04"
+  ],
+  "casual": [
+   "Male_Adult_01",
+   "Male_Adult_02",
+   "Male_Adult_03",
+   "Male_Adult_04",
+   "Male_Adult_08",
+   "Male_Adult_12",
+   "Male_Adult_15",
+   "Male_Adult_18",
+   "Female_Adult_01",
+   "Female_Adult_02",
+   "Female_Adult_03",
+   "Female_Adult_05",
+   "Female_Adult_06",
+   "Female_Adult_08",
+   "Female_Adult_12",
+   "Female_Adult_14"
+  ],
+  "business": [
+   "Business_Female_01",
+   "Business_Female_02",
+   "Business_Male_01",
+   "Business_Male_02",
+   "Business_Male_07"
+  ],
+  "police": [
+   "Police_Male_01",
+   "Police_Male_05",
+   "Security_Female_01"
+  ],
+  "medical": [
+   "Medical_Female_01",
+   "Medical_Female_02",
+   "Medical_Male_02",
+   "Medical_Male_04"
+  ],
+  "fire": [
+   "Fire_Male_03",
+   "Fire_Male_01"
+  ],
+  "trades": [
+   "Construction_Male_04",
+   "Construction_Male_02",
+   "Construction_Male_07",
+   "Construction_Female_01"
+  ],
+  "service": [
+   "Chef_Female_01",
+   "Delivery_Male_01",
+   "Gardener_Male_01",
+   "Wood_Male_01"
+  ]
+ },
+ "job_pools": {
+  "shop owner": [
+   "Male_Adult_01",
+   "Male_Adult_02",
+   "Male_Adult_03",
+   "Male_Adult_04",
+   "Male_Adult_08",
+   "Male_Adult_12",
+   "Male_Adult_15",
+   "Male_Adult_18",
+   "Female_Adult_01",
+   "Female_Adult_02",
+   "Female_Adult_03",
+   "Female_Adult_05",
+   "Female_Adult_06",
+   "Female_Adult_08",
+   "Female_Adult_12",
+   "Female_Adult_14"
+  ],
+  "cashier": [
+   "Male_Adult_01",
+   "Male_Adult_02",
+   "Male_Adult_03",
+   "Male_Adult_04",
+   "Male_Adult_08",
+   "Male_Adult_12",
+   "Male_Adult_15",
+   "Male_Adult_18",
+   "Female_Adult_01",
+   "Female_Adult_02",
+   "Female_Adult_03",
+   "Female_Adult_05",
+   "Female_Adult_06",
+   "Female_Adult_08",
+   "Female_Adult_12",
+   "Female_Adult_14"
+  ],
+  "barista": [
+   "Male_Adult_01",
+   "Male_Adult_02",
+   "Male_Adult_03",
+   "Male_Adult_04",
+   "Male_Adult_08",
+   "Male_Adult_12",
+   "Male_Adult_15",
+   "Male_Adult_18",
+   "Female_Adult_01",
+   "Female_Adult_02",
+   "Female_Adult_03",
+   "Female_Adult_05",
+   "Female_Adult_06",
+   "Female_Adult_08",
+   "Female_Adult_12",
+   "Female_Adult_14"
+  ],
+  "artist": [
+   "Male_Adult_01",
+   "Male_Adult_02",
+   "Male_Adult_03",
+   "Male_Adult_04",
+   "Male_Adult_08",
+   "Male_Adult_12",
+   "Male_Adult_15",
+   "Male_Adult_18",
+   "Female_Adult_01",
+   "Female_Adult_02",
+   "Female_Adult_03",
+   "Female_Adult_05",
+   "Female_Adult_06",
+   "Female_Adult_08",
+   "Female_Adult_12",
+   "Female_Adult_14"
+  ],
+  "student": [
+   "Male_Adult_01",
+   "Male_Adult_02",
+   "Male_Adult_03",
+   "Male_Adult_04",
+   "Male_Adult_08",
+   "Male_Adult_12",
+   "Male_Adult_15",
+   "Male_Adult_18",
+   "Female_Adult_01",
+   "Female_Adult_02",
+   "Female_Adult_03",
+   "Female_Adult_05",
+   "Female_Adult_06",
+   "Female_Adult_08",
+   "Female_Adult_12",
+   "Female_Adult_14"
+  ],
+  "teacher": [
+   "Male_Adult_01",
+   "Male_Adult_02",
+   "Male_Adult_03",
+   "Male_Adult_04",
+   "Male_Adult_08",
+   "Male_Adult_12",
+   "Male_Adult_15",
+   "Male_Adult_18",
+   "Female_Adult_01",
+   "Female_Adult_02",
+   "Female_Adult_03",
+   "Female_Adult_05",
+   "Female_Adult_06",
+   "Female_Adult_08",
+   "Female_Adult_12",
+   "Female_Adult_14"
+  ],
+  "retiree": [
+   "Male_Adult_03",
+   "Female_Adult_03",
+   "Female_Adult_12"
+  ],
+  "stadium staff": [
+   "Male_Adult_01",
+   "Male_Adult_02",
+   "Male_Adult_03",
+   "Male_Adult_04",
+   "Male_Adult_08",
+   "Male_Adult_12",
+   "Male_Adult_15",
+   "Male_Adult_18",
+   "Female_Adult_01",
+   "Female_Adult_02",
+   "Female_Adult_03",
+   "Female_Adult_05",
+   "Female_Adult_06",
+   "Female_Adult_08",
+   "Female_Adult_12",
+   "Female_Adult_14"
+  ],
+  "airport worker": [
+   "Male_Adult_01",
+   "Male_Adult_02",
+   "Male_Adult_03",
+   "Male_Adult_04",
+   "Male_Adult_08",
+   "Male_Adult_12",
+   "Male_Adult_15",
+   "Male_Adult_18",
+   "Female_Adult_01",
+   "Female_Adult_02",
+   "Female_Adult_03",
+   "Female_Adult_05",
+   "Female_Adult_06",
+   "Female_Adult_08",
+   "Female_Adult_12",
+   "Female_Adult_14"
+  ],
+  "bus driver": [
+   "Male_Adult_01",
+   "Male_Adult_02",
+   "Male_Adult_03",
+   "Male_Adult_04",
+   "Male_Adult_08",
+   "Male_Adult_12",
+   "Male_Adult_15",
+   "Male_Adult_18",
+   "Female_Adult_01",
+   "Female_Adult_02",
+   "Female_Adult_03",
+   "Female_Adult_05",
+   "Female_Adult_06",
+   "Female_Adult_08",
+   "Female_Adult_12",
+   "Female_Adult_14"
+  ],
+  "software developer": [
+   "Business_Female_01",
+   "Business_Female_02",
+   "Business_Male_01",
+   "Business_Male_02",
+   "Business_Male_07"
+  ],
+  "accountant": [
+   "Business_Female_01",
+   "Business_Female_02",
+   "Business_Male_01",
+   "Business_Male_02",
+   "Business_Male_07"
+  ],
+  "city clerk": [
+   "Business_Female_01",
+   "Business_Female_02",
+   "Business_Male_01",
+   "Business_Male_02",
+   "Business_Male_07"
+  ],
+  "professor": [
+   "Business_Female_01",
+   "Business_Female_02",
+   "Business_Male_01",
+   "Business_Male_02",
+   "Business_Male_07"
+  ],
+  "civil engineer": [
+   "Business_Female_01",
+   "Business_Female_02",
+   "Business_Male_01",
+   "Business_Male_02",
+   "Business_Male_07"
+  ],
+  "police officer": [
+   "Police_Male_01",
+   "Police_Male_05",
+   "Security_Female_01"
+  ],
+  "nurse": [
+   "Medical_Female_01",
+   "Medical_Male_04"
+  ],
+  "caregiver": [
+   "Medical_Female_01",
+   "Medical_Male_04"
+  ],
+  "doctor": [
+   "Medical_Female_02",
+   "Medical_Male_04"
+  ],
+  "paramedic": [
+   "Medical_Male_02",
+   "Medical_Female_01"
+  ],
+  "firefighter": [
+   "Fire_Male_03",
+   "Fire_Male_01"
+  ],
+  "construction worker": [
+   "Construction_Male_04",
+   "Construction_Male_02",
+   "Construction_Male_07",
+   "Construction_Female_01"
+  ],
+  "electrician": [
+   "Construction_Male_04",
+   "Construction_Male_02",
+   "Construction_Male_07",
+   "Construction_Female_01"
+  ],
+  "power line technician": [
+   "Construction_Male_04",
+   "Construction_Male_02",
+   "Construction_Male_07",
+   "Construction_Female_01"
+  ],
+  "plumber": [
+   "Construction_Male_04",
+   "Construction_Male_02",
+   "Construction_Male_07",
+   "Construction_Female_01"
+  ],
+  "water utility engineer": [
+   "Construction_Male_04",
+   "Construction_Male_02",
+   "Construction_Male_07",
+   "Construction_Female_01"
+  ],
+  "sanitation worker": [
+   "Construction_Male_07",
+   "Gardener_Male_01",
+   "Construction_Female_01"
+  ],
+  "chef": [
+   "Chef_Female_01"
+  ],
+  "truck driver": [
+   "Delivery_Male_01"
+  ],
+  "warehouse worker": [
+   "Delivery_Male_01",
+   "Wood_Male_01"
+  ],
+  "factory worker": [
+   "Wood_Male_01",
+   "Gardener_Male_01"
+  ],
+  "mechanic": [
+   "Wood_Male_01",
+   "Construction_Male_07"
+  ],
+  "power plant operator": [
+   "Construction_Male_07",
+   "Construction_Female_01"
+  ]
+ },
+ "casual_pools": {
+  "m": [
+   "Male_Adult_01",
+   "Male_Adult_02",
+   "Male_Adult_03",
+   "Male_Adult_04",
+   "Male_Adult_08",
+   "Male_Adult_12",
+   "Male_Adult_15",
+   "Male_Adult_18"
+  ],
+  "f": [
+   "Female_Adult_01",
+   "Female_Adult_02",
+   "Female_Adult_03",
+   "Female_Adult_05",
+   "Female_Adult_06",
+   "Female_Adult_08",
+   "Female_Adult_12",
+   "Female_Adult_14"
+  ]
+ },
+ "ambient_weights": {
+  "casual": 0.6,
+  "business": 0.25,
+  "uniform": 0.15
+ },
+ "uniform_groups": [
+  "police",
+  "medical",
+  "fire",
+  "trades",
+  "service"
+ ],
+ "height": {
+  "target_m": 1.75,
+  "female_factor": 0.95,
+  "jitter": [
+   0.97,
+   1.03
+  ]
+ },
+ "name_gender": {
+  "Ava": "f",
+  "Ben": "m",
+  "Eli": "m",
+  "Fatima": "f",
+  "Gus": "m",
+  "Hana": "f",
+  "Ivan": "m",
+  "Jade": "f",
+  "Kofi": "m",
+  "Lena": "f",
+  "Mateo": "m",
+  "Nia": "f",
+  "Omar": "m",
+  "Priya": "f",
+  "Rosa": "f",
+  "Tomas": "m",
+  "Uma": "f",
+  "Vik": "m",
+  "Zane": "m",
+  "Aiko": "f",
+  "Bruno": "m",
+  "Carmen": "f",
+  "Dmitri": "m",
+  "Esi": "f",
+  "Farid": "m",
+  "Greta": "f",
+  "Hugo": "m",
+  "Imani": "f",
+  "Jonas": "m",
+  "Keiko": "f",
+  "Luis": "m",
+  "Maya": "f",
+  "Nikhil": "m",
+  "Olga": "f",
+  "Pablo": "m",
+  "Rania": "f",
+  "Sven": "m",
+  "Tara": "f",
+  "Ugo": "m",
+  "Valeria": "f",
+  "Ximena": "f",
+  "Yara": "f",
+  "Zoltan": "m",
+  "Amara": "f",
+  "Bilal": "m",
+  "Clara": "f",
+  "Desmond": "m",
+  "Elif": "f",
+  "Gloria": "f",
+  "Hamza": "m",
+  "Ines": "f",
+  "Jamal": "m"
+ }
+}

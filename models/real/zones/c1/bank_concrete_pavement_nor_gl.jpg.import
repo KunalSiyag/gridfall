@@ -3,9 +3,10 @@
 importer="texture"
 type="CompressedTexture2D"
 uid="uid://dnsbanljfbtqn"
-path="res://.godot/imported/bank_concrete_pavement_nor_gl.jpg-df3d7843b528cafb1237aa9e612f7236.ctex"
+path.s3tc="res://.godot/imported/bank_concrete_pavement_nor_gl.jpg-df3d7843b528cafb1237aa9e612f7236.s3tc.ctex"
 metadata={
-"vram_texture": false
+"imported_formats": ["s3tc_bptc"],
+"vram_texture": true
 }
 generator_parameters={
 "md5": "1a3bc23cca9e080eeb6945cce0a98434"
@@ -14,17 +15,17 @@ generator_parameters={
 [deps]
 
 source_file="res://models/real/zones/c1/bank_concrete_pavement_nor_gl.jpg"
-dest_files=["res://.godot/imported/bank_concrete_pavement_nor_gl.jpg-df3d7843b528cafb1237aa9e612f7236.ctex"]
+dest_files=["res://.godot/imported/bank_concrete_pavement_nor_gl.jpg-df3d7843b528cafb1237aa9e612f7236.s3tc.ctex"]
 
 [params]
 
-compress/mode=0
+compress/mode=2
 compress/high_quality=false
 compress/lossy_quality=0.7
 compress/uastc_level=0
 compress/rdo_quality_loss=0.0
 compress/hdr_compression=1
-compress/normal_map=0
+compress/normal_map=1
 compress/channel_pack=0
 mipmaps/generate=true
 mipmaps/limit=-1

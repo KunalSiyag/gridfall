@@ -3,9 +3,10 @@
 importer="texture"
 type="CompressedTexture2D"
 uid="uid://ca0228vlbuf4v"
-path="res://.godot/imported/hospital_leafcluster_round.png-e17a77ec7a451675b261329f37612b4d.ctex"
+path.s3tc="res://.godot/imported/hospital_leafcluster_round.png-e17a77ec7a451675b261329f37612b4d.s3tc.ctex"
 metadata={
-"vram_texture": false
+"imported_formats": ["s3tc_bptc"],
+"vram_texture": true
 }
 generator_parameters={
 "md5": "211a0a3103a022e13d026903ac21b083"
@@ -14,11 +15,11 @@ generator_parameters={
 [deps]
 
 source_file="res://models/real/buildings/hospital_leafcluster_round.png"
-dest_files=["res://.godot/imported/hospital_leafcluster_round.png-e17a77ec7a451675b261329f37612b4d.ctex"]
+dest_files=["res://.godot/imported/hospital_leafcluster_round.png-e17a77ec7a451675b261329f37612b4d.s3tc.ctex"]
 
 [params]
 
-compress/mode=0
+compress/mode=2
 compress/high_quality=false
 compress/lossy_quality=0.7
 compress/uastc_level=0

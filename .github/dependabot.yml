@@ -1,0 +1,31 @@
+# Dependency updates. cooldown holds every proposal until the release is 7 days old
+# (minimum release age), so a broken or malicious release has time to be yanked first.
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+    cooldown:
+      default-days: 7
+    labels: [dependencies, area/ci]
+    commit-message:
+      prefix: "chore(deps)"
+    groups:
+      actions:
+        patterns: ["*"]
+  - package-ecosystem: pip
+    directory: /tools
+    schedule:
+      interval: weekly
+      day: monday
+    cooldown:
+      default-days: 7
+    labels: [dependencies, area/tooling]
+    commit-message:
+      prefix: "chore(deps)"
+    groups:
+      python-minor-and-patch:
+        patterns: ["*"]
+        update-types: [minor, patch]

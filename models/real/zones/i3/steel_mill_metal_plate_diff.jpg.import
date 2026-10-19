@@ -3,9 +3,10 @@
 importer="texture"
 type="CompressedTexture2D"
 uid="uid://bycbdy5rktotx"
-path="res://.godot/imported/steel_mill_metal_plate_diff.jpg-afd14fa02985a072855a72cd56e65f56.ctex"
+path.s3tc="res://.godot/imported/steel_mill_metal_plate_diff.jpg-afd14fa02985a072855a72cd56e65f56.s3tc.ctex"
 metadata={
-"vram_texture": false
+"imported_formats": ["s3tc_bptc"],
+"vram_texture": true
 }
 generator_parameters={
 "md5": "102fafb238f0dc82825ea3701724e6c1"
@@ -14,11 +15,11 @@ generator_parameters={
 [deps]
 
 source_file="res://models/real/zones/i3/steel_mill_metal_plate_diff.jpg"
-dest_files=["res://.godot/imported/steel_mill_metal_plate_diff.jpg-afd14fa02985a072855a72cd56e65f56.ctex"]
+dest_files=["res://.godot/imported/steel_mill_metal_plate_diff.jpg-afd14fa02985a072855a72cd56e65f56.s3tc.ctex"]
 
 [params]
 
-compress/mode=0
+compress/mode=2
 compress/high_quality=false
 compress/lossy_quality=0.7
 compress/uastc_level=0

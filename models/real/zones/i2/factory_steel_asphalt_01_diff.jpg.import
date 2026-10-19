@@ -3,9 +3,10 @@
 importer="texture"
 type="CompressedTexture2D"
 uid="uid://yx0avwgs2anc"
-path="res://.godot/imported/factory_steel_asphalt_01_diff.jpg-6ba07d6c213cd17632da77c426a5443d.ctex"
+path.s3tc="res://.godot/imported/factory_steel_asphalt_01_diff.jpg-6ba07d6c213cd17632da77c426a5443d.s3tc.ctex"
 metadata={
-"vram_texture": false
+"imported_formats": ["s3tc_bptc"],
+"vram_texture": true
 }
 generator_parameters={
 "md5": "9efd0826806a3d0cf1067600ec0a7391"
@@ -14,11 +15,11 @@ generator_parameters={
 [deps]
 
 source_file="res://models/real/zones/i2/factory_steel_asphalt_01_diff.jpg"
-dest_files=["res://.godot/imported/factory_steel_asphalt_01_diff.jpg-6ba07d6c213cd17632da77c426a5443d.ctex"]
+dest_files=["res://.godot/imported/factory_steel_asphalt_01_diff.jpg-6ba07d6c213cd17632da77c426a5443d.s3tc.ctex"]
 
 [params]
 
-compress/mode=0
+compress/mode=2
 compress/high_quality=false
 compress/lossy_quality=0.7
 compress/uastc_level=0

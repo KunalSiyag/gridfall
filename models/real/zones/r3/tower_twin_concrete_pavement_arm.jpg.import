@@ -3,9 +3,10 @@
 importer="texture"
 type="CompressedTexture2D"
 uid="uid://2ge4skrrnr14"
-path="res://.godot/imported/tower_twin_concrete_pavement_arm.jpg-44cf9b41008cbe66301f2368d1acb762.ctex"
+path.s3tc="res://.godot/imported/tower_twin_concrete_pavement_arm.jpg-44cf9b41008cbe66301f2368d1acb762.s3tc.ctex"
 metadata={
-"vram_texture": false
+"imported_formats": ["s3tc_bptc"],
+"vram_texture": true
 }
 generator_parameters={
 "md5": "9bd3e296783de784efbe67f2e36a2e28"
@@ -14,11 +15,11 @@ generator_parameters={
 [deps]
 
 source_file="res://models/real/zones/r3/tower_twin_concrete_pavement_arm.jpg"
-dest_files=["res://.godot/imported/tower_twin_concrete_pavement_arm.jpg-44cf9b41008cbe66301f2368d1acb762.ctex"]
+dest_files=["res://.godot/imported/tower_twin_concrete_pavement_arm.jpg-44cf9b41008cbe66301f2368d1acb762.s3tc.ctex"]
 
 [params]
 
-compress/mode=0
+compress/mode=2
 compress/high_quality=false
 compress/lossy_quality=0.7
 compress/uastc_level=0

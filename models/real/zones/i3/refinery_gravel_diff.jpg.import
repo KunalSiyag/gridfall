@@ -3,9 +3,10 @@
 importer="texture"
 type="CompressedTexture2D"
 uid="uid://bkn2061etkq5w"
-path="res://.godot/imported/refinery_gravel_diff.jpg-7ba1df4607d585777eb7716e325678cc.ctex"
+path.s3tc="res://.godot/imported/refinery_gravel_diff.jpg-7ba1df4607d585777eb7716e325678cc.s3tc.ctex"
 metadata={
-"vram_texture": false
+"imported_formats": ["s3tc_bptc"],
+"vram_texture": true
 }
 generator_parameters={
 "md5": "46316e4d3f78e802540202a010f8f04a"
@@ -14,11 +15,11 @@ generator_parameters={
 [deps]
 
 source_file="res://models/real/zones/i3/refinery_gravel_diff.jpg"
-dest_files=["res://.godot/imported/refinery_gravel_diff.jpg-7ba1df4607d585777eb7716e325678cc.ctex"]
+dest_files=["res://.godot/imported/refinery_gravel_diff.jpg-7ba1df4607d585777eb7716e325678cc.s3tc.ctex"]
 
 [params]
 
-compress/mode=0
+compress/mode=2
 compress/high_quality=false
 compress/lossy_quality=0.7
 compress/uastc_level=0

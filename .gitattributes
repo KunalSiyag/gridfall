@@ -1,0 +1,31 @@
+# Binary assets: no text diffs, merges or line-ending conversion. No LFS: size limits are enforced
+# by tools/checks/large_files.py and the check-added-large-files hook (12 MB).
+*.glb binary
+*.bin binary
+*.blend binary
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.webp binary
+*.hdr binary
+*.exr binary
+*.ktx2 binary
+*.wav binary
+*.ogg binary
+*.mp3 binary
+*.ttf binary
+*.otf binary
+*.woff2 binary
+*.res binary
+*.scn binary
+*.ctex binary
+*.zip binary
+*.tpz binary
+*.pck binary
+
+# The gate and tool scripts run on Linux runners.
+*.sh text eol=lf
+
+# Generated files, collapsed in pull request diffs.
+docs/api/** linguist-generated=true
+tools/checks/baselines/** linguist-generated=true

@@ -3,9 +3,10 @@
 importer="texture"
 type="CompressedTexture2D"
 uid="uid://3lkrsgqc5n63"
-path="res://.godot/imported/house_gable_yellow_leafcluster_round.png-8a23b33b3cec6236102b81d038dcb600.ctex"
+path.s3tc="res://.godot/imported/house_gable_yellow_leafcluster_round.png-8a23b33b3cec6236102b81d038dcb600.s3tc.ctex"
 metadata={
-"vram_texture": false
+"imported_formats": ["s3tc_bptc"],
+"vram_texture": true
 }
 generator_parameters={
 "md5": "211a0a3103a022e13d026903ac21b083"
@@ -14,11 +15,11 @@ generator_parameters={
 [deps]
 
 source_file="res://models/real/zones/r1/house_gable_yellow_leafcluster_round.png"
-dest_files=["res://.godot/imported/house_gable_yellow_leafcluster_round.png-8a23b33b3cec6236102b81d038dcb600.ctex"]
+dest_files=["res://.godot/imported/house_gable_yellow_leafcluster_round.png-8a23b33b3cec6236102b81d038dcb600.s3tc.ctex"]
 
 [params]
 
-compress/mode=0
+compress/mode=2
 compress/high_quality=false
 compress/lossy_quality=0.7
 compress/uastc_level=0

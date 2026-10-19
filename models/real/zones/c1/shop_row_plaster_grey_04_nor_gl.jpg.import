@@ -3,9 +3,10 @@
 importer="texture"
 type="CompressedTexture2D"
 uid="uid://quq5k2nipot4"
-path="res://.godot/imported/shop_row_plaster_grey_04_nor_gl.jpg-b77135a8ffea99f0683fb1fac328320e.ctex"
+path.s3tc="res://.godot/imported/shop_row_plaster_grey_04_nor_gl.jpg-b77135a8ffea99f0683fb1fac328320e.s3tc.ctex"
 metadata={
-"vram_texture": false
+"imported_formats": ["s3tc_bptc"],
+"vram_texture": true
 }
 generator_parameters={
 "md5": "343b75484144cc3c3bf4d3821c3b7139"
@@ -14,17 +15,17 @@ generator_parameters={
 [deps]
 
 source_file="res://models/real/zones/c1/shop_row_plaster_grey_04_nor_gl.jpg"
-dest_files=["res://.godot/imported/shop_row_plaster_grey_04_nor_gl.jpg-b77135a8ffea99f0683fb1fac328320e.ctex"]
+dest_files=["res://.godot/imported/shop_row_plaster_grey_04_nor_gl.jpg-b77135a8ffea99f0683fb1fac328320e.s3tc.ctex"]
 
 [params]
 
-compress/mode=0
+compress/mode=2
 compress/high_quality=false
 compress/lossy_quality=0.7
 compress/uastc_level=0
 compress/rdo_quality_loss=0.0
 compress/hdr_compression=1
-compress/normal_map=0
+compress/normal_map=1
 compress/channel_pack=0
 mipmaps/generate=true
 mipmaps/limit=-1

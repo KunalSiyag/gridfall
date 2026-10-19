@@ -3,9 +3,10 @@
 importer="texture"
 type="CompressedTexture2D"
 uid="uid://bid3ivsid1jyj"
-path="res://.godot/imported/house_cottage_concrete_wall_008_arm.jpg-b6da7149f52c4234bf8b6f60b223ef84.ctex"
+path.s3tc="res://.godot/imported/house_cottage_concrete_wall_008_arm.jpg-b6da7149f52c4234bf8b6f60b223ef84.s3tc.ctex"
 metadata={
-"vram_texture": false
+"imported_formats": ["s3tc_bptc"],
+"vram_texture": true
 }
 generator_parameters={
 "md5": "88c51ff773e6bcbc65e3f628a0fbd56d"
@@ -14,11 +15,11 @@ generator_parameters={
 [deps]
 
 source_file="res://models/real/zones/r1/house_cottage_concrete_wall_008_arm.jpg"
-dest_files=["res://.godot/imported/house_cottage_concrete_wall_008_arm.jpg-b6da7149f52c4234bf8b6f60b223ef84.ctex"]
+dest_files=["res://.godot/imported/house_cottage_concrete_wall_008_arm.jpg-b6da7149f52c4234bf8b6f60b223ef84.s3tc.ctex"]
 
 [params]
 
-compress/mode=0
+compress/mode=2
 compress/high_quality=false
 compress/lossy_quality=0.7
 compress/uastc_level=0

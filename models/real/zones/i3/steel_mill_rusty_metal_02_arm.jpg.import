@@ -3,9 +3,10 @@
 importer="texture"
 type="CompressedTexture2D"
 uid="uid://davmcowqdo3rn"
-path="res://.godot/imported/steel_mill_rusty_metal_02_arm.jpg-f2d851802c3594ad172e18ec2474ad49.ctex"
+path.s3tc="res://.godot/imported/steel_mill_rusty_metal_02_arm.jpg-f2d851802c3594ad172e18ec2474ad49.s3tc.ctex"
 metadata={
-"vram_texture": false
+"imported_formats": ["s3tc_bptc"],
+"vram_texture": true
 }
 generator_parameters={
 "md5": "8902c697f5e83511ef2839e57ca50c33"
@@ -14,11 +15,11 @@ generator_parameters={
 [deps]
 
 source_file="res://models/real/zones/i3/steel_mill_rusty_metal_02_arm.jpg"
-dest_files=["res://.godot/imported/steel_mill_rusty_metal_02_arm.jpg-f2d851802c3594ad172e18ec2474ad49.ctex"]
+dest_files=["res://.godot/imported/steel_mill_rusty_metal_02_arm.jpg-f2d851802c3594ad172e18ec2474ad49.s3tc.ctex"]
 
 [params]
 
-compress/mode=0
+compress/mode=2
 compress/high_quality=false
 compress/lossy_quality=0.7
 compress/uastc_level=0

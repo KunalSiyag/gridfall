@@ -3,9 +3,10 @@
 importer="texture"
 type="CompressedTexture2D"
 uid="uid://cerv0eet7dbry"
-path="res://.godot/imported/bench_park_painted_wooden_bench_nor_gl_1k.jpg-48b6055df76199bfd8e11175315779ee.ctex"
+path.s3tc="res://.godot/imported/bench_park_painted_wooden_bench_nor_gl_1k.jpg-48b6055df76199bfd8e11175315779ee.s3tc.ctex"
 metadata={
-"vram_texture": false
+"imported_formats": ["s3tc_bptc"],
+"vram_texture": true
 }
 generator_parameters={
 "md5": "81c81dd43877b845139637542e6f46f3"
@@ -14,11 +15,11 @@ generator_parameters={
 [deps]
 
 source_file="res://models/real/props/bench_park_painted_wooden_bench_nor_gl_1k.jpg"
-dest_files=["res://.godot/imported/bench_park_painted_wooden_bench_nor_gl_1k.jpg-48b6055df76199bfd8e11175315779ee.ctex"]
+dest_files=["res://.godot/imported/bench_park_painted_wooden_bench_nor_gl_1k.jpg-48b6055df76199bfd8e11175315779ee.s3tc.ctex"]
 
 [params]
 
-compress/mode=0
+compress/mode=2
 compress/high_quality=false
 compress/lossy_quality=0.7
 compress/uastc_level=0

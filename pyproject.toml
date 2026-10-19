@@ -1,0 +1,17 @@
+# Tool configuration only: GridFall is a Godot project, not a Python package.
+# Tests: ~/.venvs/gridfall-tools/bin/python -m pytest   (add --no-cov to run a single test fast)
+
+[tool.pytest.ini_options]
+testpaths = ["tools/pytests"]
+pythonpath = ["."]
+addopts = "-q --cov=tools/checks --cov=tools/ops --cov-report=term-missing:skip-covered --cov-fail-under=80"
+
+[tool.coverage.run]
+branch = true
+omit = ["tools/pytests/*"]
+
+[tool.coverage.report]
+exclude_also = [
+    "if __name__ == .__main__.:",
+    "if __package__ in \\(None, \"\"\\):",
+]

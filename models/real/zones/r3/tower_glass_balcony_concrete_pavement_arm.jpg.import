@@ -3,9 +3,10 @@
 importer="texture"
 type="CompressedTexture2D"
 uid="uid://cd7615s6c5u1m"
-path="res://.godot/imported/tower_glass_balcony_concrete_pavement_arm.jpg-e91e3dce7546653ff45594bc9938c6de.ctex"
+path.s3tc="res://.godot/imported/tower_glass_balcony_concrete_pavement_arm.jpg-e91e3dce7546653ff45594bc9938c6de.s3tc.ctex"
 metadata={
-"vram_texture": false
+"imported_formats": ["s3tc_bptc"],
+"vram_texture": true
 }
 generator_parameters={
 "md5": "9bd3e296783de784efbe67f2e36a2e28"
@@ -14,11 +15,11 @@ generator_parameters={
 [deps]
 
 source_file="res://models/real/zones/r3/tower_glass_balcony_concrete_pavement_arm.jpg"
-dest_files=["res://.godot/imported/tower_glass_balcony_concrete_pavement_arm.jpg-e91e3dce7546653ff45594bc9938c6de.ctex"]
+dest_files=["res://.godot/imported/tower_glass_balcony_concrete_pavement_arm.jpg-e91e3dce7546653ff45594bc9938c6de.s3tc.ctex"]
 
 [params]
 
-compress/mode=0
+compress/mode=2
 compress/high_quality=false
 compress/lossy_quality=0.7
 compress/uastc_level=0

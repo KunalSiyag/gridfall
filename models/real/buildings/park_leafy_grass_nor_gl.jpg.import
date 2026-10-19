@@ -3,9 +3,10 @@
 importer="texture"
 type="CompressedTexture2D"
 uid="uid://bl6sfpjc5xfvp"
-path="res://.godot/imported/park_leafy_grass_nor_gl.jpg-8f2d255ba6134a423de814508b5925e8.ctex"
+path.s3tc="res://.godot/imported/park_leafy_grass_nor_gl.jpg-8f2d255ba6134a423de814508b5925e8.s3tc.ctex"
 metadata={
-"vram_texture": false
+"imported_formats": ["s3tc_bptc"],
+"vram_texture": true
 }
 generator_parameters={
 "md5": "01d4d38e68c51e16c6896a6794894bf6"
@@ -14,17 +15,17 @@ generator_parameters={
 [deps]
 
 source_file="res://models/real/buildings/park_leafy_grass_nor_gl.jpg"
-dest_files=["res://.godot/imported/park_leafy_grass_nor_gl.jpg-8f2d255ba6134a423de814508b5925e8.ctex"]
+dest_files=["res://.godot/imported/park_leafy_grass_nor_gl.jpg-8f2d255ba6134a423de814508b5925e8.s3tc.ctex"]
 
 [params]
 
-compress/mode=0
+compress/mode=2
 compress/high_quality=false
 compress/lossy_quality=0.7
 compress/uastc_level=0
 compress/rdo_quality_loss=0.0
 compress/hdr_compression=1
-compress/normal_map=0
+compress/normal_map=1
 compress/channel_pack=0
 mipmaps/generate=true
 mipmaps/limit=-1

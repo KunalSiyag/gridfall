@@ -3,9 +3,10 @@
 importer="texture"
 type="CompressedTexture2D"
 uid="uid://4b33qqo3ecqo"
-path="res://.godot/imported/landfill_wood_planks_arm.jpg-9523c221d87ac853c2aeaecb996b002a.ctex"
+path.s3tc="res://.godot/imported/landfill_wood_planks_arm.jpg-9523c221d87ac853c2aeaecb996b002a.s3tc.ctex"
 metadata={
-"vram_texture": false
+"imported_formats": ["s3tc_bptc"],
+"vram_texture": true
 }
 generator_parameters={
 "md5": "38ed7cac0d9756f935e9d99e5cb962a6"
@@ -14,11 +15,11 @@ generator_parameters={
 [deps]
 
 source_file="res://models/real/buildings/landfill_wood_planks_arm.jpg"
-dest_files=["res://.godot/imported/landfill_wood_planks_arm.jpg-9523c221d87ac853c2aeaecb996b002a.ctex"]
+dest_files=["res://.godot/imported/landfill_wood_planks_arm.jpg-9523c221d87ac853c2aeaecb996b002a.s3tc.ctex"]
 
 [params]
 
-compress/mode=0
+compress/mode=2
 compress/high_quality=false
 compress/lossy_quality=0.7
 compress/uastc_level=0

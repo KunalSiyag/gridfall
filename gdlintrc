@@ -1,0 +1,43 @@
+# gdlint (gdtoolkit 4.x) settings for GridFall. Run through tools/checks/lint.py, which compares
+# against tools/checks/baselines/gdlint.json so only new findings fail.
+#
+# Naming follows the codebase: snake_case functions, variables, arguments and signals (an
+# optional trailing underscore avoids shadowing, as in `name_`), PascalCase classes and preloads,
+# UPPER_CASE constants and enum members. `_on_<Node>_<signal>` handlers are allowed.
+# class-definitions-order is off: files group members by topic, not by kind.
+class-definitions-order: null
+class-load-variable-name: (([A-Z][a-z0-9]*)+|_?[a-z][a-z0-9]*(_[a-z0-9]+)*)
+class-name: ([A-Z][a-z0-9]*)+
+class-variable-name: _?[a-z][a-z0-9]*(_[a-z0-9]+)*
+comparison-with-itself: null
+constant-name: _?[A-Z][A-Z0-9]*(_[A-Z0-9]+)*
+disable:
+- class-definitions-order
+duplicated-load: null
+enum-element-name: '[A-Z][A-Z0-9]*(_[A-Z0-9]+)*'
+enum-name: ([A-Z][a-z0-9]*)+
+excluded_directories: !!set
+  .git: null
+  .godot: null
+  addons: null
+expression-not-assigned: null
+function-argument-name: _?[a-z][a-z0-9]*(_[a-z0-9]+)*_?
+function-arguments-number: 10
+function-name: (_on_([A-Z][a-z0-9]*)+(_[a-z0-9]+)*|_?[a-z][a-z0-9]*(_[a-z0-9]+)*)
+function-preload-variable-name: ([A-Z][a-z0-9]*)+
+function-variable-name: '[a-z][a-z0-9]*(_[a-z0-9]+)*_?'
+load-constant-name: (([A-Z][a-z0-9]*)+|_?[A-Z][A-Z0-9]*(_[A-Z0-9]+)*)
+loop-variable-name: _?[a-z][a-z0-9]*(_[a-z0-9]+)*
+max-file-lines: 1000
+max-line-length: 100
+max-public-methods: 20
+max-returns: 6
+mixed-tabs-and-spaces: null
+no-elif-return: null
+no-else-return: null
+signal-name: '[a-z][a-z0-9]*(_[a-z0-9]+)*'
+sub-class-name: _?([A-Z][a-z0-9]*)+
+tab-characters: 4
+trailing-whitespace: null
+unnecessary-pass: null
+unused-argument: null

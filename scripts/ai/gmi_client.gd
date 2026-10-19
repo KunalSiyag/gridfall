@@ -4,8 +4,21 @@ extends Node
 ## heuristic fallback. Every call is logged with its source (live / cache / heuristic).
 
 signal call_logged(record: Dictionary)
+## The circuit breaker moved to state ("closed" / "open" / "half_open").
+signal breaker_changed(state: String)
 
 const CHAT_URL := "https://api.gmi-serving.com/v1/chat/completions"
+## Retries after the first attempt, for transient failures only (see is_retryable()).
+const MAX_RETRIES := 2
+const BACKOFF_BASE_MS := 500
+const BACKOFF_CAP_MS := 4000
+## Live outcomes kept for the failure-ratio alert.
+const LIVE_WINDOW := 20
+## Network results worth another attempt; TLS, redirect, body-size and file errors are not.
+const RETRY_RESULTS := [HTTPRequest.RESULT_CANT_CONNECT, HTTPRequest.RESULT_CANT_RESOLVE,
+	HTTPRequest.RESULT_CONNECTION_ERROR, HTTPRequest.RESULT_NO_RESPONSE, HTTPRequest.RESULT_REQUEST_FAILED,
+	HTTPRequest.RESULT_TIMEOUT]
+const RETRY_HTTP := [408, 429, 500, 502, 503, 504]
 const REPLAY_CACHE_PATH := "res://data/gmi_replay_cache.json"
 const SESSION_CACHE_PATH := "user://gmi_session_cache.json"
 const MAX_LOG := 300
@@ -25,13 +38,26 @@ var record_mode: bool = false
 var replay_cache: Dictionary = {}
 var session_cache: Dictionary = {}
 var log_records: Array[Dictionary] = []
-var stats: Dictionary = {"live_ok": 0, "live_fail": 0, "cache": 0, "heuristic": 0, "latency_ms_sum": 0, "in_flight": 0}
+var stats: Dictionary = {"live_ok": 0, "live_fail": 0, "cache": 0, "heuristic": 0, "latency_ms_sum": 0, "in_flight": 0,
+	"retries": 0, "breaker_open": 0, "breaker_skip": 0}
+## Opens after 4 consecutive service failures; while open, chat_json goes straight to the cache or
+## heuristic and live_json fails fast with "circuit open".
+var breaker := CircuitBreaker.new(4, 30000)
+## The last LIVE_WINDOW live outcomes (true = ok), oldest first.
+var live_outcomes: Array[bool] = []
 var _seq: int = 0
+var _hdr_request_id: String = ""
+var _hdr_trace_id: String = ""
+
+
+func _init() -> void:
+	breaker.state_changed.connect(_on_breaker_changed)
 
 
 func _ready() -> void:
 	api_key = _resolve_api_key()
-	live_enabled = not api_key.is_empty() and OS.get_environment("GRIDFALL_OFFLINE") != "1"
+	Redact.add_secret(api_key)
+	live_enabled = not api_key.is_empty() and OS.get_environment("GRIDFALL_OFFLINE") != "1" and FeatureFlags.enabled("gmi_live")
 	record_mode = OS.get_environment("GRIDFALL_RECORD") == "1"
 	_load_replay_cache()
 
@@ -41,7 +67,45 @@ func has_key() -> bool:
 
 
 func set_live(enabled: bool) -> void:
-	live_enabled = enabled and has_key()
+	live_enabled = enabled and has_key() and FeatureFlags.enabled("gmi_live")
+
+
+## "closed", "open" or "half_open" (an open breaker past its cool-down reads half_open).
+func breaker_state() -> String:
+	return breaker.peek_state()
+
+
+## Share of failed live calls among the last LIVE_WINDOW (0 when none).
+func live_failure_ratio() -> float:
+	if live_outcomes.is_empty():
+		return 0.0
+	var bad := 0
+	for ok: bool in live_outcomes:
+		if not ok:
+			bad += 1
+	return float(bad) / float(live_outcomes.size())
+
+
+## True for failures another attempt may fix: transient network results, 408, 429 and 500/502/503/504.
+static func is_retryable(result_code: int, http_code: int) -> bool:
+	if result_code != HTTPRequest.RESULT_SUCCESS:
+		return result_code in RETRY_RESULTS
+	return http_code in RETRY_HTTP
+
+
+## True when the failure says the service (not the request or the reply) is unhealthy; these
+## count toward opening the breaker.
+static func is_service_failure(result_code: int, http_code: int) -> bool:
+	if result_code != HTTPRequest.RESULT_SUCCESS:
+		return true
+	return http_code == 408 or http_code == 429 or http_code >= 500
+
+
+## Delay before retry number attempt (0-based): exponential from BACKOFF_BASE_MS, capped at
+## BACKOFF_CAP_MS, with "equal jitter" (jitter01 in 0..1 picks a point in the upper half).
+static func backoff_ms(attempt: int, jitter01: float) -> int:
+	var ceiling := mini(BACKOFF_CAP_MS, BACKOFF_BASE_MS << clampi(attempt, 0, 16))
+	return int(float(ceiling) * (0.5 + 0.5 * clampf(jitter01, 0.0, 1.0)))
 
 
 func _resolve_api_key() -> String:
@@ -74,13 +138,14 @@ func _load_replay_cache() -> void:
 ## replay cache (same role/agent, nearest day) and then to the heuristic callable.
 func chat_json(role: String, agent_id: String, model: String, system_prompt: String, user_prompt: String,
 		day: int, max_tokens: int, timeout_s: float, heuristic: Callable) -> Dictionary:
-	_seq += 1
 	var key := "%s|%s" % [role, agent_id]
-	var result := {"ok": false, "data": {}, "source": "", "latency_ms": 0, "model": model, "error": "", "raw": "", "role": role, "agent": agent_id, "day": day, "seq": _seq}
-	if live_enabled:
+	var result := _new_result(role, agent_id, model, day)
+	if live_enabled and not _breaker_allows():
+		result["error"] = "circuit open"
+	elif live_enabled:
 		stats["in_flight"] = int(stats["in_flight"]) + 1
 		var t0 := Time.get_ticks_msec()
-		var live := await _post(model, system_prompt, user_prompt, max_tokens, timeout_s)
+		var live := await _post_with_retry(model, system_prompt, user_prompt, max_tokens, timeout_s, result)
 		stats["in_flight"] = int(stats["in_flight"]) - 1
 		result["latency_ms"] = Time.get_ticks_msec() - t0
 		result["raw"] = str(live.get("raw", "")).left(600)
@@ -115,14 +180,17 @@ func chat_json(role: String, agent_id: String, model: String, system_prompt: Str
 ## touches the role-level cache; on failure returns ok=false so the caller can fall back.
 func live_json(role: String, agent_id: String, model: String, system_prompt: String, user_prompt: String,
 		day: int, max_tokens: int, timeout_s: float) -> Dictionary:
-	_seq += 1
-	var result := {"ok": false, "data": {}, "source": "", "latency_ms": 0, "model": model, "error": "", "raw": "", "role": role, "agent": agent_id, "day": day, "seq": _seq}
+	var result := _new_result(role, agent_id, model, day)
 	if not live_enabled:
 		result["error"] = "offline"
 		return result
+	if not _breaker_allows():
+		result["error"] = "circuit open"
+		result["source"] = "failed"
+		return result
 	stats["in_flight"] = int(stats["in_flight"]) + 1
 	var t0 := Time.get_ticks_msec()
-	var live := await _post(model, system_prompt, user_prompt, max_tokens, timeout_s)
+	var live := await _post_with_retry(model, system_prompt, user_prompt, max_tokens, timeout_s, result)
 	stats["in_flight"] = int(stats["in_flight"]) - 1
 	result["latency_ms"] = Time.get_ticks_msec() - t0
 	result["raw"] = str(live.get("raw", "")).left(600)
@@ -152,7 +220,67 @@ func count_source(source: String, n: int = 1) -> void:
 	if stats.has(source):
 		stats[source] = int(stats[source]) + n
 
+
+## A fresh result dict with this call's seq, request_id and the current trace id.
+func _new_result(role: String, agent_id: String, model: String, day: int) -> Dictionary:
+	_seq += 1
+	return {"ok": false, "data": {}, "source": "", "latency_ms": 0, "model": model, "error": "", "raw": "", "role": role,
+		"agent": agent_id, "day": day, "seq": _seq, "request_id": Trace.new_id(), "trace_id": Trace.current(), "attempts": 0}
+
+
+func _breaker_allows() -> bool:
+	if breaker.allow():
+		return true
+	stats["breaker_skip"] = int(stats["breaker_skip"]) + 1
+	return false
+
+
+## _post with up to MAX_RETRIES retries for transient failures (exponential backoff with jitter,
+## honouring Retry-After), all within a budget of 2 x timeout_s. Reports the outcome to the
+## breaker and live_outcomes; sets result["attempts"].
+func _post_with_retry(model: String, system_prompt: String, user_prompt: String, max_tokens: int, timeout_s: float,
+		result: Dictionary) -> Dictionary:
+	var deadline := Time.get_ticks_msec() + int(timeout_s * 2000.0)
+	var attempt := 0
+	var live: Dictionary = {}
+	while true:
+		var left_s := float(deadline - Time.get_ticks_msec()) / 1000.0
+		# _post reads these before its first await; overrides in tests keep the 5-argument signature.
+		_hdr_request_id = str(result.get("request_id", ""))
+		_hdr_trace_id = str(result.get("trace_id", ""))
+		live = await _post(model, system_prompt, user_prompt, max_tokens, clampf(left_s, 1.0, timeout_s))
+		attempt += 1
+		if bool(live.get("ok", false)) or not bool(live.get("retryable", false)) or attempt > MAX_RETRIES or not is_inside_tree():
+			break
+		var wait_ms := maxi(backoff_ms(attempt - 1, randf()), int(live.get("retry_after_ms", 0)))
+		if Time.get_ticks_msec() + wait_ms + 1000 >= deadline:
+			break
+		stats["retries"] = int(stats["retries"]) + 1
+		await get_tree().create_timer(float(wait_ms) / 1000.0, true, false, true).timeout
+	result["attempts"] = attempt
+	var ok := bool(live.get("ok", false))
+	if ok or not bool(live.get("service_fail", true)):
+		breaker.record_success()
+	else:
+		breaker.record_failure()
+	live_outcomes.append(ok)
+	if live_outcomes.size() > LIVE_WINDOW:
+		live_outcomes.pop_front()
+	return live
+
+
+func _on_breaker_changed(_from: String, to: String) -> void:
+	if to == CircuitBreaker.OPEN:
+		stats["breaker_open"] = int(stats["breaker_open"]) + 1
+	ErrorTracker.breadcrumb("gmi breaker " + to)
+	breaker_changed.emit(to)
+
+
 func _post(model: String, system_prompt: String, user_prompt: String, max_tokens: int, timeout_s: float) -> Dictionary:
+	var request_id := _hdr_request_id
+	var trace_id := _hdr_trace_id
+	_hdr_request_id = ""
+	_hdr_trace_id = ""
 	var http := HTTPRequest.new()
 	http.timeout = timeout_s
 	add_child(http)
@@ -161,6 +289,10 @@ func _post(model: String, system_prompt: String, user_prompt: String, max_tokens
 		"Content-Type: application/json",
 		"User-Agent: GridFall/2.0 (Godot)",
 	])
+	if not request_id.is_empty():
+		headers.append("X-Request-ID: " + request_id)
+	if not trace_id.is_empty():
+		headers.append("X-Trace-ID: " + trace_id)
 	var payload := {
 		"model": model,
 		"messages": [
@@ -177,23 +309,27 @@ func _post(model: String, system_prompt: String, user_prompt: String, max_tokens
 	var err := http.request(CHAT_URL, headers, HTTPClient.METHOD_POST, body)
 	if err != OK:
 		http.queue_free()
-		return {"ok": false, "error": "request error %d" % err}
+		return {"ok": false, "error": "request error %d" % err, "retryable": false, "service_fail": true}
 	var res: Array = await http.request_completed
 	http.queue_free()
 	var result_code: int = res[0]
 	var http_code: int = res[1]
 	var raw_body: PackedByteArray = res[3]
 	var text := raw_body.get_string_from_utf8()
-	if result_code != HTTPRequest.RESULT_SUCCESS:
-		return {"ok": false, "error": "network result %d" % result_code}
-	if http_code != 200:
-		return {"ok": false, "error": "HTTP %d %s" % [http_code, text.left(140)]}
+	if result_code != HTTPRequest.RESULT_SUCCESS or http_code != 200:
+		var fail := {"ok": false, "retryable": is_retryable(result_code, http_code), "service_fail": is_service_failure(result_code, http_code)}
+		if result_code != HTTPRequest.RESULT_SUCCESS:
+			fail["error"] = "network result %d" % result_code
+		else:
+			fail["error"] = "HTTP %d %s" % [http_code, text.left(140)]
+			fail["retry_after_ms"] = _retry_after_ms(res[2])
+		return fail
 	var parsed: Variant = JSON.parse_string(text)
 	if typeof(parsed) != TYPE_DICTIONARY:
-		return {"ok": false, "error": "bad response body"}
+		return {"ok": false, "error": "bad response body", "service_fail": false}
 	var choices: Array = (parsed as Dictionary).get("choices", [])
 	if choices.is_empty():
-		return {"ok": false, "error": "no choices"}
+		return {"ok": false, "error": "no choices", "service_fail": false}
 	var msg: Dictionary = (choices[0] as Dictionary).get("message", {})
 	var content: String = str(msg.get("content", "")) if msg.get("content") != null else ""
 	if content.strip_edges().is_empty() and msg.get("reasoning_content") != null:
@@ -202,8 +338,18 @@ func _post(model: String, system_prompt: String, user_prompt: String, max_tokens
 	if data.is_empty():
 		data = salvage_array(content)
 	if data.is_empty():
-		return {"ok": false, "error": "no JSON in reply", "raw": content}
+		return {"ok": false, "error": "no JSON in reply", "raw": content, "service_fail": false}
 	return {"ok": true, "data": data, "raw": content}
+
+
+## Retry-After in ms from response headers (delta-seconds form only), capped at 2 x BACKOFF_CAP_MS; 0 if absent.
+static func _retry_after_ms(headers: PackedStringArray) -> int:
+	for h: String in headers:
+		if h.to_lower().begins_with("retry-after:"):
+			var v := h.substr(12).strip_edges()
+			if v.is_valid_float():
+				return clampi(int(float(v) * 1000.0), 0, BACKOFF_CAP_MS * 2)
+	return 0
 
 
 ## Recovers the complete objects of a truncated {"key":[{...},{...},{... reply.
@@ -293,8 +439,39 @@ func _cache_lookup(key: String, day: int) -> Dictionary:
 	return {}
 
 
-## Writes the recorded live responses so offline runs can replay real model output.
+## Writes the recorded live responses so offline runs can replay real model output. Outside record
+## mode the session file keeps each key's last 3 days (a pruned copy: session_cache itself stays
+## whole, lookups read it) and is not rewritten when nothing was added since the last flush (the
+## brain flushes at every day end). Record mode writes exactly as before.
 func flush_cache() -> void:
+	if not record_mode:
+		var entries := 0
+		for key: String in session_cache.keys():
+			entries += (session_cache[key] as Array).size()
+		var sig := [session_cache.size(), entries]
+		if has_meta("flush_sig") and get_meta("flush_sig") == sig and is_same(get_meta("flush_of"), session_cache):
+			return
+		var pruned := {}
+		for key: String in session_cache.keys():
+			var days: Array = []
+			for e: Variant in session_cache[key]:
+				var dd := int((e as Dictionary).get("day", 0))
+				if not days.has(dd):
+					days.append(dd)
+			days.sort()
+			var recent: Array = days.slice(maxi(0, days.size() - 3))
+			var keep: Array = []
+			for e: Variant in session_cache[key]:
+				if recent.has(int((e as Dictionary).get("day", 0))):
+					keep.append(e)
+			pruned[key] = keep
+		var pf := FileAccess.open(SESSION_CACHE_PATH, FileAccess.WRITE)
+		if pf != null:
+			pf.store_string(JSON.stringify(pruned))
+			pf.close()
+			set_meta("flush_sig", sig)
+			set_meta("flush_of", session_cache)
+		return
 	var f := FileAccess.open(SESSION_CACHE_PATH, FileAccess.WRITE)
 	if f != null:
 		f.store_string(JSON.stringify(session_cache))
@@ -319,6 +496,10 @@ func _log(rec: Dictionary) -> void:
 	var slim := rec.duplicate()
 	slim.erase("data")
 	slim["summary"] = _summarize(rec.get("data", {}))
+	# raw and error can echo request content; the key may have been set after _ready.
+	var extra := PackedStringArray([api_key])
+	for k: String in ["summary", "raw", "error"]:
+		slim[k] = Redact.scrub(str(slim.get(k, "")), extra)
 	log_records.append(slim)
 	if log_records.size() > MAX_LOG:
 		log_records.pop_front()

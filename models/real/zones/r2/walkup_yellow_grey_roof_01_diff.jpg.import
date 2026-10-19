@@ -3,9 +3,10 @@
 importer="texture"
 type="CompressedTexture2D"
 uid="uid://dhajt1ljrmuo6"
-path="res://.godot/imported/walkup_yellow_grey_roof_01_diff.jpg-6e026e32a0450845b64a873091b26ac5.ctex"
+path.s3tc="res://.godot/imported/walkup_yellow_grey_roof_01_diff.jpg-6e026e32a0450845b64a873091b26ac5.s3tc.ctex"
 metadata={
-"vram_texture": false
+"imported_formats": ["s3tc_bptc"],
+"vram_texture": true
 }
 generator_parameters={
 "md5": "e8b94f32865edb5e403f295ea964bf10"
@@ -14,11 +15,11 @@ generator_parameters={
 [deps]
 
 source_file="res://models/real/zones/r2/walkup_yellow_grey_roof_01_diff.jpg"
-dest_files=["res://.godot/imported/walkup_yellow_grey_roof_01_diff.jpg-6e026e32a0450845b64a873091b26ac5.ctex"]
+dest_files=["res://.godot/imported/walkup_yellow_grey_roof_01_diff.jpg-6e026e32a0450845b64a873091b26ac5.s3tc.ctex"]
 
 [params]
 
-compress/mode=0
+compress/mode=2
 compress/high_quality=false
 compress/lossy_quality=0.7
 compress/uastc_level=0

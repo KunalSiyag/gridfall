@@ -3,9 +3,10 @@
 importer="texture"
 type="CompressedTexture2D"
 uid="uid://ct0hmyb3r2k65"
-path="res://.godot/imported/road_cross_concrete_wall_004_arm.jpg-68b6124f67c672ad6bac46dbc567497a.ctex"
+path.s3tc="res://.godot/imported/road_cross_concrete_wall_004_arm.jpg-68b6124f67c672ad6bac46dbc567497a.s3tc.ctex"
 metadata={
-"vram_texture": false
+"imported_formats": ["s3tc_bptc"],
+"vram_texture": true
 }
 generator_parameters={
 "md5": "28040cb586a1dd8d3bc7886c842938e5"
@@ -14,11 +15,11 @@ generator_parameters={
 [deps]
 
 source_file="res://models/real/roads/road_cross_concrete_wall_004_arm.jpg"
-dest_files=["res://.godot/imported/road_cross_concrete_wall_004_arm.jpg-68b6124f67c672ad6bac46dbc567497a.ctex"]
+dest_files=["res://.godot/imported/road_cross_concrete_wall_004_arm.jpg-68b6124f67c672ad6bac46dbc567497a.s3tc.ctex"]
 
 [params]
 
-compress/mode=0
+compress/mode=2
 compress/high_quality=false
 compress/lossy_quality=0.7
 compress/uastc_level=0

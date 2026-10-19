@@ -3,9 +3,10 @@
 importer="texture"
 type="CompressedTexture2D"
 uid="uid://dg513tkpe6eiy"
-path="res://.godot/imported/police_station_red_brick_03_arm.jpg-20c22c1e7d383d120e30ba5d2111207e.ctex"
+path.s3tc="res://.godot/imported/police_station_red_brick_03_arm.jpg-20c22c1e7d383d120e30ba5d2111207e.s3tc.ctex"
 metadata={
-"vram_texture": false
+"imported_formats": ["s3tc_bptc"],
+"vram_texture": true
 }
 generator_parameters={
 "md5": "458dfbad013b4052db61d54104168af1"
@@ -14,11 +15,11 @@ generator_parameters={
 [deps]
 
 source_file="res://models/real/buildings/police_station_red_brick_03_arm.jpg"
-dest_files=["res://.godot/imported/police_station_red_brick_03_arm.jpg-20c22c1e7d383d120e30ba5d2111207e.ctex"]
+dest_files=["res://.godot/imported/police_station_red_brick_03_arm.jpg-20c22c1e7d383d120e30ba5d2111207e.s3tc.ctex"]
 
 [params]
 
-compress/mode=0
+compress/mode=2
 compress/high_quality=false
 compress/lossy_quality=0.7
 compress/uastc_level=0

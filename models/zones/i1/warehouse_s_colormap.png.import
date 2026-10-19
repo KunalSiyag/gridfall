@@ -3,9 +3,10 @@
 importer="texture"
 type="CompressedTexture2D"
 uid="uid://uammofx0hqhd"
-path="res://.godot/imported/warehouse_s_colormap.png-9abb17f9ed1ec4c2ad6b3d7ab2b70c09.ctex"
+path.s3tc="res://.godot/imported/warehouse_s_colormap.png-9abb17f9ed1ec4c2ad6b3d7ab2b70c09.s3tc.ctex"
 metadata={
-"vram_texture": false
+"imported_formats": ["s3tc_bptc"],
+"vram_texture": true
 }
 generator_parameters={
 "md5": "2cbfad07a5006a3c3a465adb8a0206fc"
@@ -14,11 +15,11 @@ generator_parameters={
 [deps]
 
 source_file="res://models/zones/i1/warehouse_s_colormap.png"
-dest_files=["res://.godot/imported/warehouse_s_colormap.png-9abb17f9ed1ec4c2ad6b3d7ab2b70c09.ctex"]
+dest_files=["res://.godot/imported/warehouse_s_colormap.png-9abb17f9ed1ec4c2ad6b3d7ab2b70c09.s3tc.ctex"]
 
 [params]
 
-compress/mode=0
+compress/mode=2
 compress/high_quality=false
 compress/lossy_quality=0.7
 compress/uastc_level=0

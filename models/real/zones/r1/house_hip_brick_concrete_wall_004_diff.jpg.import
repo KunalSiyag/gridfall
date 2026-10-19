@@ -3,9 +3,10 @@
 importer="texture"
 type="CompressedTexture2D"
 uid="uid://cqque88udx20b"
-path="res://.godot/imported/house_hip_brick_concrete_wall_004_diff.jpg-84d78256c5592edf308d211cad79c2e0.ctex"
+path.s3tc="res://.godot/imported/house_hip_brick_concrete_wall_004_diff.jpg-84d78256c5592edf308d211cad79c2e0.s3tc.ctex"
 metadata={
-"vram_texture": false
+"imported_formats": ["s3tc_bptc"],
+"vram_texture": true
 }
 generator_parameters={
 "md5": "a56ea9d31c4356749fae1d4a6b151f99"
@@ -14,11 +15,11 @@ generator_parameters={
 [deps]
 
 source_file="res://models/real/zones/r1/house_hip_brick_concrete_wall_004_diff.jpg"
-dest_files=["res://.godot/imported/house_hip_brick_concrete_wall_004_diff.jpg-84d78256c5592edf308d211cad79c2e0.ctex"]
+dest_files=["res://.godot/imported/house_hip_brick_concrete_wall_004_diff.jpg-84d78256c5592edf308d211cad79c2e0.s3tc.ctex"]
 
 [params]
 
-compress/mode=0
+compress/mode=2
 compress/high_quality=false
 compress/lossy_quality=0.7
 compress/uastc_level=0

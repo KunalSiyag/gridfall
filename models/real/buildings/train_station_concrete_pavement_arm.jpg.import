@@ -3,9 +3,10 @@
 importer="texture"
 type="CompressedTexture2D"
 uid="uid://bv0ixbub45v7d"
-path="res://.godot/imported/train_station_concrete_pavement_arm.jpg-48279a10a18719b46b74ff0ca868fb18.ctex"
+path.s3tc="res://.godot/imported/train_station_concrete_pavement_arm.jpg-48279a10a18719b46b74ff0ca868fb18.s3tc.ctex"
 metadata={
-"vram_texture": false
+"imported_formats": ["s3tc_bptc"],
+"vram_texture": true
 }
 generator_parameters={
 "md5": "9bd3e296783de784efbe67f2e36a2e28"
@@ -14,11 +15,11 @@ generator_parameters={
 [deps]
 
 source_file="res://models/real/buildings/train_station_concrete_pavement_arm.jpg"
-dest_files=["res://.godot/imported/train_station_concrete_pavement_arm.jpg-48279a10a18719b46b74ff0ca868fb18.ctex"]
+dest_files=["res://.godot/imported/train_station_concrete_pavement_arm.jpg-48279a10a18719b46b74ff0ca868fb18.s3tc.ctex"]
 
 [params]
 
-compress/mode=0
+compress/mode=2
 compress/high_quality=false
 compress/lossy_quality=0.7
 compress/uastc_level=0

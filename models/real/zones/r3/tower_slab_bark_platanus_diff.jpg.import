@@ -3,9 +3,10 @@
 importer="texture"
 type="CompressedTexture2D"
 uid="uid://c373dm7nis0sc"
-path="res://.godot/imported/tower_slab_bark_platanus_diff.jpg-b9c8f78dba304b959706519ef47b08b3.ctex"
+path.s3tc="res://.godot/imported/tower_slab_bark_platanus_diff.jpg-b9c8f78dba304b959706519ef47b08b3.s3tc.ctex"
 metadata={
-"vram_texture": false
+"imported_formats": ["s3tc_bptc"],
+"vram_texture": true
 }
 generator_parameters={
 "md5": "bd7d557e09a64f0ed1338d39dc34892d"
@@ -14,11 +15,11 @@ generator_parameters={
 [deps]
 
 source_file="res://models/real/zones/r3/tower_slab_bark_platanus_diff.jpg"
-dest_files=["res://.godot/imported/tower_slab_bark_platanus_diff.jpg-b9c8f78dba304b959706519ef47b08b3.ctex"]
+dest_files=["res://.godot/imported/tower_slab_bark_platanus_diff.jpg-b9c8f78dba304b959706519ef47b08b3.s3tc.ctex"]
 
 [params]
 
-compress/mode=0
+compress/mode=2
 compress/high_quality=false
 compress/lossy_quality=0.7
 compress/uastc_level=0

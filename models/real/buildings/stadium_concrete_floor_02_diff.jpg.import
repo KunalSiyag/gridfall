@@ -3,9 +3,10 @@
 importer="texture"
 type="CompressedTexture2D"
 uid="uid://jrpvoa21lr3k"
-path="res://.godot/imported/stadium_concrete_floor_02_diff.jpg-115355827f23f31ada19612f1b081023.ctex"
+path.s3tc="res://.godot/imported/stadium_concrete_floor_02_diff.jpg-115355827f23f31ada19612f1b081023.s3tc.ctex"
 metadata={
-"vram_texture": false
+"imported_formats": ["s3tc_bptc"],
+"vram_texture": true
 }
 generator_parameters={
 "md5": "241b3c4c14730e8fdb887e374af4e523"
@@ -14,11 +15,11 @@ generator_parameters={
 [deps]
 
 source_file="res://models/real/buildings/stadium_concrete_floor_02_diff.jpg"
-dest_files=["res://.godot/imported/stadium_concrete_floor_02_diff.jpg-115355827f23f31ada19612f1b081023.ctex"]
+dest_files=["res://.godot/imported/stadium_concrete_floor_02_diff.jpg-115355827f23f31ada19612f1b081023.s3tc.ctex"]
 
 [params]
 
-compress/mode=0
+compress/mode=2
 compress/high_quality=false
 compress/lossy_quality=0.7
 compress/uastc_level=0

@@ -3,9 +3,10 @@
 importer="texture"
 type="CompressedTexture2D"
 uid="uid://1oujruh1vxbb"
-path="res://.godot/imported/plant_works_colormap.png-a143877410b707060b87bafcea303b8f.ctex"
+path.s3tc="res://.godot/imported/plant_works_colormap.png-a143877410b707060b87bafcea303b8f.s3tc.ctex"
 metadata={
-"vram_texture": false
+"imported_formats": ["s3tc_bptc"],
+"vram_texture": true
 }
 generator_parameters={
 "md5": "2cbfad07a5006a3c3a465adb8a0206fc"
@@ -14,11 +15,11 @@ generator_parameters={
 [deps]
 
 source_file="res://models/zones/i3/plant_works_colormap.png"
-dest_files=["res://.godot/imported/plant_works_colormap.png-a143877410b707060b87bafcea303b8f.ctex"]
+dest_files=["res://.godot/imported/plant_works_colormap.png-a143877410b707060b87bafcea303b8f.s3tc.ctex"]
 
 [params]
 
-compress/mode=0
+compress/mode=2
 compress/high_quality=false
 compress/lossy_quality=0.7
 compress/uastc_level=0

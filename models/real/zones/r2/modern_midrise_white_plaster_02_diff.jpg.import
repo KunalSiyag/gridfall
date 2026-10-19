@@ -3,9 +3,10 @@
 importer="texture"
 type="CompressedTexture2D"
 uid="uid://c7sotf0564nes"
-path="res://.godot/imported/modern_midrise_white_plaster_02_diff.jpg-6dfe8329fb004888e8598f1b3da25c69.ctex"
+path.s3tc="res://.godot/imported/modern_midrise_white_plaster_02_diff.jpg-6dfe8329fb004888e8598f1b3da25c69.s3tc.ctex"
 metadata={
-"vram_texture": false
+"imported_formats": ["s3tc_bptc"],
+"vram_texture": true
 }
 generator_parameters={
 "md5": "ec4f266af731d969a0d89a30ead57c09"
@@ -14,11 +15,11 @@ generator_parameters={
 [deps]
 
 source_file="res://models/real/zones/r2/modern_midrise_white_plaster_02_diff.jpg"
-dest_files=["res://.godot/imported/modern_midrise_white_plaster_02_diff.jpg-6dfe8329fb004888e8598f1b3da25c69.ctex"]
+dest_files=["res://.godot/imported/modern_midrise_white_plaster_02_diff.jpg-6dfe8329fb004888e8598f1b3da25c69.s3tc.ctex"]
 
 [params]
 
-compress/mode=0
+compress/mode=2
 compress/high_quality=false
 compress/lossy_quality=0.7
 compress/uastc_level=0

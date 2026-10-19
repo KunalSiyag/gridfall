@@ -18,9 +18,43 @@ signal incident_progress(ev: Dictionary)
 signal site_started(site: Dictionary)
 signal site_stage(site: Dictionary)
 signal site_finished(site: Dictionary)
+## Progress of a sliced tick; phase is a stable name ("recompute", "growth", "construction",
+## "incidents", "residents", "commit", "day_end"); fraction 0..1 within the whole tick.
+signal tick_progress(phase: String, fraction: float)
 
 const D := preload("res://scripts/sim/sim_defs.gd")
 const N4 := [Vector2i(0, -1), Vector2i(1, 0), Vector2i(0, 1), Vector2i(-1, 0)]
+## Sliced work is counted in units: one unit is a chunk of at most UNIT_WORK tile visits, one road
+## search that misses the route cache, or one resident's turn. A pump starts no step once it has
+## done UNITS_PER_PUMP - STEP_MAX_UNITS units, and a step (with its nested synchronous sections)
+## stays within STEP_MAX_UNITS, so one pump never exceeds UNITS_PER_PUMP on any machine.
+const UNITS_PER_PUMP := 32
+const STEP_MAX_UNITS := 8
+const UNIT_WORK := 2048
+const _SYNC_LIM := 1 << 30
+const _JOB_NONE := 0
+const _JOB_TICK := 1
+const _JOB_POST := 2
+const _JOB_RECOMPUTE := 3
+
+## Time-sliced ticking for first person. false (default): _process runs step_tick() synchronously,
+## exactly as today. true: a due tick runs as a resumable job, at most slice_budget_ms per frame.
+## Switching finishes any job in flight first, so teardown's `sliced = false` never abandons a tick.
+var sliced: bool = false:
+	set(v):
+		if v == sliced:
+			return
+		_finish_job_now()
+		sliced = v
+var slice_budget_ms: float = 4.0
+## Set by ResidentMinds: true while it spreads the day's plan batches over frames. begin_tick()
+## waits for it, and _finish_job_now() drains it through spread_finish.
+var spread_gate: Callable = Callable()
+var spread_finish: Callable = Callable()
+## Other spread sources (add_spread_source): [gate, finish] pairs, checked after ResidentMinds.
+var _spread_sources: Array = []
+## Bumped whenever a tile turns into a road or stops being one (route caches key on it).
+var road_epoch: int = 0
 
 var kind := PackedInt32Array()
 var level := PackedInt32Array()
@@ -46,6 +80,10 @@ var cov_transit := PackedFloat32Array()
 var day: int = 1
 var tick_in_day: int = 0
 var speed: int = 1
+## Real seconds per game day at speed 1. Orbit and tests keep SimDefs.BASE_DAY_SECONDS (12);
+## first person sets WS.FP_DAY_SECONDS (1200). Not saved: the view mode sets it at boot. Change it
+## through set_day_seconds() while a day is running, so the time of day stays put.
+var day_seconds: float = D.BASE_DAY_SECONDS
 var waiting_for_ai: bool = false
 var day_gate: Callable = Callable()
 var rng := RandomNumberGenerator.new()
@@ -86,6 +124,37 @@ var _surveyed: Dictionary = {}
 var load_remap: Dictionary = {}
 var _wet2 := PackedByteArray()
 
+# Sliced job: a stack of task dictionaries ({"f": Callable(task) -> bool done, "phase", cursors}).
+# Tasks a step pushes (a nested recompute, the flush after it) wait in _nested and go on top of
+# the stack when the step returns, so the calling phase resumes only after they finish.
+var _job: Array[Dictionary] = []
+var _nested: Array[Dictionary] = []
+var _job_kind: int = _JOB_NONE
+var _job_t: int = 0
+var _job_from_accum: bool = false
+var _job_started: bool = false
+var _tick_running: bool = false
+var _stepping: bool = false
+var _finishing: bool = false
+var _in_job: int = 0
+var _force_sync: int = 0
+var _defer_day: bool = false
+var _lim: int = _SYNC_LIM
+var _pumping: bool = false
+var _pump_units: int = 0
+var _step_noted: int = 0
+var _excl_us: int = 0
+var _excl_depth: int = 0
+var _committed: bool = false
+var _tick_units: int = 0
+var _tick_units_est: float = 400.0
+var _step_ema_ms: float = 0.25
+var _step_cost: Dictionary = {}
+var _ss: Dictionary = {}
+var _ss_steps: Dictionary = {}
+var _ss_ms := PackedFloat32Array()
+var _ss_next: int = 0
+
 
 func _ready() -> void:
 	if kind.is_empty():
@@ -93,6 +162,9 @@ func _ready() -> void:
 
 
 func new_city(seed_value: int) -> void:
+	_abort_job()
+	_force_sync += 1
+	road_epoch += 1
 	city_seed = seed_value
 	load_remap = {}
 	_wet2 = PackedByteArray()
@@ -131,8 +203,9 @@ func new_city(seed_value: int) -> void:
 	log_lines.clear()
 	mayors.clear()
 	for m in D.MAYORS:
+		## "name" is the mayor's human display name; "id" and "model" stay for the API.
 		mayors.append({
-			"id": m["id"], "name": m["name"], "model": m["model"], "color": m["color"],
+			"id": m["id"], "name": m["display"], "model": m["model"], "color": m["color"],
 			"treasury": D.START_FUNDS, "tax_r": 9, "tax_c": 9, "tax_i": 9,
 			"last_income": 0, "last_upkeep": 0, "actions_ok": 0, "actions_rejected": 0,
 			"pop": 0, "jobs": 0, "happiness": 0.5, "annexed": 0,
@@ -163,6 +236,7 @@ func new_city(seed_value: int) -> void:
 	_recompute_all()
 	_log("GridFall founded. Five GMI-powered mayors take office.", "city")
 	_flush_changes(true)
+	_force_sync -= 1
 
 
 ## Unclaimed land around the founding city: the river keeps flowing, woods cluster, and a
@@ -324,7 +398,6 @@ func _plot_touches(r: Rect2i, mi: int) -> bool:
 	return false
 
 
-
 func _act_annex(mi: int, a: Dictionary) -> Dictionary:
 	var x := int(a.get("x", -9999))
 	var y := int(a.get("y", -9999))
@@ -350,7 +423,7 @@ func _act_annex(mi: int, a: Dictionary) -> Dictionary:
 			_changed[i] = true
 	mayors[mi]["annexed"] = int(mayors[mi].get("annexed", 0)) + 1
 	_rebuild_active()
-	_recompute_all()
+	_recompute_deferred()
 	_log("%s annexed the land at x %d-%d, y %d-%d for $%d." % [mayors[mi]["name"], r.position.x, r.end.x - 1, r.position.y, r.end.y - 1, cost], "city")
 	territory_changed.emit(mi)
 	return {"ok": true, "reason": "annexed plot x %d-%d, y %d-%d" % [r.position.x, r.end.x - 1, r.position.y, r.end.y - 1], "cost": cost}
@@ -358,8 +431,15 @@ func _act_annex(mi: int, a: Dictionary) -> Dictionary:
 
 func _seed_road(x: int, y: int) -> void:
 	var i := D.idx(x, y)
-	kind[i] = D.ROAD
+	_kind_set(i, D.ROAD)
 	level[i] = 0
+
+
+## Writes kind[i] and bumps road_epoch when a road appears or disappears.
+func _kind_set(i: int, k: int) -> void:
+	if kind[i] == D.ROAD or k == D.ROAD:
+		road_epoch += 1
+	kind[i] = k
 
 
 # ---------------------------------------------------------------- time
@@ -370,7 +450,12 @@ func set_speed(s: int) -> void:
 
 
 func _process(delta: float) -> void:
-	if speed <= 0 or kind.is_empty():
+	if kind.is_empty():
+		return
+	if sliced:
+		_process_sliced(delta)
+		return
+	if speed <= 0:
 		return
 	if waiting_for_ai:
 		if day_gate.is_valid() and not bool(day_gate.call()):
@@ -380,7 +465,7 @@ func _process(delta: float) -> void:
 		_begin_day()
 		return
 	_time_accum += delta * float(speed)
-	var tick_len := D.BASE_DAY_SECONDS / float(D.GROWTH_TICKS_PER_DAY)
+	var tick_len := tick_seconds()
 	var guard := 0
 	while _time_accum >= tick_len and guard < 8 and not waiting_for_ai:
 		_time_accum -= tick_len
@@ -388,18 +473,81 @@ func _process(delta: float) -> void:
 		step_tick()
 
 
+## Sliced mode: at most one job in flight. A due tick starts as a job (and gets its first slice
+## this frame); the time it covers is subtracted when it commits. A job in flight keeps pumping
+## even at speed 0, so a tick never freezes half done.
+func _process_sliced(delta: float) -> void:
+	if speed > 0 and not waiting_for_ai:
+		_time_accum += delta * float(speed)
+	if _job.is_empty() and speed > 0:
+		if waiting_for_ai:
+			if day_gate.is_valid() and not bool(day_gate.call()):
+				return
+			waiting_for_ai = false
+			waiting_changed.emit(false)
+			_start_job(_JOB_POST, [_tagged("day_end", "day_start", _task_day_start)])
+		elif _time_accum >= tick_seconds() and begin_tick():
+			_job_from_accum = true
+	if not _job.is_empty():
+		pump(slice_budget_ms)
+
+
 func day_progress() -> float:
-	var tick_len := D.BASE_DAY_SECONDS / float(D.GROWTH_TICKS_PER_DAY)
+	var tick_len := tick_seconds()
 	return clampf((float(tick_in_day) + _time_accum / tick_len) / float(D.GROWTH_TICKS_PER_DAY), 0.0, 1.0)
 
 
+## Real seconds per growth tick at speed 1.
+func tick_seconds() -> float:
+	return day_seconds / float(D.GROWTH_TICKS_PER_DAY)
+
+
+## Changes the day length and rescales the time already accumulated toward the next tick, so
+## day_progress() and tick_phase() are unchanged (a raw switch from a 1200 s to a 12 s day would
+## leave up to a whole 300 s tick pending and run dozens of ticks at once).
+func set_day_seconds(s: float) -> void:
+	if s <= 0.0:
+		return
+	if day_seconds > 0.0:
+		_time_accum *= s / day_seconds
+	day_seconds = s
+
+
+## Sets how far the current growth tick has run (0..1), e.g. when a save restores the time of day.
+## A sliced tick in flight then commits without taking its time back out of the accumulator.
+func set_tick_phase(p: float) -> void:
+	_time_accum = clampf(p, 0.0, 1.0) * tick_seconds()
+	_job_from_accum = false
+
+
+## Runs the rest of today's growth ticks synchronously so the next day starts at dawn
+## (FP "skip to morning"). Stops early if the day gate holds the boundary. Returns true when
+## the new day has started. In sliced mode it first completes the job in flight.
+func skip_to_next_day() -> bool:
+	var d0 := day
+	_finish_job_now()
+	if day != d0:
+		_time_accum = 0.0
+		return not waiting_for_ai
+	var n := D.GROWTH_TICKS_PER_DAY - tick_in_day
+	for _k in range(n):
+		if waiting_for_ai:
+			break
+		step_tick()
+	_time_accum = 0.0
+	return not waiting_for_ai
+
+
 func step_tick() -> void:
+	_finish_job_now()
+	_force_sync += 1
 	_growth_tick()
 	tick_done.emit(tick_in_day)
 	tick_in_day += 1
 	if tick_in_day >= D.GROWTH_TICKS_PER_DAY:
 		tick_in_day = 0
 		_end_day()
+	_force_sync -= 1
 
 
 ## Emits day_started for the very first day (call once after wiring listeners).
@@ -409,6 +557,13 @@ func start() -> void:
 
 func _end_day() -> void:
 	_collect_budget()
+	if _end_day_rest():
+		_begin_day()
+
+
+## Day end after the budget: history, day_ended, the new day number, expired events. Returns false
+## when the day gate holds the next day (waiting_for_ai).
+func _end_day_rest() -> bool:
 	history.append({
 		"day": day, "pop": int(stats.get("population", 0)), "funds": total_funds(),
 		"happiness": float(stats.get("happiness", 0.0)), "jobs": int(stats.get("jobs", 0)),
@@ -431,12 +586,18 @@ func _end_day() -> void:
 	if day_gate.is_valid() and not bool(day_gate.call()):
 		waiting_for_ai = true
 		waiting_changed.emit(true)
-		return
-	_begin_day()
+		return false
+	return true
 
 
 func _begin_day() -> void:
 	day_started.emit(day)
+
+
+## True while the sliced day job emits day_started: Residents then leaves its day-start work to
+## begin_day() / pump_day(), which the job runs after the emission.
+func day_start_deferred() -> bool:
+	return _defer_day
 
 
 # ---------------------------------------------------------------- simulation core
@@ -451,29 +612,461 @@ func global_tick() -> int:
 
 
 func _growth_tick() -> void:
-	_recompute_all()
-	_grow_zones()
-	_construction_tick()
-	_update_fires()
-	_random_fires()
-	if work_based():
-		_incident_tick()
-	# Growth and fires change tiles, so refresh networks and stats to match what is rendered.
-	_recompute_all()
-	_flush_changes(false)
+	# Growth and fires change tiles, so the second recompute refreshes networks and stats to match
+	# what is rendered.
+	_run_sync(_growth_tasks())
 
 
+## The phases of _growth_tick(), as tasks (shared by the synchronous and the sliced path).
+func _growth_tasks() -> Array[Dictionary]:
+	return [
+		_new_recompute_task(),
+		_task("growth", _task_grow_zones),
+		_task("construction", _task_construction),
+		_task("incidents", _task_update_fires),
+		_task("incidents", _task_random_fires),
+		_task("incidents", _task_incidents),
+		_new_recompute_task(),
+		_task("recompute", _task_flush_tick),
+	]
+
+
+## Refreshes every derived map now (outside a job; a call from inside a job step is queued behind
+## that step). Load and tests use it; mutators use _recompute_deferred().
 func _recompute_all() -> void:
+	if _stepping:
+		_nested.append(_new_recompute_task())
+		return
+	_finish_job_now()
+	_recompute_now()
+
+
+## The recompute a mutator owes: synchronous outside sliced mode, a sub-job behind the current step
+## inside a job, and a queued sliced recompute job for a mutator called from outside a job.
+func _recompute_deferred() -> void:
+	if not sliced or _force_sync > 0:
+		_recompute_now()
+	elif _stepping:
+		_nested.append(_new_recompute_task())
+	else:
+		_finish_job_now()
+		if _job.is_empty():
+			_start_job(_JOB_RECOMPUTE, [_new_recompute_task()])
+		else:
+			# Re-entered from a drain in progress (a spread source's finish): the drain runs it next.
+			_job.push_back(_new_recompute_task())
+
+
+func _recompute_now() -> void:
+	_run_sync([_new_recompute_task()])
+
+
+## Runs tasks to completion on the spot (one chunk covers the whole pass).
+func _run_sync(tasks: Array[Dictionary]) -> void:
+	var saved := _lim
+	_lim = _SYNC_LIM
+	for t in tasks:
+		while not (t["f"] as Callable).call(t):
+			pass
+	_lim = saved
+
+
+# ---------------------------------------------------------------- sliced job
+
+## Starts a sliced tick now if none is in flight and the day gate is open (waiting_for_ai false).
+## Returns true if a job started. _process calls it when _time_accum reaches a tick; tests call it.
+func begin_tick() -> bool:
+	if not sliced or kind.is_empty() or not _job.is_empty() or waiting_for_ai or _stepping or _spread_pending():
+		return false
+	_job_t = tick_in_day
+	_job_from_accum = false
+	_tick_running = true
+	_tick_units = 0
+	var tasks := _growth_tasks()
+	tasks.append(_task("residents", _task_people_tick))
+	tasks.append(_task("residents", _task_tick_done))
+	tasks.append(_task("commit", _task_commit))
+	_start_job(_JOB_TICK, tasks)
+	return true
+
+
+## Advances the in-flight sliced job by up to budget_ms of work. It never starts a new tick (that is
+## begin_tick's job). Returns true if a tick committed during this call. While ResidentMinds spreads
+## a reaction the job raised, the job waits (the reaction comes first, as in the synchronous path).
+func pump(budget_ms: float) -> bool:
+	if _job.is_empty() or _stepping or _pumping or _spread_pending():
+		return false
+	_pumping = true
+	_committed = false
+	_pump_units = 0
+	_excl_us = 0
+	var saved := _lim
+	_lim = UNIT_WORK
+	var t0 := Time.get_ticks_usec()
+	var max_step := 0
+	while not _job.is_empty() and not _spread_pending():
+		var top: Dictionary = _job.back()
+		var phase := "%s:%s" % [top.get("phase", ""), top.get("tag", top.get("s", 0))]
+		if _pump_units > 0:
+			# The frame's wall time counts here (a view rebuild or the brain's day start already in
+			# this pump leaves less room); only the sim's own time is reported. The next step is
+			# predicted from recent steps of its own kind, so a costly kind waits for a fresh frame.
+			var el := float(Time.get_ticks_usec() - t0) / 1000.0
+			var est := maxf(_step_ema_ms, float(_step_cost.get(phase, 0.0)))
+			if el + est > budget_ms or _pump_units > UNITS_PER_PUMP - STEP_MAX_UNITS:
+				break
+		var u0 := _pump_units
+		var s0 := Time.get_ticks_usec()
+		var x0 := _excl_us
+		_pump_units += 1
+		_step_once()
+		var su := _pump_units - u0
+		max_step = maxi(max_step, su)
+		var sms := float(Time.get_ticks_usec() - s0 - (_excl_us - x0)) / 1000.0
+		_step_ema_ms = lerpf(_step_ema_ms, sms / float(su), 0.1)
+		_step_cost[phase] = lerpf(float(_step_cost.get(phase, sms)), sms, 0.3)
+		if sms > float(_ss.get("slowest_step_ms", 0.0)):
+			_ss["slowest_step_ms"] = snappedf(sms, 0.01)
+			_ss["slowest_phase"] = phase
+		if su > int(_ss.get("max_step_units", 0)):
+			_ss["max_step_units"] = su
+			_ss["max_step_phase"] = phase
+		var prof: Array = _ss_steps.get(phase, [0, 0.0, 0, 0.0])
+		_ss_steps[phase] = [int(prof[0]) + 1, maxf(float(prof[1]), sms), maxi(int(prof[2]), su), float(prof[3]) + sms]
+	var ms := float(Time.get_ticks_usec() - t0 - _excl_us) / 1000.0
+	_lim = saved
+	_pumping = false
+	_note_pump(ms, max_step, budget_ms)
+	if _job_kind == _JOB_TICK and not _job.is_empty():
+		tick_progress.emit(str(_job.back().get("phase", "")), minf(0.99, float(_tick_units) / maxf(_tick_units_est, 1.0)))
+	elif _job_kind == _JOB_POST:
+		tick_progress.emit("day_end", 1.0)
+	return _committed
+
+
+## True when listeners may spread work over frames (ResidentMinds' plan batches and reactions, a
+## registered spread source): sliced, and not inside a forced synchronous tick (step_tick, load).
+## The job waits for them.
+func spread_allowed() -> bool:
+	return sliced and _force_sync == 0
+
+
+## True while ResidentMinds or a registered spread source still has work waiting for a frame; the
+## sliced job and begin_tick() wait meanwhile.
+func spread_pending() -> bool:
+	return _spread_pending()
+
+
+## Registers a listener that spreads work it would otherwise do inside a job emission (day_started,
+## event_started) over later frames, e.g. CityBrain's mayors. While gate() returns true the sliced
+## job waits (begin_tick() starts nothing, pump() does nothing), so the work lands at the same point
+## as in the synchronous path, and _finish_job_now() calls finish() to run the rest at once. A
+## day_started listener spreads only when day_start_deferred() is true (the emission comes from the
+## sliced day job, which holds Residents' day work until the gate closes); other emissions only
+## while spread_allowed() is true. Each deferred piece, and each piece finish() runs, goes through
+## run_in_phase(). Registering the same gate again replaces its finish.
+func add_spread_source(gate: Callable, finish: Callable) -> void:
+	remove_spread_source(gate)
+	_spread_sources.append([gate, finish])
+
+
+func remove_spread_source(gate: Callable) -> void:
+	for k in range(_spread_sources.size() - 1, -1, -1):
+		if (_spread_sources[k][0] as Callable) == gate:
+			_spread_sources.remove_at(k)
+
+
+## Runs f as part of the sliced job's current phase: work a spread source deferred from a job
+## emission. Mutators inside f neither finish the job nor recompute on the spot; a recompute they
+## owe runs as a sub-job right after f, before the job resumes. With no job in flight (or inside a
+## step) it just calls f. f must not await: a live call that resumes later comes back through here.
+func run_in_phase(f: Callable) -> void:
+	if _job.is_empty() or _stepping:
+		f.call()
+		return
+	var noted := _step_noted
+	_step_noted = 0
+	_stepping = true
+	_in_job += 1
+	f.call()
+	_in_job -= 1
+	_stepping = false
+	_step_noted = noted
+	for k in range(_nested.size() - 1, -1, -1):
+		_job.push_back(_nested[k])
+	_nested.clear()
+
+
+## True while a sliced tick is between start and commit.
+func is_tick_running() -> bool:
+	return _tick_running
+
+
+## True while any sliced job is in flight: a tick, the day boundary after its commit, or a recompute
+## queued by a mutator.
+func job_pending() -> bool:
+	return not _job.is_empty()
+
+
+## Per-pump timings since the last reset: {"pumps", "ticks", "max_ms", "p95_ms", "over_budget",
+## "max_units" (largest number of work units in one pump, nested sync sections counted),
+## "sync_max_ms" (the longest forced synchronous finish, reported separately)}, plus "brain_ms"
+## (longest day_started emission, the brain's listeners; excluded from max_ms), "view_ms" (longest
+## tiles_changed emission, the view rebuild; excluded), "sync_finishes" (how many forced finishes),
+## "units_limit", "max_step_units", "slowest_step_ms" / "slowest_phase" and "avg_ms".
+func slice_stats() -> Dictionary:
+	var out := _ss.duplicate()
+	for key in ["pumps", "ticks", "over_budget", "max_units", "max_step_units", "sync_finishes"]:
+		out[key] = int(out.get(key, 0))
+	for key in ["max_ms", "sync_max_ms", "brain_ms", "view_ms", "slowest_step_ms"]:
+		out[key] = snappedf(float(out.get(key, 0.0)), 0.01)
+	out["slowest_phase"] = str(out.get("slowest_phase", ""))
+	out["max_step_phase"] = str(out.get("max_step_phase", ""))
+	out["units_limit"] = UNITS_PER_PUMP
+	out["avg_ms"] = snappedf(float(out.get("sum_ms", 0.0)) / float(maxi(int(out["pumps"]), 1)), 0.01)
+	out.erase("sum_ms")
+	var n := mini(int(out["pumps"]), _ss_ms.size())
+	var p95 := 0.0
+	if n > 0:
+		var s := _ss_ms.slice(0, n)
+		s.sort()
+		p95 = s[mini(int(float(n) * 0.95), n - 1)]
+	out["p95_ms"] = snappedf(p95, 0.01)
+	return out
+
+
+## Per step kind ("phase:stage"): [steps, max_ms, max_units, total_ms] since the last reset.
+func slice_profile() -> Dictionary:
+	return _ss_steps.duplicate(true)
+
+
+func reset_slice_stats() -> void:
+	_ss = {}
+	_ss_steps = {}
+	_ss_ms = PackedFloat32Array()
+	_ss_next = 0
+
+
+## Counts n extra work units in the current pump (a road search, a full-map scan inside a step).
+func note_units(n: int) -> void:
+	if _pumping and n > 0:
+		_pump_units += n
+		_step_noted += n
+
+
+## True inside a pumped step that already paid for a heavy item (a road search or a full scan):
+## loops that take several items per unit stop there.
+func step_heavy() -> bool:
+	return _stepping and _step_noted > 0
+
+
+## True inside a job step that queued a nested task: resumable loops stop after the current item so
+## the nested task runs before them.
+func job_yield_requested() -> bool:
+	return _stepping and not _nested.is_empty()
+
+
+func _spread_pending() -> bool:
+	if spread_gate.is_valid() and bool(spread_gate.call()):
+		return true
+	for src: Array in _spread_sources:
+		var gate: Callable = src[0]
+		if gate.is_valid() and bool(gate.call()):
+			return true
+	return false
+
+
+## Calls finish() of the first spread source with work waiting (ResidentMinds first). False when
+## none could run.
+func _finish_spread() -> bool:
+	if spread_gate.is_valid() and spread_finish.is_valid() and bool(spread_gate.call()):
+		spread_finish.call()
+		return true
+	for src: Array in _spread_sources:
+		var gate: Callable = src[0]
+		var finish: Callable = src[1]
+		if gate.is_valid() and finish.is_valid() and bool(gate.call()):
+			finish.call()
+			return true
+	return false
+
+
+func _task(phase: String, f: Callable) -> Dictionary:
+	return {"f": f, "phase": phase, "k": 0, "s": 0}
+
+
+func _tagged(phase: String, tag: String, f: Callable) -> Dictionary:
+	var t := _task(phase, f)
+	t["tag"] = tag
+	return t
+
+
+func _start_job(kind_id: int, tasks: Array[Dictionary]) -> void:
+	_job_kind = kind_id
+	_job_started = false
+	for k in range(tasks.size() - 1, -1, -1):
+		_job.push_back(tasks[k])
+
+
+func _step_once() -> void:
+	var task: Dictionary = _job.back()
+	_job_started = true
+	_step_noted = 0
+	_stepping = true
+	_in_job += 1
+	var done: bool = (task["f"] as Callable).call(task)
+	_in_job -= 1
+	_stepping = false
+	if _job_kind == _JOB_TICK:
+		_tick_units += 1
+	if done and not _job.is_empty() and is_same(_job.back(), task):
+		_job.pop_back()
+	for k in range(_nested.size() - 1, -1, -1):
+		_job.push_back(_nested[k])
+	_nested.clear()
+	if _job.is_empty():
+		_job_kind = _JOB_NONE
+		_tick_running = false
+
+
+## Completes the job in flight (and the spread work it waits for: ResidentMinds' plan batches, other
+## spread sources) synchronously. Used by external mutators, to_dict(), skip_to_next_day() and the
+## sliced setter; never from inside a step.
+func _finish_job_now() -> void:
+	if _stepping or _pumping or _finishing:
+		return
+	if _job.is_empty() and not _spread_pending():
+		return
+	_finishing = true
+	var t0 := Time.get_ticks_usec()
+	var saved := _lim
+	_lim = _SYNC_LIM
+	# A finish() that leaves its gate open is not called forever: the job steps on after a few tries.
+	var tries := 0
+	while true:
+		if tries < 8 and _finish_spread():
+			tries += 1
+		elif not _job.is_empty():
+			tries = 0
+			_step_once()
+		else:
+			break
+	_lim = saved
+	_finishing = false
+	var ms := float(Time.get_ticks_usec() - t0) / 1000.0
+	_ss["sync_max_ms"] = maxf(float(_ss.get("sync_max_ms", 0.0)), ms)
+	_ss["sync_finishes"] = int(_ss.get("sync_finishes", 0)) + 1
+
+
+## Drops the job in flight without finishing it (new_city / from_dict replace the whole city).
+func _abort_job() -> void:
+	_job.clear()
+	_nested.clear()
+	_job_kind = _JOB_NONE
+	_tick_running = false
+	_job_started = false
+	_job_from_accum = false
 	if people != null:
-		people.rebuild_maps()
-	_compute_road_dist()
-	_compute_utilities()
-	_compute_coverage()
-	_compute_traffic()
-	_compute_pollution()
-	_compute_crime_land_happiness()
-	_compute_demand()
-	_compute_stats()
+		people.abort_jobs()
+
+
+## Mutators called from outside the job finish it first, so they see the whole tick or none of it.
+func _external_entry() -> void:
+	if not _stepping and _in_job == 0:
+		_finish_job_now()
+
+
+func _note_pump(ms: float, max_step: int, budget_ms: float) -> void:
+	_ss["pumps"] = int(_ss.get("pumps", 0)) + 1
+	_ss["sum_ms"] = float(_ss.get("sum_ms", 0.0)) + ms
+	_ss["max_ms"] = maxf(float(_ss.get("max_ms", 0.0)), ms)
+	_ss["max_units"] = maxi(int(_ss.get("max_units", 0)), _pump_units)
+	_ss["max_step_units"] = maxi(int(_ss.get("max_step_units", 0)), max_step)
+	if ms > budget_ms:
+		_ss["over_budget"] = int(_ss.get("over_budget", 0)) + 1
+	if _ss_ms.size() < 4096:
+		_ss_ms.append(ms)
+	else:
+		_ss_ms[_ss_next] = ms
+		_ss_next = (_ss_next + 1) % 4096
+
+
+## Time spent inside a listener emission that belongs to another owner (the brain's day start, the
+## view's rebuild): excluded from the pump's own time and reported under key. A view rebuild inside
+## the brain's emission is reported under both keys but excluded once.
+func _note_excluded(us: int, key: String) -> void:
+	if not _pumping:
+		return
+	if _excl_depth == 0:
+		_excl_us += us
+	_ss[key] = maxf(float(_ss.get(key, 0.0)), float(us) / 1000.0)
+	_ss[key + "_total"] = float(_ss.get(key + "_total", 0.0)) + float(us) / 1000.0
+
+
+func _task_flush_tick(_t: Dictionary) -> bool:
+	_flush_changes(false)
+	return true
+
+
+func _task_random_fires(_t: Dictionary) -> bool:
+	_random_fires()
+	return true
+
+
+func _task_people_tick(t: Dictionary) -> bool:
+	if people == null:
+		return true
+	if int(t["s"]) == 0:
+		t["s"] = 1
+		people.begin_tick(_job_t)
+	return people.pump_tick(0.0)
+
+
+func _task_tick_done(_t: Dictionary) -> bool:
+	tick_done.emit(_job_t)
+	return true
+
+
+func _task_commit(_t: Dictionary) -> bool:
+	tick_in_day += 1
+	if _job_from_accum:
+		_time_accum -= tick_seconds()
+	_job_from_accum = false
+	_tick_running = false
+	_committed = true
+	_ss["ticks"] = int(_ss.get("ticks", 0)) + 1
+	_tick_units_est = lerpf(_tick_units_est, float(_tick_units), 0.5)
+	tick_progress.emit("commit", 1.0)
+	if tick_in_day >= D.GROWTH_TICKS_PER_DAY:
+		tick_in_day = 0
+		_job_kind = _JOB_POST
+		_nested.append(_tagged("day_end", "budget", _task_budget))
+		_nested.append(_tagged("day_end", "end_day", _task_end_day))
+	return true
+
+
+func _task_end_day(_t: Dictionary) -> bool:
+	if _end_day_rest():
+		_nested.append(_tagged("day_end", "day_start", _task_day_start))
+	return true
+
+
+func _task_day_start(_t: Dictionary) -> bool:
+	_defer_day = true
+	var t0 := Time.get_ticks_usec()
+	_excl_depth += 1
+	day_started.emit(day)
+	_excl_depth -= 1
+	_defer_day = false
+	_note_excluded(Time.get_ticks_usec() - t0, "brain_ms")
+	if people != null:
+		people.begin_day(day)
+		_nested.append(_tagged("day_end", "people_day", _task_people_day))
+	return true
+
+
+func _task_people_day(_t: Dictionary) -> bool:
+	return people == null or people.pump_day(0.0)
 
 
 func _conductive(i: int) -> bool:
@@ -569,18 +1162,158 @@ func _blackout_zone(x: int, y: int) -> bool:
 	return false
 
 
-func _bfs_network(sources: Array[int]) -> Array[int]:
-	var order: Array[int] = []
-	var seen := {}
-	var queue: Array[int] = []
-	for s in sources:
-		seen[s] = true
-		queue.append(s)
-	var head := 0
-	while head < queue.size():
+# ---------------------------------------------------------------- derived maps
+#
+# _recompute_all() is one task of 20 stages in a fixed order (residents' maps, road distance,
+# utilities, coverage, traffic, pollution, crime / land value / happiness, demand, stats). Each
+# stage walks its tiles (or a work queue) from a cursor, at most _lim work per call: the synchronous
+# path passes an unlimited chunk, the sliced path one unit. Every pass fills fresh arrays and
+# swaps them in when it ends, so a reader sees the old or the new map, never a partial one.
+
+func _new_recompute_task() -> Dictionary:
+	return {"f": _task_recompute, "phase": "recompute", "s": 0, "k": 0}
+
+
+func _task_recompute(rc: Dictionary) -> bool:
+	var s := int(rc["s"])
+	var done := false
+	match s:
+		0:
+			done = people == null or people.maps_step(rc, _lim)
+		1:
+			done = _rc_road_seed(rc)
+		2:
+			done = _rc_road_bfs(rc)
+		3:
+			done = _rc_power_scan(rc)
+		4:
+			done = _rc_network(rc, "pq", "pseen")
+		5:
+			done = _rc_power_consumers(rc)
+		6:
+			done = _rc_power_sort(rc)
+		7:
+			done = _rc_power_assign(rc)
+		8:
+			done = _rc_water_scan(rc)
+		9:
+			done = _rc_network(rc, "wq", "wseen")
+		10:
+			done = _rc_water_assign(rc)
+		11:
+			done = _rc_coverage(rc)
+		12:
+			done = _rc_traffic(rc)
+		13:
+			done = _rc_poll_scan(rc)
+		14:
+			done = _rc_poll_splat(rc)
+		15:
+			done = _rc_poll_final(rc)
+		16:
+			done = _rc_clh(rc)
+		17:
+			done = _rc_demand_scan(rc)
+		18:
+			done = _rc_demand_bonus(rc)
+		19:
+			done = _rc_stats(rc)
+	if done:
+		rc["s"] = s + 1
+		rc["k"] = 0
+	return done and s == 19
+
+
+## Runs recompute stages a..b on the spot (profile_sim.gd times the passes through the wrappers).
+func _run_stages(a: int, b: int) -> void:
+	var saved := _lim
+	_lim = _SYNC_LIM
+	var rc := _new_recompute_task()
+	rc["s"] = a
+	while int(rc["s"]) <= b:
+		_task_recompute(rc)
+	_lim = saved
+
+
+func _compute_road_dist() -> void:
+	_run_stages(1, 2)
+
+
+func _compute_utilities() -> void:
+	_run_stages(3, 10)
+
+
+func _compute_coverage() -> void:
+	_run_stages(11, 11)
+
+
+func _compute_traffic() -> void:
+	_run_stages(12, 12)
+
+
+func _compute_pollution() -> void:
+	_run_stages(13, 15)
+
+
+func _compute_crime_land_happiness() -> void:
+	_run_stages(16, 16)
+
+
+func _compute_demand() -> void:
+	_run_stages(17, 18)
+
+
+func _compute_stats() -> void:
+	_run_stages(19, 19)
+
+
+## The [from, to) slice of the stage's tile list this call covers, at most `per` work each.
+func _rc_range(rc: Dictionary, total: int, per: int) -> Vector2i:
+	var k := int(rc["k"])
+	var end := total if _lim >= _SYNC_LIM else mini(total, k + maxi(1, _lim / per))
+	rc["k"] = end
+	return Vector2i(k, end)
+
+
+func _rc_act(rc: Dictionary) -> PackedInt32Array:
+	if not rc.has("act"):
+		rc["act"] = active
+	return rc["act"]
+
+
+func _rc_road_seed(rc: Dictionary) -> bool:
+	var act := _rc_act(rc)
+	if not rc.has("rd"):
+		var fresh := _ints(D.W * D.H)
+		fresh.fill(99)
+		rc["rd"] = fresh
+		rc["rq"] = PackedInt32Array()
+	var rd: PackedInt32Array = rc["rd"]
+	var queue: PackedInt32Array = rc["rq"]
+	var r := _rc_range(rc, act.size(), 1)
+	for k in range(r.x, r.y):
+		var i := act[k]
+		if kind[i] == D.ROAD:
+			rd[i] = 0
+			queue.append(i)
+	if r.y < act.size():
+		return false
+	rc["head"] = 0
+	return true
+
+
+func _rc_road_bfs(rc: Dictionary) -> bool:
+	var rd: PackedInt32Array = rc["rd"]
+	var queue: PackedInt32Array = rc["rq"]
+	var head := int(rc["head"])
+	var work := _lim
+	while head < queue.size() and work > 0:
 		var cur: int = queue[head]
 		head += 1
-		order.append(cur)
+		work -= 8
+		var d0 := rd[cur]
+		if d0 >= 4:
+			continue
 		var cx := D.tx(cur)
 		var cy := D.ty(cur)
 		for dv: Vector2i in N4:
@@ -589,23 +1322,33 @@ func _bfs_network(sources: Array[int]) -> Array[int]:
 			if not D.in_bounds(nx, ny):
 				continue
 			var ni := D.idx(nx, ny)
-			if seen.has(ni) or not _conductive(ni):
-				continue
-			seen[ni] = true
-			queue.append(ni)
-	return order
+			if rd[ni] > d0 + 1:
+				rd[ni] = d0 + 1
+				queue.append(ni)
+	rc["head"] = head
+	if head < queue.size():
+		return false
+	road_dist = rd
+	return true
 
 
-func _compute_utilities() -> void:
-	var n := D.W * D.H
-	powered.fill(0)
-	watered.fill(0)
-	var p_sources: Array[int] = []
-	var cap := 0.0
+func _rc_power_scan(rc: Dictionary) -> bool:
+	var act := _rc_act(rc)
+	if not rc.has("pw"):
+		rc["pw"] = _bytes(D.W * D.H)
+		rc["wt"] = _bytes(D.W * D.H)
+		rc["psrc"] = PackedInt32Array()
+		rc["cap"] = 0.0
+		rc["tneed"] = 0.0
+	var src: PackedInt32Array = rc["psrc"]
+	var cap: float = rc["cap"]
+	var total_need: float = rc["tneed"]
 	var solar_mult := 1.5 if ordinances.has("green_energy_subsidy") else 1.0
-	for i in active:
+	var r := _rc_range(rc, act.size(), 9)
+	for k in range(r.x, r.y):
+		var i := act[k]
 		if D.is_power_plant(kind[i]) and _operational(i):
-			p_sources.append(i)
+			src.append(i)
 			if kind[i] == D.COAL:
 				cap += float(D.BUILDINGS["coal_plant"]["power"])
 			elif kind[i] == D.WIND:
@@ -614,80 +1357,631 @@ func _compute_utilities() -> void:
 				cap += float(D.BUILDINGS["wind_farm"]["power"]) * solar_mult * gust
 			else:
 				cap += float(D.BUILDINGS["solar_farm"]["power"]) * solar_mult
-	var connected := _bfs_network(p_sources)
-	var total_need := 0.0
-	for i in active:
 		total_need += power_need(i)
-	var connected_need := 0.0
-	var consumers: Array[int] = []
-	for i in connected:
+	rc["cap"] = cap
+	rc["tneed"] = total_need
+	if r.y < act.size():
+		return false
+	_rc_network_begin(rc, src, "pq", "pseen")
+	return true
+
+
+func _rc_network_begin(rc: Dictionary, sources: PackedInt32Array, qkey: String, seenkey: String) -> void:
+	var seen := _bytes(D.W * D.H)
+	var queue := PackedInt32Array()
+	for s in sources:
+		seen[s] = 1
+		queue.append(s)
+	rc[qkey] = queue
+	rc[seenkey] = seen
+	rc["head"] = 0
+
+
+## Breadth-first walk over conductive tiles from the sources (was _bfs_network); the queue, in
+## order, is the connected set.
+func _rc_network(rc: Dictionary, qkey: String, seenkey: String) -> bool:
+	var queue: PackedInt32Array = rc[qkey]
+	var seen: PackedByteArray = rc[seenkey]
+	var head := int(rc["head"])
+	var work := _lim
+	while head < queue.size() and work > 0:
+		var cur: int = queue[head]
+		head += 1
+		work -= 12
+		var cx := D.tx(cur)
+		var cy := D.ty(cur)
+		for dv: Vector2i in N4:
+			var nx := cx + dv.x
+			var ny := cy + dv.y
+			if not D.in_bounds(nx, ny):
+				continue
+			var ni := D.idx(nx, ny)
+			if seen[ni] == 1 or not _conductive(ni):
+				continue
+			seen[ni] = 1
+			queue.append(ni)
+	rc["head"] = head
+	return head >= queue.size()
+
+
+func _rc_power_consumers(rc: Dictionary) -> bool:
+	var connected: PackedInt32Array = rc["pq"]
+	if not rc.has("cons"):
+		var empty: Array[int] = []
+		rc["cons"] = empty
+		rc["cneed"] = 0.0
+	var pw: PackedByteArray = rc["pw"]
+	var consumers: Array[int] = rc["cons"]
+	var connected_need: float = rc["cneed"]
+	var r := _rc_range(rc, connected.size(), 4)
+	for k in range(r.x, r.y):
+		var i := connected[k]
 		var pn := power_need(i)
 		if pn > 0.0:
 			consumers.append(i)
 			connected_need += pn
 		else:
-			powered[i] = 1
-	if connected_need > cap:
+			pw[i] = 1
+	rc["cneed"] = connected_need
+	return r.y >= connected.size()
+
+
+func _rc_power_sort(rc: Dictionary) -> bool:
+	if float(rc["cneed"]) > float(rc["cap"]):
 		# Load shedding: Grid Operator priority order decides which districts keep power.
+		var consumers: Array[int] = rc["cons"]
 		var rank := {}
 		for r in range(grid_priority.size()):
 			rank[int(grid_priority[r])] = r
 		consumers.sort_custom(func(a: int, b: int) -> bool:
 			return int(rank.get(district[a], 9)) < int(rank.get(district[b], 9))
 		)
-	var used := 0.0
-	for i in consumers:
+		note_units(consumers.size() / 256)
+	rc["used"] = 0.0
+	return true
+
+
+func _rc_power_assign(rc: Dictionary) -> bool:
+	var consumers: Array[int] = rc["cons"]
+	var pw: PackedByteArray = rc["pw"]
+	var cap: float = rc["cap"]
+	var used: float = rc["used"]
+	var r := _rc_range(rc, consumers.size(), 4)
+	for k in range(r.x, r.y):
+		var i: int = consumers[k]
 		var pn2 := power_need(i)
 		if used + pn2 <= cap and not _blackout_zone(D.tx(i), D.ty(i)):
 			used += pn2
-			powered[i] = 1
-	stats["power_cap"] = cap
-	stats["power_need"] = total_need
-	stats["power_used"] = used
+			pw[i] = 1
+	rc["used"] = used
+	return r.y >= consumers.size()
 
-	var w_sources: Array[int] = []
-	var wcap := 0.0
-	for i in active:
-		if kind[i] == D.PUMP and _operational(i) and powered[i] == 1:
-			w_sources.append(i)
+
+## Water sources and needs, sewage and waste capacity (they all read the new power map).
+func _rc_water_scan(rc: Dictionary) -> bool:
+	var act := _rc_act(rc)
+	if not rc.has("wsrc"):
+		rc["wsrc"] = PackedInt32Array()
+		rc["wcap"] = 0.0
+		rc["wneed"] = 0.0
+		rc["scap"] = 0.0
+		rc["sneed"] = 0.0
+		rc["xcap"] = 0.0
+		rc["xneed"] = 0.0
+	var pw: PackedByteArray = rc["pw"]
+	var src: PackedInt32Array = rc["wsrc"]
+	var wcap: float = rc["wcap"]
+	var wneed_total: float = rc["wneed"]
+	var scap: float = rc["scap"]
+	var sneed: float = rc["sneed"]
+	var wcap2: float = rc["xcap"]
+	var wneed2: float = rc["xneed"]
+	var r := _rc_range(rc, act.size(), 11)
+	for k in range(r.x, r.y):
+		var i := act[k]
+		if kind[i] == D.PUMP and _operational(i) and pw[i] == 1:
+			src.append(i)
 			var bonus := 1.5 if _near_water(D.tx(i), D.ty(i), 2) else 1.0
 			wcap += float(D.BUILDINGS["water_pump"]["water"]) * bonus
-	var w_conn := _bfs_network(w_sources)
-	var wneed_total := 0.0
-	for i in active:
 		wneed_total += water_need(i)
-	var wused := 0.0
-	for i in w_conn:
-		var wn := water_need(i)
-		if wn <= 0.0:
-			watered[i] = 1
-		elif wused + wn <= wcap:
-			wused += wn
-			watered[i] = 1
-	stats["water_cap"] = wcap
-	stats["water_need"] = wneed_total
-	stats["water_used"] = wused
-
-	var scap := 0.0
-	var sneed := 0.0
-	for i in active:
-		if kind[i] == D.SEWAGE and _operational(i) and powered[i] == 1:
+		if kind[i] == D.SEWAGE and _operational(i) and pw[i] == 1:
 			scap += float(D.BUILDINGS["sewage_plant"]["sewage"])
 		sneed += sewage_need(i)
-	stats["sewage_cap"] = scap
-	stats["sewage_need"] = sneed
-	stats["sewage_ratio"] = 1.0 if sneed <= 0.01 else clampf(scap / sneed, 0.0, 1.0)
-
-	var wcap2 := 0.0
-	var wneed2 := 0.0
-	for i in active:
 		if kind[i] == D.LANDFILL and _operational(i):
 			wcap2 += float(D.BUILDINGS["landfill"]["waste"]) * (1.25 if ordinances.has("recycling") else 1.0)
 		wneed2 += waste_need(i)
+	rc["wcap"] = wcap
+	rc["wneed"] = wneed_total
+	rc["scap"] = scap
+	rc["sneed"] = sneed
+	rc["xcap"] = wcap2
+	rc["xneed"] = wneed2
+	if r.y < act.size():
+		return false
+	_rc_network_begin(rc, src, "wq", "wseen")
+	rc["wused"] = 0.0
+	return true
+
+
+func _rc_water_assign(rc: Dictionary) -> bool:
+	var w_conn: PackedInt32Array = rc["wq"]
+	var wt: PackedByteArray = rc["wt"]
+	var wcap: float = rc["wcap"]
+	var wused: float = rc["wused"]
+	var r := _rc_range(rc, w_conn.size(), 3)
+	for k in range(r.x, r.y):
+		var i := w_conn[k]
+		var wn := water_need(i)
+		if wn <= 0.0:
+			wt[i] = 1
+		elif wused + wn <= wcap:
+			wused += wn
+			wt[i] = 1
+	rc["wused"] = wused
+	if r.y < w_conn.size():
+		return false
+	stats["power_cap"] = float(rc["cap"])
+	stats["power_need"] = float(rc["tneed"])
+	stats["power_used"] = float(rc["used"])
+	stats["water_cap"] = wcap
+	stats["water_need"] = float(rc["wneed"])
+	stats["water_used"] = wused
+	var scap: float = rc["scap"]
+	var sneed: float = rc["sneed"]
+	stats["sewage_cap"] = scap
+	stats["sewage_need"] = sneed
+	stats["sewage_ratio"] = 1.0 if sneed <= 0.01 else clampf(scap / sneed, 0.0, 1.0)
+	var wcap2: float = rc["xcap"]
+	var wneed2: float = rc["xneed"]
 	stats["waste_cap"] = wcap2
 	stats["waste_need"] = wneed2
 	# A small town copes without a landfill; shortages only bite once there is real trash.
 	stats["waste_ratio"] = 1.0 if wneed2 <= 25.0 else clampf(wcap2 / wneed2, 0.0, 1.0)
+	powered = rc["pw"]
+	watered = wt
+	return true
+
+
+func _rc_coverage(rc: Dictionary) -> bool:
+	var act := _rc_act(rc)
+	var n := D.W * D.H
+	if not rc.has("cov"):
+		# One flat buffer (7 layers), sliced into the seven maps when the pass ends.
+		rc["cov"] = _floats(n * 7)
+	var buf: PackedFloat32Array = rc["cov"]
+	var k := int(rc["k"])
+	var work := _lim
+	while k < act.size() and work > 0:
+		var i := act[k]
+		k += 1
+		work -= 3
+		var kd := kind[i]
+		var layer := 0
+		var radius := 0
+		match kd:
+			D.POLICE:
+				layer = 0
+				radius = 7
+			D.FIRE:
+				layer = 1
+				radius = 7
+			D.HOSPITAL:
+				layer = 2
+				radius = 8
+			D.SCHOOL:
+				layer = 3
+				radius = 8
+			D.PARK:
+				layer = 4
+				radius = 3
+			D.UNIVERSITY:
+				layer = 3
+				radius = 11
+			D.STADIUM:
+				layer = 5
+				radius = 10
+			D.TRAIN:
+				layer = 6
+				radius = 8
+			_:
+				continue
+		work -= 3 * (2 * radius + 1) * (2 * radius + 1)
+		var effective := 1.0
+		if kd != D.PARK and (powered[i] == 0 or not _operational(i)):
+			effective = 0.35
+		var cx := D.tx(i)
+		var cy := D.ty(i)
+		for dy in range(-radius, radius + 1):
+			for dx in range(-radius, radius + 1):
+				var nx := cx + dx
+				var ny := cy + dy
+				if not D.in_bounds(nx, ny):
+					continue
+				var dist := sqrt(float(dx * dx + dy * dy))
+				if dist > float(radius):
+					continue
+				var v := (1.0 - dist / float(radius + 1)) * effective
+				var bi := layer * n + D.idx(nx, ny)
+				if v > buf[bi]:
+					buf[bi] = v
+	rc["k"] = k
+	if k < act.size():
+		return false
+	cov_police = buf.slice(0, n)
+	cov_fire = buf.slice(n, n * 2)
+	cov_health = buf.slice(n * 2, n * 3)
+	cov_school = buf.slice(n * 3, n * 4)
+	cov_park = buf.slice(n * 4, n * 5)
+	cov_leisure = buf.slice(n * 5, n * 6)
+	cov_transit = buf.slice(n * 6, n * 7)
+	return true
+
+
+func _rc_traffic(rc: Dictionary) -> bool:
+	var act := _rc_act(rc)
+	if not rc.has("tr"):
+		rc["tr"] = _floats(D.W * D.H)
+		rc["wb"] = work_based()
+	var tr: PackedFloat32Array = rc["tr"]
+	var mult := 0.7 if ordinances.has("public_transit") else 1.0
+	var k := int(rc["k"])
+	var work := _lim
+	if bool(rc["wb"]):
+		# Traffic is the residents' actual chosen trips, each standing in for its share of people.
+		var trips: PackedFloat32Array = people.trip_load
+		while k < act.size() and work > 0:
+			var i := act[k]
+			k += 1
+			work -= 1
+			if kind[i] != D.ROAD:
+				continue
+			work -= 2 + 2 * events.size()
+			var t := trips[i] / 160.0 * mult
+			t += _event_strength("gridlock", D.tx(i), D.ty(i)) * 0.75 + _event_strength("car_crash", D.tx(i), D.ty(i)) * 0.6
+			tr[i] = clampf(t, 0.0, 1.0)
+	else:
+		while k < act.size() and work > 0:
+			var i := act[k]
+			k += 1
+			work -= 1
+			if kind[i] != D.ROAD:
+				continue
+			work -= 196
+			var cx := D.tx(i)
+			var cy := D.ty(i)
+			var load := 0.0
+			var roads := 0
+			for dy in range(-3, 4):
+				for dx in range(-3, 4):
+					var nx := cx + dx
+					var ny := cy + dy
+					if not D.in_bounds(nx, ny):
+						continue
+					var ni := D.idx(nx, ny)
+					if kind[ni] == D.ROAD:
+						roads += 1
+					else:
+						load += float(tile_pop(ni) + tile_jobs(ni))
+			var t := load / maxf(1.0, float(roads) * 38.0) * mult * (1.0 - cov_transit[i] * 0.4)
+			t += _event_strength("gridlock", cx, cy) * 0.75
+			tr[i] = clampf(t, 0.0, 1.0)
+	rc["k"] = k
+	if k < act.size():
+		return false
+	traffic = tr
+	return true
+
+
+func _rc_poll_scan(rc: Dictionary) -> bool:
+	var act := _rc_act(rc)
+	if not rc.has("raw"):
+		rc["raw"] = _floats(D.W * D.H)
+		rc["psrc2"] = PackedInt32Array()
+	var raw: PackedFloat32Array = rc["raw"]
+	var sources: PackedInt32Array = rc["psrc2"]
+	var ind_mult := 0.6 if ordinances.has("clean_air_act") else 1.0
+	var r := _rc_range(rc, act.size(), 4)
+	for k in range(r.x, r.y):
+		var i := act[k]
+		var v := 0.0
+		match kind[i]:
+			D.ZONE_I:
+				v = float(level[i]) * 0.24 * ind_mult
+			D.COAL:
+				v = 1.0 if _operational(i) else 0.2
+			D.LANDFILL:
+				v = 0.45
+			D.AIRPORT:
+				v = 0.5 if _operational(i) else 0.1
+			D.ROAD:
+				v = traffic[i] * 0.22
+		if burning[i] > 0:
+			v += 0.7
+		if v > 0.01:
+			raw[i] = v
+			sources.append(i)
+	if r.y < act.size():
+		return false
+	rc["po"] = _floats(D.W * D.H)
+	return true
+
+
+func _rc_poll_splat(rc: Dictionary) -> bool:
+	var raw: PackedFloat32Array = rc["raw"]
+	var sources: PackedInt32Array = rc["psrc2"]
+	var po: PackedFloat32Array = rc["po"]
+	var r := _rc_range(rc, sources.size(), 240)
+	for k in range(r.x, r.y):
+		var s := sources[k]
+		var sx := D.tx(s)
+		var sy := D.ty(s)
+		for dy in range(-4, 5):
+			for dx in range(-4, 5):
+				var nx := sx + dx
+				var ny := sy + dy
+				if not D.in_bounds(nx, ny):
+					continue
+				var dist := sqrt(float(dx * dx + dy * dy))
+				if dist > 4.5:
+					continue
+				var ni := D.idx(nx, ny)
+				po[ni] += raw[s] * (1.0 - dist / 5.0) * 0.32
+	return r.y >= sources.size()
+
+
+func _rc_poll_final(rc: Dictionary) -> bool:
+	var act := _rc_act(rc)
+	var po: PackedFloat32Array = rc["po"]
+	var rec := 0.85 if ordinances.has("recycling") else 1.0
+	var sewage_short := 1.0 - float(stats.get("sewage_ratio", 1.0))
+	var waste_short := 1.0 - float(stats.get("waste_ratio", 1.0))
+	var r := _rc_range(rc, act.size(), 4 + 4 * events.size())
+	for k in range(r.x, r.y):
+		var i := act[k]
+		var x := D.tx(i)
+		var y := D.ty(i)
+		var p := po[i] * rec - cov_park[i] * 0.25
+		p += _event_strength("smog", x, y) * 0.55 + _event_strength("sewage_burst", x, y) * 0.35
+		if level[i] > 0 and D.is_zone(kind[i]):
+			p += sewage_short * 0.18 + waste_short * 0.14
+		po[i] = clampf(p, 0.0, 1.0)
+	if r.y < act.size():
+		return false
+	pollution = po
+	return true
+
+
+## Crime, land value and happiness. Land value reads last pass's crime (still the live map) and the
+## crime and happiness of a tile read its new land value, exactly as the in-place loop did.
+func _rc_clh(rc: Dictionary) -> bool:
+	var act := _rc_act(rc)
+	if not rc.has("lv"):
+		rc["lv"] = land_value.duplicate()
+		rc["cr"] = crime.duplicate()
+		rc["hp"] = happiness.duplicate()
+	var lvm: PackedFloat32Array = rc["lv"]
+	var crm: PackedFloat32Array = rc["cr"]
+	var hpm: PackedFloat32Array = rc["hp"]
+	var crime_mult := 1.0
+	if ordinances.has("neighborhood_watch"):
+		crime_mult *= 0.8
+	if ordinances.has("curfew"):
+		crime_mult *= 0.7
+	var sewage_short := 1.0 - float(stats.get("sewage_ratio", 1.0))
+	var waste_short := 1.0 - float(stats.get("waste_ratio", 1.0))
+	var r := _rc_range(rc, act.size(), 12)
+	for k in range(r.x, r.y):
+		var i := act[k]
+		var x := D.tx(i)
+		var y := D.ty(i)
+		var kd := kind[i]
+		var lv := 0.35 + cov_park[i] * 0.3 + cov_school[i] * 0.15 + cov_health[i] * 0.1
+		lv += cov_transit[i] * 0.1 + cov_leisure[i] * 0.08
+		if _near_water(x, y, 2):
+			lv += 0.12
+		lv -= pollution[i] * 0.45 + crime[i] * 0.25
+		lvm[i] = clampf(lv, 0.0, 1.0)
+		var c := 0.0
+		if D.is_zone(kd) and level[i] > 0:
+			c = 0.08 * float(level[i]) + (0.15 if powered[i] == 0 else 0.0) + (0.1 if lvm[i] < 0.3 else 0.0)
+			c = maxf(0.0, c - cov_police[i] * 0.7) * crime_mult
+		crm[i] = clampf(c, 0.0, 1.0)
+		var h := 0.0
+		if kd == D.ZONE_R and level[i] > 0 and work_based():
+			# Each resident judges their own life; nearby residents speak for homes without one.
+			h = people.mood_map[i]
+		elif kd == D.ZONE_R and level[i] > 0:
+			var m: Dictionary = mayors[district[i]]
+			h = 0.58 + lvm[i] * 0.25 - pollution[i] * 0.35 - crm[i] * 0.25
+			h -= 0.3 if powered[i] == 0 else 0.0
+			h -= 0.2 if watered[i] == 0 else 0.0
+			h -= commute(x, y) * 0.15
+			h += cov_health[i] * 0.08 + cov_school[i] * 0.05
+			h -= float(int(m["tax_r"]) - 7) * 0.02
+			h -= sewage_short * 0.25 + waste_short * 0.15
+			h += cov_leisure[i] * 0.08
+			h -= _event_strength("sewage_burst", x, y) * 0.2 + _event_strength("smog", x, y) * 0.15
+			if ordinances.has("free_clinics"):
+				h += 0.05
+			if ordinances.has("curfew"):
+				h -= 0.05
+		hpm[i] = clampf(h, 0.0, 1.0)
+	if r.y < act.size():
+		return false
+	land_value = lvm
+	crime = crm
+	happiness = hpm
+	return true
+
+
+func _rc_demand_scan(rc: Dictionary) -> bool:
+	var act := _rc_act(rc)
+	if not rc.has("pop"):
+		rc["pop"] = 0
+		rc["jc"] = 0
+		rc["ji"] = 0
+		rc["js"] = 0
+	var pop: int = rc["pop"]
+	var jobs_c: int = rc["jc"]
+	var jobs_i: int = rc["ji"]
+	var jobs_s: int = rc["js"]
+	var r := _rc_range(rc, act.size(), 6)
+	for k in range(r.x, r.y):
+		var i := act[k]
+		pop += tile_pop(i)
+		if kind[i] == D.ZONE_C:
+			jobs_c += tile_jobs(i)
+		elif kind[i] == D.ZONE_I:
+			jobs_i += tile_jobs(i)
+		else:
+			jobs_s += tile_jobs(i)
+	rc["pop"] = pop
+	rc["jc"] = jobs_c
+	rc["ji"] = jobs_i
+	rc["js"] = jobs_s
+	if r.y < act.size():
+		return false
+	var workers := float(pop) * 0.55
+	var jobs := float(jobs_c + jobs_i + jobs_s)
+	var rr := ((jobs + 70.0) - workers) / maxf(70.0, workers * 0.5)
+	var c_want := float(pop) * 0.22 + 20.0
+	var c := (c_want - float(jobs_c)) / maxf(30.0, c_want)
+	var i_want := float(pop) * 0.28 + 40.0
+	var ii := (i_want - float(jobs_i)) / maxf(40.0, i_want)
+	var hap := float(stats.get("happiness", 0.6))
+	if work_based():
+		# Residents' word of mouth and decisions to leave set housing demand; shop demand follows
+		# what they actually spent; industry slows when workers do not show up.
+		var s: Dictionary = people.sentiment
+		rr = rr * 0.5 + (float(s["recommend"]) - 5.0) / 5.0 * 0.6 - float(s["leaving"]) * 1.5
+		var spend := float(s["spend_local"])
+		c = (spend - float(jobs_c) * 9.0) / maxf(90.0, float(jobs_c) * 9.0) + 0.15
+		ii -= (1.0 - float(s["attendance"])) * 0.5
+	else:
+		rr += (hap - 0.5) * 0.4
+	rc["dr"] = rr
+	rc["dc"] = c
+	rc["di"] = ii
+	return true
+
+
+func _rc_demand_bonus(rc: Dictionary) -> bool:
+	var act := _rc_act(rc)
+	var rr: float = rc["dr"]
+	var c: float = rc["dc"]
+	var ii: float = rc["di"]
+	var r := _rc_range(rc, act.size(), 2)
+	for k in range(r.x, r.y):
+		var i := act[k]
+		if not _operational(i) or powered[i] == 0:
+			continue
+		match kind[i]:
+			D.AIRPORT:
+				c += 0.15
+				ii += 0.15
+			D.STADIUM:
+				c += 0.06
+			D.UNIVERSITY:
+				rr += 0.05
+				c += 0.05
+	rc["dr"] = rr
+	rc["dc"] = c
+	rc["di"] = ii
+	if r.y < act.size():
+		return false
+	if ordinances.has("tourism_campaign"):
+		c += 0.15
+	if ordinances.has("trade_expo"):
+		ii += 0.2
+	if ordinances.has("clean_air_act"):
+		ii -= 0.1
+	demand["r"] = clampf(rr, -1.0, 1.0)
+	demand["c"] = clampf(c, -1.0, 1.0)
+	demand["i"] = clampf(ii, -1.0, 1.0)
+	return true
+
+
+## City and per-mayor totals; mayors and stats are written once, when the pass ends.
+func _rc_stats(rc: Dictionary) -> bool:
+	var act := _rc_act(rc)
+	if not rc.has("st"):
+		var mp: Array = []
+		var mj: Array = []
+		var mh: Array = []
+		for _m in mayors:
+			mp.append(0)
+			mj.append(0)
+			mh.append(0.0)
+		rc["st"] = {"pop": 0, "jobs": 0, "hap": 0.0, "poll": 0.0, "crime": 0.0, "dev": 0, "unp": 0, "unw": 0, "tr": 0.0, "roads": 0, "mp": mp, "mj": mj, "mh": mh}
+	var st: Dictionary = rc["st"]
+	var mp2: Array = st["mp"]
+	var mj2: Array = st["mj"]
+	var mh2: Array = st["mh"]
+	var pop: int = st["pop"]
+	var jobs: int = st["jobs"]
+	var hap_sum: float = st["hap"]
+	var poll_sum: float = st["poll"]
+	var crime_sum: float = st["crime"]
+	var developed: int = st["dev"]
+	var unpowered: int = st["unp"]
+	var unwatered: int = st["unw"]
+	var traffic_sum: float = st["tr"]
+	var roads: int = st["roads"]
+	var r := _rc_range(rc, act.size(), 7)
+	for k in range(r.x, r.y):
+		var i := act[k]
+		var p := tile_pop(i)
+		var j := tile_jobs(i)
+		pop += p
+		jobs += j
+		var d := district[i]
+		if d < 0:
+			continue
+		mp2[d] = int(mp2[d]) + p
+		mj2[d] = int(mj2[d]) + j
+		if p > 0:
+			hap_sum += happiness[i] * float(p)
+			mh2[d] = float(mh2[d]) + happiness[i] * float(p)
+		if D.is_zone(kind[i]) and level[i] > 0:
+			developed += 1
+			poll_sum += pollution[i]
+			crime_sum += crime[i]
+			if powered[i] == 0:
+				unpowered += 1
+			if watered[i] == 0:
+				unwatered += 1
+		if kind[i] == D.ROAD:
+			roads += 1
+			traffic_sum += traffic[i]
+	st["pop"] = pop
+	st["jobs"] = jobs
+	st["hap"] = hap_sum
+	st["poll"] = poll_sum
+	st["crime"] = crime_sum
+	st["dev"] = developed
+	st["unp"] = unpowered
+	st["unw"] = unwatered
+	st["tr"] = traffic_sum
+	st["roads"] = roads
+	if r.y < act.size():
+		return false
+	for mi in range(mayors.size()):
+		var m: Dictionary = mayors[mi]
+		m["pop"] = int(mp2[mi])
+		m["jobs"] = int(mj2[mi])
+		m["happiness"] = float(mh2[mi]) / float(maxi(int(mp2[mi]), 1)) if int(mp2[mi]) > 0 else 0.5
+	stats["population"] = pop
+	stats["jobs"] = jobs
+	stats["unemployment"] = clampf(1.0 - float(jobs) / maxf(1.0, float(pop) * 0.55), 0.0, 1.0) if pop > 0 else 0.0
+	stats["happiness"] = hap_sum / float(maxi(pop, 1)) if pop > 0 else 0.6
+	stats["pollution"] = poll_sum / float(maxi(developed, 1))
+	stats["crime"] = crime_sum / float(maxi(developed, 1))
+	stats["traffic"] = traffic_sum / float(maxi(roads, 1))
+	stats["developed"] = developed
+	stats["unpowered"] = unpowered
+	stats["unwatered"] = unwatered
+	stats["roads"] = roads
+	return true
 
 
 func _near_water(x: int, y: int, r: int) -> bool:
@@ -715,96 +2009,6 @@ func _scan_water(x: int, y: int, r: int) -> bool:
 	return false
 
 
-func _compute_road_dist() -> void:
-	var n := D.W * D.H
-	road_dist.fill(99)
-	var queue: Array[int] = []
-	for i in active:
-		if kind[i] == D.ROAD:
-			road_dist[i] = 0
-			queue.append(i)
-	var head := 0
-	while head < queue.size():
-		var cur: int = queue[head]
-		head += 1
-		var d0 := road_dist[cur]
-		if d0 >= 4:
-			continue
-		var cx := D.tx(cur)
-		var cy := D.ty(cur)
-		for dv: Vector2i in N4:
-			var nx := cx + dv.x
-			var ny := cy + dv.y
-			if not D.in_bounds(nx, ny):
-				continue
-			var ni := D.idx(nx, ny)
-			if road_dist[ni] > d0 + 1:
-				road_dist[ni] = d0 + 1
-				queue.append(ni)
-
-
-func _compute_coverage() -> void:
-	var n := D.W * D.H
-	# One flat buffer (5 layers) because packed arrays are copied by value when aliased.
-	var buf := _floats(n * 7)
-	for i in active:
-		var k := kind[i]
-		var layer := 0
-		var radius := 0
-		match k:
-			D.POLICE:
-				layer = 0
-				radius = 7
-			D.FIRE:
-				layer = 1
-				radius = 7
-			D.HOSPITAL:
-				layer = 2
-				radius = 8
-			D.SCHOOL:
-				layer = 3
-				radius = 8
-			D.PARK:
-				layer = 4
-				radius = 3
-			D.UNIVERSITY:
-				layer = 3
-				radius = 11
-			D.STADIUM:
-				layer = 5
-				radius = 10
-			D.TRAIN:
-				layer = 6
-				radius = 8
-			_:
-				continue
-		var effective := 1.0
-		if k != D.PARK and (powered[i] == 0 or not _operational(i)):
-			effective = 0.35
-		var cx := D.tx(i)
-		var cy := D.ty(i)
-		for dy in range(-radius, radius + 1):
-			for dx in range(-radius, radius + 1):
-				var nx := cx + dx
-				var ny := cy + dy
-				if not D.in_bounds(nx, ny):
-					continue
-				var dist := sqrt(float(dx * dx + dy * dy))
-				if dist > float(radius):
-					continue
-				var v := (1.0 - dist / float(radius + 1)) * effective
-				var bi := layer * n + D.idx(nx, ny)
-				if v > buf[bi]:
-					buf[bi] = v
-	cov_police = buf.slice(0, n)
-	cov_fire = buf.slice(n, n * 2)
-	cov_health = buf.slice(n * 2, n * 3)
-	cov_school = buf.slice(n * 3, n * 4)
-	cov_park = buf.slice(n * 4, n * 5)
-	cov_leisure = buf.slice(n * 5, n * 6)
-	cov_transit = buf.slice(n * 6, n * 7)
-
-
 func _event_strength(type_name: String, x: int, y: int) -> float:
 	var best := 0.0
 	for ev in events:
@@ -815,141 +2019,6 @@ func _event_strength(type_name: String, x: int, y: int) -> float:
 		if d <= r:
 			best = maxf(best, 1.0 - d / (r + 1.0))
 	return best
-
-
-func _compute_traffic() -> void:
-	var n := D.W * D.H
-	traffic.fill(0.0)
-	var mult := 0.7 if ordinances.has("public_transit") else 1.0
-	if work_based():
-		# Traffic is the residents' actual chosen trips, each standing in for its share of people.
-		var trips: PackedFloat32Array = people.trip_load
-		for i in active:
-			if kind[i] != D.ROAD:
-				continue
-			var t := trips[i] / 160.0 * mult
-			t += _event_strength("gridlock", D.tx(i), D.ty(i)) * 0.75 + _event_strength("car_crash", D.tx(i), D.ty(i)) * 0.6
-			traffic[i] = clampf(t, 0.0, 1.0)
-		return
-	for i in active:
-		if kind[i] != D.ROAD:
-			continue
-		var cx := D.tx(i)
-		var cy := D.ty(i)
-		var load := 0.0
-		var roads := 0
-		for dy in range(-3, 4):
-			for dx in range(-3, 4):
-				var nx := cx + dx
-				var ny := cy + dy
-				if not D.in_bounds(nx, ny):
-					continue
-				var ni := D.idx(nx, ny)
-				if kind[ni] == D.ROAD:
-					roads += 1
-				else:
-					load += float(tile_pop(ni) + tile_jobs(ni))
-		var t := load / maxf(1.0, float(roads) * 38.0) * mult * (1.0 - cov_transit[i] * 0.4)
-		t += _event_strength("gridlock", cx, cy) * 0.75
-		traffic[i] = clampf(t, 0.0, 1.0)
-
-
-func _compute_pollution() -> void:
-	var n := D.W * D.H
-	var raw := PackedFloat32Array()
-	raw.resize(n)
-	var ind_mult := 0.6 if ordinances.has("clean_air_act") else 1.0
-	var sources: Array[int] = []
-	for i in active:
-		var v := 0.0
-		match kind[i]:
-			D.ZONE_I:
-				v = float(level[i]) * 0.24 * ind_mult
-			D.COAL:
-				v = 1.0 if _operational(i) else 0.2
-			D.LANDFILL:
-				v = 0.45
-			D.AIRPORT:
-				v = 0.5 if _operational(i) else 0.1
-			D.ROAD:
-				v = traffic[i] * 0.22
-		if burning[i] > 0:
-			v += 0.7
-		if v > 0.01:
-			raw[i] = v
-			sources.append(i)
-	pollution.fill(0.0)
-	for s in sources:
-		var sx := D.tx(s)
-		var sy := D.ty(s)
-		for dy in range(-4, 5):
-			for dx in range(-4, 5):
-				var nx := sx + dx
-				var ny := sy + dy
-				if not D.in_bounds(nx, ny):
-					continue
-				var dist := sqrt(float(dx * dx + dy * dy))
-				if dist > 4.5:
-					continue
-				var ni := D.idx(nx, ny)
-				pollution[ni] += raw[s] * (1.0 - dist / 5.0) * 0.32
-	var rec := 0.85 if ordinances.has("recycling") else 1.0
-	var sewage_short := 1.0 - float(stats.get("sewage_ratio", 1.0))
-	var waste_short := 1.0 - float(stats.get("waste_ratio", 1.0))
-	for i in active:
-		var x := D.tx(i)
-		var y := D.ty(i)
-		var p := pollution[i] * rec - cov_park[i] * 0.25
-		p += _event_strength("smog", x, y) * 0.55 + _event_strength("sewage_burst", x, y) * 0.35
-		if level[i] > 0 and D.is_zone(kind[i]):
-			p += sewage_short * 0.18 + waste_short * 0.14
-		pollution[i] = clampf(p, 0.0, 1.0)
-
-
-func _compute_crime_land_happiness() -> void:
-	var n := D.W * D.H
-	var crime_mult := 1.0
-	if ordinances.has("neighborhood_watch"):
-		crime_mult *= 0.8
-	if ordinances.has("curfew"):
-		crime_mult *= 0.7
-	var sewage_short := 1.0 - float(stats.get("sewage_ratio", 1.0))
-	var waste_short := 1.0 - float(stats.get("waste_ratio", 1.0))
-	for i in active:
-		var x := D.tx(i)
-		var y := D.ty(i)
-		var k := kind[i]
-		var lv := 0.35 + cov_park[i] * 0.3 + cov_school[i] * 0.15 + cov_health[i] * 0.1
-		lv += cov_transit[i] * 0.1 + cov_leisure[i] * 0.08
-		if _near_water(x, y, 2):
-			lv += 0.12
-		lv -= pollution[i] * 0.45 + crime[i] * 0.25
-		land_value[i] = clampf(lv, 0.0, 1.0)
-		var c := 0.0
-		if D.is_zone(k) and level[i] > 0:
-			c = 0.08 * float(level[i]) + (0.15 if powered[i] == 0 else 0.0) + (0.1 if land_value[i] < 0.3 else 0.0)
-			c = maxf(0.0, c - cov_police[i] * 0.7) * crime_mult
-		crime[i] = clampf(c, 0.0, 1.0)
-		var h := 0.0
-		if k == D.ZONE_R and level[i] > 0 and work_based():
-			# Each resident judges their own life; nearby residents speak for homes without one.
-			h = people.mood_map[i]
-		elif k == D.ZONE_R and level[i] > 0:
-			var m: Dictionary = mayors[district[i]]
-			h = 0.58 + land_value[i] * 0.25 - pollution[i] * 0.35 - crime[i] * 0.25
-			h -= 0.3 if powered[i] == 0 else 0.0
-			h -= 0.2 if watered[i] == 0 else 0.0
-			h -= commute(x, y) * 0.15
-			h += cov_health[i] * 0.08 + cov_school[i] * 0.05
-			h -= float(int(m["tax_r"]) - 7) * 0.02
-			h -= sewage_short * 0.25 + waste_short * 0.15
-			h += cov_leisure[i] * 0.08
-			h -= _event_strength("sewage_burst", x, y) * 0.2 + _event_strength("smog", x, y) * 0.15
-			if ordinances.has("free_clinics"):
-				h += 0.05
-			if ordinances.has("curfew"):
-				h -= 0.05
-		happiness[i] = clampf(h, 0.0, 1.0)
 
 
 func commute(x: int, y: int) -> float:
@@ -988,118 +2057,19 @@ func tile_jobs(i: int) -> int:
 	return 0
 
 
-func _compute_demand() -> void:
-	var pop := 0
-	var jobs_c := 0
-	var jobs_i := 0
-	var jobs_s := 0
-	for i in active:
-		pop += tile_pop(i)
-		if kind[i] == D.ZONE_C:
-			jobs_c += tile_jobs(i)
-		elif kind[i] == D.ZONE_I:
-			jobs_i += tile_jobs(i)
-		else:
-			jobs_s += tile_jobs(i)
-	var workers := float(pop) * 0.55
-	var jobs := float(jobs_c + jobs_i + jobs_s)
-	var r := ((jobs + 70.0) - workers) / maxf(70.0, workers * 0.5)
-	var c_want := float(pop) * 0.22 + 20.0
-	var c := (c_want - float(jobs_c)) / maxf(30.0, c_want)
-	var i_want := float(pop) * 0.28 + 40.0
-	var ii := (i_want - float(jobs_i)) / maxf(40.0, i_want)
-	var hap := float(stats.get("happiness", 0.6))
-	if work_based():
-		# Residents' word of mouth and decisions to leave set housing demand; shop demand follows
-		# what they actually spent; industry slows when workers do not show up.
-		var s: Dictionary = people.sentiment
-		r = r * 0.5 + (float(s["recommend"]) - 5.0) / 5.0 * 0.6 - float(s["leaving"]) * 1.5
-		var spend := float(s["spend_local"])
-		c = (spend - float(jobs_c) * 9.0) / maxf(90.0, float(jobs_c) * 9.0) + 0.15
-		ii -= (1.0 - float(s["attendance"])) * 0.5
-	else:
-		r += (hap - 0.5) * 0.4
-	for i in active:
-		if not _operational(i) or powered[i] == 0:
-			continue
-		match kind[i]:
-			D.AIRPORT:
-				c += 0.15
-				ii += 0.15
-			D.STADIUM:
-				c += 0.06
-			D.UNIVERSITY:
-				r += 0.05
-				c += 0.05
-	if ordinances.has("tourism_campaign"):
-		c += 0.15
-	if ordinances.has("trade_expo"):
-		ii += 0.2
-	if ordinances.has("clean_air_act"):
-		ii -= 0.1
-	demand["r"] = clampf(r, -1.0, 1.0)
-	demand["c"] = clampf(c, -1.0, 1.0)
-	demand["i"] = clampf(ii, -1.0, 1.0)
-
-
-func _compute_stats() -> void:
-	var pop := 0
-	var jobs := 0
-	var hap_sum := 0.0
-	var poll_sum := 0.0
-	var crime_sum := 0.0
-	var developed := 0
-	var unpowered := 0
-	var unwatered := 0
-	var traffic_sum := 0.0
-	var roads := 0
-	for m in mayors:
-		m["pop"] = 0
-		m["jobs"] = 0
-		m["hap_sum"] = 0.0
-	for i in active:
-		var p := tile_pop(i)
-		var j := tile_jobs(i)
-		pop += p
-		jobs += j
-		if district[i] < 0:
-			continue
-		var m: Dictionary = mayors[district[i]]
-		m["pop"] = int(m["pop"]) + p
-		m["jobs"] = int(m["jobs"]) + j
-		if p > 0:
-			hap_sum += happiness[i] * float(p)
-			m["hap_sum"] = float(m["hap_sum"]) + happiness[i] * float(p)
-		if D.is_zone(kind[i]) and level[i] > 0:
-			developed += 1
-			poll_sum += pollution[i]
-			crime_sum += crime[i]
-			if powered[i] == 0:
-				unpowered += 1
-			if watered[i] == 0:
-				unwatered += 1
-		if kind[i] == D.ROAD:
-			roads += 1
-			traffic_sum += traffic[i]
-	for m in mayors:
-		m["happiness"] = float(m["hap_sum"]) / float(maxi(int(m["pop"]), 1)) if int(m["pop"]) > 0 else 0.5
-		m.erase("hap_sum")
-	stats["population"] = pop
-	stats["jobs"] = jobs
-	stats["unemployment"] = clampf(1.0 - float(jobs) / maxf(1.0, float(pop) * 0.55), 0.0, 1.0) if pop > 0 else 0.0
-	stats["happiness"] = hap_sum / float(maxi(pop, 1)) if pop > 0 else 0.6
-	stats["pollution"] = poll_sum / float(maxi(developed, 1))
-	stats["crime"] = crime_sum / float(maxi(developed, 1))
-	stats["traffic"] = traffic_sum / float(maxi(roads, 1))
-	stats["developed"] = developed
-	stats["unpowered"] = unpowered
-	stats["unwatered"] = unwatered
-	stats["roads"] = roads
-
-
 func _grow_zones() -> void:
-	var open_sites := zone_site_counts()
-	for i in active:
+	_run_sync([_task("growth", _task_grow_zones)])
+
+
+func _task_grow_zones(t: Dictionary) -> bool:
+	if not t.has("act"):
+		t["act"] = active
+		t["open"] = zone_site_counts()
+	var act: PackedInt32Array = t["act"]
+	var open_sites: Array = t["open"]
+	var r := _rc_range(t, act.size(), 6)
+	for kk in range(r.x, r.y):
+		var i := act[kk]
 		var k := kind[i]
 		if not D.is_zone(k) or burning[i] > 0 or terrain[i] == D.WATER or sites.has(i):
 			continue
@@ -1158,6 +2128,7 @@ func _grow_zones() -> void:
 			_set_level(i, l - 1)
 		elif k == D.ZONE_R and l > 0 and happiness[i] < 0.22 and rng.randf() < 0.05:
 			_set_level(i, l - 1)
+	return r.y >= act.size()
 
 
 func _set_level(i: int, l: int) -> void:
@@ -1194,7 +2165,7 @@ func _start_site(i: int, type: String, mi: int, target_kind: int, target_level: 
 	}
 	sites[i] = s
 	if type != "zone":
-		kind[i] = D.SITE
+		_kind_set(i, D.SITE)
 		level[i] = 0
 		burning[i] = 0
 	_mark(i)
@@ -1242,7 +2213,7 @@ func add_site_work(i: int, amount: float, who: String) -> bool:
 func _finish_site(s: Dictionary) -> void:
 	var i := int(s["i"])
 	sites.erase(i)
-	kind[i] = int(s["target_kind"])
+	_kind_set(i, int(s["target_kind"]))
 	level[i] = int(s["target_level"])
 	burning[i] = 0
 	_mark(i)
@@ -1280,7 +2251,16 @@ func _contractor(s: Dictionary) -> String:
 
 ## Paid contractors put in a steady shift on every open site; residents add their own work.
 func _construction_tick() -> void:
-	for i: int in sites.keys():
+	_run_sync([_task("construction", _task_construction)])
+
+
+func _task_construction(t: Dictionary) -> bool:
+	if not t.has("keys"):
+		t["keys"] = sites.keys()
+	var keys: Array = t["keys"]
+	var r := _rc_range(t, keys.size(), 128)
+	for kk in range(r.x, r.y):
+		var i: int = keys[kk]
 		if not sites.has(i):
 			continue
 		var s: Dictionary = sites[i]
@@ -1296,23 +2276,25 @@ func _construction_tick() -> void:
 			s["rate"] = 0.0
 			continue
 		add_site_work(i, D.CREW_RATE, _contractor(s))
+	return r.y >= keys.size()
 
 
 ## Finishes every open site at once (showcase and tests).
 func finish_all_sites() -> void:
+	_external_entry()
 	for i: int in sites.keys():
 		var s: Dictionary = sites[i]
 		if _site_valid(s):
 			_finish_site(s)
 		else:
 			sites.erase(i)
-	_recompute_all()
+	_recompute_deferred()
 	_flush_changes(true)
 
 
 ## 0..1 progress through the current growth tick, so views can interpolate between ticks.
 func tick_phase() -> float:
-	return clampf(_time_accum / (D.BASE_DAY_SECONDS / float(D.GROWTH_TICKS_PER_DAY)), 0.0, 1.0)
+	return clampf(_time_accum / tick_seconds(), 0.0, 1.0)
 
 
 ## Open developer (zone) sites per district.
@@ -1373,8 +2355,19 @@ func site_summary(d: int, max_n: int = 8) -> Array:
 	return out
 
 func _update_fires() -> void:
-	var spread: Array[int] = []
-	for i in active:
+	_run_sync([_task("incidents", _task_update_fires)])
+
+
+func _task_update_fires(t: Dictionary) -> bool:
+	if not t.has("act"):
+		t["act"] = active
+		var spread0: Array[int] = []
+		t["spread"] = spread0
+	var act: PackedInt32Array = t["act"]
+	var spread: Array[int] = t["spread"]
+	var r := _rc_range(t, act.size(), 2)
+	for kk in range(r.x, r.y):
+		var i := act[kk]
 		if burning[i] <= 0:
 			continue
 		var fc := cov_fire[i]
@@ -1387,7 +2380,7 @@ func _update_fires() -> void:
 			continue
 		burning[i] -= 1
 		if burning[i] <= 0:
-			kind[i] = D.RUBBLE
+			_kind_set(i, D.RUBBLE)
 			level[i] = 0
 			_mark(i)
 			_log("A fire destroyed a building at (%d,%d)." % [D.tx(i), D.ty(i)], "disaster")
@@ -1400,10 +2393,13 @@ func _update_fires() -> void:
 			# Fires stay on claimed land, which is all the tick loops track.
 			if D.in_bounds(nx, ny) and district[D.idx(nx, ny)] >= 0 and _flammable(D.idx(nx, ny)) and rng.randf() < 0.22 * (1.0 - fc * (0.5 if work_based() else 1.0)):
 				spread.append(D.idx(nx, ny))
+	if r.y < act.size():
+		return false
 	for s in spread:
 		if burning[s] == 0:
 			burning[s] = 6
 			_mark(s)
+	return true
 
 
 func _flammable(i: int) -> bool:
@@ -1428,19 +2424,35 @@ func _random_fires() -> void:
 
 
 func _collect_budget() -> void:
-	var ord_cost := 0.0
-	for key: String in ordinances.keys():
-		ord_cost += float(D.ORDINANCES[key]["cost"])
-	var income := [0.0, 0.0, 0.0, 0.0, 0.0]
-	var upkeep := [0.0, 0.0, 0.0, 0.0, 0.0]
-	var wb := work_based()
-	if wb:
-		# Income and sales taxes come from what residents actually earned and spent today.
-		var money: Array = people.district_money()
-		for d in range(mayors.size()):
-			income[d] += float(money[d]["wages"]) * float(mayors[d]["tax_r"]) / 100.0
-			income[d] += float(money[d]["sales"]) * float(mayors[d]["tax_c"]) / 100.0 * 0.5
-	for i in active:
+	_run_sync([_task("day_end", _task_budget)])
+
+
+func _task_budget(t: Dictionary) -> bool:
+	if not t.has("inc"):
+		var ord_cost := 0.0
+		for key: String in ordinances.keys():
+			ord_cost += float(D.ORDINANCES[key]["cost"])
+		var income := [0.0, 0.0, 0.0, 0.0, 0.0]
+		var upkeep := [0.0, 0.0, 0.0, 0.0, 0.0]
+		var wb0 := work_based()
+		if wb0:
+			# Income and sales taxes come from what residents actually earned and spent today.
+			var money: Array = people.district_money()
+			for d in range(mayors.size()):
+				income[d] += float(money[d]["wages"]) * float(mayors[d]["tax_r"]) / 100.0
+				income[d] += float(money[d]["sales"]) * float(mayors[d]["tax_c"]) / 100.0 * 0.5
+		t["ord"] = ord_cost
+		t["inc"] = income
+		t["up"] = upkeep
+		t["wb"] = wb0
+		t["act"] = active
+	var act: PackedInt32Array = t["act"]
+	var income: Array = t["inc"]
+	var upkeep: Array = t["up"]
+	var wb: bool = t["wb"]
+	var r := _rc_range(t, act.size(), 8)
+	for kk in range(r.x, r.y):
+		var i := act[kk]
 		var d := district[i]
 		if d < 0:
 			continue
@@ -1462,12 +2474,16 @@ func _collect_budget() -> void:
 				var bk := D.building_key_for_kind(k)
 				if not bk.is_empty():
 					upkeep[d] += float(D.BUILDINGS[bk]["upkeep"])
+	if r.y < act.size():
+		return false
+	var ord_cost: float = t["ord"]
 	for d in range(mayors.size()):
 		var m: Dictionary = mayors[d]
 		var up: float = upkeep[d] + ord_cost / float(mayors.size())
 		m["last_income"] = int(round(income[d]))
 		m["last_upkeep"] = int(round(up))
 		m["treasury"] = int(m["treasury"]) + int(round(income[d] - up))
+	return true
 
 
 func total_funds() -> int:
@@ -1481,6 +2497,7 @@ func total_funds() -> int:
 
 ## Applies one AI (or player) action for the mayor at index mi. Returns {ok, reason, cost}.
 func apply_action(mi: int, a: Dictionary) -> Dictionary:
+	_external_entry()
 	if mi < 0 or mi >= mayors.size():
 		return {"ok": false, "reason": "unknown mayor"}
 	var m: Dictionary = mayors[mi]
@@ -1569,7 +2586,7 @@ func _act_road(mi: int, a: Dictionary) -> Dictionary:
 		_log("%s's road crews started %d tiles of road%s." % [mayors[mi]["name"], to_build.size(), note], "build")
 		return {"ok": true, "reason": "road construction started on %d tiles%s (open in about %s with contractors alone)" % [to_build.size(), note, "two and a half days" if bridges > 0 else "a day"], "cost": cost}
 	for i in to_build:
-		kind[i] = D.ROAD
+		_kind_set(i, D.ROAD)
 		level[i] = 0
 		_mark(i)
 	return {"ok": true, "reason": "built %d road tiles" % to_build.size(), "cost": cost}
@@ -1604,7 +2621,7 @@ func _act_zone(mi: int, a: Dictionary) -> Dictionary:
 		return {"ok": false, "reason": "cannot afford zoning ($%d)" % cost}
 	var near_road := 0
 	for i in tiles:
-		kind[i] = zk
+		_kind_set(i, zk)
 		level[i] = 0
 		if road_dist[i] <= 2:
 			near_road += 1
@@ -1636,7 +2653,7 @@ func _act_build(mi: int, a: Dictionary) -> Dictionary:
 		_start_site(i, "build", mi, int(spec["kind"]), 1, plan, ticks, str(spec["label"]))
 		_log("%s broke ground on a %s at (%d,%d)." % [mayors[mi]["name"], spec["label"], spot.x, spot.y], "build")
 		return {"ok": true, "reason": "construction of %s started%s; contractors alone need about %.1f days, local builders speed it up" % [spec["label"], moved, float(ticks) / float(D.GROWTH_TICKS_PER_DAY)], "cost": cost, "x": spot.x, "y": spot.y, "site": true}
-	kind[i] = int(spec["kind"])
+	_kind_set(i, int(spec["kind"]))
 	level[i] = 1
 	_mark(i)
 	return {"ok": true, "reason": "built %s%s" % [spec["label"], moved], "cost": cost, "x": spot.x, "y": spot.y}
@@ -1694,7 +2711,7 @@ func _act_bulldoze(mi: int, a: Dictionary) -> Dictionary:
 			continue
 		if had_site and k == D.SITE:
 			_log("%s cancelled the construction site at (%d,%d)." % [mayors[mi]["name"], D.tx(i), D.ty(i)], "build")
-		kind[i] = D.EMPTY
+		_kind_set(i, D.EMPTY)
 		level[i] = 0
 		burning[i] = 0
 		_mark(i)
@@ -1764,6 +2781,7 @@ func _act_grant(mi: int, a: Dictionary) -> Dictionary:
 
 
 func enact_ordinance(key: String) -> bool:
+	_external_entry()
 	if not D.ORDINANCES.has(key) or ordinances.has(key):
 		return false
 	ordinances[key] = day
@@ -1772,6 +2790,7 @@ func enact_ordinance(key: String) -> bool:
 
 
 func repeal_ordinance(key: String) -> bool:
+	_external_entry()
 	if not ordinances.has(key):
 		return false
 	ordinances.erase(key)
@@ -1780,6 +2799,7 @@ func repeal_ordinance(key: String) -> bool:
 
 
 func gift_funds(mi: int, amount: int) -> void:
+	_external_entry()
 	if mi >= 0 and mi < mayors.size():
 		mayors[mi]["treasury"] = int(mayors[mi]["treasury"]) + amount
 		_log("Player granted $%d to %s." % [amount, mayors[mi]["name"]], "player")
@@ -1791,6 +2811,7 @@ func gift_funds(mi: int, amount: int) -> void:
 func trigger_disaster(type_name: String, x: int, y: int, source: String = "player", reason: String = "") -> Dictionary:
 	if not D.DISASTERS.has(type_name):
 		return {}
+	_external_entry()
 	x = clampi(x, D.X0, D.X0 + D.W - 1)
 	y = clampi(y, D.Y0, D.Y0 + D.H - 1)
 	_event_seq += 1
@@ -1864,7 +2885,7 @@ func trigger_disaster(type_name: String, x: int, y: int, source: String = "playe
 				if D.is_zone(kind[i]) and level[i] > 0:
 					var r := rng.randf()
 					if r < 0.10:
-						kind[i] = D.RUBBLE
+						_kind_set(i, D.RUBBLE)
 						level[i] = 0
 						_mark(i)
 						(ev["tiles"] as Array).append(i)
@@ -1892,7 +2913,7 @@ func trigger_disaster(type_name: String, x: int, y: int, source: String = "playe
 					var ti := D.idx(px, py)
 					(ev["tiles"] as Array).append(ti)
 					if (D.is_zone(kind[ti]) and level[ti] > 0) or (D.is_service(kind[ti]) and kind[ti] != D.HALL):
-						kind[ti] = D.RUBBLE
+						_kind_set(ti, D.RUBBLE)
 						level[ti] = 0
 						_mark(ti)
 				px += rng.randi_range(-1, 1)
@@ -1901,7 +2922,7 @@ func trigger_disaster(type_name: String, x: int, y: int, source: String = "playe
 	var who := "Player" if source == "player" else source
 	_log("%s: %s at (%d,%d)! %s" % [who, ev["label"], int(ev["x"]), int(ev["y"]), reason], "disaster")
 	event_started.emit(ev)
-	_recompute_all()
+	_recompute_deferred()
 	_flush_changes(true)
 	return ev
 
@@ -1930,6 +2951,7 @@ func find_event(ev_id: int) -> Dictionary:
 
 
 func resolve_incident(ev: Dictionary, finisher: String) -> void:
+	_external_entry()
 	if not events.has(ev):
 		return
 	events.erase(ev)
@@ -1948,40 +2970,81 @@ func resolve_incident(ev: Dictionary, finisher: String) -> void:
 	var names: Array = (ev["helpers"] as Dictionary).keys()
 	_log("%s at (%d,%d) was fixed after %d ticks. Done by: %s." % [ev["label"], int(ev["x"]), int(ev["y"]), global_tick() - int(ev.get("start_tick", global_tick())), ", ".join(PackedStringArray(names.slice(0, 5))) if not names.is_empty() else finisher], "response")
 	event_ended.emit(ev)
-	_recompute_all()
+	_recompute_deferred()
 	_flush_changes(true)
 
 
 ## Weather fades, paid crews keep working, stray fires become incidents, and worn
 ## infrastructure sometimes fails on its own.
 func _incident_tick() -> void:
-	for ev in events.duplicate():
-		var spec: Dictionary = D.DISASTERS.get(str(ev["type"]), {})
-		if spec.has("weather"):
-			add_incident_work(int(ev["id"]), float(spec["weather"]), "the weather")
-		if int(ev.get("crew_ticks", 0)) > 0 and events.has(ev):
-			ev["crew_ticks"] = int(ev["crew_ticks"]) - 1
-			add_incident_work(int(ev["id"]), 20.0, "%s's city crews" % owner_name(D.idx(int(ev["x"]), int(ev["y"]))))
-	for i in active:
-		if burning[i] <= 0:
-			continue
-		var covered := false
-		for ev in events:
-			if str(ev["type"]) in ["fire", "earthquake", "tornado"] and absi(D.tx(i) - int(ev["x"])) + absi(D.ty(i) - int(ev["y"])) <= int(ev.get("radius", 2)) + 1:
-				covered = true
-				break
-		if not covered:
-			trigger_disaster("fire", D.tx(i), D.ty(i), "accident", "the fire spread")
-	if events.size() < 3 and rng.randf() < 0.05:
-		var pick := rng.randi_range(0, 2)
-		var t: String = ["power_line", "water_main", "car_crash"][pick]
-		var cand: Array[int] = []
-		for i in active:
-			if (t == "water_main" and kind[i] == D.PUMP) or (t != "water_main" and kind[i] == D.ROAD and traffic[i] > 0.3):
-				cand.append(i)
-		if not cand.is_empty():
-			var c := cand[rng.randi_range(0, cand.size() - 1)]
-			trigger_disaster(t, D.tx(c), D.ty(c), "wear and tear", "infrastructure failed under load")
+	_run_sync([_task("incidents", _task_incidents)])
+
+
+## Resumable _incident_tick. An item that resolves or starts an incident queues the recompute it owes
+## behind the current step, and the loop stops after that item so the recompute runs before the next.
+func _task_incidents(t: Dictionary) -> bool:
+	match int(t["s"]):
+		0:
+			if not work_based():
+				return true
+			t["evs"] = events.duplicate()
+			t["act"] = active
+			t["s"] = 1
+		1:
+			var evs: Array = t["evs"]
+			var k := int(t["k"])
+			var work := _lim
+			while k < evs.size() and work > 0:
+				var ev: Dictionary = evs[k]
+				k += 1
+				work -= 256
+				var spec: Dictionary = D.DISASTERS.get(str(ev["type"]), {})
+				if spec.has("weather"):
+					add_incident_work(int(ev["id"]), float(spec["weather"]), "the weather")
+				if int(ev.get("crew_ticks", 0)) > 0 and events.has(ev):
+					ev["crew_ticks"] = int(ev["crew_ticks"]) - 1
+					add_incident_work(int(ev["id"]), 20.0, "%s's city crews" % owner_name(D.idx(int(ev["x"]), int(ev["y"]))))
+				if not _nested.is_empty():
+					break
+			t["k"] = k
+			if k >= evs.size():
+				t["s"] = 2
+				t["k"] = 0
+		2:
+			var act: PackedInt32Array = t["act"]
+			var k := int(t["k"])
+			var end := act.size() if _lim >= _SYNC_LIM else mini(act.size(), k + _lim)
+			while k < end:
+				var i := act[k]
+				k += 1
+				if burning[i] <= 0:
+					continue
+				var covered := false
+				for ev in events:
+					if str(ev["type"]) in ["fire", "earthquake", "tornado"] and absi(D.tx(i) - int(ev["x"])) + absi(D.ty(i) - int(ev["y"])) <= int(ev.get("radius", 2)) + 1:
+						covered = true
+						break
+				if not covered:
+					trigger_disaster("fire", D.tx(i), D.ty(i), "accident", "the fire spread")
+					if not _nested.is_empty():
+						break
+			t["k"] = k
+			if k >= act.size():
+				t["s"] = 3
+		3:
+			if events.size() < 3 and rng.randf() < 0.05:
+				var pick := rng.randi_range(0, 2)
+				var ty: String = ["power_line", "water_main", "car_crash"][pick]
+				var cand: Array[int] = []
+				for i in active:
+					if (ty == "water_main" and kind[i] == D.PUMP) or (ty != "water_main" and kind[i] == D.ROAD and traffic[i] > 0.3):
+						cand.append(i)
+				note_units(active.size() / UNIT_WORK)
+				if not cand.is_empty():
+					var c := cand[rng.randi_range(0, cand.size() - 1)]
+					trigger_disaster(ty, D.tx(c), D.ty(c), "wear and tear", "infrastructure failed under load")
+			return true
+	return false
 
 
 ## A resident moving away empties part of their building.
@@ -2002,6 +3065,7 @@ func _nearest(x: int, y: int, max_d: int, pred: Callable) -> int:
 
 
 func clear_all_events() -> void:
+	_external_entry()
 	for ev in events:
 		event_ended.emit(ev)
 	events.clear()
@@ -2014,7 +3078,7 @@ func clear_all_events() -> void:
 			burning[i] = 0
 			_mark(i)
 	_log("Player restored all city systems.", "player")
-	_recompute_all()
+	_recompute_deferred()
 	_flush_changes(true)
 
 
@@ -2201,7 +3265,11 @@ func tile_report(x: int, y: int) -> Dictionary:
 
 # ---------------------------------------------------------------- save / load
 
+## A save taken while a sliced job runs completes it first, so it equals the save after the
+## equivalent synchronous tick.
 func to_dict() -> Dictionary:
+	if not _stepping:
+		_finish_job_now()
 	return {
 		"version": 3, "seed": city_seed, "day": day, "tick_in_day": tick_in_day,
 		"world": {"w": D.W, "h": D.H, "x0": D.X0, "y0": D.Y0},
@@ -2244,6 +3312,7 @@ func from_dict(data: Dictionary) -> bool:
 		district = _place_tiles(d_arr, district)
 	if district.size() != n:
 		return false
+	road_epoch += 1
 	_wet2 = PackedByteArray()
 	_rebuild_active()
 	day = int(data.get("day", 1))
@@ -2251,6 +3320,8 @@ func from_dict(data: Dictionary) -> bool:
 	mayors.clear()
 	for m in data.get("mayors", []):
 		mayors.append(m as Dictionary)
+	for mi in range(mini(mayors.size(), D.MAYORS.size())):
+		mayors[mi]["name"] = D.MAYORS[mi]["display"]
 	ordinances = data.get("ordinances", {})
 	events.clear()
 	for ev in data.get("events", []):
@@ -2342,16 +3413,34 @@ func _mark(i: int) -> void:
 	_changed[i] = true
 
 
+## Emits tiles_changed for the marked tiles and stats_updated. Behind a recompute that is still
+## queued (inside a job step, or a mutator's fresh recompute job) it waits its turn, so listeners
+## always see the maps of the tiles they are told about.
 func _flush_changes(force_stats: bool) -> void:
+	if _stepping and not _nested.is_empty():
+		_nested.append({"f": _task_flush, "phase": "recompute", "force": force_stats})
+		return
+	if not _stepping and _job_kind == _JOB_RECOMPUTE and not _job_started and _force_sync == 0:
+		_job.insert(0, {"f": _task_flush, "phase": "recompute", "force": force_stats})
+		return
 	if not _changed.is_empty():
 		var arr := PackedInt32Array()
 		for key in _changed.keys():
 			arr.append(int(key))
 		_changed.clear()
+		var t0 := Time.get_ticks_usec()
+		_excl_depth += 1
 		tiles_changed.emit(arr)
+		_excl_depth -= 1
+		_note_excluded(Time.get_ticks_usec() - t0, "view_ms")
 	stats_updated.emit()
 	if force_stats:
 		pass
+
+
+func _task_flush(t: Dictionary) -> bool:
+	_flush_changes(bool(t["force"]))
+	return true
 
 
 func _log(msg: String, category: String) -> void:

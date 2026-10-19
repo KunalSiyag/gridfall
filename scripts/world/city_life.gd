@@ -3,8 +3,11 @@ extends Node3D
 ## Moving city life layered on top of CityView: buses that stop at bus stops, delivery and
 ## garbage trucks, emergency crews dispatched to live disasters, boats on the river, and
 ## planes and helicopters. Every model has a procedural stand-in so the layer works without assets.
+## In first person the traffic feature sets `external`: road fleets and crews then run on its lane
+## graph (spawn_fleet / dispatch_crew / vehicle_counts are forwarded) while boats and aircraft stay.
 
 const D := preload("res://scripts/sim/sim_defs.gd")
+const WS := preload("res://scripts/fp/world_scale.gd")
 const M := "res://models/"
 const ROAD_SCALE := 0.17
 const DIRS := [Vector2i(0, -1), Vector2i(1, 0), Vector2i(0, 1), Vector2i(-1, 0)]
@@ -28,6 +31,9 @@ const SIREN_COLORS := {
 
 var sim: CitySim
 var view: Node3D
+## First-person road-agent system (the traffic feature) or null. While set, CityLife's own road
+## vehicles stay idle and fleet maintenance and crew dispatch go to it (docs/fp/slices/E-traffic.md §5).
+var external: Object = null
 var _last_real: bool = false
 var _road_root: Node3D
 var _air_root: Node3D
@@ -238,7 +244,7 @@ func _place(a: Dictionary, delta: float) -> void:
 	var right := Vector3(-dir.z, 0, dir.x)
 	var p := Vector3(from.x, 0, from.y).lerp(Vector3(to.x, 0, to.y), float(a["t"])) + right * float(a["side"])
 	var node: Node3D = a["node"]
-	node.position = Vector3(p.x, 0.05, p.z)
+	node.position = Vector3(p.x, WS.ASPHALT_TOP if _fp() else 0.05, p.z)
 	if dir.length_squared() > 0.0:
 		var yaw := atan2(dir.x, dir.z)
 		node.rotation.y = yaw if delta <= 0.0 else lerp_angle(node.rotation.y, yaw, minf(1.0, delta * 10.0))
@@ -284,6 +290,11 @@ func _count(kind: int, min_level: int = 0) -> int:
 
 
 func _maintain_fleet(list: Array[Dictionary], kind: String, want: int, starts: Array[Vector2i], speed: float) -> void:
+	if external != null:
+		if int(external.call("fleet_size", kind)) < want:
+			var s0: Vector2i = starts[int(_time) % starts.size()] if not starts.is_empty() else D.NO_TILE
+			external.call("spawn_fleet", kind, s0)
+		return
 	if list.size() < want and randf() < 0.25:
 		var start: Vector2i = starts[randi() % starts.size()] if not starts.is_empty() else view._random_road(-1)
 		if start != D.NO_TILE:
@@ -348,6 +359,9 @@ func _on_event_started(ev: Dictionary) -> void:
 			start = view._random_road(-1)
 		if start == D.NO_TILE:
 			continue
+		if external != null:
+			external.call("dispatch_crew", kind, start, target)
+			continue
 		var a := _new_road_agent(kind, start, 2.6)
 		if a.is_empty():
 			continue
@@ -360,6 +374,23 @@ func _on_event_started(ev: Dictionary) -> void:
 		a["side"] = 0.13 if _crews.size() % 2 == 0 else -0.13
 		_attach_sirens(a, kind)
 		_crews.append(a)
+
+
+## Sends crews for every live event again (the traffic feature attaches after setup() already
+## dispatched them to CityLife's own agents).
+func redispatch_events() -> void:
+	if sim == null:
+		return
+	if external != null:
+		for a: Dictionary in _crews:
+			(a["node"] as Node3D).queue_free()
+		_crews.clear()
+	for ev in sim.events:
+		_on_event_started(ev)
+
+
+func _fp() -> bool:
+	return view != null and view.get("fp_mode") == true
 
 
 func _event_live(id: int) -> bool:
@@ -522,7 +553,7 @@ func _spawn_plane(ap: Vector2i, phase: float) -> void:
 	node.add_child(blink)
 	_air_root.add_child(node)
 	var a := Vector3(ap.x, 0.12, ap.y)
-	var c := Vector3(15.5, 0.0, 15.5)
+	var c := Vector3(ap.x, 0.0, ap.y) if _fp() else Vector3(15.5, 0.0, 15.5)
 	var curve := Curve3D.new()
 	var pts := [a + Vector3(-0.6, 0, 0), a + Vector3(1.5, 0, 0), a + Vector3(5.0, 1.2, 0),
 		Vector3(c.x + 20, 5.5, c.z - 12), Vector3(c.x + 4, 6.5, c.z - 22), Vector3(c.x - 20, 6.0, c.z - 10),
@@ -583,7 +614,7 @@ func _process(delta: float) -> void:
 	if _census_t <= 0.0:
 		_census_t = 1.0
 		_census()
-	for list: Array in [_buses, _trucks]:
+	for list: Array in ([] if external != null else [_buses, _trucks]):
 		var keep: Array[Dictionary] = []
 		for a: Dictionary in list:
 			if _step(a, delta, true):
@@ -592,10 +623,21 @@ func _process(delta: float) -> void:
 				(a["node"] as Node3D).queue_free()
 		list.clear()
 		list.append_array(keep)
-	_update_crews(delta)
+	if external == null:
+		_update_crews(delta)
 	_update_boats(delta)
 	_update_flyers(delta)
 
 
 func vehicle_counts() -> Dictionary:
+	if external != null:
+		return external.call("vehicle_counts")
 	return {"buses": _buses.size(), "trucks": _trucks.size(), "crews": _crews.size(), "boats": _boats.size(), "aircraft": _flyers.size()}
+
+
+func boat_count() -> int:
+	return _boats.size()
+
+
+func aircraft_count() -> int:
+	return _flyers.size()

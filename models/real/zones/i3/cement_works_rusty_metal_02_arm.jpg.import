@@ -3,9 +3,10 @@
 importer="texture"
 type="CompressedTexture2D"
 uid="uid://c7ljxb2453cs8"
-path="res://.godot/imported/cement_works_rusty_metal_02_arm.jpg-5112dc25a9c5f0cc17fbeb8ade244108.ctex"
+path.s3tc="res://.godot/imported/cement_works_rusty_metal_02_arm.jpg-5112dc25a9c5f0cc17fbeb8ade244108.s3tc.ctex"
 metadata={
-"vram_texture": false
+"imported_formats": ["s3tc_bptc"],
+"vram_texture": true
 }
 generator_parameters={
 "md5": "8902c697f5e83511ef2839e57ca50c33"
@@ -14,11 +15,11 @@ generator_parameters={
 [deps]
 
 source_file="res://models/real/zones/i3/cement_works_rusty_metal_02_arm.jpg"
-dest_files=["res://.godot/imported/cement_works_rusty_metal_02_arm.jpg-5112dc25a9c5f0cc17fbeb8ade244108.ctex"]
+dest_files=["res://.godot/imported/cement_works_rusty_metal_02_arm.jpg-5112dc25a9c5f0cc17fbeb8ade244108.s3tc.ctex"]
 
 [params]
 
-compress/mode=0
+compress/mode=2
 compress/high_quality=false
 compress/lossy_quality=0.7
 compress/uastc_level=0

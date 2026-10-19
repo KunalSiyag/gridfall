@@ -1,0 +1,80 @@
+name: pr-review
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+
+permissions:
+  contents: read
+  pull-requests: write
+
+concurrency:
+  group: pr-review-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  review:
+    name: review
+    if: ${{ !github.event.pull_request.draft }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 0
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: tools/requirements-dev.txt
+      - run: python -m pip install -r tools/requirements-dev.txt
+      - name: Findings on changed lines
+        env:
+          BASE: ${{ github.event.pull_request.base.sha }}
+        run: python tools/checks/pr_review.py --base "$BASE" --out review.json --markdown "$GITHUB_STEP_SUMMARY"
+      - name: Post review
+        # A fork's token is read-only; its findings stay in the job summary.
+        if: github.event.pull_request.head.repo.full_name == github.repository
+        uses: actions/github-script@v9
+        with:
+          script: |
+            const fs = require('fs');
+            const data = JSON.parse(fs.readFileSync('review.json', 'utf8'));
+            const { owner, repo } = context.repo;
+            const pull_number = context.issue.number;
+            const marker = '<!-- gridfall-pr-review -->';
+
+            const comments = await github.paginate(github.rest.issues.listComments, {
+              owner, repo, issue_number: pull_number, per_page: 100,
+            });
+            const mine = comments.find((c) => c.user && c.user.type === 'Bot' && (c.body || '').includes(marker));
+            if (mine) {
+              await github.rest.issues.updateComment({ owner, repo, comment_id: mine.id, body: data.summary });
+            } else {
+              await github.rest.issues.createComment({ owner, repo, issue_number: pull_number, body: data.summary });
+            }
+
+            const existing = await github.paginate(github.rest.pulls.listReviewComments, {
+              owner, repo, pull_number, per_page: 100,
+            });
+            const seen = new Set(existing.map((c) => `${c.path}:${c.line}:${c.body}`));
+            const fresh = data.comments
+              .filter((c) => !seen.has(`${c.path}:${c.line}:${c.body}`))
+              .slice(0, 50)
+              .map((c) => ({ path: c.path, line: c.line, side: 'RIGHT', body: c.body }));
+            if (fresh.length === 0) {
+              core.info('No new inline findings.');
+              return;
+            }
+            try {
+              await github.rest.pulls.createReview({
+                owner, repo, pull_number,
+                commit_id: context.payload.pull_request.head.sha,
+                event: 'COMMENT',
+                body: `Automated review: ${fresh.length} new finding(s) on changed lines.`,
+                comments: fresh,
+              });
+            } catch (e) {
+              core.warning(`Inline review failed (${e.message}); the summary comment lists every finding.`);
+            }

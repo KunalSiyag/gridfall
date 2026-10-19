@@ -3,9 +3,10 @@
 importer="texture"
 type="CompressedTexture2D"
 uid="uid://w83macf13rpx"
-path="res://.godot/imported/airport_corrugated_iron_02_arm.jpg-60d4ab06f67b30bceb9147aa5f8a83c1.ctex"
+path.s3tc="res://.godot/imported/airport_corrugated_iron_02_arm.jpg-60d4ab06f67b30bceb9147aa5f8a83c1.s3tc.ctex"
 metadata={
-"vram_texture": false
+"imported_formats": ["s3tc_bptc"],
+"vram_texture": true
 }
 generator_parameters={
 "md5": "58f58c7a7f675d429ada7297d8a30718"
@@ -14,11 +15,11 @@ generator_parameters={
 [deps]
 
 source_file="res://models/real/buildings/airport_corrugated_iron_02_arm.jpg"
-dest_files=["res://.godot/imported/airport_corrugated_iron_02_arm.jpg-60d4ab06f67b30bceb9147aa5f8a83c1.ctex"]
+dest_files=["res://.godot/imported/airport_corrugated_iron_02_arm.jpg-60d4ab06f67b30bceb9147aa5f8a83c1.s3tc.ctex"]
 
 [params]
 
-compress/mode=0
+compress/mode=2
 compress/high_quality=false
 compress/lossy_quality=0.7
 compress/uastc_level=0

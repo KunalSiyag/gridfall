@@ -3,9 +3,10 @@
 importer="texture"
 type="CompressedTexture2D"
 uid="uid://i5q88ea7m74n"
-path="res://.godot/imported/factory_steel_box_profile_metal_sheet_diff.jpg-69d67bc4d244186d7ddf9681107531d7.ctex"
+path.s3tc="res://.godot/imported/factory_steel_box_profile_metal_sheet_diff.jpg-69d67bc4d244186d7ddf9681107531d7.s3tc.ctex"
 metadata={
-"vram_texture": false
+"imported_formats": ["s3tc_bptc"],
+"vram_texture": true
 }
 generator_parameters={
 "md5": "fc423e130f47dc64bec80abb0e58b8fd"
@@ -14,11 +15,11 @@ generator_parameters={
 [deps]
 
 source_file="res://models/real/zones/i2/factory_steel_box_profile_metal_sheet_diff.jpg"
-dest_files=["res://.godot/imported/factory_steel_box_profile_metal_sheet_diff.jpg-69d67bc4d244186d7ddf9681107531d7.ctex"]
+dest_files=["res://.godot/imported/factory_steel_box_profile_metal_sheet_diff.jpg-69d67bc4d244186d7ddf9681107531d7.s3tc.ctex"]
 
 [params]
 
-compress/mode=0
+compress/mode=2
 compress/high_quality=false
 compress/lossy_quality=0.7
 compress/uastc_level=0

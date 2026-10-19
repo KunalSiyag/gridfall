@@ -3,9 +3,10 @@
 importer="texture"
 type="CompressedTexture2D"
 uid="uid://c3mnq6ri2lnpk"
-path="res://.godot/imported/police_station_concrete_pavement_arm.jpg-59f5f7c79533e582af49c5bdd10911cd.ctex"
+path.s3tc="res://.godot/imported/police_station_concrete_pavement_arm.jpg-59f5f7c79533e582af49c5bdd10911cd.s3tc.ctex"
 metadata={
-"vram_texture": false
+"imported_formats": ["s3tc_bptc"],
+"vram_texture": true
 }
 generator_parameters={
 "md5": "9bd3e296783de784efbe67f2e36a2e28"
@@ -14,11 +15,11 @@ generator_parameters={
 [deps]
 
 source_file="res://models/real/buildings/police_station_concrete_pavement_arm.jpg"
-dest_files=["res://.godot/imported/police_station_concrete_pavement_arm.jpg-59f5f7c79533e582af49c5bdd10911cd.ctex"]
+dest_files=["res://.godot/imported/police_station_concrete_pavement_arm.jpg-59f5f7c79533e582af49c5bdd10911cd.s3tc.ctex"]
 
 [params]
 
-compress/mode=0
+compress/mode=2
 compress/high_quality=false
 compress/lossy_quality=0.7
 compress/uastc_level=0

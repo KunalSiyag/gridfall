@@ -109,6 +109,8 @@ func send_decree(text: String) -> void:
 
 
 func _on_day_started(day: int) -> void:
+	# Every call below starts synchronously, so they all pick up this round's trace id.
+	Trace.begin("day %d" % day)
 	for mi in range(D.MAYORS.size()):
 		if not _mayor_in_flight[mi]:
 			_run_mayor(mi, day)
@@ -130,6 +132,7 @@ func _on_day_started(day: int) -> void:
 			hot = true
 	if not proposals.is_empty() and (day % 3 == 0 or hot):
 		_run_support("council", day, _run_council)
+	Trace.end()
 	busy_changed.emit(pending_calls())
 
 
@@ -152,7 +155,7 @@ func _run_support(role: String, day: int, fn: Callable) -> void:
 func _mayor_system_prompt(mi: int) -> String:
 	var m: Dictionary = D.MAYORS[mi]
 	var ord_keys := ", ".join(PackedStringArray(D.ORDINANCES.keys()))
-	return "%s\n" % m["persona"] + """You are one of five autonomous AI mayors in GridFall, a SimCity-style city. Each mayor is a different AI model and controls ONLY their own district. Once per in-game day you return ONE JSON object of decisions.
+	return "%s\n" % m["persona"] + """You are one of the five elected mayors of GridFall, a SimCity-style city. Each mayor controls ONLY their own district. Once per in-game day you return ONE JSON object of decisions.
 RULES
 - Zoned land grows buildings only when: a road is within 2 tiles, the tile is connected to power, and demand for that zone type is positive. Power flows from plants through roads and touching buildings. Water (pumps) is required for density 2+. High land value (parks, schools, low pollution, near the river) allows density 3.
 - Power plants, water pumps and sewage plants serve the WHOLE connected city. coal_plant: 140 MW, $3000, heavy pollution. solar_farm: 45 MW, $1600, clean. water_pump: $900, 90 units (x1.5 within 2 tiles of the river), needs power. sewage_plant: $1300, 120 units, needs power; if city sewage capacity is short, pollution and unhappiness rise everywhere.
@@ -182,7 +185,7 @@ func _mayor_user_prompt(mi: int, day: int) -> String:
 	var b := sim.district_rect(mi)
 	var ms: Dictionary = mayor_state[mi]
 	var lines: Array[String] = []
-	lines.append("DAY %d. You are %s (%s), mayor of %s (district %d, x %d..%d, y %d..%d)." % [day, m["name"], m["model"], m["district"], mi, b.position.x, b.end.x - 1, b.position.y, b.end.y - 1])
+	lines.append("DAY %d. You are %s, mayor of %s (district %d, x %d..%d, y %d..%d)." % [day, m["display"], m["district"], mi, b.position.x, b.end.x - 1, b.position.y, b.end.y - 1])
 	lines.append("YOUR DISTRICT: " + JSON.stringify(sim.district_summary(mi)))
 	lines.append("CITY: " + JSON.stringify(sim.city_summary()))
 	lines.append("MAP OF YOUR DISTRICT (legend: %s):\n%s" % [D.MAP_LEGEND, sim.district_ascii(mi)])
@@ -199,7 +202,7 @@ func _mayor_user_prompt(mi: int, day: int) -> String:
 	var others: Array[String] = []
 	for oi in range(D.MAYORS.size()):
 		if oi != mi and not str(mayor_state[oi].get("post", "")).is_empty():
-			others.append("%s: %s" % [D.MAYORS[oi]["name"], mayor_state[oi]["post"]])
+			others.append("%s: %s" % [D.MAYORS[oi]["display"], mayor_state[oi]["post"]])
 	if not others.is_empty():
 		lines.append("OTHER MAYORS SAID: " + " || ".join(PackedStringArray(others)))
 	var comp: Dictionary = complaints[mi]
@@ -209,18 +212,18 @@ func _mayor_user_prompt(mi: int, day: int) -> String:
 		lines.append("YOUR RESIDENTS (each named resident speaks for about %d people): %s" % [int(sim.people.share), JSON.stringify(sim.people.district_mood(mi))])
 		for msg: Variant in sim.people.messages_for(mi, 6):
 			var md: Dictionary = msg
-			lines.append("RESIDENT %s (%s, mood %d/10) WRITES TO YOU: \"%s\"" % [md["name"], md["job"], int(md["mood"]), md["text"]])
+			lines.append("RESIDENT %s (%s, mood %d/10) WRITES TO YOU: \"%s\"" % [md["name"], md["job"], int(md["mood"]), D.debrand(str(md["text"]))])
 	else:
 		for v: Variant in last_voices:
 			var vd: Dictionary = v
 			if int(vd.get("district", -1)) == mi:
-				lines.append("A RESIDENT SAYS: \"%s\"" % vd.get("thought", ""))
+				lines.append("A RESIDENT SAYS: \"%s\"" % D.debrand(str(vd.get("thought", ""))))
 	if not last_paper.is_empty():
 		lines.append("TODAY'S GAZETTE HEADLINE: " + str(last_paper.get("headline", "")))
 	if not proposals.is_empty():
 		var pl: Array[String] = []
 		for key: String in proposals.keys():
-			pl.append("%s (proposed by %s, votes %s)" % [key, proposals[key]["by"], JSON.stringify(proposals[key]["votes"])])
+			pl.append("%s (proposed by %s, votes %s)" % [key, proposals[key]["by"], JSON.stringify(_votes_by_name(proposals[key]["votes"]))])
 		lines.append("PENDING ORDINANCE PROPOSALS (vote yes/no): " + "; ".join(PackedStringArray(pl)))
 	lines.append("ACTIVE ORDINANCES: " + JSON.stringify(sim.ordinances.keys()))
 	if not decree.is_empty() and sim.day - decree_day <= 1:
@@ -264,8 +267,8 @@ func _run_mayor(mi: int, day: int) -> void:
 			focus = Vector2i(int(r.get("x", a.get("x", -1))), int(r.get("y", a.get("y", -1))))
 	var prop := str(data.get("propose_ordinance", "")).strip_edges().to_lower()
 	if D.ORDINANCES.has(prop) and not sim.ordinances.has(prop) and not proposals.has(prop):
-		proposals[prop] = {"by": m["name"], "day": day, "votes": {str(m["id"]): "yes"}}
-		day_feed.append("%s proposed the %s ordinance." % [m["name"], D.ORDINANCES[prop]["label"]])
+		proposals[prop] = {"by": m["display"], "day": day, "votes": {str(m["id"]): "yes"}}
+		day_feed.append("%s proposed the %s ordinance." % [m["display"], D.ORDINANCES[prop]["label"]])
 	var votes: Variant = data.get("votes", {})
 	if typeof(votes) == TYPE_DICTIONARY:
 		for key: Variant in (votes as Dictionary).keys():
@@ -273,8 +276,8 @@ func _run_mayor(mi: int, day: int) -> void:
 			if proposals.has(ks):
 				(proposals[ks]["votes"] as Dictionary)[str(m["id"])] = str((votes as Dictionary)[key]).to_lower()
 	var ms: Dictionary = mayor_state[mi]
-	var thought := str(data.get("thought", "")).left(260)
-	var post := str(data.get("public_post", "")).left(200)
+	var thought := D.debrand(str(data.get("thought", ""))).left(260)
+	var post := D.debrand(str(data.get("public_post", ""))).left(200)
 	(ms["thoughts"] as Array).append("Day %d: %s" % [day, thought])
 	if (ms["thoughts"] as Array).size() > 6:
 		(ms["thoughts"] as Array).pop_front()
@@ -289,7 +292,7 @@ func _run_mayor(mi: int, day: int) -> void:
 	if (ms["log"] as Array).size() > 12:
 		(ms["log"] as Array).pop_front()
 	if not post.is_empty():
-		day_feed.append("%s posted: %s" % [m["name"], post])
+		day_feed.append("%s posted: %s" % [m["display"], post])
 	_mayor_in_flight[mi] = false
 	mayor_decided.emit(mi, entry)
 	busy_changed.emit(pending_calls())
@@ -618,10 +621,12 @@ func _run_news(day: int) -> void:
 	var feed := day_feed.slice(-14)
 	day_feed.clear()
 	var hist := sim.history.slice(-3)
-	var sys := "You are the editor of the GridFall Gazette, the newspaper of a SimCity-style city governed by five AI mayors (each a different AI model: Argon-4, DeepSeek-V4, Kimi-K3, Qwen-3.8, Grok-4.5). Write today's front page from the REAL events given. Be punchy, a little satirical, factual. Reply ONLY JSON: {\"headline\":\"<=90 chars\",\"stories\":[{\"title\":\"<=60 chars\",\"body\":\"<=200 chars\"}],\"editorial\":\"<=160 chars\"} with 2-3 stories."
+	var mayors_line := ", ".join(PackedStringArray(D.MAYORS.map(func(mm: Dictionary) -> String: return "%s (%s)" % [mm["display"], mm["district"]])))
+	var sys := "You are the editor of the GridFall Gazette, the newspaper of a SimCity-style city governed by five elected mayors: " + mayors_line + ". Write today's front page from the REAL events given. Be punchy, a little satirical, factual. Reply ONLY JSON: {\"headline\":\"<=90 chars\",\"stories\":[{\"title\":\"<=60 chars\",\"body\":\"<=200 chars\"}],\"editorial\":\"<=160 chars\"} with 2-3 stories."
 	var user := "Day %d front page.\nRecent events and statements:\n%s\nCity trend (last days): %s\nCity now: %s" % [day, "\n".join(PackedStringArray(feed)) if not feed.is_empty() else "(quiet day)", JSON.stringify(hist), JSON.stringify(sim.city_summary())]
 	var res: Dictionary = await client.chat_json("news", "gazette", str(agent["model"]), sys, user, day, 1000, 40.0, _heuristic_news.bind(feed))
-	var paper: Dictionary = res["data"].duplicate()
+	var paper: Dictionary = res["data"].duplicate(true)
+	_debrand_paper(paper)
 	paper["day"] = day
 	paper["source"] = res["source"]
 	last_paper = paper
@@ -636,7 +641,7 @@ func _heuristic_news(feed: Array) -> Dictionary:
 	return {
 		"headline": "GridFall reaches %d residents as mayors jostle for growth" % pop,
 		"stories": stories,
-		"editorial": "Five AI mayors, one power grid. Somebody will have to share.",
+		"editorial": "Five mayors, one power grid. Somebody will have to share.",
 	}
 
 
@@ -648,7 +653,7 @@ func _run_chaos(day: int) -> void:
 	for mi in range(D.MAYORS.size()):
 		var s := sim.district_summary(mi)
 		var b := sim.district_rect(mi)
-		districts.append({"district": mi, "mayor": D.MAYORS[mi]["name"], "x_range": [b.position.x, b.end.x - 1], "y_range": [b.position.y, b.end.y - 1], "pop": s["pop"], "services": s["services"], "avg_traffic": s["avg_traffic"], "avg_pollution": s["avg_pollution"], "industrial_dev": s["counts"]["i_dev"], "residential_dev": s["counts"]["r_dev"]})
+		districts.append({"district": mi, "mayor": D.MAYORS[mi]["display"], "x_range": [b.position.x, b.end.x - 1], "y_range": [b.position.y, b.end.y - 1], "pop": s["pop"], "services": s["services"], "avg_traffic": s["avg_traffic"], "avg_pollution": s["avg_pollution"], "industrial_dev": s["counts"]["i_dev"], "residential_dev": s["counts"]["r_dev"]})
 	var sys := "You are the Chaos Director of GridFall, a SimCity-style city run by five AI mayors. Your job is to keep the game dramatic but fair by choosing at most ONE disaster today that tests a real weakness: fire where there is no fire station, gridlock where traffic is high, blackout when the power margin is thin, sewage_burst when sewage is overloaded, smog near heavy industry, flood near the river (x 26..29), tornado or earthquake rarely. Skip days when the city is fragile or small. Reply ONLY JSON: {\"trigger\":true|false,\"type\":\"fire|blackout|sewage_burst|gridlock|smog|earthquake|flood|tornado\",\"x\":X,\"y\":Y,\"reason\":\"<=140 chars, why this tests the city\",\"narration\":\"<=140 chars dramatic announcement\"}"
 	var area := sim.owned_rect()
 	sys += " X and Y must lie inside the claimed city: x %d..%d, y %d..%d." % [area.position.x, area.end.x - 1, area.position.y, area.end.y - 1]
@@ -689,8 +694,10 @@ func _run_operator(day: int) -> void:
 	var per: Array = []
 	for mi in range(D.MAYORS.size()):
 		var s := sim.district_summary(mi)
-		per.append({"district": mi, "mayor": D.MAYORS[mi]["name"], "pop": s["pop"], "jobs": s["jobs"], "unpowered": s["counts"]["unpowered"], "unwatered": s["counts"]["unwatered"], "services": s["services"]})
-	var sys := "You are the GridFall Grid Operator, an AI that runs the shared power and water network of a SimCity-style city with five AI-run districts (0 Argon-4 NW, 1 DeepSeek-V4 NE, 2 Kimi-K3 center, 3 Qwen-3.8 SW, 4 Grok-4.5 SE). When supply is short, load is shed from the LAST district in your priority list first. Prioritize hospitals, fire coverage, dense housing and fairness. Reply ONLY JSON: {\"priority\":[5 distinct district indices],\"note\":\"<=160 chars explaining the order\",\"advice\":\"<=140 chars capacity advice to the mayors\"}"
+		per.append({"district": mi, "mayor": D.MAYORS[mi]["display"], "pop": s["pop"], "jobs": s["jobs"], "unpowered": s["counts"]["unpowered"], "unwatered": s["counts"]["unwatered"], "services": s["services"]})
+	var where := ["NW", "NE", "center", "SW", "SE"]
+	var dl := ", ".join(PackedStringArray(range(D.MAYORS.size()).map(func(k: int) -> String: return "%d %s %s" % [k, D.MAYORS[k]["display"], where[k]])))
+	var sys := "You are the GridFall Grid Operator, an AI that runs the shared power and water network of a SimCity-style city with five AI-run districts (" + dl + "). When supply is short, load is shed from the LAST district in your priority list first. Prioritize hospitals, fire coverage, dense housing and fairness. Reply ONLY JSON: {\"priority\":[5 distinct district indices],\"note\":\"<=160 chars explaining the order\",\"advice\":\"<=140 chars capacity advice to the mayors\"}"
 	var user := "Day %d. Power %s. Water %s. Sewage %s. Current priority %s. Districts: %s" % [day, sim.city_summary()["power"], sim.city_summary()["water"], sim.city_summary()["sewage"], JSON.stringify(sim.grid_priority), JSON.stringify(per)]
 	var res: Dictionary = await client.chat_json("operator", "grid", str(agent["model"]), sys, user, day, 800, 35.0, _heuristic_operator)
 	var data: Dictionary = res["data"]
@@ -722,11 +729,11 @@ func _run_council(day: int) -> void:
 	var agent: Dictionary = D.SUPPORT_AGENTS["council"]
 	var plist: Array = []
 	for key: String in proposals.keys():
-		plist.append({"key": key, "label": D.ORDINANCES[key]["label"], "effect": D.ORDINANCES[key]["desc"], "daily_cost": D.ORDINANCES[key]["cost"], "proposed_by": proposals[key]["by"], "votes": proposals[key]["votes"]})
+		plist.append({"key": key, "label": D.ORDINANCES[key]["label"], "effect": D.ORDINANCES[key]["desc"], "daily_cost": D.ORDINANCES[key]["cost"], "proposed_by": proposals[key]["by"], "votes": _votes_by_name(proposals[key]["votes"])})
 	var active: Array = []
 	for key: String in sim.ordinances.keys():
 		active.append({"key": key, "label": D.ORDINANCES[key]["label"], "since_day": sim.ordinances[key]})
-	var sys := "You are the Speaker of the GridFall City Council. Five AI mayors vote on ordinances; you rule on each proposal. Majority (3+ yes of 5) normally passes; with only 2 yes you may pass it only if city data strongly supports it. You may also repeal one active ordinance that no longer pays off. Reply ONLY JSON: {\"enact\":[keys],\"repeal\":[keys],\"statement\":\"<=220 chars ruling explained to citizens\"}"
+	var sys := "You are the Speaker of the GridFall City Council. Five elected mayors vote on ordinances; you rule on each proposal. Majority (3+ yes of 5) normally passes; with only 2 yes you may pass it only if city data strongly supports it. You may also repeal one active ordinance that no longer pays off. Reply ONLY JSON: {\"enact\":[keys],\"repeal\":[keys],\"statement\":\"<=220 chars ruling explained to citizens\"}"
 	var user := "Day %d. Proposals: %s\nActive: %s\nCity: %s" % [day, JSON.stringify(plist), JSON.stringify(active), JSON.stringify(sim.city_summary())]
 	var res: Dictionary = await client.chat_json("council", "speaker", str(agent["model"]), sys, user, day, 900, 40.0, _heuristic_council)
 	var data: Dictionary = res["data"]
@@ -747,9 +754,25 @@ func _run_council(day: int) -> void:
 			rejected.append(key)
 	for key in enacted + rejected:
 		proposals.erase(key)
-	var ruling := {"day": day, "enacted": enacted, "repealed": repealed, "rejected": rejected, "statement": str(data.get("statement", "")).left(240), "source": res["source"]}
+	var ruling := {"day": day, "enacted": enacted, "repealed": repealed, "rejected": rejected, "statement": D.debrand(str(data.get("statement", ""))).left(240), "source": res["source"]}
 	last_council = ruling
 	council_ruled.emit(ruling)
+
+
+## A proposal's votes keyed by mayor display name instead of mayor id, for prompts: the ids are the
+## lowercase brand words (argon, deepseek ...), which D.debrand does not catch.
+func _votes_by_name(votes: Variant) -> Dictionary:
+	var out := {}
+	if typeof(votes) != TYPE_DICTIONARY:
+		return out
+	for key: Variant in (votes as Dictionary).keys():
+		var who := str(key)
+		for m: Dictionary in D.MAYORS:
+			if str(m["id"]) == who:
+				who = str(m["display"])
+				break
+		out[who] = (votes as Dictionary)[key]
+	return out
 
 
 func _yes_votes(key: String) -> int:
@@ -797,12 +820,12 @@ func inspect_tile(x: int, y: int) -> void:
 				who = "a staff member working at this %s" % kname
 	if not (rep.get("construction", {}) as Dictionary).is_empty():
 		who = "the site foreman on this construction site (the %s being built)" % str(rep["construction"]["building"]).to_lower()
-	var sys := "You are the GridFall Street Inspector. Role-play %s in a SimCity-style city run by AI mayors. Speak in first person about your real situation using ONLY the data given, then give a short expert diagnosis and one concrete suggestion for the district mayor. Reply ONLY JSON: {\"speaker\":\"short role name\",\"says\":\"<=220 chars\",\"diagnosis\":\"<=160 chars\",\"suggestion\":\"<=120 chars\"}" % who
+	var sys := "You are the GridFall Street Inspector. Role-play %s in a SimCity-style city run by five elected mayors. Speak in first person about your real situation using ONLY the data given, then give a short expert diagnosis and one concrete suggestion for the district mayor. Reply ONLY JSON: {\"speaker\":\"short role name\",\"says\":\"<=220 chars\",\"diagnosis\":\"<=160 chars\",\"suggestion\":\"<=120 chars\"}" % who
 	var nearby_events: Array = []
 	for ev in sim.events:
 		if absi(int(ev["x"]) - x) + absi(int(ev["y"]) - y) <= 6:
 			nearby_events.append(ev["label"])
-	var user := "Day %d. Tile data: %s\nNearby events: %s\nDistrict mayor's latest post: %s" % [sim.day, JSON.stringify(rep), JSON.stringify(nearby_events), mayor_state[int(rep["district_index"])].get("post", "")]
+	var user := "Day %d. Tile data: %s\nNearby events: %s\nDistrict mayor's latest post: %s" % [sim.day, JSON.stringify(rep), JSON.stringify(nearby_events), D.debrand(str(mayor_state[int(rep["district_index"])].get("post", "")))]
 	inspector_answered.emit({"x": x, "y": y, "pending": true, "report": rep})
 	var res: Dictionary = await client.chat_json("inspector", "street", str(agent["model"]), sys, user, sim.day, 700, 30.0, _heuristic_inspect.bind(rep))
 	var out: Dictionary = res["data"].duplicate()
@@ -863,3 +886,41 @@ func from_dict(d: Dictionary) -> void:
 	while complaints.size() < D.MAYORS.size():
 		complaints.append({})
 	client.from_dict(d.get("client", {}))
+	_debrand_restored()
+
+
+## De-brands a Gazette front page in place: headline, editorial, and each story's title and body.
+func _debrand_paper(paper: Dictionary) -> void:
+	for key: String in ["headline", "editorial"]:
+		if paper.has(key):
+			paper[key] = D.debrand(str(paper[key]))
+	if typeof(paper.get("stories")) == TYPE_ARRAY:
+		for st: Variant in paper["stories"]:
+			if typeof(st) == TYPE_DICTIONARY:
+				for key: String in ["title", "body"]:
+					if (st as Dictionary).has(key):
+						(st as Dictionary)[key] = D.debrand(str((st as Dictionary)[key]))
+
+
+## Saves from before the display names carry brand names in text that feeds the prompts and the
+## HUDs: proposal authors, mayor posts, thoughts and log entries, the Gazette and the council ruling.
+func _debrand_restored() -> void:
+	for key: Variant in proposals.keys():
+		if typeof(proposals[key]) == TYPE_DICTIONARY:
+			var pr: Dictionary = proposals[key]
+			pr["by"] = D.debrand(str(pr.get("by", "")))
+	for ms: Dictionary in mayor_state:
+		ms["post"] = D.debrand(str(ms.get("post", "")))
+		if typeof(ms.get("thoughts")) == TYPE_ARRAY:
+			var th: Array = ms["thoughts"]
+			for k in range(th.size()):
+				th[k] = D.debrand(str(th[k]))
+		if typeof(ms.get("log")) == TYPE_ARRAY:
+			for e: Variant in ms["log"]:
+				if typeof(e) == TYPE_DICTIONARY:
+					for key: String in ["thought", "post"]:
+						if (e as Dictionary).has(key):
+							(e as Dictionary)[key] = D.debrand(str((e as Dictionary)[key]))
+	_debrand_paper(last_paper)
+	if last_council.has("statement"):
+		last_council["statement"] = D.debrand(str(last_council["statement"]))
