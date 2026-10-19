@@ -2,10 +2,10 @@ class_name FpHud
 extends CanvasLayer
 ## The lean on-foot HUD (slice B): named slots the HUD, chat and other slices fill, and B's widgets
 ## in them: indicator chips and the compass (top_bar), toasts and the alert banner (toasts), the
-## rotating minimap and street label (minimap_slot), the interact prompt and first-person crosshair
-## (center), and the pause menu, place card and full map (overlay). No AI or model branding: every
-## string goes through SimDefs.debrand(). The minimap and map need the hud_widgets feature, which
-## binds its tile model and waypoint with bind_widgets().
+## rotating minimap and street label (minimap_slot), the interact prompt, first-person crosshair
+## and district caption (center), and the pause menu, place card and full map (overlay). No AI or
+## model branding: every string goes through SimDefs.debrand(). The minimap and map need the
+## hud_widgets feature, which binds its tile model and waypoint with bind_widgets().
 
 const D := preload("res://scripts/sim/sim_defs.gd")
 const S := preload("res://scripts/fp/ui/hud_style.gd")
@@ -14,6 +14,7 @@ const Toasts := preload("res://scripts/fp/ui/hud_toasts.gd")
 const Compass := preload("res://scripts/fp/ui/hud_compass.gd")
 const MinimapView := preload("res://scripts/fp/ui/minimap_view.gd")
 const Prompt := preload("res://scripts/fp/ui/hud_prompt.gd")
+const Caption := preload("res://scripts/fp/ui/hud_caption.gd")
 const PauseMenu := preload("res://scripts/fp/ui/pause_menu.gd")
 const PlaceCard := preload("res://scripts/fp/ui/place_card.gd")
 const MapScreen := preload("res://scripts/fp/ui/map_screen.gd")
@@ -47,6 +48,7 @@ var toasts: Toasts
 var compass: Compass
 var minimap: MinimapView
 var prompt: Prompt
+var caption: Caption
 var pause_menu: PauseMenu
 var card: PlaceCard
 var map: MapScreen
@@ -99,6 +101,9 @@ func setup(p_ctx: FpContext) -> void:
 	prompt = Prompt.new()
 	slot("center").add_child(prompt)
 	prompt.setup(ctx)
+	caption = Caption.new()
+	slot("center").add_child(caption)
+	caption.setup(ctx)
 	card = PlaceCard.new()
 	slot("overlay").add_child(card)
 	card.setup(ctx, self)
