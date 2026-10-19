@@ -3,9 +3,10 @@
 importer="texture"
 type="CompressedTexture2D"
 uid="uid://bkrlk5h3smi7w"
-path="res://.godot/imported/bus_shelter_concrete_wall_008_diff.jpg-cf0c8c297c23f2438be6f44b5a1bad58.ctex"
+path.s3tc="res://.godot/imported/bus_shelter_concrete_wall_008_diff.jpg-cf0c8c297c23f2438be6f44b5a1bad58.s3tc.ctex"
 metadata={
-"vram_texture": false
+"imported_formats": ["s3tc_bptc"],
+"vram_texture": true
 }
 generator_parameters={
 "md5": "b0f10da5a9326fc38d8df2f6d81e8daa"
@@ -14,11 +15,11 @@ generator_parameters={
 [deps]
 
 source_file="res://models/real/street/bus_shelter_concrete_wall_008_diff.jpg"
-dest_files=["res://.godot/imported/bus_shelter_concrete_wall_008_diff.jpg-cf0c8c297c23f2438be6f44b5a1bad58.ctex"]
+dest_files=["res://.godot/imported/bus_shelter_concrete_wall_008_diff.jpg-cf0c8c297c23f2438be6f44b5a1bad58.s3tc.ctex"]
 
 [params]
 
-compress/mode=0
+compress/mode=2
 compress/high_quality=false
 compress/lossy_quality=0.7
 compress/uastc_level=0

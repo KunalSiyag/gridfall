@@ -3,9 +3,10 @@
 importer="texture"
 type="CompressedTexture2D"
 uid="uid://bofd7gjjg4qor"
-path="res://.godot/imported/parking_meter_car_atlas_diff.png-5d8bca7d84a39cfce8d99bc3bc8d80ec.ctex"
+path.s3tc="res://.godot/imported/parking_meter_car_atlas_diff.png-5d8bca7d84a39cfce8d99bc3bc8d80ec.s3tc.ctex"
 metadata={
-"vram_texture": false
+"imported_formats": ["s3tc_bptc"],
+"vram_texture": true
 }
 generator_parameters={
 "md5": "2fd2df13272cbd4ef96f2bc37d20db7a"
@@ -14,11 +15,11 @@ generator_parameters={
 [deps]
 
 source_file="res://models/real/street/parking_meter_car_atlas_diff.png"
-dest_files=["res://.godot/imported/parking_meter_car_atlas_diff.png-5d8bca7d84a39cfce8d99bc3bc8d80ec.ctex"]
+dest_files=["res://.godot/imported/parking_meter_car_atlas_diff.png-5d8bca7d84a39cfce8d99bc3bc8d80ec.s3tc.ctex"]
 
 [params]
 
-compress/mode=0
+compress/mode=2
 compress/high_quality=false
 compress/lossy_quality=0.7
 compress/uastc_level=0

@@ -3,9 +3,10 @@
 importer="texture"
 type="CompressedTexture2D"
 uid="uid://dxt6ys0045l6r"
-path="res://.godot/imported/pickup_grey_car_atlas_diff.png-7fa87baa8b6a0b48b18f9ffb66437448.ctex"
+path.s3tc="res://.godot/imported/pickup_grey_car_atlas_diff.png-7fa87baa8b6a0b48b18f9ffb66437448.s3tc.ctex"
 metadata={
-"vram_texture": false
+"imported_formats": ["s3tc_bptc"],
+"vram_texture": true
 }
 generator_parameters={
 "md5": "2fd2df13272cbd4ef96f2bc37d20db7a"
@@ -14,11 +15,11 @@ generator_parameters={
 [deps]
 
 source_file="res://models/real/vehicles_v2/pickup_grey_car_atlas_diff.png"
-dest_files=["res://.godot/imported/pickup_grey_car_atlas_diff.png-7fa87baa8b6a0b48b18f9ffb66437448.ctex"]
+dest_files=["res://.godot/imported/pickup_grey_car_atlas_diff.png-7fa87baa8b6a0b48b18f9ffb66437448.s3tc.ctex"]
 
 [params]
 
-compress/mode=0
+compress/mode=2
 compress/high_quality=false
 compress/lossy_quality=0.7
 compress/uastc_level=0

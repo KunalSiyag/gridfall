@@ -3,9 +3,10 @@
 importer="texture"
 type="CompressedTexture2D"
 uid="uid://bou6r2dfubp4f"
-path="res://.godot/imported/sedan_blue_car_atlas_arm.png-30a242fad000ece003369306fa10b652.ctex"
+path.s3tc="res://.godot/imported/sedan_blue_car_atlas_arm.png-30a242fad000ece003369306fa10b652.s3tc.ctex"
 metadata={
-"vram_texture": false
+"imported_formats": ["s3tc_bptc"],
+"vram_texture": true
 }
 generator_parameters={
 "md5": "69b152c7a90cc51aacb6bbca1333bf20"
@@ -14,11 +15,11 @@ generator_parameters={
 [deps]
 
 source_file="res://models/real/vehicles_v2/sedan_blue_car_atlas_arm.png"
-dest_files=["res://.godot/imported/sedan_blue_car_atlas_arm.png-30a242fad000ece003369306fa10b652.ctex"]
+dest_files=["res://.godot/imported/sedan_blue_car_atlas_arm.png-30a242fad000ece003369306fa10b652.s3tc.ctex"]
 
 [params]
 
-compress/mode=0
+compress/mode=2
 compress/high_quality=false
 compress/lossy_quality=0.7
 compress/uastc_level=0

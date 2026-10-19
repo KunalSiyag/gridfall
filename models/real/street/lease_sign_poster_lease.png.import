@@ -3,9 +3,10 @@
 importer="texture"
 type="CompressedTexture2D"
 uid="uid://c7pgaehfmu33g"
-path="res://.godot/imported/lease_sign_poster_lease.png-a0296d494e9d5c3711dc18a80ad9b54f.ctex"
+path.s3tc="res://.godot/imported/lease_sign_poster_lease.png-a0296d494e9d5c3711dc18a80ad9b54f.s3tc.ctex"
 metadata={
-"vram_texture": false
+"imported_formats": ["s3tc_bptc"],
+"vram_texture": true
 }
 generator_parameters={
 "md5": "142c2e0f8fbb66f549fe76a92eef9945"
@@ -14,11 +15,11 @@ generator_parameters={
 [deps]
 
 source_file="res://models/real/street/lease_sign_poster_lease.png"
-dest_files=["res://.godot/imported/lease_sign_poster_lease.png-a0296d494e9d5c3711dc18a80ad9b54f.ctex"]
+dest_files=["res://.godot/imported/lease_sign_poster_lease.png-a0296d494e9d5c3711dc18a80ad9b54f.s3tc.ctex"]
 
 [params]
 
-compress/mode=0
+compress/mode=2
 compress/high_quality=false
 compress/lossy_quality=0.7
 compress/uastc_level=0

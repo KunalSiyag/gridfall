@@ -3,9 +3,10 @@
 importer="texture"
 type="CompressedTexture2D"
 uid="uid://cfdyyaqvr3qh4"
-path="res://.godot/imported/yield_sign_car_atlas_arm.png-0994f9a221cbde8017b621bce5cb867a.ctex"
+path.s3tc="res://.godot/imported/yield_sign_car_atlas_arm.png-0994f9a221cbde8017b621bce5cb867a.s3tc.ctex"
 metadata={
-"vram_texture": false
+"imported_formats": ["s3tc_bptc"],
+"vram_texture": true
 }
 generator_parameters={
 "md5": "69b152c7a90cc51aacb6bbca1333bf20"
@@ -14,11 +15,11 @@ generator_parameters={
 [deps]
 
 source_file="res://models/real/street/yield_sign_car_atlas_arm.png"
-dest_files=["res://.godot/imported/yield_sign_car_atlas_arm.png-0994f9a221cbde8017b621bce5cb867a.ctex"]
+dest_files=["res://.godot/imported/yield_sign_car_atlas_arm.png-0994f9a221cbde8017b621bce5cb867a.s3tc.ctex"]
 
 [params]
 
-compress/mode=0
+compress/mode=2
 compress/high_quality=false
 compress/lossy_quality=0.7
 compress/uastc_level=0

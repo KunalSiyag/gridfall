@@ -3,9 +3,10 @@
 importer="texture"
 type="CompressedTexture2D"
 uid="uid://ou7hm22jbc0n"
-path="res://.godot/imported/poster_frame_poster_portrait.png-22c572e3481674742ec7dd7d9d8f84ca.ctex"
+path.s3tc="res://.godot/imported/poster_frame_poster_portrait.png-22c572e3481674742ec7dd7d9d8f84ca.s3tc.ctex"
 metadata={
-"vram_texture": false
+"imported_formats": ["s3tc_bptc"],
+"vram_texture": true
 }
 generator_parameters={
 "md5": "62db2066e60aaecb80211dae88f28513"
@@ -14,11 +15,11 @@ generator_parameters={
 [deps]
 
 source_file="res://models/real/street/poster_frame_poster_portrait.png"
-dest_files=["res://.godot/imported/poster_frame_poster_portrait.png-22c572e3481674742ec7dd7d9d8f84ca.ctex"]
+dest_files=["res://.godot/imported/poster_frame_poster_portrait.png-22c572e3481674742ec7dd7d9d8f84ca.s3tc.ctex"]
 
 [params]
 
-compress/mode=0
+compress/mode=2
 compress/high_quality=false
 compress/lossy_quality=0.7
 compress/uastc_level=0

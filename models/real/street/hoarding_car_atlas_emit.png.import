@@ -3,9 +3,10 @@
 importer="texture"
 type="CompressedTexture2D"
 uid="uid://ygdl34n1i1ce"
-path="res://.godot/imported/hoarding_car_atlas_emit.png-054e588b37749e37fa318a59ab50bf55.ctex"
+path.s3tc="res://.godot/imported/hoarding_car_atlas_emit.png-054e588b37749e37fa318a59ab50bf55.s3tc.ctex"
 metadata={
-"vram_texture": false
+"imported_formats": ["s3tc_bptc"],
+"vram_texture": true
 }
 generator_parameters={
 "md5": "1e1949a33e8b88bf81dca38475f1d5f2"
@@ -14,11 +15,11 @@ generator_parameters={
 [deps]
 
 source_file="res://models/real/street/hoarding_car_atlas_emit.png"
-dest_files=["res://.godot/imported/hoarding_car_atlas_emit.png-054e588b37749e37fa318a59ab50bf55.ctex"]
+dest_files=["res://.godot/imported/hoarding_car_atlas_emit.png-054e588b37749e37fa318a59ab50bf55.s3tc.ctex"]
 
 [params]
 
-compress/mode=0
+compress/mode=2
 compress/high_quality=false
 compress/lossy_quality=0.7
 compress/uastc_level=0

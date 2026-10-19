@@ -3,9 +3,10 @@
 importer="texture"
 type="CompressedTexture2D"
 uid="uid://co0nx71m48shf"
-path="res://.godot/imported/hatchback_green_car_atlas_diff.png-2fb449f45b7bb3d4be2454ffdc977da2.ctex"
+path.s3tc="res://.godot/imported/hatchback_green_car_atlas_diff.png-2fb449f45b7bb3d4be2454ffdc977da2.s3tc.ctex"
 metadata={
-"vram_texture": false
+"imported_formats": ["s3tc_bptc"],
+"vram_texture": true
 }
 generator_parameters={
 "md5": "2fd2df13272cbd4ef96f2bc37d20db7a"
@@ -14,11 +15,11 @@ generator_parameters={
 [deps]
 
 source_file="res://models/real/vehicles_v2/hatchback_green_car_atlas_diff.png"
-dest_files=["res://.godot/imported/hatchback_green_car_atlas_diff.png-2fb449f45b7bb3d4be2454ffdc977da2.ctex"]
+dest_files=["res://.godot/imported/hatchback_green_car_atlas_diff.png-2fb449f45b7bb3d4be2454ffdc977da2.s3tc.ctex"]
 
 [params]
 
-compress/mode=0
+compress/mode=2
 compress/high_quality=false
 compress/lossy_quality=0.7
 compress/uastc_level=0

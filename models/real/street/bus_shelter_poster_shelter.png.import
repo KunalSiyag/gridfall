@@ -3,9 +3,10 @@
 importer="texture"
 type="CompressedTexture2D"
 uid="uid://ihpj8ae7r5ab"
-path="res://.godot/imported/bus_shelter_poster_shelter.png-c24fde5a6768d379f1331e8039b9797b.ctex"
+path.s3tc="res://.godot/imported/bus_shelter_poster_shelter.png-c24fde5a6768d379f1331e8039b9797b.s3tc.ctex"
 metadata={
-"vram_texture": false
+"imported_formats": ["s3tc_bptc"],
+"vram_texture": true
 }
 generator_parameters={
 "md5": "4f0268eee6ce3e958908e136c38b24d6"
@@ -14,11 +15,11 @@ generator_parameters={
 [deps]
 
 source_file="res://models/real/street/bus_shelter_poster_shelter.png"
-dest_files=["res://.godot/imported/bus_shelter_poster_shelter.png-c24fde5a6768d379f1331e8039b9797b.ctex"]
+dest_files=["res://.godot/imported/bus_shelter_poster_shelter.png-c24fde5a6768d379f1331e8039b9797b.s3tc.ctex"]
 
 [params]
 
-compress/mode=0
+compress/mode=2
 compress/high_quality=false
 compress/lossy_quality=0.7
 compress/uastc_level=0

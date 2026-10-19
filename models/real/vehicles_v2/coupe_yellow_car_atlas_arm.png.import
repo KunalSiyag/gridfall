@@ -3,9 +3,10 @@
 importer="texture"
 type="CompressedTexture2D"
 uid="uid://bvnec2j5nt7p2"
-path="res://.godot/imported/coupe_yellow_car_atlas_arm.png-29e9e688162e1b4cfa180096bf6522b6.ctex"
+path.s3tc="res://.godot/imported/coupe_yellow_car_atlas_arm.png-29e9e688162e1b4cfa180096bf6522b6.s3tc.ctex"
 metadata={
-"vram_texture": false
+"imported_formats": ["s3tc_bptc"],
+"vram_texture": true
 }
 generator_parameters={
 "md5": "69b152c7a90cc51aacb6bbca1333bf20"
@@ -14,11 +15,11 @@ generator_parameters={
 [deps]
 
 source_file="res://models/real/vehicles_v2/coupe_yellow_car_atlas_arm.png"
-dest_files=["res://.godot/imported/coupe_yellow_car_atlas_arm.png-29e9e688162e1b4cfa180096bf6522b6.ctex"]
+dest_files=["res://.godot/imported/coupe_yellow_car_atlas_arm.png-29e9e688162e1b4cfa180096bf6522b6.s3tc.ctex"]
 
 [params]
 
-compress/mode=0
+compress/mode=2
 compress/high_quality=false
 compress/lossy_quality=0.7
 compress/uastc_level=0

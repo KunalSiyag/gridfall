@@ -3,9 +3,10 @@
 importer="texture"
 type="CompressedTexture2D"
 uid="uid://dsh2p4nulvx81"
-path="res://.godot/imported/coupe_navy_car_atlas_diff.png-ac3eaf53d1b31a35d9c2ce76d0bb4b36.ctex"
+path.s3tc="res://.godot/imported/coupe_navy_car_atlas_diff.png-ac3eaf53d1b31a35d9c2ce76d0bb4b36.s3tc.ctex"
 metadata={
-"vram_texture": false
+"imported_formats": ["s3tc_bptc"],
+"vram_texture": true
 }
 generator_parameters={
 "md5": "2fd2df13272cbd4ef96f2bc37d20db7a"
@@ -14,11 +15,11 @@ generator_parameters={
 [deps]
 
 source_file="res://models/real/vehicles_v2/coupe_navy_car_atlas_diff.png"
-dest_files=["res://.godot/imported/coupe_navy_car_atlas_diff.png-ac3eaf53d1b31a35d9c2ce76d0bb4b36.ctex"]
+dest_files=["res://.godot/imported/coupe_navy_car_atlas_diff.png-ac3eaf53d1b31a35d9c2ce76d0bb4b36.s3tc.ctex"]
 
 [params]
 
-compress/mode=0
+compress/mode=2
 compress/high_quality=false
 compress/lossy_quality=0.7
 compress/uastc_level=0

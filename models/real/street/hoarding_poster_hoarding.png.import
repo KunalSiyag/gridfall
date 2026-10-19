@@ -3,9 +3,10 @@
 importer="texture"
 type="CompressedTexture2D"
 uid="uid://c7s8ip7kkf8tp"
-path="res://.godot/imported/hoarding_poster_hoarding.png-f9879792e7f6f24f98cfd088e47ca92d.ctex"
+path.s3tc="res://.godot/imported/hoarding_poster_hoarding.png-f9879792e7f6f24f98cfd088e47ca92d.s3tc.ctex"
 metadata={
-"vram_texture": false
+"imported_formats": ["s3tc_bptc"],
+"vram_texture": true
 }
 generator_parameters={
 "md5": "71d99732597263d6055c72ef952ad1cc"
@@ -14,11 +15,11 @@ generator_parameters={
 [deps]
 
 source_file="res://models/real/street/hoarding_poster_hoarding.png"
-dest_files=["res://.godot/imported/hoarding_poster_hoarding.png-f9879792e7f6f24f98cfd088e47ca92d.ctex"]
+dest_files=["res://.godot/imported/hoarding_poster_hoarding.png-f9879792e7f6f24f98cfd088e47ca92d.s3tc.ctex"]
 
 [params]
 
-compress/mode=0
+compress/mode=2
 compress/high_quality=false
 compress/lossy_quality=0.7
 compress/uastc_level=0

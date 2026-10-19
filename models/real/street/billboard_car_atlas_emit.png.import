@@ -3,9 +3,10 @@
 importer="texture"
 type="CompressedTexture2D"
 uid="uid://cr35qdh1w7ldm"
-path="res://.godot/imported/billboard_car_atlas_emit.png-f9f98ad7e6b00f591b692c80f8d0694e.ctex"
+path.s3tc="res://.godot/imported/billboard_car_atlas_emit.png-f9f98ad7e6b00f591b692c80f8d0694e.s3tc.ctex"
 metadata={
-"vram_texture": false
+"imported_formats": ["s3tc_bptc"],
+"vram_texture": true
 }
 generator_parameters={
 "md5": "1e1949a33e8b88bf81dca38475f1d5f2"
@@ -14,11 +15,11 @@ generator_parameters={
 [deps]
 
 source_file="res://models/real/street/billboard_car_atlas_emit.png"
-dest_files=["res://.godot/imported/billboard_car_atlas_emit.png-f9f98ad7e6b00f591b692c80f8d0694e.ctex"]
+dest_files=["res://.godot/imported/billboard_car_atlas_emit.png-f9f98ad7e6b00f591b692c80f8d0694e.s3tc.ctex"]
 
 [params]
 
-compress/mode=0
+compress/mode=2
 compress/high_quality=false
 compress/lossy_quality=0.7
 compress/uastc_level=0

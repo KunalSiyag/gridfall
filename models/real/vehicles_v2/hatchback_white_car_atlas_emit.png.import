@@ -3,9 +3,10 @@
 importer="texture"
 type="CompressedTexture2D"
 uid="uid://d4gr8l5ve1nvy"
-path="res://.godot/imported/hatchback_white_car_atlas_emit.png-bc3d8f094a39ae494c7499b60ee23d8e.ctex"
+path.s3tc="res://.godot/imported/hatchback_white_car_atlas_emit.png-bc3d8f094a39ae494c7499b60ee23d8e.s3tc.ctex"
 metadata={
-"vram_texture": false
+"imported_formats": ["s3tc_bptc"],
+"vram_texture": true
 }
 generator_parameters={
 "md5": "1e1949a33e8b88bf81dca38475f1d5f2"
@@ -14,11 +15,11 @@ generator_parameters={
 [deps]
 
 source_file="res://models/real/vehicles_v2/hatchback_white_car_atlas_emit.png"
-dest_files=["res://.godot/imported/hatchback_white_car_atlas_emit.png-bc3d8f094a39ae494c7499b60ee23d8e.ctex"]
+dest_files=["res://.godot/imported/hatchback_white_car_atlas_emit.png-bc3d8f094a39ae494c7499b60ee23d8e.s3tc.ctex"]
 
 [params]
 
-compress/mode=0
+compress/mode=2
 compress/high_quality=false
 compress/lossy_quality=0.7
 compress/uastc_level=0

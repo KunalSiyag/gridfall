@@ -3,9 +3,10 @@
 importer="texture"
 type="CompressedTexture2D"
 uid="uid://b1a6desn86qgl"
-path="res://.godot/imported/bus_shelter_car_atlas_diff.png-2d789238b21467359cc41affc20ef07a.ctex"
+path.s3tc="res://.godot/imported/bus_shelter_car_atlas_diff.png-2d789238b21467359cc41affc20ef07a.s3tc.ctex"
 metadata={
-"vram_texture": false
+"imported_formats": ["s3tc_bptc"],
+"vram_texture": true
 }
 generator_parameters={
 "md5": "2fd2df13272cbd4ef96f2bc37d20db7a"
@@ -14,11 +15,11 @@ generator_parameters={
 [deps]
 
 source_file="res://models/real/street/bus_shelter_car_atlas_diff.png"
-dest_files=["res://.godot/imported/bus_shelter_car_atlas_diff.png-2d789238b21467359cc41affc20ef07a.ctex"]
+dest_files=["res://.godot/imported/bus_shelter_car_atlas_diff.png-2d789238b21467359cc41affc20ef07a.s3tc.ctex"]
 
 [params]
 
-compress/mode=0
+compress/mode=2
 compress/high_quality=false
 compress/lossy_quality=0.7
 compress/uastc_level=0
