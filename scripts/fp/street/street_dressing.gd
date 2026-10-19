@@ -42,7 +42,7 @@ const KITS := {
 	"apron": ["", -1.0],
 }
 ## Kinds that stay visible out to the fog (street trees, lot aprons); the rest end at WS.VIS_PROP.
-const FAR_KINDS := ["tree", "pit", "apron"]
+const FAR_KINDS := ["tree", "apron"]
 const SIGN_GREEN := Color(0.02, 0.36, 0.2)
 
 var view: CityView
@@ -827,7 +827,9 @@ func dress_model(model: Node3D) -> void:
 			if nm.begins_with("Glass") and not nm.begins_with("Glass_Car"):
 				mi.set_surface_override_material(s, _glass_mat(nm, m as BaseMaterial3D))
 			elif nm.begins_with("Leaves") and m is BaseMaterial3D:
-				mi.set_surface_override_material(s, _foliage_mat(m as BaseMaterial3D, 0.55))
+				mi.set_surface_override_material(s, _foliage_mat(m as BaseMaterial3D, 0.55, 0.0, Vector3.ZERO, card_uv_offset(mi.mesh, s)))
+			elif nm == "Hedge_Core":
+				mi.set_surface_override_material(s, _hedge_mat())
 
 
 func _glass_mat(nm: String, src: BaseMaterial3D) -> StandardMaterial3D:
@@ -859,15 +861,38 @@ func fp_tree_parts(parts: Array) -> Array:
 			continue
 		var bb := mesh.get_aabb()
 		var q := p.duplicate()
-		q["mat"] = _foliage_mat(mat as BaseMaterial3D, 0.15, 0.8, bb.get_center() - Vector3(0, bb.size.y * 0.15, 0))
+		q["mat"] = _foliage_mat(mat as BaseMaterial3D, 0.15, 0.8, bb.get_center() - Vector3(0, bb.size.y * 0.15, 0), card_uv_offset(mesh, 0))
 		out.append(q)
 	return out
 
 
+## The UV offset the model exporter added to every leaf card of surface s (core.py build adds one
+## random offset per material, and each card spans offset .. offset + 1): the minimum UV of the
+## surface's first triangle. Cached per mesh and surface.
+func card_uv_offset(mesh: Mesh, s: int) -> Vector2:
+	var key := "uvoff_%d_%d" % [mesh.get_instance_id(), s]
+	if _mats.has(key):
+		return _mats[key]
+	var off := Vector2.ZERO
+	if s < mesh.get_surface_count():
+		var arr := mesh.surface_get_arrays(s)
+		var uv: PackedVector2Array = arr[Mesh.ARRAY_TEX_UV]
+		var idx: PackedInt32Array = arr[Mesh.ARRAY_INDEX] if arr[Mesh.ARRAY_INDEX] != null else PackedInt32Array()
+		var tri: Array[int] = [0, 1, 2]
+		if idx.size() >= 3:
+			tri = [idx[0], idx[1], idx[2]]
+		if uv.size() > 2:
+			off = Vector2(INF, INF)
+			for k: int in tri:
+				off = Vector2(minf(off.x, uv[k].x), minf(off.y, uv[k].y))
+	_mats[key] = off
+	return off
+
+
 ## The foliage shader for leaf material src: up_bias pulls normals toward the sky, bend bends them out
 ## from centre (mesh space).
-func _foliage_mat(src: BaseMaterial3D, up_bias: float, bend: float = 0.0, centre: Vector3 = Vector3.ZERO) -> Material:
-	var key := "foliage_%d_%.2f_%.2f_%s" % [src.get_instance_id(), up_bias, bend, str(centre.snapped(Vector3.ONE * 0.001))]
+func _foliage_mat(src: BaseMaterial3D, up_bias: float, bend: float = 0.0, centre: Vector3 = Vector3.ZERO, uv_offset: Vector2 = Vector2.ZERO) -> Material:
+	var key := "foliage_%d_%.2f_%.2f_%s_%s" % [src.get_instance_id(), up_bias, bend, str(centre.snapped(Vector3.ONE * 0.001)), str(uv_offset.snapped(Vector2.ONE * 0.0001))]
 	if _mats.has(key):
 		return _mats[key]
 	var m: Material = null
@@ -879,6 +904,7 @@ func _foliage_mat(src: BaseMaterial3D, up_bias: float, bend: float = 0.0, centre
 		sm.set_shader_parameter("up_bias", up_bias)
 		sm.set_shader_parameter("bend", bend)
 		sm.set_shader_parameter("crown_centre", centre)
+		sm.set_shader_parameter("uv_offset", uv_offset)
 		m = sm
 	else:
 		var d := src.duplicate() as BaseMaterial3D
@@ -887,6 +913,28 @@ func _foliage_mat(src: BaseMaterial3D, up_bias: float, bend: float = 0.0, centre
 		m = d
 	_mats[key] = m
 	return m
+
+
+## The clipped face of a hedge (the models' flat dark-green core box): dense leaves, one repeat per
+## metre in world space.
+func _hedge_mat() -> StandardMaterial3D:
+	if not _mats.has("hedge"):
+		var m := StandardMaterial3D.new()
+		m.resource_name = "Hedge_Core_FP"
+		var tex := DECALS + "hedge_leaves.png"
+		if ResourceLoader.exists(tex):
+			m.albedo_texture = load(tex)
+			m.albedo_color = Color(0.82, 0.86, 0.78)
+			m.uv1_triplanar = true
+			m.uv1_world_triplanar = true
+			m.uv1_scale = Vector3.ONE / (1.0 * WS.M)
+			m.texture_filter = BaseMaterial3D.TEXTURE_FILTER_LINEAR_WITH_MIPMAPS_ANISOTROPIC
+		else:
+			m.albedo_color = Color(0.07, 0.14, 0.05)
+		m.roughness = 0.85
+		m.diffuse_mode = BaseMaterial3D.DIFFUSE_LAMBERT_WRAP
+		_mats["hedge"] = m
+	return _mats["hedge"]
 
 
 func _metal_mat() -> StandardMaterial3D:
@@ -926,18 +974,15 @@ func _procedural_kit(kind: String) -> Array:
 		"apron":
 			return [{"mesh": _apron_mesh(), "xform": Transform3D(), "mat": view.apron_material()}]
 		"pit":
-			# A cast-iron tree grate, 1.3 m square, with a soil disc round the trunk.
-			var plate := BoxMesh.new()
-			plate.size = Vector3(1.3, 0.02, 1.3) * WS.M
-			var soil := CylinderMesh.new()
-			soil.top_radius = 0.38 * WS.M
-			soil.bottom_radius = 0.38 * WS.M
-			soil.height = 0.025 * WS.M
-			soil.radial_segments = 12
-			soil.rings = 1
+			# A cast-iron tree grate, 1.3 m square, flush with the paving, over a soil bed that shows
+			# through its slots and round the trunk.
+			var plate := PlaneMesh.new()
+			plate.size = Vector2(1.3, 1.3) * WS.M
+			var soil := PlaneMesh.new()
+			soil.size = Vector2(1.26, 1.26) * WS.M
 			return [
-				{"mesh": plate, "xform": Transform3D(Basis(), Vector3(0, 0.01 * WS.M, 0)), "mat": _std("grate", Color(0.13, 0.12, 0.11), 0.6, 0.55)},
-				{"mesh": soil, "xform": Transform3D(Basis(), Vector3(0, 0.0125 * WS.M, 0)), "mat": _std("soil", Color(0.2, 0.15, 0.11), 0.0, 0.95)},
+				{"mesh": plate, "xform": Transform3D(Basis(), Vector3(0, 0.02 * WS.M, 0)), "mat": _grate_mat()},
+				{"mesh": soil, "xform": Transform3D(Basis(), Vector3(0, 0.008 * WS.M, 0)), "mat": _soil_mat()},
 			]
 		"rack":
 			# Three steel hoops, 0.85 m tall, 0.7 m wide, side by side along x.
@@ -986,6 +1031,29 @@ func _procedural_kit(kind: String) -> Array:
 				{"mesh": pad, "xform": Transform3D(Basis(), Vector3(0, WS.SIDEWALK_TOP + 0.0002, 0.016)), "mat": _std("tactile", Color(0.78, 0.62, 0.32), 0.0, 0.7)},
 			]
 	return []
+
+
+func _grate_mat() -> StandardMaterial3D:
+	if not _mats.has("grate_tex"):
+		var m := _std("grate", Color(0.13, 0.12, 0.11), 0.6, 0.55).duplicate() as StandardMaterial3D
+		var tex := DECALS + "grate.png"
+		if ResourceLoader.exists(tex):
+			m.albedo_color = Color.WHITE
+			m.albedo_texture = load(tex)
+			m.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA_SCISSOR
+			m.alpha_scissor_threshold = 0.5
+			m.metallic = 0.3
+			m.roughness = 0.72
+			m.texture_filter = BaseMaterial3D.TEXTURE_FILTER_LINEAR_WITH_MIPMAPS_ANISOTROPIC
+		_mats["grate_tex"] = m
+	return _mats["grate_tex"]
+
+
+## Bare soil in tree pits: the ground's earth texture, darker and damp.
+func _soil_mat() -> Material:
+	if not _mats.has("soil_tex"):
+		_mats["soil_tex"] = view._pbr("dirt", Color(0.2, 0.15, 0.11), 1.0 / (2.0 * WS.M), Color(0.42, 0.36, 0.31))
+	return _mats["soil_tex"]
 
 
 func _box(st: SurfaceTool, c: Vector3, s: Vector3) -> void:

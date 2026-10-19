@@ -48,6 +48,12 @@ func _init(p_view: Node) -> void:
 func mat(key: String) -> Material:
 	if _mats.has(key):
 		return _mats[key]
+	if key == "net_fp" and ResourceLoader.exists("res://shaders/scaffold_net.gdshader"):
+		var sm := ShaderMaterial.new()
+		sm.shader = load("res://shaders/scaffold_net.gdshader")
+		sm.set_shader_parameter("metre", WS.M)
+		_mats[key] = sm
+		return sm
 	var m := StandardMaterial3D.new()
 	m.roughness = 0.6
 	if key in ["paint", "paint_dark", "white", "orange", "red", "steel", "rubber"]:
@@ -94,7 +100,7 @@ func mat(key: String) -> Material:
 		"timber":
 			m.albedo_color = Color(0.64, 0.47, 0.28)
 			m.roughness = 0.85
-		"net":
+		"net", "net_fp":
 			m.albedo_color = Color(0.16, 0.4, 0.27, 0.62)
 			m.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
 			m.cull_mode = BaseMaterial3D.CULL_DISABLED
@@ -971,8 +977,16 @@ func _scaffold(root: Node3D, foot: Vector2, height: float, roll_net: bool) -> vo
 	# Netting hangs from the top lift and is rolled up as the facade is finished.
 	var net := _group(sc, "Net")
 	net.position.y = top
-	box(net, Vector3(hx * 2.0, top, 0.003), Vector3(0, -top * 0.5, hz + 0.004), "net", Vector3.ZERO, false)
-	box(net, Vector3(0.003, top, hz * 2.0), Vector3(hx + 0.004, -top * 0.5, 0), "net", Vector3.ZERO, false)
+	# On foot a knitted weave you can see the scaffold through, instead of a translucent green slab.
+	var nk := "net_fp" if bool(view.get("fp_mode")) else "net"
+	if nk == "net_fp":
+		# Outside the boards (which reach hz + 0.027), wrapping the corner.
+		var g := 0.032
+		box(net, Vector3(hx * 2.0 + g, top, 0.003), Vector3(g * 0.5, -top * 0.5, hz + g), nk, Vector3.ZERO, false)
+		box(net, Vector3(0.003, top, hz * 2.0 + g), Vector3(hx + g, -top * 0.5, g * 0.5), nk, Vector3.ZERO, false)
+	else:
+		box(net, Vector3(hx * 2.0, top, 0.003), Vector3(0, -top * 0.5, hz + 0.004), nk, Vector3.ZERO, false)
+		box(net, Vector3(0.003, top, hz * 2.0), Vector3(hx + 0.004, -top * 0.5, 0), nk, Vector3.ZERO, false)
 	if roll_net:
 		track(net, "sy", 0.0, 1.0, 1.0, 0.15)
 

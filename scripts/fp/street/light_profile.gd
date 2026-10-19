@@ -26,7 +26,9 @@ const SNAP := &"g1_orbit_profile"
 ## intensity, volumetric fog, sky radiance size.
 const PRESETS := {
 	"low": {"shadow": 8.0, "splits": [0.1, 0.3, 0.6], "mode": DirectionalLight3D.SHADOW_PARALLEL_2_SPLITS, "blend": false, "ao": 1.0, "il": 0.0, "il_i": 0.0, "vol": false, "radiance": Sky.RADIANCE_SIZE_64},
-	"medium": {"shadow": WS.SHADOW_MAX_DIST, "splits": [0.06, 0.16, 0.4], "mode": DirectionalLight3D.SHADOW_PARALLEL_4_SPLITS, "blend": true, "ao": 1.2, "il": WS.SSIL_RADIUS, "il_i": 0.6, "vol": false, "radiance": Sky.RADIANCE_SIZE_256},
+	# Medium uses 2 cascades (the near one to 29 m): with 4 cascades and blending, a street view drew
+	# 950 shadow draw calls against 500 for the orbit profile, every building caught in every split.
+	"medium": {"shadow": WS.SHADOW_MAX_DIST, "splits": [0.12, 0.3, 0.6], "mode": DirectionalLight3D.SHADOW_PARALLEL_2_SPLITS, "blend": false, "ao": 1.2, "il": WS.SSIL_RADIUS, "il_i": 0.6, "vol": false, "radiance": Sky.RADIANCE_SIZE_256},
 	"high": {"shadow": 16.0, "splits": [0.05, 0.14, 0.38], "mode": DirectionalLight3D.SHADOW_PARALLEL_4_SPLITS, "blend": true, "ao": 1.3, "il": WS.SSIL_RADIUS, "il_i": 0.7, "vol": true, "radiance": Sky.RADIANCE_SIZE_256},
 }
 ## Camera far plane per preset until G2's quality.gd provides camera_far().

@@ -16,6 +16,14 @@ uniform float up_bias = 0.0;
 // mesh so the imported mesh keeps its automatic LODs.
 uniform float bend = 0.0;
 uniform vec3 crown_centre = vec3(0.0, 0.25, 0.0);
+// A card turning edge-on smears its cluster into long slivers (the "torn paper" look): between
+// these facings (|cos| of the view angle) the cluster shrinks toward the card centre, and below
+// edge_lo the card is gone.
+uniform float edge_lo = 0.1;
+uniform float edge_hi = 0.5;
+// The model exporter shifts every card's 0..1 UVs by one offset per material (core.py build), which
+// cuts the round leaf cluster into quarters at the card corners; subtracting it recentres them.
+uniform vec2 uv_offset = vec2(0.0);
 
 void vertex() {
 	vec3 wp = (MODEL_MATRIX * vec4(VERTEX, 1.0)).xyz;
@@ -32,14 +40,19 @@ void vertex() {
 }
 
 void fragment() {
-	vec4 a = texture(albedo_tex, UV) * tint;
+	vec2 cuv = UV - uv_offset;
+	vec4 a = texture(albedo_tex, cuv) * tint;
 	// Mip-averaged alpha thins distant crowns; push coverage back up as the footprint grows.
 	vec2 ts = vec2(textureSize(albedo_tex, 0));
-	vec2 dx = dFdx(UV * ts);
-	vec2 dy = dFdy(UV * ts);
+	vec2 dx = dFdx(cuv * ts);
+	vec2 dy = dFdy(cuv * ts);
 	float lod = max(0.5 * log2(max(dot(dx, dx), dot(dy, dy))), 0.0);
 	ALBEDO = a.rgb * COLOR.rgb * mix(1.0, 0.72, wetness);
-	ALPHA = clamp(a.a * (1.0 + lod * 0.28), 0.0, 1.0);
+	vec3 face_n = normalize(cross(dFdx(VERTEX), dFdy(VERTEX)));
+	float keep = smoothstep(edge_lo, edge_hi, abs(dot(face_n, normalize(VERTEX))));
+	float r = length(cuv - 0.5) * 2.0;
+	float shrink = 1.0 - smoothstep(keep * 1.15 - 0.3, keep * 1.15, r);
+	ALPHA = clamp(a.a * (1.0 + lod * 0.28), 0.0, 1.0) * shrink;
 	ALPHA_HASH_SCALE = 1.0;
 	NORMAL = FRONT_FACING ? NORMAL : -NORMAL;
 	if (up_bias > 0.0) {

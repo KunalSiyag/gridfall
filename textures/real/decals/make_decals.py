@@ -2,10 +2,13 @@
 """Street-level textures for slice G1: road-wear decals and the site hoarding.
 
 Writes PNGs next to this file: crack_0/1, patch_0, oil_0/1, drain_0, stain_0, puddle_0, the puddle
-ORM map, and hoarding.png (a greyscale painted-plywood hoarding, 4.8 m square, four 1.2 m panels,
-tinted per site). Deterministic (fixed seeds); needs numpy and Pillow.
+ORM map, hoarding.png (a greyscale painted-plywood hoarding, 4.8 m square, four 1.2 m panels,
+tinted per site), grime_mask/grime_dust, hedge_leaves.png (a tiling clipped-hedge surface, 1 m
+square, stamped from the shrub leaf cluster) and grate.png (a 1.3 m cast-iron tree grate with
+slots, alpha 0 in the slots). Deterministic (fixed seeds); needs numpy and Pillow. Name textures
+to rebuild only those (hoarding, grime, hedge, grate, decals).
 
-    python3 textures/real/decals/make_decals.py
+    python3 textures/real/decals/make_decals.py [name ...]
 """
 import math
 import os
@@ -188,7 +191,62 @@ def grime(seed):
     Image.fromarray(rgb.astype(np.uint8), "RGB").save(os.path.join(OUT, "grime_dust.png"), optimize=True)
 
 
+def hedge(seed):
+    """A clipped hedge surface: shrub leaf clusters stamped densely over shade, tiling both ways."""
+    rng = np.random.default_rng(seed)
+    n = 512
+    src = os.path.join(OUT, "..", "..", "..", "models", "real", "props", "tree_hedge_leafcluster_shrub.png")
+    leaf = Image.open(src).convert("RGBA")
+    # Stamps go on a transparent 2n canvas; its quadrants fold back onto the tile so it wraps.
+    layer = Image.new("RGBA", (n * 2, n * 2), (0, 0, 0, 0))
+    count = 320
+    for k in range(count):
+        size = int(rng.uniform(70, 130))
+        stamp = leaf.resize((size, size), Image.LANCZOS).rotate(rng.uniform(0, 360), Image.BICUBIC)
+        # Later (outer) stamps are brighter: leaves on the clipped face catch the light.
+        arr = np.asarray(stamp, np.float32)
+        arr[..., :3] *= (0.5 + 0.6 * k / count) * rng.uniform(0.85, 1.1)
+        stamp = Image.fromarray(np.clip(arr, 0, 255).astype(np.uint8), "RGBA")
+        layer.alpha_composite(stamp, (int(rng.uniform(0, n)), int(rng.uniform(0, n))))
+    shade = fbm(rng, n, 8, 3)
+    tile = Image.fromarray(np.dstack([10 + 10 * shade, 22 + 16 * shade, 8 + 8 * shade, np.full((n, n), 255.0)]).astype(np.uint8), "RGBA")
+    for ox, oy in ((0, 0), (n, 0), (0, n), (n, n)):
+        tile.alpha_composite(layer.crop((ox, oy, ox + n, oy + n)))
+    Image.fromarray(np.asarray(tile.convert("RGB"), np.uint8), "RGB").save(os.path.join(OUT, "hedge_leaves.png"), optimize=True)
+
+
+def grate(seed):
+    """A square cast-iron tree grate, 1.3 m: rings of radial slots round a 0.76 m trunk opening."""
+    rng = np.random.default_rng(seed)
+    n = 512
+    yy, xx = (np.mgrid[0:n, 0:n] + 0.5) / n - 0.5
+    r = np.sqrt(xx * xx + yy * yy) * 1.3     # metres from the centre
+    ang = np.arctan2(yy, xx)
+    border = np.maximum(np.abs(xx), np.abs(yy)) * 1.3
+    solid = np.ones((n, n), bool)
+    solid &= r > 0.38                        # trunk opening
+    # Three rings of slots, more slots on the outer rings, solid spokes between.
+    for r0, r1, k in ((0.42, 0.5, 18), (0.53, 0.59, 24), (0.62, 0.69, 30)):
+        ring = (r > r0) & (r < r1)
+        spoke = np.abs(((ang / (2 * math.pi) * k) % 1.0) - 0.5) < 0.32
+        solid &= ~(ring & spoke)
+    solid |= border > 0.62                   # frame
+    alpha = solid.astype(np.float32) * 255
+    n2 = fbm(rng, n, 10, 3)
+    iron = 44 + 22 * n2
+    rust = np.clip((fbm(rng, n, 16, 3) - 0.58) * 3, 0, 1) * 0.6
+    edge = np.clip(1 - np.abs(border - 0.62) / 0.012, 0, 1)
+    rgb = np.dstack([iron + rust * 34, iron + rust * 14, iron - rust * 6]) * (1 - 0.25 * edge[..., None])
+    save("grate", rgb, alpha)
+
+
 def main():
+    import sys
+    want = set(sys.argv[1:])
+    if want:
+        for name in want:
+            {"hoarding": lambda: hoarding(71), "grime": lambda: grime(81), "hedge": lambda: hedge(91), "grate": lambda: grate(101)}[name]()
+        return
     for k in range(2):
         save("crack_%d" % k, *cracks(11 + k))
         save("oil_%d" % k, *oil(31 + k))
@@ -201,6 +259,8 @@ def main():
     Image.fromarray(np.full((16, 16, 3), (255, 12, 0), np.uint8), "RGB").save(os.path.join(OUT, "puddle_orm.png"))
     hoarding(71)
     grime(81)
+    hedge(91)
+    grate(101)
 
 
 if __name__ == "__main__":

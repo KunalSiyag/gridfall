@@ -904,6 +904,9 @@ func _fp_far_tree_parts() -> Array:
 	crown.set_shader_parameter("tint", Color(0.78, 0.9, 0.7))
 	crown.set_shader_parameter("up_bias", 0.25)
 	crown.set_shader_parameter("wind", 0.0)
+	# Three crossed cards: thin the most edge-on one gently, never all three.
+	crown.set_shader_parameter("edge_lo", 0.0)
+	crown.set_shader_parameter("edge_hi", 0.3)
 	var st2 := SurfaceTool.new()
 	st2.begin(Mesh.PRIMITIVE_TRIANGLES)
 	for k in range(2):

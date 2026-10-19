@@ -377,6 +377,50 @@ func _check_trees(view: CityView) -> void:
 	for e: float in far_end:
 		far_ok = far_ok and absf(e - 50.0) < 1e-3
 	K.check(fails, far_ok, "far tree stand-ins end at 50 u")
+	# Leaf cards are recentred: every card spans exactly uv_offset .. uv_offset + 1, so the round
+	# leaf cluster sits whole in the middle of the card instead of being cut at its corners.
+	var cards := 0
+	var bad := []
+	for c: Vector3i in view._tree_chunks.keys():
+		for mmi: MultiMeshInstance3D in view._tree_chunks[c]:
+			if not is_instance_valid(mmi) or c.z != 1 or not (mmi.material_override is ShaderMaterial):
+				continue
+			var sm := mmi.material_override as ShaderMaterial
+			if sm.get_shader_parameter("uv_offset") == null:
+				continue
+			var off: Vector2 = sm.get_shader_parameter("uv_offset")
+			var arr := mmi.multimesh.mesh.surface_get_arrays(0)
+			var uv: PackedVector2Array = arr[Mesh.ARRAY_TEX_UV]
+			var idx: PackedInt32Array = arr[Mesh.ARRAY_INDEX] if arr[Mesh.ARRAY_INDEX] != null else PackedInt32Array()
+			for t in range(0, mini(idx.size(), 60), 3):
+				var lo := Vector2(INF, INF)
+				var hi := -lo
+				for k in range(3):
+					var q := uv[idx[t + k]] - off
+					lo = Vector2(minf(lo.x, q.x), minf(lo.y, q.y))
+					hi = Vector2(maxf(hi.x, q.x), maxf(hi.y, q.y))
+				cards += 1
+				if lo.length() > 1e-3 or (hi - Vector2.ONE).length() > 1e-3:
+					bad.append([str(lo), str(hi)])
+	K.check(fails, cards > 0 and bad.is_empty(), "near leaf cards are recentred (%d checked, bad %s)" % [cards, str(bad.slice(0, 3))])
+	var hedges := 0
+	var flat := 0
+	var where := []
+	for h: Node in view.get_node("Tiles").get_children():
+		if h.is_queued_for_deletion():
+			continue
+		for n in h.find_children("*", "MeshInstance3D", true, false):
+			var mi := n as MeshInstance3D
+			if mi.mesh == null:
+				continue
+			for k in range(mi.mesh.get_surface_count()):
+				var m := mi.mesh.surface_get_material(k)
+				if m != null and m.resource_name == "Hedge_Core":
+					hedges += 1
+					if mi.get_active_material(k) == m:
+						flat += 1
+						where.append(str(h.get_path_to(mi)))
+	K.check(fails, flat == 0, "hedge cores are leafy on foot (%d of %d flat: %s)" % [flat, hedges, str(where.slice(0, 3))])
 
 
 # ------------------------------------------------------------------ rebuild queue
