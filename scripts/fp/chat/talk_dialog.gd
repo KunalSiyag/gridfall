@@ -67,7 +67,7 @@ var _you_l: Label
 var _emote_l: Label
 var _text_l: Label
 var _dots: Control
-var _quick: HBoxContainer
+var _quick: HFlowContainer
 var _input_row: HBoxContainer
 
 
@@ -77,7 +77,7 @@ func setup(p_ctx: FpContext, p_feed: ChatFeed, p_minds: ChatterMinds) -> void:
 	feed = p_feed
 	minds = p_minds
 	name = "TalkDialog"
-	set_anchors_preset(Control.PRESET_FULL_RECT)
+	set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	mouse_filter = Control.MOUSE_FILTER_IGNORE
 	visible = false
 	_build()
@@ -128,7 +128,7 @@ func open_ask(place: String) -> void:
 	_sub_l.text = place
 	_mood_box.visible = false
 	_show_typing()
-	_set_quick(["Thanks"])
+	_set_quick([["Thanks", "Thanks"]])
 	_input_row.visible = false
 	_appear()
 
@@ -395,23 +395,28 @@ func _show_typing() -> void:
 
 
 func _build_quick(r: Dictionary) -> void:
-	var opts: Array[String] = ["How's life?", "What happened around here?"]
+	var opts: Array = [["How's life?", "How's life?"], ["What's going on?", "What happened around here?"]]
 	var d := ctx.sim.district[int(r["home"])] if ctx.sim != null else -1
 	if d >= 0 and d < D.MAYORS.size():
-		opts.append("What do you think of Mayor %s?" % str(D.MAYORS[d]["display"]))
-	opts.append("Goodbye")
+		var disp := str(D.MAYORS[d]["display"])
+		opts.append(["Mayor %s?" % disp.get_slice(" ", disp.get_slice_count(" ") - 1), "What do you think of Mayor %s?" % disp])
+	opts.append(["Goodbye", "Goodbye"])
 	_set_quick(opts)
 
 
-func _set_quick(opts: Array[String]) -> void:
+## opts: [label, line said] pairs; "Thanks" closes the ask card.
+func _set_quick(opts: Array) -> void:
 	for c in _quick.get_children():
+		_quick.remove_child(c)
 		c.queue_free()
 	for k in range(opts.size()):
-		var t := opts[k]
-		var b := S.pill_button(t, Color(1, 1, 1, 0.08) if t not in ["Goodbye", "Thanks"] else Color(0.9, 0.3, 0.28, 0.22), S.TEXT, 13)
+		var label := str(opts[k][0])
+		var line := str(opts[k][1])
+		var leave := line in ["Goodbye", "Thanks"]
+		var b := S.pill_button(label, Color(1, 1, 1, 0.08) if not leave else Color(0.9, 0.3, 0.28, 0.22), S.TEXT, 13)
 		b.name = "Quick%d" % k
-		b.tooltip_text = "Key %d" % (k + 1)
-		b.pressed.connect(say.bind(t) if t != "Thanks" else end.bind(""))
+		b.tooltip_text = "%s  (key %d)" % [line, k + 1]
+		b.pressed.connect(say.bind(line) if line != "Thanks" else end.bind(""))
 		_quick.add_child(b)
 
 
@@ -483,6 +488,7 @@ func _build() -> void:
 	_card.offset_right = CARD_W * 0.5
 	_card.offset_top = -CARD_H - BOTTOM_GAP
 	_card.offset_bottom = -BOTTOM_GAP
+	_card.grow_vertical = Control.GROW_DIRECTION_BEGIN
 	var sb := S.box(Color(0.04, 0.055, 0.08, 0.93), 20, Color(1, 1, 1, 0.09), 1, Vector4(18, 14, 18, 14))
 	sb.shadow_color = Color(0, 0, 0, 0.45)
 	sb.shadow_size = 22
@@ -565,10 +571,11 @@ func _build() -> void:
 	_dots = W.Dots.new(Color(1, 1, 1, 0.85))
 	_dots.visible = false
 	line.add_child(_dots)
-	_quick = HBoxContainer.new()
+	_quick = HFlowContainer.new()
 	_quick.name = "Quick"
 	_quick.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	_quick.add_theme_constant_override("separation", 6)
+	_quick.add_theme_constant_override("h_separation", 6)
+	_quick.add_theme_constant_override("v_separation", 4)
 	v.add_child(_quick)
 	_input_row = HBoxContainer.new()
 	_input_row.mouse_filter = Control.MOUSE_FILTER_IGNORE

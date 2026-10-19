@@ -21,6 +21,8 @@ const RELEASE_MIN_MS := 1500
 const RELEASE_MAX_MS := 3000
 ## Queued lines at or below "chatter" priority older than this are dropped unshown (stale gossip).
 const STALE_MS := 240000
+## Kinds where an author's newer line replaces their queued one (a status, not a thread).
+const REPLACE_KINDS := ["say", "post", "headline", "ruling", "notice"]
 ## Roles the per-author rate limit applies to.
 const LIMITED_ROLES := ["resident", "mayor"]
 const INTERNAL := ["_prio", "_qid", "_q_ms", "_due", "_reply_qid", "_exempt", "_norm"]
@@ -102,11 +104,13 @@ func enqueue(msg: Dictionary, opts: Dictionary = {}) -> int:
 		e["_due"] = now_ms + int(opts.get("delay_ms", 0))
 		_fast.append(e)
 		return _qid
-	# The newest daily "say" of an author replaces their queued one (a status, not a thread).
-	if str(e["kind"]) == "say":
+	# An author's newer status line (daily say, mayor post, Gazette edition, ruling) replaces the
+	# queued one instead of piling up.
+	if str(e["kind"]) in REPLACE_KINDS:
 		for q: Dictionary in queue:
-			if str(q["author_id"]) == str(e["author_id"]) and str(q["kind"]) == "say":
-				q["text"] = e["text"]
+			if str(q["author_id"]) == str(e["author_id"]) and str(q["kind"]) == str(e["kind"]):
+				for key in ["text", "day", "clock", "refs", "district"]:
+					q[key] = e[key]
 				q["_norm"] = norm
 				return -1
 	queue.append(e)
@@ -292,9 +296,11 @@ func _show(e: Dictionary) -> Dictionary:
 func _pick() -> Dictionary:
 	var best := -1
 	var k := 0
+	var today := ctx.sim.day if ctx != null and ctx.sim != null else 0
 	while k < queue.size():
 		var q: Dictionary = queue[k]
-		if int(q["_prio"]) <= int(PRIORITY["chatter"]) and now_ms - int(q["_q_ms"]) > STALE_MS:
+		var stale := int(q["_prio"]) <= int(PRIORITY["chatter"]) and now_ms - int(q["_q_ms"]) > STALE_MS
+		if stale or int(q.get("day", today)) < today - 1:
 			queue.remove_at(k)
 			continue
 		k += 1

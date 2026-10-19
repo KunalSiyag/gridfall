@@ -17,10 +17,17 @@ const IN_R := 10.0
 const IN_T := 6.0
 const IN_B := 7.0
 const HEAD_H := 20.0
+## Baseline of the header line (name, job, time) below the bubble's inner top.
+const HEAD_BASE := 15.0
 const REPLY_H := 17.0
 const CHIP_H := 15.0
 const CARD_ICON := 22.0
 const ROLE_TAGS := {"mayor": "MAYOR", "press": "PRESS", "council": "COUNCIL"}
+## Card icon per incident type (refs.type).
+const INCIDENT_ICONS := {
+	"fire": "fire", "blackout": "bolt", "power_line": "bolt", "sewage_burst": "drop", "water_main": "drop",
+	"flood": "drop", "gridlock": "alert", "car_crash": "alert", "smog": "alert", "earthquake": "alert", "tornado": "alert",
+}
 
 static var _cache: Dictionary = {}
 
@@ -105,10 +112,12 @@ func _shape(p_msg: Dictionary, parent: Dictionary, time_text: String) -> void:
 		_icon = S.CARD_ICONS.get(kind, "coin")
 		var title := str(spec[2])
 		var phase := str(refs.get("phase", ""))
+		if kind in ["incident", "alert"]:
+			_icon = INCIDENT_ICONS.get(str(refs.get("type", "")), _icon)
 		if kind == "incident" and phase == "ended":
 			bg = S.CARDS["opened"][0]
 			_accent = S.CARDS["opened"][1]
-			_icon = "check"
+			_icon = "wrench"
 			title = "ALL CLEAR"
 		elif kind == "people":
 			title = "MOVED AWAY" if phase == "left" else "NEW NEIGHBOUR"
@@ -169,8 +178,9 @@ func _draw() -> void:
 		draw_style_box(_box, r)
 		S.draw_icon(self, _icon, Rect2(r.position.x + 10.0, r.position.y + 8.0, CARD_ICON, CARD_ICON), _accent)
 		var tx := r.position.x + 10.0 + CARD_ICON + 10.0
+		var tb := r.position.y + 7.0 + _title.get_line_ascent()
 		_title.draw(ci, Vector2(tx, r.position.y + 7.0), _accent)
-		_time.draw(ci, Vector2(r.end.x - 10.0 - _time.get_size().x, r.position.y + 7.0), S.TEXT_FAINT)
+		_time.draw(ci, Vector2(r.end.x - 10.0 - _time.get_size().x, tb - _time.get_line_ascent()), S.TEXT_FAINT)
 		_text.draw(ci, Vector2(tx, r.position.y + 7.0 + 17.0), _text_col)
 		return
 	S.draw_avatar(self, Rect2(PAD_L, 3.0, AV, AV), _avatar_fill, _initials, _avatar_icon)
@@ -180,8 +190,9 @@ func _draw() -> void:
 	var cx := x0 + IN_L
 	var cy := 3.0 + IN_T
 	var right := x0 + bw - IN_R
+	var base := cy + HEAD_BASE
 	var name_sz := _name.get_size()
-	_name.draw(ci, Vector2(cx, cy + (HEAD_H - name_sz.y) * 0.5), _name_col)
+	_name.draw(ci, Vector2(cx, base - _name.get_line_ascent()), _name_col)
 	var x := cx + name_sz.x + 6.0
 	for c: Dictionary in _chips:
 		var line: TextLine = c["line"]
@@ -192,12 +203,12 @@ func _draw() -> void:
 		line.draw(ci, Vector2(x + 5.0, cr.position.y + (CHIP_H - lsz.y) * 0.5), c["fg"])
 		x += cw + 5.0
 	var tsz := _time.get_size()
-	_time.draw(ci, Vector2(right - tsz.x, cy + (HEAD_H - tsz.y) * 0.5), S.TEXT_FAINT)
+	_time.draw(ci, Vector2(right - tsz.x, base - _time.get_line_ascent()), S.TEXT_FAINT)
 	if _job != null:
 		var avail := right - tsz.x - 8.0 - x
 		if avail > 24.0:
 			_job.width = avail
-			_job.draw(ci, Vector2(x, cy + (HEAD_H - _job.get_size().y) * 0.5 + 1.0), S.TEXT_FAINT)
+			_job.draw(ci, Vector2(x, base - _job.get_line_ascent()), S.TEXT_FAINT)
 	cy += HEAD_H
 	if _reply_name != null:
 		S.draw_icon(self, "reply", Rect2(cx, cy + 2.0, 12.0, 12.0), S.TEXT_FAINT)

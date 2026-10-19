@@ -27,9 +27,26 @@ const EVENT_TITLE := {
 	"smog": "Toxic smog", "earthquake": "Earthquake", "flood": "River flood", "tornado": "Tornado",
 	"water_main": "Water main break", "power_line": "Downed power line", "car_crash": "Car crash",
 }
+## "Ask someone here": who answers, by tile_report kind (lower case; services by label words).
 const SPEAKER_ROLES := {
 	"residential": "Resident", "commercial": "Shopkeeper", "industrial": "Foreman", "road": "Driver",
 	"river": "Fisherman", "forest": "Park ranger", "rubble": "Site worker", "empty": "Surveyor",
+	"fire": "Firefighter", "police": "Officer", "hospital": "Nurse", "clinic": "Nurse", "school": "Teacher",
+	"university": "Lecturer", "park": "Park keeper", "power": "Plant operator", "plant": "Plant operator",
+	"farm": "Technician", "pump": "Water engineer", "water": "Water engineer", "sewage": "Plant operator",
+	"hall": "Clerk", "station": "Station attendant", "stadium": "Groundskeeper", "airport": "Ground crew",
+	"landfill": "Yard worker", "recycling": "Yard worker",
+}
+## Openers for the offline "Ask someone here" voice, by role.
+const ASK_OPENERS := {
+	"Resident": "I live here at %s.", "Shopkeeper": "I run the counter here at %s.", "Foreman": "I keep the line moving at %s.",
+	"Driver": "I'm stuck on %s, like always.", "Fisherman": "Been fishing off %s since dawn.", "Park ranger": "I look after the trees out here by %s.",
+	"Site worker": "We're clearing what's left at %s.", "Surveyor": "Just measuring up this lot at %s.", "Site foreman": "I run the crew building at %s.",
+}
+const ASK_FINE := {
+	"Resident": "Quiet street, decent neighbours. Can't complain.", "Shopkeeper": "Business is steady. People come by most days.",
+	"Foreman": "Orders are in and the machines are humming. Good week.", "Driver": "Traffic's moving today, for once.",
+	"Site foreman": "We're on schedule. Mostly.", "Fisherman": "Water's calm. Not biting much, though.",
 }
 
 var feed: ChatFeed
@@ -57,6 +74,7 @@ var _decree_day: int = -1
 var _taxes: Array[int] = []
 var _links: Array[Array] = []
 var _coord_re := RegEx.create_from_string("\\((-?\\d+),\\s*(-?\\d+)\\)")
+var _district_ref_re := RegEx.create_from_string("\\b(?:D|[Dd]istrict\\s*)([0-4])\\b")
 
 
 func feature_id() -> String:
@@ -451,7 +469,7 @@ func _on_council(r: Dictionary) -> void:
 			if first.is_empty():
 				first = labels[0]
 				enacted = key == "enacted"
-	var st := str(r.get("statement", "")).strip_edges()
+	var st := T.clip(str(r.get("statement", "")).strip_edges(), 180)
 	if not st.is_empty():
 		parts.append(st)
 	if parts.is_empty():
@@ -486,6 +504,7 @@ func _on_chaos(d: Dictionary) -> void:
 	var refs := {"x": x, "y": y, "phase": "started"}
 	if not ev.is_empty():
 		refs["event_id"] = int(ev["id"])
+		refs["type"] = str(ev["type"])
 	if tile >= 0:
 		refs["tile"] = tile
 	feed.enqueue(feed.make("system", "Breaking", "system", ctx.sim.district[tile] if tile >= 0 else -1, text, "alert", -1, refs))
@@ -506,6 +525,11 @@ func _on_operator(d: Dictionary) -> void:
 	if note.is_empty() and first.is_empty():
 		return
 	_operator_day = ctx.sim.day
+	var m := _district_ref_re.search(note)
+	while m != null:
+		var rep_name := str(D.MAYORS[m.get_string(1).to_int()]["district"])
+		note = note.substr(0, m.get_start()) + rep_name + note.substr(m.get_end())
+		m = _district_ref_re.search(note, m.get_start() + rep_name.length())
 	var text := ("%s keeps power first today. " % first if not first.is_empty() else "") + note
 	feed.enqueue(feed.make("system", "Grid Operator", "system", -1, text, "notice"))
 
@@ -543,7 +567,7 @@ func _on_event_started(ev: Dictionary) -> void:
 	var tile := D.idx(x, y) if D.in_bounds(x, y) else -1
 	var title: String = EVENT_TITLE.get(str(ev["type"]), str(ev.get("label", "Trouble")))
 	var place := ctx.directory.place_label(tile) if tile >= 0 else "the edge of town"
-	var refs := {"event_id": int(ev["id"]), "x": x, "y": y, "phase": "started"}
+	var refs := {"event_id": int(ev["id"]), "x": x, "y": y, "phase": "started", "type": str(ev["type"])}
 	if tile >= 0:
 		refs["tile"] = tile
 	var d := ctx.sim.district[tile] if tile >= 0 else -1
@@ -557,7 +581,7 @@ func _on_event_ended(ev: Dictionary) -> void:
 	var tile := D.idx(x, y) if D.in_bounds(x, y) else -1
 	var noun := str(ChatterMinds.EVENT_NOUN.get(str(ev["type"]), "trouble"))
 	var place := ctx.directory.place_label(tile) if tile >= 0 else "the edge of town"
-	var refs := {"event_id": int(ev["id"]), "x": x, "y": y, "phase": "ended"}
+	var refs := {"event_id": int(ev["id"]), "x": x, "y": y, "phase": "ended", "type": str(ev["type"])}
 	if tile >= 0:
 		refs["tile"] = tile
 	feed.enqueue(feed.make("system", "City Alert", "system", ctx.sim.district[tile] if tile >= 0 else -1, "Crews cleared the %s at %s." % [noun, place], "incident", -1, refs))
@@ -589,14 +613,17 @@ func _on_inspector(rep: Dictionary) -> void:
 	if int(rep.get("x", -99999)) != _inspect_req.x or int(rep.get("y", -99999)) != _inspect_req.y:
 		return
 	_inspect_req = Vector2i(-99999, -99999)
-	var says := T.display(str(rep.get("says", "")), ctx.directory)
-	if says.is_empty():
-		says = T.display(str(rep.get("diagnosis", "")), ctx.directory)
 	var x := int(rep["x"])
 	var y := int(rep["y"])
 	var place := ctx.directory.place_label(D.idx(x, y)) if D.in_bounds(x, y) else ""
+	var role := _speaker_role(rep)
+	var says := ""
+	if str(rep.get("source", "")) == "live":
+		says = T.display(str(rep.get("says", "")), ctx.directory)
+	if says.is_empty():
+		says = _ask_voice(rep, role, place)
 	if talk != null:
-		talk.set_ask_answer(_speaker_role(rep), place, says)
+		talk.set_ask_answer(role, place, says)
 
 
 # ---------------------------------------------------------------- bus
@@ -820,12 +847,44 @@ func _cast_msg(v: Dictionary) -> Dictionary:
 func _speaker_role(rep: Dictionary) -> String:
 	var sp := str(rep.get("speaker", "")).strip_edges()
 	var report: Dictionary = rep.get("report", {}) if typeof(rep.get("report")) == TYPE_DICTIONARY else {}
-	var kind := str(report.get("kind", ""))
+	var kind := str(report.get("kind", "")).to_lower()
 	if str(rep.get("source", "")) == "live" and not sp.is_empty() and sp.length() <= 32 and not sp.to_lower().contains("inspector") and not T.has_model_name(sp):
 		return T.cap(T.display(sp, ctx.directory))
-	if not (report.get("construction", {}) as Dictionary).is_empty():
+	var site: Variant = report.get("construction", {})
+	if typeof(site) == TYPE_DICTIONARY and not (site as Dictionary).is_empty():
 		return "Site foreman"
-	return str(SPEAKER_ROLES.get(kind, "Staff member"))
+	if SPEAKER_ROLES.has(kind):
+		return str(SPEAKER_ROLES[kind])
+	for word: String in kind.split(" ", false):
+		if SPEAKER_ROLES.has(word):
+			return str(SPEAKER_ROLES[word])
+	return "Staff member"
+
+
+## The offline "Ask someone here" answer: first person, from the tile report (power, water, air,
+## crime, road access), naming the district's mayor when something is wrong.
+func _ask_voice(rep: Dictionary, role: String, place: String) -> String:
+	var report: Dictionary = rep.get("report", {}) if typeof(rep.get("report")) == TYPE_DICTIONARY else {}
+	var opener: String = str(ASK_OPENERS.get(role, "I work here at %s.")) % (place if not place.is_empty() else "this spot")
+	var issues: Array[String] = []
+	if bool(report.get("burning", false)):
+		issues.append("the whole place is on fire")
+	if not bool(report.get("powered", true)) and int(report.get("density", 1)) > 0:
+		issues.append("we've had no power all day")
+	if not bool(report.get("watered", true)) and int(report.get("density", 0)) > 0:
+		issues.append("the taps are dry")
+	if float(report.get("pollution", 0.0)) > 0.4:
+		issues.append("the air tastes like smoke")
+	if float(report.get("crime", 0.0)) > 0.3:
+		issues.append("there have been break-ins on this block")
+	if not bool(report.get("road_access", true)):
+		issues.append("there's no proper road in")
+	if issues.is_empty():
+		return "%s %s" % [opener, ASK_FINE.get(role, "Things are fine around here, honestly.")]
+	var joined := issues[0] if issues.size() == 1 else ", ".join(PackedStringArray(issues.slice(0, issues.size() - 1))) + " and " + issues[-1]
+	var mayor := D.mayor_display(int(report.get("district_index", -1)))
+	var tail := (" Somebody tell Mayor %s." % mayor.get_slice(" ", mayor.get_slice_count(" ") - 1)) if not mayor.is_empty() else ""
+	return "%s Honestly? %s.%s" % [opener, T.cap(joined), tail]
 
 
 func _link(sig: Signal, c: Callable) -> void:

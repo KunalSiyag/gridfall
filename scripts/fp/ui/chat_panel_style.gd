@@ -309,6 +309,20 @@ static func draw_icon(ci: CanvasItem, icon: String, rect: Rect2, col: Color) -> 
 		"chat":
 			ci.draw_rect(Rect2(p.call(0.1, 0.14), Vector2(s.x * 0.8, s.y * 0.56)), col)
 			ci.draw_colored_polygon(PackedVector2Array([p.call(0.24, 0.66), p.call(0.48, 0.66), p.call(0.24, 0.9)]), col)
+		"drop":
+			var pts := PackedVector2Array()
+			pts.append(p.call(0.5, 0.06))
+			for k in range(17):
+				var ang := PI * 0.15 - PI * 1.3 * float(k) / 16.0
+				pts.append(p.call(0.5 + 0.3 * cos(ang), 0.62 + 0.3 * sin(-ang)))
+			ci.draw_colored_polygon(pts, col)
+			ci.draw_arc(p.call(0.5, 0.64), s.x * 0.17, PI * 0.55, PI * 0.95, 8, Color(1, 1, 1, 0.55), maxf(1.2, s.x * 0.06), true)
+		"wrench":
+			var a0: Vector2 = p.call(0.24, 0.76)
+			var a1: Vector2 = p.call(0.62, 0.38)
+			ci.draw_line(a0, a1, col, maxf(2.5, s.x * 0.17), true)
+			ci.draw_circle(a0, s.x * 0.1, col, true, -1.0, true)
+			ci.draw_arc(p.call(0.68, 0.32), s.x * 0.2, -PI * 0.15, PI * 1.35, 16, col, maxf(2.0, s.x * 0.13), true)
 		"close":
 			ci.draw_line(p.call(0.24, 0.24), p.call(0.76, 0.76), col, w, true)
 			ci.draw_line(p.call(0.76, 0.24), p.call(0.24, 0.76), col, w, true)

@@ -77,7 +77,7 @@ func setup(p_ctx: FpContext, p_feed: ChatFeed) -> void:
 	ctx = p_ctx
 	feed = p_feed
 	name = "ChatPanel"
-	set_anchors_preset(Control.PRESET_FULL_RECT)
+	set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_build_ticker()
 	_build_drawer()
@@ -482,7 +482,7 @@ func _build_drawer() -> void:
 	_body = PanelContainer.new()
 	_body.name = "Body"
 	_body.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	_body.set_anchors_preset(Control.PRESET_FULL_RECT)
+	_body.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	var bsb := S.box(S.PANEL_BG, [0, 18, 18, 0], S.EDGE, 0, Vector4(0, 0, 0, 0))
 	bsb.border_width_right = 1
 	bsb.border_width_top = 1
@@ -560,7 +560,6 @@ func _build_header() -> Control:
 	for st in ["normal", "hover", "pressed", "focus", "hover_pressed"]:
 		close_b.add_theme_stylebox_override(st, S.box(Color(1, 1, 1, 0.08 if st == "hover" else 0.0), 14))
 	var ci := W.Icon.new("close", S.TEXT_DIM, 14.0)
-	ci.set_anchors_preset(Control.PRESET_CENTER)
 	ci.position = Vector2(7, 7)
 	close_b.add_child(ci)
 	close_b.pressed.connect(close)
@@ -641,7 +640,7 @@ func _build_list() -> Control:
 	area.clip_contents = true
 	_scroll = ScrollContainer.new()
 	_scroll.name = "Scroll"
-	_scroll.set_anchors_preset(Control.PRESET_FULL_RECT)
+	_scroll.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	_scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
 	_scroll.vertical_scroll_mode = ScrollContainer.SCROLL_MODE_SHOW_ALWAYS
 	_scroll.mouse_filter = Control.MOUSE_FILTER_PASS
@@ -661,6 +660,24 @@ func _build_list() -> Control:
 	_list.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	_list.add_theme_constant_override("separation", 2)
 	pad.add_child(_list)
+	var fade := TextureRect.new()
+	fade.name = "TopFade"
+	fade.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	fade.anchor_right = 1.0
+	fade.offset_right = -8
+	fade.offset_bottom = 16
+	fade.stretch_mode = TextureRect.STRETCH_SCALE
+	fade.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+	var g := Gradient.new()
+	g.set_color(0, Color(S.PANEL_BG, 1.0))
+	g.set_color(1, Color(S.PANEL_BG, 0.0))
+	var gt := GradientTexture2D.new()
+	gt.gradient = g
+	gt.fill_to = Vector2(0, 1)
+	gt.width = 4
+	gt.height = 32
+	fade.texture = gt
+	area.add_child(fade)
 	var bar := _scroll.get_v_scroll_bar()
 	bar.changed.connect(_on_bar_changed)
 	bar.value_changed.connect(_on_scrolled)

@@ -75,6 +75,14 @@ const DISAGREE := {
 	"civic": ["Disagree, {afirst}. It's a planning problem, not bad luck.", "We can fix this if we push, {afirst}."],
 	"plain": ["Not my experience, {afirst}.", "Hm, {district} is fine for me."],
 }
+## Replies to an incident, by voice ({ev}, {place}, {street}, {work}, {afirst}).
+const INCIDENT_REACT := {
+	"grump": ["Another {ev}. Who's running this place?", "{afirst}, don't hold your breath for the crews.", "Of course it's near {place}. Nobody maintains anything.", "And we pay taxes for this."],
+	"worried": ["{afirst}, is it spreading? I've got family near {place}.", "Please tell me nobody's hurt.", "Keeping the kids inside until it's sorted.", "That's two streets from me. Should I leave?"],
+	"sunny": ["Crews here are quick, {afirst}. It'll be sorted.", "Hang in there, everyone near {place}.", "We'll get through it. We always do."],
+	"civic": ["Keep {street} clear for the crews, people.", "Got a first aid kit if anyone near {place} needs it.", "Called it in. They said crews are rolling.", "If you're near {place}, check on your neighbours."],
+	"plain": ["Saw the {ev} on my way to {work}.", "How long until it's fixed?", "Hope everyone's okay over there.", "Thanks for the heads up, {afirst}."],
+}
 const MAYOR_STYLE := [
 	"Crews are dispatched to {place}. Utilities first, then cleanup.",
 	"Rerouting around {place}. Repairs should take under a day.",
@@ -596,8 +604,6 @@ static func intent_of(text: String) -> String:
 		return "how"
 	if has.call(["what happened", "happened around", "what s going on", "whats going on", "what s new", "any news around", "around here"]):
 		return "around"
-	if has.call(["mayor", "okafor", "kimura", "quintero", "granger", "city hall", "council", "viktor", "han"]):
-		return "mayor"
 	if has.call(["power", "blackout", "electric*", "lights", "outage"]):
 		return "power"
 	if has.call(["water", "taps", "pipe*", "sewage", "drain*"]):
@@ -618,6 +624,8 @@ static func intent_of(text: String) -> String:
 		return "fun"
 	if has.call(["gazette", "news", "headline", "paper"]):
 		return "news"
+	if has.call(["mayor", "mayors", "okafor", "kimura", "quintero", "granger", "council", "viktor", "ada", "rosa", "duke"]):
+		return "mayor"
 	if has.call(["hi", "hello", "hey", "yo", "morning", "evening", "howdy", "hiya", "greetings", "sup"]):
 		return "greet"
 	if has.call(["who", "anyone", "anybody", "everyone", "everybody", "somebody"]):
@@ -778,8 +786,9 @@ func _reaction(kind: String, topic: Dictionary, r: Dictionary, f: Dictionary, rn
 		for s: Variant in skills:
 			if s in ev_sk and rng.randf() < 0.7:
 				return _fill(_pick(rng, ["{afirst}, I'm off shift. Coming to help.", "On my way. Keep the road clear for us.", "Grabbing my kit, see you at {place}."]), f)
-		if rng.randf() < 0.3 and not str(r.get("mood_reason", "")).is_empty():
-			return T.cap(T.clip(T.display(str(r["mood_reason"]), directory), 90)) + ". And now this."
+		if rng.randf() < 0.3 and not str(r.get("mood_reason", "")).is_empty() and str(r["mood_reason"]) != "just moved in":
+			return T.cap(T.clip(T.display(str(r["mood_reason"]), directory).trim_suffix("."), 90)) + ". And now this."
+		return _flourish(_fill(_pick(rng, INCIDENT_REACT[v]), f), r, rng)
 	if kind == "opening" and rng.randf() < 0.5:
 		var job := str(r["job_title"])
 		if int(r.get("work", -1)) < 0 and job not in ["retiree", "student"]:
@@ -915,7 +924,14 @@ func _mayor_opinion(r: Dictionary, f: Dictionary, v: String, rng: RandomNumberGe
 	if approve >= 7.0:
 		return _fill(_pick(rng, ["{mayor}? Doing alright by {district}, honestly.", "I like {mayor}. Things actually get fixed.", "{mayor} gets my vote again."]), f)
 	if approve >= 4.5:
-		return _fill(_pick(rng, ["{mayor} is okay. Talks a lot, does some.", "Mixed feelings about {mayor}.", "{mayor}? Could be worse. Could be better."]), f)
+		var meh := _fill(_pick(rng, ["{mayor} is okay. Talks a lot, does some.", "Mixed feelings about {mayor}.", "{mayor}? Could be worse. Could be better."]), f)
+		var cc := str(r.get("complaint", "none"))
+		var ask: String = {
+			"power": " Fix the power and we'll talk.", "water": " Just keep the taps running.", "traffic": " Do something about the traffic.",
+			"taxes": " Taxes are a bit steep though.", "rent": " Rents are getting silly.", "jobs": " We need more jobs here.",
+			"crime": " Streets could be safer.", "pollution": " The air could be cleaner.", "noise": " The construction noise, though.",
+		}.get(cc, "")
+		return (meh + ask).strip_edges()
 	var c := str(r.get("complaint", "none"))
 	var gripe: String = {
 		"power": "Lights keep going out.", "water": "We keep losing water.", "traffic": "The traffic is a joke.",
@@ -958,10 +974,18 @@ func _topic_answer(intent: String, r: Dictionary, f: Dictionary, v: String, rng:
 			var bad := sim.crime[home] > 0.3
 			return [_fill("Not great on {street} after dark." if bad else "Feels safe enough in {district}.", f), "safety"]
 		"food":
-			var biz := _nearby_business(home, ["cafe", "bakery", "diner", "deli", "noodle bar", "bistro", "market"])
+			var biz := _nearby_business(home, ["cafe", "bakery", "diner", "deli", "noodle bar", "bistro", "market", "corner store"])
 			if not biz.is_empty():
-				return ["Try " + biz + ". Best thing near my place.", "food"]
-			return [_fill("Not much to eat near {street}. Head downtown.", f), "food"]
+				var g := f.duplicate()
+				g["biz"] = biz
+				return [_fill(_pick(rng, {
+					"grump": ["{biz}, I suppose. Overpriced, but it's close.", "{biz}. Don't expect a smile with your order."],
+					"worried": ["{biz} is nice. Go early, it gets crowded.", "I like {biz}. Mind the traffic on {street} though."],
+					"sunny": ["{biz}! Tell them {first} sent you.", "Oh, {biz}, hands down. Get the special."],
+					"civic": ["{biz}. Support the locals!", "{biz} on {street}. Family-run, good people."],
+					"plain": ["{biz}, near my place. It's good.", "Try {biz}. Can't go wrong."],
+				}[v]), g), "food"]
+			return [_fill(_pick(rng, ["Not much to eat near {street}. Head downtown.", "Honestly? Nothing good near {street} yet. Someone open a cafe!"]), f), "food"]
 		"fun":
 			return [_fill(_pick(rng, ["Park's nice this time of day.", "Weekend market near {street}, if you like that.", "I just go home and sleep, honestly."]), f), "having fun"]
 		"news":
