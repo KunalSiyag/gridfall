@@ -17,8 +17,11 @@ const SW := preload("res://scripts/fp/traffic/sidewalks.gd")
 const SEDAN_HW := 0.063 * WS.VEHICLE_SCALE
 ## Hard minimum bumper gap; IDM keeps s0 = 2 m, this only stops a car from ever touching.
 const MIN_GAP := 0.5 * WS.M
-## Seconds a held car waits before it accepts a smaller gap at a yield (never at a red light).
+## Seconds a held car waits before it stops yielding at all (never at a red light); before that
+## the gap it needs shrinks from the junction's gap to GAP_MIN over GAP_PATIENCE seconds.
 const IMPATIENCE := 14.0
+const GAP_MIN := 1.8
+const GAP_PATIENCE := 8.0
 ## Pull-in / pull-out duration at the curb, seconds.
 const PARK_TIME := 1.6
 ## Cyclists ride this far right of the lane centre (carriageway edge at ROAD_HALF - 0.04).
@@ -33,6 +36,8 @@ const BLOCKED_SPEED := 2.5 * WS.M
 ## Simulation LOD: vehicles farther than this from the player step at most every LOD_DT seconds.
 const LOD_NEAR := 6.0
 const LOD_DT := 1.0 / 15.0
+## Data-only vehicles beyond the traffic radius cruise at this share of their own speed.
+const FAR_SPEED := 0.9
 
 
 ## One vehicle.
@@ -670,8 +675,10 @@ func hold_reason(c: Car, x: LG.Lane, mv: LG.Lane, after: LG.Lane, d_stop: float)
 	if _zebra_busy(x.tile, x.zebra_arm):
 		return "zebra"
 	if mv.gap_s > 0.0 and (c.wait_t < IMPATIENCE or c.siren):
+		# A driver kept waiting accepts a shorter gap (never a crew under sirens).
+		var need := mv.gap_s if c.siren else lerpf(mv.gap_s, GAP_MIN, clampf(c.wait_t / GAP_PATIENCE, 0.0, 1.0))
 		for e: int in mv.yield_to:
-			if _threat(t, e, mv, mv.gap_s):
+			if _threat(t, e, mv, need):
 				return "yield"
 	if _box_busy(mv):
 		return "box"
@@ -697,12 +704,20 @@ func why_held(c: Car) -> String:
 	return ""
 
 
-## True when a vehicle occupies a move that conflicts with mv.
+## True when a vehicle on a move that conflicts with mv has not yet cleared the conflict.
 func _box_busy(mv: LG.Lane) -> bool:
-	for cid: int in mv.conflicts:
+	for k in range(mv.conflicts.size()):
+		var cid: int = mv.conflicts[k]
 		var o: LG.Lane = lg.lanes[cid] if cid < lg.lanes.size() else null
-		if o != null and (not o.cars.is_empty() or not o.tails.is_empty()):
-			return true
+		if o == null:
+			continue
+		var clear: float = mv.conflict_clear[k] + 0.01
+		for oc: Car in o.cars:
+			if oc.s - oc.length < clear:
+				return true
+		for oc: Car in o.tails:
+			if rear_on(oc, o) < clear:
+				return true
 	return false
 
 
@@ -850,9 +865,10 @@ func _choose(opts: Array) -> LG.Lane:
 	return opts[opts.size() - 1]
 
 
-## Data-only motion beyond the traffic radius: along the path at 85 % of each lane's limit.
+## Data-only motion beyond the traffic radius: along the path at FAR_SPEED of the driver's speed
+## on each lane (lights and queues are averaged into that factor).
 func _advance_far(c: Car, dt: float) -> void:
-	var v := (c.v0 if c.v0 > 0.0 else c.lane.limit) * 0.85
+	var v := (c.v0 if c.v0 > 0.0 else c.lane.limit * c.speed_f) * FAR_SPEED
 	c.v = v
 	var ds := v * dt
 	c.s += ds

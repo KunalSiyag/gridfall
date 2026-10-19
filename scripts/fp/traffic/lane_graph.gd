@@ -59,6 +59,7 @@ class Lane extends RefCounted:
 	var cars: Array = []          # vehicles whose front is on the lane, ascending s (agents keep it)
 	var tails: Array = []         # vehicles whose body still covers the lane, front further on
 	var conflicts := PackedInt32Array()   # move: conflicting move lane ids in the same junction
+	var conflict_clear := PackedFloat32Array()   # per conflict: s on that lane past which it is clear
 	var yield_to := PackedInt32Array()    # move: entry edges whose crossing traffic has priority
 	var gap_s: float = 0.0        # move: seconds of gap it needs from those
 	var zebra_s0: float = -1.0    # approach: entry zebra; move: exit zebra (front s range)
@@ -104,6 +105,7 @@ var dirty: Dictionary = {}
 var _free: Array[int] = []
 var _by_key: Dictionary = {}
 var _conflict_cache: Dictionary = {}      # mask -> Dictionary
+var _geom_cache: Dictionary = {}          # shape key -> [local pts, cum, length, kmax(, zebra s0, s1)]
 
 
 func setup(p_sim: CitySim) -> void:
@@ -417,6 +419,7 @@ func _lane(i: int, fe: int, te: int, kind: int, keep: Dictionary) -> Lane:
 	l.kind = kind
 	l.alive = true
 	l.conflicts = PackedInt32Array()
+	l.conflict_clear = PackedFloat32Array()
 	l.yield_to = PackedInt32Array()
 	l.gap_s = 0.0
 	l.zebra_s0 = -1.0
@@ -468,17 +471,18 @@ func rebuild_tile(i: int) -> void:
 	var limit := WS.CAR_RESIDENTIAL if t.residential else WS.CAR_CITY
 	if arms.size() == 1:
 		var l := _lane(i, arms[0], arms[0], UTURN, keep)
-		_set_pts(l, _uturn_pts(arms[0]), c)
+		var ue: int = arms[0]
+		_set_geom(l, _geom(Vector4(64 + ue, 0, 0, 0), func() -> PackedVector2Array: return _uturn_pts(ue)), c, limit)
 		l.turn = 2
-		_finish(l, limit)
 		t.lanes.append(l)
 		t.entry[arms[0]].append(l)
 	elif arms.size() == 2 and arms[1] == OPP[arms[0]]:
 		for e: int in arms:
 			var l := _lane(i, e, OPP[e], STRAIGHT, keep)
-			_set_pts(l, _straight_pts(i, e, l), c)
+			var sh := _straight_shape(i, e, l)
+			var se := e
+			_set_geom(l, _geom(Vector4(se, sh.x, sh.y, sh.z), func() -> PackedVector2Array: return _straight_pts(se, sh)), c, limit)
 			l.turn = 0
-			_finish(l, limit)
 			t.lanes.append(l)
 			t.entry[e].append(l)
 	elif arms.size() == 2:
@@ -486,9 +490,8 @@ func rebuild_tile(i: int) -> void:
 			var e: int = arms[k]
 			var xo: int = arms[1 - k]
 			var l := _lane(i, e, xo, CORNER, keep)
-			_set_pts(l, _corner_pts(e, xo), c)
+			_set_geom(l, _geom(Vector4(16 + e * 4 + xo, 0, 0, 0), func() -> PackedVector2Array: return _corner_pts(e, xo)), c, limit)
 			l.turn = _turn(e, xo)
-			_finish(l, limit)
 			t.lanes.append(l)
 			t.entry[e].append(l)
 	elif arms.size() >= 3:
@@ -502,9 +505,9 @@ func rebuild_tile(i: int) -> void:
 			t.stem_residential = _residential(sx, sy)
 		for e: int in arms:
 			var a := _lane(i, e, -1, APPROACH, keep)
-			_set_pts(a, _approach_pts(e), c)
+			var ae := e
+			_set_geom(a, _geom(Vector4(32 + ae, 0, 0, 0), func() -> PackedVector2Array: return _approach_pts(ae)), c, limit)
 			a.turn = 0
-			_finish(a, limit)
 			a.stop_s = clampf(0.5 - STOP_FRONT, 0.0, a.length)
 			a.zebra_arm = e
 			a.zebra_s0 = 0.5 - WS.ZEBRA_FAR
@@ -516,12 +519,17 @@ func rebuild_tile(i: int) -> void:
 				if xo == e:
 					continue
 				var mv := _lane(i, e, xo, MOVE, keep)
-				_set_pts(mv, _move_pts(e, xo), c)
+				var me := e
+				var mx := xo
+				var g := _geom(Vector4(48 + me * 4 + mx, 0, 0, 0), func() -> PackedVector2Array: return _move_pts(me, mx))
+				_set_geom(mv, g, c, limit)
 				mv.turn = _turn(e, xo)
-				_finish(mv, limit)
 				mv.zebra_arm = xo
-				mv.zebra_s0 = _zebra_s(mv, xo, c, WS.ZEBRA_NEAR)
-				mv.zebra_s1 = _zebra_s(mv, xo, c, WS.ZEBRA_FAR)
+				if g.size() < 6:
+					g.append(_zebra_s(g[0], g[1], xo, WS.ZEBRA_NEAR))
+					g.append(_zebra_s(g[0], g[1], xo, WS.ZEBRA_FAR))
+				mv.zebra_s0 = g[4]
+				mv.zebra_s1 = g[5]
 				t.lanes.append(mv)
 				t.moves[e].append(mv)
 		_junction_rules(t)
@@ -598,9 +606,10 @@ func _compat(i: int, e: int) -> bool:
 	return mn == mi and (mi == RoadTopology.NS or mi == RoadTopology.EW) and not RoadTopology.is_bridge(sim, i) and not RoadTopology.is_bridge(sim, n)
 
 
-func _straight_pts(i: int, fe: int, l: Lane) -> PackedVector2Array:
+## [off_in, mid, off_out] of the straight lane on tile i entering at fe (and sets its side and
+## shifted flags): PASS_OFFSET beside parked cars, easing to LANE_OFFSET where the run ends.
+func _straight_shape(i: int, fe: int, l: Lane) -> Vector3:
 	var h := -DIRS[fe]
-	var r := _right(h)
 	var te: int = OPP[fe]
 	var sidx := side_of_heading(i, h)
 	l.side = sidx
@@ -609,16 +618,22 @@ func _straight_pts(i: int, fe: int, l: Lane) -> PackedVector2Array:
 	var off_in := _edge_off(i, fe, sidx, here)
 	var off_out := _edge_off(i, te, sidx, here)
 	l.shifted = here or off_in < WS.LANE_OFFSET or off_out < WS.LANE_OFFSET
+	return Vector3(off_in, mid, off_out)
+
+
+func _straight_pts(fe: int, sh: Vector3) -> PackedVector2Array:
+	var h := -DIRS[fe]
+	var r := _right(h)
 	var n := int(ceil(1.0 / STEP))
 	var out := PackedVector2Array()
 	out.resize(n + 1)
 	for k in range(n + 1):
 		var u := float(k) / float(n)
-		var off := mid
+		var off := sh.y
 		if u < SHIFT_LEN:
-			off = lerpf(off_in, mid, smoothstep(0.0, SHIFT_LEN, u))
+			off = lerpf(sh.x, sh.y, smoothstep(0.0, SHIFT_LEN, u))
 		elif u > 1.0 - SHIFT_LEN:
-			off = lerpf(mid, off_out, smoothstep(1.0 - SHIFT_LEN, 1.0, u))
+			off = lerpf(sh.y, sh.z, smoothstep(1.0 - SHIFT_LEN, 1.0, u))
 		out[k] = -h * 0.5 + h * u + r * off
 	return out
 
@@ -744,45 +759,63 @@ func _resample(dense: PackedVector2Array) -> PackedVector2Array:
 	return out
 
 
-func _set_pts(l: Lane, local: PackedVector2Array, c: Vector2) -> void:
+## Tile-local geometry of a lane shape, built once per key: [local points, cumulative lengths,
+## length, max curvature] (moves add their zebra distances). Translation-invariant, so a tile
+## rebuild only offsets cached points.
+func _geom(key: Vector4, build: Callable) -> Array:
+	var g: Array = _geom_cache.get(key, [])
+	if not g.is_empty():
+		return g
+	var local: PackedVector2Array = build.call()
 	var n := local.size()
-	l.pts.resize(n)
-	l.cum.resize(n)
+	var cum := PackedFloat32Array()
+	cum.resize(n)
 	var acc := 0.0
 	for k in range(n):
-		l.pts[k] = local[k] + c
 		if k > 0:
-			acc += l.pts[k].distance_to(l.pts[k - 1])
-		l.cum[k] = acc
-	l.length = acc
+			acc += local[k].distance_to(local[k - 1])
+		cum[k] = acc
+	g = [local, cum, acc, _kmax(local, cum)]
+	_geom_cache[key] = g
+	return g
 
 
-## Speed limit: the street's limit capped by the tightest curvature (v = sqrt(a_lat * r)). The
-## gentle lateral shift of a straight beside parked cars is no curve to slow down for.
-func _finish(l: Lane, limit: float) -> void:
+## Puts cached geometry g on lane l at tile centre c, with the speed limit: the street's limit
+## capped by the tightest curvature (v = sqrt(a_lat * r)). The gentle lateral shift of a straight
+## beside parked cars is no curve to slow down for.
+func _set_geom(l: Lane, g: Array, c: Vector2, limit: float) -> void:
+	var local: PackedVector2Array = g[0]
+	var n := local.size()
+	l.pts.resize(n)
+	for k in range(n):
+		l.pts[k] = local[k] + c
+	l.cum = g[1]
+	l.length = g[2]
 	l.base_limit = limit
-	if l.kind == STRAIGHT:
-		l.limit = limit
-		return
+	var kmax: float = g[3]
+	l.limit = limit if l.kind == STRAIGHT or kmax < 1e-4 else minf(limit, sqrt(A_LAT / kmax))
+
+
+static func _kmax(pts: PackedVector2Array, cum: PackedFloat32Array) -> float:
 	var kmax := 0.0
-	var n := l.pts.size()
+	var n := pts.size()
 	var w := 3
 	for k in range(w, n - w):
-		var d1 := (l.pts[k] - l.pts[k - w]).normalized()
-		var d2 := (l.pts[k + w] - l.pts[k]).normalized()
-		var ds := l.cum[k + w] - l.cum[k - w]
+		var d1 := (pts[k] - pts[k - w]).normalized()
+		var d2 := (pts[k + w] - pts[k]).normalized()
+		var ds := cum[k + w] - cum[k - w]
 		if ds > 0.0:
 			kmax = maxf(kmax, absf(d1.angle_to(d2)) / (ds * 0.5))
-	l.limit = limit if kmax < 1e-4 else minf(limit, sqrt(A_LAT / kmax))
+	return kmax
 
 
-## s at which the move's centreline crosses `along` from the centre on exit arm te.
-func _zebra_s(mv: Lane, te: int, c: Vector2, along: float) -> float:
+## s at which a move's tile-local centreline crosses `along` from the centre on exit arm te.
+static func _zebra_s(pts: PackedVector2Array, cum: PackedFloat32Array, te: int, along: float) -> float:
 	var b := DIRS[te]
-	for k in range(mv.pts.size()):
-		if (mv.pts[k] - c).dot(b) >= along:
-			return mv.cum[k]
-	return mv.length
+	for k in range(pts.size()):
+		if pts[k].dot(b) >= along:
+			return cum[k]
+	return cum[cum.size() - 1]
 
 
 # ------------------------------------------------------------------ junction rules
@@ -795,10 +828,16 @@ func _junction_rules(t: TileInfo) -> void:
 		all.append_array(t.moves[e])
 	for mv: Lane in all:
 		var ids := PackedInt32Array()
+		var clear := PackedFloat32Array()
 		for o: Lane in all:
-			if o != mv and table.get(_pair(mv.from_e, mv.to_e, o.from_e, o.to_e), false):
+			if o == mv:
+				continue
+			var c: float = table.get(_pair(mv.from_e, mv.to_e, o.from_e, o.to_e), -1.0)
+			if c >= 0.0:
 				ids.append(o.id)
+				clear.append(c)
 		mv.conflicts = ids
+		mv.conflict_clear = clear
 		var y := PackedInt32Array()
 		var gap := 0.0
 		if t.lights:
@@ -822,6 +861,9 @@ func _pair(e1: int, x1: int, e2: int, x2: int) -> int:
 	return ((e1 * 4 + x1) * 4 + e2) * 4 + x2
 
 
+## Per mask: for every ordered pair of conflicting moves, the distance along the second move
+## past which a vehicle's rear has cleared the first (its whole length when both share an exit);
+## pairs that never come within CONFLICT_DIST are absent.
 func _conflicts_for(m: int) -> Dictionary:
 	if _conflict_cache.has(m):
 		return _conflict_cache[m]
@@ -830,39 +872,48 @@ func _conflicts_for(m: int) -> Dictionary:
 	for e in range(4):
 		if m & (1 << e):
 			arms.append(e)
-	var paths := {}
+	var geo := {}
 	for e: int in arms:
 		for xo: int in arms:
 			if xo != e:
-				paths[e * 4 + xo] = _move_pts(e, xo)
-	for k1: int in paths.keys():
-		for k2: int in paths.keys():
+				var me := e
+				var mx := xo
+				geo[e * 4 + xo] = _geom(Vector4(48 + me * 4 + mx, 0, 0, 0), func() -> PackedVector2Array: return _move_pts(me, mx))
+	for k1: int in geo.keys():
+		for k2: int in geo.keys():
 			if k1 >= k2:
 				continue
 			var e1 := k1 / 4
 			var x1 := k1 % 4
 			var e2 := k2 / 4
 			var x2 := k2 % 4
-			var hit := false
 			if e1 == e2:
-				hit = false
-			elif x1 == x2:
-				hit = true
-			else:
-				hit = _near(paths[k1], paths[k2])
-			table[_pair(e1, x1, e2, x2)] = hit
-			table[_pair(e2, x2, e1, x1)] = hit
+				continue
+			var g1: Array = geo[k1]
+			var g2: Array = geo[k2]
+			if x1 == x2:
+				table[_pair(e1, x1, e2, x2)] = float(g2[2]) + 1.0
+				table[_pair(e2, x2, e1, x1)] = float(g1[2]) + 1.0
+				continue
+			var end2 := _near_end(g1[0], g2[0], g2[1])
+			if end2 < 0.0:
+				continue
+			table[_pair(e1, x1, e2, x2)] = end2
+			table[_pair(e2, x2, e1, x1)] = _near_end(g2[0], g1[0], g1[1])
 	_conflict_cache[m] = table
 	return table
 
 
-func _near(a: PackedVector2Array, b: PackedVector2Array) -> bool:
+## Largest distance along b (cumulative cb) of a point of b within CONFLICT_DIST of a, or -1.
+func _near_end(a: PackedVector2Array, b: PackedVector2Array, cb: PackedFloat32Array) -> float:
 	var lim := CONFLICT_DIST * CONFLICT_DIST
-	for i in range(0, a.size(), 2):
-		for j in range(0, b.size(), 2):
+	var best := -1.0
+	for j in range(b.size()):
+		for i in range(0, a.size(), 2):
 			if a[i].distance_squared_to(b[j]) < lim:
-				return true
-	return false
+				best = cb[j]
+				break
+	return best
 
 
 # ------------------------------------------------------------------ routing
