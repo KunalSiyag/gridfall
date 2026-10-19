@@ -59,6 +59,10 @@ const HL_BOB := 0.12
 ## Step length (m) = STEP_BASE + STEP_PER_MPS * speed (m/s): 0.70 m at WALK, 1.35 m at RUN.
 const STEP_BASE := 0.40
 const STEP_PER_MPS := 0.21
+## With nothing to look at, the hero looks at the point this far along the view.
+const LOOK_AHEAD := 10.0 * WS.M
+## Gait phase per radian turned in place (scripted facing): 4 is two steps per quarter turn.
+const TURN_STEPS := 4.0
 ## Footsteps sound this far either side of the body's centre line.
 const FOOT_SPREAD := 0.09 * WS.M
 const FP_SPRINT_FOV := 4.0
@@ -398,6 +402,7 @@ func update_view(delta: float) -> void:
 		var alpha := clampf(inverse_lerp(TpsRig.FADE_NEAR, TpsRig.FADE_FAR, xf.origin.distance_to(head)), 0.0, 1.0)
 		avatar.set_view_state(pure_fp, alpha)
 		if not photo_mode:
+			avatar.set_look_target(_look_target(xf))
 			avatar.update_motion(dt, sp, _yaw_rate, _fwd_acc, _step_snap, clampf((WS.EYE - _eye_h) / (WS.EYE - WS.CROUCH_EYE), 0.0, 1.0), _gait_phase, grounded, velocity.y)
 		_step_snap = 0.0
 
@@ -714,14 +719,30 @@ func _vertical(h: float, height: float) -> void:
 		_coyote = 0.0
 
 
+## What the hero looks at (A 6.9): the conversation partner's head, else the focused interactable,
+## else the point 10 m along the view from camera transform xf.
+func _look_target(xf: Transform3D) -> Vector3:
+	if _conv_on:
+		return _conv_npc
+	if rig != null and camera_mode == "third" and not is_nan(rig.assist_target.x):
+		return rig.assist_target
+	return xf.origin - xf.basis.z * LOOK_AHEAD
+
+
 ## Advances the gait phase by a ground move (u; backward travel runs it backward) at speed (u/s)
 ## and sounds a footstep on each heel strike it crosses.
 func _advance_gait(moved: Vector2, sp: float) -> void:
 	var dist := moved.length()
 	var back := moved.dot(Vector2(-sin(yaw), -cos(yaw))) < -0.25 * dist
 	var step_len := (STEP_BASE + STEP_PER_MPS * sp / WS.M) * WS.M
+	_advance_phase((-1.0 if back else 1.0) * dist / step_len * PI)
+
+
+## Moves the gait phase by d radians (less than PI) and sounds a footstep on the heel strike it
+## crosses, at that foot's ground point.
+func _advance_phase(d: float) -> void:
 	var ph0 := _gait_phase
-	var ph1 := ph0 + (-1.0 if back else 1.0) * dist / step_len * PI
+	var ph1 := ph0 + d
 	var k0 := floori(ph0 / PI)
 	var k1 := floori(ph1 / PI)
 	_gait_phase = fposmod(ph1, TAU)
@@ -825,8 +846,11 @@ func _update_facing(dt: float, sp: float) -> void:
 		yaw = wrapf(yaw + clampf(err, -FACE_RATE * dt, FACE_RATE * dt), -PI, PI)
 		if absf(err) < deg_to_rad(1.0):
 			_face_goal = NAN
-	_yaw_rate = wrapf(yaw - y0, -PI, PI) / dt
+	var turned := wrapf(yaw - y0, -PI, PI)
+	_yaw_rate = turned / dt
 	rotation.y = yaw
+	# Turning in place takes small steps (two per quarter turn).
+	_advance_phase(absf(turned) * TURN_STEPS)
 
 
 func _set_crouch(want: bool) -> void:

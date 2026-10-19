@@ -420,12 +420,25 @@ func _check_puppet(ctx: FpContext, s: Dictionary) -> void:
 	for k in range(90):
 		p.simulate(Vector2.ZERO, false, DT)
 		p.update_view(DT)
+	# Idle breathing swings the arms by at most BREATH_DEG.
 	var neutral := 0.0
 	for j: String in ["hip", "shoulder"]:
 		for a: float in av.joints[j]:
-			neutral = maxf(neutral, absf(a))
+			neutral = maxf(neutral, absf(a) - (deg_to_rad(av.BREATH_DEG) if j == "shoulder" else 0.0))
 	var pel: Vector3 = av.pose_metrics()["pelvis"]
-	K.check(fails, neutral < deg_to_rad(1.0) and pel.length() < 0.01 * M, "13. standing returns to the neutral pose (%.2f deg, pelvis %.1f cm)" % [rad_to_deg(neutral), pel.length() / M * 100.0])
+	K.check(fails, neutral < deg_to_rad(1.0) and pel.length() < 0.01 * M, "13. standing returns to the neutral pose (%.2f deg beyond breathing, pelvis %.1f cm)" % [rad_to_deg(neutral), pel.length() / M * 100.0])
+	# Head look: the hero looks where the camera looks, within its limits.
+	p.rig.assist_target = Vector3(NAN, NAN, NAN)
+	p.look(deg_to_rad(50.0), 0.0)
+	for k in range(30):
+		p.update_view(DT)
+	var side_look: Vector2 = av.head_look
+	p.look(deg_to_rad(110.0), 0.0)
+	for k in range(60):
+		p.update_view(DT)
+	var back_look: Vector2 = av.head_look
+	K.check(fails, side_look.x > deg_to_rad(35.0) and side_look.x < deg_to_rad(60.0) and back_look.length() < deg_to_rad(2.0), "13. the head turns %.0f deg toward a view 50 deg left and back to neutral for a view behind (%.1f deg)" % [rad_to_deg(side_look.x), rad_to_deg(back_look.length())])
+	p.look(deg_to_rad(-160.0), 0.0)
 	for k in range(40):
 		p.simulate(Vector2.ZERO, false, DT, true)
 		p.update_view(DT)

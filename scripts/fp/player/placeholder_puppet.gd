@@ -4,8 +4,9 @@ extends RefCounted
 ## A2). The legacy people are built from separate primitives per segment (thigh, knee ball, shin,
 ## shoe; shoulder ball, upper arm, elbow ball, forearm, hand), posed mid-stride. build() finds
 ## those pieces, derives the joints (ball centres and segment end caps), straightens every segment
-## about its joint and parents it into a hip -> knee -> ankle and shoulder -> elbow chain; pose()
-## drives the joints with a procedural gait. Model space: +Z forward, +X the figure's left.
+## about its joint and parents it into a hip -> knee -> ankle and shoulder -> elbow chain, with the
+## neck, head and hair on a head joint; the avatar drives the joints with a procedural gait and a
+## head look. Model space: +Z forward, +X the figure's left.
 ## A model whose pieces do not match falls back to the rigid body (build() returns null).
 
 ## One analysed model per scene path: the part meshes and the joint layout (or {} when the model
@@ -19,6 +20,8 @@ const CAP_FRAC := 0.8
 var root: Node3D
 var pelvis: Node3D
 var spine: Node3D
+## The head joint (neck base), a child of spine; null when the model has no separate neck piece.
+var head: Node3D
 var hips: Array[Node3D] = []
 var knees: Array[Node3D] = []
 var ankles: Array[Node3D] = []
@@ -60,6 +63,12 @@ func apply(hip: Array, knee: Array, ankle: Array, shoulder: Array, elbow: Array,
 		elbows[i].rotation = Vector3(-float(elbow[i]), 0.0, 0.0)
 
 
+## Head look in the spine's frame (radians): yaw toward the figure's left, pitch up.
+func look(yaw: float, pitch: float) -> void:
+	if head != null:
+		head.rotation = Vector3(-pitch, yaw, 0.0)
+
+
 ## Vertical reach of a leg (hip to ankle, model units) at hip swing h and knee flexion k.
 func reach(h: float, k: float) -> float:
 	return thigh_len * cos(h) + shin_len * cos(h - k)
@@ -81,6 +90,9 @@ func _instance(data: Dictionary) -> void:
 	pelvis = _node(root, "Pelvis", pelvis_rest)
 	spine = _node(pelvis, "Spine", Vector3.ZERO)
 	_mesh(spine, data["torso"])
+	if data.has("head"):
+		head = _node(spine, "Head", data["neck"])
+		_mesh(head, data["head"])
 	for i in range(SIDES):
 		var leg: Dictionary = data["legs"][i]
 		var arm: Dictionary = data["arms"][i]
@@ -243,7 +255,25 @@ static func _layout(mi: MeshInstance3D, xf: Transform3D) -> Dictionary:
 		})
 		var arm: Dictionary = data["arms"][i]
 		arm["shoulder"] = (arm["shoulder"] as Vector3) - pelvis
-	data["torso"] = _group(surfs, torso, Transform3D(Basis.IDENTITY, -pelvis))
+	# Pieces centred above the shoulder balls (neck, head, nose, hair) turn with the head about
+	# the bottom of the lowest of them (the neck).
+	var shoulder_y := minf((arms[0][4]["aabb"] as AABB).get_center().y, (arms[1][4]["aabb"] as AABB).get_center().y)
+	var head_parts: Array = []
+	var body_parts: Array = []
+	for c: Dictionary in torso:
+		if (c["aabb"] as AABB).get_center().y > shoulder_y:
+			head_parts.append(c)
+		else:
+			body_parts.append(c)
+	if not head_parts.is_empty():
+		var neck: AABB = head_parts[0]["aabb"]
+		for c: Dictionary in head_parts:
+			if (c["aabb"] as AABB).position.y < neck.position.y:
+				neck = c["aabb"]
+		var pivot := Vector3(neck.get_center().x, neck.position.y, neck.get_center().z)
+		data["head"] = _group(surfs, head_parts, Transform3D(Basis.IDENTITY, -pivot))
+		data["neck"] = pivot - pelvis
+	data["torso"] = _group(surfs, body_parts, Transform3D(Basis.IDENTITY, -pelvis))
 	data["pelvis"] = pelvis
 	data["thigh_len"] = thigh_len
 	data["shin_len"] = shin_len

@@ -5,8 +5,9 @@ extends Node3D
 ## is re-rigged as a jointed puppet (placeholder_puppet.gd) and walks, runs, crouches, jumps and
 ## lands with a procedural gait whose foot contacts FpPlayer's footsteps follow. Procedural lean
 ## about the feet and a damped visual step offset apply on top. HC's animated hero replaces the
-## placeholder in stage A2. In first person it only casts its shadow; in third person it fades out
-## when the camera comes close to the head.
+## placeholder in stage A2. The head turns toward a look target (A 6.9: the conversation partner,
+## the focused interactable or where the camera looks). In first person it only casts its shadow;
+## in third person it fades out when the camera comes close to the head.
 
 const WS := preload("res://scripts/fp/world_scale.gd")
 const AP := preload("res://scripts/fp/asset_paths.gd")
@@ -53,6 +54,17 @@ const CROUCH_GAIT := 0.55
 const RUN_LOW := 0.06
 const RUN_LIFT := 0.045
 const WALK_SWAY := 0.012
+# --- Head look (A 6.9): limits, the angle beyond which the head returns to neutral, halflife
+const LOOK_YAW_MAX := deg_to_rad(70.0)
+const LOOK_PITCH_MAX := deg_to_rad(35.0)
+const LOOK_GIVE_UP := deg_to_rad(110.0)
+const HL_LOOK := 0.1
+## Turning in place at this rate or faster takes full-size shuffle steps (rad/s); their size.
+const TURN_SHUFFLE_RATE := deg_to_rad(180.0)
+const TURN_SHUFFLE := 0.6
+## Idle breathing: spine and shoulder swing (degrees) and rate (Hz).
+const BREATH_DEG := 0.7
+const BREATH_HZ := 0.23
 
 ## "m" or "f" (settings.hero).
 var hero: String = ""
@@ -77,6 +89,10 @@ var _land_w: float = 0.0
 var _was_grounded: bool = true
 var _last_vy: float = 0.0
 var _phase: float = 0.0
+var _breath: float = 0.0
+var _look_target: Vector3 = Vector3(NAN, NAN, NAN)
+## Current head look (yaw toward the figure's left, pitch up), radians.
+var head_look: Vector2 = Vector2.ZERO
 ## The last pose's joint angles (radians) per side, for tests: {"hip", "knee", "ankle",
 ## "shoulder", "elbow"} -> [left, right].
 var joints: Dictionary = {}
@@ -152,7 +168,10 @@ func update_motion(dt: float, speed: float, yaw_rate: float, fwd_acc: float, ste
 		return
 	var mps := speed / WS.M
 	_phase = phase
-	_move_w = SM.damp(_move_w, clampf(mps / (MOVE_FULL * WS.WALK / WS.M), 0.0, 1.0) if grounded else _move_w, HL_MOVE, dt)
+	var move_goal := clampf(mps / (MOVE_FULL * WS.WALK / WS.M), 0.0, 1.0)
+	move_goal = maxf(move_goal, TURN_SHUFFLE * clampf(absf(yaw_rate) / TURN_SHUFFLE_RATE, 0.0, 1.0))
+	_move_w = SM.damp(_move_w, move_goal if grounded else _move_w, HL_MOVE, dt)
+	_breath = fmod(_breath + dt * BREATH_HZ, 1.0)
 	_run_w = SM.damp(_run_w, smoothstep(RUN_FROM, RUN_FULL, mps), HL_RUN, dt)
 	_crouch_w = SM.damp(_crouch_w, _crouch, HL_CROUCH, dt)
 	_air_w = SM.damp(_air_w, 0.0 if grounded else 1.0, HL_AIR_OUT if grounded else HL_AIR_IN, dt)
@@ -162,6 +181,12 @@ func update_motion(dt: float, speed: float, yaw_rate: float, fwd_acc: float, ste
 	_was_grounded = grounded
 	_last_vy = vy
 	_pose(_phase)
+	_head_look(dt)
+
+
+## The world point the head turns toward (NAN components: look straight ahead).
+func set_look_target(p: Vector3) -> void:
+	_look_target = p
 
 
 ## Clears lean and step offsets and the gait blends (teleport).
@@ -175,8 +200,10 @@ func snap() -> void:
 	_air_w = 0.0
 	_land_w = 0.0
 	_was_grounded = true
+	head_look = Vector2.ZERO
 	transform = Transform3D.IDENTITY
 	_pose(_phase)
+	_head_look(0.0)
 
 
 ## Current lean (roll, pitch) in radians, for tests.
@@ -253,9 +280,33 @@ func _pose(phase: float) -> void:
 	var sway := WALK_SWAY * WS.M * sin(TAU * s0) * gait * (1.0 - _run_w)
 	# Crouched, the pelvis sits back over the feet.
 	var z := -fwd_sum * 0.5 * c * (1.0 - _air_w)
-	var lean := deg_to_rad((3.0 + 7.0 * _run_w) * gait + CROUCH_LEAN * c + 6.0 * _land_w)
+	var calm := (1.0 - _move_w) * (1.0 - _air_w)
+	var breath := deg_to_rad(BREATH_DEG) * sin(TAU * _breath) * calm
+	shoulder[0] += breath
+	shoulder[1] += breath
+	var lean := deg_to_rad((3.0 + 7.0 * _run_w) * gait + CROUCH_LEAN * c + 6.0 * _land_w) - breath * 0.5
 	puppet.call("apply", hip, knee, ankle, shoulder, elbow, Vector3(sway, y - rest.y, z), lean)
 	joints = {"hip": hip, "knee": knee, "ankle": ankle, "shoulder": shoulder, "elbow": elbow}
+
+
+## Turns the head toward the look target within its limits, measured in the spine's frame (so a
+## running lean keeps the eyes level); a target behind the figure eases the head back to neutral.
+func _head_look(dt: float) -> void:
+	var hd: Node3D = puppet.get("head")
+	if hd == null:
+		return
+	var goal := Vector2.ZERO
+	var sp: Node3D = puppet.get("spine")
+	if not is_nan(_look_target.x) and sp.is_inside_tree():
+		var d := sp.global_transform.affine_inverse() * _look_target - hd.position
+		var yaw := atan2(d.x, d.z)
+		if absf(yaw) < LOOK_GIVE_UP and d.length_squared() > 1e-12:
+			goal = Vector2(clampf(yaw, -LOOK_YAW_MAX, LOOK_YAW_MAX), clampf(atan2(d.y, Vector2(d.x, d.z).length()), -LOOK_PITCH_MAX, LOOK_PITCH_MAX))
+	if dt <= 0.0:
+		head_look = goal
+	else:
+		head_look = Vector2(SM.damp_angle(head_look.x, goal.x, HL_LOOK, dt), SM.damp(head_look.y, goal.y, HL_LOOK, dt))
+	puppet.call("look", head_look.x, head_look.y)
 
 
 ## One leg's gait at cycle fraction s (degrees): x hip swing, y knee flexion, z toe pitch, w the
