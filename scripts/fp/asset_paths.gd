@@ -70,7 +70,7 @@ static func load_scene(path: String) -> PackedScene:
 ## Realistic characters (slice HC, docs/fp/slices/HC-characters.md). Bodies are Microsoft Rocketbox
 ## avatars on Godot's humanoid skeleton (`%GeneralSkeleton`, metric, feet at y = 0, facing +Z). Scale
 ## each one under a `CharacterRoot` node: `scale = WS.M * h_target_m / rest_height_m`, with
-## rest_height_m from CHAR_ROSTER. Animate with the gender's library added as the default library ""
+## rest_height_m (stature to the skull top; hair and hats add up to 4 %) from CHAR_ROSTER. Animate with the gender's library added as the default library ""
 ## (clip names stay bare: "walk") and `root_motion_track = CHAR_ROOT_MOTION_TRACK`; loops then play in
 ## place. Every clip carries the metas `speed_mps` (Root speed on a skeleton whose hips are
 ## `speed_ref_hip_m` high: a body with hip_m from the roster covers speed_mps * hip_m / speed_ref_hip_m

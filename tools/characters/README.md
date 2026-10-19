@@ -41,13 +41,19 @@ the GLBs.
 ## Using the characters (A, E)
 
 - Instance a body under a `CharacterRoot` node with `scale = WS.M * h_target_m / rest_height_m`
-  (`roster.json`); never scale the skeleton itself.
+  (`roster.json`); never scale the skeleton itself. `rest_height_m` is the stature to the skull top
+  (eye height × 1.0647, measured on the bald Business_Male_07), so hair, hats and helmets do not shrink
+  a body; `aabb_height_m` is the full mesh. Every Rocketbox man shares one skeleton (hips 0.895 m,
+  stature 1.795 m) and every woman another (0.923 m, 1.716 m).
 - Add `AP.CHAR_LIB_M` or `AP.CHAR_LIB_F` as the default library `""` and set
   `root_motion_track = AP.CHAR_ROOT_MOTION_TRACK` on the AnimationPlayer or AnimationTree. The mixer's
   root node must be the body's scene root (so `%GeneralSkeleton` resolves).
 - Loops play in place; their Root carries the travel. A body covers
   `speed_mps * hip_m / speed_ref_hip_m` metres per second (before `CharacterRoot` scaling); match the
   playback rate to the ground speed with that.
+- Every travel loop starts on the left-heel strike, so walk, walk_fast, run and run_fast blend without
+  scissoring as long as their phases stay locked: a BlendSpace's `sync` alone does not equalise cycle
+  lengths (walk 1.07 s, run 0.77 s), so scale each clip's time to a common cycle while blending.
 - One-shots with root motion (`walk_start`, `run_stop`, `turn_*`, `sit_down`, `stand_up`) start at the
   origin facing +Z; read `get_root_motion_position()` / `get_root_motion_rotation()` to move the node.
   Static clips centre the pelvis over the origin; `sit` matches the end of `sit_down`.
