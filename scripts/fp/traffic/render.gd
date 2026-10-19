@@ -45,7 +45,10 @@ const BEAMS := 8
 const BEAM_DIST := 4.0
 const BEAM_RANGE := 34.0 * WS.M
 const BEAM_ANGLE := 30.0
-const BEAM_ENERGY := 3.0
+const BEAM_ENERGY := 2.4
+## Distance falloff exponent of a beam: gentler than inverse distance, so someone standing in
+## front of a waiting car is lit, not blown out, while the road 10-30 m ahead still gets a pool.
+const BEAM_DECAY := 0.5
 const BEAM_HEIGHT := 0.65 * WS.M
 ## Siren light washes: flashing omni lights on responding crews near the camera.
 const WASHES := 3
@@ -576,7 +579,7 @@ func _beam(k: int) -> SpotLight3D:
 		l.spot_range = BEAM_RANGE
 		l.spot_angle = BEAM_ANGLE
 		l.spot_angle_attenuation = 0.6
-		l.spot_attenuation = 1.0
+		l.spot_attenuation = BEAM_DECAY
 		l.light_specular = 0.6
 		l.shadow_enabled = false
 		l.visible = false
