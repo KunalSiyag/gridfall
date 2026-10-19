@@ -27,7 +27,9 @@ const FADE_IN := 0.2
 const INPUT_MAX := 140
 ## Width rows are first shaped for (the list width with the always-on scroll bar).
 const ROW_W := PANEL_W - 8.0
-const HELP := "Enter sends, Esc closes.\nStart a line with /mayor to write to every mayor (once a day)."
+const HELP := "Enter sends, Esc closes.\nType @ and the start of a name, then Tab, to call a neighbour within 10 blocks.\nStart a line with /mayor to write to every mayor (once a day)."
+## Residents within this many tiles of the player can be @-mentioned.
+const MENTION_TILES := 10.0
 
 ## The player sent a line (already trimmed, at most INPUT_MAX characters).
 signal submitted(text: String)
@@ -99,10 +101,48 @@ func _unhandled_input(event: InputEvent) -> void:
 
 
 ## A focused LineEdit swallows Esc before _unhandled_input, so the open panel catches it here.
+## Tab completes an @-mention instead of moving the focus (which would close the chat).
 func _input(event: InputEvent) -> void:
-	if is_open and not event.is_echo() and event.is_action_pressed("pause_menu"):
+	if not is_open:
+		return
+	if not event.is_echo() and event.is_action_pressed("pause_menu"):
 		close()
 		get_viewport().set_input_as_handled()
+	elif input.has_focus() and (event.is_action_pressed("ui_focus_next") or event.is_action_pressed("ui_focus_prev")):
+		complete_mention()
+		get_viewport().set_input_as_handled()
+
+
+## Completes the "@na" before the caret to "@Name " with the nearest resident within
+## MENTION_TILES whose first or last name starts with it. Returns the name, or "".
+func complete_mention() -> String:
+	var text := input.text
+	var caret := input.caret_column
+	var start := text.rfind("@", maxi(caret - 1, 0))
+	if start < 0:
+		return ""
+	var token := text.substr(start + 1, caret - start - 1).to_lower()
+	if token.is_empty() or token.contains(" ") or ctx == null or ctx.residents == null:
+		return ""
+	var p := ctx.player_position()
+	var best := ""
+	var bd := INF
+	for r: Dictionary in ctx.residents.people:
+		var nm := str(r["name"])
+		var low := nm.to_lower()
+		if not (low.begins_with(token) or low.get_slice(" ", 1).begins_with(token)):
+			continue
+		var at := int(r.get("at", r["home"]))
+		var d := Vector2(D.tx(at) - p.x, D.ty(at) - p.z).length()
+		if d <= MENTION_TILES and d < bd:
+			bd = d
+			best = nm
+	if best.is_empty():
+		return ""
+	var first := best.get_slice(" ", 0)
+	input.text = text.substr(0, start) + "@" + first + " " + text.substr(caret)
+	input.caret_column = start + first.length() + 2
+	return best
 
 
 func _process(delta: float) -> void:

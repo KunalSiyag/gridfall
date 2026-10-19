@@ -243,8 +243,12 @@ func on_pump(now_ms: int) -> void:
 
 
 func _input(event: InputEvent) -> void:
-	if mode != "" and not event.is_echo() and event.is_action_pressed("pause_menu"):
+	if mode == "":
+		return
+	if not event.is_echo() and event.is_action_pressed("pause_menu"):
 		end()
+		get_viewport().set_input_as_handled()
+	elif input.has_focus() and (event.is_action_pressed("ui_focus_next") or event.is_action_pressed("ui_focus_prev")):
 		get_viewport().set_input_as_handled()
 
 

@@ -529,6 +529,27 @@ func _check_esc() -> void:
 	await process_frame
 	K.check(fails, not bool(panel.get("is_open")) and not ctx.has_modal(&"chat"), "esc: Esc closes the panel and pops &\"chat\"")
 	K.check(fails, probe.got == 0 and not ctx.mode.paused, "esc: the Esc was handled (no pause_menu reached _unhandled_input)")
+	# @-mentions: Tab completes the nearest resident within 10 blocks and keeps the chat open.
+	var target := _first_resident()
+	var t_at := int(target.get("at", target["home"]))
+	var saved_pos := ctx.player.position
+	ctx.player.teleport(Vector3(D.tx(t_at), 0.0, D.ty(t_at) + 1.0), 0.0, 0.0, true)
+	panel.call("open")
+	await process_frame
+	var first := str(target["name"]).get_slice(" ", 0)
+	inp.text = "hey @" + first.left(2).to_lower()
+	inp.caret_column = inp.text.length()
+	var tab := InputEventKey.new()
+	tab.keycode = KEY_TAB
+	tab.physical_keycode = KEY_TAB
+	tab.pressed = true
+	Input.parse_input_event(tab)
+	Input.flush_buffered_events()
+	await process_frame
+	K.check(fails, inp.text.begins_with("hey @") and inp.text.ends_with(" ") and bool(panel.get("is_open")) and inp.has_focus(), "mention: Tab completes '@%s' to a nearby name and keeps the chat open ('%s')" % [first.left(2), inp.text])
+	inp.text = ""
+	panel.call("close")
+	ctx.player.teleport(saved_pos, 0.0, 0.0, true)
 	# Enter (chat_open) opens it from _unhandled_input; Esc in the talk dialogue ends the conversation.
 	var ev := InputEventAction.new()
 	ev.action = "chat_open"
