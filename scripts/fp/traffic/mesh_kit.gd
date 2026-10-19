@@ -6,6 +6,8 @@ extends RefCounted
 const WS := preload("res://scripts/fp/world_scale.gd")
 
 var st := SurfaceTool.new()
+## Vertex alpha for surfaces whose material emits (lamps); 1.0 leaves every vertex opaque-flagged.
+var lamp_alpha: float = 1.0
 var _open := false
 
 
@@ -82,8 +84,10 @@ func mesh(xf: Transform3D, m: Mesh, overrides: Array = []) -> void:
 		if mat is BaseMaterial3D:
 			var bm := mat as BaseMaterial3D
 			c = bm.albedo_color
+			c.a = 1.0
 			if bm.emission_enabled:
 				c = c.lerp(bm.emission, 0.5)
+				c.a = lamp_alpha
 		var nb := xf.basis.inverse().transposed()
 		var count := idx.size() if not idx.is_empty() else verts.size()
 		for k in range(count):

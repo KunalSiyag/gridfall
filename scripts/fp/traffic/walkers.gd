@@ -20,6 +20,13 @@ const CELL := 0.06
 ## seconds without crowd logic.
 const LOD_NEAR := 4.6
 const LOD_DT := 0.2
+## Seconds a person spawned in view takes to fade in.
+const FADE_IN := 1.6
+## People waiting at a zebra spread along the curb (metres, by slot) and step back a row.
+const WAIT_ALONG: Array[float] = [0.0, -0.6, 0.6]
+const WAIT_ROW := 0.55
+## Hip height of the legacy people (half their 1.83 m), the pivot of the leg swing.
+const HIP_M := 0.91
 
 
 ## One person on foot.
@@ -59,6 +66,10 @@ class Walker extends RefCounted:
 	var stalled_s: float = 0.0
 	var acc_dt: float = 0.0
 	var lod_far: bool = false
+	var gait: float = 0.0            # drawn stride amount 0..1 (eases toward the walking speed)
+	var fade: float = 1.0            # drawn opacity 0..1 (people spawned in view fade in)
+	var wait_slot: int = -1          # place in the little crowd waiting at a zebra
+	var vis_off := Vector3.ZERO      # drawn offset from pos (eases; spreads a waiting crowd)
 
 
 var sw: SW
@@ -365,8 +376,7 @@ func _next(w: Walker) -> void:
 				on_done.call(w)
 			return
 		if e.zebra and not w.far and not _can_cross(e):
-			w.state = "wait"
-			w.v = 0.0
+			_begin_wait(w)
 			return
 		w.plan.pop_front()
 		_enter(w, e, int(st["dir"]), float(st.get("t0", 0.0)), float(st.get("t1", -1.0)))
@@ -401,11 +411,39 @@ func _next(w: Walker) -> void:
 	var dir := 1 if pick.a == n else -1
 	if pick.zebra and not _can_cross(pick):
 		w.plan = [{"edge": pick.id, "dir": dir}]
-		w.state = "wait"
-		w.v = 0.0
 		w.role = "ambient"
+		_begin_wait(w)
 		return
 	_enter(w, pick, dir)
+
+
+## w stops at the curb before a zebra, taking the next free place in the waiting crowd.
+func _begin_wait(w: Walker) -> void:
+	w.state = "wait"
+	w.v = 0.0
+	w.wait_t = 0.0
+	var taken := {}
+	for o: Walker in walkers:
+		if o != w and o.state == "wait" and not o.dead and o.pos.distance_squared_to(w.pos) < 0.0004:
+			taken[o.wait_slot] = true
+	var k := 0
+	while taken.has(k):
+		k += 1
+	w.wait_slot = k
+
+
+## Drawn offset of a waiting walker's place in the crowd (zero once they walk).
+func _wait_offset(w: Walker) -> Vector3:
+	if w.state != "wait" or w.wait_slot <= 0:
+		return Vector3.ZERO
+	var z := _peek_zebra(w)
+	if z == null:
+		return Vector3.ZERO
+	var d := sw.dir_at(z, 0.0) * float(_zebra_dir(w, z))
+	var along := Vector2(-d.y, d.x)
+	var k := w.wait_slot
+	var o := along * (WAIT_ALONG[k % 3] * WS.M) - d * (WAIT_ROW * WS.M * float(k / 3))
+	return Vector3(o.x, 0.0, o.y)
 
 
 func _enter(w: Walker, e: SW.PedEdge, dir: int, t0: float = 0.0, t1: float = -1.0) -> void:
@@ -525,12 +563,26 @@ func start_plan(w: Walker, plan: Array) -> void:
 	_next(w)
 
 
-## Draw transform of w (with a light walking bob for the static legacy bodies).
+## Eases the drawn stride toward the walking speed and the fade-in toward 1 (real seconds, so a
+## paused tour still settles).
+func ease_visuals(w: Walker, delta: float) -> void:
+	var want := clampf(w.v / (0.7 * WS.PED_WALK), 0.0, 1.0)
+	var off := _wait_offset(w)
+	if off != w.vis_off:
+		var was := w.vis_off
+		w.vis_off = w.vis_off.move_toward(off, delta * WS.PED_WALK)
+		# Stepping into place in the crowd is walking too.
+		want = maxf(want, clampf((w.vis_off - was).length() / maxf(delta, 1e-4) / (0.7 * WS.PED_WALK), 0.0, 1.0))
+		w.phase += (w.vis_off - was).length() / (0.75 * WS.M) * PI
+	w.gait = move_toward(w.gait, want, delta * 4.0)
+	if w.fade < 1.0:
+		w.fade = minf(1.0, w.fade + delta / FADE_IN)
+
+
+## Draw transform of w: the legs and arms swing in the people shader (render.gd), and the body
+## bobs with them, highest as the legs pass each other.
 func draw_xform(w: Walker) -> Transform3D:
-	var bob := 0.0
-	var sway := 0.0
-	if w.v > 0.05 * WS.M:
-		bob = absf(sin(w.phase)) * 0.018 * WS.M
-		sway = sin(w.phase) * 0.035
-	var b := Basis(Vector3.UP, w.yaw) * Basis(Vector3(0, 0, 1), sway)
-	return Transform3D(b, w.pos + Vector3(0, bob, 0))
+	# The hips drop as the legs spread, so the planted foot stays on the ground (render.LEG_SWING).
+	var a := 0.38 * w.gait * sin(w.phase)
+	var drop := HIP_M * WS.M * (1.0 - cos(a))
+	return Transform3D(Basis(Vector3.UP, w.yaw), w.pos + w.vis_off - Vector3(0, drop, 0))

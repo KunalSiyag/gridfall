@@ -924,7 +924,7 @@ func vehicle_of(rid: String) -> VH.Car:
 func live_position(rid: String) -> Vector3:
 	var w := walker_of(rid)
 	if w != null:
-		return w.pos
+		return w.pos + w.vis_off
 	var c := vehicle_of(rid)
 	if c != null:
 		return c.pos + c.vis_off
@@ -935,7 +935,7 @@ func live_position(rid: String) -> Vector3:
 func anchor(rid: String) -> Vector3:
 	var w := walker_of(rid)
 	if w != null:
-		return w.pos + Vector3(0, HEAD, 0)
+		return w.pos + w.vis_off + Vector3(0, HEAD, 0)
 	var c := vehicle_of(rid)
 	if c != null:
 		return c.pos + c.vis_off + Vector3(0, SEATED_HEAD, 0)

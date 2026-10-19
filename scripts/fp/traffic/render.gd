@@ -1,10 +1,14 @@
 extends RefCounted
-## Draws E's agents (docs/fp/slices/E-traffic.md §3 Draw calls): the full GLB only within NEAR of
-## the camera (pooled per model, capped), beyond that one MultiMeshInstance3D per model built from
-## a single-surface, vertex-coloured merge of the GLB (H's <name>_lod1.glb when it exists), with
-## shadows to SHADOW_DIST and none beyond. Parked cars go through a static layer rebuilt only when
-## the parked set changes or the camera moves. Brake lights, siren flashes and wheel spin on full
-## models.
+## Draws E's agents (docs/fp/slices/E-traffic.md §3 Draw calls). Vehicles: the full GLB only
+## within NEAR of the camera (pooled per model, capped), beyond that one MultiMeshInstance3D per
+## model built from a single-surface, vertex-coloured merge of the GLB (H's <name>_lod1.glb when it
+## exists), with shadows to SHADOW_DIST and none beyond. Parked cars go through a static layer
+## rebuilt only when the parked set changes or the camera moves. Brake lights, siren flashes and
+## wheel spin on full models; head and tail lamps glow on the merged ones after dark.
+## People (the legacy static bodies, until HC's rigged ones): every distance draws the merged body
+## through the people shader, which swings the legs and arms from per-instance stride data and
+## dithers people in and out (spawned in view, or at the edge of VIS_PERSON). Same geometry and
+## colours as the GLB, one draw per body model and layer.
 
 const WS := preload("res://scripts/fp/world_scale.gd")
 const AP := preload("res://scripts/fp/asset_paths.gd")
@@ -25,6 +29,81 @@ const L_MID := 0
 const L_FAR := 1
 const L_SMID := 2
 const L_SFAR := 3
+## Stride swing of the people shader, radians at full stride (legs; arms swing opposite).
+const LEG_SWING := 0.38
+const ARM_SWING := 0.3
+## People fade out over this last stretch before VIS_PERSON.
+const PERSON_FADE := 0.4
+## Merged meshes flag lamp vertices (emissive source materials) with this vertex alpha.
+const LAMP_ALPHA := 0.5
+const PEOPLE_SHADER := """
+shader_type spatial;
+render_mode cull_back, depth_draw_opaque;
+// INSTANCE_CUSTOM: x stride phase (radians), y stride amount 0..1, z body height (mesh units),
+// w opacity 0..1. Legacy bodies face +Z; legs hang below 0.54 h inside |x| < 0.105 h, arms
+// outside it from the shoulders (0.8 h) down to the hands.
+uniform float leg_swing = 0.38;
+uniform float arm_swing = 0.3;
+uniform float rough = 0.78;
+varying float v_fade;
+
+vec3 rot_x(vec3 v, float pivot, float a) {
+	float c = cos(a);
+	float s = sin(a);
+	float dy = v.y - pivot;
+	return vec3(v.x, pivot + dy * c - v.z * s, dy * s + v.z * c);
+}
+
+void vertex() {
+	float h = max(INSTANCE_CUSTOM.z, 1e-5);
+	float sw = sin(INSTANCE_CUSTOM.x) * INSTANCE_CUSTOM.y;
+	float hy = VERTEX.y / h;
+	float ax = abs(VERTEX.x) / h;
+	float side = VERTEX.x >= 0.0 ? 1.0 : -1.0;
+	float a = 0.0;
+	float pivot = 0.0;
+	if (ax < 0.105 && hy < 0.54) {
+		a = side * leg_swing * sw * smoothstep(0.54, 0.44, hy);
+		pivot = 0.5 * h;
+	} else if (ax >= 0.105 && hy > 0.36 && hy < 0.85) {
+		a = -side * arm_swing * sw * smoothstep(0.82, 0.72, hy);
+		pivot = 0.8 * h;
+	}
+	VERTEX = rot_x(VERTEX, pivot, a);
+	NORMAL = rot_x(NORMAL, 0.0, a);
+	v_fade = INSTANCE_CUSTOM.w;
+}
+
+void fragment() {
+	if (v_fade < 0.999) {
+		float n = fract(52.9829189 * fract(dot(FRAGCOORD.xy, vec2(0.06711056, 0.00583715))));
+		if (n >= v_fade) {
+			discard;
+		}
+	}
+	ALBEDO = pow(COLOR.rgb, vec3(2.2));
+	ROUGHNESS = rough;
+}
+"""
+const VEHICLE_SHADER := """
+shader_type spatial;
+render_mode cull_back;
+// Merged vehicle bodies: vertex colour is the source material's albedo (sRGB); alpha < 0.75 marks
+// a lamp (head, tail, sign) that glows by `glow` (0 by day, 1 at night).
+uniform float glow = 0.0;
+uniform float rough = 0.5;
+uniform float metal = 0.15;
+
+void fragment() {
+	vec3 c = pow(COLOR.rgb, vec3(2.2));
+	ALBEDO = c;
+	ROUGHNESS = rough;
+	METALLIC = metal;
+	if (COLOR.a < 0.75) {
+		EMISSION = c * glow * 6.0;
+	}
+}
+"""
 
 
 ## One drawable model.
@@ -38,15 +117,20 @@ class Model extends RefCounted:
 	var lod_mesh: Mesh = null
 	var mms: Array = [null, null, null, null]
 	var lists: Array = [[], [], [], []]   # Transform3D per layer
+	var custom: Array = [[], [], [], []]  # people: Color per instance (phase, stride, height, opacity)
 	var pool: Array[Node3D] = []
 	var person: bool = false
+	var mesh_h: float = 0.09              # body height in mesh units (people shader)
 	var offset := Transform3D.IDENTITY    # scale and recentring applied after the agent transform
 
 
 var root: Node3D
 var models: Array = []
 var _by_key: Dictionary = {}
-var _lod_mat: StandardMaterial3D
+var _lod_mat: ShaderMaterial
+## Parked cars: the same shader with the lamps off.
+var _lod_static_mat: ShaderMaterial
+var _people_mat: ShaderMaterial
 var _brake_mat: StandardMaterial3D
 var _siren_mats: Dictionary = {}
 var _made_this_frame: int = 0
@@ -57,11 +141,23 @@ var draws_people: int = 0
 var draws_vehicles: int = 0
 var time: float = 0.0
 var _last_lod: int = -1
+var _glow: float = 0.0
 
 
 func setup(p_root: Node3D) -> void:
 	root = p_root
-	_lod_mat = KIT.vc_material(0.5, 0.15)
+	var vs := Shader.new()
+	vs.code = VEHICLE_SHADER
+	_lod_mat = ShaderMaterial.new()
+	_lod_mat.shader = vs
+	_lod_static_mat = ShaderMaterial.new()
+	_lod_static_mat.shader = vs
+	var ps := Shader.new()
+	ps.code = PEOPLE_SHADER
+	_people_mat = ShaderMaterial.new()
+	_people_mat.shader = ps
+	_people_mat.set_shader_parameter("leg_swing", LEG_SWING)
+	_people_mat.set_shader_parameter("arm_swing", ARM_SWING)
 	_brake_mat = StandardMaterial3D.new()
 	_brake_mat.albedo_color = Color(0.9, 0.05, 0.03)
 	_brake_mat.emission_enabled = true
@@ -97,6 +193,7 @@ func model_for(path: String, scale: float, person: bool = false) -> int:
 	var inst := ps.instantiate() as Node3D
 	var bb := _bounds(inst, Transform3D.IDENTITY)
 	m.size = bb.size * scale
+	m.mesh_h = bb.size.y
 	m.center = Vector3(bb.get_center().x, 0, bb.get_center().z) * scale
 	m.offset = Transform3D(Basis.from_scale(Vector3.ONE * scale), -m.center)
 	# H's single-material far LOD when present, else a merge of the full model.
@@ -104,6 +201,7 @@ func model_for(path: String, scale: float, person: bool = false) -> int:
 	var lod_ps := AP.load_scene(lod_path) if ResourceLoader.exists(lod_path) else null
 	var kit: KIT = KIT.new()
 	kit.begin()
+	kit.lamp_alpha = LAMP_ALPHA
 	if lod_ps != null:
 		var li := lod_ps.instantiate() as Node3D
 		kit.node(li)
@@ -143,10 +241,14 @@ func _add_mm(m: Model) -> void:
 		var mmi := MultiMeshInstance3D.new()
 		var mm := MultiMesh.new()
 		mm.transform_format = MultiMesh.TRANSFORM_3D
+		mm.use_custom_data = m.person
 		mm.mesh = m.lod_mesh
 		mm.instance_count = 0
 		mmi.multimesh = mm
-		mmi.material_override = _lod_mat
+		if m.person:
+			mmi.material_override = _people_mat
+		else:
+			mmi.material_override = _lod_static_mat if (k == L_SMID or k == L_SFAR) else _lod_mat
 		var shadows := k == L_MID or k == L_SMID
 		mmi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_ON if shadows else GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 		mmi.custom_aabb = AABB(Vector3(-200, -10, -200), Vector3(400, 40, 400))
@@ -184,6 +286,15 @@ func begin(dt: float) -> void:
 	for m: Model in models:
 		(m.lists[L_MID] as Array).clear()
 		(m.lists[L_FAR] as Array).clear()
+		(m.custom[L_MID] as Array).clear()
+		(m.custom[L_FAR] as Array).clear()
+
+
+## Lamp glow of the merged vehicles (0 by day, 1 at night).
+func set_glow(g: float) -> void:
+	if _lod_mat != null and absf(g - _glow) > 0.004:
+		_glow = g
+		_lod_mat.set_shader_parameter("glow", g)
 
 
 ## Starts a rebuild of the static (parked) layer.
@@ -210,9 +321,24 @@ func draw_parked(c: VH.Car, xf: Transform3D, d: float, vis_end: float) -> void:
 		_extras(c.node, model(c.model), false, "", 0.0)
 
 
+## A person: always the merged body through the people shader (stride and opacity per instance).
 func draw_walker(w: WK.Walker, xf: Transform3D, d: float, vis_end: float) -> void:
-	w.node = _place(w.model, w.node, w.lod, xf, d, vis_end, false)
-	w.lod = _last_lod
+	var m: Model = model(w.model)
+	if m == null or not m.person:
+		w.node = _place(w.model, w.node, w.lod, xf, d, vis_end, false)
+		w.lod = _last_lod
+		return
+	if w.node != null:
+		_release_node(m, w.node)
+		w.node = null
+	var op := minf(w.fade, clampf((vis_end - d) / PERSON_FADE, 0.0, 1.0))
+	if op <= 0.0 or m.lod_mesh == null:
+		w.lod = -1
+		return
+	var layer := L_MID if d < SHADOW_DIST else L_FAR
+	(m.lists[layer] as Array).append(xf * m.offset)
+	(m.custom[layer] as Array).append(Color(fposmod(w.phase, TAU), w.gait, m.mesh_h, op))
+	w.lod = 1 if layer == L_MID else 2
 
 
 ## Places one agent; returns its full node (or null) and sets _last_lod (-1 hidden, 0 full, 1 mid,
@@ -223,7 +349,7 @@ func _place(mi: int, node: Node3D, lod: int, xf: Transform3D, d: float, vis_end:
 		_release_node(m, node)
 		_last_lod = -1
 		return null
-	var want_full := m.scene != null and (d < NEAR or (lod == 0 and d < NEAR_OUT))
+	var want_full := m.scene != null and not m.person and (d < NEAR or (lod == 0 and d < NEAR_OUT))
 	if want_full:
 		if m.person:
 			want_full = full_people < CAP_PEOPLE
@@ -338,8 +464,8 @@ func _extras(node: Node3D, m: Model, brake: bool, siren: String, spin: float) ->
 ## Writes the moving MultiMesh layers for this frame.
 func finish() -> void:
 	for m: Model in models:
-		_fill(m.mms[L_MID], m.lists[L_MID])
-		_fill(m.mms[L_FAR], m.lists[L_FAR])
+		_fill(m.mms[L_MID], m.lists[L_MID], m.custom[L_MID])
+		_fill(m.mms[L_FAR], m.lists[L_FAR], m.custom[L_FAR])
 	_count_draws()
 
 
@@ -362,11 +488,10 @@ func _count_draws() -> void:
 			draws_people += n
 		else:
 			draws_vehicles += n
-	draws_people += full_people * 5
 	draws_vehicles += (full_vehicles + full_static) * 11
 
 
-func _fill(mmi: Variant, list: Array) -> void:
+func _fill(mmi: Variant, list: Array, custom: Array = []) -> void:
 	if mmi == null:
 		return
 	var mmn := mmi as MultiMeshInstance3D
@@ -379,6 +504,9 @@ func _fill(mmi: Variant, list: Array) -> void:
 		mm.instance_count = int(max(list.size(), mm.instance_count * 2, 8))
 	for k in range(list.size()):
 		mm.set_instance_transform(k, list[k])
+	if mm.use_custom_data:
+		for k in range(mini(custom.size(), list.size())):
+			mm.set_instance_custom_data(k, custom[k])
 	mm.visible_instance_count = list.size()
 	mmn.visible = true
 
