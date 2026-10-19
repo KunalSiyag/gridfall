@@ -786,11 +786,8 @@ func _geom(key: Vector4, build: Callable) -> Array:
 ## capped by the tightest curvature (v = sqrt(a_lat * r)). The gentle lateral shift of a straight
 ## beside parked cars is no curve to slow down for.
 func _set_geom(l: Lane, g: Array, c: Vector2, limit: float) -> void:
-	var local: PackedVector2Array = g[0]
-	var n := local.size()
-	l.pts.resize(n)
-	for k in range(n):
-		l.pts[k] = local[k] + c
+	# The tile-local shape offset to the tile centre in one native call.
+	l.pts = Transform2D(0.0, c) * (g[0] as PackedVector2Array)
 	l.cum = g[1]
 	l.length = g[2]
 	l.base_limit = limit
