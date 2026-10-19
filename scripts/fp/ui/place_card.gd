@@ -202,8 +202,10 @@ func _build_vehicle(t: Dictionary) -> void:
 	var dest := str(data.get("dest_label", ""))
 	if not dest.is_empty():
 		_line("Heading to " + D.debrand(dest), S.TEXT)
-	if data.has("mood"):
-		var m := float(data["mood"])
+	# E sends "" for a car without a driver: only a number is a mood.
+	var mv: Variant = data.get("mood", null)
+	if typeof(mv) == TYPE_FLOAT or typeof(mv) == TYPE_INT:
+		var m := float(mv)
 		var ten := roundi(m * 10.0 if m <= 1.0 else m)
 		var col := S.GOOD if ten >= 7 else (S.TEXT if ten >= 5 else (S.AMBER if ten >= 3 else S.RED))
 		var row := HFlowContainer.new()

@@ -302,6 +302,11 @@ func _check_card(ctx: FpContext, client: GmiClient) -> void:
 	_action("interact")
 	await _frames(1)
 	K.check(fails, not card.is_open() and not ctx.has_modal(&"card") and not ctx.is_modal(), "an interact press closes the card and pops &card")
+	# E's driverless car: mood "" and no destination.
+	ctx.bus.interact_requested.emit({"kind": "vehicle", "id": "v2", "tile": -1, "pos": Vector3.ZERO, "label": "a commuter", "data": {"driver_id": "", "state": "driving", "dest_label": "", "mood": ""}})
+	await _frames(1)
+	K.check(fails, card.is_open() and " ".join(card.texts()).contains("A commuter") and not " ".join(card.texts()).contains("Mood"), "a driverless vehicle card shows no mood (%s)" % " | ".join(card.texts()))
+	card.close()
 	ctx.bus.interact_requested.emit({"kind": "resident", "id": "r1", "tile": -1, "pos": Vector3.ZERO, "label": "Talk", "data": {}})
 	await _frames(1)
 	K.check(fails, not card.is_open(), "a resident target never opens B's card")
