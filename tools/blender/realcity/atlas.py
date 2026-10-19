@@ -5,8 +5,10 @@ builders give a face the pseudo-material "@<swatch>" and resolve(mb) turns it in
 "Car_Atlas" material with UVs at the centre of that swatch in a fixed 128 x 64 palette texture
 (base colour, ARM and emission maps, 8 x 8 px swatches). The palette is identical in every file.
 
-Far LODs use no texture at all: build_vc() writes the swatch colours as vertex colours (COLOR_0)
-under the single material "Car_LOD".
+Far LODs use no texture at all: build_lod() gives each group of near-identical swatch colours one flat
+material (LOD_<swatch>), and the lamp lenses the emissive Light_Head / Light_Tail. Slice E merges a
+far LOD into one surface coloured by each material's albedo (emissive ones become lamps), so the far
+LOD has to carry its colours in its materials, not in a texture or in vertex colours.
 
 A swatch is either a custom entry of PALETTE or any flat material of core.MATS (e.g. "@Paint_blue",
 "@Chrome", "@Sign_Red"), listed in MATS_SWATCHES so the atlas layout never depends on build order."""
@@ -22,7 +24,6 @@ import core
 ATLAS_DIR = os.path.join(core.DERIVED, "atlas")
 COLS, ROWS, PX = 16, 8, 8
 MAT_NAME = "Car_Atlas"
-LOD_MAT = "Car_LOD"
 
 # name: (albedo linear rgb, roughness, metallic, emission linear rgb or None)
 PALETTE = [
@@ -221,24 +222,6 @@ def material():
     return m
 
 
-def lod_material():
-    if LOD_MAT in core._mat_cache:
-        return core._mat_cache[LOD_MAT]
-    m = bpy.data.materials.new(LOD_MAT)
-    m.use_nodes = True
-    m.use_backface_culling = True
-    nt = m.node_tree
-    b = nt.nodes.get("Principled BSDF")
-    ca = nt.nodes.new("ShaderNodeVertexColor")
-    ca.layer_name = "Color"
-    nt.links.new(ca.outputs["Color"], b.inputs["Base Color"])
-    b.inputs["Roughness"].default_value = 0.45
-    b.inputs["Metallic"].default_value = 0.0
-    m.diffuse_color = (0.5, 0.5, 0.5, 1)
-    core._mat_cache[LOD_MAT] = m
-    return m
-
-
 def resolve(mb):
     """Turn every "@swatch" face of mb into a Car_Atlas face with swatch-centre UVs."""
     used = False
@@ -252,36 +235,53 @@ def resolve(mb):
     return used
 
 
-LAMP_SWATCHES = ("lens_head", "lens_tail")
+LOD_LAMPS = {
+    "lens_head": ("Light_Head", ("flat", (0.85, 0.85, 0.84), 0.1, 0.0, {"emission": (1.0, 0.95, 0.85), "strength": 0.6})),
+    "lens_tail": ("Light_Tail", ("flat", (0.40, 0.015, 0.012), 0.12, 0.0,
+                                 {"emission": (0.55, 0.015, 0.01), "strength": 0.5})),
+}
+LOD_TOL = 0.06   # swatches whose linear colours differ by less than this share one far-LOD material
 
 
-def build_vc(mb, name, smooth_angle=None):
-    """Build mb as one mesh with the single vertex-coloured material Car_LOD; every face must use a
-    "@swatch" (or a flat MATS name). Returns the object.
+def lod_groups(names):
+    """swatch -> material name for a far LOD: lamps get Light_Head / Light_Tail, emissive swatches keep
+    their own LOD_<swatch>, the rest are grouped by colour (deterministic: sorted by name)."""
+    out, reps = {}, []
+    for n in sorted(names):
+        if n in LOD_LAMPS:
+            out[n] = LOD_LAMPS[n][0]
+            continue
+        _, col, r, m, e = SWATCHES[n]
+        if not e:
+            for rn, rc, rm in reps:
+                if max(abs(a - b) for a, b in zip(col, rc)) < LOD_TOL:
+                    out[n] = rn
+                    break
+            if n in out:
+                continue
+            reps.append(("LOD_" + n, col, m))
+        out[n] = "LOD_" + n
+    return out
 
-    The material has no texture, so UV0 carries a flag instead: u = 1 on head- and tail-lamp faces
-    (LAMP_SWATCHES), 0 elsewhere (glTF export drops vertex-colour alpha, so alpha cannot carry it)."""
+
+def build_lod(mb, name, smooth_angle=None):
+    """Build mb as one mesh with a few flat, untextured materials (lod_groups); every face must use a
+    "@swatch" (or a flat MATS name). Returns the object."""
     if not mb.f:
         return None
-    me = bpy.data.meshes.new(name)
-    me.from_pydata([tuple(v) for v in mb.v], [], [f[0] for f in mb.f])
-    me.materials.append(lod_material())
-    ca = me.color_attributes.new("Color", "BYTE_COLOR", "CORNER")
-    uvl = me.uv_layers.new(name="UVMap")
-    for pi, (idx, m, smooth, uvs) in enumerate(mb.f):
-        n = m[1:] if m.startswith("@") else m
-        c = SWATCHES[n][1]
-        lamp = 1.0 if n in LAMP_SWATCHES else 0.0
-        poly = me.polygons[pi]
-        poly.material_index = 0
-        poly.use_smooth = smooth
-        for li in poly.loop_indices:
-            ca.data[li].color = (c[0], c[1], c[2], 1.0)
-            uvl.data[li].uv = (lamp, 0.0)
-    me.validate(clean_customdata=False)
-    me.update()
-    ob = bpy.data.objects.new(name, me)
-    bpy.context.scene.collection.objects.link(ob)
+    names = {(m[1:] if m.startswith("@") else m) for _, m, _, _ in mb.f}
+    groups = lod_groups(names)
+    for n, mname in groups.items():
+        if mname in core._mat_cache:
+            continue
+        if n in LOD_LAMPS:
+            core.material(mname, override=LOD_LAMPS[n][1])
+            continue
+        _, col, r, m, e = SWATCHES[n]
+        core.material(mname, override=("flat", col, r, m, {"emission": e, "strength": 1.0} if e else {}))
+    for k, (idx, m, smooth, uvs) in enumerate(mb.f):
+        mb.f[k] = (idx, groups[m[1:] if m.startswith("@") else m], smooth, None)
+    ob = mb.build(name, uv_offset=(0.0, 0.0))
     if smooth_angle is not None:
         bpy.ops.object.select_all(action="DESELECT")
         ob.select_set(True)

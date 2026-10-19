@@ -111,22 +111,26 @@ func _check_vehicles() -> void:
 		var mats := {}
 		var tris := 0
 		var lamp := false
-		for mi: MeshInstance3D in _meshes(lod):
+		var textured := false
+		var meshes := _meshes(lod)
+		for mi: MeshInstance3D in meshes:
 			for s in range(mi.mesh.get_surface_count()):
-				var m := mi.get_active_material(s)
+				var m := mi.get_active_material(s) as BaseMaterial3D
 				mats[m.resource_name if m != null else "<none>"] = true
+				if m != null and (m.albedo_texture != null or m.emission_texture != null):
+					textured = true
+				if m != null and m.resource_name == "Light_Head" and m.emission_enabled:
+					lamp = true
 				var arr := mi.mesh.surface_get_arrays(s)
 				var idx: PackedInt32Array = arr[Mesh.ARRAY_INDEX] if arr[Mesh.ARRAY_INDEX] != null else PackedInt32Array()
 				tris += (idx.size() if not idx.is_empty() else (arr[Mesh.ARRAY_VERTEX] as PackedVector3Array).size()) / 3
-				if arr[Mesh.ARRAY_TEX_UV] != null:
-					for uv: Vector2 in arr[Mesh.ARRAY_TEX_UV]:
-						if uv.x > 0.5:
-							lamp = true
-							break
-		K.check(fails, mats.size() == 1, "%s_lod1 has one material (%s)" % [n, str(mats.keys())])
+		# Slice E merges a far LOD by material albedo (emissive materials become lamps): flat colours,
+		# no textures, one mesh (docs/fp/requests/H-needs.md).
+		K.check(fails, meshes.size() == 1 and mats.size() <= 16 and not textured,
+			"%s_lod1 is one mesh with %d <= 16 flat untextured materials" % [n, mats.size()])
 		K.check(fails, tris <= 1500, "%s_lod1 has %d <= 1500 triangles" % [n, tris])
 		if n != "bicycle":
-			K.check(fails, lamp, "%s_lod1 flags its lamp faces (UV.x = 1)" % n)
+			K.check(fails, lamp, "%s_lod1 has an emissive Light_Head" % n)
 		lod.free()
 
 

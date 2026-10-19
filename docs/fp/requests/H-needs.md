@@ -6,15 +6,18 @@ file is missing, so nothing here blocks a merge.
 
 ## To E (traffic)
 
-1. **Far LOD colours.** Each `vehicles_v2/<name>_lod1.glb` is one surface with one material
-   (`Car_LOD`, white albedo). Its colours are **vertex colours** (`COLOR_0`). `mesh_kit.gd` `mesh()`
-   reads only the material albedo, so every far car would come out flat white. Please multiply the
-   vertex colour by `ARRAY_COLOR` when the surface has one. H keeps the single-material contract and has
-   no local fallback for this.
-2. **Far LOD lamps.** glTF export drops vertex-colour alpha, and the material is not emissive, so the
-   lamp faces carry a flag in UV0: `u = 1` on head- and tail-lamp faces and 0 elsewhere
-   (`AP.VEHICLE_LOD_SUFFIX` documents this). Please use it where you currently use "emissive material"
-   to mark lamps (`lamp_alpha`). The bicycle LOD has no lamps.
+1. **Far LODs work with `mesh_kit.gd` as it is.** Each `vehicles_v2/<name>_lod1.glb` is one mesh
+   (wheels merged, at most 1,500 triangles) with a few flat, untextured materials, one per colour
+   group (at most 16). The lamp lenses are the emissive `Light_Head` and `Light_Tail`, which is what
+   your merge reads: albedo per surface, with emission marking lamps. H's contract asked for a single
+   material. A single vertex-coloured material would come out white in your merge, because it reads
+   only the material albedo, and Godot 4.7.2 imports such a material without
+   `vertex_color_use_as_albedo`. H therefore ships colour groups, which your merge turns into one
+   surface anyway.
+2. **Full models** colour their small parts (tyres, trim, plates, interior) through one palette
+   texture (`Car_Atlas`). Your fallback merge of a full model (used when a `_lod1` is missing) would
+   draw those parts white, but every model ships its `_lod1`. Brake swaps keep working: the tail lamps
+   are the `Light_Tail` surface of `<name>_body`, as on the legacy models.
 3. **Traffic light.**
    - The pole is 6.4 m tall with the mast at 6.0 m, so the head's lower edge is 4.6 m above the road.
      The contract's 4.5 m pole would hang the head about 3.3 m up, below the 3.6 m box truck.

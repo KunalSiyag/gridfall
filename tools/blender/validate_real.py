@@ -18,8 +18,10 @@ Checks (Godot axes: X right, Y up, Z toward the viewer = Blender -Y):
   * budgets: triangles and GLB size per category
   * vehicles_v2 (1.0x): length 0.17-0.65 and width <= 0.13 for road vehicles, wheels on y = 0, the four
     Wheel_* objects (bicycle Wheel_F / Wheel_R) with their origin within 0.001 of their mesh bounds centre,
-    Seat_Driver, tinted see-through Glass_Car, Light_Head at +Z, <= 8 materials; each <name>_lod1 has one
-    material and <= 1,500 triangles
+    Seat_Driver, tinted see-through Glass_Car, Light_Head at +Z, <= 8 materials; each <name>_lod1 is one
+    mesh of <= 1,500 triangles with <= 16 flat untextured materials and an emissive Light_Head (road
+    vehicles). The contract asked for a single material; slice E merges far LODs by material albedo and
+    emission, so the colours live in a few flat materials instead (docs/fp/requests/H-needs.md)
   * street: footprint (AABB size) <= 0.25 except bus_shelter (<= 0.2 x 0.08), billboard and hoarding
     (<= 0.36) and traffic_light (<= 0.3 along X); base at y = 0 (the curb ramp sits in the road tile's height
     frame); every Poster_<n> object has one surface with material Poster, UVs within [0, 1] +- 1e-4 and its
@@ -93,6 +95,7 @@ STREET_FOOT = {"bus_shelter": (0.2, 0.08), "billboard": (0.36, 0.36), "hoarding"
                "traffic_light": (0.3, 0.25)}
 FUNCTIONAL = ("Poster", "SignFace", "Signal_", "Walk", "DontWalk", "Lamp_Glow", "Bulb")
 UV_EPS = 1e-4
+LOD_MAX_MATS = 16
 
 argv = sys.argv[sys.argv.index("--") + 1:] if "--" in sys.argv else []
 json_out = None
@@ -114,6 +117,16 @@ files = []
 for d in dirs:
     p = d if os.path.isabs(d) else os.path.join(PROJECT, d)
     files += sorted(glob.glob(os.path.join(p, "**", "*.glb"), recursive=True)) if os.path.isdir(p) else [p]
+
+
+def _emissive(m):
+    if m is None or not m.node_tree:
+        return False
+    for nd in m.node_tree.nodes:
+        if nd.type == "BSDF_PRINCIPLED":
+            c = nd.inputs["Emission Color"].default_value
+            return nd.inputs["Emission Strength"].default_value > 0 and max(c[0], c[1], c[2]) > 0
+    return False
 
 
 def _is(o, prefix):
@@ -260,8 +273,16 @@ def check(f):
         base = name[:-5] if lod else name
         if lod:
             tri_cap = 1500
-            if len(mats) != 1:
-                flags.append("LOD_MATS=%d" % len(mats))
+            # flat colour groups (slice E merges a far LOD by material albedo): one mesh, no textures,
+            # at most LOD_MAX_MATS materials, emissive Light_Head on road vehicles
+            if len([o for o in objs if o.type == "MESH"]) != 1:
+                flags.append("LOD_MESHES")
+            if len(mats) > LOD_MAX_MATS:
+                flags.append("LOD_MATS=%d>%d" % (len(mats), LOD_MAX_MATS))
+            if any(nd.type == "TEX_IMAGE" for m in bpy.data.materials if m.node_tree for nd in m.node_tree.nodes):
+                flags.append("LOD_TEXTURED")
+            if base != "bicycle" and not _emissive(bpy.data.materials.get("Light_Head")):
+                flags.append("LOD_NO_LAMPS")
         if abs(gy[0]) > 2e-3:
             flags.append("WHEELS!=0")
         if base != "bicycle" and (not (0.17 <= length <= 0.65) or width > 0.13):

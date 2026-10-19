@@ -30,8 +30,9 @@ const PERSON_LOOPING := ["idle", "walk", "run", "talk"]
 ## Separate wheel nodes on vehicles_v2 road vehicles (origin at the hub, spin about local X).
 const WHEEL_NODES := ["Wheel_FL", "Wheel_FR", "Wheel_RL", "Wheel_RR"]
 const BIKE_WHEEL_NODES := ["Wheel_F", "Wheel_R"]
-## Far LOD next to each vehicles_v2 model (<name>_lod1.glb): one vertex-coloured material, wheels
-## merged, at most 1,500 triangles. UV0.x is 1 on head- and tail-lamp faces, 0 elsewhere.
+## Far LOD next to each vehicles_v2 model (<name>_lod1.glb): one mesh, wheels merged, at most 1,500
+## triangles, a few flat untextured materials (colour in the albedo); the lamp lenses are the
+## emissive Light_Head / Light_Tail.
 const VEHICLE_LOD_SUFFIX := "_lod1.glb"
 ## Traffic-signal lens nodes in TRAFFIC_LIGHT (<prefix><n>, one material each), and the pedestrian
 ## head nodes in TRAFFIC_LIGHT and PED_SIGNAL.

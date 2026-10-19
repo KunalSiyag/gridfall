@@ -14,8 +14,9 @@ Materials (at most 8 per file): Paint_<colour> (clear coat), Glass_Car (tinted, 
 Light_Head, Light_Tail, Light_Brake, Light_Indicator_L, Light_Indicator_R and Car_Atlas (atlas.py:
 tyres, trim, interior, plates, secondary paint). Glass is see-through, so every vehicle has a cabin.
 
-<name>_lod1.glb (key vehicles_v2/<name>_lod1): the same silhouette with one vertex-coloured material
-(Car_LOD), opaque glass, wheels merged and static, at most 1,500 triangles.
+<name>_lod1.glb (key vehicles_v2/<name>_lod1): the same silhouette with a few flat, untextured materials
+(atlas.build_lod: colour groups, emissive Light_Head / Light_Tail lenses), opaque glass, wheels merged and
+static, at most 1,500 triangles.
 
 baked_car() puts a mid-detail car (Paint + Car_Atlas, opaque glass, merged wheels) into another
 model's builder; arch.parked_car uses it for the cars on house drives and parking lots."""
@@ -47,7 +48,7 @@ LIGHT_SPECS = {
 class Look:
     """Material per role for one of three detail modes:
     full  - the vehicles_v2 GLB (8 materials, transparent glass, cabin, lights as own materials)
-    lod   - the _lod1 GLB (everything as palette swatches, merged into one vertex-coloured mesh)
+    lod   - the _lod1 GLB (everything as palette swatches, merged into one mesh of flat colour groups)
     baked - a parked car merged into a zone model (Paint + Car_Atlas, opaque glass)"""
 
     def __init__(self, mode, paint, rnd=None):
@@ -1540,10 +1541,10 @@ def bicycle(c, look, frame="Paint_blue"):
 # ----------------------------------------------------------------------------- entry points
 
 def _finish(c, name, look, hip):
-    """Build the merged body: <name>_body (full: materials, smooth by angle), <name>_lod1 (vertex colours)."""
+    """Build the merged body: <name>_body (full: materials, smooth by angle), <name>_lod1 (flat colours)."""
     import bpy
     if look.lod:
-        ob = atlas.build_vc(c.mb, name, smooth_angle=math.radians(38))
+        ob = atlas.build_lod(c.mb, name, smooth_angle=math.radians(38))
     else:
         if c.cage.f:
             c.body_obs.append(cage_object(c.cage, "_cage"))

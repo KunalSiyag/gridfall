@@ -144,6 +144,10 @@ def sheet():
             sc = 6.0
         if "/props/" in f:
             sc = 2.2
+        if "/vehicles_v2/" in f:
+            sc = 2.0
+        if "/street/" in f:
+            sc = 3.0
         objs = import_glb(f, (0, 0, 0), scale=sc)
         bpy.context.view_layer.update()
         hz = max([(o.matrix_world @ Vector(c)).z for o in objs if o.type == "MESH" for c in o.bound_box] or [0.5])
