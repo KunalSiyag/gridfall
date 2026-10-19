@@ -24,6 +24,8 @@ var state: String = "clear"
 var wet: float = 0.0
 ## A state forced by tests and photos ("" follows the day and incidents).
 var forced: String = ""
+## Whether to write the `wetness` global shader parameter (the streetscape feature added it).
+var push_global: bool = false
 var rain: GPUParticles3D
 var _look: Dictionary = {"energy": 1.0, "exposure": 1.0, "grey": 0.0, "fog": -1.0}
 var _smog: float = 0.0
@@ -102,7 +104,8 @@ func _apply_hooks() -> void:
 		ctx.sky.weather_fog_tint = Color(0.62, 0.55, 0.36, clampf(_smog, 0.0, 0.85))
 	if ctx.view != null:
 		ctx.view.set_wetness(wet)
-	if RenderingServer.global_shader_parameter_get_list().has(&"wetness"):
+		ctx.view.set_rain(1.0 if state == "rain" else 0.0)
+	if push_global:
 		RenderingServer.global_shader_parameter_set(&"wetness", wet)
 
 

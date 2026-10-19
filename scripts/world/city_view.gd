@@ -59,13 +59,14 @@ const LEAF_TEXTURE := R + "buildings/hospital_leafcluster_round.png"
 const TREE_PROPS := ["tree_oak", "tree_round", "tree_birch", "tree_poplar", "tree_conifer"]
 ## Trees are batched in square chunks so far chunks can switch to low-poly stand-ins and a
 ## cleared forest only rebuilds its own chunk. TREE_RING tiles of woods surround the world.
-## Orbit: one 48-tile chunk carries both layers. On foot: 8-tile near chunks (full trees to
-## TREE_NEAR_FP) and 32-tile far chunks (stand-ins to TREE_FAR_FP, where the depth fog takes over).
+## Orbit: one 48-tile chunk carries both layers. On foot: 8-tile chunks carry full trees to
+## TREE_NEAR_FP, then one merged stand-in mesh (a single draw per chunk) to TREE_FAR_FP, where the
+## depth fog takes over. Both layers of a chunk measure from one centre, so they are exact
+## complements: no gap and no double tree at the switch.
 const TREE_CHUNK := 48
 const TREE_RING := 12
 const TREE_NEAR := 120.0
 const TREE_CHUNK_FP := 8
-const TREE_FAR_CHUNK_FP := 32
 const TREE_NEAR_FP := 12.0
 const TREE_FAR_FP := 50.0
 ## Orbit C/I pad height (the FP pad, when a fallback model needs one, sits at WS.PAD_TOP).
@@ -81,6 +82,7 @@ const GROUND_CHUNK := 64
 const GROUND_MARGIN := 30
 const BANK_W := 0.1
 const GROUND_SHADER := "res://shaders/ground_detail.gdshader"
+const WINDOW_SHADER := "res://shaders/window_fp.gdshader"
 ## Road-surface materials that darken and turn glossy in the rain (by resource-name prefix).
 const WET_PREFIXES := ["Asphalt", "Sidewalk", "Curb", "Paint_White"]
 ## Window glass tints: warm homes, cool offices, a dimmer warm, and mostly dark rooms.
@@ -134,6 +136,8 @@ var avatars: ResidentAvatars
 ## 0 at noon, 1 at midnight; set by SkyDirector.
 var night: float = 0.0
 var _window_mats: Array[StandardMaterial3D] = []
+## On foot every window shares one shader that varies room by room in world space.
+var _window_fp_mat: ShaderMaterial
 var _lamp_mat: StandardMaterial3D
 var _water_mat: ShaderMaterial
 var _tex_mats: Dictionary = {}
@@ -179,6 +183,7 @@ var _street: STREET
 var _ground_chunks: Array[MeshInstance3D] = []
 var _ground_fp_mat: ShaderMaterial
 var _lot_mat: ShaderMaterial
+var _bank_mat: ShaderMaterial
 var _apron_mat: StandardMaterial3D
 var _water_node: MeshInstance3D
 var _bed_node: MeshInstance3D
@@ -546,8 +551,11 @@ func _apply_ground_mode() -> void:
 		if is_instance_valid(g):
 			g.material_override = gm
 	if _bed_node != null:
-		_bed_node.material_override = _pbr("dirt", Color(0.22, 0.2, 0.17), 1.0 / (3.0 * WS.M) if fp_mode else 0.6, Color(0.82, 0.76, 0.7) if fp_mode else Color.WHITE)
+		_bed_node.material_override = _bank_material() if fp_mode else _pbr("dirt", Color(0.22, 0.2, 0.17), 0.6)
 	if _water_mat != null:
+		# On foot a darker, greener city river; the sky's reflection supplies the blue.
+		_water_mat.set_shader_parameter("deep_color", Color(0.03, 0.075, 0.075) if fp_mode else Color(0.10, 0.30, 0.38))
+		_water_mat.set_shader_parameter("shallow_color", Color(0.09, 0.15, 0.13) if fp_mode else Color(0.22, 0.48, 0.52))
 		# Normal-map repeats: one per 8 m on foot; the depth read fades the shallows and foams the banks.
 		_water_mat.set_shader_parameter("tiling", 1.0 / (8.0 * WS.M) if fp_mode else 0.35)
 		_water_mat.set_shader_parameter("speed", 0.05 if fp_mode else 0.03)
@@ -572,6 +580,18 @@ func _ground_material() -> Material:
 		_ground_fp_mat.set_shader_parameter("grass_tint", Color(1.0, 1.04, 0.96))
 		_ground_fp_mat.set_shader_parameter("wetness", wetness)
 	return _ground_fp_mat
+
+
+## River banks and bed on foot: the ground shader turned mostly to wet earth with grassy tufts.
+func _bank_material() -> Material:
+	var base := _ground_material()
+	if not (base is ShaderMaterial):
+		return _pbr("dirt", Color(0.22, 0.2, 0.17), 1.0 / (3.0 * WS.M))
+	if _bank_mat == null:
+		_bank_mat = (base as ShaderMaterial).duplicate() as ShaderMaterial
+		_bank_mat.set_shader_parameter("dirt", 0.8)
+		_bank_mat.set_shader_parameter("wetness", maxf(wetness, 0.35))
+	return _bank_mat
 
 
 ## Ground for a vacant lot on foot: the detail shader turned to patchy earth that fades back to grass
@@ -627,10 +647,16 @@ func set_wetness(w: float) -> void:
 	for sm: ShaderMaterial in [_ground_fp_mat, _lot_mat]:
 		if sm != null:
 			sm.set_shader_parameter("wetness", w)
-	if _water_mat != null:
-		_water_mat.set_shader_parameter("rain", 1.0 if w > 0.05 and fp_mode else 0.0)
+	if _bank_mat != null:
+		_bank_mat.set_shader_parameter("wetness", maxf(w, 0.35))
 	if _street != null:
 		_street.set_wetness(w)
+
+
+## Rain falling now (0 none .. 1 full): rings on the river.
+func set_rain(r: float) -> void:
+	if _water_mat != null:
+		_water_mat.set_shader_parameter("rain", clampf(r, 0.0, 1.0) if fp_mode else 0.0)
 
 
 func _wet_material(m: BaseMaterial3D, w: float) -> void:
@@ -780,7 +806,7 @@ func _build_trees() -> void:
 	if kits.is_empty():
 		kits.append(_procedural_tree_parts())
 	_tree_kits = kits
-	_far_tree_parts = _low_poly_tree_parts()
+	_far_tree_parts = _fp_far_tree_parts() if fp_mode else _low_poly_tree_parts()
 
 
 func _collect_meshes(n: Node, xf: Transform3D, out: Array) -> void:
@@ -852,20 +878,69 @@ func _low_poly_tree_parts() -> Array:
 	]
 
 
-## Chunk key of tile (x, y) for a tree layer: z = 0 is the orbit chunk (both layers), 1 the FP near
-## chunk, 2 the FP far chunk.
+## Distant trees on foot, one merged mesh: a trunk and a crown of three overlapping smooth lobes with
+## normals radiating from the crown centre and a vertex-colour gradient (lit top, shaded underside);
+## the multimesh adds a per-tree tint.
+func _fp_far_tree_parts() -> Array:
+	var st := SurfaceTool.new()
+	st.begin(Mesh.PRIMITIVE_TRIANGLES)
+	var centre := Vector3(0, 0.27, 0)
+	var trunk := CylinderMesh.new()
+	trunk.top_radius = 0.012
+	trunk.bottom_radius = 0.018
+	trunk.height = 0.2
+	trunk.radial_segments = 6
+	trunk.rings = 1
+	_append_tinted(st, trunk, Transform3D(Basis(), Vector3(0, 0.1, 0)), Color(0.24, 0.18, 0.12), Vector3.INF)
+	for lobe: Array in [[Vector3(0, 0.28, 0), 0.115], [Vector3(0.065, 0.23, 0.035), 0.085], [Vector3(-0.055, 0.235, -0.045), 0.08]]:
+		var sm := SphereMesh.new()
+		sm.radius = lobe[1]
+		sm.height = float(lobe[1]) * 1.8
+		sm.radial_segments = 12
+		sm.rings = 7
+		_append_tinted(st, sm, Transform3D(Basis(), lobe[0]), Color(0.2, 0.3, 0.11), centre)
+	var mat := StandardMaterial3D.new()
+	mat.vertex_color_use_as_albedo = true
+	mat.roughness = 0.92
+	mat.diffuse_mode = BaseMaterial3D.DIFFUSE_LAMBERT_WRAP
+	mat.specular_mode = BaseMaterial3D.SPECULAR_DISABLED
+	return [{"mesh": st.commit(), "xform": Transform3D(), "mat": mat, "tint": true}]
+
+
+## Appends a primitive mesh to st with transform xf and colour col; with a finite centre the
+## normals point away from it and the colour darkens toward the bottom.
+func _append_tinted(st: SurfaceTool, mesh: PrimitiveMesh, xf: Transform3D, col: Color, centre: Vector3) -> void:
+	var arr := mesh.get_mesh_arrays()
+	var v: PackedVector3Array = arr[Mesh.ARRAY_VERTEX]
+	var nrm: PackedVector3Array = arr[Mesh.ARRAY_NORMAL]
+	var idx: PackedInt32Array = arr[Mesh.ARRAY_INDEX]
+	for k in idx:
+		var p := xf * v[k]
+		var n := (xf.basis * nrm[k]).normalized()
+		var c := col
+		if centre.is_finite():
+			n = n.lerp((p - centre).normalized(), 0.6).normalized()
+			var up := clampf((p.y - centre.y) / 0.12 * 0.5 + 0.5, 0.0, 1.0)
+			c = col * lerpf(0.55, 1.25, up)
+			c.a = 1.0
+		st.set_color(c)
+		st.set_normal(n)
+		st.add_vertex(p)
+
+
+## Chunk key of tile (x, y) for a tree layer: z = 0 the orbit chunks, 1 the FP chunks.
 func _tree_chunk_of(x: int, y: int, layer: int = 0) -> Vector3i:
 	var size := _tree_chunk_size(layer)
 	return Vector3i(floori(float(x - D.X0 + TREE_RING) / size), floori(float(y - D.Y0 + TREE_RING) / size), layer)
 
 
 func _tree_chunk_size(layer: int) -> int:
-	return TREE_CHUNK if layer == 0 else (TREE_CHUNK_FP if layer == 1 else TREE_FAR_CHUNK_FP)
+	return TREE_CHUNK if layer == 0 else TREE_CHUNK_FP
 
 
-## The tree layers in use: one combined chunk set in orbit, near and far chunk sets on foot.
+## The chunk set in use: 48-tile chunks in orbit, 8-tile chunks on foot.
 func _tree_layers() -> Array[int]:
-	return [1, 2] if fp_mode else [0]
+	return [1] if fp_mode else [0]
 
 
 ## Marks the chunks holding tile (x, y) for a rebuild next frame.
@@ -916,38 +991,46 @@ func _refresh_tree_chunk(c: Vector3i) -> void:
 			n.queue_free()
 	var layers: Array = []
 	var every: Array = []
+	for ki in range(_tree_kits.size()):
+		every.append_array(by_kit[ki])
+	if every.is_empty():
+		_tree_chunks[c] = layers
+		return
+	var centre := Vector3.ZERO
+	for t: Transform3D in every:
+		centre += t.origin
+	centre /= float(every.size())
 	var near_end := TREE_NEAR_FP * vis_mult if fp_mode else TREE_NEAR
+	var margin := 1.5 if fp_mode else 6.0
 	for ki in range(_tree_kits.size()):
 		var spots: Array = by_kit[ki]
-		every.append_array(spots)
-		if spots.is_empty() or c.z == 2:
+		if spots.is_empty():
 			continue
 		for p: Dictionary in _tree_kits[ki]:
-			layers.append(_tree_layer(p, spots, 0.0, near_end, 1.5 if fp_mode else 6.0))
-	if not every.is_empty() and c.z != 1:
-		for p: Dictionary in _far_tree_parts:
-			if fp_mode:
-				layers.append(_tree_layer(p, every, near_end, TREE_FAR_FP * vis_mult, 2.0))
-			else:
-				layers.append(_tree_layer(p, every, TREE_NEAR, 0.0, 6.0))
+			layers.append(_tree_layer(p, spots, centre, 0.0, near_end, margin))
+	for p: Dictionary in _far_tree_parts:
+		layers.append(_tree_layer(p, every, centre, near_end, TREE_FAR_FP * vis_mult if fp_mode else 0.0, margin))
 	_tree_chunks[c] = layers
 
 
-## One part of one tree kit for a chunk. The layer sits at the chunk centre so visibility range
-## distances are measured per chunk.
-func _tree_layer(part: Dictionary, spots: Array, begin: float, end: float, margin: float) -> MultiMeshInstance3D:
-	var centre := Vector3.ZERO
-	for t: Transform3D in spots:
-		centre += t.origin
-	centre /= float(spots.size())
+## One part of one tree kit for a chunk. Every layer of a chunk sits at the same centre (the mean of
+## all its trees) so visibility range distances are measured per chunk and the layers complement.
+## Parts with "tint" get a hashed per-tree colour.
+func _tree_layer(part: Dictionary, spots: Array, centre: Vector3, begin: float, end: float, margin: float) -> MultiMeshInstance3D:
 	var mm := MultiMesh.new()
 	mm.transform_format = MultiMesh.TRANSFORM_3D
+	var tint := bool(part.get("tint", false))
+	mm.use_colors = tint
 	mm.mesh = part["mesh"]
 	mm.instance_count = spots.size()
 	var xf: Transform3D = part["xform"]
 	for k in range(spots.size()):
 		var t: Transform3D = spots[k]
 		mm.set_instance_transform(k, Transform3D(t.basis, t.origin - centre) * xf)
+		if tint:
+			var hv := absi(hash(Vector2i(roundi(t.origin.x * 100.0), roundi(t.origin.z * 100.0))))
+			var b := 0.82 + float(hv % 37) / 100.0
+			mm.set_instance_color(k, Color(b * (0.95 + float((hv >> 8) % 11) / 100.0), b, b * (0.9 + float((hv >> 16) % 13) / 100.0)))
 	var mmi := MultiMeshInstance3D.new()
 	mmi.multimesh = mm
 	mmi.position = centre
@@ -957,6 +1040,8 @@ func _tree_layer(part: Dictionary, spots: Array, begin: float, end: float, margi
 	mmi.visibility_range_begin_margin = margin if begin > 0.0 else 0.0
 	mmi.visibility_range_end = end
 	mmi.visibility_range_end_margin = margin if end > 0.0 else 0.0
+	if fp_mode:
+		mmi.visibility_range_fade_mode = GeometryInstance3D.VISIBILITY_RANGE_FADE_SELF
 	if begin > 0.0:
 		mmi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	_trees_root.add_child(mmi)
@@ -1963,7 +2048,13 @@ func _dress_windows(model: Node3D, h: int) -> void:
 				mi.set_surface_override_material(s, _window_material(variant))
 
 
-func _window_material(v: int) -> StandardMaterial3D:
+func _window_material(v: int) -> Material:
+	if fp_mode and ResourceLoader.exists(WINDOW_SHADER):
+		if _window_fp_mat == null:
+			_window_fp_mat = ShaderMaterial.new()
+			_window_fp_mat.shader = load(WINDOW_SHADER)
+			_window_fp_mat.set_shader_parameter("night", night)
+		return _window_fp_mat
 	if _window_mats.is_empty():
 		for t: Color in WINDOW_TINTS:
 			var m := StandardMaterial3D.new()
@@ -2008,6 +2099,8 @@ func _apply_night() -> void:
 			(_mats[key] as StandardMaterial3D).emission_energy_multiplier = 0.25 * (1.0 - 0.8 * glow)
 	if _water_mat != null:
 		_water_mat.set_shader_parameter("night", night)
+	if _window_fp_mat != null:
+		_window_fp_mat.set_shader_parameter("night", glow)
 
 
 func _animate_parts(delta: float) -> void:

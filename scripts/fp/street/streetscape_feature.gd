@@ -16,7 +16,9 @@ const DEFAULT_LIGHTS := 12
 var weather: WEATHER
 var lights: LIGHTS
 var preset: String = "medium"
-var _added_global: bool = false
+## True while the `wetness` global shader parameter exists (added here; the query for it is
+## editor-only, so the flag is the record).
+static var wetness_global: bool = false
 
 
 func feature_id() -> String:
@@ -27,11 +29,12 @@ func setup(p_ctx: FpContext) -> void:
 	ctx = p_ctx
 	preset = str(ctx.settings.get("quality", "medium"))
 	LP.apply(ctx.env, ctx.sun, "fp", preset)
-	if not RenderingServer.global_shader_parameter_get_list().has(&"wetness"):
+	if not wetness_global:
 		RenderingServer.global_shader_parameter_add(&"wetness", RenderingServer.GLOBAL_VAR_TYPE_FLOAT, 0.0)
-		_added_global = true
+		wetness_global = true
 	weather = WEATHER.new()
 	weather.name = "Weather"
+	weather.push_global = wetness_global
 	add_child(weather)
 	weather.setup(ctx, preset)
 	lights = LIGHTS.new()
@@ -73,9 +76,9 @@ func teardown() -> void:
 	if ctx.sky != null:
 		ctx.sky.reset_weather()
 	LP.apply(ctx.env, ctx.sun, "orbit", preset)
-	if _added_global:
+	if wetness_global:
 		RenderingServer.global_shader_parameter_remove(&"wetness")
-		_added_global = false
+		wetness_global = false
 
 
 func to_dict() -> Dictionary:

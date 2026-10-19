@@ -37,13 +37,13 @@ void fragment() {
 	vec3 n2 = texture(normal_tex, uv * 1.7 - vec2(TIME * speed * 0.8, -TIME * speed * 0.4)).rgb;
 	vec3 nm = normalize(mix(n1, n2, 0.5));
 	if (rain > 0.0) {
-		// Expanding rings in a jittered grid of 40 cm cells, each on its own clock.
-		vec2 cell = world_pos.xz * 50.0;
+		// Expanding rings in a jittered grid of 16 cm cells, each on its own clock.
+		vec2 cell = world_pos.xz * 125.0;
 		vec2 id = floor(cell);
 		vec2 c = fract(cell) - 0.5 - (vec2(hash12(id), hash12(id + 7.3)) - 0.5) * 0.5;
 		float t = fract(TIME * 1.3 + hash12(id + 3.1));
-		float ripple = smoothstep(0.06, 0.0, abs(length(c) - t * 0.45)) * (1.0 - t) * rain;
-		nm.xy += normalize(c + 1e-4) * ripple * 0.35;
+		float ripple = smoothstep(0.07, 0.0, abs(length(c) - t * 0.4)) * (1.0 - t) * rain;
+		nm.xy += normalize(c + 1e-4) * ripple * 0.22;
 	}
 	NORMAL_MAP = nm;
 	NORMAL_MAP_DEPTH = 0.6;

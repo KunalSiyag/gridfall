@@ -9,6 +9,9 @@ uniform vec4 tint : source_color = vec4(1.0);
 uniform vec3 translucency : source_color = vec3(0.30, 0.38, 0.12);
 uniform float wind = 1.0;
 uniform float wetness = 0.0;
+// Pulls the normal toward world up: cards then shade like a canopy lit from above (used on the
+// building models' hedges and shrubs, whose normals are not bent).
+uniform float up_bias = 0.0;
 
 void vertex() {
 	vec3 wp = (MODEL_MATRIX * vec4(VERTEX, 1.0)).xyz;
@@ -30,6 +33,9 @@ void fragment() {
 	ALPHA = clamp(a.a * (1.0 + lod * 0.28), 0.0, 1.0);
 	ALPHA_HASH_SCALE = 1.0;
 	NORMAL = FRONT_FACING ? NORMAL : -NORMAL;
+	if (up_bias > 0.0) {
+		NORMAL = normalize(mix(NORMAL, (VIEW_MATRIX * vec4(0.0, 1.0, 0.0, 0.0)).xyz, up_bias));
+	}
 	ROUGHNESS = mix(0.72, 0.35, wetness);
 	SPECULAR = 0.35;
 	BACKLIGHT = translucency;

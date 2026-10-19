@@ -366,11 +366,11 @@ func _check_trees(view: CityView) -> void:
 	var far_end := []
 	for c: Vector3i in view._tree_chunks.keys():
 		for mmi: MultiMeshInstance3D in view._tree_chunks[c]:
-			if not is_instance_valid(mmi):
+			if not is_instance_valid(mmi) or c.z != 1:
 				continue
-			if c.z == 1:
+			if mmi.visibility_range_begin <= 0.0:
 				near_end = maxf(near_end, mmi.visibility_range_end)
-			elif c.z == 2:
+			else:
 				far_end.append(mmi.visibility_range_end)
 	K.check(fails, near_end > 0.0 and near_end <= 15.0, "near trees end by 15 u (%.1f)" % near_end)
 	var far_ok := not far_end.is_empty()
@@ -650,7 +650,7 @@ func _check_feature_hooks(ctx: FpContext, f: FpFeature) -> void:
 	K.check(fails, "street_sign" in names and "rain" in names, "photo shots: street_sign and rain (%s)" % str(names))
 	f._process(0.016)
 	K.check(fails, ctx.view.priority_point.distance_to(ctx.player_position()) < 1e-4, "the feature feeds the player position to the rebuild queue")
-	K.check(fails, RenderingServer.global_shader_parameter_get_list().has(&"wetness"), "the wetness global shader parameter exists on foot")
+	K.check(fails, (f.get("weather") as Node).get("push_global") == true, "the wetness global shader parameter exists on foot")
 
 
 # ------------------------------------------------------------------ imports

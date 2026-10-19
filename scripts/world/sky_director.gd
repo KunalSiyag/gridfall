@@ -7,6 +7,11 @@ extends Node
 const DAY_HDRI := "res://env/sky.hdr"
 ## Poly Haven sunset panorama; true night is drawn procedurally in the sky shader.
 const DUSK_HDRI := "res://env/sky_night.hdr"
+## On foot the horizon is in view, and sky_night's city skyline would loom over the streets: a
+## pure-sky dusk replaces it (orbit keeps the old one), scaled to the same mean brightness.
+const DUSK_HDRI_FP := "res://env/sky_dusk.hdr"
+const DUSK_GAIN := 0.3
+const DUSK_GAIN_FP := 0.38
 const SKY_SHADER := "res://shaders/sky_blend.gdshader"
 ## Above this speed a day lasts under 3 seconds, so the cycle holds at midday instead of strobing.
 const MAX_CYCLE_SPEED := 4
@@ -32,6 +37,7 @@ var fog_begin_override: float = -1.0
 var weather_grey: float = 0.0
 var weather_fog_tint: Color = Color(1, 1, 1, 0)
 var _sky_mat: ShaderMaterial
+var _dusk_fp: bool = false
 ## The depth-fog begin that fog_begin_override replaced (negative: nothing replaced).
 var _fog_begin_saved: float = -1.0
 
@@ -130,6 +136,11 @@ func _apply(blend: float) -> void:
 			env.fog_depth_begin = _fog_begin_saved
 			_fog_begin_saved = -1.0
 	if _sky_mat != null:
+		var want_fp := view != null and view.fp_mode and ResourceLoader.exists(DUSK_HDRI_FP)
+		if want_fp != _dusk_fp:
+			_dusk_fp = want_fp
+			_sky_mat.set_shader_parameter("dusk_sky", load(DUSK_HDRI_FP if want_fp else (DUSK_HDRI if ResourceLoader.exists(DUSK_HDRI) else DAY_HDRI)))
+			_sky_mat.set_shader_parameter("dusk_gain", DUSK_GAIN_FP if want_fp else DUSK_GAIN)
 		_sky_mat.set_shader_parameter("dusk", dusk)
 		_sky_mat.set_shader_parameter("night", dark)
 		_sky_mat.set_shader_parameter("tint", Vector3(1.0, 1.0, 1.0).lerp(Vector3(1.15, 0.9, 0.75), dusk))

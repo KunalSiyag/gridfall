@@ -392,7 +392,7 @@ func _dress_junction(i: int, holder: Node3D, mask: int, kind_name: String, rng: 
 		var side := Vector2(-far.y, far.x)
 		var p := far * CURB + side * 0.33
 		_street_sign(holder, Vector3(p.x, WS.SIDEWALK_TOP, p.y), names, cols, true)
-		_corner_bin(i, Vector2(stem) * 0.345 - side * 0.345, cols, rng)
+		_corner_bin(i, Vector2(stem) * 0.47 - side * 0.47, cols, rng)
 	else:
 		var pole: Node3D = null
 		if view.light_pole_source != null and view.light_pole_source.has_method("light_pole"):
@@ -404,9 +404,10 @@ func _dress_junction(i: int, holder: Node3D, mask: int, kind_name: String, rng: 
 			holder.add_child(blades)
 		else:
 			_street_sign(holder, Vector3(0.345, WS.SIDEWALK_TOP, -0.345), names, cols, true)
-		_corner_bin(i, Vector2(-0.345, 0.345) if rng.randf() < 0.5 else Vector2(0.345, 0.345), cols, rng)
+		_corner_bin(i, Vector2(-0.47, 0.47) if rng.randf() < 0.5 else Vector2(0.47, 0.47), cols, rng)
 
 
+## A bin at the back of a corner's sidewalk square, clear of the crossing and its waiting spot.
 func _corner_bin(i: int, p: Vector2, cols: Array, rng: RandomNumberGenerator) -> void:
 	if rng.randf() < 0.6:
 		_put(i, "bin", Vector3(p.x, WS.SIDEWALK_TOP, p.y), -p.normalized(), cols)
@@ -803,7 +804,8 @@ func shelter(holder: Node3D, dv: Vector2i) -> Node3D:
 
 # ------------------------------------------------------------------ materials
 
-## Swaps see-through glass on a building for opaque, sky-reflecting curtain wall on foot.
+## A building model on foot: see-through glass becomes opaque, sky-reflecting curtain wall (keeping
+## its tint), and the model's own hedges, shrubs and trees get the hashed-alpha foliage shader.
 func dress_model(model: Node3D) -> void:
 	for n in model.find_children("*", "MeshInstance3D", true, false):
 		var mi := n as MeshInstance3D
@@ -814,17 +816,21 @@ func dress_model(model: Node3D) -> void:
 			if m == null:
 				continue
 			var nm := m.resource_name
-			if nm == "Glass" or nm.begins_with("Glass_Curtain") or nm.begins_with("Glass_Shop"):
-				mi.set_surface_override_material(s, _glass_mat(nm))
+			if nm.begins_with("Glass") and not nm.begins_with("Glass_Car"):
+				mi.set_surface_override_material(s, _glass_mat(nm, m as BaseMaterial3D))
+			elif nm.begins_with("Leaves") and m is BaseMaterial3D:
+				mi.set_surface_override_material(s, _foliage_mat(m as BaseMaterial3D, 0.55))
 
 
-func _glass_mat(nm: String) -> StandardMaterial3D:
+func _glass_mat(nm: String, src: BaseMaterial3D) -> StandardMaterial3D:
 	var key := "glass_" + nm
 	if not _mats.has(key):
 		var m := StandardMaterial3D.new()
 		m.resource_name = nm + "_FP"
-		var shop := nm.begins_with("Glass_Shop")
-		m.albedo_color = Color(0.1, 0.12, 0.13) if shop else Color(0.05, 0.075, 0.095)
+		# Keep a trace of the authored hue (green or blue curtain walls), darkened like tinted glass.
+		var hue := src.albedo_color if src != null else Color(0.2, 0.25, 0.3)
+		var base := Color(0.1, 0.12, 0.13) if nm.begins_with("Glass_Shop") else Color(0.045, 0.065, 0.08)
+		m.albedo_color = base.lerp(Color(hue.r, hue.g, hue.b) * 0.35, 0.5)
 		m.metallic = 0.15
 		m.metallic_specular = 0.75
 		m.roughness = 0.05
@@ -844,7 +850,7 @@ func fp_tree_parts(parts: Array) -> Array:
 			continue
 		var q := p.duplicate()
 		q["mesh"] = _bent_mesh(mesh as ArrayMesh)
-		q["mat"] = _foliage_mat(mat as BaseMaterial3D)
+		q["mat"] = _foliage_mat(mat as BaseMaterial3D, 0.15)
 		out.append(q)
 	return out
 
@@ -872,8 +878,9 @@ func _bent_mesh(src: ArrayMesh) -> ArrayMesh:
 	return out
 
 
-func _foliage_mat(src: BaseMaterial3D) -> Material:
-	var key := "foliage_%d" % src.get_instance_id()
+## The foliage shader for leaf material src; up_bias pulls normals toward the sky (0 for bent meshes).
+func _foliage_mat(src: BaseMaterial3D, up_bias: float) -> Material:
+	var key := "foliage_%d_%.2f" % [src.get_instance_id(), up_bias]
 	if _mats.has(key):
 		return _mats[key]
 	var m: Material = null
@@ -882,6 +889,7 @@ func _foliage_mat(src: BaseMaterial3D) -> Material:
 		sm.shader = load("res://shaders/foliage.gdshader")
 		sm.set_shader_parameter("albedo_tex", src.albedo_texture)
 		sm.set_shader_parameter("tint", src.albedo_color)
+		sm.set_shader_parameter("up_bias", up_bias)
 		m = sm
 	else:
 		var d := src.duplicate() as BaseMaterial3D
@@ -983,7 +991,7 @@ func _procedural_kit(kind: String) -> Array:
 			var pad := BoxMesh.new()
 			pad.size = Vector3(hw * 2.0, 0.0004, 0.03)
 			return [
-				{"mesh": wedge, "xform": Transform3D(), "mat": _std("ramp", Color(0.62, 0.61, 0.58), 0.0, 0.85)},
+				{"mesh": wedge, "xform": Transform3D(), "mat": _std("ramp", Color(0.47, 0.46, 0.44), 0.0, 0.85)},
 				{"mesh": pad, "xform": Transform3D(Basis(), Vector3(0, WS.SIDEWALK_TOP + 0.0002, 0.016)), "mat": _std("tactile", Color(0.78, 0.62, 0.32), 0.0, 0.7)},
 			]
 	return []
