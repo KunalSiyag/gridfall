@@ -5,8 +5,9 @@ Writes PNGs next to this file: crack_0/1, patch_0, oil_0/1, drain_0, stain_0, pu
 ORM map, hoarding.png (a greyscale painted-plywood hoarding, 4.8 m square, four 1.2 m panels,
 tinted per site), grime_mask/grime_dust, hedge_leaves.png (a tiling clipped-hedge surface, 1 m
 square, stamped from the shrub leaf cluster) and grate.png (a 1.3 m cast-iron tree grate with
-slots, alpha 0 in the slots). Deterministic (fixed seeds); needs numpy and Pillow. Name textures
-to rebuild only those (hoarding, grime, hedge, grate, decals).
+slots, alpha 0 in the slots) and tactile.png (0.4 m of buff blister paving for the kerb ramps).
+Deterministic (fixed seeds); needs numpy and Pillow. Name textures
+to rebuild only those (hoarding, grime, hedge, grate, tactile).
 
     python3 textures/real/decals/make_decals.py [name ...]
 """
@@ -240,12 +241,36 @@ def grate(seed):
     save("grate", rgb, alpha)
 
 
+def tactile(seed):
+    """Buff blister paving at a kerb ramp, 0.4 m square and tiling: a 6 x 6 grid of 25 mm domes at
+    66.7 mm, lit from the upper left, with light grime."""
+    rng = np.random.default_rng(seed)
+    n = 256
+    yy, xx = (np.mgrid[0:n, 0:n] + 0.5) / n
+    cell = 6.0
+    fx = (xx * cell) % 1.0 - 0.5
+    fy = (yy * cell) % 1.0 - 0.5
+    rr = np.sqrt(fx * fx + fy * fy) / (0.0125 / (0.4 / cell))   # 1 at the dome's rim
+    dome = np.clip(1.0 - rr, 0.0, 1.0)
+    # Dome shading: the slope toward the light brightens, away from it darkens; a soft rim shadow.
+    lit = np.where(rr < 1.0, (-fx - fy) / 0.5 * 0.35 * (1.0 - dome * 0.4), 0.0)
+    rim = np.clip(1.0 - np.abs(rr - 1.05) / 0.12, 0.0, 1.0) * 0.18
+    g = rng.random((9, 9)).astype(np.float32)
+    g[-1, :] = g[0, :]
+    g[:, -1] = g[:, 0]
+    grime = np.asarray(Image.fromarray((g * 255).astype(np.uint8)).resize((n, n), Image.BICUBIC), np.float32) / 255.0
+    shade = (1.0 + lit - rim) * (0.93 + 0.07 * grime)
+    base = np.array([200.0, 163.0, 98.0])
+    rgb = base[None, None, :] * shade[..., None]
+    save("tactile", rgb, np.full((n, n), 255.0))
+
+
 def main():
     import sys
     want = set(sys.argv[1:])
     if want:
         for name in want:
-            {"hoarding": lambda: hoarding(71), "grime": lambda: grime(81), "hedge": lambda: hedge(91), "grate": lambda: grate(101)}[name]()
+            {"hoarding": lambda: hoarding(71), "grime": lambda: grime(81), "hedge": lambda: hedge(91), "grate": lambda: grate(101), "tactile": lambda: tactile(111)}[name]()
         return
     for k in range(2):
         save("crack_%d" % k, *cracks(11 + k))
@@ -261,6 +286,7 @@ def main():
     grime(81)
     hedge(91)
     grate(101)
+    tactile(111)
 
 
 if __name__ == "__main__":

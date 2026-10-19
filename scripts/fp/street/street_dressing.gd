@@ -49,6 +49,11 @@ const LAMP_BULB := Vector3(0.0, 0.4112, 0.085)
 const FAR_KINDS := ["tree", "lamp", "apron"]
 ## Kinds whose batches cast shadows.
 const SHADOW_KINDS := ["tree", "lamp"]
+## Kinds lying flat on the ground, which never come between the camera and the player.
+const FLAT_KINDS := ["apron", "pit", "ramp"]
+## Props and leaves dither out this close to the camera (metres): a third-person camera backed into
+## a bench, bin or street-tree crown sees through it instead of a wall of leaves or paint.
+const NEAR_FADE := Vector2(0.35, 1.4)
 const SIGN_GREEN := Color(0.02, 0.36, 0.2)
 ## Cross tiles without a traffic feature: G1's own sign pole at the NE corner (holder-local).
 const OWN_POLE := Vector3(0.345, WS.SIDEWALK_TOP, -0.345)
@@ -210,6 +215,8 @@ func _kit(kind: String) -> Dictionary:
 			parts = _lamp_parts(parts)
 	if parts.is_empty():
 		parts = _procedural_kit(kind)
+	if kind not in FLAT_KINDS:
+		parts = _near_faded(parts)
 	var bb := AABB()
 	for p: Dictionary in parts:
 		var a: AABB = (p["xform"] as Transform3D) * (p["mesh"] as Mesh).get_aabb()
@@ -267,6 +274,9 @@ func _asphalt(model: Node3D, mask: int, kind_name: String) -> void:
 			elif m != null and m.resource_name == "Metal_Dark":
 				# Manhole covers and gutter grates: worn cast iron, not a blue-grey mirror.
 				mi.set_surface_override_material(s, _iron_mat())
+			elif m != null and m.resource_name == "Grass" and view.lawn_material() != null:
+				# The cul-de-sac island: the same metric grass as the verges round it.
+				mi.set_surface_override_material(s, view.lawn_material())
 		if hit:
 			mi.set_instance_shader_parameter(&"lane_axis", float(axis))
 
@@ -665,6 +675,43 @@ func _lamp_parts(parts: Array) -> Array:
 	return out
 
 
+## Kit parts whose materials dither out near the camera (NEAR_FADE). Standard materials are
+## duplicated with a pixel-dither distance fade (a multi-surface mesh gets a copy carrying them);
+## shader materials (the foliage) fade themselves; the lamps' night-driven glass is left alone.
+func _near_faded(parts: Array) -> Array:
+	var out: Array = []
+	for p: Dictionary in parts:
+		var q := p.duplicate()
+		var m: Variant = p.get("mat")
+		if m is BaseMaterial3D:
+			if m != view._lamp_material():
+				q["mat"] = _faded(m as BaseMaterial3D)
+		elif m == null:
+			var mesh := p["mesh"] as Mesh
+			if mesh is ArrayMesh:
+				var copy := (mesh as ArrayMesh).duplicate() as ArrayMesh
+				for k in range(copy.get_surface_count()):
+					var sm := mesh.surface_get_material(k)
+					if sm is BaseMaterial3D:
+						copy.surface_set_material(k, _faded(sm as BaseMaterial3D))
+				q["mesh"] = copy
+			elif mesh != null and mesh.get_surface_count() == 1 and mesh.surface_get_material(0) is BaseMaterial3D:
+				q["mat"] = _faded(mesh.surface_get_material(0) as BaseMaterial3D)
+		out.append(q)
+	return out
+
+
+func _faded(m: BaseMaterial3D) -> BaseMaterial3D:
+	var key := "faded_%d" % m.get_instance_id()
+	if not _mats.has(key):
+		var d := m.duplicate() as BaseMaterial3D
+		d.distance_fade_mode = BaseMaterial3D.DISTANCE_FADE_PIXEL_DITHER
+		d.distance_fade_min_distance = NEAR_FADE.x * WS.M
+		d.distance_fade_max_distance = NEAR_FADE.y * WS.M
+		_mats[key] = d
+	return _mats[key]
+
+
 ## A pool of lamplight under a bulb at parent-local p: an emissive decal over the ground it falls on,
 ## shown after dark (night_glow). It fades out beyond 8 u.
 func light_pool(parent: Node3D, p: Vector3) -> Decal:
@@ -1045,6 +1092,9 @@ func dress_model(model: Node3D) -> void:
 				mi.set_surface_override_material(s, _foliage_mat(m as BaseMaterial3D, 0.55, 0.0, Vector3.ZERO, card_uv_offset(mi.mesh, s)))
 			elif nm == "Hedge_Core":
 				mi.set_surface_override_material(s, _hedge_mat())
+			elif nm == "Grass" and view.lawn_material() != null:
+				# Flat untextured lawns and park grass: the street's metric, non-repeating grass.
+				mi.set_surface_override_material(s, view.lawn_material())
 
 
 func _glass_mat(nm: String, src: BaseMaterial3D) -> StandardMaterial3D:
@@ -1120,6 +1170,7 @@ func _foliage_mat(src: BaseMaterial3D, up_bias: float, bend: float = 0.0, centre
 		sm.set_shader_parameter("bend", bend)
 		sm.set_shader_parameter("crown_centre", centre)
 		sm.set_shader_parameter("uv_offset", uv_offset)
+		sm.set_shader_parameter("near_fade", NEAR_FADE * WS.M)
 		m = sm
 	else:
 		var d := src.duplicate() as BaseMaterial3D
@@ -1242,8 +1293,8 @@ func _procedural_kit(kind: String) -> Array:
 			var pad := BoxMesh.new()
 			pad.size = Vector3(hw * 2.0, 0.0004, 0.03)
 			return [
-				{"mesh": wedge, "xform": Transform3D(), "mat": _std("ramp", Color(0.47, 0.46, 0.44), 0.0, 0.85)},
-				{"mesh": pad, "xform": Transform3D(Basis(), Vector3(0, WS.SIDEWALK_TOP + 0.0002, 0.016)), "mat": _std("tactile", Color(0.78, 0.62, 0.32), 0.0, 0.7)},
+				{"mesh": wedge, "xform": Transform3D(), "mat": _ramp_mat()},
+				{"mesh": pad, "xform": Transform3D(Basis(), Vector3(0, WS.SIDEWALK_TOP + 0.0002, 0.016)), "mat": _tactile_mat()},
 			]
 	return []
 
@@ -1262,6 +1313,41 @@ func _grate_mat() -> StandardMaterial3D:
 			m.texture_filter = BaseMaterial3D.TEXTURE_FILTER_LINEAR_WITH_MIPMAPS_ANISOTROPIC
 		_mats["grate_tex"] = m
 	return _mats["grate_tex"]
+
+
+## Kerb-ramp concrete: the paving texture in world metres, a little greyer; wet with the street.
+func _ramp_mat() -> StandardMaterial3D:
+	if not _mats.has("ramp_tex"):
+		var m := view._pbr("sidewalk", Color(0.47, 0.46, 0.44), 1.0 / (2.0 * WS.M), Color(0.8, 0.8, 0.79)).duplicate() as StandardMaterial3D
+		m.resource_name = "Ramp_FP"
+		m.roughness = 0.85
+		_wets(m)
+		_mats["ramp_tex"] = m
+	return _mats["ramp_tex"]
+
+
+## Buff blister paving (textures/real/decals/tactile.png, 0.4 m per repeat, world-mapped).
+func _tactile_mat() -> StandardMaterial3D:
+	if not _mats.has("tactile_tex"):
+		var m := _std("tactile", Color(0.78, 0.62, 0.32), 0.0, 0.7).duplicate() as StandardMaterial3D
+		m.resource_name = "Tactile_FP"
+		var tex := _decal_texture("tactile")
+		if tex != null:
+			m.albedo_color = Color.WHITE
+			m.albedo_texture = tex
+			m.uv1_triplanar = true
+			m.uv1_world_triplanar = true
+			m.uv1_scale = Vector3.ONE / (0.4 * WS.M)
+			m.texture_filter = BaseMaterial3D.TEXTURE_FILTER_LINEAR_WITH_MIPMAPS_ANISOTROPIC
+		_wets(m)
+		_mats["tactile_tex"] = m
+	return _mats["tactile_tex"]
+
+
+## Lets CityView's set_wetness() darken and gloss m with the road surfaces.
+func _wets(m: BaseMaterial3D) -> void:
+	view._wet_mats[m] = [m.albedo_color, m.roughness, m.metallic_specular, false]
+	view._wet_material(m, view.wetness)
 
 
 ## Cast iron for the road models' covers on foot: dark, mottled by the grime mask in world space.

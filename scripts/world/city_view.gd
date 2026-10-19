@@ -186,6 +186,7 @@ var _street: STREET
 var _ground_chunks: Array[MeshInstance3D] = []
 var _ground_fp_mat: ShaderMaterial
 var _lot_mat: ShaderMaterial
+var _lawn_mat: ShaderMaterial
 var _bank_mat: ShaderMaterial
 var _apron_mat: StandardMaterial3D
 var _road_fp_mat: ShaderMaterial
@@ -618,6 +619,19 @@ func lot_ground_material() -> Material:
 	return _lot_mat
 
 
+## Lawns and park grass of the building models on foot (their flat "Grass" surfaces): the street's
+## metric grass, a little lusher and with fewer worn patches. Null without the ground shader.
+func lawn_material() -> ShaderMaterial:
+	var base := _ground_material()
+	if not (base is ShaderMaterial):
+		return null
+	if _lawn_mat == null:
+		_lawn_mat = (base as ShaderMaterial).duplicate() as ShaderMaterial
+		_lawn_mat.set_shader_parameter("grass_tint", Color(0.96, 1.08, 0.92))
+		_lawn_mat.set_shader_parameter("wetness", wetness)
+	return _lawn_mat
+
+
 ## Paving for the aprons between lots and road sidewalks: the road's own sidewalk material, world
 ## tiled at the road's density (one repeat per 3 m).
 func apron_material() -> Material:
@@ -681,7 +695,7 @@ func set_wetness(w: float) -> void:
 	for m: BaseMaterial3D in _wet_mats.keys():
 		if is_instance_valid(m):
 			_wet_material(m, w)
-	for sm: ShaderMaterial in [_ground_fp_mat, _lot_mat, _road_fp_mat]:
+	for sm: ShaderMaterial in [_ground_fp_mat, _lot_mat, _road_fp_mat, _lawn_mat]:
 		if sm != null:
 			sm.set_shader_parameter("wetness", w)
 	if _bank_mat != null:

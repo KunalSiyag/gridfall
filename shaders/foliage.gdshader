@@ -24,6 +24,9 @@ uniform float edge_hi = 0.5;
 // The model exporter shifts every card's 0..1 UVs by one offset per material (core.py build), which
 // cuts the round leaf cluster into quarters at the card corners; subtracting it recentres them.
 uniform vec2 uv_offset = vec2(0.0);
+// Leaves closer to the camera than near_fade.x are gone and fade in by near_fade.y (world units), so
+// a camera backed into a crown sees through it; (0, 0) turns it off.
+uniform vec2 near_fade = vec2(0.0);
 
 void vertex() {
 	vec3 wp = (MODEL_MATRIX * vec4(VERTEX, 1.0)).xyz;
@@ -53,6 +56,9 @@ void fragment() {
 	float r = length(cuv - 0.5) * 2.0;
 	float shrink = 1.0 - smoothstep(keep * 1.15 - 0.3, keep * 1.15, r);
 	ALPHA = clamp(a.a * (1.0 + lod * 0.28), 0.0, 1.0) * shrink;
+	if (near_fade.y > 0.0) {
+		ALPHA *= smoothstep(near_fade.x, near_fade.y, length(VERTEX));
+	}
 	ALPHA_HASH_SCALE = 1.0;
 	NORMAL = FRONT_FACING ? NORMAL : -NORMAL;
 	if (up_bias > 0.0) {
