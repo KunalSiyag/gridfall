@@ -5,11 +5,21 @@ extends RefCounted
 ## cranes, bulldozers and road rollers. Machines are modelled in metres and scaled by MS.
 
 const D := preload("res://scripts/sim/sim_defs.gd")
-## One tile is roughly 16 m across next to the realistic cars (a 4.7 m sedan is 0.285 tiles).
-const MS := 1.0 / 16.0
-## Small parts stop drawing beyond this camera distance.
-const FAR := 70.0
+const WS := preload("res://scripts/fp/world_scale.gd")
+## Machines are modelled in metres: true scale is one tile per 20 m.
+const MS := WS.MACHINE_SCALE
+## Small parts stop drawing beyond this camera distance; the crane's big parts carry further.
+const FAR := WS.VIS_SITE_PART
+const CRANE_FAR := 30.0
 const FLOOR_H := 0.11
+## Site hoarding height: 1 m in orbit, 2.2 m of painted plywood on foot.
+const HOARDING_H := 0.05
+const HOARDING_H_FP := 2.2 * WS.M
+## Hoarding paint per site (hash): green, slate, raw plywood.
+const HOARDING_TINTS := [Color(0.33, 0.43, 0.34), Color(0.36, 0.4, 0.45), Color(0.86, 0.7, 0.5)]
+## Machines keep their footprint inside the hoarding at +-HOARDING_IN.
+const HOARDING_IN := 0.46
+const GRIME := "res://textures/real/decals/"
 
 var view: Node
 var _mats: Dictionary = {}
@@ -23,6 +33,17 @@ var _site_root: Node3D
 var _solids: Array[Dictionary] = []
 ## Machine kind -> its swept bounds in the machine's frame (machines are built the same every time).
 var _machine_bounds: Dictionary = {}
+## Machine kind -> its footprint bounds in the machine root's frame (unrotated, arms included).
+var _machine_foot: Dictionary = {}
+## Static parts are merged per group and material after a site is built (_merge_static): a site was
+## about 100 MeshInstance3Ds and as many draw calls. Per build: nodes whose whole subtree one collider
+## box covers (so a merged mesh stays inside it), and the frame floors (update_site shows them one by
+## one). The cache shares merged meshes between identical groups (machines of a kind, equal floors).
+var _merge_ok: Dictionary = {}
+var _floors: Array[Node3D] = []
+var _merged: Dictionary = {}
+var _grime: Texture2D
+var _dust: Texture2D
 
 
 func _init(p_view: Node) -> void:
@@ -34,8 +55,16 @@ func _init(p_view: Node) -> void:
 func mat(key: String) -> Material:
 	if _mats.has(key):
 		return _mats[key]
+	if key == "net_fp" and ResourceLoader.exists("res://shaders/scaffold_net.gdshader"):
+		var sm := ShaderMaterial.new()
+		sm.shader = load("res://shaders/scaffold_net.gdshader")
+		sm.set_shader_parameter("metre", WS.M)
+		_mats[key] = sm
+		return sm
 	var m := StandardMaterial3D.new()
 	m.roughness = 0.6
+	if key in ["paint", "paint_dark", "white", "orange", "red", "steel", "rubber"]:
+		_add_grime(m)
 	match key:
 		"paint":
 			m.albedo_color = Color(0.93, 0.64, 0.06)
@@ -78,7 +107,7 @@ func mat(key: String) -> Material:
 		"timber":
 			m.albedo_color = Color(0.64, 0.47, 0.28)
 			m.roughness = 0.85
-		"net":
+		"net", "net_fp":
 			m.albedo_color = Color(0.16, 0.4, 0.27, 0.62)
 			m.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
 			m.cull_mode = BaseMaterial3D.CULL_DISABLED
@@ -86,6 +115,17 @@ func mat(key: String) -> Material:
 		"hoarding":
 			m.albedo_color = Color(0.15, 0.3, 0.5)
 			m.roughness = 0.7
+		"hoarding_fp_0", "hoarding_fp_1", "hoarding_fp_2":
+			# Painted (or raw) plywood, one repeat per 4.8 m, tinted per site.
+			m.albedo_color = HOARDING_TINTS[int(key.right(1))]
+			m.roughness = 0.82
+			var tex := "res://textures/real/decals/hoarding.png"
+			if ResourceLoader.exists(tex):
+				m.albedo_texture = load(tex)
+				m.uv1_triplanar = true
+				m.uv1_world_triplanar = true
+				m.uv1_scale = Vector3.ONE / (4.8 * WS.M)
+				m.texture_filter = BaseMaterial3D.TEXTURE_FILTER_LINEAR_WITH_MIPMAPS_ANISOTROPIC
 		"gravel":
 			m.albedo_color = Color(0.52, 0.5, 0.47)
 			m.roughness = 1.0
@@ -115,6 +155,22 @@ func mat(key: String) -> Material:
 			m.albedo_color = Color.MAGENTA
 	_mats[key] = m
 	return m
+
+
+## Worn paint and dust on machine materials: a soft noise mask blends in a dusty brown, mapped in the
+## machine's own metres so it travels with it.
+func _add_grime(m: StandardMaterial3D) -> void:
+	if _grime == null:
+		if not ResourceLoader.exists(GRIME + "grime_mask.png"):
+			return
+		_grime = load(GRIME + "grime_mask.png")
+		_dust = load(GRIME + "grime_dust.png")
+	m.detail_enabled = true
+	m.detail_mask = _grime
+	m.detail_albedo = _dust
+	m.detail_blend_mode = BaseMaterial3D.BLEND_MODE_MIX
+	m.uv1_triplanar = true
+	m.uv1_scale = Vector3.ONE * 0.35
 
 
 func _material(m: Variant) -> Material:
@@ -256,8 +312,42 @@ func machine(kind: String, parent: Node3D, pos: Vector3, yaw: float, phase := 0.
 			_bulldozer(b)
 		"roller":
 			_roller(b)
+	# Keep the machine (arms included) inside the hoarding.
+	var foot := _foot_of(kind, b)
+	var yb := Basis(Vector3.UP, yaw)
+	var lo := Vector2(INF, INF)
+	var hi := Vector2(-INF, -INF)
+	for cx: float in [foot.position.x, foot.end.x]:
+		for cz: float in [foot.position.z, foot.end.z]:
+			var c := yb * Vector3(cx, 0, cz)
+			lo = Vector2(minf(lo.x, c.x), minf(lo.y, c.z))
+			hi = Vector2(maxf(hi.x, c.x), maxf(hi.y, c.z))
+	if hi.x - lo.x < HOARDING_IN * 2.0:
+		root.position.x = clampf(pos.x, -HOARDING_IN - lo.x, HOARDING_IN - hi.x)
+	if hi.y - lo.y < HOARDING_IN * 2.0:
+		root.position.z = clampf(pos.z, -HOARDING_IN - lo.y, HOARDING_IN - hi.y)
 	_solids.append({"n": root, "arms": false, "anims": _anims.slice(a0), "kind": kind})
 	return root
+
+
+## Bounds of a freshly built machine body b in its root's frame (cached per kind).
+func _foot_of(kind: String, b: Node3D) -> AABB:
+	if _machine_foot.has(kind):
+		return _machine_foot[kind]
+	var bb := AABB()
+	var first := true
+	for n in b.find_children("*", "MeshInstance3D", true, false):
+		var mi := n as MeshInstance3D
+		var xf := Transform3D()
+		var q: Node = mi
+		while q != b:
+			xf = (q as Node3D).transform * xf
+			q = q.get_parent()
+		var a := (b.transform * xf) * mi.mesh.get_aabb()
+		bb = a if first else bb.merge(a)
+		first = false
+	_machine_foot[kind] = bb
+	return bb
 
 
 ## Sends a machine back and forth along dir (holder space) by amp tiles.
@@ -410,6 +500,8 @@ func tower_crane(parent: Node3D, pos: Vector3, h_m: float, yaw: float, phase := 
 	root.position = pos
 	root.rotation.y = yaw
 	parent.add_child(root)
+	# Its static parts (base, mast) lie inside the base box below in x and z: mergeable.
+	_merge_ok[root.get_instance_id()] = true
 	var b := Node3D.new()
 	b.scale = Vector3.ONE * MS
 	root.add_child(b)
@@ -457,6 +549,8 @@ func tower_crane(parent: Node3D, pos: Vector3, h_m: float, yaw: float, phase := 
 	box(trolley, Vector3(4.0, 0.45, 0.9), Vector3(0, -drop - 0.8, 0), "rebar", Vector3(0, 0.4, 0), false)
 	_anim(slew, "yaw", 0.0, 0.9, 0.12, phase)
 	_anim(trolley, "slide", 11.0, 6.0, 0.3, phase)
+	for part in root.find_children("*", "GeometryInstance3D", true, false):
+		(part as GeometryInstance3D).visibility_range_end = CRANE_FAR
 	return root
 
 
@@ -470,12 +564,14 @@ func build_site(holder: Node3D, s: Dictionary, stage: String, f: float, ctx: Dic
 	holder.add_child(root)
 	_site_root = root
 	_solids.clear()
+	_merge_ok.clear()
+	_floors.clear()
+	var a0 := _anims.size()
 	var h := int(ctx.get("h", 0))
 	var ph := float(h % 628) * 0.01
 	if str(s["type"]) == "road":
 		_road_site(root, stage, ctx, ph)
-		_bake_colliders(root)
-		_apply_progress(root, f)
+		_finish_site(root, f, a0)
 		return root
 	var plan := str(s["plan"])
 	var overlay := plan == "zone_up"
@@ -485,7 +581,7 @@ func build_site(holder: Node3D, s: Dictionary, stage: String, f: float, ctx: Dic
 	var big := height > 0.55 or str(s["type"]) == "build" and int(s["target_kind"]) in [D.AIRPORT, D.STADIUM, D.UNIVERSITY, D.COAL, D.HOSPITAL, D.TRAIN]
 	if not overlay:
 		_ground(root, stage)
-		_fence(root, h)
+		_fence(root, h, ctx.get("front", Vector2i.ZERO))
 	match stage:
 		"clearing":
 			# Standing trees come down first, then the stumps get grubbed out.
@@ -579,12 +675,149 @@ func build_site(holder: Node3D, s: Dictionary, stage: String, f: float, ctx: Dic
 			machine("backhoe", root, Vector3(-0.3, 0, 0.32), -0.6, ph)
 			machine("dump_truck", root, Vector3(0.32, 0, -0.32), PI * 0.6, ph)
 	if big and stage in ["frame", "finishing"]:
-		tower_crane(root, Vector3(-foot.x * 0.5 - 0.1, 0, -foot.y * 0.5 - 0.1), clampf(height / MS + 9.0, 18.0, 40.0), float(h % 6), ph)
+		# An internal climbing crane in the footprint's corner, inside the hoarding (it used to stand
+		# 0.1 u outside the footprint, up to 4 m onto the neighbouring sidewalk).
+		var cp := Vector3(-clampf(foot.x * 0.5 - 0.1, 0.0, 0.36), 0, -clampf(foot.y * 0.5 - 0.1, 0.0, 0.36))
+		tower_crane(root, cp, clampf(height / MS + 9.0, 18.0, 52.0), float(h % 6), ph)
 	if not overlay or stage == "frame":
 		_floodlight(root, Vector3(foot.x * 0.5 + 0.06, 0, -foot.y * 0.5 - 0.06))
-	_bake_colliders(root)
-	_apply_progress(root, f)
+	# Big parts (frame floors, scaffold faces, the hoarding runs) carry as far as the crane.
+	for part in root.find_children("*", "MeshInstance3D", true, false):
+		var mi := part as MeshInstance3D
+		if mi.mesh != null and mi.visibility_range_end == FAR and (mi.mesh.get_aabb().size * mi.scale).length() > 0.25:
+			mi.visibility_range_end = CRANE_FAR
+	_finish_site(root, f, a0)
 	return root
+
+
+## Bakes the colliders from the parts as built, merges the static parts, then applies progress.
+## a0: the first _anims entry of this site.
+func _finish_site(root: Node3D, f: float, a0: int) -> void:
+	for e: Dictionary in _solids:
+		if not e.has("box") and is_instance_valid(e["n"]):
+			_merge_ok[(e["n"] as Node).get_instance_id()] = true
+	_bake_colliders(root)
+	_merge_static(root, a0)
+	_apply_progress(root, f)
+
+
+## Merges the site's static kit parts into one mesh per group, shadow mode, range and material. A
+## group is a part's nearest ancestor that moves, scales or toggles on its own (animated, tracked,
+## a frame floor) or a direct child of the Site; parts directly under the Site stay single (each
+## hoarding run, mound and pole has its own collider box). Only groups inside a part boxed whole by
+## solid() (or a crane, or a machine arm) are merged, so each merged mesh stays inside one collider
+## box and the seams test's per-mesh check still holds. Named parts others look up (Bulb*, the
+## hoarding's poster slot) and model instances (not primitive meshes) are left alone.
+func _merge_static(site: Node3D, a0: int) -> void:
+	var dyn := {}
+	for k in range(a0, _anims.size()):
+		var an: Variant = _anims[k]["node"]
+		if is_instance_valid(an):
+			dyn[(an as Node).get_instance_id()] = true
+	var no_add := {}
+	for p: Dictionary in site.get_meta("progress", []):
+		var pn: Variant = p["n"]
+		if not is_instance_valid(pn):
+			continue
+		dyn[(pn as Node).get_instance_id()] = true
+		if str(p["m"]) in ["reveal", "hide"]:
+			# Its children are shown one by one: they are groups, and nothing may be added beside them.
+			no_add[(pn as Node).get_instance_id()] = true
+			for c in (pn as Node).get_children():
+				dyn[c.get_instance_id()] = true
+	for fl in _floors:
+		if is_instance_valid(fl):
+			dyn[fl.get_instance_id()] = true
+	var allowed := {}
+	# group id -> {"node": Node3D, "buckets": {"shadow|range": Array of [mesh, xform, material, mi]}}
+	var groups := {}
+	for n in site.find_children("*", "MeshInstance3D", true, false):
+		var mi := n as MeshInstance3D
+		if mi.get_parent() == site or dyn.has(mi.get_instance_id()) or not mi.visible or not (mi.mesh is PrimitiveMesh):
+			continue
+		if mi.has_meta("poster_slot") or str(mi.name).begins_with("Bulb") or mi.mesh.get_surface_count() != 1:
+			continue
+		var g := mi.get_parent() as Node3D
+		var xf := mi.transform
+		var hidden := false
+		while g != site and not dyn.has(g.get_instance_id()) and g.get_parent() != site:
+			hidden = hidden or not g.visible
+			xf = g.transform * xf
+			g = g.get_parent() as Node3D
+		if hidden or g == site or no_add.has(g.get_instance_id()):
+			continue
+		var gid := g.get_instance_id()
+		if not allowed.has(gid):
+			allowed[gid] = _merge_allowed(g, site)
+		if not bool(allowed[gid]):
+			continue
+		var m: Material = mi.material_override if mi.material_override != null else mi.mesh.surface_get_material(0)
+		if not groups.has(gid):
+			groups[gid] = {"node": g, "buckets": {}}
+		var bk := "%d|%.4f" % [mi.cast_shadow, mi.visibility_range_end]
+		var buckets: Dictionary = groups[gid]["buckets"]
+		if not buckets.has(bk):
+			buckets[bk] = []
+		(buckets[bk] as Array).append([mi.mesh, xf, m, mi])
+	var far_mult := float(view.get("vis_mult")) if bool(view.get("fp_mode")) and view.get("vis_mult") != null else 1.0
+	for gid: int in groups.keys():
+		var g: Node3D = groups[gid]["node"]
+		var buckets: Dictionary = groups[gid]["buckets"]
+		for bk: String in buckets.keys():
+			var items: Array = buckets[bk]
+			if items.size() < 2:
+				continue
+			var first := items[0][3] as MeshInstance3D
+			var merged := MeshInstance3D.new()
+			merged.name = "Merged"
+			merged.mesh = _merged_mesh(items)
+			merged.cast_shadow = first.cast_shadow
+			var end := first.visibility_range_end
+			merged.visibility_range_end = end * far_mult if is_equal_approx(end, FAR) else end
+			g.add_child(merged)
+			for it: Array in items:
+				var old := it[3] as MeshInstance3D
+				old.get_parent().remove_child(old)
+				old.free()
+
+
+## True when g lies inside a part one collider box covers whole (solid() without a box, a crane) or
+## inside a machine arm ("Boom", which walkers' collision ignores).
+func _merge_allowed(g: Node, site: Node) -> bool:
+	var n := g
+	while n != null and n != site:
+		if _merge_ok.has(n.get_instance_id()) or n.name == &"Boom":
+			return true
+		n = n.get_parent()
+	return false
+
+
+## One ArrayMesh with a surface per material for items ([mesh, xform in the group, material, _]),
+## shared between identical groups.
+func _merged_mesh(items: Array) -> ArrayMesh:
+	var sig := []
+	for it: Array in items:
+		sig.append([(it[0] as Object).get_instance_id(), it[1], (it[2] as Object).get_instance_id() if it[2] != null else 0])
+	var key := hash(sig)
+	if _merged.has(key):
+		return _merged[key]
+	var by_mat := {}
+	var order: Array = []
+	for it: Array in items:
+		var m: Variant = it[2]
+		if not by_mat.has(m):
+			by_mat[m] = SurfaceTool.new()
+			(by_mat[m] as SurfaceTool).begin(Mesh.PRIMITIVE_TRIANGLES)
+			order.append(m)
+		(by_mat[m] as SurfaceTool).append_from(it[0] as Mesh, 0, it[1] as Transform3D)
+	var am := ArrayMesh.new()
+	for m: Variant in order:
+		(by_mat[m] as SurfaceTool).commit(am)
+		am.surface_set_material(am.get_surface_count() - 1, m as Material)
+	if _merged.size() > 512:
+		_merged.clear()
+	_merged[key] = am
+	return am
 
 
 ## Grows a rising frame's floors with stage progress (called a few times a second).
@@ -785,24 +1018,41 @@ func _ground(root: Node3D, stage: String) -> void:
 	var pm := PlaneMesh.new()
 	pm.size = Vector2(0.98, 0.98)
 	g.mesh = pm
-	g.position.y = 0.007
+	g.position.y = WS.GROUND_Y + 0.0004 if bool(view.get("fp_mode")) else 0.007
 	g.material_override = view.call("_pbr", "dirt", Color(0.38, 0.3, 0.22), 1.0) if stage != "landscaping" else mat("soil")
 	root.add_child(g)
 
 
-## Blue site hoarding with a gate gap on one side.
-func _fence(root: Node3D, h: int) -> void:
+## Site hoarding with a gate gap on one side: blue boards in orbit; on foot 2.2 m of painted plywood
+## whose segment on the frontage side (`front`, toward the lot's frontage road) carries D's
+## `poster_slot`.
+func _fence(root: Node3D, h: int, front: Vector2i = Vector2i.ZERO) -> void:
 	var gate := h % 4
+	var fp := bool(view.get("fp_mode"))
+	var hh := HOARDING_H_FP if fp else HOARDING_H
+	var m := "hoarding_fp_%d" % ((h >> 5) % 3) if fp else "hoarding"
+	var sides := [Vector2i(0, -1), Vector2i(1, 0), Vector2i(0, 1), Vector2i(-1, 0)]
 	for k in range(4):
-		var along := Vector3(0.94, 0.05, 0.008) if k % 2 == 0 else Vector3(0.008, 0.05, 0.94)
-		var pos := [Vector3(0, 0.025, -0.47), Vector3(0.47, 0.025, 0), Vector3(0, 0.025, 0.47), Vector3(-0.47, 0.025, 0)][k] as Vector3
+		var along := Vector3(0.94, hh, 0.008) if k % 2 == 0 else Vector3(0.008, hh, 0.94)
+		var pos := Vector3(sides[k].x * 0.47, hh * 0.5, sides[k].y * 0.47)
+		var seg: MeshInstance3D = null
 		if k == gate:
 			var half := Vector3(along.x * 0.35, along.y, along.z * 0.35)
 			var off := Vector3(0.3, 0, 0) if k % 2 == 0 else Vector3(0, 0, 0.3)
-			solid(box(root, half, pos - off, "hoarding", Vector3.ZERO, false))
-			solid(box(root, half, pos + off, "hoarding", Vector3.ZERO, false))
+			solid(box(root, half, pos - off, m, Vector3.ZERO, fp))
+			seg = solid(box(root, half, pos + off, m, Vector3.ZERO, fp)) as MeshInstance3D
 		else:
-			solid(box(root, along, pos, "hoarding", Vector3.ZERO, false))
+			seg = solid(box(root, along, pos, m, Vector3.ZERO, fp)) as MeshInstance3D
+		if fp and sides[k] == front:
+			_poster_slot(seg, Vector2(front), hh)
+
+
+## D's hoarding poster on segment seg: 3 m x 1.5 m on its outer face, facing out toward dv.
+func _poster_slot(seg: MeshInstance3D, dv: Vector2, hh: float) -> void:
+	var face := Basis(Vector3.UP, atan2(dv.x, dv.y))
+	var out := Vector3(dv.x, 0, dv.y) * (0.004 + 0.0004)
+	seg.name = "HoardingFront"
+	seg.set_meta("poster_slot", {"kind": "hoarding", "size": Vector2(3.0, 1.5) * WS.M, "xform": Transform3D(face, out + Vector3(0, hh * 0.05, 0))})
 
 
 func _floodlight(root: Node3D, pos: Vector3) -> void:
@@ -826,6 +1076,7 @@ func _frame(root: Node3D, foot: Vector2, base_h: float, top_h: float, f: float) 
 		var fl := Node3D.new()
 		fl.position.y = base_h + float(k) * fh
 		frame.add_child(fl)
+		_floors.append(fl)
 		for gx in range(g):
 			for gz in range(g):
 				var px := (float(gx) / float(g - 1) - 0.5) * foot.x * 0.92
@@ -867,8 +1118,16 @@ func _scaffold(root: Node3D, foot: Vector2, height: float, roll_net: bool) -> vo
 	# Netting hangs from the top lift and is rolled up as the facade is finished.
 	var net := _group(sc, "Net")
 	net.position.y = top
-	box(net, Vector3(hx * 2.0, top, 0.003), Vector3(0, -top * 0.5, hz + 0.004), "net", Vector3.ZERO, false)
-	box(net, Vector3(0.003, top, hz * 2.0), Vector3(hx + 0.004, -top * 0.5, 0), "net", Vector3.ZERO, false)
+	# On foot a knitted weave you can see the scaffold through, instead of a translucent green slab.
+	var nk := "net_fp" if bool(view.get("fp_mode")) else "net"
+	if nk == "net_fp":
+		# Outside the boards (which reach hz + 0.027), wrapping the corner.
+		var g := 0.032
+		box(net, Vector3(hx * 2.0 + g, top, 0.003), Vector3(g * 0.5, -top * 0.5, hz + g), nk, Vector3.ZERO, false)
+		box(net, Vector3(0.003, top, hz * 2.0 + g), Vector3(hx + g, -top * 0.5, g * 0.5), nk, Vector3.ZERO, false)
+	else:
+		box(net, Vector3(hx * 2.0, top, 0.003), Vector3(0, -top * 0.5, hz + 0.004), nk, Vector3.ZERO, false)
+		box(net, Vector3(0.003, top, hz * 2.0), Vector3(hx + 0.004, -top * 0.5, 0), nk, Vector3.ZERO, false)
 	if roll_net:
 		track(net, "sy", 0.0, 1.0, 1.0, 0.15)
 
