@@ -4,7 +4,9 @@ extends RefCounted
 ## model built from a single-surface, vertex-coloured merge of the GLB (H's <name>_lod1.glb when it
 ## exists), with shadows to SHADOW_DIST and none beyond. Parked cars go through a static layer
 ## rebuilt only when the parked set changes or the camera moves. Brake lights, siren flashes and
-## wheel spin on full models; head and tail lamps glow on the merged ones after dark.
+## wheel spin on full models; after dark their head and tail lamps light up, the nearest moving
+## vehicles throw headlight beams, and the head and tail lamps of the merged ones glow. Responding
+## crews near the camera wash their surroundings in flashing siren light.
 ## People (the legacy static bodies, until HC's rigged ones): every distance draws the merged body
 ## through the people shader, which swings the legs and arms from per-instance stride data and
 ## dithers people in and out (spawned in view, or at the edge of VIS_PERSON). Same geometry and
@@ -36,6 +38,19 @@ const ARM_SWING := 0.3
 const PERSON_FADE := 0.4
 ## Merged meshes flag lamp vertices (emissive source materials) with this vertex alpha.
 const LAMP_ALPHA := 0.5
+## Lamps count as on above this darkness (sky night 0..1).
+const LAMPS_ON := 0.35
+## Headlight beams after dark: spot lights on the moving vehicles nearest the camera (no shadows).
+const BEAMS := 8
+const BEAM_DIST := 4.0
+const BEAM_RANGE := 34.0 * WS.M
+const BEAM_ANGLE := 30.0
+const BEAM_ENERGY := 3.0
+const BEAM_HEIGHT := 0.65 * WS.M
+## Siren light washes: flashing omni lights on responding crews near the camera.
+const WASHES := 3
+const WASH_DIST := 3.0
+const WASH_RANGE := 14.0 * WS.M
 const PEOPLE_SHADER := """
 shader_type spatial;
 render_mode cull_back, depth_draw_opaque;
@@ -132,6 +147,17 @@ var _lod_mat: ShaderMaterial
 var _lod_static_mat: ShaderMaterial
 var _people_mat: ShaderMaterial
 var _brake_mat: StandardMaterial3D
+## Full models after dark: head lamps and tail lamps lit (per-instance surface overrides).
+var _head_mat: StandardMaterial3D
+var _tail_mat: StandardMaterial3D
+var _beams: Array[SpotLight3D] = []
+var _washes: Array[OmniLight3D] = []
+## This frame's candidates: [distance, transform, length] for beams, [distance, transform, siren
+## kind, height] for siren washes.
+var _beam_cands: Array = []
+var _wash_cands: Array = []
+var beams_on: int = 0
+var washes_on: int = 0
 var _siren_mats: Dictionary = {}
 var _siren_dark: StandardMaterial3D
 var _made_this_frame: int = 0
@@ -164,6 +190,16 @@ func setup(p_root: Node3D) -> void:
 	_brake_mat.emission_enabled = true
 	_brake_mat.emission = Color(1.0, 0.05, 0.02)
 	_brake_mat.emission_energy_multiplier = 5.0
+	_head_mat = StandardMaterial3D.new()
+	_head_mat.albedo_color = Color(1.0, 0.98, 0.92)
+	_head_mat.emission_enabled = true
+	_head_mat.emission = Color(1.0, 0.94, 0.82)
+	_head_mat.emission_energy_multiplier = 10.0
+	_tail_mat = StandardMaterial3D.new()
+	_tail_mat.albedo_color = Color(0.55, 0.03, 0.02)
+	_tail_mat.emission_enabled = true
+	_tail_mat.emission = Color(1.0, 0.06, 0.03)
+	_tail_mat.emission_energy_multiplier = 2.2
 	for k: String in SIREN_COLS.keys():
 		var mats: Array = []
 		for c: Color in SIREN_COLS[k]:
@@ -312,8 +348,14 @@ func begin_static() -> void:
 func draw_car(c: VH.Car, xf: Transform3D, d: float, vis_end: float, brake: bool, siren: String, spin: float) -> void:
 	c.node = _place(c.model, c.node, c.lod, xf, d, vis_end, false)
 	c.lod = _last_lod
+	var lit := _glow > LAMPS_ON
 	if c.lod == 0:
-		_extras(c.node, model(c.model), brake, siren, spin)
+		_extras(c.node, model(c.model), brake, lit, siren, spin)
+	if c.lod >= 0:
+		if lit and d < BEAM_DIST and c.kind != "bike":
+			_beam_cands.append([d, xf, c.length])
+		if _siren_mats.has(siren) and d < WASH_DIST:
+			_wash_cands.append([d, xf, siren, c.height])
 
 
 ## A parked car into the static layer (between begin_static and finish_static).
@@ -322,7 +364,7 @@ func draw_parked(c: VH.Car, xf: Transform3D, d: float, vis_end: float) -> void:
 	c.lod = _last_lod
 	if c.lod == 0:
 		full_static += 1
-		_extras(c.node, model(c.model), false, "", 0.0)
+		_extras(c.node, model(c.model), false, false, "", 0.0)
 
 
 ## A person: always the merged body through the people shader (stride and opacity per instance).
@@ -427,6 +469,8 @@ func _index_parts(n: Node3D) -> void:
 			var mat := mesh.surface_get_material(s)
 			if mat != null and mat.resource_name == "Light_Tail":
 				n.set_meta("tail", [mi, s])
+			if mat != null and mat.resource_name == "Light_Head":
+				n.set_meta("head", [mi, s])
 			if mat != null and mat.resource_name.begins_with("Siren"):
 				if not n.has_meta("siren_surf"):
 					n.set_meta("siren_surf", [])
@@ -447,14 +491,20 @@ func _index_parts(n: Node3D) -> void:
 		n.set_meta("wheel_r", maxf(wb.size.y * 0.5, 0.001))
 
 
-func _extras(node: Node3D, m: Model, brake: bool, siren: String, spin: float) -> void:
+func _extras(node: Node3D, m: Model, brake: bool, lit: bool, siren: String, spin: float) -> void:
 	if node == null or m == null:
 		return
-	if node.has_meta("tail"):
-		var tail: Array = node.get_meta("tail")
-		if brake != bool(node.get_meta("brake_on", false)):
-			node.set_meta("brake_on", brake)
-			(tail[0] as MeshInstance3D).set_surface_override_material(int(tail[1]), _brake_mat if brake else null)
+	# Lamps: brake lights, and head and tail lamps after dark (0 is the imported state).
+	var key := (1 if brake else 0) + (2 if lit else 0)
+	if int(node.get_meta("lamp_key", 0)) != key:
+		node.set_meta("lamp_key", key)
+		if node.has_meta("tail"):
+			var tail: Array = node.get_meta("tail")
+			var tm: Material = _brake_mat if brake else (_tail_mat if lit else null)
+			(tail[0] as MeshInstance3D).set_surface_override_material(int(tail[1]), tm)
+		if node.has_meta("head"):
+			var head: Array = node.get_meta("head")
+			(head[0] as MeshInstance3D).set_surface_override_material(int(head[1]), _head_mat if lit else null)
 	if node.has_meta("sirens"):
 		var on := _siren_mats.has(siren)
 		var sirens: Array = node.get_meta("sirens")
@@ -467,14 +517,14 @@ func _extras(node: Node3D, m: Model, brake: bool, siren: String, spin: float) ->
 		# crew responds and stay dark otherwise.
 		var on := _siren_mats.has(siren)
 		var flash := int(time * 6.0) % 2
-		var key := (flash + 1) if on else 0
-		if int(node.get_meta("siren_key", -1)) != key:
-			node.set_meta("siren_key", key)
+		var skey := (flash + 1) if on else 0
+		if int(node.get_meta("siren_key", -1)) != skey:
+			node.set_meta("siren_key", skey)
 			var list: Array = node.get_meta("siren_surf")
 			for j in range(list.size()):
 				var e: Array = list[j]
-				var lit := on and (j + flash) % 2 == 0
-				var mat: Material = (_siren_mats[siren][j % 2] as Material) if lit else _siren_dark
+				var bank := on and (j + flash) % 2 == 0
+				var mat: Material = (_siren_mats[siren][j % 2] as Material) if bank else _siren_dark
 				(e[0] as MeshInstance3D).set_surface_override_material(int(e[1]), mat)
 	if node.has_meta("wheels"):
 		var r: float = node.get_meta("wheel_r")
@@ -483,12 +533,92 @@ func _extras(node: Node3D, m: Model, brake: bool, siren: String, spin: float) ->
 			w.rotation.x = fposmod(ang, TAU)
 
 
-## Writes the moving MultiMesh layers for this frame.
+## Writes the moving MultiMesh layers for this frame, and aims the headlight beams and siren
+## washes at the nearest candidates.
 func finish() -> void:
 	for m: Model in models:
 		_fill(m.mms[L_MID], m.lists[L_MID], m.custom[L_MID])
 		_fill(m.mms[L_FAR], m.lists[L_FAR], m.custom[L_FAR])
 	_count_draws()
+	_place_beams()
+	_place_washes()
+
+
+## Headlight beams: one spot per vehicle (both lamps), low and tipped a little down, lighting the
+## road ahead of the nearest moving vehicles after dark.
+func _place_beams() -> void:
+	var n := 0
+	if _glow > LAMPS_ON and root != null and root.is_inside_tree():
+		_beam_cands.sort_custom(func(a: Array, b: Array) -> bool: return float(a[0]) < float(b[0]))
+		var e := BEAM_ENERGY * clampf((_glow - LAMPS_ON) / 0.3, 0.0, 1.0)
+		for cand: Array in _beam_cands:
+			if n >= BEAMS:
+				break
+			var xf: Transform3D = cand[1]
+			var fwd := xf.basis.z.normalized()
+			var l := _beam(n)
+			var p := xf.origin + fwd * (float(cand[2]) * 0.5) + Vector3(0, BEAM_HEIGHT, 0)
+			l.transform = Transform3D(Basis.looking_at((fwd + Vector3(0, -0.09, 0)).normalized(), Vector3.UP), p)
+			l.light_energy = e
+			l.visible = true
+			n += 1
+	for k in range(n, _beams.size()):
+		_beams[k].visible = false
+	beams_on = n
+	_beam_cands.clear()
+
+
+func _beam(k: int) -> SpotLight3D:
+	while _beams.size() <= k:
+		var l := SpotLight3D.new()
+		l.name = "Beam%d" % _beams.size()
+		l.light_color = Color(1.0, 0.93, 0.8)
+		l.spot_range = BEAM_RANGE
+		l.spot_angle = BEAM_ANGLE
+		l.spot_angle_attenuation = 0.6
+		l.spot_attenuation = 1.0
+		l.light_specular = 0.6
+		l.shadow_enabled = false
+		l.visible = false
+		root.add_child(l)
+		_beams.append(l)
+	return _beams[k]
+
+
+## Siren washes: a flashing omni light over each responding crew near the camera, alternating
+## the two siren colours with the lamps.
+func _place_washes() -> void:
+	var n := 0
+	if not _wash_cands.is_empty() and root != null and root.is_inside_tree():
+		_wash_cands.sort_custom(func(a: Array, b: Array) -> bool: return float(a[0]) < float(b[0]))
+		var flash := int(time * 6.0) % 2
+		for cand: Array in _wash_cands:
+			if n >= WASHES:
+				break
+			var xf: Transform3D = cand[1]
+			var l := _wash(n)
+			l.transform = Transform3D(Basis(), xf.origin + Vector3(0, float(cand[3]) + 0.4 * WS.M, 0))
+			l.light_color = (SIREN_COLS[str(cand[2])] as Array)[(flash + n) % 2]
+			l.light_energy = 0.6 + 1.4 * _glow
+			l.visible = true
+			n += 1
+	for k in range(n, _washes.size()):
+		_washes[k].visible = false
+	washes_on = n
+	_wash_cands.clear()
+
+
+func _wash(k: int) -> OmniLight3D:
+	while _washes.size() <= k:
+		var l := OmniLight3D.new()
+		l.name = "Siren%d" % _washes.size()
+		l.omni_range = WASH_RANGE
+		l.omni_attenuation = 1.0
+		l.shadow_enabled = false
+		l.visible = false
+		root.add_child(l)
+		_washes.append(l)
+	return _washes[k]
 
 
 ## Writes the static (parked) layers.
@@ -546,3 +676,13 @@ func clear() -> void:
 	models.clear()
 	_by_key.clear()
 	full_static = 0
+	for l: Node in _beams:
+		if is_instance_valid(l):
+			l.queue_free()
+	for l: Node in _washes:
+		if is_instance_valid(l):
+			l.queue_free()
+	_beams.clear()
+	_washes.clear()
+	_beam_cands.clear()
+	_wash_cands.clear()

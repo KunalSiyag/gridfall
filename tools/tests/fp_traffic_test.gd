@@ -49,6 +49,7 @@ func _init() -> void:
 	_check_following()
 	_check_parking_clearance()
 	_check_lights()
+	_check_night_lamps()
 	_check_tee()
 	_check_player_yield()
 	sim.set_day_seconds(WS.FP_DAY_SECONDS)
@@ -369,21 +370,24 @@ func _check_people_draw() -> void:
 	K.check(fails, people_mm > 0 and striding > 0, "people: drawn by %d shader MultiMeshes with stride data, %d walking in stride" % [people_mm, striding])
 
 
-## People waiting at a zebra take distinct places along the curb.
+## People waiting at a zebra take distinct places along the curb, clear of the light poles.
 func _check_wait_crowd() -> void:
 	var sw: SW = f.get("peds")
 	var wk: WK = f.get("walkers")
 	var z: SW.PedEdge = null
 	for e: Variant in sw.edges:
 		if e != null and (e as SW.PedEdge).zebra:
-			z = e
-			break
+			var t: LG.TileInfo = _lg().info((e as SW.PedEdge).tile)
+			if z == null or (t != null and t.lights):
+				z = e
+			if t != null and t.lights:
+				break
 	K.check(fails, z != null, "fixture: a zebra")
 	if z == null:
 		return
 	var at := sw.pos_at(z, 0.0)
 	var crowd: Array = []
-	for k in range(4):
+	for k in range(6):
 		var w := wk.make("ambient")
 		w.pos = at
 		w.plan = [{"edge": z.id, "dir": 1}]
@@ -401,6 +405,16 @@ func _check_wait_crowd() -> void:
 			var b: WK.Walker = crowd[j]
 			min_d = minf(min_d, (a.pos + a.vis_off).distance_to(b.pos + b.vis_off))
 	K.check(fails, slots.size() == crowd.size() and min_d >= 0.45 * WS.M, "wait crowd: %d people at one zebra stand apart (closest %.2f m)" % [crowd.size(), min_d / WS.M])
+	var zt: LG.TileInfo = _lg().info(z.tile)
+	if zt != null and zt.lights:
+		# Light poles stand at (+-0.42, +-0.42) with a 0.24 m footing; a body is about 0.25 m deep.
+		var pole_d := INF
+		for w: WK.Walker in crowd:
+			var q := w.pos + w.vis_off
+			for cn: Vector2 in [Vector2(1, -1), Vector2(1, 1), Vector2(-1, 1), Vector2(-1, -1)]:
+				var pp := Vector2(D.tx(z.tile), D.ty(z.tile)) + cn * 0.42
+				pole_d = minf(pole_d, Vector2(q.x, q.z).distance_to(pp))
+		K.check(fails, pole_d >= 0.5 * WS.M, "wait crowd: everyone stands clear of the light poles (closest %.2f m)" % [pole_d / WS.M])
 	for w: WK.Walker in crowd:
 		wk.remove(w)
 
@@ -603,8 +617,71 @@ func _check_lights() -> void:
 	K.check(fails, ns_red != null and ns_red.material_override == jn.get("_off_mats")[0] and ns_green.material_override == jn.get("_on_mats")[2], "lamps: N-S green lit after the change")
 	K.check(fails, is_equal_approx(on_red.emission_energy_multiplier, energy) and on_red.albedo_color == col, "lamps: the shared materials are never edited")
 	K.check(fails, f.light_pole(x, 0) != null and f.light_pole(x, 0).find_child("SignText_A", false, false) != null, "light_pole(i, 0) is the NE pole with SignText_A / SignText_B mounts")
+	# The poles and pedestrian signals stand beside the zebras, never in the walking line: every
+	# zebra point keeps 0.3 m clear even at the widest lateral offset a crosser takes (half the band).
+	var sw: SW = f.get("peds")
+	var zd := INF
+	var zn := 0
+	for arm in range(4):
+		var z: SW.PedEdge = sw.zebra_at(x, arm)
+		if z == null:
+			continue
+		zn += 1
+		for q: Vector2 in z.pts:
+			zd = minf(zd, _furniture_dist(q - Vector2(D.tx(x), D.ty(x))))
+	var reach := (WK.BAND + 0.012) * 0.5
+	K.check(fails, zn == 4 and zd - reach >= 0.3 * WS.M, "furniture: light poles and pedestrian signals stand clear of the 4 zebras (closest %.2f m from a crosser)" % [(zd - reach) / WS.M])
 	f.set("clock", 0.0)
 	jn.clock = 0.0
+
+
+## After dark a moving car near the camera lights its head and tail lamps (per-instance surface
+## overrides; the imported materials are untouched) and throws a headlight beam down the road
+## ahead of it. By day the imported lamps are back and the beams are off.
+func _check_night_lamps() -> void:
+	_quiet()
+	var run: Array = _straight_run()
+	var tiles: Array[int] = run[0]
+	var e: int = run[1]
+	if tiles.size() < 3:
+		K.check(fails, false, "fixture: a straight run for the night lamps")
+		return
+	var lanes := _lg().lanes_along(tiles, LG.OPP[e], e)
+	var car := _car(lanes[1], 0.5, lanes.slice(2), WS.CAR_CITY)
+	var dir := Vector3(LG.DIRS[e].x, 0, LG.DIRS[e].y)
+	var right := Vector3(-dir.z, 0, dir.x)
+	var saved := ctx.player.position
+	ctx.player.teleport(car.pos + dir * 0.6 + right * 0.23, 0.0)
+	var rd = f.get("render")
+	rd.set_glow(1.0)
+	f.sync_visuals(DT)
+	var lit := false
+	var node: Node3D = car.node
+	var head_mat: Material = null
+	if node != null and node.has_meta("head") and node.has_meta("tail"):
+		var head: Array = node.get_meta("head")
+		var tail: Array = node.get_meta("tail")
+		var hm: MeshInstance3D = head[0]
+		var tm: MeshInstance3D = tail[0]
+		head_mat = hm.mesh.surface_get_material(int(head[1]))
+		lit = hm.get_surface_override_material(int(head[1])) == rd.get("_head_mat") and tm.get_surface_override_material(int(tail[1])) != null and head_mat != rd.get("_head_mat")
+	K.check(fails, car.lod == 0 and lit, "night: a near car lights its head and tail lamps through per-instance overrides (lod %d)" % car.lod)
+	var beams: Array = rd.get("_beams")
+	var beam_ok := false
+	var fwd: Vector3 = (_vh().draw_xform(car) as Transform3D).basis.z.normalized()
+	for b: SpotLight3D in beams:
+		if b.visible and b.position.distance_to(car.pos + car.vis_off + fwd * (car.length * 0.5)) < 0.06 and (-b.transform.basis.z).dot(fwd) > 0.95:
+			beam_ok = true
+	K.check(fails, int(rd.get("beams_on")) >= 1 and beam_ok, "night: its headlight beam starts at its front and points down the road (%d beams)" % int(rd.get("beams_on")))
+	rd.set_glow(0.0)
+	f.sync_visuals(DT)
+	var day_ok := node != null and car.node == node
+	if day_ok and node.has_meta("head"):
+		var head: Array = node.get_meta("head")
+		day_ok = (head[0] as MeshInstance3D).get_surface_override_material(int(head[1])) == null
+	K.check(fails, day_ok and int(rd.get("beams_on")) == 0, "night: by day the imported lamps are back and no beam is on")
+	_vh().remove(car)
+	ctx.player.teleport(saved, 0.0)
 
 
 # ------------------------------------------------------------------ tee yield
@@ -905,6 +982,19 @@ func _check_walker() -> void:
 	ctx.player.teleport(saved, 0.0)
 
 
+## Distance from tile-local lp on a cross tile to the nearest light pole or pedestrian signal.
+func _furniture_dist(lp: Vector2) -> float:
+	var best := INF
+	for c: Vector2 in JN.CORNERS:
+		best = minf(best, lp.distance_to(c * JN.POLE_AT))
+	var lat := (WS.CURB_FURNITURE[0] + WS.CURB_FURNITURE[1]) * 0.5
+	for a: Vector2 in LG.DIRS:
+		var p := Vector2(-a.y, a.x)
+		for sd: float in [1.0, -1.0]:
+			best = minf(best, lp.distance_to(a * JN.PED_SIGNAL_AT + p * (sd * lat)))
+	return best
+
+
 ## Lateral offset of a sidewalk point from the road centreline it follows (tile-local lp).
 func _lateral(m: int, lp: Vector2) -> float:
 	var arms := RoadTopology.arms(m)
@@ -964,10 +1054,41 @@ func _check_conversation() -> void:
 	K.check(fails, w.v < 0.01 * WS.M and face < deg_to_rad(15.0), "conversation: the resident stops within 2 s and turns to the player (%.0f deg off)" % rad_to_deg(face))
 	var head: Vector3 = f.anchor_of(rid)
 	K.check(fails, head.distance_to(w.pos + Vector3(0, TRIPS.HEAD, 0)) <= 0.1 * WS.M and absf(head.y - w.pos.y - 1.62 * WS.M) < 0.12 * WS.M, "conversation: anchor_of stays at the head while they stand")
+	_check_street_bubble(r)
 	ctx.bus.conversation_changed.emit(rid, false)
 	_step(2.0)
 	K.check(fails, w.dead or w.v > 0.0 or w.done, "conversation: they walk on when it ends")
 	ctx.player.teleport(saved, 0.0)
+
+
+## A line the resident says shows as a small depth-tested street bubble 0.12 u over their head
+## (when the HUD lets bubbles show at all: never while avatars.fp_hidden).
+func _check_street_bubble(r: Dictionary) -> void:
+	var av: ResidentAvatars = ctx.view.avatars
+	var cam := Camera3D.new()
+	get_root().add_child(cam)
+	cam.global_position = ctx.player.position + Vector3(0, WS.EYE, 0)
+	var saved_cam := av.camera
+	var saved_hidden := av.fp_hidden
+	av.camera = cam
+	av.fp_hidden = false
+	for _k in range(ResidentAvatars.SAY_SLICES + 1):
+		av.call("_process", DT)
+	var saved_say: Variant = r.get("say", "")
+	r["say"] = "Testing the street bubble"
+	for _k in range(ResidentAvatars.SAY_SLICES + 1):
+		av.call("_process", DT)
+	var b: Label3D = (av.get("_street") as Dictionary).get(str(r["id"]), null)
+	var at := b.position if b != null else Vector3(INF, INF, INF)
+	K.check(fails, b != null and b.visible and not b.no_depth_test and is_equal_approx(b.pixel_size, 0.0006) and at.distance_to(f.anchor_of(str(r["id"])) + Vector3(0, 0.12, 0)) < 1e-3,
+		"street bubble: a new line shows over the head, depth-tested at pixel_size 0.0006 (%s)" % (b.text if b != null else "none"))
+	av.fp_hidden = true
+	av.call("_process", DT)
+	K.check(fails, b != null and not b.visible, "street bubble: hidden while avatars.fp_hidden")
+	r["say"] = saved_say
+	av.fp_hidden = saved_hidden
+	av.camera = saved_cam
+	cam.queue_free()
 
 
 # ------------------------------------------------------------------ people (stage E2)

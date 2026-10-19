@@ -8,7 +8,8 @@ Recorded agreement (ARCHITECTURE §7.4, `slices/E-traffic.md` §2).
   NE serves northbound traffic (from the S arm), SE eastbound (W arm), SW southbound (N arm) and
   NW westbound (E arm).
 - E also places a pedestrian signal at both ends of every zebra, in `CURB_FURNITURE`
-  (0.325 u from the arm's axis, at the middle of the zebra, 0.4225 u from the centre).
+  (0.325 u from the arm's axis), just beyond the zebra's far edge (`ZEBRA_FAR + 0.3 m`, 0.485 u
+  from the centre), beside the crossing rather than in the walking line.
 - **G1 places no pole of its own on cross tiles.** G1's street-name blades mount on E's NE pole:
   `traffic.light_pole(i, 0)` returns it (`null` while the feature is not built or the tile is not a
   cross). It carries two empties, `SignText_A` (4.6 m, facing the pole's +Z) and `SignText_B`

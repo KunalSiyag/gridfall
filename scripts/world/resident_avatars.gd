@@ -19,6 +19,8 @@ const SHIRTS := [Color(0.85, 0.25, 0.22), Color(0.22, 0.45, 0.85), Color(0.25, 0
 const SKINS := [Color(0.96, 0.8, 0.66), Color(0.86, 0.66, 0.5), Color(0.66, 0.46, 0.32), Color(0.45, 0.3, 0.2), Color(0.98, 0.86, 0.74)]
 const INSIDE := ["home", "work", "shopping", "working late"]
 const MAX_BUBBLES := 6
+## First person: new lines are looked for in this many slices of the resident list, one per frame.
+const SAY_SLICES := 6
 
 var sim: CitySim
 var people: Residents
@@ -33,6 +35,12 @@ var external: Object = null:
 		external = v
 		_apply_external()
 var _bubble_root: Node3D
+## First person (external set): street bubbles by resident id, their seconds left, the last line
+## seen per resident, and the round-robin position of the line scan.
+var _street: Dictionary = {}
+var _street_t: Dictionary = {}
+var _said: Dictionary = {}
+var _say_k: int = -1
 var _avatars: Dictionary = {}
 var _people_scenes: Array = []
 var _car_scenes: Array = []
@@ -229,6 +237,12 @@ func _on_departed(r: Dictionary, _reason: String) -> void:
 	if _avatars.has(id):
 		(_avatars[id]["root"] as Node3D).queue_free()
 		_avatars.erase(id)
+	if _street.has(id):
+		if is_instance_valid(_street[id]):
+			(_street[id] as Node).queue_free()
+		_street.erase(id)
+		_street_t.erase(id)
+	_said.erase(id)
 	if selected == id:
 		selected = ""
 
@@ -410,8 +424,8 @@ func _float_y() -> float:
 	return WS.SIDEWALK_TOP if _fp() else 0.05
 
 
-## Hides every legacy avatar (the traffic feature draws residents) and moves the speech bubbles
-## to a separate root that follows the feature's head anchors.
+## Hides every legacy avatar and its bubble (the traffic feature draws residents; street bubbles
+## of their own follow its head anchors), or, when the feature lets go, drops the street bubbles.
 func _apply_external() -> void:
 	if _ring != null:
 		_ring.visible = false
@@ -421,15 +435,15 @@ func _apply_external() -> void:
 		if not is_instance_valid(root):
 			continue
 		root.visible = external == null and root.visible
-		var bubble: Label3D = a["bubble"]
-		if external != null:
-			if bubble.get_parent() != _bubble_parent():
-				bubble.reparent(_bubble_parent(), false)
-			_style_bubble(bubble, true)
-		elif bubble.get_parent() != root:
-			bubble.reparent(root, false)
-			bubble.position = Vector3(0, 0.42, 0)
-			_style_bubble(bubble, false)
+		(a["bubble"] as Label3D).visible = false
+	if external == null:
+		for id: String in _street.keys():
+			var b: Label3D = _street[id]
+			if is_instance_valid(b):
+				b.queue_free()
+		_street.clear()
+		_street_t.clear()
+		_said.clear()
 
 
 func _bubble_parent() -> Node3D:
@@ -446,37 +460,70 @@ func _style_bubble(b: Label3D, street: bool) -> void:
 	b.fixed_size = false
 
 
-## First person with the traffic feature: no legacy movement, every avatar root hidden; bubbles
-## (depth-tested, near the player only, never while fp_hidden) ride the feature's head anchors.
+## First person with the traffic feature: no legacy avatar moves or shows. New lines are picked up
+## from a sixth of the residents per frame (each is seen every few frames), and only residents
+## with a fresh line carry a street bubble: depth-tested, near the camera only, never while
+## fp_hidden, riding the feature's head anchor. Newcomers get their (hidden) legacy avatar a
+## couple per frame, so going back to orbit finds them all built.
 func _process_external(delta: float) -> void:
-	var cam := camera.global_position if camera != null and camera.is_inside_tree() else Vector3(INF, INF, INF)
-	for r in people.people:
-		var a := _avatar(r)
-		var root: Node3D = a["root"]
-		root.visible = false
-		var bubble: Label3D = a["bubble"]
-		if bubble.get_parent() != _bubble_parent():
-			bubble.reparent(_bubble_parent(), false)
-			_style_bubble(bubble, true)
-		var say := str(r.get("say", ""))
-		if say != str(a["last_say"]):
-			a["last_say"] = say
-			if not say.is_empty():
-				bubble.text = "%s: \"%s\"" % [str(r["name"]).split(" ")[0], say]
-				a["bubble_t"] = 7.0
-		if float(a["bubble_t"]) > 0.0:
-			a["bubble_t"] = float(a["bubble_t"]) - delta
-		var show := false
-		if float(a["bubble_t"]) > 0.0 and not fp_hidden and _bubbles < MAX_BUBBLES:
+	var list: Array = people.people
+	var n := list.size()
+	var made := 0
+	if n > 0:
+		for _j in range(mini(n, ceili(float(n) / float(SAY_SLICES)))):
+			_say_k = (_say_k + 1) % n
+			var r: Dictionary = list[_say_k]
 			var id := str(r["id"])
-			if bool(external.call("is_resident_visible", id)):
-				var head: Vector3 = external.call("anchor_of", id)
-				if head.distance_to(cam) <= FP_BUBBLE_RANGE:
-					bubble.position = head + Vector3(0, FP_BUBBLE_ABOVE, 0)
-					show = true
-		bubble.visible = show
+			if made < 2 and not _avatars.has(id):
+				made += 1
+				_avatar(r)
+			var say := str(r.get("say", ""))
+			if not _said.has(id):
+				_said[id] = say
+				continue
+			if say == str(_said[id]):
+				continue
+			_said[id] = say
+			if not say.is_empty():
+				var b := _street_bubble(id)
+				b.text = "%s: \"%s\"" % [str(r["name"]).split(" ")[0], say]
+				_street_t[id] = 7.0
+	var cam := camera.global_position if camera != null and camera.is_inside_tree() else Vector3(INF, INF, INF)
+	for id: String in _street_t.keys():
+		var t := float(_street_t[id]) - delta
+		var b: Label3D = _street[id]
+		if t <= 0.0:
+			_street_t.erase(id)
+			b.visible = false
+			continue
+		_street_t[id] = t
+		var show := false
+		if not fp_hidden and _bubbles < MAX_BUBBLES and bool(external.call("is_resident_visible", id)):
+			var head: Vector3 = external.call("anchor_of", id)
+			if head.distance_to(cam) <= FP_BUBBLE_RANGE:
+				b.position = head + Vector3(0, FP_BUBBLE_ABOVE, 0)
+				show = true
+		b.visible = show
 		if show:
 			_bubbles += 1
-			bubble.modulate.a = clampf(float(a["bubble_t"]), 0.0, 1.0)
+			b.modulate.a = clampf(t, 0.0, 1.0)
 	_ring.visible = false
 	_name_tag.visible = false
+
+
+## The street bubble of resident id (made on its first line, styled like the legacy one).
+func _street_bubble(id: String) -> Label3D:
+	if _street.has(id) and is_instance_valid(_street[id]):
+		return _street[id]
+	var b := Label3D.new()
+	b.name = "Say_" + id
+	b.billboard = BaseMaterial3D.BILLBOARD_ENABLED
+	b.font_size = 26
+	b.outline_size = 7
+	b.width = 420.0
+	b.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	b.visible = false
+	_style_bubble(b, true)
+	_bubble_parent().add_child(b)
+	_street[id] = b
+	return b

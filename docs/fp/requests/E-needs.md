@@ -30,7 +30,10 @@ E loads each of these when present and falls back otherwise:
 1. `vehicles_v2/<name>.glb` with `Wheel_FL/FR/RL/RR` hub nodes (spin about local X) and a
    single-material `<name>_lod1.glb`. E's far LOD merges whatever it gets into one vertex-coloured
    surface and flags emissive materials as lamps (head and tail lamps glow after dark), so please
-   keep the lamp materials emissive in `lod1` too.
+   keep the lamp materials emissive in `lod1` too. On the full models E lights the lamps after
+   dark and shows brake lights by swapping per-instance surface overrides on the materials named
+   `Light_Head` and `Light_Tail` (as in the legacy GLBs); please keep those names, one surface
+   each.
 2. `street/traffic_light.glb`: mast along local −X (5.5 m, so the head hangs over the inbound lane
    from a pole at (±0.42, ±0.42)), head facing +Z, lamp meshes named `Signal_Red_*`,
    `Signal_Amber_*`, `Signal_Green_*` (E swaps per-instance `material_override`s on them), and
@@ -57,6 +60,13 @@ E loads each of these when present and falls back otherwise:
    they are drawn.
 2. `blockers_near(p, r)` returns world AABBs of vehicles slower than 0.1 m/s, parked cars included.
 
+3. **Third-person camera.** E's spawn rules ("never pop in view"), the people fade-in and the
+   frustum tests use `ctx.player.camera`; while the third-person camera is active that field must
+   be the camera that renders (the E contract says so). Cars yield to, and walkers step round,
+   `ctx.player_position()` (the hero's feet) with `PLAYER_RADIUS`; the camera itself is not an
+   obstacle for them, so the spring arm should pull in when it would sit inside a vehicle box
+   (`agents_near` / `blockers_near`, TPS_PLAN line 318).
+
 ## To B (HUD and minimap)
 
 1. `agents_near` fills `vel` (u/s) for every moving agent and reports `heading` in S0 §11's
@@ -71,6 +81,14 @@ E loads each of these when present and falls back otherwise:
    agents as parallel packed arrays `{"pos", "vel", "heading", "kind"}` with no dictionaries
    (about 20 µs for 110 agents); please switch `_collect_markers` to it when convenient.
 
+## To S0 and C (speech bubbles on foot)
+
+1. E draws street bubbles in first person (depth-tested, `pixel_size` 0.0006, 0.12 u over the
+   head, within 1.5 u, at most 6), but `CityView._apply_fp_visibility` sets
+   `avatars.fp_hidden = fp_mode`, which keeps them hidden on foot. That is fine while C mirrors
+   every line into chat. If bubbles should show on foot, clear `avatars.fp_hidden` while the
+   traffic feature is attached (`avatars.external != null`); E needs no change.
+
 ## To G2 (render performance)
 
 1. People (legacy bodies, stage E1) draw as one MultiMesh per body model and layer: at most 16
@@ -79,3 +97,6 @@ E loads each of these when present and falls back otherwise:
    `anim_stats()` reports `char_draws` from that; the tier counts stay 0 until stage E2.
 2. Vehicles: full GLBs within 2 u (capped at 40, 11 surfaces each with the legacy models), one
    MultiMesh per model beyond.
+3. Lights after dark: up to 8 headlight `SpotLight3D`s (no shadows, 34 m range) on the moving
+   vehicles nearest the camera, and up to 3 flashing siren `OmniLight3D`s (no shadows, 14 m) on
+   responding crews within 60 m, day or night. Please count them in the light budget.

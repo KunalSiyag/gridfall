@@ -1,9 +1,10 @@
 extends RefCounted
 ## People on foot (docs/fp/slices/E-traffic.md §3 Pedestrians): they walk the sidewalk network at
 ## PED_WALK ±15 %, keep right when they meet, keep 0.6 m apart, follow slower walkers, sidestep
-## the posts baked into lit straights and the player, and cross only on zebras: in their walk
-## phase at lights, or at tees when no car is within 2 s. A walker either wanders (ambient), follows
-## a plan of network edges and free legs (resident trips), or stands (waiting, chatting, outdoors).
+## the posts baked into lit straights, the light poles and the player, and cross only on zebras:
+## in their walk phase at lights, or at tees when no car is within 2 s. A walker either wanders
+## (ambient), follows a plan of network edges and free legs (resident trips), or stands (waiting,
+## chatting, outdoors).
 
 const D := preload("res://scripts/sim/sim_defs.gd")
 const WS := preload("res://scripts/fp/world_scale.gd")
@@ -30,8 +31,10 @@ const CHATTY := 0.22
 const CHAT_MEET := 1.3 * WS.M
 const CHAT_MIN := 10.0
 const CHAT_MAX := 40.0
-## People waiting at a zebra spread along the curb (metres, by slot) and step back a row.
+## People waiting at a zebra spread along the curb (metres, by slot) and step back a row. The rows
+## behind the first stand staggered, clear of the light pole 0.8 m behind the middle of the curb.
 const WAIT_ALONG: Array[float] = [0.0, -0.6, 0.6]
+const WAIT_ALONG_BACK: Array[float] = [-0.55, 0.55, -1.15]
 const WAIT_ROW := 0.55
 ## Hip height of the legacy people (half their 1.83 m), the pivot of the leg swing.
 const HIP_M := 0.91
@@ -164,28 +167,36 @@ func stand(w: Walker, p: Vector3, yaw: float) -> void:
 	w.vel = Vector3.ZERO
 
 
-## Rebuilds the post obstacles of lit straights (posts at model-local (±0.4, ∓0.2), roads.py).
+## Rebuilds the post obstacles: the posts baked into lit straights (model-local (±0.4, ∓0.2),
+## roads.py) and the traffic-light poles at the corners of cross tiles (junctions.gd POLE_AT).
 func rebuild_posts(sim: CitySim) -> void:
 	posts.clear()
 	_post_cells.clear()
 	for i: int in lg.tiles.keys():
 		var t: LG.TileInfo = lg.tiles[i]
-		if t.piece != "straight" or t.bridge:
-			continue
 		var x := D.tx(i)
 		var y := D.ty(i)
+		if t.lights:
+			for c: Vector2 in JN.CORNERS:
+				_add_post(Vector2(x, y) + c * JN.POLE_AT)
+			continue
+		if t.piece != "straight" or t.bridge:
+			continue
 		if (x + y) % 4 != 0:
 			continue
 		var yaw := float(RoadTopology.piece(t.mask)[1])
 		var b := Basis(Vector3.UP, deg_to_rad(yaw))
 		for lp: Vector3 in [Vector3(-0.4, 0, -0.2), Vector3(0.4, 0, 0.2)]:
 			var q := b * lp
-			var p := Vector2(x + q.x, y + q.z)
-			posts.append(p)
-			var key := Vector2i(floori(p.x / CELL), floori(p.y / CELL))
-			if not _post_cells.has(key):
-				_post_cells[key] = []
-			(_post_cells[key] as Array).append(p)
+			_add_post(Vector2(x + q.x, y + q.z))
+
+
+func _add_post(p: Vector2) -> void:
+	posts.append(p)
+	var key := Vector2i(floori(p.x / CELL), floori(p.y / CELL))
+	if not _post_cells.has(key):
+		_post_cells[key] = []
+	(_post_cells[key] as Array).append(p)
 
 
 # ------------------------------------------------------------------ stepping
@@ -349,7 +360,7 @@ func _walk_edge(w: Walker, dt: float) -> void:
 				v = 0.0
 			elif ahead > 0.0:
 				v *= 0.6
-	# Posts on lit straights stand on the outer half of the band.
+	# Posts (lit straights, light poles at crosses): pass them on the other half of the band.
 	if not e.zebra and not _post_cells.is_empty():
 		for gx in range(cx - 1, cx + 2):
 			for gz in range(cz - 1, cz + 2):
@@ -542,7 +553,8 @@ func _wait_offset(w: Walker) -> Vector3:
 	var d := sw.dir_at(z, 0.0) * float(_zebra_dir(w, z))
 	var along := Vector2(-d.y, d.x)
 	var k := w.wait_slot
-	var o := along * (WAIT_ALONG[k % 3] * WS.M) - d * (WAIT_ROW * WS.M * float(k / 3))
+	var a := WAIT_ALONG[k % 3] if k < 3 else WAIT_ALONG_BACK[k % 3]
+	var o := along * (a * WS.M) - d * (WAIT_ROW * WS.M * float(k / 3))
 	return Vector3(o.x, 0.0, o.y)
 
 

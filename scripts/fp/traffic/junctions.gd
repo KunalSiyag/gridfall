@@ -24,6 +24,9 @@ const WALK_START := 4.5
 ## Corner poles at (±0.42, ±0.42); masts along local -X reach over the inbound lane.
 const POLE_AT := 0.42
 const MAST := 5.5 * WS.M
+## Pedestrian signals stand in the curb furniture band just beyond the far edge of their zebra
+## (away from the junction), beside the crossing rather than in its path.
+const PED_SIGNAL_AT := WS.ZEBRA_FAR + 0.3 * WS.M
 ## Corners 0..3 = NE, SE, SW, NW: offsets and the approach arm each pole's heads face.
 const CORNERS: Array[Vector2] = [Vector2(1, -1), Vector2(1, 1), Vector2(-1, 1), Vector2(-1, -1)]
 ## NE serves northbound traffic (from the S arm), SE eastbound (W arm), SW southbound (N arm),
@@ -251,14 +254,14 @@ func _build_cross(i: int) -> Dictionary:
 			m.position = Vector3(-0.05 * WS.M, (4.6 if nm == "SignText_A" else 4.35) * WS.M, 0.0)
 			m.rotation.y = 0.0 if nm == "SignText_A" else PI * 0.5
 			pole.add_child(m)
-	# Pedestrian signals at both ends of each zebra, in the curb furniture band.
+	# Pedestrian signals at both ends of each zebra, in the curb furniture band beside it.
 	var lat := (WS.CURB_FURNITURE[0] + WS.CURB_FURNITURE[1]) * 0.5
 	for arm in range(4):
 		var a := LG.DIRS[arm]
 		var p := Vector2(-a.y, a.x)
 		var axis := 0 if (arm == 1 or arm == 3) else 1
 		for s: float in [1.0, -1.0]:
-			var at := a * LG.ZEBRA_MID + p * (s * lat)
+			var at := a * PED_SIGNAL_AT + p * (s * lat)
 			var face := -p * s
 			_ped_signal(kit, at, face, peds[axis * 2], peds[axis * 2 + 1])
 	var mesh := kit.commit()
