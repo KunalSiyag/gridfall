@@ -51,6 +51,8 @@ var slice_budget_ms: float = 4.0
 ## waits for it, and _finish_job_now() drains it through spread_finish.
 var spread_gate: Callable = Callable()
 var spread_finish: Callable = Callable()
+## Other spread sources (add_spread_source): [gate, finish] pairs, checked after ResidentMinds.
+var _spread_sources: Array = []
 ## Bumped whenever a tile turns into a road or stops being one (route caches key on it).
 var road_epoch: int = 0
 
@@ -648,7 +650,11 @@ func _recompute_deferred() -> void:
 		_nested.append(_new_recompute_task())
 	else:
 		_finish_job_now()
-		_start_job(_JOB_RECOMPUTE, [_new_recompute_task()])
+		if _job.is_empty():
+			_start_job(_JOB_RECOMPUTE, [_new_recompute_task()])
+		else:
+			# Re-entered from a drain in progress (a spread source's finish): the drain runs it next.
+			_job.push_back(_new_recompute_task())
 
 
 func _recompute_now() -> void:
@@ -738,10 +744,57 @@ func pump(budget_ms: float) -> bool:
 	return _committed
 
 
-## True when listeners may spread work over frames (ResidentMinds' plan batches and reactions):
-## sliced, and not inside a forced synchronous tick (step_tick, load). The job waits for them.
+## True when listeners may spread work over frames (ResidentMinds' plan batches and reactions, a
+## registered spread source): sliced, and not inside a forced synchronous tick (step_tick, load).
+## The job waits for them.
 func spread_allowed() -> bool:
 	return sliced and _force_sync == 0
+
+
+## True while ResidentMinds or a registered spread source still has work waiting for a frame; the
+## sliced job and begin_tick() wait meanwhile.
+func spread_pending() -> bool:
+	return _spread_pending()
+
+
+## Registers a listener that spreads work it would otherwise do inside a job emission (day_started,
+## event_started) over later frames, e.g. CityBrain's mayors. While gate() returns true the sliced
+## job waits (begin_tick() starts nothing, pump() does nothing), so the work lands at the same point
+## as in the synchronous path, and _finish_job_now() calls finish() to run the rest at once. A
+## day_started listener spreads only when day_start_deferred() is true (the emission comes from the
+## sliced day job, which holds Residents' day work until the gate closes); other emissions only
+## while spread_allowed() is true. Each deferred piece, and each piece finish() runs, goes through
+## run_in_phase(). Registering the same gate again replaces its finish.
+func add_spread_source(gate: Callable, finish: Callable) -> void:
+	remove_spread_source(gate)
+	_spread_sources.append([gate, finish])
+
+
+func remove_spread_source(gate: Callable) -> void:
+	for k in range(_spread_sources.size() - 1, -1, -1):
+		if (_spread_sources[k][0] as Callable) == gate:
+			_spread_sources.remove_at(k)
+
+
+## Runs f as part of the sliced job's current phase: work a spread source deferred from a job
+## emission. Mutators inside f neither finish the job nor recompute on the spot; a recompute they
+## owe runs as a sub-job right after f, before the job resumes. With no job in flight (or inside a
+## step) it just calls f. f must not await: a live call that resumes later comes back through here.
+func run_in_phase(f: Callable) -> void:
+	if _job.is_empty() or _stepping:
+		f.call()
+		return
+	var noted := _step_noted
+	_step_noted = 0
+	_stepping = true
+	_in_job += 1
+	f.call()
+	_in_job -= 1
+	_stepping = false
+	_step_noted = noted
+	for k in range(_nested.size() - 1, -1, -1):
+		_job.push_back(_nested[k])
+	_nested.clear()
 
 
 ## True while a sliced tick is between start and commit.
@@ -814,7 +867,28 @@ func job_yield_requested() -> bool:
 
 
 func _spread_pending() -> bool:
-	return spread_gate.is_valid() and bool(spread_gate.call())
+	if spread_gate.is_valid() and bool(spread_gate.call()):
+		return true
+	for src: Array in _spread_sources:
+		var gate: Callable = src[0]
+		if gate.is_valid() and bool(gate.call()):
+			return true
+	return false
+
+
+## Calls finish() of the first spread source with work waiting (ResidentMinds first). False when
+## none could run.
+func _finish_spread() -> bool:
+	if spread_gate.is_valid() and spread_finish.is_valid() and bool(spread_gate.call()):
+		spread_finish.call()
+		return true
+	for src: Array in _spread_sources:
+		var gate: Callable = src[0]
+		var finish: Callable = src[1]
+		if gate.is_valid() and finish.is_valid() and bool(gate.call()):
+			finish.call()
+			return true
+	return false
 
 
 func _task(phase: String, f: Callable) -> Dictionary:
@@ -855,8 +929,9 @@ func _step_once() -> void:
 		_tick_running = false
 
 
-## Completes the job in flight (and ResidentMinds' spread plan batches) synchronously. Used by
-## external mutators, to_dict(), skip_to_next_day() and the sliced setter; never from inside a step.
+## Completes the job in flight (and the spread work it waits for: ResidentMinds' plan batches, other
+## spread sources) synchronously. Used by external mutators, to_dict(), skip_to_next_day() and the
+## sliced setter; never from inside a step.
 func _finish_job_now() -> void:
 	if _stepping or _pumping or _finishing:
 		return
@@ -866,10 +941,13 @@ func _finish_job_now() -> void:
 	var t0 := Time.get_ticks_usec()
 	var saved := _lim
 	_lim = _SYNC_LIM
+	# A finish() that leaves its gate open is not called forever: the job steps on after a few tries.
+	var tries := 0
 	while true:
-		if _spread_pending() and spread_finish.is_valid():
-			spread_finish.call()
+		if tries < 8 and _finish_spread():
+			tries += 1
 		elif not _job.is_empty():
+			tries = 0
 			_step_once()
 		else:
 			break

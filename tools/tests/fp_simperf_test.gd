@@ -46,6 +46,7 @@ func _init() -> void:
 	await _check_minds()
 	_check_flush()
 	_check_people_api()
+	await _check_spread_source()
 	print("FP_SIMPERF_TEST: " + ("PASS" if fails.is_empty() else "FAIL " + str(fails)))
 	quit(0 if fails.is_empty() else 1)
 
@@ -56,7 +57,7 @@ func _init() -> void:
 ## signals other slices consume. A brain-like day_started listener (connected before Residents, as
 ## CityBrain is in main) builds a road inside the emission, and a tick_done listener sets a fire on
 ## the 10th tick, so nested recomputes run inside the job.
-func _world(sliced: bool, fire_tick: int = 10) -> Dictionary:
+func _world(sliced: bool, fire_tick: int = 10, spread_brain: bool = false) -> Dictionary:
 	var w := {"log": [], "ticks": 0}
 	var sim: CitySim = (load("res://scripts/sim/city_sim.gd") as GDScript).new()
 	get_root().add_child(sim)
@@ -74,10 +75,13 @@ func _world(sliced: bool, fire_tick: int = 10) -> Dictionary:
 	sim.tiles_changed.connect(func(ix: PackedInt32Array) -> void: log.append(["tiles_changed", Array(ix)]))
 	sim.day_started.connect(func(d: int) -> void: log.append(["day_started", d]))
 	sim.day_ended.connect(func(d: int) -> void: log.append(["day_ended", d]))
-	sim.day_started.connect(func(d: int) -> void:
-		var y := 12 + d % 4
-		sim.apply_action(0, {"type": "road", "x": 1, "y": y, "x2": 7, "y2": y})
-	)
+	if spread_brain:
+		_spread_brain(w, sim, people)
+	else:
+		sim.day_started.connect(func(d: int) -> void:
+			var y := 12 + d % 4
+			sim.apply_action(0, {"type": "road", "x": 1, "y": y, "x2": 7, "y2": y})
+		)
 	people.setup(sim)
 	minds.setup(sim, people, client, null)
 	people.trip_started.connect(func(id: String, f: int, t: int, m: String) -> void: log.append(["trip_started", id, f, t, m]))
@@ -106,11 +110,10 @@ func _run_sync(w: Dictionary) -> void:
 
 
 ## Drives a sliced world the way the contract describes (begin_tick when idle, pump(4.0), count the
-## commits), letting frames pass while the minds spread plan batches, then lets the last day job and
-## spread finish through the same path.
+## commits), letting frames pass while the minds (or a spread brain) spread work, then lets the last
+## day job and spread finish through the same path.
 func _run_sliced(w: Dictionary, ticks: int) -> void:
 	var sim: CitySim = w["sim"]
-	var minds: ResidentMinds = w["minds"]
 	var committed := 0
 	var guard := 0
 	while committed < ticks and guard < 500000:
@@ -119,23 +122,23 @@ func _run_sliced(w: Dictionary, ticks: int) -> void:
 			sim.begin_tick()
 		if sim.pump(4.0):
 			committed += 1
-		if minds.spreading():
+		if sim.spread_pending():
 			await process_frame
-	while (sim.job_pending() or minds.spreading()) and guard < 500000:
+	while (sim.job_pending() or sim.spread_pending()) and guard < 500000:
 		guard += 1
 		sim.pump(4.0)
-		if minds.spreading():
+		if sim.spread_pending():
 			await process_frame
 	check(committed == ticks and not sim.job_pending(), "the sliced world committed %d ticks (%d)" % [ticks, committed])
 
 
 ## Pumps the job in flight to the end, letting frames pass while the minds spread work.
-func _drain(sim: CitySim, minds: ResidentMinds) -> void:
+func _drain(sim: CitySim, _minds: ResidentMinds) -> void:
 	var guard := 0
-	while (sim.job_pending() or minds.spreading()) and guard < 100000:
+	while (sim.job_pending() or sim.spread_pending()) and guard < 100000:
 		guard += 1
 		sim.pump(4.0)
-		if minds.spreading():
+		if sim.spread_pending():
 			await process_frame
 
 
@@ -448,3 +451,98 @@ func _check_people_api() -> void:
 	people.nudge_mood(r, -1.0)
 	check(is_equal_approx(hi, 10.0) and is_equal_approx(mid, 9.25) and is_equal_approx(float(r["mood"]), 0.0), "nudge_mood() shifts the mood and clamps it to 0..10")
 	_free_world(w)
+
+
+# ---------------------------------------------------------------- 1b. spread sources
+
+## A brain-like day_started listener that spreads its work the way CityBrain may (F-needs.md): the
+## first mayor inside the emission, the others one per frame through run_in_phase while its gate
+## holds the day job, all of it inline unless the emission comes from the sliced day job
+## (day_start_deferred()). Its pieces build roads, draw from sim.rng and set a fire (a mutator that
+## owes a recompute), so the spread path must keep the RNG order, the nested recompute and the
+## signal order of the synchronous one.
+func _spread_brain(w: Dictionary, sim: CitySim, people: Residents) -> void:
+	var queue: Array[Callable] = []
+	w["brain_queue"] = queue
+	w["brain_spread_frames"] = 0
+	sim.add_spread_source(func() -> bool: return not queue.is_empty(), func() -> void:
+		while not queue.is_empty():
+			sim.run_in_phase(queue.pop_front())
+	)
+	sim.day_started.connect(func(d: int) -> void:
+		var pieces: Array[Callable] = []
+		for m in range(3):
+			pieces.append(func() -> void:
+				var y := 12 + (d + m) % 5
+				var n := sim.rng.randi_range(2, 6)
+				sim.apply_action(0, {"type": "road", "x": 1, "y": y, "x2": 1 + n, "y2": y})
+			)
+		if d % 3 == 0:
+			pieces.append(func() -> void:
+				if not people.people.is_empty():
+					var h := int(people.people[sim.rng.randi_range(0, people.people.size() - 1)]["home"])
+					sim.trigger_disaster("fire", D.tx(h), D.ty(h), "test", "spread chaos")
+			)
+		(pieces.pop_front() as Callable).call()
+		if not sim.day_start_deferred():
+			for c in pieces:
+				c.call()
+			return
+		queue.append_array(pieces)
+		_brain_frames(w, sim, queue)
+	)
+
+
+func _brain_frames(w: Dictionary, sim: CitySim, queue: Array[Callable]) -> void:
+	while not queue.is_empty():
+		await process_frame
+		if queue.is_empty():
+			break
+		w["brain_spread_frames"] = int(w["brain_spread_frames"]) + 1
+		sim.run_in_phase(queue.pop_front())
+
+
+func _check_spread_source() -> void:
+	var a := _world(false, 6, true)
+	var b := _world(true, 6, true)
+	var sa: CitySim = a["sim"]
+	var sb: CitySim = b["sim"]
+	for _k in range(24):
+		sa.step_tick()
+	await _run_sliced(b, 24)
+	var frames := int(b["brain_spread_frames"])
+	check(frames >= 10 and int(a["brain_spread_frames"]) == 0, "the spread brain ran its later pieces on %d frames (sync: inline)" % frames)
+	check(JSON.stringify(sa.to_dict()) == JSON.stringify(sb.to_dict()), "spread source: sim.to_dict() is identical")
+	check(JSON.stringify((a["people"] as Residents).to_dict()) == JSON.stringify((b["people"] as Residents).to_dict()), "spread source: residents.to_dict() is identical")
+	var diff: Array[String] = []
+	for key in ["pollution", "crime", "land_value", "traffic", "happiness", "powered", "watered", "road_dist", "cov_fire", "burning", "demand", "stats"]:
+		if var_to_bytes(sa.get(key)) != var_to_bytes(sb.get(key)):
+			diff.append(key)
+	check(diff.is_empty(), "spread source: derived maps, demand and stats are bitwise equal %s" % str(diff))
+	check(var_to_bytes(a["log"]) == var_to_bytes(b["log"]), "spread source: the signal sequence is identical (%d signals)" % (a["log"] as Array).size())
+	check(int(sb.slice_stats().get("sync_finishes", 0)) == 0, "spread pieces never forced a synchronous finish (%d)" % int(sb.slice_stats().get("sync_finishes", 0)))
+	# A save while the brain still holds the job drains it first (the save sees the whole day start).
+	var queue: Array[Callable] = b["brain_queue"]
+	while sb.day % 3 != 2:
+		sb.skip_to_next_day()
+	sb.begin_tick()
+	await _drain_until(sb, func() -> bool: return not queue.is_empty())
+	var held := not queue.is_empty() and sb.job_pending() and not sb.begin_tick()
+	sb.to_dict()
+	check(held and queue.is_empty() and not sb.job_pending(), "to_dict() while the spread brain holds the day job runs its pieces and the job")
+	_free_world(a)
+	_free_world(b)
+	await process_frame
+
+
+## Runs sliced ticks (begin_tick when idle, pump(4.0)) until cond() holds; frames pass while
+## something spreads.
+func _drain_until(sim: CitySim, cond: Callable) -> void:
+	var guard := 0
+	while not bool(cond.call()) and guard < 100000:
+		guard += 1
+		if not sim.job_pending():
+			sim.begin_tick()
+		sim.pump(4.0)
+		if sim.spread_pending() and not bool(cond.call()):
+			await process_frame
