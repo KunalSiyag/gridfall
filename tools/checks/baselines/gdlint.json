@@ -1,0 +1,505 @@
+{
+ "scripts/ai/chatter_minds.gd": {
+  "max-file-lines: Max allowed file lines num (1000) exceeded": 1,
+  "max-line-length: Max allowed line length (100) exceeded": 172,
+  "max-public-methods: \"Class global scope\" has more than 20 public methods (functions)": 1,
+  "max-returns: Function \"_job_lines\" has more than 6 return statements": 1,
+  "max-returns: Function \"_opener\" has more than 6 return statements": 1,
+  "max-returns: Function \"_reaction\" has more than 6 return statements": 1,
+  "max-returns: Function \"_topic_answer\" has more than 6 return statements": 1,
+  "unused-argument: unused function argument 'recent'": 1,
+  "unused-argument: unused function argument 'topic'": 1,
+  "unused-argument: unused function argument 'v'": 2
+ },
+ "scripts/ai/city_brain.gd": {
+  "max-line-length: Max allowed line length (100) exceeded": 100
+ },
+ "scripts/ai/gmi_client.gd": {
+  "max-line-length: Max allowed line length (100) exceeded": 20
+ },
+ "scripts/ai/gmi_image_client.gd": {
+  "max-line-length: Max allowed line length (100) exceeded": 25
+ },
+ "scripts/ai/resident_minds.gd": {
+  "max-line-length: Max allowed line length (100) exceeded": 46
+ },
+ "scripts/audio_director.gd": {
+  "max-line-length: Max allowed line length (100) exceeded": 2
+ },
+ "scripts/cinematic.gd": {
+  "duplicated-load: duplicated loading of \"res://scripts/sim/sim_defs.gd\"": 3,
+  "max-line-length: Max allowed line length (100) exceeded": 20,
+  "max-returns: Function \"_action_text\" has more than 6 return statements": 1
+ },
+ "scripts/fp/asset_paths.gd": {
+  "max-line-length: Max allowed line length (100) exceeded": 6
+ },
+ "scripts/fp/audio/ambience.gd": {
+  "max-line-length: Max allowed line length (100) exceeded": 5
+ },
+ "scripts/fp/audio/audio_bank.gd": {
+  "max-line-length: Max allowed line length (100) exceeded": 3
+ },
+ "scripts/fp/audio/audio_feature.gd": {
+  "max-line-length: Max allowed line length (100) exceeded": 4
+ },
+ "scripts/fp/audio/emitters.gd": {
+  "max-line-length: Max allowed line length (100) exceeded": 16,
+  "max-public-methods: \"Class global scope\" has more than 20 public methods (functions)": 1
+ },
+ "scripts/fp/audio/footsteps.gd": {
+  "max-line-length: Max allowed line length (100) exceeded": 1
+ },
+ "scripts/fp/chat/chat_feature.gd": {
+  "max-line-length: Max allowed line length (100) exceeded": 55
+ },
+ "scripts/fp/chat/chat_feed.gd": {
+  "max-line-length: Max allowed line length (100) exceeded": 7
+ },
+ "scripts/fp/chat/chat_text.gd": {
+  "max-line-length: Max allowed line length (100) exceeded": 3
+ },
+ "scripts/fp/chat/talk_dialog.gd": {
+  "max-line-length: Max allowed line length (100) exceeded": 10,
+  "max-returns: Function \"say\" has more than 6 return statements": 1
+ },
+ "scripts/fp/city_directory.gd": {
+  "max-line-length: Max allowed line length (100) exceeded": 22,
+  "max-returns: Function \"_landmark\" has more than 6 return statements": 1
+ },
+ "scripts/fp/fp_context.gd": {
+  "max-line-length: Max allowed line length (100) exceeded": 6
+ },
+ "scripts/fp/fp_feature.gd": {
+  "max-line-length: Max allowed line length (100) exceeded": 2
+ },
+ "scripts/fp/fp_features.gd": {
+  "max-line-length: Max allowed line length (100) exceeded": 1
+ },
+ "scripts/fp/fp_mode.gd": {
+  "max-line-length: Max allowed line length (100) exceeded": 8,
+  "max-returns: Function \"_unhandled_input\" has more than 6 return statements": 1
+ },
+ "scripts/fp/game_bus.gd": {
+  "max-line-length: Max allowed line length (100) exceeded": 1
+ },
+ "scripts/fp/interact/interact_feature.gd": {
+  "max-line-length: Max allowed line length (100) exceeded": 17
+ },
+ "scripts/fp/overview/overview_feature.gd": {
+  "max-line-length: Max allowed line length (100) exceeded": 15
+ },
+ "scripts/fp/player/body_bake.gd": {
+  "max-line-length: Max allowed line length (100) exceeded": 9
+ },
+ "scripts/fp/player/body_shapes.gd": {
+  "max-line-length: Max allowed line length (100) exceeded": 13
+ },
+ "scripts/fp/player/body_table.gd": {
+  "max-line-length: Max allowed line length (100) exceeded": 114
+ },
+ "scripts/fp/player/hero_rig.gd": {
+  "max-line-length: Max allowed line length (100) exceeded": 15
+ },
+ "scripts/fp/player/placeholder_puppet.gd": {
+  "max-line-length: Max allowed line length (100) exceeded": 8
+ },
+ "scripts/fp/player/player.gd": {
+  "max-file-lines: Max allowed file lines num (1000) exceeded": 1,
+  "max-line-length: Max allowed line length (100) exceeded": 36,
+  "max-public-methods: \"Class global scope\" has more than 20 public methods (functions)": 1,
+  "max-returns: Function \"_unhandled_input\" has more than 6 return statements": 1
+ },
+ "scripts/fp/player/player_avatar.gd": {
+  "function-arguments-number: Function \"update_motion\" has more than 10 arguments": 1,
+  "max-line-length: Max allowed line length (100) exceeded": 13
+ },
+ "scripts/fp/player/spring_math.gd": {
+  "max-line-length: Max allowed line length (100) exceeded": 2
+ },
+ "scripts/fp/player/tps_rig.gd": {
+  "max-line-length: Max allowed line length (100) exceeded": 10,
+  "unused-argument: unused function argument 'body_yaw'": 1,
+  "unused-argument: unused function argument 'flat'": 1
+ },
+ "scripts/fp/posters/poster_compositor.gd": {
+  "max-line-length: Max allowed line length (100) exceeded": 8
+ },
+ "scripts/fp/posters/poster_director.gd": {
+  "max-line-length: Max allowed line length (100) exceeded": 47,
+  "max-returns: Function \"_wall\" has more than 6 return statements": 1,
+  "max-returns: Function \"on_mayor_decided\" has more than 6 return statements": 1
+ },
+ "scripts/fp/posters/poster_feature.gd": {
+  "max-line-length: Max allowed line length (100) exceeded": 15
+ },
+ "scripts/fp/posters/poster_layouts.gd": {
+  "max-line-length: Max allowed line length (100) exceeded": 37
+ },
+ "scripts/fp/posters/poster_surfaces.gd": {
+  "max-line-length: Max allowed line length (100) exceeded": 20
+ },
+ "scripts/fp/posters/wall_spot_baker.gd": {
+  "max-line-length: Max allowed line length (100) exceeded": 13
+ },
+ "scripts/fp/render/hlod.gd": {
+  "max-line-length: Max allowed line length (100) exceeded": 10
+ },
+ "scripts/fp/render/midlod.gd": {
+  "max-line-length: Max allowed line length (100) exceeded": 2
+ },
+ "scripts/fp/render/occluders.gd": {
+  "max-line-length: Max allowed line length (100) exceeded": 1
+ },
+ "scripts/fp/render/proxies.gd": {
+  "max-line-length: Max allowed line length (100) exceeded": 16
+ },
+ "scripts/fp/render/proxy_bake.gd": {
+  "max-line-length: Max allowed line length (100) exceeded": 7
+ },
+ "scripts/fp/render/quality.gd": {
+  "max-line-length: Max allowed line length (100) exceeded": 2
+ },
+ "scripts/fp/render/render_opt_feature.gd": {
+  "max-line-length: Max allowed line length (100) exceeded": 18
+ },
+ "scripts/fp/road_topology.gd": {
+  "max-line-length: Max allowed line length (100) exceeded": 4
+ },
+ "scripts/fp/sim/sim_perf_feature.gd": {
+  "max-line-length: Max allowed line length (100) exceeded": 2
+ },
+ "scripts/fp/street/light_profile.gd": {
+  "max-line-length: Max allowed line length (100) exceeded": 5
+ },
+ "scripts/fp/street/street_dressing.gd": {
+  "max-file-lines: Max allowed file lines num (1000) exceeded": 1,
+  "max-line-length: Max allowed line length (100) exceeded": 72,
+  "max-returns: Function \"_front_recipe\" has more than 6 return statements": 1,
+  "max-returns: Function \"_lot_context\" has more than 6 return statements": 1,
+  "unused-argument: unused function argument 'holder'": 1,
+  "unused-argument: unused function argument 'i'": 1
+ },
+ "scripts/fp/street/street_lights.gd": {
+  "max-line-length: Max allowed line length (100) exceeded": 1
+ },
+ "scripts/fp/street/streetscape_feature.gd": {
+  "max-line-length: Max allowed line length (100) exceeded": 8
+ },
+ "scripts/fp/street/weather.gd": {
+  "max-line-length: Max allowed line length (100) exceeded": 4
+ },
+ "scripts/fp/traffic/ambient.gd": {
+  "max-line-length: Max allowed line length (100) exceeded": 3,
+  "max-returns: Function \"_spawn_car\" has more than 6 return statements": 1,
+  "max-returns: Function \"_spawn_ped\" has more than 6 return statements": 1
+ },
+ "scripts/fp/traffic/fleets.gd": {
+  "max-line-length: Max allowed line length (100) exceeded": 6
+ },
+ "scripts/fp/traffic/junctions.gd": {
+  "function-variable-name: Function-scope variable name \"M\" is not valid": 4,
+  "max-line-length: Max allowed line length (100) exceeded": 17
+ },
+ "scripts/fp/traffic/lane_graph.gd": {
+  "max-file-lines: Max allowed file lines num (1000) exceeded": 1,
+  "max-line-length: Max allowed line length (100) exceeded": 16,
+  "max-public-methods: \"Class global scope\" has more than 20 public methods (functions)": 1
+ },
+ "scripts/fp/traffic/mesh_kit.gd": {
+  "max-line-length: Max allowed line length (100) exceeded": 6
+ },
+ "scripts/fp/traffic/render.gd": {
+  "max-line-length: Max allowed line length (100) exceeded": 9
+ },
+ "scripts/fp/traffic/sidewalks.gd": {
+  "max-line-length: Max allowed line length (100) exceeded": 2
+ },
+ "scripts/fp/traffic/traffic_feature.gd": {
+  "function-variable-name: Function-scope variable name \"M\" is not valid": 1,
+  "max-file-lines: Max allowed file lines num (1000) exceeded": 1,
+  "max-line-length: Max allowed line length (100) exceeded": 28,
+  "max-public-methods: \"Class global scope\" has more than 20 public methods (functions)": 1
+ },
+ "scripts/fp/traffic/trips.gd": {
+  "function-variable-name: Function-scope variable name \"R\" is not valid": 1,
+  "max-line-length: Max allowed line length (100) exceeded": 9,
+  "max-public-methods: \"Class global scope\" has more than 20 public methods (functions)": 1,
+  "max-returns: Function \"_purpose\" has more than 6 return statements": 1,
+  "unused-argument: unused function argument 'toward_lot'": 1
+ },
+ "scripts/fp/traffic/vehicles.gd": {
+  "function-variable-name: Function-scope variable name \"L\" is not valid": 1,
+  "max-file-lines: Max allowed file lines num (1000) exceeded": 1,
+  "max-line-length: Max allowed line length (100) exceeded": 6,
+  "max-public-methods: \"Class global scope\" has more than 20 public methods (functions)": 1,
+  "max-returns: Function \"hold_reason\" has more than 6 return statements": 1
+ },
+ "scripts/fp/traffic/walkers.gd": {
+  "max-line-length: Max allowed line length (100) exceeded": 6,
+  "max-returns: Function \"_next\" has more than 6 return statements": 1,
+  "unused-argument: unused function argument 'sim'": 1,
+  "unused-argument: unused function argument 'z'": 1
+ },
+ "scripts/fp/ui/chat_panel.gd": {
+  "max-line-length: Max allowed line length (100) exceeded": 16
+ },
+ "scripts/fp/ui/chat_panel_row.gd": {
+  "max-line-length: Max allowed line length (100) exceeded": 10
+ },
+ "scripts/fp/ui/chat_panel_style.gd": {
+  "max-line-length: Max allowed line length (100) exceeded": 44
+ },
+ "scripts/fp/ui/chat_panel_widgets.gd": {
+  "max-line-length: Max allowed line length (100) exceeded": 1
+ },
+ "scripts/fp/ui/fp_hud.gd": {
+  "max-line-length: Max allowed line length (100) exceeded": 4
+ },
+ "scripts/fp/ui/hud_caption.gd": {
+  "max-line-length: Max allowed line length (100) exceeded": 2
+ },
+ "scripts/fp/ui/hud_chips.gd": {
+  "max-line-length: Max allowed line length (100) exceeded": 5
+ },
+ "scripts/fp/ui/hud_compass.gd": {
+  "max-line-length: Max allowed line length (100) exceeded": 10
+ },
+ "scripts/fp/ui/hud_icon.gd": {
+  "max-line-length: Max allowed line length (100) exceeded": 7
+ },
+ "scripts/fp/ui/hud_prompt.gd": {
+  "max-line-length: Max allowed line length (100) exceeded": 2
+ },
+ "scripts/fp/ui/hud_style.gd": {
+  "max-line-length: Max allowed line length (100) exceeded": 9
+ },
+ "scripts/fp/ui/hud_toasts.gd": {
+  "max-line-length: Max allowed line length (100) exceeded": 6
+ },
+ "scripts/fp/ui/hud_widgets_feature.gd": {
+  "max-line-length: Max allowed line length (100) exceeded": 1
+ },
+ "scripts/fp/ui/map_screen.gd": {
+  "max-line-length: Max allowed line length (100) exceeded": 23
+ },
+ "scripts/fp/ui/minimap_model.gd": {
+  "max-line-length: Max allowed line length (100) exceeded": 2
+ },
+ "scripts/fp/ui/minimap_view.gd": {
+  "max-line-length: Max allowed line length (100) exceeded": 10
+ },
+ "scripts/fp/ui/pause_menu.gd": {
+  "max-line-length: Max allowed line length (100) exceeded": 6
+ },
+ "scripts/fp/ui/place_card.gd": {
+  "max-line-length: Max allowed line length (100) exceeded": 6
+ },
+ "scripts/fp/world/collision_world.gd": {
+  "max-line-length: Max allowed line length (100) exceeded": 41,
+  "max-public-methods: \"Class global scope\" has more than 20 public methods (functions)": 1,
+  "max-returns: Function \"ground_height\" has more than 6 return statements": 1,
+  "max-returns: Function \"surface_at\" has more than 6 return statements": 1
+ },
+ "scripts/fp/world_scale.gd": {
+  "max-line-length: Max allowed line length (100) exceeded": 12
+ },
+ "scripts/main.gd": {
+  "max-line-length: Max allowed line length (100) exceeded": 33
+ },
+ "scripts/ops/alerts.gd": {
+  "max-line-length: Max allowed line length (100) exceeded": 3
+ },
+ "scripts/ops/analytics.gd": {
+  "max-line-length: Max allowed line length (100) exceeded": 1
+ },
+ "scripts/ops/error_tracker.gd": {
+  "max-line-length: Max allowed line length (100) exceeded": 4
+ },
+ "scripts/ops/feature_flags.gd": {
+  "max-line-length: Max allowed line length (100) exceeded": 2
+ },
+ "scripts/ops/ops_sink.gd": {
+  "max-line-length: Max allowed line length (100) exceeded": 1
+ },
+ "scripts/ops/redact.gd": {
+  "max-line-length: Max allowed line length (100) exceeded": 1
+ },
+ "scripts/sim/city_sim.gd": {
+  "max-file-lines: Max allowed file lines num (1000) exceeded": 1,
+  "max-line-length: Max allowed line length (100) exceeded": 95,
+  "max-public-methods: \"Class global scope\" has more than 20 public methods (functions)": 1,
+  "max-returns: Function \"_act_road\" has more than 6 return statements": 1,
+  "max-returns: Function \"power_need\" has more than 6 return statements": 1,
+  "max-returns: Function \"tile_jobs\" has more than 6 return statements": 1,
+  "max-returns: Function \"water_need\" has more than 6 return statements": 1
+ },
+ "scripts/sim/residents.gd": {
+  "max-file-lines: Max allowed file lines num (1000) exceeded": 1,
+  "max-line-length: Max allowed line length (100) exceeded": 55,
+  "max-public-methods: \"Class global scope\" has more than 20 public methods (functions)": 1,
+  "max-returns: Function \"_day_unit\" has more than 6 return statements": 1,
+  "max-returns: Function \"maps_step\" has more than 6 return statements": 1,
+  "unused-argument: unused function argument 'day'": 1
+ },
+ "scripts/sim/sim_defs.gd": {
+  "max-line-length: Max allowed line length (100) exceeded": 35
+ },
+ "scripts/ui/city_hud.gd": {
+  "max-file-lines: Max allowed file lines num (1000) exceeded": 1,
+  "max-line-length: Max allowed line length (100) exceeded": 75
+ },
+ "scripts/ui/gridfall_hud.gd": {
+  "max-line-length: Max allowed line length (100) exceeded": 11
+ },
+ "scripts/world/camera_controller.gd": {
+  "max-line-length: Max allowed line length (100) exceeded": 2
+ },
+ "scripts/world/city_life.gd": {
+  "max-line-length: Max allowed line length (100) exceeded": 19
+ },
+ "scripts/world/city_view.gd": {
+  "max-file-lines: Max allowed file lines num (1000) exceeded": 1,
+  "max-line-length: Max allowed line length (100) exceeded": 90,
+  "max-public-methods: \"Class global scope\" has more than 20 public methods (functions)": 1
+ },
+ "scripts/world/construction_kit.gd": {
+  "max-file-lines: Max allowed file lines num (1000) exceeded": 1,
+  "max-line-length: Max allowed line length (100) exceeded": 61
+ },
+ "scripts/world/gridfall_world.gd": {
+  "function-variable-name: Function-scope variable name \"slot_Wait\" is not valid": 1,
+  "max-file-lines: Max allowed file lines num (1000) exceeded": 1,
+  "max-line-length: Max allowed line length (100) exceeded": 12
+ },
+ "scripts/world/resident_avatars.gd": {
+  "max-line-length: Max allowed line length (100) exceeded": 12
+ },
+ "scripts/world/sky_director.gd": {
+  "max-line-length: Max allowed line length (100) exceeded": 6
+ },
+ "tools/characters/build_anim_library.gd": {
+  "max-line-length: Max allowed line length (100) exceeded": 4
+ },
+ "tools/hdr_probe.gd": {
+  "max-line-length: Max allowed line length (100) exceeded": 1
+ },
+ "tools/probe_models.gd": {
+  "max-line-length: Max allowed line length (100) exceeded": 1
+ },
+ "tools/probe_vehicles.gd": {
+  "max-line-length: Max allowed line length (100) exceeded": 1
+ },
+ "tools/profile_sim.gd": {
+  "max-line-length: Max allowed line length (100) exceeded": 4
+ },
+ "tools/tests/brain_live_test.gd": {
+  "max-line-length: Max allowed line length (100) exceeded": 7
+ },
+ "tools/tests/buildings_test.gd": {
+  "max-line-length: Max allowed line length (100) exceeded": 3
+ },
+ "tools/tests/construction_test.gd": {
+  "duplicated-load: duplicated loading of \"res://scripts/sim/city_sim.gd\"": 1,
+  "function-variable-name: Function-scope variable name \"D\" is not valid": 1,
+  "max-line-length: Max allowed line length (100) exceeded": 17
+ },
+ "tools/tests/dump_prompts.gd": {
+  "max-line-length: Max allowed line length (100) exceeded": 2
+ },
+ "tools/tests/expansion_test.gd": {
+  "function-variable-name: Function-scope variable name \"D\" is not valid": 1,
+  "max-line-length: Max allowed line length (100) exceeded": 12
+ },
+ "tools/tests/fp_assets_test.gd": {
+  "max-line-length: Max allowed line length (100) exceeded": 24
+ },
+ "tools/tests/fp_audio_test.gd": {
+  "max-line-length: Max allowed line length (100) exceeded": 76
+ },
+ "tools/tests/fp_bench.gd": {
+  "max-line-length: Max allowed line length (100) exceeded": 11
+ },
+ "tools/tests/fp_characters_test.gd": {
+  "max-line-length: Max allowed line length (100) exceeded": 39
+ },
+ "tools/tests/fp_chat_test.gd": {
+  "max-line-length: Max allowed line length (100) exceeded": 109,
+  "unused-argument: unused function argument 'agent_id'": 1
+ },
+ "tools/tests/fp_core_test.gd": {
+  "max-line-length: Max allowed line length (100) exceeded": 70
+ },
+ "tools/tests/fp_directory_test.gd": {
+  "max-line-length: Max allowed line length (100) exceeded": 15
+ },
+ "tools/tests/fp_hud_test.gd": {
+  "max-line-length: Max allowed line length (100) exceeded": 92,
+  "unused-argument: unused function argument 'ctx'": 1
+ },
+ "tools/tests/fp_kit.gd": {
+  "duplicated-load: duplicated loading of \"res://scripts/ai/gmi_client.gd\"": 1,
+  "max-line-length: Max allowed line length (100) exceeded": 5
+ },
+ "tools/tests/fp_ops_test.gd": {
+  "max-line-length: Max allowed line length (100) exceeded": 83
+ },
+ "tools/tests/fp_overview_test.gd": {
+  "max-line-length: Max allowed line length (100) exceeded": 24
+ },
+ "tools/tests/fp_photo_tour.gd": {
+  "max-line-length: Max allowed line length (100) exceeded": 3
+ },
+ "tools/tests/fp_player_test.gd": {
+  "max-line-length: Max allowed line length (100) exceeded": 62
+ },
+ "tools/tests/fp_posters_test.gd": {
+  "max-line-length: Max allowed line length (100) exceeded": 103,
+  "unused-argument: unused function argument 'c_lot'": 1,
+  "unused-argument: unused function argument 'ctx'": 1
+ },
+ "tools/tests/fp_renderperf_test.gd": {
+  "max-line-length: Max allowed line length (100) exceeded": 63,
+  "unused-argument: unused function argument 'ctx'": 1,
+  "unused-argument: unused function argument 'f'": 1
+ },
+ "tools/tests/fp_seams_test.gd": {
+  "duplicated-load: duplicated loading of \"res://scripts/sim/city_sim.gd\"": 1,
+  "max-line-length: Max allowed line length (100) exceeded": 56
+ },
+ "tools/tests/fp_shots.gd": {
+  "max-line-length: Max allowed line length (100) exceeded": 11,
+  "unused-argument: unused function argument 'sim'": 1
+ },
+ "tools/tests/fp_simperf_test.gd": {
+  "duplicated-load: duplicated loading of \"res://scripts/ai/gmi_client.gd\"": 1,
+  "duplicated-load: duplicated loading of \"res://scripts/sim/city_sim.gd\"": 1,
+  "max-line-length: Max allowed line length (100) exceeded": 55
+ },
+ "tools/tests/fp_smoke.gd": {
+  "max-line-length: Max allowed line length (100) exceeded": 33
+ },
+ "tools/tests/fp_streetscape_test.gd": {
+  "max-line-length: Max allowed line length (100) exceeded": 90,
+  "unused-argument: unused function argument 'sim'": 1
+ },
+ "tools/tests/fp_tps_test.gd": {
+  "max-line-length: Max allowed line length (100) exceeded": 76
+ },
+ "tools/tests/fp_traffic_test.gd": {
+  "max-file-lines: Max allowed file lines num (1000) exceeded": 1,
+  "max-line-length: Max allowed line length (100) exceeded": 103
+ },
+ "tools/tests/fp_world_scale_test.gd": {
+  "max-line-length: Max allowed line length (100) exceeded": 9
+ },
+ "tools/tests/residents_live.gd": {
+  "max-line-length: Max allowed line length (100) exceeded": 10
+ },
+ "tools/tests/residents_test.gd": {
+  "max-line-length: Max allowed line length (100) exceeded": 7
+ },
+ "tools/tests/sim_test.gd": {
+  "max-line-length: Max allowed line length (100) exceeded": 9
+ }
+}

@@ -1,0 +1,116 @@
+name: release
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      publish:
+        description: Create the GitHub Release for v<VERSION> (otherwise build artifacts only)
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  export:
+    name: export and release
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - name: Version
+        id: v
+        env:
+          REF_TYPE: ${{ github.ref_type }}
+          REF_NAME: ${{ github.ref_name }}
+        run: |
+          ver="$(tr -d '[:space:]' < VERSION)"
+          if [ "$REF_TYPE" = "tag" ] && [ "$REF_NAME" != "v$ver" ]; then
+            echo "::error::tag $REF_NAME does not match VERSION ($ver); cut releases with tools/release.sh"
+            exit 1
+          fi
+          echo "version=$ver" >> "$GITHUB_OUTPUT"
+          case "$ver" in *-*) echo "prerelease=true" >> "$GITHUB_OUTPUT" ;; *) echo "prerelease=false" >> "$GITHUB_OUTPUT" ;; esac
+      - uses: ./.github/actions/setup-godot
+        with:
+          templates: "true"
+      - name: Godot import cache
+        uses: actions/cache/restore@v6
+        with:
+          path: .godot
+          key: godot-import-${{ runner.os }}-${{ hashFiles('.godot-version') }}-${{ hashFiles('**/*.import') }}
+          restore-keys: |
+            godot-import-${{ runner.os }}-${{ hashFiles('.godot-version') }}-
+      - name: Gate (quick) before shipping
+        env:
+          GATE_RETRIES: "1"
+          GATE_LOG_DIR: ${{ github.workspace }}/gate-logs
+          GATE_TMP: ${{ runner.temp }}/gridfall
+          GATE_IMPORT_TIMEOUT: "2700"
+        run: tools/gate.sh quick
+      - name: Export Linux and Windows
+        env:
+          GATE_TMP: ${{ runner.temp }}/gridfall
+        run: tools/export.sh all
+      - name: Package
+        env:
+          VER: ${{ steps.v.outputs.version }}
+        run: |
+          mkdir -p dist
+          (cd build/linux && zip -qr "../../dist/gridfall-$VER-linux-x86_64.zip" .)
+          (cd build/windows && zip -qr "../../dist/gridfall-$VER-windows-x86_64.zip" .)
+          (cd dist && sha256sum ./*.zip > SHA256SUMS.txt)
+          prev="$(git describe --tags --abbrev=0 HEAD^ 2>/dev/null || true)"
+          python3 tools/changelog.py --version "$VER" --since "$prev" > dist/CHANGES.md
+      - uses: actions/upload-artifact@v7
+        with:
+          name: gridfall-${{ steps.v.outputs.version }}
+          path: |
+            dist/
+            gate-logs/results.json
+          retention-days: 90
+      - name: GitHub Release
+        id: release
+        if: github.ref_type == 'tag' || inputs.publish
+        uses: softprops/action-gh-release@v3
+        with:
+          tag_name: v${{ steps.v.outputs.version }}
+          name: GridFall v${{ steps.v.outputs.version }}
+          body_path: dist/CHANGES.md
+          generate_release_notes: true
+          prerelease: ${{ steps.v.outputs.prerelease == 'true' }}
+          files: |
+            dist/*.zip
+            dist/SHA256SUMS.txt
+      - name: Deploy summary
+        if: success() || failure()
+        env:
+          VER: ${{ steps.v.outputs.version }}
+          RELEASE_URL: ${{ steps.release.outputs.url }}
+        run: |
+          {
+            echo "## Release v$VER"
+            echo
+            echo "| Field | Value |"
+            echo "|---|---|"
+            echo "| Version | v$VER |"
+            echo "| Commit | \`$GITHUB_SHA\` |"
+            echo "| Godot | $(tr -d '[:space:]' < .godot-version) |"
+            echo "| Gate | $(python3 -c 'import json;d=json.load(open("gate-logs/results.json"));print(d["result"], len(d["steps"]), "steps")' 2>/dev/null || echo missing) ([checks]($GITHUB_SERVER_URL/$GITHUB_REPOSITORY/commit/$GITHUB_SHA/checks)) |"
+            echo "| Release | ${RELEASE_URL:-not published (artifacts only)} |"
+            echo "| Run | $GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID |"
+            echo
+            echo "| Artifact | Size |"
+            echo "|---|---|"
+            for f in dist/*.zip; do [ -f "$f" ] && echo "| $(basename "$f") | $(du -h "$f" | cut -f1) |"; done
+          } >> "$GITHUB_STEP_SUMMARY"

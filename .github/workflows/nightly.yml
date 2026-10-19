@@ -1,0 +1,87 @@
+name: nightly
+
+on:
+  schedule:
+    - cron: "17 3 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: nightly
+  cancel-in-progress: false
+
+jobs:
+  gate-full:
+    name: gate full
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+    permissions:
+      contents: read
+      issues: write
+    steps:
+      - uses: actions/checkout@v7
+      - uses: ./.github/actions/setup-godot
+      - name: Godot import cache
+        uses: actions/cache@v6
+        with:
+          path: .godot
+          key: godot-import-${{ runner.os }}-${{ hashFiles('.godot-version') }}-${{ hashFiles('**/*.import') }}
+          restore-keys: |
+            godot-import-${{ runner.os }}-${{ hashFiles('.godot-version') }}-
+      - name: Gate (full, one retry per failed step)
+        env:
+          GATE_RETRIES: "1"
+          GATE_LOG_DIR: ${{ github.workspace }}/gate-logs
+          GATE_TMP: ${{ runner.temp }}/gridfall
+          GATE_IMPORT_TIMEOUT: "2700"
+        run: tools/gate.sh full
+      - name: Timing and flaky summary
+        if: success() || failure()
+        run: |
+          if [ -f gate-logs/results.json ]; then
+            python3 tools/checks/build_timing.py gate-logs/results.json --summary "$GITHUB_STEP_SUMMARY"
+            python3 tools/checks/flaky_report.py gate-logs --summary "$GITHUB_STEP_SUMMARY"
+          fi
+      - uses: actions/upload-artifact@v7
+        if: success() || failure()
+        with:
+          name: nightly-gate-logs
+          path: gate-logs/
+          retention-days: 14
+      - name: Open or update the ci-failure issue
+        if: failure()
+        uses: actions/github-script@v9
+        with:
+          script: |
+            const fs = require('fs');
+            const { owner, repo } = context.repo;
+            const title = 'Nightly gate failing';
+            const runUrl = `${context.serverUrl}/${owner}/${repo}/actions/runs/${context.runId}`;
+            let failed = [];
+            try {
+              const r = JSON.parse(fs.readFileSync('gate-logs/results.json', 'utf8'));
+              failed = r.steps.filter((s) => !String(s.result).startsWith('PASS')).map((s) => `- \`${s.step}\`: ${s.result}`);
+            } catch (e) {
+              failed = ['- the gate did not write results.json (setup or import failed)'];
+            }
+            const body = [`The nightly \`tools/gate.sh full\` failed on ${context.sha.slice(0, 7)}.`, '', ...failed, '', `Run and logs: ${runUrl}`].join('\n');
+            const open = await github.paginate(github.rest.issues.listForRepo, { owner, repo, state: 'open', labels: 'ci-failure', per_page: 100 });
+            const issue = open.find((i) => i.title === title && !i.pull_request);
+            if (issue) {
+              await github.rest.issues.createComment({ owner, repo, issue_number: issue.number, body });
+            } else {
+              await github.rest.issues.create({ owner, repo, title, body, labels: ['ci-failure'] });
+            }
+      - name: Close the ci-failure issue
+        if: success()
+        uses: actions/github-script@v9
+        with:
+          script: |
+            const { owner, repo } = context.repo;
+            const open = await github.paginate(github.rest.issues.listForRepo, { owner, repo, state: 'open', labels: 'ci-failure', per_page: 100 });
+            for (const i of open.filter((i) => i.title === 'Nightly gate failing' && !i.pull_request)) {
+              await github.rest.issues.createComment({ owner, repo, issue_number: i.number, body: `The nightly gate passes again on ${context.sha.slice(0, 7)}.` });
+              await github.rest.issues.update({ owner, repo, issue_number: i.number, state: 'closed' });
+            }

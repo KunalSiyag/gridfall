@@ -1,11 +1,70 @@
 # Godot editor cache and import artifacts
 .godot/
+.import/
 *.translation
 override.cfg
+export_credentials.cfg
+.mono/
+data_*/
+mono_crash.*.json
 
-# Recordings and Python caches
+# Exports and build output (tools/export.sh writes to build/)
+build/
+dist/
+export/
+*.pck
+*.zip
+*.x86_64
+*.x86_32
+*.exe
+*.dmg
+*.apk
+*.aab
+
+# Recordings
 *.avi
 trailer/
+
+# Python
 __pycache__/
-*.pyc
+*.py[cod]
+.venv/
+venv/
+.pytest_cache/
+.coverage
+.coverage.*
+htmlcov/
+coverage.xml
+.mypy_cache/
+.ruff_cache/
+
+# Secrets and local environment
 .env
+.env.*
+!.env.example
+*.pem
+*.key
+
+# Logs and reports from local tooling
+*.log
+reports/
+
+# Editors and IDEs
+.vscode/*
+!.vscode/extensions.json
+.idea/
+*.iml
+*.swp
+*.swo
+*~
+*.sublime-workspace
+
+# OS files
+.DS_Store
+._*
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+
+# Node (docs tooling)
+node_modules/

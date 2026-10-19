@@ -1,0 +1,12 @@
+# Default owner for everything in the repository.
+*                       @KunalSiyag
+
+# Areas (same owner today; split when the team grows).
+/scripts/sim/           @KunalSiyag
+/scripts/ai/            @KunalSiyag
+/scripts/fp/            @KunalSiyag
+/scripts/ops/           @KunalSiyag
+/tools/                 @KunalSiyag
+/models/                @KunalSiyag
+/.github/               @KunalSiyag
+/project.godot          @KunalSiyag

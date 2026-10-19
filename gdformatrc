@@ -1,0 +1,9 @@
+# gdformat (gdtoolkit 4.x). tools/checks/format.py applies it to new and changed files only;
+# legacy files that were never formatted are listed in tools/checks/baselines/gdformat.json.
+excluded_directories: !!set
+  .git: null
+  .godot: null
+  addons: null
+line_length: 100
+safety_checks: null
+use_spaces: null

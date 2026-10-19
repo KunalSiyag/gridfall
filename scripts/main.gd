@@ -31,6 +31,11 @@ var _fp_saved: Dictionary = {}
 
 
 func _ready() -> void:
+	var ops := OpsAlerts.new()
+	ops.name = "OpsAlerts"
+	ops.main = self
+	add_child(ops)
+	Analytics.track("session_start", {"view": "fp" if wants_fp() else "orbit", "flags": FeatureFlags.snapshot()})
 	sim.set_speed(0)
 	residents = Residents.new()
 	residents.name = "Residents"
@@ -147,6 +152,10 @@ func _unhandled_input(event: InputEvent) -> void:
 	notify("Back on the street. Tab opens the city overview.")
 
 
+func _exit_tree() -> void:
+	Analytics.track("session_end", {"secs": snappedf(Analytics.uptime_s(), 0.1), "day": sim.day if sim != null else 0, "view": view_mode})
+
+
 func _process(delta: float) -> void:
 	if sky != null:
 		sky.crisis = lerpf(sky.crisis, _crisis, minf(1.0, delta * 2.0))
@@ -184,6 +193,7 @@ func save_game(path: String = SAVE_PATH) -> void:
 	f.store_string(JSON.stringify(data))
 	f.close()
 	client.flush_cache()
+	Analytics.track("save", {"day": sim.day, "view": view_mode})
 	notify("City saved (Day %d)" % sim.day, "success")
 
 
@@ -215,6 +225,7 @@ func load_game(path: String = SAVE_PATH) -> bool:
 	if sim.tick_in_day == 0:
 		sim.start()
 	_update_mood()
+	Analytics.track("load", {"day": sim.day, "view": view_mode})
 	notify("Loaded city from Day %d" % sim.day, "success")
 	return true
 
@@ -231,6 +242,7 @@ func new_game() -> void:
 	_fp_saved = {}
 	sim.start()
 	_update_mood()
+	Analytics.track("new_city", {"seed": sim.city_seed})
 	notify("A new GridFall has been founded", "success")
 
 
@@ -293,6 +305,7 @@ func enter_fp() -> void:
 		back.erase("day_phase")
 		_fp_saved = {}
 		fp.from_dict(back)
+	Analytics.track("enter_fp", {"day": sim.day, "features": fp.ctx.features.size()})
 
 
 ## Back to the orbit view and CityHud (used by B's "Quit to orbit"). Safe to call twice.
@@ -319,6 +332,7 @@ func exit_fp() -> void:
 	get_tree().paused = false
 	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
 	view_mode = "orbit"
+	Analytics.track("exit_fp", {"day": sim.day})
 	hud.toast("Planner view. Press Tab to walk the streets again.")
 
 

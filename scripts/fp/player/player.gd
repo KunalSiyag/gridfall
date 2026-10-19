@@ -475,6 +475,7 @@ func toggle_camera_mode() -> void:
 	if ctx != null and ctx.mode != null:
 		ctx.mode.apply_settings({"camera_mode": m})
 	set_camera_mode(m, true)
+	Analytics.track("camera_mode", {"mode": m})
 
 
 ## Hands the camera to another owner: until clear_view_override(), update_view puts it at xf with

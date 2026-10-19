@@ -1,0 +1,17 @@
+{
+  "_doc": "Local alert rules evaluated by scripts/ops/alerts.gd every interval_s. A firing rule prints 'OPS_ALERT {json}', is appended to user://ops/alerts.jsonl when error tracking or analytics records to disk, and toasts in game only with flag ops_alerts and GRIDFALL_OPS_ALERTS_UI=1. Kinds: frame_time_p95_ms, gmi_breaker_open, gmi_live_failure_ratio, errors_per_minute, sim_tick_stall. {value} and {threshold} expand in message.",
+  "interval_s": 5.0,
+  "warmup_s": 20.0,
+  "rules": [
+    {"id": "frame_time_p95", "kind": "frame_time_p95_ms", "threshold": 50.0, "min_samples": 120, "cooldown_s": 300, "severity": "warning",
+      "message": "Frame time p95 {value} ms is over {threshold} ms (below 20 fps)."},
+    {"id": "gmi_breaker_open", "kind": "gmi_breaker_open", "cooldown_s": 300, "severity": "critical",
+      "message": "GMI circuit breaker is open: live calls are paused and the city runs on cache and heuristics."},
+    {"id": "gmi_live_failures", "kind": "gmi_live_failure_ratio", "threshold": 0.5, "window": 20, "min_calls": 6, "cooldown_s": 600, "severity": "warning",
+      "message": "{value} of recent live GMI calls failed (threshold {threshold})."},
+    {"id": "error_burst", "kind": "errors_per_minute", "threshold": 10, "cooldown_s": 120, "severity": "critical",
+      "message": "{value} engine/script errors in the last minute."},
+    {"id": "sim_tick_stall", "kind": "sim_tick_stall", "threshold": 4.0, "cooldown_s": 600, "severity": "critical",
+      "message": "The simulation has not advanced a tick for {value}x the expected tick time."}
+  ]
+}

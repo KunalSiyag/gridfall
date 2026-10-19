@@ -241,6 +241,7 @@ func player_say(text: String) -> void:
 	if _player_first_ms < 0:
 		_player_first_ms = feed.now_ms
 	_player_last_ms = feed.now_ms
+	Analytics.track("chat_message", {"chars": body.length(), "to_mayors": t.begins_with("To the mayors: "), "district": d})
 
 
 ## Tour hook: opens the chat drawer.

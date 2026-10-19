@@ -1,0 +1,60 @@
+name: Bug report
+description: Something in the game or tooling is broken.
+title: "bug: "
+labels: ["type/bug", "needs-triage"]
+body:
+  - type: markdown
+    attributes:
+      value: Thanks for the report. Please check open issues first.
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      options:
+        - sim (simulation, residents, construction)
+        - ai (GMI client, mayors, prompts)
+        - fp (first / third-person mode, HUD, overview)
+        - world (orbit view, rendering, traffic)
+        - assets (models, textures, audio)
+        - tooling / CI
+    validations:
+      required: true
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened?
+      description: What you saw and what you expected instead.
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      placeholder: |
+        1. GRIDFALL_OFFLINE=1 godot --path .
+        2. Press Tab, then N three times
+        3. ...
+    validations:
+      required: true
+  - type: textarea
+    id: env
+    attributes:
+      label: Environment
+      description: OS, GPU, Godot version (`godot --version`), view (first person / orbit), GRIDFALL_* variables set.
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs
+      description: Relevant console output, `user://ops/errors.jsonl` lines, or gate output. Remove API keys.
+      render: text
+  - type: dropdown
+    id: priority
+    attributes:
+      label: How bad is it?
+      options:
+        - priority/p0 - crash, data loss or build broken
+        - priority/p1 - major feature broken
+        - priority/p2 - annoying, has a workaround
+        - priority/p3 - cosmetic

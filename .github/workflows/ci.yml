@@ -1,0 +1,98 @@
+name: ci
+
+on:
+  push:
+    branches: [main, "fp/**"]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  checks:
+    name: checks
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: tools/requirements-dev.txt
+      - name: Install tools
+        run: python -m pip install -r tools/requirements-dev.txt
+      - name: Repo checks (gdlint, gdformat on changed files, complexity, dead code, duplicates, boundaries, ...)
+        env:
+          BASE: ${{ github.event.pull_request.base.sha || github.event.before }}
+        run: >-
+          python tools/checks/run_all.py --base "$BASE" --json reports/checks.json
+          --summary "$GITHUB_STEP_SUMMARY" --debt-report reports/tech-debt.md
+      - name: Python tests with coverage (>= 80%)
+        if: success() || failure()
+        run: python -m pytest --cov-report=json:reports/coverage.json --junitxml=reports/pytest.xml
+      - name: Quality report
+        if: success() || failure()
+        run: |
+          python tools/checks/quality_report.py --from reports/checks.json --coverage reports/coverage.json \
+            --out reports/quality-report.json --markdown "$GITHUB_STEP_SUMMARY"
+          if [ -f reports/tech-debt.md ]; then cat reports/tech-debt.md >> "$GITHUB_STEP_SUMMARY"; fi
+      - uses: actions/upload-artifact@v7
+        if: success() || failure()
+        with:
+          name: quality-reports
+          path: reports/
+          retention-days: 30
+
+  gate:
+    name: gate
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    permissions:
+      contents: read
+      actions: read
+    steps:
+      - uses: actions/checkout@v7
+      - uses: ./.github/actions/setup-godot
+      - name: Godot import cache
+        uses: actions/cache@v6
+        with:
+          path: .godot
+          key: godot-import-${{ runner.os }}-${{ hashFiles('.godot-version') }}-${{ hashFiles('**/*.import') }}
+          restore-keys: |
+            godot-import-${{ runner.os }}-${{ hashFiles('.godot-version') }}-
+      - name: Gate (quick, one retry per failed step)
+        env:
+          GATE_RETRIES: "1"
+          GATE_LOG_DIR: ${{ github.workspace }}/gate-logs
+          GATE_TMP: ${{ runner.temp }}/gridfall
+          GATE_IMPORT_TIMEOUT: "2700"
+        run: tools/gate.sh quick
+      - name: Previous main timings
+        if: success() || failure()
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          id="$(gh run list -R "$GITHUB_REPOSITORY" --workflow ci.yml --branch main --status success --limit 1 --json databaseId -q '.[0].databaseId')"
+          if [ -n "$id" ]; then gh run download "$id" -R "$GITHUB_REPOSITORY" -n gate-logs -D prev-gate; fi
+      - name: Timing and flaky summary
+        if: success() || failure()
+        run: |
+          if [ -f gate-logs/results.json ]; then
+            python3 tools/checks/build_timing.py gate-logs/results.json --previous prev-gate/results.json --summary "$GITHUB_STEP_SUMMARY"
+            python3 tools/checks/flaky_report.py gate-logs --summary "$GITHUB_STEP_SUMMARY"
+          fi
+      - uses: actions/upload-artifact@v7
+        if: success() || failure()
+        with:
+          name: gate-logs
+          path: gate-logs/
+          retention-days: 30

@@ -1,0 +1,19 @@
+# Categories for GitHub's generated release notes (labels from .github/labels.yml).
+changelog:
+  exclude:
+    labels: [skip-changelog]
+  categories:
+    - title: Breaking changes
+      labels: [breaking]
+    - title: Features
+      labels: [type/feature]
+    - title: Bug fixes
+      labels: [type/bug, priority/p0, priority/p1]
+    - title: Documentation
+      labels: [type/docs]
+    - title: Dependencies
+      labels: [dependencies]
+    - title: Tooling and chores
+      labels: [type/chore, area/ci, area/tooling]
+    - title: Other changes
+      labels: ["*"]

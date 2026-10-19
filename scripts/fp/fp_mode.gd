@@ -98,6 +98,8 @@ func setup(main: Node3D) -> void:
 	for entry: Dictionary in REGISTRY.FEATURES:
 		var id := str(entry["id"])
 		var path := str(entry["path"])
+		if not FeatureFlags.enabled(id):
+			continue
 		if not ResourceLoader.exists(path):
 			push_warning("FpMode: feature %s missing at %s" % [id, path])
 			continue

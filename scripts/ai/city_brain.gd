@@ -109,6 +109,8 @@ func send_decree(text: String) -> void:
 
 
 func _on_day_started(day: int) -> void:
+	# Every call below starts synchronously, so they all pick up this round's trace id.
+	Trace.begin("day %d" % day)
 	for mi in range(D.MAYORS.size()):
 		if not _mayor_in_flight[mi]:
 			_run_mayor(mi, day)
@@ -130,6 +132,7 @@ func _on_day_started(day: int) -> void:
 			hot = true
 	if not proposals.is_empty() and (day % 3 == 0 or hot):
 		_run_support("council", day, _run_council)
+	Trace.end()
 	busy_changed.emit(pending_calls())
 
 

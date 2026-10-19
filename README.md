@@ -167,6 +167,27 @@ blender --background --python /abs/path/to/tools/blender/make_gridfall_assets.py
 blender --background --python /abs/path/to/tools/blender/import_kits.py
 ```
 
+## Development setup
+
+```bash
+tools/setup.sh                       # venv with pinned tools, pre-commit hooks, first asset import
+pre-commit run --all-files           # gdlint, gdformat --check, large files, secret scan
+python tools/checks/run_all.py       # complexity, dead code, duplicates, module boundaries, TODOs, flags
+python -m pytest                     # Python tooling tests (coverage gate, >= 80%)
+```
+
+Requires Godot 4.7.x (`.godot-version`) and Python 3.10+. Run the Python tools from the venv `tools/setup.sh` creates (`. ~/.venvs/gridfall-tools/bin/activate`). A dev container with both is in `.devcontainer/`. See `AGENTS.md` and `CONTRIBUTING.md` for rules and workflow, and `docs/runbooks/` when something breaks.
+
+## Build and export
+
+```bash
+tools/export.sh linux                # build/linux/gridfall.x86_64 (+ .pck)
+tools/export.sh windows              # build/windows/gridfall.exe (+ .pck)
+tools/export.sh all                  # both presets in export_presets.cfg
+```
+
+Export needs the Godot export templates for the version in `.godot-version` (Editor > Manage Export Templates, or `tools/export.sh` prints the download commands when they are missing). Releases are cut with `tools/release.sh <version>` (for example `tools/release.sh 0.2.0`), which updates `VERSION` and `CHANGELOG.md`, commits and tags; pushing the tag runs the `release` workflow, which runs the gate, exports both platforms and publishes a GitHub Release with zips, checksums and generated notes.
+
 ## Code map
 
 - `scripts/sim/sim_defs.gd`: rules, costs, ordinances, disasters, mayors, support agents.

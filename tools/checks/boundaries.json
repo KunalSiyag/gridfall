@@ -1,0 +1,81 @@
+{
+ "layers": [
+  {
+   "name": "sim-core",
+   "from": ["scripts/sim/**"],
+   "forbid": ["scripts/fp/**", "scripts/world/**", "scripts/ui/**", "scripts/main.gd"],
+   "why": "the simulation runs headless in tests and must not know views, HUDs or the on-foot mode"
+  },
+  {
+   "name": "ai-core",
+   "from": ["scripts/ai/**"],
+   "forbid": ["scripts/fp/**", "scripts/world/**", "scripts/ui/**", "scripts/main.gd"],
+   "why": "mayor, resident and chatter minds talk to the sim and GMI only"
+  },
+  {
+   "name": "runtime-not-tools",
+   "from": ["scripts/**"],
+   "forbid": ["tools/**"],
+   "why": "shipped scripts must not depend on test or tool scripts (exports exclude tools/)"
+  }
+ ],
+ "slices": {
+  "root": "scripts/fp",
+  "owners": {
+   "player": "A",
+   "world": "A",
+   "interact": "A",
+   "ui": "B",
+   "chat": "C",
+   "posters": "D",
+   "traffic": "E",
+   "sim": "F",
+   "street": "G1",
+   "render": "G2",
+   "audio": "I",
+   "overview": "integration"
+  },
+  "file_owners": {
+   "scripts/fp/ui/chat_panel*.gd": "C"
+  },
+  "shared": [
+   "scripts/fp/*.gd",
+   "scripts/fp/ui/hud_style.gd",
+   "scripts/fp/world/collision_world.gd",
+   "scripts/fp/render/quality.gd"
+  ],
+  "shared_why": {
+   "scripts/fp/*.gd": "S0 core: FpMode, FpContext, GameBus, FpFeature, the registry, world_scale (WS), asset_paths (AP), CityDirectory, RoadTopology",
+   "scripts/fp/ui/hud_style.gd": "B's palette and fonts; every on-foot panel draws with it",
+   "scripts/fp/world/collision_world.gd": "CollisionWorld.boxes() is an S0 shared contract (ARCHITECTURE.md §4)",
+   "scripts/fp/render/quality.gd": "G2's quality presets (Low/Medium/High) are read by the light profile and the pause menu"
+  }
+ },
+ "allow": [
+  {
+   "from": "scripts/ai/chatter_minds.gd",
+   "to": "scripts/fp/chat/**",
+   "why": "slice C owns chatter_minds.gd (ARCHITECTURE.md §5) and shares its text helpers"
+  },
+  {
+   "from": "scripts/ai/chatter_minds.gd",
+   "to": "scripts/fp/city_directory.gd",
+   "why": "chatter names real businesses through CityDirectory, an S0 shared contract"
+  },
+  {
+   "from": "scripts/ai/gmi_image_client.gd",
+   "to": "scripts/fp/posters/**",
+   "why": "slice D owns gmi_image_client.gd (ARCHITECTURE.md §5); the worker and art helpers are D's"
+  },
+  {
+   "from": "scripts/main.gd",
+   "to": "tools/tests/fp_smoke.gd",
+   "why": "loaded only when GRIDFALL_FP_SMOKE=1 (gate full); release builds never set it"
+  },
+  {
+   "from": "scripts/main.gd",
+   "to": "tools/tests/fp_photo_tour.gd",
+   "why": "loaded only when GRIDFALL_FP_PHOTO_DIR is set (gate render); release builds never set it"
+  }
+ ]
+}

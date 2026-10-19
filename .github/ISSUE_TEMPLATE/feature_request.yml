@@ -1,0 +1,42 @@
+name: Feature request
+description: Suggest a gameplay, tooling or content idea.
+title: "feat: "
+labels: ["type/feature", "needs-triage"]
+body:
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      options:
+        - sim
+        - ai
+        - fp
+        - world
+        - assets
+        - tooling / CI
+    validations:
+      required: true
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem
+      description: What is missing or hard today?
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposal
+      description: What should happen? Include controls, UI and any GMI prompt changes.
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+  - type: checkboxes
+    id: flag
+    attributes:
+      label: Rollout
+      options:
+        - label: This changes gameplay and should ship behind a flag in data/feature_flags.json

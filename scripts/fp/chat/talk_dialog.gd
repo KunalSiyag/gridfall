@@ -205,6 +205,7 @@ func say(text: String) -> void:
 		_closing_ms = feed.now_ms + GOODBYE_HOLD_MS
 		return
 	lines += 1
+	Analytics.track("talk_message", {"chars": t.length(), "line": lines})
 	var before := _turns.duplicate()
 	_turns.append({"who": "you", "text": t})
 	waiting = true

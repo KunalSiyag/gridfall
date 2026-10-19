@@ -2,8 +2,12 @@
 # GridFall gate (docs/fp/S0-foundation.md §18).
 #
 # usage: tools/gate.sh quick|full|render [--only <step-substring>] [--keep]
-# env:   GODOT (default: godot)   GATE_LOG_DIR (default: /tmp/claude-1000/gf-gate-<branch>-<UTC ts>)
-#        DISPLAY (render only; default :1)
+# env:   GODOT (default: godot)   GATE_LOG_DIR (default: $GATE_TMP/gf-gate-<branch>-<UTC ts>)
+#        DISPLAY (render only; default :1)   GATE_RETRIES (re-runs of a failed step; default 0)
+#        GATE_TMP (lock, scratch dirs; default /tmp/claude-1000)   GATE_IMPORT_TIMEOUT (secs; default 900)
+#
+# A step that fails and then passes on a retry reports PASS(flaky), counts as a pass and is listed
+# in $GATE_LOG_DIR/flaky.txt. Every run writes $GATE_LOG_DIR/results.json (step, result, secs).
 #
 # quick:  parse_all, the five legacy unit tests, every tools/tests/fp_*_test.gd
 # full:   quick + orbit smoke + FP smoke (headless, heavy)
@@ -14,7 +18,7 @@
 set -u -o pipefail
 
 usage() {
-	sed -n '4,6p' "$0" | sed 's/^# \{0,1\}//' >&2
+	sed -n '4,7p' "$0" | sed 's/^# \{0,1\}//' >&2
 	exit 2
 }
 
@@ -35,10 +39,15 @@ done
 
 cd "$(dirname "$0")/.." || exit 2
 GODOT="${GODOT:-godot}"
-LOCK=/tmp/claude-1000/gf-heavy.lock
-mkdir -p /tmp/claude-1000
+GATE_TMP="${GATE_TMP:-/tmp/claude-1000}"
+GATE_RETRIES="${GATE_RETRIES:-0}"
+GATE_IMPORT_TIMEOUT="${GATE_IMPORT_TIMEOUT:-900}"
+case "$GATE_RETRIES" in ''|*[!0-9]*) GATE_RETRIES=0 ;; esac
+LOCK="$GATE_TMP/gf-heavy.lock"
+mkdir -p "$GATE_TMP"
 BRANCH="$(git rev-parse --abbrev-ref HEAD 2>/dev/null | tr '/' '-' || echo nobranch)"
-GATE_LOG_DIR="${GATE_LOG_DIR:-/tmp/claude-1000/gf-gate-${BRANCH}-$(date -u +%Y%m%dT%H%M%SZ)}"
+STARTED="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+GATE_LOG_DIR="${GATE_LOG_DIR:-$GATE_TMP/gf-gate-${BRANCH}-$(date -u +%Y%m%dT%H%M%SZ)}"
 mkdir -p "$GATE_LOG_DIR"
 XDG_DIRS=()
 cleanup() {
@@ -52,7 +61,29 @@ NAMES=()
 RESULTS=()
 SECS=()
 LOGS=()
+TRIES=()
 FAILED=0
+
+# Classifies a finished step from its exit code and log.
+classify() {
+	local rc="$1" log="$2" token="$3"
+	if [ "$rc" -eq 124 ]; then
+		echo "TIMEOUT"
+	elif grep -qE 'SCRIPT ERROR|Parse Error|Failed to load script|Failed loading resource|No loader found' "$log"; then
+		echo "FAIL(script-error)"
+	elif ! grep -qF -- "$token" "$log"; then
+		echo "FAIL(no-token)"
+	elif [ "$rc" -ne 0 ]; then
+		echo "FAIL(exit=$rc)"
+	else
+		echo "PASS"
+	fi
+}
+
+is_pass() {
+	case "$1" in PASS|"PASS(flaky)") return 0 ;; esac
+	return 1
+}
 
 # run_step <name> <token> <timeout> <heavy:0|1> -- <env...> -- <godot args...>
 run_step() {
@@ -66,34 +97,35 @@ run_step() {
 		return 0
 	fi
 	local log="$GATE_LOG_DIR/$name.log"
-	local xdg
-	xdg="$(mktemp -d /tmp/claude-1000/gf-xdg.XXXXXX)"
-	XDG_DIRS+=("$xdg")
-	local cmd=(env -u GMI_API_KEY -u GRIDFALL_RECORD -u GRIDFALL_VIEW -u GRIDFALL_SPEED -u GRIDFALL_HOUR -u GRIDFALL_RESIDENTS
-		"XDG_DATA_HOME=$xdg" GRIDFALL_OFFLINE=1 "${envs[@]+"${envs[@]}"}" timeout "$tmo" "$GODOT" "$@")
-	if [ "$heavy" = "1" ]; then
-		cmd=(flock -w 3600 "$LOCK" "${cmd[@]}")
-	fi
-	printf '%-28s ...\r' "$name" >&2
-	local t0 rc
+	local t0 rc res first="" attempt=0 xdg
 	t0=$(date +%s)
-	"${cmd[@]}" >"$log" 2>&1
-	rc=$?
-	local secs=$(( $(date +%s) - t0 ))
-	local res
-	if [ "$rc" -eq 124 ]; then
-		res="TIMEOUT"
-	elif grep -qE 'SCRIPT ERROR|Parse Error|Failed to load script|Failed loading resource|No loader found' "$log"; then
-		res="FAIL(script-error)"
-	elif ! grep -qF -- "$token" "$log"; then
-		res="FAIL(no-token)"
-	elif [ "$rc" -ne 0 ]; then
-		res="FAIL(exit=$rc)"
-	else
-		res="PASS"
+	while :; do
+		# Every attempt gets a fresh XDG_DATA_HOME, so a retry never sees the failed run's saves.
+		xdg="$(mktemp -d "$GATE_TMP/gf-xdg.XXXXXX")"
+		XDG_DIRS+=("$xdg")
+		local cmd=(env -u GMI_API_KEY -u GRIDFALL_RECORD -u GRIDFALL_VIEW -u GRIDFALL_SPEED -u GRIDFALL_HOUR -u GRIDFALL_RESIDENTS
+			"XDG_DATA_HOME=$xdg" GRIDFALL_OFFLINE=1 "${envs[@]+"${envs[@]}"}" timeout "$tmo" "$GODOT" "$@")
+		if [ "$heavy" = "1" ]; then
+			cmd=(flock -w 3600 "$LOCK" "${cmd[@]}")
+		fi
+		printf '%-28s ...\r' "$name" >&2
+		"${cmd[@]}" >"$log" 2>&1
+		rc=$?
+		res="$(classify "$rc" "$log" "$token")"
+		attempt=$((attempt + 1))
+		[ "$res" = "PASS" ] && break
+		[ -z "$first" ] && first="$res"
+		[ "$attempt" -gt "$GATE_RETRIES" ] && break
+		mv -f "$log" "$GATE_LOG_DIR/$name.try$attempt.log"
+		printf '%-28s %s, retrying (%d/%d)\n' "$name" "$res" "$attempt" "$GATE_RETRIES" >&2
+	done
+	if [ "$res" = "PASS" ] && [ "$attempt" -gt 1 ]; then
+		res="PASS(flaky)"
+		printf '%s\t%s\t%s\t%s\n' "$name" "$first" "$attempt" "$(date -u +%Y-%m-%dT%H:%M:%SZ)" >>"$GATE_LOG_DIR/flaky.txt"
 	fi
-	NAMES+=("$name"); RESULTS+=("$res"); SECS+=("$secs"); LOGS+=("$log")
-	[ "$res" = "PASS" ] || FAILED=$((FAILED + 1))
+	local secs=$(( $(date +%s) - t0 ))
+	NAMES+=("$name"); RESULTS+=("$res"); SECS+=("$secs"); LOGS+=("$log"); TRIES+=("$attempt")
+	is_pass "$res" || FAILED=$((FAILED + 1))
 	printf '%-28s %s (%ss)\n' "$name" "$res" "$secs" >&2
 	return 0
 }
@@ -102,7 +134,7 @@ run_step() {
 set_last_result() {
 	local n=$(( ${#RESULTS[@]} - 1 ))
 	[ "$n" -ge 0 ] || return 0
-	if [ "${RESULTS[$n]}" = "PASS" ] && [ "$1" != "PASS" ]; then FAILED=$((FAILED + 1)); fi
+	if is_pass "${RESULTS[$n]}" && ! is_pass "$1"; then FAILED=$((FAILED + 1)); fi
 	RESULTS[$n]="$1"
 }
 
@@ -128,9 +160,9 @@ if needs_import; then
 	only_saved="$ONLY"
 	ONLY=""
 	# The import prints no token; an empty token matches any output, so exit code and loader errors decide.
-	run_step import "" 900 1 -- -- --headless --path . --import
+	run_step import "" "$GATE_IMPORT_TIMEOUT" 1 -- -- --headless --path . --import
 	ONLY="$only_saved"
-	if [ "${RESULTS[$(( ${#RESULTS[@]} - 1 ))]}" = "PASS" ]; then
+	if is_pass "${RESULTS[$(( ${#RESULTS[@]} - 1 ))]}"; then
 		touch "$STAMP"
 	fi
 fi
@@ -159,7 +191,7 @@ if [ "$MODE" = "render" ]; then
 	DISP="${DISPLAY:-:1}"
 	before=${#RESULTS[@]}
 	run_step fp_photo "FP_PHOTO: DONE" 400 1 -- "DISPLAY=$DISP" "GRIDFALL_FP_PHOTO_DIR=$PHOTO_DIR" GRIDFALL_PHOTO_DAYS=6 -- --path . --resolution 1600x900 --audio-driver Dummy
-	if [ ${#RESULTS[@]} -gt "$before" ] && [ "${RESULTS[$before]}" = "PASS" ]; then
+	if [ ${#RESULTS[@]} -gt "$before" ] && is_pass "${RESULTS[$before]}"; then
 		missing=0
 		for s in street intersection downtown park residential river dusk night; do
 			for v in "$s.png" "${s}_hud.png"; do
@@ -175,7 +207,7 @@ if [ "$MODE" = "render" ]; then
 	fi
 	before=${#RESULTS[@]}
 	run_step fp_bench "FPBENCH: DONE" 400 1 -- "DISPLAY=$DISP" "FPBENCH_DIR=$BENCH_DIR" -- --path . --resolution 1600x900 --audio-driver Dummy -s tools/tests/fp_bench.gd
-	if [ ${#RESULTS[@]} -gt "$before" ] && [ "${RESULTS[$before]}" = "PASS" ]; then
+	if [ ${#RESULTS[@]} -gt "$before" ] && is_pass "${RESULTS[$before]}"; then
 		rows=$(grep -cE '^FPBENCH \{' "$GATE_LOG_DIR/fp_bench.log")
 		good=$(grep -cE '^FPBENCH \{.*"viewport":"1600x900"' "$GATE_LOG_DIR/fp_bench.log")
 		if [ "$rows" -eq 0 ] || [ "$rows" -ne "$good" ]; then
@@ -209,6 +241,21 @@ for line in sys.stdin:
 	echo "photos: $PHOTO_DIR"
 fi
 echo "logs: $GATE_LOG_DIR"
+
+# Machine-readable results for CI artifacts, tools/checks/build_timing.py and flaky_report.py.
+{
+	printf '{\n "mode": "%s",\n "branch": "%s",\n "commit": "%s",\n "started": "%s",\n "finished": "%s",\n' \
+		"$MODE" "$BRANCH" "$(git rev-parse HEAD 2>/dev/null || echo unknown)" "$STARTED" "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+	printf ' "retries": %s,\n "failed": %s,\n "result": "%s",\n "steps": [' "$GATE_RETRIES" "$FAILED" "$([ "$FAILED" -eq 0 ] && echo PASS || echo FAIL)"
+	sep=""
+	for i in "${!NAMES[@]}"; do
+		printf '%s\n  {"step": "%s", "result": "%s", "secs": %s, "attempts": %s, "log": "%s"}' \
+			"$sep" "${NAMES[$i]}" "${RESULTS[$i]}" "${SECS[$i]}" "${TRIES[$i]}" "${LOGS[$i]}"
+		sep=","
+	done
+	printf '\n ]\n}\n'
+} >"$GATE_LOG_DIR/results.json"
+echo "results: $GATE_LOG_DIR/results.json"
 if [ "$FAILED" -eq 0 ]; then
 	echo "GATE $MODE: PASS"
 	exit 0

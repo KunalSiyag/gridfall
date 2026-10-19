@@ -160,6 +160,7 @@ func enter() -> bool:
 	_layer.visible = true
 	_you.visible = true
 	_refresh()
+	Analytics.track("overview_open", {"sites": markers.size()})
 	return true
 
 
@@ -178,6 +179,7 @@ func exit(blend: float = BLEND_OUT) -> void:
 	for i: int in markers.keys():
 		(markers[i] as Node3D).queue_free()
 	markers.clear()
+	Analytics.track("overview_close")
 
 
 func toggle() -> void:
@@ -284,6 +286,7 @@ func walk_to_selected() -> bool:
 	var sp := stand_point(selected)
 	var what := _site_name(selected)
 	ctx.player.teleport(sp["pos"], float(sp["yaw"]), WATCH_PITCH)
+	Analytics.track("site_walk", {"site": what})
 	exit(BLEND_OUT)
 	if ctx.bus != null:
 		ctx.bus.toast.emit("You are at the %s site. Watch it go up." % what, "success")
@@ -297,6 +300,7 @@ func waypoint_to_selected() -> bool:
 	var sp := stand_point(selected)
 	ctx.hud.set_waypoint(sp["pos"])
 	var what := _site_name(selected)
+	Analytics.track("site_waypoint", {"site": what})
 	exit(BLEND_OUT)
 	if ctx.bus != null:
 		ctx.bus.toast.emit("Waypoint set: %s" % what, "info")
