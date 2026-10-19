@@ -182,15 +182,21 @@ func self_test() -> Dictionary:
 
 
 ## Third-person shots for the photo tour (A 6.3): the street pose and a crossing, both from behind
-## the hero at hour 10.5.
+## the hero at hour 10.5, and the hero walking and running down the street (stage A2).
 func photo_shots() -> Array:
 	var out: Array = []
 	if ctx == null or ctx.sim == null or ctx.collision == null:
 		return out
 	var street := _street_pose()
 	if not street.is_empty():
+		var walk := street.duplicate()
+		var run := street.duplicate()
 		street.merge({"name": "tps_street", "hour": 10.5, "prepare": "photo_third_person", "restore": "photo_first_person"})
 		out.append(street)
+		walk.merge({"name": "tps_walk", "hour": 10.5, "prepare": "photo_walk", "restore": "photo_stop"})
+		out.append(walk)
+		run.merge({"name": "tps_run", "hour": 10.5, "prepare": "photo_run", "restore": "photo_stop"})
+		out.append(run)
 	var crossing := _crossing_pose()
 	if not crossing.is_empty():
 		crossing.merge({"name": "tps_crossing", "hour": 10.5, "prepare": "photo_third_person", "restore": "photo_first_person"})
@@ -207,6 +213,22 @@ func photo_third_person() -> void:
 func photo_first_person() -> void:
 	ctx.mode.apply_settings({"camera_mode": "first"}, false)
 	ctx.player.set_camera_mode("first", false)
+
+
+## The hero walks (or runs) along its facing through the shot; photo_stop ends it.
+func photo_walk() -> void:
+	photo_third_person()
+	ctx.player.autopilot = {"wish": Vector2(0.0, 1.0), "sprint": false}
+
+
+func photo_run() -> void:
+	photo_third_person()
+	ctx.player.autopilot = {"wish": Vector2(0.0, 1.0), "sprint": true}
+
+
+func photo_stop() -> void:
+	ctx.player.autopilot = {}
+	photo_first_person()
 
 
 func _set_target(t: Dictionary) -> void:

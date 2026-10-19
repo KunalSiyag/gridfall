@@ -62,6 +62,13 @@ const CONTACT_EPS := 0.005
 const CONTACT_BEFORE := 0.2
 const CONTACT_AFTER := 0.15
 const BLEND_STEPS := 8
+## UAL's crouch and landing clips, retargeted onto Rocketbox legs, hold the feet a few centimetres
+## above the ground: in those states the body is lowered until its lowest sole touches (at most
+## GROUND_DOWN, at most GROUND_UP up), with this halflife (s).
+const GROUND_STATES := ["crouch", "land"]
+const GROUND_DOWN := 0.08
+const GROUND_UP := 0.03
+const HL_GROUND := 0.08
 ## Footsteps sound while the walk blend is at least this strong.
 const STEP_MIN_MOVE := 0.25
 ## Gesture one-shot fades (s).
@@ -119,6 +126,8 @@ var phase: float = -1.0
 var move: float = 0.0
 ## Foot contacts of the last update: [{"left": bool, "pos": Vector3 (world, the foot's ground point)}].
 var contacts: Array[Dictionary] = []
+## How far the body is lowered to put the soles on the ground (skeleton metres; _update_ground).
+var ground_fix: float = 0.0
 ## Head-look influence (0..1) and whether the modifier last found its target within its limits.
 var look_weight: float = 0.0
 var look_within: bool = false
@@ -245,6 +254,7 @@ func update(dt: float, v: float, grounded: bool, vy: float, crouched: bool, talk
 	_last_vy = vy
 	_set_locomotion(v, a)
 	tree.advance(dt)
+	_update_ground(dt)
 	_update_contacts()
 	_update_look(dt)
 
@@ -287,6 +297,8 @@ func snap(crouched: bool) -> void:
 	_last_vy = 0.0
 	_look_dir = Vector3.ZERO
 	_reset_params()
+	ground_fix = 0.0
+	body.position.y = 0.0
 	tree.set("parameters/shot/request", AnimationNodeOneShot.ONE_SHOT_REQUEST_ABORT)
 	playback.start("crouch" if crouched else "loco", true)
 	tree.advance(0.0)
@@ -314,6 +326,19 @@ func feet_low(ground_y: float) -> float:
 		var y := (skeleton.global_transform * skeleton.get_bone_global_pose(i).origin).y
 		low = minf(low, y - ground_y - (float(_feet_rest[k]) if k < _feet_rest.size() else 0.0) * sc)
 	return low
+
+
+## Lowers the body in GROUND_STATES so the lowest sole rests on the ground (skeleton metres).
+func _update_ground(dt: float) -> void:
+	var goal := 0.0
+	var st := state()
+	if st in GROUND_STATES and (st != "land" or _land_t > XF_LAND):
+		var low := INF
+		for k in range(_feet.size()):
+			low = minf(low, skeleton.get_bone_global_pose(_feet[k]).origin.y - float(_feet_rest[k]))
+		goal = clampf(low, -GROUND_UP, GROUND_DOWN)
+	ground_fix = goal if dt <= 0.0 else SM.damp(ground_fix, goal, HL_GROUND, dt)
+	body.position.y = -ground_fix
 
 
 # --- Tree

@@ -32,6 +32,9 @@ item has a local fallback in A's code, so nothing here blocks a merge.
    `player.view_position()` would hide that; A can call a `fade_props_near(p, r)` if G1 adds one.
 4. **When `WS.GROUND_Y` moves** (the raised base ground), tell A: the interim soft step in
    `CollisionWorld.walk_height` (`SOFT_STEP` / `SOFT_BAND`) is removed in A's follow-up commit.
+5. **The hero's shadow is faint.** In the stage A2 shots the 1.75 m figure casts only a soft, pale
+   shadow at street level (the directional shadow covers far more than the figure needs); a
+   tighter first split in the first-person light profile would ground characters visibly.
 
 ## To H (`tools/blender/**`, `models/real/**`)
 
@@ -60,6 +63,12 @@ A uses these when they exist and skips them otherwise:
   forward convention) to pull the camera arm out of car, bus, truck and emergency boxes.
 - `pick()` kinds as in S0 §9; A rewrites a `pedestrian` with `data.driver_id` into that resident.
 
+For stage E2, `scripts/fp/player/hero_rig.gd` is a working reference for HC's T0 tier: the
+library as the default library, the Root motion track, a `SYNC_MODE_CYCLIC_MUTABLE` BlendSpace1D of
+walk / walk_fast / run / run_fast at `speed_mps * hip_m / speed_ref_hip_m * h_target /
+rest_height_m`, idle outside the cyclic blend (its 11.7 s loop would otherwise stretch the shared
+cycle), and the TimeScale `v / v_anim`.
+
 ## To B (HUD)
 
 - In third person, hide the crosshair and anchor the prompt over `target.pos` with
@@ -72,14 +81,29 @@ A uses these when they exist and skips them otherwise:
 - `FpPlayer.stepped(surface: String, pos: Vector3)` fires on each heel strike of the player's gait
   (left at phase 0, right at PI; about 0.70 m apart at a walk and 1.35 m at a run), so it matches
   the placeholder's visible stride; `pos` is that foot's ground point, 9 cm either side of the
-  body. Stage A2 keeps the same contract on the hero's clips. `FpPlayer.photo_mode_changed(on)` is
-  there if photo mode should duck anything.
+  body. `FpPlayer.photo_mode_changed(on)` is there if photo mode should duck anything.
+- With HC's hero (stage A2) the same signal fires on the heel strikes of the blended walk / run
+  (or crouch-walk) clip, measured from the clips' keys, at the striking foot's ground point. In
+  first person the hero still animates (only its shadow shows), so steps keep coming. Landings and
+  turning in place make no step.
 
 ## To HC (stage A2)
 
-- A2 needs `AP.HERO_M` / `AP.HERO_F`, `AP.CHAR_LIB_M` / `AP.CHAR_LIB_F` (bare clip names,
-  `speed_mps` meta) and `rest_height_m` per body in `AP.CHAR_ROSTER`. The avatar node is
-  `scripts/fp/player/player_avatar.gd`; until then it shows the legacy `person_a.glb` (hero `m`)
-  or `person_b.glb` (hero `f`), re-rigged at load into a jointed puppet with a procedural walk,
-  run, crouch, jump and landing (`placeholder_puppet.gd`; also the fallback whenever a hero GLB
-  is missing).
+Stage A2 consumes `AP.HERO_M` / `AP.HERO_F`, `AP.CHAR_LIB_M` / `AP.CHAR_LIB_F`, the `speed_mps` and
+`speed_ref_hip_m` metas, `rest_height_m` and `hip_m` from `AP.CHAR_ROSTER`, `AP.CHAR_ROOT_MOTION_TRACK`
+and `AP.CHAR_LOOK_AXIS` (`scripts/fp/player/hero_rig.gd`). The placeholder puppet stays as the
+fallback whenever a hero GLB or library is missing. Notes for a later clip pass (A works around
+each one; none blocks):
+
+1. **UAL feet above the ground.** Retargeted onto Rocketbox legs, `crouch_idle`, `crouch_walk` and
+   the absorb of `land` hold the lowest sole about 3-5 cm above the floor (the ankles at 0.146 m
+   against 0.106 m standing). A lowers the body in those states until the lowest sole touches
+   (`hero_rig.gd` `GROUND_STATES`); a per-clip foot-height fix in `build_clips.py` would make that
+   unnecessary.
+2. **Heel strikes are near, not at, 0 and 0.5.** Measured on the clips' own keys (the ankle within
+   5 mm of its lowest point), `walk_fast` lands its right heel at 0.473 and `run` at 0.542 of the
+   cycle (male), `walk_fast` its left heel at 0.039 (female). A measures the contact phases of each
+   blended pose (on first use, about 2 ms each) and fires `stepped` there (within one frame of the visible strike in
+   `fp_tps_test`), so this only matters to other consumers that assume 0 / 0.5.
+3. **`jump_start` opens on a deep crouch** (hips at 0.51 m at t = 0, take-off by 0.07 s). The player
+   leaves the ground on the press, so A starts the clip at 0.05 s.

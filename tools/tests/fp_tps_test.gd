@@ -438,7 +438,7 @@ func _check_hero(ctx: FpContext, s: Dictionary) -> void:
 		p.update_view(DT)
 	var hips_c: float = (rig.call("bone_world", "Hips").y - p.position.y) / M
 	var low_c: float = rig.call("feet_low", p.position.y) / M
-	K.check(fails, str(rig.call("state")) == "crouch" and hips_c < 0.6 and low_c > -0.02 and low_c < 0.06, "13a. crouching: state %s, hips at %.2f m, feet %.1f cm up" % [rig.call("state"), hips_c, low_c * 100.0])
+	K.check(fails, str(rig.call("state")) == "crouch" and hips_c < 0.6 and absf(low_c) < 0.01, "13a. crouching: state %s, hips at %.2f m, the lowest sole %.1f cm from the ground" % [rig.call("state"), hips_c, low_c * 100.0])
 	_run(p, Vector2.ZERO, false, 40)
 	# Jump and land.
 	p.simulate(Vector2.ZERO, false, DT, false, true)
@@ -477,6 +477,18 @@ func _check_hero(ctx: FpContext, s: Dictionary) -> void:
 	var waving: bool = rig.call("gesture_active")
 	_run(p, Vector2.ZERO, false, 240)
 	K.check(fails, waving and not rig.call("gesture_active"), "13a. a wave gesture plays once over the idle")
+	# Sit: sit_down then the sit loop; standing up returns to locomotion.
+	rig.call("sit", true)
+	_run(p, Vector2.ZERO, false, 30)
+	var sit0 := str(rig.call("state"))
+	_run(p, Vector2.ZERO, false, 200)
+	var sit1 := str(rig.call("state"))
+	var hips_s: float = (rig.call("bone_world", "Hips").y - p.position.y) / M
+	rig.call("sit", false)
+	_run(p, Vector2.ZERO, false, 30)
+	var sit2 := str(rig.call("state"))
+	_run(p, Vector2.ZERO, false, 200)
+	K.check(fails, sit0 == "sit_down" and sit1 == "sit" and hips_s < 0.6 and sit2 == "stand_up" and str(rig.call("state")) == "loco", "13a. sitting: %s -> %s (hips %.2f m) -> %s -> %s" % [sit0, sit1, hips_s, sit2, rig.call("state")])
 	# Head look (the look-at modifiers run in the skeleton's frame update: real frames).
 	p.teleport(s["pos"], s["yaw"])
 	p.rig.assist_target = Vector3(NAN, NAN, NAN)

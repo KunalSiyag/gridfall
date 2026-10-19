@@ -101,6 +101,9 @@ var yaw: float = 0.0        # radians; body yaw = rotation.y. Body forward = (-s
 var pitch: float = 0.0      # radians; the view pitch (= cam_pitch), kept for S0 callers
 var velocity: Vector3 = Vector3.ZERO   # u/s; y is the vertical speed
 var input_enabled: bool = true   # false for tests and scripted tours
+## Scripted movement while input_enabled is false (photo tour shots of the hero in motion):
+## {"wish": Vector2, "sprint": bool}; empty for none.
+var autopilot: Dictionary = {}
 var photo_mode: bool = false     # free-fly photo mode; FpMode ignores hud_toggle and C ignores chat_open while true
 ## View angles (radians). Movement input is rotated by cam_yaw; forward() looks along them.
 var cam_yaw: float = 0.0
@@ -591,6 +594,8 @@ func _process(delta: float) -> void:
 			_stick_look(dt)
 		var wish := Input.get_vector("move_left", "move_right", "move_back", "move_forward")
 		simulate(wish, Input.is_action_pressed("sprint"), dt, Input.is_action_pressed("crouch"), Input.is_action_pressed("jump"))
+	elif not autopilot.is_empty():
+		simulate(autopilot.get("wish", Vector2.ZERO), bool(autopilot.get("sprint", false)), dt)
 	update_view(dt)
 
 
