@@ -3,9 +3,10 @@
 importer="texture"
 type="CompressedTexture2D"
 uid="uid://dg408vjxsxw5l"
-path="res://.godot/imported/townhouse_row_painted_plaster_wall_diff.jpg-448fe7ac2506fa64768b1bc38b244cb1.ctex"
+path.s3tc="res://.godot/imported/townhouse_row_painted_plaster_wall_diff.jpg-448fe7ac2506fa64768b1bc38b244cb1.s3tc.ctex"
 metadata={
-"vram_texture": false
+"imported_formats": ["s3tc_bptc"],
+"vram_texture": true
 }
 generator_parameters={
 "md5": "83ec6fa2677f3ced1a482ebbef209f41"
@@ -14,11 +15,11 @@ generator_parameters={
 [deps]
 
 source_file="res://models/real/zones/r2/townhouse_row_painted_plaster_wall_diff.jpg"
-dest_files=["res://.godot/imported/townhouse_row_painted_plaster_wall_diff.jpg-448fe7ac2506fa64768b1bc38b244cb1.ctex"]
+dest_files=["res://.godot/imported/townhouse_row_painted_plaster_wall_diff.jpg-448fe7ac2506fa64768b1bc38b244cb1.s3tc.ctex"]
 
 [params]
 
-compress/mode=0
+compress/mode=2
 compress/high_quality=false
 compress/lossy_quality=0.7
 compress/uastc_level=0

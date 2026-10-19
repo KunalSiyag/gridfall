@@ -3,9 +3,10 @@
 importer="texture"
 type="CompressedTexture2D"
 uid="uid://cn38us43guavm"
-path="res://.godot/imported/workshop_sawtooth_wood_planks_diff.jpg-7c9079f1a29dad778c9381337b3ed0bb.ctex"
+path.s3tc="res://.godot/imported/workshop_sawtooth_wood_planks_diff.jpg-7c9079f1a29dad778c9381337b3ed0bb.s3tc.ctex"
 metadata={
-"vram_texture": false
+"imported_formats": ["s3tc_bptc"],
+"vram_texture": true
 }
 generator_parameters={
 "md5": "4078036e4cecddd371ee08ac6e8762bd"
@@ -14,11 +15,11 @@ generator_parameters={
 [deps]
 
 source_file="res://models/real/zones/i1/workshop_sawtooth_wood_planks_diff.jpg"
-dest_files=["res://.godot/imported/workshop_sawtooth_wood_planks_diff.jpg-7c9079f1a29dad778c9381337b3ed0bb.ctex"]
+dest_files=["res://.godot/imported/workshop_sawtooth_wood_planks_diff.jpg-7c9079f1a29dad778c9381337b3ed0bb.s3tc.ctex"]
 
 [params]
 
-compress/mode=0
+compress/mode=2
 compress/high_quality=false
 compress/lossy_quality=0.7
 compress/uastc_level=0

@@ -3,9 +3,10 @@
 importer="texture"
 type="CompressedTexture2D"
 uid="uid://vkiimot5j0ip"
-path="res://.godot/imported/school_leafcluster_broad.png-2ccf9f44ee0eaec5973e229b7daaad93.ctex"
+path.s3tc="res://.godot/imported/school_leafcluster_broad.png-2ccf9f44ee0eaec5973e229b7daaad93.s3tc.ctex"
 metadata={
-"vram_texture": false
+"imported_formats": ["s3tc_bptc"],
+"vram_texture": true
 }
 generator_parameters={
 "md5": "578b129923af0f4eb0a919f9ac277f44"
@@ -14,11 +15,11 @@ generator_parameters={
 [deps]
 
 source_file="res://models/real/buildings/school_leafcluster_broad.png"
-dest_files=["res://.godot/imported/school_leafcluster_broad.png-2ccf9f44ee0eaec5973e229b7daaad93.ctex"]
+dest_files=["res://.godot/imported/school_leafcluster_broad.png-2ccf9f44ee0eaec5973e229b7daaad93.s3tc.ctex"]
 
 [params]
 
-compress/mode=0
+compress/mode=2
 compress/high_quality=false
 compress/lossy_quality=0.7
 compress/uastc_level=0

@@ -3,9 +3,10 @@
 importer="texture"
 type="CompressedTexture2D"
 uid="uid://ch3h0iwooc10v"
-path="res://.godot/imported/workshop_sawtooth_bark_brown_02_diff.jpg-0825c463492ef10b51506cfaaa400a92.ctex"
+path.s3tc="res://.godot/imported/workshop_sawtooth_bark_brown_02_diff.jpg-0825c463492ef10b51506cfaaa400a92.s3tc.ctex"
 metadata={
-"vram_texture": false
+"imported_formats": ["s3tc_bptc"],
+"vram_texture": true
 }
 generator_parameters={
 "md5": "f8d30011de83e45c87949b73b176b428"
@@ -14,11 +15,11 @@ generator_parameters={
 [deps]
 
 source_file="res://models/real/zones/i1/workshop_sawtooth_bark_brown_02_diff.jpg"
-dest_files=["res://.godot/imported/workshop_sawtooth_bark_brown_02_diff.jpg-0825c463492ef10b51506cfaaa400a92.ctex"]
+dest_files=["res://.godot/imported/workshop_sawtooth_bark_brown_02_diff.jpg-0825c463492ef10b51506cfaaa400a92.s3tc.ctex"]
 
 [params]
 
-compress/mode=0
+compress/mode=2
 compress/high_quality=false
 compress/lossy_quality=0.7
 compress/uastc_level=0

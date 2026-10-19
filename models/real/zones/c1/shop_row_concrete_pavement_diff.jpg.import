@@ -3,9 +3,10 @@
 importer="texture"
 type="CompressedTexture2D"
 uid="uid://diirtdrp6ruf7"
-path="res://.godot/imported/shop_row_concrete_pavement_diff.jpg-1fd7d06c4f16deceb8b0a5e38405a7ff.ctex"
+path.s3tc="res://.godot/imported/shop_row_concrete_pavement_diff.jpg-1fd7d06c4f16deceb8b0a5e38405a7ff.s3tc.ctex"
 metadata={
-"vram_texture": false
+"imported_formats": ["s3tc_bptc"],
+"vram_texture": true
 }
 generator_parameters={
 "md5": "67ab74296cc900c08c5a3a7754fbd57d"
@@ -14,11 +15,11 @@ generator_parameters={
 [deps]
 
 source_file="res://models/real/zones/c1/shop_row_concrete_pavement_diff.jpg"
-dest_files=["res://.godot/imported/shop_row_concrete_pavement_diff.jpg-1fd7d06c4f16deceb8b0a5e38405a7ff.ctex"]
+dest_files=["res://.godot/imported/shop_row_concrete_pavement_diff.jpg-1fd7d06c4f16deceb8b0a5e38405a7ff.s3tc.ctex"]
 
 [params]
 
-compress/mode=0
+compress/mode=2
 compress/high_quality=false
 compress/lossy_quality=0.7
 compress/uastc_level=0

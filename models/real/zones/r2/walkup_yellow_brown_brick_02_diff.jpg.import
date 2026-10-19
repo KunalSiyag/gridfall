@@ -3,9 +3,10 @@
 importer="texture"
 type="CompressedTexture2D"
 uid="uid://v7intclpjvu"
-path="res://.godot/imported/walkup_yellow_brown_brick_02_diff.jpg-e8ee893eadb4175126f6e1764ea13d70.ctex"
+path.s3tc="res://.godot/imported/walkup_yellow_brown_brick_02_diff.jpg-e8ee893eadb4175126f6e1764ea13d70.s3tc.ctex"
 metadata={
-"vram_texture": false
+"imported_formats": ["s3tc_bptc"],
+"vram_texture": true
 }
 generator_parameters={
 "md5": "dc94f7f19340fa7834985f00ca826c5e"
@@ -14,11 +15,11 @@ generator_parameters={
 [deps]
 
 source_file="res://models/real/zones/r2/walkup_yellow_brown_brick_02_diff.jpg"
-dest_files=["res://.godot/imported/walkup_yellow_brown_brick_02_diff.jpg-e8ee893eadb4175126f6e1764ea13d70.ctex"]
+dest_files=["res://.godot/imported/walkup_yellow_brown_brick_02_diff.jpg-e8ee893eadb4175126f6e1764ea13d70.s3tc.ctex"]
 
 [params]
 
-compress/mode=0
+compress/mode=2
 compress/high_quality=false
 compress/lossy_quality=0.7
 compress/uastc_level=0

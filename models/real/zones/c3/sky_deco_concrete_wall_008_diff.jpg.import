@@ -3,9 +3,10 @@
 importer="texture"
 type="CompressedTexture2D"
 uid="uid://bn3cha4vm3v5a"
-path="res://.godot/imported/sky_deco_concrete_wall_008_diff.jpg-24f893ad6d37d25d3fdb400a71a1f22c.ctex"
+path.s3tc="res://.godot/imported/sky_deco_concrete_wall_008_diff.jpg-24f893ad6d37d25d3fdb400a71a1f22c.s3tc.ctex"
 metadata={
-"vram_texture": false
+"imported_formats": ["s3tc_bptc"],
+"vram_texture": true
 }
 generator_parameters={
 "md5": "b0f10da5a9326fc38d8df2f6d81e8daa"
@@ -14,11 +15,11 @@ generator_parameters={
 [deps]
 
 source_file="res://models/real/zones/c3/sky_deco_concrete_wall_008_diff.jpg"
-dest_files=["res://.godot/imported/sky_deco_concrete_wall_008_diff.jpg-24f893ad6d37d25d3fdb400a71a1f22c.ctex"]
+dest_files=["res://.godot/imported/sky_deco_concrete_wall_008_diff.jpg-24f893ad6d37d25d3fdb400a71a1f22c.s3tc.ctex"]
 
 [params]
 
-compress/mode=0
+compress/mode=2
 compress/high_quality=false
 compress/lossy_quality=0.7
 compress/uastc_level=0

@@ -3,9 +3,10 @@
 importer="texture"
 type="CompressedTexture2D"
 uid="uid://clw8sbx2c34p4"
-path="res://.godot/imported/factory_brick_wood_planks_arm.jpg-7990db98ba8b84f27ca4800ccea479cb.ctex"
+path.s3tc="res://.godot/imported/factory_brick_wood_planks_arm.jpg-7990db98ba8b84f27ca4800ccea479cb.s3tc.ctex"
 metadata={
-"vram_texture": false
+"imported_formats": ["s3tc_bptc"],
+"vram_texture": true
 }
 generator_parameters={
 "md5": "38ed7cac0d9756f935e9d99e5cb962a6"
@@ -14,11 +15,11 @@ generator_parameters={
 [deps]
 
 source_file="res://models/real/zones/i2/factory_brick_wood_planks_arm.jpg"
-dest_files=["res://.godot/imported/factory_brick_wood_planks_arm.jpg-7990db98ba8b84f27ca4800ccea479cb.ctex"]
+dest_files=["res://.godot/imported/factory_brick_wood_planks_arm.jpg-7990db98ba8b84f27ca4800ccea479cb.s3tc.ctex"]
 
 [params]
 
-compress/mode=0
+compress/mode=2
 compress/high_quality=false
 compress/lossy_quality=0.7
 compress/uastc_level=0

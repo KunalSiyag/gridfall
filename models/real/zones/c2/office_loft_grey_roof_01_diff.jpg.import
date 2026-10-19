@@ -3,9 +3,10 @@
 importer="texture"
 type="CompressedTexture2D"
 uid="uid://c6qqo2xy7enve"
-path="res://.godot/imported/office_loft_grey_roof_01_diff.jpg-1a10e8790f4b0bcb30465e028285e826.ctex"
+path.s3tc="res://.godot/imported/office_loft_grey_roof_01_diff.jpg-1a10e8790f4b0bcb30465e028285e826.s3tc.ctex"
 metadata={
-"vram_texture": false
+"imported_formats": ["s3tc_bptc"],
+"vram_texture": true
 }
 generator_parameters={
 "md5": "e8b94f32865edb5e403f295ea964bf10"
@@ -14,11 +15,11 @@ generator_parameters={
 [deps]
 
 source_file="res://models/real/zones/c2/office_loft_grey_roof_01_diff.jpg"
-dest_files=["res://.godot/imported/office_loft_grey_roof_01_diff.jpg-1a10e8790f4b0bcb30465e028285e826.ctex"]
+dest_files=["res://.godot/imported/office_loft_grey_roof_01_diff.jpg-1a10e8790f4b0bcb30465e028285e826.s3tc.ctex"]
 
 [params]
 
-compress/mode=0
+compress/mode=2
 compress/high_quality=false
 compress/lossy_quality=0.7
 compress/uastc_level=0

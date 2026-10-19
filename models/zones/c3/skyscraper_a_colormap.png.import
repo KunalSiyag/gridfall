@@ -3,9 +3,10 @@
 importer="texture"
 type="CompressedTexture2D"
 uid="uid://b186y7reft5j7"
-path="res://.godot/imported/skyscraper_a_colormap.png-72172fe37a87b061e5bc37b1974d7c91.ctex"
+path.s3tc="res://.godot/imported/skyscraper_a_colormap.png-72172fe37a87b061e5bc37b1974d7c91.s3tc.ctex"
 metadata={
-"vram_texture": false
+"imported_formats": ["s3tc_bptc"],
+"vram_texture": true
 }
 generator_parameters={
 "md5": "ef6c8f021506cbf338b3ccb15ca9a3ac"
@@ -14,11 +15,11 @@ generator_parameters={
 [deps]
 
 source_file="res://models/zones/c3/skyscraper_a_colormap.png"
-dest_files=["res://.godot/imported/skyscraper_a_colormap.png-72172fe37a87b061e5bc37b1974d7c91.ctex"]
+dest_files=["res://.godot/imported/skyscraper_a_colormap.png-72172fe37a87b061e5bc37b1974d7c91.s3tc.ctex"]
 
 [params]
 
-compress/mode=0
+compress/mode=2
 compress/high_quality=false
 compress/lossy_quality=0.7
 compress/uastc_level=0

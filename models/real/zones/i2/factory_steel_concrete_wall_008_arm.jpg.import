@@ -3,9 +3,10 @@
 importer="texture"
 type="CompressedTexture2D"
 uid="uid://rjqrl4o45085"
-path="res://.godot/imported/factory_steel_concrete_wall_008_arm.jpg-6e4f4a340768c9a0b3b11e7ea9579d11.ctex"
+path.s3tc="res://.godot/imported/factory_steel_concrete_wall_008_arm.jpg-6e4f4a340768c9a0b3b11e7ea9579d11.s3tc.ctex"
 metadata={
-"vram_texture": false
+"imported_formats": ["s3tc_bptc"],
+"vram_texture": true
 }
 generator_parameters={
 "md5": "88c51ff773e6bcbc65e3f628a0fbd56d"
@@ -14,11 +15,11 @@ generator_parameters={
 [deps]
 
 source_file="res://models/real/zones/i2/factory_steel_concrete_wall_008_arm.jpg"
-dest_files=["res://.godot/imported/factory_steel_concrete_wall_008_arm.jpg-6e4f4a340768c9a0b3b11e7ea9579d11.ctex"]
+dest_files=["res://.godot/imported/factory_steel_concrete_wall_008_arm.jpg-6e4f4a340768c9a0b3b11e7ea9579d11.s3tc.ctex"]
 
 [params]
 
-compress/mode=0
+compress/mode=2
 compress/high_quality=false
 compress/lossy_quality=0.7
 compress/uastc_level=0

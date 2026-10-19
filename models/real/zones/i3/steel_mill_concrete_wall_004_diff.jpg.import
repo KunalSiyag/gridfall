@@ -3,9 +3,10 @@
 importer="texture"
 type="CompressedTexture2D"
 uid="uid://scvs2k6w8ge6"
-path="res://.godot/imported/steel_mill_concrete_wall_004_diff.jpg-e2d8cb9c8e47de390b35d64665760e14.ctex"
+path.s3tc="res://.godot/imported/steel_mill_concrete_wall_004_diff.jpg-e2d8cb9c8e47de390b35d64665760e14.s3tc.ctex"
 metadata={
-"vram_texture": false
+"imported_formats": ["s3tc_bptc"],
+"vram_texture": true
 }
 generator_parameters={
 "md5": "a56ea9d31c4356749fae1d4a6b151f99"
@@ -14,11 +15,11 @@ generator_parameters={
 [deps]
 
 source_file="res://models/real/zones/i3/steel_mill_concrete_wall_004_diff.jpg"
-dest_files=["res://.godot/imported/steel_mill_concrete_wall_004_diff.jpg-e2d8cb9c8e47de390b35d64665760e14.ctex"]
+dest_files=["res://.godot/imported/steel_mill_concrete_wall_004_diff.jpg-e2d8cb9c8e47de390b35d64665760e14.s3tc.ctex"]
 
 [params]
 
-compress/mode=0
+compress/mode=2
 compress/high_quality=false
 compress/lossy_quality=0.7
 compress/uastc_level=0

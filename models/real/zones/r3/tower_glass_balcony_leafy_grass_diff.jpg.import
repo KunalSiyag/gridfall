@@ -3,9 +3,10 @@
 importer="texture"
 type="CompressedTexture2D"
 uid="uid://d3vwwunn57qr1"
-path="res://.godot/imported/tower_glass_balcony_leafy_grass_diff.jpg-ad969473a3b9e60d3a8e99ef3e55cc0e.ctex"
+path.s3tc="res://.godot/imported/tower_glass_balcony_leafy_grass_diff.jpg-ad969473a3b9e60d3a8e99ef3e55cc0e.s3tc.ctex"
 metadata={
-"vram_texture": false
+"imported_formats": ["s3tc_bptc"],
+"vram_texture": true
 }
 generator_parameters={
 "md5": "5289ac4c3bf240f677f5b31118faf1da"
@@ -14,11 +15,11 @@ generator_parameters={
 [deps]
 
 source_file="res://models/real/zones/r3/tower_glass_balcony_leafy_grass_diff.jpg"
-dest_files=["res://.godot/imported/tower_glass_balcony_leafy_grass_diff.jpg-ad969473a3b9e60d3a8e99ef3e55cc0e.ctex"]
+dest_files=["res://.godot/imported/tower_glass_balcony_leafy_grass_diff.jpg-ad969473a3b9e60d3a8e99ef3e55cc0e.s3tc.ctex"]
 
 [params]
 
-compress/mode=0
+compress/mode=2
 compress/high_quality=false
 compress/lossy_quality=0.7
 compress/uastc_level=0

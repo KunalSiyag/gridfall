@@ -3,9 +3,10 @@
 importer="texture"
 type="CompressedTexture2D"
 uid="uid://ddp3ucom1gush"
-path="res://.godot/imported/workshop_sawtooth_corrugated_iron_02_nor_gl.jpg-6934e70d9b77191619a2c0ed6866c10a.ctex"
+path.s3tc="res://.godot/imported/workshop_sawtooth_corrugated_iron_02_nor_gl.jpg-6934e70d9b77191619a2c0ed6866c10a.s3tc.ctex"
 metadata={
-"vram_texture": false
+"imported_formats": ["s3tc_bptc"],
+"vram_texture": true
 }
 generator_parameters={
 "md5": "3c2ea0a8e3773c86658b511e1dd93a4a"
@@ -14,17 +15,17 @@ generator_parameters={
 [deps]
 
 source_file="res://models/real/zones/i1/workshop_sawtooth_corrugated_iron_02_nor_gl.jpg"
-dest_files=["res://.godot/imported/workshop_sawtooth_corrugated_iron_02_nor_gl.jpg-6934e70d9b77191619a2c0ed6866c10a.ctex"]
+dest_files=["res://.godot/imported/workshop_sawtooth_corrugated_iron_02_nor_gl.jpg-6934e70d9b77191619a2c0ed6866c10a.s3tc.ctex"]
 
 [params]
 
-compress/mode=0
+compress/mode=2
 compress/high_quality=false
 compress/lossy_quality=0.7
 compress/uastc_level=0
 compress/rdo_quality_loss=0.0
 compress/hdr_compression=1
-compress/normal_map=0
+compress/normal_map=1
 compress/channel_pack=0
 mipmaps/generate=true
 mipmaps/limit=-1

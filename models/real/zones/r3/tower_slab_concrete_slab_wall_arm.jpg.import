@@ -3,9 +3,10 @@
 importer="texture"
 type="CompressedTexture2D"
 uid="uid://bhsa8iu6occh2"
-path="res://.godot/imported/tower_slab_concrete_slab_wall_arm.jpg-ecbec4bd342d81fa718a932650084bb2.ctex"
+path.s3tc="res://.godot/imported/tower_slab_concrete_slab_wall_arm.jpg-ecbec4bd342d81fa718a932650084bb2.s3tc.ctex"
 metadata={
-"vram_texture": false
+"imported_formats": ["s3tc_bptc"],
+"vram_texture": true
 }
 generator_parameters={
 "md5": "c165efc41263a5187109bb14725fd90c"
@@ -14,11 +15,11 @@ generator_parameters={
 [deps]
 
 source_file="res://models/real/zones/r3/tower_slab_concrete_slab_wall_arm.jpg"
-dest_files=["res://.godot/imported/tower_slab_concrete_slab_wall_arm.jpg-ecbec4bd342d81fa718a932650084bb2.ctex"]
+dest_files=["res://.godot/imported/tower_slab_concrete_slab_wall_arm.jpg-ecbec4bd342d81fa718a932650084bb2.s3tc.ctex"]
 
 [params]
 
-compress/mode=0
+compress/mode=2
 compress/high_quality=false
 compress/lossy_quality=0.7
 compress/uastc_level=0

@@ -3,9 +3,10 @@
 importer="texture"
 type="CompressedTexture2D"
 uid="uid://bkbg7kbfv8ywn"
-path="res://.godot/imported/picnic_table_wooden_picnic_table_top_nor_gl_1k.jpg-1b407c4ef7414d94f41f178e0b3396f1.ctex"
+path.s3tc="res://.godot/imported/picnic_table_wooden_picnic_table_top_nor_gl_1k.jpg-1b407c4ef7414d94f41f178e0b3396f1.s3tc.ctex"
 metadata={
-"vram_texture": false
+"imported_formats": ["s3tc_bptc"],
+"vram_texture": true
 }
 generator_parameters={
 "md5": "87ddaceaa32a6bc6deeb29ad5913e00b"
@@ -14,11 +15,11 @@ generator_parameters={
 [deps]
 
 source_file="res://models/real/props/picnic_table_wooden_picnic_table_top_nor_gl_1k.jpg"
-dest_files=["res://.godot/imported/picnic_table_wooden_picnic_table_top_nor_gl_1k.jpg-1b407c4ef7414d94f41f178e0b3396f1.ctex"]
+dest_files=["res://.godot/imported/picnic_table_wooden_picnic_table_top_nor_gl_1k.jpg-1b407c4ef7414d94f41f178e0b3396f1.s3tc.ctex"]
 
 [params]
 
-compress/mode=0
+compress/mode=2
 compress/high_quality=false
 compress/lossy_quality=0.7
 compress/uastc_level=0

@@ -3,9 +3,10 @@
 importer="texture"
 type="CompressedTexture2D"
 uid="uid://f3vgsillm45"
-path="res://.godot/imported/house_modern_white_plaster_02_diff.jpg-ddb0e81a4dfa9c82c04a43f4ee85e6b4.ctex"
+path.s3tc="res://.godot/imported/house_modern_white_plaster_02_diff.jpg-ddb0e81a4dfa9c82c04a43f4ee85e6b4.s3tc.ctex"
 metadata={
-"vram_texture": false
+"imported_formats": ["s3tc_bptc"],
+"vram_texture": true
 }
 generator_parameters={
 "md5": "ec4f266af731d969a0d89a30ead57c09"
@@ -14,11 +15,11 @@ generator_parameters={
 [deps]
 
 source_file="res://models/real/zones/r1/house_modern_white_plaster_02_diff.jpg"
-dest_files=["res://.godot/imported/house_modern_white_plaster_02_diff.jpg-ddb0e81a4dfa9c82c04a43f4ee85e6b4.ctex"]
+dest_files=["res://.godot/imported/house_modern_white_plaster_02_diff.jpg-ddb0e81a4dfa9c82c04a43f4ee85e6b4.s3tc.ctex"]
 
 [params]
 
-compress/mode=0
+compress/mode=2
 compress/high_quality=false
 compress/lossy_quality=0.7
 compress/uastc_level=0

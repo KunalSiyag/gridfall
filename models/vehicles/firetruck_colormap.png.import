@@ -3,9 +3,10 @@
 importer="texture"
 type="CompressedTexture2D"
 uid="uid://klosni5yt8fe"
-path="res://.godot/imported/firetruck_colormap.png-794d9b2081eea12b9de747331dd33103.ctex"
+path.s3tc="res://.godot/imported/firetruck_colormap.png-794d9b2081eea12b9de747331dd33103.s3tc.ctex"
 metadata={
-"vram_texture": false
+"imported_formats": ["s3tc_bptc"],
+"vram_texture": true
 }
 generator_parameters={
 "md5": "8fa2e771fb74ce0bd4942f13b0fb9a3c"
@@ -14,11 +15,11 @@ generator_parameters={
 [deps]
 
 source_file="res://models/vehicles/firetruck_colormap.png"
-dest_files=["res://.godot/imported/firetruck_colormap.png-794d9b2081eea12b9de747331dd33103.ctex"]
+dest_files=["res://.godot/imported/firetruck_colormap.png-794d9b2081eea12b9de747331dd33103.s3tc.ctex"]
 
 [params]
 
-compress/mode=0
+compress/mode=2
 compress/high_quality=false
 compress/lossy_quality=0.7
 compress/uastc_level=0

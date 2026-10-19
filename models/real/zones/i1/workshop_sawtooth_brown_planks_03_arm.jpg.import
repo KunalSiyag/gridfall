@@ -3,9 +3,10 @@
 importer="texture"
 type="CompressedTexture2D"
 uid="uid://dbo1hd1mwl3na"
-path="res://.godot/imported/workshop_sawtooth_brown_planks_03_arm.jpg-e7ea19e1afece493ad31cfee6831828f.ctex"
+path.s3tc="res://.godot/imported/workshop_sawtooth_brown_planks_03_arm.jpg-e7ea19e1afece493ad31cfee6831828f.s3tc.ctex"
 metadata={
-"vram_texture": false
+"imported_formats": ["s3tc_bptc"],
+"vram_texture": true
 }
 generator_parameters={
 "md5": "6d583fc8588c3b935cb4f5f48c486e30"
@@ -14,11 +15,11 @@ generator_parameters={
 [deps]
 
 source_file="res://models/real/zones/i1/workshop_sawtooth_brown_planks_03_arm.jpg"
-dest_files=["res://.godot/imported/workshop_sawtooth_brown_planks_03_arm.jpg-e7ea19e1afece493ad31cfee6831828f.ctex"]
+dest_files=["res://.godot/imported/workshop_sawtooth_brown_planks_03_arm.jpg-e7ea19e1afece493ad31cfee6831828f.s3tc.ctex"]
 
 [params]
 
-compress/mode=0
+compress/mode=2
 compress/high_quality=false
 compress/lossy_quality=0.7
 compress/uastc_level=0

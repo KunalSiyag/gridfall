@@ -3,9 +3,10 @@
 importer="texture"
 type="CompressedTexture2D"
 uid="uid://dskuwlggt7xtt"
-path="res://.godot/imported/tower_twin_plaster_grey_04_arm.jpg-ca9aa999a9d1e54c4aa9cc1067595202.ctex"
+path.s3tc="res://.godot/imported/tower_twin_plaster_grey_04_arm.jpg-ca9aa999a9d1e54c4aa9cc1067595202.s3tc.ctex"
 metadata={
-"vram_texture": false
+"imported_formats": ["s3tc_bptc"],
+"vram_texture": true
 }
 generator_parameters={
 "md5": "68a723e8503ab7069a797083b997e310"
@@ -14,11 +15,11 @@ generator_parameters={
 [deps]
 
 source_file="res://models/real/zones/r3/tower_twin_plaster_grey_04_arm.jpg"
-dest_files=["res://.godot/imported/tower_twin_plaster_grey_04_arm.jpg-ca9aa999a9d1e54c4aa9cc1067595202.ctex"]
+dest_files=["res://.godot/imported/tower_twin_plaster_grey_04_arm.jpg-ca9aa999a9d1e54c4aa9cc1067595202.s3tc.ctex"]
 
 [params]
 
-compress/mode=0
+compress/mode=2
 compress/high_quality=false
 compress/lossy_quality=0.7
 compress/uastc_level=0

@@ -3,9 +3,10 @@
 importer="texture"
 type="CompressedTexture2D"
 uid="uid://cc347wrynjrci"
-path="res://.godot/imported/shop_row_beige_wall_001_arm.jpg-20747812f3c8df7808e2832615ff3841.ctex"
+path.s3tc="res://.godot/imported/shop_row_beige_wall_001_arm.jpg-20747812f3c8df7808e2832615ff3841.s3tc.ctex"
 metadata={
-"vram_texture": false
+"imported_formats": ["s3tc_bptc"],
+"vram_texture": true
 }
 generator_parameters={
 "md5": "504022dfe2a969ba69b69d9ad6f1c41a"
@@ -14,11 +15,11 @@ generator_parameters={
 [deps]
 
 source_file="res://models/real/zones/c1/shop_row_beige_wall_001_arm.jpg"
-dest_files=["res://.godot/imported/shop_row_beige_wall_001_arm.jpg-20747812f3c8df7808e2832615ff3841.ctex"]
+dest_files=["res://.godot/imported/shop_row_beige_wall_001_arm.jpg-20747812f3c8df7808e2832615ff3841.s3tc.ctex"]
 
 [params]
 
-compress/mode=0
+compress/mode=2
 compress/high_quality=false
 compress/lossy_quality=0.7
 compress/uastc_level=0

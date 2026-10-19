@@ -3,9 +3,10 @@
 importer="texture"
 type="CompressedTexture2D"
 uid="uid://dcx8mq0gl8214"
-path="res://.godot/imported/road_corner_concrete_floor_02_diff.jpg-9dcc2ebcef0468703c09181307c77c70.ctex"
+path.s3tc="res://.godot/imported/road_corner_concrete_floor_02_diff.jpg-9dcc2ebcef0468703c09181307c77c70.s3tc.ctex"
 metadata={
-"vram_texture": false
+"imported_formats": ["s3tc_bptc"],
+"vram_texture": true
 }
 generator_parameters={
 "md5": "241b3c4c14730e8fdb887e374af4e523"
@@ -14,11 +15,11 @@ generator_parameters={
 [deps]
 
 source_file="res://models/real/roads/road_corner_concrete_floor_02_diff.jpg"
-dest_files=["res://.godot/imported/road_corner_concrete_floor_02_diff.jpg-9dcc2ebcef0468703c09181307c77c70.ctex"]
+dest_files=["res://.godot/imported/road_corner_concrete_floor_02_diff.jpg-9dcc2ebcef0468703c09181307c77c70.s3tc.ctex"]
 
 [params]
 
-compress/mode=0
+compress/mode=2
 compress/high_quality=false
 compress/lossy_quality=0.7
 compress/uastc_level=0

@@ -3,9 +3,10 @@
 importer="texture"
 type="CompressedTexture2D"
 uid="uid://fx2binbaf38s"
-path="res://.godot/imported/sky_glass_gravel_floor_nor_gl.jpg-26f6d212bf713e890c28c462fd37f533.ctex"
+path.s3tc="res://.godot/imported/sky_glass_gravel_floor_nor_gl.jpg-26f6d212bf713e890c28c462fd37f533.s3tc.ctex"
 metadata={
-"vram_texture": false
+"imported_formats": ["s3tc_bptc"],
+"vram_texture": true
 }
 generator_parameters={
 "md5": "029b2a1941d9f3c410e89108e367a475"
@@ -14,17 +15,17 @@ generator_parameters={
 [deps]
 
 source_file="res://models/real/zones/c3/sky_glass_gravel_floor_nor_gl.jpg"
-dest_files=["res://.godot/imported/sky_glass_gravel_floor_nor_gl.jpg-26f6d212bf713e890c28c462fd37f533.ctex"]
+dest_files=["res://.godot/imported/sky_glass_gravel_floor_nor_gl.jpg-26f6d212bf713e890c28c462fd37f533.s3tc.ctex"]
 
 [params]
 
-compress/mode=0
+compress/mode=2
 compress/high_quality=false
 compress/lossy_quality=0.7
 compress/uastc_level=0
 compress/rdo_quality_loss=0.0
 compress/hdr_compression=1
-compress/normal_map=0
+compress/normal_map=1
 compress/channel_pack=0
 mipmaps/generate=true
 mipmaps/limit=-1

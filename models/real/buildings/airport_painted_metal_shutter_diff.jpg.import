@@ -3,9 +3,10 @@
 importer="texture"
 type="CompressedTexture2D"
 uid="uid://btnrjc3x7k66r"
-path="res://.godot/imported/airport_painted_metal_shutter_diff.jpg-1f8d337db180337bc6b9c32fd82a7d7d.ctex"
+path.s3tc="res://.godot/imported/airport_painted_metal_shutter_diff.jpg-1f8d337db180337bc6b9c32fd82a7d7d.s3tc.ctex"
 metadata={
-"vram_texture": false
+"imported_formats": ["s3tc_bptc"],
+"vram_texture": true
 }
 generator_parameters={
 "md5": "4d05529f03151984d565b473e034bc2e"
@@ -14,11 +15,11 @@ generator_parameters={
 [deps]
 
 source_file="res://models/real/buildings/airport_painted_metal_shutter_diff.jpg"
-dest_files=["res://.godot/imported/airport_painted_metal_shutter_diff.jpg-1f8d337db180337bc6b9c32fd82a7d7d.ctex"]
+dest_files=["res://.godot/imported/airport_painted_metal_shutter_diff.jpg-1f8d337db180337bc6b9c32fd82a7d7d.s3tc.ctex"]
 
 [params]
 
-compress/mode=0
+compress/mode=2
 compress/high_quality=false
 compress/lossy_quality=0.7
 compress/uastc_level=0

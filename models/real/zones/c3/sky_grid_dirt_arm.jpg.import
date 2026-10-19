@@ -3,9 +3,10 @@
 importer="texture"
 type="CompressedTexture2D"
 uid="uid://dn64awq1blir0"
-path="res://.godot/imported/sky_grid_dirt_arm.jpg-13f9293c8e28d6f5d7cc2824050330fb.ctex"
+path.s3tc="res://.godot/imported/sky_grid_dirt_arm.jpg-13f9293c8e28d6f5d7cc2824050330fb.s3tc.ctex"
 metadata={
-"vram_texture": false
+"imported_formats": ["s3tc_bptc"],
+"vram_texture": true
 }
 generator_parameters={
 "md5": "7956d1bb2c719cc82ab209999205602b"
@@ -14,11 +15,11 @@ generator_parameters={
 [deps]
 
 source_file="res://models/real/zones/c3/sky_grid_dirt_arm.jpg"
-dest_files=["res://.godot/imported/sky_grid_dirt_arm.jpg-13f9293c8e28d6f5d7cc2824050330fb.ctex"]
+dest_files=["res://.godot/imported/sky_grid_dirt_arm.jpg-13f9293c8e28d6f5d7cc2824050330fb.s3tc.ctex"]
 
 [params]
 
-compress/mode=0
+compress/mode=2
 compress/high_quality=false
 compress/lossy_quality=0.7
 compress/uastc_level=0

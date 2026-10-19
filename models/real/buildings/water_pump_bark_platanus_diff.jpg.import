@@ -3,9 +3,10 @@
 importer="texture"
 type="CompressedTexture2D"
 uid="uid://dl60v3laqcb5b"
-path="res://.godot/imported/water_pump_bark_platanus_diff.jpg-add2332f8bd0f286973867d0dd400cca.ctex"
+path.s3tc="res://.godot/imported/water_pump_bark_platanus_diff.jpg-add2332f8bd0f286973867d0dd400cca.s3tc.ctex"
 metadata={
-"vram_texture": false
+"imported_formats": ["s3tc_bptc"],
+"vram_texture": true
 }
 generator_parameters={
 "md5": "bd7d557e09a64f0ed1338d39dc34892d"
@@ -14,11 +15,11 @@ generator_parameters={
 [deps]
 
 source_file="res://models/real/buildings/water_pump_bark_platanus_diff.jpg"
-dest_files=["res://.godot/imported/water_pump_bark_platanus_diff.jpg-add2332f8bd0f286973867d0dd400cca.ctex"]
+dest_files=["res://.godot/imported/water_pump_bark_platanus_diff.jpg-add2332f8bd0f286973867d0dd400cca.s3tc.ctex"]
 
 [params]
 
-compress/mode=0
+compress/mode=2
 compress/high_quality=false
 compress/lossy_quality=0.7
 compress/uastc_level=0

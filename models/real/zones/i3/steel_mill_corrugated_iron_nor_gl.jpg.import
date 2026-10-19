@@ -3,9 +3,10 @@
 importer="texture"
 type="CompressedTexture2D"
 uid="uid://dxcy3drjt8y4p"
-path="res://.godot/imported/steel_mill_corrugated_iron_nor_gl.jpg-6df436bf9b4cdc10ebfaf45db08571dd.ctex"
+path.s3tc="res://.godot/imported/steel_mill_corrugated_iron_nor_gl.jpg-6df436bf9b4cdc10ebfaf45db08571dd.s3tc.ctex"
 metadata={
-"vram_texture": false
+"imported_formats": ["s3tc_bptc"],
+"vram_texture": true
 }
 generator_parameters={
 "md5": "a6405d87b885e9534f7d95b7a6756afd"
@@ -14,17 +15,17 @@ generator_parameters={
 [deps]
 
 source_file="res://models/real/zones/i3/steel_mill_corrugated_iron_nor_gl.jpg"
-dest_files=["res://.godot/imported/steel_mill_corrugated_iron_nor_gl.jpg-6df436bf9b4cdc10ebfaf45db08571dd.ctex"]
+dest_files=["res://.godot/imported/steel_mill_corrugated_iron_nor_gl.jpg-6df436bf9b4cdc10ebfaf45db08571dd.s3tc.ctex"]
 
 [params]
 
-compress/mode=0
+compress/mode=2
 compress/high_quality=false
 compress/lossy_quality=0.7
 compress/uastc_level=0
 compress/rdo_quality_loss=0.0
 compress/hdr_compression=1
-compress/normal_map=0
+compress/normal_map=1
 compress/channel_pack=0
 mipmaps/generate=true
 mipmaps/limit=-1

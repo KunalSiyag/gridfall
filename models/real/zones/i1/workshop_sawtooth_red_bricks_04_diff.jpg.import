@@ -3,9 +3,10 @@
 importer="texture"
 type="CompressedTexture2D"
 uid="uid://bqu80y777jv05"
-path="res://.godot/imported/workshop_sawtooth_red_bricks_04_diff.jpg-3a80c7bf07e494b7444b051ede0f7dbe.ctex"
+path.s3tc="res://.godot/imported/workshop_sawtooth_red_bricks_04_diff.jpg-3a80c7bf07e494b7444b051ede0f7dbe.s3tc.ctex"
 metadata={
-"vram_texture": false
+"imported_formats": ["s3tc_bptc"],
+"vram_texture": true
 }
 generator_parameters={
 "md5": "2a5d9e63579be9e4ce4729c243f69ccf"
@@ -14,11 +15,11 @@ generator_parameters={
 [deps]
 
 source_file="res://models/real/zones/i1/workshop_sawtooth_red_bricks_04_diff.jpg"
-dest_files=["res://.godot/imported/workshop_sawtooth_red_bricks_04_diff.jpg-3a80c7bf07e494b7444b051ede0f7dbe.ctex"]
+dest_files=["res://.godot/imported/workshop_sawtooth_red_bricks_04_diff.jpg-3a80c7bf07e494b7444b051ede0f7dbe.s3tc.ctex"]
 
 [params]
 
-compress/mode=0
+compress/mode=2
 compress/high_quality=false
 compress/lossy_quality=0.7
 compress/uastc_level=0

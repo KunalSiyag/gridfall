@@ -3,9 +3,10 @@
 importer="texture"
 type="CompressedTexture2D"
 uid="uid://b0f1igud1o3bd"
-path="res://.godot/imported/workshop_sawtooth_concrete_wall_008_arm.jpg-fad17061a7cc332ecfb6c2a83f4a2cab.ctex"
+path.s3tc="res://.godot/imported/workshop_sawtooth_concrete_wall_008_arm.jpg-fad17061a7cc332ecfb6c2a83f4a2cab.s3tc.ctex"
 metadata={
-"vram_texture": false
+"imported_formats": ["s3tc_bptc"],
+"vram_texture": true
 }
 generator_parameters={
 "md5": "88c51ff773e6bcbc65e3f628a0fbd56d"
@@ -14,11 +15,11 @@ generator_parameters={
 [deps]
 
 source_file="res://models/real/zones/i1/workshop_sawtooth_concrete_wall_008_arm.jpg"
-dest_files=["res://.godot/imported/workshop_sawtooth_concrete_wall_008_arm.jpg-fad17061a7cc332ecfb6c2a83f4a2cab.ctex"]
+dest_files=["res://.godot/imported/workshop_sawtooth_concrete_wall_008_arm.jpg-fad17061a7cc332ecfb6c2a83f4a2cab.s3tc.ctex"]
 
 [params]
 
-compress/mode=0
+compress/mode=2
 compress/high_quality=false
 compress/lossy_quality=0.7
 compress/uastc_level=0

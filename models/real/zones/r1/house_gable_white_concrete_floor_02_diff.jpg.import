@@ -3,9 +3,10 @@
 importer="texture"
 type="CompressedTexture2D"
 uid="uid://dsl8vr3w2yh7o"
-path="res://.godot/imported/house_gable_white_concrete_floor_02_diff.jpg-1eda3efafc8bdf41e0937edf3e8afb9f.ctex"
+path.s3tc="res://.godot/imported/house_gable_white_concrete_floor_02_diff.jpg-1eda3efafc8bdf41e0937edf3e8afb9f.s3tc.ctex"
 metadata={
-"vram_texture": false
+"imported_formats": ["s3tc_bptc"],
+"vram_texture": true
 }
 generator_parameters={
 "md5": "241b3c4c14730e8fdb887e374af4e523"
@@ -14,11 +15,11 @@ generator_parameters={
 [deps]
 
 source_file="res://models/real/zones/r1/house_gable_white_concrete_floor_02_diff.jpg"
-dest_files=["res://.godot/imported/house_gable_white_concrete_floor_02_diff.jpg-1eda3efafc8bdf41e0937edf3e8afb9f.ctex"]
+dest_files=["res://.godot/imported/house_gable_white_concrete_floor_02_diff.jpg-1eda3efafc8bdf41e0937edf3e8afb9f.s3tc.ctex"]
 
 [params]
 
-compress/mode=0
+compress/mode=2
 compress/high_quality=false
 compress/lossy_quality=0.7
 compress/uastc_level=0

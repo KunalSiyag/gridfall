@@ -3,9 +3,10 @@
 importer="texture"
 type="CompressedTexture2D"
 uid="uid://dooc6qk73uq73"
-path="res://.godot/imported/office_glass_bitumen_diff.jpg-9af68bc77fbe79cbd5a057d2a0590c4c.ctex"
+path.s3tc="res://.godot/imported/office_glass_bitumen_diff.jpg-9af68bc77fbe79cbd5a057d2a0590c4c.s3tc.ctex"
 metadata={
-"vram_texture": false
+"imported_formats": ["s3tc_bptc"],
+"vram_texture": true
 }
 generator_parameters={
 "md5": "b6d7c3096bc68eba624ec450f01b9294"
@@ -14,11 +15,11 @@ generator_parameters={
 [deps]
 
 source_file="res://models/real/zones/c2/office_glass_bitumen_diff.jpg"
-dest_files=["res://.godot/imported/office_glass_bitumen_diff.jpg-9af68bc77fbe79cbd5a057d2a0590c4c.ctex"]
+dest_files=["res://.godot/imported/office_glass_bitumen_diff.jpg-9af68bc77fbe79cbd5a057d2a0590c4c.s3tc.ctex"]
 
 [params]
 
-compress/mode=0
+compress/mode=2
 compress/high_quality=false
 compress/lossy_quality=0.7
 compress/uastc_level=0

@@ -3,9 +3,10 @@
 importer="texture"
 type="CompressedTexture2D"
 uid="uid://iw6xhew1hfox"
-path="res://.godot/imported/house_cottage_rectangular_facade_tiles_02_arm.jpg-f05f138e5c98a29bbd4d61230800784e.ctex"
+path.s3tc="res://.godot/imported/house_cottage_rectangular_facade_tiles_02_arm.jpg-f05f138e5c98a29bbd4d61230800784e.s3tc.ctex"
 metadata={
-"vram_texture": false
+"imported_formats": ["s3tc_bptc"],
+"vram_texture": true
 }
 generator_parameters={
 "md5": "798b9e8edb53c1f019fc9953efb473cd"
@@ -14,11 +15,11 @@ generator_parameters={
 [deps]
 
 source_file="res://models/real/zones/r1/house_cottage_rectangular_facade_tiles_02_arm.jpg"
-dest_files=["res://.godot/imported/house_cottage_rectangular_facade_tiles_02_arm.jpg-f05f138e5c98a29bbd4d61230800784e.ctex"]
+dest_files=["res://.godot/imported/house_cottage_rectangular_facade_tiles_02_arm.jpg-f05f138e5c98a29bbd4d61230800784e.s3tc.ctex"]
 
 [params]
 
-compress/mode=0
+compress/mode=2
 compress/high_quality=false
 compress/lossy_quality=0.7
 compress/uastc_level=0

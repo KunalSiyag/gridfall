@@ -3,9 +3,10 @@
 importer="texture"
 type="CompressedTexture2D"
 uid="uid://b44lxb1w8kbyw"
-path="res://.godot/imported/office_ribbon_gravel_floor_arm.jpg-c61c64c7689bb8a525af5550bdd10f1b.ctex"
+path.s3tc="res://.godot/imported/office_ribbon_gravel_floor_arm.jpg-c61c64c7689bb8a525af5550bdd10f1b.s3tc.ctex"
 metadata={
-"vram_texture": false
+"imported_formats": ["s3tc_bptc"],
+"vram_texture": true
 }
 generator_parameters={
 "md5": "03cae83919bbe998b8a4d59c97f9b425"
@@ -14,11 +15,11 @@ generator_parameters={
 [deps]
 
 source_file="res://models/real/zones/c2/office_ribbon_gravel_floor_arm.jpg"
-dest_files=["res://.godot/imported/office_ribbon_gravel_floor_arm.jpg-c61c64c7689bb8a525af5550bdd10f1b.ctex"]
+dest_files=["res://.godot/imported/office_ribbon_gravel_floor_arm.jpg-c61c64c7689bb8a525af5550bdd10f1b.s3tc.ctex"]
 
 [params]
 
-compress/mode=0
+compress/mode=2
 compress/high_quality=false
 compress/lossy_quality=0.7
 compress/uastc_level=0

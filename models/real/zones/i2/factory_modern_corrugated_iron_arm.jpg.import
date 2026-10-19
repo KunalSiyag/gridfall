@@ -3,9 +3,10 @@
 importer="texture"
 type="CompressedTexture2D"
 uid="uid://b2b222a4es5vj"
-path="res://.godot/imported/factory_modern_corrugated_iron_arm.jpg-c5bbb3112325b4558d625c42176d4df3.ctex"
+path.s3tc="res://.godot/imported/factory_modern_corrugated_iron_arm.jpg-c5bbb3112325b4558d625c42176d4df3.s3tc.ctex"
 metadata={
-"vram_texture": false
+"imported_formats": ["s3tc_bptc"],
+"vram_texture": true
 }
 generator_parameters={
 "md5": "f4e64b3490b6c330feebc15b878cfe5e"
@@ -14,11 +15,11 @@ generator_parameters={
 [deps]
 
 source_file="res://models/real/zones/i2/factory_modern_corrugated_iron_arm.jpg"
-dest_files=["res://.godot/imported/factory_modern_corrugated_iron_arm.jpg-c5bbb3112325b4558d625c42176d4df3.ctex"]
+dest_files=["res://.godot/imported/factory_modern_corrugated_iron_arm.jpg-c5bbb3112325b4558d625c42176d4df3.s3tc.ctex"]
 
 [params]
 
-compress/mode=0
+compress/mode=2
 compress/high_quality=false
 compress/lossy_quality=0.7
 compress/uastc_level=0

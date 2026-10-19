@@ -3,9 +3,10 @@
 importer="texture"
 type="CompressedTexture2D"
 uid="uid://dvqlmdkxvlkhv"
-path="res://.godot/imported/house_hip_brick_leafy_grass_arm.jpg-c2d45648009d9c0ca52b6cdcfa9aac3d.ctex"
+path.s3tc="res://.godot/imported/house_hip_brick_leafy_grass_arm.jpg-c2d45648009d9c0ca52b6cdcfa9aac3d.s3tc.ctex"
 metadata={
-"vram_texture": false
+"imported_formats": ["s3tc_bptc"],
+"vram_texture": true
 }
 generator_parameters={
 "md5": "7778c286c26314db36cb2eba18db7fa6"
@@ -14,11 +15,11 @@ generator_parameters={
 [deps]
 
 source_file="res://models/real/zones/r1/house_hip_brick_leafy_grass_arm.jpg"
-dest_files=["res://.godot/imported/house_hip_brick_leafy_grass_arm.jpg-c2d45648009d9c0ca52b6cdcfa9aac3d.ctex"]
+dest_files=["res://.godot/imported/house_hip_brick_leafy_grass_arm.jpg-c2d45648009d9c0ca52b6cdcfa9aac3d.s3tc.ctex"]
 
 [params]
 
-compress/mode=0
+compress/mode=2
 compress/high_quality=false
 compress/lossy_quality=0.7
 compress/uastc_level=0

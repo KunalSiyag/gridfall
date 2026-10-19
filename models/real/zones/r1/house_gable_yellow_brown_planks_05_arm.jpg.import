@@ -3,9 +3,10 @@
 importer="texture"
 type="CompressedTexture2D"
 uid="uid://cwputuwx5nocb"
-path="res://.godot/imported/house_gable_yellow_brown_planks_05_arm.jpg-95e84332b98373b850d44c520a140076.ctex"
+path.s3tc="res://.godot/imported/house_gable_yellow_brown_planks_05_arm.jpg-95e84332b98373b850d44c520a140076.s3tc.ctex"
 metadata={
-"vram_texture": false
+"imported_formats": ["s3tc_bptc"],
+"vram_texture": true
 }
 generator_parameters={
 "md5": "fd8e706345fe2625b9e0b972d82a065b"
@@ -14,11 +15,11 @@ generator_parameters={
 [deps]
 
 source_file="res://models/real/zones/r1/house_gable_yellow_brown_planks_05_arm.jpg"
-dest_files=["res://.godot/imported/house_gable_yellow_brown_planks_05_arm.jpg-95e84332b98373b850d44c520a140076.ctex"]
+dest_files=["res://.godot/imported/house_gable_yellow_brown_planks_05_arm.jpg-95e84332b98373b850d44c520a140076.s3tc.ctex"]
 
 [params]
 
-compress/mode=0
+compress/mode=2
 compress/high_quality=false
 compress/lossy_quality=0.7
 compress/uastc_level=0

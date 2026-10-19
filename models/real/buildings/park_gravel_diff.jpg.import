@@ -3,9 +3,10 @@
 importer="texture"
 type="CompressedTexture2D"
 uid="uid://cns00mr4n2hal"
-path="res://.godot/imported/park_gravel_diff.jpg-b6b652b8b5575aa500a9a2d28f0b09b2.ctex"
+path.s3tc="res://.godot/imported/park_gravel_diff.jpg-b6b652b8b5575aa500a9a2d28f0b09b2.s3tc.ctex"
 metadata={
-"vram_texture": false
+"imported_formats": ["s3tc_bptc"],
+"vram_texture": true
 }
 generator_parameters={
 "md5": "46316e4d3f78e802540202a010f8f04a"
@@ -14,11 +15,11 @@ generator_parameters={
 [deps]
 
 source_file="res://models/real/buildings/park_gravel_diff.jpg"
-dest_files=["res://.godot/imported/park_gravel_diff.jpg-b6b652b8b5575aa500a9a2d28f0b09b2.ctex"]
+dest_files=["res://.godot/imported/park_gravel_diff.jpg-b6b652b8b5575aa500a9a2d28f0b09b2.s3tc.ctex"]
 
 [params]
 
-compress/mode=0
+compress/mode=2
 compress/high_quality=false
 compress/lossy_quality=0.7
 compress/uastc_level=0

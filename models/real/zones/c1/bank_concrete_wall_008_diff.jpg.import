@@ -3,9 +3,10 @@
 importer="texture"
 type="CompressedTexture2D"
 uid="uid://dxi1wu7hu31w1"
-path="res://.godot/imported/bank_concrete_wall_008_diff.jpg-a08b6994f47cc943f386d4cb909eda72.ctex"
+path.s3tc="res://.godot/imported/bank_concrete_wall_008_diff.jpg-a08b6994f47cc943f386d4cb909eda72.s3tc.ctex"
 metadata={
-"vram_texture": false
+"imported_formats": ["s3tc_bptc"],
+"vram_texture": true
 }
 generator_parameters={
 "md5": "b0f10da5a9326fc38d8df2f6d81e8daa"
@@ -14,11 +15,11 @@ generator_parameters={
 [deps]
 
 source_file="res://models/real/zones/c1/bank_concrete_wall_008_diff.jpg"
-dest_files=["res://.godot/imported/bank_concrete_wall_008_diff.jpg-a08b6994f47cc943f386d4cb909eda72.ctex"]
+dest_files=["res://.godot/imported/bank_concrete_wall_008_diff.jpg-a08b6994f47cc943f386d4cb909eda72.s3tc.ctex"]
 
 [params]
 
-compress/mode=0
+compress/mode=2
 compress/high_quality=false
 compress/lossy_quality=0.7
 compress/uastc_level=0

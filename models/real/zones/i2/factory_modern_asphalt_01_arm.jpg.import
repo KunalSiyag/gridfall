@@ -3,9 +3,10 @@
 importer="texture"
 type="CompressedTexture2D"
 uid="uid://bq8qwx1c8bxjd"
-path="res://.godot/imported/factory_modern_asphalt_01_arm.jpg-0707c18c195643c5ea69734b1614be96.ctex"
+path.s3tc="res://.godot/imported/factory_modern_asphalt_01_arm.jpg-0707c18c195643c5ea69734b1614be96.s3tc.ctex"
 metadata={
-"vram_texture": false
+"imported_formats": ["s3tc_bptc"],
+"vram_texture": true
 }
 generator_parameters={
 "md5": "c006b3c06b8eec52053c1f666b662c52"
@@ -14,11 +15,11 @@ generator_parameters={
 [deps]
 
 source_file="res://models/real/zones/i2/factory_modern_asphalt_01_arm.jpg"
-dest_files=["res://.godot/imported/factory_modern_asphalt_01_arm.jpg-0707c18c195643c5ea69734b1614be96.ctex"]
+dest_files=["res://.godot/imported/factory_modern_asphalt_01_arm.jpg-0707c18c195643c5ea69734b1614be96.s3tc.ctex"]
 
 [params]
 
-compress/mode=0
+compress/mode=2
 compress/high_quality=false
 compress/lossy_quality=0.7
 compress/uastc_level=0

@@ -3,9 +3,10 @@
 importer="texture"
 type="CompressedTexture2D"
 uid="uid://cqt5hr6olrup7"
-path="res://.godot/imported/fire_station_bitumen_diff.jpg-a3cb7225158b9a1e24db112e8bcb2548.ctex"
+path.s3tc="res://.godot/imported/fire_station_bitumen_diff.jpg-a3cb7225158b9a1e24db112e8bcb2548.s3tc.ctex"
 metadata={
-"vram_texture": false
+"imported_formats": ["s3tc_bptc"],
+"vram_texture": true
 }
 generator_parameters={
 "md5": "b6d7c3096bc68eba624ec450f01b9294"
@@ -14,11 +15,11 @@ generator_parameters={
 [deps]
 
 source_file="res://models/real/buildings/fire_station_bitumen_diff.jpg"
-dest_files=["res://.godot/imported/fire_station_bitumen_diff.jpg-a3cb7225158b9a1e24db112e8bcb2548.ctex"]
+dest_files=["res://.godot/imported/fire_station_bitumen_diff.jpg-a3cb7225158b9a1e24db112e8bcb2548.s3tc.ctex"]
 
 [params]
 
-compress/mode=0
+compress/mode=2
 compress/high_quality=false
 compress/lossy_quality=0.7
 compress/uastc_level=0

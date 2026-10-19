@@ -3,9 +3,10 @@
 importer="texture"
 type="CompressedTexture2D"
 uid="uid://b18h4ljs0m1sm"
-path="res://.godot/imported/office_glass_concrete_pavement_arm.jpg-0ef637ed249f0f657801b877ddbae8c4.ctex"
+path.s3tc="res://.godot/imported/office_glass_concrete_pavement_arm.jpg-0ef637ed249f0f657801b877ddbae8c4.s3tc.ctex"
 metadata={
-"vram_texture": false
+"imported_formats": ["s3tc_bptc"],
+"vram_texture": true
 }
 generator_parameters={
 "md5": "9bd3e296783de784efbe67f2e36a2e28"
@@ -14,11 +15,11 @@ generator_parameters={
 [deps]
 
 source_file="res://models/real/zones/c2/office_glass_concrete_pavement_arm.jpg"
-dest_files=["res://.godot/imported/office_glass_concrete_pavement_arm.jpg-0ef637ed249f0f657801b877ddbae8c4.ctex"]
+dest_files=["res://.godot/imported/office_glass_concrete_pavement_arm.jpg-0ef637ed249f0f657801b877ddbae8c4.s3tc.ctex"]
 
 [params]
 
-compress/mode=0
+compress/mode=2
 compress/high_quality=false
 compress/lossy_quality=0.7
 compress/uastc_level=0

@@ -3,9 +3,10 @@
 importer="texture"
 type="CompressedTexture2D"
 uid="uid://dhpu3ulcty4hf"
-path="res://.godot/imported/chemical_plant_concrete_wall_004_arm.jpg-3a8654d826b1b22017c69307c636f359.ctex"
+path.s3tc="res://.godot/imported/chemical_plant_concrete_wall_004_arm.jpg-3a8654d826b1b22017c69307c636f359.s3tc.ctex"
 metadata={
-"vram_texture": false
+"imported_formats": ["s3tc_bptc"],
+"vram_texture": true
 }
 generator_parameters={
 "md5": "28040cb586a1dd8d3bc7886c842938e5"
@@ -14,11 +15,11 @@ generator_parameters={
 [deps]
 
 source_file="res://models/real/zones/i3/chemical_plant_concrete_wall_004_arm.jpg"
-dest_files=["res://.godot/imported/chemical_plant_concrete_wall_004_arm.jpg-3a8654d826b1b22017c69307c636f359.ctex"]
+dest_files=["res://.godot/imported/chemical_plant_concrete_wall_004_arm.jpg-3a8654d826b1b22017c69307c636f359.s3tc.ctex"]
 
 [params]
 
-compress/mode=0
+compress/mode=2
 compress/high_quality=false
 compress/lossy_quality=0.7
 compress/uastc_level=0

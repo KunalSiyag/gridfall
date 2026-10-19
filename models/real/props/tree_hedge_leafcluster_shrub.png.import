@@ -3,9 +3,10 @@
 importer="texture"
 type="CompressedTexture2D"
 uid="uid://b54baphsx5gkn"
-path="res://.godot/imported/tree_hedge_leafcluster_shrub.png-1501991c54cfcebdf618ac305c52c2fb.ctex"
+path.s3tc="res://.godot/imported/tree_hedge_leafcluster_shrub.png-1501991c54cfcebdf618ac305c52c2fb.s3tc.ctex"
 metadata={
-"vram_texture": false
+"imported_formats": ["s3tc_bptc"],
+"vram_texture": true
 }
 generator_parameters={
 "md5": "b439822cd6e23bddd53e9114242db5b2"
@@ -14,11 +15,11 @@ generator_parameters={
 [deps]
 
 source_file="res://models/real/props/tree_hedge_leafcluster_shrub.png"
-dest_files=["res://.godot/imported/tree_hedge_leafcluster_shrub.png-1501991c54cfcebdf618ac305c52c2fb.ctex"]
+dest_files=["res://.godot/imported/tree_hedge_leafcluster_shrub.png-1501991c54cfcebdf618ac305c52c2fb.s3tc.ctex"]
 
 [params]
 
-compress/mode=0
+compress/mode=2
 compress/high_quality=false
 compress/lossy_quality=0.7
 compress/uastc_level=0

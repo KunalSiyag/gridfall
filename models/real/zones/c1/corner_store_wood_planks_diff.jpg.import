@@ -3,9 +3,10 @@
 importer="texture"
 type="CompressedTexture2D"
 uid="uid://ds4wbm7yfhog3"
-path="res://.godot/imported/corner_store_wood_planks_diff.jpg-5d926902015635c444288836e4a14666.ctex"
+path.s3tc="res://.godot/imported/corner_store_wood_planks_diff.jpg-5d926902015635c444288836e4a14666.s3tc.ctex"
 metadata={
-"vram_texture": false
+"imported_formats": ["s3tc_bptc"],
+"vram_texture": true
 }
 generator_parameters={
 "md5": "4078036e4cecddd371ee08ac6e8762bd"
@@ -14,11 +15,11 @@ generator_parameters={
 [deps]
 
 source_file="res://models/real/zones/c1/corner_store_wood_planks_diff.jpg"
-dest_files=["res://.godot/imported/corner_store_wood_planks_diff.jpg-5d926902015635c444288836e4a14666.ctex"]
+dest_files=["res://.godot/imported/corner_store_wood_planks_diff.jpg-5d926902015635c444288836e4a14666.s3tc.ctex"]
 
 [params]
 
-compress/mode=0
+compress/mode=2
 compress/high_quality=false
 compress/lossy_quality=0.7
 compress/uastc_level=0

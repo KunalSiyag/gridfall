@@ -3,9 +3,10 @@
 importer="texture"
 type="CompressedTexture2D"
 uid="uid://b2h17l857wjpt"
-path="res://.godot/imported/factory_modern_leafy_grass_diff.jpg-86e4d6b0d50f3bc1bb2f66eff56d7235.ctex"
+path.s3tc="res://.godot/imported/factory_modern_leafy_grass_diff.jpg-86e4d6b0d50f3bc1bb2f66eff56d7235.s3tc.ctex"
 metadata={
-"vram_texture": false
+"imported_formats": ["s3tc_bptc"],
+"vram_texture": true
 }
 generator_parameters={
 "md5": "5289ac4c3bf240f677f5b31118faf1da"
@@ -14,11 +15,11 @@ generator_parameters={
 [deps]
 
 source_file="res://models/real/zones/i2/factory_modern_leafy_grass_diff.jpg"
-dest_files=["res://.godot/imported/factory_modern_leafy_grass_diff.jpg-86e4d6b0d50f3bc1bb2f66eff56d7235.ctex"]
+dest_files=["res://.godot/imported/factory_modern_leafy_grass_diff.jpg-86e4d6b0d50f3bc1bb2f66eff56d7235.s3tc.ctex"]
 
 [params]
 
-compress/mode=0
+compress/mode=2
 compress/high_quality=false
 compress/lossy_quality=0.7
 compress/uastc_level=0

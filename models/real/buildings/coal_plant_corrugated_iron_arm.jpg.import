@@ -3,9 +3,10 @@
 importer="texture"
 type="CompressedTexture2D"
 uid="uid://cj1rqiaqykj6s"
-path="res://.godot/imported/coal_plant_corrugated_iron_arm.jpg-a5a01479af3c0aff4407f2376426ff3c.ctex"
+path.s3tc="res://.godot/imported/coal_plant_corrugated_iron_arm.jpg-a5a01479af3c0aff4407f2376426ff3c.s3tc.ctex"
 metadata={
-"vram_texture": false
+"imported_formats": ["s3tc_bptc"],
+"vram_texture": true
 }
 generator_parameters={
 "md5": "f4e64b3490b6c330feebc15b878cfe5e"
@@ -14,11 +15,11 @@ generator_parameters={
 [deps]
 
 source_file="res://models/real/buildings/coal_plant_corrugated_iron_arm.jpg"
-dest_files=["res://.godot/imported/coal_plant_corrugated_iron_arm.jpg-a5a01479af3c0aff4407f2376426ff3c.ctex"]
+dest_files=["res://.godot/imported/coal_plant_corrugated_iron_arm.jpg-a5a01479af3c0aff4407f2376426ff3c.s3tc.ctex"]
 
 [params]
 
-compress/mode=0
+compress/mode=2
 compress/high_quality=false
 compress/lossy_quality=0.7
 compress/uastc_level=0

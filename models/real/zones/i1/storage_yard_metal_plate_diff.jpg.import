@@ -3,9 +3,10 @@
 importer="texture"
 type="CompressedTexture2D"
 uid="uid://cboxtpecnk0pn"
-path="res://.godot/imported/storage_yard_metal_plate_diff.jpg-8868f5e5e75c6de316838cf178e39f0e.ctex"
+path.s3tc="res://.godot/imported/storage_yard_metal_plate_diff.jpg-8868f5e5e75c6de316838cf178e39f0e.s3tc.ctex"
 metadata={
-"vram_texture": false
+"imported_formats": ["s3tc_bptc"],
+"vram_texture": true
 }
 generator_parameters={
 "md5": "102fafb238f0dc82825ea3701724e6c1"
@@ -14,11 +15,11 @@ generator_parameters={
 [deps]
 
 source_file="res://models/real/zones/i1/storage_yard_metal_plate_diff.jpg"
-dest_files=["res://.godot/imported/storage_yard_metal_plate_diff.jpg-8868f5e5e75c6de316838cf178e39f0e.ctex"]
+dest_files=["res://.godot/imported/storage_yard_metal_plate_diff.jpg-8868f5e5e75c6de316838cf178e39f0e.s3tc.ctex"]
 
 [params]
 
-compress/mode=0
+compress/mode=2
 compress/high_quality=false
 compress/lossy_quality=0.7
 compress/uastc_level=0

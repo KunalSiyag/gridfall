@@ -3,9 +3,10 @@
 importer="texture"
 type="CompressedTexture2D"
 uid="uid://gnoej7okyl0n"
-path="res://.godot/imported/modern_midrise_solar_cells_diff.jpg-44d0f30821554348c44c7c642d15ee51.ctex"
+path.s3tc="res://.godot/imported/modern_midrise_solar_cells_diff.jpg-44d0f30821554348c44c7c642d15ee51.s3tc.ctex"
 metadata={
-"vram_texture": false
+"imported_formats": ["s3tc_bptc"],
+"vram_texture": true
 }
 generator_parameters={
 "md5": "34314ca24667c3eec574d37137a7832f"
@@ -14,11 +15,11 @@ generator_parameters={
 [deps]
 
 source_file="res://models/real/zones/r2/modern_midrise_solar_cells_diff.jpg"
-dest_files=["res://.godot/imported/modern_midrise_solar_cells_diff.jpg-44d0f30821554348c44c7c642d15ee51.ctex"]
+dest_files=["res://.godot/imported/modern_midrise_solar_cells_diff.jpg-44d0f30821554348c44c7c642d15ee51.s3tc.ctex"]
 
 [params]
 
-compress/mode=0
+compress/mode=2
 compress/high_quality=false
 compress/lossy_quality=0.7
 compress/uastc_level=0

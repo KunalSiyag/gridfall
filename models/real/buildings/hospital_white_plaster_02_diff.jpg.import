@@ -3,9 +3,10 @@
 importer="texture"
 type="CompressedTexture2D"
 uid="uid://uetemmkf6dmx"
-path="res://.godot/imported/hospital_white_plaster_02_diff.jpg-a6668cd7d5e9d0b0913a667044a4f747.ctex"
+path.s3tc="res://.godot/imported/hospital_white_plaster_02_diff.jpg-a6668cd7d5e9d0b0913a667044a4f747.s3tc.ctex"
 metadata={
-"vram_texture": false
+"imported_formats": ["s3tc_bptc"],
+"vram_texture": true
 }
 generator_parameters={
 "md5": "ec4f266af731d969a0d89a30ead57c09"
@@ -14,11 +15,11 @@ generator_parameters={
 [deps]
 
 source_file="res://models/real/buildings/hospital_white_plaster_02_diff.jpg"
-dest_files=["res://.godot/imported/hospital_white_plaster_02_diff.jpg-a6668cd7d5e9d0b0913a667044a4f747.ctex"]
+dest_files=["res://.godot/imported/hospital_white_plaster_02_diff.jpg-a6668cd7d5e9d0b0913a667044a4f747.s3tc.ctex"]
 
 [params]
 
-compress/mode=0
+compress/mode=2
 compress/high_quality=false
 compress/lossy_quality=0.7
 compress/uastc_level=0
