@@ -21,6 +21,9 @@ const DIST_Y := BAND_TOP + BAND_H + 12.0
 const MAX_PINGS := 3
 ## Horizontal spacing of chevrons stacked at one end of the strip.
 const STACK_PX := 11.0
+## Least space between two distance labels, and how far a label may slide from its marker.
+const LABEL_GAP := 6.0
+const LABEL_SLIDE := 24.0
 ## Draw order (later on top) and label priority (lower first).
 const ORDER := {"ping": 0, "event": 1, "waypoint": 2}
 
@@ -170,7 +173,7 @@ func _draw() -> void:
 			draw_circle(c, 6.2, Color(0.02, 0.03, 0.05, 0.55 * col.a), true, -1.0, true)
 			draw_circle(c, 4.6, col, true, -1.0, true)
 	# Distances under the markers on the strip, by priority; a label that would overlap one
-	# already placed is left out.
+	# already placed slides aside while it stays under its marker, else it is left out.
 	var spans: Array[Vector2] = []
 	var fs2 := 12
 	for k in range(placed.size() - 1, -1, -1):
@@ -180,14 +183,11 @@ func _draw() -> void:
 		var m: Dictionary = e["m"]
 		var t: String = m["dist"]
 		var w := f.get_string_size(t, HORIZONTAL_ALIGNMENT_LEFT, -1, fs2).x
-		var x0 := clampf(float(e["x"]) - w * 0.5, 0.0, WIDTH - w)
-		var span := Vector2(x0 - 4.0, x0 + w + 4.0)
-		var hit := false
-		for q in spans:
-			hit = hit or (span.x < q.y and q.x < span.y)
-		if hit:
+		var mx := float(e["x"])
+		var x0 := _label_x(mx, w, spans)
+		if is_nan(x0):
 			continue
-		spans.append(span)
+		spans.append(Vector2(x0, x0 + w))
 		var a := float(m.get("alpha", 1.0))
 		var col := S.ACCENT.lerp(S.WHITE, 0.25) if str(m["kind"]) == "waypoint" else Color(1, 1, 1, 0.92)
 		col.a *= a
@@ -205,12 +205,33 @@ func _edge_fade(x: float) -> float:
 	return 1.0 - smoothstep(0.62, 1.0, u)
 
 
-## 1 away from every marker, fading to 0.18 for a letter or tick right under one.
+## 1 away from every marker, fading to 0.12 for a letter or tick right under one.
 static func _under_marker(x: float, xs: PackedFloat32Array) -> float:
 	var k := 1.0
 	for mx in xs:
-		k = minf(k, lerpf(0.18, 1.0, smoothstep(7.0, 15.0, absf(x - mx))))
+		k = minf(k, lerpf(0.12, 1.0, smoothstep(8.0, 20.0, absf(x - mx))))
 	return k
+
+
+## Left x of a w-wide label under the marker at mx, kept inside the strip and clear of the
+## labels in spans (each Vector2(left, right)) by LABEL_GAP: centred if it fits, else slid aside
+## while its centre stays within LABEL_SLIDE of the marker; NAN when it cannot be placed.
+static func _label_x(mx: float, w: float, spans: Array[Vector2]) -> float:
+	var x0 := clampf(mx - w * 0.5, 0.0, WIDTH - w)
+	for _pass in range(2):
+		var moved := false
+		for q in spans:
+			if x0 < q.y + LABEL_GAP and q.x < x0 + w + LABEL_GAP:
+				x0 = q.y + LABEL_GAP if mx >= (q.x + q.y) * 0.5 else q.x - LABEL_GAP - w
+				moved = true
+		if not moved:
+			break
+	if x0 < 0.0 or x0 + w > WIDTH or absf(x0 + w * 0.5 - mx) > LABEL_SLIDE:
+		return NAN
+	for q in spans:
+		if x0 < q.y + LABEL_GAP and q.x < x0 + w + LABEL_GAP:
+			return NAN
+	return x0
 
 
 static func _flat(a: Vector3, b: Vector3) -> float:

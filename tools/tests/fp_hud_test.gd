@@ -77,6 +77,7 @@ func _init() -> void:
 	await _check_agents(ctx)
 	await _check_card(ctx, client)
 	await _check_map(ctx, f)
+	_check_compass_labels()
 	await _check_reload(ctx)
 	await _check_pause(ctx)
 	var st: Dictionary = f.self_test()
@@ -366,6 +367,15 @@ func _check_map(ctx: FpContext, f: FpFeature) -> void:
 	K.check(fails, ctx.hud.waypoint() != null and is_equal_approx((ctx.hud.waypoint() as Vector3).x, 3.0), "from_dict restores the waypoint")
 	f.from_dict({})
 	K.check(fails, ctx.hud.waypoint() == null, "from_dict({}) clears the waypoint")
+
+
+func _check_compass_labels() -> void:
+	var C := preload("res://scripts/fp/ui/hud_compass.gd")
+	var spans: Array[Vector2] = [Vector2(377.0, 417.0)]
+	var x := C._label_x(444.0, 36.0, spans)
+	K.check(fails, not is_nan(x) and x >= 417.0 + C.LABEL_GAP - 0.01 and x + 36.0 <= C.WIDTH + 0.01, "a compass distance at the strip's end slides clear of its neighbour (%.1f)" % x)
+	K.check(fails, is_nan(C._label_x(400.0, 36.0, spans)), "a distance that cannot stay under its marker is left out")
+	K.check(fails, is_equal_approx(C._label_x(200.0, 36.0, spans), 182.0), "a free distance is centred under its marker")
 
 
 func _check_reload(ctx: FpContext) -> void:
