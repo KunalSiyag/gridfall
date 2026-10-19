@@ -454,7 +454,10 @@ func _check_lots(view: CityView, sim: CitySim) -> void:
 			continue
 		vacant += 1
 		for m: Material in _materials(holder):
-			if m is BaseMaterial3D and (m as BaseMaterial3D).emission_enabled:
+			# H's street props share a palette atlas whose emission is masked by a texture (black away
+			# from lamps); only flat, unmasked emission is the old glowing pad or post.
+			var bm := m as BaseMaterial3D
+			if bm != null and bm.emission_enabled and bm.emission_texture == null:
 				glowing.append(i)
 				break
 		if holder.find_children("VacantLot", "", false, false).is_empty():

@@ -616,7 +616,7 @@ func _check_lights() -> void:
 	jn.update_lamps(Vector3(D.tx(x), 0, D.ty(x)), 1.0)
 	K.check(fails, ns_red != null and ns_red.material_override == jn.get("_off_mats")[0] and ns_green.material_override == jn.get("_on_mats")[2], "lamps: N-S green lit after the change")
 	K.check(fails, is_equal_approx(on_red.emission_energy_multiplier, energy) and on_red.albedo_color == col, "lamps: the shared materials are never edited")
-	K.check(fails, f.light_pole(x, 0) != null and f.light_pole(x, 0).find_child("SignText_A", false, false) != null, "light_pole(i, 0) is the NE pole with SignText_A / SignText_B mounts")
+	K.check(fails, f.light_pole(x, 0) != null and f.light_pole(x, 0).find_child("SignText_A", true, false) != null, "light_pole(i, 0) is the NE pole with SignText_A / SignText_B mounts")
 	# The poles and pedestrian signals stand beside the zebras, never in the walking line: every
 	# zebra point keeps 0.3 m clear even at the widest lateral offset a crosser takes (half the band).
 	var sw: SW = f.get("peds")
