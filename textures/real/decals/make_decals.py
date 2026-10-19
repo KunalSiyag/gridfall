@@ -4,10 +4,11 @@
 Writes PNGs next to this file: crack_0/1, patch_0, oil_0/1, drain_0, stain_0, puddle_0, the puddle
 ORM map, hoarding.png (a greyscale painted-plywood hoarding, 4.8 m square, four 1.2 m panels,
 tinted per site), grime_mask/grime_dust, hedge_leaves.png (a tiling clipped-hedge surface, 1 m
-square, stamped from the shrub leaf cluster) and grate.png (a 1.3 m cast-iron tree grate with
-slots, alpha 0 in the slots) and tactile.png (0.4 m of buff blister paving for the kerb ramps).
-Deterministic (fixed seeds); needs numpy and Pillow. Name textures
-to rebuild only those (hoarding, grime, hedge, grate, tactile).
+square, stamped from the shrub leaf cluster), grate.png (a 1.3 m cast-iron tree grate with slots,
+alpha 0 in the slots), tactile.png (0.4 m of buff blister paving for the kerb ramps) and
+noise_fbm.png (a tiling, equalised fbm for the asphalt and iron shaders). Deterministic (fixed
+seeds); needs numpy and Pillow. Name textures to rebuild only those (hoarding, grime, hedge, grate,
+tactile, noise).
 
     python3 textures/real/decals/make_decals.py [name ...]
 """
@@ -241,6 +242,36 @@ def grate(seed):
     save("grate", rgb, alpha)
 
 
+def noise(seed):
+    """A seamlessly tiling fbm (periodic value noise, five octaves), equalised so its values spread
+    evenly over 0..1, for shaders that need a smooth noise field: the street asphalt's wear and
+    variation, the cast-iron covers."""
+    rng = np.random.default_rng(seed)
+    n = 256
+    t = (np.arange(n) + 0.5) / n
+    acc = np.zeros((n, n), np.float32)
+    amp = 1.0
+    for o in range(5):
+        c = 4 * 2 ** o
+        g = rng.random((c, c)).astype(np.float32)
+        u = t * c
+        i0 = np.floor(u).astype(int) % c
+        i1 = (i0 + 1) % c
+        f = u - np.floor(u)
+        f = f * f * (3.0 - 2.0 * f)
+        a = g[i0[:, None], i0[None, :]]
+        b = g[i0[:, None], i1[None, :]]
+        cc = g[i1[:, None], i0[None, :]]
+        d = g[i1[:, None], i1[None, :]]
+        fx = f[None, :]
+        fy = f[:, None]
+        acc += amp * ((a * (1 - fx) + b * fx) * (1 - fy) + (cc * (1 - fx) + d * fx) * fy)
+        amp *= 0.5
+    # Equalise (a monotonic rank remap keeps it smooth): values spread evenly over 0..1.
+    m = np.argsort(np.argsort(acc, axis=None)).reshape(acc.shape) / float(acc.size - 1)
+    Image.fromarray((m * 255).astype(np.uint8), "L").save(os.path.join(OUT, "noise_fbm.png"), optimize=True)
+
+
 def tactile(seed):
     """Buff blister paving at a kerb ramp, 0.4 m square and tiling: a 6 x 6 grid of 25 mm domes at
     66.7 mm, lit from the upper left, with light grime."""
@@ -270,7 +301,7 @@ def main():
     want = set(sys.argv[1:])
     if want:
         for name in want:
-            {"hoarding": lambda: hoarding(71), "grime": lambda: grime(81), "hedge": lambda: hedge(91), "grate": lambda: grate(101), "tactile": lambda: tactile(111)}[name]()
+            {"hoarding": lambda: hoarding(71), "grime": lambda: grime(81), "hedge": lambda: hedge(91), "grate": lambda: grate(101), "tactile": lambda: tactile(111), "noise": lambda: noise(121)}[name]()
         return
     for k in range(2):
         save("crack_%d" % k, *cracks(11 + k))
@@ -287,6 +318,7 @@ def main():
     hedge(91)
     grate(101)
     tactile(111)
+    noise(121)
 
 
 if __name__ == "__main__":

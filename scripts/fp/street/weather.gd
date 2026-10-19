@@ -240,10 +240,10 @@ func _build_rain(p_preset: String) -> void:
 	mat.billboard_mode = BaseMaterial3D.BILLBOARD_FIXED_Y
 	mat.billboard_keep_scale = true
 	mat.albedo_color = Color(0.78, 0.82, 0.88, 0.26)
-	# Drops passing right by the lens would be metre-long bars: fade them in from 0.4 to 1.6 m.
+	# Drops passing right by the lens would be bars across the screen: fade them in from 1 to 3 m.
 	mat.distance_fade_mode = BaseMaterial3D.DISTANCE_FADE_PIXEL_ALPHA
-	mat.distance_fade_min_distance = 0.4 * WS.M
-	mat.distance_fade_max_distance = 1.6 * WS.M
+	mat.distance_fade_min_distance = 1.0 * WS.M
+	mat.distance_fade_max_distance = 3.0 * WS.M
 	mat.disable_receive_shadows = true
 	q.material = mat
 	rain.draw_pass_1 = q

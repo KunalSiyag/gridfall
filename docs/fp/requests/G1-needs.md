@@ -61,6 +61,9 @@ metres are given.
 
 ## To A (player)
 
-1. **Camera fade hook** (your request 3, optional v2): not done. Most furniture is batched in
-   MultiMeshes, so a per-prop dither fade needs a per-instance shader parameter path; G1 will add
-   `fade_props_near(p, r)` with it if the grazing frames turn out to matter.
+1. **Camera fade hook** (your request 3, optional v2): done in the materials instead of a call.
+   G1's batched street props (benches, bins, bollards, lamps, trees, ...) and every street-level
+   leaf dither out between 1.4 m and 0.35 m from the camera (`street_dressing.gd` `NEAR_FADE`), so
+   a camera backed into them sees through. Not covered: the lamp poles baked into lit road pieces,
+   signs, shelters and lease boards (single nodes, rarely in the arm's way). No `fade_props_near`
+   is needed; tell G1 if A still wants one.

@@ -286,6 +286,7 @@ func set_fp_mode(on: bool) -> void:
 		_build_trees()
 		_refresh_trees()
 		rebuild_all(false)
+		_apply_night()
 	_apply_fp_visibility()
 	if changed:
 		if sim != null and _tiles_root != null:
@@ -665,7 +666,7 @@ func road_fp_material() -> ShaderMaterial:
 	if _road_fp_mat == null and ResourceLoader.exists(ROAD_SHADER) and ResourceLoader.exists(TEX + "asphalt_albedo.jpg"):
 		_road_fp_mat = ShaderMaterial.new()
 		_road_fp_mat.shader = load(ROAD_SHADER)
-		for pair: Array in [["albedo_tex", "asphalt_albedo.jpg"], ["normal_tex", "asphalt_normal.jpg"], ["rough_tex", "asphalt_rough.jpg"], ["noise_tex", "decals/grime_mask.png"]]:
+		for pair: Array in [["albedo_tex", "asphalt_albedo.jpg"], ["normal_tex", "asphalt_normal.jpg"], ["rough_tex", "asphalt_rough.jpg"], ["noise_tex", "decals/noise_fbm.png"]]:
 			if ResourceLoader.exists(TEX + str(pair[1])):
 				_road_fp_mat.set_shader_parameter(str(pair[0]), load(TEX + str(pair[1])))
 		_road_fp_mat.set_shader_parameter("metre", WS.M)
@@ -2150,7 +2151,10 @@ func _apply_night() -> void:
 	for k in range(_window_mats.size()):
 		_window_mats[k].emission_energy_multiplier = float(WINDOW_GLOW[k]) * glow
 	if _lamp_mat != null:
-		_lamp_mat.emission_energy_multiplier = 0.4 + 5.0 * glow
+		# From above a faint glow keeps the lamps readable by day; on foot an unlit lamp is frosted
+		# glass, so it lights up only toward dusk.
+		_lamp_mat.emission_energy_multiplier = (0.0 if fp_mode else 0.4) + 5.0 * glow
+		_lamp_mat.albedo_color = Color(0.78, 0.76, 0.72) if fp_mode else Color(1.0, 0.93, 0.75)
 	if _pool_mat != null:
 		_pool_mat.albedo_color = Color(1.0, 0.78, 0.5) * (0.55 * glow)
 	for key: String in _mats.keys():

@@ -10,7 +10,7 @@ shader_type spatial;
 uniform sampler2D albedo_tex : source_color, filter_linear_mipmap_anisotropic, repeat_enable;
 uniform sampler2D normal_tex : hint_normal, filter_linear_mipmap_anisotropic, repeat_enable;
 uniform sampler2D rough_tex : hint_default_white, filter_linear_mipmap_anisotropic, repeat_enable;
-// A tiling fbm mask (textures/real/decals/grime_mask.png).
+// A tiling, equalised fbm (textures/real/decals/noise_fbm.png).
 uniform sampler2D noise_tex : hint_default_white, filter_linear_mipmap, repeat_enable;
 uniform vec4 tint : source_color = vec4(0.80, 0.80, 0.81, 1.0);
 uniform float metre = 0.05;

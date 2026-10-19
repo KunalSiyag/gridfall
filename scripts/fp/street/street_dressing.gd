@@ -1350,13 +1350,15 @@ func _wets(m: BaseMaterial3D) -> void:
 	view._wet_material(m, view.wetness)
 
 
-## Cast iron for the road models' covers on foot: dark, mottled by the grime mask in world space.
+## Cast iron for the road models' covers on foot: dark, mottled by the fbm noise in world space.
 func _iron_mat() -> StandardMaterial3D:
 	if not _mats.has("iron"):
-		var m := _std("iron_base", Color(0.2, 0.19, 0.18), 0.5, 0.6).duplicate() as StandardMaterial3D
+		var m := _std("iron_base", Color(0.2, 0.19, 0.18), 0.2, 0.75).duplicate() as StandardMaterial3D
 		m.resource_name = "Iron_FP"
-		var tex := _decal_texture("grime_mask")
+		var tex := _decal_texture("noise_fbm")
 		if tex != null:
+			# The noise averages a half: mottled iron around 0.15 albedo.
+			m.albedo_color = Color(0.32, 0.3, 0.28)
 			m.albedo_texture = tex
 			m.uv1_triplanar = true
 			m.uv1_world_triplanar = true
