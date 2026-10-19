@@ -1,18 +1,27 @@
 extends Node3D
-## The player's visible body (slice A). Stage A1: the legacy person (AP.PEOPLE_LEGACY_DIR
-## person_a.glb at WS.PEOPLE_SCALE) as a placeholder under a CharacterRoot, turned to face the
-## player's -Z forward. The legacy people are built from separate limb pieces, so the placeholder
-## is re-rigged as a jointed puppet (placeholder_puppet.gd) and walks, runs, crouches, jumps and
-## lands with a procedural gait whose foot contacts FpPlayer's footsteps follow. Procedural lean
-## about the feet and a damped visual step offset apply on top. HC's animated hero replaces the
-## placeholder in stage A2. The head turns toward a look target (A 6.9: the conversation partner,
-## the focused interactable or where the camera looks). In first person it only casts its shadow;
-## in third person it fades out when the camera comes close to the head.
+## The player's visible body (slice A). Stage A2: HC's animated hero (hero_rig.gd: AP.HERO_M or
+## AP.HERO_F per settings.hero, the gender's shared animation library, an AnimationTree driven
+## from code, head look through LookAtModifier3Ds) under a CharacterRoot scaled to the hero's
+## height (WS.M * h_target / rest_height_m from HC's roster), turned to face the player's -Z
+## forward. When the hero's files are missing it falls back to the stage A1 placeholder: the legacy
+## person (AP.PEOPLE_LEGACY_DIR person_a.glb at WS.PEOPLE_SCALE) re-rigged as a jointed puppet
+## (placeholder_puppet.gd) that walks, runs, crouches, jumps and lands with a procedural gait.
+## Either body's foot contacts drive FpPlayer's footsteps. Procedural lean about the feet and a
+## damped visual step offset apply on top. The head turns toward a look target (A 6.9: the
+## conversation partner, the focused interactable or where the camera looks). In first person
+## the body only casts its shadow; in third person it fades out when the camera comes close to
+## the head.
 
 const WS := preload("res://scripts/fp/world_scale.gd")
 const AP := preload("res://scripts/fp/asset_paths.gd")
 const SM := preload("res://scripts/fp/player/spring_math.gd")
 const PUPPET := preload("res://scripts/fp/player/placeholder_puppet.gd")
+const HERO := preload("res://scripts/fp/player/hero_rig.gd")
+## HC's roster defaults (Rocketbox: one skeleton per gender) for a checkout without roster.json.
+const ROSTER_DEFAULTS := {"m": {"rest_height_m": 1.7951, "hip_m": 0.8952}, "f": {"rest_height_m": 1.7164, "hip_m": 0.9233}}
+## Hero heights (m; HC-characters.md 1.9): the man at WS.PERSON_H, the woman 5 % shorter.
+const HERO_H := 1.75
+const HERO_F_FACTOR := 0.95
 ## Placeholder bodies per settings.hero (the legacy people are not gendered; b reads as the
 ## alternative figure).
 const PLACEHOLDERS := {"m": "person_a.glb", "f": "person_b.glb"}
@@ -68,8 +77,13 @@ const BREATH_HZ := 0.23
 
 ## "m" or "f" (settings.hero).
 var hero: String = ""
-## True when the loaded body is the legacy placeholder (always, until stage A2).
+## Body and library per hero; a missing file falls back to the placeholder (tests point these at
+## missing files to exercise it).
+var hero_paths: Dictionary = {"m": [AP.HERO_M, AP.CHAR_LIB_M], "f": [AP.HERO_F, AP.CHAR_LIB_F]}
+## True when the loaded body is the legacy placeholder.
 var placeholder: bool = true
+## HC's animated hero (hero_rig.gd), or null for the placeholder.
+var rig: RefCounted = null
 ## The jointed placeholder (placeholder_puppet.gd), or null for a rigid body.
 var puppet: RefCounted = null
 var _root: Node3D
@@ -98,15 +112,32 @@ var head_look: Vector2 = Vector2.ZERO
 var joints: Dictionary = {}
 
 
-## Loads the body for hero ("m" or "f"); a missing file keeps the current body.
+## Loads the body for hero ("m" or "f"): HC's animated hero, else the placeholder; a body that
+## cannot load keeps the current one.
 func set_hero(h: String) -> void:
+	if h != "f":
+		h = "m"
 	if h == hero and _body != null:
 		return
-	var file: String = PLACEHOLDERS.get(h, PLACEHOLDERS["m"])
-	var path: String = AP.PEOPLE_LEGACY_DIR + file
-	var ps := AP.load_scene(path)
-	if ps == null and _body != null:
-		return
+	var new_rig := _build_hero(h)
+	var new_puppet: RefCounted = null
+	var new_body: Node3D = null
+	var scale := WS.PEOPLE_SCALE
+	if new_rig != null:
+		new_body = new_rig.get("body")
+		scale = _hero_scale(h)
+	else:
+		var path: String = AP.PEOPLE_LEGACY_DIR + str(PLACEHOLDERS.get(h, PLACEHOLDERS["m"]))
+		var ps := AP.load_scene(path)
+		if ps == null and _body != null:
+			return
+		new_puppet = PUPPET.build(path, ps) if ps != null else null
+		if new_puppet != null:
+			new_body = new_puppet.get("root")
+		elif ps != null:
+			new_body = ps.instantiate() as Node3D
+		if new_body == null:
+			new_body = _stand_in()
 	hero = h
 	if _root == null:
 		_root = Node3D.new()
@@ -116,17 +147,14 @@ func set_hero(h: String) -> void:
 		_body.queue_free()
 		_body = null
 	_geoms.clear()
-	puppet = PUPPET.build(path, ps) if ps != null else null
-	if puppet != null:
-		_body = puppet.get("root")
-	elif ps != null:
-		_body = ps.instantiate() as Node3D
-	if _body == null:
-		_body = _stand_in()
+	rig = new_rig
+	puppet = new_puppet
+	placeholder = rig == null
+	_body = new_body
 	_body.name = "Body"
-	# The legacy people face +Z; the player looks along -Z.
+	# Both bodies face +Z; the player looks along -Z.
 	_body.rotation.y = PI
-	_root.scale = Vector3.ONE * WS.PEOPLE_SCALE
+	_root.scale = Vector3.ONE * scale
 	_root.rotation = Vector3.ZERO
 	_root.add_child(_body)
 	for g: Node in _body.find_children("*", "GeometryInstance3D", true, false):
@@ -134,7 +162,37 @@ func set_hero(h: String) -> void:
 	if _body is GeometryInstance3D:
 		_geoms.append(_body as GeometryInstance3D)
 	_apply_look()
-	_pose(0.0)
+	if rig != null:
+		rig.call("snap", _crouch > 0.5)
+	else:
+		_pose(0.0)
+
+
+## True while HC's animated hero is the body (its clips then own the gait and the footsteps).
+func is_animated() -> bool:
+	return rig != null
+
+
+## The hero's locomotion phase in radians (the left heel strikes at 0, the right at PI), or NAN
+## outside locomotion; NAN for the placeholder.
+func gait_phase() -> float:
+	if rig == null:
+		return NAN
+	var ph: float = rig.get("phase")
+	return ph * TAU if ph >= 0.0 else NAN
+
+
+## Foot contacts of the last update_motion (hero only): [{"left": bool, "pos": Vector3}].
+func contacts() -> Array[Dictionary]:
+	if rig == null:
+		return []
+	return rig.get("contacts")
+
+
+## Plays an upper-body gesture on the hero ("interact", "wave", "phone", "door_try").
+func play_gesture(g: String) -> void:
+	if rig != null:
+		rig.call("play_gesture", g)
 
 
 ## First person: shadow only (you see your shadow, never your body). alpha 0..1 fades the body in
@@ -152,7 +210,8 @@ func set_view_state(shadow_only: bool, alpha: float) -> void:
 ## (u/s^2); step is the feet's sudden vertical jump this frame (a curb), absorbed visually; crouch
 ## is 0 standing .. 1 crouched; phase is FpPlayer's gait phase (radians, the left heel strikes at
 ## 0 and the right at PI); grounded and vy (u/s) drive the jump and landing poses.
-func update_motion(dt: float, speed: float, yaw_rate: float, fwd_acc: float, step: float, crouch: float = 0.0, phase: float = 0.0, grounded: bool = true, vy: float = 0.0) -> void:
+## talking holds the hero in its talk loop; backward plays its walk in reverse (first person).
+func update_motion(dt: float, speed: float, yaw_rate: float, fwd_acc: float, step: float, crouch: float = 0.0, phase: float = 0.0, grounded: bool = true, vy: float = 0.0, talking: bool = false, backward: bool = false) -> void:
 	_crouch = clampf(crouch, 0.0, 1.0)
 	if _root != null and placeholder and puppet == null:
 		_root.scale = Vector3(1.0, lerpf(1.0, RIGID_CROUCH_Y, _crouch), 1.0) * WS.PEOPLE_SCALE
@@ -164,6 +223,10 @@ func update_motion(dt: float, speed: float, yaw_rate: float, fwd_acc: float, ste
 	_dy = SM.damp(_dy - step, 0.0, HL_STEP, dt)
 	# Roll about the forward axis (-Z), positive leans left; pitch about +X, positive leans forward.
 	transform = Transform3D(Basis.from_euler(Vector3(-_pitch.x, 0.0, _roll.x)), Vector3(0.0, _dy, 0.0))
+	if rig != null:
+		rig.call("set_look_target", _look_target)
+		rig.call("update", dt, (-speed if backward else speed) / WS.M, grounded, vy / WS.M, _crouch > 0.5, talking)
+		return
 	if puppet == null:
 		return
 	var mps := speed / WS.M
@@ -202,6 +265,9 @@ func snap() -> void:
 	_was_grounded = true
 	head_look = Vector2.ZERO
 	transform = Transform3D.IDENTITY
+	if rig != null:
+		rig.call("snap", _crouch > 0.5)
+		return
 	_pose(_phase)
 	_head_look(0.0)
 
@@ -292,6 +358,8 @@ func _pose(phase: float) -> void:
 ## Turns the head toward the look target within its limits, measured in the spine's frame (so a
 ## running lean keeps the eyes level); a target behind the figure eases the head back to neutral.
 func _head_look(dt: float) -> void:
+	if puppet == null:
+		return
 	var hd: Node3D = puppet.get("head")
 	if hd == null:
 		return
@@ -336,6 +404,49 @@ func _elbow(s: float) -> float:
 static func _bump(s: float, c: float, w: float) -> float:
 	var d := wrapf(s - c, -0.5, 0.5)
 	return exp(-(d * d) / (w * w))
+
+
+## HC's hero for h, or null when its body or library is missing.
+func _build_hero(h: String) -> RefCounted:
+	var paths: Array = hero_paths.get(h, [])
+	if paths.size() < 2:
+		return null
+	var info := _roster_body(h, str(paths[0]))
+	var lib_path := str(paths[1])
+	var lib := load(lib_path) as AnimationLibrary if ResourceLoader.exists(lib_path) else null
+	var ref_hip := 0.0
+	if lib != null and lib.has_animation("walk"):
+		ref_hip = float(lib.get_animation("walk").get_meta("speed_ref_hip_m", 0.0))
+	var hip_ratio := float(info["hip_m"]) / ref_hip if ref_hip > 0.0 else 1.0
+	var k := hip_ratio * _hero_height(h) / float(info["rest_height_m"])
+	return HERO.build(str(paths[0]), lib_path, k, h)
+
+
+## WS.M * h_target / rest_height_m: the CharacterRoot scale that makes the hero h_target tall.
+func _hero_scale(h: String) -> float:
+	var paths: Array = hero_paths.get(h, [""])
+	return WS.M * _hero_height(h) / float(_roster_body(h, str(paths[0]))["rest_height_m"])
+
+
+static func _hero_height(h: String) -> float:
+	return HERO_H * (HERO_F_FACTOR if h == "f" else 1.0)
+
+
+static var _roster: Dictionary = {}
+
+
+## The roster entry (rest_height_m, hip_m) of the body at path, else the gender's defaults.
+static func _roster_body(h: String, path: String) -> Dictionary:
+	if _roster.is_empty():
+		var f := FileAccess.open(AP.CHAR_ROSTER, FileAccess.READ)
+		var parsed: Variant = JSON.parse_string(f.get_as_text()) if f != null else null
+		_roster = parsed if typeof(parsed) == TYPE_DICTIONARY else {"bodies": {}}
+	var bodies: Dictionary = _roster.get("bodies", {})
+	var e: Variant = bodies.get(path.get_file().get_basename(), null)
+	var d: Dictionary = ROSTER_DEFAULTS["f" if h == "f" else "m"]
+	if typeof(e) != TYPE_DICTIONARY:
+		return d
+	return {"rest_height_m": float((e as Dictionary).get("rest_height_m", d["rest_height_m"])), "hip_m": float((e as Dictionary).get("hip_m", d["hip_m"]))}
 
 
 func _model_point(n: Node3D) -> Vector3:

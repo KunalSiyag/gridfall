@@ -3,7 +3,8 @@ extends SceneTree
 ## the teleport snap, the arm never inside a building, the ground lift, recentering, frame-rate
 ## independence, the speed gate, the body turning to its travel, interaction from the camera ray,
 ## the V toggle, the conversation two-shot (on a test emission of conversation_changed), the rig's
-## cost and the placeholder avatar. Runs in third person on a grown city.
+## cost, HC's animated hero (stage A2) and the placeholder fallback. Runs in third person on a
+## grown city.
 
 const K := preload("res://tools/tests/fp_kit.gd")
 const D := preload("res://scripts/sim/sim_defs.gd")
@@ -11,6 +12,8 @@ const WS := preload("res://scripts/fp/world_scale.gd")
 const AP := preload("res://scripts/fp/asset_paths.gd")
 const DT := 1.0 / 60.0
 const M := WS.M
+## A heel is down once its ankle is this close to its standing height (m).
+const HEEL_DOWN := 0.005
 
 var fails: Array[String] = []
 
@@ -60,7 +63,7 @@ func _init() -> void:
 	await _check_toggle(ctx)
 	_check_conversation(ctx)
 	_check_cost(ctx)
-	_check_avatar(ctx)
+	await _check_avatar(ctx)
 	K.finish(self, "FP_TPS_TEST", fails)
 
 
@@ -358,17 +361,15 @@ func _check_cost(ctx: FpContext) -> void:
 	K.check(fails, frame_us / 600.0 + it / 6.0 < 500.0 and it < 200.0, "12. a player frame costs %.0f us and an interact tick %.0f us (frame + tick/6 < 500, tick < 200)" % [frame_us / 600.0, it])
 
 
-## 13 (A1 part). The placeholder hero is drawn in third person, shadow-only in first person; HC's
-## animated hero is stage A2.
+## 13. The hero is drawn in third person (shadow-only in first person: item 10) and leans into a
+## running turn. With HC's files: the animated hero (13a); then, with the hero's files pointed at
+## missing paths, the A1 placeholder fallback (13b).
 func _check_avatar(ctx: FpContext) -> void:
 	var p := ctx.player
 	var s := _street(ctx)
 	p.teleport(s["pos"], s["yaw"])
 	p.update_view(DT)
 	K.check(fails, p.avatar != null and p.avatar.is_body_visible() and not _shadow_only(p.avatar), "13. third person shows the hero")
-	var hero_path: String = (AP as Script).get_script_constant_map().get("HERO_M", "")
-	if hero_path.is_empty() or AP.load_scene(hero_path) == null:
-		print("  note 13. HC's hero (AP.HERO_M) is not merged yet: the animated-avatar checks run in stage A2")
 	# Leaning into a turn: running in a circle rolls the body toward the centre.
 	for k in range(90):
 		p.simulate(Vector2(0.6, 0.8), true, DT)
@@ -376,7 +377,245 @@ func _check_avatar(ctx: FpContext) -> void:
 		p.update_view(DT)
 	var lean: Vector2 = p.avatar.lean()
 	K.check(fails, absf(lean.x) > deg_to_rad(1.0) and absf(lean.x) <= deg_to_rad(8.0) + 1e-6, "13. the body leans into a running turn (%.1f deg roll)" % rad_to_deg(lean.x))
+	if not ResourceLoader.exists(AP.HERO_M) or not ResourceLoader.exists(AP.CHAR_LIB_M):
+		print("  note 13. HC's hero (AP.HERO_M) is missing: only the placeholder is checked")
+	else:
+		await _check_hero(ctx, s)
+	var av := p.avatar
+	var saved: Dictionary = av.hero_paths
+	av.hero_paths = {"m": ["res://models/characters/bodies/missing.glb", AP.CHAR_LIB_M], "f": ["res://models/characters/bodies/missing.glb", AP.CHAR_LIB_F]}
+	av.hero = ""
+	av.set_hero("m")
+	K.check(fails, av.placeholder and not av.is_animated(), "13b. with the hero's files missing the placeholder stands in")
 	_check_puppet(ctx, s)
+	av.hero_paths = saved
+	av.hero = ""
+	av.set_hero(str(ctx.settings.get("hero", "m")))
+
+
+## 13a (A2). HC's hero: loaded with its library and scaled to 1.75 m, facing the player's forward,
+## arms down (no T-pose) with the feet on the ground; walking and running keep the planted foot
+## still (the TimeScale matches the stride: within [0.9, 1.1] at WALK) and footsteps fall on
+## each heel strike; crouch, jump / land and talk switch the state machine; the head looks where
+## the camera looks within its limits; hero "f" swaps the body; gestures play; the tree is cheap.
+func _check_hero(ctx: FpContext, s: Dictionary) -> void:
+	var p := ctx.player
+	var av := p.avatar
+	p.teleport(s["pos"], s["yaw"])
+	p.update_view(DT)
+	K.check(fails, av.is_animated() and av.rig != null, "13a. HC's hero is the body")
+	if av.rig == null:
+		return
+	var rig: RefCounted = av.rig
+	var tree: AnimationTree = rig.get("tree")
+	var body: Node3D = rig.get("body")
+	var rest_h := 1.7951
+	K.check(fails, body.scene_file_path == AP.HERO_M and tree.has_animation_library("") and tree.get_animation_library("") == load(AP.CHAR_LIB_M) and str(tree.root_motion_track) == AP.CHAR_ROOT_MOTION_TRACK, "13a. %s with lib_m as the default library and the Root motion track" % body.scene_file_path.get_file())
+	var root_scale := (body.get_parent() as Node3D).scale.x
+	K.check(fails, absf(root_scale - M * 1.75 / rest_h) < 0.002 * M, "13a. CharacterRoot scale %.4f = WS.M * 1.75 / rest_height_m" % root_scale)
+	var fwd := p.body_forward()
+	var face := body.global_transform.basis.z.normalized()
+	K.check(fails, face.dot(fwd) > 0.995, "13a. the body faces the player's forward (dot %.4f)" % face.dot(fwd))
+	_run(p, Vector2.ZERO, false, 30)
+	var hand_drop := minf(rig.call("bone_world", "LeftUpperArm").y - rig.call("bone_world", "LeftHand").y, rig.call("bone_world", "RightUpperArm").y - rig.call("bone_world", "RightHand").y) / M
+	var low_idle: float = rig.call("feet_low", p.position.y) / M
+	K.check(fails, hand_drop > 0.4 and str(rig.call("state")) == "loco", "13a. idle: arms hang %.2f m below the shoulders (no T-pose)" % hand_drop)
+	K.check(fails, low_idle > -0.01 and low_idle < 0.03, "13a. idle: the feet are on the ground (lowest foot bone %.1f cm up)" % (low_idle * 100.0))
+	# Walking: TimeScale, the planted foot, the feet on the ground and the footsteps.
+	var walk := _gait(p, false, 240)
+	K.check(fails, float(walk["ts"]) >= 0.9 and float(walk["ts"]) <= 1.1, "13a. walking at WALK the locomotion TimeScale is %.3f (0.9..1.1)" % float(walk["ts"]))
+	K.check(fails, float(walk["slide"]) < 0.08, "13a. walking: the planted foot slides %.1f %% of the ground speed (< 8)" % (float(walk["slide"]) * 100.0))
+	K.check(fails, float(walk["low_min"]) > -0.02 and float(walk["low_max"]) < 0.04, "13a. walking: the lowest foot stays at the ground (%.1f..%.1f cm)" % [float(walk["low_min"]) * 100.0, float(walk["low_max"]) * 100.0])
+	K.check(fails, bool(walk["alternate"]) and int(walk["steps"]) >= 4 and absf(float(walk["steps"]) - float(walk["expect"])) <= 1.5, "13a. walking: %d footsteps alternate feet (%.1f expected from the stride)" % [int(walk["steps"]), float(walk["expect"])])
+	K.check(fails, int(walk["late"]) == 0, "13a. walking: every footstep is within 1 frame of its heel strike (%d off, worst %d frames)" % [int(walk["late"]), int(walk["worst"])])
+	var run := _gait(p, true, 150)
+	K.check(fails, float(run["ts"]) >= 0.85 and float(run["ts"]) <= 1.15 and float(run["slide"]) < 0.1, "13a. running: TimeScale %.3f, the planted foot slides %.1f %% (< 10)" % [float(run["ts"]), float(run["slide"]) * 100.0])
+	K.check(fails, float(run["low_min"]) > -0.02 and bool(run["alternate"]) and int(run["late"]) == 0, "13a. running: no foot below the ground (%.1f cm), %d alternating footsteps on the heel strikes (worst %d frames)" % [float(run["low_min"]) * 100.0, int(run["steps"]), int(run["worst"])])
+	_run(p, Vector2.ZERO, false, 60)
+	# Crouch.
+	for k in range(40):
+		p.simulate(Vector2.ZERO, false, DT, true)
+		p.update_view(DT)
+	var hips_c: float = (rig.call("bone_world", "Hips").y - p.position.y) / M
+	var low_c: float = rig.call("feet_low", p.position.y) / M
+	K.check(fails, str(rig.call("state")) == "crouch" and hips_c < 0.6 and low_c > -0.02 and low_c < 0.06, "13a. crouching: state %s, hips at %.2f m, feet %.1f cm up" % [rig.call("state"), hips_c, low_c * 100.0])
+	_run(p, Vector2.ZERO, false, 40)
+	# Jump and land.
+	p.simulate(Vector2.ZERO, false, DT, false, true)
+	p.update_view(DT)
+	var air_states := {}
+	var tuck := 0.0
+	for k in range(60):
+		p.simulate(Vector2.ZERO, false, DT, false, k < 5)
+		p.update_view(DT)
+		air_states[str(rig.call("state"))] = true
+		if not p.grounded:
+			tuck = maxf(tuck, (rig.call("feet_low", p.position.y)) / M)
+	var landed_state := str(rig.call("state"))
+	_run(p, Vector2.ZERO, false, 90)
+	K.check(fails, air_states.has("jump") and tuck > 0.15 and (landed_state == "land" or air_states.has("land")) and str(rig.call("state")) == "loco", "13a. a jump plays jump_start (feet tucked %.2f m up), lands (%s) and returns to locomotion (%s)" % [tuck, landed_state, rig.call("state")])
+	# Talk.
+	var traffic := FakeTraffic.new()
+	traffic.name = "fake_traffic_13"
+	var old_traffic: Variant = ctx.features.get("traffic")
+	ctx.world_root.get_parent().get_node("Features").add_child(traffic)
+	ctx.features["traffic"] = traffic
+	traffic.head = p.eye_position() + p.body_forward() * (1.4 * M)
+	ctx.bus.conversation_changed.emit("r_test13", true)
+	_run(p, Vector2.ZERO, false, 30)
+	var talk_state := str(rig.call("state"))
+	ctx.bus.conversation_changed.emit("r_test13", false)
+	_run(p, Vector2.ZERO, false, 30)
+	K.check(fails, talk_state == "talk" and str(rig.call("state")) == "loco", "13a. a conversation plays talk (%s), then locomotion again (%s)" % [talk_state, rig.call("state")])
+	ctx.features.erase("traffic")
+	if old_traffic != null:
+		ctx.features["traffic"] = old_traffic
+	traffic.queue_free()
+	# Gesture one-shot.
+	av.play_gesture("wave")
+	_run(p, Vector2.ZERO, false, 3)
+	var waving: bool = rig.call("gesture_active")
+	_run(p, Vector2.ZERO, false, 240)
+	K.check(fails, waving and not rig.call("gesture_active"), "13a. a wave gesture plays once over the idle")
+	# Head look (the look-at modifiers run in the skeleton's frame update: real frames).
+	p.teleport(s["pos"], s["yaw"])
+	p.rig.assist_target = Vector3(NAN, NAN, NAN)
+	p.look(deg_to_rad(50.0), 0.0)
+	await _frames(p, 40)
+	var hf: Vector3 = rig.get("head_forward")
+	var bf := p.body_forward()
+	var side_yaw := rad_to_deg(atan2(bf.cross(hf).y, bf.dot(hf)))
+	var side_w: float = rig.get("look_weight")
+	p.look(deg_to_rad(110.0), 0.0)
+	await _frames(p, 40)
+	var back_w: float = rig.get("look_weight")
+	p.look(deg_to_rad(-160.0), 0.0)
+	await _frames(p, 40)
+	var again_w: float = rig.get("look_weight")
+	K.check(fails, side_w > 0.99 and side_yaw > 30.0 and side_yaw < 60.0, "13a. the head turns %.0f deg toward a view 50 deg left (influence %.2f)" % [side_yaw, side_w])
+	K.check(fails, back_w < 0.01 and again_w > 0.99, "13a. a view behind fades the head look out (%.2f) and a view ahead brings it back (%.2f)" % [back_w, again_w])
+	# First person keeps animating (the shadow walks): footsteps still fire.
+	p.set_camera_mode("first", false)
+	var fp_steps := [0]
+	var count := func(_surface: String, _pos: Vector3) -> void:
+		fp_steps[0] += 1
+	p.stepped.connect(count)
+	_run(p, Vector2(0, 1), false, 90)
+	p.stepped.disconnect(count)
+	K.check(fails, int(fp_steps[0]) >= 2 and _shadow_only(av), "13a. first person: the hero only casts its shadow and still steps (%d footsteps)" % int(fp_steps[0]))
+	p.set_camera_mode("third", false)
+	# Hero "f".
+	ctx.mode.apply_settings({"hero": "f"}, false)
+	var fbody: Node3D = av.rig.get("body") if av.rig != null else null
+	var f_ok := fbody != null and fbody.scene_file_path == AP.HERO_F and (av.rig.get("tree") as AnimationTree).get_animation_library("") == load(AP.CHAR_LIB_F)
+	_run(p, Vector2.ZERO, false, 60)
+	var f_low: float = av.rig.call("feet_low", p.position.y) / M if av.rig != null else -1.0
+	K.check(fails, f_ok and f_low > -0.01 and f_low < 0.03, "13a. settings hero f loads %s with lib_f, feet on the ground (%.1f cm)" % [fbody.scene_file_path.get_file() if fbody != null else "nothing", f_low * 100.0])
+	ctx.mode.apply_settings({"hero": "m"}, false)
+	rig = av.rig
+	# Cost of the hero's tree and look update per frame.
+	var t0 := Time.get_ticks_usec()
+	for k in range(300):
+		av.update_motion(DT, WS.WALK, 0.0, 0.0, 0.0)
+	var us := float(Time.get_ticks_usec() - t0) / 300.0
+	K.check(fails, us < 400.0, "13a. the hero's animation update costs %.0f us per frame (budget 100 us on the reference machine; < 400 here)" % us)
+
+
+## Walks (or runs) along the view for n frames at DT and measures the gait: the mean TimeScale,
+## the planted foot's slide as a fraction of the ground speed, the lowest foot's range (metres),
+## and the footsteps (count, alternation, frames from the nearest heel strike of that foot).
+func _gait(p: FpPlayer, sprint: bool, n: int) -> Dictionary:
+	var rig: RefCounted = p.avatar.rig
+	var steps: Array[Dictionary] = []
+	var frame := [0]
+	var on_step := func(_surface: String, pos: Vector3) -> void:
+		if frame[0] >= 45:
+			steps.append({"f": frame[0], "pos": pos})
+	p.stepped.connect(on_step)
+	var ts := 0.0
+	var ts_n := 0
+	var slide := 0.0
+	var travel := 0.0
+	var low_min := INF
+	var low_max := -INF
+	var prev_toe: Array[Vector3] = []
+	var prev_planted: Array[bool] = [false, false]
+	var ankles: Array = [[], []]   # per frame from 45, above the ground
+	var start := p.position
+	for k in range(n):
+		frame[0] = k
+		var before := p.position
+		p.simulate(Vector2(0.0, 1.0), sprint, DT)
+		p.update_view(DT)
+		if k < 45:
+			prev_toe.clear()
+			start = p.position
+			continue
+		ts += float(rig.get("time_scale"))
+		ts_n += 1
+		var toes: Array[Vector3] = [rig.call("bone_world", "LeftToes"), rig.call("bone_world", "RightToes")]
+		var ground := p.position.y
+		var low: float = rig.call("feet_low", ground)
+		low_min = minf(low_min, low / M)
+		low_max = maxf(low_max, low / M)
+		var lo := 0 if toes[0].y < toes[1].y else 1
+		for f in range(2):
+			var planted := f == lo and toes[f].y - ground < 0.05 * M
+			if planted and prev_planted[f] and prev_toe.size() == 2:
+				slide += Vector2(toes[f].x - prev_toe[f].x, toes[f].z - prev_toe[f].z).length()
+				travel += Vector2(p.position.x - before.x, p.position.z - before.z).length()
+			prev_planted[f] = planted
+			(ankles[f] as Array).append(rig.call("bone_world", "LeftFoot" if f == 0 else "RightFoot").y - ground)
+		prev_toe = toes
+	p.stepped.disconnect(on_step)
+	# Heel strikes: each ankle coming within HEEL_DOWN of its lowest height after the swing.
+	var heel: Array = [[], []]
+	for f in range(2):
+		var h: Array = ankles[f]
+		var lo := INF
+		for v in h:
+			lo = minf(lo, v)
+		for i in range(1, h.size()):
+			if h[i - 1] > lo + HEEL_DOWN * M and h[i] <= lo + HEEL_DOWN * M:
+				(heel[f] as Array).append(45 + i)
+	var dist := Vector2(p.position.x - start.x, p.position.z - start.z).length() / M
+	var alternate := steps.size() >= 2
+	var late := 0
+	var worst := 0
+	var right := Vector3(cos(p.yaw), 0.0, -sin(p.yaw))
+	var counted := 0
+	for i in range(steps.size()):
+		var e: Dictionary = steps[i]
+		var side_left := ((e["pos"] as Vector3) - p.position).dot(right) < 0.0
+		if i > 0:
+			var prev_left := (((steps[i - 1] as Dictionary)["pos"] as Vector3) - p.position).dot(right) < 0.0
+			alternate = alternate and side_left != prev_left
+		if int(e["f"]) < 50 or int(e["f"]) > n - 5:
+			continue
+		counted += 1
+		var best := 99
+		for h: int in heel[0 if side_left else 1]:
+			best = mini(best, absi(h - int(e["f"])))
+		worst = maxi(worst, best)
+		if best > 1:
+			late += 1
+	var expect := 2.0 * dist / float(rig.call("stride", p.speed() / M))
+	return {"ts": ts / maxf(1.0, float(ts_n)), "slide": slide / maxf(travel, 1e-6), "low_min": low_min, "low_max": low_max, "steps": steps.size(), "alternate": alternate, "late": late, "worst": worst, "expect": expect, "dist": dist, "counted": counted, "heels": heel}
+
+
+## n frames of simulate + update_view at DT with a fixed wish.
+func _run(p: FpPlayer, wish: Vector2, sprint: bool, n: int) -> void:
+	for k in range(n):
+		p.simulate(wish, sprint, DT)
+		p.update_view(DT)
+
+
+## n real frames, each driving the player by DT (the skeleton's modifiers run in the frame).
+func _frames(p: FpPlayer, n: int) -> void:
+	for k in range(n):
+		p.simulate(Vector2.ZERO, false, DT)
+		p.update_view(DT)
+		await process_frame
 
 
 ## 13 (A1 placeholder). The legacy person is re-rigged as a jointed puppet: walking swings the legs

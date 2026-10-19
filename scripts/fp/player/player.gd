@@ -180,6 +180,7 @@ func setup(p_ctx: FpContext) -> void:
 	if ctx.bus != null:
 		ctx.bus.settings_changed.connect(_apply_settings)
 		ctx.bus.conversation_changed.connect(_on_conversation_changed)
+		ctx.bus.interact_requested.connect(_on_interact_requested)
 	_set_up = true
 	_apply_rotation()
 	_snap_view()
@@ -403,7 +404,10 @@ func update_view(delta: float) -> void:
 		avatar.set_view_state(pure_fp, alpha)
 		if not photo_mode:
 			avatar.set_look_target(_look_target(xf))
-			avatar.update_motion(dt, sp, _yaw_rate, _fwd_acc, _step_snap, clampf((WS.EYE - _eye_h) / (WS.EYE - WS.CROUCH_EYE), 0.0, 1.0), _gait_phase, grounded, velocity.y)
+			var back := Vector2(velocity.x, velocity.z).dot(Vector2(-sin(yaw), -cos(yaw))) < -0.3 * sp
+			avatar.update_motion(dt, sp, _yaw_rate, _fwd_acc, _step_snap, clampf((WS.EYE - _eye_h) / (WS.EYE - WS.CROUCH_EYE), 0.0, 1.0), _gait_phase, grounded, velocity.y, _conv_on, back)
+			if avatar.is_animated():
+				_hero_steps()
 		_step_snap = 0.0
 
 
@@ -675,7 +679,7 @@ func _step(goal: Vector2, h: float) -> void:
 	velocity.z = nv.y
 	_acc = na
 	var dist := moved.length()
-	if grounded and dist > 0.0:
+	if grounded and dist > 0.0 and not _hero_animates():
 		_advance_gait(moved, nv.length())
 	_vertical(h, height)
 	_body_yaw_step(h)
@@ -752,6 +756,22 @@ func _advance_phase(d: float) -> void:
 	var side := Vector3(-cos(yaw), 0.0, sin(yaw)) * (FOOT_SPREAD if left else -FOOT_SPREAD)
 	var foot := position + side
 	stepped.emit(ctx.collision.surface_at(foot), foot)
+
+
+## True while HC's hero animates: its clips own the gait phase and the footsteps.
+func _hero_animates() -> bool:
+	return avatar != null and avatar.is_animated()
+
+
+## The hero's heel strikes become footsteps at the striking foot's ground point; the gait phase
+## (head bob) follows its locomotion clip.
+func _hero_steps() -> void:
+	for c: Dictionary in avatar.contacts():
+		var foot: Vector3 = c["pos"]
+		stepped.emit(ctx.collision.surface_at(foot), foot)
+	var ph: float = avatar.gait_phase()
+	if not is_nan(ph):
+		_gait_phase = ph
 
 
 func _jump() -> void:
@@ -849,8 +869,9 @@ func _update_facing(dt: float, sp: float) -> void:
 	var turned := wrapf(yaw - y0, -PI, PI)
 	_yaw_rate = turned / dt
 	rotation.y = yaw
-	# Turning in place takes small steps (two per quarter turn).
-	_advance_phase(absf(turned) * TURN_STEPS)
+	# The placeholder turns in place with small steps (two per quarter turn).
+	if not _hero_animates():
+		_advance_phase(absf(turned) * TURN_STEPS)
 
 
 func _set_crouch(want: bool) -> void:
@@ -1061,6 +1082,17 @@ func _on_conversation_changed(id: String, active: bool) -> void:
 			rig.pitch = cam_pitch
 			rig.notify_look()
 			_start_transition(CONV_OUT, xf, fv)
+
+
+## The hero greets a resident with a wave and reaches toward a car or a poster (6.9 OneShot).
+func _on_interact_requested(t: Dictionary) -> void:
+	if avatar == null or photo_mode:
+		return
+	var kind := str(t.get("kind", ""))
+	if kind == "resident" or kind == "pedestrian":
+		avatar.play_gesture("wave")
+	elif kind == "vehicle" or kind == "poster":
+		avatar.play_gesture("interact")
 
 
 func _end_conversation() -> void:
