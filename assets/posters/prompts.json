@@ -1,0 +1,67 @@
+{
+  "_doc": "Poster image prompts, the single source for the in-game director (scripts/fp/posters/poster_director.gd) and the offline generator (tools/gmi/generate_posters.py). A prompt is <body> + ' ' + style_lock; identical strings give identical cache keys, so the pre-baked file of a prompt is found by exact key. Images carry no text: Godot draws every name, slogan and headline over them.",
+  "style_lock": "Photorealistic full-bleed photograph, no border, no frame. The image contains absolutely no text: no letters, words, numbers, logos, brand names, signs, captions or watermarks anywhere. No real people or celebrities; any people are small, anonymous, seen from behind or out of focus. Set in a modern mid-sized city. Natural light, sharp detail, believable colour, 35mm lens.",
+  "sizes": {
+    "wide": "1536x640",
+    "tall": "768x1152"
+  },
+  "campaign": {
+    "argon": [
+      "Wide cinematic photograph of the Northwest Civic Campus: a new public library and a brick school courtyard on a tree-lined civic campus at golden hour, a clean water tower in the distance, warm amber fabric pennants on the lamp posts.",
+      "Wide cinematic photograph of the Northwest Civic Campus: a spotless modern water treatment plant and a solar-roofed bus depot at dawn, orderly and calm, amber safety railings catching the light.",
+      "Wide cinematic photograph of the Northwest Civic Campus: families seen from far behind walking through a new park with a playground next to a red brick school, amber autumn leaves."
+    ],
+    "deepseek": [
+      "Wide cinematic photograph of the Northeast Tech Corridor: a sleek boulevard of glass offices at blue hour, a light-rail tram gliding past, smooth traffic drawn as long-exposure light trails, cool cyan accent lighting.",
+      "Wide cinematic photograph of the Northeast Tech Corridor: a clean, bright modern factory floor with robotic arms and conveyors, cyan status lights, precise and efficient.",
+      "Wide cinematic photograph of the Northeast Tech Corridor: an aerial view at dusk of an efficient grid of streets and a new highway interchange, flowing traffic, cyan-lit skyline."
+    ],
+    "kimi": [
+      "Wide cinematic photograph of the Central Plaza: a lively central plaza market at early evening with striped shop awnings, string lights and a fountain, anonymous shoppers seen from behind, soft violet lanterns.",
+      "Wide cinematic photograph of the Central Plaza: a neighbourhood street festival at dusk with food stalls and paper lanterns in violet, crowds seen from far away, warm and welcoming.",
+      "Wide cinematic photograph of the Central Plaza: a safe, well-lit pedestrian shopping street at night with a police bicycle patrol seen from behind, violet shop lights reflecting on clean paving."
+    ],
+    "qwen": [
+      "Wide cinematic photograph of the Southwest Eco Quarter: a green residential street with solar roofs, bicycles, community vegetable gardens and wind turbines on the horizon, fresh morning light, emerald green accents.",
+      "Wide cinematic photograph of the Southwest Eco Quarter: a field of solar panels and wind turbines beside neat townhouses under a clear sky, emerald hedges, quiet and prosperous.",
+      "Wide cinematic photograph of the Southwest Eco Quarter: a tidy farmers market under trees on a sunny morning, baskets of produce, cyclists seen from behind, emerald awnings."
+    ],
+    "grok": [
+      "Wide cinematic photograph of the Southeast Boomtown: a booming downtown skyline under construction at sunset, tower cranes over rising glass towers, crimson safety netting on the scaffolds.",
+      "Wide cinematic photograph of the Southeast Boomtown: a busy industrial waterfront at golden hour with container cranes, trucks and new warehouses, crimson safety lights, energetic and loud.",
+      "Wide cinematic photograph of the Southeast Boomtown: a brand-new nightlife street at night with glowing shopfronts and a rooftop crowd seen from far below, crimson neon light."
+    ]
+  },
+  "ad": {
+    "ad_cafe": "Commercial photograph: a steaming flat white and a buttery croissant on a marble cafe counter by a sunny window, shallow depth of field, warm tones, inviting.",
+    "ad_bakery": "Commercial photograph: fresh crusty sourdough loaves, baguettes and glazed pastries on rustic wooden bakery shelves, a light dusting of flour, warm morning light.",
+    "ad_market": "Commercial photograph: crates of colourful fresh fruit and vegetables and tidy shelves of everyday groceries in a bright neighbourhood market, cheerful and clean.",
+    "ad_bookshop": "Commercial photograph: a cosy independent bookshop interior with tall wooden shelves of books, a leather reading chair and warm lamplight, calm and inviting.",
+    "ad_fitness": "Commercial photograph: a modern gym with racks of dumbbells and rowing machines, one athletic person seen from behind mid-workout, dramatic energetic lighting.",
+    "ad_cinema": "Commercial photograph: a grand vintage cinema auditorium with red velvet seats facing a glowing blank screen, a striped box of popcorn in the foreground.",
+    "ad_bank": "Commercial photograph: a calm modern bank lobby with light oak, green plants and a wide city view, a hand holding a house key in the foreground, trustworthy and bright.",
+    "ad_hardware": "Commercial photograph: neatly arranged hand tools, paint tins, rope and planks of timber on a workshop bench in a hardware store, warm practical light.",
+    "ad_default": "Commercial photograph: a stylish modern shopping street at dusk with glowing shop windows and anonymous shoppers seen from behind, upmarket and lively."
+  },
+  "gazette": {
+    "skyline": "Editorial press photograph: the GridFall skyline at sunrise seen across a calm river, mid-rise towers and bridges, editorial press photo.",
+    "construction": "Editorial press photograph: construction workers in hard hats seen from behind on a busy building site with a tower crane and a rising steel frame, press photo.",
+    "crews": "Editorial press photograph: firefighters and emergency crews at work at an incident on a city street at dusk, flashing lights and smoke, press photo.",
+    "park": "Editorial press photograph: residents enjoying a new city park with trees and a pond on a sunny afternoon, seen from a distance, press photo."
+  },
+  "gazette_live": "Editorial press photograph of the scene in this news story: {headline}. Show the place and the event itself; no newspaper, no printed matter, no words.",
+  "hoarding": {
+    "tower": "Architectural visualisation: a sleek new mixed-use tower of glass and warm stone above a landscaped plaza with trees, blue sky, photoreal render.",
+    "park": "Architectural visualisation: a planned city park with lawns, young trees, a playground and a pond, sunny afternoon, photoreal render.",
+    "station": "Architectural visualisation: a bright modern civic building with a tall glass entrance hall facing a public square, photoreal render."
+  },
+  "notice": {
+    "incident": "Photograph: orange traffic cones, a striped road barrier and flashing amber beacons blocking a wet city street at night, emergency atmosphere.",
+    "ordinance": "Photograph: the classical stone columns and steps of a city hall under a clear blue sky, a flag on a tall pole, civic and dignified.",
+    "power": "Photograph: electrical utility workers in hi-vis jackets seen from behind repairing power lines from a bucket truck at dusk, a city street below.",
+    "water": "Photograph: a burst water main flooding a city street, workers in hi-vis seen from behind with pumps and hoses, reflections on the water."
+  },
+  "placard": {
+    "protest": "Documentary photograph: a crowd of anonymous protesters seen from behind raising plain blank cardboard placards in front of a city hall, overcast day."
+  }
+}
