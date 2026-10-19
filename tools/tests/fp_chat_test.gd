@@ -100,6 +100,7 @@ func _init() -> void:
 	_check_mayor()
 	_check_gazette_chaos()
 	_check_openings()
+	_check_letters_and_decree()
 	_check_budget_ambient()
 	_check_budget_player()
 	await _check_talk()
@@ -321,6 +322,38 @@ func _check_openings() -> void:
 		if str(m["kind"]) == "opened":
 			texts.append(str(m["text"]))
 	K.check(fails, texts.size() == 1 and texts[0].begins_with("Now open: "), "openings: one 'Now open:' row for two openings within 30 s (%s)" % str(texts))
+
+
+func _check_letters_and_decree() -> void:
+	_pump(46.0)
+	var seq0 := _feed().seq
+	var expect := 0
+	var ids: Array[String] = []
+	for k in range(9):
+		var r: Dictionary = ctx.residents.people[k]
+		var id := str(r["id"])
+		ids.append(id)
+		if chat.get_script().letter_public(id, ctx.sim.day) and not D.mayor_display(ctx.sim.district[int(r["home"])]).is_empty():
+			expect += 1
+		ctx.residents.resident_said.emit(id, "Please fix the potholes on my street number %d." % k, "letter")
+	_pump(60.0)
+	var shown := 0
+	var prefixed := true
+	for m in _rows_since(seq0):
+		if str(m["kind"]) == "letter":
+			shown += 1
+			if not str(m["text"]).begins_with("To Mayor "):
+				prefixed = false
+	K.check(fails, shown == expect and shown > 0 and shown < 9 and prefixed, "letters: a deterministic share goes public as 'To Mayor <display>: ...' (%d of 9, expected %d)" % [shown, expect])
+	chat.call("player_say", "/mayor Please fix the water pumps")
+	K.check(fails, ctx.brain.decree == "Please fix the water pumps" and ctx.brain.decree_day == ctx.sim.day, "decree: '/mayor <text>' reaches brain.send_decree")
+	chat.call("player_say", "/mayor And the roads too")
+	K.check(fails, ctx.brain.decree == "Please fix the water pumps", "decree: at most one per game day")
+	var mine := _feed().find_shown({"role": "player"})
+	K.check(fails, str(mine.get("text", "")) == "And the roads too", "decree: a refused second decree posts as a plain line (%s)" % mine.get("text", ""))
+	var first := _feed().find_shown({"role": "player", "text": "To the mayors: Please fix the water pumps"})
+	K.check(fails, not first.is_empty(), "decree: the accepted line shows as 'To the mayors: ...'")
+	_pump(20.0)
 
 
 # ---------------------------------------------------------------- budgets

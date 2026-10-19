@@ -106,7 +106,7 @@ func open(id: String) -> bool:
 	_fill_header_resident(r)
 	var hello := minds.greeting(r) if minds != null else "Hi."
 	_turns.append({"who": "them", "text": hello})
-	_show_line(hello, "wave", "")
+	_show_line(hello, minds.greeting_emote(r) if minds != null else "none", "")
 	_build_quick(r)
 	_input_row.visible = true
 	_appear()

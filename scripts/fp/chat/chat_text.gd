@@ -201,6 +201,16 @@ static func h(s: String) -> int:
 	return absi(hash(s)) & 0x7fffffff
 
 
+## h(s) with its bits mixed (a murmur-style finaliser). Godot's String hash is djb2, whose value
+## modulo 3 depends only on the last character, so "hash(id + day) % 3" would make every letter of
+## a day public or none; mix() spreads it.
+static func mix(s: String) -> int:
+	var x := h(s)
+	x = ((x >> 16) ^ x) * 0x45d9f3b & 0x7fffffff
+	x = ((x >> 16) ^ x) * 0x45d9f3b & 0x7fffffff
+	return (x >> 16) ^ x
+
+
 ## Two-or-three letter badge for district d ("NW", "NE", "CTR", "SW", "SE"); "" outside them.
 static func district_badge(d: int) -> String:
 	return ["NW", "NE", "CTR", "SW", "SE"][d] if d >= 0 and d < 5 else ""

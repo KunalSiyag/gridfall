@@ -23,6 +23,7 @@ const TICKER_SECONDS := 8.0
 const TICKER_FADE := 1.2
 const TICKER_CHARS := 118
 const TIME_REFRESH_MS := 10000
+const FADE_IN := 0.2
 const INPUT_MAX := 140
 ## Width rows are first shaped for (the list width with the always-on scroll bar).
 const ROW_W := PANEL_W - 8.0
@@ -185,6 +186,8 @@ func append(msg: Dictionary) -> void:
 	while _rows.size() > MAX_ROWS:
 		_rows.pop_front().queue_free()
 	if is_open:
+		if row.visible:
+			_fade_in(row)
 		if not _follow and row.visible:
 			_pill.visible = true
 	else:
@@ -439,10 +442,22 @@ func _push_ticker(msg: Dictionary) -> void:
 	var line := TICKER.new()
 	line.setup(head, head_col, text, text_col, PANEL_W - 24.0)
 	_ticker.add_child(line)
+	_fade_in(line)
 	_ticker_items.append({"node": line, "t": 0.0})
 	while _ticker_items.size() > TICKER_LINES:
 		var old: Dictionary = _ticker_items.pop_front()
 		(old["node"] as Node).queue_free()
+
+
+## A short fade for a row or ticker line that just appeared (the ticker's own fade-out drives
+## modulate afterwards, so this one only runs for its first FADE_IN seconds).
+func _fade_in(c: CanvasItem) -> void:
+	if not is_inside_tree():
+		return
+	c.self_modulate.a = 0.0
+	var tw := c.create_tween()
+	tw.set_ease(Tween.EASE_OUT).set_trans(Tween.TRANS_CUBIC)
+	tw.tween_property(c, "self_modulate:a", 1.0, FADE_IN)
 
 
 func _clear_ticker() -> void:
@@ -688,19 +703,22 @@ func _build_list() -> Control:
 	_pill.anchor_right = 0.5
 	_pill.anchor_top = 1.0
 	_pill.anchor_bottom = 1.0
-	_pill.offset_left = -78
-	_pill.offset_right = 78
+	_pill.offset_left = -88
+	_pill.offset_right = 88
 	_pill.offset_top = -44
 	_pill.offset_bottom = -12
 	_pill.alignment = HORIZONTAL_ALIGNMENT_LEFT
+	_pill.add_theme_stylebox_override("normal", S.box(S.GOLD, 16, Color(1, 1, 1, 0.35), 1, Vector4(16, 5, 40, 5)))
+	_pill.add_theme_stylebox_override("hover", S.box(S.GOLD.lightened(0.12), 16, Color(1, 1, 1, 0.5), 1, Vector4(16, 5, 40, 5)))
+	_pill.add_theme_stylebox_override("pressed", S.box(S.GOLD.darkened(0.12), 16, Color(1, 1, 1, 0.5), 1, Vector4(16, 5, 40, 5)))
 	_pill.add_theme_constant_override("h_separation", 0)
 	var arrow := W.Icon.new("arrow_down", Color(0.13, 0.09, 0.02), 14.0)
 	arrow.anchor_left = 1.0
 	arrow.anchor_right = 1.0
 	arrow.anchor_top = 0.5
 	arrow.anchor_bottom = 0.5
-	arrow.offset_left = -30
-	arrow.offset_right = -16
+	arrow.offset_left = -28
+	arrow.offset_right = -14
 	arrow.offset_top = -7
 	arrow.offset_bottom = 7
 	_pill.add_child(arrow)

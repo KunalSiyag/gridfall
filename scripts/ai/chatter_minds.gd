@@ -303,6 +303,17 @@ func greeting(r: Dictionary) -> String:
 	return _fill(str(opts[T.h(str(r["id"]) + str(sim.day)) % opts.size()]), f)
 
 
+## The emote that goes with r's greeting: a wave from friendly voices, a frown when miserable.
+func greeting_emote(r: Dictionary) -> String:
+	var v := voice(r)
+	var mood := float(r.get("mood", 5.5))
+	if mood < 3.0:
+		return "angry"
+	if v in ["sunny", "civic"] or (v == "plain" and mood >= 5.0):
+		return "wave"
+	return "none"
+
+
 ## Deterministic offline reply in r's voice (C §4 "Offline"): answers the quick questions from the
 ## resident's real state and keywords in free text from their job, home and the city.
 func talk_heuristic(r: Dictionary, turns: Array, said: String) -> Dictionary:

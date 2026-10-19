@@ -210,6 +210,12 @@ func photo_shots() -> Array:
 	]
 
 
+## True when resident id's letter to their mayor on day goes public in the chat (about a third
+## of them, deterministic: the spec's hash(id + str(day)) % 3 == 0, with the hash mixed).
+static func letter_public(id: String, day: int) -> bool:
+	return T.mix(id + str(day)) % 3 == 0
+
+
 ## True while the talk dialogue's free-text LineEdit has focus (the player is typing a line).
 func is_typing() -> bool:
 	return talk != null and talk.is_typing()
@@ -222,12 +228,11 @@ func player_say(text: String) -> void:
 	if t.is_empty():
 		return
 	var body := t
-	if t.to_lower().begins_with("/mayor"):
+	if t.to_lower().begins_with("/mayor ") or t.to_lower() == "/mayor":
 		body = t.substr(6).strip_edges()
 		if body.is_empty():
 			return
-		t = "To the mayors: " + body
-		_send_decree(body)
+		t = ("To the mayors: " + body) if _send_decree(body) else body
 	var d := _player_district()
 	var shown := feed.post_now(feed.make("player", "You", "player", d, t, "player"))
 	_player_last_seq = int(shown["seq"])
@@ -399,7 +404,7 @@ func _on_said(id: String, text: String, kind: String) -> void:
 			if ev_id >= 0:
 				refs["event_id"] = ev_id
 		"letter":
-			if absi(hash(id + str(ctx.sim.day))) % 3 != 0:
+			if not letter_public(id, ctx.sim.day):
 				return
 			var md := D.mayor_display(ctx.sim.district[int(r["home"])])
 			if md.is_empty():
@@ -787,17 +792,19 @@ func _snapshot_taxes() -> void:
 		_taxes.append(int(m.get("tax_r", 9)))
 
 
-func _send_decree(body: String) -> void:
+## Sends body to every mayor (brain.send_decree), at most once per game day. False when refused.
+func _send_decree(body: String) -> bool:
 	if ctx.brain == null:
-		return
+		return false
 	if _decree_day == ctx.sim.day:
 		if ctx.bus != null:
 			ctx.bus.toast.emit("The mayors already heard from you today.", "info")
-		return
+		return false
 	_decree_day = ctx.sim.day
 	ctx.brain.send_decree(body)
 	if ctx.bus != null:
 		ctx.bus.toast.emit("Your message is on every mayor's desk.", "success")
+	return true
 
 
 func _pin_last_paper() -> void:

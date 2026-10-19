@@ -123,6 +123,8 @@ func _shape(p_msg: Dictionary, parent: Dictionary, time_text: String) -> void:
 			title = "MOVED AWAY" if phase == "left" else "NEW NEIGHBOUR"
 		if kind == "alert" and body.begins_with("Breaking: "):
 			body = body.substr(10)
+		elif kind == "opened" and body.begins_with("Now open: "):
+			body = body.substr(10)
 		_title = S.text_line(title, S.display_font(), 12)
 		_box = _card_style(bg, _accent)
 		_text = S.text_para(body, S.bold_font() if kind == "alert" else S.body_font(), 14, 100.0)
