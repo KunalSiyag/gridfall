@@ -444,8 +444,15 @@ func sync_visuals(delta: float) -> void:
 		if w.dead or w.state == "hidden" or w.far:
 			render.release_walker(w)
 			continue
+		var dw := cam.distance_to(w.pos)
+		if dw > WS.VIS_PERSON:
+			# Out of drawing range: only the fade-in keeps time.
+			render.release_walker(w)
+			if w.fade < 1.0:
+				w.fade = minf(1.0, w.fade + delta / WK.FADE_IN)
+			continue
 		walkers.ease_visuals(w, delta)
-		render.draw_walker(w, walkers.draw_xform(w), cam.distance_to(w.pos), WS.VIS_PERSON, walkers.draw_phase(w))
+		render.draw_walker(w, walkers.draw_xform(w), dw, WS.VIS_PERSON, walkers.draw_phase(w))
 	render.finish()
 	render.set_glow(_night())
 	junctions.update_lamps(ctx.player_position(), WS.VIS_PROP + 1.0)

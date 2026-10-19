@@ -599,7 +599,7 @@ func _place_washes() -> void:
 			var l := _wash(n)
 			l.transform = Transform3D(Basis(), xf.origin + Vector3(0, float(cand[3]) + 0.4 * WS.M, 0))
 			l.light_color = (SIREN_COLS[str(cand[2])] as Array)[(flash + n) % 2]
-			l.light_energy = 0.6 + 1.4 * _glow
+			l.light_energy = 0.5 + 0.9 * _glow
 			l.visible = true
 			n += 1
 	for k in range(n, _washes.size()):
