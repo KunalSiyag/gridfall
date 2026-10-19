@@ -363,27 +363,25 @@ func _check_footsteps(ctx: FpContext, f: FpFeature) -> void:
 		fs.play(surf)
 		var last: String = fs.history.back()
 		K.check(fails, surf == c[0] and last.begins_with("footstep_%s_" % c[0]), "footsteps: %s -> %s plays %s" % [str(c[1]), surf, last])
-	# Polling: the kit's player has no stepped signal.
+	# Polling: a walker without a stepped signal (FpPlayer has one since slice A).
 	var p := ctx.player
 	p.teleport(Vector3(D.tx(road), 0, D.ty(road)), 0.0)
-	fs.bind(p)
+	var walker := Node3D.new()
+	walker.name = "PollStub"
+	get_root().add_child(walker)
+	walker.position = p.position
+	fs.bind(walker)
 	var n0 := fs.steps_played
 	var travel := 10.0 * FS.STRIDE_M * WS.M
 	var inc := 0.1 * WS.M
 	fs.poll(DT)
 	for _k in range(roundi(travel / inc)):
-		p.position.x += inc
+		walker.position.x += inc
 		fs.poll(DT)
 	var polled := fs.steps_played - n0
 	K.check(fails, fs.polling and absi(polled - 10) <= 1, "footsteps: polling, 10 strides of travel -> %d steps" % polled)
-	# A player with the stepped signal: one step per emission, no polling.
-	var gd := GDScript.new()
-	gd.source_code = "extends FpPlayer\nsignal stepped(surface: String, pos: Vector3)\n"
-	gd.reload()
-	var sp: FpPlayer = gd.new()
-	sp.name = "SteppedStub"
-	get_root().add_child(sp)
-	sp.position = p.position
+	# The player with its stepped signal: one step per emission, no polling.
+	var sp := p
 	fs.bind(sp)
 	var n1 := fs.steps_played
 	for _k in range(8):
@@ -400,7 +398,7 @@ func _check_footsteps(ctx: FpContext, f: FpFeature) -> void:
 		fs.poll(DT)
 	K.check(fails, fs.steps_played == n2, "footsteps: walking with the signal but no emission plays nothing")
 	fs.bind(p)
-	sp.queue_free()
+	walker.queue_free()
 
 
 func _check_ambience(ctx: FpContext, f: FpFeature, _fx: Dictionary) -> void:
