@@ -56,12 +56,12 @@ const END_ISLAND_R := 0.11               # raised grass island at SIDEWALK_TOP w
 const BRIDGE_SIDEWALK_OUT := 0.428       # walkable bridge sidewalk ends; parapet beyond (roads.py:270-281)
 const LAMP_HEIGHT := 0.42                # 8.4 m (roads.py:127)
 
-# --- Ground datum (current CityView geometry)
-const GROUND_Y := -0.012                 # base grass plane (city_view.gd:278)
-const LOT_TOP := 0.004                   # real-model lot slab top (validate_real)
-const PAD_TOP := 0.006                   # C/I pad and rubble plane (city_view.gd:934, 989)
-const WATER_Y := 0.03                    # water surface (city_view.gd:290)
-const RIVERBED_Y := -0.004               # city_view.gd:285
+# --- Ground datum (CityView geometry; G1 owns these values, slices/G1-streetscape.md)
+const GROUND_Y := 0.0                    # base grass at the tile datum, 18 cm below the sidewalk top
+const LOT_TOP := 0.004                   # real-model lot slab top, 8 cm (validate_real)
+const PAD_TOP := LOT_TOP + 0.0002        # C/I fallback pad and FP rubble, just above the lot slab
+const WATER_Y := -0.6 * M                # water surface, 60 cm below the banks
+const RIVERBED_Y := -1.6 * M             # riverbed; the banks slope up to GROUND_Y
 const LOT_FOOTPRINT := 0.94              # authored lot width before REAL_SCALE (validate_real)
 
 # --- Asset multipliers (targets the slices apply)

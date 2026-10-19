@@ -18,6 +18,9 @@ signal world_rebuilt()
 signal fp_mode_changed(on: bool)
 
 const D := preload("res://scripts/sim/sim_defs.gd")
+const WS := preload("res://scripts/fp/world_scale.gd")
+const AP := preload("res://scripts/fp/asset_paths.gd")
+const STREET := preload("res://scripts/fp/street/street_dressing.gd")
 const M := "res://models/"
 const B := "res://models/blender/"
 
@@ -50,15 +53,36 @@ const NEW_SERVICE_MODELS := {
 ## Realistic assets (Blender + Poly Haven PBR). Each falls back to the older models above when missing.
 const R := "res://models/real/"
 const TEX := "res://textures/real/"
-const REAL_SCALE := 0.9
+const REAL_SCALE := WS.REAL_SCALE
 const REAL_ROADS := {"straight": R + "roads/road_straight.glb", "lights": R + "roads/road_straight_lights.glb", "corner": R + "roads/road_corner.glb", "tee": R + "roads/road_tee.glb", "cross": R + "roads/road_cross.glb", "end": R + "roads/road_end.glb", "bridge": R + "roads/road_bridge.glb"}
 const LEAF_TEXTURE := R + "buildings/hospital_leafcluster_round.png"
 const TREE_PROPS := ["tree_oak", "tree_round", "tree_birch", "tree_poplar", "tree_conifer"]
 ## Trees are batched in square chunks so far chunks can switch to low-poly stand-ins and a
 ## cleared forest only rebuilds its own chunk. TREE_RING tiles of woods surround the world.
+## Orbit: one 48-tile chunk carries both layers. On foot: 8-tile near chunks (full trees to
+## TREE_NEAR_FP) and 32-tile far chunks (stand-ins to TREE_FAR_FP, where the depth fog takes over).
 const TREE_CHUNK := 48
 const TREE_RING := 12
 const TREE_NEAR := 120.0
+const TREE_CHUNK_FP := 8
+const TREE_FAR_CHUNK_FP := 32
+const TREE_NEAR_FP := 12.0
+const TREE_FAR_FP := 50.0
+## Orbit C/I pad height (the FP pad, when a fallback model needs one, sits at WS.PAD_TOP).
+const ORBIT_PAD_Y := 0.006
+## Rebuild queue (FP only): frame budget, how close a tile in view must be to wait until the
+## player looks away, and the longest it may wait.
+const REBUILD_DEFER_DIST := 1.5
+const REBUILD_DEFER_MAX_S := 5.0
+## Ground: merged land quads per GROUND_CHUNK x GROUND_CHUNK tiles (water tiles excluded), out to
+## GROUND_MARGIN tiles past the world edge. Water tiles get a riverbed whose banks slope from the
+## ground down to WS.RIVERBED_Y over BANK_W.
+const GROUND_CHUNK := 64
+const GROUND_MARGIN := 30
+const BANK_W := 0.1
+const GROUND_SHADER := "res://shaders/ground_detail.gdshader"
+## Road-surface materials that darken and turn glossy in the rain (by resource-name prefix).
+const WET_PREFIXES := ["Asphalt", "Sidewalk", "Curb", "Paint_White"]
 ## Window glass tints: warm homes, cool offices, a dimmer warm, and mostly dark rooms.
 const WINDOW_TINTS := [Color(1.0, 0.76, 0.46), Color(0.84, 0.91, 1.0), Color(1.0, 0.86, 0.62), Color(1.0, 0.70, 0.40)]
 const WINDOW_GLOW := [3.4, 2.8, 1.9, 0.3]
@@ -132,6 +156,34 @@ var in_setup: bool = false
 ## Street-level presentation: hides builder aids and the AI presentation layer, stops ambient
 ## traffic, picking and camera shake. Persists across setup().
 var fp_mode: bool = false
+## Street names and the lot frontage rule, rebuilt by setup().
+var directory: CityDirectory
+## The player's position on foot, set every frame by the streetscape feature. The FP rebuild queue
+## builds nearest-first to it; close-range FX (dust puffs) test against it.
+var priority_point: Vector3 = Vector3.ZERO
+## FP rebuild budget per frame in milliseconds, tile_built emissions included.
+var rebuild_budget_ms: float = 3.0
+## Any object with light_pole(i: int, corner: int) -> Node3D (E's traffic feature). Cross tiles then
+## mount their street-name blades on its NE pole instead of a G1 pole. Set by the streetscape feature.
+var light_pole_source: Object = null
+## Visibility multiplier for the props, decals and multimeshes G1 ranges itself (G2's vis_mult).
+var vis_mult: float = 1.0
+## 0 dry .. 1 soaked; set by the streetscape weather through set_wetness().
+var wetness: float = 0.0
+## FP rebuild queue: tile index -> seconds it has waited deferred (near and in view).
+var _queue: Dictionary = {}
+## Scene paths being loaded on a thread for the queue (path -> true).
+var _warming: Dictionary = {}
+var _flicker_lights: Array[OmniLight3D] = []
+var _street: STREET
+var _ground_chunks: Array[MeshInstance3D] = []
+var _ground_fp_mat: ShaderMaterial
+var _lot_mat: ShaderMaterial
+var _apron_mat: StandardMaterial3D
+var _water_node: MeshInstance3D
+var _bed_node: MeshInstance3D
+## Shared road-surface materials -> [dry albedo, roughness, metallic_specular] for set_wetness().
+var _wet_mats: Dictionary = {}
 
 
 func setup(p_sim: CitySim, p_camera: Camera3D) -> void:
@@ -146,7 +198,12 @@ func setup(p_sim: CitySim, p_camera: Camera3D) -> void:
 	_peds.clear()
 	_bubbles.clear()
 	_avatars.clear()
+	_queue.clear()
+	_flicker_lights.clear()
 	_territory_root = null
+	directory = CityDirectory.new()
+	directory.setup(sim)
+	_street = STREET.new(self)
 	_tiles_root = _mk_root("Tiles")
 	_fx_root = _mk_root("Effects")
 	_cars_root = _mk_root("Cars")
@@ -201,13 +258,28 @@ func setup(p_sim: CitySim, p_camera: Camera3D) -> void:
 	world_rebuilt.emit()
 
 
-## S0 version: toggles visibility. G1 extends it: on a real change it also rebuilds the FP-only
-## geometry synchronously (trees, tiles) and emits world_rebuilt (see slices/G1-streetscape.md).
+## Switches between the orbit and the street-level presentation. On a real change it also rebuilds
+## the mode-specific geometry synchronously (tree chunks, every tile: lots, pads, furniture, FX),
+## bypassing the rebuild queue, then emits world_rebuilt and fp_mode_changed. Setting the same value
+## again does nothing; the boot path sets the field before the first setup() instead.
 func set_fp_mode(on: bool) -> void:
 	var changed := on != fp_mode
 	fp_mode = on
+	if changed and sim != null and _tiles_root != null:
+		_queue.clear()
+		if _trees_root != null:
+			_trees_root.free()
+		for id: int in _event_nodes.keys():
+			(_event_nodes[id] as Node3D).queue_free()
+		_event_nodes.clear()
+		_apply_ground_mode()
+		_build_trees()
+		_refresh_trees()
+		rebuild_all(false)
 	_apply_fp_visibility()
 	if changed:
+		if sim != null and _tiles_root != null:
+			world_rebuilt.emit()
 		fp_mode_changed.emit(on)
 
 
@@ -277,6 +349,11 @@ func _tune_materials(ps: PackedScene) -> void:
 				continue
 			_tuned[m.get_instance_id()] = true
 			_tune_material(m)
+			for p: String in WET_PREFIXES:
+				if m.resource_name.begins_with(p):
+					_wet_mats[m] = [m.albedo_color, m.roughness, m.metallic_specular]
+					_wet_material(m, wetness)
+					break
 	root.free()
 
 
@@ -333,36 +410,236 @@ func _mat(key: String, col: Color, emissive: float = 0.0, alpha: float = 1.0) ->
 
 # ------------------------------------------------------------------ static scenery
 
+## The ground at WS.GROUND_Y as merged land quads in chunks (no ground under water), the riverbed with
+## sloped banks under every water tile, and the water surface at WS.WATER_Y.
 func _build_ground() -> void:
-	var span := Vector2(D.W + 60, D.H + 60)
-	var ground := MeshInstance3D.new()
-	var pm := PlaneMesh.new()
-	pm.size = span
-	ground.mesh = pm
-	ground.position = Vector3(D.X0 + (D.W - 1) * 0.5, -0.012, D.Y0 + (D.H - 1) * 0.5)
-	ground.material_override = _pbr("grass", Color(0.36, 0.6, 0.3), 0.18, Color(1.12, 1.15, 1.0))
-	(ground.material_override as StandardMaterial3D).normal_scale = 0.45
-	ground.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-	add_child(ground)
+	_ground_chunks.clear()
+	var lo := Vector2i(D.X0 - GROUND_MARGIN, D.Y0 - GROUND_MARGIN)
+	var hi := Vector2i(D.X0 + D.W + GROUND_MARGIN, D.Y0 + D.H + GROUND_MARGIN)
+	for cy in range(lo.y, hi.y, GROUND_CHUNK):
+		for cx in range(lo.x, hi.x, GROUND_CHUNK):
+			var mesh := _ground_chunk_mesh(cx, cy, mini(cx + GROUND_CHUNK, hi.x), mini(cy + GROUND_CHUNK, hi.y))
+			if mesh == null:
+				continue
+			var g := MeshInstance3D.new()
+			g.name = "Ground"
+			g.mesh = mesh
+			g.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+			add_child(g)
+			_ground_chunks.append(g)
 	var is_water := func(i: int) -> bool: return sim.terrain[i] == D.WATER
-	var bed := MeshInstance3D.new()
-	bed.mesh = _tiles_mesh(is_water, -0.004, 1.0)
-	bed.material_override = _pbr("dirt", Color(0.22, 0.2, 0.17), 0.6)
-	bed.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-	add_child(bed)
-	var water := MeshInstance3D.new()
-	water.mesh = _tiles_mesh(is_water, 0.03, 1.0)
-	water.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	_bed_node = MeshInstance3D.new()
+	_bed_node.name = "RiverBed"
+	_bed_node.mesh = _river_bed_mesh()
+	_bed_node.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	add_child(_bed_node)
+	_water_node = MeshInstance3D.new()
+	_water_node.name = "Water"
+	_water_node.mesh = _tiles_mesh(is_water, WS.WATER_Y, 1.0)
+	_water_node.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	if ResourceLoader.exists("res://shaders/water.gdshader"):
 		_water_mat = ShaderMaterial.new()
 		_water_mat.shader = load("res://shaders/water.gdshader")
 		if ResourceLoader.exists(TEX + "water_normal.png"):
 			_water_mat.set_shader_parameter("normal_tex", load(TEX + "water_normal.png"))
 		_water_mat.set_shader_parameter("night", night)
-		water.material_override = _water_mat
+		_water_node.material_override = _water_mat
 	else:
-		water.material_override = _mat("water_glow", Color(0.2, 0.45, 0.6), 0.0, 0.8)
-	add_child(water)
+		_water_node.material_override = _mat("water_glow", Color(0.2, 0.45, 0.6), 0.0, 0.8)
+	add_child(_water_node)
+	_apply_ground_mode()
+
+
+func _is_water_at(x: int, y: int) -> bool:
+	return D.in_bounds(x, y) and sim.terrain[D.idx(x, y)] == D.WATER
+
+
+## Land quads of tiles [x0, x1) x [y0, y1) at GROUND_Y, one quad per run of land tiles in a row; UV
+## is world xz (tangents follow +x) for the detail shader. Null when the chunk is all water.
+func _ground_chunk_mesh(x0: int, y0: int, x1: int, y1: int) -> ArrayMesh:
+	var st := SurfaceTool.new()
+	st.begin(Mesh.PRIMITIVE_TRIANGLES)
+	var any := false
+	for y in range(y0, y1):
+		var x := x0
+		while x < x1:
+			if _is_water_at(x, y):
+				x += 1
+				continue
+			var xe := x
+			while xe + 1 < x1 and not _is_water_at(xe + 1, y):
+				xe += 1
+			var a := Vector3(x - 0.5, WS.GROUND_Y, y - 0.5)
+			var b := Vector3(xe + 0.5, WS.GROUND_Y, y - 0.5)
+			var c := Vector3(xe + 0.5, WS.GROUND_Y, y + 0.5)
+			var d := Vector3(x - 0.5, WS.GROUND_Y, y + 0.5)
+			for v: Vector3 in [a, b, c, a, c, d]:
+				st.set_normal(Vector3.UP)
+				st.set_uv(Vector2(v.x, v.z))
+				st.add_vertex(v)
+			any = true
+			x = xe + 1
+	if not any:
+		return null
+	st.generate_tangents()
+	return st.commit()
+
+
+## Riverbed under the water tiles at RIVERBED_Y, rising to GROUND_Y over BANK_W at every edge or
+## corner that touches land, so the water sits below its banks instead of level with the lots.
+func _river_bed_mesh() -> ArrayMesh:
+	var st := SurfaceTool.new()
+	st.begin(Mesh.PRIMITIVE_TRIANGLES)
+	var g := [0.0, BANK_W, 1.0 - BANK_W, 1.0]
+	var any := false
+	for i in range(D.W * D.H):
+		if sim.terrain[i] != D.WATER:
+			continue
+		any = true
+		var x := D.tx(i)
+		var y := D.ty(i)
+		var land := [
+			not _is_water_at(x, y - 1), not _is_water_at(x + 1, y), not _is_water_at(x, y + 1), not _is_water_at(x - 1, y),
+			not _is_water_at(x - 1, y - 1), not _is_water_at(x + 1, y - 1), not _is_water_at(x + 1, y + 1), not _is_water_at(x - 1, y + 1),
+		]
+		var pts := []
+		for gy: float in g:
+			var row := []
+			for gx: float in g:
+				var dist := 2.0
+				if land[0]:
+					dist = minf(dist, gy)
+				if land[1]:
+					dist = minf(dist, 1.0 - gx)
+				if land[2]:
+					dist = minf(dist, 1.0 - gy)
+				if land[3]:
+					dist = minf(dist, gx)
+				var corners := [Vector2(0, 0), Vector2(1, 0), Vector2(1, 1), Vector2(0, 1)]
+				for k in range(4):
+					if land[4 + k]:
+						dist = minf(dist, Vector2(gx, gy).distance_to(corners[k]))
+				var h := lerpf(WS.GROUND_Y, WS.RIVERBED_Y, smoothstep(0.0, BANK_W, dist))
+				row.append(Vector3(x - 0.5 + gx, h, y - 0.5 + gy))
+			pts.append(row)
+		for r in range(3):
+			for c in range(3):
+				var a: Vector3 = pts[r][c]
+				var b: Vector3 = pts[r][c + 1]
+				var cc: Vector3 = pts[r + 1][c + 1]
+				var d: Vector3 = pts[r + 1][c]
+				for v: Vector3 in [a, b, cc, a, cc, d]:
+					st.set_uv(Vector2(v.x, v.z))
+					st.add_vertex(v)
+	if not any:
+		return ArrayMesh.new()
+	st.index()
+	st.generate_normals()
+	return st.commit()
+
+
+## Ground and water materials for the current mode: the metric detail shader with depth-faded water
+## on foot, the old large-scale grass and plain water in orbit.
+func _apply_ground_mode() -> void:
+	var gm: Material = _ground_material()
+	for g in _ground_chunks:
+		if is_instance_valid(g):
+			g.material_override = gm
+	if _bed_node != null:
+		_bed_node.material_override = _pbr("dirt", Color(0.22, 0.2, 0.17), 1.0 / (3.0 * WS.M) if fp_mode else 0.6, Color(0.82, 0.76, 0.7) if fp_mode else Color.WHITE)
+	if _water_mat != null:
+		# Normal-map repeats: one per 8 m on foot; the depth read fades the shallows and foams the banks.
+		_water_mat.set_shader_parameter("tiling", 1.0 / (8.0 * WS.M) if fp_mode else 0.35)
+		_water_mat.set_shader_parameter("speed", 0.05 if fp_mode else 0.03)
+		_water_mat.set_shader_parameter("depth_fade", 0.045 if fp_mode else 0.0)
+		_water_mat.set_shader_parameter("foam_width", 0.006)
+
+
+func _ground_material() -> Material:
+	if not fp_mode or not ResourceLoader.exists(GROUND_SHADER) or not ResourceLoader.exists(TEX + "grass_albedo.jpg"):
+		var m := _pbr("grass", Color(0.36, 0.6, 0.3), 0.18, Color(1.12, 1.15, 1.0))
+		m.normal_scale = 0.45
+		return m
+	if _ground_fp_mat == null:
+		_ground_fp_mat = ShaderMaterial.new()
+		_ground_fp_mat.shader = load(GROUND_SHADER)
+		for key: String in ["grass_albedo", "grass_normal", "grass_rough", "dirt_albedo", "dirt_normal"]:
+			var p := TEX + key + ".jpg"
+			if ResourceLoader.exists(p):
+				_ground_fp_mat.set_shader_parameter(key, load(p))
+		_ground_fp_mat.set_shader_parameter("detail_scale", 1.0 / (3.0 * WS.M))
+		_ground_fp_mat.set_shader_parameter("macro_scale", 1.0 / (40.0 * WS.M))
+		_ground_fp_mat.set_shader_parameter("grass_tint", Color(1.0, 1.04, 0.96))
+		_ground_fp_mat.set_shader_parameter("wetness", wetness)
+	return _ground_fp_mat
+
+
+## Ground for a vacant lot on foot: the detail shader turned to patchy earth that fades back to grass
+## at the lot's edges.
+func lot_ground_material() -> Material:
+	var base := _ground_material()
+	if not (base is ShaderMaterial):
+		return _pbr("dirt", Color(0.35, 0.3, 0.25), 1.0 / (3.0 * WS.M))
+	if _lot_mat == null:
+		_lot_mat = (base as ShaderMaterial).duplicate() as ShaderMaterial
+		_lot_mat.set_shader_parameter("dirt", 0.62)
+		_lot_mat.set_shader_parameter("lot_edge", 1.0)
+		_lot_mat.set_shader_parameter("wetness", wetness)
+	return _lot_mat
+
+
+## Paving for the aprons between lots and road sidewalks: the road's own sidewalk material, world
+## tiled at the road's density (one repeat per 3 m).
+func apron_material() -> Material:
+	if _apron_mat == null:
+		var src: BaseMaterial3D = null
+		var road := _inst(_road_path("straight"))
+		if road != null:
+			for n in road.find_children("*", "MeshInstance3D", true, false):
+				var mesh := (n as MeshInstance3D).mesh
+				for s in range(mesh.get_surface_count()):
+					var m := mesh.surface_get_material(s) as BaseMaterial3D
+					if m != null and m.resource_name == "Sidewalk":
+						src = m
+			road.free()
+		if src != null:
+			_apron_mat = src.duplicate() as StandardMaterial3D
+			_apron_mat.uv1_triplanar = true
+			_apron_mat.uv1_world_triplanar = true
+			_apron_mat.uv1_scale = Vector3.ONE / (3.0 * WS.M)
+			_wet_mats[_apron_mat] = [_apron_mat.albedo_color, _apron_mat.roughness, _apron_mat.metallic_specular]
+			_wet_material(_apron_mat, wetness)
+		else:
+			_apron_mat = _pbr("sidewalk", Color(0.6, 0.6, 0.58), 1.0 / (3.0 * WS.M))
+	return _apron_mat
+
+
+## Wet streets: road and sidewalk materials darken and turn glossy, the ground shaders and the water
+## follow, and puddles appear by the curbs. w is 0 (dry) .. 1 (soaked).
+func set_wetness(w: float) -> void:
+	w = clampf(w, 0.0, 1.0)
+	if absf(w - wetness) < 0.002 and w != 0.0:
+		return
+	wetness = w
+	for m: BaseMaterial3D in _wet_mats.keys():
+		if is_instance_valid(m):
+			_wet_material(m, w)
+	for sm: ShaderMaterial in [_ground_fp_mat, _lot_mat]:
+		if sm != null:
+			sm.set_shader_parameter("wetness", w)
+	if _water_mat != null:
+		_water_mat.set_shader_parameter("rain", 1.0 if w > 0.05 and fp_mode else 0.0)
+	if _street != null:
+		_street.set_wetness(w)
+
+
+func _wet_material(m: BaseMaterial3D, w: float) -> void:
+	var dry: Array = _wet_mats[m]
+	var c: Color = dry[0]
+	var k := lerpf(1.0, 0.62, w)
+	m.albedo_color = Color(c.r * k, c.g * k, c.b * k, c.a)
+	m.roughness = lerpf(float(dry[1]), 0.16, w)
+	m.metallic_specular = lerpf(float(dry[2]), 0.65, w)
 
 
 ## One merged quad mesh over every tile the predicate accepts, so water costs a single draw call.
@@ -499,7 +776,7 @@ func _build_trees() -> void:
 		_collect_meshes(inst, Transform3D(), parts)
 		inst.free()
 		if not parts.is_empty():
-			kits.append(parts)
+			kits.append(_street.fp_tree_parts(parts) if fp_mode else parts)
 	if kits.is_empty():
 		kits.append(_procedural_tree_parts())
 	_tree_kits = kits
@@ -575,28 +852,48 @@ func _low_poly_tree_parts() -> Array:
 	]
 
 
-func _tree_chunk_of(x: int, y: int) -> Vector2i:
-	return Vector2i(floori(float(x - D.X0 + TREE_RING) / TREE_CHUNK), floori(float(y - D.Y0 + TREE_RING) / TREE_CHUNK))
+## Chunk key of tile (x, y) for a tree layer: z = 0 is the orbit chunk (both layers), 1 the FP near
+## chunk, 2 the FP far chunk.
+func _tree_chunk_of(x: int, y: int, layer: int = 0) -> Vector3i:
+	var size := _tree_chunk_size(layer)
+	return Vector3i(floori(float(x - D.X0 + TREE_RING) / size), floori(float(y - D.Y0 + TREE_RING) / size), layer)
+
+
+func _tree_chunk_size(layer: int) -> int:
+	return TREE_CHUNK if layer == 0 else (TREE_CHUNK_FP if layer == 1 else TREE_FAR_CHUNK_FP)
+
+
+## The tree layers in use: one combined chunk set in orbit, near and far chunk sets on foot.
+func _tree_layers() -> Array[int]:
+	return [1, 2] if fp_mode else [0]
+
+
+## Marks the chunks holding tile (x, y) for a rebuild next frame.
+func _dirty_trees_at(x: int, y: int) -> void:
+	for layer in _tree_layers():
+		_dirty_tree_chunks[_tree_chunk_of(x, y, layer)] = true
 
 
 ## Rebuilds every tree chunk: the forest tiles of the world plus a ring of woods beyond its edge.
 func _refresh_trees() -> void:
-	var lo := _tree_chunk_of(D.X0 - TREE_RING, D.Y0 - TREE_RING)
-	var hi := _tree_chunk_of(D.X0 + D.W + TREE_RING - 1, D.Y0 + D.H + TREE_RING - 1)
-	for cy in range(lo.y, hi.y + 1):
-		for cx in range(lo.x, hi.x + 1):
-			_refresh_tree_chunk(Vector2i(cx, cy))
+	for layer in _tree_layers():
+		var lo := _tree_chunk_of(D.X0 - TREE_RING, D.Y0 - TREE_RING, layer)
+		var hi := _tree_chunk_of(D.X0 + D.W + TREE_RING - 1, D.Y0 + D.H + TREE_RING - 1, layer)
+		for cy in range(lo.y, hi.y + 1):
+			for cx in range(lo.x, hi.x + 1):
+				_refresh_tree_chunk(Vector3i(cx, cy, layer))
 	_dirty_tree_chunks.clear()
 
 
-func _refresh_tree_chunk(c: Vector2i) -> void:
+func _refresh_tree_chunk(c: Vector3i) -> void:
+	var size := _tree_chunk_size(c.z)
 	var by_kit: Array = []
 	for _k in range(maxi(1, _tree_kits.size())):
 		by_kit.append([])
-	var x0 := D.X0 - TREE_RING + c.x * TREE_CHUNK
-	var z0 := D.Y0 - TREE_RING + c.y * TREE_CHUNK
-	for gx in range(x0, mini(x0 + TREE_CHUNK, D.X0 + D.W + TREE_RING)):
-		for gz in range(z0, mini(z0 + TREE_CHUNK, D.Y0 + D.H + TREE_RING)):
+	var x0 := D.X0 - TREE_RING + c.x * size
+	var z0 := D.Y0 - TREE_RING + c.y * size
+	for gx in range(x0, mini(x0 + size, D.X0 + D.W + TREE_RING)):
+		for gz in range(z0, mini(z0 + size, D.Y0 + D.H + TREE_RING)):
 			var inside := D.in_bounds(gx, gz)
 			var h := absi(gx * 73856093 ^ gz * 19349663)
 			var n := 0
@@ -615,25 +912,30 @@ func _refresh_tree_chunk(c: Vector2i) -> void:
 				var yaw := Basis(Vector3.UP, float(hh % 13) / 13.0 * TAU).scaled(Vector3.ONE * sc)
 				(by_kit[(hh >> 3) % by_kit.size()] as Array).append(Transform3D(yaw, Vector3(gx + ox * 0.85, 0.0, gz + oz * 0.85)))
 	for n: Node in _tree_chunks.get(c, []):
-		n.queue_free()
+		if is_instance_valid(n):
+			n.queue_free()
 	var layers: Array = []
 	var every: Array = []
+	var near_end := TREE_NEAR_FP * vis_mult if fp_mode else TREE_NEAR
 	for ki in range(_tree_kits.size()):
 		var spots: Array = by_kit[ki]
 		every.append_array(spots)
-		if spots.is_empty():
+		if spots.is_empty() or c.z == 2:
 			continue
 		for p: Dictionary in _tree_kits[ki]:
-			layers.append(_tree_layer(p, spots, 0.0, TREE_NEAR))
-	if not every.is_empty():
+			layers.append(_tree_layer(p, spots, 0.0, near_end, 1.5 if fp_mode else 6.0))
+	if not every.is_empty() and c.z != 1:
 		for p: Dictionary in _far_tree_parts:
-			layers.append(_tree_layer(p, every, TREE_NEAR, 0.0))
+			if fp_mode:
+				layers.append(_tree_layer(p, every, near_end, TREE_FAR_FP * vis_mult, 2.0))
+			else:
+				layers.append(_tree_layer(p, every, TREE_NEAR, 0.0, 6.0))
 	_tree_chunks[c] = layers
 
 
 ## One part of one tree kit for a chunk. The layer sits at the chunk centre so visibility range
 ## distances are measured per chunk.
-func _tree_layer(part: Dictionary, spots: Array, begin: float, end: float) -> MultiMeshInstance3D:
+func _tree_layer(part: Dictionary, spots: Array, begin: float, end: float, margin: float) -> MultiMeshInstance3D:
 	var centre := Vector3.ZERO
 	for t: Transform3D in spots:
 		centre += t.origin
@@ -652,9 +954,9 @@ func _tree_layer(part: Dictionary, spots: Array, begin: float, end: float) -> Mu
 	if part.get("mat") != null:
 		mmi.material_override = part["mat"]
 	mmi.visibility_range_begin = begin
-	mmi.visibility_range_begin_margin = 6.0 if begin > 0.0 else 0.0
+	mmi.visibility_range_begin_margin = margin if begin > 0.0 else 0.0
 	mmi.visibility_range_end = end
-	mmi.visibility_range_end_margin = 6.0 if end > 0.0 else 0.0
+	mmi.visibility_range_end_margin = margin if end > 0.0 else 0.0
 	if begin > 0.0:
 		mmi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	_trees_root.add_child(mmi)
@@ -845,10 +1147,13 @@ func _label(text: String, size: int, col: Color) -> Label3D:
 func rebuild_all(animate: bool) -> void:
 	for i in sim.active:
 		_build_tile(i, animate)
+	_street.flush()
 	_refresh_status()
 	_sync_events()
 
 
+## Changed tiles and their road neighbours (whose pieces and furniture depend on them) rebuild; so do
+## neighbouring lots whose frontage turned. Orbit builds them now; on foot they join the queue.
 func _on_tiles_changed(indices: PackedInt32Array) -> void:
 	var todo := {}
 	for i in indices:
@@ -858,11 +1163,148 @@ func _on_tiles_changed(indices: PackedInt32Array) -> void:
 		for dv in [Vector2i(0, -1), Vector2i(1, 0), Vector2i(0, 1), Vector2i(-1, 0)]:
 			var nx: int = x + dv.x
 			var ny: int = y + dv.y
-			if D.in_bounds(nx, ny) and sim.kind[D.idx(nx, ny)] == D.ROAD:
-				todo[D.idx(nx, ny)] = true
+			if not D.in_bounds(nx, ny):
+				continue
+			var j := D.idx(nx, ny)
+			var nk := sim.kind[j]
+			if nk == D.ROAD:
+				todo[j] = true
+			elif (D.is_zone(nk) or D.is_service(nk)) and _yaw_stale(j):
+				todo[j] = true
+	if fp_mode:
+		for i: int in todo.keys():
+			if not _queue.has(i):
+				_queue[i] = 0.0
+		return
 	for i: int in todo.keys():
 		_build_tile(i, true)
+	_street.flush()
 	_refresh_status()
+
+
+## True when lot j's building no longer faces its frontage road (a road appeared or went next to it).
+func _yaw_stale(j: int) -> bool:
+	var holder: Node3D = _tile_nodes.get(j, null)
+	if holder == null or not is_instance_valid(holder) or not holder.has_meta("building_xform"):
+		return false
+	var x := D.tx(j)
+	var y := D.ty(j)
+	var h := absi(x * 73856093 ^ y * 19349663)
+	var want := deg_to_rad(_lot_yaw(j, h, D.is_zone(sim.kind[j])))
+	var have := (holder.get_meta("building_xform") as Transform3D).basis.get_euler().y
+	return absf(angle_difference(want, have)) > 0.01
+
+
+## Builds every queued tile now (each emits tile_built), then the batched street props.
+func flush_rebuild_queue() -> void:
+	while not _queue.is_empty():
+		var i: int = _queue.keys()[0]
+		_build_tile(i, true)
+		_queue.erase(i)
+	_street.flush()
+
+
+## Tiles waiting in the FP rebuild queue.
+func rebuild_pending() -> int:
+	return _queue.size()
+
+
+## FP rebuild queue, once per frame: nearest tiles to priority_point first until rebuild_budget_ms is
+## spent (tile_built included), at least one tile per frame. A tile within REBUILD_DEFER_DIST that
+## the camera sees waits until it leaves the view or REBUILD_DEFER_MAX_S of its own waiting pass, so
+## buildings do not pop beside the player; a tile whose model is still loading on a thread waits too.
+func _process_queue(delta: float) -> void:
+	var t0 := Time.get_ticks_usec()
+	var budget := int(rebuild_budget_ms * 1000.0)
+	var order: Array = []
+	for i: int in _queue.keys():
+		var d := Vector2(D.tx(i) - priority_point.x, D.ty(i) - priority_point.z).length_squared()
+		order.append(Vector2(d, i))
+	order.sort()
+	var built := 0
+	for e: Vector2 in order:
+		var i := int(e.y)
+		if e.x < REBUILD_DEFER_DIST * REBUILD_DEFER_DIST and float(_queue[i]) < REBUILD_DEFER_MAX_S and _in_view(i):
+			_queue[i] = float(_queue[i]) + delta
+			continue
+		if not _models_ready(i):
+			continue
+		_build_tile(i, true)
+		_queue.erase(i)
+		built += 1
+		if Time.get_ticks_usec() - t0 >= budget:
+			break
+	if built > 0:
+		_street.flush()
+
+
+func _in_view(i: int) -> bool:
+	return camera != null and camera.is_inside_tree() and camera.is_position_in_frustum(Vector3(D.tx(i), 0.05, D.ty(i)))
+
+
+## True when the scene tile i needs is loaded; otherwise starts (or polls) a threaded load so the
+## queue never loads a building on the main thread.
+func _models_ready(i: int) -> bool:
+	var k := sim.kind[i]
+	var path := ""
+	if D.is_zone(k) or D.is_service(k):
+		var h := absi(D.tx(i) * 73856093 ^ D.ty(i) * 19349663)
+		path = _model_path(k, sim.level[i], h)
+	if path.is_empty() or _scenes.has(path):
+		return true
+	return _warm_one(path)
+
+
+## Starts loading the scenes at paths on worker threads (the streetscape feature warms every zone,
+## service and prop model at setup); _process tunes them in as they finish.
+func warm_scenes(paths: Array) -> void:
+	for p: String in paths:
+		if not _scenes.has(p) and ResourceLoader.exists(p):
+			_warm_one(p)
+
+
+## Polls one threaded load; true once the scene is in the cache.
+func _warm_one(path: String) -> bool:
+	if _scenes.has(path):
+		return true
+	if not _warming.has(path):
+		if ResourceLoader.load_threaded_request(path, "PackedScene", true) != OK:
+			_scene(path)
+			return true
+		_warming[path] = true
+		return false
+	var st := ResourceLoader.load_threaded_get_status(path)
+	if st == ResourceLoader.THREAD_LOAD_IN_PROGRESS:
+		return false
+	_warming.erase(path)
+	var ps: PackedScene = ResourceLoader.load_threaded_get(path) as PackedScene if st == ResourceLoader.THREAD_LOAD_LOADED else null
+	if ps != null:
+		_tune_materials(ps)
+	_scenes[path] = ps
+	return true
+
+
+## Finishes at most one warmed scene per frame (tuning instantiates it once).
+func _poll_warming() -> void:
+	for p: String in _warming.keys():
+		if ResourceLoader.load_threaded_get_status(p) != ResourceLoader.THREAD_LOAD_IN_PROGRESS:
+			_warm_one(p)
+			return
+
+
+## Scene paths a growing city can need on foot: every zone level option and service model.
+func warm_paths() -> Array:
+	var out: Array = []
+	for k: int in [D.ZONE_R, D.ZONE_C, D.ZONE_I]:
+		for l in range(1, 4):
+			for p: Variant in _zone_options(k, l):
+				out.append(str(p))
+	for k: int in D.KIND_NAMES.keys():
+		if D.is_service(k):
+			var p := _model_path(k, 1, 0)
+			if not p.is_empty():
+				out.append(p)
+	return out
 
 
 func _road_mask(x: int, y: int) -> int:
@@ -943,13 +1385,15 @@ func _build_tile(i: int, animate: bool) -> void:
 	var was_level := _prev_level[i]
 	_prev_kind[i] = k
 	_prev_level[i] = l
+	_queue.erase(i)
+	_street.forget(i)
 	var had := _tile_nodes.has(i)
 	if _tile_nodes.has(i):
 		(_tile_nodes[i] as Node3D).queue_free()
 		_tile_nodes.erase(i)
 	bus_stops.erase(i)
 	if k == D.FOREST or was_kind == D.FOREST:
-		_dirty_tree_chunks[_tree_chunk_of(x, y)] = true
+		_dirty_trees_at(x, y)
 	# Woods are drawn by the tree chunks; only a burning forest needs its own node.
 	if k == D.EMPTY or (k == D.FOREST and sim.burning[i] == 0):
 		if had:
@@ -964,7 +1408,8 @@ func _build_tile(i: int, animate: bool) -> void:
 	var site: Dictionary = sim.sites.get(i, {})
 	match k:
 		D.ROAD:
-			var piece := _road_piece(_road_mask(x, y))
+			var mask := _road_mask(x, y)
+			var piece := _road_piece(mask)
 			var kind_name: String = piece[0]
 			var on_water := sim.terrain[i] == D.WATER
 			if kind_name == "straight" and on_water and _real_roads and ResourceLoader.exists(REAL_ROADS["bridge"]):
@@ -982,11 +1427,13 @@ func _build_tile(i: int, animate: bool) -> void:
 				var bm := BoxMesh.new()
 				bm.size = Vector3(1.0, 0.12, 1.0)
 				deck.mesh = bm
-				deck.position.y = -0.07
+				deck.position.y = WS.GROUND_Y - 0.06
 				deck.material_override = _mat("bridge", Color(0.45, 0.45, 0.5))
 				holder.add_child(deck)
 			else:
 				_maybe_bus_stop(i, x, y, holder)
+			if fp_mode:
+				_street.dress_road(i, holder, mask, kind_name, model)
 		D.FOREST:
 			pass
 		D.ZONE_R, D.ZONE_C, D.ZONE_I:
@@ -995,27 +1442,35 @@ func _build_tile(i: int, animate: bool) -> void:
 				lv = int(site["target_level"])
 			if not site.is_empty() and str(site["plan"]) != "zone_up":
 				_build_site(i, holder, site, h)
+			elif fp_mode and lv == 0:
+				# A vacant lot on foot: rough ground and a "For lease" board, no zoning glow.
+				_street.empty_lot(i, holder, k, h)
 			else:
 				var zc: Color = ZONE_COLORS[k]
+				var pick := ""
+				if lv > 0:
+					var opts := _zone_options(k, lv)
+					pick = str(opts[(h >> 3) % opts.size()])
 				var pad := MeshInstance3D.new()
 				var pm := PlaneMesh.new()
 				pm.size = Vector2(0.96, 0.96) if lv > 0 else Vector2(0.94, 0.94)
 				pad.mesh = pm
-				pad.position.y = 0.006
+				pad.position.y = WS.PAD_TOP if fp_mode else ORBIT_PAD_Y
 				if lv == 0:
 					pad.material_override = _mat("zone", zc, 0.25, 0.85)
 					holder.add_child(pad)
+				elif fp_mode and (pick.begins_with(R) or k == D.ZONE_R):
+					# On foot the real model's own lot slab shows its paving, tree pits and parking.
+					pad.free()
 				elif k == D.ZONE_C:
-					pad.material_override = _pbr("sidewalk", Color(0.6, 0.6, 0.58), 1.0)
+					pad.material_override = _pbr("sidewalk", Color(0.6, 0.6, 0.58), 1.0 / (3.0 * WS.M) if fp_mode else 1.0)
 					holder.add_child(pad)
 				elif k == D.ZONE_I:
-					pad.material_override = _pbr("asphalt", Color(0.3, 0.3, 0.3), 0.8, Color(0.85, 0.85, 0.85))
+					pad.material_override = _pbr("asphalt", Color(0.3, 0.3, 0.3), 1.0 / (3.0 * WS.M) if fp_mode else 0.8, Color(0.85, 0.85, 0.85))
 					holder.add_child(pad)
 				else:
 					pad.free()
 				if lv > 0:
-					var opts := _zone_options(k, lv)
-					var pick := str(opts[(h >> 3) % opts.size()])
 					model = _inst(pick)
 					if model != null:
 						var s := 0.95
@@ -1027,9 +1482,12 @@ func _build_tile(i: int, animate: bool) -> void:
 							s = 0.86
 						# Real models are authored at their true height; only the stand-ins get height jitter.
 						model.scale = Vector3.ONE * s if pick.begins_with(R) else Vector3(s, s * (0.9 + float(h % 5) * 0.06), s)
-						model.rotation_degrees.y = float((h % 4) * 90)
+						model.rotation_degrees.y = _lot_yaw(i, h, true)
 						holder.add_child(model)
-					_add_zone_prop(k, h, holder)
+					if fp_mode:
+						_street.dress_lot(i, holder, k, lv, h)
+					else:
+						_add_zone_prop(k, h, holder)
 				else:
 					var post := MeshInstance3D.new()
 					var cm := CylinderMesh.new()
@@ -1046,11 +1504,19 @@ func _build_tile(i: int, animate: bool) -> void:
 			_build_site(i, holder, site, h)
 		D.RUBBLE:
 			var dirt := MeshInstance3D.new()
-			var dm := PlaneMesh.new()
-			dm.size = Vector2(0.96, 0.96)
-			dirt.mesh = dm
-			dirt.position.y = 0.006
-			dirt.material_override = _pbr("dirt", Color(0.35, 0.3, 0.25), 1.0)
+			if fp_mode:
+				# On foot a closed slab of churned earth at PAD_TOP (the walkable height), no floating edge.
+				var db := BoxMesh.new()
+				db.size = Vector3(0.96, WS.PAD_TOP - WS.GROUND_Y, 0.96)
+				dirt.mesh = db
+				dirt.position.y = (WS.PAD_TOP + WS.GROUND_Y) * 0.5
+				dirt.material_override = _pbr("dirt", Color(0.35, 0.3, 0.25), 1.0 / (3.0 * WS.M))
+			else:
+				var dm := PlaneMesh.new()
+				dm.size = Vector2(0.96, 0.96)
+				dirt.mesh = dm
+				dirt.position.y = ORBIT_PAD_Y
+				dirt.material_override = _pbr("dirt", Color(0.35, 0.3, 0.25), 1.0)
 			holder.add_child(dirt)
 			for r in range(5):
 				var chunk := MeshInstance3D.new()
@@ -1078,7 +1544,10 @@ func _build_tile(i: int, animate: bool) -> void:
 				if model != null:
 					if spath.begins_with(R):
 						model.scale = Vector3.ONE * REAL_SCALE
+					model.rotation_degrees.y = _lot_yaw(i, h, false)
 					holder.add_child(model)
+					if fp_mode:
+						_street.dress_service(i, holder, k, model)
 					if k == D.COAL:
 						for sn in ["StackTop_0", "StackTop_1"]:
 							var top := model.find_child(sn, true, false) as Node3D
@@ -1098,18 +1567,27 @@ func _build_tile(i: int, animate: bool) -> void:
 	if model != null:
 		_register_animated(model)
 		_dress_windows(model, h)
+		if fp_mode and k != D.ROAD:
+			_street.dress_model(model)
 	if k == D.ZONE_I and l >= 2 and model != null:
 		var st := model.find_child("StackTop_0", true, false) as Node3D
 		if st != null:
 			_add_smoke(st, Color(0.5, 0.48, 0.44))
 	if sim.burning[i] > 0:
-		_add_fire(holder)
+		_add_fire(holder, model)
 	if animate and model != null and (was_kind != k or l > was_level) and k != D.ROAD and k != D.FOREST:
-		var target_scale := model.scale
-		model.scale = Vector3(target_scale.x, target_scale.y * 0.05, target_scale.z)
-		var tw := create_tween()
-		tw.tween_property(model, "scale", target_scale, 0.55).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
-		_dust_puff(Vector3(x, 0.1, y))
+		if fp_mode:
+			# On foot buildings do not squash and spring; a small puff only when it happens nearby.
+			if Vector2(x - priority_point.x, y - priority_point.z).length() < 4.0:
+				_dust_puff(Vector3(x, 0.02, y))
+		else:
+			var target_scale := model.scale
+			model.scale = Vector3(target_scale.x, target_scale.y * 0.05, target_scale.z)
+			var tw := create_tween()
+			tw.tween_property(model, "scale", target_scale, 0.55).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
+			_dust_puff(Vector3(x, 0.1, y))
+	if fp_mode and not holder.has_meta("colliders") and k == D.ROAD:
+		holder.set_meta("colliders", [])
 	tile_built.emit(i, holder)
 
 
@@ -1119,6 +1597,9 @@ func _build_site(i: int, holder: Node3D, s: Dictionary, h: int, existing: Node3D
 		return
 	var stage := sim.site_stage_name(s)
 	var ctx := {"h": h, "water": sim.terrain[i] == D.WATER}
+	var f := directory.frontage(i) if directory != null else -1
+	if f >= 0:
+		ctx["front"] = Vector2i(D.tx(f) - D.tx(i), D.ty(f) - D.ty(i))
 	var tk := int(s["target_kind"])
 	var tl := maxi(int(s["target_level"]), 1)
 	match str(s["type"]):
@@ -1126,7 +1607,7 @@ func _build_site(i: int, holder: Node3D, s: Dictionary, h: int, existing: Node3D
 			ctx["axis"] = _site_axis(i)
 		"demolish":
 			if str(s["plan"]) == "demolish" and stage == "demolition":
-				ctx["old"] = _model_for(int(s["from_kind"]), maxi(int(s["from_level"]), 1), h)
+				ctx["old"] = _model_for(int(s["from_kind"]), maxi(int(s["from_level"]), 1), h, i)
 		_:
 			var bb := _model_bounds(tk, tl, h)
 			var side := maxf(bb.size.x, bb.size.z)
@@ -1135,9 +1616,11 @@ func _build_site(i: int, holder: Node3D, s: Dictionary, h: int, existing: Node3D
 			if existing != null:
 				ctx["base_height"] = _model_bounds(tk, int(s["from_level"]), h).end.y
 			elif stage == "finishing":
-				var target := _model_for(tk, tl, h)
+				var target := _model_for(tk, tl, h, i)
 				if target != null:
 					_dress_windows(target, h)
+					if fp_mode:
+						_street.dress_model(target)
 					ctx["target"] = target
 	var root: Node3D = kit.build_site(holder, s, stage, _stage_fraction(s), ctx)
 	_register_animated(root)
@@ -1210,7 +1693,9 @@ func _model_scale(path: String, zone: bool, h: int) -> Vector3:
 	return Vector3(s, s * (0.9 + float(h % 5) * 0.06), s)
 
 
-func _model_for(k: int, l: int, h: int) -> Node3D:
+## The finished model of kind k at density l for a tile with hash h, scaled and turned. With a tile
+## index, zone and service models face that lot's frontage road.
+func _model_for(k: int, l: int, h: int, i: int = -1) -> Node3D:
 	var path := _model_path(k, l, h)
 	if path.is_empty():
 		return null
@@ -1218,9 +1703,21 @@ func _model_for(k: int, l: int, h: int) -> Node3D:
 	if m == null:
 		return null
 	m.scale = _model_scale(path, D.is_zone(k), h)
-	if D.is_zone(k):
+	if i >= 0:
+		m.rotation_degrees.y = _lot_yaw(i, h, D.is_zone(k))
+	elif D.is_zone(k):
 		m.rotation_degrees.y = float((h % 4) * 90)
 	return m
+
+
+## Model yaw (degrees) for lot i: its +Z face (doors, shopfronts) toward the frontage road
+## (CityDirectory.frontage_yaw); without a frontage, zones keep the hashed quarter turn and
+## services face south.
+func _lot_yaw(i: int, h: int, zone: bool) -> float:
+	var fy := directory.frontage_yaw(i) if directory != null else NAN
+	if not is_nan(fy):
+		return fy
+	return float((h % 4) * 90) if zone else 0.0
 
 
 ## Scaled bounds of the model a tile would show, cached per file.
@@ -1354,6 +1851,9 @@ func _add_zone_prop(k: int, h: int, holder: Node3D) -> void:
 	var cz := 0.4 if corner < 2 else -0.4
 	prop.position = Vector3(cx, 0.0, cz)
 	prop.rotation_degrees.y = float(((h >> 11) % 4) * 90)
+	prop.set_meta("prop", true)
+	if prop.scene_file_path == R + "props/billboard.glb":
+		prop.set_meta("poster_slot", STREET.billboard_slot())
 	holder.add_child(prop)
 	_register_animated(prop)
 
@@ -1371,14 +1871,18 @@ func _maybe_bus_stop(i: int, x: int, y: int, holder: Node3D) -> void:
 			continue
 		var nk := sim.kind[D.idx(nx, ny)]
 		if (nk == D.ZONE_R or nk == D.ZONE_C) and sim.level[D.idx(nx, ny)] > 0:
-			var stop := _inst(M + "props/bus_stop.glb")
+			var stop: Node3D = _street.shelter(holder, dv) if fp_mode else null
 			if stop == null:
-				stop = _proc_bus_stop()
-			stop.position = Vector3(dv.x * 0.43, 0.0, dv.y * 0.43)
-			# The shelter's open side (+Z) faces the road.
-			stop.rotation.y = atan2(-float(dv.x), -float(dv.y))
-			holder.add_child(stop)
-			bus_stops[i] = true
+				stop = _inst(M + "props/bus_stop.glb")
+				if stop == null:
+					stop = _proc_bus_stop()
+				stop.position = Vector3(dv.x * 0.43, 0.0, dv.y * 0.43)
+				# The shelter's open side (+Z) faces the road.
+				stop.rotation.y = atan2(-float(dv.x), -float(dv.y))
+				stop.set_meta("prop", true)
+				stop.set_meta("poster_slot", {"kind": "bus_shelter", "size": Vector2(0.08, 0.09), "xform": Transform3D(Basis(), Vector3(0.10, 0.09, -0.0555))})
+				holder.add_child(stop)
+			bus_stops[i] = dv
 			return
 
 
@@ -1534,6 +2038,14 @@ func _add_smoke(parent: Node3D, col: Color) -> void:
 	p.gravity = Vector3(0.05, 0.05, 0)
 	p.scale_amount_min = 0.6
 	p.scale_amount_max = 1.4
+	if fp_mode:
+		# Street scale: a stack plume rising at walking-to-jogging pace, puffs a few metres across.
+		p.lifetime = 6.0
+		p.initial_velocity_min = 1.5 * WS.M
+		p.initial_velocity_max = 2.5 * WS.M
+		p.gravity = Vector3(0.4 * WS.M, 0.3 * WS.M, 0)
+		p.scale_amount_min = 0.36
+		p.scale_amount_max = 0.84
 	var sm := SphereMesh.new()
 	sm.radius = 0.07
 	sm.height = 0.14
@@ -1548,7 +2060,7 @@ func _add_smoke(parent: Node3D, col: Color) -> void:
 	parent.add_child(p)
 
 
-func _add_fire(holder: Node3D) -> void:
+func _add_fire(holder: Node3D, model: Node3D = null) -> void:
 	var p := CPUParticles3D.new()
 	p.amount = 26
 	p.lifetime = 0.9
@@ -1559,14 +2071,31 @@ func _add_fire(holder: Node3D) -> void:
 	p.gravity = Vector3(0, 0.4, 0)
 	p.emission_shape = CPUParticles3D.EMISSION_SHAPE_BOX
 	p.emission_box_extents = Vector3(0.3, 0.1, 0.3)
+	var radius := 0.08
+	p.position.y = 0.4
+	if fp_mode:
+		# Flames a little over a metre across licking up at 2-3 m/s from the building's footprint.
+		radius = 0.6 * WS.M
+		p.amount = 60
+		p.lifetime = 1.4
+		p.initial_velocity_min = 2.0 * WS.M
+		p.initial_velocity_max = 3.0 * WS.M
+		p.gravity = Vector3(0, 1.0 * WS.M, 0)
+		var foot := Vector2(0.7, 0.7)
+		var top := 0.3
+		if model != null and holder.has_meta("building_path"):
+			var b := _local_bounds(str(holder.get_meta("building_path")))
+			foot = Vector2(b.size.x, b.size.z) * model.scale.x
+			top = b.end.y * model.scale.y
+		p.emission_box_extents = Vector3(foot.x * 0.4, 0.4 * WS.M, foot.y * 0.4)
+		p.position.y = clampf(top * 0.5, 0.05, 1.5)
 	var sm := SphereMesh.new()
-	sm.radius = 0.08
-	sm.height = 0.16
+	sm.radius = radius
+	sm.height = radius * 2.0
 	sm.radial_segments = 6
 	sm.rings = 3
 	sm.material = _mat("flame", Color(1.0, 0.45, 0.1), 4.0, 0.9)
 	p.mesh = sm
-	p.position.y = 0.4
 	p.color = Color(1, 0.7, 0.3)
 	holder.add_child(p)
 	var light := OmniLight3D.new()
@@ -1576,6 +2105,7 @@ func _add_fire(holder: Node3D) -> void:
 	light.position.y = 0.8
 	light.set_meta("flicker", true)
 	holder.add_child(light)
+	_flicker_lights.append(light)
 
 
 func _dust_puff(pos: Vector3) -> void:
@@ -1764,7 +2294,8 @@ func _make_event_fx(ev: Dictionary) -> Node3D:
 			col = Color(1.0, 0.6, 0.1)
 		"smog":
 			col = Color(0.7, 0.65, 0.4)
-			for s in range(7):
+			# On foot the streetscape weather tints the fog near the event instead of floating balls.
+			for s in range(0 if fp_mode else 7):
 				var puff := MeshInstance3D.new()
 				var sm := SphereMesh.new()
 				sm.radius = 1.0 + float(s % 3) * 0.3
@@ -1783,6 +2314,12 @@ func _make_event_fx(ev: Dictionary) -> Node3D:
 				w.mesh = fm
 				w.position = Vector3(D.tx(int(ti)) - int(ev["x"]), 0.12, D.ty(int(ti)) - int(ev["y"]))
 				w.material_override = _mat("flood", Color(0.25, 0.5, 0.9), 0.4, 0.55)
+				if fp_mode:
+					# Ankle-deep water over the street, drawn like the river (root sits at y 0.05).
+					w.position.y = WS.GROUND_Y + 0.008 - root.position.y
+					if _water_mat != null:
+						w.material_override = _water_mat
+					w.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 				root.add_child(w)
 		"tornado":
 			col = Color(0.75, 0.75, 0.8)
@@ -2006,9 +2543,12 @@ func _process(delta: float) -> void:
 		return
 	_time += delta
 	if not _dirty_tree_chunks.is_empty():
-		for c: Vector2i in _dirty_tree_chunks.keys():
-			_refresh_tree_chunk(c)
+		for c: Vector3i in _dirty_tree_chunks.keys():
+			if c.z in _tree_layers():
+				_refresh_tree_chunk(c)
 		_dirty_tree_chunks.clear()
+	if not _warming.is_empty():
+		_poll_warming()
 	if not fp_mode:
 		_update_population(delta)
 	_status_timer += delta
@@ -2060,10 +2600,15 @@ func _process(delta: float) -> void:
 				root2.position = root2.position.lerp(Vector3(D.tx(ti), 0.05, D.ty(ti)), minf(1.0, delta * 3.0))
 	_animate_parts(delta)
 	_animate_sites(delta)
-	for holder: Node3D in _tile_nodes.values():
-		for c in holder.get_children():
-			if c is OmniLight3D and c.has_meta("flicker"):
-				(c as OmniLight3D).light_energy = 2.0 + randf() * 1.2
+	if not _flicker_lights.is_empty():
+		var live: Array[OmniLight3D] = []
+		for l: Variant in _flicker_lights:
+			if is_instance_valid(l):
+				(l as OmniLight3D).light_energy = 2.0 + randf() * 1.2
+				live.append(l)
+		_flicker_lights = live
+	if fp_mode and not _queue.is_empty():
+		_process_queue(delta)
 	if not fp_mode:
 		if _shake > 0.0 and camera != null:
 			_shake = maxf(0.0, _shake - delta)
