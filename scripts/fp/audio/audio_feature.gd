@@ -1,9 +1,10 @@
 extends FpFeature
 ## City sound on foot (slice I). Owns the Music, SFX, Ambience and UI buses while on foot, puts
 ## the AudioDirector's music under the street (set_fp), and runs three parts: positional emitters
-## (engines, horns, sirens, construction, fire, fountains, plants, the river), the area beds and
-## the hero's footsteps, plus the chat blip and alert stingers. Pausing muffles the music (the
-## only thing still playing); talking to someone ducks the beds.
+## (engines, horns, sirens, construction, fire, fountains, plants, the river, passers-by's steps),
+## the area beds (with rain from G1's weather) and the hero's footsteps (splashing on wet paving),
+## plus the chat blip and alert stingers. Pausing muffles the music (the only thing still
+## playing); talking to someone ducks the beds.
 
 const WS := preload("res://scripts/fp/world_scale.gd")
 const BANK := preload("res://scripts/fp/audio/audio_bank.gd")
@@ -18,6 +19,11 @@ const MUFFLE_S := 0.25
 const TALK_DUCK_DB := -6.0
 const DUCK_RATE_DB := 12.0
 const BLIP_GAP := 1.5
+## The chat drips a line every 1.5-3 s, so ordinary lines share one quiet blip per this many s.
+const CHATTER_GAP := 30.0
+## System cards that blip softly; mayor and press posts blip softly with their role's pitch.
+const SOFT_CARD_KINDS: Array[String] = ["alert", "incident"]
+const POST_KINDS: Array[String] = ["post", "headline", "ruling"]
 const STINGER_GAP := 4.0
 ## Street reflections on the SFX bus: wet level from open land to a dense downtown street.
 const REVERB_WET_OPEN := 0.05
@@ -30,6 +36,8 @@ var footsteps: FOOTSTEPS
 var music_filter: AudioEffectLowPassFilter
 var sfx_reverb: AudioEffectReverb
 var blips_played: int = 0
+## The last blip's tier: "reply", "card", "post" or "chatter" (tests).
+var last_blip: String = ""
 var stingers_played: int = 0
 var duck_db: float = 0.0
 var _created_buses: Array[StringName] = []
@@ -38,6 +46,8 @@ var _ui: Array[AudioStreamPlayer] = []
 var _ui_next: int = 0
 var _now: float = 0.0
 var _last_blip: float = -INF
+var _last_chatter: float = -INF
+var _player_seq: int = -1
 var _last_stinger: float = -INF
 var _duck_target: float = 0.0
 var _sfx_db: float = 0.0
@@ -114,6 +124,7 @@ func from_dict(_d: Dictionary) -> void:
 	emitters.full_scan()
 	_talking.clear()
 	_duck_target = 0.0
+	_player_seq = -1
 	_start_beds()
 
 
@@ -204,16 +215,41 @@ func _start_beds() -> void:
 	ambience.step(0.0)
 
 
+## A new chat line, while the panel is collapsed: the full blip for a reply to the player's own
+## line, a soft one for alert and incident cards and for mayor and press posts, and one quiet blip
+## per CHATTER_GAP for everything else (C drips a line every 1.5-3 s). At most one per BLIP_GAP.
 func _on_chat_posted(msg: Dictionary) -> void:
 	var role := str(msg.get("role", "resident"))
-	if role == "player" or _chat_open() or _now - _last_blip < BLIP_GAP:
+	if role == "player":
+		_player_seq = int(msg.get("seq", -1))
+		return
+	if _chat_open() or _now - _last_blip < BLIP_GAP:
+		return
+	var kind := str(msg.get("kind", ""))
+	var reply := int(msg.get("reply_to", -1))
+	var tier := "chatter"
+	if reply >= 0 and reply == _player_seq:
+		tier = "reply"
+	elif role == "system" and kind in SOFT_CARD_KINDS:
+		tier = "card"
+	elif kind in POST_KINDS:
+		tier = "post"
+	elif _now - _last_chatter < CHATTER_GAP:
 		return
 	_last_blip = _now
+	if tier == "chatter":
+		_last_chatter = _now
 	blips_played += 1
-	if role == "system":
-		play_ui("chat_blip_soft", BANK.BLIP_SOFT_DB)
-	else:
-		play_ui("chat_blip", BANK.BLIP_DB, float(BLIP_PITCH.get(role, 1.0)))
+	last_blip = tier
+	match tier:
+		"reply":
+			play_ui("chat_blip", BANK.BLIP_DB)
+		"card":
+			play_ui("chat_blip_soft", BANK.BLIP_SOFT_DB)
+		"post":
+			play_ui("chat_blip_soft", BANK.BLIP_SOFT_DB, float(BLIP_PITCH.get(role, 1.0)))
+		_:
+			play_ui("chat_blip_soft", BANK.BLIP_CHATTER_DB)
 
 
 func _on_ping(_p: Vector3, reason: String) -> void:

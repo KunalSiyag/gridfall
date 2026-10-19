@@ -41,6 +41,7 @@ BASE_SEED = 20261019
 ROOT = pathlib.Path(__file__).resolve().parents[2]
 SURFACES = ["asphalt", "sidewalk", "lot", "grass", "dirt", "bridge"]
 STEP_VARIANTS = 6
+SPLASH_VARIANTS = 4
 
 
 # ------------------------------------------------------------------ helpers
@@ -444,6 +445,33 @@ def synth_step(surface: str, k: int) -> np.ndarray:
     return norm_short(fade_edges(out, 0.0005, 0.06), st["loud"] + rng.uniform(-1.2, 0.6))
 
 
+def synth_splash(k: int) -> np.ndarray:
+    """The wet layer of a step on soaked paving: a sole slapping a film of water, a spray of
+    droplets and a puddle bubble or two. Played over the dry step, scaled by how wet it is."""
+    rng = rng_for("footstep_splash_%d" % k)
+    n = int(0.3 * SR)
+    t = secs(n)
+    out = np.zeros(n)
+    # Slap: broadband burst, low-mid heavy, very fast attack.
+    slap = bandpass(rng.standard_normal(n), 300.0, 4500.0) * env_ad(n, 0.002, rng.uniform(0.018, 0.03))
+    out += 0.9 * slap / (np.max(np.abs(slap)) + 1e-9)
+    # Spray: droplets thrown up and landing over the next 60-120 ms.
+    spray = grains(rng, n, rng.uniform(500.0, 800.0), rng.uniform(0.06, 0.12), 2500.0, 11000.0, 0.05)
+    out += 0.6 * spray / (np.max(np.abs(spray)) + 1e-9)
+    # One or two bubbles from the displaced water.
+    for _ in range(int(rng.integers(1, 3))):
+        f0 = np.exp(rng.uniform(np.log(600.0), np.log(1600.0)))
+        tau = rng.uniform(0.006, 0.014)
+        bl = int(tau * 6 * SR) + 8
+        bt = secs(bl)
+        fr = f0 * (1.0 + 0.8 * bt / (tau * 6))
+        b = np.sin(2 * np.pi * np.cumsum(fr) / SR) * np.exp(-bt / tau) * (1 - np.exp(-bt / 0.0008))
+        add_at(out, 0.2 * b * rng.uniform(0.5, 1.0), int(rng.uniform(0.01, 0.06) * SR), wrap=False)
+    out *= np.exp(-np.maximum(t - 0.18, 0.0) / 0.03)
+    out = lowpass(out, 12000.0, 2)
+    return norm_short(fade_edges(out, 0.0005, 0.05), -17.0 + rng.uniform(-1.0, 0.5))
+
+
 # ------------------------------------------------------------------ places
 
 def metal_hit(rng: np.random.Generator, f0: float, decay: float, amp: float) -> np.ndarray:
@@ -748,6 +776,58 @@ def synth_traffic_hum() -> np.ndarray:
     return norm_rms(out, -20.0)
 
 
+def synth_rain() -> np.ndarray:
+    """Steady city rain: the bright wash of distant drops, near drops ticking on paving, drips off
+    awnings onto metal and plastic, plinks in puddles, gutter gurgle and wet tyres hissing past."""
+    rng = rng_for("rain")
+    seconds = 30.0
+    n = int(seconds * SR)
+    wash = circ_filter(noise(rng, n, -1.5, 2), chain(band(350.0, 11000.0, 2), bell(3200.0, 0.7, 3.0)))
+    wash *= (1.0 + 0.12 * wander(rng, n, 0.08))[:, None]
+    # Near drops: a few hundred tiny clicks per second across the stereo field.
+    drops = np.zeros((n, 2))
+    for tk in poisson_times(rng, 240.0, seconds):
+        gl = int(rng.uniform(0.0005, 0.0028) * SR) + 2
+        g = rng.standard_normal(gl) * np.exp(-secs(gl) / (gl / SR / 3.0))
+        add_at(drops, pan(g * rng.uniform(0.1, 1.0) ** 2.5, rng.uniform(-1.0, 1.0)), int(tk * SR))
+    drops = circ_filter(drops, band(1100.0, 10000.0, 2))
+    # Drips off roofs and awnings onto metal and plastic: short resonant ticks, a few per second.
+    drips = np.zeros((n, 2))
+    for tk in poisson_times(rng, 3.0, seconds):
+        f0 = np.exp(rng.uniform(np.log(900.0), np.log(3200.0)))
+        dl = int(0.12 * SR)
+        s = modes(dl, [(f0, rng.uniform(0.008, 0.03), 1.0), (f0 * rng.uniform(2.2, 2.9), 0.006, 0.4)], rng)
+        s += 0.3 * rng.standard_normal(dl) * np.exp(-secs(dl) / 0.002)
+        add_at(drips, pan(s * rng.uniform(0.15, 0.6), rng.uniform(-0.9, 0.9)), int(tk * SR))
+    # Puddles: Minnaert bubbles, the rising chirp of a drop landing in standing water.
+    plinks = np.zeros((n, 2))
+    for tk in poisson_times(rng, 9.0, seconds):
+        f0 = np.exp(rng.uniform(np.log(700.0), np.log(2400.0)))
+        tau = rng.uniform(0.004, 0.012) * (900.0 / f0) ** 0.5
+        bl = int(tau * 6 * SR) + 8
+        bt = secs(bl)
+        fr = f0 * (1.0 + 0.9 * bt / (tau * 6))
+        s = np.sin(2 * np.pi * np.cumsum(fr) / SR) * np.exp(-bt / tau) * (1 - np.exp(-bt / 0.0008))
+        add_at(plinks, pan(s * rng.uniform(0.2, 1.0) ** 2, rng.uniform(-0.8, 0.8)), int(tk * SR))
+    runoff = circ_filter(noise(rng, n, -6.0, 2), band(60.0, 420.0, 2)) * (1.0 + 0.3 * wander(rng, n, 0.6))[:, None]
+    # Wet tyres: a car hissing past now and then, far down the street.
+    hiss = np.zeros((n, 2))
+    tk = rng.uniform(0.0, 4.0)
+    while tk < seconds:
+        dur = rng.uniform(3.5, 6.5)
+        pl = int(dur * SR)
+        u = secs(pl) / dur
+        s = bandpass(rng.standard_normal(pl), 900.0, 7000.0) * np.exp(-((u - 0.5) / 0.18) ** 2)
+        side = np.clip(rng.choice([-1.0, 1.0]) * (u - 0.5) * 1.6, -0.9, 0.9)
+        th = (side + 1.0) * np.pi / 4.0
+        add_at(hiss, np.stack([s * np.cos(th), s * np.sin(th)], axis=1) * rng.uniform(0.4, 1.0), int(tk * SR))
+        tk += dur * 0.6 + rng.uniform(3.0, 9.0)
+    out = (unit(wash) + 0.5 * drops / rms(drops) + 0.3 * drips / rms(drips) + 0.22 * plinks / rms(plinks)
+           + 0.3 * unit(runoff) + 0.25 * hiss / rms(hiss))
+    out = stereo_reverb(out, rng, 0.8, 0.15, 6000.0)
+    return norm_rms(out, -20.0)
+
+
 # ------------------------------------------------------------------ UI
 
 def bell_note(f: float, dur: float, index: float = 2.0, ratio: float = 1.4, decay: float = 0.4) -> np.ndarray:
@@ -816,6 +896,7 @@ def catalogue() -> dict[str, tuple[object, bool]]:
         "park_birds": (synth_park_birds, True),
         "night_insects": (synth_night_insects, True),
         "traffic_hum": (synth_traffic_hum, True),
+        "rain": (synth_rain, True),
         "chat_blip": (synth_chat_blip, False),
         "chat_blip_soft": (synth_chat_blip_soft, False),
         "alert_stinger": (synth_alert_stinger, False),
@@ -823,6 +904,8 @@ def catalogue() -> dict[str, tuple[object, bool]]:
     for s in SURFACES:
         for k in range(1, STEP_VARIANTS + 1):
             c["footstep_%s_%d" % (s, k)] = ((lambda s=s, k=k: synth_step(s, k)), False)
+    for k in range(1, SPLASH_VARIANTS + 1):
+        c["footstep_splash_%d" % k] = ((lambda k=k: synth_splash(k)), False)
     return c
 
 

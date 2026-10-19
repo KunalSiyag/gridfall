@@ -12,10 +12,12 @@ const DIR := "res://sounds/fp/"
 const LEGACY_AMBIENCE := "res://sounds/ambience.ogg"
 const SURFACES: Array[String] = ["asphalt", "sidewalk", "lot", "grass", "dirt", "bridge"]
 const STEP_VARIANTS := 6
+## The wet layer played over a step on soaked paving: footstep_splash_<n>.
+const SPLASH_VARIANTS := 4
 ## Every looping asset (their .import files set loop=true).
 const LOOPS: Array[String] = [
 	"engine_idle", "engine_run", "siren_two_tone", "construction_loop", "fire_crackle", "river_loop",
-	"river_bed", "fountain_loop", "plant_hum", "park_birds", "night_insects", "traffic_hum",
+	"river_bed", "fountain_loop", "plant_hum", "park_birds", "night_insects", "traffic_hum", "rain",
 ]
 const ONE_SHOTS: Array[String] = ["horn_short", "horn_long", "chat_blip", "chat_blip_soft", "alert_stinger"]
 ## Stored as WAV (with every footstep_*); everything else is .ogg.
@@ -36,15 +38,19 @@ const BEDS := {
 	"river": ["river_bed", -8.0],
 	"residential_quiet": ["", -9.0],
 	"night_insects": ["night_insects", -14.0],
+	"rain": ["rain", -9.0],
 }
 ## Footsteps: base level (contract: -14 dB), running and crouching trims, pitch spread.
 const STEP_DB := -14.0
 const STEP_RUN_DB := 3.0
 const STEP_CROUCH_DB := -6.0
 const STEP_PITCH_SPREAD := 0.08
+## The splash layer at full wetness, relative to the step.
+const SPLASH_DB := -2.0
 ## UI cues on the UI bus.
 const BLIP_DB := -16.0
 const BLIP_SOFT_DB := -19.0
+const BLIP_CHATTER_DB := -24.0
 const STINGER_DB := -12.0
 
 static var _cache: Dictionary = {}
@@ -75,6 +81,8 @@ static func all_names() -> Array[String]:
 	for s in SURFACES:
 		for n in range(1, STEP_VARIANTS + 1):
 			out.append(step_name(s, n))
+	for n in range(1, SPLASH_VARIANTS + 1):
+		out.append("footstep_splash_%d" % n)
 	return out
 
 

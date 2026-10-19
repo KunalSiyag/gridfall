@@ -1,6 +1,7 @@
 extends Node3D
 ## Positional city sound (slice I): logical sources (engines, horns, sirens, construction, fire,
-## fountains, power plants, river banks) share a pool of at most MAX_PLAYERS AudioStreamPlayer3D.
+## fountains, power plants, river banks, passers-by's footsteps) share a pool of at most
+## MAX_PLAYERS AudioStreamPlayer3D.
 ## Every refresh scores the sources by their estimated level at the listener and gives the players
 ## to the loudest; the farthest or quietest lose theirs first. Doppler is computed by hand (the
 ## built-in effect works in world units against 343 u/s and is inaudible at 1 u = 20 m).
@@ -8,6 +9,7 @@ extends Node3D
 const D := preload("res://scripts/sim/sim_defs.gd")
 const WS := preload("res://scripts/fp/world_scale.gd")
 const BANK := preload("res://scripts/fp/audio/audio_bank.gd")
+const FS := preload("res://scripts/fp/audio/footsteps.gd")
 
 const MAX_PLAYERS := 24
 ## Per type: max_distance (u), volume_db at unit_size (10 m), the near cap above that (max_db =
@@ -21,13 +23,26 @@ const TYPES := {
 	"fountain": {"max": 3.0, "db": -8.0, "near": 6.0, "stream": "fountain_loop"},
 	"plant": {"max": 6.0, "db": -2.0, "near": 6.0, "stream": "plant_hum"},
 	"river": {"max": 6.0, "db": -3.0, "near": 6.0, "stream": "river_loop"},
+	"step": {"max": 0.5, "db": -24.0, "near": 6.0, "stream": "footstep_sidewalk_1"},
 }
+## Residents on foot (E's "pedestrian" agents): positional footsteps for the WALKER_MAX nearest
+## walkers within WALKER_RADIUS of the hero, one per stride of their travel (E has no foot-contact
+## signal yet). Faster "pedestrians" are E's bikes and stay silent.
+const WALKER_RADIUS := 6.0 * WS.M
+const WALKER_MAX := 4
+const WALKER_MIN_MPS := 0.4
+const WALKER_MAX_MPS := 2.6
 ## Engines: how many cars and how far (u); horn rules.
 const ENGINE_CARS := 8
 const ENGINE_RADIUS := 3.0
+## Horns: a car stalled longer than HORN_STALL_S may honk; the urge grows until HORN_STALL_FULL_S
+## (a red light rarely gets a horn, a jam often does) and with the congestion of its tile.
 const HORN_STALL_S := 4.0
-const HORN_RATE := 0.07          # chance per second per stalled car
-const HORN_GAP := 6.0            # at most one horn per this many seconds, city-wide
+const HORN_STALL_FULL_S := 24.0
+const HORN_RATE := 0.05          # honks per second per stalled car at full urge in a jam
+const HORN_GAP := 6.0            # at most one horn per this many seconds, city-wide ...
+const HORN_GAP_MAX := 14.0       # ... the gap after each horn is drawn from HORN_GAP..HORN_GAP_MAX
+const HORN_CAR_REST := 20.0      # the same car does not honk again for this long
 ## Incident sirens without a visible crew: play at the event for this long after it starts.
 const EVENT_SIREN_S := 35.0
 ## Incidents that send a crew with sirens (utility repairs do not).
@@ -74,6 +89,7 @@ var agents_provider: Callable = Callable()
 var time_scale: int = 1
 var enabled: bool = true
 var horns_played: int = 0
+var walker_steps: int = 0
 ## 0 day .. 1 night (SkyDirector.night); construction falls quiet at night.
 var night: float = 0.0
 
@@ -85,7 +101,8 @@ var _t_refresh: float = 0.0
 var _t_siren: float = 0.0
 var _force: bool = true
 var _force_wide: bool = true
-var _last_horn: float = -INF
+var _next_horn: float = -INF          # no horn before this time (the city-wide gap)
+var _honked: Dictionary = {}           # agent id -> time of its last horn
 var _now: float = 0.0
 var _horn_seq: int = 0
 var _banks: Dictionary = {}            # Vector2i chunk -> PackedVector3Array of bank points
@@ -95,6 +112,9 @@ var _static_at: Vector3 = Vector3(INF, INF, INF)
 var _crew_sirens: Dictionary = {}      # siren source keys refreshed by the wide scan
 var _fresh_ogg: int = 0                # Ogg playbacks started this refresh
 var _river_at: Vector3 = Vector3(INF, INF, INF)
+## Walkers heard stepping: agent id -> {"pos", "vel", "travel" (u since the last step), "left"}.
+var _walkers: Dictionary = {}
+var _step_seq: int = 0
 
 
 func setup(p_ctx: FpContext) -> void:
@@ -114,7 +134,8 @@ func request(key: String, type: String, pos: Vector3, opts: Dictionary = {}) -> 
 		s.pos = pos
 		s.dynamic = bool(opts.get("dynamic", false))
 		_sources[key] = s
-		if not s.dynamic:
+		# One-shots (horns, passers-by's steps) never join the static set.
+		if not s.dynamic and not bool(opts.get("one_shot", false)):
 			_static_dirty = true
 		s.stream = BANK.stream(str(opts.get("stream", spec["stream"])))
 		s.gain_db = float(opts.get("gain", 0.0))
@@ -197,6 +218,8 @@ func clear() -> void:
 		pl.stream = null
 		pl.stream_paused = false
 	_crew_sirens.clear()
+	_honked.clear()
+	_walkers.clear()
 	_static_near.clear()
 	_static_dirty = true
 
@@ -349,6 +372,8 @@ func step(dt: float) -> void:
 		_force = false
 		_force_wide = false
 		_refresh(lis, wide)
+	if not _walkers.is_empty():
+		_step_walkers(dt)
 	var lv := _listener_vel()
 	var k_pitch := 1.0 - exp(-dt * 10.0)
 	for key: String in _sources.keys():
@@ -456,7 +481,8 @@ func _refresh(lis: Vector3, wide: bool) -> void:
 		var est := estimate_db(s.type, s.db + s.gain_target, s.dist)
 		if est == -INF:
 			continue
-		s.score = est + (3.0 if s.player != null else 0.0) + (12.0 if s.one_shot else 0.0)
+		# A horn wins a player from a loop; a passer-by's step only takes a spare one.
+		s.score = est + (3.0 if s.player != null else 0.0) + (12.0 if s.one_shot and s.type != "step" else 0.0)
 		cand.append(s)
 	cand.sort_custom(func(a: Src, b: Src) -> bool: return a.score > b.score)
 	var keep := {}
@@ -546,6 +572,9 @@ func _update_agents(lis: Vector3, wide: bool) -> void:
 		_engine(a, e_mode)
 	if e_mode:
 		_horns(near, lis)
+		_update_walkers(near)
+	else:
+		_walkers.clear()
 	var live := ctx.sim != null and not ctx.sim.events.is_empty()
 	if wide:
 		_crew_sirens.clear()
@@ -595,20 +624,109 @@ func _engine(a: Dictionary, e_mode: bool) -> void:
 
 
 func _horns(near: Array, lis: Vector3) -> void:
-	if time_scale >= 4 or _now - _last_horn < HORN_GAP:
+	if time_scale >= 4 or _now < _next_horn:
 		return
 	for a: Dictionary in near:
-		if not a.has("stalled_s") or str(a.get("kind", "")) == "pedestrian":
+		if not a.has("stalled_s") or str(a.get("kind", "")) in ["pedestrian", "emergency"]:
 			continue
-		if float(a["stalled_s"]) <= HORN_STALL_S:
+		var stalled := float(a["stalled_s"])
+		if stalled <= HORN_STALL_S:
 			continue
-		if (a["pos"] as Vector3).distance_to(lis) > float(TYPES["horn"]["max"]):
+		var id := str(a.get("id", ""))
+		if _now - float(_honked.get(id, -INF)) < HORN_CAR_REST:
 			continue
-		if _rng.randf() >= 1.0 - exp(-HORN_RATE * REFRESH):
+		var p: Vector3 = a["pos"]
+		if p.distance_to(lis) > float(TYPES["horn"]["max"]):
 			continue
-		_last_horn = _now
-		horn(a["pos"], "horn_long" if _rng.randf() < 0.3 else "horn_short", float(a.get("speed", 0.0)))
+		var urge := clampf((stalled - HORN_STALL_S) / (HORN_STALL_FULL_S - HORN_STALL_S), 0.0, 1.0)
+		var rate := HORN_RATE * urge * (0.35 + 0.65 * _congestion(p))
+		if _rng.randf() >= 1.0 - exp(-rate * REFRESH):
+			continue
+		_next_horn = _now + _rng.randf_range(HORN_GAP, HORN_GAP_MAX)
+		_honked[id] = _now
+		if _honked.size() > 64:
+			for k: String in _honked.keys():
+				if _now - float(_honked[k]) >= HORN_CAR_REST:
+					_honked.erase(k)
+		# A long lean on the horn is likelier the longer the jam has lasted.
+		horn(p, "horn_long" if _rng.randf() < 0.15 + 0.25 * urge else "horn_short", float(a.get("speed", 0.0)))
 		return
+
+
+## The sim's congestion 0..1 on the tile under p (0 without a sim).
+func _congestion(p: Vector3) -> float:
+	var sim := ctx.sim if ctx != null else null
+	var x := roundi(p.x)
+	var y := roundi(p.z)
+	if sim == null or not D.in_bounds(x, y):
+		return 0.0
+	return clampf(float(sim.traffic[D.idx(x, y)]), 0.0, 1.0)
+
+
+## Keeps the WALKER_MAX nearest residents walking within WALKER_RADIUS of the hero, each with its
+## own stride phase while it stays in the set.
+func _update_walkers(near: Array) -> void:
+	var hero := ctx.player_position() if ctx != null else Vector3.ZERO
+	var picks: Array = []
+	for a: Dictionary in near:
+		if str(a.get("kind", "")) != "pedestrian":
+			continue
+		var p: Vector3 = a["pos"]
+		var d := Vector2(p.x - hero.x, p.z - hero.z).length()
+		if d > WALKER_RADIUS:
+			continue
+		var v: Vector3 = a.get("vel", Vector3.ZERO)
+		var mps := float(a.get("speed", Vector2(v.x, v.z).length())) / WS.M
+		if mps < WALKER_MIN_MPS or mps > WALKER_MAX_MPS:
+			continue
+		picks.append([d, a])
+	picks.sort_custom(func(x: Array, y: Array) -> bool: return float(x[0]) < float(y[0]))
+	var keep := {}
+	for k in range(mini(WALKER_MAX, picks.size())):
+		var a: Dictionary = picks[k][1]
+		var id := str(a["id"])
+		keep[id] = true
+		var w: Dictionary = _walkers.get(id, {})
+		if w.is_empty():
+			w = {"travel": _rng.randf() * FS.STRIDE_M * WS.M, "left": _rng.randf() < 0.5}
+			_walkers[id] = w
+		w["pos"] = a["pos"]
+		w["vel"] = a.get("vel", Vector3.ZERO)
+	for id: String in _walkers.keys():
+		if not keep.has(id):
+			_walkers.erase(id)
+
+
+## Moves the heard walkers on and sounds a step each time one covers a stride.
+func _step_walkers(dt: float) -> void:
+	for w: Dictionary in _walkers.values():
+		var v: Vector3 = w["vel"]
+		var flat := Vector2(v.x, v.z).length()
+		w["pos"] = (w["pos"] as Vector3) + v * dt
+		var travel := float(w["travel"]) + flat * dt
+		var stride := FS.stride_length(flat / WS.M) * WS.M
+		if travel >= stride:
+			travel = fmod(travel, stride)
+			_walker_step(w)
+		w["travel"] = travel
+
+
+## One positional step of walker w on the surface under it; skipped when every player is busy.
+func _walker_step(w: Dictionary) -> void:
+	if _players.size() >= MAX_PLAYERS and _free.is_empty():
+		return
+	var p: Vector3 = w["pos"]
+	var surf := ctx.collision.surface_at(p) if ctx != null and ctx.collision != null else "sidewalk"
+	if not surf in BANK.SURFACES:
+		surf = "sidewalk"
+	var left: bool = w["left"]
+	w["left"] = not left
+	var pool: Array[int] = FS.LEFT_VARIANTS if left else FS.RIGHT_VARIANTS
+	_step_seq += 1
+	walker_steps += 1
+	var s := request("wstep:%d" % _step_seq, "step", p, {"stream": BANK.step_name(surf, pool[_rng.randi() % pool.size()]),
+		"one_shot": true, "pitch": _rng.randf_range(0.92, 1.08), "trim_db": _rng.randf_range(-3.0, 0.0), "ttl": 1.0})
+	_assign(s)
 
 
 ## A one-shot horn at p (tests call it directly).

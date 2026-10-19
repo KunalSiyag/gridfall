@@ -4,7 +4,8 @@ extends Node
 ## sound lands with the visible stride. Without it, a step plays every stride of horizontal travel
 ## (0.7 m at a walk, longer when running). Left and right feet alternate between their own
 ## variant sets; steps are non-positional (the listener sits behind the hero in third person, so
-## a positional step would sound like someone else's feet).
+## a positional step would sound like someone else's feet). On soaked paving (G1's weather) a
+## splash layer plays over each step, scaled by how wet the streets are.
 
 const WS := preload("res://scripts/fp/world_scale.gd")
 const BANK := preload("res://scripts/fp/audio/audio_bank.gd")
@@ -18,14 +19,19 @@ const TELEPORT_M := 2.0
 ## Left-foot variants are the odd numbers, right-foot ones the even numbers.
 const LEFT_VARIANTS: Array[int] = [1, 3, 5]
 const RIGHT_VARIANTS: Array[int] = [2, 4, 6]
+## Surfaces that hold a film of water when wet, and the wetness below which no splash plays.
+const PAVED: Array[String] = ["asphalt", "sidewalk", "lot", "bridge"]
+const SPLASH_MIN_WET := 0.2
 
 var ctx: FpContext
 var steps_played: int = 0
+var splashes_played: int = 0
 ## The last steps' stream names, newest last (tests).
 var history: Array[String] = []
 var polling: bool = true
 var enabled: bool = true
 var _feet: Array[AudioStreamPlayer] = []
+var _splash: AudioStreamPlayer
 var _rng := RandomNumberGenerator.new()
 var _left: bool = true
 var _last_variant: Dictionary = {true: 0, false: 0}
@@ -43,6 +49,10 @@ func setup(p_ctx: FpContext) -> void:
 		p.bus = BANK.BUS_SFX
 		add_child(p)
 		_feet.append(p)
+	_splash = AudioStreamPlayer.new()
+	_splash.name = "Splash"
+	_splash.bus = BANK.BUS_SFX
+	add_child(_splash)
 	bind(ctx.player)
 
 
@@ -124,6 +134,27 @@ func play(surface: String) -> void:
 	p.volume_db = vol
 	p.pitch_scale = 1.0 + _rng.randf_range(-BANK.STEP_PITCH_SPREAD, BANK.STEP_PITCH_SPREAD)
 	p.play()
+	var wet := wetness()
+	if wet >= SPLASH_MIN_WET and surf in PAVED:
+		var sp := BANK.stream("footstep_splash_%d" % (1 + _rng.randi() % BANK.SPLASH_VARIANTS))
+		if sp != null:
+			splashes_played += 1
+			_splash.stream = sp
+			_splash.volume_db = vol + BANK.SPLASH_DB + linear_to_db(wet)
+			_splash.pitch_scale = p.pitch_scale
+			_splash.play()
+
+
+## How wet the streets are, 0..1: G1's streetscape weather, read by name; 0 without it.
+func wetness() -> float:
+	var street := ctx.feature("streetscape") if ctx != null else null
+	if street == null:
+		return 0.0
+	var w: Variant = street.get("weather")
+	if not (w is Object) or not is_instance_valid(w):
+		return 0.0
+	var v: Variant = (w as Object).get("wet")
+	return clampf(float(v), 0.0, 1.0) if typeof(v) == TYPE_FLOAT else 0.0
 
 
 ## True when stream name n is a left-foot variant.

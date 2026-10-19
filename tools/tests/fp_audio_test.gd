@@ -32,9 +32,11 @@ func _init() -> void:
 	_check_emitter_settings(f)
 	_check_cap(ctx, f)
 	_check_doppler_and_horns(ctx, f)
+	_check_walkers(ctx, f)
 	_check_sirens(ctx, f)
 	_check_footsteps(ctx, f)
 	_check_ambience(ctx, f, fx)
+	_check_weather(ctx, f)
 	await _check_director_fp(ctx)
 	_check_settings(ctx, f)
 	_check_pause_and_duck(ctx, f)
@@ -232,9 +234,9 @@ func _check_doppler_and_horns(_ctx: FpContext, f: FpFeature) -> void:
 			engines += 1
 	K.check(fails, engines == EM.ENGINE_CARS and em.source("eng:100").stream == BANK.stream("engine_idle") and em.source("eng:111") == null,
 		"engines: the %d nearest of 12 cars, idle ones on engine_idle (%d)" % [EM.ENGINE_CARS, engines])
-	# Horns: stalled cars honk now and then, never twice within HORN_GAP; none without stalled_s.
+	# Horns: a jam honks now and then, never twice within HORN_GAP; none without stalled_s.
 	for a: Dictionary in agents:
-		a["stalled_s"] = 12.0
+		a["stalled_s"] = 30.0
 	var h0 := em.horns_played
 	var times: Array[float] = []
 	for k in range(roundi(60.0 / DT)):
@@ -246,7 +248,18 @@ func _check_doppler_and_horns(_ctx: FpContext, f: FpFeature) -> void:
 	for k in range(1, times.size()):
 		if times[k] - times[k - 1] < EM.HORN_GAP - 0.01:
 			gap_ok = false
-	K.check(fails, em.horns_played - h0 >= 1 and gap_ok, "horns: %d horns in 60 s from stalled cars, >= %.0f s apart" % [em.horns_played - h0, EM.HORN_GAP])
+	K.check(fails, em.horns_played - h0 >= 2 and gap_ok, "horns: %d horns in 60 s from a jam, >= %.0f s apart" % [em.horns_played - h0, EM.HORN_GAP])
+	# One stalled car rests between its own horns; a car that just stopped never honks.
+	var lone: Dictionary = agents[0]
+	agents.clear()
+	agents.append(lone)
+	var h_lone := em.horns_played
+	_steps(f, 60.0)
+	K.check(fails, em.horns_played - h_lone <= ceili(60.0 / EM.HORN_CAR_REST), "horns: one stalled car honks %d times in 60 s (<= %d)" % [em.horns_played - h_lone, ceili(60.0 / EM.HORN_CAR_REST)])
+	lone["stalled_s"] = EM.HORN_STALL_S
+	var h_fresh := em.horns_played
+	_steps(f, 30.0)
+	K.check(fails, em.horns_played == h_fresh, "horns: none from a car stalled only %.0f s" % EM.HORN_STALL_S)
 	for a: Dictionary in agents:
 		a.erase("stalled_s")
 	var h1 := em.horns_played
@@ -254,6 +267,49 @@ func _check_doppler_and_horns(_ctx: FpContext, f: FpFeature) -> void:
 	K.check(fails, em.horns_played == h1, "horns: none while agents lack stalled_s")
 	em.agents_provider = Callable()
 	_steps(f, 1.0)
+
+
+## Residents walking past within 6 m step audibly (the WALKER_MAX nearest, one step per stride);
+## farther walkers and E's bikes (reported as "pedestrian") stay silent.
+func _check_walkers(ctx: FpContext, f: FpFeature) -> void:
+	var em := _em(f)
+	var hero := ctx.player_position()
+	var walk := 1.35 * WS.M
+	var t: Array[float] = [0.0]
+	var agents: Array = []
+	for k in range(6):
+		agents.append({"id": 2000 + k, "start": hero + Vector3(0.05 + 0.04 * k, 0, -0.1), "vel": Vector3(0, 0, walk), "speed": walk, "kind": "pedestrian", "stalled_s": 0.0})
+	agents.append({"id": 2100, "start": hero + Vector3(0.5, 0, -0.1), "vel": Vector3(0, 0, walk), "speed": walk, "kind": "pedestrian", "stalled_s": 0.0})
+	agents.append({"id": 2101, "start": hero + Vector3(-0.04, 0, -0.1), "vel": Vector3(0, 0, 5.0 * WS.M), "speed": 5.0 * WS.M, "kind": "pedestrian", "stalled_s": 0.0})
+	em.agents_provider = func(p: Vector3, r: float) -> Array:
+		var out: Array = []
+		for a: Dictionary in agents:
+			var q: Vector3 = (a["start"] as Vector3) + (a["vel"] as Vector3) * t[0]
+			if q.distance_to(p) <= r:
+				var d := a.duplicate()
+				d["pos"] = q
+				out.append(d)
+		return out
+	var s0 := em.walker_steps
+	var heard := {}
+	var near_ok := true
+	for _k in range(roundi(3.0 / DT)):
+		t[0] += DT
+		f.call("step", DT)
+		var ws: Dictionary = em.get("_walkers")
+		for id: String in ws.keys():
+			heard[id] = true
+		for s: EM.Src in em.sources():
+			if s.type == "step" and Vector2(s.pos.x - hero.x, s.pos.z - hero.z).length() > EM.WALKER_RADIUS + 0.02:
+				near_ok = false
+	var n := em.walker_steps - s0
+	var ids := heard.keys()
+	ids.sort()
+	K.check(fails, ids == ["2000", "2001", "2002", "2003"] and near_ok, "walkers: the %d nearest residents within 6 m step, the far one and the cyclist do not (%s)" % [EM.WALKER_MAX, str(ids)])
+	K.check(fails, n >= 16 and n <= 28, "walkers: 4 residents walking 3 s at 1.35 m/s -> %d steps (one per 0.7 m stride, ~23)" % n)
+	em.agents_provider = Callable()
+	_steps(f, 1.0)
+	K.check(fails, (em.get("_walkers") as Dictionary).is_empty(), "walkers: forgotten once no agents report them")
 
 
 func _check_sirens(ctx: FpContext, f: FpFeature) -> void:
@@ -400,6 +456,46 @@ func _check_ambience(ctx: FpContext, f: FpFeature, _fx: Dictionary) -> void:
 	ctx.bus.player_tile_changed.emit(roundi(here.x), roundi(here.z))
 
 
+## G1's weather, read by name from a stand-in streetscape feature: rain fades a rain bed in and the
+## birds out, and steps on soaked paving get a splash layer (not on grass).
+func _check_weather(ctx: FpContext, f: FpFeature) -> void:
+	var amb: AMB = f.get("ambience")
+	var fs: FS = f.get("footsteps")
+	var wg := GDScript.new()
+	wg.source_code = "extends RefCounted\nvar state: String = \"rain\"\nvar wet: float = 0.9\n"
+	wg.reload()
+	var sg := GDScript.new()
+	sg.source_code = "extends FpFeature\nvar weather: RefCounted\n"
+	sg.reload()
+	var street: FpFeature = sg.new()
+	var w: RefCounted = wg.new()
+	street.set("weather", w)
+	ctx.features["streetscape"] = street
+	amb.recompute()
+	var most := 0
+	for _s in range(roundi(4.0 / DT)):
+		f.call("step", DT)
+		most = maxi(most, amb.playing_count())
+	var rain_p: AudioStreamPlayer = amb.players["rain"]
+	K.check(fails, amb.weather_state() == "rain" and rain_p.playing and float(amb.levels["rain"]) > 0.6 and rain_p.bus == BANK.BUS_AMBIENCE and most <= AMB.MAX_PLAYING,
+		"weather: rain fades the rain bed in (level %.2f, %d beds)" % [float(amb.levels["rain"]), most])
+	var sp0 := fs.splashes_played
+	fs.play("asphalt")
+	fs.play("sidewalk")
+	var sp1 := fs.splashes_played
+	fs.play("grass")
+	K.check(fails, sp1 - sp0 == 2 and fs.splashes_played == sp1, "weather: steps on soaked paving splash, steps on grass do not")
+	w.set("state", "clear")
+	w.set("wet", 0.0)
+	amb.recompute()
+	_steps(f, 4.0)
+	fs.play("asphalt")
+	K.check(fails, not rain_p.playing and float(amb.levels["rain"]) == 0.0 and fs.splashes_played == sp1, "weather: the rain bed stops when it clears, and dry steps do not splash")
+	ctx.features.erase("streetscape")
+	street.free()
+	amb.recompute()
+
+
 func _check_director_fp(ctx: FpContext) -> void:
 	var dir: GridFallAudioDirector = ctx.audio
 	var nom := dir.get_node("NominalStemPlayer") as AudioStreamPlayer
@@ -478,12 +574,29 @@ func _check_ui(ctx: FpContext, f: FpFeature) -> void:
 	var b2: int = f.get("blips_played")
 	var sys := msg.duplicate()
 	sys["role"] = "system"
+	sys["kind"] = "alert"
 	ctx.bus.chat_posted.emit(sys)
 	var ui: Array = f.get("_ui")
 	var soft := false
 	for p: AudioStreamPlayer in ui:
 		soft = soft or p.stream == BANK.stream("chat_blip_soft")
-	K.check(fails, b1 - b0 == 1 and b2 == b1 and int(f.get("blips_played")) == b1 + 1 and soft, "chat: one blip per 1.5 s, none for the player's own line, the soft blip for system cards")
+	K.check(fails, b1 - b0 == 1 and b2 == b1 and int(f.get("blips_played")) == b1 + 1 and soft and str(f.get("last_blip")) == "card",
+		"chat: one blip per 1.5 s, none for the player's own line, the soft blip for an alert card")
+	# The drip releases a line every 1.5-3 s: ordinary lines share one blip per CHATTER_GAP, while a
+	# reply to the player's own line always gets the full blip.
+	_steps(f, 1.6)
+	var b3: int = f.get("blips_played")
+	ctx.bus.chat_posted.emit(msg)
+	var b4: int = f.get("blips_played")
+	var reply := msg.duplicate()
+	reply["seq"] = 7
+	reply["reply_to"] = int(mine["seq"])
+	ctx.bus.chat_posted.emit(reply)
+	var full := false
+	for p: AudioStreamPlayer in ui:
+		full = full or p.stream == BANK.stream("chat_blip")
+	K.check(fails, b4 == b3 and int(f.get("blips_played")) == b4 + 1 and str(f.get("last_blip")) == "reply" and full,
+		"chat: more chatter inside the chatter gap stays silent, a reply to the player gets the full blip (%s)" % str(f.get("last_blip")))
 	var s0: int = f.get("stingers_played")
 	ctx.bus.ping.emit(Vector3.ZERO, "event:fire")
 	ctx.bus.toast.emit("Fire!", "alert")

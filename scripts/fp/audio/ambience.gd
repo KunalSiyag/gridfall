@@ -1,13 +1,13 @@
 extends Node
-## Area ambience (slice I): five looping 2D beds on the Ambience bus (traffic hum, park birds,
-## river, the quiet residential bed and night insects), weighted by what lies around the player
-## and cross-faded over CROSSFADE_S. At most MAX_PLAYING beds play at once: a bed whose weight
-## falls under MIN_WEIGHT stops, and the weakest bed yields when a fifth would start.
+## Area ambience (slice I): looping 2D beds on the Ambience bus (traffic hum, park birds, river,
+## the quiet residential bed, night insects and rain), weighted by what lies around the player and
+## by the weather, and cross-faded over CROSSFADE_S. At most MAX_PLAYING beds play at once: a bed
+## whose weight falls under MIN_WEIGHT stops, and the weakest bed yields when another would start.
 
 const D := preload("res://scripts/sim/sim_defs.gd")
 const BANK := preload("res://scripts/fp/audio/audio_bank.gd")
 
-const BED_NAMES: Array[String] = ["traffic_hum", "park_birds", "river", "residential_quiet", "night_insects"]
+const BED_NAMES: Array[String] = ["traffic_hum", "park_birds", "river", "residential_quiet", "night_insects", "rain"]
 const MAX_PLAYING := 4
 const MIN_WEIGHT := 0.02
 const CROSSFADE_S := 3.0
@@ -15,6 +15,8 @@ const RECOMPUTE_S := 2.0
 ## Neighbourhood radius in tiles (water counts within WATER_R).
 const AREA_R := 4
 const WATER_R := 3
+## Rain bed level while it rains (G1's streetscape weather); birds and insects shelter meanwhile.
+const RAIN_WEIGHT := 0.85
 
 var ctx: FpContext
 ## bed -> target weight 0..1 and current smoothed level 0..1.
@@ -24,6 +26,8 @@ var players: Dictionary = {}           # bed -> AudioStreamPlayer
 ## 0 (open land, parks) .. 1 (dense commercial streets); drives the SFX bus reverb.
 var urban: float = 0.0
 var night: float = 0.0
+## 1 while it rains, else 0 (G1's weather state; 0 without the streetscape feature).
+var rain: float = 0.0
 var enabled: bool = true
 ## Most beds ever playing at once (tests).
 var max_seen_playing: int = 0
@@ -56,6 +60,7 @@ func recompute() -> void:
 	var cx := roundi(p.x)
 	var cy := roundi(p.z)
 	night = clampf(float(ctx.sky.night), 0.0, 1.0) if ctx.sky != null else 0.0
+	rain = 1.0 if weather_state() == "rain" else 0.0
 	var total := 0.0
 	var green := 0.0
 	var ci := 0.0
@@ -103,10 +108,24 @@ func recompute() -> void:
 	var traffic := clampf(0.05 + 0.35 * f_road + 1.1 * f_ci + 0.6 * f_jam * minf(f_road * 3.0, 1.0), 0.0, 0.9)
 	traffic *= lerpf(1.0, 0.55, night)
 	weights["traffic_hum"] = traffic
-	weights["park_birds"] = clampf(1.5 * f_green - 0.1, 0.0, 1.0) * lerpf(1.0, 0.2, night)
+	weights["park_birds"] = clampf(1.5 * f_green - 0.1, 0.0, 1.0) * lerpf(1.0, 0.2, night) * (1.0 - 0.85 * rain)
 	weights["river"] = clampf(1.2 * water, 0.0, 1.0)
-	weights["residential_quiet"] = clampf(1.6 * f_res + 0.1 * f_green, 0.0, 1.0) * (1.0 - 0.6 * traffic) * lerpf(1.0, 0.65, night)
-	weights["night_insects"] = night * clampf(1.3 * (f_res + f_green) + 0.1, 0.0, 1.0) * (1.0 - 0.7 * traffic)
+	weights["residential_quiet"] = clampf(1.6 * f_res + 0.1 * f_green, 0.0, 1.0) * (1.0 - 0.6 * traffic) * lerpf(1.0, 0.65, night) * (1.0 - 0.5 * rain)
+	weights["night_insects"] = night * clampf(1.3 * (f_res + f_green) + 0.1, 0.0, 1.0) * (1.0 - 0.7 * traffic) * (1.0 - 0.9 * rain)
+	weights["rain"] = RAIN_WEIGHT * rain
+
+
+## G1's weather state ("clear", "overcast", "rain"), read by name from the streetscape feature;
+## "" when that feature is absent.
+func weather_state() -> String:
+	var street := ctx.feature("streetscape") if ctx != null else null
+	if street == null:
+		return ""
+	var w: Variant = street.get("weather")
+	if not (w is Object) or not is_instance_valid(w):
+		return ""
+	var st: Variant = (w as Object).get("state")
+	return str(st) if typeof(st) == TYPE_STRING else ""
 
 
 ## One frame: recompute every RECOMPUTE_S, move the levels toward the weights (a full fade takes
