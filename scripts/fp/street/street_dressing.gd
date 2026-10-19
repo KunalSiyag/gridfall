@@ -1095,6 +1095,10 @@ func dress_model(model: Node3D) -> void:
 			elif nm == "Grass" and view.lawn_material() != null:
 				# Flat untextured lawns and park grass: the street's metric, non-repeating grass.
 				mi.set_surface_override_material(s, view.lawn_material())
+			elif nm == "Lamp_Glow":
+				# Lamp heads baked into a model body (parks, shop fronts) glowed all day: they follow
+				# the night like every other lamp.
+				mi.set_surface_override_material(s, view._lamp_material())
 
 
 func _glass_mat(nm: String, src: BaseMaterial3D) -> StandardMaterial3D:

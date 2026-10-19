@@ -47,6 +47,7 @@ func _init() -> void:
 	_check_ground(view, sim)
 	_check_furniture(view, sim)
 	_check_near_fade(view)
+	_check_model_dress(view, sim)
 	_check_signs_with_poles(view, sim)
 	_check_lots(view, sim)
 	_check_trees(view)
@@ -164,6 +165,38 @@ func _check_ground(view: CityView, sim: CitySim) -> void:
 
 
 # ------------------------------------------------------------------ furniture
+
+## On foot the building models' flat lawns use the metric grass and their baked lamp heads follow
+## the night (no glow by day).
+func _check_model_dress(view: CityView, sim: CitySim) -> void:
+	var lawns := 0
+	var lamps := 0
+	var bad := []
+	for i in sim.active:
+		var k := sim.kind[i]
+		if not (D.is_zone(k) or D.is_service(k)):
+			continue
+		var holder := view.tile_holder(i)
+		if holder == null:
+			continue
+		for n in holder.find_children("*", "MeshInstance3D", true, false):
+			var mi := n as MeshInstance3D
+			if mi.mesh == null:
+				continue
+			for s2 in range(mi.mesh.get_surface_count()):
+				var m := mi.mesh.surface_get_material(s2)
+				if m == null:
+					continue
+				if m.resource_name == "Grass":
+					lawns += 1
+					if mi.get_surface_override_material(s2) != view.lawn_material():
+						bad.append([i, "Grass"])
+				elif m.resource_name == "Lamp_Glow":
+					lamps += 1
+					if mi.get_surface_override_material(s2) != view._lamp_material():
+						bad.append([i, "Lamp_Glow"])
+	K.check(fails, lawns > 0 and bad.is_empty(), "model lawns use the metric grass and baked lamps follow the night (%d lawns, %d lamps, bad %s)" % [lawns, lamps, str(bad.slice(0, 4))])
+
 
 ## Batched props dither out right in front of the camera (a third-person camera backed into them),
 ## and so do street-tree leaves; flat kinds (aprons, pits, ramps) never fade.
