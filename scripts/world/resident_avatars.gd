@@ -3,8 +3,15 @@ extends Node3D
 ## Draws every AI resident as the person (or car) actually making their trip: they walk or drive
 ## the road route their mind chose, go inside at home/work/shops, gather around incidents they are
 ## fixing, and speak their lines. Clicking one selects them so the HUD can show their mind.
+## In first person the traffic feature sets `external` and draws every resident itself; this node
+## then only forwards and keeps the speech bubbles (docs/fp/slices/E-traffic.md §7).
 
 const D := preload("res://scripts/sim/sim_defs.gd")
+const WS := preload("res://scripts/fp/world_scale.gd")
+## Street-level speech bubbles (first person): depth-tested, small, shown within this distance.
+const FP_BUBBLE_RANGE := 1.5
+const FP_BUBBLE_PIXEL := 0.0006
+const FP_BUBBLE_ABOVE := 0.12
 const REAL_PEOPLE := "res://models/real/people/"
 const REAL_CARS := "res://models/real/vehicles/"
 const KENNEY_CARS := ["res://models/cars/sedan.glb", "res://models/cars/hatchback-sports.glb", "res://models/cars/suv.glb", "res://models/cars/van.glb", "res://models/cars/taxi.glb"]
@@ -17,8 +24,15 @@ var sim: CitySim
 var people: Residents
 var camera: Camera3D
 var selected: String = ""
-## Set by CityView in first person (S0 seam): speech bubbles stay hidden until slice E restyles them.
+## Set by CityView in first person (S0 seam): speech bubbles stay hidden while it is true.
 var fp_hidden: bool = false
+## The first-person traffic feature (or null): it draws residents, answers pick, visible_count and
+## position_of, and gets resident_moved forwarded. Set and cleared by the feature.
+var external: Object = null:
+	set(v):
+		external = v
+		_apply_external()
+var _bubble_root: Node3D
 var _avatars: Dictionary = {}
 var _people_scenes: Array = []
 var _car_scenes: Array = []
@@ -157,7 +171,7 @@ func _avatar(r: Dictionary) -> Dictionary:
 func _make_person(h: int) -> Node3D:
 	if not _people_scenes.is_empty():
 		var p := (_people_scenes[h % _people_scenes.size()] as PackedScene).instantiate() as Node3D
-		p.scale = Vector3.ONE * 1.5
+		p.scale = Vector3.ONE * (WS.PEOPLE_SCALE if _fp() else 1.5)
 		return p
 	var node := Node3D.new()
 	var shirt: Color = SHIRTS[h % SHIRTS.size()]
@@ -189,6 +203,9 @@ func _make_person(h: int) -> Node3D:
 
 
 func _on_moved(r: Dictionary) -> void:
+	if external != null:
+		external.call("on_resident_moved", r)
+		return
 	var a := _avatar(r)
 	var route: Array = r.get("route", [])
 	a["route"] = route.duplicate()
@@ -221,6 +238,9 @@ func _process(delta: float) -> void:
 		return
 	_time += delta
 	_bubbles = 0
+	if external != null:
+		_process_external(delta)
+		return
 	for r in people.people:
 		var a := _avatar(r)
 		var root: Node3D = a["root"]
@@ -268,7 +288,7 @@ func _advance(a: Dictionary, r: Dictionary, delta: float) -> void:
 	var right := Vector3(-dir.z, 0, dir.x)
 	var p := Vector3(from.x, 0, from.y).lerp(Vector3(to.x, 0, to.y), f) + right * side
 	var bob := 0.0 if driving else absf(sin(_time * 10.0 + float(a["slot"]))) * 0.008
-	root.position = Vector3(p.x, 0.05 + bob, p.z)
+	root.position = Vector3(p.x, _float_y() + bob, p.z)
 	if dir.length_squared() > 0.0:
 		root.rotation.y = lerp_angle(root.rotation.y, atan2(dir.x, dir.z), minf(1.0, delta * 12.0))
 
@@ -280,7 +300,7 @@ func _idle(a: Dictionary, r: Dictionary, delta: float) -> void:
 	if not root.visible:
 		return
 	var at := int(r["at"])
-	var center := Vector3(D.tx(at), 0.05, D.ty(at))
+	var center := Vector3(D.tx(at), _float_y(), D.ty(at))
 	var slot := int(a["slot"])
 	var ang := float(slot) / 8.0 * TAU + _time * (0.15 if state.begins_with("at the") else 0.0)
 	var radius := 0.42 if state.begins_with("helping") else 0.3
@@ -290,10 +310,14 @@ func _idle(a: Dictionary, r: Dictionary, delta: float) -> void:
 	if face.length_squared() > 0.0001:
 		root.rotation.y = lerp_angle(root.rotation.y, atan2(face.x, face.z), minf(1.0, delta * 6.0))
 	if state.begins_with("helping") or state.begins_with("protesting"):
-		root.position.y = 0.05 + absf(sin(_time * 6.0 + float(slot))) * 0.02
+		root.position.y = _float_y() + absf(sin(_time * 6.0 + float(slot))) * 0.02
 
 
 func _update_selection() -> void:
+	if _fp():
+		_ring.visible = false
+		_name_tag.visible = false
+		return
 	if selected.is_empty() or not _avatars.has(selected):
 		_ring.visible = false
 		_name_tag.visible = false
@@ -313,6 +337,8 @@ func _update_selection() -> void:
 
 
 func position_of(id: String) -> Vector3:
+	if external != null:
+		return external.call("position_of", id)
 	if not _avatars.has(id):
 		return Vector3(15.5, 0, 15.5)
 	var root: Node3D = _avatars[id]["root"]
@@ -327,6 +353,8 @@ func position_of(id: String) -> Vector3:
 
 ## Returns the id of the visible resident drawn closest to screen_pos, or "".
 func pick(screen_pos: Vector2) -> String:
+	if external != null:
+		return str(external.call("avatar_pick", screen_pos, camera))
 	if camera == null:
 		return ""
 	var best := ""
@@ -350,6 +378,8 @@ func select(id: String) -> void:
 
 
 func visible_count() -> Dictionary:
+	if external != null:
+		return external.call("avatar_counts")
 	var walking := 0
 	var driving := 0
 	var standing := 0
@@ -365,3 +395,88 @@ func visible_count() -> Dictionary:
 		else:
 			standing += 1
 	return {"walking": walking, "driving": driving, "standing": standing, "total": _avatars.size()}
+
+
+## True in first person (CityView.fp_mode): avatars stand on the ground at true scale.
+func _fp() -> bool:
+	if fp_hidden:
+		return true
+	var v := get_parent()
+	return v != null and v.get("fp_mode") == true
+
+
+## Legacy orbit height of avatar roots; first person stands them on the sidewalk.
+func _float_y() -> float:
+	return WS.SIDEWALK_TOP if _fp() else 0.05
+
+
+## Hides every legacy avatar (the traffic feature draws residents) and moves the speech bubbles
+## to a separate root that follows the feature's head anchors.
+func _apply_external() -> void:
+	if _ring != null:
+		_ring.visible = false
+		_name_tag.visible = false
+	for a: Dictionary in _avatars.values():
+		var root: Node3D = a["root"]
+		if not is_instance_valid(root):
+			continue
+		root.visible = external == null and root.visible
+		var bubble: Label3D = a["bubble"]
+		if external != null:
+			if bubble.get_parent() != _bubble_parent():
+				bubble.reparent(_bubble_parent(), false)
+			_style_bubble(bubble, true)
+		elif bubble.get_parent() != root:
+			bubble.reparent(root, false)
+			bubble.position = Vector3(0, 0.42, 0)
+			_style_bubble(bubble, false)
+
+
+func _bubble_parent() -> Node3D:
+	if _bubble_root == null or not is_instance_valid(_bubble_root):
+		_bubble_root = Node3D.new()
+		_bubble_root.name = "Bubbles"
+		add_child(_bubble_root)
+	return _bubble_root
+
+
+func _style_bubble(b: Label3D, street: bool) -> void:
+	b.pixel_size = FP_BUBBLE_PIXEL if street else 0.0035
+	b.no_depth_test = false
+	b.fixed_size = false
+
+
+## First person with the traffic feature: no legacy movement, every avatar root hidden; bubbles
+## (depth-tested, near the player only, never while fp_hidden) ride the feature's head anchors.
+func _process_external(delta: float) -> void:
+	var cam := camera.global_position if camera != null and camera.is_inside_tree() else Vector3(INF, INF, INF)
+	for r in people.people:
+		var a := _avatar(r)
+		var root: Node3D = a["root"]
+		root.visible = false
+		var bubble: Label3D = a["bubble"]
+		if bubble.get_parent() != _bubble_parent():
+			bubble.reparent(_bubble_parent(), false)
+			_style_bubble(bubble, true)
+		var say := str(r.get("say", ""))
+		if say != str(a["last_say"]):
+			a["last_say"] = say
+			if not say.is_empty():
+				bubble.text = "%s: \"%s\"" % [str(r["name"]).split(" ")[0], say]
+				a["bubble_t"] = 7.0
+		if float(a["bubble_t"]) > 0.0:
+			a["bubble_t"] = float(a["bubble_t"]) - delta
+		var show := false
+		if float(a["bubble_t"]) > 0.0 and not fp_hidden and _bubbles < MAX_BUBBLES:
+			var id := str(r["id"])
+			if bool(external.call("is_resident_visible", id)):
+				var head: Vector3 = external.call("anchor_of", id)
+				if head.distance_to(cam) <= FP_BUBBLE_RANGE:
+					bubble.position = head + Vector3(0, FP_BUBBLE_ABOVE, 0)
+					show = true
+		bubble.visible = show
+		if show:
+			_bubbles += 1
+			bubble.modulate.a = clampf(float(a["bubble_t"]), 0.0, 1.0)
+	_ring.visible = false
+	_name_tag.visible = false
