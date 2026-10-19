@@ -12,10 +12,14 @@ runs against S0 alone: every item below has a local fallback, so nothing blocks 
 2. **Heading.** B orients car blips by `vel`. When `vel` is zero it falls back to `heading`, read
    in S0 §11's yaw convention (forward = `(-sin h, 0, -cos h)`). Please confirm that convention, or
    always fill `vel`.
-3. **Kinds.** B styles `bus` and `truck` larger, `emergency` red, and `pedestrian` as a small dot.
-   Anything else is drawn as a car.
+3. **Kinds.** B styles `bus` and `truck` larger, `emergency` red, and `pedestrian` as a faint
+   small dot; anything else is a car. Cars are steel-blue capsules about a road wide (checked
+   against fp/E 0e20963 in a throwaway merge: near-white blips made every busy road look
+   beaded). Named residents from `visible_near` draw as bright dots on top.
 4. **Vehicle target `data`.** The place card reads `state` ("driving to work"), `dest_label` and
-   `mood` (0..1 or 0..10; both are handled). It shows `label` as the title.
+   `mood` (0..1 or 0..10; both are handled). It shows `label` as the title. `mood: ""` (a car
+   without a driver) shows no mood line, and the prompt and card sentence-case `label`
+   ("a commuter" reads "A commuter"), so E can keep its labels as they are.
 5. **Fallback while E is absent.** B makes one pass over `residents.people` at 2 Hz, skips indoor
    residents without a route, and draws the rest at their `at` tile. It never calls
    `avatars.position_of`.
@@ -48,6 +52,9 @@ runs against S0 alone: every item below has a local fallback, so nothing blocks 
    count. If one is wanted later, B can add a rim dot from `chat_posted`.
 3. **`card_action("ask_here", tile)`** is emitted once per press, after the card has closed and
    popped `&"card"`, so C can push `&"talk"` immediately.
+4. **Screen corners.** B's district caption ("Northwest Civic Campus" / "Mayor Ada Okafor", 5 s
+   on arrival and on entering a district) uses the bottom-right corner of the `center` slot,
+   right-aligned on the 24 px margin, up to 90 px tall. Nothing of B's sits in `chat_slot`.
 
 ## To G2 (render) and I (audio)
 
