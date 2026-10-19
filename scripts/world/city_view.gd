@@ -884,54 +884,52 @@ func _low_poly_tree_parts() -> Array:
 	]
 
 
-## Distant trees on foot, one merged mesh: a trunk and a crown of three overlapping smooth lobes with
-## normals radiating from the crown centre and a vertex-colour gradient (lit top, shaded underside);
-## the multimesh adds a per-tree tint.
+## Distant trees on foot (12-50 u): an impostor of three crossed leaf cards (6 triangles) with
+## normals radiating from the crown, drawn by the foliage shader with a per-tree tint, over a
+## crossed trunk card. Real trees cost thousands of triangles; at 6-27 px these read the same.
 func _fp_far_tree_parts() -> Array:
+	var leaf := R + "props/tree_round_leafcluster_round.png"
+	var shader := "res://shaders/foliage.gdshader"
+	if not ResourceLoader.exists(leaf) or not ResourceLoader.exists(shader):
+		return _low_poly_tree_parts()
+	var centre := Vector3(0, 0.27, 0)
 	var st := SurfaceTool.new()
 	st.begin(Mesh.PRIMITIVE_TRIANGLES)
-	var centre := Vector3(0, 0.27, 0)
-	var trunk := CylinderMesh.new()
-	trunk.top_radius = 0.012
-	trunk.bottom_radius = 0.018
-	trunk.height = 0.2
-	trunk.radial_segments = 6
-	trunk.rings = 1
-	_append_tinted(st, trunk, Transform3D(Basis(), Vector3(0, 0.1, 0)), Color(0.24, 0.18, 0.12), Vector3.INF)
-	for lobe: Array in [[Vector3(0, 0.28, 0), 0.115], [Vector3(0.065, 0.23, 0.035), 0.085], [Vector3(-0.055, 0.235, -0.045), 0.08]]:
-		var sm := SphereMesh.new()
-		sm.radius = lobe[1]
-		sm.height = float(lobe[1]) * 1.8
-		sm.radial_segments = 12
-		sm.rings = 7
-		_append_tinted(st, sm, Transform3D(Basis(), lobe[0]), Color(0.2, 0.3, 0.11), centre)
-	var mat := StandardMaterial3D.new()
-	mat.vertex_color_use_as_albedo = true
-	mat.roughness = 0.92
-	mat.diffuse_mode = BaseMaterial3D.DIFFUSE_LAMBERT_WRAP
-	mat.specular_mode = BaseMaterial3D.SPECULAR_DISABLED
-	return [{"mesh": st.commit(), "xform": Transform3D(), "mat": mat, "tint": true}]
+	for k in range(3):
+		var d := Vector3(cos(float(k) * PI / 3.0), 0, sin(float(k) * PI / 3.0)) * 0.14
+		_card(st, -d, d, 0.14, 0.4, centre)
+	var crown := ShaderMaterial.new()
+	crown.shader = load(shader)
+	crown.set_shader_parameter("albedo_tex", load(leaf))
+	crown.set_shader_parameter("tint", Color(0.78, 0.9, 0.7))
+	crown.set_shader_parameter("up_bias", 0.25)
+	crown.set_shader_parameter("wind", 0.0)
+	var st2 := SurfaceTool.new()
+	st2.begin(Mesh.PRIMITIVE_TRIANGLES)
+	for k in range(2):
+		var d2 := Vector3(cos(float(k) * PI * 0.5), 0, sin(float(k) * PI * 0.5)) * 0.012
+		_card(st2, -d2, d2, 0.0, 0.2, Vector3.INF)
+	var bark := StandardMaterial3D.new()
+	bark.albedo_color = Color(0.22, 0.17, 0.12)
+	bark.roughness = 0.95
+	bark.cull_mode = BaseMaterial3D.CULL_DISABLED
+	return [
+		{"mesh": st.commit(), "xform": Transform3D(), "mat": crown, "tint": true},
+		{"mesh": st2.commit(), "xform": Transform3D(), "mat": bark},
+	]
 
 
-## Appends a primitive mesh to st with transform xf and colour col; with a finite centre the
-## normals point away from it and the colour darkens toward the bottom.
-func _append_tinted(st: SurfaceTool, mesh: PrimitiveMesh, xf: Transform3D, col: Color, centre: Vector3) -> void:
-	var arr := mesh.get_mesh_arrays()
-	var v: PackedVector3Array = arr[Mesh.ARRAY_VERTEX]
-	var nrm: PackedVector3Array = arr[Mesh.ARRAY_NORMAL]
-	var idx: PackedInt32Array = arr[Mesh.ARRAY_INDEX]
-	for k in idx:
-		var p := xf * v[k]
-		var n := (xf.basis * nrm[k]).normalized()
-		var c := col
-		if centre.is_finite():
-			n = n.lerp((p - centre).normalized(), 0.6).normalized()
-			var up := clampf((p.y - centre.y) / 0.12 * 0.5 + 0.5, 0.0, 1.0)
-			c = col * lerpf(0.55, 1.25, up)
-			c.a = 1.0
-		st.set_color(c)
-		st.set_normal(n)
-		st.add_vertex(p)
+## One vertical card from a to b (xz), y0..y1, UV 0..1; with a finite centre the normals radiate
+## from it, else they face the card's own normal.
+func _card(st: SurfaceTool, a: Vector3, b: Vector3, y0: float, y1: float, centre: Vector3) -> void:
+	var p := [a + Vector3(0, y1, 0), b + Vector3(0, y1, 0), b + Vector3(0, y0, 0), a + Vector3(0, y0, 0)]
+	var uv := [Vector2(0, 0), Vector2(1, 0), Vector2(1, 1), Vector2(0, 1)]
+	var flat := (b - a).cross(Vector3.UP).normalized()
+	for k: int in [0, 1, 2, 0, 2, 3]:
+		var v: Vector3 = p[k]
+		st.set_normal((v - centre).normalized() if centre.is_finite() else flat)
+		st.set_uv(uv[k])
+		st.add_vertex(v)
 
 
 ## Chunk key of tile (x, y) for a tree layer: z = 0 the orbit chunks, 1 the FP chunks.

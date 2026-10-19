@@ -1,8 +1,8 @@
 extends FpFeature
 ## Street-level look on foot (slice G1). Applies the first-person light profile for the quality
-## preset, runs the weather (rain, wet roads, overcast) and the street-light pool, warms the building
-## cache on threads, adds the global `wetness` shader parameter, and feeds the player position to
-## CityView's rebuild queue every frame. The street geometry itself (ground, furniture, signs, decals,
+## preset, runs the weather (rain, wet roads, overcast) and the street-light pool, adds the global
+## `wetness` shader parameter, and feeds the player position to CityView's rebuild queue every frame
+## (the queue loads building models on threads as tiles need them). The street geometry itself (ground, furniture, signs, decals,
 ## lots) is CityView's fp_mode.
 
 const WS := preload("res://scripts/fp/world_scale.gd")
@@ -48,7 +48,6 @@ func setup(p_ctx: FpContext) -> void:
 		ctx.view.vis_mult = _vis_mult()
 		ctx.view.tile_built.connect(lights.on_tile_built)
 		ctx.view.tile_cleared.connect(lights.on_tile_cleared)
-		ctx.view.warm_scenes(ctx.view.warm_paths())
 		_hook_traffic()
 	if ctx.bus != null:
 		ctx.bus.quality_changed.connect(_on_quality_changed)

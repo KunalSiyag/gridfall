@@ -39,9 +39,10 @@ const KITS := {
 	"rack": [AP.BIKE_RACK, 0.0],
 	"meter": [AP.PARKING_METER, 0.004],
 	"ramp": [AP.CROSSWALK_RAMP, -1.0],
+	"apron": ["", -1.0],
 }
-## Kinds that stay visible out to the fog (street trees); the rest end at WS.VIS_PROP.
-const FAR_KINDS := ["tree", "pit"]
+## Kinds that stay visible out to the fog (street trees, lot aprons); the rest end at WS.VIS_PROP.
+const FAR_KINDS := ["tree", "pit", "apron"]
 const SIGN_GREEN := Color(0.02, 0.36, 0.2)
 
 var view: CityView
@@ -447,6 +448,7 @@ func _street_sign(holder: Node3D, pos: Vector3, names: PackedStringArray, cols: 
 	blades.position.y = 2.75 * WS.M
 	sign.add_child(blades)
 	holder.add_child(sign)
+	_range(sign, WS.VIS_PROP)
 	return sign
 
 
@@ -639,12 +641,7 @@ func _aprons(i: int, holder: Node3D, all_roads: bool) -> void:
 			continue
 		if not all_roads and D.idx(nx, ny) != f:
 			continue
-		var ap := MeshInstance3D.new()
-		ap.name = "Apron"
-		ap.mesh = _apron_mesh()
-		ap.rotation.y = atan2(float(dv.x), float(dv.y))
-		ap.material_override = view.apron_material()
-		holder.add_child(ap)
+		_put(i, "apron", Vector3.ZERO, Vector2(dv), [])
 
 
 func _apron_mesh() -> ArrayMesh:
@@ -744,8 +741,19 @@ func _lease_board(holder: Node3D, p: Vector2, dv: Vector2, cols: Array) -> Node3
 	var hgt2 := 0.9 * WS.M
 	board.set_meta("poster_slot", {"kind": "lease", "size": Vector2(1.4 * WS.M, hgt2 * 0.7), "xform": Transform3D(Basis(), Vector3(0, 2.2 * WS.M - hgt2 * 0.62 - 0.05 * WS.M, 0.018 * WS.M))})
 	holder.add_child(board)
+	_range(board, WS.VIS_PROP)
 	cols.append({"shape": "box", "pos": board.position, "size": Vector3(1.4 * WS.M, 2.2 * WS.M, 0.1 * WS.M), "yaw": board.rotation.y, "kind": "lease"})
 	return board
+
+
+## Ends every drawn part under n at end * vis_mult (with a dithered fade): props in holders that
+## G2's post-pass may not see yet.
+func _range(n: Node, end: float) -> void:
+	for g in n.find_children("*", "GeometryInstance3D", true, false):
+		var gi := g as GeometryInstance3D
+		gi.visibility_range_end = end * view.vis_mult
+		gi.visibility_range_end_margin = 0.5
+		gi.visibility_range_fade_mode = GeometryInstance3D.VISIBILITY_RANGE_FADE_SELF
 
 
 ## A billboard (H's poster billboard when present) at holder-local pos, facing dv.
@@ -838,49 +846,28 @@ func _glass_mat(nm: String, src: BaseMaterial3D) -> StandardMaterial3D:
 	return _mats[key]
 
 
-## Tree kit parts for street level: leaf cards get normals bent out from the crown centre (soft,
-## volumetric shading instead of dark card undersides) and the hashed-alpha foliage shader.
+## Tree kit parts for street level: the leaf parts get the hashed-alpha foliage shader with normals
+## bent out from their crown centre (soft, volumetric shading instead of dark card undersides). The
+## imported meshes are kept as they are, so their automatic LODs still apply.
 func fp_tree_parts(parts: Array) -> Array:
 	var out: Array = []
 	for p: Dictionary in parts:
 		var mesh := p["mesh"] as Mesh
 		var mat := mesh.surface_get_material(0) if mesh.get_surface_count() > 0 else null
-		if mat == null or not mat.resource_name.begins_with("Leaves") or not (mesh is ArrayMesh):
+		if mat == null or not mat.resource_name.begins_with("Leaves") or not (mat is BaseMaterial3D):
 			out.append(p)
 			continue
+		var bb := mesh.get_aabb()
 		var q := p.duplicate()
-		q["mesh"] = _bent_mesh(mesh as ArrayMesh)
-		q["mat"] = _foliage_mat(mat as BaseMaterial3D, 0.15)
+		q["mat"] = _foliage_mat(mat as BaseMaterial3D, 0.15, 0.8, bb.get_center() - Vector3(0, bb.size.y * 0.15, 0))
 		out.append(q)
 	return out
 
 
-func _bent_mesh(src: ArrayMesh) -> ArrayMesh:
-	var key := "bent_%d" % src.get_instance_id()
-	if _mats.has(key):
-		return _mats[key]
-	var out := ArrayMesh.new()
-	var bb := src.get_aabb()
-	var c := bb.get_center() - Vector3(0, bb.size.y * 0.15, 0)
-	for s in range(src.get_surface_count()):
-		var arr := src.surface_get_arrays(s)
-		var v: PackedVector3Array = arr[Mesh.ARRAY_VERTEX]
-		var nrm: PackedVector3Array = arr[Mesh.ARRAY_NORMAL]
-		if nrm.size() == v.size():
-			for k in range(v.size()):
-				var radial := (v[k] - c)
-				radial.y *= 1.4
-				nrm[k] = nrm[k].lerp(radial.normalized(), 0.8).normalized()
-			arr[Mesh.ARRAY_NORMAL] = nrm
-		arr[Mesh.ARRAY_TANGENT] = null
-		out.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, arr)
-	_mats[key] = out
-	return out
-
-
-## The foliage shader for leaf material src; up_bias pulls normals toward the sky (0 for bent meshes).
-func _foliage_mat(src: BaseMaterial3D, up_bias: float) -> Material:
-	var key := "foliage_%d_%.2f" % [src.get_instance_id(), up_bias]
+## The foliage shader for leaf material src: up_bias pulls normals toward the sky, bend bends them out
+## from centre (mesh space).
+func _foliage_mat(src: BaseMaterial3D, up_bias: float, bend: float = 0.0, centre: Vector3 = Vector3.ZERO) -> Material:
+	var key := "foliage_%d_%.2f_%.2f_%s" % [src.get_instance_id(), up_bias, bend, str(centre.snapped(Vector3.ONE * 0.001))]
 	if _mats.has(key):
 		return _mats[key]
 	var m: Material = null
@@ -890,6 +877,8 @@ func _foliage_mat(src: BaseMaterial3D, up_bias: float) -> Material:
 		sm.set_shader_parameter("albedo_tex", src.albedo_texture)
 		sm.set_shader_parameter("tint", src.albedo_color)
 		sm.set_shader_parameter("up_bias", up_bias)
+		sm.set_shader_parameter("bend", bend)
+		sm.set_shader_parameter("crown_centre", centre)
 		m = sm
 	else:
 		var d := src.duplicate() as BaseMaterial3D
@@ -934,6 +923,8 @@ func _std(key: String, c: Color, metal: float, rough: float) -> StandardMaterial
 
 func _procedural_kit(kind: String) -> Array:
 	match kind:
+		"apron":
+			return [{"mesh": _apron_mesh(), "xform": Transform3D(), "mat": view.apron_material()}]
 		"pit":
 			# A cast-iron tree grate, 1.3 m square, with a soil disc round the trunk.
 			var plate := BoxMesh.new()
