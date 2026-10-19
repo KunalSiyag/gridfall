@@ -293,8 +293,39 @@ func _cache_lookup(key: String, day: int) -> Dictionary:
 	return {}
 
 
-## Writes the recorded live responses so offline runs can replay real model output.
+## Writes the recorded live responses so offline runs can replay real model output. Outside record
+## mode the session file keeps each key's last 3 days (a pruned copy: session_cache itself stays
+## whole, lookups read it) and is not rewritten when nothing was added since the last flush (the
+## brain flushes at every day end). Record mode writes exactly as before.
 func flush_cache() -> void:
+	if not record_mode:
+		var entries := 0
+		for key: String in session_cache.keys():
+			entries += (session_cache[key] as Array).size()
+		var sig := [session_cache.size(), entries]
+		if has_meta("flush_sig") and get_meta("flush_sig") == sig and is_same(get_meta("flush_of"), session_cache):
+			return
+		var pruned := {}
+		for key: String in session_cache.keys():
+			var days: Array = []
+			for e: Variant in session_cache[key]:
+				var dd := int((e as Dictionary).get("day", 0))
+				if not days.has(dd):
+					days.append(dd)
+			days.sort()
+			var recent: Array = days.slice(maxi(0, days.size() - 3))
+			var keep: Array = []
+			for e: Variant in session_cache[key]:
+				if recent.has(int((e as Dictionary).get("day", 0))):
+					keep.append(e)
+			pruned[key] = keep
+		var pf := FileAccess.open(SESSION_CACHE_PATH, FileAccess.WRITE)
+		if pf != null:
+			pf.store_string(JSON.stringify(pruned))
+			pf.close()
+			set_meta("flush_sig", sig)
+			set_meta("flush_of", session_cache)
+		return
 	var f := FileAccess.open(SESSION_CACHE_PATH, FileAccess.WRITE)
 	if f != null:
 		f.store_string(JSON.stringify(session_cache))

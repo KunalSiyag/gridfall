@@ -1,10 +1,13 @@
 extends SceneTree
-## Times each simulation phase on a grown world so slow per-tile passes are easy to spot.
+## Times each simulation phase on a grown world so slow per-tile passes are easy to spot, then runs
+## the same ticks sliced (CitySim.sliced, 4 ms pumps) and prints the pump statistics and the
+## slowest step kinds.
 
 func _init() -> void:
 	var Sim: GDScript = load("res://scripts/sim/city_sim.gd")
 	var sim: Node = Sim.new()
 	get_root().add_child(sim)
+	sim.set_process(false)
 	sim.new_city(7)
 	for d in range(12):
 		for t in range(4):
@@ -22,4 +25,22 @@ func _init() -> void:
 	for k in range(4):
 		sim.step_tick()
 	print("step_tick %.1f ms" % (float(Time.get_ticks_usec() - t1) / 4000.0))
+	sim.set("sliced", true)
+	sim.call("reset_slice_stats")
+	var committed := 0
+	while committed < 4:
+		if not sim.call("job_pending"):
+			sim.call("begin_tick")
+		if sim.call("pump", 4.0):
+			committed += 1
+	while sim.call("job_pending"):
+		sim.call("pump", 4.0)
+	var st: Dictionary = sim.call("slice_stats")
+	print("sliced: %d pumps for 4 ticks, max %.2f ms, p95 %.2f ms, max units %d/%d" % [int(st["pumps"]), float(st["max_ms"]), float(st["p95_ms"]), int(st["max_units"]), int(st["units_limit"])])
+	var prof: Dictionary = sim.call("slice_profile")
+	var keys := prof.keys()
+	keys.sort_custom(func(a: String, b: String) -> bool: return float(prof[a][1]) > float(prof[b][1]))
+	for k: String in keys.slice(0, 6):
+		var v: Array = prof[k]
+		print("  step %-20s n=%d max %.2f ms total %.1f ms" % [k, int(v[0]), float(v[1]), float(v[3])])
 	quit(0)

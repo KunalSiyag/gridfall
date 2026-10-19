@@ -51,6 +51,10 @@ var _rot: int = 0
 var _asked: Dictionary = {}
 var _bad_models: Dictionary = {}
 var _rng := RandomNumberGenerator.new()
+## Sliced mode (sim.sliced): the day's plan batches and the follow-up reactions wait here and run
+## one per frame, in the order the synchronous path runs them.
+var _spread: Array[Callable] = []
+var _spread_running: bool = false
 
 
 func setup(p_sim: CitySim, p_people: Residents, p_client: GmiClient, p_brain: Node) -> void:
@@ -62,6 +66,9 @@ func setup(p_sim: CitySim, p_people: Residents, p_client: GmiClient, p_brain: No
 	_asked.clear()
 	_plans_pending = 0
 	_reacts_pending = 0
+	_spread.clear()
+	sim.spread_gate = spreading
+	sim.spread_finish = finish_spread
 	if not people.day_ready.is_connected(plan_day):
 		people.day_ready.connect(plan_day)
 		sim.event_started.connect(_on_event_started)
@@ -95,6 +102,9 @@ func _note_model(model: String, res: Dictionary) -> void:
 # ---------------------------------------------------------------- daily plans
 
 func plan_day(day: int) -> void:
+	if _spread_ok():
+		_plan_day_spread(day)
+		return
 	last_plan_day = day
 	var everyone: Array = people.people.duplicate()
 	if everyone.is_empty():
@@ -116,6 +126,72 @@ func plan_day(day: int) -> void:
 				resident_helpers += 1
 		if resident_helpers < 2:
 			_react(ev, true)
+
+
+## Sliced sim work outside a forced synchronous tick: plan batches and reactions run one per frame.
+func _spread_ok() -> bool:
+	return sim != null and sim.spread_allowed() and is_inside_tree()
+
+
+## True while spread plan batches or reactions are still waiting for their frame (sliced mode).
+func spreading() -> bool:
+	return not _spread.is_empty()
+
+
+## Runs every waiting spread item now (a save, skip or mode switch needs the whole day planned).
+func finish_spread() -> void:
+	while not _spread.is_empty():
+		var c: Callable = _spread.pop_front()
+		c.call()
+
+
+## plan_day for sliced mode: the same batches, models, context and follow-up reactions, one batch
+## per frame instead of all at once (each batch builds ten cards, at most about 10 ms).
+func _plan_day_spread(day: int) -> void:
+	last_plan_day = day
+	var everyone: Array = people.people.duplicate()
+	if everyone.is_empty():
+		plans_done.emit(day)
+		return
+	var batches: Array = []
+	for i in range(0, everyone.size(), BATCH):
+		batches.append(everyone.slice(i, i + BATCH))
+	_plans_pending += batches.size()
+	busy_changed.emit(pending())
+	var ctx := _city_context()
+	for b in range(batches.size()):
+		_spread.append(_plan_batch.bind(batches[b], day, _model(_rot + b), ctx))
+	_rot += 1
+	_spread.append(_spread_reacts)
+	_run_spread()
+
+
+## The tail of plan_day: incidents with fewer than two resident helpers get a wide call for help,
+## one reaction per frame.
+func _spread_reacts() -> void:
+	var reacts: Array[Callable] = []
+	for ev in sim.events.duplicate():
+		var resident_helpers := 0
+		for h: String in (ev["helpers"] as Dictionary).keys():
+			if h.contains("("):
+				resident_helpers += 1
+		if resident_helpers < 2:
+			reacts.append(_react.bind(ev, true))
+	for k in range(reacts.size() - 1, -1, -1):
+		_spread.push_front(reacts[k])
+
+
+func _run_spread() -> void:
+	if _spread_running:
+		return
+	_spread_running = true
+	while not _spread.is_empty():
+		await get_tree().process_frame
+		if _spread.is_empty():
+			break
+		var c: Callable = _spread.pop_front()
+		c.call()
+	_spread_running = false
 
 
 func _plan_batch(batch: Array, day: int, model: String, ctx: Dictionary) -> void:
@@ -333,6 +409,17 @@ func _react(ev: Dictionary, wide: bool) -> void:
 			for v: Variant in arr:
 				if typeof(v) == TYPE_DICTIONARY:
 					got[str((v as Dictionary).get("id", ""))] = v
+	if _spread_ok():
+		# One responder per frame, ahead of anything already waiting; the sliced tick waits for them.
+		var st := {"out": [], "stop": false}
+		var items: Array[Callable] = []
+		for r: Dictionary in picks:
+			items.append(_react_one.bind(r, ev, got, model, st))
+		items.append(_react_done.bind(ev, st))
+		for k in range(items.size() - 1, -1, -1):
+			_spread.push_front(items[k])
+		_run_spread()
+		return
 	var out: Array = []
 	for r: Dictionary in picks:
 		if not people.people.has(r):
@@ -355,6 +442,43 @@ func _react(ev: Dictionary, wide: bool) -> void:
 			break
 		var action := people.respond(r, ev, data, src, model if src == "live" else "")
 		out.append({"id": r["id"], "name": r["name"], "job": r["job_title"], "action": action, "say": r["say"], "thought": r["thought"], "source": src})
+	_reacts_pending -= 1
+	busy_changed.emit(pending())
+	if not out.is_empty():
+		var helping := out.filter(func(o: Dictionary) -> bool: return str(o["action"]) == "help").map(func(o: Dictionary) -> String: return str(o["name"]))
+		if not helping.is_empty():
+			sim._log("%s: %s went to help." % [ev["label"], ", ".join(PackedStringArray(helping.slice(0, 5)))], "response")
+		reacted.emit(ev, out)
+
+
+## One responder of a spread _react (the body of its loop; st carries the results and the break).
+func _react_one(r: Dictionary, ev: Dictionary, got: Dictionary, model: String, st: Dictionary) -> void:
+	if bool(st["stop"]) or not people.people.has(r):
+		return
+	var k := "react|%s|%s" % [people.key(r), ev["type"]]
+	var data: Dictionary = got.get(str(r["id"]), {})
+	var src := "live"
+	if not data.is_empty():
+		client.remember(k, sim.day, data)
+	else:
+		data = client.lookup(k, sim.day)
+		src = "cache"
+		if data.is_empty():
+			data = _heuristic_react(r, ev)
+			src = "heuristic"
+	if src != "live":
+		client.count_source(src)
+	stats["reactions"] = int(stats["reactions"]) + 1
+	if not sim.events.has(ev):
+		st["stop"] = true
+		return
+	var action := people.respond(r, ev, data, src, model if src == "live" else "")
+	(st["out"] as Array).append({"id": r["id"], "name": r["name"], "job": r["job_title"], "action": action, "say": r["say"], "thought": r["thought"], "source": src})
+
+
+## The end of a spread _react, as after its loop.
+func _react_done(ev: Dictionary, st: Dictionary) -> void:
+	var out: Array = st["out"]
 	_reacts_pending -= 1
 	busy_changed.emit(pending())
 	if not out.is_empty():
@@ -456,3 +580,4 @@ func from_dict(d: Dictionary) -> void:
 	_rot = int(d.get("rot", 0))
 	_plans_pending = 0
 	_reacts_pending = 0
+	_spread.clear()

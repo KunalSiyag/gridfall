@@ -27,6 +27,11 @@ const TRIP_SCALE := 0.35
 const MODE_WEIGHT := {"car": 1.0, "bus": 0.25, "bike": 0.05, "walk": 0.0, "stay_home": 0.0}
 const LIVING_COST := 30
 const N4 := [Vector2i(0, -1), Vector2i(1, 0), Vector2i(0, 1), Vector2i(-1, 0)]
+## Residents handled per work unit of a sliced tick, and the route-search cache size (one
+## 192x192 parent map per origin road tile).
+const RES_PER_UNIT := 4
+const BFS_CACHE_MAX := 160
+const _BIG := 1 << 30
 const COMMUTES := ["car", "bus", "bike", "walk", "stay_home"]
 const SPEND_WHERE := ["local", "downtown", "online", "none"]
 const EVENINGS := ["home", "shopping", "park", "stadium", "visit_friend", "help_neighbors", "protest", "work_overtime"]
@@ -92,6 +97,14 @@ var _rng := RandomNumberGenerator.new()
 var _road_sig: int = -1
 var _trips_dirty: bool = true
 var _blocked: Dictionary = {}
+var _blocked_epoch: int = 0
+# Sliced work driven by CitySim's job (see begin_tick / begin_day); {} when idle.
+var _tk: Dictionary = {}
+var _dj: Dictionary = {}
+# Route searches per origin road tile, valid while the roads (sim.road_epoch) and the blocked
+# tiles (_blocked_epoch) stay the same; the result is identical to a fresh search.
+var _bfs_cache: Dictionary = {}
+var _bfs_sig := Vector2i(-1, -1)
 
 
 func setup(p_sim: CitySim) -> void:
@@ -110,6 +123,9 @@ func setup(p_sim: CitySim) -> void:
 		sim.event_ended.connect(_on_event_ended)
 		sim.site_finished.connect(_on_site_finished)
 	sim.people = self
+	abort_jobs()
+	_bfs_cache.clear()
+	_bfs_sig = Vector2i(-1, -1)
 	_trips_dirty = true
 	rebuild_maps()
 
@@ -142,24 +158,125 @@ func _reset_money() -> void:
 # ---------------------------------------------------------------- maps read by CitySim
 
 func rebuild_maps() -> void:
-	var n := D.W * D.H
-	if sim == null or sim.kind.size() != n:
-		return
-	if mood_map.size() != n:
-		mood_map.resize(n)
-	if trip_load.size() != n:
-		trip_load.resize(n)
-		trip_load.fill(0.0)
-	_update_share()
-	var sig := _road_signature()
-	if sig != _road_sig:
-		_road_sig = sig
-		_trips_dirty = true
-	if _trips_dirty:
-		_trips_dirty = false
-		_compute_trips()
-	_compute_mood_map()
-	_compute_sentiment()
+	var st := {}
+	while not maps_step(st, _BIG):
+		pass
+
+
+## One step of a resumable rebuild_maps() that keeps its state in st (CitySim's recompute task, or
+## a fresh dictionary): share, road signature, trips (one origin's road search per unit), mood map
+## and sentiment, in that order. lim is this call's work budget in tile visits. True when done.
+func maps_step(st: Dictionary, lim: int) -> bool:
+	if not st.has("ms"):
+		var n := D.W * D.H
+		if sim == null or sim.kind.size() != n:
+			return true
+		if mood_map.size() != n:
+			mood_map.resize(n)
+		if trip_load.size() != n:
+			trip_load.resize(n)
+			trip_load.fill(0.0)
+		st["ms"] = 0
+		st["mk"] = 0
+		st["mact"] = sim.active
+		st["mpop"] = 0
+	var big := lim >= _BIG
+	var act: PackedInt32Array = st["mact"]
+	match int(st["ms"]):
+		0:
+			var k := int(st["mk"])
+			var end := act.size() if big else mini(act.size(), k + maxi(1, lim / 4))
+			var pop: int = st["mpop"]
+			for kk in range(k, end):
+				pop += sim.tile_pop(act[kk])
+			st["mpop"] = pop
+			st["mk"] = end
+			if end < act.size():
+				return false
+			share = float(pop) / float(maxi(people.size(), 1))
+			st["ms"] = 1
+			st["mk"] = 0
+			st["mh"] = 17
+		1:
+			var k := int(st["mk"])
+			var end := act.size() if big else mini(act.size(), k + lim)
+			var h: int = st["mh"]
+			for kk in range(k, end):
+				var i := act[kk]
+				if sim.kind[i] == D.ROAD:
+					h = (h * 31 + i) % 1000000007
+			st["mh"] = h
+			st["mk"] = end
+			if end < act.size():
+				return false
+			var sig := _finish_road_signature(h)
+			if sig != _road_sig:
+				_road_sig = sig
+				_trips_dirty = true
+			st["mk"] = 0
+			if _trips_dirty:
+				_trips_dirty = false
+				st["ms"] = 2
+				st["mtl"] = _floats(D.W * D.H)
+				st["morig"] = {}
+				st["mpc"] = {}
+			else:
+				st["ms"] = 4
+		2:
+			var by_origin: Dictionary = st["morig"]
+			var pc: Dictionary = st["mpc"]
+			var k := int(st["mk"])
+			var end := people.size() if big else mini(people.size(), k + maxi(1, lim / 256))
+			while k < end:
+				_trip_pairs(people[k], by_origin, pc)
+				k += 1
+				if sim.step_heavy():
+					break
+			st["mk"] = k
+			if k < people.size():
+				return false
+			st["morder"] = by_origin.keys()
+			st["ms"] = 3
+			st["mk"] = 0
+		3:
+			var by_origin: Dictionary = st["morig"]
+			var order: Array = st["morder"]
+			var tl: PackedFloat32Array = st["mtl"]
+			var k := int(st["mk"])
+			var work := lim
+			while k < order.size() and work > 0:
+				var o: int = order[k]
+				k += 1
+				var parent := _bfs(o)
+				for item: Variant in by_origin[o]:
+					var pair: Array = item
+					var c := int(pair[0])
+					if parent[c] == -2:
+						continue
+					var guard := 0
+					while c >= 0 and guard < 400:
+						tl[c] += float(pair[1])
+						c = parent[c]
+						guard += 1
+					work -= 8 + guard
+				if sim.step_heavy():
+					break
+			st["mk"] = k
+			if k < order.size():
+				return false
+			trip_load = tl
+			st["ms"] = 4
+			st["mk"] = 0
+		4:
+			if not st.has("mm"):
+				_mood_begin(st)
+			if not _mood_step(st, act, lim, big):
+				return false
+			st["ms"] = 5
+		5:
+			_compute_sentiment()
+			return true
+	return false
 
 
 func _update_share() -> void:
@@ -169,64 +286,53 @@ func _update_share() -> void:
 	share = float(pop) / float(maxi(people.size(), 1))
 
 
-func _road_signature() -> int:
-	var h := 17
-	for i in sim.active:
-		if sim.kind[i] == D.ROAD:
-			h = (h * 31 + i) % 1000000007
-	_blocked.clear()
+## Ends the road signature started over the road tiles (h): rebuilds the blocked tiles (downed
+## lines, crashes) and folds them in. A change of the blocked set invalidates cached road searches.
+func _finish_road_signature(h: int) -> int:
+	var blocked: Dictionary = {}
 	for k: Variant in sim.broken_roads.keys():
-		_blocked[int(k)] = true
+		blocked[int(k)] = true
 	for ev in sim.events:
 		if str(ev["type"]) == "car_crash":
-			_blocked[D.idx(int(ev["x"]), int(ev["y"]))] = true
+			blocked[D.idx(int(ev["x"]), int(ev["y"]))] = true
+	if blocked != _blocked:
+		_blocked_epoch += 1
+	_blocked = blocked
 	for k: int in _blocked.keys():
 		h = (h * 37 + k + 7) % 1000000007
 	return h
 
 
-func _compute_trips() -> void:
-	trip_load.fill(0.0)
-	var by_origin: Dictionary = {}
-	for r in people:
-		var p: Dictionary = r.get("plan", {})
-		var w := int(r["work"])
-		if w < 0 or not _as_bool(p.get("go_to_work", true)):
-			continue
-		var mode := str(p.get("commute", "car"))
-		var weight := share * TRIP_SCALE * float(MODE_WEIGHT.get(mode, 1.0))
-		if weight <= 0.0:
-			continue
-		var o := _near_road(int(r["home"]))
-		var g := _near_road(w)
-		if o < 0 or g < 0:
-			continue
-		if not by_origin.has(o):
-			by_origin[o] = []
-		(by_origin[o] as Array).append([g, weight])
-		var shop := _shop_for(r)
-		if shop >= 0:
-			var sg := _near_road(shop)
-			if sg >= 0:
-				(by_origin[o] as Array).append([sg, weight * 0.4])
-	for o: int in by_origin.keys():
-		var parent := _bfs(o)
-		for item: Variant in by_origin[o]:
-			var pair: Array = item
-			var c := int(pair[0])
-			if parent[c] == -2:
-				continue
-			var guard := 0
-			while c >= 0 and guard < 400:
-				trip_load[c] += float(pair[1])
-				c = parent[c]
-				guard += 1
+## Adds r's commute (and shop run) to by_origin: road tile -> [[goal road tile, weight], ...].
+func _trip_pairs(r: Dictionary, by_origin: Dictionary, pc: Dictionary) -> void:
+	var p: Dictionary = r.get("plan", {})
+	var w := int(r["work"])
+	if w < 0 or not _as_bool(p.get("go_to_work", true)):
+		return
+	var mode := str(p.get("commute", "car"))
+	var weight := share * TRIP_SCALE * float(MODE_WEIGHT.get(mode, 1.0))
+	if weight <= 0.0:
+		return
+	var o := _near_road(int(r["home"]))
+	var g := _near_road(w)
+	if o < 0 or g < 0:
+		return
+	if not by_origin.has(o):
+		by_origin[o] = []
+	(by_origin[o] as Array).append([g, weight])
+	var shop := _shop_for(r, pc)
+	if shop >= 0:
+		var sg := _near_road(shop)
+		if sg >= 0:
+			(by_origin[o] as Array).append([sg, weight * 0.4])
 
 
-func _compute_mood_map() -> void:
-	var n := D.W * D.H
-	mood_map.fill(0.0)
+## Homes with named residents, in first-seen order, as flat arrays for the mood map pass.
+func _mood_begin(st: Dictionary) -> void:
+	st["mm"] = _floats(D.W * D.H)
+	st["mk"] = 0
 	if people.is_empty():
+		st["mn"] = 0
 		return
 	var at_home: Dictionary = {}
 	var avg := 0.0
@@ -240,27 +346,76 @@ func _compute_mood_map() -> void:
 		a[0] = float(a[0]) + m
 		a[1] = int(a[1]) + 1
 	avg /= float(people.size())
-	for i in range(n):
+	var hx := PackedInt32Array()
+	var hy := PackedInt32Array()
+	var hs: Array = []
+	var hc := PackedInt32Array()
+	for h: int in at_home.keys():
+		var a: Array = at_home[h]
+		hx.append(D.tx(h))
+		hy.append(D.ty(h))
+		hs.append(float(a[0]))
+		hc.append(int(a[1]))
+	st["mat"] = at_home
+	st["mhx"] = hx
+	st["mhy"] = hy
+	st["mhs"] = hs
+	st["mhc"] = hc
+	st["mavg"] = avg
+	st["mn"] = 1
+
+
+## Homes without a named resident take the mood of the neighbours who live nearby. Only `active`
+## can hold developed homes, so the pass skips the wilds (identical result, mood_map starts at 0).
+func _mood_step(st: Dictionary, act: PackedInt32Array, lim: int, big: bool) -> bool:
+	var mm: PackedFloat32Array = st["mm"]
+	if int(st["mn"]) == 0:
+		mood_map = mm
+		return true
+	var at_home: Dictionary = st["mat"]
+	var hx: PackedInt32Array = st["mhx"]
+	var hy: PackedInt32Array = st["mhy"]
+	var hs: Array = st["mhs"]
+	var hc: PackedInt32Array = st["mhc"]
+	var avg: float = st["mavg"]
+	var nh := hx.size()
+	var k := int(st["mk"])
+	var work := lim
+	while k < act.size() and (big or work > 0):
+		var i := act[k]
+		k += 1
+		work -= 1
 		if sim.kind[i] != D.ZONE_R or sim.level[i] <= 0:
 			continue
 		if at_home.has(i):
 			var a: Array = at_home[i]
-			mood_map[i] = float(a[0]) / float(a[1])
+			mm[i] = float(a[0]) / float(a[1])
 			continue
-		# Homes without a named resident take the mood of the neighbours who live nearby.
+		work -= nh
 		var wsum := 0.0
 		var msum := 0.0
 		var x := D.tx(i)
 		var y := D.ty(i)
-		for h: int in at_home.keys():
-			var d := absi(D.tx(h) - x) + absi(D.ty(h) - y)
+		for j in range(nh):
+			var d := absi(hx[j] - x) + absi(hy[j] - y)
 			if d > 6:
 				continue
 			var wgt := 1.0 / (1.0 + float(d))
-			var a: Array = at_home[h]
-			wsum += wgt * float(a[1])
-			msum += wgt * float(a[0])
-		mood_map[i] = msum / wsum if wsum > 0.0 else avg
+			wsum += wgt * float(hc[j])
+			msum += wgt * float(hs[j])
+		mm[i] = msum / wsum if wsum > 0.0 else avg
+	st["mk"] = k
+	if k < act.size():
+		return false
+	mood_map = mm
+	return true
+
+
+func _floats(n: int) -> PackedFloat32Array:
+	var a := PackedFloat32Array()
+	a.resize(n)
+	a.fill(0.0)
+	return a
 
 
 func _compute_sentiment() -> void:
@@ -335,25 +490,118 @@ func messages_for(d: int, max_n: int = 6) -> Array:
 # ---------------------------------------------------------------- daily life
 
 func _on_day_started(day: int) -> void:
-	if not enabled or sim == null:
-		day_ready.emit(day)
+	# Sliced: the sim's day job runs this work through begin_day() / pump_day() after the emission.
+	if sim != null and sim.day_start_deferred():
 		return
-	_update_share()
-	for r in people.duplicate():
-		_check_home(r, day)
-	for r in people:
-		_check_job(r, day)
-	var target := _target_count()
-	var max_new := maxi(3, target / 8)
-	var made := 0
-	var demand_ok := float(sim.demand["r"]) > -0.25 or people.size() < 4
-	while people.size() < target and made < max_new and demand_ok:
-		if _spawn(day).is_empty():
-			break
-		made += 1
-	_trips_dirty = true
-	rebuild_maps()
-	day_ready.emit(day)
+	begin_day(day)
+	while not _day_unit(_BIG):
+		pass
+
+
+## Starts the day-start work (moves, new jobs, arrivals, maps, then day_ready) as a resumable job.
+func begin_day(day: int) -> void:
+	_dj = {"day": day, "s": 0, "k": 0, "pop": 0}
+
+
+## Advances the day-start job: one unit when budget_ms <= 0, else units until budget_ms is spent.
+## Emits day_ready and returns true when the job is done.
+func pump_day(budget_ms: float) -> bool:
+	var t0 := Time.get_ticks_usec()
+	while true:
+		if _day_unit(RES_PER_UNIT):
+			return true
+		if budget_ms <= 0.0 or Time.get_ticks_usec() - t0 >= int(budget_ms * 1000.0):
+			return false
+	return false
+
+
+## True while a sliced day-start job is in flight.
+func day_job_running() -> bool:
+	return not _dj.is_empty()
+
+
+## Up to n residents (stopping after a heavy one), one arrival, or n * 64 tiles of a scan per call.
+func _day_unit(n: int) -> bool:
+	if _dj.is_empty():
+		return true
+	var day := int(_dj["day"])
+	match int(_dj["s"]):
+		0:
+			if not enabled or sim == null:
+				_dj = {}
+				day_ready.emit(day)
+				return true
+			if not _pop_scan(_dj, n):
+				return false
+			share = float(int(_dj["pop"])) / float(maxi(people.size(), 1))
+			_dj["list"] = people.duplicate()
+			_dj["s"] = 1
+		1:
+			var list: Array = _dj["list"]
+			var k := int(_dj["k"])
+			var end := mini(list.size(), k + n)
+			while k < end:
+				_check_home(list[k], day)
+				k += 1
+				if sim.step_heavy():
+					break
+			_dj["k"] = k
+			if k >= list.size():
+				_dj["s"] = 2
+				_dj["k"] = 0
+		2:
+			var k := int(_dj["k"])
+			var end := mini(people.size(), k + n)
+			while k < end:
+				_check_job(people[k], day)
+				k += 1
+				if sim.step_heavy():
+					break
+			_dj["k"] = k
+			if k >= people.size():
+				_dj["s"] = 3
+				_dj["k"] = 0
+				_dj["pop"] = 0
+		3:
+			if not _pop_scan(_dj, n):
+				return false
+			var target := clampi(int(ceil(float(int(_dj["pop"])) / PEOPLE_PER_RESIDENT)), 0, MAX_RESIDENTS)
+			_dj["target"] = target
+			_dj["max_new"] = maxi(3, target / 8)
+			_dj["made"] = 0
+			_dj["demand_ok"] = float(sim.demand["r"]) > -0.25 or people.size() < 4
+			_dj["s"] = 4
+		4:
+			var made := int(_dj["made"])
+			if people.size() < int(_dj["target"]) and made < int(_dj["max_new"]) and bool(_dj["demand_ok"]) and not _spawn(day).is_empty():
+				_dj["made"] = made + 1
+				return false
+			_trips_dirty = true
+			_dj["maps"] = {}
+			_dj["s"] = 5
+		5:
+			if not maps_step(_dj["maps"], CitySim.UNIT_WORK if n < _BIG else _BIG):
+				return false
+			_dj = {}
+			day_ready.emit(day)
+			return true
+	return false
+
+
+## Sums tile_pop over sim.active into state["pop"], n * 64 tiles per call; true when done.
+func _pop_scan(state: Dictionary, n: int) -> bool:
+	var act := sim.active
+	var k := int(state["k"])
+	var end := act.size() if n >= _BIG else mini(act.size(), k + n * 64)
+	var pop: int = state["pop"]
+	for kk in range(k, end):
+		pop += sim.tile_pop(act[kk])
+	state["pop"] = pop
+	state["k"] = end
+	if end < act.size():
+		return false
+	state["k"] = 0
+	return true
 
 
 func _on_day_ended(_day: int) -> void:
@@ -373,135 +621,214 @@ func _target_count() -> int:
 
 
 func _on_tick(t: int) -> void:
+	# Sliced: the sim's tick job already ran this tick's work through begin_tick() / pump_tick().
+	if sim != null and sim.is_tick_running():
+		return
 	if not is_active():
 		return
-	_update_share()
-	match t:
+	begin_tick(t)
+	while not _tick_unit(_BIG):
+		pass
+
+
+## Starts tick t's resident work (the daily routine phase, then helpers on sites and incidents) as a
+## resumable job.
+func begin_tick(t: int) -> void:
+	_tk = {"t": t, "s": 0, "k": 0, "pop": 0}
+
+
+## Advances the tick job: one unit when budget_ms <= 0, else units until budget_ms is spent. Stops
+## early when the sim queued nested work (an incident resolved). True when the tick's work is done.
+func pump_tick(budget_ms: float) -> bool:
+	var t0 := Time.get_ticks_usec()
+	while true:
+		if _tick_unit(RES_PER_UNIT):
+			return true
+		if budget_ms <= 0.0 or sim.job_yield_requested() or Time.get_ticks_usec() - t0 >= int(budget_ms * 1000.0):
+			return false
+	return false
+
+
+func _tick_unit(n: int) -> bool:
+	if _tk.is_empty():
+		return true
+	var t := int(_tk["t"])
+	match int(_tk["s"]):
 		0:
-			_morning()
+			if not is_active():
+				_tk = {}
+				return true
+			if not _pop_scan(_tk, n):
+				return false
+			share = float(int(_tk["pop"])) / float(maxi(people.size(), 1))
+			match t:
+				0:
+					protests = [0, 0, 0, 0, 0]
+					_tk["load"] = {}
+					_tk["list"] = people
+				1, 2:
+					_tk["list"] = people
+				3:
+					_tk["list"] = people.duplicate()
+				_:
+					_tk["list"] = []
+			_tk["pc"] = {}
+			_tk["s"] = 1
 		1:
-			_midday()
+			var list: Array = _tk["list"]
+			var k := int(_tk["k"])
+			var c := 0
+			while k < list.size() and c < n:
+				var r: Dictionary = list[k]
+				k += 1
+				c += 1
+				match t:
+					0:
+						_morning_one(r, _tk["load"])
+					1:
+						_midday_one(r)
+					2:
+						_evening_one(r, _tk["pc"])
+					3:
+						_night_one(r)
+				if sim.job_yield_requested() or sim.step_heavy():
+					break
+			_tk["k"] = k
+			if k >= list.size():
+				_tk["s"] = 2
+				_tk["k"] = 0
 		2:
-			_evening()
-		3:
-			_night()
-	_helpers_work()
-	_trips_dirty = true
+			var k := int(_tk["k"])
+			var c := 0
+			while k < people.size() and c < n:
+				var r: Dictionary = people[k]
+				k += 1
+				c += 1
+				_helpers_one(r)
+				if sim.job_yield_requested() or sim.step_heavy():
+					break
+			_tk["k"] = k
+			if k >= people.size():
+				_tk = {}
+				_trips_dirty = true
+				return true
+	return false
 
 
-func _morning() -> void:
-	protests = [0, 0, 0, 0, 0]
-	var site_load: Dictionary = {}
-	for r in people:
-		r["worked"] = false
-		r["spent"] = 0
-		r["site"] = -1
-		if int(r["helping"]) >= 0:
-			continue
-		if _join_site(r, site_load):
-			continue
-		var p: Dictionary = r.get("plan", {})
-		var w := int(r["work"])
-		var mode := str(p.get("commute", "car"))
-		if w >= 0 and _as_bool(p.get("go_to_work", true)) and mode != "stay_home":
-			if not _workplace_open(w):
-				_remember(r, "my workplace at (%d,%d) was closed when I got there" % [D.tx(w), D.ty(w)])
-				_go(r, int(r["home"]), "home")
-				continue
-			if _go(r, w, "work"):
-				r["worked"] = true
-			else:
-				_remember(r, "could not get to work, every road was blocked")
+## Drops the sliced tick and day jobs (the sim replaced the city).
+func abort_jobs() -> void:
+	_tk = {}
+	_dj = {}
+
+
+func _morning_one(r: Dictionary, site_load: Dictionary) -> void:
+	r["worked"] = false
+	r["spent"] = 0
+	r["site"] = -1
+	if int(r["helping"]) >= 0:
+		return
+	if _join_site(r, site_load):
+		return
+	var p: Dictionary = r.get("plan", {})
+	var w := int(r["work"])
+	var mode := str(p.get("commute", "car"))
+	if w >= 0 and _as_bool(p.get("go_to_work", true)) and mode != "stay_home":
+		if not _workplace_open(w):
+			_remember(r, "my workplace at (%d,%d) was closed when I got there" % [D.tx(w), D.ty(w)])
+			_go(r, int(r["home"]), "home")
+			return
+		if _go(r, w, "work"):
+			r["worked"] = true
 		else:
+			_remember(r, "could not get to work, every road was blocked")
+	else:
+		_go(r, int(r["home"]), "home")
+
+
+func _midday_one(r: Dictionary) -> void:
+	var title := str(r["job_title"])
+	var tax := int(sim.mayors[sim.district[int(r["home"])]]["tax_r"])
+	if bool(r["worked"]) and (int(r["work"]) >= 0 or int(r["site"]) >= 0):
+		if int(r["site"]) < 0 and not _workplace_open(int(r["work"])):
+			r["worked"] = false
+			_remember(r, "sent home early, my workplace lost power or was shut")
+			if int(r["helping"]) < 0:
+				_go(r, int(r["home"]), "home")
+			return
+		var wage := float(r["wage"])
+		r["savings"] = float(r["savings"]) + wage * (1.0 - float(tax) / 100.0)
+		(_money[sim.district[int(r["home"])]] as Dictionary)["wages"] = float(_money[sim.district[int(r["home"])]]["wages"]) + wage * share * WAGE_SCALE
+	elif title == "retiree":
+		r["savings"] = float(r["savings"]) + 85.0
+	elif title == "student":
+		r["savings"] = float(r["savings"]) + 25.0
+	elif int(r["work"]) < 0:
+		r["savings"] = float(r["savings"]) + 40.0
+
+
+## pc caches tile lookups for this phase (kinds and levels do not change during the evening loop).
+func _evening_one(r: Dictionary, pc: Dictionary) -> void:
+	var p: Dictionary = r.get("plan", {})
+	var spend := int(p.get("spend", 30))
+	var where := str(p.get("spend_where", "local"))
+	var shop := _shop_for(r, pc)
+	if spend > 0 and where != "none":
+		spend = mini(spend, maxi(0, int(float(r["savings"]))) + 20)
+		r["savings"] = float(r["savings"]) - float(spend)
+		r["spent"] = spend
+		if shop >= 0 and where != "online":
+			(_money[sim.district[shop]] as Dictionary)["sales"] = float(_money[sim.district[shop]]["sales"]) + float(spend) * share * SALES_SCALE
+	r["site"] = -1
+	if int(r["helping"]) >= 0:
+		return
+	var ev_choice := str(p.get("evening", "home"))
+	match ev_choice:
+		"shopping":
+			if shop >= 0:
+				_go(r, shop, "shopping")
+		"park":
+			_go_kind(r, D.PARK, "at the park", pc)
+		"stadium":
+			if not _go_kind(r, D.STADIUM, "at the stadium", pc):
+				_go_kind(r, D.PARK, "at the park", pc)
+		"visit_friend":
+			if people.size() > 1:
+				var f: Dictionary = people[_rng.randi_range(0, people.size() - 1)]
+				if f != r:
+					_go(r, int(f["home"]), "visiting %s" % str(f["name"]).split(" ")[0])
+		"help_neighbors":
+			var ev := _nearest_event(int(r["home"]), 10)
+			if not ev.is_empty():
+				_start_help(r, ev)
+				_remember(r, "went to help with the %s near home" % ev["label"])
+		"protest":
+			var hall := _nearest_kind(int(r["home"]), D.HALL, 64, pc)
+			if hall >= 0:
+				_go(r, hall, "protesting at city hall")
+				protests[sim.district[int(r["home"])]] = int(protests[sim.district[int(r["home"])]]) + 1
+		"work_overtime":
+			if bool(r["worked"]) and _workplace_open(int(r["work"])):
+				r["savings"] = float(r["savings"]) + float(r["wage"]) * 0.35
+				r["state"] = "working late"
+		_:
 			_go(r, int(r["home"]), "home")
 
 
-func _midday() -> void:
-	for r in people:
-		var title := str(r["job_title"])
-		var tax := int(sim.mayors[sim.district[int(r["home"])]]["tax_r"])
-		if bool(r["worked"]) and (int(r["work"]) >= 0 or int(r["site"]) >= 0):
-			if int(r["site"]) < 0 and not _workplace_open(int(r["work"])):
-				r["worked"] = false
-				_remember(r, "sent home early, my workplace lost power or was shut")
-				if int(r["helping"]) < 0:
-					_go(r, int(r["home"]), "home")
-				continue
-			var wage := float(r["wage"])
-			r["savings"] = float(r["savings"]) + wage * (1.0 - float(tax) / 100.0)
-			(_money[sim.district[int(r["home"])]] as Dictionary)["wages"] = float(_money[sim.district[int(r["home"])]]["wages"]) + wage * share * WAGE_SCALE
-		elif title == "retiree":
-			r["savings"] = float(r["savings"]) + 85.0
-		elif title == "student":
-			r["savings"] = float(r["savings"]) + 25.0
-		elif int(r["work"]) < 0:
-			r["savings"] = float(r["savings"]) + 40.0
-
-
-func _evening() -> void:
-	for r in people:
-		var p: Dictionary = r.get("plan", {})
-		var spend := int(p.get("spend", 30))
-		var where := str(p.get("spend_where", "local"))
-		var shop := _shop_for(r)
-		if spend > 0 and where != "none":
-			spend = mini(spend, maxi(0, int(float(r["savings"]))) + 20)
-			r["savings"] = float(r["savings"]) - float(spend)
-			r["spent"] = spend
-			if shop >= 0 and where != "online":
-				(_money[sim.district[shop]] as Dictionary)["sales"] = float(_money[sim.district[shop]]["sales"]) + float(spend) * share * SALES_SCALE
-		r["site"] = -1
-		if int(r["helping"]) >= 0:
-			continue
-		var ev_choice := str(p.get("evening", "home"))
-		match ev_choice:
-			"shopping":
-				if shop >= 0:
-					_go(r, shop, "shopping")
-			"park":
-				_go_kind(r, D.PARK, "at the park")
-			"stadium":
-				if not _go_kind(r, D.STADIUM, "at the stadium"):
-					_go_kind(r, D.PARK, "at the park")
-			"visit_friend":
-				if people.size() > 1:
-					var f: Dictionary = people[_rng.randi_range(0, people.size() - 1)]
-					if f != r:
-						_go(r, int(f["home"]), "visiting %s" % str(f["name"]).split(" ")[0])
-			"help_neighbors":
-				var ev := _nearest_event(int(r["home"]), 10)
-				if not ev.is_empty():
-					_start_help(r, ev)
-					_remember(r, "went to help with the %s near home" % ev["label"])
-			"protest":
-				var hall := _nearest_kind(int(r["home"]), D.HALL, 64)
-				if hall >= 0:
-					_go(r, hall, "protesting at city hall")
-					protests[sim.district[int(r["home"])]] = int(protests[sim.district[int(r["home"])]]) + 1
-			"work_overtime":
-				if bool(r["worked"]) and _workplace_open(int(r["work"])):
-					r["savings"] = float(r["savings"]) + float(r["wage"]) * 0.35
-					r["state"] = "working late"
-			_:
-				_go(r, int(r["home"]), "home")
-
-
-func _night() -> void:
-	for r in people.duplicate():
-		var rent := rent_for(r)
-		r["savings"] = float(r["savings"]) - float(rent + LIVING_COST)
-		if float(r["savings"]) < 0.0:
-			r["broke_days"] = int(r["broke_days"]) + 1
-		else:
-			r["broke_days"] = 0
-		if str(r["intent"]) == "leaving":
-			_depart(r, str(r.get("mood_reason", "decided to move away")))
-			continue
-		if int(r["broke_days"]) >= 3:
-			_depart(r, "could no longer afford rent")
-			continue
-		if int(r["helping"]) < 0:
-			_go(r, int(r["home"]), "home")
+func _night_one(r: Dictionary) -> void:
+	var rent := rent_for(r)
+	r["savings"] = float(r["savings"]) - float(rent + LIVING_COST)
+	if float(r["savings"]) < 0.0:
+		r["broke_days"] = int(r["broke_days"]) + 1
+	else:
+		r["broke_days"] = 0
+	if str(r["intent"]) == "leaving":
+		_depart(r, str(r.get("mood_reason", "decided to move away")))
+		return
+	if int(r["broke_days"]) >= 3:
+		_depart(r, "could no longer afford rent")
+		return
+	if int(r["helping"]) < 0:
+		_go(r, int(r["home"]), "home")
 
 
 func rent_for(r: Dictionary) -> int:
@@ -573,31 +900,32 @@ func _on_site_finished(s: Dictionary) -> void:
 	_trips_dirty = true
 
 
-func _helpers_work() -> void:
-	for r in people:
-		var si := int(r.get("site", -1))
-		if si >= 0:
-			if not sim.sites.has(si):
-				r["site"] = -1
-			else:
-				sim.add_site_work(si, build_amount(r), "%s (%s)" % [r["name"], r["job_title"]])
-		var eid := int(r["helping"])
-		if eid < 0:
-			continue
-		var ev := sim.find_event(eid)
-		if ev.is_empty():
-			_stop_help(r)
-			continue
-		if int(r["help_eta"]) > 0:
-			r["help_eta"] = int(r["help_eta"]) - 1
-			continue
-		r["help_ticks"] = int(r["help_ticks"]) + 1
-		var amount := help_amount(r, ev)
-		var label := "%s (%s)" % [r["name"], r["job_title"]]
-		sim.add_incident_work(eid, amount, label)
-		if int(r["helping"]) >= 0 and int(r["help_ticks"]) >= 8:
-			_remember(r, "spent hours at the %s and had to go home, it is still not fixed" % ev["label"])
-			_stop_help(r)
+## One resident's shift on a site and at an incident (after the day's routine, every tick). An
+## incident it resolves queues the sim's recompute; nothing after that here reads the maps.
+func _helpers_one(r: Dictionary) -> void:
+	var si := int(r.get("site", -1))
+	if si >= 0:
+		if not sim.sites.has(si):
+			r["site"] = -1
+		else:
+			sim.add_site_work(si, build_amount(r), "%s (%s)" % [r["name"], r["job_title"]])
+	var eid := int(r["helping"])
+	if eid < 0:
+		return
+	var ev := sim.find_event(eid)
+	if ev.is_empty():
+		_stop_help(r)
+		return
+	if int(r["help_eta"]) > 0:
+		r["help_eta"] = int(r["help_eta"]) - 1
+		return
+	r["help_ticks"] = int(r["help_ticks"]) + 1
+	var amount := help_amount(r, ev)
+	var label := "%s (%s)" % [r["name"], r["job_title"]]
+	sim.add_incident_work(eid, amount, label)
+	if int(r["helping"]) >= 0 and int(r["help_ticks"]) >= 8:
+		_remember(r, "spent hours at the %s and had to go home, it is still not fixed" % ev["label"])
+		_stop_help(r)
 
 
 func help_amount(r: Dictionary, ev: Dictionary) -> float:
@@ -723,9 +1051,9 @@ func respond(r: Dictionary, ev: Dictionary, d: Dictionary, source: String, model
 			ev["reports"] = int(ev.get("reports", 0)) + 1
 			_remember(r, "called in " + where)
 		"evacuate":
-			var safe := _nearest_kind(int(r["home"]), D.PARK, 30)
+			var safe := _nearest_kind(int(r["home"]), D.PARK, 30, {})
 			if safe < 0:
-				safe = _nearest_kind(int(r["home"]), D.HALL, 64)
+				safe = _nearest_kind(int(r["home"]), D.HALL, 64, {})
 			if safe >= 0 and int(r["helping"]) < 0:
 				_go(r, safe, "sheltering away from the %s" % ev["label"])
 			_remember(r, "got away from " + where)
@@ -761,6 +1089,17 @@ func _remember(r: Dictionary, line: String) -> void:
 	mem.append("Day %d: %s" % [sim.day, line])
 	while mem.size() > 8:
 		mem.pop_front()
+
+
+## Adds a line to the resident's memory as "Day N: line" (an exact repeat of the last line is
+## skipped, at most 8 lines kept). For other slices, e.g. a face-to-face conversation that ends.
+func remember(r: Dictionary, line: String) -> void:
+	_remember(r, line)
+
+
+## Shifts the resident's mood (0..10) by delta, clamped. Callers bound delta themselves.
+func nudge_mood(r: Dictionary, delta: float) -> void:
+	r["mood"] = clampf(float(r.get("mood", 5.0)) + delta, 0.0, 10.0)
 
 
 # ---------------------------------------------------------------- arrivals, homes, jobs
@@ -815,38 +1154,43 @@ func _unique_name(idr: RandomNumberGenerator) -> String:
 	return "Resident %d" % _seq
 
 
-func _residents_at(home: int) -> int:
-	var n := 0
-	for r in people:
-		if int(r["home"]) == home:
-			n += 1
-	return n
-
-
 func _pick_home() -> int:
+	# Residents per home counted once (was one pass over everyone per candidate home).
+	var at: Dictionary = {}
+	for r in people:
+		var h := int(r["home"])
+		at[h] = int(at.get(h, 0)) + 1
 	var best := -1
 	var best_score := INF
 	for i in sim.active:
 		if sim.kind[i] != D.ZONE_R or sim.level[i] <= 0 or sim.burning[i] > 0:
 			continue
-		var score := float(_residents_at(i)) / float(sim.tile_pop(i)) + _rng.randf() * 0.01
+		var score := float(int(at.get(i, 0))) / float(sim.tile_pop(i)) + _rng.randf() * 0.01
 		if score < best_score:
 			best_score = score
 			best = i
+	sim.note_units(sim.active.size() / CitySim.UNIT_WORK)
 	return best
 
 
-func _slots(i: int) -> float:
-	var jobs := float(sim.tile_jobs(i))
-	if jobs <= 0.0:
-		return 0.0
-	var s := jobs / maxf(share, 1.0)
-	return maxf(s, 1.0) if not D.is_zone(sim.kind[i]) else maxf(s, 0.5)
+## Workplace tiles (tile_jobs > 0) in `active` order. Cached for the day-start job, where jobs do
+## not change; computed fresh elsewhere.
+func _job_tiles() -> PackedInt32Array:
+	if not _dj.is_empty() and _dj.has("jt"):
+		return _dj["jt"]
+	var out := PackedInt32Array()
+	for i in sim.active:
+		if sim.tile_jobs(i) > 0:
+			out.append(i)
+	sim.note_units(sim.active.size() / CitySim.UNIT_WORK)
+	if not _dj.is_empty() and int(_dj["s"]) >= 2:
+		_dj["jt"] = out
+	return out
 
 
 func _pick_occupation() -> String:
 	var cap: Dictionary = {}
-	for i in sim.active:
+	for i in _job_tiles():
 		var s := _slots(i)
 		if s > 0.0:
 			cap[sim.kind[i]] = float(cap.get(sim.kind[i], 0.0)) + s
@@ -896,7 +1240,8 @@ func _find_job(r: Dictionary) -> void:
 	var home := int(r["home"])
 	var best := -1
 	var best_score := INF
-	for i in sim.active:
+	# Only workplaces can match (_slots is 0 elsewhere), visited in the same order as `active`.
+	for i in _job_tiles():
 		if not at.has(sim.kind[i]):
 			continue
 		var s := _slots(i)
@@ -911,6 +1256,14 @@ func _find_job(r: Dictionary) -> void:
 			best_score = score
 			best = i
 	r["work"] = best
+
+
+func _slots(i: int) -> float:
+	var jobs := float(sim.tile_jobs(i))
+	if jobs <= 0.0:
+		return 0.0
+	var s := jobs / maxf(share, 1.0)
+	return maxf(s, 1.0) if not D.is_zone(sim.kind[i]) else maxf(s, 0.5)
 
 
 func _check_home(r: Dictionary, day: int) -> void:
@@ -963,29 +1316,45 @@ func _workplace_open(i: int) -> bool:
 	return i >= 0 and sim.tile_jobs(i) > 0 and sim.powered[i] == 1 and sim.burning[i] == 0 and not sim.disabled_until.has(i)
 
 
-func _shop_for(r: Dictionary) -> int:
+## pc caches tile lookups across calls that see the same kinds and levels ({} for none).
+func _shop_for(r: Dictionary, pc: Dictionary) -> int:
 	var p: Dictionary = r.get("plan", {})
 	var where := str(p.get("spend_where", "local"))
 	if where == "downtown":
-		var best := -1
-		var bl := -1
-		for i in sim.active:
-			if sim.kind[i] == D.ZONE_C and sim.level[i] > bl and sim.district[i] == 2:
-				bl = sim.level[i]
-				best = i
-		if best >= 0:
-			return best
+		if not pc.has("downtown"):
+			var best := -1
+			var bl := -1
+			for i in sim.active:
+				if sim.kind[i] == D.ZONE_C and sim.level[i] > bl and sim.district[i] == 2:
+					bl = sim.level[i]
+					best = i
+			sim.note_units(sim.active.size() / CitySim.UNIT_WORK)
+			pc["downtown"] = best
+		if int(pc["downtown"]) >= 0:
+			return int(pc["downtown"])
 	if where == "none":
 		return -1
-	return _nearest_dev(int(r["home"]), D.ZONE_C, 12)
+	return _nearest_dev(int(r["home"]), D.ZONE_C, 12, pc)
 
 
-func _nearest_dev(from: int, k: int, max_d: int) -> int:
+## Tiles of kind k in `active` order (developed ones only when dev), cached in pc.
+func _kind_tiles(k: int, dev: bool, pc: Dictionary) -> PackedInt32Array:
+	var key := "%s%d" % ["dev" if dev else "kind", k]
+	if pc.has(key):
+		return pc[key]
+	var out := PackedInt32Array()
+	for i in sim.active:
+		if sim.kind[i] == k and (not dev or sim.level[i] > 0):
+			out.append(i)
+	sim.note_units(sim.active.size() / CitySim.UNIT_WORK)
+	pc[key] = out
+	return out
+
+
+func _nearest_dev(from: int, k: int, max_d: int, pc: Dictionary) -> int:
 	var best := -1
 	var bd := max_d + 1
-	for i in sim.active:
-		if sim.kind[i] != k or sim.level[i] <= 0:
-			continue
+	for i in _kind_tiles(k, true, pc):
 		var d := absi(D.tx(i) - D.tx(from)) + absi(D.ty(i) - D.ty(from))
 		if d < bd:
 			bd = d
@@ -993,12 +1362,10 @@ func _nearest_dev(from: int, k: int, max_d: int) -> int:
 	return best
 
 
-func _nearest_kind(from: int, k: int, max_d: int) -> int:
+func _nearest_kind(from: int, k: int, max_d: int, pc: Dictionary) -> int:
 	var best := -1
 	var bd := max_d + 1
-	for i in sim.active:
-		if sim.kind[i] != k:
-			continue
+	for i in _kind_tiles(k, false, pc):
 		var d := absi(D.tx(i) - D.tx(from)) + absi(D.ty(i) - D.ty(from))
 		if d < bd:
 			bd = d
@@ -1006,8 +1373,8 @@ func _nearest_kind(from: int, k: int, max_d: int) -> int:
 	return best
 
 
-func _go_kind(r: Dictionary, k: int, state: String) -> bool:
-	var t := _nearest_kind(int(r["home"]), k, 40)
+func _go_kind(r: Dictionary, k: int, state: String, pc: Dictionary) -> bool:
+	var t := _nearest_kind(int(r["home"]), k, 40, pc)
 	if t < 0:
 		return false
 	return _go(r, t, state)
@@ -1077,7 +1444,23 @@ func _near_road(i: int) -> int:
 	return -1
 
 
+## Road parents from src (-1 at src, -2 unreachable). Cached per origin; callers must not modify it.
 func _bfs(src: int) -> PackedInt32Array:
+	var sig := Vector2i(sim.road_epoch, _blocked_epoch)
+	if sig != _bfs_sig:
+		_bfs_cache.clear()
+		_bfs_sig = sig
+	if _bfs_cache.has(src):
+		return _bfs_cache[src]
+	var parent := _bfs_search(src)
+	if _bfs_cache.size() >= BFS_CACHE_MAX:
+		_bfs_cache.erase(_bfs_cache.keys()[0])
+	_bfs_cache[src] = parent
+	sim.note_units(1)
+	return parent
+
+
+func _bfs_search(src: int) -> PackedInt32Array:
 	var parent := PackedInt32Array()
 	parent.resize(D.W * D.H)
 	parent.fill(-2)
@@ -1188,6 +1571,8 @@ func from_dict(d: Dictionary) -> void:
 		messages.append(v as Dictionary)
 	_seq = int(d.get("seq", people.size()))
 	enabled = bool(d.get("enabled", true))
+	abort_jobs()
+	_bfs_cache.clear()
 	_trips_dirty = true
 	rebuild_maps()
 
