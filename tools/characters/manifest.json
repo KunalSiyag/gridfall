@@ -342,32 +342,28 @@
    ],
    "src_bytes": 57220312
   },
-  "Fire_Female_01": {
+  "Fire_Male_01": {
    "group": "fire",
-   "id": "m131",
-   "gender": "f",
+   "id": "m138",
+   "gender": "m",
    "parts": [
     "body",
-    "flashlight",
     "head",
-    "helmet",
-    "mask",
-    "opacity"
+    "helmet"
    ],
-   "src_bytes": 73378048
+   "src_bytes": 57219368
   },
-  "Construction_Male_01": {
+  "Construction_Male_04": {
    "group": "trades",
-   "id": "m111",
+   "id": "m103",
    "gender": "m",
    "parts": [
     "body",
     "head",
     "helmet",
-    "opacity",
     "tools"
    ],
-   "src_bytes": 70800456
+   "src_bytes": 69869840
   },
   "Construction_Male_02": {
    "group": "trades",
@@ -1406,122 +1402,82 @@
    "git_blob_sha1": "f22c956aa4203438264b1f37eb87fad553c3aa82"
   },
   {
-   "path": "Assets/Avatars/Professions/Fire_Female_01/Export/Fire_Female_01.fbx",
-   "size": 763632,
-   "git_blob_sha1": "a4ee8ace11d9599fd86853d94efbe84a553e8d4f"
+   "path": "Assets/Avatars/Professions/Fire_Male_01/Export/Fire_Male_01.fbx",
+   "size": 596000,
+   "git_blob_sha1": "029dca36fe4aeb2fc23125f3b8a5a89166adf044"
   },
   {
-   "path": "Assets/Avatars/Professions/Fire_Female_01/Textures/m131_body_color.tga",
+   "path": "Assets/Avatars/Professions/Fire_Male_01/Textures/m138_body_color.tga",
    "size": 12582956,
-   "git_blob_sha1": "b6b74adc36297eb858af416c4630103cf4e89891"
+   "git_blob_sha1": "37848d1863fd5faf4b30c74cf89fd9b7cc3f3324"
   },
   {
-   "path": "Assets/Avatars/Professions/Fire_Female_01/Textures/m131_body_normal.tga",
+   "path": "Assets/Avatars/Professions/Fire_Male_01/Textures/m138_body_normal.tga",
    "size": 12582956,
-   "git_blob_sha1": "3994a059ee8ef051071bf680c467bbab49bf576c"
+   "git_blob_sha1": "a6e620593058ae3d35731034c6eef15f8a3dd2d9"
   },
   {
-   "path": "Assets/Avatars/Professions/Fire_Female_01/Textures/m131_flashlight_color.tga",
-   "size": 786476,
-   "git_blob_sha1": "5010eafcfdb4c84483fc2c827af76669b9b8c79e"
-  },
-  {
-   "path": "Assets/Avatars/Professions/Fire_Female_01/Textures/m131_flashlight_normal.tga",
-   "size": 786476,
-   "git_blob_sha1": "3d69d64a09a66e4d0ac318e9beb76136730d72c9"
-  },
-  {
-   "path": "Assets/Avatars/Professions/Fire_Female_01/Textures/m131_head_color.tga",
+   "path": "Assets/Avatars/Professions/Fire_Male_01/Textures/m138_head_color.tga",
    "size": 12582956,
-   "git_blob_sha1": "527089948e29a739c052d68612b61cc0dc54db15"
+   "git_blob_sha1": "4f66cb5124472cd29f4fffbe13d58a4f740b23d6"
   },
   {
-   "path": "Assets/Avatars/Professions/Fire_Female_01/Textures/m131_head_normal.tga",
+   "path": "Assets/Avatars/Professions/Fire_Male_01/Textures/m138_head_normal.tga",
    "size": 12582956,
-   "git_blob_sha1": "6f4cf7622416921d7bf087c654b10f6496aef371"
+   "git_blob_sha1": "d13825f413e383fbfda7e68f2c75aefe9abad7b7"
   },
   {
-   "path": "Assets/Avatars/Professions/Fire_Female_01/Textures/m131_helmet_color.tga",
+   "path": "Assets/Avatars/Professions/Fire_Male_01/Textures/m138_helmet_color.tga",
    "size": 3145772,
-   "git_blob_sha1": "19068edc11e187b29b2cdb1c4ef80a10f616d780"
+   "git_blob_sha1": "bb26521fb0599b2fff83431ab4f3305cbc8ac392"
   },
   {
-   "path": "Assets/Avatars/Professions/Fire_Female_01/Textures/m131_helmet_normal.tga",
+   "path": "Assets/Avatars/Professions/Fire_Male_01/Textures/m138_helmet_normal.tga",
    "size": 3145772,
-   "git_blob_sha1": "2bd5840308e31d024080f2eb6e612118231740e3"
+   "git_blob_sha1": "f22c956aa4203438264b1f37eb87fad553c3aa82"
   },
   {
-   "path": "Assets/Avatars/Professions/Fire_Female_01/Textures/m131_mask_color.tga",
-   "size": 6291500,
-   "git_blob_sha1": "4b1b834482822b72d64990675d7cd260d1b3c78d"
+   "path": "Assets/Avatars/Professions/Construction_Male_04/Export/Construction_Male_04.fbx",
+   "size": 663472,
+   "git_blob_sha1": "e659b7074a44fc82163b2722809d471b78d43f43"
   },
   {
-   "path": "Assets/Avatars/Professions/Fire_Female_01/Textures/m131_mask_normal.tga",
-   "size": 6291500,
-   "git_blob_sha1": "f49c8d96e46a1124401e30a42e76bd4f3db05aa0"
-  },
-  {
-   "path": "Assets/Avatars/Professions/Fire_Female_01/Textures/m131_opacity_color.tga",
-   "size": 1048620,
-   "git_blob_sha1": "824c7014a4be844e5541927da4b354a3c4b70cb5"
-  },
-  {
-   "path": "Assets/Avatars/Professions/Fire_Female_01/Textures/m131_opacity_normal.tga",
-   "size": 786476,
-   "git_blob_sha1": "d43a865c3aed0bf00b0bd7c2f092cc6385e63204"
-  },
-  {
-   "path": "Assets/Avatars/Professions/Construction_Male_01/Export/Construction_Male_01.fbx",
-   "size": 676496,
-   "git_blob_sha1": "cfcf667eb5c712e5a1510a2ea3e46d157b49ea42"
-  },
-  {
-   "path": "Assets/Avatars/Professions/Construction_Male_01/Textures/m111_body_color.tga",
+   "path": "Assets/Avatars/Professions/Construction_Male_04/Textures/m103_body_color.tga",
    "size": 12582956,
-   "git_blob_sha1": "ea180a862d949f5f16c1c430362ae199b8d572df"
+   "git_blob_sha1": "e47c4561400e27cbe7c5c6baf196b3fc024f2c3e"
   },
   {
-   "path": "Assets/Avatars/Professions/Construction_Male_01/Textures/m111_body_normal.tga",
+   "path": "Assets/Avatars/Professions/Construction_Male_04/Textures/m103_body_normal.tga",
    "size": 12582956,
-   "git_blob_sha1": "500a390f9b8e390d153470e8272d91a48b2b8dd7"
+   "git_blob_sha1": "217edda66f63c7917f9a2e68063ed74bf75e5180"
   },
   {
-   "path": "Assets/Avatars/Professions/Construction_Male_01/Textures/m111_head_color.tga",
+   "path": "Assets/Avatars/Professions/Construction_Male_04/Textures/m103_head_color.tga",
    "size": 12582956,
-   "git_blob_sha1": "bb0038aba62407f7823420e1a6114f8980a81888"
+   "git_blob_sha1": "73c53324532962e42a97b5dfc31270e9115acc6d"
   },
   {
-   "path": "Assets/Avatars/Professions/Construction_Male_01/Textures/m111_head_normal.tga",
+   "path": "Assets/Avatars/Professions/Construction_Male_04/Textures/m103_head_normal.tga",
    "size": 12582956,
-   "git_blob_sha1": "e39487ceee1de795906f90fa73e7bc509e23da10"
+   "git_blob_sha1": "562603f08dca2623d940c833b5dbe1b5ec000ca4"
   },
   {
-   "path": "Assets/Avatars/Professions/Construction_Male_01/Textures/m111_helmet_color.tga",
+   "path": "Assets/Avatars/Professions/Construction_Male_04/Textures/m103_helmet_color.tga",
    "size": 6291500,
-   "git_blob_sha1": "45f8a87ad06cc30d215e4071b228622b1588c9e1"
+   "git_blob_sha1": "3f51f17cc0b7f783993b132463a17391fecd04e2"
   },
   {
-   "path": "Assets/Avatars/Professions/Construction_Male_01/Textures/m111_helmet_normal.tga",
+   "path": "Assets/Avatars/Professions/Construction_Male_04/Textures/m103_helmet_normal.tga",
    "size": 6291500,
-   "git_blob_sha1": "c0e59e8c934a0a64e169b00db7c115156fe9cf67"
+   "git_blob_sha1": "e6fbf3bca4bdfac0bca8ed36763022018e139461"
   },
   {
-   "path": "Assets/Avatars/Professions/Construction_Male_01/Textures/m111_opacity_color.tga",
-   "size": 524332,
-   "git_blob_sha1": "bf2c986d67533db898c19b2e9f0e695a0043623e"
-  },
-  {
-   "path": "Assets/Avatars/Professions/Construction_Male_01/Textures/m111_opacity_normal.tga",
-   "size": 393260,
-   "git_blob_sha1": "0abd0308bf2384bfb6b0719f8d894c4f644dc41b"
-  },
-  {
-   "path": "Assets/Avatars/Professions/Construction_Male_01/Textures/m111_tools_color.tga",
+   "path": "Assets/Avatars/Professions/Construction_Male_04/Textures/m103_tools_color.tga",
    "size": 3145772,
    "git_blob_sha1": "ae5872a6808aa115c84aff5a5d8859ac7bedab6f"
   },
   {
-   "path": "Assets/Avatars/Professions/Construction_Male_01/Textures/m111_tools_normal.tga",
+   "path": "Assets/Avatars/Professions/Construction_Male_04/Textures/m103_tools_normal.tga",
    "size": 3145772,
    "git_blob_sha1": "748260cd9aadd421032675eb92842564e9377935"
   },

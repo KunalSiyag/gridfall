@@ -1,0 +1,15 @@
+[gd_resource type="StandardMaterial3D" load_steps=2 format=3]
+
+[ext_resource type="Texture2D" path="res://models/characters/bodies/tex/Male_Adult_01_opacity_color.png" id="1"]
+
+[resource]
+resource_name = "m002_opacity"
+transparency = 2
+alpha_scissor_threshold = 0.5
+alpha_antialiasing_mode = 1
+alpha_antialiasing_edge = 0.3
+cull_mode = 2
+albedo_texture = ExtResource("1")
+roughness = 0.85
+metallic_specular = 0.15
+texture_filter = 5

@@ -36,6 +36,8 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 RES = "res://models/characters/"
 LOD_TRIS = 1500
 BODY_TRIS = 9000
+# Stature over eye height, measured on the bald Business_Male_07 (skull top 1.795 m, eyes 1.686 m).
+STATURE_PER_EYE = 1.0647
 WALK_SRC = {"m": "all_animations_max_motextr_xy/m_walk_neutral_02.max.fbx", "f": "all_animations_max_motextr_xy/f_walk_neutral_01.max.fbx"}
 LOD_FRAME = 8
 
@@ -87,8 +89,9 @@ def save_tex(src: str, dst: str, px: int, kind: str) -> int:
 
 def write_texture_import(path: str, normal: bool) -> None:
 	"""VRAM-compressed, mipmapped texture import (G2's settings for model textures)."""
+	head = rb_rig.import_header(path, "texture", "CompressedTexture2D")
 	with open(path + ".import", "w") as f:
-		f.write('[remap]\n\nimporter="texture"\ntype="CompressedTexture2D"\n\n[params]\n\n')
+		f.write(head)
 		f.write("compress/mode=2\ncompress/high_quality=false\ncompress/lossy_quality=0.7\n")
 		f.write("compress/uastc_level=0\ncompress/rdo_quality_loss=0.0\ncompress/hdr_compression=1\n")
 		f.write("compress/normal_map=%d\ncompress/channel_pack=0\nmipmaps/generate=true\nmipmaps/limit=-1\n" % (1 if normal else 2))
@@ -132,8 +135,9 @@ def write_scene_import(path: str, materials: dict, skinned: bool) -> None:
 		sub.append('"materials": {\n%s\n}' % mats)
 	if skinned:
 		sub.append('"nodes": {\n"PATH:Armature/Skeleton3D": {\n%s\n}\n}' % RETARGET_RB)
+	head = rb_rig.import_header(path, "scene", "PackedScene")
 	with open(path + ".import", "w") as f:
-		f.write('[remap]\n\nimporter="scene"\nimporter_version=1\ntype="PackedScene"\n\n[params]\n\n')
+		f.write(head)
 		f.write(SCENE_PARAMS % ("true" if skinned else "false"))
 		f.write("_subresources={\n%s\n}\n" % ",\n".join(sub))
 		f.write("gltf/naming_version=2\ngltf/embedded_image_handling=0\n")
@@ -215,9 +219,12 @@ def drop_parts(obj, parts: set) -> None:
 
 
 def part_of(mat_name: str) -> tuple:
-	"""('m011', 'body') from 'm011_body' (Blender may add '.001')."""
+	"""('m011', 'body') from 'm011_body' (Blender may add '.001'). A variant prefix is dropped:
+	'f110_A_head' is part 'head' (its maps are f110_head_color_a.tga, found by find_tga)."""
 	base = mat_name.split(".")[0]
 	rid, _, part = base.partition("_")
+	if len(part) > 2 and part[1] == "_" and part[0].isalpha():
+		part = part[2:]
 	return rid, part
 
 
@@ -286,6 +293,10 @@ def build_one(name: str, info: dict, cache: str, out: str, rules: dict, lod: boo
 		res = {}
 		for kind in ("color", "normal"):
 			src_tga = find_tga(tex_dir, rid, part, kind)
+			if not src_tga and kind == "color":
+				# Glasses carry their colour and alpha in <part>_opacity_color (lenses cut out).
+				src_tga = find_tga(tex_dir, rid, part + "_opacity", kind)
+				opacity = opacity or bool(src_tga)
 			if not src_tga:
 				continue
 			k = "opacity" if (opacity and kind == "color") else kind
@@ -311,8 +322,12 @@ def build_one(name: str, info: dict, cache: str, out: str, rules: dict, lod: boo
 	export_glb(glb, animations=False)
 	write_scene_import(glb, mats, skinned=True)
 	hip = arm.data.bones[rb_rig.BIP].head_local.z
+	eye = arm.data.bones["Bip01 LEye"].head_local.z
+	# Stature to the top of the skull, not the mesh top: hair, hats and helmets must not shrink a body
+	# when CharacterRoot scales it to a target height.
 	rep = {"name": name, "group": info["group"], "gender": info["gender"], "id": rid, "parts": parts,
-		"rest_height_m": round(zmax - zmin, 4), "feet_m": round(zmin, 4), "hip_m": round(hip, 4),
+		"rest_height_m": round(eye * STATURE_PER_EYE, 4), "aabb_height_m": round(zmax - zmin, 4),
+		"eye_m": round(eye, 4), "feet_m": round(zmin, 4), "hip_m": round(hip, 4),
 		"tris": tris, "surfaces": len(body.material_slots), "bytes": os.path.getsize(glb) + tex_bytes,
 		"path": RES + "bodies/%s.glb" % name}
 	if lod:
@@ -415,7 +430,7 @@ def write_roster(out: str, man: dict, rules: dict, reports: dict) -> None:
 	casual = {g: [n for n, i in residents.items() if i["group"] == "casual" and i["gender"] == g] for g in ("m", "f")}
 	roster = {
 		"version": 1,
-		"note": "HC roster (docs/fp/slices/HC-characters.md). Skeletons are metric: CharacterRoot.scale = WS.M * h_target / rest_height_m. Pick a resident body from job_pools[job] filtered by gender, else casual_pools[gender], index crc32(resident_id) % n; name_gender misses fall back to crc32(id) & 1.",
+		"note": "HC roster (docs/fp/slices/HC-characters.md). Skeletons are metric: CharacterRoot.scale = WS.M * h_target / rest_height_m, where rest_height_m is the stature to the skull top (eye height * 1.0647; aabb_height_m adds hair and hats). Pick a resident body from job_pools[job] filtered by gender, else casual_pools[gender], index crc32(resident_id) % n; name_gender misses fall back to crc32(id) & 1.",
 		"heroes": rules["heroes"],
 		"bodies": bodies,
 		"groups": groups,

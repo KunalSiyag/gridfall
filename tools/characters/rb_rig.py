@@ -15,6 +15,7 @@ relative to its parent (a Biped-to-Biped transfer: exact, no retargeting).
 """
 
 import math
+import os
 
 import bpy
 from mathutils import Matrix, Quaternion, Vector
@@ -196,3 +197,16 @@ def set_pose(arm, basis: dict) -> None:
 		pb.location = loc
 		pb.rotation_quaternion = rot
 	bpy.context.view_layer.update()
+
+
+def import_header(path: str, importer: str, kind: str) -> str:
+	"""The [remap] head of a Godot .import file for path, keeping the uid of an existing one so a
+	rebuild does not churn resource ids."""
+	uid = ""
+	if os.path.isfile(path + ".import"):
+		with open(path + ".import") as f:
+			for line in f:
+				if line.startswith("uid="):
+					uid = line
+					break
+	return '[remap]\n\nimporter="%s"\n%stype="%s"\n%s\n[params]\n\n' % (importer, "importer_version=1\n" if importer == "scene" else "", kind, uid)

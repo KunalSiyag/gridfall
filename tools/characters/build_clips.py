@@ -516,8 +516,9 @@ def export_anim(path: str) -> None:
 
 def write_anim_import(path: str, bonemap: str) -> None:
 	retarget = RETARGET % bonemap
+	head = rb_rig.import_header(path, "scene", "PackedScene")
 	with open(path + ".import", "w") as f:
-		f.write('[remap]\n\nimporter="scene"\nimporter_version=1\ntype="PackedScene"\n\n[params]\n\n')
+		f.write(head)
 		f.write(ANIM_PARAMS)
 		f.write('_subresources={\n"nodes": {\n"PATH:Armature/Skeleton3D": {\n%s\n}\n}\n}\n' % retarget)
 		f.write("gltf/naming_version=2\ngltf/embedded_image_handling=0\n")

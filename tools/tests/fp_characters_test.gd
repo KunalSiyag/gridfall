@@ -12,6 +12,8 @@ const FOOT_BONES := ["LeftFoot", "RightFoot", "LeftToes", "RightToes"]
 const LOOP_TRAVEL := ["walk", "walk_fast", "run", "run_fast", "crouch_walk", "carry"]
 const HEEL_STRIKE := ["walk", "run", "run_fast"]
 const FPS := 30.0
+## roster.json rest_height_m is the stature to the skull top: eye height times this (build_bodies.py).
+const STATURE_PER_EYE := 1.0647
 const MANIFEST := "res://tools/characters/manifest.json"
 const QUATERNIUS := "res://tools/characters/quaternius.json"
 const LICENCES := ["rocketbox-MIT.txt", "quaternius-UAL1-License.txt", "quaternius-UAL2-License.txt"]
@@ -119,11 +121,17 @@ func _check_body(name: String, info: Dictionary) -> void:
 		var tris := _tris(mesh)
 		K.check(fails, mesh.get_surface_count() >= 1 and mesh.get_surface_count() <= 6 and tris <= 9000, "%s: %d surfaces, %d tris (1-6, <= 9000)" % [name, mesh.get_surface_count(), tris])
 		var h_rest: float = info.get("rest_height_m", 0.0)
+		var eye: float = info.get("eye_m", 0.0)
+		var head := sk.get_bone_global_rest(sk.find_bone("Head")).origin.y
+		var top := mesh.get_aabb().end.y
+		K.check(fails, absf(h_rest - eye * STATURE_PER_EYE) < 0.001 and h_rest > head + 0.1 and h_rest <= top + 0.005, "%s: rest_height_m %.3f is the stature (eye %.3f; head bone %.3f, mesh top %.3f)" % [name, h_rest, eye, head, top])
+		K.check(fails, absf(mesh.get_aabb().size.y - float(info.get("aabb_height_m", 0.0))) < 0.01, "%s: aabb_height_m matches the mesh (%.3f)" % [name, mesh.get_aabb().size.y])
+		# CharacterRoot at the shortest and tallest resident jitter (heroes use 1.0).
 		var h_target := 1.75 * (1.0 if info.get("gender", "m") == "m" else 0.95)
-		holder.scale = Vector3.ONE * WS.M * h_target / maxf(h_rest, 0.01)
-		var aabb_h := mesh.get_aabb().size.y * holder.scale.y
-		K.check(fails, aabb_h >= 0.08 and aabb_h <= 0.095, "%s: scaled height %.4f u in [0.08, 0.095]" % [name, aabb_h])
-		K.check(fails, absf(mesh.get_aabb().size.y - h_rest) < 0.01, "%s: rest_height_m %.3f matches the mesh (%.3f)" % [name, h_rest, mesh.get_aabb().size.y])
+		for jitter: float in [0.97, 1.03]:
+			holder.scale = Vector3.ONE * WS.M * h_target * jitter / maxf(h_rest, 0.01)
+			var aabb_h := mesh.get_aabb().size.y * holder.scale.y
+			K.check(fails, aabb_h >= 0.08 and aabb_h <= 0.095, "%s: height with CharacterRoot scaling %.4f u in [0.08, 0.095] (jitter %.2f)" % [name, aabb_h, jitter])
 	K.check(fails, absf(sk.motion_scale - float(info.get("hip_m", 0.0))) < 0.005, "%s: hip_m %.3f matches motion_scale %.3f" % [name, info.get("hip_m", 0.0), sk.motion_scale])
 	_check_look_axis(name, sk)
 	_check_lod(name)
@@ -188,7 +196,7 @@ func _check_motion(name: String, body: Node3D, sk: Skeleton3D, lib: AnimationLib
 	ap.root_node = NodePath("..")
 	ap.add_animation_library("", lib)
 	ap.root_motion_track = NodePath(AP.CHAR_ROOT_MOTION_TRACK)
-	var h := _rest_height(body)
+	var h: float = (roster["bodies"][name] as Dictionary)["rest_height_m"]
 	var hips := sk.find_bone("Hips")
 	# walk for 1 s: hips height band, feet above the ground, no NaNs.
 	ap.play("walk")
@@ -266,13 +274,6 @@ func _global(sk: Skeleton3D, bone: int) -> Transform3D:
 	return t
 
 
-func _rest_height(body: Node3D) -> float:
-	for m: Node in body.find_children("*", "MeshInstance3D", true, false):
-		if (m as MeshInstance3D).skin != null:
-			return (m as MeshInstance3D).mesh.get_aabb().size.y
-	return 1.75
-
-
 # --- Roster, licences ----------------------------------------------------------------------------
 
 func _check_roster() -> void:
@@ -294,10 +295,10 @@ func _check_roster() -> void:
 					pick.append(n)
 			var heroic := false
 			for n: String in pick:
-				heroic = heroic or n in heroes.values() or not avatars.has(n)
+				heroic = heroic or n in heroes.values() or not (roster.get("bodies", {}) as Dictionary).has(n)
 			if pick.is_empty() or heroic:
 				bad.append("%s/%s" % [job, g])
-	K.check(fails, not Residents.OCCUPATIONS.is_empty() and bad.is_empty(), "every job title has a non-hero pool for both genders %s" % [bad])
+	K.check(fails, not Residents.OCCUPATIONS.is_empty() and bad.is_empty(), "every job title has a pool of built non-hero bodies for both genders %s" % [bad])
 	var genders: Dictionary = roster.get("name_gender", {})
 	var odd: Array[String] = []
 	for n: String in genders:
@@ -305,6 +306,11 @@ func _check_roster() -> void:
 			odd.append(n)
 	K.check(fails, genders.size() >= 40 and odd.is_empty(), "name_gender maps %d first names to m/f %s" % [genders.size(), odd])
 	var built: Dictionary = roster.get("bodies", {})
+	var unbuilt: Array[String] = []
+	for n: String in avatars:
+		if not built.has(n):
+			unbuilt.append(n)
+	K.check(fails, avatars.size() == 40 and unbuilt.is_empty(), "all %d manifest avatars are built %s" % [avatars.size(), unbuilt])
 	for n: String in built:
 		var b: Dictionary = built[n]
 		var want: Dictionary = avatars.get(n, {})
