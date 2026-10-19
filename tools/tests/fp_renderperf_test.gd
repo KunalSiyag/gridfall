@@ -125,7 +125,8 @@ func _check_ranges(f: Node, hlod: RefCounted, view: CityView, mult: float, forei
 				nr += 1
 			elif gi is MeshInstance3D:
 				nb += 1
-	K.check(fails, nb >= 50 and np >= 5 and nr >= 50 and nm >= 20, "fixtures: %d building meshes, %d mid-LOD twins, %d prop parts, %d road parts" % [nb, nm, np, nr])
+	# G1 ranges most furniture itself (then G2 leaves it alone), so a few G2 props suffice.
+	K.check(fails, nb >= 50 and np >= 1 and nr >= 50 and nm >= 20, "fixtures: %d building meshes, %d mid-LOD twins, %d prop parts, %d road parts" % [nb, nm, np, nr])
 	K.check(fails, bad.is_empty(), "building meshes end at VIS_BUILDING_NEAR*mult where their one-surface twin (same bounds, shadows as authored) takes over to VIS_BUILDING*mult; other building/road parts end at VIS_BUILDING*mult, props at VIS_PROP*mult with no shadow %s" % str(bad.slice(0, 5)))
 	# Every building mesh under a holder is ranged.
 	var unranged := 0
@@ -154,6 +155,15 @@ func _check_ranges(f: Node, hlod: RefCounted, view: CityView, mult: float, forei
 				site_touched += 1
 	K.check(fails, site_touched == 0, "no node under %d Site children touched (%d)" % [sites, site_touched])
 	K.check(fails, foreign != null and is_equal_approx(foreign.visibility_range_end, 3.21) and not foreign.has_meta("g2_vis"), "a part ranged before the post-pass keeps its range")
+
+
+## True when n or an ancestor is queued for deletion (G1 rebuilds every holder on a mode change).
+static func _doomed(n: Node) -> bool:
+	while n != null:
+		if n.is_queued_for_deletion():
+			return true
+		n = n.get_parent()
+	return false
 
 
 static func _want_end(c: int, mult: float) -> float:
@@ -312,7 +322,7 @@ func _check_undo(ctx: FpContext, f: Node, hlod: RefCounted, view: CityView) -> v
 	view.set_fp_mode(false)
 	var kept := 0
 	for gi: Variant in parts:
-		if is_instance_valid(gi) and not (gi as Node).is_queued_for_deletion() and ((gi as GeometryInstance3D).visibility_range_end != 0.0 or (gi as Node).has_meta("g2_vis")):
+		if is_instance_valid(gi) and not _doomed(gi as Node) and ((gi as GeometryInstance3D).visibility_range_end != 0.0 or (gi as Node).has_meta("g2_vis")):
 			kept += 1
 	var shown := 0
 	for n: Variant in imps + occs:

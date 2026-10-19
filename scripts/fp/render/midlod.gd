@@ -31,7 +31,7 @@ static func mergeable(src: Mesh) -> bool:
 
 
 ## The merged mesh for src, or null while it is being built (the build starts on the first call).
-## path is the building model's scene path (for the baked colours).
+## path is the model's scene path (building or road piece, for the baked colours).
 func mesh_for(src: Mesh, path: String) -> ArrayMesh:
 	var id := src.get_instance_id()
 	if _meshes.has(id):
@@ -77,7 +77,7 @@ func wait_all() -> void:
 ## Main thread: copies the surfaces with their colour and kind.
 static func _gather(src: Mesh, path: String) -> Dictionary:
 	var models: Dictionary = PROXIES.bake().get("models", {})
-	var mats: Dictionary = (models.get(path, {}) as Dictionary).get("mats", {})
+	var mats: Dictionary = (models.get(path, {}) as Dictionary).get("mats", (PROXIES.bake().get("road_mats", {}) as Dictionary).get(path, {}))
 	var surfaces: Array = []
 	for s in range(src.get_surface_count()):
 		var mat := src.surface_get_material(s)

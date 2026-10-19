@@ -12,12 +12,13 @@ const PROXIES := preload("res://scripts/fp/render/proxies.gd")
 const MIDLOD := preload("res://scripts/fp/render/midlod.gd")
 const SHADER := preload("res://scripts/fp/render/impostor.gdshader")
 const CHUNK := 8
-## BUILDING: holder part ending at VIS_BUILDING; NEAR: a building mesh ending at VIS_BUILDING_NEAR;
-## MID: its merged twin, from VIS_BUILDING_NEAR to VIS_BUILDING.
+## BUILDING / ROAD: holder parts ending at VIS_BUILDING; NEAR: a building or road mesh ending at
+## VIS_BUILDING_NEAR; MID: its merged twin, from VIS_BUILDING_NEAR to VIS_BUILDING.
 enum Cls { BUILDING, PROP, ROAD, NEAR, MID }
 ## Meshes smaller than this (longest side, world units) never cast shadows (1 m).
 const SMALL := 0.05
 const PROP_SCENES := ["res://models/real/props/", "res://models/props/"]
+const ROAD_SCENES := "res://models/real/roads/"
 ## Service kinds drawn as far impostors (open or sparse ones, like parks and wind farms, are not).
 const IMPOSTOR_SERVICES := [D.HALL, D.HOSPITAL, D.SCHOOL, D.POLICE, D.FIRE, D.UNIVERSITY, D.TRAIN, D.COAL, D.PUMP, D.SEWAGE, D.STADIUM]
 ## Closed services that occlude (G2 contract: solid kinds).
@@ -249,16 +250,19 @@ func clear() -> void:
 	chunk_tiles.clear()
 
 
-## Gives every building mesh of tile i's model a merged mid-LOD twin (a child at identity, so both
-## share one bounding box and switch at the same point). Models with spinning parts keep theirs.
+## Gives every mesh of tile i's building model or road piece a merged mid-LOD twin (a child at
+## identity, so both share one bounding box and switch at the same point). Models with spinning
+## parts keep theirs.
 func _add_twins(i: int, holder: Node3D, e: Dictionary) -> void:
-	if not holder.has_meta("building_path"):
-		return
-	var path := str(holder.get_meta("building_path"))
+	var path := str(holder.get_meta("building_path", ""))
 	var model: Node3D = null
 	for ch in holder.get_children():
-		if ch is Node3D and ch.scene_file_path == path:
+		if not (ch is Node3D):
+			continue
+		var sp: String = ch.scene_file_path
+		if (not path.is_empty() and sp == path) or (path.is_empty() and sp.begins_with(ROAD_SCENES)):
 			model = ch
+			path = sp
 			break
 	if model == null or not model.find_children("Rotor*", "", true, false).is_empty():
 		return
@@ -266,7 +270,7 @@ func _add_twins(i: int, holder: Node3D, e: Dictionary) -> void:
 	var cls: PackedByteArray = e["cls"]
 	for k in range(gis.size()):
 		var mi := gis[k] as MeshInstance3D
-		if cls[k] != Cls.BUILDING or mi == null or not model.is_ancestor_of(mi) or PROXIES._skipped(str(mi.name)):
+		if (cls[k] != Cls.BUILDING and cls[k] != Cls.ROAD) or mi == null or not model.is_ancestor_of(mi) or PROXIES._skipped(str(mi.name)):
 			continue
 		if not MIDLOD.mergeable(mi.mesh) or mi.material_override != null:
 			continue

@@ -15,6 +15,8 @@ const WS := preload("res://scripts/fp/world_scale.gd")
 const AP := preload("res://scripts/fp/asset_paths.gd")
 const OUT := "res://scripts/fp/render/proxies.json"
 const DIRS := ["res://models/real/zones/", "res://models/real/buildings/"]
+## Road pieces get material colours only (midlod.gd twins), no proxy.
+const ROAD_DIRS := ["res://models/real/roads/"]
 const GRID := 16
 const HALF := 0.5
 ## Facade colour bands (world units) and the base split for buildings at least TALL high.
@@ -32,21 +34,24 @@ var _tex_avg: Dictionary = {}
 
 func _init() -> void:
 	var models := {}
+	var road_mats := {}
 	var t0 := Time.get_ticks_msec()
-	for p: String in _model_paths():
+	for p: String in _model_paths(DIRS):
 		var d := _bake(p)
 		if not d.is_empty():
 			models[p] = d
+	for p: String in _model_paths(ROAD_DIRS):
+		road_mats[p] = _mats_only(p)
 	var f := FileAccess.open(OUT, FileAccess.WRITE)
-	f.store_string(JSON.stringify({"version": 1, "grid": GRID, "half": HALF, "models": models}, "", true, false))
+	f.store_string(JSON.stringify({"version": 1, "grid": GRID, "half": HALF, "models": models, "road_mats": road_mats}, "", true, false))
 	f.close()
 	print("PROXY_BAKE: %d models in %d ms -> %s" % [models.size(), Time.get_ticks_msec() - t0, OUT])
 	quit(0)
 
 
-func _model_paths() -> Array[String]:
+func _model_paths(dirs: Array) -> Array[String]:
 	var out: Array[String] = []
-	for root: String in DIRS:
+	for root: String in dirs:
 		var stack: Array[String] = [root]
 		while not stack.is_empty():
 			var d: String = stack.pop_back()
@@ -60,6 +65,26 @@ func _model_paths() -> Array[String]:
 				if n.ends_with(".glb") and not out.has(d + n):
 					out.append(d + n)
 	out.sort()
+	return out
+
+
+## Average colour of every material of a model (road pieces).
+func _mats_only(path: String) -> Dictionary:
+	var out := {}
+	var ps := load(path) as PackedScene
+	if ps == null:
+		return out
+	var root := ps.instantiate()
+	for n in root.find_children("*", "MeshInstance3D", true, false):
+		var mesh := (n as MeshInstance3D).mesh
+		if mesh == null:
+			continue
+		for s in range(mesh.get_surface_count()):
+			var mat := mesh.surface_get_material(s)
+			if mat != null:
+				var col := _surface_color(mat)
+				out[mat.resource_name] = [snappedf(col.r, 0.005), snappedf(col.g, 0.005), snappedf(col.b, 0.005)]
+	root.free()
 	return out
 
 

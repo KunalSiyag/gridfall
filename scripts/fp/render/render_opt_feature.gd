@@ -290,7 +290,8 @@ func _deactivate() -> void:
 
 
 func _on_tile_built(i: int, holder: Node3D) -> void:
-	if not active or ctx.view.in_setup:
+	# G1 rebuilds every tile for orbit before it announces fp_mode_changed(false).
+	if not active or ctx.view.in_setup or not ctx.view.fp_mode:
 		return
 	_dirty[hlod.post_pass(i, holder)] = true
 
@@ -301,7 +302,8 @@ func _on_tile_cleared(i: int) -> void:
 
 
 func _on_fp_mode_changed(on: bool) -> void:
-	if on and not ctx.view.in_setup:
+	# G1's set_fp_mode emits world_rebuilt first, which FpMode turns into on_world_rebuilt().
+	if on and not ctx.view.in_setup and not active:
 		_activate()
 	elif not on:
 		_deactivate()
