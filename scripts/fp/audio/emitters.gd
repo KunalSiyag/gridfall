@@ -5,6 +5,9 @@ extends Node3D
 ## Every refresh scores the sources by their estimated level at the listener and gives the players
 ## to the loudest; the farthest or quietest lose theirs first. Doppler is computed by hand (the
 ## built-in effect works in world units against 343 u/s and is inaudible at 1 u = 20 m).
+## A grown city registers hundreds of static sources (every park's fountain, every site), so the
+## per-frame work touches only the sources holding a player, the refresh only the volatile ones
+## (agents, one-shots, sirens, river) and the static ones near the listener.
 
 const D := preload("res://scripts/sim/sim_defs.gd")
 const WS := preload("res://scripts/fp/world_scale.gd")
@@ -22,7 +25,7 @@ const TYPES := {
 	"fire": {"max": 6.0, "db": 0.0, "near": 6.0, "stream": "fire_crackle"},
 	"fountain": {"max": 3.0, "db": -8.0, "near": 6.0, "stream": "fountain_loop"},
 	"plant": {"max": 6.0, "db": -2.0, "near": 6.0, "stream": "plant_hum"},
-	"river": {"max": 6.0, "db": -3.0, "near": 6.0, "stream": "river_loop"},
+	"river": {"max": 6.0, "db": -5.0, "near": 6.0, "stream": "river_loop"},
 	"step": {"max": 0.5, "db": -24.0, "near": 6.0, "stream": "footstep_sidewalk_1"},
 }
 ## Residents on foot (E's "pedestrian" agents): positional footsteps for the WALKER_MAX nearest
@@ -56,6 +59,12 @@ const DOPPLER_MAX := 1.4
 ## Distance filter: Godot dulls a source above the cutoff as its gain falls (air absorption).
 const FILTER_DB := -10.0
 const FILTER_HZ := 5000.0
+## A source that gets a player fades in from this far below its level (no pop when it steals one),
+## at FADE_IN_RATE dB/s; levels fall at FADE_RATE dB/s and a dying source at DIE_RATE.
+const FADE_IN_DB := 18.0
+const FADE_IN_RATE := 36.0
+const FADE_RATE := 12.0
+const DIE_RATE := 60.0
 
 
 ## One logical sound source; holds a pool player only while it is among the loudest.
@@ -74,7 +83,8 @@ class Src extends RefCounted:
 	var dynamic: bool = false             # refreshed from agents; dropped when not seen
 	var seen: bool = true
 	var one_shot: bool = false
-	var ttl: float = INF                  # seconds left (one-shots, timed sirens)
+	var expire_at: float = INF            # emitter clock time it fades out (one-shots, timed sirens)
+	var volatile: bool = false            # dynamic, one-shot, siren or river: not in the static set
 	var dying: bool = false
 	var started: bool = false             # a one-shot played once already
 	var player: AudioStreamPlayer3D
@@ -94,6 +104,8 @@ var walker_steps: int = 0
 var night: float = 0.0
 
 var _sources: Dictionary = {}          # key -> Src
+var _volatile: Dictionary = {}         # key -> Src, the volatile subset of _sources
+var _assigned: Dictionary = {}         # Src -> true while it holds a player
 var _players: Array[AudioStreamPlayer3D] = []
 var _free: Array[AudioStreamPlayer3D] = []
 var _rng := RandomNumberGenerator.new()
@@ -133,9 +145,11 @@ func request(key: String, type: String, pos: Vector3, opts: Dictionary = {}) -> 
 		s.type = type
 		s.pos = pos
 		s.dynamic = bool(opts.get("dynamic", false))
+		s.volatile = s.dynamic or bool(opts.get("one_shot", false)) or type == "siren" or type == "river"
 		_sources[key] = s
-		# One-shots (horns, passers-by's steps) never join the static set.
-		if not s.dynamic and not bool(opts.get("one_shot", false)):
+		if s.volatile:
+			_volatile[key] = s
+		else:
 			_static_dirty = true
 		s.stream = BANK.stream(str(opts.get("stream", spec["stream"])))
 		s.gain_db = float(opts.get("gain", 0.0))
@@ -160,18 +174,22 @@ func request(key: String, type: String, pos: Vector3, opts: Dictionary = {}) -> 
 	s.one_shot = bool(opts.get("one_shot", s.one_shot))
 	s.tag = int(opts.get("tag", s.tag))
 	if opts.has("ttl"):
-		s.ttl = float(opts["ttl"])
+		s.expire_at = _now + float(opts["ttl"])
 	if opts.has("gain"):
 		s.gain_target = float(opts["gain"])
 	return s
 
 
-## Fades a source out and forgets it.
+## Fades a source out and forgets it (at once when it holds no player).
 func release(key: String) -> void:
 	var s: Src = _sources.get(key, null)
-	if s != null:
-		s.dying = true
-		s.gain_target = -60.0
+	if s == null:
+		return
+	if s.player == null:
+		_erase(key)
+		return
+	s.dying = true
+	s.gain_target = -60.0
 
 
 func has_source(key: String) -> bool:
@@ -194,16 +212,15 @@ func players() -> Array[AudioStreamPlayer3D]:
 ## Sources that hold a player right now.
 func assigned() -> Array[Src]:
 	var out: Array[Src] = []
-	for s: Src in _sources.values():
-		if s.player != null:
-			out.append(s)
+	for s: Src in _assigned.keys():
+		out.append(s)
 	return out
 
 
 func count_assigned(type: String = "") -> int:
 	var n := 0
-	for s: Src in _sources.values():
-		if s.player != null and (type.is_empty() or s.type == type):
+	for s: Src in _assigned.keys():
+		if type.is_empty() or s.type == type:
 			n += 1
 	return n
 
@@ -213,6 +230,8 @@ func clear() -> void:
 	for s: Src in _sources.values():
 		_unassign(s, true)
 	_sources.clear()
+	_volatile.clear()
+	_assigned.clear()
 	for pl in _players:
 		pl.stop()
 		pl.stream = null
@@ -237,10 +256,8 @@ func full_scan() -> void:
 	if sim == null:
 		return
 	for key: String in _sources.keys():
-		var s: Src = _sources[key]
-		if not s.dynamic and not s.one_shot and s.type != "river":
-			_unassign(s)
-			_sources.erase(key)
+		if not (_sources[key] as Src).volatile or key.begins_with("evs:"):
+			_erase(key)
 	for i: Variant in sim.sites.keys():
 		add_site(int(i))
 	for i in sim.active:
@@ -376,14 +393,11 @@ func step(dt: float) -> void:
 		_step_walkers(dt)
 	var lv := _listener_vel()
 	var k_pitch := 1.0 - exp(-dt * 10.0)
-	for key: String in _sources.keys():
-		var s: Src = _sources[key]
-		if s.ttl < INF:
-			s.ttl -= dt
-			if s.ttl <= 0.0 and not s.dying:
-				s.dying = true
-				s.gain_target = -60.0
-		var rate := 60.0 if s.dying else 12.0
+	for s: Src in _assigned.keys():
+		if _now >= s.expire_at and not s.dying:
+			s.dying = true
+			s.gain_target = -60.0
+		var rate := DIE_RATE if s.dying else (FADE_IN_RATE if s.gain_db < s.gain_target else FADE_RATE)
 		s.gain_db = move_toward(s.gain_db, s.gain_target, rate * dt)
 		if s.dynamic and s.vel != Vector3.ZERO:
 			s.pos += s.vel * dt
@@ -391,21 +405,14 @@ func step(dt: float) -> void:
 			s.pitch = lerpf(s.pitch, s.pitch_base * doppler_factor(s.pos, s.vel, lis, lv), k_pitch)
 		else:
 			s.pitch = lerpf(s.pitch, s.pitch_base, k_pitch)
-		if s.dying and s.gain_db <= -50.0:
-			_unassign(s)
-			_sources.erase(key)
-			_static_dirty = true
-			continue
-		if s.one_shot and s.started and (s.player == null or not s.player.playing):
-			_unassign(s)
-			_sources.erase(key)
+		if (s.dying and s.gain_db <= -50.0) or (s.one_shot and s.started and not s.player.playing):
+			_erase(s.key)
 			continue
 		var pl := s.player
-		if pl != null:
-			pl.position = s.pos
-			pl.pitch_scale = clampf(s.pitch, 0.25, 4.0)
-			pl.volume_db = s.db + s.gain_db
-			pl.max_db = s.db + float(TYPES[s.type]["near"])
+		pl.position = s.pos
+		pl.pitch_scale = clampf(s.pitch, 0.25, 4.0)
+		pl.volume_db = s.db + s.gain_db
+		pl.max_db = s.db + float(TYPES[s.type]["near"])
 
 
 ## The listener: the current camera (behind the hero in third person), else the player's feet.
@@ -453,23 +460,28 @@ func _refresh(lis: Vector3, wide: bool) -> void:
 		_collect_static(lis)
 	var cand: Array[Src] = []
 	var crew_heard := false
-	for s: Src in _sources.values():
+	# Volatile housekeeping: agents not seen again fade out; silent sources that expired, died or
+	# already played their one shot are dropped now (an audible one finishes in step()).
+	for s: Src in _volatile.values():
 		if s.dynamic and not s.seen and not s.dying:
 			s.dying = true
 			s.gain_target = -60.0
+		if s.player == null:
+			if s.dying or _now >= s.expire_at or (s.one_shot and s.started):
+				_erase(s.key)
+				continue
+			s.gain_db = s.gain_target
 		if s.type == "siren" and s.key.begins_with("sir:") and s.player != null:
 			crew_heard = true
-	for s: Src in _sources.values():
+	for s: Src in _volatile.values():
 		if s.type == "siren" and s.key.begins_with("evs:") and not s.dying:
 			s.gain_target = -40.0 if crew_heard else 0.0
 	_apply_night()
 	var pool: Array = _static_near.duplicate()
-	for s: Src in _sources.values():
-		if s.dynamic or s.one_shot or s.type == "siren" or s.type == "river":
-			pool.append(s)
+	pool.append_array(_volatile.values())
 	var seen := {}
 	for s: Src in pool:
-		if seen.has(s) or not _sources.has(s.key):
+		if seen.has(s) or _sources.get(s.key) != s:
 			continue
 		seen[s] = true
 		if s.stream == null or (s.one_shot and s.started):
@@ -488,18 +500,17 @@ func _refresh(lis: Vector3, wide: bool) -> void:
 	var keep := {}
 	for k in range(mini(MAX_PLAYERS, cand.size())):
 		keep[cand[k]] = true
-	for s: Src in _sources.values():
-		if s.player != null and not keep.has(s):
+	for s: Src in _assigned.keys():
+		if not keep.has(s):
 			_unassign(s)
-			if s.one_shot:
-				s.dying = true
-				s.gain_db = -60.0
+			if s.one_shot or s.dying:
+				_erase(s.key)
 	_fresh_ogg = 0
 	for s: Src in keep.keys():
 		if s.player == null:
 			_assign(s)
 	# Dynamic sources must be seen again by the next refresh or they fade out.
-	for s: Src in _sources.values():
+	for s: Src in _volatile.values():
 		if s.dynamic:
 			s.seen = false
 
@@ -509,11 +520,11 @@ func _collect_static(lis: Vector3) -> void:
 	_static_at = lis
 	_static_dirty = false
 	for s: Src in _sources.values():
-		if s.dynamic or s.one_shot or s.type == "siren" or s.type == "river":
+		if s.volatile or _sources.get(s.key) != s:
 			continue
 		if s.type == "fire" and s.tag >= 0 and ctx.sim != null and ctx.sim.burning[s.tag] == 0 and not s.dying:
 			release(s.key)
-		if s.pos.distance_to(lis) <= float(TYPES[s.type]["max"]) + 1.0:
+		if _sources.get(s.key) == s and s.pos.distance_to(lis) <= float(TYPES[s.type]["max"]) + 1.0:
 			_static_near.append(s)
 	_apply_night()
 
@@ -547,7 +558,7 @@ func _update_rivers(lis: Vector3) -> void:
 		want[key] = true
 		if not has_source(key):
 			request(key, "river", p)
-	for s: Src in _sources.values():
+	for s: Src in _volatile.values():
 		if s.type == "river" and not want.has(s.key) and not s.dying:
 			release(s.key)
 
@@ -802,18 +813,14 @@ func _listener_vel() -> Vector3:
 ## Gives s a player: a released one still holding s's stream resumes where it paused (no new
 ## playback); else a new one while fewer than MAX_PLAYERS exist; else the oldest released one.
 ## At most one Ogg playback starts per refresh (each costs ~0.4 ms); the rest wait a refresh.
+## A loop fades in over FADE_IN_DB, so taking a player never pops.
 func _assign(s: Src) -> void:
 	var pl: AudioStreamPlayer3D = null
 	for k in range(_free.size() - 1, -1, -1):
 		if _free[k].stream == s.stream and s.stream != null and not s.one_shot:
 			pl = _free[k]
 			_free.remove_at(k)
-			s.player = pl
-			pl.max_distance = float(TYPES[s.type]["max"])
-			pl.position = s.pos
-			pl.pitch_scale = clampf(s.pitch, 0.25, 4.0)
-			pl.volume_db = s.db + s.gain_db
-			pl.max_db = s.db + float(TYPES[s.type]["near"])
+			_bind(s, pl)
 			pl.stream_paused = false
 			if not pl.playing:
 				pl.play(_rng.randf() * maxf(s.stream.get_length() - 0.1, 0.0))
@@ -837,14 +844,22 @@ func _assign(s: Src) -> void:
 		pl = _free.pop_front()
 	if pl == null:
 		return
-	s.player = pl
-	pl.max_distance = float(TYPES[s.type]["max"])
+	_bind(s, pl)
 	pl.stream = s.stream
+	_restart(s)
+
+
+## Hands player pl to s and sets it to s's place, pitch and (faded-in) level.
+func _bind(s: Src, pl: AudioStreamPlayer3D) -> void:
+	s.player = pl
+	_assigned[s] = true
+	if not s.one_shot and not s.dying:
+		s.gain_db = s.gain_target - FADE_IN_DB
+	pl.max_distance = float(TYPES[s.type]["max"])
 	pl.position = s.pos
 	pl.pitch_scale = clampf(s.pitch, 0.25, 4.0)
 	pl.volume_db = s.db + s.gain_db
 	pl.max_db = s.db + float(TYPES[s.type]["near"])
-	_restart(s)
 
 
 func _restart(s: Src) -> void:
@@ -865,6 +880,7 @@ func _restart(s: Src) -> void:
 ## same stream resumes it without starting a new playback.
 func _unassign(s: Src, full_stop: bool = false) -> void:
 	var pl := s.player
+	_assigned.erase(s)
 	if pl == null:
 		return
 	s.player = null
@@ -875,6 +891,18 @@ func _unassign(s: Src, full_stop: bool = false) -> void:
 	else:
 		pl.stream_paused = true
 	_free.append(pl)
+
+
+## Forgets source key: frees its player and drops it from every set.
+func _erase(key: String) -> void:
+	var s: Src = _sources.get(key, null)
+	if s == null:
+		return
+	_unassign(s)
+	_sources.erase(key)
+	_volatile.erase(key)
+	if not s.volatile:
+		_static_dirty = true
 
 
 func _tile_pos(i: int) -> Vector3:

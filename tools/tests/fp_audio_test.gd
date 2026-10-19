@@ -620,6 +620,28 @@ func _check_budget(ctx: FpContext, f: FpFeature) -> void:
 	avg /= times.size()
 	print("  budget: step avg %.0f us, p50 %.0f us, p99 %.0f us, max %.0f us" % [avg, p50, times[int(times.size() * 0.99)], times.back()])
 	K.check(fails, avg < 300.0, "budget: audio step averages %.0f us (< 300 us)" % avg)
+	# A grown city registers hundreds of static sources (a fountain per park, every site): the
+	# per-frame cost must not grow with them.
+	var em := _em(f)
+	var rng := RandomNumberGenerator.new()
+	rng.seed = 11
+	var here := ctx.player_position()
+	for k in range(300):
+		em.request("budget:%d" % k, "fountain", here + Vector3(rng.randf_range(-40.0, 40.0), 0.0, rng.randf_range(-40.0, 40.0)))
+	var big: Array[float] = []
+	for k in range(600):
+		p.position.x += 0.0004
+		var t0 := Time.get_ticks_usec()
+		f.call("step", DT)
+		big.append(float(Time.get_ticks_usec() - t0))
+	var avg_big := 0.0
+	for t in big:
+		avg_big += t
+	avg_big /= big.size()
+	for k in range(300):
+		em.release("budget:%d" % k)
+	_steps(f, 1.5)
+	K.check(fails, avg_big < 300.0, "budget: with 300 more static sources the step averages %.0f us (was %.0f)" % [avg_big, avg])
 
 
 func _check_teardown(ctx: FpContext, f: FpFeature) -> void:

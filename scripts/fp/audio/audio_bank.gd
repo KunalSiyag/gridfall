@@ -35,7 +35,7 @@ const BUS_UI := &"UI"
 const BEDS := {
 	"traffic_hum": ["traffic_hum", -9.0],
 	"park_birds": ["park_birds", -11.0],
-	"river": ["river_bed", -8.0],
+	"river": ["river_bed", -10.0],
 	"residential_quiet": ["", -9.0],
 	"night_insects": ["night_insects", -14.0],
 	"rain": ["rain", -9.0],
