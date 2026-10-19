@@ -9,7 +9,9 @@ extends Node3D
 ## `yaw` is the body yaw (rotation.y); cam_yaw / cam_pitch are the view; movement input is
 ## relative to the view.
 
-## A foot came down (every STRIDE of travel on the ground): surface from CollisionWorld.surface_at.
+## A foot came down: on the gait's foot contacts (the left heel at phase 0, the right at PI; the
+## placeholder's visible stride follows the same phase). pos is that foot's ground point, surface
+## comes from CollisionWorld.surface_at.
 signal stepped(surface: String, pos: Vector3)
 ## Photo mode was entered or left.
 signal photo_mode_changed(on: bool)
@@ -54,7 +56,11 @@ const HL_CONV_FACE := 0.3
 const BOB_V := 0.03 * WS.M
 const BOB_L := 0.015 * WS.M
 const HL_BOB := 0.12
-const STRIDE := 0.7 * WS.M
+## Step length (m) = STEP_BASE + STEP_PER_MPS * speed (m/s): 0.70 m at WALK, 1.35 m at RUN.
+const STEP_BASE := 0.40
+const STEP_PER_MPS := 0.21
+## Footsteps sound this far either side of the body's centre line.
+const FOOT_SPREAD := 0.09 * WS.M
 const FP_SPRINT_FOV := 4.0
 const HL_FOV := 0.25
 const FP_PITCH_LIMIT := deg_to_rad(WS.PITCH_LIMIT_DEG)
@@ -122,9 +128,9 @@ var _yaw_rate: float = 0.0
 var _fwd_acc: float = 0.0
 var _target_speed: float = 0.0
 var _running: bool = false
-var _bob_phase: float = 0.0
+## Gait phase (radians): one cycle is two steps; the left heel strikes at 0, the right at PI.
+var _gait_phase: float = 0.0
 var _bob_amp: float = 0.0
-var _stride: float = 0.0
 var _fp_fov: float = WS.FOV
 var _stick_full: float = 0.0
 var _face_goal: float = NAN
@@ -392,7 +398,7 @@ func update_view(delta: float) -> void:
 		var alpha := clampf(inverse_lerp(TpsRig.FADE_NEAR, TpsRig.FADE_FAR, xf.origin.distance_to(head)), 0.0, 1.0)
 		avatar.set_view_state(pure_fp, alpha)
 		if not photo_mode:
-			avatar.update_motion(dt, sp, _yaw_rate, _fwd_acc, _step_snap, clampf((WS.EYE - _eye_h) / (WS.EYE - WS.CROUCH_EYE), 0.0, 1.0))
+			avatar.update_motion(dt, sp, _yaw_rate, _fwd_acc, _step_snap, clampf((WS.EYE - _eye_h) / (WS.EYE - WS.CROUCH_EYE), 0.0, 1.0), _gait_phase, grounded, velocity.y)
 		_step_snap = 0.0
 
 
@@ -562,6 +568,11 @@ func conversation_id() -> String:
 	return _conv_id if _conv_on else ""
 
 
+## The gait phase in radians (the left heel strikes at 0, the right at PI).
+func gait_phase() -> float:
+	return _gait_phase
+
+
 func _process(delta: float) -> void:
 	if ctx == null:
 		return
@@ -660,11 +671,7 @@ func _step(goal: Vector2, h: float) -> void:
 	_acc = na
 	var dist := moved.length()
 	if grounded and dist > 0.0:
-		_bob_phase = fmod(_bob_phase + dist / STRIDE * PI, TAU)
-		_stride += dist
-		if _stride >= STRIDE:
-			_stride -= STRIDE
-			stepped.emit(col.surface_at(position), position)
+		_advance_gait(moved, nv.length())
 	_vertical(h, height)
 	_body_yaw_step(h)
 
@@ -705,6 +712,25 @@ func _vertical(h: float, height: float) -> void:
 		velocity.y = 0.0
 		grounded = true
 		_coyote = 0.0
+
+
+## Advances the gait phase by a ground move (u; backward travel runs it backward) at speed (u/s)
+## and sounds a footstep on each heel strike it crosses.
+func _advance_gait(moved: Vector2, sp: float) -> void:
+	var dist := moved.length()
+	var back := moved.dot(Vector2(-sin(yaw), -cos(yaw))) < -0.25 * dist
+	var step_len := (STEP_BASE + STEP_PER_MPS * sp / WS.M) * WS.M
+	var ph0 := _gait_phase
+	var ph1 := ph0 + (-1.0 if back else 1.0) * dist / step_len * PI
+	var k0 := floori(ph0 / PI)
+	var k1 := floori(ph1 / PI)
+	_gait_phase = fposmod(ph1, TAU)
+	if k0 == k1:
+		return
+	var left := posmod(maxi(k0, k1), 2) == 0
+	var side := Vector3(-cos(yaw), 0.0, sin(yaw)) * (FOOT_SPREAD if left else -FOOT_SPREAD)
+	var foot := position + side
+	stepped.emit(ctx.collision.surface_at(foot), foot)
 
 
 func _jump() -> void:
@@ -935,8 +961,8 @@ func _fp_local() -> Transform3D:
 	var bv := 0.0
 	var bl := 0.0
 	if _head_bob:
-		bv = -BOB_V * _bob_amp * cos(2.0 * _bob_phase)
-		bl = BOB_L * _bob_amp * sin(_bob_phase)
+		bv = -BOB_V * _bob_amp * cos(2.0 * _gait_phase)
+		bl = BOB_L * _bob_amp * sin(_gait_phase)
 	return Transform3D(Basis.from_euler(Vector3(cam_pitch, 0.0, 0.0)), Vector3(bl, _eye_h + _cam_dy + bv, 0.0))
 
 

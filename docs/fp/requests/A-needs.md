@@ -69,13 +69,17 @@ A uses these when they exist and skips them otherwise:
 
 ## To I (audio)
 
-- `FpPlayer.stepped(surface: String, pos: Vector3)` fires every 0.7 m of travel on the ground
-  (stage A2 moves it onto the hero's foot contacts). `FpPlayer.photo_mode_changed(on)` is there
-  if photo mode should duck anything.
+- `FpPlayer.stepped(surface: String, pos: Vector3)` fires on each heel strike of the player's gait
+  (left at phase 0, right at PI; about 0.70 m apart at a walk and 1.35 m at a run), so it matches
+  the placeholder's visible stride; `pos` is that foot's ground point, 9 cm either side of the
+  body. Stage A2 keeps the same contract on the hero's clips. `FpPlayer.photo_mode_changed(on)` is
+  there if photo mode should duck anything.
 
 ## To HC (stage A2)
 
 - A2 needs `AP.HERO_M` / `AP.HERO_F`, `AP.CHAR_LIB_M` / `AP.CHAR_LIB_F` (bare clip names,
   `speed_mps` meta) and `rest_height_m` per body in `AP.CHAR_ROSTER`. The avatar node is
   `scripts/fp/player/player_avatar.gd`; until then it shows the legacy `person_a.glb` (hero `m`)
-  or `person_b.glb` (hero `f`), squatting for crouch.
+  or `person_b.glb` (hero `f`), re-rigged at load into a jointed puppet with a procedural walk,
+  run, crouch, jump and landing (`placeholder_puppet.gd`; also the fallback whenever a hero GLB
+  is missing).

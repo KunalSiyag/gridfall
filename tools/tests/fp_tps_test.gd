@@ -376,6 +376,75 @@ func _check_avatar(ctx: FpContext) -> void:
 		p.update_view(DT)
 	var lean: Vector2 = p.avatar.lean()
 	K.check(fails, absf(lean.x) > deg_to_rad(1.0) and absf(lean.x) <= deg_to_rad(8.0) + 1e-6, "13. the body leans into a running turn (%.1f deg roll)" % rad_to_deg(lean.x))
+	_check_puppet(ctx, s)
+
+
+## 13 (A1 placeholder). The legacy person is re-rigged as a jointed puppet: walking swings the legs
+## with the stance foot on the ground, footsteps fall on the heel strikes and alternate feet,
+## standing returns to the neutral pose, crouching lowers the pelvis with the feet down, and a
+## jump tucks the legs.
+func _check_puppet(ctx: FpContext, s: Dictionary) -> void:
+	var p := ctx.player
+	var av := p.avatar
+	K.check(fails, av.puppet != null, "13. the placeholder is re-rigged as a jointed puppet")
+	if av.puppet == null:
+		return
+	p.teleport(s["pos"], s["yaw"])
+	p.update_view(DT)
+	var steps: Array[float] = []
+	var on_step := func(_surface: String, pos: Vector3) -> void:
+		steps.append((pos - p.position).dot(Vector3(-cos(p.yaw), 0.0, sin(p.yaw))))
+	p.stepped.connect(on_step)
+	var start := p.position
+	var hip_lo := INF
+	var hip_hi := -INF
+	var drift := 0.0
+	for k in range(150):
+		p.simulate(Vector2(0.0, 1.0), false, DT)
+		p.update_view(DT)
+		if k >= 60:
+			var h: float = (av.joints["hip"] as Array)[0]
+			hip_lo = minf(hip_lo, h)
+			hip_hi = maxf(hip_hi, h)
+			var m: Dictionary = av.pose_metrics()
+			drift = maxf(drift, absf(float(m["ankle_low"]) - float(m["ankle_rest"])))
+	p.stepped.disconnect(on_step)
+	K.check(fails, hip_lo < deg_to_rad(-10.0) and hip_hi > deg_to_rad(18.0), "13. walking swings the legs (left hip %.0f..%.0f deg)" % [rad_to_deg(hip_lo), rad_to_deg(hip_hi)])
+	K.check(fails, drift < 0.01 * M, "13. walking keeps the stance foot on the ground (%.1f cm off)" % (drift / M * 100.0))
+	var dist := Vector2(p.position.x - start.x, p.position.z - start.z).length() / M
+	var alternate := steps.size() >= 2
+	for k in range(1, steps.size()):
+		alternate = alternate and signf(steps[k]) != signf(steps[k - 1]) and absf(steps[k]) > 0.05 * M
+	var expect := dist / (FpPlayer.STEP_BASE + FpPlayer.STEP_PER_MPS * WS.WALK / M)
+	K.check(fails, alternate and absf(float(steps.size()) - expect) <= 1.5, "13. %d footsteps over %.2f m alternate feet (about %.1f expected)" % [steps.size(), dist, expect])
+	for k in range(90):
+		p.simulate(Vector2.ZERO, false, DT)
+		p.update_view(DT)
+	var neutral := 0.0
+	for j: String in ["hip", "shoulder"]:
+		for a: float in av.joints[j]:
+			neutral = maxf(neutral, absf(a))
+	var pel: Vector3 = av.pose_metrics()["pelvis"]
+	K.check(fails, neutral < deg_to_rad(1.0) and pel.length() < 0.01 * M, "13. standing returns to the neutral pose (%.2f deg, pelvis %.1f cm)" % [rad_to_deg(neutral), pel.length() / M * 100.0])
+	for k in range(40):
+		p.simulate(Vector2.ZERO, false, DT, true)
+		p.update_view(DT)
+	var cm: Dictionary = av.pose_metrics()
+	K.check(fails, (cm["pelvis"] as Vector3).y < -0.3 * M and absf(float(cm["ankle_low"]) - float(cm["ankle_rest"])) < 0.01 * M, "13. crouching lowers the pelvis %.0f cm with the feet on the ground" % (-(cm["pelvis"] as Vector3).y / M * 100.0))
+	for k in range(40):
+		p.simulate(Vector2.ZERO, false, DT)
+		p.update_view(DT)
+	p.simulate(Vector2.ZERO, false, DT, false, true)
+	p.update_view(DT)
+	for k in range(12):
+		p.simulate(Vector2.ZERO, false, DT, false, true)
+		p.update_view(DT)
+	var jm: Dictionary = av.pose_metrics()
+	var knee_hi := maxf((av.joints["knee"] as Array)[0], (av.joints["knee"] as Array)[1])
+	K.check(fails, not p.grounded and knee_hi > deg_to_rad(30.0) and float(jm["ankle_low"]) - float(jm["ankle_rest"]) > 0.03 * M, "13. a jump tucks the legs (knee %.0f deg, feet %.0f cm up)" % [rad_to_deg(knee_hi), (float(jm["ankle_low"]) - float(jm["ankle_rest"])) / M * 100.0])
+	for k in range(90):
+		p.simulate(Vector2.ZERO, false, DT)
+		p.update_view(DT)
 
 
 func _press(action: String) -> void:
