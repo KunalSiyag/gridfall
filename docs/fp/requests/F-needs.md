@@ -13,11 +13,11 @@ ran headless.
 
 | Frame contributor (tick and day-end frames) | fp/integration | fp/F |
 |---|---|---|
-| `CitySim` node, the slowest frame | 382 ms (day end), 171–177 ms (tick) | 56 ms, all of it the view's `tiles_changed` rebuild |
-| The sim's own pump (`slice_stats().max_ms`) | n/a (synchronous) | 5.45 ms at day 6, 4.85 ms at day 16 |
-| `tiles_changed` rebuild in CityView (`view_ms`) | inside the 171–382 ms | 34–55 ms at day 6, 198 ms headless at day 16 |
+| `CitySim` node, the slowest frame | 382 ms (day end), 171–177 ms (tick) | 56–72 ms warm, up to 2555 ms when the view loads a model cold (G1 item 2); all of it is the view's `tiles_changed` rebuild |
+| The sim's own pump (`slice_stats().max_ms`) | n/a (synchronous) | 4.3–5.5 ms at day 6, 4.85 ms at day 16 |
+| `tiles_changed` rebuild in CityView (`view_ms`) | inside the 171–382 ms | 34–72 ms warm at day 6, 198 ms headless at day 16, 530–2552 ms with a cold model load |
 | `day_started` in CityBrain (`brain_ms`) | inside the 382 ms | 35–39 ms at day 6, 27–29 ms headless at day 16 |
-| fp_bench `street_tick` max / `street_day_end` max | 240 / 442 ms | 89 / 77 ms |
+| fp_bench `street_tick` max / `street_day_end` max | 240 / 442 ms | 89–126 / 77–392 ms (the day-end maxima are cold model loads) |
 
 ## To S0 (owner of `scripts/ai/city_brain.gd`)
 
@@ -61,6 +61,16 @@ ran headless.
    at the sim's 4–5 ms plus the queue's 3 ms.
    *Fallback:* F leaves view time out of its budget (`view_ms`). A pump that has already paid for
    a rebuild in its frame starts no further step.
+2. **Load building models before their first tile appears, not inside the rebuild.** The worst
+   frames in four runs on `fp/F` (530, 686, 2552 ms, and the bench's 392 ms on `street_day_end`)
+   are first-time `load()` calls in `CityView._scene()` during a `tiles_changed` rebuild. On day 7
+   the first police station and two parks complete. The 32 tiles of that emission cost 2552 ms
+   cold, 41 ms rebuilt warm, and VRAM grows by 45 MB at that moment. Cold `load()` of each
+   `models/real/buildings/*.glb` takes 190–390 ms windowed (park 390, fire station 358, school
+   310, hospital 274, landfill 254, police 214 ms), before `_tune_materials` and the first
+   pipeline compile. Two options: warm every building model once at boot or under the loading
+   veil, or start `ResourceLoader.load_threaded_request` on `site_started`, since a site stands for
+   several ticks before its building appears, and draw the site until the load finishes.
 
 ## To G2 (owner of `tools/tests/fp_bench.gd`)
 
