@@ -63,11 +63,13 @@ const CONTACT_BEFORE := 0.2
 const CONTACT_AFTER := 0.15
 const BLEND_STEPS := 8
 ## UAL's crouch and landing clips, retargeted onto Rocketbox legs, hold the feet a few centimetres
-## above the ground: in those states the body is lowered until its lowest sole touches (at most
-## GROUND_DOWN, at most GROUND_UP up), with this halflife (s).
+## above the ground: in those states the body is lowered until both feet rest on it (each foot's
+## lowest point; the other may sink at most GROUND_SINK), by at most GROUND_DOWN (GROUND_UP
+## upward), with this halflife (s).
 const GROUND_STATES := ["crouch", "land"]
 const GROUND_DOWN := 0.08
 const GROUND_UP := 0.03
+const GROUND_SINK := 0.01
 const HL_GROUND := 0.08
 ## Footsteps sound while the walk blend is at least this strong.
 const STEP_MIN_MOVE := 0.25
@@ -333,10 +335,12 @@ func _update_ground(dt: float) -> void:
 	var goal := 0.0
 	var st := state()
 	if st in GROUND_STATES and (st != "land" or _land_t > XF_LAND):
-		var low := INF
+		# Per foot (ankle k, toe k + 2) the lower of heel and toe above standing.
+		var foot := [INF, INF]
 		for k in range(_feet.size()):
-			low = minf(low, skeleton.get_bone_global_pose(_feet[k]).origin.y - float(_feet_rest[k]))
-		goal = clampf(low, -GROUND_UP, GROUND_DOWN)
+			foot[k % 2] = minf(foot[k % 2], skeleton.get_bone_global_pose(_feet[k]).origin.y - float(_feet_rest[k]))
+		var lo := minf(foot[0], foot[1])
+		goal = clampf(minf(maxf(foot[0], foot[1]), lo + GROUND_SINK), -GROUND_UP, GROUND_DOWN)
 	ground_fix = goal if dt <= 0.0 else SM.damp(ground_fix, goal, HL_GROUND, dt)
 	body.position.y = -ground_fix
 

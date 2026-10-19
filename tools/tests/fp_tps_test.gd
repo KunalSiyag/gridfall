@@ -506,6 +506,22 @@ func _check_hero(ctx: FpContext, s: Dictionary) -> void:
 	var again_w: float = rig.get("look_weight")
 	K.check(fails, side_w > 0.99 and side_yaw > 30.0 and side_yaw < 60.0, "13a. the head turns %.0f deg toward a view 50 deg left (influence %.2f)" % [side_yaw, side_w])
 	K.check(fails, back_w < 0.01 and again_w > 0.99, "13a. a view behind fades the head look out (%.2f) and a view ahead brings it back (%.2f)" % [back_w, again_w])
+	# The camera fade: backed against a wall the arm pulls in to the head and the hero fades out;
+	# on the open street it is opaque.
+	var spot := _wall_spot(ctx)
+	if not spot.is_empty():
+		var away := Vector3(-sin(deg_to_rad(float(spot["yaw"]))), 0.0, -cos(deg_to_rad(float(spot["yaw"]))))
+		var meshes: Array = rig.get("meshes")
+		var fades := []
+		for back: float in [0.35, 0.7]:
+			p.teleport((spot["pos"] as Vector3) - away * (back * M), spot["yaw"])
+			_run(p, Vector2.ZERO, false, 20)
+			var g: GeometryInstance3D = meshes[0]
+			fades.append([p.camera.global_position.distance_to(p.eye_position()) / M, g.transparency, av.is_body_visible()])
+		p.teleport(s["pos"], s["yaw"])
+		_run(p, Vector2.ZERO, false, 20)
+		var open_t: float = (meshes[0] as GeometryInstance3D).transparency
+		K.check(fails, float(fades[0][1]) > 0.0 and float(fades[0][1]) < 1.0 and not bool(fades[1][2]) and open_t == 0.0 and av.is_body_visible(), "13a. camera fade: %.2f m from the head %.2f transparent, %.2f m hidden (%s), open street opaque (%.2f)" % [float(fades[0][0]), float(fades[0][1]), float(fades[1][0]), not bool(fades[1][2]), open_t])
 	# First person keeps animating (the shadow walks): footsteps still fire.
 	p.set_camera_mode("first", false)
 	var fp_steps := [0]
