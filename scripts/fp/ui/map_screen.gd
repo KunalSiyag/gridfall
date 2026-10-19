@@ -1,9 +1,11 @@
 extends Control
 ## Full-screen map (slice B) on M: the minimap's tile images at large size, north up, with district
 ## names, street names (from the directory) at 6 px per tile and closer, incidents, pings, the
-## waypoint and the player. Drag pans, the wheel zooms about the cursor, a left click sets the
-## waypoint (ping(world, "player")), a right click or a click on the waypoint clears it. Pushes the
-## &"map" modal; M or Esc closes it (consumed). Ignored under other modals and in photo mode.
+## waypoint and the player. Hovering shows what is under the cursor (place, district, distance, an
+## incident or the waypoint) in a small card. Drag pans, the wheel zooms about the cursor, a left
+## click sets the waypoint (ping(world, "player")), a right click or a click on the waypoint clears
+## it. Pushes the &"map" modal; M or Esc closes it (consumed). Ignored under other modals and in
+## photo mode.
 
 const D := preload("res://scripts/sim/sim_defs.gd")
 const S := preload("res://scripts/fp/ui/hud_style.gd")
@@ -46,6 +48,12 @@ var _streets: Array[Dictionary] = []
 ## {"name": String, "lines": PackedStringArray, "pos": Vector2 (world)}
 var _districts: Array[Dictionary] = []
 var _time: float = 0.0
+## Tile under the cursor (-1 when none) and the hover card's lines (title, detail).
+var hover_tile: int = -1
+var _hover_pos: Vector2 = Vector2.INF
+var _hover_lines: PackedStringArray = PackedStringArray()
+var _hover_key: String = ""
+var _card_box: StyleBoxFlat
 
 
 func setup(p_ctx: FpContext, p_hud: Node) -> void:
@@ -141,6 +149,7 @@ func open() -> bool:
 	visible = true
 	_age = 0.0
 	modulate.a = 0.0
+	_clear_hover()
 	if not _pushed:
 		ctx.push_modal(MODAL)
 		_pushed = true
@@ -153,6 +162,7 @@ func open() -> bool:
 func close() -> void:
 	visible = false
 	_press = Vector2.INF
+	_clear_hover()
 	if _pushed:
 		_pushed = false
 		ctx.pop_modal(MODAL)
@@ -190,6 +200,75 @@ func zoom_at(p: Vector2, factor: float) -> void:
 	ppt = clampf(ppt * factor, MIN_PPT, MAX_PPT)
 	center = w - (p - _view_size() * 0.5) / ppt
 	_apply_view()
+
+
+## Updates the hover card for screen point p: an incident or the waypoint under the cursor, else
+## the tile's place label with its district and distance. Returns the card's lines.
+func hover_at(p: Vector2) -> PackedStringArray:
+	_hover_pos = p
+	var w := screen_to_world(p)
+	var x := roundi(w.x)
+	var y := roundi(w.y)
+	hover_tile = D.idx(x, y) if D.in_bounds(x, y) else -1
+	var key := str(hover_tile)
+	var lines := PackedStringArray()
+	if ctx.sim != null:
+		for ev: Dictionary in ctx.sim.events:
+			var q := Vector2(float(ev.get("x", 0)), float(ev.get("y", 0)))
+			if world_to_screen(q).distance_to(p) < 12.0:
+				key = "ev%d" % int(ev.get("id", -1))
+				lines = PackedStringArray([D.debrand(str(ev.get("label", "Incident"))), "Incident · " + _distance_to(q)])
+				break
+	var wp: Variant = hud.call("waypoint") if lines.is_empty() else null
+	if wp != null:
+		var q := Vector2((wp as Vector3).x, (wp as Vector3).z)
+		if world_to_screen(q).distance_to(p) < 12.0:
+			key = "wp"
+			lines = PackedStringArray(["Waypoint", _distance_to(q) + " · click to clear"])
+	if lines.is_empty() and hover_tile >= 0 and ctx.directory != null:
+		if key == _hover_key:
+			return _hover_lines
+		var title := _sentence(D.debrand(ctx.directory.place_label(hover_tile)))
+		var parts := PackedStringArray()
+		var dn := _sentence(D.debrand(ctx.directory.district_name(hover_tile)))
+		if dn != title:
+			parts.append(dn)
+		if ctx.sim != null and ctx.sim.burning[hover_tile] > 0:
+			parts.append("On fire")
+		elif ctx.sim != null and not ctx.sim.is_surveyed(x, y):
+			parts.append("Unsurveyed")
+		parts.append(_distance_to(Vector2(x, y)))
+		lines = PackedStringArray([title, " · ".join(parts)])
+	_hover_key = key
+	_hover_lines = lines
+	return lines
+
+
+## The hover card's lines (empty when it is hidden).
+func hover_lines() -> PackedStringArray:
+	return _hover_lines
+
+
+func _notification(what: int) -> void:
+	if what == NOTIFICATION_MOUSE_EXIT:
+		_clear_hover()
+
+
+func _clear_hover() -> void:
+	_hover_pos = Vector2.INF
+	_hover_lines = PackedStringArray()
+	_hover_key = ""
+	hover_tile = -1
+
+
+func _distance_to(q: Vector2) -> String:
+	if ctx.player == null:
+		return ""
+	return S.distance(Vector2(q.x - ctx.player.position.x, q.y - ctx.player.position.z).length()) + " away"
+
+
+static func _sentence(t: String) -> String:
+	return t.substr(0, 1).to_upper() + t.substr(1) if not t.is_empty() else t
 
 
 func _unhandled_input(event: InputEvent) -> void:
@@ -234,6 +313,10 @@ func _gui_input(event: InputEvent) -> void:
 			center -= (mm.position - _drag_last) / ppt
 			_drag_last = mm.position
 			_apply_view()
+			_clear_hover()
+		accept_event()
+	elif event is InputEventMouseMotion:
+		hover_at((event as InputEventMouseMotion).position)
 		accept_event()
 
 
@@ -540,6 +623,38 @@ func _draw_overlay() -> void:
 	o.draw_colored_polygon(PackedVector2Array([na + Vector2(0, -12), na + Vector2(5, -3), na + Vector2(-5, -3)]), S.WHITE)
 	var nw := f.get_string_size("N", HORIZONTAL_ALIGNMENT_LEFT, -1, 12).x
 	o.draw_string(f, na + Vector2(-nw * 0.5, 11.0), "N", HORIZONTAL_ALIGNMENT_LEFT, -1, 12, S.WHITE)
+	_draw_hover(o, view)
+
+
+## The hovered tile's outline and the hover card beside the cursor, kept on screen.
+func _draw_hover(o: Control, view: Vector2) -> void:
+	if _hover_lines.is_empty() or _hover_pos == Vector2.INF:
+		return
+	if _hover_key.is_valid_int() and hover_tile >= 0 and ppt >= 6.0:
+		var c := world_to_screen(Vector2(D.tx(hover_tile), D.ty(hover_tile)))
+		var r := Rect2(c - Vector2(ppt, ppt) * 0.5, Vector2(ppt, ppt))
+		o.draw_rect(r.grow(1.0), Color(0, 0, 0, 0.35), false, 3.0)
+		o.draw_rect(r, Color(1, 1, 1, 0.7), false, 1.5)
+	var f := S.bold()
+	var g := S.font()
+	var t0 := _hover_lines[0]
+	var t1 := _hover_lines[1] if _hover_lines.size() > 1 else ""
+	var w := maxf(f.get_string_size(t0, HORIZONTAL_ALIGNMENT_LEFT, -1, 15).x, g.get_string_size(t1, HORIZONTAL_ALIGNMENT_LEFT, -1, 13).x)
+	var sz := Vector2(w + 24.0, 50.0 if not t1.is_empty() else 32.0)
+	var at := _hover_pos + Vector2(18.0, 16.0)
+	if at.x + sz.x > view.x - 12.0:
+		at.x = _hover_pos.x - 18.0 - sz.x
+	if at.y + sz.y > view.y - 12.0:
+		at.y = _hover_pos.y - 16.0 - sz.y
+	at = at.clamp(Vector2(12, 12), view - sz - Vector2(12, 12)).round()
+	if _card_box == null:
+		_card_box = S.box(Color(0.045, 0.055, 0.085, 0.9), 8, 12, 8, Color(1, 1, 1, 0.1), 1)
+		_card_box.shadow_color = Color(0, 0, 0, 0.35)
+		_card_box.shadow_size = 8
+	o.draw_style_box(_card_box, Rect2(at, sz))
+	o.draw_string(f, at + Vector2(12.0, 21.0), t0, HORIZONTAL_ALIGNMENT_LEFT, -1, 15, S.WHITE)
+	if not t1.is_empty():
+		o.draw_string(g, at + Vector2(12.0, 40.0), t1, HORIZONTAL_ALIGNMENT_LEFT, -1, 13, S.TEXT_DIM)
 
 
 ## True when an incident stands within 1.5 tiles of world point w.

@@ -78,6 +78,7 @@ func _init() -> void:
 	await _check_card(ctx, client)
 	await _check_map(ctx, f)
 	_check_compass_labels()
+	_check_caption(ctx)
 	await _check_reload(ctx)
 	await _check_pause(ctx)
 	var st: Dictionary = f.self_test()
@@ -327,6 +328,12 @@ func _check_map(ctx: FpContext, f: FpFeature) -> void:
 	var wp: Variant = ctx.hud.waypoint()
 	K.check(fails, pings.size() == 1 and str(pings[0][1]) == "player" and wp != null and Vector2((wp as Vector3).x, (wp as Vector3).z).distance_to(Vector2(ctx.player.position.x + 4.0, ctx.player.position.z - 3.0)) < 0.05, "a map click emits ping(world, player) and stores the waypoint")
 	ctx.bus.ping.disconnect(cb)
+	var hw := map.hover_at(target)
+	K.check(fails, hw.size() == 2 and hw[0] == "Waypoint" and hw[1].contains("click to clear"), "hovering the waypoint offers to clear it (%s)" % " / ".join(hw))
+	var lot := _find_c_lot(ctx)
+	var hl := map.hover_at(map.world_to_screen(Vector2(D.tx(lot), D.ty(lot))))
+	var want := D.debrand(ctx.directory.place_label(lot))
+	K.check(fails, map.hover_tile == lot and hl.size() == 2 and hl[0].to_lower() == want.to_lower() and hl[1].ends_with(" m away"), "hovering a lot names it (%s)" % " / ".join(hl))
 	var saved: Dictionary = f.to_dict()
 	K.check(fails, saved.has("waypoint") and (saved["waypoint"] as Array).size() == 2, "the waypoint is saved (%s)" % str(saved))
 	map.zoom_at(Vector2(800, 450), 1.5)
@@ -376,6 +383,36 @@ func _check_compass_labels() -> void:
 	K.check(fails, not is_nan(x) and x >= 417.0 + C.LABEL_GAP - 0.01 and x + 36.0 <= C.WIDTH + 0.01, "a compass distance at the strip's end slides clear of its neighbour (%.1f)" % x)
 	K.check(fails, is_nan(C._label_x(400.0, 36.0, spans)), "a distance that cannot stay under its marker is left out")
 	K.check(fails, is_equal_approx(C._label_x(200.0, 36.0, spans), 182.0), "a free distance is centred under its marker")
+
+
+func _check_caption(ctx: FpContext) -> void:
+	var cap := ctx.hud.caption
+	var sim := ctx.sim
+	var a := _find(ctx, func(i: int) -> bool: return sim.district[i] >= 0 and sim.terrain[i] != D.WATER)
+	var da := sim.district[a] if a >= 0 else -1
+	var b := _find(ctx, func(i: int) -> bool: return sim.district[i] >= 0 and sim.district[i] != da and sim.terrain[i] != D.WATER)
+	K.check(fails, a >= 0 and b >= 0, "two districts to walk between")
+	if a < 0 or b < 0:
+		return
+	var keep := ctx.player.position
+	ctx.player.teleport(Vector3(D.tx(a), 0, D.ty(a)), 0.0)
+	cap.arrive()
+	cap._process(0.5)
+	K.check(fails, cap.caption_text() == str(D.MAYORS[da]["district"]), "arriving shows the district caption (%s)" % cap.caption_text())
+	cap._process(10.0)
+	ctx.player.teleport(Vector3(D.tx(b), 0, D.ty(b)), 0.0)
+	cap.check()
+	cap._process(0.5)
+	var db := sim.district[b]
+	var sub := (cap.find_child("Mayor", true, false) as Label).text
+	K.check(fails, cap.caption_text() == str(D.MAYORS[db]["district"]) and sub == "Mayor " + D.mayor_display(db) and not S.branded(sub), "entering another district captions it with its mayor (%s, %s)" % [cap.caption_text(), sub])
+	cap._process(10.0)
+	ctx.player.teleport(Vector3(D.tx(a), 0, D.ty(a)), 0.0)
+	cap.check()
+	cap._process(0.5)
+	K.check(fails, cap.caption_text().is_empty() and cap.district == da, "walking back within the cooldown shows no caption again")
+	ctx.player.teleport(keep, 0.0)
+	cap.check()
 
 
 func _check_reload(ctx: FpContext) -> void:
