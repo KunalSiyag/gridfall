@@ -43,8 +43,12 @@ const vec3 WATER_COL = vec3(0.125, 0.265, 0.365);
 const vec3 SHORE_COL = vec3(0.21, 0.37, 0.48);
 const vec3 WALK_COL = vec3(0.24, 0.27, 0.30);
 const vec3 FOREST_COL = vec3(0.13, 0.175, 0.155);
-// Zoomed out every built lot takes this neutral tone, so blocks read as one shape.
-const vec3 BLOCK_COL = vec3(0.235, 0.26, 0.295);
+// Woods inside a district read as green space, not as holes in the blocks.
+const vec3 CITY_WOOD = vec3(0.165, 0.245, 0.19);
+// City blocks (the ground of every developed lot) and the neutral tone of building footprints,
+// tinted faintly by use.
+const vec3 BLOCK_COL = vec3(0.165, 0.185, 0.215);
+const vec3 BUILD_COL = vec3(0.305, 0.33, 0.37);
 
 ivec2 texel(vec2 tile) {
 	return ivec2(tile - world_origin);
@@ -64,6 +68,22 @@ int cls_at(ivec2 t) {
 
 bool is_road(int c) {
 	return c == ROAD || c == BRIDGE;
+}
+
+// Developed tiles: they join into city blocks.
+bool is_block(int c) {
+	return c == LOT || c == BUILDING || c == SERVICE || c == SITE || c == RUBBLE || c == LANDMARK || c == PARK;
+}
+
+// A building of level 2 or more (dense neighbours join into a street wall).
+bool dense_at(ivec2 t) {
+	vec4 d = data_at(t);
+	return int(round(d.r * 255.0)) == BUILDING && int(round(d.g * 255.0)) >= 2;
+}
+
+vec2 hash2(vec2 p) {
+	p = vec2(dot(p, vec2(127.1, 311.7)), dot(p, vec2(269.5, 183.3)));
+	return fract(sin(p) * 43758.5453);
 }
 
 float water_of(ivec2 t) {
@@ -114,6 +134,15 @@ float sd_box(vec2 p, vec2 b, float r) {
 	return length(max(q, 0.0)) + min(max(q.x, q.y), 0.0) - r;
 }
 
+// Distance to a tile's part of a joined shape: each side reaches past the tile (beyond the
+// rounded corner) toward a joined neighbour, else stops at inset e from the centre.
+float sd_joined(vec2 lp, bool xp, bool xn, bool yp, bool yn, float e, float r) {
+	float far = 0.62 + r;
+	vec2 lo = vec2(xn ? -far : -e, yn ? -far : -e);
+	vec2 hi = vec2(xp ? far : e, yp ? far : e);
+	return sd_box(lp - (lo + hi) * 0.5, (hi - lo) * 0.5, r);
+}
+
 // Coverage of an SDF (negative inside) with a one-pixel antialiased edge; px = tiles per pixel.
 float cover(float d, float px) {
 	return clamp(0.5 - d / px, 0.0, 1.0);
@@ -144,7 +173,7 @@ void fragment() {
 	// Woods: smooth blobs.
 	float fv = smooth_mask(w, 0);
 	float fw = max(fwidth(fv), 1e-4);
-	col = mix(col, FOREST_COL, 0.8 * clamp((fv - 0.45) / fw + 0.5, 0.0, 1.0));
+	col = mix(col, dist >= 0 ? CITY_WOOD : FOREST_COL, 0.8 * clamp((fv - 0.45) / fw + 0.5, 0.0, 1.0));
 
 	// Water with a soft lighter shore line.
 	// The B-spline narrows water, so its edge sits lower: a one-tile river keeps about a tile.
@@ -155,37 +184,72 @@ void fragment() {
 	col = mix(col, WATER_COL, water);
 	col = mix(col, SHORE_COL, shore * 0.6);
 
-	// Lots and footprints. Zoomed out they fill their tiles, so a street block reads as one shape;
-	// zoomed in each lot separates into its own footprint.
-	float merge = 1.0 - smoothstep(4.5, 9.0, ppt);
-	if (c == LOT) {
-		// Zoned but empty: a faint plot outline only when zoomed in.
-		col = mix(col, tile_col, cover(sd_box(lp, vec2(0.46), 0.05), px) * (1.0 - merge));
-	} else if (c == PARK) {
-		col = mix(col, tile_col, cover(sd_box(lp, vec2(mix(0.47, 0.51, merge)), 0.12 * (1.0 - merge)), px));
-	} else if (c == BUILDING || c == SERVICE || c == LANDMARK || c == RUBBLE || c == SITE) {
-		float h = c == BUILDING ? (level >= 3 ? 0.43 : (level == 2 ? 0.4 : 0.36)) : (c == RUBBLE ? 0.36 : 0.42);
-		h = mix(h, 0.51, merge);
-		float d = sd_box(lp, vec2(h), 0.05 * (1.0 - merge));
-		vec3 fill = mix(tile_col, BLOCK_COL * (0.9 + 0.06 * float(level)), merge * 0.8);
-		if (c == SITE && ppt >= 7.0) {
-			float stripe = step(0.5, fract((lp.x + lp.y) * 3.5));
-			fill = mix(tile_col, tile_col * 0.78, stripe);
+	// City blocks: every developed tile joins its developed neighbours into one block, inset only
+	// where it meets a road or open land, so a street block reads as one calm shape at any zoom.
+	float detail = smoothstep(4.5, 9.0, ppt);
+	if (is_block(c)) {
+		float db = sd_joined(lp, is_block(cls_at(t + ivec2(1, 0))), is_block(cls_at(t + ivec2(-1, 0))),
+				is_block(cls_at(t + ivec2(0, 1))), is_block(cls_at(t + ivec2(0, -1))), 0.43, 0.07);
+		col = mix(col, BLOCK_COL, cover(db, px));
+		if (c == PARK) {
+			float dp = sd_joined(lp, cls_at(t + ivec2(1, 0)) == PARK, cls_at(t + ivec2(-1, 0)) == PARK,
+					cls_at(t + ivec2(0, 1)) == PARK, cls_at(t + ivec2(0, -1)) == PARK, 0.41, 0.12);
+			col = mix(col, tile_col, cover(dp, px));
+		} else if (c != LOT) {
+			// A footprint per lot, varied per tile and pulled toward the street; dense buildings join
+			// their dense neighbours into a street wall. Zoomed out the lot just brightens its block.
+			vec2 hv = hash2(tile);
+			vec2 street = vec2(0.0);
+			if (is_road(cls_at(t + ivec2(1, 0)))) street.x += 1.0;
+			if (is_road(cls_at(t + ivec2(-1, 0)))) street.x -= 1.0;
+			if (is_road(cls_at(t + ivec2(0, 1)))) street.y += 1.0;
+			if (is_road(cls_at(t + ivec2(0, -1)))) street.y -= 1.0;
+			vec2 hs = vec2(0.4) + (hv - 0.5) * 0.06;
+			vec2 off = vec2(0.0);
+			if (c == BUILDING) {
+				float s = level >= 3 ? 0.43 : (level == 2 ? 0.38 : 0.3);
+				hs = vec2(s) + (hv - 0.5) * (level >= 3 ? 0.04 : 0.1);
+				off = street * (level <= 1 ? 0.1 : 0.03) + (hash2(tile + 31.0) - 0.5) * (level <= 1 ? 0.06 : 0.02);
+			} else if (c == LANDMARK) {
+				hs = vec2(0.44);
+			} else if (c == SITE) {
+				hs = vec2(0.4);
+			} else if (c == RUBBLE) {
+				hs = vec2(0.3) + (hv - 0.5) * 0.1;
+			}
+			vec2 lo = off - hs;
+			vec2 hi = off + hs;
+			if (c == BUILDING && level >= 2) {
+				if (dense_at(t + ivec2(1, 0))) hi.x = 0.62;
+				if (dense_at(t + ivec2(-1, 0))) lo.x = -0.62;
+				if (dense_at(t + ivec2(0, 1))) hi.y = 0.62;
+				if (dense_at(t + ivec2(0, -1))) lo.y = -0.62;
+			}
+			float d = mix(db, sd_box(lp - (lo + hi) * 0.5, (hi - lo) * 0.5, 0.03), detail);
+			vec3 fill = c == BUILDING || c == SERVICE ? mix(BUILD_COL, tile_col, 0.4) * (0.92 + 0.05 * float(level)) : tile_col;
+			if (c == SITE && ppt >= 7.0) {
+				fill = mix(fill, fill * 0.8, step(0.5, fract((lp.x + lp.y) * 3.5)));
+			}
+			if (burning) {
+				fill = mix(fill, vec3(1.0, 0.36, 0.3), 0.7);
+			}
+			fill = mix(mix(BLOCK_COL, fill, 0.55), fill, detail);
+			col = mix(col, fill * 0.45, cover(d - px * 1.1, px) * detail);
+			col = mix(col, fill, cover(d, px));
 		}
-		if (burning) {
-			fill = mix(fill, vec3(1.0, 0.36, 0.3), 0.7);
-		}
-		col = mix(col, fill * 0.62, cover(d - px * 1.1, px) * smoothstep(3.0, 6.0, ppt));
-		col = mix(col, fill, cover(d, px));
 	}
 
-	// Roads: a capsule from the tile centre toward every road neighbour; sidewalks at zoom.
+	// Roads: a capsule from the tile centre toward every road neighbour, a filled corner where a
+	// road is two or more tiles wide, and sidewalks at zoom.
 	if (is_road(c)) {
 		float rd = length(lp);
 		if (is_road(cls_at(t + ivec2(0, -1)))) rd = min(rd, sd_segment(lp, vec2(0.0), vec2(0.0, -0.51)));
 		if (is_road(cls_at(t + ivec2(0, 1)))) rd = min(rd, sd_segment(lp, vec2(0.0), vec2(0.0, 0.51)));
 		if (is_road(cls_at(t + ivec2(1, 0)))) rd = min(rd, sd_segment(lp, vec2(0.0), vec2(0.51, 0.0)));
 		if (is_road(cls_at(t + ivec2(-1, 0)))) rd = min(rd, sd_segment(lp, vec2(0.0), vec2(-0.51, 0.0)));
+		ivec2 qx = ivec2(lp.x >= 0.0 ? 1 : -1, 0);
+		ivec2 qy = ivec2(0, lp.y >= 0.0 ? 1 : -1);
+		if (is_road(cls_at(t + qx)) && is_road(cls_at(t + qy)) && is_road(cls_at(t + qx + qy))) rd = 0.0;
 		float walk = cover(rd - 0.5, px) * smoothstep(5.0, 10.0, ppt);
 		col = mix(col, WALK_COL, walk);
 		float hw = mix(0.36, 0.3, smoothstep(3.0, 8.0, ppt));
