@@ -1,0 +1,722 @@
+{
+ "note": "Written by tools/characters/build_clips.py; read by build_anim_library.gd. m/f: Rocketbox clips in rb_m.glb / rb_f.glb; u: Quaternius UAL clips in ual.glb, shared by both libraries.",
+ "fps": 30,
+ "clips": {
+  "carry": {
+   "u": {
+    "kind": "travel",
+    "loop": true,
+    "source": "quaternius:UAL2/Walk_Carry_Loop",
+    "frames": 49,
+    "seconds": 2.0,
+    "speed_mps": 0.6115
+   }
+  },
+  "climb_1m": {
+   "u": {
+    "kind": "ual",
+    "loop": false,
+    "source": "quaternius:UAL2/ClimbUp_1m",
+    "frames": 17,
+    "seconds": 0.6667,
+    "speed_mps": 0.0
+   }
+  },
+  "crouch_idle": {
+   "u": {
+    "kind": "ual",
+    "loop": true,
+    "source": "quaternius:UAL1/Crouch_Idle_Loop",
+    "frames": 71,
+    "seconds": 2.9167,
+    "speed_mps": 0.0
+   }
+  },
+  "crouch_walk": {
+   "u": {
+    "kind": "travel",
+    "loop": true,
+    "source": "quaternius:UAL1/Crouch_Fwd_Loop",
+    "frames": 49,
+    "seconds": 2.0,
+    "speed_mps": 0.6292
+   }
+  },
+  "door_try": {
+   "m": {
+    "kind": "static",
+    "loop": false,
+    "source": "rocketbox:static/m_try_door_inwards",
+    "frames": 187,
+    "seconds": 6.2,
+    "speed_mps": 0.0
+   },
+   "f": {
+    "kind": "static",
+    "loop": false,
+    "source": "rocketbox:static/f_try_door_inwards",
+    "frames": 271,
+    "seconds": 9.0,
+    "speed_mps": 0.0
+   }
+  },
+  "drive": {
+   "u": {
+    "kind": "ual",
+    "loop": true,
+    "source": "quaternius:UAL1/Driving_Loop",
+    "frames": 41,
+    "seconds": 1.6667,
+    "speed_mps": 0.0
+   }
+  },
+  "fall": {
+   "u": {
+    "kind": "ual",
+    "loop": true,
+    "source": "quaternius:UAL1/Jump_Loop",
+    "frames": 61,
+    "seconds": 2.5,
+    "speed_mps": 0.0
+   }
+  },
+  "fold_arms": {
+   "u": {
+    "kind": "ual",
+    "loop": true,
+    "source": "quaternius:UAL2/Idle_FoldArms_Loop",
+    "frames": 61,
+    "seconds": 2.5,
+    "speed_mps": 0.0
+   }
+  },
+  "idle": {
+   "m": {
+    "kind": "static",
+    "loop": true,
+    "source": "rocketbox:static/m_idle_neutral_01",
+    "frames": 351,
+    "seconds": 11.6667,
+    "speed_mps": 0.0
+   },
+   "f": {
+    "kind": "static",
+    "loop": true,
+    "source": "rocketbox:static/f_idle_neutral_01",
+    "frames": 288,
+    "seconds": 9.5667,
+    "speed_mps": 0.0,
+    "window": [
+     21,
+     308
+    ]
+   }
+  },
+  "idle_look": {
+   "m": {
+    "kind": "static",
+    "loop": true,
+    "source": "rocketbox:static/m_idle_look_around_01",
+    "frames": 140,
+    "seconds": 4.6333,
+    "speed_mps": 0.0
+   },
+   "f": {
+    "kind": "static",
+    "loop": true,
+    "source": "rocketbox:static/f_idle_look_around_01",
+    "frames": 135,
+    "seconds": 4.4667,
+    "speed_mps": 0.0
+   }
+  },
+  "idle_wait": {
+   "m": {
+    "kind": "static",
+    "loop": true,
+    "source": "rocketbox:static/m_idle_waiting_01",
+    "frames": 337,
+    "seconds": 11.2,
+    "speed_mps": 0.0,
+    "window": [
+     648,
+     984
+    ]
+   },
+   "f": {
+    "kind": "static",
+    "loop": true,
+    "source": "rocketbox:static/f_idle_waiting_01",
+    "frames": 257,
+    "seconds": 8.5333,
+    "speed_mps": 0.0,
+    "window": [
+     86,
+     342
+    ]
+   }
+  },
+  "interact": {
+   "u": {
+    "kind": "ual",
+    "loop": false,
+    "source": "quaternius:UAL1/Interact",
+    "frames": 49,
+    "seconds": 2.0,
+    "speed_mps": 0.0
+   }
+  },
+  "jump_start": {
+   "u": {
+    "kind": "ual",
+    "loop": false,
+    "source": "quaternius:UAL1/Jump_Start",
+    "frames": 33,
+    "seconds": 1.3333,
+    "speed_mps": 0.0
+   }
+  },
+  "knock": {
+   "m": {
+    "kind": "static",
+    "loop": false,
+    "source": "rocketbox:static/m_knock_door",
+    "frames": 241,
+    "seconds": 8.0,
+    "speed_mps": 0.0
+   },
+   "f": {
+    "kind": "static",
+    "loop": false,
+    "source": "rocketbox:static/f_knock_door",
+    "frames": 96,
+    "seconds": 3.1667,
+    "speed_mps": 0.0
+   }
+  },
+  "knockback": {
+   "u": {
+    "kind": "ual",
+    "loop": false,
+    "source": "quaternius:UAL2/Hit_Knockback",
+    "frames": 21,
+    "seconds": 0.8333,
+    "speed_mps": 0.0
+   }
+  },
+  "land": {
+   "u": {
+    "kind": "ual",
+    "loop": false,
+    "source": "quaternius:UAL1/Jump_Land",
+    "frames": 31,
+    "seconds": 1.25,
+    "speed_mps": 0.0
+   }
+  },
+  "no": {
+   "u": {
+    "kind": "ual",
+    "loop": true,
+    "source": "quaternius:UAL2/Idle_No_Loop",
+    "frames": 61,
+    "seconds": 2.5,
+    "speed_mps": 0.0
+   }
+  },
+  "phone": {
+   "m": {
+    "kind": "static",
+    "loop": true,
+    "source": "rocketbox:static/m_cell_phone_talk_01",
+    "frames": 313,
+    "seconds": 10.4,
+    "speed_mps": 0.0,
+    "window": [
+     566,
+     878
+    ]
+   },
+   "f": {
+    "kind": "static",
+    "loop": true,
+    "source": "rocketbox:xyz/f_cell_phone_talk_01",
+    "frames": 248,
+    "seconds": 8.2333,
+    "speed_mps": 0.0,
+    "window": [
+     798,
+     1045
+    ]
+   }
+  },
+  "phone_idle": {
+   "u": {
+    "kind": "ual",
+    "loop": true,
+    "source": "quaternius:UAL2/Idle_TalkingPhone_Loop",
+    "frames": 71,
+    "seconds": 2.9167,
+    "speed_mps": 0.0
+   }
+  },
+  "pickup": {
+   "u": {
+    "kind": "ual",
+    "loop": false,
+    "source": "quaternius:UAL1/PickUp_Table",
+    "frames": 21,
+    "seconds": 0.8333,
+    "speed_mps": 0.0
+   }
+  },
+  "push": {
+   "u": {
+    "kind": "ual",
+    "loop": true,
+    "source": "quaternius:UAL1/Push_Loop",
+    "frames": 65,
+    "seconds": 2.6667,
+    "speed_mps": 0.0
+   }
+  },
+  "run": {
+   "m": {
+    "kind": "travel",
+    "loop": true,
+    "source": "rocketbox:xy/m_run_neutral",
+    "frames": 24,
+    "seconds": 0.7667,
+    "speed_mps": 3.0747,
+    "phase_shift": 9,
+    "feet_z0": [
+     0.1161,
+     0.3857
+    ]
+   },
+   "f": {
+    "kind": "travel",
+    "loop": true,
+    "source": "rocketbox:xy/f_run_neutral",
+    "frames": 26,
+    "seconds": 0.8333,
+    "speed_mps": 3.1572,
+    "phase_shift": 9,
+    "feet_z0": [
+     0.1089,
+     0.4412
+    ]
+   }
+  },
+  "run_fast": {
+   "m": {
+    "kind": "travel",
+    "loop": true,
+    "source": "rocketbox:xy/m_run_fast_01",
+    "frames": 19,
+    "seconds": 0.6,
+    "speed_mps": 5.8395,
+    "phase_shift": 15,
+    "feet_z0": [
+     0.1085,
+     0.4395
+    ]
+   },
+   "f": {
+    "kind": "travel",
+    "loop": true,
+    "source": "rocketbox:xy/f_run_fast_01",
+    "frames": 22,
+    "seconds": 0.7,
+    "speed_mps": 5.3786,
+    "phase_shift": 8,
+    "feet_z0": [
+     0.105,
+     0.5732
+    ]
+   }
+  },
+  "run_start": {
+   "m": {
+    "kind": "motion",
+    "loop": false,
+    "source": "rocketbox:xy/m_run_start",
+    "frames": 20,
+    "seconds": 0.6333,
+    "root_travel_m": 0.561,
+    "root_yaw_deg": 0.0,
+    "speed_mps": 0.0
+   },
+   "f": {
+    "kind": "motion",
+    "loop": false,
+    "source": "rocketbox:xy/f_run_start",
+    "frames": 33,
+    "seconds": 1.0667,
+    "root_travel_m": 0.8975,
+    "root_yaw_deg": 0.0,
+    "speed_mps": 0.0
+   }
+  },
+  "run_stop": {
+   "m": {
+    "kind": "motion",
+    "loop": false,
+    "source": "rocketbox:xy/m_run_stop",
+    "frames": 39,
+    "seconds": 1.2667,
+    "root_travel_m": 1.5797,
+    "root_yaw_deg": 0.0,
+    "speed_mps": 0.0
+   },
+   "f": {
+    "kind": "motion",
+    "loop": false,
+    "source": "rocketbox:xy/f_run_stop",
+    "frames": 51,
+    "seconds": 1.6667,
+    "root_travel_m": 3.017,
+    "root_yaw_deg": 0.0,
+    "speed_mps": 0.0
+   }
+  },
+  "sit": {
+   "m": {
+    "kind": "static",
+    "loop": true,
+    "source": "rocketbox:static/m_sit_chair_idle_neutral_01",
+    "frames": 261,
+    "seconds": 8.6667,
+    "speed_mps": 0.0,
+    "window": [
+     121,
+     381
+    ]
+   },
+   "f": {
+    "kind": "static",
+    "loop": true,
+    "source": "rocketbox:static/f_sit_chair_idle_neutral_01",
+    "frames": 268,
+    "seconds": 8.9,
+    "speed_mps": 0.0,
+    "window": [
+     710,
+     977
+    ]
+   }
+  },
+  "sit_down": {
+   "m": {
+    "kind": "motion",
+    "loop": false,
+    "source": "rocketbox:xyz/m_sit_down_chair_01",
+    "frames": 88,
+    "seconds": 2.9,
+    "root_travel_m": 0.4576,
+    "root_yaw_deg": 0.0,
+    "speed_mps": 0.0
+   },
+   "f": {
+    "kind": "motion",
+    "loop": false,
+    "source": "rocketbox:xyz/f_sit_down_chair_01",
+    "frames": 148,
+    "seconds": 4.9,
+    "root_travel_m": 0.4534,
+    "root_yaw_deg": 0.0,
+    "speed_mps": 0.0
+   }
+  },
+  "stand_up": {
+   "m": {
+    "kind": "motion",
+    "loop": false,
+    "source": "rocketbox:xyz/m_sit_stand_up_chair_01",
+    "frames": 76,
+    "seconds": 2.5,
+    "root_travel_m": 0.4232,
+    "root_yaw_deg": 0.0,
+    "speed_mps": 0.0
+   },
+   "f": {
+    "kind": "motion",
+    "loop": false,
+    "source": "rocketbox:xyz/f_sit_stand_up_chair_01",
+    "frames": 101,
+    "seconds": 3.3333,
+    "root_travel_m": 0.4,
+    "root_yaw_deg": 0.0,
+    "speed_mps": 0.0
+   }
+  },
+  "talk": {
+   "m": {
+    "kind": "static",
+    "loop": true,
+    "source": "rocketbox:static/m_gestic_talk_neutral_01",
+    "frames": 353,
+    "seconds": 11.7333,
+    "speed_mps": 0.0,
+    "window": [
+     187,
+     539
+    ]
+   },
+   "f": {
+    "kind": "static",
+    "loop": true,
+    "source": "rocketbox:static/f_gestic_talk_neutral_01",
+    "frames": 264,
+    "seconds": 8.7667,
+    "speed_mps": 0.0,
+    "window": [
+     318,
+     581
+    ]
+   }
+  },
+  "talk_2": {
+   "m": {
+    "kind": "static",
+    "loop": true,
+    "source": "rocketbox:static/m_gestic_talk_neutral_02",
+    "frames": 341,
+    "seconds": 11.3333,
+    "speed_mps": 0.0,
+    "window": [
+     331,
+     671
+    ]
+   },
+   "f": {
+    "kind": "static",
+    "loop": true,
+    "source": "rocketbox:static/f_gestic_talk_neutral_02",
+    "frames": 308,
+    "seconds": 10.2333,
+    "speed_mps": 0.0,
+    "window": [
+     414,
+     721
+    ]
+   }
+  },
+  "turn_l180_walk": {
+   "m": {
+    "kind": "turn",
+    "loop": false,
+    "source": "rocketbox:xyz/m_turn_left_180_to_walk",
+    "frames": 50,
+    "seconds": 1.6333,
+    "root_travel_m": 1.0237,
+    "root_yaw_deg": 174.5,
+    "speed_mps": 0.0
+   },
+   "f": {
+    "kind": "turn",
+    "loop": false,
+    "source": "rocketbox:xyz/f_turn_left_180_to_walk",
+    "frames": 52,
+    "seconds": 1.7,
+    "root_travel_m": 0.7256,
+    "root_yaw_deg": 170.5,
+    "speed_mps": 0.0
+   }
+  },
+  "turn_l90": {
+   "m": {
+    "kind": "turn",
+    "loop": false,
+    "source": "rocketbox:xyz/m_turn_left_90",
+    "frames": 71,
+    "seconds": 2.3333,
+    "root_travel_m": 0.0013,
+    "root_yaw_deg": 90.3,
+    "speed_mps": 0.0
+   },
+   "f": {
+    "kind": "turn",
+    "loop": false,
+    "source": "rocketbox:xyz/f_turn_left_90",
+    "frames": 71,
+    "seconds": 2.3333,
+    "root_travel_m": 0.0652,
+    "root_yaw_deg": 89.8,
+    "speed_mps": 0.0
+   }
+  },
+  "turn_r180_walk": {
+   "m": {
+    "kind": "turn",
+    "loop": false,
+    "source": "rocketbox:xyz/m_turn_right_180_to_walk",
+    "frames": 63,
+    "seconds": 2.0667,
+    "root_travel_m": 0.3488,
+    "root_yaw_deg": -177.0,
+    "speed_mps": 0.0
+   },
+   "f": {
+    "kind": "turn",
+    "loop": false,
+    "source": "rocketbox:xyz/f_turn_right_180_to_walk",
+    "frames": 40,
+    "seconds": 1.3,
+    "root_travel_m": 0.0489,
+    "root_yaw_deg": -175.4,
+    "speed_mps": 0.0
+   }
+  },
+  "turn_r90": {
+   "m": {
+    "kind": "turn",
+    "loop": false,
+    "source": "rocketbox:xyz/m_turn_right_90",
+    "frames": 66,
+    "seconds": 2.1667,
+    "root_travel_m": 0.0023,
+    "root_yaw_deg": -89.0,
+    "speed_mps": 0.0
+   },
+   "f": {
+    "kind": "turn",
+    "loop": false,
+    "source": "rocketbox:xyz/f_turn_right_90",
+    "frames": 71,
+    "seconds": 2.3333,
+    "root_travel_m": 0.1576,
+    "root_yaw_deg": -90.1,
+    "speed_mps": 0.0
+   }
+  },
+  "walk": {
+   "m": {
+    "kind": "travel",
+    "loop": true,
+    "source": "rocketbox:xy/m_walk_neutral_02",
+    "frames": 33,
+    "seconds": 1.0667,
+    "speed_mps": 1.3484,
+    "phase_shift": 10,
+    "feet_z0": [
+     0.1071,
+     0.1899
+    ]
+   },
+   "f": {
+    "kind": "travel",
+    "loop": true,
+    "source": "rocketbox:xy/f_walk_neutral_01",
+    "frames": 37,
+    "seconds": 1.2,
+    "speed_mps": 1.2138,
+    "phase_shift": 10,
+    "feet_z0": [
+     0.1085,
+     0.1669
+    ]
+   }
+  },
+  "walk_fast": {
+   "m": {
+    "kind": "travel",
+    "loop": true,
+    "source": "rocketbox:xy/m_walk_fast_01",
+    "frames": 33,
+    "seconds": 1.0667,
+    "speed_mps": 1.4954,
+    "phase_shift": 26,
+    "feet_z0": [
+     0.1122,
+     0.2511
+    ]
+   },
+   "f": {
+    "kind": "travel",
+    "loop": true,
+    "source": "rocketbox:xy/f_walk_fast_01",
+    "frames": 32,
+    "seconds": 1.0333,
+    "speed_mps": 1.5305,
+    "phase_shift": 9,
+    "feet_z0": [
+     0.1089,
+     0.2109
+    ]
+   }
+  },
+  "walk_start": {
+   "m": {
+    "kind": "motion",
+    "loop": false,
+    "source": "rocketbox:xy/m_walk_start",
+    "frames": 30,
+    "seconds": 0.9667,
+    "root_travel_m": 0.5854,
+    "root_yaw_deg": 0.0,
+    "speed_mps": 0.0
+   },
+   "f": {
+    "kind": "motion",
+    "loop": false,
+    "source": "rocketbox:xy/f_walk_start",
+    "frames": 29,
+    "seconds": 0.9333,
+    "root_travel_m": 0.7473,
+    "root_yaw_deg": 0.0,
+    "speed_mps": 0.0
+   }
+  },
+  "walk_stop": {
+   "m": {
+    "kind": "motion",
+    "loop": false,
+    "source": "rocketbox:xy/m_walk_stop",
+    "frames": 61,
+    "seconds": 2.0,
+    "root_travel_m": 1.3696,
+    "root_yaw_deg": 0.0,
+    "speed_mps": 0.0
+   },
+   "f": {
+    "kind": "motion",
+    "loop": false,
+    "source": "rocketbox:xy/f_walk_stop",
+    "frames": 54,
+    "seconds": 1.7667,
+    "root_travel_m": 0.6576,
+    "root_yaw_deg": 0.0,
+    "speed_mps": 0.0
+   }
+  },
+  "wave": {
+   "m": {
+    "kind": "static",
+    "loop": false,
+    "source": "rocketbox:static/m_wave_01",
+    "frames": 86,
+    "seconds": 2.8333,
+    "speed_mps": 0.0
+   },
+   "f": {
+    "kind": "static",
+    "loop": false,
+    "source": "rocketbox:static/f_wave_01",
+    "frames": 167,
+    "seconds": 5.5333,
+    "speed_mps": 0.0
+   }
+  },
+  "yes": {
+   "u": {
+    "kind": "ual",
+    "loop": false,
+    "source": "quaternius:UAL2/Yes",
+    "frames": 61,
+    "seconds": 2.5,
+    "speed_mps": 0.0
+   }
+  }
+ }
+}
