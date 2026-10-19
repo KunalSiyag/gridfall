@@ -11,6 +11,8 @@ const HLOD := preload("res://scripts/fp/render/hlod.gd")
 const OCCLUDERS := preload("res://scripts/fp/render/occluders.gd")
 ## A preset switch re-ranges cached parts for at most this long per frame.
 const JOB_BUDGET_USEC := 3000
+## Tiles re-passed per frame once their mid-LOD merges finish, at most this long.
+const WAIT_BUDGET_USEC := 2000
 ## Project defaults of the global RenderingServer knobs (headless has no getters for them).
 const RS_SETTINGS := {
 	"atlas": "rendering/lights_and_shadows/directional_shadow/size",
@@ -47,6 +49,8 @@ var _job: Array = []
 var _night: float = -1.0
 var _imp_root: Node3D
 var _occ_root: Node3D
+var _waiting_ready: bool = false
+var _wait_queue: Array = []
 
 
 func feature_id() -> String:
@@ -66,6 +70,8 @@ func setup(p_ctx: FpContext) -> void:
 		_occ_root = _child_root("Occluders")
 	if ctx.view != null:
 		hlod.setup(ctx.view, ctx.sim, _imp_root)
+		# Headless runs (tests) merge on the calling thread, so results are deterministic.
+		hlod.midlod.threaded = DisplayServer.get_name() != "headless"
 		occluders.setup(_occ_root)
 		ctx.view.tile_built.connect(_on_tile_built)
 		ctx.view.tile_cleared.connect(_on_tile_cleared)
@@ -115,7 +121,7 @@ func apply_preset(p: String) -> void:
 		cam.far = Q.camera_far(preset)
 	var mult := Q.vis_mult(preset)
 	if hlod != null and hlod.view != null:
-		hlod.set_ranges(WS.VIS_BUILDING * mult, WS.VIS_PROP * mult)
+		hlod.set_ranges(WS.VIS_BUILDING * mult, WS.VIS_BUILDING_NEAR * mult, WS.VIS_PROP * mult)
 		_job = hlod.tiles.keys()
 
 
@@ -135,8 +141,11 @@ func job_pending() -> int:
 	return _job.size()
 
 
-## Runs every pending re-range and chunk rebuild now (tests and tools).
+## Runs every pending re-range, mid-LOD merge and chunk rebuild now (tests and tools).
 func flush() -> void:
+	if hlod.view != null:
+		hlod.midlod.wait_all()
+		_run_waiting(1 << 30)
 	_run_job(1 << 30)
 	while not _dirty.is_empty():
 		_rebuild_one()
@@ -228,12 +237,17 @@ func _process(_delta: float) -> void:
 		return
 	if not _job.is_empty():
 		_run_job(JOB_BUDGET_USEC)
+	if hlod.midlod.poll() > 0:
+		_waiting_ready = true
+	if _waiting_ready:
+		_run_waiting(WAIT_BUDGET_USEC)
 	if not _dirty.is_empty():
 		_rebuild_one()
 	var n: float = ctx.view.night
 	if absf(n - _night) > 0.002:
 		_night = n
 		hlod.material.set_shader_parameter("night", n)
+		hlod.midlod.material.set_shader_parameter("night", n)
 
 
 func _activate() -> void:
@@ -260,6 +274,9 @@ func _deactivate() -> void:
 	if not active:
 		return
 	active = false
+	hlod.midlod.wait_all()
+	_wait_queue.clear()
+	_waiting_ready = false
 	for e: Dictionary in hlod.tiles.values():
 		HLOD.restore(e)
 	hlod.set_visible(false)
@@ -292,6 +309,24 @@ func _on_fp_mode_changed(on: bool) -> void:
 
 func _on_quality_changed(p: String) -> void:
 	apply_preset(p)
+
+
+## Re-passes the tiles that waited for a mid-LOD merge (some may wait again for another mesh).
+func _run_waiting(budget_usec: int) -> void:
+	if _wait_queue.is_empty():
+		_wait_queue = hlod.waiting.keys()
+	var t0 := Time.get_ticks_usec()
+	while not _wait_queue.is_empty() and Time.get_ticks_usec() - t0 < budget_usec:
+		var i: int = _wait_queue.pop_back()
+		if not hlod.waiting.has(i):
+			continue
+		var h := ctx.view.tile_holder(i)
+		if h != null and is_instance_valid(h):
+			_dirty[hlod.post_pass(i, h)] = true
+		else:
+			hlod.waiting.erase(i)
+	if _wait_queue.is_empty():
+		_waiting_ready = false
 
 
 func _run_job(budget_usec: int) -> void:

@@ -5,7 +5,8 @@ extends SceneTree
 ## origin, ground at y = 0): a GRID x GRID height field of the building mass (lot slab, foliage and
 ## props excluded) with the colour of the surface on top of each cell, the facade colour, the share
 ## of the facade that is glass and of that the share that lights up at night, and the body box (the
-## main mass: cells at least half the building's height, or H's ColBox_<n> empties when present).
+## main mass: cells at least half the building's height, or H's ColBox_<n> empties when present),
+## and the average colour of every material (midlod.gd's vertex colours).
 ## Colours are the materials' albedo_color times the average of their source albedo images (read
 ## from the source files here, never from the VRAM-compressed imports at runtime). Re-run after a
 ## model changes; the runtime falls back to surface bounds for any model missing from the file.
@@ -16,6 +17,11 @@ const OUT := "res://scripts/fp/render/proxies.json"
 const DIRS := ["res://models/real/zones/", "res://models/real/buildings/"]
 const GRID := 16
 const HALF := 0.5
+## Facade colour bands (world units) and the base split for buildings at least TALL high.
+const BAND_H := 0.02
+const BANDS := 200
+const TALL := 0.3
+const BASE_MAX := 0.2
 ## Surfaces that are not building mass (by material or node name prefix).
 const SKIP_PREFIXES := ["Leaves", "Leaf", "Bark", "Hedge", "Tree", "Grass", "Turf"]
 const GLASS_PREFIXES := ["WindowLit", "Glass_Shop", "Glass_Office", "Glass"]
@@ -32,7 +38,7 @@ func _init() -> void:
 		if not d.is_empty():
 			models[p] = d
 	var f := FileAccess.open(OUT, FileAccess.WRITE)
-	f.store_string(JSON.stringify({"version": 1, "grid": GRID, "half": HALF, "models": models}, "", true, true))
+	f.store_string(JSON.stringify({"version": 1, "grid": GRID, "half": HALF, "models": models}, "", true, false))
 	f.close()
 	print("PROXY_BAKE: %d models in %d ms -> %s" % [models.size(), Time.get_ticks_msec() - t0, OUT])
 	quit(0)
@@ -91,8 +97,13 @@ func _bake(path: String) -> Dictionary:
 	top.resize(n2)
 	var wall := Vector3.ZERO
 	var wall_area := 0.0
+	# Facade colour per 0.02 u height band: rgb * area, area.
+	var bands: Array[Vector4] = []
+	bands.resize(BANDS)
+	bands.fill(Vector4.ZERO)
 	var glass_area := 0.0
 	var lit_area := 0.0
+	var mats := {}
 	var cut := WS.LOT_TOP + 0.002
 	for e: Dictionary in parts:
 		var mesh: Mesh = e["mesh"]
@@ -100,9 +111,10 @@ func _bake(path: String) -> Dictionary:
 		for s in range(mesh.get_surface_count()):
 			var mat := mesh.surface_get_material(s)
 			var mname := mat.resource_name if mat != null else ""
+			var col := _surface_color(mat)
+			mats[mname] = [snappedf(col.r, 0.005), snappedf(col.g, 0.005), snappedf(col.b, 0.005)]
 			if _skipped(mname) or mname in CAR_MATERIALS:
 				continue
-			var col := _surface_color(mat)
 			var glass := _is_glass(mname)
 			var arrays := mesh.surface_get_arrays(s)
 			var v: PackedVector3Array = xf * (arrays[Mesh.ARRAY_VERTEX] as PackedVector3Array)
@@ -128,6 +140,8 @@ func _bake(path: String) -> Dictionary:
 					else:
 						wall += Vector3(col.r, col.g, col.b) * area
 						wall_area += area
+						var bi := clampi(int((a.y + b.y + c.y) / 3.0 / BAND_H), 0, BANDS - 1)
+						bands[bi] += Vector4(col.r * area, col.g * area, col.b * area, area)
 				if nrm.y > 0.2:
 					_raster(a, b, c, col, hgt, top, step)
 	root.free()
@@ -165,15 +179,36 @@ func _bake(path: String) -> Dictionary:
 		for cb: AABB in colboxes:
 			body = body.merge(cb)
 	var wc := wall / wall_area if wall_area > 0.0 else Vector3(0.6, 0.6, 0.58)
+	# Mid-rise and taller buildings often stand on a different base (shopfronts, a brick podium):
+	# facades below `split` take the base's colour, the rest the body's.
+	var split := 0.0
+	var lo := wc
+	if maxh >= TALL:
+		split = minf(BASE_MAX, 0.4 * maxh)
+		var acc_lo := Vector4.ZERO
+		var acc_hi := Vector4.ZERO
+		for bi in range(BANDS):
+			if (float(bi) + 0.5) * BAND_H < split:
+				acc_lo += bands[bi]
+			else:
+				acc_hi += bands[bi]
+		if acc_lo.w > 0.0 and acc_hi.w > 0.0:
+			lo = Vector3(acc_lo.x, acc_lo.y, acc_lo.z) / acc_lo.w
+			wc = Vector3(acc_hi.x, acc_hi.y, acc_hi.z) / acc_hi.w
+		else:
+			split = 0.0
 	var vert := wall_area + glass_area
 	return {
 		"h": hs, "c": Array(cells), "pal": pal, "maxh": snappedf(maxh, 0.001),
 		"wall": [snappedf(wc.x, 0.01), snappedf(wc.y, 0.01), snappedf(wc.z, 0.01)],
+		"wall_lo": [snappedf(lo.x, 0.01), snappedf(lo.y, 0.01), snappedf(lo.z, 0.01)],
+		"split": snappedf(split, 0.001),
 		"win": snappedf(glass_area / vert if vert > 0.0 else 0.0, 0.01),
 		"lit": snappedf(lit_area / glass_area if glass_area > 0.0 else 0.0, 0.01),
 		"body": [snappedf(body.position.x, 0.001), snappedf(body.position.y, 0.001), snappedf(body.position.z, 0.001),
 			snappedf(body.end.x, 0.001), snappedf(body.end.y, 0.001), snappedf(body.end.z, 0.001)],
 		"colbox": not colboxes.is_empty(),
+		"mats": mats,
 	}
 
 

@@ -137,6 +137,7 @@ const TIME_SCALES := [1, 2, 4, 8]        # allowed first-person speeds (D4)
 
 
 # --- G2 render performance (owned by G2)
+const VIS_BUILDING_NEAR := 4.0          # 80 m: textured buildings; merged one-draw twins to VIS_BUILDING
 # end G2
 
 

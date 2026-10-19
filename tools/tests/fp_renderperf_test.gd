@@ -102,6 +102,7 @@ func _check_ranges(f: Node, hlod: RefCounted, view: CityView, mult: float, forei
 	var nb := 0
 	var np := 0
 	var nr := 0
+	var nm := 0
 	var bad: Array[String] = []
 	for i: int in tiles.keys():
 		var e: Dictionary = tiles[i]
@@ -109,9 +110,13 @@ func _check_ranges(f: Node, hlod: RefCounted, view: CityView, mult: float, forei
 		var cls: PackedByteArray = e["cls"]
 		for k in range(gis.size()):
 			var gi := gis[k] as GeometryInstance3D
-			var want := WS.VIS_PROP * mult if cls[k] == HLOD.Cls.PROP else WS.VIS_BUILDING * mult
-			if absf(gi.visibility_range_end - want) > EPS or not gi.has_meta("g2_vis"):
+			if absf(gi.visibility_range_end - _want_end(cls[k], mult)) > EPS or absf(gi.visibility_range_begin - _want_begin(cls[k], mult)) > EPS or not gi.has_meta("g2_vis"):
 				bad.append("%d:%s" % [i, gi.name])
+			if cls[k] == HLOD.Cls.MID:
+				nm += 1
+				var src := gi.get_parent() as MeshInstance3D
+				if src == null or not (e["gis"] as Array).has(src) or cls[(e["gis"] as Array).find(src)] != HLOD.Cls.NEAR or gi.transform != Transform3D.IDENTITY or not src.get_aabb().is_equal_approx(gi.get_aabb()) or (gi as MeshInstance3D).mesh.get_surface_count() != 1 or gi.cast_shadow != src.cast_shadow:
+					bad.append("%d:%s twin" % [i, gi.name])
 			if cls[k] == HLOD.Cls.PROP:
 				np += 1
 				if gi.cast_shadow != GeometryInstance3D.SHADOW_CASTING_SETTING_OFF:
@@ -120,8 +125,8 @@ func _check_ranges(f: Node, hlod: RefCounted, view: CityView, mult: float, forei
 				nr += 1
 			elif gi is MeshInstance3D:
 				nb += 1
-	K.check(fails, nb >= 50 and np >= 5 and nr >= 50, "fixtures: %d building meshes, %d prop parts, %d road parts" % [nb, np, nr])
-	K.check(fails, bad.is_empty(), "every building/road part ends at VIS_BUILDING*mult, every prop at VIS_PROP*mult with no shadow %s" % str(bad.slice(0, 5)))
+	K.check(fails, nb >= 50 and np >= 5 and nr >= 50 and nm >= 20, "fixtures: %d building meshes, %d mid-LOD twins, %d prop parts, %d road parts" % [nb, nm, np, nr])
+	K.check(fails, bad.is_empty(), "building meshes end at VIS_BUILDING_NEAR*mult where their one-surface twin (same bounds, shadows as authored) takes over to VIS_BUILDING*mult; other building/road parts end at VIS_BUILDING*mult, props at VIS_PROP*mult with no shadow %s" % str(bad.slice(0, 5)))
 	# Every building mesh under a holder is ranged.
 	var unranged := 0
 	for i: int in tiles.keys():
@@ -149,6 +154,19 @@ func _check_ranges(f: Node, hlod: RefCounted, view: CityView, mult: float, forei
 				site_touched += 1
 	K.check(fails, site_touched == 0, "no node under %d Site children touched (%d)" % [sites, site_touched])
 	K.check(fails, foreign != null and is_equal_approx(foreign.visibility_range_end, 3.21) and not foreign.has_meta("g2_vis"), "a part ranged before the post-pass keeps its range")
+
+
+static func _want_end(c: int, mult: float) -> float:
+	match c:
+		HLOD.Cls.PROP:
+			return WS.VIS_PROP * mult
+		HLOD.Cls.NEAR:
+			return WS.VIS_BUILDING_NEAR * mult
+	return WS.VIS_BUILDING * mult
+
+
+static func _want_begin(c: int, mult: float) -> float:
+	return WS.VIS_BUILDING_NEAR * mult if c == HLOD.Cls.MID else 0.0
 
 
 func _check_occluders(hlod: RefCounted, occ: RefCounted, view: CityView, sim: CitySim) -> void:
@@ -276,8 +294,8 @@ func _check_presets(ctx: FpContext, f: Node, hlod: RefCounted) -> void:
 	for e: Dictionary in hlod.tiles.values():
 		var gis: Array = e["gis"]
 		for k in range(gis.size()):
-			var want := WS.VIS_PROP * 1.3 if (e["cls"] as PackedByteArray)[k] == HLOD.Cls.PROP else WS.VIS_BUILDING * 1.3
-			ok = ok and absf((gis[k] as GeometryInstance3D).visibility_range_end - want) < EPS
+			var c: int = (e["cls"] as PackedByteArray)[k]
+			ok = ok and absf((gis[k] as GeometryInstance3D).visibility_range_end - _want_end(c, 1.3)) < EPS and absf((gis[k] as GeometryInstance3D).visibility_range_begin - _want_begin(c, 1.3)) < EPS
 	K.check(fails, ok, "High: cached parts re-ranged to VIS_*×1.3")
 	K.check(fails, hlod.walks == walks, "the preset switch walked only the cached lists (holder walks %d -> %d)" % [walks, hlod.walks])
 	ctx.bus.quality_changed.emit("medium")
@@ -294,7 +312,7 @@ func _check_undo(ctx: FpContext, f: Node, hlod: RefCounted, view: CityView) -> v
 	view.set_fp_mode(false)
 	var kept := 0
 	for gi: Variant in parts:
-		if is_instance_valid(gi) and ((gi as GeometryInstance3D).visibility_range_end != 0.0 or (gi as Node).has_meta("g2_vis")):
+		if is_instance_valid(gi) and not (gi as Node).is_queued_for_deletion() and ((gi as GeometryInstance3D).visibility_range_end != 0.0 or (gi as Node).has_meta("g2_vis")):
 			kept += 1
 	var shown := 0
 	for n: Variant in imps + occs:

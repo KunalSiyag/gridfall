@@ -1,16 +1,20 @@
 extends RefCounted
-## Visibility ranges and far impostors (slice G2). post_pass() classifies every drawn part of a tile
+## Visibility ranges and building LODs (slice G2). post_pass() classifies every drawn part of a tile
 ## holder once (building, prop or road), sets its visibility range and shadow casting, and caches
-## the list so a preset switch never walks the scene again. Far buildings are drawn as stepped
-## mass proxies (proxies.gd) merged into one mesh per 8x8-tile chunk; the impostor shader hides each
-## proxy inside the range where its real building is drawn, so the two never overlap.
+## the list so a preset switch never walks the scene again. Buildings have three levels: the real
+## textured model up to VIS_BUILDING_NEAR, a merged one-draw twin of each building mesh (midlod.gd)
+## up to VIS_BUILDING, then stepped mass proxies (proxies.gd) merged into one mesh per 8x8-tile
+## chunk. Each switch happens at one exact distance from the same point, so levels never overlap.
 
 const WS := preload("res://scripts/fp/world_scale.gd")
 const D := preload("res://scripts/sim/sim_defs.gd")
 const PROXIES := preload("res://scripts/fp/render/proxies.gd")
+const MIDLOD := preload("res://scripts/fp/render/midlod.gd")
 const SHADER := preload("res://scripts/fp/render/impostor.gdshader")
 const CHUNK := 8
-enum Cls { BUILDING, PROP, ROAD }
+## BUILDING: holder part ending at VIS_BUILDING; NEAR: a building mesh ending at VIS_BUILDING_NEAR;
+## MID: its merged twin, from VIS_BUILDING_NEAR to VIS_BUILDING.
+enum Cls { BUILDING, PROP, ROAD, NEAR, MID }
 ## Meshes smaller than this (longest side, world units) never cast shadows (1 m).
 const SMALL := 0.05
 const PROP_SCENES := ["res://models/real/props/", "res://models/props/"]
@@ -23,9 +27,11 @@ var view: CityView
 var sim: CitySim
 var root: Node3D
 var proxies: RefCounted = PROXIES.new()
+var midlod: RefCounted = MIDLOD.new()
 var material: ShaderMaterial
 ## Visibility ranges in world units after the preset multiplier.
 var vis_building: float = WS.VIS_BUILDING
+var vis_near: float = WS.VIS_BUILDING_NEAR
 var vis_prop: float = WS.VIS_PROP
 ## tile index -> entry {"holder", "gis": Array of GeometryInstance3D, "cls": PackedByteArray,
 ## "chunk": Vector2i, "path", "xf": Transform3D (model to world), "center": Vector3 (the engine's
@@ -35,6 +41,8 @@ var tiles: Dictionary = {}
 var chunk_tiles: Dictionary = {}
 ## chunk -> MeshInstance3D
 var chunk_nodes: Dictionary = {}
+## Tiles whose building waits for a mid-LOD merge (tile index -> true); re-run post_pass when ready.
+var waiting: Dictionary = {}
 ## Test hooks: holders walked by post_pass, and chunk meshes built.
 var walks: int = 0
 var builds: int = 0
@@ -46,12 +54,13 @@ func setup(p_view: CityView, p_sim: CitySim, p_root: Node3D) -> void:
 	root = p_root
 	material = ShaderMaterial.new()
 	material.shader = SHADER
-	set_ranges(vis_building, vis_prop)
+	set_ranges(vis_building, vis_near, vis_prop)
 
 
 ## Sets the switch distances used from now on (cached parts are re-ranged by apply_ranges).
-func set_ranges(building: float, prop: float) -> void:
+func set_ranges(building: float, near: float, prop: float) -> void:
 	vis_building = building
+	vis_near = minf(near, building)
 	vis_prop = prop
 	material.set_shader_parameter("range_sq", building * building)
 	for c: Vector2i in chunk_nodes.keys():
@@ -62,8 +71,8 @@ static func chunk_of(i: int) -> Vector2i:
 	return Vector2i(floori(float(D.tx(i)) / CHUNK), floori(float(D.ty(i)) / CHUNK))
 
 
-## Classifies and ranges every drawn part of tile i's holder; returns the chunk that changed or
-## Vector2i(-9999, -9999) when the tile is not part of any chunk.
+## Classifies and ranges every drawn part of tile i's holder (replacing its mid-LOD twins); returns
+## the tile's chunk, whose impostor and occluder need a rebuild.
 func post_pass(i: int, holder: Node3D) -> Vector2i:
 	drop(i)
 	if holder == null or not is_instance_valid(holder) or not holder.is_inside_tree():
@@ -75,6 +84,9 @@ func post_pass(i: int, holder: Node3D) -> Vector2i:
 	var cls := PackedByteArray()
 	for n in holder.find_children("*", "GeometryInstance3D", true, false):
 		var gi := n as GeometryInstance3D
+		if gi.has_meta("g2_mid"):
+			_free(gi)
+			continue
 		if site != null and (gi == site or site.is_ancestor_of(gi)):
 			continue
 		if not gi.has_meta("g2_vis") and (gi.visibility_range_end != 0.0 or gi.visibility_range_begin != 0.0):
@@ -88,6 +100,7 @@ func post_pass(i: int, holder: Node3D) -> Vector2i:
 				gi.set_meta("g2_shadow", gi.cast_shadow)
 			gi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	var e := {"holder": holder, "gis": gis, "cls": cls, "chunk": chunk_of(i), "path": "", "impostor": false, "solid": false}
+	_add_twins(i, holder, e)
 	apply_ranges(e)
 	_proxy_info(i, holder, e)
 	tiles[i] = e
@@ -101,6 +114,7 @@ func post_pass(i: int, holder: Node3D) -> Vector2i:
 ## Forgets tile i (its holder was replaced or cleared); returns its chunk.
 func drop(i: int) -> Vector2i:
 	var c := chunk_of(i)
+	waiting.erase(i)
 	if tiles.has(i):
 		tiles.erase(i)
 		if chunk_tiles.has(c):
@@ -116,8 +130,18 @@ func apply_ranges(e: Dictionary) -> void:
 		if not is_instance_valid(gis[k]):
 			continue
 		var gi := gis[k] as GeometryInstance3D
-		gi.visibility_range_end = vis_prop if cls[k] == Cls.PROP else vis_building
-		# No hysteresis margin: the impostor shader switches at exactly this distance.
+		match cls[k]:
+			Cls.PROP:
+				gi.visibility_range_end = vis_prop
+			Cls.NEAR:
+				gi.visibility_range_end = vis_near
+			Cls.MID:
+				gi.visibility_range_begin = vis_near
+				gi.visibility_range_end = vis_building
+			_:
+				gi.visibility_range_end = vis_building
+		# No hysteresis margins: each level switches at exactly one distance from the same point.
+		gi.visibility_range_begin_margin = 0.0
 		gi.visibility_range_end_margin = 0.0
 		gi.visibility_range_fade_mode = GeometryInstance3D.VISIBILITY_RANGE_FADE_DISABLED
 
@@ -128,6 +152,9 @@ static func restore(e: Dictionary) -> void:
 		if not is_instance_valid(o):
 			continue
 		var gi := o as GeometryInstance3D
+		if gi.has_meta("g2_mid"):
+			_free(gi)
+			continue
 		gi.visibility_range_end = 0.0
 		gi.visibility_range_end_margin = 0.0
 		if gi.has_meta("g2_shadow"):
@@ -222,6 +249,46 @@ func clear() -> void:
 	chunk_tiles.clear()
 
 
+## Gives every building mesh of tile i's model a merged mid-LOD twin (a child at identity, so both
+## share one bounding box and switch at the same point). Models with spinning parts keep theirs.
+func _add_twins(i: int, holder: Node3D, e: Dictionary) -> void:
+	if not holder.has_meta("building_path"):
+		return
+	var path := str(holder.get_meta("building_path"))
+	var model: Node3D = null
+	for ch in holder.get_children():
+		if ch is Node3D and ch.scene_file_path == path:
+			model = ch
+			break
+	if model == null or not model.find_children("Rotor*", "", true, false).is_empty():
+		return
+	var gis: Array = e["gis"]
+	var cls: PackedByteArray = e["cls"]
+	for k in range(gis.size()):
+		var mi := gis[k] as MeshInstance3D
+		if cls[k] != Cls.BUILDING or mi == null or not model.is_ancestor_of(mi) or PROXIES._skipped(str(mi.name)):
+			continue
+		if not MIDLOD.mergeable(mi.mesh) or mi.material_override != null:
+			continue
+		var m: ArrayMesh = midlod.mesh_for(mi.mesh, path)
+		if m == null:
+			waiting[i] = true
+			continue
+		var twin := MeshInstance3D.new()
+		twin.name = "G2Mid"
+		twin.mesh = m
+		twin.material_override = midlod.material
+		twin.cast_shadow = mi.cast_shadow
+		twin.set_meta("g2_mid", true)
+		twin.set_meta("g2_vis", true)
+		twin.set_meta("fp_owner", "render_opt")
+		mi.add_child(twin)
+		cls[k] = Cls.NEAR
+		gis.append(twin)
+		cls.append(Cls.MID)
+	e["cls"] = cls
+
+
 ## Fills path, xf, center, impostor and solid for tile i.
 func _proxy_info(i: int, holder: Node3D, e: Dictionary) -> void:
 	if not holder.has_meta("building_path"):
@@ -266,6 +333,12 @@ static func _range_point(model: Node3D, xf: Transform3D) -> Vector3:
 	if best == null:
 		return xf.origin
 	return (xf * PROXIES._relative(model, best) * best.get_aabb()).get_center()
+
+
+static func _free(n: Node) -> void:
+	if n.get_parent() != null:
+		n.get_parent().remove_child(n)
+	n.queue_free()
 
 
 static func _is_prop(gi: Node, holder: Node) -> bool:

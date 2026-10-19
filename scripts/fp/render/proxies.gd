@@ -57,6 +57,9 @@ func _from_bake(e: Dictionary, g: int, half: float) -> Dictionary:
 	var pal: Array = e["pal"]
 	var wl: Array = e["wall"]
 	var wall := Color(float(wl[0]), float(wl[1]), float(wl[2]), float(e.get("lit", 0.0)))
+	var wb: Array = e.get("wall_lo", wl)
+	var base := Color(float(wb[0]), float(wb[1]), float(wb[2]), wall.a)
+	var split := float(e.get("split", 0.0))
 	var step := 2.0 * half / float(g)
 	var out := {"verts": PackedVector3Array(), "normals": PackedVector3Array(), "colors": PackedColorArray(), "win": float(e.get("win", 0.0)), "baked": true}
 	var h := func(i: int, j: int) -> float:
@@ -113,7 +116,11 @@ func _from_bake(e: Dictionary, g: int, half: float) -> Dictionary:
 					if not is_equal_approx(h.call(i2, j2), hi) or not is_equal_approx(h.call(i2 + dir.x, j2 + dir.y), lo):
 						break
 					run += 1
-				_facade(out, dir, i, j, run, step, half, lo, hi, wall)
+				if split > lo and split < hi:
+					_facade(out, dir, i, j, run, step, half, lo, split, base)
+					_facade(out, dir, i, j, run, step, half, split, hi, wall)
+				else:
+					_facade(out, dir, i, j, run, step, half, lo, hi, base if hi <= split else wall)
 				b += run
 	var bb: Array = e["body"]
 	out["body"] = AABB(Vector3(float(bb[0]), float(bb[1]), float(bb[2])), Vector3(float(bb[3]) - float(bb[0]), float(bb[4]) - float(bb[1]), float(bb[5]) - float(bb[2])))
