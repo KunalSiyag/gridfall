@@ -27,6 +27,8 @@ const WARM_SECONDS := 14.0
 const PICK_PX := 26.0
 ## The traffic photo stands this far from the junction centre along the arm.
 const PHOTO_BACK := 1.3
+## Seconds between attempts to rebuild bus lines that no longer match the roads.
+const LINE_RETRY := 10.0
 
 var lanes: LG
 var peds: SW
@@ -351,12 +353,25 @@ func _maintain(sync: bool) -> void:
 	if ambient_enabled:
 		ambient.maintain(p, _player_fwd(), sync)
 	var sig := fleets.stops_signature(ctx.view)
+	fleets.retry_t -= 0.5
 	if sig != _stops_sig:
+		# New or removed stops: their curbs change (no parking), and the lines are drawn anew.
 		_stops_sig = sig
+		var before := lanes.stop_sides.duplicate()
 		lanes.stop_sides = fleets.read_stops(ctx.view)
-		lanes.rebuild_all()
+		for i: int in before.keys() + lanes.stop_sides.keys():
+			if before.get(i, -1) != lanes.stop_sides.get(i, -1) and lanes.tiles.has(i):
+				lanes.rebuild_tile(i)
 		fleets.rebuild_lines(ctx.view)
+		fleets.backoff = LINE_RETRY
+		fleets.retry_t = LINE_RETRY
 		_after_lane_change()
+	elif fleets.retry_t <= 0.0 and fleets.stale():
+		# Roads changed under the lines (or connected the stops at last): try again, less often
+		# while it keeps failing.
+		fleets.rebuild_lines(ctx.view)
+		fleets.backoff = LINE_RETRY if not fleets.stale() else minf(fleets.backoff * 2.0, LINE_RETRY * 16.0)
+		fleets.retry_t = fleets.backoff
 
 
 func _drop_stuck(c: VH.Car) -> void:

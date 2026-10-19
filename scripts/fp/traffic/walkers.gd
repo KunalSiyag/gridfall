@@ -25,6 +25,11 @@ const LOD_NEAR := 4.6
 const LOD_DT := 0.2
 ## Seconds a person spawned in view takes to fade in.
 const FADE_IN := 1.6
+## Ambient walkers who stop to chat when they meet (a pair of them stands out of the flow).
+const CHATTY := 0.22
+const CHAT_MEET := 1.3 * WS.M
+const CHAT_MIN := 10.0
+const CHAT_MAX := 40.0
 ## People waiting at a zebra spread along the curb (metres, by slot) and step back a row.
 const WAIT_ALONG: Array[float] = [0.0, -0.6, 0.6]
 const WAIT_ROW := 0.55
@@ -75,6 +80,11 @@ class Walker extends RefCounted:
 	var gait: float = 0.0            # drawn stride amount 0..1 (eases toward the walking speed)
 	var fade: float = 1.0            # drawn opacity 0..1 (people spawned in view fade in)
 	var wait_slot: int = -1          # place in the little crowd waiting at a zebra
+	var chatty: bool = false         # stops to chat when meeting another chatty walker
+	var chat_t: float = 0.0
+	var chat_cool: float = 0.0
+	var chat_lat: float = 0.0
+	var chat_with: Walker = null
 	var vis_off := Vector3.ZERO      # drawn offset from pos (eases; spreads a waiting crowd)
 
 
@@ -114,6 +124,7 @@ func make(role: String) -> Walker:
 	w.lat_jit = _rng.randf_range(-0.008, 0.008)
 	w.lat = w.lat_jit
 	w.phase = _rng.randf() * TAU
+	w.chatty = role == "ambient" and _rng.randf() < CHATTY
 	walkers.append(w)
 	return w
 
@@ -211,6 +222,10 @@ func _step_one(w: Walker, dt: float) -> void:
 	if w.state == "stand":
 		w.v = 0.0
 		return
+	if w.state == "chat":
+		_chat(w, dt)
+		return
+	w.chat_cool -= dt
 	if w.on_leg:
 		_walk_leg(w, dt)
 	elif w.edge != null:
@@ -286,6 +301,17 @@ func _walk_edge(w: Walker, dt: float) -> void:
 				if ahead <= 0.0:
 					continue
 				var ofwd := Vector2(sin(o.yaw), cos(o.yaw))
+				if o.state != "walk" or o.hold:
+					# Someone standing (chatting, waiting): step around them on the road side.
+					if dist < SEP * 2.5:
+						var side := -dp.x * fwd.y + dp.z * fwd.x
+						lat_t = -BAND * 0.8 if side > 0.0 else BAND * 0.8
+						if dist < SEP * 0.9 and absf(side - w.lat) < SEP * 0.6:
+							v *= 0.4
+					continue
+				if ofwd.dot(fwd) < -0.3 and dist < CHAT_MEET and _may_chat(w, e) and _may_chat(o, o.edge):
+					_start_chat(w, o)
+					return
 				if ofwd.dot(fwd) > 0.3:
 					if dist < SEP * 1.6 and o.v < v:
 						v = maxf(o.v, 0.0) if dist < SEP else lerpf(o.v, v, (dist - SEP) / (SEP * 0.6))
@@ -424,6 +450,53 @@ func _next(w: Walker) -> void:
 		_begin_wait(w)
 		return
 	_enter(w, pick, dir)
+
+
+## True when w could stop to chat here: an ambient walker in the mood, on a plain sidewalk.
+func _may_chat(w: Walker, e: SW.PedEdge) -> bool:
+	if w.role != "ambient" or not w.chatty or w.chat_cool > 0.0 or w.state != "walk" or w.on_leg or w.hold:
+		return false
+	if e == null or e.zebra or not w.plan.is_empty():
+		return false
+	var t: LG.TileInfo = lg.info(e.tile)
+	return t != null and t.piece == "straight"
+
+
+## Two walkers who meet stop for a chat: both step to the lot side of the walking band (out of
+## the flow) and face each other for 10-40 s.
+func _start_chat(a: Walker, b: Walker) -> void:
+	var secs := _rng.randf_range(CHAT_MIN, CHAT_MAX)
+	for pair: Array in [[a, b], [b, a]]:
+		var w: Walker = pair[0]
+		w.state = "chat"
+		w.chat_t = secs
+		w.chat_with = pair[1]
+		w.v = 0.0
+		w.vel = Vector3.ZERO
+		var f := _fwd(w)
+		var p := Vector2(w.pos.x, w.pos.z)
+		var to_road := Vector2(D.tx(w.edge.tile), D.ty(w.edge.tile)) - p
+		var right := Vector2(-f.y, f.x)
+		w.chat_lat = -BAND if right.dot(to_road) > 0.0 else BAND
+
+
+func _chat(w: Walker, dt: float) -> void:
+	w.v = 0.0
+	w.vel = Vector3.ZERO
+	w.chat_t -= dt
+	var o := w.chat_with
+	if o == null or o.dead or o.state != "chat" or w.chat_t <= 0.0:
+		w.state = "walk"
+		w.chat_with = null
+		w.chat_cool = _rng.randf_range(60.0, 150.0)
+		return
+	w.lat = move_toward(w.lat, w.chat_lat, dt * 0.5 * WS.M)
+	var yaw := w.yaw
+	_pose(w, 0.0)
+	w.yaw = yaw
+	var d := o.pos - w.pos
+	if Vector2(d.x, d.z).length_squared() > 1e-10:
+		w.yaw = lerp_angle(w.yaw, atan2(d.x, d.z), minf(1.0, dt * 3.0))
 
 
 ## w stops at the curb before a zebra, taking the next free place in the waiting crowd.

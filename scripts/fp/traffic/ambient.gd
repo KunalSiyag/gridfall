@@ -155,8 +155,9 @@ func _d2(a: Vector3, b: Vector3) -> float:
 
 
 ## A random road tile within the spawn ring (min_r..r; r < 0: the car ring), weighted toward busy
-## streets. Outside a sync fill a car tile also lies away from where the player faces.
-func _pick_tile(p: Vector3, fwd: Vector3, sync: bool, r: float = -1.0, min_r: float = MIN_SPAWN) -> int:
+## streets. Whether the spot is in view is the caller's check (never "behind the player" alone:
+## at the edge of the city there may be no road behind).
+func _pick_tile(p: Vector3, _fwd: Vector3, sync: bool, r: float = -1.0, min_r: float = MIN_SPAWN) -> int:
 	if _road_tiles.is_empty():
 		return -1
 	var rr := radius if r < 0.0 else r
@@ -168,11 +169,8 @@ func _pick_tile(p: Vector3, fwd: Vector3, sync: bool, r: float = -1.0, min_r: fl
 		var dx := float(D.tx(i)) - p.x
 		var dz := float(D.ty(i)) - p.z
 		var d2 := dx * dx + dz * dz
-		if not sync:
-			if d2 < min_r * min_r:
-				continue
-			if r < 0.0 and dx * fwd.x + dz * fwd.z >= 0.0:
-				continue
+		if not sync and d2 < min_r * min_r:
+			continue
 		var w := 0.35 + (sim.traffic[i] if i < sim.traffic.size() else 0.0)
 		if _rng.randf() > w:
 			continue
@@ -223,8 +221,10 @@ func _spawn_car(p: Vector3, fwd: Vector3, sync: bool) -> bool:
 	var dp := at.distance_to(Vector2(p.x, p.z))
 	if dp < PERSONAL + dims.z or (sync and dp < SYNC_CAR_CLEAR):
 		return false
-	if not sync and visible.call(Vector3(at.x, 0.03, at.y)):
-		return false
+	if not sync:
+		for q: Vector2 in [lg.pos_at(l, s), lg.pos_at(l, s - dims.z)]:
+			if visible.call(Vector3(q.x, 0.03, q.y)):
+				return false
 	var c := vh.make("car", "ambient", dims)
 	c.model = m
 	c.label = "a commuter"

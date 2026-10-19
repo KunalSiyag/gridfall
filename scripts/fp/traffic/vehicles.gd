@@ -774,19 +774,34 @@ func _next_move(o: Car, a: LG.Lane) -> LG.Lane:
 	return null
 
 
-## Free length at the start of lane `after` (beyond move mv), minus what is queued on mv.
+## Free length from the start of lane `after` (beyond move mv) along c's own path, up to the first
+## vehicle (a short approach lane of the next junction counts with what lies beyond it), minus
+## what is queued on mv.
 func _room(after: LG.Lane, mv: LG.Lane, c: Car) -> float:
-	var free := after.length
-	for o: Car in after.cars:
-		if o != c:
-			free = minf(free, o.s - o.length)
+	var need := c.length + IDM.S0
+	var free := 0.0
+	var k := c.path.find(after)
+	var x := after
+	while x != null:
+		var block := INF
+		for o: Car in x.cars:
+			if o != c:
+				block = o.s - o.length
+				break
+		for o: Car in x.tails:
+			if o != c:
+				block = minf(block, rear_on(o, x))
+		if block < INF:
+			free += maxf(block, 0.0)
 			break
-	for o: Car in after.tails:
-		if o != c:
-			free = minf(free, rear_on(o, after))
-	if free >= after.length - 0.001:
-		# Empty: the lane after it counts too (short approach lanes).
-		free = after.length + 0.5
+		free += x.length
+		if free >= need + 0.05:
+			break
+		k = k + 1 if k >= 0 else -1
+		x = c.path[k] if k >= 0 and k < c.path.size() else null
+		if x == null:
+			# Open-ended path: assume the road goes on.
+			free += 0.5
 	for o: Car in mv.cars:
 		if o != c:
 			free -= o.length + IDM.S0

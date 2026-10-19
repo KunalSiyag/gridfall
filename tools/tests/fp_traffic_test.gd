@@ -58,6 +58,7 @@ func _init() -> void:
 	_check_conversation()
 	_check_people_e2()
 	_check_save()
+	_check_buses()
 	_check_fleets()
 	K.finish(self, "FP_TRAFFIC_TEST", fails)
 
@@ -706,9 +707,9 @@ func _aabb_dist(b: AABB, p: Vector3) -> float:
 # ------------------------------------------------------------------ resident driver
 
 func _check_resident_driver() -> void:
+	# The drive is timed on quiet streets: how long a queue at a busy tee lasts depends on the
+	# ambient tuning, which the following, light, tee and clearance checks cover on their own.
 	_quiet()
-	f.set("ambient_enabled", true)
-	f.call("_maintain", true)
 	var people := ctx.residents
 	var r := people.find(fixture_rid)
 	r["plan"] = {"commute": "car", "go_to_work": true, "spend": 0, "spend_where": "none", "evening": "home"}
@@ -790,6 +791,8 @@ func _check_resident_driver() -> void:
 	K.check(fails, picked_res, "resident driver: pick() into the resident on foot gives kind resident")
 	K.check(fails, inside_seen.is_empty(), "visible_near never lists a resident who is indoors (%s)" % inside_seen)
 	# An ambient walker picks as a pedestrian.
+	f.set("ambient_enabled", true)
+	f.call("_maintain", true)
 	var amb: WK.Walker = null
 	for w: WK.Walker in (f.get("walkers") as WK).walkers:
 		if w.role == "ambient" and w.resident_id.is_empty() and not w.dead:
@@ -1004,6 +1007,89 @@ func _check_save() -> void:
 		if not w.dead:
 			peds += 1
 	K.check(fails, cars >= 2 and peds >= 2, "save: right after from_dict there are cars (%d) and pedestrians (%d)" % [cars, peds])
+
+
+# ------------------------------------------------------------------ buses
+
+## Two stops on straights 4+ tiles apart make a line; a bus runs it, pulls in to the curb at a
+## shelter for its dwell and leaves again.
+func _check_buses() -> void:
+	_quiet()
+	var view := ctx.view
+	var lg := _lg()
+	var fleets = f.get("fleets")
+	var cands: Array[int] = []
+	for i: int in lg.tiles.keys():
+		if lg.parkable(i) and not view.bus_stops.has(i) and lg.slot_valid(i, 0) and lg.slot_valid(i, 2):
+			cands.append(i)
+	cands.sort()
+	# The farthest pair on one connected road network.
+	var a := -1
+	var b := -1
+	var best := 0
+	for i: int in cands:
+		var comp := {i: true}
+		var q: Array[int] = [i]
+		while not q.is_empty():
+			var t: int = q.pop_back()
+			for n: int in lg.neighbours(t):
+				if lg.tiles.has(n) and not comp.has(n):
+					comp[n] = true
+					q.append(n)
+		for j: int in cands:
+			var d := absi(D.tx(i) - D.tx(j)) + absi(D.ty(i) - D.ty(j))
+			if comp.has(j) and d > best:
+				best = d
+				a = i
+				b = j
+	K.check(fails, a >= 0 and best >= 4, "fixture: two straights 4+ tiles apart for bus stops (%d)" % best)
+	if a < 0 or best < 4:
+		return
+	var added: Array[int] = []
+	for i: int in [a, b]:
+		if not view.bus_stops.has(i):
+			view.bus_stops[i] = true
+			added.append(i)
+	f.call("_maintain", false)
+	K.check(fails, fleets.lines.size() >= 1, "buses: new stops make %d seeded line(s)" % fleets.lines.size())
+	if fleets.lines.is_empty():
+		for i: int in added:
+			view.bus_stops.erase(i)
+		return
+	f.spawn_fleet("bus", Vector2i.ZERO)
+	var bus: VH.Car = null
+	for c: VH.Car in _vh().cars:
+		if c.role == "bus" and not c.dead:
+			bus = c
+	K.check(fails, bus != null, "buses: spawn_fleet(\"bus\") puts a bus on a line")
+	if bus == null:
+		return
+	var stop_lanes: Array = []
+	for line: Variant in fleets.lines:
+		stop_lanes.append_array(line.stop_lanes)
+	var dwell := 0.0
+	var best_dwell := 0.0
+	var curb := 0.0
+	var left_after := false
+	for _k in range(int(160.0 / DT)):
+		f.step(DT)
+		if bus.dead:
+			break
+		if bus.arrived and stop_lanes.has(bus.lane):
+			dwell += DT
+			curb = maxf(curb, bus.lat_off)
+		elif dwell > 0.0:
+			best_dwell = maxf(best_dwell, dwell)
+			left_after = true
+			dwell = 0.0
+		if left_after and best_dwell > 0.0:
+			break
+	K.check(fails, best_dwell >= fleets.DWELL * 0.9 and left_after and curb >= fleets.CURB_LAT * 0.9, "buses: the bus stands %.1f s at a shelter, pulled %.1f m to the curb, then leaves" % [best_dwell, curb / WS.M])
+	if not bus.dead:
+		_vh().remove(bus)
+	for i: int in added:
+		view.bus_stops.erase(i)
+	f.call("_maintain", false)
 
 
 # ------------------------------------------------------------------ fleets

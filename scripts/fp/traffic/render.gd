@@ -133,6 +133,7 @@ var _lod_static_mat: ShaderMaterial
 var _people_mat: ShaderMaterial
 var _brake_mat: StandardMaterial3D
 var _siren_mats: Dictionary = {}
+var _siren_dark: StandardMaterial3D
 var _made_this_frame: int = 0
 var full_vehicles: int = 0
 var full_people: int = 0
@@ -173,6 +174,9 @@ func setup(p_root: Node3D) -> void:
 			m.emission_energy_multiplier = 8.0
 			mats.append(m)
 		_siren_mats[k] = mats
+	_siren_dark = StandardMaterial3D.new()
+	_siren_dark.albedo_color = Color(0.25, 0.22, 0.24)
+	_siren_dark.roughness = 0.3
 
 
 ## Index of the model for a GLB path (loaded once), or -1 when it cannot load.
@@ -423,6 +427,10 @@ func _index_parts(n: Node3D) -> void:
 			var mat := mesh.surface_get_material(s)
 			if mat != null and mat.resource_name == "Light_Tail":
 				n.set_meta("tail", [mi, s])
+			if mat != null and mat.resource_name.begins_with("Siren"):
+				if not n.has_meta("siren_surf"):
+					n.set_meta("siren_surf", [])
+				(n.get_meta("siren_surf") as Array).append([mi, s])
 	var sirens: Array = []
 	for c in n.find_children("Siren*", "MeshInstance3D", true, false):
 		sirens.append(c)
@@ -454,6 +462,20 @@ func _extras(node: Node3D, m: Model, brake: bool, siren: String, spin: float) ->
 		for j in range(sirens.size()):
 			var s: MeshInstance3D = sirens[j]
 			s.material_override = (_siren_mats[siren][(j + flash) % 2] as Material) if on else null
+	if node.has_meta("siren_surf"):
+		# Legacy models: siren lamps are surfaces; they flash in two alternating banks while the
+		# crew responds and stay dark otherwise.
+		var on := _siren_mats.has(siren)
+		var flash := int(time * 6.0) % 2
+		var key := (flash + 1) if on else 0
+		if int(node.get_meta("siren_key", -1)) != key:
+			node.set_meta("siren_key", key)
+			var list: Array = node.get_meta("siren_surf")
+			for j in range(list.size()):
+				var e: Array = list[j]
+				var lit := on and (j + flash) % 2 == 0
+				var mat: Material = (_siren_mats[siren][j % 2] as Material) if lit else _siren_dark
+				(e[0] as MeshInstance3D).set_surface_override_material(int(e[1]), mat)
 	if node.has_meta("wheels"):
 		var r: float = node.get_meta("wheel_r")
 		var ang := spin / (r * m.scale)

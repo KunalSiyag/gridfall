@@ -40,6 +40,8 @@ const A_LAT := 2.2 * WS.M
 const UTURN_R := 0.235
 ## Two move lanes whose centrelines come closer than this conflict (a car is 2.1 m wide).
 const CONFLICT_DIST := 0.11
+## Route cost factor through a blocked tile for the vehicles that may cross one.
+const BLOCKED_COST := 12.0
 
 
 ## One lane: a directed polyline on one road tile.
@@ -967,9 +969,10 @@ func lanes_through(i: int, fe: int, te: int) -> Array:
 
 
 ## A* over lanes from the end of `from` to the end of any lane in `goals` (lane id -> true),
-## costing length / limit * (1 + 2 * traffic) and avoiding blocked tiles (crews pass them:
-## through_blocked). At most max_nodes expansions. Returns the lanes after `from` up to and
-## including the goal lane, or [].
+## costing length / limit * (1 + 2 * traffic) and avoiding blocked tiles (through_blocked: crews
+## and bus lines may cross them, at BLOCKED_COST times the cost, when there is no way round).
+## At most max_nodes expansions. Returns the lanes after `from` up to and including the goal
+## lane, or [].
 func astar(from: Lane, goals: Dictionary, max_nodes: int = 3000, through_blocked: bool = false) -> Array:
 	if from == null or goals.is_empty():
 		return []
@@ -999,12 +1002,15 @@ func astar(from: Lane, goals: Dictionary, max_nodes: int = 3000, through_blocked
 				c = prev[c]
 			return path
 		for nl: Lane in next_lanes(cur):
-			if blocked.has(nl.tile) and not goals.has(nl.id) and not through_blocked:
-				continue
+			var penalty := 1.0
+			if blocked.has(nl.tile) and not goals.has(nl.id):
+				if not through_blocked:
+					continue
+				penalty = BLOCKED_COST
 			var tr := 0.0
 			if nl.tile < sim.traffic.size():
 				tr = sim.traffic[nl.tile]
-			var ng := float(g[cur_id]) + nl.length / maxf(nl.limit, 0.05) * (1.0 + 2.0 * tr)
+			var ng := float(g[cur_id]) + nl.length / maxf(nl.limit, 0.05) * (1.0 + 2.0 * tr) * penalty
 			if nl.turn == 2:
 				ng += 6.0
 			if ng < float(g.get(nl.id, INF)):

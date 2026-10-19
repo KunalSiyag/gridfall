@@ -44,6 +44,10 @@ var homing: Array = []
 ## A* builds left this frame.
 var astar_left: int = ASTAR_PER_FRAME
 var _sig: String = ""
+## Seconds before stale lines may be rebuilt again, and the current wait (it doubles while the
+## rebuild keeps failing: a failed A* is the expensive case).
+var retry_t: float = 0.0
+var backoff: float = 10.0
 var _rng := RandomNumberGenerator.new()
 
 
@@ -116,15 +120,18 @@ func rebuild_lines(view: CityView) -> int:
 	_rng.seed = sim.city_seed * 4099 + stops.size()
 	var n := clampi(1 + stops.size() / 3, 2, 4)
 	for li in range(n):
-		var pool := stops.duplicate()
-		_shuffle(pool)
-		var k := clampi(_rng.randi_range(2, 5), 2, pool.size())
-		var pick: Array[int] = []
-		for j in range(k):
-			pick.append(pool[j])
-		var line := _make_line(li, pick, li % 2 == 1)
-		if line != null:
-			lines.append(line)
+		# A pick whose stops cannot all be joined (another road network) is drawn again.
+		for _attempt in range(4):
+			var pool := stops.duplicate()
+			_shuffle(pool)
+			var k := clampi(_rng.randi_range(2, 5), 2, pool.size())
+			var pick: Array[int] = []
+			for j in range(k):
+				pick.append(pool[j])
+			var line := _make_line(lines.size(), pick, li % 2 == 1)
+			if line != null:
+				lines.append(line)
+				break
 	return lines.size()
 
 
@@ -162,13 +169,29 @@ func _make_line(id: int, pick: Array[int], ccw: bool) -> Line:
 	for k in range(line.stops.size()):
 		var a: LG.Lane = line.stop_lanes[k]
 		var b: LG.Lane = line.stop_lanes[(k + 1) % line.stops.size()]
-		var leg := lg.astar(a, {b.id: true}, 6000)
+		var leg := lg.astar(a, {b.id: true}, 6000, true)
 		if leg.is_empty():
 			return null
 		line.legs.append(leg)
 		for l: LG.Lane in leg:
 			line.length += l.length
 	return line
+
+
+## True when the lines no longer match the roads: none although two stops exist (the roads
+## between them may have been missing when the stops appeared), or a lane they use is gone.
+func stale() -> bool:
+	if lines.is_empty():
+		return stop_sides.size() >= 2
+	for line: Line in lines:
+		for l: LG.Lane in line.stop_lanes:
+			if not l.alive:
+				return true
+		for leg: Array in line.legs:
+			for l: LG.Lane in leg:
+				if not l.alive:
+					return true
+	return false
 
 
 ## [line id, board tile, alight tile] for a trip along road tiles seq to dest, or [].
