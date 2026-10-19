@@ -147,6 +147,7 @@ var _committed: bool = false
 var _tick_units: int = 0
 var _tick_units_est: float = 400.0
 var _step_ema_ms: float = 0.25
+var _step_cost: Dictionary = {}
 var _ss: Dictionary = {}
 var _ss_steps: Dictionary = {}
 var _ss_ms := PackedFloat32Array()
@@ -698,23 +699,26 @@ func pump(budget_ms: float) -> bool:
 	var t0 := Time.get_ticks_usec()
 	var max_step := 0
 	while not _job.is_empty() and not _spread_pending():
+		var top: Dictionary = _job.back()
+		var phase := "%s:%s" % [top.get("phase", ""), top.get("tag", top.get("s", 0))]
 		if _pump_units > 0:
 			# The frame's wall time counts here (a view rebuild or the brain's day start already in
-			# this pump leaves less room); only the sim's own time is reported.
+			# this pump leaves less room); only the sim's own time is reported. The next step is
+			# predicted from recent steps of its own kind, so a costly kind waits for a fresh frame.
 			var el := float(Time.get_ticks_usec() - t0) / 1000.0
-			if el + _step_ema_ms > budget_ms or _pump_units > UNITS_PER_PUMP - STEP_MAX_UNITS:
+			var est := maxf(_step_ema_ms, float(_step_cost.get(phase, 0.0)))
+			if el + est > budget_ms or _pump_units > UNITS_PER_PUMP - STEP_MAX_UNITS:
 				break
 		var u0 := _pump_units
 		var s0 := Time.get_ticks_usec()
 		var x0 := _excl_us
-		var top: Dictionary = _job.back()
-		var phase := "%s:%s" % [top.get("phase", ""), top.get("tag", top.get("s", 0))]
 		_pump_units += 1
 		_step_once()
 		var su := _pump_units - u0
 		max_step = maxi(max_step, su)
 		var sms := float(Time.get_ticks_usec() - s0 - (_excl_us - x0)) / 1000.0
 		_step_ema_ms = lerpf(_step_ema_ms, sms / float(su), 0.1)
+		_step_cost[phase] = lerpf(float(_step_cost.get(phase, sms)), sms, 0.3)
 		if sms > float(_ss.get("slowest_step_ms", 0.0)):
 			_ss["slowest_step_ms"] = snappedf(sms, 0.01)
 			_ss["slowest_phase"] = phase
