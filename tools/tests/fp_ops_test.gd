@@ -174,7 +174,9 @@ func _check_client_breaker() -> void:
 	var r6: Dictionary = await c.live_json("chatter", "round", "m", "s", "u", 1, 50, 10.0)
 	var took := Time.get_ticks_msec() - t0
 	K.check(fails, c.posts - before == 3 and int(r6["attempts"]) == 3 and int(c.stats["retries"]) == 2, "a transient failure is retried twice (%d attempts)" % (c.posts - before))
-	K.check(fails, took >= 500 and took < 4000, "with backoff between attempts (%d ms)" % took)
+	# backoff_ms() is checked exactly above. Here only prove the retries waited: SceneTree timers
+	# count frame deltas, so one slow frame (CI runners) can end the 750 ms minimum early.
+	K.check(fails, took >= 250 and took < 4000, "with backoff between attempts (%d ms)" % took)
 	K.check(fails, c.seen_ids[c.seen_ids.size() - 1] == str(r6["request_id"]) and c.seen_ids[c.seen_ids.size() - 3] == str(r6["request_id"]), "retries reuse the call's request id")
 	c.reply = {"ok": false, "error": "HTTP 400 bad", "retryable": false, "service_fail": false}
 	before = c.posts

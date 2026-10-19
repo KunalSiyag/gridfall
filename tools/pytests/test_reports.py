@@ -128,6 +128,7 @@ def test_pr_review(repo, monkeypatch, tmp_path, capsys):
             "b.gd": "extends Node\n\n\n" + BIG.replace("big", "known_big"),
             "c.gd": "extends Node\n\n\n" + BIG.replace("big", "untouched") + "func also_dead():\n\tpass\n",
             "tools/checks/baselines/complexity.json": json.dumps({"b.gd::known_big": 30}),
+            "tools/checks/baselines/gdlint.json": json.dumps({"c.gd": {"max-line-length: legacy": 1}}),
         }
     )
     big_start = 4
@@ -143,6 +144,7 @@ def test_pr_review(repo, monkeypatch, tmp_path, capsys):
         lambda r, files: [
             {"path": "a.gd", "line": 1, "rule": "max-line-length", "msg": "too long"},
             {"path": "b.gd", "line": 1, "rule": "max-line-length", "msg": "not on an added line"},
+            {"path": "c.gd", "line": 1, "rule": "max-line-length", "msg": "legacy"},
         ],
     )
     data = pr_review.review(root, "main")
@@ -150,6 +152,7 @@ def test_pr_review(repo, monkeypatch, tmp_path, capsys):
     assert ("a.gd", 1, "gdlint `max-line-length`: too long") in bodies
     assert any(p == "a.gd" and ln == big_start and "Cyclomatic complexity 23" in b and "above the threshold" in b for p, ln, b in bodies)
     assert not any(p == "b.gd" for p, _, _ in bodies)
+    assert not any(p == "c.gd" and "legacy" in b for p, _, b in bodies)
     assert not any("untouched" in b for _, _, b in bodies)
     assert any(p == "a.gd" and "Unlinked" in b for p, _, b in bodies)
     assert any(p == "a.gd" and b.startswith("Dead code: func dead_one") for p, _, b in bodies)

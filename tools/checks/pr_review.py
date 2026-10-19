@@ -3,7 +3,8 @@
 usage: python3 tools/checks/pr_review.py --base REF [--out review.json] [--markdown FILE]
 
 Runs gdlint, complexity, the TODO policy and dead code on the files changed since --base and
-keeps what is new: gdlint findings and unlinked TODOs on added lines, functions over the
+keeps what is new: gdlint findings on added lines of a kind that grew past its baseline, unlinked
+TODOs on added lines, functions over the
 complexity threshold that are not baselined (or grew) and touch added lines, and new dead
 definitions in changed files. Writes {"comments": [{path, line, body}], "summary": markdown,
 "counts": {...}}; .github/workflows/pr-review.yml posts it with actions/github-script.
@@ -31,7 +32,17 @@ def review(root: Path, base: str | None, use_gdlint: bool = True) -> dict:
     notes: list[str] = []
 
     if use_gdlint and gd:
-        for f in lint.run_gdlint(root, gd):
+        found = lint.run_gdlint(root, gd)
+        lint_base = common.load_json(common.baseline_path(root, lint.BASELINE), {})
+        per_kind: dict[tuple[str, str], int] = {}
+        for f in found:
+            per_kind[(f["path"], lint.key_of(f))] = per_kind.get((f["path"], lint.key_of(f)), 0) + 1
+        for f in found:
+            # The baseline counts findings per file and kind, not per line: a kind still within its
+            # baselined count is legacy debt, so only kinds that grew are worth a comment.
+            k = lint.key_of(f)
+            if per_kind[(f["path"], k)] <= int(lint_base.get(f["path"], {}).get(k, 0)):
+                continue
             if f["line"] in added.get(f["path"], set()):
                 comments.append({"path": f["path"], "line": f["line"], "body": f"gdlint `{f['rule']}`: {f['msg']}"})
 
