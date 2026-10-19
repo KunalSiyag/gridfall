@@ -102,7 +102,7 @@ func _note_model(model: String, res: Dictionary) -> void:
 # ---------------------------------------------------------------- daily plans
 
 func plan_day(day: int) -> void:
-	if sim != null and sim.sliced and is_inside_tree():
+	if _spread_ok():
 		_plan_day_spread(day)
 		return
 	last_plan_day = day
@@ -126,6 +126,11 @@ func plan_day(day: int) -> void:
 				resident_helpers += 1
 		if resident_helpers < 2:
 			_react(ev, true)
+
+
+## Sliced sim work outside a forced synchronous tick: plan batches and reactions run one per frame.
+func _spread_ok() -> bool:
+	return sim != null and sim.spread_allowed() and is_inside_tree()
 
 
 ## True while spread plan batches or reactions are still waiting for their frame (sliced mode).
@@ -404,6 +409,17 @@ func _react(ev: Dictionary, wide: bool) -> void:
 			for v: Variant in arr:
 				if typeof(v) == TYPE_DICTIONARY:
 					got[str((v as Dictionary).get("id", ""))] = v
+	if _spread_ok():
+		# One responder per frame, ahead of anything already waiting; the sliced tick waits for them.
+		var st := {"out": [], "stop": false}
+		var items: Array[Callable] = []
+		for r: Dictionary in picks:
+			items.append(_react_one.bind(r, ev, got, model, st))
+		items.append(_react_done.bind(ev, st))
+		for k in range(items.size() - 1, -1, -1):
+			_spread.push_front(items[k])
+		_run_spread()
+		return
 	var out: Array = []
 	for r: Dictionary in picks:
 		if not people.people.has(r):
@@ -426,6 +442,43 @@ func _react(ev: Dictionary, wide: bool) -> void:
 			break
 		var action := people.respond(r, ev, data, src, model if src == "live" else "")
 		out.append({"id": r["id"], "name": r["name"], "job": r["job_title"], "action": action, "say": r["say"], "thought": r["thought"], "source": src})
+	_reacts_pending -= 1
+	busy_changed.emit(pending())
+	if not out.is_empty():
+		var helping := out.filter(func(o: Dictionary) -> bool: return str(o["action"]) == "help").map(func(o: Dictionary) -> String: return str(o["name"]))
+		if not helping.is_empty():
+			sim._log("%s: %s went to help." % [ev["label"], ", ".join(PackedStringArray(helping.slice(0, 5)))], "response")
+		reacted.emit(ev, out)
+
+
+## One responder of a spread _react (the body of its loop; st carries the results and the break).
+func _react_one(r: Dictionary, ev: Dictionary, got: Dictionary, model: String, st: Dictionary) -> void:
+	if bool(st["stop"]) or not people.people.has(r):
+		return
+	var k := "react|%s|%s" % [people.key(r), ev["type"]]
+	var data: Dictionary = got.get(str(r["id"]), {})
+	var src := "live"
+	if not data.is_empty():
+		client.remember(k, sim.day, data)
+	else:
+		data = client.lookup(k, sim.day)
+		src = "cache"
+		if data.is_empty():
+			data = _heuristic_react(r, ev)
+			src = "heuristic"
+	if src != "live":
+		client.count_source(src)
+	stats["reactions"] = int(stats["reactions"]) + 1
+	if not sim.events.has(ev):
+		st["stop"] = true
+		return
+	var action := people.respond(r, ev, data, src, model if src == "live" else "")
+	(st["out"] as Array).append({"id": r["id"], "name": r["name"], "job": r["job_title"], "action": action, "say": r["say"], "thought": r["thought"], "source": src})
+
+
+## The end of a spread _react, as after its loop.
+func _react_done(ev: Dictionary, st: Dictionary) -> void:
+	var out: Array = st["out"]
 	_reacts_pending -= 1
 	busy_changed.emit(pending())
 	if not out.is_empty():

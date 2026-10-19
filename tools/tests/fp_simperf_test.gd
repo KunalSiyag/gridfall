@@ -128,6 +128,16 @@ func _run_sliced(w: Dictionary, ticks: int) -> void:
 	check(committed == ticks and not sim.job_pending(), "the sliced world committed %d ticks (%d)" % [ticks, committed])
 
 
+## Pumps the job in flight to the end, letting frames pass while the minds spread work.
+func _drain(sim: CitySim, minds: ResidentMinds) -> void:
+	var guard := 0
+	while (sim.job_pending() or minds.spreading()) and guard < 100000:
+		guard += 1
+		sim.pump(4.0)
+		if minds.spreading():
+			await process_frame
+
+
 func _free_world(w: Dictionary) -> void:
 	for key in ["sim", "people", "minds", "client"]:
 		var n: Node = w[key]
@@ -261,8 +271,7 @@ func _check_day_boundary() -> void:
 	while sim.tick_in_day != 3:
 		await _run_sliced(w, 1)
 	sim.begin_tick()
-	while sim.job_pending():
-		sim.pump(4.0)
+	await _drain(sim, w["minds"])
 	check(sim.waiting_for_ai and sim.day == day1 + 1 and started.get(day1 + 1, 0) == 0, "a closed day gate holds day %d (waiting=%s)" % [day1 + 1, str(sim.waiting_for_ai)])
 	check(not sim.begin_tick(), "no tick starts while the gate is closed")
 	sim.set_speed(1)
@@ -270,9 +279,8 @@ func _check_day_boundary() -> void:
 	check(sim.waiting_for_ai and not sim.job_pending(), "the closed gate keeps holding in _process")
 	gate["open"] = true
 	sim._process(0.016)
-	while sim.job_pending():
-		sim.pump(4.0)
 	sim.set_speed(0)
+	await _drain(sim, w["minds"])
 	check(not sim.waiting_for_ai and started.get(day1 + 1, 0) == 1, "opening the gate starts day %d through the sliced day job" % (day1 + 1))
 	(w["minds"] as ResidentMinds).finish_spread()
 	_free_world(w)
@@ -343,7 +351,7 @@ func _check_minds() -> void:
 		sb.pump(4.0)
 		if mb.spreading():
 			await process_frame
-	while sb.job_pending():
+	while sb.job_pending() and not mb.spreading():
 		sb.pump(4.0)
 	var spreading_now := mb.spreading()
 	var blocked := not sb.begin_tick()
@@ -358,6 +366,25 @@ func _check_minds() -> void:
 	check(spreading_now and blocked, "sliced: minds spread the day's batches and begin_tick() waits for them")
 	check(not mb.spreading() and planned == pb.people.size() and frames >= 2, "the spread batches finish over %d frames and plan everyone (%d/%d)" % [frames, planned, pb.people.size()])
 	check(sb.begin_tick(), "begin_tick() starts once the batches are done")
+	# A fire raised inside the job: its residents react one per frame, and the job waits for them.
+	var fired := {"done": false}
+	sb.tick_done.connect(func(_t: int) -> void:
+		if not bool(fired["done"]) and not pb.people.is_empty():
+			fired["done"] = true
+			var h := int(pb.people[0]["home"])
+			sb.trigger_disaster("fire", D.tx(h), D.ty(h), "test", "forced fire")
+	)
+	var reactions0 := int(mb.stats["reactions"])
+	while sb.job_pending() and not mb.spreading():
+		sb.pump(4.0)
+	var pumps0 := int(sb.slice_stats()["pumps"])
+	var waits := mb.spreading() and sb.job_pending() and not sb.pump(4.0) and int(sb.slice_stats()["pumps"]) == pumps0
+	frames = 0
+	while mb.spreading() and frames < 100:
+		await process_frame
+		frames += 1
+	await _drain(sb, mb)
+	check(bool(fired["done"]) and waits and frames >= 2 and int(mb.stats["reactions"]) > reactions0, "a reaction raised inside the job runs over %d frames while the job waits (%d reactions)" % [frames, int(mb.stats["reactions"]) - reactions0])
 	sb.sliced = false
 	_free_world(a)
 	_free_world(b)

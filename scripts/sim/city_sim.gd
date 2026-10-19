@@ -669,9 +669,7 @@ func _run_sync(tasks: Array[Dictionary]) -> void:
 ## Starts a sliced tick now if none is in flight and the day gate is open (waiting_for_ai false).
 ## Returns true if a job started. _process calls it when _time_accum reaches a tick; tests call it.
 func begin_tick() -> bool:
-	if not sliced or kind.is_empty() or not _job.is_empty() or waiting_for_ai or _stepping:
-		return false
-	if spread_gate.is_valid() and bool(spread_gate.call()):
+	if not sliced or kind.is_empty() or not _job.is_empty() or waiting_for_ai or _stepping or _spread_pending():
 		return false
 	_job_t = tick_in_day
 	_job_from_accum = false
@@ -686,9 +684,10 @@ func begin_tick() -> bool:
 
 
 ## Advances the in-flight sliced job by up to budget_ms of work. It never starts a new tick (that is
-## begin_tick's job). Returns true if a tick committed during this call.
+## begin_tick's job). Returns true if a tick committed during this call. While ResidentMinds spreads
+## a reaction the job raised, the job waits (the reaction comes first, as in the synchronous path).
 func pump(budget_ms: float) -> bool:
-	if _job.is_empty() or _stepping or _pumping:
+	if _job.is_empty() or _stepping or _pumping or _spread_pending():
 		return false
 	_pumping = true
 	_committed = false
@@ -698,7 +697,7 @@ func pump(budget_ms: float) -> bool:
 	_lim = UNIT_WORK
 	var t0 := Time.get_ticks_usec()
 	var max_step := 0
-	while not _job.is_empty():
+	while not _job.is_empty() and not _spread_pending():
 		if _pump_units > 0:
 			# The frame's wall time counts here (a view rebuild or the brain's day start already in
 			# this pump leaves less room); only the sim's own time is reported.
@@ -733,6 +732,12 @@ func pump(budget_ms: float) -> bool:
 	elif _job_kind == _JOB_POST:
 		tick_progress.emit("day_end", 1.0)
 	return _committed
+
+
+## True when listeners may spread work over frames (ResidentMinds' plan batches and reactions):
+## sliced, and not inside a forced synchronous tick (step_tick, load). The job waits for them.
+func spread_allowed() -> bool:
+	return sliced and _force_sync == 0
 
 
 ## True while a sliced tick is between start and commit.
@@ -804,6 +809,10 @@ func job_yield_requested() -> bool:
 	return _stepping and not _nested.is_empty()
 
 
+func _spread_pending() -> bool:
+	return spread_gate.is_valid() and bool(spread_gate.call())
+
+
 func _task(phase: String, f: Callable) -> Dictionary:
 	return {"f": f, "phase": phase, "k": 0, "s": 0}
 
@@ -847,19 +856,18 @@ func _step_once() -> void:
 func _finish_job_now() -> void:
 	if _stepping or _pumping or _finishing:
 		return
-	var spreading := spread_gate.is_valid() and bool(spread_gate.call())
-	if _job.is_empty() and not spreading:
+	if _job.is_empty() and not _spread_pending():
 		return
 	_finishing = true
 	var t0 := Time.get_ticks_usec()
 	var saved := _lim
 	_lim = _SYNC_LIM
-	for _round in range(4):
-		while not _job.is_empty():
-			_step_once()
-		if spread_finish.is_valid() and spread_gate.is_valid() and bool(spread_gate.call()):
+	while true:
+		if _spread_pending() and spread_finish.is_valid():
 			spread_finish.call()
-		if _job.is_empty():
+		elif not _job.is_empty():
+			_step_once()
+		else:
 			break
 	_lim = saved
 	_finishing = false
