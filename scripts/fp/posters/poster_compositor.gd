@@ -1,7 +1,8 @@
 extends Node
 ## Draws poster text over poster images (slice D): a one-shot SubViewport (update mode ONCE) holds
 ## the image and the layout's panels and Labels (Lilita One for display type, system serif and
-## sans for newspaper and body copy), the result is read back as an Image, mipmapped and
+## sans for newspaper and body copy), the result is read back asynchronously (RenderingDevice
+## texture_get_data_async, so the main thread never stalls on the GPU), mipmapped and
 ## VRAM-compressed on a background thread and wrapped in an ImageTexture. One job renders at a time,
 ## nearest first. Headless runs skip the drawing and return the raw image, so tests check the
 ## pipeline and not the pixels of the text.
@@ -11,17 +12,32 @@ signal composited(job_id: String, tex: Texture2D)
 const FONT_PATH := "res://fonts/lilita_one_regular.ttf"
 const WORKER := preload("res://scripts/fp/posters/poster_worker.gd")
 const SERIF := ["DejaVu Serif", "Georgia", "Times New Roman", "Liberation Serif", "Noto Serif", "serif"]
+## Idle frames between two jobs, so a burst of composites never stacks readback stalls.
+const FRAMES_BETWEEN_JOBS := 2
 const SANS := ["Fira Sans", "Source Sans Pro", "DejaVu Sans", "Arial", "Liberation Sans", "Noto Sans", "sans-serif"]
 
 var headless: bool = false
 ## Jobs finished so far (tests).
 var done_count: int = 0
+## Longest main-thread cost of one composite (readback, or texture creation), in ms.
+var max_main_ms: float = 0.0
+## The same split: the readback request (or blocking read) and the texture upload, in ms.
+var max_read_ms: float = 0.0
+var max_upload_ms: float = 0.0
+## Frames left before the next job may start (spreads readback stalls).
+var _cooldown: int = 0
 var _vp: SubViewport
 var _root: Control
 var _queue: Array[Dictionary] = []
 var _busy: bool = false
 var _current: String = ""
 var _worker := WORKER.new()
+## Async readback hand-off: the RenderingDevice callback (render thread or main) stores the bytes
+## in this mailbox; _process forwards them to the worker. A RefCounted, so a callback that lands
+## after this node is freed still has a live target.
+var _mail := Mailbox.new()
+## Frames the current job has waited for its readback (falls back to a blocking read when stuck).
+var _rb_wait: int = 0
 var _fonts: Dictionary = {}
 var _stripes: ImageTexture
 
@@ -78,8 +94,13 @@ func queued() -> int:
 
 func _process(_dt: float) -> void:
 	_drain()
+	_take_readbacks()
+	if _cooldown > 0:
+		_cooldown -= 1
+		return
 	if _busy or _queue.is_empty() or _vp == null:
 		return
+	_cooldown = FRAMES_BETWEEN_JOBS
 	_queue.sort_custom(func(a: Dictionary, b: Dictionary) -> bool: return float(a["order"]) < float(b["order"]))
 	_run(_queue.pop_front())
 
@@ -103,17 +124,64 @@ func _run(job: Dictionary) -> void:
 	await RenderingServer.frame_post_draw
 	if not is_inside_tree():
 		return
+	var t0 := Time.get_ticks_usec()
+	var rd := RenderingServer.get_rendering_device()
+	var rid := RenderingServer.texture_get_rd_texture(_vp.get_texture().get_rid())
+	if rd != null and rid.is_valid():
+		# The copy is recorded after this frame's draw of the viewport; the bytes arrive a few
+		# frames later in the mailbox. The viewport is not redrawn until then (_busy).
+		var id := str(job["id"])
+		_rb_wait = 0
+		var mail := _mail
+		RenderingServer.call_on_render_thread(func() -> void:
+			var err := rd.texture_get_data_async(rid, 0, func(data: PackedByteArray) -> void: mail.put(id, px, data))
+			if err != OK:
+				mail.put(id, px, PackedByteArray()))
+		max_read_ms = maxf(max_read_ms, float(Time.get_ticks_usec() - t0) / 1000.0)
+		max_main_ms = maxf(max_read_ms, max_upload_ms)
+		return
+	_finish_sync(job["id"], t0)
+
+
+## Blocking readback (Compatibility renderer, or an async read that never answered).
+func _finish_sync(id: String, t0: int) -> void:
 	var img := _vp.get_texture().get_image()
-	_worker.push(Callable(WORKER, "finish_image"), {"id": job["id"], "image": img})
+	max_read_ms = maxf(max_read_ms, float(Time.get_ticks_usec() - t0) / 1000.0)
+	max_main_ms = maxf(max_read_ms, max_upload_ms)
+	_worker.push(Callable(WORKER, "finish_image"), {"id": id, "image": img})
 	_busy = false
 	_current = ""
+
+
+## Forwards finished readbacks to the worker and frees the viewport for the next job.
+func _take_readbacks() -> void:
+	var got := _mail.take()
+	for r: Dictionary in got:
+		var data: PackedByteArray = r["data"]
+		var px: Vector2i = r["px"]
+		if str(r["id"]) != _current:
+			continue
+		if data.size() == px.x * px.y * 4:
+			_worker.push(Callable(WORKER, "finish_image"), {"id": r["id"], "data": data, "px": px})
+			_busy = false
+			_current = ""
+		else:
+			_finish_sync(str(r["id"]), Time.get_ticks_usec())
+	if _busy and not _current.is_empty() and got.is_empty():
+		_rb_wait += 1
+		if _rb_wait > 120:
+			_finish_sync(_current, Time.get_ticks_usec())
 
 
 func _drain() -> void:
 	for input: Dictionary in _worker.take_done():
 		if bool(input.get("ok", false)):
 			done_count += 1
-			composited.emit(str(input["id"]), ImageTexture.create_from_image(input["image"]))
+			var t0 := Time.get_ticks_usec()
+			var tex := ImageTexture.create_from_image(input["image"])
+			max_upload_ms = maxf(max_upload_ms, float(Time.get_ticks_usec() - t0) / 1000.0)
+			max_main_ms = maxf(max_read_ms, max_upload_ms)
+			composited.emit(str(input["id"]), tex)
 
 
 # ------------------------------------------------------------------ drawing
@@ -251,3 +319,22 @@ func _stripe_texture(c0: Color, c1: Color) -> ImageTexture:
 			img.set_pixel(x, y, c0 if ((x + y) / 8) % 2 == 0 else c1)
 	_stripes = ImageTexture.create_from_image(img)
 	return _stripes
+
+
+## Thread-safe drop box for readback bytes (see _mail).
+class Mailbox:
+	extends RefCounted
+	var _m := Mutex.new()
+	var _items: Array = []
+
+	func put(id: String, px: Vector2i, data: PackedByteArray) -> void:
+		_m.lock()
+		_items.append({"id": id, "px": px, "data": data})
+		_m.unlock()
+
+	func take() -> Array:
+		_m.lock()
+		var out := _items
+		_items = []
+		_m.unlock()
+		return out

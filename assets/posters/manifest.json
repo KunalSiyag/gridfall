@@ -215,6 +215,30 @@
     "elapsed_s": 15.6,
     "created": "2026-10-19T06:52:32Z"
   },
+  "hoarding_homes.webp": {
+    "kind": "hoarding",
+    "pool": "hoarding_homes",
+    "tags": [
+      "homes"
+    ],
+    "prompt": "Architectural visualisation: a row of new brick and timber townhouses with small front gardens and young trees on a quiet residential street, warm afternoon light, photoreal render. Photorealistic full-bleed photograph, no border, no frame. The image contains absolutely no text: no letters, words, numbers, logos, brand names, signs, captions or watermarks anywhere. No real people or celebrities; any people are small, anonymous, seen from behind or out of focus. Set in a modern mid-sized city. Natural light, sharp detail, believable colour, 35mm lens.",
+    "size": "1536x640",
+    "model": "hy-image-v3.5-preview",
+    "elapsed_s": 17.4,
+    "created": "2026-10-19T07:56:06Z"
+  },
+  "hoarding_industry.webp": {
+    "kind": "hoarding",
+    "pool": "hoarding_industry",
+    "tags": [
+      "industry"
+    ],
+    "prompt": "Architectural visualisation: a clean modern light-industrial building of grey metal cladding and glass with loading bays and landscaped parking, blue sky, photoreal render. Photorealistic full-bleed photograph, no border, no frame. The image contains absolutely no text: no letters, words, numbers, logos, brand names, signs, captions or watermarks anywhere. No real people or celebrities; any people are small, anonymous, seen from behind or out of focus. Set in a modern mid-sized city. Natural light, sharp detail, believable colour, 35mm lens.",
+    "size": "1536x640",
+    "model": "hy-image-v3.5-preview",
+    "elapsed_s": 19.6,
+    "created": "2026-10-19T07:56:06Z"
+  },
   "hoarding_park.webp": {
     "kind": "hoarding",
     "pool": "hoarding_park",

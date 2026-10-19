@@ -14,9 +14,15 @@ var _running: int = 0
 var _stop: bool = false
 
 
-## Job for composites: opaque RGB, mipmaps and block compression of input.image; sets input.ok.
+## Job for composites: opaque RGB, mipmaps and block compression of input.image (or of the raw
+## RGBA8 readback input.data at input.px); sets input.ok.
 static func finish_image(input: Dictionary) -> void:
-	var img: Image = input["image"]
+	var img: Image = input.get("image", null)
+	if img == null and input.has("data"):
+		var px: Vector2i = input["px"]
+		img = Image.create_from_data(px.x, px.y, false, Image.FORMAT_RGBA8, input["data"])
+		input.erase("data")
+		input["image"] = img
 	if img == null or img.is_empty():
 		return
 	img.convert(Image.FORMAT_RGB8)

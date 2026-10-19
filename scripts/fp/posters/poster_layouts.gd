@@ -206,8 +206,11 @@ static func _placard(o: Dictionary) -> Array:
 
 
 static func _lease(o: Dictionary) -> Array:
+	var red := Color(0.72, 0.1, 0.08)
 	return [
 		{"t": "rect", "r": Rect2(0, 0, 1, 1), "c": Color(0.97, 0.96, 0.93)},
-		_t(Rect2(0.05, 0.06, 0.9, 0.5), str(o.get("address", "")), "display", INK, 0.34, 1, 1, 1),
-		_t(Rect2(0.05, 0.58, 0.9, 0.34), "Call " + str(o.get("phone", "555-0142")), "sans_bold", Color(0.72, 0.1, 0.08), 0.24, 1, 1, 1),
+		{"t": "rect", "r": Rect2(0, 0, 1, 0.36), "c": red},
+		_t(Rect2(0.05, 0.03, 0.9, 0.3), str(o.get("title", "For lease")), "display", WHITE, 0.26, 1, 1, 1, true),
+		_t(Rect2(0.05, 0.4, 0.9, 0.3), str(o.get("address", "")), "display", INK, 0.2, 2, 1, 1),
+		_t(Rect2(0.05, 0.72, 0.9, 0.22), "Call " + str(o.get("phone", "555-0142")), "sans_bold", red, 0.16, 1, 1, 1),
 	]

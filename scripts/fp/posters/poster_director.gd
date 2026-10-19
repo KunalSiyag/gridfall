@@ -213,7 +213,8 @@ static func slogan_of(post: String) -> String:
 	var sp := cut.rfind(" ")
 	if sp > 20:
 		cut = cut.left(sp)
-	return cut.rstrip(",;:-") + "…"
+	cut = cut.rstrip(",;:- ")
+	return cut if cut.right(1) in [".", "!", "?"] else cut + "…"
 
 
 func _scenes(mi: int) -> Array:
@@ -313,6 +314,12 @@ func _wall(slot: Dictionary, i: int) -> Dictionary:
 	var inc := incident_near(i)
 	if not inc.is_empty():
 		return inc
+	# After a district protest, every other wall carries a protest flyer next to the notices.
+	var d0 := ctx.sim.district[i]
+	if d0 >= 0 and d0 < D.MAYORS.size() and slot_hash(str(slot["id"]) + "|flyer") % 2 == 1:
+		var fl := placard(d0)
+		if not fl.is_empty():
+			return fl
 	var ords: Array = ctx.sim.ordinances.keys()
 	if not ords.is_empty():
 		ords.sort()
@@ -419,7 +426,15 @@ func hoarding(i: int) -> Dictionary:
 		name = "New homes" if tk == D.ZONE_R else str(s.get("label", "New building"))
 	var owner := int(s.get("owner", -1))
 	var builder := "Built by %s's contractors" % D.mayor_display(owner) if owner >= 0 and owner < D.MAYORS.size() else "Built by GridFall contractors"
-	var pool := "hoarding_park" if tk == D.PARK else ("hoarding_station" if D.is_service(tk) else "hoarding_tower")
+	var pool := "hoarding_tower"
+	if tk == D.PARK:
+		pool = "hoarding_park"
+	elif tk == D.ZONE_R:
+		pool = "hoarding_homes"
+	elif tk == D.ZONE_I:
+		pool = "hoarding_industry"
+	elif D.is_service(tk):
+		pool = "hoarding_station"
 	var body := str((prompts.get("hoarding", {}) as Dictionary).get(pool.trim_prefix("hoarding_"), ""))
 	return _assignment(pool, prompt(body), WIDE, 0, {
 		"title": "COMING SOON", "name": D.debrand(name), "builder": D.debrand(builder), "owner": owner,

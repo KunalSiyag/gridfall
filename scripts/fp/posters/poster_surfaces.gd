@@ -22,9 +22,11 @@ const SPOTS_PATH := "res://assets/posters/wall_spots.json"
 ## The legacy billboard's sign face: 0.34 x 0.15 at y 0.20-0.35, front plane z 0.0045.
 const BILLBOARD_SIZE := Vector2(0.34, 0.15)
 const BILLBOARD_XF := Transform3D(Basis(), Vector3(0, 0.275, 0.006))
-## The gf stop's gf_ad_pink lightbox (x 0.06-0.14, y 0.045-0.135, z -0.060 to -0.056).
+## The gf stop's gf_ad_pink lightbox (x 0.06-0.14, y 0.045-0.135) sits behind its opaque back
+## wall (gf_sky_blue, z -0.058 to -0.052) and pokes out of the back to z -0.060: the poster faces
+## the road just in front of the wall's inner face and the sidewalk just behind the box.
 const GF_STOP_SIZE := Vector2(0.08, 0.09)
-const GF_STOP_FRONT := Transform3D(Basis(), Vector3(0.10, 0.09, -0.0555))
+const GF_STOP_FRONT := Transform3D(Basis(), Vector3(0.10, 0.09, -0.0515))
 const GF_STOP_BACK := Transform3D(Basis(Vector3.UP, PI), Vector3(0.10, 0.09, -0.0605))
 ## The real stop's lightbox at its west end (x -0.123), facing -X.
 const REAL_STOP_SIZE := Vector2(0.063, 0.106)
@@ -147,7 +149,7 @@ func _carrier_slot(i: int, n: Node3D, counts: Dictionary) -> Dictionary:
 			faces.append(_quad(n, size, REAL_STOP_XF, nodes))
 	if faces.is_empty():
 		return {}
-	return _slot(i, carrier, counts, faces, nodes, size, carrier == "billboard" or carrier == "shelter")
+	return _slot(i, carrier, counts, faces, nodes, size, carrier if carrier == "billboard" or carrier == "shelter" else "")
 
 
 static func _carrier_of(kind: String) -> String:
@@ -165,7 +167,8 @@ static func _carrier_of(kind: String) -> String:
 	return ""
 
 
-func _slot(i: int, carrier: String, counts: Dictionary, faces: Array[Dictionary], nodes: Array[Node], size: Vector2, lit: bool) -> Dictionary:
+## lit is "" (unlit), "billboard" (lamp-lit at night) or "shelter" (a lightbox, faint by day).
+func _slot(i: int, carrier: String, counts: Dictionary, faces: Array[Dictionary], nodes: Array[Node], size: Vector2, lit: String) -> Dictionary:
 	var n := int(counts.get(carrier, 0))
 	counts[carrier] = n + 1
 	var f0: Dictionary = faces[0]
@@ -233,7 +236,7 @@ func _hoarding_slot(i: int, holder: Node3D, site: Node3D, counts: Dictionary) ->
 			var nodes: Array[Node] = []
 			var m: Dictionary = meta
 			var f := _quad(c as Node3D, m.get("size", Vector2(0.15, 0.075)), m.get("xform", Transform3D()), nodes)
-			return _slot(i, "hoarding", counts, [f], nodes, m.get("size", Vector2(0.15, 0.075)), false)
+			return _slot(i, "hoarding", counts, [f], nodes, m.get("size", Vector2(0.15, 0.075)), "")
 	# S0 kit: a banner on the outer face of the frontage fence segment (never a panel at 0.44).
 	var fr := directory.frontage(i)
 	if fr < 0:
@@ -266,7 +269,7 @@ func _hoarding_slot(i: int, holder: Node3D, site: Node3D, counts: Dictionary) ->
 	var xf := Transform3D(Basis(Vector3.UP, atan2(dv.x, dv.z)), pos)
 	var nodes: Array[Node] = []
 	var f2 := _quad(holder, size, xf, nodes)
-	return _slot(i, "hoarding", counts, [f2], nodes, size, false)
+	return _slot(i, "hoarding", counts, [f2], nodes, size, "")
 
 
 # ------------------------------------------------------------------ walls
@@ -299,7 +302,7 @@ func _wall_slot(i: int, holder: Node3D) -> Dictionary:
 			return {}
 	var f := _quad(holder, size, xf, nodes)
 	var counts := {}
-	var s := _slot(i, "wall", counts, [f], nodes, size, false)
+	var s := _slot(i, "wall", counts, [f], nodes, size, "")
 	s["spot"] = {"plane_point": holder.transform * (spot["point"] as Vector3), "normal": n, "source": spot["source"], "window": spot.get("window", false)}
 	return s
 

@@ -17,9 +17,17 @@ const MAX_COMPOSITES := 32
 ## Night glow and composite upkeep run at 2 Hz.
 const UPDATE_S := 0.5
 const MODAL := &"poster"
+## Emission energies (see glow()): billboards are lamp-lit at night only; shelter lightboxes are
+## backlit, faint by day and brightest at night. Measured against the night exposure: above about
+## 1.6 the white of a print blooms and its text loses contrast.
+const NIGHT_BILLBOARD := 0.9
+const DAY_SHELTER := 0.3
+const NIGHT_SHELTER := 1.3
 const OWNER := "posters"
 
 var image_client: GmiImageClient
+## Composite cap (MAX_COMPOSITES; tests lower it).
+var max_composites: int = MAX_COMPOSITES
 var director: DIRECTOR
 var surfaces: SURFACES
 var compositor: COMPOSITOR
@@ -37,7 +45,8 @@ var _slot_comp: Dictionary = {}
 var _slot_cid: Dictionary = {}
 var _slot_mat: Dictionary = {}
 var _mats: Dictionary = {}
-var _lit_mats: Array[StandardMaterial3D] = []
+## Lit materials with their glow kind: [[StandardMaterial3D, "billboard" | "shelter"]].
+var _lit_mats: Array = []
 var _t: float = 0.0
 var _viewer: Control
 var _viewer_tex: TextureRect
@@ -162,16 +171,19 @@ func _process(delta: float) -> void:
 	if _t < UPDATE_S:
 		return
 	_t = 0.0
-	var g := glow()
-	for m in _lit_mats:
-		m.emission_energy_multiplier = g
+	for e: Array in _lit_mats:
+		(e[0] as StandardMaterial3D).emission_energy_multiplier = glow(str(e[1]))
 	update_composites()
 
 
-## Emission energy of lit posters: 0.4 by day to 2.0 at midnight (view.night 0..1).
-func glow() -> float:
+## Emission energy of a lit poster from view.night (0 noon .. 1 midnight). The emission is the
+## print itself (EMISSION_OP_MULTIPLY), so this is how bright the print glows on its own.
+func glow(kind: String = "billboard") -> float:
 	var n := ctx.view.night if ctx != null and ctx.view != null else 0.0
-	return 0.4 + 1.6 * n
+	var dark := smoothstep(0.2, 0.75, n)
+	if kind == "shelter":
+		return lerpf(DAY_SHELTER, NIGHT_SHELTER, dark)
+	return NIGHT_BILLBOARD * dark
 
 
 # ------------------------------------------------------------------ tiles and slots
@@ -332,7 +344,7 @@ func _apply(id: String) -> void:
 		_show(s, null)
 		return
 	var size: Vector2 = s["size"]
-	var mat := _material(tex, bool(s["lit"]), size.x / maxf(size.y, 1e-6) if crop else -1.0)
+	var mat := _material(tex, str(s["lit"]), size.x / maxf(size.y, 1e-6) if crop else -1.0)
 	_slot_mat[id] = mat
 	_show(s, mat)
 
@@ -345,9 +357,9 @@ func _show(s: Dictionary, mat: Material) -> void:
 			mi.visible = mat != null
 
 
-## One material per image (and per slot aspect for cropped images, per glow), shared by every
+## One material per image (and per slot aspect for cropped images, per glow kind), shared by every
 ## slot that shows it. aspect < 0: the texture already has the slot's aspect.
-func _material(tex: Texture2D, lit: bool, aspect: float) -> StandardMaterial3D:
+func _material(tex: Texture2D, lit: String, aspect: float) -> StandardMaterial3D:
 	var k := "%d|%s|%.2f" % [tex.get_instance_id(), lit, aspect]
 	if _mats.has(k):
 		return _mats[k]
@@ -365,12 +377,15 @@ func _material(tex: Texture2D, lit: bool, aspect: float) -> StandardMaterial3D:
 		else:
 			m.uv1_scale = Vector3(1, ta / aspect, 1)
 			m.uv1_offset = Vector3(0, (1.0 - ta / aspect) * 0.5, 0)
-	if lit:
+	if not lit.is_empty():
+		# MULTIPLY: the glow is the print itself. The default ADD operator would add the emission
+		# colour to the texture and wash the whole face out to white at night.
 		m.emission_enabled = true
 		m.emission = Color(1, 1, 1)
+		m.emission_operator = BaseMaterial3D.EMISSION_OP_MULTIPLY
 		m.emission_texture = tex
-		m.emission_energy_multiplier = glow()
-		_lit_mats.append(m)
+		m.emission_energy_multiplier = glow(lit)
+		_lit_mats.append([m, lit])
 	_mats[k] = m
 	return m
 
@@ -381,19 +396,21 @@ func _prune_materials() -> void:
 		used[m] = true
 	for k: String in _mats.keys():
 		if not used.has(_mats[k]):
-			_lit_mats.erase(_mats[k])
 			_mats.erase(k)
+	_lit_mats = _lit_mats.filter(func(e: Array) -> bool: return used.has(e[0]))
 
 
 # ------------------------------------------------------------------ composites
 
-## Gives slots within VIS_PROP of the player a composite (nearest first, at most MAX_COMPOSITES)
-## and releases the composite of slots beyond 1.25 * VIS_PROP.
+## Gives slots within VIS_PROP of the player a composite (nearest first, at most MAX_COMPOSITES
+## distinct ones) and releases the composite of slots beyond 1.25 * VIS_PROP. When the cap is
+## reached, the composites of the farthest slots make room for nearer ones.
 func update_composites() -> void:
 	if ctx == null:
 		return
 	var here := ctx.player_position()
 	var near: Array = []
+	var held: Array = []
 	for id: String in assigned.keys():
 		var s: Dictionary = slots[id]
 		var p: Vector3 = s["pos"]
@@ -402,16 +419,39 @@ func update_composites() -> void:
 			if dist > 1.25 * WS.VIS_PROP:
 				_release_composite(id)
 				_apply(id)
-		elif dist <= WS.VIS_PROP and base_tex.has(str(assigned[id]["key"])):
+				continue
+			held.append([dist, id])
+		if dist <= WS.VIS_PROP and base_tex.has(str(assigned[id]["key"])):
 			near.append([dist, id])
 	near.sort_custom(func(a: Array, b: Array) -> bool: return float(a[0]) < float(b[0]))
+	# The composites the nearest slots want, nearest first (slots with the same poster share one).
+	var want := {}
+	for e: Array in near:
+		var cid: String = _slot_cid.get(str(e[1]), "")
+		if not cid.is_empty() and not want.has(cid):
+			if want.size() >= max_composites:
+				break
+			want[cid] = true
+	var missing := 0
+	for cid: String in want.keys():
+		if not composites.has(cid):
+			missing += 1
+	if composites.size() + missing > max_composites:
+		held.sort_custom(func(a: Array, b: Array) -> bool: return float(a[0]) > float(b[0]))
+		for e: Array in held:
+			if composites.size() + missing <= max_composites:
+				break
+			var hid: String = e[1]
+			if _slot_comp.has(hid) and not want.has(str(_slot_comp[hid])):
+				_release_composite(hid)
+				_apply(hid)
 	for e: Array in near:
 		var id: String = e[1]
 		var cid: String = _slot_cid.get(id, "")
-		if cid.is_empty():
+		if cid.is_empty() or not want.has(cid) or str(_slot_comp.get(id, "")) == cid:
 			continue
 		if not composites.has(cid):
-			if composites.size() >= MAX_COMPOSITES:
+			if composites.size() >= max_composites:
 				continue
 			composites[cid] = {"tex": null, "slots": {}, "key": str(assigned[id]["key"])}
 			_enqueue_composite(cid, id, float(e[0]))
@@ -652,7 +692,8 @@ func self_test() -> Dictionary:
 		for i in ctx.sim.active:
 			if ctx.sim.kind[i] == D.ZONE_C and ctx.sim.level[i] > 0:
 				c_lots += 1
-	var detail := "%d surfaces %s, %d assigned, %d composites, client %s" % [slots.size(), str(counts), assigned.size(), composites.size(), str(image_client.stats)]
+	var detail := "%d surfaces %s, %d assigned, %d composites (%d drawn, main thread max read %.2f / upload %.2f ms), client %s" % [slots.size(),
+		str(counts), assigned.size(), composites.size(), compositor.done_count, compositor.max_read_ms, compositor.max_upload_ms, str(image_client.stats)]
 	if slots.is_empty():
 		return {"ok": c_lots == 0, "detail": ("no C lots yet; " if c_lots == 0 else "no poster surface with %d C lots; " % c_lots) + detail}
 	return {"ok": not assigned.is_empty(), "detail": detail}

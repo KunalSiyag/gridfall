@@ -303,7 +303,12 @@ func _test_offline_determinism() -> void:
 	var crews := str(picks0.get(GmiImageClient.key_for("determinism prompt for gazette_crews", "1536x640"), ""))
 	check(cafe == "prebaked:ad_cafe.webp" and crews == "prebaked:gazette_crews.webp", "kind pools resolve to their pre-baked files (%s, %s)" % [cafe, crews])
 	var lib := GmiImageClient.new()
-	check(lib.pool_files("hoarding_unknown").size() == 3 and lib.pool_files("placard").size() == 1, "an unknown pool falls back to its family")
+	var manifest: Dictionary = JSON.parse_string(FileAccess.get_file_as_string("res://assets/posters/manifest.json"))
+	var hoardings := manifest.values().filter(func(e: Dictionary) -> bool: return str(e.get("kind", "")) == "hoarding").size()
+	check(hoardings >= 3 and lib.pool_files("hoarding_unknown").size() == hoardings and lib.pool_files("placard").size() == 1,
+		"an unknown pool falls back to its family (%d hoardings)" % hoardings)
+	check(lib.pool_files("hoarding_homes") == ["hoarding_homes.webp"] and lib.pool_files("hoarding_industry") == ["hoarding_industry.webp"],
+		"R and I sites have their own hoarding art")
 	lib.free()
 
 
@@ -366,6 +371,7 @@ func _test_feature() -> void:
 	await _test_director(ctx, f, c_lot)
 	_test_walls(ctx, f)
 	await _test_hoarding(ctx, f)
+	_test_seams(ctx, f, c_lot)
 	_test_save(ctx, f)
 	_test_pick_and_viewer(ctx, f, bb_id)
 	await _test_setup_gate(ctx, f)
@@ -471,6 +477,29 @@ func _test_director(ctx: FpContext, f: FpFeature, c_lot: int) -> void:
 	while not ready.call() and Time.get_ticks_msec() - t0 < 3000:
 		await process_frame
 	check(ready.call(), "every assigned poster face has a material within 3 s")
+	# Night glow: the print is its own emission (MULTIPLY; ADD would wash the face out to white).
+	var lit_bad: Array[String] = []
+	var lit_n := 0
+	for id: String in assigned.keys():
+		var s: Dictionary = slots[id]
+		var mi: MeshInstance3D = s["faces"][0]["mesh"]
+		var m := mi.material_override as StandardMaterial3D if is_instance_valid(mi) else null
+		if m == null or str(s["lit"]).is_empty():
+			continue
+		lit_n += 1
+		if not m.emission_enabled or m.emission_operator != BaseMaterial3D.EMISSION_OP_MULTIPLY or m.emission_texture != m.albedo_texture:
+			lit_bad.append(id)
+	check(lit_n > 0 and lit_bad.is_empty(), "lit posters (%d) glow with their own print (multiply) %s" % [lit_n, str(lit_bad)])
+	var night0: float = ctx.view.night
+	ctx.view.night = 0.0
+	var day_bb: float = f.call("glow", "billboard")
+	var day_sh: float = f.call("glow", "shelter")
+	ctx.view.night = 1.0
+	var night_bb: float = f.call("glow", "billboard")
+	var night_sh: float = f.call("glow", "shelter")
+	ctx.view.night = night0
+	check(day_bb == 0.0 and night_bb > 0.5 and day_sh < night_sh and night_sh <= 1.6,
+		"billboards glow only at night, shelters glow brighter at night (%.2f/%.2f, %.2f/%.2f)" % [day_bb, night_bb, day_sh, night_sh])
 	check(ic.transport_calls == 0 and ic.http_requests == 0, "offline: the feature made 0 transport calls")
 	check(int(ic.stats["prebaked"]) > 0, "offline art comes from the pre-baked set (%s)" % str(ic.stats))
 
@@ -540,6 +569,13 @@ func _test_hoarding(ctx: FpContext, f: FpFeature) -> void:
 	var want := ctx.directory.planned_name(c_lot, D.ZONE_C, 1)
 	check(not want.is_empty() and not hz.is_empty() and str(hz["overlay"]["name"]) == want, "a C site's hoarding uses planned_name (%s)" % want)
 	check(not hz.is_empty() and str(hz["overlay"]["builder"]) == "Built by Viktor Han's contractors", "the hoarding credits the mayor's contractors")
+	# The hoarding art follows what is being built.
+	var pools := {}
+	for tk: int in [D.ZONE_R, D.ZONE_I, D.ZONE_C, D.PARK, D.POLICE]:
+		sim.sites[c_lot] = {"type": "zone", "plan": "zone_new", "target_kind": tk, "target_level": 1, "owner": 1, "label": "x"}
+		pools[tk] = str(dirr.hoarding(c_lot).get("kind", ""))
+	check(pools[D.ZONE_R] == "hoarding_homes" and pools[D.ZONE_I] == "hoarding_industry" and pools[D.ZONE_C] == "hoarding_tower"
+		and pools[D.PARK] == "hoarding_park" and pools[D.POLICE] == "hoarding_station", "hoarding art per target kind %s" % str(pools.values()))
 	if had.is_empty():
 		sim.sites.erase(c_lot)
 	else:
@@ -576,6 +612,58 @@ func _test_hoarding(ctx: FpContext, f: FpFeature) -> void:
 		var out := Vector3(D.tx(dv) - D.tx(site), 0, D.ty(dv) - D.ty(site))
 		var depth := ((face["center"] as Vector3) - Vector3(D.tx(site), 0, D.ty(site))).dot(out)
 		check(depth > 0.47 and depth < 0.48, "the hoarding poster sits just outside the fence at 0.47 (%.4f), not a panel at 0.44" % depth)
+
+
+## Carrier precedence for the seams that land later: H's Poster_<n> meshes, then G1's poster_slot
+## meta (billboards, lease boards, site hoardings), then D's own quad.
+func _test_seams(ctx: FpContext, f: FpFeature, c_lot: int) -> void:
+	var AP := load("res://scripts/fp/asset_paths.gd")
+	var surf: RefCounted = f.get("surfaces")
+	var dirr: RefCounted = f.get("director")
+	var h := Node3D.new()
+	# H: a billboard asset that exports Poster_0 (and a poster_slot, which it overrides).
+	var hb := Node3D.new()
+	hb.scene_file_path = AP.BILLBOARD_POSTER
+	hb.set_meta("poster_slot", {"kind": "billboard", "size": Vector2(0.2, 0.1), "xform": Transform3D()})
+	var pm := MeshInstance3D.new()
+	pm.name = "Poster_0"
+	var q := QuadMesh.new()
+	q.size = Vector2(0.3, 0.12)
+	pm.mesh = q
+	hb.add_child(pm)
+	h.add_child(hb)
+	# G1: a legacy billboard with a poster_slot, and a lease board.
+	var gb := (load(REAL_BILLBOARD) as PackedScene).instantiate() as Node3D
+	gb.set_meta("poster_slot", {"kind": "billboard", "size": Vector2(0.2, 0.09), "xform": Transform3D(Basis(), Vector3(0, 0.3, 0.005))})
+	h.add_child(gb)
+	var lb := Node3D.new()
+	lb.set_meta("poster_slot", {"kind": "lease", "size": Vector2(0.04, 0.03), "xform": Transform3D(Basis(), Vector3(0, 0.05, 0.002))})
+	h.add_child(lb)
+	# G1: the site kit's frontage hoarding segment.
+	var site := Node3D.new()
+	site.name = "Site"
+	var seg := Node3D.new()
+	seg.set_meta("poster_slot", {"kind": "hoarding", "size": Vector2(0.3, 0.045), "xform": Transform3D(Basis(), Vector3(0, 0.025, 0.006))})
+	site.add_child(seg)
+	h.add_child(site)
+	var got: Array = surf.scan(c_lot, h)
+	var by := {}
+	for s: Dictionary in got:
+		by[(s["faces"][0]["mesh"] as Node).get_parent()] = s
+	var sh: Dictionary = by.get(hb, {})
+	check(not sh.is_empty() and sh["faces"][0]["mesh"] == pm and (sh["size"] as Vector2).is_equal_approx(Vector2(0.3, 0.12))
+		and hb.find_children("Poster", "MeshInstance3D", false, false).is_empty(), "H's Poster_0 wins: no D quad, its own size")
+	var sg: Dictionary = by.get(gb, {})
+	check(not sg.is_empty() and str(sg["carrier"]) == "billboard" and (sg["size"] as Vector2).is_equal_approx(Vector2(0.2, 0.09))
+		and str((sg["faces"][0]["mesh"] as Node).get_meta("fp_owner", "")) == "posters", "G1's poster_slot beats the hardcoded billboard quad")
+	var sl: Dictionary = by.get(lb, {})
+	var la: Dictionary = dirr.assign(sl) if not sl.is_empty() else {}
+	check(not sl.is_empty() and str(sl["carrier"]) == "lease" and str(la.get("family", "")) == "lease"
+		and str(la["overlay"].get("title", "")) == "For lease" and not str(la["overlay"].get("address", "")).is_empty(),
+		"a G1 lease slot reads For lease · %s" % str(la.get("overlay", {}).get("address", "")))
+	var sz: Dictionary = by.get(seg, {})
+	check(not sz.is_empty() and str(sz["carrier"]) == "hoarding", "G1's hoarding poster_slot on the site kit carries the hoarding")
+	h.free()
 
 
 func _plain(v: Variant) -> Variant:
@@ -688,6 +776,31 @@ func _test_composites(ctx: FpContext, f: FpFeature) -> void:
 	ctx.player.teleport(Vector3(p.x + 1.3 * WS.VIS_PROP, 0, p.z + 1.3 * WS.VIS_PROP), 0.0, 0.0, false)
 	f.update_composites()
 	check(not (f.get("_slot_comp") as Dictionary).has(any_id), "moving the player beyond 1.25 * VIS_PROP releases its composite")
+	# At the cap, a nearer poster takes the composite of a farther one.
+	var cids: Dictionary = f.get("_slot_cid")
+	var pair: Array = []
+	for a: String in assigned.keys():
+		for b: String in assigned.keys():
+			var pa: Vector3 = slots[a]["pos"]
+			var pb: Vector3 = slots[b]["pos"]
+			var d := Vector2(pa.x - pb.x, pa.z - pb.z).length()
+			if pair.is_empty() and cids.get(a, "") != cids.get(b, "") and d > 0.05 and d < WS.VIS_PROP:
+				pair = [a, b]
+	if pair.is_empty():
+		check(false, "fixture: two different posters within VIS_PROP of each other")
+	else:
+		f.set("max_composites", 1)
+		var pa2: Vector3 = slots[pair[0]]["pos"]
+		var pb2: Vector3 = slots[pair[1]]["pos"]
+		ctx.player.teleport(Vector3(pa2.x, 0, pa2.z), 0.0, 0.0, false)
+		f.update_composites()
+		var had_a := (f.get("_slot_comp") as Dictionary).has(pair[0])
+		ctx.player.teleport(Vector3(pb2.x, 0, pb2.z), 0.0, 0.0, false)
+		f.update_composites()
+		var sc: Dictionary = f.get("_slot_comp")
+		check(had_a and sc.has(pair[1]) and not sc.has(pair[0]) and comps.size() == 1,
+			"at the cap the nearest poster takes the composite of a farther one (%s -> %s)" % [pair[0], pair[1]])
+		f.set("max_composites", 32)
 	var far := Vector3(-79, 0, -79)
 	ctx.player.teleport(far, 0.0, 0.0, false)
 	f.update_composites()

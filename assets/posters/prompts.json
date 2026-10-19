@@ -53,7 +53,9 @@
   "hoarding": {
     "tower": "Architectural visualisation: a sleek new mixed-use tower of glass and warm stone above a landscaped plaza with trees, blue sky, photoreal render.",
     "park": "Architectural visualisation: a planned city park with lawns, young trees, a playground and a pond, sunny afternoon, photoreal render.",
-    "station": "Architectural visualisation: a bright modern civic building with a tall glass entrance hall facing a public square, photoreal render."
+    "station": "Architectural visualisation: a bright modern civic building with a tall glass entrance hall facing a public square, photoreal render.",
+    "homes": "Architectural visualisation: a row of new brick and timber townhouses with small front gardens and young trees on a quiet residential street, warm afternoon light, photoreal render.",
+    "industry": "Architectural visualisation: a clean modern light-industrial building of grey metal cladding and glass with loading bays and landscaped parking, blue sky, photoreal render."
   },
   "notice": {
     "incident": "Photograph: orange traffic cones, a striped road barrier and flashing amber beacons blocking a wet city street at night, emergency atmosphere.",
