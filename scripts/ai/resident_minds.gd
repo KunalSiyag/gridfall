@@ -51,6 +51,10 @@ var _rot: int = 0
 var _asked: Dictionary = {}
 var _bad_models: Dictionary = {}
 var _rng := RandomNumberGenerator.new()
+## Sliced mode (sim.sliced): the day's plan batches and the follow-up reactions wait here and run
+## one per frame, in the order the synchronous path runs them.
+var _spread: Array[Callable] = []
+var _spread_running: bool = false
 
 
 func setup(p_sim: CitySim, p_people: Residents, p_client: GmiClient, p_brain: Node) -> void:
@@ -62,6 +66,9 @@ func setup(p_sim: CitySim, p_people: Residents, p_client: GmiClient, p_brain: No
 	_asked.clear()
 	_plans_pending = 0
 	_reacts_pending = 0
+	_spread.clear()
+	sim.spread_gate = spreading
+	sim.spread_finish = finish_spread
 	if not people.day_ready.is_connected(plan_day):
 		people.day_ready.connect(plan_day)
 		sim.event_started.connect(_on_event_started)
@@ -95,6 +102,9 @@ func _note_model(model: String, res: Dictionary) -> void:
 # ---------------------------------------------------------------- daily plans
 
 func plan_day(day: int) -> void:
+	if sim != null and sim.sliced and is_inside_tree():
+		_plan_day_spread(day)
+		return
 	last_plan_day = day
 	var everyone: Array = people.people.duplicate()
 	if everyone.is_empty():
@@ -116,6 +126,67 @@ func plan_day(day: int) -> void:
 				resident_helpers += 1
 		if resident_helpers < 2:
 			_react(ev, true)
+
+
+## True while spread plan batches or reactions are still waiting for their frame (sliced mode).
+func spreading() -> bool:
+	return not _spread.is_empty()
+
+
+## Runs every waiting spread item now (a save, skip or mode switch needs the whole day planned).
+func finish_spread() -> void:
+	while not _spread.is_empty():
+		var c: Callable = _spread.pop_front()
+		c.call()
+
+
+## plan_day for sliced mode: the same batches, models, context and follow-up reactions, one batch
+## per frame instead of all at once (each batch builds ten cards, at most about 10 ms).
+func _plan_day_spread(day: int) -> void:
+	last_plan_day = day
+	var everyone: Array = people.people.duplicate()
+	if everyone.is_empty():
+		plans_done.emit(day)
+		return
+	var batches: Array = []
+	for i in range(0, everyone.size(), BATCH):
+		batches.append(everyone.slice(i, i + BATCH))
+	_plans_pending += batches.size()
+	busy_changed.emit(pending())
+	var ctx := _city_context()
+	for b in range(batches.size()):
+		_spread.append(_plan_batch.bind(batches[b], day, _model(_rot + b), ctx))
+	_rot += 1
+	_spread.append(_spread_reacts)
+	_run_spread()
+
+
+## The tail of plan_day: incidents with fewer than two resident helpers get a wide call for help,
+## one reaction per frame.
+func _spread_reacts() -> void:
+	var reacts: Array[Callable] = []
+	for ev in sim.events.duplicate():
+		var resident_helpers := 0
+		for h: String in (ev["helpers"] as Dictionary).keys():
+			if h.contains("("):
+				resident_helpers += 1
+		if resident_helpers < 2:
+			reacts.append(_react.bind(ev, true))
+	for k in range(reacts.size() - 1, -1, -1):
+		_spread.push_front(reacts[k])
+
+
+func _run_spread() -> void:
+	if _spread_running:
+		return
+	_spread_running = true
+	while not _spread.is_empty():
+		await get_tree().process_frame
+		if _spread.is_empty():
+			break
+		var c: Callable = _spread.pop_front()
+		c.call()
+	_spread_running = false
 
 
 func _plan_batch(batch: Array, day: int, model: String, ctx: Dictionary) -> void:
@@ -456,3 +527,4 @@ func from_dict(d: Dictionary) -> void:
 	_rot = int(d.get("rot", 0))
 	_plans_pending = 0
 	_reacts_pending = 0
+	_spread.clear()
