@@ -1,9 +1,24 @@
 class_name FpHud
 extends CanvasLayer
-## First-person HUD shell: named slot Controls the HUD, chat and other slices fill. S0 ships
-## placeholders (status line, crosshair, toasts, pause card) so FP is usable before slice B.
+## The lean on-foot HUD (slice B): named slots the HUD, chat and other slices fill, and B's widgets
+## in them: indicator chips and the compass (top_bar), toasts and the alert banner (toasts), the
+## rotating minimap and street label (minimap_slot), the interact prompt, first-person crosshair
+## and district caption (center), and the pause menu, place card and full map (overlay). No AI or
+## model branding: every string goes through SimDefs.debrand(). The minimap and map need the
+## hud_widgets feature, which binds its tile model and waypoint with bind_widgets().
 
 const D := preload("res://scripts/sim/sim_defs.gd")
+const S := preload("res://scripts/fp/ui/hud_style.gd")
+const Chips := preload("res://scripts/fp/ui/hud_chips.gd")
+const Toasts := preload("res://scripts/fp/ui/hud_toasts.gd")
+const Compass := preload("res://scripts/fp/ui/hud_compass.gd")
+const MinimapView := preload("res://scripts/fp/ui/minimap_view.gd")
+const Prompt := preload("res://scripts/fp/ui/hud_prompt.gd")
+const Caption := preload("res://scripts/fp/ui/hud_caption.gd")
+const PauseMenu := preload("res://scripts/fp/ui/pause_menu.gd")
+const PlaceCard := preload("res://scripts/fp/ui/place_card.gd")
+const MapScreen := preload("res://scripts/fp/ui/map_screen.gd")
+
 const SLOTS := ["top_bar", "minimap_slot", "chat_slot", "center", "toasts", "overlay"]
 ## [anchor_left, anchor_top, anchor_right, anchor_bottom, offset_left, offset_top, offset_right, offset_bottom]
 ## in the 1600x900 base viewport (canvas_items stretch).
@@ -15,35 +30,42 @@ const SLOT_RECTS := {
 	"toasts": [0.5, 0.0, 0.5, 0.0, -320, 76, 320, 236],
 	"overlay": [0.0, 0.0, 1.0, 1.0, 0, 0, 0, 0],
 }
-const FONT_PATH := "res://fonts/lilita_one_regular.ttf"
-const STATUS_PERIOD := 0.25
-const TOAST_SECONDS := 4.0
-const TOAST_FADE := 0.6
-const MAX_TOASTS := 4
-const TOAST_COLORS := {
-	"info": Color(1, 1, 1), "alert": Color(1.0, 0.55, 0.45), "success": Color(0.6, 1.0, 0.65),
-	"system": Color(0.75, 0.85, 1.0), "chat": Color(1.0, 0.95, 0.7),
+## Seconds a ping marker lives on the minimap and compass (it fades over the last third).
+const PING_LIFE := 30.0
+const MAX_PINGS := 8
+## Short names for incident banners ("Fire reported near 214 Maple Street").
+const EVENT_NOUNS := {
+	"fire": "Fire", "blackout": "Power plant failure", "sewage_burst": "Sewage main burst",
+	"gridlock": "Gridlock", "smog": "Toxic smog", "earthquake": "Earthquake", "flood": "Flooding",
+	"tornado": "Tornado", "water_main": "Water main break", "power_line": "Downed power line",
+	"car_crash": "Car crash",
 }
 
 var ctx: FpContext
 var root: Control
+var chips: Chips
+var toasts: Toasts
+var compass: Compass
+var minimap: MinimapView
+var prompt: Prompt
+var caption: Caption
+var pause_menu: PauseMenu
+var card: PlaceCard
+var map: MapScreen
+## The hud_widgets feature once bound (minimap model and waypoint), else null.
+var widgets: FpFeature
+## Live pings: {"pos": Vector3, "reason": String, "age": float, "alpha": float}, oldest first.
+var pings: Array[Dictionary] = []
 var _slots: Dictionary = {}
 var _hud_visible: bool = true
-var _font: Font
-var _status: Label
-var _status_t: float = 0.0
-var _toast_box: VBoxContainer
-## Each entry: {"label": Label, "t": seconds left}.
-var _toasts: Array[Dictionary] = []
-var _pause_card: PanelContainer
+var _show_hud_setting: bool = true
 
 
-## Builds the slots and the S0 placeholders and connects to the bus.
+## Builds the slots and every widget and connects to the bus.
 func setup(p_ctx: FpContext) -> void:
 	ctx = p_ctx
 	layer = 10
 	process_mode = Node.PROCESS_MODE_ALWAYS
-	_font = load(FONT_PATH) if ResourceLoader.exists(FONT_PATH) else null
 	root = Control.new()
 	root.name = "Root"
 	root.set_anchors_preset(Control.PRESET_FULL_RECT)
@@ -64,12 +86,41 @@ func setup(p_ctx: FpContext) -> void:
 		c.offset_bottom = r[7]
 		root.add_child(c)
 		_slots[n] = c
-	_build_placeholders()
+	chips = Chips.new()
+	slot("top_bar").add_child(chips)
+	chips.setup(ctx)
+	compass = Compass.new()
+	slot("top_bar").add_child(compass)
+	compass.setup(ctx, self)
+	toasts = Toasts.new()
+	slot("toasts").add_child(toasts)
+	toasts.setup()
+	minimap = MinimapView.new()
+	slot("minimap_slot").add_child(minimap)
+	minimap.setup(ctx, self)
+	prompt = Prompt.new()
+	slot("center").add_child(prompt)
+	prompt.setup(ctx)
+	caption = Caption.new()
+	slot("center").add_child(caption)
+	caption.setup(ctx)
+	card = PlaceCard.new()
+	slot("overlay").add_child(card)
+	card.setup(ctx, self)
+	map = MapScreen.new()
+	slot("overlay").add_child(map)
+	map.setup(ctx, self)
+	pause_menu = PauseMenu.new()
+	slot("overlay").add_child(pause_menu)
+	pause_menu.setup(ctx, self)
 	if ctx.bus != null:
 		ctx.bus.toast.connect(show_toast)
 		ctx.bus.ping.connect(_on_ping)
-		ctx.bus.pause_changed.connect(_on_pause_changed)
-	_refresh_status()
+		ctx.bus.settings_changed.connect(_on_settings)
+		ctx.bus.world_ready.connect(close_transient)
+	_show_hud_setting = bool(ctx.settings.get("show_hud", true))
+	if not _show_hud_setting:
+		set_hud_visible(false)
 
 
 ## The slot Control by name (one of SLOTS); asserts on unknown names.
@@ -93,151 +144,129 @@ func is_hud_visible() -> bool:
 
 ## Queues a toast in the "toasts" slot. kind: info|alert|success|system|chat.
 func show_toast(text: String, kind: String = "info") -> void:
-	if _toast_box == null or text.strip_edges().is_empty():
+	if toasts != null:
+		toasts.show_toast(text, kind)
+
+
+## Binds the hud_widgets feature: its model feeds the minimap and map, its waypoint the compass.
+func bind_widgets(f: FpFeature) -> void:
+	widgets = f
+	var m: Variant = f.get("model") if f != null else null
+	minimap.bind(m)
+	map.bind(m)
+
+
+## Drops the feature binding (feature teardown).
+func unbind_widgets() -> void:
+	widgets = null
+	minimap.bind(null)
+	map.bind(null)
+
+
+## The waypoint (Vector3 at y = 0) or null.
+func waypoint() -> Variant:
+	if widgets != null and bool(widgets.get("has_waypoint")):
+		return widgets.get("waypoint")
+	return null
+
+
+## The road route to the waypoint as world (x, z) points (empty without a waypoint).
+func route() -> PackedVector2Array:
+	if widgets != null and bool(widgets.get("has_waypoint")):
+		return widgets.get("route")
+	return PackedVector2Array()
+
+
+## Sets the waypoint and announces it as a "player" ping (the map's left click).
+func set_waypoint(p: Vector3) -> void:
+	if widgets == null:
 		return
-	while _toasts.size() >= MAX_TOASTS:
-		var old: Dictionary = _toasts.pop_front()
-		(old["label"] as Label).queue_free()
-	var l := _make_label(D.debrand(text), 18)
-	l.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	l.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	l.custom_minimum_size = Vector2(640, 0)
-	l.modulate = TOAST_COLORS.get(kind, Color.WHITE)
-	_toast_box.add_child(l)
-	_toasts.append({"label": l, "t": TOAST_SECONDS})
+	widgets.call("set_waypoint", Vector3(p.x, 0.0, p.z))
+	if ctx.bus != null:
+		ctx.bus.ping.emit(Vector3(p.x, 0.0, p.z), "player")
+
+
+## Clears the waypoint.
+func clear_waypoint() -> void:
+	if widgets != null:
+		widgets.call("clear_waypoint")
+
+
+## Closes the place card and the full map and pops their modals (world_ready, load, New City).
+func close_transient() -> void:
+	if card != null:
+		card.close()
+	if map != null:
+		map.close()
+	pings.clear()
+	if minimap != null:
+		minimap.refresh_street()
 
 
 func _process(delta: float) -> void:
-	_status_t += delta
-	if _status_t >= STATUS_PERIOD:
-		_status_t = 0.0
-		_refresh_status()
 	var k := 0
-	while k < _toasts.size():
-		var e: Dictionary = _toasts[k]
-		e["t"] = float(e["t"]) - delta
-		var l: Label = e["label"]
-		if float(e["t"]) <= 0.0:
-			l.queue_free()
-			_toasts.remove_at(k)
+	while k < pings.size():
+		var e: Dictionary = pings[k]
+		var age := float(e["age"]) + delta
+		if age >= PING_LIFE:
+			pings.remove_at(k)
 			continue
-		var a := clampf(float(e["t"]) / TOAST_FADE, 0.0, 1.0)
-		l.modulate.a = a
+		e["age"] = age
+		e["alpha"] = 1.0 - smoothstep(PING_LIFE * 0.66, PING_LIFE, age)
 		k += 1
+	_check_waypoint_reached()
 
 
-func _build_placeholders() -> void:
-	_status = _make_label("", 18)
-	_status.name = "Status"
-	_status.set_anchors_preset(Control.PRESET_TOP_WIDE)
-	_status.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	slot("top_bar").add_child(_status)
-	var cross := ColorRect.new()
-	cross.name = "Crosshair"
-	cross.color = Color(1, 1, 1, 0.85)
-	cross.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	cross.anchor_left = 0.5
-	cross.anchor_right = 0.5
-	cross.anchor_top = 0.5
-	cross.anchor_bottom = 0.5
-	cross.offset_left = -2
-	cross.offset_right = 2
-	cross.offset_top = -2
-	cross.offset_bottom = 2
-	slot("center").add_child(cross)
-	_toast_box = VBoxContainer.new()
-	_toast_box.name = "ToastBox"
-	_toast_box.set_anchors_preset(Control.PRESET_FULL_RECT)
-	_toast_box.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	_toast_box.alignment = BoxContainer.ALIGNMENT_BEGIN
-	slot("toasts").add_child(_toast_box)
-	_pause_card = PanelContainer.new()
-	_pause_card.name = "PauseCard"
-	_pause_card.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	var sb := StyleBoxFlat.new()
-	sb.bg_color = Color(0.04, 0.06, 0.1, 0.82)
-	sb.set_corner_radius_all(10)
-	sb.set_content_margin_all(18)
-	_pause_card.add_theme_stylebox_override("panel", sb)
-	_pause_card.anchor_left = 0.5
-	_pause_card.anchor_right = 0.5
-	_pause_card.anchor_top = 0.5
-	_pause_card.anchor_bottom = 0.5
-	_pause_card.grow_horizontal = Control.GROW_DIRECTION_BOTH
-	_pause_card.grow_vertical = Control.GROW_DIRECTION_BOTH
-	_pause_card.add_child(_make_label("Paused · Esc resume · F5 save · F9 load · F1 hide HUD", 22))
-	_pause_card.visible = false
-	slot("overlay").add_child(_pause_card)
-
-
-func _make_label(text: String, size: int) -> Label:
-	var l := Label.new()
-	l.text = text
-	l.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	if _font != null:
-		l.add_theme_font_override("font", _font)
-	l.add_theme_font_size_override("font_size", size)
-	l.add_theme_constant_override("outline_size", 6)
-	l.add_theme_color_override("font_outline_color", Color(0.03, 0.05, 0.08, 0.95))
-	return l
-
-
-func _refresh_status() -> void:
-	if _status == null or ctx == null or ctx.sim == null:
+func _check_waypoint_reached() -> void:
+	var wp: Variant = waypoint()
+	if wp == null or ctx.player == null:
 		return
-	var sim := ctx.sim
-	var mood := float(sim.stats.get("happiness", 0.0)) * 10.0
-	if ctx.residents != null and ctx.residents.is_active():
-		mood = float(ctx.residents.sentiment.get("mood", 0.0)) * 10.0
-	var clock := ctx.sky.clock_text() if ctx.sky != null else "--:--"
-	var ts := ctx.mode.time_scale if ctx.mode != null else 1
-	var funds := sim.total_funds()
-	var money := ("-$" if funds < 0 else "$") + _thousands(absi(funds))
-	_status.text = "Day %d · %s · Pop %s · Mood %.1f/10 · %s · %dx" % [sim.day, clock, _thousands(int(sim.stats.get("population", 0))), mood, money, ts]
+	var p: Vector3 = wp
+	var me := ctx.player.position
+	if Vector2(p.x - me.x, p.z - me.z).length() < 0.6:
+		clear_waypoint()
+		show_toast("Waypoint reached", "success")
 
 
 func _on_ping(world_pos: Vector3, reason: String) -> void:
-	var tile := -1
-	var x := roundi(world_pos.x)
-	var y := roundi(world_pos.z)
-	if D.in_bounds(x, y):
-		tile = D.idx(x, y)
-	var where := ctx.directory.place_label(tile) if ctx.directory != null and tile >= 0 else "the frontier"
-	show_toast("Attention: %s near %s" % [_reason_label(reason), where], "alert")
-
-
-func _reason_label(reason: String) -> String:
+	if reason == "player":
+		return
+	pings.append({"pos": Vector3(world_pos.x, 0.0, world_pos.z), "reason": reason, "age": 0.0, "alpha": 1.0})
+	while pings.size() > MAX_PINGS:
+		pings.pop_front()
+	var where := _place_near(world_pos)
 	if reason.begins_with("event:"):
 		var t := reason.substr(6)
-		return str((D.DISASTERS.get(t, {}) as Dictionary).get("label", t.capitalize()))
+		var noun := str(EVENT_NOUNS.get(t, (D.DISASTERS.get(t, {}) as Dictionary).get("label", "Incident")))
+		toasts.show_banner("%s reported near %s" % [noun, where])
+		return
 	if reason.begins_with("resident:"):
+		var who := "A resident"
 		if ctx.residents != null:
 			var r := ctx.residents.find(reason.substr(9))
 			if not r.is_empty():
-				return str(r.get("name", "a resident"))
-		return "a resident"
-	if reason.begins_with("district:"):
+				who = str(r.get("name", who))
+		show_toast("%s is near %s" % [who, where], "info")
+	elif reason.begins_with("district:"):
 		var mi := int(reason.substr(9))
-		if mi >= 0 and mi < D.MAYORS.size():
-			return str(D.MAYORS[mi]["district"])
-		return "a district"
-	match reason:
-		"player":
-			return "your waypoint"
-		"tile":
-			return "a report"
-	return "something"
+		var dn := str(D.MAYORS[mi]["district"]) if mi >= 0 and mi < D.MAYORS.size() else "A district"
+		show_toast("%s · marked on your map" % dn, "info")
+	else:
+		show_toast("Marked near %s" % where, "info")
 
 
-func _on_pause_changed(p: bool) -> void:
-	if _pause_card != null:
-		_pause_card.visible = p
+## A directory place label for a world point ("214 Maple Street"), never raw coordinates.
+func _place_near(p: Vector3) -> String:
+	var x := roundi(p.x)
+	var y := roundi(p.z)
+	if ctx.directory == null or not D.in_bounds(x, y):
+		return "the frontier"
+	var t := ctx.directory.place_label(D.idx(x, y))
+	return D.debrand(t) if not t.is_empty() else "the frontier"
 
 
-static func _thousands(n: int) -> String:
-	var s := str(absi(n))
-	var out := ""
-	while s.length() > 3:
-		out = "," + s.right(3) + out
-		s = s.left(s.length() - 3)
-	return ("-" if n < 0 else "") + s + out
+func _on_settings(s: Dictionary) -> void:
+	var v := bool(s.get("show_hud", true))
+	if v != _show_hud_setting:
+		_show_hud_setting = v
+		set_hud_visible(v)
