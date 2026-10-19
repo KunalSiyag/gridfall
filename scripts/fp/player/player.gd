@@ -284,6 +284,7 @@ func simulate(wish: Vector2, sprint: bool, delta: float, crouch: bool = false, j
 		_jump_buffer = JUMP_BUFFER
 	_jump_held = jump
 	_set_crouch(crouch)
+	_eye_h = SM.damp(_eye_h, WS.CROUCH_EYE if crouched else WS.EYE, HL_EYE, delta)
 	var top_speed := WS.CROUCH_WALK if crouched else (WS.RUN if sprint else WS.WALK)
 	_running = sprint and not crouched and wish.length_squared() > 0.01
 	_target_speed = top_speed * wish.length()
@@ -329,7 +330,6 @@ func update_view(delta: float) -> void:
 		return
 	var dt := clampf(delta, 0.0, MAX_FRAME_DELTA)
 	var sp := speed()
-	_eye_h = SM.damp(_eye_h, WS.CROUCH_EYE if crouched else WS.EYE, HL_EYE, dt)
 	_cam_dy = SM.damp(_cam_dy, 0.0, HL_FP_STEP, dt)
 	_bob_amp = SM.damp(_bob_amp, sqrt(clampf(sp / WS.RUN, 0.0, 1.0)) if grounded else 0.0, HL_BOB, dt)
 	var fp_goal := _fov_setting + (FP_SPRINT_FOV if _head_bob and _running and sp > 0.8 * WS.RUN else 0.0)

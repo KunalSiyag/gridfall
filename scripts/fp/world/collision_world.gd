@@ -53,6 +53,9 @@ var _runtime_shapes: Dictionary = {}
 ## Prop model path -> local AABB of its meshes.
 var _prop_bounds: Dictionary = {}
 var _test_boxes: Array[AABB] = []
+var _esc_from: Vector3 = Vector3(NAN, NAN, NAN)
+var _esc_point: Vector3 = Vector3(NAN, NAN, NAN)
+var _esc_r: float = 0.0
 var _warned: Dictionary = {}
 
 
@@ -65,18 +68,21 @@ func setup(p_ctx: FpContext) -> void:
 func rebuild_all() -> void:
 	_tiles.clear()
 	_bounds.clear()
+	_esc_from = Vector3(NAN, NAN, NAN)
 
 
 ## Invalidates tile i's colliders.
 func on_tile_built(i: int, _holder: Node3D) -> void:
 	_tiles.erase(i)
 	_bounds.erase(i)
+	_esc_from = Vector3(NAN, NAN, NAN)
 
 
 ## Invalidates tile i's colliders.
 func on_tile_cleared(i: int) -> void:
 	_tiles.erase(i)
 	_bounds.erase(i)
+	_esc_from = Vector3(NAN, NAN, NAN)
 
 
 ## Test hook: a world box that blocks like any other (a ledge, a ceiling), listed in boxes() of
@@ -248,30 +254,32 @@ func move_body(from: Vector3, motion: Vector3, radius: float, height: float, max
 	for c: Vector3 in [first, second]:
 		if c != from and _can_stand(from, c, radius, height, max_rise):
 			return c
-	# Walk-out: from already overlaps something (a building or a site appeared underfoot). The
-	# overlapped boxes and everything touching them form one obstacle; a move is allowed when it
-	# enters nothing outside it and gets no deeper into its bound.
+	# Walk-out: from already overlaps something (a building or a site appeared underfoot). A move
+	# is allowed when it goes no deeper into what it overlaps and enters nothing new (S0), or when
+	# it heads for the nearest free point and enters nothing outside the obstacle it is in (the
+	# boxes and posts touching each other), so a building made of several boxes lets go.
 	var d0 := _overlaps(from, radius, height)
 	if d0.is_empty():
 		return from
 	var cl := _cluster(from, radius, height, d0)
-	var bound: AABB = cl["bound"]
 	var keys: Dictionary = cl["keys"]
-	var dep0 := _depth_xz(bound, from)
+	var esc := _escape_point(from, radius)
 	for c: Vector3 in [full, first, second]:
 		if c == from:
 			continue
 		var g := walk_height(c)
 		if is_nan(g) or g - from.y > max_rise + 1e-6:
 			continue
-		var cp := Vector3(c.x, maxf(from.y, g), c.z)
-		var ok := _depth_xz(bound, cp) <= dep0 + 1e-9
-		if ok:
-			for key: Vector2i in _overlaps(cp, radius, height).keys():
-				if not keys.has(key):
-					ok = false
-					break
-		if ok:
+		var d1 := _overlaps(Vector3(c.x, maxf(from.y, g), c.z), radius, height)
+		var shallower := true
+		var known := true
+		for key: Vector2i in d1.keys():
+			if not d0.has(key) or float(d1[key]) > float(d0[key]) + 1e-9:
+				shallower = false
+			if not keys.has(key):
+				known = false
+		var outward := not is_nan(esc.x) and Vector2(c.x - from.x, c.z - from.z).dot(Vector2(esc.x - from.x, esc.z - from.z)) > 0.0
+		if shallower or (known and outward):
 			return c
 	return from
 
@@ -619,6 +627,17 @@ func _overlaps(p: Vector3, radius: float, height: float) -> Dictionary:
 	return out
 
 
+## The nearest free point for a stuck walker at p (nearest_free within 2 u), cached while the
+## walker stays within 1 m of the last query.
+func _escape_point(p: Vector3, radius: float) -> Vector3:
+	if not is_nan(_esc_from.x) and Vector2(p.x - _esc_from.x, p.z - _esc_from.z).length() < 1.0 * WS.M and is_equal_approx(_esc_r, radius):
+		return _esc_point
+	_esc_from = p
+	_esc_r = radius
+	_esc_point = nearest_free(p, radius, 2.0)
+	return _esc_point
+
+
 ## The obstacle a stuck walker is in: the boxes and cylinders overlapping p and, repeatedly,
 ## every one touching their merged bound (grown by radius). {"bound": AABB, "keys": {key: true}}
 ## with the _overlaps() keys.
@@ -674,11 +693,6 @@ func _key_box(key: Vector2i) -> AABB:
 	var cy: PackedFloat32Array = e["cyls"]
 	var k := key.y - 100000
 	return AABB(Vector3(cy[k] - cy[k + 2], WS.GROUND_Y, cy[k + 1] - cy[k + 2]), Vector3(cy[k + 2] * 2.0, cy[k + 3] - WS.GROUND_Y, cy[k + 2] * 2.0))
-
-
-## How far p is inside b in xz (distance to its nearest side; negative outside).
-static func _depth_xz(b: AABB, p: Vector3) -> float:
-	return minf(minf(p.x - b.position.x, b.end.x - p.x), minf(p.z - b.position.z, b.end.z - p.z))
 
 
 ## Builds (once) tile i's colliders.
