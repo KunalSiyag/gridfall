@@ -6,6 +6,10 @@ under models/real/. Run tools/polyhaven_fetch.py first to populate ~/.cache/grid
     blender --background --python tools/blender/make_realistic_city.py -- all
     blender --background --python tools/blender/make_realistic_city.py -- zones/r1 roads
     blender --background --python tools/blender/make_realistic_city.py -- --list
+    blender --background --python tools/blender/make_realistic_city.py -- --out ~/scratch/real street
+
+--out DIR writes the GLBs under DIR/<category>/ instead of models/real (dry runs; Blender is a flatpak
+and cannot see /tmp, so keep DIR under $HOME).
 
 Arguments are key prefixes (e.g. "zones", "zones/r1", "buildings/stadium", "vehicles").
 Conventions: Godot Y up (Blender Z), front faces Godot +Z (Blender -Y), base at y=0,
@@ -30,13 +34,15 @@ from arch import Ctx  # noqa: E402
 
 PROJECT = os.path.abspath(os.path.join(HERE, "..", ".."))
 OUT = os.path.join(PROJECT, "models", "real")
+OUT_DIR = [OUT]
 
 
 def registry():
     reg = {}
     import zones_res
     reg.update(zones_res.R1)
-    for mod in ("zones_res2", "zones_com", "zones_ind", "services", "services2", "roads", "props", "vehicles", "people"):
+    for mod in ("zones_res2", "zones_com", "zones_ind", "services", "services2", "roads", "props", "vehicles", "people",
+                "vehicles2", "street"):
         try:
             m = __import__(mod)
         except ImportError as e:
@@ -52,11 +58,13 @@ def registry():
 def build(key, entry):
     fn, kw = entry[0], dict(entry[1])
     look = kw.pop("_lit", "Glass")
+    # a new key that rebuilds a legacy asset (vehicles_v2/sedan_blue) keeps the legacy seed and palette
+    seed_key = kw.pop("_seed_key", key)
     core.reset()
     import nature
     nature.BOUND = (0.47 if key.startswith(("zones/", "buildings/")) else 0.2 if key.startswith("props/")
                     else 0.5 if key.startswith("roads/") else None)
-    seed = zlib.crc32(key.encode())
+    seed = zlib.crc32(seed_key.encode())
     c = Ctx(seed=seed, lit_look=look)
     core.material("WindowLit", override=core.MATS[look])
     t0 = time.time()
@@ -68,7 +76,7 @@ def build(key, entry):
         if ob.type == "MESH" and ob.data.users > 1:
             ob.data = ob.data.copy()
     tris = core.tri_count()
-    path = os.path.join(OUT, key + ".glb")
+    path = os.path.join(OUT_DIR[0], key + ".glb")
     size = core.export_glb(path)
     anim = sorted(o.name for o in bpy.context.scene.objects if o.name.startswith(core.ANIM_PREFIXES))
     mats = sorted({s.material.name for o in bpy.context.scene.objects if o.type == "MESH"
@@ -79,6 +87,10 @@ def build(key, entry):
 
 def main():
     argv = sys.argv[sys.argv.index("--") + 1:] if "--" in sys.argv else ["all"]
+    if "--out" in argv:
+        i = argv.index("--out")
+        OUT_DIR[0] = os.path.abspath(os.path.expanduser(argv[i + 1]))
+        del argv[i:i + 2]
     reg = registry()
     if "--list" in argv:
         for k in reg:

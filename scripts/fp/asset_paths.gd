@@ -30,6 +30,17 @@ const PERSON_LOOPING := ["idle", "walk", "run", "talk"]
 ## Separate wheel nodes on vehicles_v2 road vehicles (origin at the hub, spin about local X).
 const WHEEL_NODES := ["Wheel_FL", "Wheel_FR", "Wheel_RL", "Wheel_RR"]
 const BIKE_WHEEL_NODES := ["Wheel_F", "Wheel_R"]
+## Far LOD next to each vehicles_v2 model (<name>_lod1.glb): one mesh, wheels merged, at most 1,500
+## triangles, a few flat untextured materials (colour in the albedo); the lamp lenses are the
+## emissive Light_Head / Light_Tail.
+const VEHICLE_LOD_SUFFIX := "_lod1.glb"
+## Traffic-signal lens nodes in TRAFFIC_LIGHT (<prefix><n>, one material each), and the pedestrian
+## head nodes in TRAFFIC_LIGHT and PED_SIGNAL.
+const SIGNAL_NODE_PREFIXES := ["Signal_Red_", "Signal_Amber_", "Signal_Green_"]
+const WALK_NODE_PREFIX := "Walk_"
+const DONT_WALK_NODE_PREFIX := "DontWalk_"
+## Name-blade anchors in TRAFFIC_LIGHT and STREET_SIGN: A runs along X facing +Z, B along Z facing +X.
+const SIGN_TEXT_NODES := ["SignText_A", "SignText_B"]
 ## Node-name contracts inside H's GLBs (all optional; consumers fall back when absent).
 ## Poster_<n>: MeshInstance3D, one surface, material "Poster", UV 0..1, normal +Z in node space.
 const POSTER_NODE_PREFIX := "Poster_"
