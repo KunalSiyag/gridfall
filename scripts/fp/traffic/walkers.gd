@@ -80,6 +80,7 @@ class Walker extends RefCounted:
 	var gait: float = 0.0            # drawn stride amount 0..1 (eases toward the walking speed)
 	var fade: float = 1.0            # drawn opacity 0..1 (people spawned in view fade in)
 	var wait_slot: int = -1          # place in the little crowd waiting at a zebra
+	var go_delay: float = -1.0       # seconds before stepping off the curb once allowed
 	var chatty: bool = false         # stops to chat when meeting another chatty walker
 	var chat_t: float = 0.0
 	var chat_cool: float = 0.0
@@ -257,6 +258,19 @@ func _walk_edge(w: Walker, dt: float) -> void:
 		w.vel = Vector3.ZERO
 		var z := _peek_zebra(w)
 		if z == null or w.far or _can_cross(z):
+			# The crowd steps off a little staggered, back rows last, each keeping its side.
+			if z != null and not w.far and w.go_delay < 0.0:
+				w.go_delay = 0.45 * float(maxi(w.wait_slot, 0) / 3) + _rng.randf_range(0.0, 0.35)
+			if w.go_delay > 0.0:
+				w.go_delay -= dt
+				return
+			w.go_delay = -1.0
+			if z != null:
+				var d := sw.dir_at(z, 0.0) * float(_zebra_dir(w, z))
+				var along := Vector2(-d.y, d.x)
+				var a := Vector2(w.vis_off.x, w.vis_off.z).dot(along)
+				w.lat = clampf(a, -BAND, BAND)
+				w.vis_off -= Vector3(along.x, 0.0, along.y) * (w.lat * 0.5)
 			w.state = "walk"
 			w.wait_t = 0.0
 			_next(w)
@@ -298,6 +312,10 @@ func _walk_edge(w: Walker, dt: float) -> void:
 				if dist > SEP * 3.0:
 					continue
 				var ahead := dp.x * fwd.x + dp.z * fwd.y
+				if dist < SEP * 0.8 and absf(ahead) < SEP * 0.5 and o.state == "walk":
+					# Side by side and too close: drift apart.
+					var side_o := -dp.x * fwd.y + dp.z * fwd.x
+					lat_t = clampf(w.lat - signf(side_o if side_o != 0.0 else float(w.id - o.id)) * SEP, -BAND, BAND)
 				if ahead <= 0.0:
 					continue
 				var ofwd := Vector2(sin(o.yaw), cos(o.yaw))
