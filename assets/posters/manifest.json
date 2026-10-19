@@ -1,0 +1,338 @@
+{
+  "ad_bakery.webp": {
+    "kind": "ad",
+    "pool": "ad_bakery",
+    "tags": [
+      "bakery"
+    ],
+    "prompt": "Commercial photograph: fresh crusty sourdough loaves, baguettes and glazed pastries on rustic wooden bakery shelves, a light dusting of flour, warm morning light. Photorealistic full-bleed photograph, no border, no frame. The image contains absolutely no text: no letters, words, numbers, logos, brand names, signs, captions or watermarks anywhere. No real people or celebrities; any people are small, anonymous, seen from behind or out of focus. Set in a modern mid-sized city. Natural light, sharp detail, believable colour, 35mm lens.",
+    "size": "1536x640",
+    "model": "hy-image-v3.5-preview",
+    "elapsed_s": 17.5,
+    "created": "2026-10-19T06:52:32Z"
+  },
+  "ad_bank.webp": {
+    "kind": "ad",
+    "pool": "ad_bank",
+    "tags": [
+      "bank"
+    ],
+    "prompt": "Commercial photograph: a calm modern bank lobby with light oak, green plants and a wide city view, a hand holding a house key in the foreground, trustworthy and bright. Photorealistic full-bleed photograph, no border, no frame. The image contains absolutely no text: no letters, words, numbers, logos, brand names, signs, captions or watermarks anywhere. No real people or celebrities; any people are small, anonymous, seen from behind or out of focus. Set in a modern mid-sized city. Natural light, sharp detail, believable colour, 35mm lens.",
+    "size": "1536x640",
+    "model": "hy-image-v3.5-preview",
+    "elapsed_s": 17.6,
+    "created": "2026-10-19T06:52:32Z"
+  },
+  "ad_bookshop.webp": {
+    "kind": "ad",
+    "pool": "ad_bookshop",
+    "tags": [
+      "bookshop"
+    ],
+    "prompt": "Commercial photograph: a cosy independent bookshop interior with tall wooden shelves of books, a leather reading chair and warm lamplight, calm and inviting. Photorealistic full-bleed photograph, no border, no frame. The image contains absolutely no text: no letters, words, numbers, logos, brand names, signs, captions or watermarks anywhere. No real people or celebrities; any people are small, anonymous, seen from behind or out of focus. Set in a modern mid-sized city. Natural light, sharp detail, believable colour, 35mm lens.",
+    "size": "1536x640",
+    "model": "hy-image-v3.5-preview",
+    "elapsed_s": 22.4,
+    "created": "2026-10-19T06:52:32Z"
+  },
+  "ad_cafe.webp": {
+    "kind": "ad",
+    "pool": "ad_cafe",
+    "tags": [
+      "cafe"
+    ],
+    "prompt": "Commercial photograph: a steaming flat white and a buttery croissant on a marble cafe counter by a sunny window, shallow depth of field, warm tones, inviting. Photorealistic full-bleed photograph, no border, no frame. The image contains absolutely no text: no letters, words, numbers, logos, brand names, signs, captions or watermarks anywhere. No real people or celebrities; any people are small, anonymous, seen from behind or out of focus. Set in a modern mid-sized city. Natural light, sharp detail, believable colour, 35mm lens.",
+    "size": "1536x640",
+    "model": "hy-image-v3.5-preview",
+    "elapsed_s": 18.0,
+    "created": "2026-10-19T06:50:16Z"
+  },
+  "ad_cinema.webp": {
+    "kind": "ad",
+    "pool": "ad_cinema",
+    "tags": [
+      "cinema"
+    ],
+    "prompt": "Commercial photograph: a grand vintage cinema auditorium with red velvet seats facing a glowing blank screen, a striped box of popcorn in the foreground. Photorealistic full-bleed photograph, no border, no frame. The image contains absolutely no text: no letters, words, numbers, logos, brand names, signs, captions or watermarks anywhere. No real people or celebrities; any people are small, anonymous, seen from behind or out of focus. Set in a modern mid-sized city. Natural light, sharp detail, believable colour, 35mm lens.",
+    "size": "1536x640",
+    "model": "hy-image-v3.5-preview",
+    "elapsed_s": 15.6,
+    "created": "2026-10-19T06:52:32Z"
+  },
+  "ad_default.webp": {
+    "kind": "ad",
+    "pool": "ad_default",
+    "tags": [
+      "default"
+    ],
+    "prompt": "Commercial photograph: a stylish modern shopping street at dusk with glowing shop windows and anonymous shoppers seen from behind, upmarket and lively. Photorealistic full-bleed photograph, no border, no frame. The image contains absolutely no text: no letters, words, numbers, logos, brand names, signs, captions or watermarks anywhere. No real people or celebrities; any people are small, anonymous, seen from behind or out of focus. Set in a modern mid-sized city. Natural light, sharp detail, believable colour, 35mm lens.",
+    "size": "1536x640",
+    "model": "hy-image-v3.5-preview",
+    "elapsed_s": 19.7,
+    "created": "2026-10-19T06:52:32Z"
+  },
+  "ad_fitness.webp": {
+    "kind": "ad",
+    "pool": "ad_fitness",
+    "tags": [
+      "fitness"
+    ],
+    "prompt": "Commercial photograph: a modern gym with racks of dumbbells and rowing machines, one athletic person seen from behind mid-workout, dramatic energetic lighting. Photorealistic full-bleed photograph, no border, no frame. The image contains absolutely no text: no letters, words, numbers, logos, brand names, signs, captions or watermarks anywhere. No real people or celebrities; any people are small, anonymous, seen from behind or out of focus. Set in a modern mid-sized city. Natural light, sharp detail, believable colour, 35mm lens.",
+    "size": "1536x640",
+    "model": "hy-image-v3.5-preview",
+    "elapsed_s": 19.6,
+    "created": "2026-10-19T06:52:32Z"
+  },
+  "ad_hardware.webp": {
+    "kind": "ad",
+    "pool": "ad_hardware",
+    "tags": [
+      "hardware"
+    ],
+    "prompt": "Commercial photograph: neatly arranged hand tools, paint tins, rope and planks of timber on a workshop bench in a hardware store, warm practical light. Photorealistic full-bleed photograph, no border, no frame. The image contains absolutely no text: no letters, words, numbers, logos, brand names, signs, captions or watermarks anywhere. No real people or celebrities; any people are small, anonymous, seen from behind or out of focus. Set in a modern mid-sized city. Natural light, sharp detail, believable colour, 35mm lens.",
+    "size": "1536x640",
+    "model": "hy-image-v3.5-preview",
+    "elapsed_s": 23.8,
+    "created": "2026-10-19T06:52:32Z"
+  },
+  "ad_market.webp": {
+    "kind": "ad",
+    "pool": "ad_market",
+    "tags": [
+      "market"
+    ],
+    "prompt": "Commercial photograph: crates of colourful fresh fruit and vegetables and tidy shelves of everyday groceries in a bright neighbourhood market, cheerful and clean. Photorealistic full-bleed photograph, no border, no frame. The image contains absolutely no text: no letters, words, numbers, logos, brand names, signs, captions or watermarks anywhere. No real people or celebrities; any people are small, anonymous, seen from behind or out of focus. Set in a modern mid-sized city. Natural light, sharp detail, believable colour, 35mm lens.",
+    "size": "1536x640",
+    "model": "hy-image-v3.5-preview",
+    "elapsed_s": 23.6,
+    "created": "2026-10-19T06:52:32Z"
+  },
+  "campaign_argon.webp": {
+    "kind": "campaign",
+    "pool": "campaign_argon",
+    "tags": [
+      "argon"
+    ],
+    "prompt": "Wide cinematic photograph of the Northwest Civic Campus: a new public library and a brick school courtyard on a tree-lined civic campus at golden hour, a clean water tower in the distance, warm amber fabric pennants on the lamp posts. Photorealistic full-bleed photograph, no border, no frame. The image contains absolutely no text: no letters, words, numbers, logos, brand names, signs, captions or watermarks anywhere. No real people or celebrities; any people are small, anonymous, seen from behind or out of focus. Set in a modern mid-sized city. Natural light, sharp detail, believable colour, 35mm lens.",
+    "size": "1536x640",
+    "model": "hy-image-v3.5-preview",
+    "elapsed_s": 18.7,
+    "created": "2026-10-19T06:50:16Z"
+  },
+  "campaign_deepseek.webp": {
+    "kind": "campaign",
+    "pool": "campaign_deepseek",
+    "tags": [
+      "deepseek"
+    ],
+    "prompt": "Wide cinematic photograph of the Northeast Tech Corridor: a sleek boulevard of glass offices at blue hour, a light-rail tram gliding past, smooth traffic drawn as long-exposure light trails, cool cyan accent lighting. Photorealistic full-bleed photograph, no border, no frame. The image contains absolutely no text: no letters, words, numbers, logos, brand names, signs, captions or watermarks anywhere. No real people or celebrities; any people are small, anonymous, seen from behind or out of focus. Set in a modern mid-sized city. Natural light, sharp detail, believable colour, 35mm lens.",
+    "size": "1536x640",
+    "model": "hy-image-v3.5-preview",
+    "elapsed_s": 20.5,
+    "created": "2026-10-19T06:52:32Z"
+  },
+  "campaign_grok.webp": {
+    "kind": "campaign",
+    "pool": "campaign_grok",
+    "tags": [
+      "grok"
+    ],
+    "prompt": "Wide cinematic photograph of the Southeast Boomtown: a booming downtown skyline under construction at sunset, tower cranes over rising glass towers, crimson safety netting on the scaffolds. Photorealistic full-bleed photograph, no border, no frame. The image contains absolutely no text: no letters, words, numbers, logos, brand names, signs, captions or watermarks anywhere. No real people or celebrities; any people are small, anonymous, seen from behind or out of focus. Set in a modern mid-sized city. Natural light, sharp detail, believable colour, 35mm lens.",
+    "size": "1536x640",
+    "model": "hy-image-v3.5-preview",
+    "elapsed_s": 21.2,
+    "created": "2026-10-19T06:52:32Z"
+  },
+  "campaign_kimi.webp": {
+    "kind": "campaign",
+    "pool": "campaign_kimi",
+    "tags": [
+      "kimi"
+    ],
+    "prompt": "Wide cinematic photograph of the Central Plaza: a lively central plaza market at early evening with striped shop awnings, string lights and a fountain, anonymous shoppers seen from behind, soft violet lanterns. Photorealistic full-bleed photograph, no border, no frame. The image contains absolutely no text: no letters, words, numbers, logos, brand names, signs, captions or watermarks anywhere. No real people or celebrities; any people are small, anonymous, seen from behind or out of focus. Set in a modern mid-sized city. Natural light, sharp detail, believable colour, 35mm lens.",
+    "size": "1536x640",
+    "model": "hy-image-v3.5-preview",
+    "elapsed_s": 18.7,
+    "created": "2026-10-19T06:52:32Z"
+  },
+  "campaign_qwen.webp": {
+    "kind": "campaign",
+    "pool": "campaign_qwen",
+    "tags": [
+      "qwen"
+    ],
+    "prompt": "Wide cinematic photograph of the Southwest Eco Quarter: a green residential street with solar roofs, bicycles, community vegetable gardens and wind turbines on the horizon, fresh morning light, emerald green accents. Photorealistic full-bleed photograph, no border, no frame. The image contains absolutely no text: no letters, words, numbers, logos, brand names, signs, captions or watermarks anywhere. No real people or celebrities; any people are small, anonymous, seen from behind or out of focus. Set in a modern mid-sized city. Natural light, sharp detail, believable colour, 35mm lens.",
+    "size": "1536x640",
+    "model": "hy-image-v3.5-preview",
+    "elapsed_s": 18.9,
+    "created": "2026-10-19T06:52:32Z"
+  },
+  "gazette_construction.webp": {
+    "kind": "gazette",
+    "pool": "gazette_construction",
+    "tags": [
+      "construction"
+    ],
+    "prompt": "Editorial press photograph: construction workers in hard hats seen from behind on a busy building site with a tower crane and a rising steel frame, press photo. Photorealistic full-bleed photograph, no border, no frame. The image contains absolutely no text: no letters, words, numbers, logos, brand names, signs, captions or watermarks anywhere. No real people or celebrities; any people are small, anonymous, seen from behind or out of focus. Set in a modern mid-sized city. Natural light, sharp detail, believable colour, 35mm lens.",
+    "size": "768x1152",
+    "model": "hy-image-v3.5-preview",
+    "elapsed_s": 17.4,
+    "created": "2026-10-19T06:52:32Z"
+  },
+  "gazette_crews.webp": {
+    "kind": "gazette",
+    "pool": "gazette_crews",
+    "tags": [
+      "crews"
+    ],
+    "prompt": "Editorial press photograph: firefighters and emergency crews at work at an incident on a city street at dusk, flashing lights and smoke, press photo. Photorealistic full-bleed photograph, no border, no frame. The image contains absolutely no text: no letters, words, numbers, logos, brand names, signs, captions or watermarks anywhere. No real people or celebrities; any people are small, anonymous, seen from behind or out of focus. Set in a modern mid-sized city. Natural light, sharp detail, believable colour, 35mm lens.",
+    "size": "768x1152",
+    "model": "hy-image-v3.5-preview",
+    "elapsed_s": 21.0,
+    "created": "2026-10-19T06:52:32Z"
+  },
+  "gazette_park.webp": {
+    "kind": "gazette",
+    "pool": "gazette_park",
+    "tags": [
+      "park"
+    ],
+    "prompt": "Editorial press photograph: residents enjoying a new city park with trees and a pond on a sunny afternoon, seen from a distance, press photo. Photorealistic full-bleed photograph, no border, no frame. The image contains absolutely no text: no letters, words, numbers, logos, brand names, signs, captions or watermarks anywhere. No real people or celebrities; any people are small, anonymous, seen from behind or out of focus. Set in a modern mid-sized city. Natural light, sharp detail, believable colour, 35mm lens.",
+    "size": "768x1152",
+    "model": "hy-image-v3.5-preview",
+    "elapsed_s": 17.8,
+    "created": "2026-10-19T06:52:32Z"
+  },
+  "gazette_skyline.webp": {
+    "kind": "gazette",
+    "pool": "gazette_skyline",
+    "tags": [
+      "skyline"
+    ],
+    "prompt": "Editorial press photograph: the GridFall skyline at sunrise seen across a calm river, mid-rise towers and bridges, editorial press photo. Photorealistic full-bleed photograph, no border, no frame. The image contains absolutely no text: no letters, words, numbers, logos, brand names, signs, captions or watermarks anywhere. No real people or celebrities; any people are small, anonymous, seen from behind or out of focus. Set in a modern mid-sized city. Natural light, sharp detail, believable colour, 35mm lens.",
+    "size": "768x1152",
+    "model": "hy-image-v3.5-preview",
+    "elapsed_s": 15.6,
+    "created": "2026-10-19T06:52:32Z"
+  },
+  "hoarding_homes.webp": {
+    "kind": "hoarding",
+    "pool": "hoarding_homes",
+    "tags": [
+      "homes"
+    ],
+    "prompt": "Architectural visualisation: a row of new brick and timber townhouses with small front gardens and young trees on a quiet residential street, warm afternoon light, photoreal render. Photorealistic full-bleed photograph, no border, no frame. The image contains absolutely no text: no letters, words, numbers, logos, brand names, signs, captions or watermarks anywhere. No real people or celebrities; any people are small, anonymous, seen from behind or out of focus. Set in a modern mid-sized city. Natural light, sharp detail, believable colour, 35mm lens.",
+    "size": "1536x640",
+    "model": "hy-image-v3.5-preview",
+    "elapsed_s": 17.4,
+    "created": "2026-10-19T07:56:06Z"
+  },
+  "hoarding_industry.webp": {
+    "kind": "hoarding",
+    "pool": "hoarding_industry",
+    "tags": [
+      "industry"
+    ],
+    "prompt": "Architectural visualisation: a clean modern light-industrial building of grey metal cladding and glass with loading bays and landscaped parking, blue sky, photoreal render. Photorealistic full-bleed photograph, no border, no frame. The image contains absolutely no text: no letters, words, numbers, logos, brand names, signs, captions or watermarks anywhere. No real people or celebrities; any people are small, anonymous, seen from behind or out of focus. Set in a modern mid-sized city. Natural light, sharp detail, believable colour, 35mm lens.",
+    "size": "1536x640",
+    "model": "hy-image-v3.5-preview",
+    "elapsed_s": 19.6,
+    "created": "2026-10-19T07:56:06Z"
+  },
+  "hoarding_park.webp": {
+    "kind": "hoarding",
+    "pool": "hoarding_park",
+    "tags": [
+      "park"
+    ],
+    "prompt": "Architectural visualisation: a planned city park with lawns, young trees, a playground and a pond, sunny afternoon, photoreal render. Photorealistic full-bleed photograph, no border, no frame. The image contains absolutely no text: no letters, words, numbers, logos, brand names, signs, captions or watermarks anywhere. No real people or celebrities; any people are small, anonymous, seen from behind or out of focus. Set in a modern mid-sized city. Natural light, sharp detail, believable colour, 35mm lens.",
+    "size": "1536x640",
+    "model": "hy-image-v3.5-preview",
+    "elapsed_s": 16.1,
+    "created": "2026-10-19T06:52:32Z"
+  },
+  "hoarding_station.webp": {
+    "kind": "hoarding",
+    "pool": "hoarding_station",
+    "tags": [
+      "station"
+    ],
+    "prompt": "Architectural visualisation: a bright modern civic building with a tall glass entrance hall facing a public square, photoreal render. Photorealistic full-bleed photograph, no border, no frame. The image contains absolutely no text: no letters, words, numbers, logos, brand names, signs, captions or watermarks anywhere. No real people or celebrities; any people are small, anonymous, seen from behind or out of focus. Set in a modern mid-sized city. Natural light, sharp detail, believable colour, 35mm lens.",
+    "size": "1536x640",
+    "model": "hy-image-v3.5-preview",
+    "elapsed_s": 18.4,
+    "created": "2026-10-19T06:52:32Z"
+  },
+  "hoarding_tower.webp": {
+    "kind": "hoarding",
+    "pool": "hoarding_tower",
+    "tags": [
+      "tower"
+    ],
+    "prompt": "Architectural visualisation: a sleek new mixed-use tower of glass and warm stone above a landscaped plaza with trees, blue sky, photoreal render. Photorealistic full-bleed photograph, no border, no frame. The image contains absolutely no text: no letters, words, numbers, logos, brand names, signs, captions or watermarks anywhere. No real people or celebrities; any people are small, anonymous, seen from behind or out of focus. Set in a modern mid-sized city. Natural light, sharp detail, believable colour, 35mm lens.",
+    "size": "1536x640",
+    "model": "hy-image-v3.5-preview",
+    "elapsed_s": 15.1,
+    "created": "2026-10-19T06:52:32Z"
+  },
+  "notice_incident.webp": {
+    "kind": "notice",
+    "pool": "notice_incident",
+    "tags": [
+      "incident"
+    ],
+    "prompt": "Photograph: orange traffic cones, a striped road barrier and flashing amber beacons blocking a wet city street at night, emergency atmosphere. Photorealistic full-bleed photograph, no border, no frame. The image contains absolutely no text: no letters, words, numbers, logos, brand names, signs, captions or watermarks anywhere. No real people or celebrities; any people are small, anonymous, seen from behind or out of focus. Set in a modern mid-sized city. Natural light, sharp detail, believable colour, 35mm lens.",
+    "size": "768x1152",
+    "model": "hy-image-v3.5-preview",
+    "elapsed_s": 15.5,
+    "created": "2026-10-19T06:52:32Z"
+  },
+  "notice_ordinance.webp": {
+    "kind": "notice",
+    "pool": "notice_ordinance",
+    "tags": [
+      "ordinance"
+    ],
+    "prompt": "Photograph: the classical stone columns and steps of a city hall under a clear blue sky, a flag on a tall pole, civic and dignified. Photorealistic full-bleed photograph, no border, no frame. The image contains absolutely no text: no letters, words, numbers, logos, brand names, signs, captions or watermarks anywhere. No real people or celebrities; any people are small, anonymous, seen from behind or out of focus. Set in a modern mid-sized city. Natural light, sharp detail, believable colour, 35mm lens.",
+    "size": "768x1152",
+    "model": "hy-image-v3.5-preview",
+    "elapsed_s": 16.6,
+    "created": "2026-10-19T06:52:32Z"
+  },
+  "notice_power.webp": {
+    "kind": "notice",
+    "pool": "notice_power",
+    "tags": [
+      "power"
+    ],
+    "prompt": "Photograph: electrical utility workers in hi-vis jackets seen from behind repairing power lines from a bucket truck at dusk, a city street below. Photorealistic full-bleed photograph, no border, no frame. The image contains absolutely no text: no letters, words, numbers, logos, brand names, signs, captions or watermarks anywhere. No real people or celebrities; any people are small, anonymous, seen from behind or out of focus. Set in a modern mid-sized city. Natural light, sharp detail, believable colour, 35mm lens.",
+    "size": "768x1152",
+    "model": "hy-image-v3.5-preview",
+    "elapsed_s": 15.4,
+    "created": "2026-10-19T06:52:32Z"
+  },
+  "notice_water.webp": {
+    "kind": "notice",
+    "pool": "notice_water",
+    "tags": [
+      "water"
+    ],
+    "prompt": "Photograph: a burst water main flooding a city street, workers in hi-vis seen from behind with pumps and hoses, reflections on the water. Photorealistic full-bleed photograph, no border, no frame. The image contains absolutely no text: no letters, words, numbers, logos, brand names, signs, captions or watermarks anywhere. No real people or celebrities; any people are small, anonymous, seen from behind or out of focus. Set in a modern mid-sized city. Natural light, sharp detail, believable colour, 35mm lens.",
+    "size": "768x1152",
+    "model": "hy-image-v3.5-preview",
+    "elapsed_s": 16.6,
+    "created": "2026-10-19T06:52:32Z"
+  },
+  "placard_protest.webp": {
+    "kind": "placard",
+    "pool": "placard",
+    "tags": [
+      "protest"
+    ],
+    "prompt": "Documentary photograph: a crowd of anonymous protesters seen from behind raising plain blank cardboard placards in front of a city hall, overcast day. Photorealistic full-bleed photograph, no border, no frame. The image contains absolutely no text: no letters, words, numbers, logos, brand names, signs, captions or watermarks anywhere. No real people or celebrities; any people are small, anonymous, seen from behind or out of focus. Set in a modern mid-sized city. Natural light, sharp detail, believable colour, 35mm lens.",
+    "size": "768x1152",
+    "model": "hy-image-v3.5-preview",
+    "elapsed_s": 15.5,
+    "created": "2026-10-19T06:52:32Z"
+  }
+}
