@@ -267,6 +267,20 @@ func _check_bodies(ctx: FpContext) -> void:
 		if not bool(hit["hit"]) or str(hit["kind"]) != "building" or int(hit["tile"]) != i:
 			unreach.append(str(i))
 	K.check(fails, n > 5 and bad.is_empty(), "%d buildings: at most 4 bodies each, all inside building_aabb %s" % [n, str(bad.slice(0, 3))])
+	# Colliders rebuild per tile on demand, within 0.2 ms a tile.
+	col.rebuild_all()
+	var built := 0
+	var worst := 0
+	var t_all := Time.get_ticks_usec()
+	for i in sim.active:
+		if ctx.view.tile_holder(i) == null:
+			continue
+		var t0 := Time.get_ticks_usec()
+		col.boxes(i)
+		worst = maxi(worst, Time.get_ticks_usec() - t0)
+		built += 1
+	var avg := float(Time.get_ticks_usec() - t_all) / float(maxi(built, 1))
+	K.check(fails, built > 20 and avg < 200.0, "colliders build in %.0f us a tile on average (%d tiles, worst %d us)" % [avg, built, worst])
 	K.check(fails, smaller * 2 > n, "bodies leave the yards open: %d of %d lots block under 90 %% of their bounds" % [smaller, n])
 	K.check(fails, unreach.is_empty(), "every building answers a ray from its frontage sidewalk %s" % str(unreach.slice(0, 5)))
 

@@ -78,6 +78,12 @@ const CONV_LOOK_DOWN := 0.05 * WS.M
 const CONV_PROBE := 0.2 * WS.M
 const CONV_FREE_MIN := 0.7
 const REVERSE_GAP := 2.5
+# --- Traffic (E, optional): stopped cars block the walker; the arm pulls in out of car boxes
+const TRAFFIC_POLL := 0.1
+const BLOCKER_REACH := 2.0 * WS.M
+const AGENT_REACH := 8.0 * WS.M
+## Approximate agent boxes for the camera (half length, half width, height), metres * M.
+const AGENT_SIZES := {"car": Vector3(2.3, 1.0, 1.6), "emergency": Vector3(2.8, 1.1, 2.4), "bus": Vector3(6.0, 1.3, 3.2), "truck": Vector3(4.5, 1.3, 3.4)}
 
 var ctx: FpContext
 var camera: Camera3D
@@ -139,6 +145,7 @@ var _conv_cut_t: float = 99.0
 var _photo_saved: Dictionary = {}
 var _photo_pos: Vector3 = Vector3.ZERO
 var _set_up: bool = false
+var _traffic_t: float = 0.0
 
 
 ## Builds the camera (sharing ctx.env, so SkyDirector's sky applies), the avatar and the rig,
@@ -336,6 +343,7 @@ func update_view(delta: float) -> void:
 	_fp_fov = SM.damp(_fp_fov, fp_goal, HL_FOV, dt)
 	_update_facing(dt, sp)
 	_update_conversation(dt)
+	_poll_traffic(dt)
 	var third := camera_mode == "third"
 	if third and not photo_mode:
 		rig.yaw = cam_yaw
@@ -384,7 +392,7 @@ func update_view(delta: float) -> void:
 		var alpha := clampf(inverse_lerp(TpsRig.FADE_NEAR, TpsRig.FADE_FAR, xf.origin.distance_to(head)), 0.0, 1.0)
 		avatar.set_view_state(pure_fp, alpha)
 		if not photo_mode:
-			avatar.update_motion(dt, sp, _yaw_rate, _fwd_acc, _step_snap)
+			avatar.update_motion(dt, sp, _yaw_rate, _fwd_acc, _step_snap, clampf((WS.EYE - _eye_h) / (WS.EYE - WS.CROUCH_EYE), 0.0, 1.0))
 		_step_snap = 0.0
 
 
@@ -740,6 +748,41 @@ func _body_yaw_step(h: float) -> void:
 	yaw = wrapf(yaw + dy, -PI, PI)
 	_yaw_v = clampf(r.y, -max_rate, max_rate)
 	rotation.y = yaw
+
+
+## A few times a second: E's stopped cars become dynamic collision boxes, and its agents near the
+## camera become the rig's pull-in boxes. No traffic feature, nothing to do.
+func _poll_traffic(dt: float) -> void:
+	_traffic_t -= dt
+	if _traffic_t > 0.0:
+		return
+	_traffic_t = TRAFFIC_POLL
+	var traffic := ctx.feature("traffic")
+	if traffic == null:
+		return
+	if traffic.has_method("blockers_near"):
+		var list: Array[AABB] = []
+		for b: Variant in traffic.call("blockers_near", position, BLOCKER_REACH):
+			if typeof(b) == TYPE_AABB:
+				list.append(b)
+		ctx.collision.dynamic_boxes = list
+	if camera_mode == "third" and traffic.has_method("agents_near"):
+		var boxes: Array[AABB] = []
+		for a: Variant in traffic.call("agents_near", position, AGENT_REACH):
+			if typeof(a) != TYPE_DICTIONARY:
+				continue
+			var d: Dictionary = a
+			var size: Variant = AGENT_SIZES.get(str(d.get("kind", "")))
+			if size == null:
+				continue
+			var ext: Vector3 = (size as Vector3) * WS.M
+			var v: Vector3 = d.get("vel", Vector3.ZERO)
+			var h := atan2(v.x, v.z) if Vector2(v.x, v.z).length_squared() > 1e-10 else float(d.get("heading", 0.0))
+			var hx := absf(sin(h)) * ext.x + absf(cos(h)) * ext.y
+			var hz := absf(cos(h)) * ext.x + absf(sin(h)) * ext.y
+			var pos: Vector3 = d.get("pos", Vector3.ZERO)
+			boxes.append(AABB(Vector3(pos.x - hx, pos.y, pos.z - hz), Vector3(hx * 2.0, ext.z, hz * 2.0)))
+		rig.agent_boxes = boxes
 
 
 ## Scripted facing (interact) and the conversation turn toward the resident.

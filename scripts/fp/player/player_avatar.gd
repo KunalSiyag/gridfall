@@ -21,6 +21,10 @@ const LEAN_PITCH_MAX := deg_to_rad(7.0)
 const HL_LEAN := 0.1
 ## The visual step offset decays with this halflife (A 6.4: avatar y after a curb step).
 const HL_STEP := 0.05
+## The static placeholder has no crouch pose: it squats to this height and tips forward instead
+## (HC's hero plays crouch clips in stage A2).
+const PLACEHOLDER_CROUCH_Y := 0.7
+const PLACEHOLDER_CROUCH_TIP := deg_to_rad(12.0)
 
 ## "m" or "f" (settings.hero).
 var hero: String = ""
@@ -34,6 +38,7 @@ var _pitch: Vector2 = Vector2.ZERO
 var _dy: float = 0.0
 var _shadow_only: bool = false
 var _alpha: float = 1.0
+var _crouch: float = 0.0
 
 
 ## Loads the body for hero ("m" or "f"); a missing file keeps the current body.
@@ -81,8 +86,13 @@ func set_view_state(shadow_only: bool, alpha: float) -> void:
 
 
 ## Per frame: lean from the planar velocity (u/s), yaw rate (rad/s) and forward acceleration
-## (u/s^2); step is the feet's sudden vertical jump this frame (a curb), absorbed visually.
-func update_motion(dt: float, speed: float, yaw_rate: float, fwd_acc: float, step: float) -> void:
+## (u/s^2); step is the feet's sudden vertical jump this frame (a curb), absorbed visually; crouch
+## is 0 standing .. 1 crouched.
+func update_motion(dt: float, speed: float, yaw_rate: float, fwd_acc: float, step: float, crouch: float = 0.0) -> void:
+	_crouch = clampf(crouch, 0.0, 1.0)
+	if _root != null and placeholder:
+		_root.scale = Vector3(1.0, lerpf(1.0, PLACEHOLDER_CROUCH_Y, _crouch), 1.0) * WS.PEOPLE_SCALE
+		_root.rotation.x = -PLACEHOLDER_CROUCH_TIP * _crouch
 	var roll_goal := clampf(LEAN_ROLL_K * atan(speed * yaw_rate / WS.GRAVITY), -LEAN_ROLL_MAX, LEAN_ROLL_MAX)
 	var pitch_goal := clampf(LEAN_PITCH_K * atan(fwd_acc / WS.GRAVITY), LEAN_PITCH_MIN, LEAN_PITCH_MAX)
 	_roll = SM.spring(_roll.x, _roll.y, roll_goal, HL_LEAN, dt)

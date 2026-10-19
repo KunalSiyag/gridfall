@@ -53,6 +53,9 @@ var _runtime_shapes: Dictionary = {}
 ## Prop model path -> local AABB of its meshes.
 var _prop_bounds: Dictionary = {}
 var _test_boxes: Array[AABB] = []
+## Boxes that move with the traffic (stopped cars from E's blockers_near), refreshed by the
+## player a few times a second; they block like walls while listed.
+var dynamic_boxes: Array[AABB] = []
 var _esc_from: Vector3 = Vector3(NAN, NAN, NAN)
 var _esc_point: Vector3 = Vector3(NAN, NAN, NAN)
 var _esc_r: float = 0.0
@@ -539,6 +542,11 @@ func _hits(p: Vector3, radius: float, height: float) -> bool:
 				var ddz := p.z - cy[k + 1]
 				if ddx * ddx + ddz * ddz < rr * rr:
 					return true
+	for b: AABB in dynamic_boxes:
+		if p.y >= b.end.y or b.position.y >= head:
+			continue
+		if p.x > b.position.x - radius and p.x < b.end.x + radius and p.z > b.position.z - radius and p.z < b.end.z + radius:
+			return true
 	return false
 
 
@@ -624,6 +632,13 @@ func _overlaps(p: Vector3, radius: float, height: float) -> Dictionary:
 				var depth := cy[k + 2] + radius - Vector2(p.x - cy[k], p.z - cy[k + 1]).length()
 				if depth > 0.0:
 					out[Vector2i(i, 100000 + k)] = depth
+	for k in range(dynamic_boxes.size()):
+		var b := dynamic_boxes[k]
+		if p.y >= b.end.y or b.position.y >= head:
+			continue
+		var depth := minf(minf(p.x - (b.position.x - radius), b.end.x + radius - p.x), minf(p.z - (b.position.z - radius), b.end.z + radius - p.z))
+		if depth > 0.0:
+			out[Vector2i(-1, k)] = depth
 	return out
 
 
@@ -687,6 +702,8 @@ func _cluster(p: Vector3, radius: float, height: float, start: Dictionary) -> Di
 
 ## The world box of an _overlaps() key (a cylinder's square bound).
 func _key_box(key: Vector2i) -> AABB:
+	if key.x < 0:
+		return dynamic_boxes[key.y] if key.y < dynamic_boxes.size() else AABB()
 	var e := _entry(key.x)
 	if key.y < 100000:
 		return (e["boxes"] as Array[AABB])[key.y]

@@ -337,14 +337,25 @@ func _check_cost(ctx: FpContext) -> void:
 	p.teleport((s["pos"] as Vector3) - (s["run"] as Vector3) * 0.4, s["yaw"])
 	var total := 0.0
 	var sweeps := 0
+	var frame_us := 0.0
 	for k in range(600):
+		var t0 := Time.get_ticks_usec()
 		p.look(0.004, 0.0)
-		p.simulate(Vector2(0.3, 1.0) if k < 300 else Vector2(-0.3, -1.0), false, DT)
+		p.simulate(Vector2(0.3, 1.0) if k < 300 else Vector2(-0.3, -1.0), k % 200 < 100, DT)
 		p.update_view(DT)
+		frame_us += float(Time.get_ticks_usec() - t0)
 		total += p.rig.update_us
 		sweeps += p.rig.sweeps
 	var avg := total / 600.0
 	K.check(fails, avg < 100.0, "12. rig.update averages %.1f us (< 100), %.1f sweeps per frame" % [avg, float(sweeps) / 600.0])
+	var feat := ctx.feature("interact")
+	var it := 0.0
+	if feat != null:
+		var t1 := Time.get_ticks_usec()
+		for k in range(60):
+			feat.call("evaluate")
+		it = float(Time.get_ticks_usec() - t1) / 60.0
+	K.check(fails, frame_us / 600.0 + it / 6.0 < 500.0 and it < 200.0, "12. a player frame costs %.0f us and an interact tick %.0f us (frame + tick/6 < 500, tick < 200)" % [frame_us / 600.0, it])
 
 
 ## 13 (A1 part). The placeholder hero is drawn in third person, shadow-only in first person; HC's
