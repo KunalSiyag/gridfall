@@ -142,6 +142,7 @@ var _pumping: bool = false
 var _pump_units: int = 0
 var _step_noted: int = 0
 var _excl_us: int = 0
+var _excl_depth: int = 0
 var _committed: bool = false
 var _tick_units: int = 0
 var _tick_units_est: float = 400.0
@@ -699,7 +700,9 @@ func pump(budget_ms: float) -> bool:
 	var max_step := 0
 	while not _job.is_empty():
 		if _pump_units > 0:
-			var el := float(Time.get_ticks_usec() - t0 - _excl_us) / 1000.0
+			# The frame's wall time counts here (a view rebuild or the brain's day start already in
+			# this pump leaves less room); only the sim's own time is reported.
+			var el := float(Time.get_ticks_usec() - t0) / 1000.0
 			if el + _step_ema_ms > budget_ms or _pump_units > UNITS_PER_PUMP - STEP_MAX_UNITS:
 				break
 		var u0 := _pump_units
@@ -899,12 +902,15 @@ func _note_pump(ms: float, max_step: int, budget_ms: float) -> void:
 
 
 ## Time spent inside a listener emission that belongs to another owner (the brain's day start, the
-## view's rebuild): excluded from the pump's own time and reported under key.
+## view's rebuild): excluded from the pump's own time and reported under key. A view rebuild inside
+## the brain's emission is reported under both keys but excluded once.
 func _note_excluded(us: int, key: String) -> void:
 	if not _pumping:
 		return
-	_excl_us += us
+	if _excl_depth == 0:
+		_excl_us += us
 	_ss[key] = maxf(float(_ss.get(key, 0.0)), float(us) / 1000.0)
+	_ss[key + "_total"] = float(_ss.get(key + "_total", 0.0)) + float(us) / 1000.0
 
 
 func _task_flush_tick(_t: Dictionary) -> bool:
@@ -958,7 +964,9 @@ func _task_end_day(_t: Dictionary) -> bool:
 func _task_day_start(_t: Dictionary) -> bool:
 	_defer_day = true
 	var t0 := Time.get_ticks_usec()
+	_excl_depth += 1
 	day_started.emit(day)
+	_excl_depth -= 1
 	_defer_day = false
 	_note_excluded(Time.get_ticks_usec() - t0, "brain_ms")
 	if people != null:
@@ -1548,7 +1556,7 @@ func _rc_traffic(rc: Dictionary) -> bool:
 			work -= 1
 			if kind[i] != D.ROAD:
 				continue
-			work -= 98
+			work -= 196
 			var cx := D.tx(i)
 			var cy := D.ty(i)
 			var load := 0.0
@@ -3331,7 +3339,9 @@ func _flush_changes(force_stats: bool) -> void:
 			arr.append(int(key))
 		_changed.clear()
 		var t0 := Time.get_ticks_usec()
+		_excl_depth += 1
 		tiles_changed.emit(arr)
+		_excl_depth -= 1
 		_note_excluded(Time.get_ticks_usec() - t0, "view_ms")
 	stats_updated.emit()
 	if force_stats:
