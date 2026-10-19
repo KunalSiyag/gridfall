@@ -473,7 +473,8 @@ SHAPES2 = {
 
 def wheel_geo(mb, R, Wd, look, style="alloy", spokes=5, side=1, dual=False, n=None):
     """A wheel around the local origin, axle along Blender X, outer face toward side * X."""
-    lod = look.lod
+    lod = not look.full          # far LODs and baked parked cars use the simple wheel
+    soft = not look.lod          # baked cars are seen close: smooth-shade the simple tyre
     n = n or (10 if lod else 20)
     h = Wd / 2
     axis = RY90 if side > 0 else rotz(math.pi) @ RY90
@@ -482,7 +483,7 @@ def wheel_geo(mb, R, Wd, look, style="alloy", spokes=5, side=1, dual=False, n=No
         mb.push(axis @ Matrix.Translation(Vector((0, 0, zc * S))))
         if lod:
             mb.lathe([(R * 0.62 * S, -h * S), (R * S, -h * 0.8 * S), (R * S, h * 0.8 * S), (R * 0.62 * S, h * S)],
-                     "@tyre", n=n, smooth=False)
+                     "@tyre", n=n, smooth=soft)
             rim = "@rim_steel" if style == "steel" else "@rim_alloy"
             mb.lathe([(R * 0.62 * S, h * 0.98 * S), (R * 0.05 * S, h * 0.8 * S)], rim if outer else "@rim_barrel",
                      n=n, smooth=False)
@@ -1575,16 +1576,16 @@ def build_vehicle(c, kind="car", paint="Paint_blue", lod=False, name=None, **kw)
     _finish(c, name or kind, look, hip)
 
 
-def baked_car(c, x, y, rz=0.0, paint="Paint_white", shape="sedan"):
-    """Mid-detail parked car merged into c.mb at (x, y) (units), turned rz; front toward local -Y."""
+def baked_car(c, x, y, rz=0.0, paint="Paint_white", shape="sedan", z=0.0, rims="alloy"):
+    """Mid-detail parked car merged into c.mb at (x, y, z) (units), turned rz; front toward local -Y."""
     look = Look("baked", paint, c.rnd)
     saved = c.mb
     tmp = MB()
     c.mb = tmp
-    car(c, look, shape=shape, rims="alloy" if c.rnd.random() < 0.6 else "steel")
+    car(c, look, shape=shape, rims=rims)
     c.mb = saved
     atlas.resolve(tmp)
-    m = Matrix.Translation(Vector((x, y, 0.0))) @ rotz(rz)
+    m = saved.xf @ Matrix.Translation(Vector((x, y, z))) @ rotz(rz)
     base = len(saved.v)
     for v in tmp.v:
         saved.v.append(m @ v)

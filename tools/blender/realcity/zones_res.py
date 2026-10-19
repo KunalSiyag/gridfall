@@ -79,7 +79,7 @@ def mailbox(c, x, y):
 
 def house_hip(c, wall="Brick_Orange", roof="Roof_Grey", door="Door_Green", seed=1):
     c.door_mat = door
-    _yard(c, drive_x=(-0.36, -0.22), drive_to=-0.05, path_x=0.06, path_to=-0.13)
+    _yard(c, drive_x=(-0.36, -0.22), drive_to=0.17, path_x=0.06, path_to=-0.13)
     x0, x1, y0, y1 = -0.2, 0.3, -0.13, 0.19
     base = 0.008
     c.mb.box2(x0 - 0.003, y0 - 0.003, 0.0, x1 + 0.003, y1 + 0.003, base, "Concrete", skip=("-z",))
@@ -154,7 +154,7 @@ def house_cottage(c, wall="Plaster_Cream", roof="Roof_Clay", door="Door_Blue", s
 def house_modern(c, seed=3):
     """Two offset flat-roofed volumes, white render + timber cladding, big glazing."""
     c.door_mat = "Door_Black"
-    _yard(c, drive_x=(0.16, 0.34), drive_to=-0.05, path_x=-0.02, path_to=-0.1, mat_drive="Concrete_Floor")
+    _yard(c, drive_x=(0.16, 0.34), drive_to=0.2, path_x=-0.02, path_to=-0.1, mat_drive="Concrete_Floor")
     base = 0.006
     # lower volume (living), full-height glazing
     x0, x1, y0, y1 = -0.32, 0.12, -0.08, 0.2

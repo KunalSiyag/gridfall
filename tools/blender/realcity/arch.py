@@ -509,18 +509,27 @@ def picket_fence(c, pts, h=0.022, mat="Trim_White"):
         mb.pop()
 
 
-def parked_car(c, x, y, rz=0.0, color=None, scale=0.5):
-    """Low-detail parked car used to dress lots (separate from the vehicle library)."""
-    mb = c.mb
+# Real-size body shapes for parked cars (vehicles2.SHAPES2) with their length in units.
+PARKED_SHAPES = (("hatchback", 0.205), ("coupe", 0.225), ("sedan", 0.235), ("suv", 0.24))
+
+
+def parked_car(c, x, y, rz=0.0, color=None, scale=0.5, max_len=None, z=0.004):
+    """Parked car merged into the model: a real-size (1.0x) body from the vehicles_v2 generator, opaque
+    glass, merged wheels; its length runs along local Y before rz. The shape is drawn from those that fit
+    max_len (default: room for the old placeholder of this `scale` plus 20%, at least a hatchback)."""
+    import vehicles2
     rnd = c.rnd
     color = color or rnd.choice(["Paint_white", "Paint_black", "Paint_silver", "Paint_red", "Paint_blue", "Paint_grey"])
-    L, W = 0.22 * scale / 0.5 * 0.5, 0.095 * scale / 0.5 * 0.5
-    L, W = 0.09 * scale / 0.5, 0.04 * scale / 0.5
-    mb.push(Matrix.Translation(Vector((x, y, 0.004))) @ rotz(rz))
-    hb = W * 0.38
-    mb.box((0, 0, hb * 0.5 + W * 0.12), (W, L, hb), color)
-    mb.box((0, L * 0.04, hb + W * 0.12 + hb * 0.38), (W * 0.86, L * 0.5, hb * 0.76), "Glass_Car", mats={"+z": color})
-    for (dx, dy) in ((-1, -1), (1, -1), (1, 1), (-1, 1)):
-        mb.cyl((dx * W * 0.42, dy * L * 0.32, W * 0.15), W * 0.15, W * 0.12, "Rubber", n=8,
-               axis=Matrix.Rotation(math.pi / 2, 4, "Y") @ Matrix.Translation(Vector((0, 0, -W * 0.06))))
-    mb.pop()
+    if max_len is None:
+        max_len = 0.09 * scale / 0.5 * 1.2
+    # a private RNG seeded by the spot, so the zone's own random sequence is unchanged
+    pr = random.Random(int(abs(x) * 1e4) * 7919 + int(abs(y) * 1e4) * 104729 + int(abs(rz) * 100))
+    fits = [s for s, ln in PARKED_SHAPES if ln <= max_len] or [PARKED_SHAPES[0][0]]
+    shape = pr.choice(fits)
+    saved = c.rnd
+    c.rnd = pr
+    try:
+        vehicles2.baked_car(c, x, y, rz=rz, paint=color, shape=shape, z=z,
+                            rims="alloy" if pr.random() < 0.6 else "steel")
+    finally:
+        c.rnd = saved

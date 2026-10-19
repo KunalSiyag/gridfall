@@ -84,12 +84,22 @@ integrator section below). Keep your `wall_spots.json` fallback.
 1. **Import.** `tools/optimize_imports.py` did not exist at H's branch point. After merging G2, run
    `python3 -I tools/optimize_imports.py --apply models/real/vehicles_v2 models/real/street`, then one
    heavy `godot --headless --path . --import`. Only new files are affected.
-2. **Zone and building re-export (deferred).** These were not re-exported, to keep about 180 MB of GLB
-   churn out of the repository while disk is tight. The door fix, the `Door_<n>` and `PosterSpot_<n>`
-   empties, and the parked cars rebuilt from `vehicles_v2` all need it. Until then
-   `fp_assets_test` reports doors as PENDING, and `validate_real.py` flags `MISSING_Door` on zones
-   and buildings. When disk allows:
-   1. `blender --background --python tools/blender/make_realistic_city.py -- zones buildings`
-   2. `optimize_imports --apply` on those paths, then the heavy import
-   3. A's body bake (`scripts/fp/player/body_bake.gd`) and G2's proxy bake (`proxy_bake.gd`)
-   4. `tools/gate.sh full`
+2. **Zone and building re-export (deferred).** These were not re-exported, to keep GLB churn out of
+   the repository while disk is tight (zones and buildings total about 180 MB).
+   - **Ready in the generator:** `arch.parked_car` now builds real-size (1.0×) cars from the
+     `vehicles_v2` body generator: hatchback, coupe, sedan or SUV, whichever fits the bay, with
+     opaque glass and merged wheels. They replace the blocky placeholder cars (G1 must-fix 13). The
+     house drives of `house_hip_brick` and `house_modern` now run under their carports. A scratch dry
+     run of all 56 zone and building models changed only the 11 that carry cars, adding about 1,100
+     triangles per car, all within budget. Bounds and footprints are unchanged.
+   - **Not done:** the door fix (`DoorLeaf_*` / `Shutter_*` renames, 2.1 m leaves) and the `Door_<n>`
+     and `PosterSpot_<n>` empties. Raising door openings to `z0 + 0.129` collides with porch roofs
+     (house_gable's sits at `base + 0.1` to `0.115`), shop awnings and sign bands, so each of the 56
+     models needs a visual pass during the re-export.
+   - Until then, `fp_assets_test` reports doors as PENDING and `validate_real.py` flags
+     `MISSING_Door` on zones and buildings.
+   - **When disk allows:**
+     1. `blender --background --python tools/blender/make_realistic_city.py -- zones buildings`
+     2. `optimize_imports --apply` on those paths, then the heavy import
+     3. A's body bake (`scripts/fp/player/body_bake.gd`) and G2's proxy bake (`proxy_bake.gd`)
+     4. `tools/gate.sh full`
