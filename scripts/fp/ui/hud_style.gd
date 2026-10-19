@@ -208,13 +208,18 @@ static func fmt(n: int) -> String:
 	return ("−" if n < 0 else "") + s + out
 
 
-## Compact money: "$950", "$3,222", "$12.4k", "$1.2M"; negatives "−$3,222".
+## Compact money: "$950", "$3.2k", "$124k", "$1.2M"; a deficit stays exact so it reads at a glance
+## ("−$3,222", true minus sign) until it passes 100k ("−$124k").
 static func money(n: int) -> String:
 	var a := absi(n)
+	if n < 0 and a < 100000:
+		return "−$" + fmt(a)
 	var s := ""
-	if a >= 1000000:
+	if a >= 999500:
 		s = "$%.1fM" % (a / 1000000.0)
-	elif a >= 10000:
+	elif a >= 99950:
+		s = "$%dk" % int(round(a / 1000.0))
+	elif a >= 1000:
 		s = "$%.1fk" % (a / 1000.0)
 	else:
 		s = "$" + fmt(a)

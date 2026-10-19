@@ -6,18 +6,21 @@ extends Control
 ## Which glyph to draw.
 var icon: String = "dot":
 	set(v):
-		icon = v
-		queue_redraw()
+		if v != icon:
+			icon = v
+			queue_redraw()
 ## Fill colour.
 var color: Color = Color(1, 1, 1):
 	set(v):
-		color = v
-		queue_redraw()
+		if v != color:
+			color = v
+			queue_redraw()
 ## Face icon only: 0 (sad) .. 1 (happy).
 var mood: float = 0.6:
 	set(v):
-		mood = v
-		queue_redraw()
+		if v != mood:
+			mood = v
+			queue_redraw()
 ## Draws a 1 px drop shadow under the glyph (for icons over the 3D world).
 var shadow: bool = true
 

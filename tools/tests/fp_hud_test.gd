@@ -93,6 +93,8 @@ func _check_branding(ctx: FpContext) -> void:
 
 
 func _check_chips(ctx: FpContext) -> void:
+	K.check(fails, S.fmt(1168) == "1,168" and S.money(3222) == "$3.2k" and S.money(-3222) == "−$3,222" and S.money(950) == "$950" and S.money(1240000) == "$1.2M", "compact formats (%s, %s, %s)" % [S.fmt(1168), S.money(3222), S.money(-3222)])
+	K.check(fails, S.distance(45.0 * WS.M) == "45 m" and S.distance(1200.0 * WS.M) == "1.2 km", "distances in metres (%s, %s)" % [S.distance(45.0 * WS.M), S.distance(1200.0 * WS.M)])
 	var chips := ctx.hud.chips
 	var pop := int(ctx.sim.stats.get("population", 0))
 	K.check(fails, chips.text_of("pop") == S.fmt(pop) and (pop < 1000 or chips.text_of("pop").contains(",")), "population chip %s == %d with separators" % [chips.text_of("pop"), pop])
