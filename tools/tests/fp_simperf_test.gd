@@ -45,6 +45,7 @@ func _init() -> void:
 	await _check_job_boundaries()
 	await _check_minds()
 	_check_flush()
+	_check_people_api()
 	print("FP_SIMPERF_TEST: " + ("PASS" if fails.is_empty() else "FAIL " + str(fails)))
 	quit(0 if fails.is_empty() else 1)
 
@@ -414,3 +415,36 @@ func _check_flush() -> void:
 	client.flush_cache()
 	check(FileAccess.file_exists(path), "flush_cache writes again after a new entry")
 	client.queue_free()
+
+
+# ---------------------------------------------------------------- 4c. public resident helpers
+
+## Residents.remember / nudge_mood (requested by slice C for face-to-face conversations).
+func _check_people_api() -> void:
+	var w := _world(false)
+	var sim: CitySim = w["sim"]
+	var people: Residents = w["people"]
+	for _k in range(8):
+		sim.step_tick()
+	if people.people.is_empty():
+		check(false, "the remember / nudge_mood world has residents")
+		_free_world(w)
+		return
+	var r: Dictionary = people.people[0]
+	var mem: Array = r["memory"]
+	var n0 := mem.size()
+	people.remember(r, "talked with a visitor about the power")
+	people.remember(r, "talked with a visitor about the power")
+	check(mem.size() == mini(n0 + 1, 8) and str(mem[-1]) == "Day %d: talked with a visitor about the power" % sim.day, "remember() adds one dated line and skips the exact repeat")
+	for k in range(12):
+		people.remember(r, "line %d" % k)
+	check(mem.size() == 8 and str(mem[-1]).ends_with(": line 11"), "remember() keeps the last 8 lines")
+	r["mood"] = 9.5
+	people.nudge_mood(r, 1.0)
+	var hi := float(r["mood"])
+	people.nudge_mood(r, -0.75)
+	var mid := float(r["mood"])
+	r["mood"] = 0.2
+	people.nudge_mood(r, -1.0)
+	check(is_equal_approx(hi, 10.0) and is_equal_approx(mid, 9.25) and is_equal_approx(float(r["mood"]), 0.0), "nudge_mood() shifts the mood and clamps it to 0..10")
+	_free_world(w)

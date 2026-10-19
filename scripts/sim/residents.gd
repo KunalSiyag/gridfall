@@ -1091,6 +1091,17 @@ func _remember(r: Dictionary, line: String) -> void:
 		mem.pop_front()
 
 
+## Adds a line to the resident's memory as "Day N: line" (an exact repeat of the last line is
+## skipped, at most 8 lines kept). For other slices, e.g. a face-to-face conversation that ends.
+func remember(r: Dictionary, line: String) -> void:
+	_remember(r, line)
+
+
+## Shifts the resident's mood (0..10) by delta, clamped. Callers bound delta themselves.
+func nudge_mood(r: Dictionary, delta: float) -> void:
+	r["mood"] = clampf(float(r.get("mood", 5.0)) + delta, 0.0, 10.0)
+
+
 # ---------------------------------------------------------------- arrivals, homes, jobs
 
 func _spawn(day: int) -> Dictionary:
