@@ -1,0 +1,28 @@
+{
+ "licence": "CC0 1.0 (bundled License.txt and the itch.io pages, checked 2026-10-19)",
+ "note": "Since 2026-08-28 quaternius.com publishes the QAL v1.0: use inside a game is allowed without credit, redistributing the assets as assets is not. Never publish these clips as a standalone pack.",
+ "packs": {
+  "UAL1": {
+   "page": "https://quaternius.itch.io/universal-animation-library",
+   "upload_id": 17958403,
+   "file_match": "Standard",
+   "zip": "ual1_itch_standard.zip",
+   "bytes": 15904933,
+   "sha256": "cc73fc4e495b82958207316596317a3f40b9fa38065bde1027937452da537724",
+   "last_modified": "2026-06-16T23:03:50Z",
+   "glb": "Unreal-Godot/UAL1_Standard.glb",
+   "licence_file": "License.txt"
+  },
+  "UAL2": {
+   "page": "https://quaternius.itch.io/universal-animation-library-2",
+   "upload_id": 17958478,
+   "file_match": "Standard",
+   "zip": "ual2_itch_standard.zip",
+   "bytes": 18735003,
+   "sha256": "4008ea208a604773a2b2177d965f0f5d3195498b5bf838c3f5785d68e95f2a68",
+   "last_modified": "2026-06-16T23:22:21Z",
+   "glb": "Unreal-Godot/UAL2_Standard.glb",
+   "licence_file": "License.txt"
+  }
+ }
+}
