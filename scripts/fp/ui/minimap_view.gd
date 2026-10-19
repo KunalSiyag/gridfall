@@ -27,6 +27,9 @@ const LABEL_Y := 216.0
 const LABEL_H := 20.0
 const LABEL_FADE := 0.3
 const RIM_PAD := 9.0
+## Car blips: a steel blue that stands apart from the white roads and the dark blocks.
+const CAR_COL := Color(0.55, 0.66, 0.8)
+const WALKER_COL := Color(0.86, 0.9, 0.96, 0.45)
 
 var ctx: FpContext
 var hud: Node
@@ -308,23 +311,26 @@ func _draw_overlay() -> void:
 	# Residents and agents: one textured triangle array per shape (dots, car capsules).
 	var dots := _Quads.new()
 	var cars := _Quads.new()
-	for p in _people:
-		var q := _to_overlay(p)
-		if q.distance_squared_to(c) < lim2:
-			dots.add(q, Vector2(2.8, 2.8), Vector2(0, -1), Color(0.94, 0.96, 1.0, 0.95))
+	# Cars are mid-tone (they ride on white roads, and walkers stand on dark blocks beside them),
+	# about a road wide at every scale; walkers are faint, named residents bright.
+	var car_half := Vector2(clampf(0.37 * ppt, 1.4, 2.4), clampf(0.7 * ppt, 2.5, 4.2))
 	for a: Dictionary in _agents:
 		var q := _to_overlay(a["pos"])
 		if q.distance_squared_to(c) >= lim2:
 			continue
 		var kind := str(a["kind"])
 		if kind == "pedestrian":
-			dots.add(q, Vector2(1.6, 1.6), Vector2(0, -1), Color(1, 1, 1, 0.6))
+			dots.add(q, Vector2(1.3, 1.3), Vector2(0, -1), WALKER_COL)
 			continue
 		var big := kind == "bus" or kind == "truck"
-		var col := S.RED if kind == "emergency" else Color(0.86, 0.9, 0.96, 1.0)
-		cars.add(q, Vector2(2.2, 3.9) * (1.3 if big else 1.0), (a["dir"] as Vector2).rotated(yaw), col)
-	dots.flush(o, _dot_texture())
+		var col := S.RED if kind == "emergency" else CAR_COL
+		cars.add(q, car_half * (Vector2(1.15, 1.45) if big else Vector2.ONE), (a["dir"] as Vector2).rotated(yaw), col)
+	for p in _people:
+		var q := _to_overlay(p)
+		if q.distance_squared_to(c) < lim2:
+			dots.add(q, Vector2(2.4, 2.4), Vector2(0, -1), Color(0.96, 0.98, 1.0, 0.95))
 	cars.flush(o, _car_texture())
+	dots.flush(o, _dot_texture())
 	# Pings (fading over their 30 s life), under the incidents; one on an incident is left out.
 	var pings: Array = hud.get("pings") if hud != null else []
 	for e: Dictionary in pings:
