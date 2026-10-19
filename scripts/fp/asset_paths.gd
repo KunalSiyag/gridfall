@@ -64,3 +64,34 @@ static func load_scene(path: String) -> PackedScene:
 			ps = res as PackedScene
 	_scene_cache[path] = ps
 	return ps
+
+
+# --- HC characters ---
+## Realistic characters (slice HC, docs/fp/slices/HC-characters.md). Bodies are Microsoft Rocketbox
+## avatars on Godot's humanoid skeleton (`%GeneralSkeleton`, metric, feet at y = 0, facing +Z). Scale
+## each one under a `CharacterRoot` node: `scale = WS.M * h_target_m / rest_height_m`, with
+## rest_height_m from CHAR_ROSTER. Animate with the gender's library added as the default library ""
+## (clip names stay bare: "walk") and `root_motion_track = CHAR_ROOT_MOTION_TRACK`; loops then play in
+## place. Every clip carries the metas `speed_mps` (Root speed on a skeleton whose hips are
+## `speed_ref_hip_m` high: a body with hip_m from the roster covers speed_mps * hip_m / speed_ref_hip_m
+## metres per second before CharacterRoot scaling) and `loop`; turns also carry `root_turn_deg`.
+const CHARACTERS_DIR := "res://models/characters/"
+const CHAR_BODIES_DIR := CHARACTERS_DIR + "bodies/"
+## roster.json: bodies (rest_height_m, hip_m, group, gender, lod1), job_pools, casual_pools,
+## name_gender, height targets. Far LODs are CHAR_BODIES_DIR + "<Name>_lod1.glb".
+const CHAR_ROSTER := CHARACTERS_DIR + "roster.json"
+const CHAR_LIB_M := CHARACTERS_DIR + "anim/lib_m.tres"
+const CHAR_LIB_F := CHARACTERS_DIR + "anim/lib_f.tres"
+const HERO_M := CHAR_BODIES_DIR + "Male_Adult_06.glb"
+const HERO_F := CHAR_BODIES_DIR + "Female_Adult_04.glb"
+const CHAR_ROOT_MOTION_TRACK := "%GeneralSkeleton:Root"
+## LookAtModifier3D.forward_axis for the Head and Neck bones of every character rig.
+const CHAR_LOOK_AXIS := SkeletonModifier3D.BONE_AXIS_PLUS_Z
+## Clips the player uses (both libraries hold them, plus AP.PERSON_ANIMS and the crowd extras).
+const PERSON_TPS_ANIMS := [
+	"idle", "walk", "walk_fast", "run", "run_fast", "crouch_idle", "crouch_walk", "jump_start", "fall",
+	"land", "talk", "sit_down", "sit", "stand_up", "interact", "wave", "phone", "door_try",
+	"walk_start", "walk_stop", "run_start", "run_stop", "turn_l90", "turn_r90", "turn_l180_walk",
+	"turn_r180_walk",
+]
+# end HC

@@ -1,0 +1,2521 @@
+{
+ "note": "Raw sources live in ~/.cache/gridfall/characters/ and are never committed. Rebuild with tools/characters/README.md.",
+ "rocketbox": {
+  "repo": "https://github.com/microsoft/Microsoft-Rocketbox",
+  "commit": "0943055db6ec570bcef9f2c8b41c9e5467c808f9",
+  "licence": "MIT, Copyright (c) 2020 Microsoft",
+  "licence_file": "LICENSES/rocketbox-MIT.txt",
+  "url_primary": "https://cdn.jsdelivr.net/gh/microsoft/Microsoft-Rocketbox@{commit}/{path}",
+  "url_fallback": "https://raw.githubusercontent.com/microsoft/Microsoft-Rocketbox/{commit}/{path}",
+  "files": [
+   {
+    "path": "Assets/Avatars/Adults/Male_Adult_06/Export/Male_Adult_06.fbx",
+    "bytes": 548576,
+    "git_blob_sha1": "ef6f0bcc0bb271effe791b3922fe5044ca881e19",
+    "url": "https://cdn.jsdelivr.net/gh/microsoft/Microsoft-Rocketbox@0943055db6ec570bcef9f2c8b41c9e5467c808f9/Assets/Avatars/Adults/Male_Adult_06/Export/Male_Adult_06.fbx",
+    "last_modified": "",
+    "fetched": "2026-10-18T22:55:45Z"
+   },
+   {
+    "path": "Assets/Avatars/Adults/Male_Adult_06/Textures/m011_body_color.tga",
+    "bytes": 12582956,
+    "git_blob_sha1": "900ab34cf22b1569fe41d5e5e1c656510484fa34",
+    "url": "https://cdn.jsdelivr.net/gh/microsoft/Microsoft-Rocketbox@0943055db6ec570bcef9f2c8b41c9e5467c808f9/Assets/Avatars/Adults/Male_Adult_06/Textures/m011_body_color.tga",
+    "last_modified": "",
+    "fetched": "2026-10-18T22:55:45Z"
+   },
+   {
+    "path": "Assets/Avatars/Adults/Male_Adult_06/Textures/m011_body_normal.tga",
+    "bytes": 12582956,
+    "git_blob_sha1": "c66042c256b1e6f22a95e961ddc2a0c2191338f8",
+    "url": "https://cdn.jsdelivr.net/gh/microsoft/Microsoft-Rocketbox@0943055db6ec570bcef9f2c8b41c9e5467c808f9/Assets/Avatars/Adults/Male_Adult_06/Textures/m011_body_normal.tga",
+    "last_modified": "",
+    "fetched": "2026-10-18T22:55:45Z"
+   },
+   {
+    "path": "Assets/Avatars/Adults/Male_Adult_06/Textures/m011_head_color.tga",
+    "bytes": 12582956,
+    "git_blob_sha1": "a24a6e2f77473f30d94ae7b4a0a34515cb215ba7",
+    "url": "https://cdn.jsdelivr.net/gh/microsoft/Microsoft-Rocketbox@0943055db6ec570bcef9f2c8b41c9e5467c808f9/Assets/Avatars/Adults/Male_Adult_06/Textures/m011_head_color.tga",
+    "last_modified": "",
+    "fetched": "2026-10-18T22:55:45Z"
+   },
+   {
+    "path": "Assets/Avatars/Adults/Male_Adult_06/Textures/m011_head_normal.tga",
+    "bytes": 12582956,
+    "git_blob_sha1": "f64d4853967ac001ad57ba2954fedd020d3b23ea",
+    "url": "https://cdn.jsdelivr.net/gh/microsoft/Microsoft-Rocketbox@0943055db6ec570bcef9f2c8b41c9e5467c808f9/Assets/Avatars/Adults/Male_Adult_06/Textures/m011_head_normal.tga",
+    "last_modified": "",
+    "fetched": "2026-10-18T22:55:45Z"
+   },
+   {
+    "path": "Assets/Avatars/Adults/Male_Adult_06/Textures/m011_opacity_color.tga",
+    "bytes": 16777260,
+    "git_blob_sha1": "5b304a95d22629e6d9abf3e6515a7e6b236708f6",
+    "url": "https://cdn.jsdelivr.net/gh/microsoft/Microsoft-Rocketbox@0943055db6ec570bcef9f2c8b41c9e5467c808f9/Assets/Avatars/Adults/Male_Adult_06/Textures/m011_opacity_color.tga",
+    "last_modified": "",
+    "fetched": "2026-10-18T22:55:45Z"
+   },
+   {
+    "path": "Assets/Avatars/Adults/Female_Adult_04/Export/Female_Adult_04.fbx",
+    "bytes": 635552,
+    "git_blob_sha1": "cf5a84ba111473c662e1ad77ae6c68d840e4ec71",
+    "url": "https://cdn.jsdelivr.net/gh/microsoft/Microsoft-Rocketbox@0943055db6ec570bcef9f2c8b41c9e5467c808f9/Assets/Avatars/Adults/Female_Adult_04/Export/Female_Adult_04.fbx",
+    "last_modified": "",
+    "fetched": "2026-10-18T22:55:45Z"
+   },
+   {
+    "path": "Assets/Avatars/Adults/Female_Adult_04/Textures/f004_body_color.tga",
+    "bytes": 12582956,
+    "git_blob_sha1": "d087c788a3d06ddff161f7d726e5964d10ab5679",
+    "url": "https://cdn.jsdelivr.net/gh/microsoft/Microsoft-Rocketbox@0943055db6ec570bcef9f2c8b41c9e5467c808f9/Assets/Avatars/Adults/Female_Adult_04/Textures/f004_body_color.tga",
+    "last_modified": "",
+    "fetched": "2026-10-18T22:55:46Z"
+   },
+   {
+    "path": "Assets/Avatars/Adults/Female_Adult_04/Textures/f004_body_normal.tga",
+    "bytes": 12582956,
+    "git_blob_sha1": "f4a57692ebc603687d65eda16a8286c03e745963",
+    "url": "https://cdn.jsdelivr.net/gh/microsoft/Microsoft-Rocketbox@0943055db6ec570bcef9f2c8b41c9e5467c808f9/Assets/Avatars/Adults/Female_Adult_04/Textures/f004_body_normal.tga",
+    "last_modified": "",
+    "fetched": "2026-10-18T22:55:46Z"
+   },
+   {
+    "path": "Assets/Avatars/Adults/Female_Adult_04/Textures/f004_head_color.tga",
+    "bytes": 12582956,
+    "git_blob_sha1": "8431d9774e3d416447096367fecf4a0f75bc7ea5",
+    "url": "https://cdn.jsdelivr.net/gh/microsoft/Microsoft-Rocketbox@0943055db6ec570bcef9f2c8b41c9e5467c808f9/Assets/Avatars/Adults/Female_Adult_04/Textures/f004_head_color.tga",
+    "last_modified": "",
+    "fetched": "2026-10-18T22:55:46Z"
+   },
+   {
+    "path": "Assets/Avatars/Adults/Female_Adult_04/Textures/f004_head_normal.tga",
+    "bytes": 12582956,
+    "git_blob_sha1": "ab4de4da7bd926286f7088a5e9caeb0a2344a479",
+    "url": "https://cdn.jsdelivr.net/gh/microsoft/Microsoft-Rocketbox@0943055db6ec570bcef9f2c8b41c9e5467c808f9/Assets/Avatars/Adults/Female_Adult_04/Textures/f004_head_normal.tga",
+    "last_modified": "",
+    "fetched": "2026-10-18T22:55:46Z"
+   },
+   {
+    "path": "Assets/Avatars/Adults/Female_Adult_04/Textures/f004_opacity_color.tga",
+    "bytes": 16777260,
+    "git_blob_sha1": "86f656686004a338b13026515c7395c946170352",
+    "url": "https://cdn.jsdelivr.net/gh/microsoft/Microsoft-Rocketbox@0943055db6ec570bcef9f2c8b41c9e5467c808f9/Assets/Avatars/Adults/Female_Adult_04/Textures/f004_opacity_color.tga",
+    "last_modified": "",
+    "fetched": "2026-10-18T22:55:46Z"
+   },
+   {
+    "path": "Assets/Avatars/Adults/Male_Adult_01/Export/Male_Adult_01.fbx",
+    "bytes": 521472,
+    "git_blob_sha1": "fdaf4aa7d15054f1601740ea1a09cf111938d210",
+    "url": "https://cdn.jsdelivr.net/gh/microsoft/Microsoft-Rocketbox@0943055db6ec570bcef9f2c8b41c9e5467c808f9/Assets/Avatars/Adults/Male_Adult_01/Export/Male_Adult_01.fbx",
+    "last_modified": "",
+    "fetched": "2026-10-18T22:55:54Z"
+   },
+   {
+    "path": "Assets/Avatars/Adults/Male_Adult_01/Textures/m002_body_color.tga",
+    "bytes": 12582956,
+    "git_blob_sha1": "818ec72b6c69655c5853ab0eb1efdd6ab40b2bf0",
+    "url": "https://cdn.jsdelivr.net/gh/microsoft/Microsoft-Rocketbox@0943055db6ec570bcef9f2c8b41c9e5467c808f9/Assets/Avatars/Adults/Male_Adult_01/Textures/m002_body_color.tga",
+    "last_modified": "",
+    "fetched": "2026-10-18T22:55:57Z"
+   },
+   {
+    "path": "Assets/Avatars/Adults/Male_Adult_01/Textures/m002_body_normal.tga",
+    "bytes": 12582956,
+    "git_blob_sha1": "31168ae5dca1085bb433988ff18f37fefe7dba0a",
+    "url": "https://cdn.jsdelivr.net/gh/microsoft/Microsoft-Rocketbox@0943055db6ec570bcef9f2c8b41c9e5467c808f9/Assets/Avatars/Adults/Male_Adult_01/Textures/m002_body_normal.tga",
+    "last_modified": "",
+    "fetched": "2026-10-18T22:55:55Z"
+   },
+   {
+    "path": "Assets/Avatars/Adults/Male_Adult_01/Textures/m002_head_color.tga",
+    "bytes": 12582956,
+    "git_blob_sha1": "0becf592ac705b4a2be8a63aa164266ac2a09d9c",
+    "url": "https://cdn.jsdelivr.net/gh/microsoft/Microsoft-Rocketbox@0943055db6ec570bcef9f2c8b41c9e5467c808f9/Assets/Avatars/Adults/Male_Adult_01/Textures/m002_head_color.tga",
+    "last_modified": "",
+    "fetched": "2026-10-18T22:55:55Z"
+   },
+   {
+    "path": "Assets/Avatars/Adults/Male_Adult_01/Textures/m002_head_normal.tga",
+    "bytes": 12582956,
+    "git_blob_sha1": "9d2385bd43ec4e2bbc1712168d5317d06f9941e7",
+    "url": "https://cdn.jsdelivr.net/gh/microsoft/Microsoft-Rocketbox@0943055db6ec570bcef9f2c8b41c9e5467c808f9/Assets/Avatars/Adults/Male_Adult_01/Textures/m002_head_normal.tga",
+    "last_modified": "",
+    "fetched": "2026-10-18T22:55:55Z"
+   },
+   {
+    "path": "Assets/Avatars/Adults/Male_Adult_01/Textures/m002_opacity_color.tga",
+    "bytes": 16777260,
+    "git_blob_sha1": "a4088df07a8896761bd209d304b12310f90e5003",
+    "url": "https://cdn.jsdelivr.net/gh/microsoft/Microsoft-Rocketbox@0943055db6ec570bcef9f2c8b41c9e5467c808f9/Assets/Avatars/Adults/Male_Adult_01/Textures/m002_opacity_color.tga",
+    "last_modified": "",
+    "fetched": "2026-10-18T22:55:56Z"
+   },
+   {
+    "path": "Assets/Avatars/Adults/Male_Adult_02/Export/Male_Adult_02.fbx",
+    "bytes": 539920,
+    "git_blob_sha1": "26ff800005a7624afa37fc212d870ea4bf0b5a02",
+    "url": "https://cdn.jsdelivr.net/gh/microsoft/Microsoft-Rocketbox@0943055db6ec570bcef9f2c8b41c9e5467c808f9/Assets/Avatars/Adults/Male_Adult_02/Export/Male_Adult_02.fbx",
+    "last_modified": "",
+    "fetched": "2026-10-18T22:55:55Z"
+   },
+   {
+    "path": "Assets/Avatars/Adults/Male_Adult_02/Textures/m003_body_color.tga",
+    "bytes": 12582956,
+    "git_blob_sha1": "23e54f1b4e06ca411aa166a016d77f7536316151",
+    "url": "https://cdn.jsdelivr.net/gh/microsoft/Microsoft-Rocketbox@0943055db6ec570bcef9f2c8b41c9e5467c808f9/Assets/Avatars/Adults/Male_Adult_02/Textures/m003_body_color.tga",
+    "last_modified": "",
+    "fetched": "2026-10-18T22:55:55Z"
+   },
+   {
+    "path": "Assets/Avatars/Adults/Male_Adult_02/Textures/m003_body_normal.tga",
+    "bytes": 12582956,
+    "git_blob_sha1": "41ca68e957b5b17bb9a95221aebe686c2a3265ef",
+    "url": "https://cdn.jsdelivr.net/gh/microsoft/Microsoft-Rocketbox@0943055db6ec570bcef9f2c8b41c9e5467c808f9/Assets/Avatars/Adults/Male_Adult_02/Textures/m003_body_normal.tga",
+    "last_modified": "",
+    "fetched": "2026-10-18T22:55:57Z"
+   },
+   {
+    "path": "Assets/Avatars/Adults/Male_Adult_02/Textures/m003_head_color.tga",
+    "bytes": 12582956,
+    "git_blob_sha1": "ec68799915ff8aa26cd18a85c09b1e86c51b17a4",
+    "url": "https://cdn.jsdelivr.net/gh/microsoft/Microsoft-Rocketbox@0943055db6ec570bcef9f2c8b41c9e5467c808f9/Assets/Avatars/Adults/Male_Adult_02/Textures/m003_head_color.tga",
+    "last_modified": "",
+    "fetched": "2026-10-18T22:55:56Z"
+   },
+   {
+    "path": "Assets/Avatars/Adults/Male_Adult_02/Textures/m003_head_normal.tga",
+    "bytes": 12582956,
+    "git_blob_sha1": "8aa92659559a4453b303805a0e5c536b763a8c41",
+    "url": "https://cdn.jsdelivr.net/gh/microsoft/Microsoft-Rocketbox@0943055db6ec570bcef9f2c8b41c9e5467c808f9/Assets/Avatars/Adults/Male_Adult_02/Textures/m003_head_normal.tga",
+    "last_modified": "",
+    "fetched": "2026-10-18T22:55:57Z"
+   },
+   {
+    "path": "Assets/Avatars/Adults/Male_Adult_02/Textures/m003_opacity_color.tga",
+    "bytes": 16777260,
+    "git_blob_sha1": "8860d347a396261f06cbb2f620a28efffe11c334",
+    "url": "https://cdn.jsdelivr.net/gh/microsoft/Microsoft-Rocketbox@0943055db6ec570bcef9f2c8b41c9e5467c808f9/Assets/Avatars/Adults/Male_Adult_02/Textures/m003_opacity_color.tga",
+    "last_modified": "",
+    "fetched": "2026-10-18T22:55:57Z"
+   },
+   {
+    "path": "Assets/Avatars/Adults/Male_Adult_03/Export/Male_Adult_03.fbx",
+    "bytes": 513728,
+    "git_blob_sha1": "9e81e1cee43804851693c7874840e4f76f762126",
+    "url": "https://cdn.jsdelivr.net/gh/microsoft/Microsoft-Rocketbox@0943055db6ec570bcef9f2c8b41c9e5467c808f9/Assets/Avatars/Adults/Male_Adult_03/Export/Male_Adult_03.fbx",
+    "last_modified": "",
+    "fetched": "2026-10-18T22:55:57Z"
+   },
+   {
+    "path": "Assets/Avatars/Adults/Male_Adult_03/Textures/m004_body_color.tga",
+    "bytes": 12582956,
+    "git_blob_sha1": "6c74391f617e383371c9cd77775ebbae16998f8e",
+    "url": "https://cdn.jsdelivr.net/gh/microsoft/Microsoft-Rocketbox@0943055db6ec570bcef9f2c8b41c9e5467c808f9/Assets/Avatars/Adults/Male_Adult_03/Textures/m004_body_color.tga",
+    "last_modified": "",
+    "fetched": "2026-10-18T22:55:57Z"
+   },
+   {
+    "path": "Assets/Avatars/Adults/Male_Adult_03/Textures/m004_body_normal.tga",
+    "bytes": 12582956,
+    "git_blob_sha1": "c1ae5c98e3d11d7266fff2e0cd693869da21e3a9",
+    "url": "https://cdn.jsdelivr.net/gh/microsoft/Microsoft-Rocketbox@0943055db6ec570bcef9f2c8b41c9e5467c808f9/Assets/Avatars/Adults/Male_Adult_03/Textures/m004_body_normal.tga",
+    "last_modified": "",
+    "fetched": "2026-10-18T22:55:58Z"
+   },
+   {
+    "path": "Assets/Avatars/Adults/Male_Adult_03/Textures/m004_head_color.tga",
+    "bytes": 12582956,
+    "git_blob_sha1": "bc8c4b56be8bef30ea204ea772451a03457a9d85",
+    "url": "https://cdn.jsdelivr.net/gh/microsoft/Microsoft-Rocketbox@0943055db6ec570bcef9f2c8b41c9e5467c808f9/Assets/Avatars/Adults/Male_Adult_03/Textures/m004_head_color.tga",
+    "last_modified": "",
+    "fetched": "2026-10-18T22:55:58Z"
+   },
+   {
+    "path": "Assets/Avatars/Adults/Male_Adult_03/Textures/m004_head_normal.tga",
+    "bytes": 12582956,
+    "git_blob_sha1": "01cbe98b0d29bfe9b5c8949800e199234014453f",
+    "url": "https://cdn.jsdelivr.net/gh/microsoft/Microsoft-Rocketbox@0943055db6ec570bcef9f2c8b41c9e5467c808f9/Assets/Avatars/Adults/Male_Adult_03/Textures/m004_head_normal.tga",
+    "last_modified": "",
+    "fetched": "2026-10-18T22:55:57Z"
+   },
+   {
+    "path": "Assets/Avatars/Adults/Male_Adult_03/Textures/m004_opacity_color.tga",
+    "bytes": 8388652,
+    "git_blob_sha1": "7a705836b26da41fbd46d5cf41835bcff82b1e0d",
+    "url": "https://cdn.jsdelivr.net/gh/microsoft/Microsoft-Rocketbox@0943055db6ec570bcef9f2c8b41c9e5467c808f9/Assets/Avatars/Adults/Male_Adult_03/Textures/m004_opacity_color.tga",
+    "last_modified": "",
+    "fetched": "2026-10-18T22:55:57Z"
+   },
+   {
+    "path": "Assets/Avatars/Adults/Male_Adult_04/Export/Male_Adult_04.fbx",
+    "bytes": 571296,
+    "git_blob_sha1": "b74a2a8e261a16bebb7acd7335dc41f8c6b7b41e",
+    "url": "https://cdn.jsdelivr.net/gh/microsoft/Microsoft-Rocketbox@0943055db6ec570bcef9f2c8b41c9e5467c808f9/Assets/Avatars/Adults/Male_Adult_04/Export/Male_Adult_04.fbx",
+    "last_modified": "",
+    "fetched": "2026-10-18T22:55:57Z"
+   },
+   {
+    "path": "Assets/Avatars/Adults/Male_Adult_04/Textures/m006_body_color.tga",
+    "bytes": 12582956,
+    "git_blob_sha1": "eb98a1056b856d117f54145abef183c93721b8a7",
+    "url": "https://cdn.jsdelivr.net/gh/microsoft/Microsoft-Rocketbox@0943055db6ec570bcef9f2c8b41c9e5467c808f9/Assets/Avatars/Adults/Male_Adult_04/Textures/m006_body_color.tga",
+    "last_modified": "",
+    "fetched": "2026-10-18T22:55:58Z"
+   },
+   {
+    "path": "Assets/Avatars/Adults/Male_Adult_04/Textures/m006_body_normal.tga",
+    "bytes": 12582956,
+    "git_blob_sha1": "4b9f8db2edbbf6ebb61d3b88b49085ecd1cd0aa7",
+    "url": "https://cdn.jsdelivr.net/gh/microsoft/Microsoft-Rocketbox@0943055db6ec570bcef9f2c8b41c9e5467c808f9/Assets/Avatars/Adults/Male_Adult_04/Textures/m006_body_normal.tga",
+    "last_modified": "",
+    "fetched": "2026-10-18T22:55:59Z"
+   },
+   {
+    "path": "Assets/Avatars/Adults/Male_Adult_04/Textures/m006_head_color.tga",
+    "bytes": 12582956,
+    "git_blob_sha1": "b8d9af1e5337c9a5ed8969395e73f8fdd6abdda6",
+    "url": "https://cdn.jsdelivr.net/gh/microsoft/Microsoft-Rocketbox@0943055db6ec570bcef9f2c8b41c9e5467c808f9/Assets/Avatars/Adults/Male_Adult_04/Textures/m006_head_color.tga",
+    "last_modified": "",
+    "fetched": "2026-10-18T22:55:58Z"
+   },
+   {
+    "path": "Assets/Avatars/Adults/Male_Adult_04/Textures/m006_head_normal.tga",
+    "bytes": 12582956,
+    "git_blob_sha1": "ea4f35b0aa2f2326d4a82eff022627f50ce1ff4a",
+    "url": "https://cdn.jsdelivr.net/gh/microsoft/Microsoft-Rocketbox@0943055db6ec570bcef9f2c8b41c9e5467c808f9/Assets/Avatars/Adults/Male_Adult_04/Textures/m006_head_normal.tga",
+    "last_modified": "",
+    "fetched": "2026-10-18T22:56:00Z"
+   },
+   {
+    "path": "Assets/Avatars/Adults/Male_Adult_04/Textures/m006_opacity_color.tga",
+    "bytes": 16777260,
+    "git_blob_sha1": "dca7411aadf0ba5b62ab314981591fad88dbf1b0",
+    "url": "https://cdn.jsdelivr.net/gh/microsoft/Microsoft-Rocketbox@0943055db6ec570bcef9f2c8b41c9e5467c808f9/Assets/Avatars/Adults/Male_Adult_04/Textures/m006_opacity_color.tga",
+    "last_modified": "",
+    "fetched": "2026-10-18T22:55:59Z"
+   },
+   {
+    "path": "Assets/Avatars/Adults/Male_Adult_08/Export/Male_Adult_08.fbx",
+    "bytes": 508784,
+    "git_blob_sha1": "2e6936c594c9c65b44916839340be3b4eecd2202",
+    "url": "https://cdn.jsdelivr.net/gh/microsoft/Microsoft-Rocketbox@0943055db6ec570bcef9f2c8b41c9e5467c808f9/Assets/Avatars/Adults/Male_Adult_08/Export/Male_Adult_08.fbx",
+    "last_modified": "",
+    "fetched": "2026-10-18T22:55:58Z"
+   },
+   {
+    "path": "Assets/Avatars/Adults/Male_Adult_08/Textures/m014_body_color.tga",
+    "bytes": 12582956,
+    "git_blob_sha1": "c6162d348435623eb44fa0f2114dc9109a0e0a8d",
+    "url": "https://cdn.jsdelivr.net/gh/microsoft/Microsoft-Rocketbox@0943055db6ec570bcef9f2c8b41c9e5467c808f9/Assets/Avatars/Adults/Male_Adult_08/Textures/m014_body_color.tga",
+    "last_modified": "",
+    "fetched": "2026-10-18T22:55:59Z"
+   },
+   {
+    "path": "Assets/Avatars/Adults/Male_Adult_08/Textures/m014_body_normal.tga",
+    "bytes": 12582956,
+    "git_blob_sha1": "f2d9f6ea9e075fbd8dba9bbae1a01f57224d4765",
+    "url": "https://cdn.jsdelivr.net/gh/microsoft/Microsoft-Rocketbox@0943055db6ec570bcef9f2c8b41c9e5467c808f9/Assets/Avatars/Adults/Male_Adult_08/Textures/m014_body_normal.tga",
+    "last_modified": "",
+    "fetched": "2026-10-18T22:56:00Z"
+   },
+   {
+    "path": "Assets/Avatars/Adults/Male_Adult_08/Textures/m014_head_color.tga",
+    "bytes": 12582956,
+    "git_blob_sha1": "66e3ac3c72cfdbd661e36dd9fd98ac611f21a6e4",
+    "url": "https://cdn.jsdelivr.net/gh/microsoft/Microsoft-Rocketbox@0943055db6ec570bcef9f2c8b41c9e5467c808f9/Assets/Avatars/Adults/Male_Adult_08/Textures/m014_head_color.tga",
+    "last_modified": "",
+    "fetched": "2026-10-18T22:56:03Z"
+   },
+   {
+    "path": "Assets/Avatars/Adults/Male_Adult_08/Textures/m014_head_normal.tga",
+    "bytes": 12582956,
+    "git_blob_sha1": "02be43d9b025eee79fd53de048d335ccd97be6be",
+    "url": "https://cdn.jsdelivr.net/gh/microsoft/Microsoft-Rocketbox@0943055db6ec570bcef9f2c8b41c9e5467c808f9/Assets/Avatars/Adults/Male_Adult_08/Textures/m014_head_normal.tga",
+    "last_modified": "",
+    "fetched": "2026-10-18T22:56:00Z"
+   },
+   {
+    "path": "Assets/Avatars/Adults/Male_Adult_08/Textures/m014_opacity_color.tga",
+    "bytes": 16777260,
+    "git_blob_sha1": "e008b9abf4901a2f23f32cb9d1e2bc7ef5a60587",
+    "url": "https://cdn.jsdelivr.net/gh/microsoft/Microsoft-Rocketbox@0943055db6ec570bcef9f2c8b41c9e5467c808f9/Assets/Avatars/Adults/Male_Adult_08/Textures/m014_opacity_color.tga",
+    "last_modified": "",
+    "fetched": "2026-10-18T22:56:02Z"
+   },
+   {
+    "path": "Assets/Avatars/Adults/Male_Adult_12/Export/Male_Adult_12.fbx",
+    "bytes": 487776,
+    "git_blob_sha1": "15d4f8501d5703600cb3d8a94765a3de1029aaf6",
+    "url": "https://cdn.jsdelivr.net/gh/microsoft/Microsoft-Rocketbox@0943055db6ec570bcef9f2c8b41c9e5467c808f9/Assets/Avatars/Adults/Male_Adult_12/Export/Male_Adult_12.fbx",
+    "last_modified": "",
+    "fetched": "2026-10-18T22:56:00Z"
+   },
+   {
+    "path": "Assets/Avatars/Adults/Male_Adult_12/Textures/m007_body_color.tga",
+    "bytes": 12582956,
+    "git_blob_sha1": "1757150789a5fdcf733394ff21a60512530b4f1a",
+    "url": "https://cdn.jsdelivr.net/gh/microsoft/Microsoft-Rocketbox@0943055db6ec570bcef9f2c8b41c9e5467c808f9/Assets/Avatars/Adults/Male_Adult_12/Textures/m007_body_color.tga",
+    "last_modified": "",
+    "fetched": "2026-10-18T22:56:01Z"
+   },
+   {
+    "path": "Assets/Avatars/Adults/Male_Adult_12/Textures/m007_body_normal.tga",
+    "bytes": 12582956,
+    "git_blob_sha1": "5bc8f98e588d55964e2b6a2d0029778f4a9db9e6",
+    "url": "https://cdn.jsdelivr.net/gh/microsoft/Microsoft-Rocketbox@0943055db6ec570bcef9f2c8b41c9e5467c808f9/Assets/Avatars/Adults/Male_Adult_12/Textures/m007_body_normal.tga",
+    "last_modified": "",
+    "fetched": "2026-10-18T22:56:01Z"
+   },
+   {
+    "path": "Assets/Avatars/Adults/Male_Adult_12/Textures/m007_head_color.tga",
+    "bytes": 12582956,
+    "git_blob_sha1": "e5b23c4f55e499893c2a92ec7e52d0252bee2ae3",
+    "url": "https://cdn.jsdelivr.net/gh/microsoft/Microsoft-Rocketbox@0943055db6ec570bcef9f2c8b41c9e5467c808f9/Assets/Avatars/Adults/Male_Adult_12/Textures/m007_head_color.tga",
+    "last_modified": "",
+    "fetched": "2026-10-18T22:56:00Z"
+   },
+   {
+    "path": "Assets/Avatars/Adults/Male_Adult_12/Textures/m007_head_normal.tga",
+    "bytes": 12582956,
+    "git_blob_sha1": "0a99ce9aa6014e94c3385555f66a14da7599b757",
+    "url": "https://cdn.jsdelivr.net/gh/microsoft/Microsoft-Rocketbox@0943055db6ec570bcef9f2c8b41c9e5467c808f9/Assets/Avatars/Adults/Male_Adult_12/Textures/m007_head_normal.tga",
+    "last_modified": "",
+    "fetched": "2026-10-18T22:56:01Z"
+   },
+   {
+    "path": "Assets/Avatars/Adults/Male_Adult_15/Export/Male_Adult_15.fbx",
+    "bytes": 532528,
+    "git_blob_sha1": "6dcbafe442f74e614c8eff16a7cd736870e54757",
+    "url": "https://cdn.jsdelivr.net/gh/microsoft/Microsoft-Rocketbox@0943055db6ec570bcef9f2c8b41c9e5467c808f9/Assets/Avatars/Adults/Male_Adult_15/Export/Male_Adult_15.fbx",
+    "last_modified": "",
+    "fetched": "2026-10-18T22:56:01Z"
+   },
+   {
+    "path": "Assets/Avatars/Adults/Male_Adult_15/Textures/m204_body_color.tga",
+    "bytes": 12582956,
+    "git_blob_sha1": "f7c95bfe928b5fc20a191921e1515596fb73caea",
+    "url": "https://cdn.jsdelivr.net/gh/microsoft/Microsoft-Rocketbox@0943055db6ec570bcef9f2c8b41c9e5467c808f9/Assets/Avatars/Adults/Male_Adult_15/Textures/m204_body_color.tga",
+    "last_modified": "",
+    "fetched": "2026-10-18T22:56:01Z"
+   },
+   {
+    "path": "Assets/Avatars/Adults/Male_Adult_15/Textures/m204_body_normal.tga",
+    "bytes": 12582956,
+    "git_blob_sha1": "12a74447f110d12babf71c36a6f611f50c4f4dee",
+    "url": "https://cdn.jsdelivr.net/gh/microsoft/Microsoft-Rocketbox@0943055db6ec570bcef9f2c8b41c9e5467c808f9/Assets/Avatars/Adults/Male_Adult_15/Textures/m204_body_normal.tga",
+    "last_modified": "",
+    "fetched": "2026-10-18T22:56:02Z"
+   },
+   {
+    "path": "Assets/Avatars/Adults/Male_Adult_15/Textures/m204_head_color.tga",
+    "bytes": 12582956,
+    "git_blob_sha1": "08011be46ab1f8a76768d633378b8ba4cb326906",
+    "url": "https://cdn.jsdelivr.net/gh/microsoft/Microsoft-Rocketbox@0943055db6ec570bcef9f2c8b41c9e5467c808f9/Assets/Avatars/Adults/Male_Adult_15/Textures/m204_head_color.tga",
+    "last_modified": "",
+    "fetched": "2026-10-18T22:56:02Z"
+   },
+   {
+    "path": "Assets/Avatars/Adults/Male_Adult_15/Textures/m204_head_normal.tga",
+    "bytes": 12582956,
+    "git_blob_sha1": "bd56e123ba25d3ad0cb51c25bbd6dde530debae1",
+    "url": "https://cdn.jsdelivr.net/gh/microsoft/Microsoft-Rocketbox@0943055db6ec570bcef9f2c8b41c9e5467c808f9/Assets/Avatars/Adults/Male_Adult_15/Textures/m204_head_normal.tga",
+    "last_modified": "",
+    "fetched": "2026-10-18T22:56:02Z"
+   },
+   {
+    "path": "Assets/Avatars/Adults/Male_Adult_18/Export/Male_Adult_18.fbx",
+    "bytes": 475888,
+    "git_blob_sha1": "a5add3c14299549fa9670e9499daf23e19f56032",
+    "url": "https://cdn.jsdelivr.net/gh/microsoft/Microsoft-Rocketbox@0943055db6ec570bcef9f2c8b41c9e5467c808f9/Assets/Avatars/Adults/Male_Adult_18/Export/Male_Adult_18.fbx",
+    "last_modified": "",
+    "fetched": "2026-10-18T22:56:02Z"
+   },
+   {
+    "path": "Assets/Avatars/Adults/Male_Adult_18/Textures/m023_body_color.tga",
+    "bytes": 12582956,
+    "git_blob_sha1": "5bd02815a216aa092c6cd30454aa057ac05242eb",
+    "url": "https://cdn.jsdelivr.net/gh/microsoft/Microsoft-Rocketbox@0943055db6ec570bcef9f2c8b41c9e5467c808f9/Assets/Avatars/Adults/Male_Adult_18/Textures/m023_body_color.tga",
+    "last_modified": "",
+    "fetched": "2026-10-18T22:56:03Z"
+   },
+   {
+    "path": "Assets/Avatars/Adults/Male_Adult_18/Textures/m023_body_normal.tga",
+    "bytes": 12582956,
+    "git_blob_sha1": "b6cf4f8fb80039d5f708a8c3ce076fcde1ed4eae",
+    "url": "https://cdn.jsdelivr.net/gh/microsoft/Microsoft-Rocketbox@0943055db6ec570bcef9f2c8b41c9e5467c808f9/Assets/Avatars/Adults/Male_Adult_18/Textures/m023_body_normal.tga",
+    "last_modified": "",
+    "fetched": "2026-10-18T22:56:03Z"
+   },
+   {
+    "path": "Assets/Avatars/Adults/Male_Adult_18/Textures/m023_head_color.tga",
+    "bytes": 12582956,
+    "git_blob_sha1": "1053c0d4b0710a3c0b6c1b8941a93269e6276767",
+    "url": "https://cdn.jsdelivr.net/gh/microsoft/Microsoft-Rocketbox@0943055db6ec570bcef9f2c8b41c9e5467c808f9/Assets/Avatars/Adults/Male_Adult_18/Textures/m023_head_color.tga",
+    "last_modified": "",
+    "fetched": "2026-10-18T22:56:05Z"
+   },
+   {
+    "path": "Assets/Avatars/Adults/Male_Adult_18/Textures/m023_head_normal.tga",
+    "bytes": 12582956,
+    "git_blob_sha1": "52dd610cce0fa87d8f1dd90202b364af2feb51a3",
+    "url": "https://cdn.jsdelivr.net/gh/microsoft/Microsoft-Rocketbox@0943055db6ec570bcef9f2c8b41c9e5467c808f9/Assets/Avatars/Adults/Male_Adult_18/Textures/m023_head_normal.tga",
+    "last_modified": "",
+    "fetched": "2026-10-18T22:56:03Z"
+   },
+   {
+    "path": "Assets/Avatars/Adults/Female_Adult_01/Export/Female_Adult_01.fbx",
+    "bytes": 609152,
+    "git_blob_sha1": "59e6c03fa86691cda806ef5d5b040e462c0fb9c1",
+    "url": "https://cdn.jsdelivr.net/gh/microsoft/Microsoft-Rocketbox@0943055db6ec570bcef9f2c8b41c9e5467c808f9/Assets/Avatars/Adults/Female_Adult_01/Export/Female_Adult_01.fbx",
+    "last_modified": "",
+    "fetched": "2026-10-18T22:56:02Z"
+   },
+   {
+    "path": "Assets/Avatars/Adults/Female_Adult_01/Textures/f001_body_color.tga",
+    "bytes": 12582956,
+    "git_blob_sha1": "25852db0db1f44a0de0643ce1e09c88aef587e6f",
+    "url": "https://cdn.jsdelivr.net/gh/microsoft/Microsoft-Rocketbox@0943055db6ec570bcef9f2c8b41c9e5467c808f9/Assets/Avatars/Adults/Female_Adult_01/Textures/f001_body_color.tga",
+    "last_modified": "",
+    "fetched": "2026-10-18T22:56:03Z"
+   },
+   {
+    "path": "Assets/Avatars/Adults/Female_Adult_01/Textures/f001_body_normal.tga",
+    "bytes": 12582956,
+    "git_blob_sha1": "345ba24adc6d429a1e0967c0010588b88892be46",
+    "url": "https://cdn.jsdelivr.net/gh/microsoft/Microsoft-Rocketbox@0943055db6ec570bcef9f2c8b41c9e5467c808f9/Assets/Avatars/Adults/Female_Adult_01/Textures/f001_body_normal.tga",
+    "last_modified": "",
+    "fetched": "2026-10-18T22:56:03Z"
+   },
+   {
+    "path": "Assets/Avatars/Adults/Female_Adult_01/Textures/f001_head_color.tga",
+    "bytes": 12582956,
+    "git_blob_sha1": "0cdc62ab47da3dca01aff0bb179159865a559c63",
+    "url": "https://cdn.jsdelivr.net/gh/microsoft/Microsoft-Rocketbox@0943055db6ec570bcef9f2c8b41c9e5467c808f9/Assets/Avatars/Adults/Female_Adult_01/Textures/f001_head_color.tga",
+    "last_modified": "",
+    "fetched": "2026-10-18T22:56:04Z"
+   },
+   {
+    "path": "Assets/Avatars/Adults/Female_Adult_01/Textures/f001_head_normal.tga",
+    "bytes": 12582956,
+    "git_blob_sha1": "6de1fb458c746154713e8c34039add24f4ba9f6d",
+    "url": "https://cdn.jsdelivr.net/gh/microsoft/Microsoft-Rocketbox@0943055db6ec570bcef9f2c8b41c9e5467c808f9/Assets/Avatars/Adults/Female_Adult_01/Textures/f001_head_normal.tga",
+    "last_modified": "",
+    "fetched": "2026-10-18T22:56:04Z"
+   },
+   {
+    "path": "Assets/Avatars/Adults/Female_Adult_01/Textures/f001_opacity_color.tga",
+    "bytes": 16777260,
+    "git_blob_sha1": "de21a9e69c88e539da6a5050eaceadd026e99b62",
+    "url": "https://cdn.jsdelivr.net/gh/microsoft/Microsoft-Rocketbox@0943055db6ec570bcef9f2c8b41c9e5467c808f9/Assets/Avatars/Adults/Female_Adult_01/Textures/f001_opacity_color.tga",
+    "last_modified": "",
+    "fetched": "2026-10-18T22:56:04Z"
+   },
+   {
+    "path": "Assets/Avatars/Adults/Female_Adult_02/Export/Female_Adult_02.fbx",
+    "bytes": 580800,
+    "git_blob_sha1": "9a165315f36c7a34e339919f84419a9f0b90fa0a",
+    "url": "https://cdn.jsdelivr.net/gh/microsoft/Microsoft-Rocketbox@0943055db6ec570bcef9f2c8b41c9e5467c808f9/Assets/Avatars/Adults/Female_Adult_02/Export/Female_Adult_02.fbx",
+    "last_modified": "",
+    "fetched": "2026-10-18T22:56:04Z"
+   },
+   {
+    "path": "Assets/Avatars/Adults/Female_Adult_02/Textures/f002_body_color.tga",
+    "bytes": 12582956,
+    "git_blob_sha1": "5eb8ee83281a7526544a80ddf9804507670eb049",
+    "url": "https://cdn.jsdelivr.net/gh/microsoft/Microsoft-Rocketbox@0943055db6ec570bcef9f2c8b41c9e5467c808f9/Assets/Avatars/Adults/Female_Adult_02/Textures/f002_body_color.tga",
+    "last_modified": "",
+    "fetched": "2026-10-18T22:56:04Z"
+   },
+   {
+    "path": "Assets/Avatars/Adults/Female_Adult_02/Textures/f002_body_normal.tga",
+    "bytes": 12582956,
+    "git_blob_sha1": "abf938f475ef06475fe8b9e4438c101a768bdfe1",
+    "url": "https://cdn.jsdelivr.net/gh/microsoft/Microsoft-Rocketbox@0943055db6ec570bcef9f2c8b41c9e5467c808f9/Assets/Avatars/Adults/Female_Adult_02/Textures/f002_body_normal.tga",
+    "last_modified": "",
+    "fetched": "2026-10-18T22:56:05Z"
+   },
+   {
+    "path": "Assets/Avatars/Adults/Female_Adult_02/Textures/f002_head_color.tga",
+    "bytes": 12582956,
+    "git_blob_sha1": "8f59bb553f24d3581de68bcf4683695c014bcc0f",
+    "url": "https://cdn.jsdelivr.net/gh/microsoft/Microsoft-Rocketbox@0943055db6ec570bcef9f2c8b41c9e5467c808f9/Assets/Avatars/Adults/Female_Adult_02/Textures/f002_head_color.tga",
+    "last_modified": "",
+    "fetched": "2026-10-18T22:56:06Z"
+   },
+   {
+    "path": "Assets/Avatars/Adults/Female_Adult_02/Textures/f002_head_normal.tga",
+    "bytes": 12582956,
+    "git_blob_sha1": "87599b637b1816a17a02cadc0a74c944f1fe33ee",
+    "url": "https://cdn.jsdelivr.net/gh/microsoft/Microsoft-Rocketbox@0943055db6ec570bcef9f2c8b41c9e5467c808f9/Assets/Avatars/Adults/Female_Adult_02/Textures/f002_head_normal.tga",
+    "last_modified": "",
+    "fetched": "2026-10-18T22:56:05Z"
+   },
+   {
+    "path": "Assets/Avatars/Adults/Female_Adult_02/Textures/f002_opacity_color.tga",
+    "bytes": 4194348,
+    "git_blob_sha1": "3d930c42ed476ab3f58548e5ee33e10ea9f02a27",
+    "url": "https://cdn.jsdelivr.net/gh/microsoft/Microsoft-Rocketbox@0943055db6ec570bcef9f2c8b41c9e5467c808f9/Assets/Avatars/Adults/Female_Adult_02/Textures/f002_opacity_color.tga",
+    "last_modified": "",
+    "fetched": "2026-10-18T22:56:04Z"
+   },
+   {
+    "path": "Assets/Avatars/Adults/Female_Adult_03/Export/Female_Adult_03.fbx",
+    "bytes": 791312,
+    "git_blob_sha1": "9ff910a80e1572c35f9064bfe649c58898f946c2",
+    "url": "https://cdn.jsdelivr.net/gh/microsoft/Microsoft-Rocketbox@0943055db6ec570bcef9f2c8b41c9e5467c808f9/Assets/Avatars/Adults/Female_Adult_03/Export/Female_Adult_03.fbx",
+    "last_modified": "",
+    "fetched": "2026-10-18T22:56:05Z"
+   },
+   {
+    "path": "Assets/Avatars/Adults/Female_Adult_03/Textures/f003_body_color.tga",
+    "bytes": 12582956,
+    "git_blob_sha1": "6e7e0bba4a2c5fd119c2f40bf3886ec2ebd89af0",
+    "url": "https://cdn.jsdelivr.net/gh/microsoft/Microsoft-Rocketbox@0943055db6ec570bcef9f2c8b41c9e5467c808f9/Assets/Avatars/Adults/Female_Adult_03/Textures/f003_body_color.tga",
+    "last_modified": "",
+    "fetched": "2026-10-18T22:56:05Z"
+   },
+   {
+    "path": "Assets/Avatars/Adults/Female_Adult_03/Textures/f003_body_normal.tga",
+    "bytes": 12582956,
+    "git_blob_sha1": "9d67f0877bd2a0c3cf7bc87f6912fb08d0e9961e",
+    "url": "https://cdn.jsdelivr.net/gh/microsoft/Microsoft-Rocketbox@0943055db6ec570bcef9f2c8b41c9e5467c808f9/Assets/Avatars/Adults/Female_Adult_03/Textures/f003_body_normal.tga",
+    "last_modified": "",
+    "fetched": "2026-10-18T22:56:06Z"
+   },
+   {
+    "path": "Assets/Avatars/Adults/Female_Adult_03/Textures/f003_head_color.tga",
+    "bytes": 12582956,
+    "git_blob_sha1": "b185268832e1b05b2e30434b714ed1a50c79726f",
+    "url": "https://cdn.jsdelivr.net/gh/microsoft/Microsoft-Rocketbox@0943055db6ec570bcef9f2c8b41c9e5467c808f9/Assets/Avatars/Adults/Female_Adult_03/Textures/f003_head_color.tga",
+    "last_modified": "",
+    "fetched": "2026-10-18T22:56:06Z"
+   },
+   {
+    "path": "Assets/Avatars/Adults/Female_Adult_03/Textures/f003_head_normal.tga",
+    "bytes": 12582956,
+    "git_blob_sha1": "cbbd2e6c901da2c10c37556ac4324e3a4d2b8f40",
+    "url": "https://cdn.jsdelivr.net/gh/microsoft/Microsoft-Rocketbox@0943055db6ec570bcef9f2c8b41c9e5467c808f9/Assets/Avatars/Adults/Female_Adult_03/Textures/f003_head_normal.tga",
+    "last_modified": "",
+    "fetched": "2026-10-18T22:56:06Z"
+   },
+   {
+    "path": "Assets/Avatars/Adults/Female_Adult_03/Textures/f003_opacity_color.tga",
+    "bytes": 16777260,
+    "git_blob_sha1": "7967eb62237314e3c76ae437a259f94052a032c3",
+    "url": "https://cdn.jsdelivr.net/gh/microsoft/Microsoft-Rocketbox@0943055db6ec570bcef9f2c8b41c9e5467c808f9/Assets/Avatars/Adults/Female_Adult_03/Textures/f003_opacity_color.tga",
+    "last_modified": "",
+    "fetched": "2026-10-18T22:56:12Z"
+   },
+   {
+    "path": "Assets/Avatars/Adults/Female_Adult_05/Export/Female_Adult_05.fbx",
+    "bytes": 594160,
+    "git_blob_sha1": "274cecdf013dc574f9739f24ed52c31b19f45f0b",
+    "url": "https://cdn.jsdelivr.net/gh/microsoft/Microsoft-Rocketbox@0943055db6ec570bcef9f2c8b41c9e5467c808f9/Assets/Avatars/Adults/Female_Adult_05/Export/Female_Adult_05.fbx",
+    "last_modified": "",
+    "fetched": "2026-10-18T22:56:06Z"
+   },
+   {
+    "path": "Assets/Avatars/Adults/Female_Adult_05/Textures/f005_body_color.tga",
+    "bytes": 12582956,
+    "git_blob_sha1": "9d5cbf117974d4b0d72f5c7a5dd690d2da0713f3",
+    "url": "https://cdn.jsdelivr.net/gh/microsoft/Microsoft-Rocketbox@0943055db6ec570bcef9f2c8b41c9e5467c808f9/Assets/Avatars/Adults/Female_Adult_05/Textures/f005_body_color.tga",
+    "last_modified": "",
+    "fetched": "2026-10-18T22:56:07Z"
+   },
+   {
+    "path": "Assets/Avatars/Adults/Female_Adult_05/Textures/f005_body_normal.tga",
+    "bytes": 12582956,
+    "git_blob_sha1": "37d064fd445d3e8e2ecf152bdfa05f36e4345c65",
+    "url": "https://cdn.jsdelivr.net/gh/microsoft/Microsoft-Rocketbox@0943055db6ec570bcef9f2c8b41c9e5467c808f9/Assets/Avatars/Adults/Female_Adult_05/Textures/f005_body_normal.tga",
+    "last_modified": "",
+    "fetched": "2026-10-18T22:56:07Z"
+   },
+   {
+    "path": "Assets/Avatars/Adults/Female_Adult_05/Textures/f005_head_color.tga",
+    "bytes": 12582956,
+    "git_blob_sha1": "7cf9fba106546281fba14bb9d67c4234e45b069c",
+    "url": "https://cdn.jsdelivr.net/gh/microsoft/Microsoft-Rocketbox@0943055db6ec570bcef9f2c8b41c9e5467c808f9/Assets/Avatars/Adults/Female_Adult_05/Textures/f005_head_color.tga",
+    "last_modified": "",
+    "fetched": "2026-10-18T22:56:07Z"
+   },
+   {
+    "path": "Assets/Avatars/Adults/Female_Adult_05/Textures/f005_head_normal.tga",
+    "bytes": 12582956,
+    "git_blob_sha1": "25be0c99e1231b421a4eb0eacb22d13cdc669a2f",
+    "url": "https://cdn.jsdelivr.net/gh/microsoft/Microsoft-Rocketbox@0943055db6ec570bcef9f2c8b41c9e5467c808f9/Assets/Avatars/Adults/Female_Adult_05/Textures/f005_head_normal.tga",
+    "last_modified": "",
+    "fetched": "2026-10-18T22:56:11Z"
+   },
+   {
+    "path": "Assets/Avatars/Adults/Female_Adult_05/Textures/f005_opacity_color.tga",
+    "bytes": 16777260,
+    "git_blob_sha1": "7c94e9b9b0bad515023e5e3509a58c874bce29d6",
+    "url": "https://cdn.jsdelivr.net/gh/microsoft/Microsoft-Rocketbox@0943055db6ec570bcef9f2c8b41c9e5467c808f9/Assets/Avatars/Adults/Female_Adult_05/Textures/f005_opacity_color.tga",
+    "last_modified": "",
+    "fetched": "2026-10-18T22:56:07Z"
+   },
+   {
+    "path": "Assets/Avatars/Adults/Female_Adult_06/Export/Female_Adult_06.fbx",
+    "bytes": 529632,
+    "git_blob_sha1": "e9e4ab1ae4bf91387bf239984d4b07f875db8f6f",
+    "url": "https://cdn.jsdelivr.net/gh/microsoft/Microsoft-Rocketbox@0943055db6ec570bcef9f2c8b41c9e5467c808f9/Assets/Avatars/Adults/Female_Adult_06/Export/Female_Adult_06.fbx",
+    "last_modified": "",
+    "fetched": "2026-10-18T22:56:07Z"
+   },
+   {
+    "path": "Assets/Avatars/Adults/Female_Adult_06/Textures/f202_body_color.tga",
+    "bytes": 12582956,
+    "git_blob_sha1": "ef6cb97a6e4fa9c7608d6688e6778384b9419606",
+    "url": "https://cdn.jsdelivr.net/gh/microsoft/Microsoft-Rocketbox@0943055db6ec570bcef9f2c8b41c9e5467c808f9/Assets/Avatars/Adults/Female_Adult_06/Textures/f202_body_color.tga",
+    "last_modified": "",
+    "fetched": "2026-10-18T22:56:08Z"
+   },
+   {
+    "path": "Assets/Avatars/Adults/Female_Adult_06/Textures/f202_body_normal.tga",
+    "bytes": 12582956,
+    "git_blob_sha1": "1887885a0ded37dd9bdf329b3371223142a0e91a",
+    "url": "https://cdn.jsdelivr.net/gh/microsoft/Microsoft-Rocketbox@0943055db6ec570bcef9f2c8b41c9e5467c808f9/Assets/Avatars/Adults/Female_Adult_06/Textures/f202_body_normal.tga",
+    "last_modified": "",
+    "fetched": "2026-10-18T22:56:08Z"
+   },
+   {
+    "path": "Assets/Avatars/Adults/Female_Adult_06/Textures/f202_head_color.tga",
+    "bytes": 12582956,
+    "git_blob_sha1": "a9ba3b91c36f00ab080f18ba9b34794dd43f1dd7",
+    "url": "https://cdn.jsdelivr.net/gh/microsoft/Microsoft-Rocketbox@0943055db6ec570bcef9f2c8b41c9e5467c808f9/Assets/Avatars/Adults/Female_Adult_06/Textures/f202_head_color.tga",
+    "last_modified": "",
+    "fetched": "2026-10-18T22:56:08Z"
+   },
+   {
+    "path": "Assets/Avatars/Adults/Female_Adult_06/Textures/f202_head_normal.tga",
+    "bytes": 12582956,
+    "git_blob_sha1": "ae8a529c6c503fa7cb64b8086b19cf5b9634dc68",
+    "url": "https://cdn.jsdelivr.net/gh/microsoft/Microsoft-Rocketbox@0943055db6ec570bcef9f2c8b41c9e5467c808f9/Assets/Avatars/Adults/Female_Adult_06/Textures/f202_head_normal.tga",
+    "last_modified": "",
+    "fetched": "2026-10-18T22:56:09Z"
+   },
+   {
+    "path": "Assets/Avatars/Adults/Female_Adult_06/Textures/f202_opacity_color.tga",
+    "bytes": 4194348,
+    "git_blob_sha1": "b776361993d745d54ac6a5d66002c4840254e5d1",
+    "url": "https://cdn.jsdelivr.net/gh/microsoft/Microsoft-Rocketbox@0943055db6ec570bcef9f2c8b41c9e5467c808f9/Assets/Avatars/Adults/Female_Adult_06/Textures/f202_opacity_color.tga",
+    "last_modified": "",
+    "fetched": "2026-10-18T22:56:08Z"
+   },
+   {
+    "path": "Assets/Avatars/Adults/Female_Adult_08/Export/Female_Adult_08.fbx",
+    "bytes": 594640,
+    "git_blob_sha1": "06bd911984cc8e1b3db7ea71b01416875427c51b",
+    "url": "https://cdn.jsdelivr.net/gh/microsoft/Microsoft-Rocketbox@0943055db6ec570bcef9f2c8b41c9e5467c808f9/Assets/Avatars/Adults/Female_Adult_08/Export/Female_Adult_08.fbx",
+    "last_modified": "",
+    "fetched": "2026-10-18T22:56:08Z"
+   },
+   {
+    "path": "Assets/Avatars/Adults/Female_Adult_08/Textures/f008_body_color.tga",
+    "bytes": 12582956,
+    "git_blob_sha1": "3be6c34c2e052b0da560bfc93e90ca6902c87530",
+    "url": "https://cdn.jsdelivr.net/gh/microsoft/Microsoft-Rocketbox@0943055db6ec570bcef9f2c8b41c9e5467c808f9/Assets/Avatars/Adults/Female_Adult_08/Textures/f008_body_color.tga",
+    "last_modified": "",
+    "fetched": "2026-10-18T22:56:09Z"
+   },
+   {
+    "path": "Assets/Avatars/Adults/Female_Adult_08/Textures/f008_body_normal.tga",
+    "bytes": 12582956,
+    "git_blob_sha1": "e0321620159d5bc71e89fbf48553671e4a15a874",
+    "url": "https://cdn.jsdelivr.net/gh/microsoft/Microsoft-Rocketbox@0943055db6ec570bcef9f2c8b41c9e5467c808f9/Assets/Avatars/Adults/Female_Adult_08/Textures/f008_body_normal.tga",
+    "last_modified": "",
+    "fetched": "2026-10-18T22:56:11Z"
+   },
+   {
+    "path": "Assets/Avatars/Adults/Female_Adult_08/Textures/f008_head_color.tga",
+    "bytes": 12582956,
+    "git_blob_sha1": "3b23b78796a1ae82557128b85e6c6387b5c521a6",
+    "url": "https://cdn.jsdelivr.net/gh/microsoft/Microsoft-Rocketbox@0943055db6ec570bcef9f2c8b41c9e5467c808f9/Assets/Avatars/Adults/Female_Adult_08/Textures/f008_head_color.tga",
+    "last_modified": "",
+    "fetched": "2026-10-18T22:56:11Z"
+   },
+   {
+    "path": "Assets/Avatars/Adults/Female_Adult_08/Textures/f008_head_normal.tga",
+    "bytes": 12582956,
+    "git_blob_sha1": "5e7cd7482e572bf8d5015af5db4baa5f55a1fbce",
+    "url": "https://cdn.jsdelivr.net/gh/microsoft/Microsoft-Rocketbox@0943055db6ec570bcef9f2c8b41c9e5467c808f9/Assets/Avatars/Adults/Female_Adult_08/Textures/f008_head_normal.tga",
+    "last_modified": "",
+    "fetched": "2026-10-18T22:56:11Z"
+   },
+   {
+    "path": "Assets/Avatars/Adults/Female_Adult_08/Textures/f008_opacity_color.tga",
+    "bytes": 16777260,
+    "git_blob_sha1": "bb23136e3a44738487b774cdf798a0d5593a2143",
+    "url": "https://cdn.jsdelivr.net/gh/microsoft/Microsoft-Rocketbox@0943055db6ec570bcef9f2c8b41c9e5467c808f9/Assets/Avatars/Adults/Female_Adult_08/Textures/f008_opacity_color.tga",
+    "last_modified": "",
+    "fetched": "2026-10-18T22:56:11Z"
+   },
+   {
+    "path": "Assets/Avatars/Adults/Female_Adult_12/Export/Female_Adult_12.fbx",
+    "bytes": 610352,
+    "git_blob_sha1": "991062920109d72ef7ecd9aee859fc6eaadf1d67",
+    "url": "https://cdn.jsdelivr.net/gh/microsoft/Microsoft-Rocketbox@0943055db6ec570bcef9f2c8b41c9e5467c808f9/Assets/Avatars/Adults/Female_Adult_12/Export/Female_Adult_12.fbx",
+    "last_modified": "",
+    "fetched": "2026-10-18T22:56:11Z"
+   },
+   {
+    "path": "Assets/Avatars/Adults/Female_Adult_12/Textures/f012_body_color.tga",
+    "bytes": 12582956,
+    "git_blob_sha1": "8beaff6c63dd1070d4e903e6c9caeb6915f58a81",
+    "url": "https://cdn.jsdelivr.net/gh/microsoft/Microsoft-Rocketbox@0943055db6ec570bcef9f2c8b41c9e5467c808f9/Assets/Avatars/Adults/Female_Adult_12/Textures/f012_body_color.tga",
+    "last_modified": "",
+    "fetched": "2026-10-18T22:56:12Z"
+   },
+   {
+    "path": "Assets/Avatars/Adults/Female_Adult_12/Textures/f012_body_normal.tga",
+    "bytes": 12582956,
+    "git_blob_sha1": "2bacdeec46e61508369c7e7de528d35132627cb5",
+    "url": "https://cdn.jsdelivr.net/gh/microsoft/Microsoft-Rocketbox@0943055db6ec570bcef9f2c8b41c9e5467c808f9/Assets/Avatars/Adults/Female_Adult_12/Textures/f012_body_normal.tga",
+    "last_modified": "",
+    "fetched": "2026-10-18T22:56:14Z"
+   },
+   {
+    "path": "Assets/Avatars/Adults/Female_Adult_12/Textures/f012_head_color.tga",
+    "bytes": 12582956,
+    "git_blob_sha1": "e932e4e53f8f5f456d3ca85ad3a0876bbc21dcdd",
+    "url": "https://cdn.jsdelivr.net/gh/microsoft/Microsoft-Rocketbox@0943055db6ec570bcef9f2c8b41c9e5467c808f9/Assets/Avatars/Adults/Female_Adult_12/Textures/f012_head_color.tga",
+    "last_modified": "",
+    "fetched": "2026-10-18T22:56:13Z"
+   },
+   {
+    "path": "Assets/Avatars/Adults/Female_Adult_12/Textures/f012_head_normal.tga",
+    "bytes": 12582956,
+    "git_blob_sha1": "0a54cd225bc3c57af003f8dc9b6eb7a3ee66fcb2",
+    "url": "https://cdn.jsdelivr.net/gh/microsoft/Microsoft-Rocketbox@0943055db6ec570bcef9f2c8b41c9e5467c808f9/Assets/Avatars/Adults/Female_Adult_12/Textures/f012_head_normal.tga",
+    "last_modified": "",
+    "fetched": "2026-10-18T22:56:12Z"
+   },
+   {
+    "path": "Assets/Avatars/Adults/Female_Adult_12/Textures/f012_opacity_color.tga",
+    "bytes": 16777260,
+    "git_blob_sha1": "8b0f1297045b2d5a448648640a7cc88a2aa9d405",
+    "url": "https://cdn.jsdelivr.net/gh/microsoft/Microsoft-Rocketbox@0943055db6ec570bcef9f2c8b41c9e5467c808f9/Assets/Avatars/Adults/Female_Adult_12/Textures/f012_opacity_color.tga",
+    "last_modified": "",
+    "fetched": "2026-10-18T22:56:13Z"
+   },
+   {
+    "path": "Assets/Avatars/Adults/Female_Adult_14/Export/Female_Adult_14.fbx",
+    "bytes": 608528,
+    "git_blob_sha1": "869e5ce1c438f305aead7404fde21b8668053a8c",
+    "url": "https://cdn.jsdelivr.net/gh/microsoft/Microsoft-Rocketbox@0943055db6ec570bcef9f2c8b41c9e5467c808f9/Assets/Avatars/Adults/Female_Adult_14/Export/Female_Adult_14.fbx",
+    "last_modified": "",
+    "fetched": "2026-10-18T22:56:12Z"
+   },
+   {
+    "path": "Assets/Avatars/Adults/Female_Adult_14/Textures/f017_body_color.tga",
+    "bytes": 12582956,
+    "git_blob_sha1": "67b1eb46b42cdd38ae974e201003568c21472aa6",
+    "url": "https://cdn.jsdelivr.net/gh/microsoft/Microsoft-Rocketbox@0943055db6ec570bcef9f2c8b41c9e5467c808f9/Assets/Avatars/Adults/Female_Adult_14/Textures/f017_body_color.tga",
+    "last_modified": "",
+    "fetched": "2026-10-18T22:56:13Z"
+   },
+   {
+    "path": "Assets/Avatars/Adults/Female_Adult_14/Textures/f017_body_normal.tga",
+    "bytes": 12582956,
+    "git_blob_sha1": "8ccb1105c0a57e1603e8e48bf1238576f0028960",
+    "url": "https://cdn.jsdelivr.net/gh/microsoft/Microsoft-Rocketbox@0943055db6ec570bcef9f2c8b41c9e5467c808f9/Assets/Avatars/Adults/Female_Adult_14/Textures/f017_body_normal.tga",
+    "last_modified": "",
+    "fetched": "2026-10-18T22:56:13Z"
+   },
+   {
+    "path": "Assets/Avatars/Adults/Female_Adult_14/Textures/f017_head_color.tga",
+    "bytes": 12582956,
+    "git_blob_sha1": "4905123421ac87d74b15bda7e3e59c944e035e97",
+    "url": "https://cdn.jsdelivr.net/gh/microsoft/Microsoft-Rocketbox@0943055db6ec570bcef9f2c8b41c9e5467c808f9/Assets/Avatars/Adults/Female_Adult_14/Textures/f017_head_color.tga",
+    "last_modified": "",
+    "fetched": "2026-10-18T22:56:13Z"
+   },
+   {
+    "path": "Assets/Avatars/Adults/Female_Adult_14/Textures/f017_head_normal.tga",
+    "bytes": 12582956,
+    "git_blob_sha1": "d62c54b9538950bc35128be757a51679258b6f35",
+    "url": "https://cdn.jsdelivr.net/gh/microsoft/Microsoft-Rocketbox@0943055db6ec570bcef9f2c8b41c9e5467c808f9/Assets/Avatars/Adults/Female_Adult_14/Textures/f017_head_normal.tga",
+    "last_modified": "",
+    "fetched": "2026-10-18T22:56:13Z"
+   },
+   {
+    "path": "Assets/Avatars/Adults/Female_Adult_14/Textures/f017_opacity_color.tga",
+    "bytes": 16777260,
+    "git_blob_sha1": "9794bd11e6b465fcd140122863204cb9bbd7cb3b",
+    "url": "https://cdn.jsdelivr.net/gh/microsoft/Microsoft-Rocketbox@0943055db6ec570bcef9f2c8b41c9e5467c808f9/Assets/Avatars/Adults/Female_Adult_14/Textures/f017_opacity_color.tga",
+    "last_modified": "",
+    "fetched": "2026-10-18T22:56:14Z"
+   },
+   {
+    "path": "Assets/Avatars/Professions/Business_Female_01/Export/Business_Female_01.fbx",
+    "bytes": 616576,
+    "git_blob_sha1": "408977c02f0ccc970cbac76137d966569cb63914",
+    "url": "https://cdn.jsdelivr.net/gh/microsoft/Microsoft-Rocketbox@0943055db6ec570bcef9f2c8b41c9e5467c808f9/Assets/Avatars/Professions/Business_Female_01/Export/Business_Female_01.fbx",
+    "last_modified": "",
+    "fetched": "2026-10-18T22:56:13Z"
+   },
+   {
+    "path": "Assets/Avatars/Professions/Business_Female_01/Textures/f014_body_color.tga",
+    "bytes": 12582956,
+    "git_blob_sha1": "0af4f272bb58a0108eb5b67fca27a4529be9bc46",
+    "url": "https://cdn.jsdelivr.net/gh/microsoft/Microsoft-Rocketbox@0943055db6ec570bcef9f2c8b41c9e5467c808f9/Assets/Avatars/Professions/Business_Female_01/Textures/f014_body_color.tga",
+    "last_modified": "",
+    "fetched": "2026-10-18T22:56:17Z"
+   },
+   {
+    "path": "Assets/Avatars/Professions/Business_Female_01/Textures/f014_body_normal.tga",
+    "bytes": 12582956,
+    "git_blob_sha1": "d99cb1bdc7cd1f1db627bee00ff6557d8596d173",
+    "url": "https://cdn.jsdelivr.net/gh/microsoft/Microsoft-Rocketbox@0943055db6ec570bcef9f2c8b41c9e5467c808f9/Assets/Avatars/Professions/Business_Female_01/Textures/f014_body_normal.tga",
+    "last_modified": "",
+    "fetched": "2026-10-18T22:56:17Z"
+   },
+   {
+    "path": "Assets/Avatars/Professions/Business_Female_01/Textures/f014_head_color.tga",
+    "bytes": 12582956,
+    "git_blob_sha1": "e9c636056a5c8414347653757656f8af4b102b88",
+    "url": "https://cdn.jsdelivr.net/gh/microsoft/Microsoft-Rocketbox@0943055db6ec570bcef9f2c8b41c9e5467c808f9/Assets/Avatars/Professions/Business_Female_01/Textures/f014_head_color.tga",
+    "last_modified": "",
+    "fetched": "2026-10-18T22:56:19Z"
+   },
+   {
+    "path": "Assets/Avatars/Professions/Business_Female_01/Textures/f014_head_normal.tga",
+    "bytes": 12582956,
+    "git_blob_sha1": "9861572ab4b683b9bf6b025ce048385821338806",
+    "url": "https://cdn.jsdelivr.net/gh/microsoft/Microsoft-Rocketbox@0943055db6ec570bcef9f2c8b41c9e5467c808f9/Assets/Avatars/Professions/Business_Female_01/Textures/f014_head_normal.tga",
+    "last_modified": "",
+    "fetched": "2026-10-18T22:56:17Z"
+   },
+   {
+    "path": "Assets/Avatars/Professions/Business_Female_01/Textures/f014_opacity_color.tga",
+    "bytes": 16777260,
+    "git_blob_sha1": "6b87a2b0f9e53a843a39112013ef9785e0110742",
+    "url": "https://cdn.jsdelivr.net/gh/microsoft/Microsoft-Rocketbox@0943055db6ec570bcef9f2c8b41c9e5467c808f9/Assets/Avatars/Professions/Business_Female_01/Textures/f014_opacity_color.tga",
+    "last_modified": "",
+    "fetched": "2026-10-18T22:56:17Z"
+   },
+   {
+    "path": "Assets/Avatars/Professions/Business_Female_02/Export/Business_Female_02.fbx",
+    "bytes": 612848,
+    "git_blob_sha1": "b574cf754e39b1fe4bf43e02aef8e7dc6f5a82ca",
+    "url": "https://cdn.jsdelivr.net/gh/microsoft/Microsoft-Rocketbox@0943055db6ec570bcef9f2c8b41c9e5467c808f9/Assets/Avatars/Professions/Business_Female_02/Export/Business_Female_02.fbx",
+    "last_modified": "",
+    "fetched": "2026-10-18T22:56:16Z"
+   },
+   {
+    "path": "Assets/Avatars/Professions/Business_Female_02/Textures/f015_body_color.tga",
+    "bytes": 12582956,
+    "git_blob_sha1": "9a3d5fbd2b69e34628ec0220572b64cb314c51d7",
+    "url": "https://cdn.jsdelivr.net/gh/microsoft/Microsoft-Rocketbox@0943055db6ec570bcef9f2c8b41c9e5467c808f9/Assets/Avatars/Professions/Business_Female_02/Textures/f015_body_color.tga",
+    "last_modified": "",
+    "fetched": "2026-10-18T22:56:18Z"
+   },
+   {
+    "path": "Assets/Avatars/Professions/Business_Female_02/Textures/f015_body_normal.tga",
+    "bytes": 12582956,
+    "git_blob_sha1": "f8fd6f901665a43b3c46ae151734bbf1cc610ff9",
+    "url": "https://cdn.jsdelivr.net/gh/microsoft/Microsoft-Rocketbox@0943055db6ec570bcef9f2c8b41c9e5467c808f9/Assets/Avatars/Professions/Business_Female_02/Textures/f015_body_normal.tga",
+    "last_modified": "",
+    "fetched": "2026-10-18T22:56:18Z"
+   },
+   {
+    "path": "Assets/Avatars/Professions/Business_Female_02/Textures/f015_glasses_normal.tga",
+    "bytes": 393260,
+    "git_blob_sha1": "bd00a20c0ba7391d69ca3d7bad2dd0c899f7ddb7",
+    "url": "https://cdn.jsdelivr.net/gh/microsoft/Microsoft-Rocketbox@0943055db6ec570bcef9f2c8b41c9e5467c808f9/Assets/Avatars/Professions/Business_Female_02/Textures/f015_glasses_normal.tga",
+    "last_modified": "",
+    "fetched": "2026-10-18T22:56:17Z"
+   },
+   {
+    "path": "Assets/Avatars/Professions/Business_Female_02/Textures/f015_glasses_opacity_color.tga",
+    "bytes": 524332,
+    "git_blob_sha1": "4041db975842d4655e0fb76ff673ee59fd9a7c3d",
+    "url": "https://cdn.jsdelivr.net/gh/microsoft/Microsoft-Rocketbox@0943055db6ec570bcef9f2c8b41c9e5467c808f9/Assets/Avatars/Professions/Business_Female_02/Textures/f015_glasses_opacity_color.tga",
+    "last_modified": "",
+    "fetched": "2026-10-18T22:56:17Z"
+   },
+   {
+    "path": "Assets/Avatars/Professions/Business_Female_02/Textures/f015_head_color.tga",
+    "bytes": 12582956,
+    "git_blob_sha1": "41eac4aaed7ed8f36b32d53ae96599694a7fd687",
+    "url": "https://cdn.jsdelivr.net/gh/microsoft/Microsoft-Rocketbox@0943055db6ec570bcef9f2c8b41c9e5467c808f9/Assets/Avatars/Professions/Business_Female_02/Textures/f015_head_color.tga",
+    "last_modified": "",
+    "fetched": "2026-10-18T22:56:18Z"
+   },
+   {
+    "path": "Assets/Avatars/Professions/Business_Female_02/Textures/f015_head_normal.tga",
+    "bytes": 12582956,
+    "git_blob_sha1": "83b20203ee6d2597ea2626e765d350b8e94ffc69",
+    "url": "https://cdn.jsdelivr.net/gh/microsoft/Microsoft-Rocketbox@0943055db6ec570bcef9f2c8b41c9e5467c808f9/Assets/Avatars/Professions/Business_Female_02/Textures/f015_head_normal.tga",
+    "last_modified": "",
+    "fetched": "2026-10-18T22:56:18Z"
+   },
+   {
+    "path": "Assets/Avatars/Professions/Business_Female_02/Textures/f015_opacity_color.tga",
+    "bytes": 16777260,
+    "git_blob_sha1": "b96abab3f5c8fae7bd72fab26a17a31b91c70ac5",
+    "url": "https://cdn.jsdelivr.net/gh/microsoft/Microsoft-Rocketbox@0943055db6ec570bcef9f2c8b41c9e5467c808f9/Assets/Avatars/Professions/Business_Female_02/Textures/f015_opacity_color.tga",
+    "last_modified": "",
+    "fetched": "2026-10-18T22:56:18Z"
+   },
+   {
+    "path": "Assets/Avatars/Professions/Business_Male_01/Export/Business_Male_01.fbx",
+    "bytes": 520704,
+    "git_blob_sha1": "705ee1b9ce18c3ddb3e4e5850d9272f2e8607738",
+    "url": "https://cdn.jsdelivr.net/gh/microsoft/Microsoft-Rocketbox@0943055db6ec570bcef9f2c8b41c9e5467c808f9/Assets/Avatars/Professions/Business_Male_01/Export/Business_Male_01.fbx",
+    "last_modified": "",
+    "fetched": "2026-10-18T22:56:18Z"
+   },
+   {
+    "path": "Assets/Avatars/Professions/Business_Male_01/Textures/m005_body_color.tga",
+    "bytes": 12582956,
+    "git_blob_sha1": "3ae157b9ee900809770d4754cc7fd5ccefbbe106",
+    "url": "https://cdn.jsdelivr.net/gh/microsoft/Microsoft-Rocketbox@0943055db6ec570bcef9f2c8b41c9e5467c808f9/Assets/Avatars/Professions/Business_Male_01/Textures/m005_body_color.tga",
+    "last_modified": "",
+    "fetched": "2026-10-18T22:56:20Z"
+   },
+   {
+    "path": "Assets/Avatars/Professions/Business_Male_01/Textures/m005_body_normal.tga",
+    "bytes": 12582956,
+    "git_blob_sha1": "ea909bede4186c54d2dbd96ddd6534f0ea4d564c",
+    "url": "https://cdn.jsdelivr.net/gh/microsoft/Microsoft-Rocketbox@0943055db6ec570bcef9f2c8b41c9e5467c808f9/Assets/Avatars/Professions/Business_Male_01/Textures/m005_body_normal.tga",
+    "last_modified": "",
+    "fetched": "2026-10-18T22:56:19Z"
+   },
+   {
+    "path": "Assets/Avatars/Professions/Business_Male_01/Textures/m005_head_color.tga",
+    "bytes": 12582956,
+    "git_blob_sha1": "25473b6a8daf5b92f13be239ac6c758c41e9b466",
+    "url": "https://cdn.jsdelivr.net/gh/microsoft/Microsoft-Rocketbox@0943055db6ec570bcef9f2c8b41c9e5467c808f9/Assets/Avatars/Professions/Business_Male_01/Textures/m005_head_color.tga",
+    "last_modified": "",
+    "fetched": "2026-10-18T22:56:19Z"
+   },
+   {
+    "path": "Assets/Avatars/Professions/Business_Male_01/Textures/m005_head_normal.tga",
+    "bytes": 12582956,
+    "git_blob_sha1": "bfe21707c2f4393bbe7a629191b232722077b2f3",
+    "url": "https://cdn.jsdelivr.net/gh/microsoft/Microsoft-Rocketbox@0943055db6ec570bcef9f2c8b41c9e5467c808f9/Assets/Avatars/Professions/Business_Male_01/Textures/m005_head_normal.tga",
+    "last_modified": "",
+    "fetched": "2026-10-18T22:56:20Z"
+   },
+   {
+    "path": "Assets/Avatars/Professions/Business_Male_01/Textures/m005_opacity_color.tga",
+    "bytes": 4194348,
+    "git_blob_sha1": "85521bcee9b307ca431fdad86926e997ce7d3e0a",
+    "url": "https://cdn.jsdelivr.net/gh/microsoft/Microsoft-Rocketbox@0943055db6ec570bcef9f2c8b41c9e5467c808f9/Assets/Avatars/Professions/Business_Male_01/Textures/m005_opacity_color.tga",
+    "last_modified": "",
+    "fetched": "2026-10-18T22:56:19Z"
+   },
+   {
+    "path": "Assets/Avatars/Professions/Business_Male_02/Export/Business_Male_02.fbx",
+    "bytes": 521088,
+    "git_blob_sha1": "a9c2440c2ca9695fcf8b4bee950d5218ef8deda4",
+    "url": "https://cdn.jsdelivr.net/gh/microsoft/Microsoft-Rocketbox@0943055db6ec570bcef9f2c8b41c9e5467c808f9/Assets/Avatars/Professions/Business_Male_02/Export/Business_Male_02.fbx",
+    "last_modified": "",
+    "fetched": "2026-10-18T22:56:19Z"
+   },
+   {
+    "path": "Assets/Avatars/Professions/Business_Male_02/Textures/m008_body_color.tga",
+    "bytes": 12582956,
+    "git_blob_sha1": "9269c2726510ad15a348bbca9ff27ac2672353f6",
+    "url": "https://cdn.jsdelivr.net/gh/microsoft/Microsoft-Rocketbox@0943055db6ec570bcef9f2c8b41c9e5467c808f9/Assets/Avatars/Professions/Business_Male_02/Textures/m008_body_color.tga",
+    "last_modified": "",
+    "fetched": "2026-10-18T22:56:21Z"
+   },
+   {
+    "path": "Assets/Avatars/Professions/Business_Male_02/Textures/m008_body_normal.tga",
+    "bytes": 12582956,
+    "git_blob_sha1": "8f0dd6b3306fe2987035c013c75baa51bf5b0aec",
+    "url": "https://cdn.jsdelivr.net/gh/microsoft/Microsoft-Rocketbox@0943055db6ec570bcef9f2c8b41c9e5467c808f9/Assets/Avatars/Professions/Business_Male_02/Textures/m008_body_normal.tga",
+    "last_modified": "",
+    "fetched": "2026-10-18T22:56:27Z"
+   },
+   {
+    "path": "Assets/Avatars/Professions/Business_Male_02/Textures/m008_head_color.tga",
+    "bytes": 12582956,
+    "git_blob_sha1": "c5b559bf94fa6ed2cfd99393bcced92ed790ef0e",
+    "url": "https://cdn.jsdelivr.net/gh/microsoft/Microsoft-Rocketbox@0943055db6ec570bcef9f2c8b41c9e5467c808f9/Assets/Avatars/Professions/Business_Male_02/Textures/m008_head_color.tga",
+    "last_modified": "",
+    "fetched": "2026-10-18T22:56:27Z"
+   },
+   {
+    "path": "Assets/Avatars/Professions/Business_Male_02/Textures/m008_head_normal.tga",
+    "bytes": 12582956,
+    "git_blob_sha1": "b3ee673b13fef3dc00452c41863f158a901fe213",
+    "url": "https://cdn.jsdelivr.net/gh/microsoft/Microsoft-Rocketbox@0943055db6ec570bcef9f2c8b41c9e5467c808f9/Assets/Avatars/Professions/Business_Male_02/Textures/m008_head_normal.tga",
+    "last_modified": "",
+    "fetched": "2026-10-18T22:56:27Z"
+   },
+   {
+    "path": "Assets/Avatars/Professions/Business_Male_02/Textures/m008_opacity_color.tga",
+    "bytes": 16777260,
+    "git_blob_sha1": "ea9aa0391466411756111e880f0cfed25bbd7f58",
+    "url": "https://cdn.jsdelivr.net/gh/microsoft/Microsoft-Rocketbox@0943055db6ec570bcef9f2c8b41c9e5467c808f9/Assets/Avatars/Professions/Business_Male_02/Textures/m008_opacity_color.tga",
+    "last_modified": "",
+    "fetched": "2026-10-18T22:56:27Z"
+   },
+   {
+    "path": "Assets/Avatars/Professions/Business_Male_07/Export/Business_Male_07.fbx",
+    "bytes": 487360,
+    "git_blob_sha1": "875a53c8ac45a7098c7e155dfe4d45e71109899d",
+    "url": "https://cdn.jsdelivr.net/gh/microsoft/Microsoft-Rocketbox@0943055db6ec570bcef9f2c8b41c9e5467c808f9/Assets/Avatars/Professions/Business_Male_07/Export/Business_Male_07.fbx",
+    "last_modified": "",
+    "fetched": "2026-10-18T22:56:20Z"
+   },
+   {
+    "path": "Assets/Avatars/Professions/Business_Male_07/Textures/m018_body_color.tga",
+    "bytes": 12582956,
+    "git_blob_sha1": "d81c12017038658f81bc7940306a9118052f519f",
+    "url": "https://cdn.jsdelivr.net/gh/microsoft/Microsoft-Rocketbox@0943055db6ec570bcef9f2c8b41c9e5467c808f9/Assets/Avatars/Professions/Business_Male_07/Textures/m018_body_color.tga",
+    "last_modified": "",
+    "fetched": "2026-10-18T22:56:27Z"
+   },
+   {
+    "path": "Assets/Avatars/Professions/Business_Male_07/Textures/m018_body_normal.tga",
+    "bytes": 12582956,
+    "git_blob_sha1": "3f4a48d87bd43e42f0105989b1d82d7ee24e1e20",
+    "url": "https://cdn.jsdelivr.net/gh/microsoft/Microsoft-Rocketbox@0943055db6ec570bcef9f2c8b41c9e5467c808f9/Assets/Avatars/Professions/Business_Male_07/Textures/m018_body_normal.tga",
+    "last_modified": "",
+    "fetched": "2026-10-18T22:56:27Z"
+   },
+   {
+    "path": "Assets/Avatars/Professions/Business_Male_07/Textures/m018_head_color.tga",
+    "bytes": 12582956,
+    "git_blob_sha1": "22b418ad5270d11747c66f27b0217b19691d7c0a",
+    "url": "https://cdn.jsdelivr.net/gh/microsoft/Microsoft-Rocketbox@0943055db6ec570bcef9f2c8b41c9e5467c808f9/Assets/Avatars/Professions/Business_Male_07/Textures/m018_head_color.tga",
+    "last_modified": "",
+    "fetched": "2026-10-18T22:56:28Z"
+   },
+   {
+    "path": "Assets/Avatars/Professions/Business_Male_07/Textures/m018_head_normal.tga",
+    "bytes": 12582956,
+    "git_blob_sha1": "656edbd870fca950c5d03b1c9cc7cf59edaef6eb",
+    "url": "https://cdn.jsdelivr.net/gh/microsoft/Microsoft-Rocketbox@0943055db6ec570bcef9f2c8b41c9e5467c808f9/Assets/Avatars/Professions/Business_Male_07/Textures/m018_head_normal.tga",
+    "last_modified": "",
+    "fetched": "2026-10-18T22:56:28Z"
+   },
+   {
+    "path": "Assets/Avatars/Professions/Police_Male_01/Export/Police_Male_01.fbx",
+    "bytes": 602400,
+    "git_blob_sha1": "9f7125e0b457c0214e7cfe1ef3a4be7fffd0a567",
+    "url": "https://cdn.jsdelivr.net/gh/microsoft/Microsoft-Rocketbox@0943055db6ec570bcef9f2c8b41c9e5467c808f9/Assets/Avatars/Professions/Police_Male_01/Export/Police_Male_01.fbx",
+    "last_modified": "",
+    "fetched": "2026-10-18T22:56:27Z"
+   },
+   {
+    "path": "Assets/Avatars/Professions/Police_Male_01/Textures/m220_body_color.tga",
+    "bytes": 12582956,
+    "git_blob_sha1": "70959d9c199e1f463f3e237988db9dd36747578d",
+    "url": "https://cdn.jsdelivr.net/gh/microsoft/Microsoft-Rocketbox@0943055db6ec570bcef9f2c8b41c9e5467c808f9/Assets/Avatars/Professions/Police_Male_01/Textures/m220_body_color.tga",
+    "last_modified": "",
+    "fetched": "2026-10-18T22:56:28Z"
+   },
+   {
+    "path": "Assets/Avatars/Professions/Police_Male_01/Textures/m220_body_normal.tga",
+    "bytes": 12582956,
+    "git_blob_sha1": "7b6e616d62565b994d750cdadb6013ebf80ad3ab",
+    "url": "https://cdn.jsdelivr.net/gh/microsoft/Microsoft-Rocketbox@0943055db6ec570bcef9f2c8b41c9e5467c808f9/Assets/Avatars/Professions/Police_Male_01/Textures/m220_body_normal.tga",
+    "last_modified": "",
+    "fetched": "2026-10-18T22:56:28Z"
+   },
+   {
+    "path": "Assets/Avatars/Professions/Police_Male_01/Textures/m220_equipment_color.tga",
+    "bytes": 1572908,
+    "git_blob_sha1": "1bd58770e8519ec8d6eee8735c67d4f5818a4712",
+    "url": "https://cdn.jsdelivr.net/gh/microsoft/Microsoft-Rocketbox@0943055db6ec570bcef9f2c8b41c9e5467c808f9/Assets/Avatars/Professions/Police_Male_01/Textures/m220_equipment_color.tga",
+    "last_modified": "",
+    "fetched": "2026-10-18T22:56:28Z"
+   },
+   {
+    "path": "Assets/Avatars/Professions/Police_Male_01/Textures/m220_equipment_normal.tga",
+    "bytes": 1572908,
+    "git_blob_sha1": "63df73fb424f94a3ccdd2a9f31cbe0e365389741",
+    "url": "https://cdn.jsdelivr.net/gh/microsoft/Microsoft-Rocketbox@0943055db6ec570bcef9f2c8b41c9e5467c808f9/Assets/Avatars/Professions/Police_Male_01/Textures/m220_equipment_normal.tga",
+    "last_modified": "",
+    "fetched": "2026-10-18T22:56:27Z"
+   },
+   {
+    "path": "Assets/Avatars/Professions/Police_Male_01/Textures/m220_head_color.tga",
+    "bytes": 12582956,
+    "git_blob_sha1": "f9cf251380ed8822667ec6f42e05c66e406b9bf2",
+    "url": "https://cdn.jsdelivr.net/gh/microsoft/Microsoft-Rocketbox@0943055db6ec570bcef9f2c8b41c9e5467c808f9/Assets/Avatars/Professions/Police_Male_01/Textures/m220_head_color.tga",
+    "last_modified": "",
+    "fetched": "2026-10-18T22:56:29Z"
+   },
+   {
+    "path": "Assets/Avatars/Professions/Police_Male_01/Textures/m220_head_normal.tga",
+    "bytes": 12582956,
+    "git_blob_sha1": "b3e6f6684826023e54dfbf8a2f8cac3481bd6038",
+    "url": "https://cdn.jsdelivr.net/gh/microsoft/Microsoft-Rocketbox@0943055db6ec570bcef9f2c8b41c9e5467c808f9/Assets/Avatars/Professions/Police_Male_01/Textures/m220_head_normal.tga",
+    "last_modified": "",
+    "fetched": "2026-10-18T22:56:28Z"
+   },
+   {
+    "path": "Assets/Avatars/Professions/Police_Male_01/Textures/m220_pistol_color.tga",
+    "bytes": 3145772,
+    "git_blob_sha1": "18ba972ac37c4c06e0d0ae8c2315555075a80cda",
+    "url": "https://cdn.jsdelivr.net/gh/microsoft/Microsoft-Rocketbox@0943055db6ec570bcef9f2c8b41c9e5467c808f9/Assets/Avatars/Professions/Police_Male_01/Textures/m220_pistol_color.tga",
+    "last_modified": "",
+    "fetched": "2026-10-18T22:56:28Z"
+   },
+   {
+    "path": "Assets/Avatars/Professions/Police_Male_01/Textures/m220_pistol_normal.tga",
+    "bytes": 3145772,
+    "git_blob_sha1": "0f816674a215e0a94464b4b2ab3a61f2eed36114",
+    "url": "https://cdn.jsdelivr.net/gh/microsoft/Microsoft-Rocketbox@0943055db6ec570bcef9f2c8b41c9e5467c808f9/Assets/Avatars/Professions/Police_Male_01/Textures/m220_pistol_normal.tga",
+    "last_modified": "",
+    "fetched": "2026-10-18T22:56:28Z"
+   },
+   {
+    "path": "Assets/Avatars/Professions/Police_Male_05/Export/Police_Male_05.fbx",
+    "bytes": 519520,
+    "git_blob_sha1": "c397482b88291cfe404e8d76a41b7cd944e4c5b3",
+    "url": "https://cdn.jsdelivr.net/gh/microsoft/Microsoft-Rocketbox@0943055db6ec570bcef9f2c8b41c9e5467c808f9/Assets/Avatars/Professions/Police_Male_05/Export/Police_Male_05.fbx",
+    "last_modified": "",
+    "fetched": "2026-10-18T22:56:28Z"
+   },
+   {
+    "path": "Assets/Avatars/Professions/Police_Male_05/Textures/m169_body_color.tga",
+    "bytes": 12582956,
+    "git_blob_sha1": "f545ec40c2287fd0bc06ec5e07eecd4361b7e6da",
+    "url": "https://cdn.jsdelivr.net/gh/microsoft/Microsoft-Rocketbox@0943055db6ec570bcef9f2c8b41c9e5467c808f9/Assets/Avatars/Professions/Police_Male_05/Textures/m169_body_color.tga",
+    "last_modified": "",
+    "fetched": "2026-10-18T22:56:29Z"
+   },
+   {
+    "path": "Assets/Avatars/Professions/Police_Male_05/Textures/m169_body_normal.tga",
+    "bytes": 12582956,
+    "git_blob_sha1": "c49be3f8c3b8a123935b0a827a0c9c4c8d7f06cf",
+    "url": "https://cdn.jsdelivr.net/gh/microsoft/Microsoft-Rocketbox@0943055db6ec570bcef9f2c8b41c9e5467c808f9/Assets/Avatars/Professions/Police_Male_05/Textures/m169_body_normal.tga",
+    "last_modified": "",
+    "fetched": "2026-10-18T22:56:29Z"
+   },
+   {
+    "path": "Assets/Avatars/Professions/Police_Male_05/Textures/m169_head_color.tga",
+    "bytes": 12582956,
+    "git_blob_sha1": "920c0c2e44daac6e113d980e074c55f1c857fdeb",
+    "url": "https://cdn.jsdelivr.net/gh/microsoft/Microsoft-Rocketbox@0943055db6ec570bcef9f2c8b41c9e5467c808f9/Assets/Avatars/Professions/Police_Male_05/Textures/m169_head_color.tga",
+    "last_modified": "",
+    "fetched": "2026-10-18T22:56:31Z"
+   },
+   {
+    "path": "Assets/Avatars/Professions/Police_Male_05/Textures/m169_head_normal.tga",
+    "bytes": 12582956,
+    "git_blob_sha1": "022bcf8867e7ab60d53cb144ba24d5a16fa4fe08",
+    "url": "https://cdn.jsdelivr.net/gh/microsoft/Microsoft-Rocketbox@0943055db6ec570bcef9f2c8b41c9e5467c808f9/Assets/Avatars/Professions/Police_Male_05/Textures/m169_head_normal.tga",
+    "last_modified": "",
+    "fetched": "2026-10-18T22:56:30Z"
+   },
+   {
+    "path": "Assets/Avatars/Professions/Security_Female_01/Export/Security_Female_01.fbx",
+    "bytes": 626544,
+    "git_blob_sha1": "280c06f131efeefde8da3bf91a1264e72e6cbd58",
+    "url": "https://cdn.jsdelivr.net/gh/microsoft/Microsoft-Rocketbox@0943055db6ec570bcef9f2c8b41c9e5467c808f9/Assets/Avatars/Professions/Security_Female_01/Export/Security_Female_01.fbx",
+    "last_modified": "",
+    "fetched": "2026-10-18T22:56:29Z"
+   },
+   {
+    "path": "Assets/Avatars/Professions/Security_Female_01/Textures/f170_body_color.tga",
+    "bytes": 12582956,
+    "git_blob_sha1": "8971067dc0b6b33ccc2c9e70e7c93d6ee8d9775f",
+    "url": "https://cdn.jsdelivr.net/gh/microsoft/Microsoft-Rocketbox@0943055db6ec570bcef9f2c8b41c9e5467c808f9/Assets/Avatars/Professions/Security_Female_01/Textures/f170_body_color.tga",
+    "last_modified": "",
+    "fetched": "2026-10-18T22:56:30Z"
+   },
+   {
+    "path": "Assets/Avatars/Professions/Security_Female_01/Textures/f170_body_normal.tga",
+    "bytes": 12582956,
+    "git_blob_sha1": "e83475fc86de61238c084d2cbf2f85415b55ca3e",
+    "url": "https://cdn.jsdelivr.net/gh/microsoft/Microsoft-Rocketbox@0943055db6ec570bcef9f2c8b41c9e5467c808f9/Assets/Avatars/Professions/Security_Female_01/Textures/f170_body_normal.tga",
+    "last_modified": "",
+    "fetched": "2026-10-18T22:56:30Z"
+   },
+   {
+    "path": "Assets/Avatars/Professions/Security_Female_01/Textures/f170_hat_color.tga",
+    "bytes": 6291500,
+    "git_blob_sha1": "efd7c886f7f0bc14fcb23fe74069de470ebb0e73",
+    "url": "https://cdn.jsdelivr.net/gh/microsoft/Microsoft-Rocketbox@0943055db6ec570bcef9f2c8b41c9e5467c808f9/Assets/Avatars/Professions/Security_Female_01/Textures/f170_hat_color.tga",
+    "last_modified": "",
+    "fetched": "2026-10-18T22:56:30Z"
+   },
+   {
+    "path": "Assets/Avatars/Professions/Security_Female_01/Textures/f170_hat_normal.tga",
+    "bytes": 6291500,
+    "git_blob_sha1": "1b091d2ab48f55a45055deaa39d4137b58d26312",
+    "url": "https://cdn.jsdelivr.net/gh/microsoft/Microsoft-Rocketbox@0943055db6ec570bcef9f2c8b41c9e5467c808f9/Assets/Avatars/Professions/Security_Female_01/Textures/f170_hat_normal.tga",
+    "last_modified": "",
+    "fetched": "2026-10-18T22:56:30Z"
+   },
+   {
+    "path": "Assets/Avatars/Professions/Security_Female_01/Textures/f170_head_color.tga",
+    "bytes": 12582956,
+    "git_blob_sha1": "6ce3ce689f5960fe0f657d5b1755e6c1795b09d0",
+    "url": "https://cdn.jsdelivr.net/gh/microsoft/Microsoft-Rocketbox@0943055db6ec570bcef9f2c8b41c9e5467c808f9/Assets/Avatars/Professions/Security_Female_01/Textures/f170_head_color.tga",
+    "last_modified": "",
+    "fetched": "2026-10-18T22:56:30Z"
+   },
+   {
+    "path": "Assets/Avatars/Professions/Security_Female_01/Textures/f170_head_normal.tga",
+    "bytes": 12582956,
+    "git_blob_sha1": "64cc55fdb5d6ff8b6bae14d8cf16b363e2db75fa",
+    "url": "https://cdn.jsdelivr.net/gh/microsoft/Microsoft-Rocketbox@0943055db6ec570bcef9f2c8b41c9e5467c808f9/Assets/Avatars/Professions/Security_Female_01/Textures/f170_head_normal.tga",
+    "last_modified": "",
+    "fetched": "2026-10-18T22:56:30Z"
+   },
+   {
+    "path": "Assets/Avatars/Professions/Security_Female_01/Textures/f170_pistol_color.tga",
+    "bytes": 3145772,
+    "git_blob_sha1": "18ba972ac37c4c06e0d0ae8c2315555075a80cda",
+    "url": "https://cdn.jsdelivr.net/gh/microsoft/Microsoft-Rocketbox@0943055db6ec570bcef9f2c8b41c9e5467c808f9/Assets/Avatars/Professions/Security_Female_01/Textures/f170_pistol_color.tga",
+    "last_modified": "",
+    "fetched": "2026-10-18T22:56:30Z"
+   },
+   {
+    "path": "Assets/Avatars/Professions/Security_Female_01/Textures/f170_pistol_normal.tga",
+    "bytes": 3145772,
+    "git_blob_sha1": "0f816674a215e0a94464b4b2ab3a61f2eed36114",
+    "url": "https://cdn.jsdelivr.net/gh/microsoft/Microsoft-Rocketbox@0943055db6ec570bcef9f2c8b41c9e5467c808f9/Assets/Avatars/Professions/Security_Female_01/Textures/f170_pistol_normal.tga",
+    "last_modified": "",
+    "fetched": "2026-10-18T22:56:31Z"
+   },
+   {
+    "path": "Assets/Avatars/Professions/Medical_Female_01/Export/Medical_Female_01.fbx",
+    "bytes": 583200,
+    "git_blob_sha1": "dad7fc77e6c1f33404f0ee0d1dbfb885de88cc35",
+    "url": "https://cdn.jsdelivr.net/gh/microsoft/Microsoft-Rocketbox@0943055db6ec570bcef9f2c8b41c9e5467c808f9/Assets/Avatars/Professions/Medical_Female_01/Export/Medical_Female_01.fbx",
+    "last_modified": "",
+    "fetched": "2026-10-18T22:56:30Z"
+   },
+   {
+    "path": "Assets/Avatars/Professions/Medical_Female_01/Textures/f152_body_color.tga",
+    "bytes": 12582956,
+    "git_blob_sha1": "6eda5f78c726625bad60516b742e524637ee3459",
+    "url": "https://cdn.jsdelivr.net/gh/microsoft/Microsoft-Rocketbox@0943055db6ec570bcef9f2c8b41c9e5467c808f9/Assets/Avatars/Professions/Medical_Female_01/Textures/f152_body_color.tga",
+    "last_modified": "",
+    "fetched": "2026-10-18T22:56:38Z"
+   },
+   {
+    "path": "Assets/Avatars/Professions/Medical_Female_01/Textures/f152_body_normal.tga",
+    "bytes": 12582956,
+    "git_blob_sha1": "0b2fbae207bf23bea64132abdeef321f18b8ac13",
+    "url": "https://cdn.jsdelivr.net/gh/microsoft/Microsoft-Rocketbox@0943055db6ec570bcef9f2c8b41c9e5467c808f9/Assets/Avatars/Professions/Medical_Female_01/Textures/f152_body_normal.tga",
+    "last_modified": "",
+    "fetched": "2026-10-18T22:56:38Z"
+   },
+   {
+    "path": "Assets/Avatars/Professions/Medical_Female_01/Textures/f152_head_color.tga",
+    "bytes": 12582956,
+    "git_blob_sha1": "13a42d44b341c9f122230bfd16868d7e3dc619d9",
+    "url": "https://cdn.jsdelivr.net/gh/microsoft/Microsoft-Rocketbox@0943055db6ec570bcef9f2c8b41c9e5467c808f9/Assets/Avatars/Professions/Medical_Female_01/Textures/f152_head_color.tga",
+    "last_modified": "",
+    "fetched": "2026-10-18T22:56:38Z"
+   },
+   {
+    "path": "Assets/Avatars/Professions/Medical_Female_01/Textures/f152_head_normal.tga",
+    "bytes": 12582956,
+    "git_blob_sha1": "781f6c1bb8bd3e5c4422a323ea0acb2c8afbef44",
+    "url": "https://cdn.jsdelivr.net/gh/microsoft/Microsoft-Rocketbox@0943055db6ec570bcef9f2c8b41c9e5467c808f9/Assets/Avatars/Professions/Medical_Female_01/Textures/f152_head_normal.tga",
+    "last_modified": "",
+    "fetched": "2026-10-18T22:56:38Z"
+   },
+   {
+    "path": "Assets/Avatars/Professions/Medical_Female_01/Textures/f152_opacity_color.tga",
+    "bytes": 16777260,
+    "git_blob_sha1": "c2ad85f17b180e2a1da5a08c0b49130222b7af7a",
+    "url": "https://cdn.jsdelivr.net/gh/microsoft/Microsoft-Rocketbox@0943055db6ec570bcef9f2c8b41c9e5467c808f9/Assets/Avatars/Professions/Medical_Female_01/Textures/f152_opacity_color.tga",
+    "last_modified": "",
+    "fetched": "2026-10-18T22:56:38Z"
+   },
+   {
+    "path": "Assets/Avatars/Professions/Medical_Female_02/Export/Medical_Female_02.fbx",
+    "bytes": 629008,
+    "git_blob_sha1": "1a7f1f167dd31ce8e9f8f9af7fe94036ee817d63",
+    "url": "https://cdn.jsdelivr.net/gh/microsoft/Microsoft-Rocketbox@0943055db6ec570bcef9f2c8b41c9e5467c808f9/Assets/Avatars/Professions/Medical_Female_02/Export/Medical_Female_02.fbx",
+    "last_modified": "",
+    "fetched": "2026-10-18T22:56:31Z"
+   },
+   {
+    "path": "Assets/Avatars/Professions/Medical_Female_02/Textures/f153_body_color.tga",
+    "bytes": 12582956,
+    "git_blob_sha1": "c2440cb565374f0e9780a9f36b14e286d8b77f58",
+    "url": "https://cdn.jsdelivr.net/gh/microsoft/Microsoft-Rocketbox@0943055db6ec570bcef9f2c8b41c9e5467c808f9/Assets/Avatars/Professions/Medical_Female_02/Textures/f153_body_color.tga",
+    "last_modified": "",
+    "fetched": "2026-10-18T22:56:38Z"
+   },
+   {
+    "path": "Assets/Avatars/Professions/Medical_Female_02/Textures/f153_body_normal.tga",
+    "bytes": 12582956,
+    "git_blob_sha1": "d5d213541c7e7405b08caf2a1c4de0bb7f3f2c00",
+    "url": "https://cdn.jsdelivr.net/gh/microsoft/Microsoft-Rocketbox@0943055db6ec570bcef9f2c8b41c9e5467c808f9/Assets/Avatars/Professions/Medical_Female_02/Textures/f153_body_normal.tga",
+    "last_modified": "",
+    "fetched": "2026-10-18T22:56:38Z"
+   },
+   {
+    "path": "Assets/Avatars/Professions/Medical_Female_02/Textures/f153_head_color.tga",
+    "bytes": 12582956,
+    "git_blob_sha1": "6a51a9a4970b1c8fbc5829ed8e88ad9c394aa3cb",
+    "url": "https://cdn.jsdelivr.net/gh/microsoft/Microsoft-Rocketbox@0943055db6ec570bcef9f2c8b41c9e5467c808f9/Assets/Avatars/Professions/Medical_Female_02/Textures/f153_head_color.tga",
+    "last_modified": "",
+    "fetched": "2026-10-18T22:56:39Z"
+   },
+   {
+    "path": "Assets/Avatars/Professions/Medical_Female_02/Textures/f153_head_normal.tga",
+    "bytes": 12582956,
+    "git_blob_sha1": "c1cfd135a3866a36ecced60923435a61a450fbe9",
+    "url": "https://cdn.jsdelivr.net/gh/microsoft/Microsoft-Rocketbox@0943055db6ec570bcef9f2c8b41c9e5467c808f9/Assets/Avatars/Professions/Medical_Female_02/Textures/f153_head_normal.tga",
+    "last_modified": "",
+    "fetched": "2026-10-18T22:56:39Z"
+   },
+   {
+    "path": "Assets/Avatars/Professions/Medical_Female_02/Textures/f153_opacity_color.tga",
+    "bytes": 2097196,
+    "git_blob_sha1": "e3d2d54055c606fac90d5c176a71377bd8d8bf60",
+    "url": "https://cdn.jsdelivr.net/gh/microsoft/Microsoft-Rocketbox@0943055db6ec570bcef9f2c8b41c9e5467c808f9/Assets/Avatars/Professions/Medical_Female_02/Textures/f153_opacity_color.tga",
+    "last_modified": "",
+    "fetched": "2026-10-18T22:56:38Z"
+   },
+   {
+    "path": "Assets/Avatars/Professions/Medical_Female_02/Textures/f153_stetoskop_color.tga",
+    "bytes": 786476,
+    "git_blob_sha1": "9e5a7f7d898bdf8a1ec046dce5591664966ee0d9",
+    "url": "https://cdn.jsdelivr.net/gh/microsoft/Microsoft-Rocketbox@0943055db6ec570bcef9f2c8b41c9e5467c808f9/Assets/Avatars/Professions/Medical_Female_02/Textures/f153_stetoskop_color.tga",
+    "last_modified": "",
+    "fetched": "2026-10-18T22:56:39Z"
+   },
+   {
+    "path": "Assets/Avatars/Professions/Medical_Female_02/Textures/f153_stetoskop_normal.tga",
+    "bytes": 786476,
+    "git_blob_sha1": "9aa25950dab804901f2440ef453b9fe52470169d",
+    "url": "https://cdn.jsdelivr.net/gh/microsoft/Microsoft-Rocketbox@0943055db6ec570bcef9f2c8b41c9e5467c808f9/Assets/Avatars/Professions/Medical_Female_02/Textures/f153_stetoskop_normal.tga",
+    "last_modified": "",
+    "fetched": "2026-10-18T22:56:39Z"
+   },
+   {
+    "path": "Assets/Avatars/Professions/Medical_Male_02/Export/Medical_Male_02.fbx",
+    "bytes": 542416,
+    "git_blob_sha1": "d3106c31cc3972dbbdb832a1cb36009df7485fca",
+    "url": "https://cdn.jsdelivr.net/gh/microsoft/Microsoft-Rocketbox@0943055db6ec570bcef9f2c8b41c9e5467c808f9/Assets/Avatars/Professions/Medical_Male_02/Export/Medical_Male_02.fbx",
+    "last_modified": "",
+    "fetched": "2026-10-18T22:56:39Z"
+   },
+   {
+    "path": "Assets/Avatars/Professions/Medical_Male_02/Textures/m154_body_normal.tga",
+    "bytes": 12582956,
+    "git_blob_sha1": "e9b3f94cdbaf5a280cfbd62939c668ecd92d8a6f",
+    "url": "https://cdn.jsdelivr.net/gh/microsoft/Microsoft-Rocketbox@0943055db6ec570bcef9f2c8b41c9e5467c808f9/Assets/Avatars/Professions/Medical_Male_02/Textures/m154_body_normal.tga",
+    "last_modified": "",
+    "fetched": "2026-10-18T22:56:39Z"
+   },
+   {
+    "path": "Assets/Avatars/Professions/Medical_Male_02/Textures/m154_head_color.tga",
+    "bytes": 12582956,
+    "git_blob_sha1": "5529918adebc20d594946fb078be05324e8a4468",
+    "url": "https://cdn.jsdelivr.net/gh/microsoft/Microsoft-Rocketbox@0943055db6ec570bcef9f2c8b41c9e5467c808f9/Assets/Avatars/Professions/Medical_Male_02/Textures/m154_head_color.tga",
+    "last_modified": "",
+    "fetched": "2026-10-18T22:56:41Z"
+   },
+   {
+    "path": "Assets/Avatars/Professions/Medical_Male_02/Textures/m154_head_normal.tga",
+    "bytes": 12582956,
+    "git_blob_sha1": "9b5ebc412332a2b26cb7ea53fc0904701154a110",
+    "url": "https://cdn.jsdelivr.net/gh/microsoft/Microsoft-Rocketbox@0943055db6ec570bcef9f2c8b41c9e5467c808f9/Assets/Avatars/Professions/Medical_Male_02/Textures/m154_head_normal.tga",
+    "last_modified": "",
+    "fetched": "2026-10-18T22:56:39Z"
+   },
+   {
+    "path": "Assets/Avatars/Professions/Medical_Male_02/Textures/m154_opacity_color.tga",
+    "bytes": 16777260,
+    "git_blob_sha1": "5b304a95d22629e6d9abf3e6515a7e6b236708f6",
+    "url": "https://cdn.jsdelivr.net/gh/microsoft/Microsoft-Rocketbox@0943055db6ec570bcef9f2c8b41c9e5467c808f9/Assets/Avatars/Professions/Medical_Male_02/Textures/m154_opacity_color.tga",
+    "last_modified": "",
+    "fetched": "2026-10-18T22:56:41Z"
+   },
+   {
+    "path": "Assets/Avatars/Professions/Medical_Male_04/Export/Medical_Male_04.fbx",
+    "bytes": 580928,
+    "git_blob_sha1": "3917f4052beeb59df0de3a40b90af92e9d2670b1",
+    "url": "https://cdn.jsdelivr.net/gh/microsoft/Microsoft-Rocketbox@0943055db6ec570bcef9f2c8b41c9e5467c808f9/Assets/Avatars/Professions/Medical_Male_04/Export/Medical_Male_04.fbx",
+    "last_modified": "",
+    "fetched": "2026-10-18T22:56:39Z"
+   },
+   {
+    "path": "Assets/Avatars/Professions/Medical_Male_04/Textures/m162_body_color.tga",
+    "bytes": 12582956,
+    "git_blob_sha1": "18f7b6bde75d89befb56160b676552e30afb4f31",
+    "url": "https://cdn.jsdelivr.net/gh/microsoft/Microsoft-Rocketbox@0943055db6ec570bcef9f2c8b41c9e5467c808f9/Assets/Avatars/Professions/Medical_Male_04/Textures/m162_body_color.tga",
+    "last_modified": "",
+    "fetched": "2026-10-18T22:56:41Z"
+   },
+   {
+    "path": "Assets/Avatars/Professions/Medical_Male_04/Textures/m162_body_normal.tga",
+    "bytes": 12582956,
+    "git_blob_sha1": "73d511454ba0d7e67c076b78976348608c745fbc",
+    "url": "https://cdn.jsdelivr.net/gh/microsoft/Microsoft-Rocketbox@0943055db6ec570bcef9f2c8b41c9e5467c808f9/Assets/Avatars/Professions/Medical_Male_04/Textures/m162_body_normal.tga",
+    "last_modified": "",
+    "fetched": "2026-10-18T22:56:40Z"
+   },
+   {
+    "path": "Assets/Avatars/Professions/Medical_Male_04/Textures/m162_head_color.tga",
+    "bytes": 12582956,
+    "git_blob_sha1": "02f877e92d9f698a7bc63e0faae263edffe24142",
+    "url": "https://cdn.jsdelivr.net/gh/microsoft/Microsoft-Rocketbox@0943055db6ec570bcef9f2c8b41c9e5467c808f9/Assets/Avatars/Professions/Medical_Male_04/Textures/m162_head_color.tga",
+    "last_modified": "",
+    "fetched": "2026-10-18T22:56:40Z"
+   },
+   {
+    "path": "Assets/Avatars/Professions/Medical_Male_04/Textures/m162_head_normal.tga",
+    "bytes": 12582956,
+    "git_blob_sha1": "e55f53d155adc6170c7d209ca4e1fdd3960ad386",
+    "url": "https://cdn.jsdelivr.net/gh/microsoft/Microsoft-Rocketbox@0943055db6ec570bcef9f2c8b41c9e5467c808f9/Assets/Avatars/Professions/Medical_Male_04/Textures/m162_head_normal.tga",
+    "last_modified": "",
+    "fetched": "2026-10-18T22:56:40Z"
+   },
+   {
+    "path": "Assets/Avatars/Professions/Medical_Male_04/Textures/m162_protection_color.tga",
+    "bytes": 12582956,
+    "git_blob_sha1": "e2ee1f8759cdccf551827f7e971e7ef7f6e8adb7",
+    "url": "https://cdn.jsdelivr.net/gh/microsoft/Microsoft-Rocketbox@0943055db6ec570bcef9f2c8b41c9e5467c808f9/Assets/Avatars/Professions/Medical_Male_04/Textures/m162_protection_color.tga",
+    "last_modified": "",
+    "fetched": "2026-10-18T22:56:41Z"
+   },
+   {
+    "path": "Assets/Avatars/Professions/Medical_Male_04/Textures/m162_protection_normal.tga",
+    "bytes": 12582956,
+    "git_blob_sha1": "93e48ab1e03764d7943640a72241c9f5df27d5ae",
+    "url": "https://cdn.jsdelivr.net/gh/microsoft/Microsoft-Rocketbox@0943055db6ec570bcef9f2c8b41c9e5467c808f9/Assets/Avatars/Professions/Medical_Male_04/Textures/m162_protection_normal.tga",
+    "last_modified": "",
+    "fetched": "2026-10-18T22:56:41Z"
+   },
+   {
+    "path": "Assets/Avatars/Professions/Fire_Male_03/Export/Fire_Male_03.fbx",
+    "bytes": 596944,
+    "git_blob_sha1": "0dbb0406e06582c48094dcbbbeca779dca9674dd",
+    "url": "https://cdn.jsdelivr.net/gh/microsoft/Microsoft-Rocketbox@0943055db6ec570bcef9f2c8b41c9e5467c808f9/Assets/Avatars/Professions/Fire_Male_03/Export/Fire_Male_03.fbx",
+    "last_modified": "",
+    "fetched": "2026-10-18T22:56:41Z"
+   },
+   {
+    "path": "Assets/Avatars/Professions/Fire_Male_03/Textures/m134_body_color.tga",
+    "bytes": 12582956,
+    "git_blob_sha1": "2834b94d06c5d4e40e6eb8b36ffa0779c4fa95db",
+    "url": "https://cdn.jsdelivr.net/gh/microsoft/Microsoft-Rocketbox@0943055db6ec570bcef9f2c8b41c9e5467c808f9/Assets/Avatars/Professions/Fire_Male_03/Textures/m134_body_color.tga",
+    "last_modified": "",
+    "fetched": "2026-10-18T22:56:41Z"
+   },
+   {
+    "path": "Assets/Avatars/Professions/Fire_Male_03/Textures/m134_body_normal.tga",
+    "bytes": 12582956,
+    "git_blob_sha1": "edfc52361097a92fa255209c978cf1d645c6715d",
+    "url": "https://cdn.jsdelivr.net/gh/microsoft/Microsoft-Rocketbox@0943055db6ec570bcef9f2c8b41c9e5467c808f9/Assets/Avatars/Professions/Fire_Male_03/Textures/m134_body_normal.tga",
+    "last_modified": "",
+    "fetched": "2026-10-18T22:56:42Z"
+   },
+   {
+    "path": "Assets/Avatars/Professions/Fire_Male_03/Textures/m134_head_color.tga",
+    "bytes": 12582956,
+    "git_blob_sha1": "585835c944e2d225c6cef4d727e50892e91a776f",
+    "url": "https://cdn.jsdelivr.net/gh/microsoft/Microsoft-Rocketbox@0943055db6ec570bcef9f2c8b41c9e5467c808f9/Assets/Avatars/Professions/Fire_Male_03/Textures/m134_head_color.tga",
+    "last_modified": "",
+    "fetched": "2026-10-18T22:56:48Z"
+   },
+   {
+    "path": "Assets/Avatars/Professions/Fire_Male_03/Textures/m134_head_normal.tga",
+    "bytes": 12582956,
+    "git_blob_sha1": "81337ea0fd5a0becd7cfc68eef62f19ab6e690c6",
+    "url": "https://cdn.jsdelivr.net/gh/microsoft/Microsoft-Rocketbox@0943055db6ec570bcef9f2c8b41c9e5467c808f9/Assets/Avatars/Professions/Fire_Male_03/Textures/m134_head_normal.tga",
+    "last_modified": "",
+    "fetched": "2026-10-18T22:56:42Z"
+   },
+   {
+    "path": "Assets/Avatars/Professions/Fire_Male_03/Textures/m134_helmet_color.tga",
+    "bytes": 3145772,
+    "git_blob_sha1": "eee694ecbc117565bca8be7b9fe3d49d677011e8",
+    "url": "https://cdn.jsdelivr.net/gh/microsoft/Microsoft-Rocketbox@0943055db6ec570bcef9f2c8b41c9e5467c808f9/Assets/Avatars/Professions/Fire_Male_03/Textures/m134_helmet_color.tga",
+    "last_modified": "",
+    "fetched": "2026-10-18T22:56:42Z"
+   },
+   {
+    "path": "Assets/Avatars/Professions/Fire_Male_03/Textures/m134_helmet_normal.tga",
+    "bytes": 3145772,
+    "git_blob_sha1": "f22c956aa4203438264b1f37eb87fad553c3aa82",
+    "url": "https://cdn.jsdelivr.net/gh/microsoft/Microsoft-Rocketbox@0943055db6ec570bcef9f2c8b41c9e5467c808f9/Assets/Avatars/Professions/Fire_Male_03/Textures/m134_helmet_normal.tga",
+    "last_modified": "",
+    "fetched": "2026-10-18T22:56:42Z"
+   },
+   {
+    "path": "Assets/Avatars/Professions/Fire_Female_01/Export/Fire_Female_01.fbx",
+    "bytes": 763632,
+    "git_blob_sha1": "a4ee8ace11d9599fd86853d94efbe84a553e8d4f",
+    "url": "https://cdn.jsdelivr.net/gh/microsoft/Microsoft-Rocketbox@0943055db6ec570bcef9f2c8b41c9e5467c808f9/Assets/Avatars/Professions/Fire_Female_01/Export/Fire_Female_01.fbx",
+    "last_modified": "",
+    "fetched": "2026-10-18T22:56:42Z"
+   },
+   {
+    "path": "Assets/Avatars/Professions/Fire_Female_01/Textures/m131_body_color.tga",
+    "bytes": 12582956,
+    "git_blob_sha1": "b6b74adc36297eb858af416c4630103cf4e89891",
+    "url": "https://cdn.jsdelivr.net/gh/microsoft/Microsoft-Rocketbox@0943055db6ec570bcef9f2c8b41c9e5467c808f9/Assets/Avatars/Professions/Fire_Female_01/Textures/m131_body_color.tga",
+    "last_modified": "",
+    "fetched": "2026-10-18T22:56:48Z"
+   },
+   {
+    "path": "Assets/Avatars/Professions/Fire_Female_01/Textures/m131_body_normal.tga",
+    "bytes": 12582956,
+    "git_blob_sha1": "3994a059ee8ef051071bf680c467bbab49bf576c",
+    "url": "https://cdn.jsdelivr.net/gh/microsoft/Microsoft-Rocketbox@0943055db6ec570bcef9f2c8b41c9e5467c808f9/Assets/Avatars/Professions/Fire_Female_01/Textures/m131_body_normal.tga",
+    "last_modified": "",
+    "fetched": "2026-10-18T22:56:48Z"
+   },
+   {
+    "path": "Assets/Avatars/Professions/Fire_Female_01/Textures/m131_flashlight_color.tga",
+    "bytes": 786476,
+    "git_blob_sha1": "5010eafcfdb4c84483fc2c827af76669b9b8c79e",
+    "url": "https://cdn.jsdelivr.net/gh/microsoft/Microsoft-Rocketbox@0943055db6ec570bcef9f2c8b41c9e5467c808f9/Assets/Avatars/Professions/Fire_Female_01/Textures/m131_flashlight_color.tga",
+    "last_modified": "",
+    "fetched": "2026-10-18T22:56:42Z"
+   },
+   {
+    "path": "Assets/Avatars/Professions/Fire_Female_01/Textures/m131_flashlight_normal.tga",
+    "bytes": 786476,
+    "git_blob_sha1": "3d69d64a09a66e4d0ac318e9beb76136730d72c9",
+    "url": "https://cdn.jsdelivr.net/gh/microsoft/Microsoft-Rocketbox@0943055db6ec570bcef9f2c8b41c9e5467c808f9/Assets/Avatars/Professions/Fire_Female_01/Textures/m131_flashlight_normal.tga",
+    "last_modified": "",
+    "fetched": "2026-10-18T22:56:43Z"
+   },
+   {
+    "path": "Assets/Avatars/Professions/Fire_Female_01/Textures/m131_head_color.tga",
+    "bytes": 12582956,
+    "git_blob_sha1": "527089948e29a739c052d68612b61cc0dc54db15",
+    "url": "https://cdn.jsdelivr.net/gh/microsoft/Microsoft-Rocketbox@0943055db6ec570bcef9f2c8b41c9e5467c808f9/Assets/Avatars/Professions/Fire_Female_01/Textures/m131_head_color.tga",
+    "last_modified": "",
+    "fetched": "2026-10-18T22:56:49Z"
+   },
+   {
+    "path": "Assets/Avatars/Professions/Fire_Female_01/Textures/m131_head_normal.tga",
+    "bytes": 12582956,
+    "git_blob_sha1": "6f4cf7622416921d7bf087c654b10f6496aef371",
+    "url": "https://cdn.jsdelivr.net/gh/microsoft/Microsoft-Rocketbox@0943055db6ec570bcef9f2c8b41c9e5467c808f9/Assets/Avatars/Professions/Fire_Female_01/Textures/m131_head_normal.tga",
+    "last_modified": "",
+    "fetched": "2026-10-18T22:56:49Z"
+   },
+   {
+    "path": "Assets/Avatars/Professions/Fire_Female_01/Textures/m131_helmet_color.tga",
+    "bytes": 3145772,
+    "git_blob_sha1": "19068edc11e187b29b2cdb1c4ef80a10f616d780",
+    "url": "https://cdn.jsdelivr.net/gh/microsoft/Microsoft-Rocketbox@0943055db6ec570bcef9f2c8b41c9e5467c808f9/Assets/Avatars/Professions/Fire_Female_01/Textures/m131_helmet_color.tga",
+    "last_modified": "",
+    "fetched": "2026-10-18T22:56:47Z"
+   },
+   {
+    "path": "Assets/Avatars/Professions/Fire_Female_01/Textures/m131_helmet_normal.tga",
+    "bytes": 3145772,
+    "git_blob_sha1": "2bd5840308e31d024080f2eb6e612118231740e3",
+    "url": "https://cdn.jsdelivr.net/gh/microsoft/Microsoft-Rocketbox@0943055db6ec570bcef9f2c8b41c9e5467c808f9/Assets/Avatars/Professions/Fire_Female_01/Textures/m131_helmet_normal.tga",
+    "last_modified": "",
+    "fetched": "2026-10-18T22:56:48Z"
+   },
+   {
+    "path": "Assets/Avatars/Professions/Fire_Female_01/Textures/m131_mask_color.tga",
+    "bytes": 6291500,
+    "git_blob_sha1": "4b1b834482822b72d64990675d7cd260d1b3c78d",
+    "url": "https://cdn.jsdelivr.net/gh/microsoft/Microsoft-Rocketbox@0943055db6ec570bcef9f2c8b41c9e5467c808f9/Assets/Avatars/Professions/Fire_Female_01/Textures/m131_mask_color.tga",
+    "last_modified": "",
+    "fetched": "2026-10-18T22:56:49Z"
+   },
+   {
+    "path": "Assets/Avatars/Professions/Fire_Female_01/Textures/m131_mask_normal.tga",
+    "bytes": 6291500,
+    "git_blob_sha1": "f49c8d96e46a1124401e30a42e76bd4f3db05aa0",
+    "url": "https://cdn.jsdelivr.net/gh/microsoft/Microsoft-Rocketbox@0943055db6ec570bcef9f2c8b41c9e5467c808f9/Assets/Avatars/Professions/Fire_Female_01/Textures/m131_mask_normal.tga",
+    "last_modified": "",
+    "fetched": "2026-10-18T22:56:49Z"
+   },
+   {
+    "path": "Assets/Avatars/Professions/Fire_Female_01/Textures/m131_opacity_color.tga",
+    "bytes": 1048620,
+    "git_blob_sha1": "824c7014a4be844e5541927da4b354a3c4b70cb5",
+    "url": "https://cdn.jsdelivr.net/gh/microsoft/Microsoft-Rocketbox@0943055db6ec570bcef9f2c8b41c9e5467c808f9/Assets/Avatars/Professions/Fire_Female_01/Textures/m131_opacity_color.tga",
+    "last_modified": "",
+    "fetched": "2026-10-18T22:56:49Z"
+   },
+   {
+    "path": "Assets/Avatars/Professions/Fire_Female_01/Textures/m131_opacity_normal.tga",
+    "bytes": 786476,
+    "git_blob_sha1": "d43a865c3aed0bf00b0bd7c2f092cc6385e63204",
+    "url": "https://cdn.jsdelivr.net/gh/microsoft/Microsoft-Rocketbox@0943055db6ec570bcef9f2c8b41c9e5467c808f9/Assets/Avatars/Professions/Fire_Female_01/Textures/m131_opacity_normal.tga",
+    "last_modified": "",
+    "fetched": "2026-10-18T22:56:48Z"
+   },
+   {
+    "path": "Assets/Avatars/Professions/Construction_Male_01/Export/Construction_Male_01.fbx",
+    "bytes": 676496,
+    "git_blob_sha1": "cfcf667eb5c712e5a1510a2ea3e46d157b49ea42",
+    "url": "https://cdn.jsdelivr.net/gh/microsoft/Microsoft-Rocketbox@0943055db6ec570bcef9f2c8b41c9e5467c808f9/Assets/Avatars/Professions/Construction_Male_01/Export/Construction_Male_01.fbx",
+    "last_modified": "",
+    "fetched": "2026-10-18T22:56:49Z"
+   },
+   {
+    "path": "Assets/Avatars/Professions/Construction_Male_01/Textures/m111_body_color.tga",
+    "bytes": 12582956,
+    "git_blob_sha1": "ea180a862d949f5f16c1c430362ae199b8d572df",
+    "url": "https://cdn.jsdelivr.net/gh/microsoft/Microsoft-Rocketbox@0943055db6ec570bcef9f2c8b41c9e5467c808f9/Assets/Avatars/Professions/Construction_Male_01/Textures/m111_body_color.tga",
+    "last_modified": "",
+    "fetched": "2026-10-18T22:56:49Z"
+   },
+   {
+    "path": "Assets/Avatars/Professions/Construction_Male_01/Textures/m111_body_normal.tga",
+    "bytes": 12582956,
+    "git_blob_sha1": "500a390f9b8e390d153470e8272d91a48b2b8dd7",
+    "url": "https://cdn.jsdelivr.net/gh/microsoft/Microsoft-Rocketbox@0943055db6ec570bcef9f2c8b41c9e5467c808f9/Assets/Avatars/Professions/Construction_Male_01/Textures/m111_body_normal.tga",
+    "last_modified": "",
+    "fetched": "2026-10-18T22:56:50Z"
+   },
+   {
+    "path": "Assets/Avatars/Professions/Construction_Male_01/Textures/m111_head_color.tga",
+    "bytes": 12582956,
+    "git_blob_sha1": "bb0038aba62407f7823420e1a6114f8980a81888",
+    "url": "https://cdn.jsdelivr.net/gh/microsoft/Microsoft-Rocketbox@0943055db6ec570bcef9f2c8b41c9e5467c808f9/Assets/Avatars/Professions/Construction_Male_01/Textures/m111_head_color.tga",
+    "last_modified": "",
+    "fetched": "2026-10-18T22:56:52Z"
+   },
+   {
+    "path": "Assets/Avatars/Professions/Construction_Male_01/Textures/m111_head_normal.tga",
+    "bytes": 12582956,
+    "git_blob_sha1": "e39487ceee1de795906f90fa73e7bc509e23da10",
+    "url": "https://cdn.jsdelivr.net/gh/microsoft/Microsoft-Rocketbox@0943055db6ec570bcef9f2c8b41c9e5467c808f9/Assets/Avatars/Professions/Construction_Male_01/Textures/m111_head_normal.tga",
+    "last_modified": "",
+    "fetched": "2026-10-18T22:56:50Z"
+   },
+   {
+    "path": "Assets/Avatars/Professions/Construction_Male_01/Textures/m111_helmet_color.tga",
+    "bytes": 6291500,
+    "git_blob_sha1": "45f8a87ad06cc30d215e4071b228622b1588c9e1",
+    "url": "https://cdn.jsdelivr.net/gh/microsoft/Microsoft-Rocketbox@0943055db6ec570bcef9f2c8b41c9e5467c808f9/Assets/Avatars/Professions/Construction_Male_01/Textures/m111_helmet_color.tga",
+    "last_modified": "",
+    "fetched": "2026-10-18T22:56:49Z"
+   },
+   {
+    "path": "Assets/Avatars/Professions/Construction_Male_01/Textures/m111_helmet_normal.tga",
+    "bytes": 6291500,
+    "git_blob_sha1": "c0e59e8c934a0a64e169b00db7c115156fe9cf67",
+    "url": "https://cdn.jsdelivr.net/gh/microsoft/Microsoft-Rocketbox@0943055db6ec570bcef9f2c8b41c9e5467c808f9/Assets/Avatars/Professions/Construction_Male_01/Textures/m111_helmet_normal.tga",
+    "last_modified": "",
+    "fetched": "2026-10-18T22:56:49Z"
+   },
+   {
+    "path": "Assets/Avatars/Professions/Construction_Male_01/Textures/m111_opacity_color.tga",
+    "bytes": 524332,
+    "git_blob_sha1": "bf2c986d67533db898c19b2e9f0e695a0043623e",
+    "url": "https://cdn.jsdelivr.net/gh/microsoft/Microsoft-Rocketbox@0943055db6ec570bcef9f2c8b41c9e5467c808f9/Assets/Avatars/Professions/Construction_Male_01/Textures/m111_opacity_color.tga",
+    "last_modified": "",
+    "fetched": "2026-10-18T22:56:49Z"
+   },
+   {
+    "path": "Assets/Avatars/Professions/Construction_Male_01/Textures/m111_opacity_normal.tga",
+    "bytes": 393260,
+    "git_blob_sha1": "0abd0308bf2384bfb6b0719f8d894c4f644dc41b",
+    "url": "https://cdn.jsdelivr.net/gh/microsoft/Microsoft-Rocketbox@0943055db6ec570bcef9f2c8b41c9e5467c808f9/Assets/Avatars/Professions/Construction_Male_01/Textures/m111_opacity_normal.tga",
+    "last_modified": "",
+    "fetched": "2026-10-18T22:56:49Z"
+   },
+   {
+    "path": "Assets/Avatars/Professions/Construction_Male_01/Textures/m111_tools_color.tga",
+    "bytes": 3145772,
+    "git_blob_sha1": "ae5872a6808aa115c84aff5a5d8859ac7bedab6f",
+    "url": "https://cdn.jsdelivr.net/gh/microsoft/Microsoft-Rocketbox@0943055db6ec570bcef9f2c8b41c9e5467c808f9/Assets/Avatars/Professions/Construction_Male_01/Textures/m111_tools_color.tga",
+    "last_modified": "",
+    "fetched": "2026-10-18T22:56:50Z"
+   },
+   {
+    "path": "Assets/Avatars/Professions/Construction_Male_01/Textures/m111_tools_normal.tga",
+    "bytes": 3145772,
+    "git_blob_sha1": "748260cd9aadd421032675eb92842564e9377935",
+    "url": "https://cdn.jsdelivr.net/gh/microsoft/Microsoft-Rocketbox@0943055db6ec570bcef9f2c8b41c9e5467c808f9/Assets/Avatars/Professions/Construction_Male_01/Textures/m111_tools_normal.tga",
+    "last_modified": "",
+    "fetched": "2026-10-18T22:56:50Z"
+   },
+   {
+    "path": "Assets/Avatars/Professions/Construction_Male_02/Export/Construction_Male_02.fbx",
+    "bytes": 542464,
+    "git_blob_sha1": "76b497909897cb9c50e6ad737b9bd1dd96d78bb5",
+    "url": "https://cdn.jsdelivr.net/gh/microsoft/Microsoft-Rocketbox@0943055db6ec570bcef9f2c8b41c9e5467c808f9/Assets/Avatars/Professions/Construction_Male_02/Export/Construction_Male_02.fbx",
+    "last_modified": "",
+    "fetched": "2026-10-18T22:56:50Z"
+   },
+   {
+    "path": "Assets/Avatars/Professions/Construction_Male_02/Textures/m101_body_color.tga",
+    "bytes": 12582956,
+    "git_blob_sha1": "a10ff14d5e2bf334abd423af3b39259621d7a36e",
+    "url": "https://cdn.jsdelivr.net/gh/microsoft/Microsoft-Rocketbox@0943055db6ec570bcef9f2c8b41c9e5467c808f9/Assets/Avatars/Professions/Construction_Male_02/Textures/m101_body_color.tga",
+    "last_modified": "",
+    "fetched": "2026-10-18T22:56:52Z"
+   },
+   {
+    "path": "Assets/Avatars/Professions/Construction_Male_02/Textures/m101_body_normal.tga",
+    "bytes": 12582956,
+    "git_blob_sha1": "8e647c76fdee2e2c9112bf5216260d30245d3c90",
+    "url": "https://cdn.jsdelivr.net/gh/microsoft/Microsoft-Rocketbox@0943055db6ec570bcef9f2c8b41c9e5467c808f9/Assets/Avatars/Professions/Construction_Male_02/Textures/m101_body_normal.tga",
+    "last_modified": "",
+    "fetched": "2026-10-18T22:56:54Z"
+   },
+   {
+    "path": "Assets/Avatars/Professions/Construction_Male_02/Textures/m101_head_color.tga",
+    "bytes": 12582956,
+    "git_blob_sha1": "8d685c4e7d7cb58007dfcaea56b1d6067bb7f729",
+    "url": "https://cdn.jsdelivr.net/gh/microsoft/Microsoft-Rocketbox@0943055db6ec570bcef9f2c8b41c9e5467c808f9/Assets/Avatars/Professions/Construction_Male_02/Textures/m101_head_color.tga",
+    "last_modified": "",
+    "fetched": "2026-10-18T22:56:53Z"
+   },
+   {
+    "path": "Assets/Avatars/Professions/Construction_Male_02/Textures/m101_head_normal.tga",
+    "bytes": 12582956,
+    "git_blob_sha1": "d177a34d0cd8b48eeb9d1bff63b14ebd2a7966bd",
+    "url": "https://cdn.jsdelivr.net/gh/microsoft/Microsoft-Rocketbox@0943055db6ec570bcef9f2c8b41c9e5467c808f9/Assets/Avatars/Professions/Construction_Male_02/Textures/m101_head_normal.tga",
+    "last_modified": "",
+    "fetched": "2026-10-18T22:56:52Z"
+   },
+   {
+    "path": "Assets/Avatars/Professions/Construction_Male_02/Textures/m101_helmet_color.tga",
+    "bytes": 6291500,
+    "git_blob_sha1": "3f51f17cc0b7f783993b132463a17391fecd04e2",
+    "url": "https://cdn.jsdelivr.net/gh/microsoft/Microsoft-Rocketbox@0943055db6ec570bcef9f2c8b41c9e5467c808f9/Assets/Avatars/Professions/Construction_Male_02/Textures/m101_helmet_color.tga",
+    "last_modified": "",
+    "fetched": "2026-10-18T22:56:52Z"
+   },
+   {
+    "path": "Assets/Avatars/Professions/Construction_Male_02/Textures/m101_helmet_normal.tga",
+    "bytes": 6291500,
+    "git_blob_sha1": "e6fbf3bca4bdfac0bca8ed36763022018e139461",
+    "url": "https://cdn.jsdelivr.net/gh/microsoft/Microsoft-Rocketbox@0943055db6ec570bcef9f2c8b41c9e5467c808f9/Assets/Avatars/Professions/Construction_Male_02/Textures/m101_helmet_normal.tga",
+    "last_modified": "",
+    "fetched": "2026-10-18T22:56:53Z"
+   },
+   {
+    "path": "Assets/Avatars/Professions/Construction_Male_07/Export/Construction_Male_07.fbx",
+    "bytes": 566144,
+    "git_blob_sha1": "d23e4a74ff9f314635114f5accd4a52d6d1a3060",
+    "url": "https://cdn.jsdelivr.net/gh/microsoft/Microsoft-Rocketbox@0943055db6ec570bcef9f2c8b41c9e5467c808f9/Assets/Avatars/Professions/Construction_Male_07/Export/Construction_Male_07.fbx",
+    "last_modified": "",
+    "fetched": "2026-10-18T22:56:53Z"
+   },
+   {
+    "path": "Assets/Avatars/Professions/Construction_Male_07/Textures/m107_body_color.tga",
+    "bytes": 12582956,
+    "git_blob_sha1": "a9b22e98dfee3a045aa63e8a684acc16e782393c",
+    "url": "https://cdn.jsdelivr.net/gh/microsoft/Microsoft-Rocketbox@0943055db6ec570bcef9f2c8b41c9e5467c808f9/Assets/Avatars/Professions/Construction_Male_07/Textures/m107_body_color.tga",
+    "last_modified": "",
+    "fetched": "2026-10-18T22:56:53Z"
+   },
+   {
+    "path": "Assets/Avatars/Professions/Construction_Male_07/Textures/m107_body_normal.tga",
+    "bytes": 12582956,
+    "git_blob_sha1": "c18a98cd49b0daca0cbd7bdfa5e0ac59e775eb27",
+    "url": "https://cdn.jsdelivr.net/gh/microsoft/Microsoft-Rocketbox@0943055db6ec570bcef9f2c8b41c9e5467c808f9/Assets/Avatars/Professions/Construction_Male_07/Textures/m107_body_normal.tga",
+    "last_modified": "",
+    "fetched": "2026-10-18T22:56:54Z"
+   },
+   {
+    "path": "Assets/Avatars/Professions/Construction_Male_07/Textures/m107_head_color.tga",
+    "bytes": 12582956,
+    "git_blob_sha1": "e532a84c2cbdd8d6ed15e2f5ef5fd7c795f34206",
+    "url": "https://cdn.jsdelivr.net/gh/microsoft/Microsoft-Rocketbox@0943055db6ec570bcef9f2c8b41c9e5467c808f9/Assets/Avatars/Professions/Construction_Male_07/Textures/m107_head_color.tga",
+    "last_modified": "",
+    "fetched": "2026-10-18T22:56:55Z"
+   },
+   {
+    "path": "Assets/Avatars/Professions/Construction_Male_07/Textures/m107_head_normal.tga",
+    "bytes": 12582956,
+    "git_blob_sha1": "28272d5d9871f60c0eb8181cb594e419d1aaf6eb",
+    "url": "https://cdn.jsdelivr.net/gh/microsoft/Microsoft-Rocketbox@0943055db6ec570bcef9f2c8b41c9e5467c808f9/Assets/Avatars/Professions/Construction_Male_07/Textures/m107_head_normal.tga",
+    "last_modified": "",
+    "fetched": "2026-10-18T22:56:54Z"
+   },
+   {
+    "path": "Assets/Avatars/Professions/Construction_Male_07/Textures/m107_helmet_color.tga",
+    "bytes": 6291500,
+    "git_blob_sha1": "52091bfe4c47827b572910761452d380fad80824",
+    "url": "https://cdn.jsdelivr.net/gh/microsoft/Microsoft-Rocketbox@0943055db6ec570bcef9f2c8b41c9e5467c808f9/Assets/Avatars/Professions/Construction_Male_07/Textures/m107_helmet_color.tga",
+    "last_modified": "",
+    "fetched": "2026-10-18T22:56:54Z"
+   },
+   {
+    "path": "Assets/Avatars/Professions/Construction_Male_07/Textures/m107_helmet_normal.tga",
+    "bytes": 6291500,
+    "git_blob_sha1": "e6fbf3bca4bdfac0bca8ed36763022018e139461",
+    "url": "https://cdn.jsdelivr.net/gh/microsoft/Microsoft-Rocketbox@0943055db6ec570bcef9f2c8b41c9e5467c808f9/Assets/Avatars/Professions/Construction_Male_07/Textures/m107_helmet_normal.tga",
+    "last_modified": "",
+    "fetched": "2026-10-18T22:56:54Z"
+   },
+   {
+    "path": "Assets/Avatars/Professions/Construction_Female_01/Export/Construction_Female_01.fbx",
+    "bytes": 603248,
+    "git_blob_sha1": "93f554c55a7ef294c5d274b0430d6f6384022ca3",
+    "url": "https://cdn.jsdelivr.net/gh/microsoft/Microsoft-Rocketbox@0943055db6ec570bcef9f2c8b41c9e5467c808f9/Assets/Avatars/Professions/Construction_Female_01/Export/Construction_Female_01.fbx",
+    "last_modified": "",
+    "fetched": "2026-10-18T22:56:54Z"
+   },
+   {
+    "path": "Assets/Avatars/Professions/Construction_Female_01/Textures/f101_body_color.tga",
+    "bytes": 12582956,
+    "git_blob_sha1": "50d49e1d549ba369d1a69964b584b7d1c83248f3",
+    "url": "https://cdn.jsdelivr.net/gh/microsoft/Microsoft-Rocketbox@0943055db6ec570bcef9f2c8b41c9e5467c808f9/Assets/Avatars/Professions/Construction_Female_01/Textures/f101_body_color.tga",
+    "last_modified": "",
+    "fetched": "2026-10-18T22:56:54Z"
+   },
+   {
+    "path": "Assets/Avatars/Professions/Construction_Female_01/Textures/f101_body_normal.tga",
+    "bytes": 12582956,
+    "git_blob_sha1": "d3e15ba111891084bf97dad9ce2ca7849b969d55",
+    "url": "https://cdn.jsdelivr.net/gh/microsoft/Microsoft-Rocketbox@0943055db6ec570bcef9f2c8b41c9e5467c808f9/Assets/Avatars/Professions/Construction_Female_01/Textures/f101_body_normal.tga",
+    "last_modified": "",
+    "fetched": "2026-10-18T22:57:00Z"
+   },
+   {
+    "path": "Assets/Avatars/Professions/Construction_Female_01/Textures/f101_head_color.tga",
+    "bytes": 12582956,
+    "git_blob_sha1": "79c9c380b8496a3a839ba9fe6900c23d57413599",
+    "url": "https://cdn.jsdelivr.net/gh/microsoft/Microsoft-Rocketbox@0943055db6ec570bcef9f2c8b41c9e5467c808f9/Assets/Avatars/Professions/Construction_Female_01/Textures/f101_head_color.tga",
+    "last_modified": "",
+    "fetched": "2026-10-18T22:57:00Z"
+   },
+   {
+    "path": "Assets/Avatars/Professions/Construction_Female_01/Textures/f101_head_normal.tga",
+    "bytes": 12582956,
+    "git_blob_sha1": "beff555687695944e60ba5c2a1e0f3bcf6f2af08",
+    "url": "https://cdn.jsdelivr.net/gh/microsoft/Microsoft-Rocketbox@0943055db6ec570bcef9f2c8b41c9e5467c808f9/Assets/Avatars/Professions/Construction_Female_01/Textures/f101_head_normal.tga",
+    "last_modified": "",
+    "fetched": "2026-10-18T22:57:00Z"
+   },
+   {
+    "path": "Assets/Avatars/Professions/Construction_Female_01/Textures/f101_helmet_color.tga",
+    "bytes": 6291500,
+    "git_blob_sha1": "3f51f17cc0b7f783993b132463a17391fecd04e2",
+    "url": "https://cdn.jsdelivr.net/gh/microsoft/Microsoft-Rocketbox@0943055db6ec570bcef9f2c8b41c9e5467c808f9/Assets/Avatars/Professions/Construction_Female_01/Textures/f101_helmet_color.tga",
+    "last_modified": "",
+    "fetched": "2026-10-18T22:56:55Z"
+   },
+   {
+    "path": "Assets/Avatars/Professions/Construction_Female_01/Textures/f101_helmet_normal.tga",
+    "bytes": 6291500,
+    "git_blob_sha1": "e6fbf3bca4bdfac0bca8ed36763022018e139461",
+    "url": "https://cdn.jsdelivr.net/gh/microsoft/Microsoft-Rocketbox@0943055db6ec570bcef9f2c8b41c9e5467c808f9/Assets/Avatars/Professions/Construction_Female_01/Textures/f101_helmet_normal.tga",
+    "last_modified": "",
+    "fetched": "2026-10-18T22:57:00Z"
+   },
+   {
+    "path": "Assets/Avatars/Professions/Chef_Female_01/Export/Chef_Female_01.fbx",
+    "bytes": 544192,
+    "git_blob_sha1": "1815e2d6362e673dfd118e8f6d8f8636160806af",
+    "url": "https://cdn.jsdelivr.net/gh/microsoft/Microsoft-Rocketbox@0943055db6ec570bcef9f2c8b41c9e5467c808f9/Assets/Avatars/Professions/Chef_Female_01/Export/Chef_Female_01.fbx",
+    "last_modified": "",
+    "fetched": "2026-10-18T22:56:55Z"
+   },
+   {
+    "path": "Assets/Avatars/Professions/Chef_Female_01/Textures/f110_body_color.tga",
+    "bytes": 12582956,
+    "git_blob_sha1": "4dee4a0a54a06918cf17eff6801c8c9a17086d93",
+    "url": "https://cdn.jsdelivr.net/gh/microsoft/Microsoft-Rocketbox@0943055db6ec570bcef9f2c8b41c9e5467c808f9/Assets/Avatars/Professions/Chef_Female_01/Textures/f110_body_color.tga",
+    "last_modified": "",
+    "fetched": "2026-10-18T22:57:00Z"
+   },
+   {
+    "path": "Assets/Avatars/Professions/Chef_Female_01/Textures/f110_body_normal.tga",
+    "bytes": 12582956,
+    "git_blob_sha1": "0a83acde0d10a53e1273baf255becf6f684a5731",
+    "url": "https://cdn.jsdelivr.net/gh/microsoft/Microsoft-Rocketbox@0943055db6ec570bcef9f2c8b41c9e5467c808f9/Assets/Avatars/Professions/Chef_Female_01/Textures/f110_body_normal.tga",
+    "last_modified": "",
+    "fetched": "2026-10-18T22:57:00Z"
+   },
+   {
+    "path": "Assets/Avatars/Professions/Chef_Female_01/Textures/f110_head_color_a.tga",
+    "bytes": 12582956,
+    "git_blob_sha1": "4de4a886c8e92d20a085e47dfcc1e216961790bb",
+    "url": "https://cdn.jsdelivr.net/gh/microsoft/Microsoft-Rocketbox@0943055db6ec570bcef9f2c8b41c9e5467c808f9/Assets/Avatars/Professions/Chef_Female_01/Textures/f110_head_color_a.tga",
+    "last_modified": "",
+    "fetched": "2026-10-18T22:57:01Z"
+   },
+   {
+    "path": "Assets/Avatars/Professions/Chef_Female_01/Textures/f110_head_normal_a.tga",
+    "bytes": 12582956,
+    "git_blob_sha1": "113385b2b386dcf8768fd46783247d9f21483570",
+    "url": "https://cdn.jsdelivr.net/gh/microsoft/Microsoft-Rocketbox@0943055db6ec570bcef9f2c8b41c9e5467c808f9/Assets/Avatars/Professions/Chef_Female_01/Textures/f110_head_normal_a.tga",
+    "last_modified": "",
+    "fetched": "2026-10-18T22:57:00Z"
+   },
+   {
+    "path": "Assets/Avatars/Professions/Delivery_Male_01/Export/Delivery_Male_01.fbx",
+    "bytes": 511312,
+    "git_blob_sha1": "b1d9677ab745d09b6807f12422db8dece3532dba",
+    "url": "https://cdn.jsdelivr.net/gh/microsoft/Microsoft-Rocketbox@0943055db6ec570bcef9f2c8b41c9e5467c808f9/Assets/Avatars/Professions/Delivery_Male_01/Export/Delivery_Male_01.fbx",
+    "last_modified": "",
+    "fetched": "2026-10-18T22:57:00Z"
+   },
+   {
+    "path": "Assets/Avatars/Professions/Delivery_Male_01/Textures/m112_body_color.tga",
+    "bytes": 12582956,
+    "git_blob_sha1": "a2453085d7c7050948e3b5a80a080f1c3ae329b2",
+    "url": "https://cdn.jsdelivr.net/gh/microsoft/Microsoft-Rocketbox@0943055db6ec570bcef9f2c8b41c9e5467c808f9/Assets/Avatars/Professions/Delivery_Male_01/Textures/m112_body_color.tga",
+    "last_modified": "",
+    "fetched": "2026-10-18T22:57:01Z"
+   },
+   {
+    "path": "Assets/Avatars/Professions/Delivery_Male_01/Textures/m112_body_normal.tga",
+    "bytes": 12582956,
+    "git_blob_sha1": "d3fad9f6d29474e4173bd2e2215d838f891b084f",
+    "url": "https://cdn.jsdelivr.net/gh/microsoft/Microsoft-Rocketbox@0943055db6ec570bcef9f2c8b41c9e5467c808f9/Assets/Avatars/Professions/Delivery_Male_01/Textures/m112_body_normal.tga",
+    "last_modified": "",
+    "fetched": "2026-10-18T22:57:01Z"
+   },
+   {
+    "path": "Assets/Avatars/Professions/Delivery_Male_01/Textures/m112_head_color.tga",
+    "bytes": 12582956,
+    "git_blob_sha1": "5e6ef334c1a4af3f8670201d35c0edf7d34725e2",
+    "url": "https://cdn.jsdelivr.net/gh/microsoft/Microsoft-Rocketbox@0943055db6ec570bcef9f2c8b41c9e5467c808f9/Assets/Avatars/Professions/Delivery_Male_01/Textures/m112_head_color.tga",
+    "last_modified": "",
+    "fetched": "2026-10-18T22:57:01Z"
+   },
+   {
+    "path": "Assets/Avatars/Professions/Delivery_Male_01/Textures/m112_head_normal.tga",
+    "bytes": 12582956,
+    "git_blob_sha1": "058e2dddab9027559cc0f025c669b8a0ea263d88",
+    "url": "https://cdn.jsdelivr.net/gh/microsoft/Microsoft-Rocketbox@0943055db6ec570bcef9f2c8b41c9e5467c808f9/Assets/Avatars/Professions/Delivery_Male_01/Textures/m112_head_normal.tga",
+    "last_modified": "",
+    "fetched": "2026-10-18T22:57:01Z"
+   },
+   {
+    "path": "Assets/Avatars/Professions/Gardener_Male_01/Export/Gardener_Male_01.fbx",
+    "bytes": 517152,
+    "git_blob_sha1": "d1def87bb530743db2df841edb77c607d8924937",
+    "url": "https://cdn.jsdelivr.net/gh/microsoft/Microsoft-Rocketbox@0943055db6ec570bcef9f2c8b41c9e5467c808f9/Assets/Avatars/Professions/Gardener_Male_01/Export/Gardener_Male_01.fbx",
+    "last_modified": "",
+    "fetched": "2026-10-18T22:57:01Z"
+   },
+   {
+    "path": "Assets/Avatars/Professions/Gardener_Male_01/Textures/m106_body_color.tga",
+    "bytes": 12582956,
+    "git_blob_sha1": "5ccd297d5609765d8d6cfccbc34113a94944d27a",
+    "url": "https://cdn.jsdelivr.net/gh/microsoft/Microsoft-Rocketbox@0943055db6ec570bcef9f2c8b41c9e5467c808f9/Assets/Avatars/Professions/Gardener_Male_01/Textures/m106_body_color.tga",
+    "last_modified": "",
+    "fetched": "2026-10-18T22:57:02Z"
+   },
+   {
+    "path": "Assets/Avatars/Professions/Gardener_Male_01/Textures/m106_body_normal.tga",
+    "bytes": 12582956,
+    "git_blob_sha1": "0296d982f9657f6296a82f680762c185efd1badd",
+    "url": "https://cdn.jsdelivr.net/gh/microsoft/Microsoft-Rocketbox@0943055db6ec570bcef9f2c8b41c9e5467c808f9/Assets/Avatars/Professions/Gardener_Male_01/Textures/m106_body_normal.tga",
+    "last_modified": "",
+    "fetched": "2026-10-18T22:57:02Z"
+   },
+   {
+    "path": "Assets/Avatars/Professions/Gardener_Male_01/Textures/m106_head_color.tga",
+    "bytes": 12582956,
+    "git_blob_sha1": "cbcb8b66787378c76bb74c810f14208d721606ba",
+    "url": "https://cdn.jsdelivr.net/gh/microsoft/Microsoft-Rocketbox@0943055db6ec570bcef9f2c8b41c9e5467c808f9/Assets/Avatars/Professions/Gardener_Male_01/Textures/m106_head_color.tga",
+    "last_modified": "",
+    "fetched": "2026-10-18T22:57:02Z"
+   },
+   {
+    "path": "Assets/Avatars/Professions/Gardener_Male_01/Textures/m106_head_normal.tga",
+    "bytes": 12582956,
+    "git_blob_sha1": "2fefd2d9076cc0a3dcf0d2b90e37e373428c8f7c",
+    "url": "https://cdn.jsdelivr.net/gh/microsoft/Microsoft-Rocketbox@0943055db6ec570bcef9f2c8b41c9e5467c808f9/Assets/Avatars/Professions/Gardener_Male_01/Textures/m106_head_normal.tga",
+    "last_modified": "",
+    "fetched": "2026-10-18T22:57:03Z"
+   },
+   {
+    "path": "Assets/Avatars/Professions/Gardener_Male_01/Textures/m106_opacity_color.tga",
+    "bytes": 16777260,
+    "git_blob_sha1": "1eda6be82167a0956c40000eaaabe96094c70dbd",
+    "url": "https://cdn.jsdelivr.net/gh/microsoft/Microsoft-Rocketbox@0943055db6ec570bcef9f2c8b41c9e5467c808f9/Assets/Avatars/Professions/Gardener_Male_01/Textures/m106_opacity_color.tga",
+    "last_modified": "",
+    "fetched": "2026-10-18T22:57:03Z"
+   },
+   {
+    "path": "Assets/Avatars/Professions/Wood_Male_01/Export/Wood_Male_01.fbx",
+    "bytes": 501552,
+    "git_blob_sha1": "6e0e9bd71adf2498d8c1779b9ce666b075b6154d",
+    "url": "https://cdn.jsdelivr.net/gh/microsoft/Microsoft-Rocketbox@0943055db6ec570bcef9f2c8b41c9e5467c808f9/Assets/Avatars/Professions/Wood_Male_01/Export/Wood_Male_01.fbx",
+    "last_modified": "",
+    "fetched": "2026-10-18T22:57:01Z"
+   },
+   {
+    "path": "Assets/Avatars/Professions/Wood_Male_01/Textures/m110_body_color.tga",
+    "bytes": 12582956,
+    "git_blob_sha1": "0af41e390f173cdf145acb21a84d49e78449f389",
+    "url": "https://cdn.jsdelivr.net/gh/microsoft/Microsoft-Rocketbox@0943055db6ec570bcef9f2c8b41c9e5467c808f9/Assets/Avatars/Professions/Wood_Male_01/Textures/m110_body_color.tga",
+    "last_modified": "",
+    "fetched": "2026-10-18T22:57:03Z"
+   },
+   {
+    "path": "Assets/Avatars/Professions/Wood_Male_01/Textures/m110_body_normal.tga",
+    "bytes": 12582956,
+    "git_blob_sha1": "73cce53e173f705fd09b76c2d09627d3d8359e6e",
+    "url": "https://cdn.jsdelivr.net/gh/microsoft/Microsoft-Rocketbox@0943055db6ec570bcef9f2c8b41c9e5467c808f9/Assets/Avatars/Professions/Wood_Male_01/Textures/m110_body_normal.tga",
+    "last_modified": "",
+    "fetched": "2026-10-18T22:57:07Z"
+   },
+   {
+    "path": "Assets/Avatars/Professions/Wood_Male_01/Textures/m110_head_color.tga",
+    "bytes": 12582956,
+    "git_blob_sha1": "6e878ffd5c130f72692e7173de09c1f60cfffb98",
+    "url": "https://cdn.jsdelivr.net/gh/microsoft/Microsoft-Rocketbox@0943055db6ec570bcef9f2c8b41c9e5467c808f9/Assets/Avatars/Professions/Wood_Male_01/Textures/m110_head_color.tga",
+    "last_modified": "",
+    "fetched": "2026-10-18T22:57:07Z"
+   },
+   {
+    "path": "Assets/Avatars/Professions/Wood_Male_01/Textures/m110_head_normal.tga",
+    "bytes": 12582956,
+    "git_blob_sha1": "9592499b18ab92e46cc7f35841d662dcb324bc08",
+    "url": "https://cdn.jsdelivr.net/gh/microsoft/Microsoft-Rocketbox@0943055db6ec570bcef9f2c8b41c9e5467c808f9/Assets/Avatars/Professions/Wood_Male_01/Textures/m110_head_normal.tga",
+    "last_modified": "",
+    "fetched": "2026-10-18T22:57:07Z"
+   },
+   {
+    "path": "Assets/Animations/all_animations_max_motextr_static/m_idle_neutral_01.max.fbx",
+    "bytes": 2418544,
+    "git_blob_sha1": "a2d92c3326a9c503af677c9fa6082387f060d6c4",
+    "url": "https://cdn.jsdelivr.net/gh/microsoft/Microsoft-Rocketbox@0943055db6ec570bcef9f2c8b41c9e5467c808f9/Assets/Animations/all_animations_max_motextr_static/m_idle_neutral_01.max.fbx",
+    "last_modified": "",
+    "fetched": "2026-10-18T22:55:46Z"
+   },
+   {
+    "path": "Assets/Animations/all_animations_max_motextr_static/m_idle_look_around_01.max.fbx",
+    "bytes": 1651456,
+    "git_blob_sha1": "c3c15a1c8b682a13533ea515aa77c44b6476c4b1",
+    "url": "https://cdn.jsdelivr.net/gh/microsoft/Microsoft-Rocketbox@0943055db6ec570bcef9f2c8b41c9e5467c808f9/Assets/Animations/all_animations_max_motextr_static/m_idle_look_around_01.max.fbx",
+    "last_modified": "",
+    "fetched": "2026-10-18T22:55:46Z"
+   },
+   {
+    "path": "Assets/Animations/all_animations_max_motextr_static/m_idle_waiting_01.max.fbx",
+    "bytes": 7450000,
+    "git_blob_sha1": "d12c10ccf80f0bc821dda6f829fa8939452324ce",
+    "url": "https://cdn.jsdelivr.net/gh/microsoft/Microsoft-Rocketbox@0943055db6ec570bcef9f2c8b41c9e5467c808f9/Assets/Animations/all_animations_max_motextr_static/m_idle_waiting_01.max.fbx",
+    "last_modified": "",
+    "fetched": "2026-10-18T22:55:46Z"
+   },
+   {
+    "path": "Assets/Animations/all_animations_max_motextr_static/m_gestic_talk_neutral_01.max.fbx",
+    "bytes": 5977648,
+    "git_blob_sha1": "23d4a2b0eeed609e9dd61757c4104cef1a648083",
+    "url": "https://cdn.jsdelivr.net/gh/microsoft/Microsoft-Rocketbox@0943055db6ec570bcef9f2c8b41c9e5467c808f9/Assets/Animations/all_animations_max_motextr_static/m_gestic_talk_neutral_01.max.fbx",
+    "last_modified": "",
+    "fetched": "2026-10-18T22:55:47Z"
+   },
+   {
+    "path": "Assets/Animations/all_animations_max_motextr_static/m_gestic_talk_neutral_02.max.fbx",
+    "bytes": 7247408,
+    "git_blob_sha1": "5afb9cdd48ac6bc133f37a399da260be6e7f62bf",
+    "url": "https://cdn.jsdelivr.net/gh/microsoft/Microsoft-Rocketbox@0943055db6ec570bcef9f2c8b41c9e5467c808f9/Assets/Animations/all_animations_max_motextr_static/m_gestic_talk_neutral_02.max.fbx",
+    "last_modified": "",
+    "fetched": "2026-10-18T22:55:47Z"
+   },
+   {
+    "path": "Assets/Animations/all_animations_max_motextr_static/m_sit_chair_idle_neutral_01.max.fbx",
+    "bytes": 5868640,
+    "git_blob_sha1": "49c0a4e4d666e8d6582486b570a90cc18fd65167",
+    "url": "https://cdn.jsdelivr.net/gh/microsoft/Microsoft-Rocketbox@0943055db6ec570bcef9f2c8b41c9e5467c808f9/Assets/Animations/all_animations_max_motextr_static/m_sit_chair_idle_neutral_01.max.fbx",
+    "last_modified": "",
+    "fetched": "2026-10-18T22:55:47Z"
+   },
+   {
+    "path": "Assets/Animations/all_animations_max_motextr_static/m_wave_01.max.fbx",
+    "bytes": 1424016,
+    "git_blob_sha1": "596c54bca6824ce663ac4239096b4c430b4e3d0b",
+    "url": "https://cdn.jsdelivr.net/gh/microsoft/Microsoft-Rocketbox@0943055db6ec570bcef9f2c8b41c9e5467c808f9/Assets/Animations/all_animations_max_motextr_static/m_wave_01.max.fbx",
+    "last_modified": "",
+    "fetched": "2026-10-18T22:55:47Z"
+   },
+   {
+    "path": "Assets/Animations/all_animations_max_motextr_static/m_crouch_idle.max.fbx",
+    "bytes": 2106496,
+    "git_blob_sha1": "cded1a52cd9e0683a3fdcda768ac70617a78d88f",
+    "url": "https://cdn.jsdelivr.net/gh/microsoft/Microsoft-Rocketbox@0943055db6ec570bcef9f2c8b41c9e5467c808f9/Assets/Animations/all_animations_max_motextr_static/m_crouch_idle.max.fbx",
+    "last_modified": "",
+    "fetched": "2026-10-18T22:55:47Z"
+   },
+   {
+    "path": "Assets/Animations/all_animations_max_motextr_static/m_knock_door.max.fbx",
+    "bytes": 2333888,
+    "git_blob_sha1": "1dadf11c19d27b643f11fe91f2921617b7f9a8ad",
+    "url": "https://cdn.jsdelivr.net/gh/microsoft/Microsoft-Rocketbox@0943055db6ec570bcef9f2c8b41c9e5467c808f9/Assets/Animations/all_animations_max_motextr_static/m_knock_door.max.fbx",
+    "last_modified": "",
+    "fetched": "2026-10-18T22:55:47Z"
+   },
+   {
+    "path": "Assets/Animations/all_animations_max_motextr_static/m_try_door_inwards.max.fbx",
+    "bytes": 1972400,
+    "git_blob_sha1": "3304cf3a8c725dde2eb044e4bed3f6ad70a9f45c",
+    "url": "https://cdn.jsdelivr.net/gh/microsoft/Microsoft-Rocketbox@0943055db6ec570bcef9f2c8b41c9e5467c808f9/Assets/Animations/all_animations_max_motextr_static/m_try_door_inwards.max.fbx",
+    "last_modified": "",
+    "fetched": "2026-10-18T22:55:47Z"
+   },
+   {
+    "path": "Assets/Animations/all_animations_max_motextr_xy/m_walk_start.max.fbx",
+    "bytes": 931792,
+    "git_blob_sha1": "ea49c0c4972ad1bf4d0124ea8ecb3d1f451698e9",
+    "url": "https://cdn.jsdelivr.net/gh/microsoft/Microsoft-Rocketbox@0943055db6ec570bcef9f2c8b41c9e5467c808f9/Assets/Animations/all_animations_max_motextr_xy/m_walk_start.max.fbx",
+    "last_modified": "",
+    "fetched": "2026-10-18T22:55:47Z"
+   },
+   {
+    "path": "Assets/Animations/all_animations_max_motextr_xy/m_walk_stop.max.fbx",
+    "bytes": 1209760,
+    "git_blob_sha1": "ce2f2359034c5df29f03cd4d645356af3da20881",
+    "url": "https://cdn.jsdelivr.net/gh/microsoft/Microsoft-Rocketbox@0943055db6ec570bcef9f2c8b41c9e5467c808f9/Assets/Animations/all_animations_max_motextr_xy/m_walk_stop.max.fbx",
+    "last_modified": "",
+    "fetched": "2026-10-18T22:55:47Z"
+   },
+   {
+    "path": "Assets/Animations/all_animations_max_motextr_xy/m_run_start.max.fbx",
+    "bytes": 841824,
+    "git_blob_sha1": "cac897d67eb3375fc590e788e32bf31d5cedede6",
+    "url": "https://cdn.jsdelivr.net/gh/microsoft/Microsoft-Rocketbox@0943055db6ec570bcef9f2c8b41c9e5467c808f9/Assets/Animations/all_animations_max_motextr_xy/m_run_start.max.fbx",
+    "last_modified": "",
+    "fetched": "2026-10-18T22:55:47Z"
+   },
+   {
+    "path": "Assets/Animations/all_animations_max_motextr_xy/m_run_stop.max.fbx",
+    "bytes": 1012752,
+    "git_blob_sha1": "f0aa0ee5b787e4d9f6503a9dadce10d627dbf9b1",
+    "url": "https://cdn.jsdelivr.net/gh/microsoft/Microsoft-Rocketbox@0943055db6ec570bcef9f2c8b41c9e5467c808f9/Assets/Animations/all_animations_max_motextr_xy/m_run_stop.max.fbx",
+    "last_modified": "",
+    "fetched": "2026-10-18T22:55:47Z"
+   },
+   {
+    "path": "Assets/Animations/all_animations_max_motextr_xy/m_walk_fast_01.max.fbx",
+    "bytes": 957776,
+    "git_blob_sha1": "c1c691e1b654565282bd15cf49df81af0b18626f",
+    "url": "https://cdn.jsdelivr.net/gh/microsoft/Microsoft-Rocketbox@0943055db6ec570bcef9f2c8b41c9e5467c808f9/Assets/Animations/all_animations_max_motextr_xy/m_walk_fast_01.max.fbx",
+    "last_modified": "",
+    "fetched": "2026-10-18T22:55:47Z"
+   },
+   {
+    "path": "Assets/Animations/all_animations_max_motextr_xy/m_run_neutral.max.fbx",
+    "bytes": 877760,
+    "git_blob_sha1": "f6346c68a30da9b89b4d561de885818c0e2f4080",
+    "url": "https://cdn.jsdelivr.net/gh/microsoft/Microsoft-Rocketbox@0943055db6ec570bcef9f2c8b41c9e5467c808f9/Assets/Animations/all_animations_max_motextr_xy/m_run_neutral.max.fbx",
+    "last_modified": "",
+    "fetched": "2026-10-18T22:55:47Z"
+   },
+   {
+    "path": "Assets/Animations/all_animations_max_motextr_xy/m_run_fast_01.max.fbx",
+    "bytes": 833040,
+    "git_blob_sha1": "3c07e032de09173b6d9e0ffd6218943bc6ebcefd",
+    "url": "https://cdn.jsdelivr.net/gh/microsoft/Microsoft-Rocketbox@0943055db6ec570bcef9f2c8b41c9e5467c808f9/Assets/Animations/all_animations_max_motextr_xy/m_run_fast_01.max.fbx",
+    "last_modified": "",
+    "fetched": "2026-10-18T22:55:47Z"
+   },
+   {
+    "path": "Assets/Animations/all_animations_max_motextr_xyz/m_turn_left_90.max.fbx",
+    "bytes": 1299184,
+    "git_blob_sha1": "20cc2e386451461657cef25cb385e5267b096316",
+    "url": "https://cdn.jsdelivr.net/gh/microsoft/Microsoft-Rocketbox@0943055db6ec570bcef9f2c8b41c9e5467c808f9/Assets/Animations/all_animations_max_motextr_xyz/m_turn_left_90.max.fbx",
+    "last_modified": "",
+    "fetched": "2026-10-18T22:55:47Z"
+   },
+   {
+    "path": "Assets/Animations/all_animations_max_motextr_xyz/m_turn_right_90.max.fbx",
+    "bytes": 1254448,
+    "git_blob_sha1": "948d02d7f32111cd5a363992fcf357e4e87a9e8c",
+    "url": "https://cdn.jsdelivr.net/gh/microsoft/Microsoft-Rocketbox@0943055db6ec570bcef9f2c8b41c9e5467c808f9/Assets/Animations/all_animations_max_motextr_xyz/m_turn_right_90.max.fbx",
+    "last_modified": "",
+    "fetched": "2026-10-18T22:55:47Z"
+   },
+   {
+    "path": "Assets/Animations/all_animations_max_motextr_xyz/m_turn_left_180_to_walk.max.fbx",
+    "bytes": 1112400,
+    "git_blob_sha1": "e1fd0d76ea4f9a810368d7d0040e18c1f24a450a",
+    "url": "https://cdn.jsdelivr.net/gh/microsoft/Microsoft-Rocketbox@0943055db6ec570bcef9f2c8b41c9e5467c808f9/Assets/Animations/all_animations_max_motextr_xyz/m_turn_left_180_to_walk.max.fbx",
+    "last_modified": "",
+    "fetched": "2026-10-18T22:55:47Z"
+   },
+   {
+    "path": "Assets/Animations/all_animations_max_motextr_xyz/m_turn_right_180_to_walk.max.fbx",
+    "bytes": 1229504,
+    "git_blob_sha1": "1064ffca9a2597b36023249faffb74ba655af095",
+    "url": "https://cdn.jsdelivr.net/gh/microsoft/Microsoft-Rocketbox@0943055db6ec570bcef9f2c8b41c9e5467c808f9/Assets/Animations/all_animations_max_motextr_xyz/m_turn_right_180_to_walk.max.fbx",
+    "last_modified": "",
+    "fetched": "2026-10-18T22:55:47Z"
+   },
+   {
+    "path": "Assets/Animations/all_animations_max_motextr_xyz/m_sit_down_chair_01.max.fbx",
+    "bytes": 1451824,
+    "git_blob_sha1": "d3e39f5ca5b0ad1911a2b7246c8a5cfab695e032",
+    "url": "https://cdn.jsdelivr.net/gh/microsoft/Microsoft-Rocketbox@0943055db6ec570bcef9f2c8b41c9e5467c808f9/Assets/Animations/all_animations_max_motextr_xyz/m_sit_down_chair_01.max.fbx",
+    "last_modified": "",
+    "fetched": "2026-10-18T22:55:47Z"
+   },
+   {
+    "path": "Assets/Animations/all_animations_max_motextr_xyz/m_sit_stand_up_chair_01.max.fbx",
+    "bytes": 1343856,
+    "git_blob_sha1": "fda9ae855fa3c14719451e4dadc73bec19f90378",
+    "url": "https://cdn.jsdelivr.net/gh/microsoft/Microsoft-Rocketbox@0943055db6ec570bcef9f2c8b41c9e5467c808f9/Assets/Animations/all_animations_max_motextr_xyz/m_sit_stand_up_chair_01.max.fbx",
+    "last_modified": "",
+    "fetched": "2026-10-18T22:55:47Z"
+   },
+   {
+    "path": "Assets/Animations/all_animations_max_motextr_xy/m_walk_neutral_02.max.fbx",
+    "bytes": 958640,
+    "git_blob_sha1": "b4fc372186ed1c7f0efd52dae4e542534d9323f2",
+    "url": "https://cdn.jsdelivr.net/gh/microsoft/Microsoft-Rocketbox@0943055db6ec570bcef9f2c8b41c9e5467c808f9/Assets/Animations/all_animations_max_motextr_xy/m_walk_neutral_02.max.fbx",
+    "last_modified": "",
+    "fetched": "2026-10-18T22:55:47Z"
+   },
+   {
+    "path": "Assets/Animations/all_animations_max_motextr_static/m_cell_phone_talk_01.max.fbx",
+    "bytes": 5374704,
+    "git_blob_sha1": "038146e7c798e69bd3b467d973c3798223d13c38",
+    "url": "https://cdn.jsdelivr.net/gh/microsoft/Microsoft-Rocketbox@0943055db6ec570bcef9f2c8b41c9e5467c808f9/Assets/Animations/all_animations_max_motextr_static/m_cell_phone_talk_01.max.fbx",
+    "last_modified": "",
+    "fetched": "2026-10-18T22:55:48Z"
+   },
+   {
+    "path": "Assets/Animations/all_animations_max_motextr_static/f_idle_neutral_01.max.fbx",
+    "bytes": 2959360,
+    "git_blob_sha1": "aecf1d0089ccfc0c381d5395294bb1c8fe0e63ae",
+    "url": "https://cdn.jsdelivr.net/gh/microsoft/Microsoft-Rocketbox@0943055db6ec570bcef9f2c8b41c9e5467c808f9/Assets/Animations/all_animations_max_motextr_static/f_idle_neutral_01.max.fbx",
+    "last_modified": "",
+    "fetched": "2026-10-18T22:55:48Z"
+   },
+   {
+    "path": "Assets/Animations/all_animations_max_motextr_static/f_idle_look_around_01.max.fbx",
+    "bytes": 1617760,
+    "git_blob_sha1": "a23f356924457936d90f2c5408d00bba343ae39f",
+    "url": "https://cdn.jsdelivr.net/gh/microsoft/Microsoft-Rocketbox@0943055db6ec570bcef9f2c8b41c9e5467c808f9/Assets/Animations/all_animations_max_motextr_static/f_idle_look_around_01.max.fbx",
+    "last_modified": "",
+    "fetched": "2026-10-18T22:55:48Z"
+   },
+   {
+    "path": "Assets/Animations/all_animations_max_motextr_static/f_idle_waiting_01.max.fbx",
+    "bytes": 7600640,
+    "git_blob_sha1": "bd990bf8b451948e7084917001c37940645b0bf4",
+    "url": "https://cdn.jsdelivr.net/gh/microsoft/Microsoft-Rocketbox@0943055db6ec570bcef9f2c8b41c9e5467c808f9/Assets/Animations/all_animations_max_motextr_static/f_idle_waiting_01.max.fbx",
+    "last_modified": "",
+    "fetched": "2026-10-18T22:55:48Z"
+   },
+   {
+    "path": "Assets/Animations/all_animations_max_motextr_static/f_gestic_talk_neutral_01.max.fbx",
+    "bytes": 4761664,
+    "git_blob_sha1": "89d5ac5626b800b33abc995725a0b5d915891e30",
+    "url": "https://cdn.jsdelivr.net/gh/microsoft/Microsoft-Rocketbox@0943055db6ec570bcef9f2c8b41c9e5467c808f9/Assets/Animations/all_animations_max_motextr_static/f_gestic_talk_neutral_01.max.fbx",
+    "last_modified": "",
+    "fetched": "2026-10-18T22:55:48Z"
+   },
+   {
+    "path": "Assets/Animations/all_animations_max_motextr_static/f_gestic_talk_neutral_02.max.fbx",
+    "bytes": 4836720,
+    "git_blob_sha1": "84cebbf63bdf39706e2602810ad2f13093d86340",
+    "url": "https://cdn.jsdelivr.net/gh/microsoft/Microsoft-Rocketbox@0943055db6ec570bcef9f2c8b41c9e5467c808f9/Assets/Animations/all_animations_max_motextr_static/f_gestic_talk_neutral_02.max.fbx",
+    "last_modified": "",
+    "fetched": "2026-10-18T22:55:48Z"
+   },
+   {
+    "path": "Assets/Animations/all_animations_max_motextr_static/f_sit_chair_idle_neutral_01.max.fbx",
+    "bytes": 5562720,
+    "git_blob_sha1": "79951806bd33d35f8302d1d324ac9d265cc5f9dd",
+    "url": "https://cdn.jsdelivr.net/gh/microsoft/Microsoft-Rocketbox@0943055db6ec570bcef9f2c8b41c9e5467c808f9/Assets/Animations/all_animations_max_motextr_static/f_sit_chair_idle_neutral_01.max.fbx",
+    "last_modified": "",
+    "fetched": "2026-10-18T22:55:48Z"
+   },
+   {
+    "path": "Assets/Animations/all_animations_max_motextr_static/f_wave_01.max.fbx",
+    "bytes": 1839824,
+    "git_blob_sha1": "e719cc1cfb2254275ea259ce54828743d904e3ea",
+    "url": "https://cdn.jsdelivr.net/gh/microsoft/Microsoft-Rocketbox@0943055db6ec570bcef9f2c8b41c9e5467c808f9/Assets/Animations/all_animations_max_motextr_static/f_wave_01.max.fbx",
+    "last_modified": "",
+    "fetched": "2026-10-18T22:55:48Z"
+   },
+   {
+    "path": "Assets/Animations/all_animations_max_motextr_static/f_crouch_idle.max.fbx",
+    "bytes": 2108192,
+    "git_blob_sha1": "b38f554fcf6262427d217a421667edb15970adeb",
+    "url": "https://cdn.jsdelivr.net/gh/microsoft/Microsoft-Rocketbox@0943055db6ec570bcef9f2c8b41c9e5467c808f9/Assets/Animations/all_animations_max_motextr_static/f_crouch_idle.max.fbx",
+    "last_modified": "",
+    "fetched": "2026-10-18T22:55:48Z"
+   },
+   {
+    "path": "Assets/Animations/all_animations_max_motextr_static/f_knock_door.max.fbx",
+    "bytes": 1513056,
+    "git_blob_sha1": "dea2deb708b2b4956178d5d7a6f9e63381989352",
+    "url": "https://cdn.jsdelivr.net/gh/microsoft/Microsoft-Rocketbox@0943055db6ec570bcef9f2c8b41c9e5467c808f9/Assets/Animations/all_animations_max_motextr_static/f_knock_door.max.fbx",
+    "last_modified": "",
+    "fetched": "2026-10-18T22:55:48Z"
+   },
+   {
+    "path": "Assets/Animations/all_animations_max_motextr_static/f_try_door_inwards.max.fbx",
+    "bytes": 2071920,
+    "git_blob_sha1": "9fae1e84511d1bc21e4732044f180ff0144591a3",
+    "url": "https://cdn.jsdelivr.net/gh/microsoft/Microsoft-Rocketbox@0943055db6ec570bcef9f2c8b41c9e5467c808f9/Assets/Animations/all_animations_max_motextr_static/f_try_door_inwards.max.fbx",
+    "last_modified": "",
+    "fetched": "2026-10-18T22:55:48Z"
+   },
+   {
+    "path": "Assets/Animations/all_animations_max_motextr_xy/f_walk_start.max.fbx",
+    "bytes": 922800,
+    "git_blob_sha1": "196cc8b3e03534d91a3a2b3b3b58d6f18948c6a2",
+    "url": "https://cdn.jsdelivr.net/gh/microsoft/Microsoft-Rocketbox@0943055db6ec570bcef9f2c8b41c9e5467c808f9/Assets/Animations/all_animations_max_motextr_xy/f_walk_start.max.fbx",
+    "last_modified": "",
+    "fetched": "2026-10-18T22:55:48Z"
+   },
+   {
+    "path": "Assets/Animations/all_animations_max_motextr_xy/f_walk_stop.max.fbx",
+    "bytes": 1147184,
+    "git_blob_sha1": "fcf5d47314b68b447ad68280c040c936343128e6",
+    "url": "https://cdn.jsdelivr.net/gh/microsoft/Microsoft-Rocketbox@0943055db6ec570bcef9f2c8b41c9e5467c808f9/Assets/Animations/all_animations_max_motextr_xy/f_walk_stop.max.fbx",
+    "last_modified": "",
+    "fetched": "2026-10-18T22:55:48Z"
+   },
+   {
+    "path": "Assets/Animations/all_animations_max_motextr_xy/f_run_start.max.fbx",
+    "bytes": 957904,
+    "git_blob_sha1": "b64f101b5b8f3e270a19164ebb5724791e3bbfe6",
+    "url": "https://cdn.jsdelivr.net/gh/microsoft/Microsoft-Rocketbox@0943055db6ec570bcef9f2c8b41c9e5467c808f9/Assets/Animations/all_animations_max_motextr_xy/f_run_start.max.fbx",
+    "last_modified": "",
+    "fetched": "2026-10-18T22:55:48Z"
+   },
+   {
+    "path": "Assets/Animations/all_animations_max_motextr_xy/f_run_stop.max.fbx",
+    "bytes": 1120448,
+    "git_blob_sha1": "5445c1e1b1a5ac35dfe708dcb6ca36352004124b",
+    "url": "https://cdn.jsdelivr.net/gh/microsoft/Microsoft-Rocketbox@0943055db6ec570bcef9f2c8b41c9e5467c808f9/Assets/Animations/all_animations_max_motextr_xy/f_run_stop.max.fbx",
+    "last_modified": "",
+    "fetched": "2026-10-18T22:55:48Z"
+   },
+   {
+    "path": "Assets/Animations/all_animations_max_motextr_xy/f_walk_fast_01.max.fbx",
+    "bytes": 948912,
+    "git_blob_sha1": "c540c1e98b0de244711a5baa7678458b388fe4fc",
+    "url": "https://cdn.jsdelivr.net/gh/microsoft/Microsoft-Rocketbox@0943055db6ec570bcef9f2c8b41c9e5467c808f9/Assets/Animations/all_animations_max_motextr_xy/f_walk_fast_01.max.fbx",
+    "last_modified": "",
+    "fetched": "2026-10-18T22:55:48Z"
+   },
+   {
+    "path": "Assets/Animations/all_animations_max_motextr_xy/f_run_neutral.max.fbx",
+    "bytes": 895504,
+    "git_blob_sha1": "145d6aebb39825777af8fa483abd0ff44f3e3fb0",
+    "url": "https://cdn.jsdelivr.net/gh/microsoft/Microsoft-Rocketbox@0943055db6ec570bcef9f2c8b41c9e5467c808f9/Assets/Animations/all_animations_max_motextr_xy/f_run_neutral.max.fbx",
+    "last_modified": "",
+    "fetched": "2026-10-18T22:55:48Z"
+   },
+   {
+    "path": "Assets/Animations/all_animations_max_motextr_xy/f_run_fast_01.max.fbx",
+    "bytes": 859600,
+    "git_blob_sha1": "0a0d4c80ef9e57d456b7f54f64cb5989c79a8fa8",
+    "url": "https://cdn.jsdelivr.net/gh/microsoft/Microsoft-Rocketbox@0943055db6ec570bcef9f2c8b41c9e5467c808f9/Assets/Animations/all_animations_max_motextr_xy/f_run_fast_01.max.fbx",
+    "last_modified": "",
+    "fetched": "2026-10-18T22:55:48Z"
+   },
+   {
+    "path": "Assets/Animations/all_animations_max_motextr_xyz/f_turn_left_90.max.fbx",
+    "bytes": 1299280,
+    "git_blob_sha1": "11d36f20f09571a8ed0b31cd7ed7e6303e5c2b54",
+    "url": "https://cdn.jsdelivr.net/gh/microsoft/Microsoft-Rocketbox@0943055db6ec570bcef9f2c8b41c9e5467c808f9/Assets/Animations/all_animations_max_motextr_xyz/f_turn_left_90.max.fbx",
+    "last_modified": "",
+    "fetched": "2026-10-18T22:55:48Z"
+   },
+   {
+    "path": "Assets/Animations/all_animations_max_motextr_xyz/f_turn_right_90.max.fbx",
+    "bytes": 1299280,
+    "git_blob_sha1": "bf136ec45209290edb5ab2e64a03eed30c5aed61",
+    "url": "https://cdn.jsdelivr.net/gh/microsoft/Microsoft-Rocketbox@0943055db6ec570bcef9f2c8b41c9e5467c808f9/Assets/Animations/all_animations_max_motextr_xyz/f_turn_right_90.max.fbx",
+    "last_modified": "",
+    "fetched": "2026-10-18T22:55:48Z"
+   },
+   {
+    "path": "Assets/Animations/all_animations_max_motextr_xyz/f_turn_left_180_to_walk.max.fbx",
+    "bytes": 1130496,
+    "git_blob_sha1": "89ba6260566a2705a5e180144e865d45b5485e3b",
+    "url": "https://cdn.jsdelivr.net/gh/microsoft/Microsoft-Rocketbox@0943055db6ec570bcef9f2c8b41c9e5467c808f9/Assets/Animations/all_animations_max_motextr_xyz/f_turn_left_180_to_walk.max.fbx",
+    "last_modified": "",
+    "fetched": "2026-10-18T22:55:48Z"
+   },
+   {
+    "path": "Assets/Animations/all_animations_max_motextr_xyz/f_turn_right_180_to_walk.max.fbx",
+    "bytes": 1022304,
+    "git_blob_sha1": "e9f1e9c9ae26933e27a71832fca90d478af3bd23",
+    "url": "https://cdn.jsdelivr.net/gh/microsoft/Microsoft-Rocketbox@0943055db6ec570bcef9f2c8b41c9e5467c808f9/Assets/Animations/all_animations_max_motextr_xyz/f_turn_right_180_to_walk.max.fbx",
+    "last_modified": "",
+    "fetched": "2026-10-18T22:55:48Z"
+   },
+   {
+    "path": "Assets/Animations/all_animations_max_motextr_xyz/f_sit_down_chair_01.max.fbx",
+    "bytes": 1725744,
+    "git_blob_sha1": "b59af286f26e27c8b05b36beb33266ac018ff93e",
+    "url": "https://cdn.jsdelivr.net/gh/microsoft/Microsoft-Rocketbox@0943055db6ec570bcef9f2c8b41c9e5467c808f9/Assets/Animations/all_animations_max_motextr_xyz/f_sit_down_chair_01.max.fbx",
+    "last_modified": "",
+    "fetched": "2026-10-18T22:55:48Z"
+   },
+   {
+    "path": "Assets/Animations/all_animations_max_motextr_xyz/f_sit_stand_up_chair_01.max.fbx",
+    "bytes": 1568528,
+    "git_blob_sha1": "018c10ff0aea10cdc1191830f8bf48b29870e611",
+    "url": "https://cdn.jsdelivr.net/gh/microsoft/Microsoft-Rocketbox@0943055db6ec570bcef9f2c8b41c9e5467c808f9/Assets/Animations/all_animations_max_motextr_xyz/f_sit_stand_up_chair_01.max.fbx",
+    "last_modified": "",
+    "fetched": "2026-10-18T22:55:49Z"
+   },
+   {
+    "path": "Assets/Animations/all_animations_max_motextr_xy/f_walk_neutral_01.max.fbx",
+    "bytes": 993792,
+    "git_blob_sha1": "c4e604bcbcf46b032533707f2b10a7c4d0b4811c",
+    "url": "https://cdn.jsdelivr.net/gh/microsoft/Microsoft-Rocketbox@0943055db6ec570bcef9f2c8b41c9e5467c808f9/Assets/Animations/all_animations_max_motextr_xy/f_walk_neutral_01.max.fbx",
+    "last_modified": "",
+    "fetched": "2026-10-18T22:55:48Z"
+   },
+   {
+    "path": "Assets/Animations/all_animations_max_motextr_xyz/f_cell_phone_talk_01.max.fbx",
+    "bytes": 6801264,
+    "git_blob_sha1": "3345467696bea83eb6a93634ff17f0efeb5a8eb7",
+    "url": "https://cdn.jsdelivr.net/gh/microsoft/Microsoft-Rocketbox@0943055db6ec570bcef9f2c8b41c9e5467c808f9/Assets/Animations/all_animations_max_motextr_xyz/f_cell_phone_talk_01.max.fbx",
+    "last_modified": "",
+    "fetched": "2026-10-18T22:55:49Z"
+   },
+   {
+    "path": "LICENSE.md",
+    "bytes": 1066,
+    "git_blob_sha1": "9bcfb3ece5301a55d3a41bbd00a029ab27d61d13",
+    "url": "https://cdn.jsdelivr.net/gh/microsoft/Microsoft-Rocketbox@0943055db6ec570bcef9f2c8b41c9e5467c808f9/LICENSE.md",
+    "last_modified": "",
+    "fetched": "2026-10-18T22:55:48Z"
+   },
+   {
+    "path": "Assets/Avatars/Professions/Medical_Male_02/Textures/m154_body_color_blue.tga",
+    "bytes": 12582956,
+    "git_blob_sha1": "19be527a4ef0b40fa6fa7cec3613d05b349247bc",
+    "url": "https://cdn.jsdelivr.net/gh/microsoft/Microsoft-Rocketbox@0943055db6ec570bcef9f2c8b41c9e5467c808f9/Assets/Avatars/Professions/Medical_Male_02/Textures/m154_body_color_blue.tga",
+    "last_modified": "",
+    "fetched": "2026-10-18T23:01:55Z"
+   }
+  ]
+ },
+ "quaternius": {
+  "UAL1": {
+   "page": "https://quaternius.itch.io/universal-animation-library",
+   "upload_id": 17958403,
+   "zip": "ual1_itch_standard.zip",
+   "bytes": 15904933,
+   "sha256": "cc73fc4e495b82958207316596317a3f40b9fa38065bde1027937452da537724",
+   "url": "https://quaternius.itch.io/universal-animation-library/file/17958403",
+   "last_modified": "2026-06-16T23:03:50Z",
+   "fetched": "2026-10-18T22:55:49Z",
+   "licence": "CC0 1.0 (bundled License.txt and the itch.io pages, checked 2026-10-19)",
+   "licence_file": "LICENSES/quaternius-UAL1-License.txt",
+   "used": "Unreal-Godot/UAL1_Standard.glb"
+  },
+  "UAL2": {
+   "page": "https://quaternius.itch.io/universal-animation-library-2",
+   "upload_id": 17958478,
+   "zip": "ual2_itch_standard.zip",
+   "bytes": 18735003,
+   "sha256": "4008ea208a604773a2b2177d965f0f5d3195498b5bf838c3f5785d68e95f2a68",
+   "url": "https://quaternius.itch.io/universal-animation-library-2/file/17958478",
+   "last_modified": "2026-06-16T23:22:21Z",
+   "fetched": "2026-10-18T22:55:49Z",
+   "licence": "CC0 1.0 (bundled License.txt and the itch.io pages, checked 2026-10-19)",
+   "licence_file": "LICENSES/quaternius-UAL2-License.txt",
+   "used": "Unreal-Godot/UAL2_Standard.glb"
+  }
+ }
+}

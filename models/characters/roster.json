@@ -1,0 +1,500 @@
+{
+ "version": 1,
+ "note": "HC roster (docs/fp/slices/HC-characters.md). Skeletons are metric: CharacterRoot.scale = WS.M * h_target / rest_height_m. Pick a resident body from job_pools[job] filtered by gender, else casual_pools[gender], index crc32(resident_id) % n; name_gender misses fall back to crc32(id) & 1.",
+ "heroes": {
+  "m": "Male_Adult_06",
+  "f": "Female_Adult_04"
+ },
+ "bodies": {
+  "Male_Adult_06": {
+   "name": "Male_Adult_06",
+   "group": "hero",
+   "gender": "m",
+   "id": "m011",
+   "parts": [
+    "body",
+    "head",
+    "opacity"
+   ],
+   "rest_height_m": 1.8313,
+   "feet_m": -0.0008,
+   "hip_m": 0.8952,
+   "tris": 7456,
+   "surfaces": 3,
+   "bytes": 2377728,
+   "path": "res://models/characters/bodies/Male_Adult_06.glb",
+   "lod1": {
+    "tris": 1439,
+    "surfaces": 2,
+    "bytes": 73195,
+    "path": "res://models/characters/bodies/Male_Adult_06_lod1.glb"
+   },
+   "seconds": 3.8
+  },
+  "Female_Adult_04": {
+   "name": "Female_Adult_04",
+   "group": "hero",
+   "gender": "f",
+   "id": "f004",
+   "parts": [
+    "body",
+    "head",
+    "opacity"
+   ],
+   "rest_height_m": 1.7659,
+   "feet_m": -0.0037,
+   "hip_m": 0.9233,
+   "tris": 8880,
+   "surfaces": 3,
+   "bytes": 1982485,
+   "path": "res://models/characters/bodies/Female_Adult_04.glb",
+   "lod1": {
+    "tris": 1440,
+    "surfaces": 2,
+    "bytes": 80326,
+    "path": "res://models/characters/bodies/Female_Adult_04_lod1.glb"
+   },
+   "seconds": 3.3
+  }
+ },
+ "groups": {
+  "hero": [
+   "Male_Adult_06",
+   "Female_Adult_04"
+  ],
+  "casual": [
+   "Male_Adult_01",
+   "Male_Adult_02",
+   "Male_Adult_03",
+   "Male_Adult_04",
+   "Male_Adult_08",
+   "Male_Adult_12",
+   "Male_Adult_15",
+   "Male_Adult_18",
+   "Female_Adult_01",
+   "Female_Adult_02",
+   "Female_Adult_03",
+   "Female_Adult_05",
+   "Female_Adult_06",
+   "Female_Adult_08",
+   "Female_Adult_12",
+   "Female_Adult_14"
+  ],
+  "business": [
+   "Business_Female_01",
+   "Business_Female_02",
+   "Business_Male_01",
+   "Business_Male_02",
+   "Business_Male_07"
+  ],
+  "police": [
+   "Police_Male_01",
+   "Police_Male_05",
+   "Security_Female_01"
+  ],
+  "medical": [
+   "Medical_Female_01",
+   "Medical_Female_02",
+   "Medical_Male_02",
+   "Medical_Male_04"
+  ],
+  "fire": [
+   "Fire_Male_03",
+   "Fire_Female_01"
+  ],
+  "trades": [
+   "Construction_Male_01",
+   "Construction_Male_02",
+   "Construction_Male_07",
+   "Construction_Female_01"
+  ],
+  "service": [
+   "Chef_Female_01",
+   "Delivery_Male_01",
+   "Gardener_Male_01",
+   "Wood_Male_01"
+  ]
+ },
+ "job_pools": {
+  "shop owner": [
+   "Male_Adult_01",
+   "Male_Adult_02",
+   "Male_Adult_03",
+   "Male_Adult_04",
+   "Male_Adult_08",
+   "Male_Adult_12",
+   "Male_Adult_15",
+   "Male_Adult_18",
+   "Female_Adult_01",
+   "Female_Adult_02",
+   "Female_Adult_03",
+   "Female_Adult_05",
+   "Female_Adult_06",
+   "Female_Adult_08",
+   "Female_Adult_12",
+   "Female_Adult_14"
+  ],
+  "cashier": [
+   "Male_Adult_01",
+   "Male_Adult_02",
+   "Male_Adult_03",
+   "Male_Adult_04",
+   "Male_Adult_08",
+   "Male_Adult_12",
+   "Male_Adult_15",
+   "Male_Adult_18",
+   "Female_Adult_01",
+   "Female_Adult_02",
+   "Female_Adult_03",
+   "Female_Adult_05",
+   "Female_Adult_06",
+   "Female_Adult_08",
+   "Female_Adult_12",
+   "Female_Adult_14"
+  ],
+  "barista": [
+   "Male_Adult_01",
+   "Male_Adult_02",
+   "Male_Adult_03",
+   "Male_Adult_04",
+   "Male_Adult_08",
+   "Male_Adult_12",
+   "Male_Adult_15",
+   "Male_Adult_18",
+   "Female_Adult_01",
+   "Female_Adult_02",
+   "Female_Adult_03",
+   "Female_Adult_05",
+   "Female_Adult_06",
+   "Female_Adult_08",
+   "Female_Adult_12",
+   "Female_Adult_14"
+  ],
+  "artist": [
+   "Male_Adult_01",
+   "Male_Adult_02",
+   "Male_Adult_03",
+   "Male_Adult_04",
+   "Male_Adult_08",
+   "Male_Adult_12",
+   "Male_Adult_15",
+   "Male_Adult_18",
+   "Female_Adult_01",
+   "Female_Adult_02",
+   "Female_Adult_03",
+   "Female_Adult_05",
+   "Female_Adult_06",
+   "Female_Adult_08",
+   "Female_Adult_12",
+   "Female_Adult_14"
+  ],
+  "student": [
+   "Male_Adult_01",
+   "Male_Adult_02",
+   "Male_Adult_03",
+   "Male_Adult_04",
+   "Male_Adult_08",
+   "Male_Adult_12",
+   "Male_Adult_15",
+   "Male_Adult_18",
+   "Female_Adult_01",
+   "Female_Adult_02",
+   "Female_Adult_03",
+   "Female_Adult_05",
+   "Female_Adult_06",
+   "Female_Adult_08",
+   "Female_Adult_12",
+   "Female_Adult_14"
+  ],
+  "teacher": [
+   "Male_Adult_01",
+   "Male_Adult_02",
+   "Male_Adult_03",
+   "Male_Adult_04",
+   "Male_Adult_08",
+   "Male_Adult_12",
+   "Male_Adult_15",
+   "Male_Adult_18",
+   "Female_Adult_01",
+   "Female_Adult_02",
+   "Female_Adult_03",
+   "Female_Adult_05",
+   "Female_Adult_06",
+   "Female_Adult_08",
+   "Female_Adult_12",
+   "Female_Adult_14"
+  ],
+  "retiree": [
+   "Male_Adult_03",
+   "Female_Adult_03",
+   "Female_Adult_12"
+  ],
+  "stadium staff": [
+   "Male_Adult_01",
+   "Male_Adult_02",
+   "Male_Adult_03",
+   "Male_Adult_04",
+   "Male_Adult_08",
+   "Male_Adult_12",
+   "Male_Adult_15",
+   "Male_Adult_18",
+   "Female_Adult_01",
+   "Female_Adult_02",
+   "Female_Adult_03",
+   "Female_Adult_05",
+   "Female_Adult_06",
+   "Female_Adult_08",
+   "Female_Adult_12",
+   "Female_Adult_14"
+  ],
+  "airport worker": [
+   "Male_Adult_01",
+   "Male_Adult_02",
+   "Male_Adult_03",
+   "Male_Adult_04",
+   "Male_Adult_08",
+   "Male_Adult_12",
+   "Male_Adult_15",
+   "Male_Adult_18",
+   "Female_Adult_01",
+   "Female_Adult_02",
+   "Female_Adult_03",
+   "Female_Adult_05",
+   "Female_Adult_06",
+   "Female_Adult_08",
+   "Female_Adult_12",
+   "Female_Adult_14"
+  ],
+  "bus driver": [
+   "Male_Adult_01",
+   "Male_Adult_02",
+   "Male_Adult_03",
+   "Male_Adult_04",
+   "Male_Adult_08",
+   "Male_Adult_12",
+   "Male_Adult_15",
+   "Male_Adult_18",
+   "Female_Adult_01",
+   "Female_Adult_02",
+   "Female_Adult_03",
+   "Female_Adult_05",
+   "Female_Adult_06",
+   "Female_Adult_08",
+   "Female_Adult_12",
+   "Female_Adult_14"
+  ],
+  "software developer": [
+   "Business_Female_01",
+   "Business_Female_02",
+   "Business_Male_01",
+   "Business_Male_02",
+   "Business_Male_07"
+  ],
+  "accountant": [
+   "Business_Female_01",
+   "Business_Female_02",
+   "Business_Male_01",
+   "Business_Male_02",
+   "Business_Male_07"
+  ],
+  "city clerk": [
+   "Business_Female_01",
+   "Business_Female_02",
+   "Business_Male_01",
+   "Business_Male_02",
+   "Business_Male_07"
+  ],
+  "professor": [
+   "Business_Female_01",
+   "Business_Female_02",
+   "Business_Male_01",
+   "Business_Male_02",
+   "Business_Male_07"
+  ],
+  "civil engineer": [
+   "Business_Female_01",
+   "Business_Female_02",
+   "Business_Male_01",
+   "Business_Male_02",
+   "Business_Male_07"
+  ],
+  "police officer": [
+   "Police_Male_01",
+   "Police_Male_05",
+   "Security_Female_01"
+  ],
+  "nurse": [
+   "Medical_Female_01",
+   "Medical_Male_04"
+  ],
+  "caregiver": [
+   "Medical_Female_01",
+   "Medical_Male_04"
+  ],
+  "doctor": [
+   "Medical_Female_02",
+   "Medical_Male_04"
+  ],
+  "paramedic": [
+   "Medical_Male_02",
+   "Medical_Female_01"
+  ],
+  "firefighter": [
+   "Fire_Male_03",
+   "Fire_Female_01"
+  ],
+  "construction worker": [
+   "Construction_Male_01",
+   "Construction_Male_02",
+   "Construction_Male_07",
+   "Construction_Female_01"
+  ],
+  "electrician": [
+   "Construction_Male_01",
+   "Construction_Male_02",
+   "Construction_Male_07",
+   "Construction_Female_01"
+  ],
+  "power line technician": [
+   "Construction_Male_01",
+   "Construction_Male_02",
+   "Construction_Male_07",
+   "Construction_Female_01"
+  ],
+  "plumber": [
+   "Construction_Male_01",
+   "Construction_Male_02",
+   "Construction_Male_07",
+   "Construction_Female_01"
+  ],
+  "water utility engineer": [
+   "Construction_Male_01",
+   "Construction_Male_02",
+   "Construction_Male_07",
+   "Construction_Female_01"
+  ],
+  "sanitation worker": [
+   "Construction_Male_07",
+   "Gardener_Male_01",
+   "Construction_Female_01"
+  ],
+  "chef": [
+   "Chef_Female_01"
+  ],
+  "truck driver": [
+   "Delivery_Male_01"
+  ],
+  "warehouse worker": [
+   "Delivery_Male_01",
+   "Wood_Male_01"
+  ],
+  "factory worker": [
+   "Wood_Male_01",
+   "Gardener_Male_01"
+  ],
+  "mechanic": [
+   "Wood_Male_01",
+   "Construction_Male_07"
+  ],
+  "power plant operator": [
+   "Construction_Male_07",
+   "Construction_Female_01"
+  ]
+ },
+ "casual_pools": {
+  "m": [
+   "Male_Adult_01",
+   "Male_Adult_02",
+   "Male_Adult_03",
+   "Male_Adult_04",
+   "Male_Adult_08",
+   "Male_Adult_12",
+   "Male_Adult_15",
+   "Male_Adult_18"
+  ],
+  "f": [
+   "Female_Adult_01",
+   "Female_Adult_02",
+   "Female_Adult_03",
+   "Female_Adult_05",
+   "Female_Adult_06",
+   "Female_Adult_08",
+   "Female_Adult_12",
+   "Female_Adult_14"
+  ]
+ },
+ "ambient_weights": {
+  "casual": 0.6,
+  "business": 0.25,
+  "uniform": 0.15
+ },
+ "uniform_groups": [
+  "police",
+  "medical",
+  "fire",
+  "trades",
+  "service"
+ ],
+ "height": {
+  "target_m": 1.75,
+  "female_factor": 0.95,
+  "jitter": [
+   0.97,
+   1.03
+  ]
+ },
+ "name_gender": {
+  "Ava": "f",
+  "Ben": "m",
+  "Eli": "m",
+  "Fatima": "f",
+  "Gus": "m",
+  "Hana": "f",
+  "Ivan": "m",
+  "Jade": "f",
+  "Kofi": "m",
+  "Lena": "f",
+  "Mateo": "m",
+  "Nia": "f",
+  "Omar": "m",
+  "Priya": "f",
+  "Rosa": "f",
+  "Tomas": "m",
+  "Uma": "f",
+  "Vik": "m",
+  "Zane": "m",
+  "Aiko": "f",
+  "Bruno": "m",
+  "Carmen": "f",
+  "Dmitri": "m",
+  "Esi": "f",
+  "Farid": "m",
+  "Greta": "f",
+  "Hugo": "m",
+  "Imani": "f",
+  "Jonas": "m",
+  "Keiko": "f",
+  "Luis": "m",
+  "Maya": "f",
+  "Nikhil": "m",
+  "Olga": "f",
+  "Pablo": "m",
+  "Rania": "f",
+  "Sven": "m",
+  "Tara": "f",
+  "Ugo": "m",
+  "Valeria": "f",
+  "Ximena": "f",
+  "Yara": "f",
+  "Zoltan": "m",
+  "Amara": "f",
+  "Bilal": "m",
+  "Clara": "f",
+  "Desmond": "m",
+  "Elif": "f",
+  "Gloria": "f",
+  "Hamza": "m",
+  "Ines": "f",
+  "Jamal": "m"
+ }
+}
