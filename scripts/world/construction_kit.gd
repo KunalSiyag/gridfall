@@ -35,6 +35,13 @@ var _solids: Array[Dictionary] = []
 var _machine_bounds: Dictionary = {}
 ## Machine kind -> its footprint bounds in the machine root's frame (unrotated, arms included).
 var _machine_foot: Dictionary = {}
+## Static parts are merged per group and material after a site is built (_merge_static): a site was
+## about 100 MeshInstance3Ds and as many draw calls. Per build: nodes whose whole subtree one collider
+## box covers (so a merged mesh stays inside it), and the frame floors (update_site shows them one by
+## one). The cache shares merged meshes between identical groups (machines of a kind, equal floors).
+var _merge_ok: Dictionary = {}
+var _floors: Array[Node3D] = []
+var _merged: Dictionary = {}
 var _grime: Texture2D
 var _dust: Texture2D
 
@@ -493,6 +500,8 @@ func tower_crane(parent: Node3D, pos: Vector3, h_m: float, yaw: float, phase := 
 	root.position = pos
 	root.rotation.y = yaw
 	parent.add_child(root)
+	# Its static parts (base, mast) lie inside the base box below in x and z: mergeable.
+	_merge_ok[root.get_instance_id()] = true
 	var b := Node3D.new()
 	b.scale = Vector3.ONE * MS
 	root.add_child(b)
@@ -555,12 +564,14 @@ func build_site(holder: Node3D, s: Dictionary, stage: String, f: float, ctx: Dic
 	holder.add_child(root)
 	_site_root = root
 	_solids.clear()
+	_merge_ok.clear()
+	_floors.clear()
+	var a0 := _anims.size()
 	var h := int(ctx.get("h", 0))
 	var ph := float(h % 628) * 0.01
 	if str(s["type"]) == "road":
 		_road_site(root, stage, ctx, ph)
-		_bake_colliders(root)
-		_apply_progress(root, f)
+		_finish_site(root, f, a0)
 		return root
 	var plan := str(s["plan"])
 	var overlay := plan == "zone_up"
@@ -675,9 +686,138 @@ func build_site(holder: Node3D, s: Dictionary, stage: String, f: float, ctx: Dic
 		var mi := part as MeshInstance3D
 		if mi.mesh != null and mi.visibility_range_end == FAR and (mi.mesh.get_aabb().size * mi.scale).length() > 0.25:
 			mi.visibility_range_end = CRANE_FAR
-	_bake_colliders(root)
-	_apply_progress(root, f)
+	_finish_site(root, f, a0)
 	return root
+
+
+## Bakes the colliders from the parts as built, merges the static parts, then applies progress.
+## a0: the first _anims entry of this site.
+func _finish_site(root: Node3D, f: float, a0: int) -> void:
+	for e: Dictionary in _solids:
+		if not e.has("box") and is_instance_valid(e["n"]):
+			_merge_ok[(e["n"] as Node).get_instance_id()] = true
+	_bake_colliders(root)
+	_merge_static(root, a0)
+	_apply_progress(root, f)
+
+
+## Merges the site's static kit parts into one mesh per group, shadow mode, range and material. A
+## group is a part's nearest ancestor that moves, scales or toggles on its own (animated, tracked,
+## a frame floor) or a direct child of the Site; parts directly under the Site stay single (each
+## hoarding run, mound and pole has its own collider box). Only groups inside a part boxed whole by
+## solid() (or a crane, or a machine arm) are merged, so each merged mesh stays inside one collider
+## box and the seams test's per-mesh check still holds. Named parts others look up (Bulb*, the
+## hoarding's poster slot) and model instances (not primitive meshes) are left alone.
+func _merge_static(site: Node3D, a0: int) -> void:
+	var dyn := {}
+	for k in range(a0, _anims.size()):
+		var an: Variant = _anims[k]["node"]
+		if is_instance_valid(an):
+			dyn[(an as Node).get_instance_id()] = true
+	var no_add := {}
+	for p: Dictionary in site.get_meta("progress", []):
+		var pn: Variant = p["n"]
+		if not is_instance_valid(pn):
+			continue
+		dyn[(pn as Node).get_instance_id()] = true
+		if str(p["m"]) in ["reveal", "hide"]:
+			# Its children are shown one by one: they are groups, and nothing may be added beside them.
+			no_add[(pn as Node).get_instance_id()] = true
+			for c in (pn as Node).get_children():
+				dyn[c.get_instance_id()] = true
+	for fl in _floors:
+		if is_instance_valid(fl):
+			dyn[fl.get_instance_id()] = true
+	var allowed := {}
+	# group id -> {"node": Node3D, "buckets": {"shadow|range": Array of [mesh, xform, material, mi]}}
+	var groups := {}
+	for n in site.find_children("*", "MeshInstance3D", true, false):
+		var mi := n as MeshInstance3D
+		if mi.get_parent() == site or dyn.has(mi.get_instance_id()) or not mi.visible or not (mi.mesh is PrimitiveMesh):
+			continue
+		if mi.has_meta("poster_slot") or str(mi.name).begins_with("Bulb") or mi.mesh.get_surface_count() != 1:
+			continue
+		var g := mi.get_parent() as Node3D
+		var xf := mi.transform
+		var hidden := false
+		while g != site and not dyn.has(g.get_instance_id()) and g.get_parent() != site:
+			hidden = hidden or not g.visible
+			xf = g.transform * xf
+			g = g.get_parent() as Node3D
+		if hidden or g == site or no_add.has(g.get_instance_id()):
+			continue
+		var gid := g.get_instance_id()
+		if not allowed.has(gid):
+			allowed[gid] = _merge_allowed(g, site)
+		if not bool(allowed[gid]):
+			continue
+		var m: Material = mi.material_override if mi.material_override != null else mi.mesh.surface_get_material(0)
+		if not groups.has(gid):
+			groups[gid] = {"node": g, "buckets": {}}
+		var bk := "%d|%.4f" % [mi.cast_shadow, mi.visibility_range_end]
+		var buckets: Dictionary = groups[gid]["buckets"]
+		if not buckets.has(bk):
+			buckets[bk] = []
+		(buckets[bk] as Array).append([mi.mesh, xf, m, mi])
+	var far_mult := float(view.get("vis_mult")) if bool(view.get("fp_mode")) and view.get("vis_mult") != null else 1.0
+	for gid: int in groups.keys():
+		var g: Node3D = groups[gid]["node"]
+		var buckets: Dictionary = groups[gid]["buckets"]
+		for bk: String in buckets.keys():
+			var items: Array = buckets[bk]
+			if items.size() < 2:
+				continue
+			var first := items[0][3] as MeshInstance3D
+			var merged := MeshInstance3D.new()
+			merged.name = "Merged"
+			merged.mesh = _merged_mesh(items)
+			merged.cast_shadow = first.cast_shadow
+			var end := first.visibility_range_end
+			merged.visibility_range_end = end * far_mult if is_equal_approx(end, FAR) else end
+			g.add_child(merged)
+			for it: Array in items:
+				var old := it[3] as MeshInstance3D
+				old.get_parent().remove_child(old)
+				old.free()
+
+
+## True when g lies inside a part one collider box covers whole (solid() without a box, a crane) or
+## inside a machine arm ("Boom", which walkers' collision ignores).
+func _merge_allowed(g: Node, site: Node) -> bool:
+	var n := g
+	while n != null and n != site:
+		if _merge_ok.has(n.get_instance_id()) or n.name == &"Boom":
+			return true
+		n = n.get_parent()
+	return false
+
+
+## One ArrayMesh with a surface per material for items ([mesh, xform in the group, material, _]),
+## shared between identical groups.
+func _merged_mesh(items: Array) -> ArrayMesh:
+	var sig := []
+	for it: Array in items:
+		sig.append([(it[0] as Object).get_instance_id(), it[1], (it[2] as Object).get_instance_id() if it[2] != null else 0])
+	var key := hash(sig)
+	if _merged.has(key):
+		return _merged[key]
+	var by_mat := {}
+	var order: Array = []
+	for it: Array in items:
+		var m: Variant = it[2]
+		if not by_mat.has(m):
+			by_mat[m] = SurfaceTool.new()
+			(by_mat[m] as SurfaceTool).begin(Mesh.PRIMITIVE_TRIANGLES)
+			order.append(m)
+		(by_mat[m] as SurfaceTool).append_from(it[0] as Mesh, 0, it[1] as Transform3D)
+	var am := ArrayMesh.new()
+	for m: Variant in order:
+		(by_mat[m] as SurfaceTool).commit(am)
+		am.surface_set_material(am.get_surface_count() - 1, m as Material)
+	if _merged.size() > 512:
+		_merged.clear()
+	_merged[key] = am
+	return am
 
 
 ## Grows a rising frame's floors with stage progress (called a few times a second).
@@ -936,6 +1076,7 @@ func _frame(root: Node3D, foot: Vector2, base_h: float, top_h: float, f: float) 
 		var fl := Node3D.new()
 		fl.position.y = base_h + float(k) * fh
 		frame.add_child(fl)
+		_floors.append(fl)
 		for gx in range(g):
 			for gz in range(g):
 				var px := (float(gx) / float(g - 1) - 0.5) * foot.x * 0.92

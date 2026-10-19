@@ -3,19 +3,20 @@
 importer="texture"
 type="CompressedTexture2D"
 uid="uid://b570ikenl44r3"
-path="res://.godot/imported/drain_0.png-a031033054a3b65f91d352661e1eccbc.ctex"
+path.s3tc="res://.godot/imported/drain_0.png-a031033054a3b65f91d352661e1eccbc.s3tc.ctex"
 metadata={
-"vram_texture": false
+"imported_formats": ["s3tc_bptc"],
+"vram_texture": true
 }
 
 [deps]
 
 source_file="res://textures/real/decals/drain_0.png"
-dest_files=["res://.godot/imported/drain_0.png-a031033054a3b65f91d352661e1eccbc.ctex"]
+dest_files=["res://.godot/imported/drain_0.png-a031033054a3b65f91d352661e1eccbc.s3tc.ctex"]
 
 [params]
 
-compress/mode=0
+compress/mode=2
 compress/high_quality=false
 compress/lossy_quality=0.7
 compress/uastc_level=0

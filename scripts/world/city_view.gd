@@ -661,6 +661,16 @@ func road_fp_material() -> ShaderMaterial:
 	return _road_fp_mat
 
 
+## Sets light_pole_source (E's traffic feature, or null) and, on a change while on foot, re-hangs
+## the street-name blades of the cross tiles already built (they were built before the source).
+func set_light_pole_source(src: Object) -> void:
+	if src == light_pole_source:
+		return
+	light_pole_source = src
+	if fp_mode and _street != null:
+		_street.remount_cross_signs()
+
+
 ## Wet streets: road and sidewalk materials darken and turn glossy, the ground shaders and the water
 ## follow, and puddles appear by the curbs. w is 0 (dry) .. 1 (soaked).
 func set_wetness(w: float) -> void:

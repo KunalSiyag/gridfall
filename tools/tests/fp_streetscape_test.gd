@@ -325,19 +325,60 @@ func _check_signs_with_poles(view: CityView, sim: CitySim) -> void:
 	stub.view = view
 	get_root().add_child(stub)
 	view.light_pole_source = stub
-	var crosses := 0
+	var crosses: Array[int] = []
 	var bad := []
 	for i in sim.active:
 		if sim.kind[i] == D.ROAD and str(RoadTopology.piece(RoadTopology.mask(sim, D.tx(i), D.ty(i)))[0]) == "cross":
 			view._build_tile(i, false)
 			var holder := view.tile_holder(i)
-			crosses += 1
-			if not holder.find_children("StreetSign", "", false, false).is_empty() or not _blades_ok(view, i, holder):
+			crosses.append(i)
+			var pole := stub.light_pole(i, 0)
+			if not _cross_signs_ok(view, i, holder, false) or _blades_at(holder).distance_to(holder.to_local(pole.global_position) + Vector3(0, STREET.E_BLADE_Y, 0)) > 0.002:
 				bad.append(i)
 	view._street.flush()
-	view.light_pole_source = null
-	K.check(fails, crosses > 0 and bad.is_empty(), "cross tiles hang their blades on the traffic feature's NE pole (%d, bad %s)" % [crosses, str(bad)])
+	K.check(fails, not crosses.is_empty() and bad.is_empty(), "cross tiles hang their blades on the traffic feature's NE pole (%d, bad %s)" % [crosses.size(), str(bad)])
+	# Tiles built before the traffic feature existed (boot) are re-hung when it appears, and get
+	# G1's own pole back when it goes; the colliders meta follows.
+	var back := []
+	view.set_light_pole_source(null)
+	for i: int in crosses:
+		if not _cross_signs_ok(view, i, view.tile_holder(i), true):
+			back.append(i)
+	var hung := []
+	view.set_light_pole_source(stub)
+	for i: int in crosses:
+		if not _cross_signs_ok(view, i, view.tile_holder(i), false):
+			hung.append(i)
+	view.set_light_pole_source(null)
+	K.check(fails, back.is_empty() and hung.is_empty(), "cross-tile signs follow the traffic feature coming and going (own pole bad %s, hung bad %s)" % [str(back.slice(0, 4)), str(hung.slice(0, 4))])
 	stub.queue_free()
+
+
+## One set of blades with the junction's names on the cross holder; with own_pole one G1 pole at the
+## NE corner and its collider, else neither.
+func _cross_signs_ok(view: CityView, i: int, holder: Node3D, own_pole: bool) -> bool:
+	var signs := holder.find_children("StreetSign", "", false, false)
+	var marked := 0
+	for c in holder.get_children():
+		if c.has_meta("street_sign"):
+			marked += 1
+	var sign_cols := 0
+	for e: Dictionary in holder.get_meta("colliders", []):
+		if str(e.get("kind", "")) == "sign":
+			sign_cols += 1
+	if marked != 1 or not _blades_ok(view, i, holder):
+		return false
+	if own_pole:
+		return signs.size() == 1 and sign_cols == 1 and (signs[0] as Node3D).position.is_equal_approx(STREET.OWN_POLE)
+	return signs.is_empty() and sign_cols == 0
+
+
+## Holder-local position of the cross tile's blades root.
+func _blades_at(holder: Node3D) -> Vector3:
+	for c in holder.get_children():
+		if c.has_meta("street_sign") and c.name == &"Blades":
+			return (c as Node3D).position
+	return Vector3.INF
 
 
 # ------------------------------------------------------------------ lots
@@ -561,6 +602,34 @@ func _check_sites(view: CityView, sim: CitySim) -> void:
 				bad.append([front, h])
 			root.free()
 	K.check(fails, bad.is_empty(), "the hoarding has a poster slot facing the frontage road %s" % str(bad))
+	# Static site parts are merged per group and material (G2 measured about 1,050 site draws in one
+	# street view): a 24 m frame with its crane and mixer stays within a few dozen surfaces, and its
+	# floors still rise with progress.
+	var holder := Node3D.new()
+	get_root().add_child(holder)
+	var s := {"type": "build", "plan": "build", "target_kind": D.ZONE_C}
+	var site := view.kit.build_site(holder, s, "frame", 0.2, {"h": 7, "height": 1.2, "foot": Vector2(0.7, 0.7)})
+	var surfaces := 0
+	var merged := 0
+	for n in site.find_children("*", "MeshInstance3D", true, false):
+		surfaces += (n as MeshInstance3D).mesh.get_surface_count()
+		if n.name == &"Merged":
+			merged += 1
+	var frame := site.get_node("Frame") as Node3D
+	var low := _shown(frame)
+	view.kit.update_site(holder, 1.0)
+	var high := _shown(frame)
+	var floors := frame.get_child_count()
+	holder.free()
+	K.check(fails, merged > 5 and surfaces <= 90 and low < high and high == floors, "a frame site draws %d surfaces (%d merged meshes), floors rise %d -> %d of %d" % [surfaces, merged, low, high, floors])
+
+
+func _shown(frame: Node3D) -> int:
+	var n := 0
+	for c in frame.get_children():
+		if (c as Node3D).visible:
+			n += 1
+	return n
 
 
 # ------------------------------------------------------------------ light profile, sky, weather
@@ -685,6 +754,20 @@ func _check_weather(ctx: FpContext, f: FpFeature) -> void:
 	f.call("force_rain_for_photo")
 	K.check(fails, is_equal_approx(ctx.view.wetness, 1.0) and str((f.call("to_dict") as Dictionary).get("weather")) == "rain", "force_rain_for_photo soaks the streets at once")
 	f.call("clear_forced_weather")
+	# A smog incident: a FogVolume over its radius on High only, gone with the incident.
+	var ev := {"type": "smog", "x": 10, "y": 12, "radius": 3}
+	ctx.sim.events.append(ev)
+	weather.call("set_rain_amount", "medium")
+	var on_medium := (weather.get("smog_volumes") as Dictionary).size()
+	weather.call("set_rain_amount", "high")
+	var vols: Dictionary = weather.get("smog_volumes")
+	var fv: FogVolume = vols.values()[0] if vols.size() == 1 else null
+	var placed := fv != null and fv.global_position.is_equal_approx(Vector3(10, WS.GROUND_Y + 10.0 * WS.M, 12)) and is_equal_approx(fv.size.x, 8.0)
+	ctx.sim.events.erase(ev)
+	weather.call("step", 0.1)
+	var after := (weather.get("smog_volumes") as Dictionary).size()
+	weather.call("set_rain_amount", "medium")
+	K.check(fails, on_medium == 0 and placed and after == 0, "smog gets a FogVolume on High only, and loses it with the incident (%d, %s, %d)" % [on_medium, placed, after])
 	weather.set_process(true)
 
 

@@ -31,10 +31,18 @@ void vertex() {
 	world_pos = (MODEL_MATRIX * vec4(VERTEX, 1.0)).xyz;
 }
 
+// The normal map is imported two-channel (RGTC), with no blue: rebuild it as the encoded value an
+// RGB normal map carries, so the mix below behaves as before.
+vec3 normal_at(vec2 uv) {
+	vec2 xy = texture(normal_tex, uv).rg;
+	vec2 d = xy * 2.0 - 1.0;
+	return vec3(xy, sqrt(max(0.0, 1.0 - dot(d, d))) * 0.5 + 0.5);
+}
+
 void fragment() {
 	vec2 uv = world_pos.xz * tiling;
-	vec3 n1 = texture(normal_tex, uv + vec2(TIME * speed, TIME * speed * 0.6)).rgb;
-	vec3 n2 = texture(normal_tex, uv * 1.7 - vec2(TIME * speed * 0.8, -TIME * speed * 0.4)).rgb;
+	vec3 n1 = normal_at(uv + vec2(TIME * speed, TIME * speed * 0.6));
+	vec3 n2 = normal_at(uv * 1.7 - vec2(TIME * speed * 0.8, -TIME * speed * 0.4));
 	vec3 nm = normalize(mix(n1, n2, 0.5));
 	if (rain > 0.0) {
 		// Expanding rings in a jittered grid of 16 cm cells, each on its own clock.

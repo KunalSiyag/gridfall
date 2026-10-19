@@ -31,12 +31,19 @@ var push_global: bool = false
 ## tour, fp_bench), so their baselines and timings do not depend on the day's weather.
 var baseline: String = ""
 var rain: GPUParticles3D
+## The quality preset: on "high" (the only preset with volumetric fog) a smog incident also gets a
+## brown FogVolume box over its radius.
+var preset: String = "medium"
+## Smog FogVolumes by event key ("x,y").
+var smog_volumes: Dictionary = {}
 var _look: Dictionary = {"energy": 1.0, "exposure": 1.0, "grey": 0.0, "fog": -1.0, "shadow": 1.0}
 var _smog: float = 0.0
+var _smog_mat: FogMaterial
 
 
-func setup(p_ctx: FpContext, preset: String) -> void:
+func setup(p_ctx: FpContext, p_preset: String) -> void:
 	ctx = p_ctx
+	preset = p_preset
 	_build_rain(preset)
 	state = target_state()
 	_look = (LOOK[state] as Dictionary).duplicate()
@@ -87,6 +94,7 @@ func step(delta: float) -> void:
 	_look["fog"] = goal["fog"]
 	_smog = lerpf(_smog, _smog_near(), k)
 	_apply_hooks()
+	_update_smog_volumes()
 	if rain != null:
 		rain.emitting = state == "rain"
 		var cam := get_viewport().get_camera_3d() if is_inside_tree() else null
@@ -152,9 +160,46 @@ func clear_forced() -> void:
 	_apply_hooks()
 
 
-func set_rain_amount(preset: String) -> void:
+func set_rain_amount(p_preset: String) -> void:
+	preset = p_preset
 	if rain != null:
 		rain.amount = int(RAIN_AMOUNT.get(preset, 1600))
+	_update_smog_volumes()
+
+
+## On "high", one FogVolume box per smog incident, 20 m tall over its radius plus a tile, thinning
+## upward and at its edges; none on the other presets (they have no volumetric fog).
+func _update_smog_volumes() -> void:
+	var want := {}
+	if preset == "high" and ctx != null and ctx.sim != null:
+		for ev: Dictionary in ctx.sim.events:
+			if str(ev.get("type", "")) == "smog":
+				want["%d,%d" % [int(ev.get("x", 0)), int(ev.get("y", 0))]] = ev
+	for key: String in smog_volumes.keys():
+		if not want.has(key):
+			var old: Variant = smog_volumes[key]
+			if is_instance_valid(old):
+				(old as Node).queue_free()
+			smog_volumes.erase(key)
+	for key: String in want.keys():
+		if smog_volumes.has(key):
+			continue
+		var ev: Dictionary = want[key]
+		if _smog_mat == null:
+			_smog_mat = FogMaterial.new()
+			_smog_mat.density = 0.15
+			_smog_mat.albedo = Color(0.62, 0.55, 0.36)
+			_smog_mat.height_falloff = 1.5
+			_smog_mat.edge_fade = 0.4
+		var fv := FogVolume.new()
+		fv.name = "Smog"
+		fv.shape = RenderingServer.FOG_VOLUME_SHAPE_BOX
+		var r := float(ev.get("radius", 3)) + 1.0
+		fv.size = Vector3(r * 2.0, 20.0 * WS.M, r * 2.0)
+		fv.material = _smog_mat
+		add_child(fv)
+		fv.global_position = Vector3(float(ev.get("x", 0)), WS.GROUND_Y + 10.0 * WS.M, float(ev.get("y", 0)))
+		smog_volumes[key] = fv
 
 
 func to_dict() -> Dictionary:
@@ -169,10 +214,10 @@ func from_dict(d: Dictionary) -> void:
 
 
 ## Falling streaks in a 1 u box above and around the camera, simulated in world space.
-func _build_rain(preset: String) -> void:
+func _build_rain(p_preset: String) -> void:
 	rain = GPUParticles3D.new()
 	rain.name = "Rain"
-	rain.amount = int(RAIN_AMOUNT.get(preset, 1600))
+	rain.amount = int(RAIN_AMOUNT.get(p_preset, 1600))
 	rain.lifetime = 1.3
 	rain.local_coords = false
 	rain.emitting = false

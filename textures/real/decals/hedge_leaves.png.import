@@ -3,19 +3,20 @@
 importer="texture"
 type="CompressedTexture2D"
 uid="uid://cff330ifpvn5w"
-path="res://.godot/imported/hedge_leaves.png-e3f507c2ef1793b7a6abb874f3aeb807.ctex"
+path.s3tc="res://.godot/imported/hedge_leaves.png-e3f507c2ef1793b7a6abb874f3aeb807.s3tc.ctex"
 metadata={
-"vram_texture": false
+"imported_formats": ["s3tc_bptc"],
+"vram_texture": true
 }
 
 [deps]
 
 source_file="res://textures/real/decals/hedge_leaves.png"
-dest_files=["res://.godot/imported/hedge_leaves.png-e3f507c2ef1793b7a6abb874f3aeb807.ctex"]
+dest_files=["res://.godot/imported/hedge_leaves.png-e3f507c2ef1793b7a6abb874f3aeb807.s3tc.ctex"]
 
 [params]
 
-compress/mode=0
+compress/mode=2
 compress/high_quality=false
 compress/lossy_quality=0.7
 compress/uastc_level=0

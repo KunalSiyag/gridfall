@@ -3,19 +3,20 @@
 importer="texture"
 type="CompressedTexture2D"
 uid="uid://dx2nad2jjgbdc"
-path="res://.godot/imported/puddle_0.png-306d33e100b1115ad086992a11e1be09.ctex"
+path.s3tc="res://.godot/imported/puddle_0.png-306d33e100b1115ad086992a11e1be09.s3tc.ctex"
 metadata={
-"vram_texture": false
+"imported_formats": ["s3tc_bptc"],
+"vram_texture": true
 }
 
 [deps]
 
 source_file="res://textures/real/decals/puddle_0.png"
-dest_files=["res://.godot/imported/puddle_0.png-306d33e100b1115ad086992a11e1be09.ctex"]
+dest_files=["res://.godot/imported/puddle_0.png-306d33e100b1115ad086992a11e1be09.s3tc.ctex"]
 
 [params]
 
-compress/mode=0
+compress/mode=2
 compress/high_quality=false
 compress/lossy_quality=0.7
 compress/uastc_level=0

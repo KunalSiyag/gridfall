@@ -73,7 +73,7 @@ func teardown() -> void:
 		if lights != null and ctx.view.tile_built.is_connected(lights.on_tile_built):
 			ctx.view.tile_built.disconnect(lights.on_tile_built)
 			ctx.view.tile_cleared.disconnect(lights.on_tile_cleared)
-		ctx.view.light_pole_source = null
+		ctx.view.set_light_pole_source(null)
 		ctx.view.set_wetness(0.0)
 	if ctx.sky != null:
 		ctx.sky.reset_weather()
@@ -108,7 +108,7 @@ func _hook_traffic() -> void:
 	if ctx.view == null:
 		return
 	var traffic := ctx.feature("traffic")
-	ctx.view.light_pole_source = traffic if traffic != null and traffic.has_method("light_pole") else null
+	ctx.view.set_light_pole_source(traffic if traffic != null and traffic.has_method("light_pole") else null)
 
 
 func _vis_mult() -> float:

@@ -3,19 +3,20 @@
 importer="texture"
 type="CompressedTexture2D"
 uid="uid://b6nx7sr3c6t2"
-path="res://.godot/imported/grime_dust.png-abc92fda0dfb06e26858cf49073fed25.ctex"
+path.s3tc="res://.godot/imported/grime_dust.png-abc92fda0dfb06e26858cf49073fed25.s3tc.ctex"
 metadata={
-"vram_texture": false
+"imported_formats": ["s3tc_bptc"],
+"vram_texture": true
 }
 
 [deps]
 
 source_file="res://textures/real/decals/grime_dust.png"
-dest_files=["res://.godot/imported/grime_dust.png-abc92fda0dfb06e26858cf49073fed25.ctex"]
+dest_files=["res://.godot/imported/grime_dust.png-abc92fda0dfb06e26858cf49073fed25.s3tc.ctex"]
 
 [params]
 
-compress/mode=0
+compress/mode=2
 compress/high_quality=false
 compress/lossy_quality=0.7
 compress/uastc_level=0

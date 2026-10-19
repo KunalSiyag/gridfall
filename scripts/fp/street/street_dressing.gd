@@ -50,6 +50,12 @@ const FAR_KINDS := ["tree", "lamp", "apron"]
 ## Kinds whose batches cast shadows.
 const SHADOW_KINDS := ["tree", "lamp"]
 const SIGN_GREEN := Color(0.02, 0.36, 0.2)
+## Cross tiles without a traffic feature: G1's own sign pole at the NE corner (holder-local).
+const OWN_POLE := Vector3(0.345, WS.SIDEWALK_TOP, -0.345)
+## E's NE traffic-light pole (junctions.gd POLE_AT, E-G1-corners.md) and its lower blade mount
+## (SignText_B, 4.35 m), used until E has built the pole.
+const E_POLE := Vector2(0.42, -0.42)
+const E_BLADE_Y := 4.35 * WS.M
 
 var view: CityView
 var root: Node3D
@@ -258,6 +264,9 @@ func _asphalt(model: Node3D, mask: int, kind_name: String) -> void:
 			if m != null and m.resource_name == "Asphalt":
 				mi.set_surface_override_material(s, mat)
 				hit = true
+			elif m != null and m.resource_name == "Metal_Dark":
+				# Manhole covers and gutter grates: worn cast iron, not a blue-grey mirror.
+				mi.set_surface_override_material(s, _iron_mat())
 		if hit:
 			mi.set_instance_shader_parameter(&"lane_axis", float(axis))
 
@@ -465,17 +474,58 @@ func _dress_junction(i: int, holder: Node3D, mask: int, kind_name: String, rng: 
 		_street_sign(holder, Vector3(p.x, WS.SIDEWALK_TOP, p.y), names, cols, true)
 		_corner_bin(i, Vector2(stem) * 0.47 - side * 0.47, cols, rng)
 	else:
-		var pole: Node3D = null
-		if view.light_pole_source != null and view.light_pole_source.has_method("light_pole"):
-			pole = view.light_pole_source.call("light_pole", i, 0) as Node3D
-		if pole != null and pole.is_inside_tree():
-			var at := holder.to_local(pole.global_position)
-			var blades := _blades(names)
-			blades.position = Vector3(at.x, at.y + 0.15, at.z)
-			holder.add_child(blades)
-		else:
-			_street_sign(holder, Vector3(0.345, WS.SIDEWALK_TOP, -0.345), names, cols, true)
+		_cross_sign(i, holder, names, cols)
 		_corner_bin(i, Vector2(-0.47, 0.47) if rng.randf() < 0.5 else Vector2(0.47, 0.47), cols, rng)
+
+
+## Cross tiles: E's traffic feature owns all four corners (docs/fp/requests/E-G1-corners.md), so with
+## a traffic feature the blades hang on its NE pole and G1 stands no pole of its own; without one
+## (orbit tools, E not merged) G1's own pole stands at the NE corner.
+func _cross_sign(i: int, holder: Node3D, names: PackedStringArray, cols: Array) -> void:
+	if view.light_pole_source == null:
+		_street_sign(holder, OWN_POLE, names, cols, true)
+		return
+	# The pole's SignText_B empty once E has built it; else where the agreement puts the pole, so a
+	# tile built before E's junction furniture (E rebuilds it after tile_built) still lines up.
+	var at := Vector3(E_POLE.x, WS.SIDEWALK_TOP + E_BLADE_Y, E_POLE.y)
+	var pole: Node3D = null
+	if view.light_pole_source.has_method("light_pole"):
+		pole = view.light_pole_source.call("light_pole", i, 0) as Node3D
+	if pole != null and pole.is_inside_tree() and holder.is_inside_tree():
+		var mark := pole.find_child("SignText_B", true, false) as Node3D
+		at = holder.to_local(mark.global_position if mark != null else pole.global_position + Vector3(0, E_BLADE_Y, 0))
+	var blades := _blades(names)
+	blades.position = at
+	blades.set_meta("prop", true)
+	blades.set_meta("street_sign", true)
+	holder.add_child(blades)
+	_range(blades, WS.VIS_PROP)
+
+
+## Re-hangs the blades of every built cross tile after the traffic feature appeared or went: its NE
+## pole replaces G1's own (or G1's comes back), and the holder's `colliders` meta follows. Tiles
+## built at boot, before the features exist, need it; the streetscape feature calls it from setup,
+## which runs before FpMode rebuilds collision.
+func remount_cross_signs() -> void:
+	for i: int in view._tile_nodes.keys():
+		if view.sim.kind[i] != D.ROAD:
+			continue
+		var mask := RoadTopology.mask(view.sim, D.tx(i), D.ty(i))
+		if str(RoadTopology.piece(mask)[0]) != "cross":
+			continue
+		var holder: Node3D = view._tile_nodes[i]
+		if not is_instance_valid(holder):
+			continue
+		for c in holder.get_children():
+			if c.has_meta("street_sign"):
+				holder.remove_child(c)
+				c.queue_free()
+		var cols: Array = []
+		for e: Dictionary in holder.get_meta("colliders", []):
+			if str(e.get("kind", "")) != "sign":
+				cols.append(e)
+		_cross_sign(i, holder, view.directory.intersection_name(i).split(" & "), cols)
+		holder.set_meta("colliders", cols)
 
 
 ## A bin at the back of a corner's sidewalk square, clear of the crossing and its waiting spot.
@@ -1212,6 +1262,21 @@ func _grate_mat() -> StandardMaterial3D:
 			m.texture_filter = BaseMaterial3D.TEXTURE_FILTER_LINEAR_WITH_MIPMAPS_ANISOTROPIC
 		_mats["grate_tex"] = m
 	return _mats["grate_tex"]
+
+
+## Cast iron for the road models' covers on foot: dark, mottled by the grime mask in world space.
+func _iron_mat() -> StandardMaterial3D:
+	if not _mats.has("iron"):
+		var m := _std("iron_base", Color(0.2, 0.19, 0.18), 0.5, 0.6).duplicate() as StandardMaterial3D
+		m.resource_name = "Iron_FP"
+		var tex := _decal_texture("grime_mask")
+		if tex != null:
+			m.albedo_texture = tex
+			m.uv1_triplanar = true
+			m.uv1_world_triplanar = true
+			m.uv1_scale = Vector3.ONE / (0.6 * WS.M)
+		_mats["iron"] = m
+	return _mats["iron"]
 
 
 ## Bare soil in tree pits: the ground's earth texture, darker and damp.

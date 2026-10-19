@@ -37,3 +37,12 @@ holder-local) and add `"h"` (height) on cylinders and `"kind"` (tree, bench, bin
 mailbox, planter, utility, rack, meter, lamp, sign, shelter, billboard, lease) for debugging. The baked
 lamp poles of lit straights are included. Tree grates and kerb ramps are walkable and have none.
 Lease boards and billboards on vacant lots put their entries on the lot holder.
+
+## To A: cross-tile sign poles and merged site meshes
+
+- With E's traffic feature present, cross tiles carry no G1 sign pole (E's NE light pole holds the
+  blades), so no `kind: "sign"` collider on them. Tiles built at boot get their pole and its collider
+  removed when the streetscape feature sets up, which runs before FpMode's `collision.rebuild_all()`.
+- `ConstructionKit` merges each site's static parts into a few meshes per group and material after
+  baking the `colliders` meta. The meta and `CityView.site_boxes(i)` are unchanged; every merged mesh
+  stays inside one collider box (`fp_seams_test` checks it).

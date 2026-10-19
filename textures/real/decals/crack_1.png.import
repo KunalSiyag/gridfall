@@ -3,19 +3,20 @@
 importer="texture"
 type="CompressedTexture2D"
 uid="uid://djat5rc7cbwt8"
-path="res://.godot/imported/crack_1.png-cea9d00d533b9daefa1bc330b2991586.ctex"
+path.s3tc="res://.godot/imported/crack_1.png-cea9d00d533b9daefa1bc330b2991586.s3tc.ctex"
 metadata={
-"vram_texture": false
+"imported_formats": ["s3tc_bptc"],
+"vram_texture": true
 }
 
 [deps]
 
 source_file="res://textures/real/decals/crack_1.png"
-dest_files=["res://.godot/imported/crack_1.png-cea9d00d533b9daefa1bc330b2991586.ctex"]
+dest_files=["res://.godot/imported/crack_1.png-cea9d00d533b9daefa1bc330b2991586.s3tc.ctex"]
 
 [params]
 
-compress/mode=0
+compress/mode=2
 compress/high_quality=false
 compress/lossy_quality=0.7
 compress/uastc_level=0

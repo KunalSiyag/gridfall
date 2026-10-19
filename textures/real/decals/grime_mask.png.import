@@ -3,19 +3,20 @@
 importer="texture"
 type="CompressedTexture2D"
 uid="uid://cmnak0u8jokcu"
-path="res://.godot/imported/grime_mask.png-f765f653c36c3c6ce4a96beced71844f.ctex"
+path.s3tc="res://.godot/imported/grime_mask.png-f765f653c36c3c6ce4a96beced71844f.s3tc.ctex"
 metadata={
-"vram_texture": false
+"imported_formats": ["s3tc_bptc"],
+"vram_texture": true
 }
 
 [deps]
 
 source_file="res://textures/real/decals/grime_mask.png"
-dest_files=["res://.godot/imported/grime_mask.png-f765f653c36c3c6ce4a96beced71844f.ctex"]
+dest_files=["res://.godot/imported/grime_mask.png-f765f653c36c3c6ce4a96beced71844f.s3tc.ctex"]
 
 [params]
 
-compress/mode=0
+compress/mode=2
 compress/high_quality=false
 compress/lossy_quality=0.7
 compress/uastc_level=0

@@ -3,19 +3,20 @@
 importer="texture"
 type="CompressedTexture2D"
 uid="uid://dwoe1rw7x1vru"
-path="res://.godot/imported/hoarding.png-b2565252e82117e55a97112c19f21b45.ctex"
+path.s3tc="res://.godot/imported/hoarding.png-b2565252e82117e55a97112c19f21b45.s3tc.ctex"
 metadata={
-"vram_texture": false
+"imported_formats": ["s3tc_bptc"],
+"vram_texture": true
 }
 
 [deps]
 
 source_file="res://textures/real/decals/hoarding.png"
-dest_files=["res://.godot/imported/hoarding.png-b2565252e82117e55a97112c19f21b45.ctex"]
+dest_files=["res://.godot/imported/hoarding.png-b2565252e82117e55a97112c19f21b45.s3tc.ctex"]
 
 [params]
 
-compress/mode=0
+compress/mode=2
 compress/high_quality=false
 compress/lossy_quality=0.7
 compress/uastc_level=0
