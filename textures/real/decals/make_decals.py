@@ -168,6 +168,26 @@ def hoarding(seed):
     Image.fromarray(np.dstack([g, g, g]), "RGB").save(os.path.join(OUT, "hoarding.png"), optimize=True)
 
 
+def grime(seed):
+    """A tiling dust mask (white = dusty) and the dust colour it blends in, for site machines."""
+    rng = np.random.default_rng(seed)
+    n = 256
+    big = fbm(rng, n * 2, 4, 5)
+    # Make it tile: blend the image with its half-shifted copy across the seams.
+    m = big[:n, :n]
+    w = np.minimum(np.arange(n), n - 1 - np.arange(n)) / (n / 2.0)
+    w = np.clip(w * 2.0, 0, 1)
+    ww = np.minimum(w[None, :], w[:, None])
+    shifted = np.roll(np.roll(m, n // 2, 0), n // 2, 1)
+    m = m * ww + shifted * (1 - ww)
+    mask = np.clip((m - 0.45) * 3.0, 0, 1) ** 1.5 * 0.85
+    g = (mask * 255).astype(np.uint8)
+    Image.fromarray(g, "L").save(os.path.join(OUT, "grime_mask.png"), optimize=True)
+    d = fbm(rng, 64, 8, 2)
+    rgb = np.dstack([0.40 + 0.08 * d, 0.34 + 0.07 * d, 0.27 + 0.05 * d]) * 255
+    Image.fromarray(rgb.astype(np.uint8), "RGB").save(os.path.join(OUT, "grime_dust.png"), optimize=True)
+
+
 def main():
     for k in range(2):
         save("crack_%d" % k, *cracks(11 + k))
@@ -180,6 +200,7 @@ def main():
     # ORM for puddles: full AO, near-mirror roughness, no metal.
     Image.fromarray(np.full((16, 16, 3), (255, 12, 0), np.uint8), "RGB").save(os.path.join(OUT, "puddle_orm.png"))
     hoarding(71)
+    grime(81)
 
 
 if __name__ == "__main__":

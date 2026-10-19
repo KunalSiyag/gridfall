@@ -332,7 +332,13 @@ func _mk_root(n: String) -> Node3D:
 
 func _scene(path: String) -> PackedScene:
 	if not _scenes.has(path):
-		var ps: PackedScene = load(path) if ResourceLoader.exists(path) else null
+		var ps: PackedScene = null
+		if _warming.has(path):
+			# A threaded warm-up of this scene is running: wait for it instead of loading it twice.
+			_warming.erase(path)
+			ps = ResourceLoader.load_threaded_get(path) as PackedScene
+		elif ResourceLoader.exists(path):
+			ps = load(path)
 		if ps != null:
 			_tune_materials(ps)
 		_scenes[path] = ps
@@ -1343,17 +1349,20 @@ func _models_ready(i: int) -> bool:
 ## Starts loading the scenes at paths on worker threads (the streetscape feature warms every zone,
 ## service and prop model at setup); _process tunes them in as they finish.
 func warm_scenes(paths: Array) -> void:
+	if DisplayServer.get_name() == "headless":
+		return
 	for p: String in paths:
 		if not _scenes.has(p) and ResourceLoader.exists(p):
 			_warm_one(p)
 
 
-## Polls one threaded load; true once the scene is in the cache.
+## Polls one threaded load; true once the scene is in the cache. Headless runs (the dummy renderer's
+## texture storage is not thread-safe) load on the main thread instead.
 func _warm_one(path: String) -> bool:
 	if _scenes.has(path):
 		return true
 	if not _warming.has(path):
-		if ResourceLoader.load_threaded_request(path, "PackedScene", true) != OK:
+		if DisplayServer.get_name() == "headless" or ResourceLoader.load_threaded_request(path, "PackedScene") != OK:
 			_scene(path)
 			return true
 		_warming[path] = true

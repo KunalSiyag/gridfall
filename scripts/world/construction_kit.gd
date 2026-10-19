@@ -19,6 +19,7 @@ const HOARDING_H_FP := 2.2 * WS.M
 const HOARDING_TINTS := [Color(0.33, 0.43, 0.34), Color(0.36, 0.4, 0.45), Color(0.86, 0.7, 0.5)]
 ## Machines keep their footprint inside the hoarding at +-HOARDING_IN.
 const HOARDING_IN := 0.46
+const GRIME := "res://textures/real/decals/"
 
 var view: Node
 var _mats: Dictionary = {}
@@ -35,6 +36,7 @@ var _machine_bounds: Dictionary = {}
 ## Machine kind -> its footprint bounds in the machine root's frame (unrotated, arms included).
 var _machine_foot: Dictionary = {}
 var _grime: Texture2D
+var _dust: Texture2D
 
 
 func _init(p_view: Node) -> void:
@@ -146,20 +148,13 @@ func mat(key: String) -> Material:
 ## machine's own metres so it travels with it.
 func _add_grime(m: StandardMaterial3D) -> void:
 	if _grime == null:
-		var nz := FastNoiseLite.new()
-		nz.frequency = 0.035
-		nz.fractal_octaves = 4
-		var nt := NoiseTexture2D.new()
-		nt.width = 256
-		nt.height = 256
-		nt.seamless = true
-		nt.noise = nz
-		_grime = nt
-	var dust := Image.create(4, 4, false, Image.FORMAT_RGB8)
-	dust.fill(Color(0.42, 0.36, 0.29))
+		if not ResourceLoader.exists(GRIME + "grime_mask.png"):
+			return
+		_grime = load(GRIME + "grime_mask.png")
+		_dust = load(GRIME + "grime_dust.png")
 	m.detail_enabled = true
 	m.detail_mask = _grime
-	m.detail_albedo = ImageTexture.create_from_image(dust)
+	m.detail_albedo = _dust
 	m.detail_blend_mode = BaseMaterial3D.BLEND_MODE_MIX
 	m.uv1_triplanar = true
 	m.uv1_scale = Vector3.ONE * 0.35
