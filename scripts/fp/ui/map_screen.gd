@@ -14,7 +14,7 @@ const MAP_SHADER := preload("res://ui/fp/map.gdshader")
 const MODAL := &"map"
 const MIN_PPT := 3.0
 const MAX_PPT := 28.0
-const START_PPT := 9.0
+const START_PPT := 12.0
 ## Street names show at this zoom and closer.
 const STREET_PPT := 6.0
 const ZOOM_STEP := 1.18
@@ -43,7 +43,7 @@ var _age: float = 0.0
 var _labels_dirty: bool = true
 ## {"name": String, "pos": Vector2 (world), "vertical": bool, "len": int (tiles)}
 var _streets: Array[Dictionary] = []
-## {"name": String, "pos": Vector2 (world)}
+## {"name": String, "lines": PackedStringArray, "pos": Vector2 (world)}
 var _districts: Array[Dictionary] = []
 var _time: float = 0.0
 
@@ -52,18 +52,18 @@ func setup(p_ctx: FpContext, p_hud: Node) -> void:
 	ctx = p_ctx
 	hud = p_hud
 	name = "MapScreen"
-	set_anchors_preset(Control.PRESET_FULL_RECT)
+	set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	mouse_filter = Control.MOUSE_FILTER_STOP
 	visible = false
 	_bg = ColorRect.new()
 	_bg.name = "Backdrop"
 	_bg.color = Color(0.035, 0.045, 0.06, 1.0)
-	_bg.set_anchors_preset(Control.PRESET_FULL_RECT)
+	_bg.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	_bg.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	add_child(_bg)
 	_rect = ColorRect.new()
 	_rect.name = "Map"
-	_rect.set_anchors_preset(Control.PRESET_FULL_RECT)
+	_rect.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	_rect.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_mat = ShaderMaterial.new()
 	_mat.shader = MAP_SHADER
@@ -75,9 +75,31 @@ func setup(p_ctx: FpContext, p_hud: Node) -> void:
 	_mat.set_shader_parameter("borders", true)
 	_rect.material = _mat
 	add_child(_rect)
+	# Soft dark bands behind the title and the key hints, so they read over roads.
+	for top: bool in [true, false]:
+		var band := TextureRect.new()
+		band.name = "Band"
+		band.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		var g := GradientTexture2D.new()
+		g.fill_from = Vector2(0, 0) if top else Vector2(0, 1)
+		g.fill_to = Vector2(0, 1) if top else Vector2(0, 0)
+		var grad := Gradient.new()
+		grad.colors = PackedColorArray([Color(0.02, 0.025, 0.035, 0.72), Color(0.02, 0.025, 0.035, 0.0)])
+		g.gradient = grad
+		g.width = 4
+		g.height = 64
+		band.texture = g
+		band.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+		band.stretch_mode = TextureRect.STRETCH_SCALE
+		band.anchor_right = 1.0
+		band.anchor_top = 0.0 if top else 1.0
+		band.anchor_bottom = 0.0 if top else 1.0
+		band.offset_top = 0.0 if top else -130.0
+		band.offset_bottom = 130.0 if top else 0.0
+		add_child(band)
 	_overlay = Control.new()
 	_overlay.name = "Labels"
-	_overlay.set_anchors_preset(Control.PRESET_FULL_RECT)
+	_overlay.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	_overlay.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_overlay.draw.connect(_draw_overlay)
 	add_child(_overlay)
@@ -327,7 +349,8 @@ func _rebuild_labels() -> void:
 	for d: int in sums:
 		var s: Vector3 = sums[d]
 		if d < D.MAYORS.size() and s.z > 0:
-			_districts.append({"name": str(D.MAYORS[d]["district"]).to_upper(), "pos": Vector2(s.x / s.z, s.y / s.z)})
+			var dn := str(D.MAYORS[d]["district"]).to_upper()
+			_districts.append({"name": dn, "lines": _split_name(dn), "pos": Vector2(s.x / s.z, s.y / s.z)})
 	# Street runs: E-W along rows, N-S along columns; one label per run of 3+ tiles.
 	for y in range(r.position.y, r.end.y):
 		_scan_runs(r.position.x, r.end.x, y, false)
@@ -379,17 +402,34 @@ func _draw_overlay() -> void:
 	var caps := S.caps()
 	var view := _view_size()
 	var screen := Rect2(Vector2.ZERO, view).grow(-4.0)
-	# District names.
-	var dfs := 15 if ppt < 10.0 else 18
+	# Labels never overlap: the player and the waypoint first, then districts, streets, incidents.
+	var placed: Array[Rect2] = [
+		Rect2(0, 0, 440, 112), Rect2(0, view.y - 84, 780, 84),
+		Rect2(view.x - 230, view.y - 84, 230, 84), Rect2(view.x - 96, 0, 96, 96),
+	]
+	if ctx.player != null:
+		placed.append(Rect2(world_to_screen(Vector2(ctx.player.position.x, ctx.player.position.z)) - Vector2(16, 16), Vector2(32, 32)))
+	# District names (two lines when long).
+	var dfs := 13 if ppt < 10.0 else 16
+	var lh := float(dfs) + 4.0
 	for e: Dictionary in _districts:
 		var p := world_to_screen(e["pos"])
 		if not screen.has_point(p):
 			continue
-		var t: String = e["name"]
-		var w := caps.get_string_size(t, HORIZONTAL_ALIGNMENT_LEFT, -1, dfs).x
-		var base := p + Vector2(-w * 0.5, dfs * 0.35)
-		o.draw_string_outline(caps, base, t, HORIZONTAL_ALIGNMENT_LEFT, -1, dfs, 5, Color(0.02, 0.03, 0.05, 0.6))
-		o.draw_string(caps, base, t, HORIZONTAL_ALIGNMENT_LEFT, -1, dfs, Color(1, 1, 1, 0.62))
+		var lines: PackedStringArray = e["lines"]
+		var w := 0.0
+		for t in lines:
+			w = maxf(w, caps.get_string_size(t, HORIZONTAL_ALIGNMENT_LEFT, -1, dfs).x)
+		var r := Rect2(p.x - w * 0.5, p.y - lh * lines.size() * 0.5, w, lh * lines.size())
+		if _hits(placed, r):
+			continue
+		placed.append(r)
+		for k in range(lines.size()):
+			var t := lines[k]
+			var tw := caps.get_string_size(t, HORIZONTAL_ALIGNMENT_LEFT, -1, dfs).x
+			var base := Vector2(p.x - tw * 0.5, r.position.y + lh * k + dfs * 0.95)
+			o.draw_string_outline(caps, base, t, HORIZONTAL_ALIGNMENT_LEFT, -1, dfs, 5, Color(0.02, 0.03, 0.05, 0.6))
+			o.draw_string(caps, base, t, HORIZONTAL_ALIGNMENT_LEFT, -1, dfs, Color(1, 1, 1, 0.6))
 	# Street names.
 	if ppt >= STREET_PPT:
 		var sfs := 11 if ppt < 12.0 else 13
@@ -402,11 +442,29 @@ func _draw_overlay() -> void:
 			if w + 10.0 > float(e["len"]) * ppt:
 				continue
 			var vert := bool(e["vertical"])
+			# Beside the road (above an E-W street, left of a N-S avenue), never on the white line.
+			var off := 0.3 * ppt + 3.0
+			var c := p + (Vector2(-(off + sfs * 0.45), 0.0) if vert else Vector2(0.0, -(off + sfs * 0.45)))
+			var r := Rect2(c - Vector2(sfs * 0.6, w * 0.5 + 2.0), Vector2(sfs * 1.2, w + 4.0)) if vert else Rect2(c - Vector2(w * 0.5 + 2.0, sfs * 0.6), Vector2(w + 4.0, sfs * 1.2))
+			if _hits(placed, r):
+				continue
+			placed.append(r)
 			o.draw_set_transform(p, -PI * 0.5 if vert else 0.0)
-			var base := Vector2(-w * 0.5, sfs * 0.36)
+			var base := Vector2(-w * 0.5, -off)
 			o.draw_string_outline(f, base, t, HORIZONTAL_ALIGNMENT_LEFT, -1, sfs, 4, Color(0.03, 0.04, 0.06, 0.85))
 			o.draw_string(f, base, t, HORIZONTAL_ALIGNMENT_LEFT, -1, sfs, Color(1, 1, 1, 0.92))
 		o.draw_set_transform(Vector2.ZERO, 0.0)
+	# Pings, under the incidents; one on an incident is left out.
+	var pings: Array = hud.get("pings")
+	for e: Dictionary in pings:
+		var pos: Vector3 = e["pos"]
+		if _near_incident(Vector2(pos.x, pos.z)):
+			continue
+		var p := world_to_screen(Vector2(pos.x, pos.z))
+		var col := S.RED if str(e["reason"]).begins_with("event:") else S.AMBER
+		var a := float(e.get("alpha", 1.0))
+		o.draw_arc(p, 8.0, 0.0, TAU, 32, Color(col, a), 2.0, true)
+		o.draw_circle(p, 3.0, Color(col, a), true, -1.0, true)
 	# Incidents.
 	if ctx.sim != null:
 		var pulse := 0.5 + 0.5 * sin(_time * 4.0)
@@ -420,19 +478,12 @@ func _draw_overlay() -> void:
 			o.draw_line(p + Vector2(0, -4.2), p + Vector2(0, 1.2), Color.WHITE, 2.2, true)
 			o.draw_circle(p + Vector2(0, 3.8), 1.3, Color.WHITE, true, -1.0, true)
 			var t := D.debrand(str(ev.get("label", "")))
-			if not t.is_empty():
+			var tr := Rect2(p + Vector2(13.0, -9.0), Vector2(f.get_string_size(t, HORIZONTAL_ALIGNMENT_LEFT, -1, 13).x + 4.0, 18.0))
+			if not t.is_empty() and not _hits(placed, tr):
+				placed.append(tr)
 				var base := p + Vector2(14.0, 5.0)
 				o.draw_string_outline(f, base, t, HORIZONTAL_ALIGNMENT_LEFT, -1, 13, 4, Color(0.03, 0.02, 0.02, 0.85))
 				o.draw_string(f, base, t, HORIZONTAL_ALIGNMENT_LEFT, -1, 13, Color(1.0, 0.82, 0.82))
-	# Pings.
-	var pings: Array = hud.get("pings")
-	for e: Dictionary in pings:
-		var pos: Vector3 = e["pos"]
-		var p := world_to_screen(Vector2(pos.x, pos.z))
-		var col := S.RED if str(e["reason"]).begins_with("event:") else S.AMBER
-		var a := float(e.get("alpha", 1.0))
-		o.draw_arc(p, 8.0, 0.0, TAU, 32, Color(col, a), 2.0, true)
-		o.draw_circle(p, 3.0, Color(col, a), true, -1.0, true)
 	# Waypoint.
 	var wp: Variant = hud.call("waypoint")
 	if wp != null:
@@ -480,3 +531,36 @@ func _draw_overlay() -> void:
 	o.draw_colored_polygon(PackedVector2Array([na + Vector2(0, -12), na + Vector2(5, -3), na + Vector2(-5, -3)]), S.WHITE)
 	var nw := f.get_string_size("N", HORIZONTAL_ALIGNMENT_LEFT, -1, 12).x
 	o.draw_string(f, na + Vector2(-nw * 0.5, 11.0), "N", HORIZONTAL_ALIGNMENT_LEFT, -1, 12, S.WHITE)
+
+
+## True when an incident stands within 1.5 tiles of world point w.
+func _near_incident(w: Vector2) -> bool:
+	if ctx.sim == null:
+		return false
+	for ev: Dictionary in ctx.sim.events:
+		if Vector2(float(ev.get("x", 0)), float(ev.get("y", 0))).distance_squared_to(w) < 2.25:
+			return true
+	return false
+
+
+## Splits a long name into two balanced lines at a space ("NORTHWEST" / "CIVIC CAMPUS").
+static func _split_name(n: String) -> PackedStringArray:
+	var words := n.split(" ", false)
+	if n.length() <= 12 or words.size() < 2:
+		return PackedStringArray([n])
+	var best := 1
+	var best_d := 1 << 20
+	for k in range(1, words.size()):
+		var a := " ".join(words.slice(0, k)).length()
+		var b := " ".join(words.slice(k)).length()
+		if absi(a - b) < best_d:
+			best_d = absi(a - b)
+			best = k
+	return PackedStringArray([" ".join(words.slice(0, best)), " ".join(words.slice(best))])
+
+
+static func _hits(placed: Array[Rect2], r: Rect2) -> bool:
+	for q in placed:
+		if q.grow(3.0).intersects(r):
+			return true
+	return false

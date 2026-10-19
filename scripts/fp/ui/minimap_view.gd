@@ -40,6 +40,7 @@ var marker_draws: int = 0
 var _map: TextureRect
 var _mat: ShaderMaterial
 var _overlay: Control
+var _ring: Control
 var _street: Label
 var _street_age: float = 1.0
 var _marker_t: float = 0.0
@@ -59,7 +60,7 @@ func setup(p_ctx: FpContext, p_hud: Node) -> void:
 	hud = p_hud
 	name = "Minimap"
 	mouse_filter = Control.MOUSE_FILTER_IGNORE
-	set_anchors_preset(Control.PRESET_FULL_RECT)
+	set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	_map = TextureRect.new()
 	_map.name = "Map"
 	_map.mouse_filter = Control.MOUSE_FILTER_IGNORE
@@ -78,6 +79,14 @@ func setup(p_ctx: FpContext, p_hud: Node) -> void:
 	_map.material = _mat
 	_map.visible = false
 	add_child(_map)
+	_ring = Control.new()
+	_ring.name = "Ring"
+	_ring.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_ring.position = ORIGIN - Vector2(12, 12)
+	_ring.size = Vector2(DIAM + 24.0, DIAM + 24.0)
+	_ring.draw.connect(_draw_ring)
+	_ring.visible = false
+	add_child(_ring)
 	_overlay = Control.new()
 	_overlay.name = "Markers"
 	_overlay.mouse_filter = Control.MOUSE_FILTER_IGNORE
@@ -101,6 +110,7 @@ func setup(p_ctx: FpContext, p_hud: Node) -> void:
 func bind(p_model: MinimapModel) -> void:
 	model = p_model
 	_map.visible = model != null
+	_ring.visible = model != null
 	if model != null:
 		_map.texture = model.texture
 		_mat.set_shader_parameter("col_tex", model.texture)
@@ -291,10 +301,6 @@ func _draw_overlay() -> void:
 	var o := _overlay
 	var c := Vector2(DIAM, DIAM) * 0.5 + Vector2(12, 12)
 	var r := DIAM * 0.5
-	# Soft outer shadow and the thin ring.
-	for k in range(5):
-		o.draw_arc(c, r + 1.0 + k * 1.4, 0.0, TAU, 96, Color(0, 0, 0, 0.16 - k * 0.03), 1.6, true)
-	o.draw_arc(c, r - 0.75, 0.0, TAU, 128, Color(1, 1, 1, 0.42), 1.5, true)
 	var lim2 := (r - 2.0) * (r - 2.0)
 	# Residents, then agents.
 	for p in _people:
@@ -315,6 +321,18 @@ func _draw_overlay() -> void:
 		var half := Vector2(1.7, 3.2) * (1.35 if big else 1.0)
 		var col := S.RED if kind == "emergency" else Color(0.86, 0.9, 0.96, 0.95)
 		_rot_rect(o, q, half, d, col)
+	# Pings (fading over their 30 s life), under the incidents; one on an incident is left out.
+	var pings: Array = hud.get("pings") if hud != null else []
+	for e: Dictionary in pings:
+		var pos: Vector3 = e["pos"]
+		var w := Vector2(pos.x, pos.z)
+		if _near_incident(w):
+			continue
+		var a := float(e.get("alpha", 1.0))
+		var col := S.RED if str(e["reason"]).begins_with("event:") else S.AMBER
+		var q := _to_overlay(w, true)
+		o.draw_arc(q, 6.0, 0.0, TAU, 32, Color(col, 0.9 * a), 2.0, true)
+		o.draw_circle(q, 2.4, Color(col, a), true, -1.0, true)
 	# Incidents (pinned to the rim when off the map).
 	var pulse := 0.5 + 0.5 * sin(_time * 4.0)
 	for p in _incidents:
@@ -324,15 +342,6 @@ func _draw_overlay() -> void:
 		o.draw_circle(q, 6.0, S.RED, true, -1.0, true)
 		o.draw_line(q + Vector2(0, -3.2), q + Vector2(0, 0.9), Color.WHITE, 1.8, true)
 		o.draw_circle(q + Vector2(0, 2.8), 1.0, Color.WHITE, true, -1.0, true)
-	# Pings (fading over their 30 s life).
-	var pings: Array = hud.get("pings") if hud != null else []
-	for e: Dictionary in pings:
-		var a := float(e.get("alpha", 1.0))
-		var col := S.RED if str(e["reason"]).begins_with("event:") else S.AMBER
-		var pos: Vector3 = e["pos"]
-		var q := _to_overlay(Vector2(pos.x, pos.z), true)
-		o.draw_arc(q, 6.0, 0.0, TAU, 32, Color(col, 0.9 * a), 2.0, true)
-		o.draw_circle(q, 2.4, Color(col, a), true, -1.0, true)
 	# Waypoint.
 	var wp: Variant = hud.call("waypoint") if hud != null else null
 	if wp != null:
@@ -352,6 +361,23 @@ func _draw_overlay() -> void:
 	var by := ctx.player.yaw if ctx.player != null else yaw
 	var fwd := Vector2(-sin(by), -cos(by)).rotated(yaw)
 	_arrow(o, c, fwd)
+
+
+## True when an incident marker already stands within 1.5 tiles of world point w.
+func _near_incident(w: Vector2) -> bool:
+	for p in _incidents:
+		if p.distance_squared_to(w) < 2.25:
+			return true
+	return false
+
+
+## The soft outer shadow and the thin ring (static: drawn once).
+func _draw_ring() -> void:
+	var c := Vector2(DIAM, DIAM) * 0.5 + Vector2(12, 12)
+	var r := DIAM * 0.5
+	for k in range(5):
+		_ring.draw_arc(c, r + 1.0 + k * 1.4, 0.0, TAU, 96, Color(0, 0, 0, 0.16 - k * 0.03), 1.6, true)
+	_ring.draw_arc(c, r - 0.75, 0.0, TAU, 128, Color(1, 1, 1, 0.42), 1.5, true)
 
 
 func _arrow(o: Control, c: Vector2, fwd: Vector2) -> void:

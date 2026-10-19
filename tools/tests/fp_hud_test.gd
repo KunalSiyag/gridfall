@@ -413,8 +413,21 @@ func _perf(ctx: FpContext, f: FpFeature) -> void:
 		mm._collect_markers()
 		mm._collect_people()
 	var mk_ms := (Time.get_ticks_usec() - t0) / 20000.0
-	print("FP_HUD_TEST: perf full_repaint=%.2fms incremental=%.3fms markers=%.3fms people=%d" % [full_ms, inc_ms, mk_ms, ctx.residents.people.size()])
+	# Per-frame CPU of every always-on HUD widget at 60 fps (budget 1.0 ms in total).
+	var hud := ctx.hud
+	var n := 240
+	t0 = Time.get_ticks_usec()
+	for _k in range(n):
+		hud._process(1.0 / 60.0)
+		hud.chips._process(1.0 / 60.0)
+		hud.compass._process(1.0 / 60.0)
+		hud.toasts._process(1.0 / 60.0)
+		hud.minimap._process(1.0 / 60.0)
+		hud.prompt._process(1.0 / 60.0)
+	var frame_ms := (Time.get_ticks_usec() - t0) / 1000.0 / n
+	print("FP_HUD_TEST: perf full_repaint=%.2fms incremental=%.3fms markers=%.3fms hud_frame=%.3fms people=%d" % [full_ms, inc_ms, mk_ms, frame_ms, ctx.residents.people.size()])
 	K.check(fails, full_ms < 30.0, "full repaint %.1f ms (budget 15 ms)" % full_ms)
+	K.check(fails, frame_ms < 1.0, "HUD widgets cost %.3f ms per frame (budget 1.0 ms)" % frame_ms)
 
 
 func _frames(n: int) -> void:

@@ -1,7 +1,7 @@
 extends Control
-## Top-centre indicator chips (slice B): population, mood, treasury, power, water on the left of
-## the clock chip (day, time, speed), alerts and the "City hall in session" dot on its right, so the
-## clock stays centred while chips come and go. Values refresh on stats_updated and
+## Top-centre indicator chips (slice B): population, mood and treasury on the left of the clock
+## chip (day, time, speed); power, water, alerts and the "City hall in session" dot on its right,
+## so the clock stays centred while the alert chips come and go. Values refresh on stats_updated and
 ## time_scale_changed and at 4 Hz for the clock; a changed value pulses its chip for 0.3 s, and only
 ## a new incident blinks (the alerts chip, twice).
 
@@ -35,7 +35,7 @@ func setup(p_ctx: FpContext) -> void:
 	ctx = p_ctx
 	name = "Chips"
 	mouse_filter = Control.MOUSE_FILTER_IGNORE
-	set_anchors_preset(Control.PRESET_FULL_RECT)
+	set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	# The top_bar slot starts 12 px from the top; 12 more puts the chips on the 24 px safe margin.
 	offset_top = 12
 	offset_left = 8
@@ -43,7 +43,7 @@ func setup(p_ctx: FpContext) -> void:
 	var row := HBoxContainer.new()
 	row.name = "Row"
 	row.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	row.set_anchors_preset(Control.PRESET_TOP_WIDE)
+	row.set_anchors_and_offsets_preset(Control.PRESET_TOP_WIDE)
 	row.add_theme_constant_override("separation", 8)
 	add_child(row)
 	var left := _group(row, BoxContainer.ALIGNMENT_END, true)
@@ -52,9 +52,9 @@ func setup(p_ctx: FpContext) -> void:
 	_chip(left, "pop", "person")
 	_chip(left, "mood", "face")
 	_chip(left, "money", "coin")
-	_chip(left, "power", "bolt")
-	_chip(left, "water", "drop")
 	_time_chip(mid)
+	_chip(right, "power", "bolt")
+	_chip(right, "water", "drop")
 	_chip(right, "alerts", "alert")
 	_alert_text = S.label("", 15, S.TEXT_DIM, S.font(), 2)
 	_alert_text.name = "Latest"

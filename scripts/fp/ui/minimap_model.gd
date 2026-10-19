@@ -21,23 +21,25 @@ const CLS_RUBBLE := 9
 const CLS_BRIDGE := 10
 const CLS_LANDMARK := 11
 
-const COL_LAND := Color(0.118, 0.141, 0.169)
-const COL_WILD := Color(0.098, 0.118, 0.141)
-const COL_WATER := Color(0.110, 0.243, 0.341)
-const COL_ROAD := Color(0.835, 0.863, 0.894)
-const COL_PARK := Color(0.200, 0.345, 0.243)
-const COL_FOREST := Color(0.153, 0.267, 0.192)
-const COL_SITE := Color(0.475, 0.439, 0.373)
-const COL_RUBBLE := Color(0.341, 0.318, 0.302)
-const COL_SERVICE := Color(0.490, 0.447, 0.612)
-const COL_LANDMARK := Color(0.769, 0.675, 0.431)
+# A calm, low-saturation palette: dark ground, near-white roads, blue water, neutral blocks with a
+# faint tint per use. Colour is for reading the street grid, not for decoration.
+const COL_LAND := Color(0.125, 0.145, 0.165)
+const COL_WILD := Color(0.105, 0.12, 0.14)
+const COL_WATER := Color(0.125, 0.265, 0.365)
+const COL_ROAD := Color(0.86, 0.88, 0.91)
+const COL_PARK := Color(0.19, 0.30, 0.215)
+const COL_FOREST := Color(0.135, 0.19, 0.16)
+const COL_SITE := Color(0.36, 0.31, 0.245)
+const COL_RUBBLE := Color(0.27, 0.255, 0.245)
+const COL_SERVICE := Color(0.30, 0.295, 0.375)
+const COL_LANDMARK := Color(0.44, 0.39, 0.27)
 ## Zone building colours at level 2; level 1 is a little darker, level 3 a little lighter.
 const ZONE_COLORS := {
-	D.ZONE_R: Color(0.373, 0.525, 0.443),
-	D.ZONE_C: Color(0.361, 0.494, 0.682),
-	D.ZONE_I: Color(0.639, 0.549, 0.373),
+	D.ZONE_R: Color(0.255, 0.315, 0.285),
+	D.ZONE_C: Color(0.255, 0.295, 0.37),
+	D.ZONE_I: Color(0.335, 0.305, 0.255),
 }
-const LEVEL_SHADE := [0.62, 0.86, 1.0, 1.14]
+const LEVEL_SHADE := [0.82, 0.92, 1.0, 1.12]
 const LANDMARKS := [D.HALL, D.STADIUM, D.UNIVERSITY, D.AIRPORT]
 const PLOTS_X := D.W / D.PLOT
 const PLOTS_Y := D.H / D.PLOT
@@ -211,7 +213,7 @@ static func tile_color(k: int, l: int, t: int, d: int) -> Color:
 		CLS_SERVICE:
 			return COL_SERVICE
 		CLS_LOT:
-			return COL_LAND.lerp(ZONE_COLORS[k], 0.3)
+			return COL_LAND.lerp(ZONE_COLORS[k], 0.35)
 		CLS_BUILDING:
 			var c: Color = ZONE_COLORS[k]
 			var f: float = LEVEL_SHADE[clampi(l, 0, 3)]
@@ -223,7 +225,7 @@ static func tile_color(k: int, l: int, t: int, d: int) -> Color:
 static func land_color(d: int) -> Color:
 	if d < 0 or d >= D.MAYORS.size():
 		return COL_WILD
-	return COL_LAND.lerp(Color(str(D.MAYORS[d]["color"])), 0.05)
+	return COL_LAND.lerp(Color(str(D.MAYORS[d]["color"])), 0.02)
 
 
 ## Image pixel of world tile (x, y).

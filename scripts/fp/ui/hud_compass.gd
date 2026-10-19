@@ -126,7 +126,12 @@ func _draw() -> void:
 		var col: Color = m["color"]
 		col.a *= float(m.get("alpha", 1.0)) * (1.0 if inside else 0.55)
 		var c := Vector2(x, LINE_Y + 4.5)
-		if str(m["kind"]) == "waypoint":
+		if not inside:
+			# Off the strip: a small chevron at the end, pointing the way to turn.
+			var s := signf(rel)
+			var tip := c + Vector2(s * 5.0, 0)
+			draw_colored_polygon(PackedVector2Array([tip, c + Vector2(-s * 2.0, -5.0), c + Vector2(-s * 2.0, 5.0)]), col)
+		elif str(m["kind"]) == "waypoint":
 			_diamond(c, 6.0, col)
 		else:
 			draw_circle(c, 6.0, Color(0, 0, 0, 0.35 * col.a), true, -1.0, true)

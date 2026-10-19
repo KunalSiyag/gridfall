@@ -18,7 +18,7 @@ uniform vec2 rect_size = vec2(200.0, 200.0);
 uniform int shape = 0;
 uniform float corner = 16.0;
 uniform float opacity = 0.9;
-uniform float rim_shade = 0.45;
+uniform float rim_shade = 0.35;
 uniform bool borders = false;
 
 const int LAND = 0;
@@ -34,12 +34,14 @@ const int RUBBLE = 9;
 const int BRIDGE = 10;
 const int LANDMARK = 11;
 
-const vec3 WILD = vec3(0.098, 0.118, 0.141);
-const vec3 HAZE = vec3(0.075, 0.09, 0.11);
-const vec3 WATER_COL = vec3(0.110, 0.243, 0.341);
-const vec3 SHORE_COL = vec3(0.20, 0.36, 0.47);
-const vec3 WALK_COL = vec3(0.235, 0.267, 0.302);
-const vec3 FOREST_COL = vec3(0.153, 0.267, 0.192);
+const vec3 WILD = vec3(0.105, 0.12, 0.14);
+const vec3 HAZE = vec3(0.085, 0.095, 0.11);
+const vec3 WATER_COL = vec3(0.125, 0.265, 0.365);
+const vec3 SHORE_COL = vec3(0.21, 0.37, 0.48);
+const vec3 WALK_COL = vec3(0.24, 0.27, 0.30);
+const vec3 FOREST_COL = vec3(0.13, 0.175, 0.155);
+// Zoomed out every built lot takes this neutral tone, so blocks read as one shape.
+const vec3 BLOCK_COL = vec3(0.235, 0.26, 0.295);
 
 ivec2 texel(vec2 tile) {
 	return ivec2(tile - world_origin);
@@ -70,23 +72,31 @@ float forest_of(ivec2 t) {
 	return cls_at(t) == FOREST ? 1.0 : 0.0;
 }
 
-// Bilinear blend of a per-tile mask between tile centres: smooth, rounded outlines.
-float smooth_water(vec2 w) {
-	vec2 b = floor(w);
-	vec2 f = w - b;
-	ivec2 t = texel(b);
-	float a = mix(water_of(t), water_of(t + ivec2(1, 0)), f.x);
-	float c = mix(water_of(t + ivec2(0, 1)), water_of(t + ivec2(1, 1)), f.x);
-	return mix(a, c, f.y);
+// Cubic B-spline weights: masks sampled over 4 x 4 tiles come out soft and rounded, and single
+// scattered trees fade out instead of speckling the map.
+vec4 bspline(float f) {
+	float f2 = f * f;
+	float f3 = f2 * f;
+	return vec4((1.0 - f) * (1.0 - f) * (1.0 - f), 3.0 * f3 - 6.0 * f2 + 4.0, -3.0 * f3 + 3.0 * f2 + 3.0 * f + 1.0, f3) / 6.0;
 }
 
-float smooth_forest(vec2 w) {
+// The 4 x 4 B-spline of a mask (which: 0 = woods, 1 = water) around world point w.
+float smooth_mask(vec2 w, int which) {
 	vec2 b = floor(w);
 	vec2 f = w - b;
+	vec4 wx = bspline(f.x);
+	vec4 wy = bspline(f.y);
 	ivec2 t = texel(b);
-	float a = mix(forest_of(t), forest_of(t + ivec2(1, 0)), f.x);
-	float c = mix(forest_of(t + ivec2(0, 1)), forest_of(t + ivec2(1, 1)), f.x);
-	return mix(a, c, f.y);
+	float v = 0.0;
+	for (int j = 0; j < 4; j++) {
+		float row = 0.0;
+		for (int i = 0; i < 4; i++) {
+			ivec2 q = t + ivec2(i - 1, j - 1);
+			row += (which == 0 ? forest_of(q) : water_of(q)) * wx[i];
+		}
+		v += row * wy[j];
+	}
+	return v;
 }
 
 float sd_segment(vec2 p, vec2 a, vec2 b) {
@@ -125,31 +135,36 @@ void fragment() {
 	if (c == LAND) {
 		col = tile_col;
 	} else if (inside(t)) {
-		col = mix(WILD, vec3(0.118, 0.141, 0.169), dist >= 0 ? 1.0 : 0.0);
+		col = mix(WILD, vec3(0.125, 0.145, 0.165), dist >= 0 ? 1.0 : 0.0);
 	}
 
 	// Woods: smooth blobs.
-	float fv = smooth_forest(w);
+	float fv = smooth_mask(w, 0);
 	float fw = max(fwidth(fv), 1e-4);
-	col = mix(col, FOREST_COL, clamp((fv - 0.45) / fw + 0.5, 0.0, 1.0));
+	col = mix(col, FOREST_COL, 0.8 * clamp((fv - 0.45) / fw + 0.5, 0.0, 1.0));
 
 	// Water with a soft lighter shore line.
-	float wv = smooth_water(w);
+	// The B-spline narrows water, so its edge sits lower: a one-tile river keeps about a tile.
+	float wv = smooth_mask(w, 1);
 	float ww = max(fwidth(wv), 1e-4);
-	float water = clamp((wv - 0.5) / ww + 0.5, 0.0, 1.0);
-	float shore = clamp(1.0 - abs(wv - 0.5) / (ww * 1.6), 0.0, 1.0) * smoothstep(2.0, 5.0, ppt);
+	float water = clamp((wv - 0.4) / ww + 0.5, 0.0, 1.0);
+	float shore = clamp(1.0 - abs(wv - 0.4) / (ww * 1.6), 0.0, 1.0) * smoothstep(2.0, 5.0, ppt);
 	col = mix(col, WATER_COL, water);
 	col = mix(col, SHORE_COL, shore * 0.6);
 
-	// Lots and footprints.
+	// Lots and footprints. Zoomed out they fill their tiles, so a street block reads as one shape;
+	// zoomed in each lot separates into its own footprint.
+	float merge = 1.0 - smoothstep(4.5, 9.0, ppt);
 	if (c == LOT) {
-		col = mix(col, tile_col, cover(sd_box(lp, vec2(0.46), 0.05), px));
+		// Zoned but empty: a faint plot outline only when zoomed in.
+		col = mix(col, tile_col, cover(sd_box(lp, vec2(0.46), 0.05), px) * (1.0 - merge));
 	} else if (c == PARK) {
-		col = mix(col, tile_col, cover(sd_box(lp, vec2(0.47), 0.12), px));
+		col = mix(col, tile_col, cover(sd_box(lp, vec2(mix(0.47, 0.51, merge)), 0.12 * (1.0 - merge)), px));
 	} else if (c == BUILDING || c == SERVICE || c == LANDMARK || c == RUBBLE || c == SITE) {
 		float h = c == BUILDING ? (level >= 3 ? 0.43 : (level == 2 ? 0.4 : 0.36)) : (c == RUBBLE ? 0.36 : 0.42);
-		float d = sd_box(lp, vec2(h), 0.05);
-		vec3 fill = tile_col;
+		h = mix(h, 0.51, merge);
+		float d = sd_box(lp, vec2(h), 0.05 * (1.0 - merge));
+		vec3 fill = mix(tile_col, BLOCK_COL * (0.9 + 0.06 * float(level)), merge * 0.8);
 		if (c == SITE && ppt >= 7.0) {
 			float stripe = step(0.5, fract((lp.x + lp.y) * 3.5));
 			fill = mix(tile_col, tile_col * 0.78, stripe);
@@ -182,13 +197,13 @@ void fragment() {
 		float e = 0.0;
 		if (int(round(data_at(t + sx).a * 255.0)) - 1 != dist && inside(t + sx)) e = max(e, cover(0.5 - abs(lp.x) - lw, px));
 		if (int(round(data_at(t + sy).a * 255.0)) - 1 != dist && inside(t + sy)) e = max(e, cover(0.5 - abs(lp.y) - lw, px));
-		col = mix(col, vec3(0.92, 0.95, 1.0), e * 0.35);
+		col = mix(col, vec3(0.92, 0.95, 1.0), e * 0.16);
 	}
 
 	// Haze over unsurveyed plots (soft, one texel per plot).
 	float sv = inside(t) ? texture(survey_tex, (w - world_origin + 0.5) / world_size).r : 0.0;
 	float haze = 1.0 - smoothstep(0.2, 0.8, sv);
-	col = mix(col, HAZE, haze * 0.7);
+	col = mix(col, HAZE, haze * 0.45);
 
 	// Shape mask and rim shading.
 	float a = opacity;

@@ -78,13 +78,13 @@ func setup(p_ctx: FpContext, p_hud: Node) -> void:
 	ctx = p_ctx
 	hud = p_hud
 	name = "PauseMenu"
-	set_anchors_preset(Control.PRESET_FULL_RECT)
+	set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	mouse_filter = Control.MOUSE_FILTER_STOP
 	visible = false
 	_grabber = _circle_texture(16, Color.WHITE)
 	_backdrop = ColorRect.new()
 	_backdrop.name = "Backdrop"
-	_backdrop.set_anchors_preset(Control.PRESET_FULL_RECT)
+	_backdrop.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	_backdrop.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	var mat := ShaderMaterial.new()
 	mat.shader = BLUR

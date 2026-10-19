@@ -39,7 +39,7 @@ func setup(p_ctx: FpContext) -> void:
 	ctx = p_ctx
 	name = "Prompt"
 	mouse_filter = Control.MOUSE_FILTER_IGNORE
-	set_anchors_preset(Control.PRESET_FULL_RECT)
+	set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	_cross = Control.new()
 	_cross.name = "Crosshair"
 	_cross.mouse_filter = Control.MOUSE_FILTER_IGNORE
