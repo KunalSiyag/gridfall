@@ -296,6 +296,15 @@ func _draw_overlay() -> void:
 	var c := Vector2(DIAM, DIAM) * 0.5 + Vector2(PAD, PAD)
 	var r := DIAM * 0.5
 	var lim2 := (r - 2.0) * (r - 2.0)
+	# GPS route to the waypoint, clipped to the circle.
+	var rt: PackedVector2Array = hud.call("route") if hud != null else PackedVector2Array()
+	if rt.size() >= 2:
+		var pts := PackedVector2Array()
+		for w in rt:
+			pts.append(_to_overlay(w))
+		for run: PackedVector2Array in _clip_runs(pts, c, r - 1.5):
+			o.draw_polyline(run, Color(0.0, 0.05, 0.08, 0.45), 5.0, true)
+			o.draw_polyline(run, Color(S.ACCENT, 0.9), 2.6, true)
 	# Residents and agents: one textured triangle array per shape (dots, car capsules).
 	var dots := _Quads.new()
 	var cars := _Quads.new()
@@ -356,6 +365,47 @@ func _draw_overlay() -> void:
 	var by := ctx.player.yaw if ctx.player != null else yaw
 	var fwd := Vector2(-sin(by), -cos(by)).rotated(yaw)
 	_arrow(o, c, fwd)
+
+
+## The parts of polyline pts inside the circle (c, rad), as connected runs.
+static func _clip_runs(pts: PackedVector2Array, c: Vector2, rad: float) -> Array[PackedVector2Array]:
+	var runs: Array[PackedVector2Array] = []
+	var cur := PackedVector2Array()
+	for k in range(pts.size() - 1):
+		var p0 := pts[k] - c
+		var d := pts[k + 1] - pts[k]
+		var qa := d.dot(d)
+		var qb := 2.0 * p0.dot(d)
+		var qc := p0.dot(p0) - rad * rad
+		var lo := 0.0
+		var hi := 1.0
+		if qa < 1e-9:
+			lo = 0.0 if qc <= 0.0 else 1.0
+		else:
+			var disc := qb * qb - 4.0 * qa * qc
+			if disc <= 0.0:
+				lo = 1.0
+				hi = 0.0
+			else:
+				var sq := sqrt(disc)
+				lo = maxf(0.0, (-qb - sq) / (2.0 * qa))
+				hi = minf(1.0, (-qb + sq) / (2.0 * qa))
+		if lo >= hi:
+			if cur.size() >= 2:
+				runs.append(cur)
+			cur = PackedVector2Array()
+			continue
+		if cur.is_empty() or lo > 0.0:
+			if cur.size() >= 2:
+				runs.append(cur)
+			cur = PackedVector2Array([c + p0 + d * lo])
+		cur.append(c + p0 + d * hi)
+		if hi < 1.0:
+			runs.append(cur)
+			cur = PackedVector2Array()
+	if cur.size() >= 2:
+		runs.append(cur)
+	return runs
 
 
 ## True when an incident marker already stands within 1.5 tiles of world point w.

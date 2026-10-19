@@ -402,6 +402,15 @@ func _draw_overlay() -> void:
 	var caps := S.caps()
 	var view := _view_size()
 	var screen := Rect2(Vector2.ZERO, view).grow(-4.0)
+	# GPS route to the waypoint, under every label.
+	var rt: PackedVector2Array = hud.call("route")
+	if rt.size() >= 2:
+		var pts := PackedVector2Array()
+		for w in rt:
+			pts.append(world_to_screen(w))
+		var rw := clampf(ppt * 0.28, 3.0, 7.0)
+		o.draw_polyline(pts, Color(0.0, 0.05, 0.08, 0.45), rw + 2.5, true)
+		o.draw_polyline(pts, Color(S.ACCENT, 0.9), rw, true)
 	# Labels never overlap: the player and the waypoint first, then districts, streets, incidents.
 	var placed: Array[Rect2] = [
 		Rect2(0, 0, 440, 112), Rect2(0, view.y - 84, 780, 84),

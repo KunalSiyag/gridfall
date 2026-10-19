@@ -294,6 +294,30 @@ func _check_map(ctx: FpContext, f: FpFeature) -> void:
 	for m: Dictionary in ctx.hud.compass.markers:
 		has_wp = has_wp or str(m["kind"]) == "waypoint"
 	K.check(fails, has_wp, "the compass shows the waypoint")
+	# GPS: a waypoint on a far road tile routes along roads, corner to corner.
+	var me := ctx.player.position
+	var far := -1
+	var best := 0.0
+	for i in ctx.sim.active:
+		if ctx.sim.kind[i] == D.ROAD:
+			var dd := Vector2(D.tx(i) - me.x, D.ty(i) - me.z).length()
+			if dd > best:
+				best = dd
+				far = i
+	var t0 := Time.get_ticks_usec()
+	f.call("set_waypoint", Vector3(D.tx(far), 0, D.ty(far)))
+	var route_ms := (Time.get_ticks_usec() - t0) / 1000.0
+	var rt: PackedVector2Array = ctx.hud.route()
+	var on_roads := rt.size() >= 3
+	for k in range(1, rt.size() - 1):
+		var tx := roundi(rt[k].x)
+		var ty := roundi(rt[k].y)
+		on_roads = on_roads and is_equal_approx(rt[k].x, tx) and is_equal_approx(rt[k].y, ty) and ctx.sim.kind[D.idx(tx, ty)] == D.ROAD
+		if k >= 2:
+			on_roads = on_roads and (is_equal_approx(rt[k].x, rt[k - 1].x) or is_equal_approx(rt[k].y, rt[k - 1].y))
+	K.check(fails, on_roads and rt[0].distance_to(Vector2(me.x, me.z)) < 0.01 and rt[rt.size() - 1].distance_to(Vector2(D.tx(far), D.ty(far))) < 0.01, "the GPS route runs along roads to a waypoint %.0f tiles away (%d points, %.2f ms)" % [best, rt.size(), route_ms])
+	f.call("clear_waypoint")
+	K.check(fails, ctx.hud.route().is_empty(), "clearing the waypoint clears the route")
 	f.from_dict({"waypoint": [3.0, 4.0]})
 	K.check(fails, ctx.hud.waypoint() != null and is_equal_approx((ctx.hud.waypoint() as Vector3).x, 3.0), "from_dict restores the waypoint")
 	f.from_dict({})

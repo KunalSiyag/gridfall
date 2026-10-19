@@ -165,6 +165,13 @@ func waypoint() -> Variant:
 	return null
 
 
+## The road route to the waypoint as world (x, z) points (empty without a waypoint).
+func route() -> PackedVector2Array:
+	if widgets != null and bool(widgets.get("has_waypoint")):
+		return widgets.get("route")
+	return PackedVector2Array()
+
+
 ## Sets the waypoint and announces it as a "player" ping (the map's left click).
 func set_waypoint(p: Vector3) -> void:
 	if widgets == null:

@@ -6,13 +6,17 @@ extends FpFeature
 
 const S := preload("res://scripts/fp/ui/hud_style.gd")
 const MinimapModel := preload("res://scripts/fp/ui/minimap_model.gd")
+const GpsRoute := preload("res://scripts/fp/ui/gps_route.gd")
 
 var model: MinimapModel
 ## The waypoint (world, y = 0) while has_waypoint.
 var waypoint: Vector3 = Vector3.ZERO
 var has_waypoint: bool = false
+## Road route from the player to the waypoint, world (x, z) corner points; empty without one.
+var route: PackedVector2Array = PackedVector2Array()
 var _painted_frame: int = -1
 var _dirty: bool = false
+var _route_dirty: bool = false
 
 
 func feature_id() -> String:
@@ -28,6 +32,7 @@ func setup(p_ctx: FpContext) -> void:
 		ctx.sim.territory_changed.connect(_on_territory_changed)
 	if ctx.bus != null:
 		ctx.bus.world_ready.connect(_on_world_ready)
+		ctx.bus.player_tile_changed.connect(_on_player_tile)
 	_full_repaint()
 	if ctx.hud != null:
 		ctx.hud.bind_widgets(self)
@@ -62,18 +67,31 @@ func teardown() -> void:
 			ctx.sim.territory_changed.disconnect(_on_territory_changed)
 	if ctx.bus != null and ctx.bus.world_ready.is_connected(_on_world_ready):
 		ctx.bus.world_ready.disconnect(_on_world_ready)
+	if ctx.bus != null and ctx.bus.player_tile_changed.is_connected(_on_player_tile):
+		ctx.bus.player_tile_changed.disconnect(_on_player_tile)
 	if ctx.hud != null and is_instance_valid(ctx.hud):
 		ctx.hud.unbind_widgets()
 
 
-## Sets the waypoint (world point; y is ignored).
+## Sets the waypoint (world point; y is ignored) and routes to it.
 func set_waypoint(p: Vector3) -> void:
 	waypoint = Vector3(p.x, 0.0, p.z)
 	has_waypoint = true
+	reroute()
 
 
 func clear_waypoint() -> void:
 	has_waypoint = false
+	route = PackedVector2Array()
+
+
+## Recomputes the road route from the player to the waypoint (on set, on every tile the player
+## enters, and after roads change).
+func reroute() -> void:
+	_route_dirty = false
+	route = PackedVector2Array()
+	if has_waypoint and ctx != null and ctx.sim != null:
+		route = GpsRoute.find(ctx.sim, ctx.player_position(), waypoint)
 
 
 ## The minimap texture exists at 192 x 192, the chips are present, and no text B made is branded.
@@ -96,6 +114,8 @@ func _process(_delta: float) -> void:
 	if _dirty:
 		_dirty = false
 		model.flush()
+	if _route_dirty:
+		reroute()
 
 
 func _full_repaint() -> void:
@@ -112,6 +132,12 @@ func _on_world_ready() -> void:
 func _on_tiles_changed(indices: PackedInt32Array) -> void:
 	model.repaint(indices, false)
 	_dirty = true
+	_route_dirty = has_waypoint
+
+
+func _on_player_tile(_x: int, _y: int) -> void:
+	if has_waypoint:
+		reroute()
 
 
 func _on_territory_changed(mi: int) -> void:
