@@ -65,6 +65,14 @@ var _rng := RandomNumberGenerator.new()
 var _photo: Dictionary = {}
 var _photo_stage: Dictionary = {}
 var _budget_frame: int = -1
+## agents_near snapshot, built once per frame: the agents and their packed state.
+var _snap: Array = []
+var _snap_pos := PackedVector3Array()
+var _snap_vel := PackedVector3Array()
+var _snap_head := PackedFloat32Array()
+var _snap_kind := PackedStringArray()
+var _snap_frame: int = -1
+var _snap_serial: int = 0
 
 
 func feature_id() -> String:
@@ -304,6 +312,7 @@ func step(dt: float) -> void:
 	if frame != _budget_frame or not auto_step:
 		_budget_frame = frame
 		fleets.astar_left = FLEETS.ASTAR_PER_FRAME
+	_snap_frame = -1
 	clock += dt
 	junctions.clock = clock
 	var pp := ctx.player_position()
@@ -421,7 +430,7 @@ func sync_visuals(delta: float) -> void:
 			render.release_walker(w)
 			continue
 		walkers.ease_visuals(w, delta)
-		render.draw_walker(w, walkers.draw_xform(w), cam.distance_to(w.pos), WS.VIS_PERSON)
+		render.draw_walker(w, walkers.draw_xform(w), cam.distance_to(w.pos), WS.VIS_PERSON, walkers.draw_phase(w))
 	render.finish()
 	render.set_glow(_night())
 	junctions.update_lamps(ctx.player_position(), WS.VIS_PROP + 1.0)
@@ -814,26 +823,95 @@ func avatar_counts() -> Dictionary:
 
 ## Agents near p for the minimap and audio (moving vehicles and people on foot; parked cars are
 ## left out): [{id, pos, vel, speed, kind, driver_id, heading, stalled_s}]. heading follows S0 §11
-## (forward = (-sin h, 0, -cos h)), so it holds for stopped agents too; vel is u/s.
+## (forward = (-sin h, 0, -cos h)), so it holds for stopped agents too; vel is u/s. The entries
+## are each agent's own dictionary, refreshed once per frame: read them now, copy one to keep it.
 func agents_near(p: Vector3, r: float) -> Array:
 	var out: Array = []
 	if not _built:
 		return out
+	_refresh_snapshot()
 	var r2 := r * r
+	for k in range(_snap_pos.size()):
+		if _snap_pos[k].distance_squared_to(p) <= r2:
+			out.append(_info(k))
+	return out
+
+
+## The cheap form of agents_near for per-frame consumers: parallel packed arrays
+## {"pos": PackedVector3Array, "vel": PackedVector3Array, "heading": PackedFloat32Array,
+##  "kind": PackedStringArray} of the agents within r of p (same conventions, no dictionaries).
+func agents_packed(p: Vector3, r: float) -> Dictionary:
+	var pos := PackedVector3Array()
+	var vel := PackedVector3Array()
+	var head := PackedFloat32Array()
+	var kind := PackedStringArray()
+	if _built:
+		_refresh_snapshot()
+		var r2 := r * r
+		for k in range(_snap_pos.size()):
+			if _snap_pos[k].distance_squared_to(p) <= r2:
+				pos.append(_snap_pos[k])
+				vel.append(_snap_vel[k])
+				head.append(_snap_head[k])
+				kind.append(_snap_kind[k])
+	return {"pos": pos, "vel": vel, "heading": head, "kind": kind}
+
+
+## Positions, velocities, headings and kinds of every moving agent, at most once per frame (and
+## again after a step).
+func _refresh_snapshot() -> void:
+	var fr := Engine.get_process_frames()
+	if fr == _snap_frame:
+		return
+	_snap_frame = fr
+	_snap_serial += 1
+	_snap.clear()
+	_snap_pos.clear()
+	_snap_vel.clear()
+	_snap_head.clear()
+	_snap_kind.clear()
 	for c: VH.Car in vehicles.cars:
 		if c.parked or c.far or c.dead:
 			continue
-		if c.pos.distance_squared_to(p) > r2:
-			continue
-		out.append({"id": c.id, "pos": c.pos + c.vis_off, "vel": c.vel, "speed": c.v,
-			"kind": "pedestrian" if c.kind == "bike" else c.kind, "driver_id": c.driver_id,
-			"heading": wrapf(c.yaw + c.vis_yaw + PI, -PI, PI), "stalled_s": c.stalled_s})
+		_snap.append(c)
+		_snap_pos.append(c.pos + c.vis_off)
+		_snap_vel.append(c.vel)
+		_snap_head.append(wrapf(c.yaw + c.vis_yaw + PI, -PI, PI))
+		_snap_kind.append("pedestrian" if c.kind == "bike" else c.kind)
 	for w: WK.Walker in walkers.walkers:
-		if w.dead or w.far or w.pos.distance_squared_to(p) > r2:
+		if w.dead or w.far:
 			continue
-		out.append({"id": 1000000 + w.id, "pos": w.pos, "vel": w.vel, "speed": w.v, "kind": "pedestrian",
-			"driver_id": w.resident_id, "heading": wrapf(w.yaw + PI, -PI, PI), "stalled_s": w.stalled_s})
-	return out
+		_snap.append(w)
+		_snap_pos.append(w.pos + w.vis_off)
+		_snap_vel.append(w.vel)
+		_snap_head.append(wrapf(w.yaw + PI, -PI, PI))
+		_snap_kind.append("pedestrian")
+
+
+## Snapshot entry k as the agent's own agents_near dictionary (refreshed once per snapshot).
+func _info(k: int) -> Dictionary:
+	var a: Variant = _snap[k]
+	var d: Dictionary = a.info
+	if a.info_serial == _snap_serial:
+		return d
+	a.info_serial = _snap_serial
+	d["pos"] = _snap_pos[k]
+	d["vel"] = _snap_vel[k]
+	d["heading"] = _snap_head[k]
+	d["kind"] = _snap_kind[k]
+	if a is VH.Car:
+		var c: VH.Car = a
+		d["id"] = c.id
+		d["speed"] = c.v
+		d["driver_id"] = c.driver_id
+		d["stalled_s"] = c.stalled_s
+	else:
+		var w: WK.Walker = a
+		d["id"] = 1000000 + w.id
+		d["speed"] = w.v
+		d["driver_id"] = w.resident_id
+		d["stalled_s"] = w.stalled_s
+	return d
 
 
 ## Visible named residents near p (on foot, in a vehicle, or standing outdoors; never indoors).
@@ -843,17 +921,21 @@ func visible_near(p: Vector3, r: float) -> Array:
 		return out
 	var r2 := r * r
 	var seen := {}
-	for rid: String in trips.trips.keys():
-		var q := trips.live_position(rid)
-		if not is_nan(q.x) and q.distance_squared_to(p) <= r2:
-			out.append({"id": rid, "pos": q})
-			seen[rid] = true
-	for rid: String in trips.standing.keys():
-		if seen.has(rid):
+	for w: WK.Walker in walkers.walkers:
+		if w.dead or w.resident_id.is_empty() or w.state == "hidden":
 			continue
-		var w: WK.Walker = trips.standing[rid]
-		if w != null and not w.dead and w.pos.distance_squared_to(p) <= r2:
-			out.append({"id": rid, "pos": w.pos})
+		var q := w.pos + w.vis_off
+		if q.distance_squared_to(p) <= r2 and not seen.has(w.resident_id):
+			out.append({"id": w.resident_id, "pos": q})
+			seen[w.resident_id] = true
+	for tr: TRIPS.Trip in trips.trips.values():
+		if seen.has(tr.rid):
+			continue
+		var c := trips.vehicle_of(tr.rid)
+		if c != null:
+			var q := c.pos + c.vis_off
+			if q.distance_squared_to(p) <= r2:
+				out.append({"id": tr.rid, "pos": q})
 	return out
 
 

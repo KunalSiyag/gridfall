@@ -64,6 +64,12 @@ E loads each of these when present and falls back otherwise:
 2. Kinds are `car`, `bus`, `truck`, `emergency` and `pedestrian`; cyclists report as `pedestrian`.
 3. Vehicle `pick()` data: `driver_id`, `state` ("driving to work", "parked", "line 2 to Elm
    Street", "responding", "at the scene"), `dest_label` and `mood` (0..1, or "" for nobody).
+4. **Cost.** E builds one snapshot of every moving agent per frame and filters it per call, so a
+   second call in the same frame costs only the filter. The dictionaries are each agent's own,
+   refreshed once per frame (read them at once; copy one to keep it); refreshing ~110 of them is
+   the expensive part of the first call. For the minimap, `agents_packed(p, r)` returns the same
+   agents as parallel packed arrays `{"pos", "vel", "heading", "kind"}` with no dictionaries
+   (about 20 µs for 110 agents); please switch `_collect_markers` to it when convenient.
 
 ## To G2 (render performance)
 

@@ -322,7 +322,7 @@ func draw_parked(c: VH.Car, xf: Transform3D, d: float, vis_end: float) -> void:
 
 
 ## A person: always the merged body through the people shader (stride and opacity per instance).
-func draw_walker(w: WK.Walker, xf: Transform3D, d: float, vis_end: float) -> void:
+func draw_walker(w: WK.Walker, xf: Transform3D, d: float, vis_end: float, phase: float = 0.0) -> void:
 	var m: Model = model(w.model)
 	if m == null or not m.person:
 		w.node = _place(w.model, w.node, w.lod, xf, d, vis_end, false)
@@ -337,7 +337,7 @@ func draw_walker(w: WK.Walker, xf: Transform3D, d: float, vis_end: float) -> voi
 		return
 	var layer := L_MID if d < SHADOW_DIST else L_FAR
 	(m.lists[layer] as Array).append(xf * m.offset)
-	(m.custom[layer] as Array).append(Color(fposmod(w.phase, TAU), w.gait, m.mesh_h, op))
+	(m.custom[layer] as Array).append(Color(fposmod(phase, TAU), w.gait, m.mesh_h, op))
 	w.lod = 1 if layer == L_MID else 2
 
 

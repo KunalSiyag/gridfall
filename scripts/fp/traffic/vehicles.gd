@@ -33,9 +33,12 @@ const SIREN_RED_SPEED := 5.0 * WS.M
 const ARRIVE_TOL := 0.45 * WS.M
 ## Speed past a blocked tile (cars avoid them when choosing a way; committed ones creep by).
 const BLOCKED_SPEED := 2.5 * WS.M
-## Simulation LOD: vehicles farther than this from the player step at most every LOD_DT seconds.
+## Simulation LOD: within LOD_FULL of the player a vehicle steps every step, out to LOD_NEAR at
+## most every LOD_MID_DT seconds, beyond that every LOD_DT; draws extrapolate in between.
+const LOD_FULL := 3.0
+const LOD_MID_DT := 1.0 / 20.0
 const LOD_NEAR := 6.0
-const LOD_DT := 1.0 / 15.0
+const LOD_DT := 1.0 / 10.0
 ## Data-only vehicles beyond the traffic radius cruise at this share of their own speed.
 const FAR_SPEED := 0.9
 
@@ -89,6 +92,9 @@ class Car extends RefCounted:
 	var arrived: bool = false
 	var stuck: bool = false         # its lane vanished in view: frozen until out of sight
 	var acc_dt: float = 0.0         # time not yet simulated (simulation LOD)
+	var info: Dictionary = {}       # its agents_near entry (refreshed in place)
+	var info_serial: int = -1
+	var ext_room: float = 0.0       # how far the last step allowed it to move on (draw extrapolation)
 
 
 var lg: LG
@@ -374,10 +380,14 @@ func update_pose(c: Car) -> void:
 	c.yaw = atan2(h.x, h.y)
 
 
-## Drawn transform of c (with the smoothing offsets).
+## Drawn transform of c (with the smoothing offsets, and carried on by the time its simulation
+## LOD has not stepped yet, never past what its last step allowed).
 func draw_xform(c: Car) -> Transform3D:
 	var b := Basis(Vector3.UP, c.yaw + c.vis_yaw)
-	return Transform3D(b, c.pos + c.vis_off)
+	var p := c.pos + c.vis_off
+	if c.acc_dt > 0.0 and c.v > 0.0 and not c.parked and not c.far and c.park_t < 0.0:
+		p += c.vel * (minf(c.v * c.acc_dt, c.ext_room) / c.v)
+	return Transform3D(b, p)
 
 
 ## World AABB of c (from its oriented box).
@@ -396,6 +406,7 @@ func aabb(c: Car) -> AABB:
 func step(dt: float) -> void:
 	var decay := exp(-dt * 1.6)
 	var near2 := LOD_NEAR * LOD_NEAR
+	var full2 := LOD_FULL * LOD_FULL
 	for c: Car in cars.duplicate():
 		if c.dead or c.parked:
 			continue
@@ -403,8 +414,9 @@ func step(dt: float) -> void:
 		if not c.far and c.park_t < 0.0:
 			var dx := c.pos.x - player_pos.x
 			var dz := c.pos.z - player_pos.z
+			var d2 := dx * dx + dz * dz
 			c.acc_dt += dt
-			if player_on and dx * dx + dz * dz > near2 and c.acc_dt < LOD_DT:
+			if player_on and d2 > full2 and c.acc_dt < (LOD_DT if d2 > near2 else LOD_MID_DT):
 				continue
 			h = c.acc_dt
 			c.acc_dt = 0.0
@@ -464,6 +476,7 @@ func _drive(c: Car, dt: float) -> void:
 		v1 = 0.0
 	c.a = (v1 - c.v) / maxf(dt, 1e-4)
 	c.v = v1
+	c.ext_room = maxf(0.0, hard - ds)
 	if c.v < 0.1 * WS.M:
 		c.stalled_s += dt
 		if held:

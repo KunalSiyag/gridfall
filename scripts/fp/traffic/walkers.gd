@@ -16,8 +16,11 @@ const BAND := (WS.PED_BAND[1] - WS.PED_BAND[0]) * 0.5 - 0.002
 const SEP := 0.6 * WS.M
 const KEEP_RIGHT := 0.012
 const CELL := 0.06
-## Simulation LOD: walkers beyond this from the player (out of drawing range) step every LOD_DT
-## seconds without crowd logic.
+## Simulation LOD: walkers within LOD_FULL of the player step every step, out to LOD_NEAR (the
+## drawing range) every LOD_MID_DT, beyond that every LOD_DT without crowd logic. Draws carry them
+## on in between.
+const LOD_FULL := 1.5
+const LOD_MID_DT := 1.0 / 15.0
 const LOD_NEAR := 4.6
 const LOD_DT := 0.2
 ## Seconds a person spawned in view takes to fade in.
@@ -65,7 +68,10 @@ class Walker extends RefCounted:
 	var last_node: int = -1
 	var stalled_s: float = 0.0
 	var acc_dt: float = 0.0
+	var info: Dictionary = {}        # its agents_near entry (refreshed in place)
+	var info_serial: int = -1
 	var lod_far: bool = false
+	var lod_dt: float = 0.0
 	var gait: float = 0.0            # drawn stride amount 0..1 (eases toward the walking speed)
 	var fade: float = 1.0            # drawn opacity 0..1 (people spawned in view fade in)
 	var wait_slot: int = -1          # place in the little crowd waiting at a zebra
@@ -174,16 +180,19 @@ func rebuild_posts(sim: CitySim) -> void:
 
 func step(dt: float) -> void:
 	var near2 := LOD_NEAR * LOD_NEAR
+	var full2 := LOD_FULL * LOD_FULL
 	for w: Walker in walkers:
 		var dx := w.pos.x - player_pos.x
 		var dz := w.pos.z - player_pos.z
-		w.lod_far = player_on and dx * dx + dz * dz > near2
+		var d2 := dx * dx + dz * dz
+		w.lod_far = player_on and d2 > near2
+		w.lod_dt = 0.0 if not player_on or d2 <= full2 else (LOD_DT if w.lod_far else LOD_MID_DT)
 	_build_grid()
 	for w: Walker in walkers.duplicate():
 		if w.dead or w.state == "hidden":
 			continue
 		w.acc_dt += dt
-		if w.lod_far and w.acc_dt < LOD_DT:
+		if w.acc_dt < w.lod_dt:
 			continue
 		var h := w.acc_dt
 		w.acc_dt = 0.0
@@ -583,6 +592,20 @@ func ease_visuals(w: Walker, delta: float) -> void:
 ## bobs with them, highest as the legs pass each other.
 func draw_xform(w: Walker) -> Transform3D:
 	# The hips drop as the legs spread, so the planted foot stays on the ground (render.LEG_SWING).
-	var a := 0.38 * w.gait * sin(w.phase)
+	var a := 0.38 * w.gait * sin(draw_phase(w))
 	var drop := HIP_M * WS.M * (1.0 - cos(a))
-	return Transform3D(Basis(Vector3.UP, w.yaw), w.pos + w.vis_off - Vector3(0, drop, 0))
+	var p := w.pos + w.vis_off - Vector3(0, drop, 0)
+	if _carried(w):
+		p += w.vel * w.acc_dt
+	return Transform3D(Basis(Vector3.UP, w.yaw), p)
+
+
+## Stride phase as drawn (carried on over the time the simulation LOD has not stepped yet).
+func draw_phase(w: Walker) -> float:
+	if _carried(w):
+		return w.phase + w.acc_dt * w.v / (0.75 * WS.M) * PI
+	return w.phase
+
+
+func _carried(w: Walker) -> bool:
+	return w.acc_dt > 0.0 and w.v > 0.0 and w.state == "walk" and not w.hold

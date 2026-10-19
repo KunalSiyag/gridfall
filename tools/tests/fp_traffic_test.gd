@@ -42,6 +42,10 @@ func _init() -> void:
 	_check_attach()
 	_check_lane_graph()
 	_check_api_compat()
+	_check_agents_api()
+	_check_people_draw()
+	_check_wait_crowd()
+	_check_ambient_spawns()
 	_check_following()
 	_check_parking_clearance()
 	_check_lights()
@@ -306,6 +310,144 @@ func _check_api_compat() -> void:
 	K.check(fails, av.external == null, "orbit avatars have no external")
 	r["route"] = saved_route
 	v2.free()
+
+
+# ------------------------------------------------------------------ agents_near, people, crowds, spawns
+
+## agents_near entries carry every key, headings follow S0 §11 (forward = (-sin h, 0, -cos h)),
+## and agents_packed lists the same agents.
+func _check_agents_api() -> void:
+	f.set("ambient_enabled", true)
+	f.call("_maintain", true)
+	_step(1.0)
+	var p := ctx.player_position()
+	var list: Array = f.agents_near(p, 40.0)
+	var keys := ["id", "pos", "vel", "speed", "kind", "driver_id", "heading", "stalled_s"]
+	var bad_keys := 0
+	var moving := 0
+	var bad_head := 0
+	for a: Dictionary in list:
+		for k: String in keys:
+			if not a.has(k):
+				bad_keys += 1
+		var v: Vector3 = a["vel"]
+		if v.length() > 0.5 * WS.M:
+			moving += 1
+			var h := float(a["heading"])
+			if Vector3(-sin(h), 0, -cos(h)).dot(v.normalized()) < 0.97:
+				bad_head += 1
+	K.check(fails, not list.is_empty() and bad_keys == 0, "agents_near: %d agents, every entry has the 8 keys (%d missing)" % [list.size(), bad_keys])
+	K.check(fails, moving > 0 and bad_head == 0, "agents_near: heading is S0's convention for all %d moving agents (%d off)" % [moving, bad_head])
+	var packed: Dictionary = f.agents_packed(p, 40.0)
+	K.check(fails, (packed["pos"] as PackedVector3Array).size() == list.size() and (packed["kind"] as PackedStringArray).size() == list.size(), "agents_packed lists the same %d agents" % list.size())
+
+
+## People draw as the merged body through the people shader (never a full GLB), with stride data.
+func _check_people_draw() -> void:
+	var wk: WK = f.get("walkers")
+	var rd = f.get("render")
+	for _k in range(20):
+		f.step(DT)
+		f.sync_visuals(DT)
+	var nodes := 0
+	var striding := 0
+	var cam: Vector3 = f.call("_camera_pos")
+	for w: WK.Walker in wk.walkers:
+		if w.node != null:
+			nodes += 1
+		if w.v > 0.5 * WS.M and w.gait > 0.5 and w.lod > 0 and cam.distance_to(w.pos) < WS.VIS_PERSON:
+			striding += 1
+	var people_mm := 0
+	for m: Variant in rd.models:
+		if m.person:
+			for k in range(2):
+				var mmi: MultiMeshInstance3D = m.mms[k]
+				if mmi != null and mmi.visible and mmi.multimesh.use_custom_data and mmi.material_override is ShaderMaterial:
+					people_mm += 1
+	K.check(fails, nodes == 0 and rd.full_people == 0, "people: no full GLB nodes for people (%d)" % nodes)
+	K.check(fails, people_mm > 0 and striding > 0, "people: drawn by %d shader MultiMeshes with stride data, %d walking in stride" % [people_mm, striding])
+
+
+## People waiting at a zebra take distinct places along the curb.
+func _check_wait_crowd() -> void:
+	var sw: SW = f.get("peds")
+	var wk: WK = f.get("walkers")
+	var z: SW.PedEdge = null
+	for e: Variant in sw.edges:
+		if e != null and (e as SW.PedEdge).zebra:
+			z = e
+			break
+	K.check(fails, z != null, "fixture: a zebra")
+	if z == null:
+		return
+	var at := sw.pos_at(z, 0.0)
+	var crowd: Array = []
+	for k in range(4):
+		var w := wk.make("ambient")
+		w.pos = at
+		w.plan = [{"edge": z.id, "dir": 1}]
+		wk.call("_begin_wait", w)
+		crowd.append(w)
+	for _k in range(90):
+		for w: WK.Walker in crowd:
+			wk.ease_visuals(w, DT)
+	var slots := {}
+	var min_d := INF
+	for i in range(crowd.size()):
+		slots[(crowd[i] as WK.Walker).wait_slot] = true
+		for j in range(i + 1, crowd.size()):
+			var a: WK.Walker = crowd[i]
+			var b: WK.Walker = crowd[j]
+			min_d = minf(min_d, (a.pos + a.vis_off).distance_to(b.pos + b.vis_off))
+	K.check(fails, slots.size() == crowd.size() and min_d >= 0.45 * WS.M, "wait crowd: %d people at one zebra stand apart (closest %.2f m)" % [crowd.size(), min_d / WS.M])
+	for w: WK.Walker in crowd:
+		wk.remove(w)
+
+
+## Outside a sync fill, cars never appear in view, and people appear in view only fading in from
+## PED_FADE_SPAWN; both keep out of the player's personal space.
+func _check_ambient_spawns() -> void:
+	_quiet()
+	f.set("ambient_enabled", true)
+	var vh := _vh()
+	var wk: WK = f.get("walkers")
+	var amb = f.get("ambient")
+	var p := ctx.player_position()
+	var seen_c := {}
+	var seen_w := {}
+	for c: VH.Car in vh.cars:
+		seen_c[c.id] = true
+	var cars_bad := 0
+	var cars_new := 0
+	var peds_bad := 0
+	var peds_new := 0
+	var faded := 0
+	for _k in range(60):
+		f.call("_maintain", false)
+		for c: VH.Car in vh.cars:
+			if seen_c.has(c.id):
+				continue
+			seen_c[c.id] = true
+			cars_new += 1
+			if f.on_screen(c.pos) or Vector2(c.pos.x - p.x, c.pos.z - p.z).length() < amb.MIN_SPAWN - 0.5:
+				cars_bad += 1
+		for w: WK.Walker in wk.walkers:
+			if seen_w.has(w.id):
+				continue
+			seen_w[w.id] = true
+			peds_new += 1
+			var d := Vector2(w.pos.x - p.x, w.pos.z - p.z).length()
+			if f.on_screen(w.pos + Vector3(0, 0.05, 0)):
+				if w.fade >= 1.0 or d < amb.PED_FADE_SPAWN - 0.05:
+					peds_bad += 1
+				else:
+					faded += 1
+			elif d < amb.PERSONAL:
+				peds_bad += 1
+		for _j in range(3):
+			f.step(DT)
+	K.check(fails, cars_new > 0 and cars_bad == 0, "ambient: %d new cars, none appears in view or within MIN_SPAWN (%d bad)" % [cars_new, cars_bad])
+	K.check(fails, peds_new > 0 and peds_bad == 0, "ambient: %d new people appear out of view or fading in from 60 m (%d fading, %d bad)" % [peds_new, faded, peds_bad])
 
 
 # ------------------------------------------------------------------ car following
@@ -886,5 +1028,19 @@ func _check_fleets() -> void:
 	f.on_world_rebuilt()
 	K.check(fails, view.life != old_life and view.life.external == f and view.avatars.external == f, "fleets: world_rebuilt re-attaches the hooks to the new instances")
 	K.check(fails, fleets.count("crew") > 0, "fleets: an event present before the rebuild gets a crew through E (%d live events) %s" % [sim.events.size(), fleets.last_dispatch_fail])
+	# Crew routes take at most ASTAR_PER_FRAME A* builds per frame; the rest wait their turn.
+	for c: VH.Car in _vh().cars.duplicate():
+		if c.role == "crew":
+			_vh().remove(c)
+	var roads: Array = _lg().tiles.keys()
+	var station: Vector2i = Vector2i(D.tx(roads[0]), D.ty(roads[0]))
+	fleets.astar_left = fleets.ASTAR_PER_FRAME
+	for k in range(6):
+		var t: int = roads[(k + 1) * roads.size() / 8]
+		fleets.dispatch_crew("ambulance", station, Vector2i(D.tx(t), D.ty(t)))
+	var first: int = fleets.count("crew")
+	var waiting: int = fleets.pending.size()
+	f.step(DT)
+	K.check(fails, first <= fleets.ASTAR_PER_FRAME and waiting == 6 - first and fleets.pending.is_empty() and fleets.count("crew") == 6, "fleets: 6 crew routes in one frame build %d now, %d wait, all 6 after the next frame (%d)" % [first, waiting, fleets.count("crew")])
 	f.teardown()
 	K.check(fails, view.life.external == null and view.avatars.external == null, "fleets: teardown() clears both hooks")
