@@ -17,8 +17,8 @@ const GAP := 6.0
 const MAX_TEXT_W := 560.0
 const BANNER_LIFE := 6.5
 const BANNER_BLINK := 0.8
-## The slot starts at y 76; the compass sits above y 100.
-const TOP := 24.0
+## The slot starts at y 76; the compass and its distance labels end at y 106.
+const TOP := 34.0
 const KIND_STYLE := {
 	"info": ["dot", S.TEXT], "success": ["check", S.GOOD], "alert": ["alert", S.AMBER],
 	"system": ["info", S.TEXT_DIM], "chat": ["dot", S.TEXT_DIM],
