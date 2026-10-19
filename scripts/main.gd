@@ -26,6 +26,8 @@ var fp: FpMode = null
 var view_mode: String = "orbit"
 ## Orbit sim speed to restore on exit_fp() (1 when first person was entered before the sim ran).
 var _orbit_speed: int = 1
+## FpMode.to_dict() from the last exit_fp(), so Tab in orbit returns the hero to where they were.
+var _fp_saved: Dictionary = {}
 
 
 func _ready() -> void:
@@ -125,11 +127,24 @@ func _ready() -> void:
 	var start_speed := int(OS.get_environment("GRIDFALL_SPEED")) if OS.has_environment("GRIDFALL_SPEED") else 1
 	if fp != null:
 		fp.set_time_scale(start_speed)
-		notify("Welcome to GridFall. WASD to walk, Enter to chat, M for the map, Esc to pause.")
+		notify("Welcome to GridFall. WASD to walk, Tab for the city overview, Enter to chat, M for the map, Esc to pause.")
 	else:
 		sim.set_speed(start_speed)
 		hud.set_speed_display(start_speed)
 		hud.toast("Five GMI mayors are drafting their first plans...")
+
+
+## Orbit view: Tab (overview_toggle) goes back down to the street.
+func _unhandled_input(event: InputEvent) -> void:
+	if fp != null or event.is_echo() or not event.is_action_pressed("overview_toggle"):
+		return
+	# Tool runs (trailer, orbit smoke, orbit photo tour) stay in orbit.
+	if OS.get_environment("GRIDFALL_CINEMATIC") in ["prep", "record"] or OS.get_environment("GRIDFALL_SMOKE_TEST") == "1" or OS.has_environment("GRIDFALL_PHOTO_DIR"):
+		return
+	get_viewport().set_input_as_handled()
+	enter_fp()
+	fp.set_time_scale(fp.time_scale)
+	notify("Back on the street. Tab opens the city overview.")
 
 
 func _process(delta: float) -> void:
@@ -160,6 +175,8 @@ func save_game(path: String = SAVE_PATH) -> void:
 	var data := {"sim": sim.to_dict(), "brain": brain.to_dict(), "client": client.to_dict(), "residents": residents.to_dict(), "minds": minds.to_dict(), "saved_at": Time.get_datetime_string_from_system()}
 	if fp != null:
 		data["fp"] = fp.to_dict()
+	elif not _fp_saved.is_empty():
+		data["fp"] = _fp_saved
 	var f := FileAccess.open(path, FileAccess.WRITE)
 	if f == null:
 		notify("Save failed: cannot write " + path, "alert")
@@ -188,9 +205,11 @@ func load_game(path: String = SAVE_PATH) -> bool:
 	view.setup(sim, active_camera())
 	hud.setup(sim, brain, client)
 	hud.setup_people(residents, minds)
+	var fd: Variant = d.get("fp", {})
 	if fp != null:
-		var fd: Variant = d.get("fp", {})
 		fp.from_dict(fd if typeof(fd) == TYPE_DICTIONARY else {})
+	else:
+		_fp_saved = fd if typeof(fd) == TYPE_DICTIONARY else {}
 	sim.waiting_for_ai = false
 	# Mid-day saves already have today's mayor decisions applied; only a boundary save needs a fresh day.
 	if sim.tick_in_day == 0:
@@ -209,6 +228,7 @@ func new_game() -> void:
 	hud.setup_people(residents, minds)
 	if fp != null:
 		fp.from_dict({})
+	_fp_saved = {}
 	sim.start()
 	_update_mood()
 	notify("A new GridFall has been founded", "success")
@@ -267,6 +287,12 @@ func enter_fp() -> void:
 	add_child(fp)
 	fp.setup(self)
 	view.set_camera(fp.player.camera)
+	if not _fp_saved.is_empty():
+		# The orbit clock ran on since; only the player and the features come back.
+		var back := _fp_saved.duplicate(true)
+		back.erase("day_phase")
+		_fp_saved = {}
+		fp.from_dict(back)
 
 
 ## Back to the orbit view and CityHud (used by B's "Quit to orbit"). Safe to call twice.
@@ -275,6 +301,7 @@ func enter_fp() -> void:
 func exit_fp() -> void:
 	if fp == null:
 		return
+	_fp_saved = fp.to_dict()
 	fp.teardown()
 	fp.queue_free()
 	fp = null
@@ -292,6 +319,7 @@ func exit_fp() -> void:
 	get_tree().paused = false
 	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
 	view_mode = "orbit"
+	hud.toast("Planner view. Press Tab to walk the streets again.")
 
 
 ## Grows the city offline at full speed with the legacy 12 s day, for tests and tours, then restores

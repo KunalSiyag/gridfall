@@ -51,7 +51,7 @@ const LEGEND := [
 	["alert", "Incidents", "How many are active, and the newest"],
 ]
 const KEYS := [
-	["M", "Map"], ["V", "Camera view"], ["Q", "Shoulder"], ["E", "Interact"], ["Enter", "Chat"],
+	["M", "Map"], ["Tab", "City overview"], ["V", "Camera view"], ["Q", "Shoulder"], ["E", "Interact"], ["Enter", "Chat"],
 	["[ ]", "Game speed"], ["T", "Skip to morning"], ["P", "Photo mode"], ["F1", "Hide HUD"],
 	["F5", "Quick save"], ["F9", "Quick load"],
 ]

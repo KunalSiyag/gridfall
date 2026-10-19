@@ -159,6 +159,10 @@ var _photo_saved: Dictionary = {}
 var _photo_pos: Vector3 = Vector3.ZERO
 var _set_up: bool = false
 var _traffic_t: float = 0.0
+## True while another owner (the city overview) places the camera through set_view_override().
+var view_override: bool = false
+var _override_xf: Transform3D = Transform3D()
+var _override_fov: float = 50.0
 
 
 ## Builds the camera (sharing ctx.env, so SkyDirector's sky applies), the avatar and the rig,
@@ -369,7 +373,10 @@ func update_view(delta: float) -> void:
 	var xf: Transform3D
 	var fv: float
 	var pure_fp := false
-	if photo_mode:
+	if view_override:
+		xf = _override_xf
+		fv = _override_fov
+	elif photo_mode:
 		xf = Transform3D(SM.look_basis(cam_yaw, cam_pitch), _photo_pos)
 		fv = rig.base_fov if third else _fov_setting
 	elif third and _conv_on:
@@ -468,6 +475,37 @@ func toggle_camera_mode() -> void:
 	if ctx != null and ctx.mode != null:
 		ctx.mode.apply_settings({"camera_mode": m})
 	set_camera_mode(m, true)
+
+
+## Hands the camera to another owner: until clear_view_override(), update_view puts it at xf with
+## fov while the body, rig and avatar keep updating. The first call eases in over blend seconds;
+## later calls (one per frame) move it at once.
+func set_view_override(xf: Transform3D, fov: float, blend: float = 0.0) -> void:
+	var first := not view_override
+	var from_xf := _camera_world()
+	var from_fov := camera.fov if camera != null else WS.FOV
+	view_override = true
+	_override_xf = xf
+	_override_fov = fov
+	if first and blend > 0.0 and _set_up:
+		_start_transition(blend, from_xf, from_fov)
+	if _set_up:
+		update_view(0.0)
+
+
+## Gives the camera back to the player's own view, easing over blend seconds.
+func clear_view_override(blend: float = MODE_BLEND) -> void:
+	if not view_override:
+		return
+	var from_xf := _camera_world()
+	var from_fov := camera.fov if camera != null else WS.FOV
+	view_override = false
+	if blend > 0.0 and _set_up:
+		_start_transition(blend, from_xf, from_fov)
+	else:
+		_trans_len = 0.0
+	if _set_up:
+		update_view(0.0)
 
 
 ## Q: the camera moves to the other shoulder (saved in the settings).
