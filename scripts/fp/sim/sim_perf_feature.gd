@@ -46,10 +46,10 @@ func self_test() -> Dictionary:
 		return {"ok": false, "detail": "no sim"}
 	var st := _sim.slice_stats()
 	var ok := _sim.sliced and float(st["max_ms"]) < STALL_LIMIT_MS
-	var detail := "sliced=%s budget=%.1fms pumps=%d ticks=%d max=%.2fms p95=%.2fms units<=%d/%d sync_max=%.1fms (brain %.1fms, view %.1fms excluded)" % [
+	var detail := "sliced=%s budget=%.1fms pumps=%d ticks=%d max=%.2fms p95=%.2fms units<=%d/%d sync_max=%.1fms (%d forced) (brain %.1fms, view %.1fms excluded)" % [
 		str(_sim.sliced).to_lower(), _sim.slice_budget_ms, int(st["pumps"]), int(st["ticks"]), float(st["max_ms"]),
 		float(st["p95_ms"]), int(st["max_units"]), int(st["units_limit"]), float(st["sync_max_ms"]),
-		float(st["brain_ms"]), float(st["view_ms"]),
+		int(st["sync_finishes"]), float(st["brain_ms"]), float(st["view_ms"]),
 	]
 	return {"ok": ok, "detail": detail}
 

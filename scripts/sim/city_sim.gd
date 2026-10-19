@@ -812,11 +812,11 @@ func job_pending() -> bool:
 ## "max_units" (largest number of work units in one pump, nested sync sections counted),
 ## "sync_max_ms" (the longest forced synchronous finish, reported separately)}, plus "brain_ms"
 ## (longest day_started emission, the brain's listeners; excluded from max_ms), "view_ms" (longest
-## tiles_changed emission, the view rebuild; excluded), "units_limit", "max_step_units",
-## "slowest_step_ms" / "slowest_phase" and "avg_ms".
+## tiles_changed emission, the view rebuild; excluded), "sync_finishes" (how many forced finishes),
+## "units_limit", "max_step_units", "slowest_step_ms" / "slowest_phase" and "avg_ms".
 func slice_stats() -> Dictionary:
 	var out := _ss.duplicate()
-	for key in ["pumps", "ticks", "over_budget", "max_units", "max_step_units"]:
+	for key in ["pumps", "ticks", "over_budget", "max_units", "max_step_units", "sync_finishes"]:
 		out[key] = int(out.get(key, 0))
 	for key in ["max_ms", "sync_max_ms", "brain_ms", "view_ms", "slowest_step_ms"]:
 		out[key] = snappedf(float(out.get(key, 0.0)), 0.01)
