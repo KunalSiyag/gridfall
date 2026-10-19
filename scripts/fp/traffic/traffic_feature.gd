@@ -25,6 +25,8 @@ const CAR_PREFIXES := ["sedan", "hatch", "suv", "taxi", "van", "pickup", "coupe"
 const TELEPORT := 2.0
 const WARM_SECONDS := 14.0
 const PICK_PX := 26.0
+## The traffic photo stands this far from the junction centre along the arm.
+const PHOTO_BACK := 1.3
 
 var lanes: LG
 var peds: SW
@@ -59,6 +61,10 @@ var _maint_t: float = 0.0
 var _stops_sig: String = ""
 var _built: bool = false
 var _rng := RandomNumberGenerator.new()
+## Photo tour: the traffic shot's junction and arm, and the pending staging for the next refill.
+var _photo: Dictionary = {}
+var _photo_stage: Dictionary = {}
+var _budget_frame: int = -1
 
 
 func feature_id() -> String:
@@ -293,6 +299,11 @@ func _process(delta: float) -> void:
 func step(dt: float) -> void:
 	if not _built or dt <= 0.0:
 		return
+	# A* budget per frame; a test driving step() itself gets a fresh budget per call.
+	var frame := Engine.get_process_frames()
+	if frame != _budget_frame or not auto_step:
+		_budget_frame = frame
+		fleets.astar_left = FLEETS.ASTAR_PER_FRAME
 	clock += dt
 	junctions.clock = clock
 	var pp := ctx.player_position()
@@ -354,6 +365,14 @@ func _refill(warm: bool) -> void:
 	_last_player = ctx.player_position()
 	_maintain(true)
 	if warm:
+		if not _photo_stage.is_empty():
+			var i := int(_photo_stage["tile"])
+			var axis_in := 0 if int(_photo_stage["arm"]) % 2 == 0 else 1
+			var want := (JN.T_GREEN + JN.T_AMBER + JN.T_ALLRED) * float(1 - axis_in) + 5.0
+			var t_end := fposmod(clock + WARM_SECONDS + junctions.offset(i), JN.CYCLE)
+			clock += fposmod(want - t_end, JN.CYCLE)
+			junctions.clock = clock
+			_photo_stage = {}
 		var saved := clock
 		for _k in range(int(WARM_SECONDS / 0.1)):
 			step(0.1)
@@ -401,9 +420,18 @@ func sync_visuals(delta: float) -> void:
 		if w.dead or w.state == "hidden" or w.far:
 			render.release_walker(w)
 			continue
+		walkers.ease_visuals(w, delta)
 		render.draw_walker(w, walkers.draw_xform(w), cam.distance_to(w.pos), WS.VIS_PERSON)
 	render.finish()
+	render.set_glow(_night())
 	junctions.update_lamps(ctx.player_position(), WS.VIS_PROP + 1.0)
+
+
+## 0 by day, 1 at night (the sky director's darkness; 0 without one).
+func _night() -> float:
+	if ctx.sky != null and is_instance_valid(ctx.sky):
+		return clampf(float(ctx.sky.night), 0.0, 1.0)
+	return 0.0
 
 
 func _camera() -> Camera3D:
@@ -785,7 +813,8 @@ func avatar_counts() -> Dictionary:
 # ------------------------------------------------------------------ public API (contract)
 
 ## Agents near p for the minimap and audio (moving vehicles and people on foot; parked cars are
-## left out): [{id, pos, vel, speed, kind, driver_id, heading, stalled_s}].
+## left out): [{id, pos, vel, speed, kind, driver_id, heading, stalled_s}]. heading follows S0 §11
+## (forward = (-sin h, 0, -cos h)), so it holds for stopped agents too; vel is u/s.
 func agents_near(p: Vector3, r: float) -> Array:
 	var out: Array = []
 	if not _built:
@@ -798,12 +827,12 @@ func agents_near(p: Vector3, r: float) -> Array:
 			continue
 		out.append({"id": c.id, "pos": c.pos + c.vis_off, "vel": c.vel, "speed": c.v,
 			"kind": "pedestrian" if c.kind == "bike" else c.kind, "driver_id": c.driver_id,
-			"heading": c.yaw, "stalled_s": c.stalled_s})
+			"heading": wrapf(c.yaw + c.vis_yaw + PI, -PI, PI), "stalled_s": c.stalled_s})
 	for w: WK.Walker in walkers.walkers:
 		if w.dead or w.far or w.pos.distance_squared_to(p) > r2:
 			continue
 		out.append({"id": 1000000 + w.id, "pos": w.pos, "vel": w.vel, "speed": w.v, "kind": "pedestrian",
-			"driver_id": w.resident_id, "heading": w.yaw, "stalled_s": w.stalled_s})
+			"driver_id": w.resident_id, "heading": wrapf(w.yaw + PI, -PI, PI), "stalled_s": w.stalled_s})
 	return out
 
 
@@ -989,15 +1018,21 @@ func self_test() -> Dictionary:
 	return {"ok": ok, "detail": "lanes=%d cars=%d people=%d lines=%d" % [lanes.lane_count(), cars, people, fleets.lines.size()]}
 
 
-## The "traffic" shot: a cross tile with lights, from a sidewalk corner at eye height.
+## The "traffic" shot: the most built-up cross tile with lights, seen at eye height from the
+## sidewalk of one of its arms, 1.3 tiles back, beside the inbound lane: the queue at the light,
+## the zebra in front of it, the poles and the cross traffic.
 func photo_shots() -> Array:
 	if not _built:
 		return []
 	var best := -1
 	var bn := -1
+	var best_arm := -1
 	for i: int in lanes.tiles.keys():
 		var t: LG.TileInfo = lanes.tiles[i]
 		if not t.lights:
+			continue
+		var arm := _photo_arm(i)
+		if arm < 0:
 			continue
 		var n := 0
 		for dy in range(-2, 3):
@@ -1009,14 +1044,50 @@ func photo_shots() -> Array:
 		if n > bn:
 			bn = n
 			best = i
+			best_arm = arm
 	if best < 0:
 		return []
-	var c := Vector3(D.tx(best), 0, D.ty(best))
-	var pos := c + Vector3(-0.38, 0, 0.62)
-	var look := (c + Vector3(0.12, 0, -0.3)) - pos
-	return [{"name": "traffic", "pos": pos, "yaw": rad_to_deg(atan2(-look.x, -look.z)), "pitch": -1.5, "hour": 10.5, "prepare": "photo_prepare"}]
+	_photo = {"tile": best, "arm": best_arm}
+	var a := LG.DIRS[best_arm]
+	var right := Vector2(a.y, -a.x)
+	var c := Vector2(D.tx(best), D.ty(best))
+	var at := c + a * PHOTO_BACK + right * SW.LAT
+	var look := c - right * 0.05 - at
+	var pos := Vector3(at.x, 0, at.y)
+	pos.y = _ground(pos, WS.SIDEWALK_TOP)
+	return [{"name": "traffic", "pos": pos, "yaw": rad_to_deg(atan2(-look.x, -look.y)), "pitch": -2.0, "hour": 10.5, "prepare": "photo_prepare"}]
 
 
-## Photo tour hook: refill the street around the next shot (the tour holds sim speed 0).
+## The arm of cross tile i to shoot from: two straight tiles beyond it (the camera stands on a
+## plain sidewalk), preferring the one with the most built-up lots beside it; -1 when none.
+func _photo_arm(i: int) -> int:
+	var best := -1
+	var bn := -1
+	for e in range(4):
+		var n1 := lanes.across(i, e)
+		var t1: LG.TileInfo = lanes.info(n1) if n1 >= 0 else null
+		if t1 == null or t1.piece != "straight" or t1.bridge:
+			continue
+		var n2 := lanes.across(n1, e)
+		var t2: LG.TileInfo = lanes.info(n2) if n2 >= 0 else null
+		if t2 == null or t2.piece != "straight":
+			continue
+		var n := 0
+		for tile: int in [n1, n2]:
+			for side: Vector2 in [Vector2(LG.DIRS[e].y, -LG.DIRS[e].x), Vector2(-LG.DIRS[e].y, LG.DIRS[e].x)]:
+				var x := D.tx(tile) + int(side.x)
+				var y := D.ty(tile) + int(side.y)
+				if D.in_bounds(x, y) and D.is_zone(ctx.sim.kind[D.idx(x, y)]):
+					n += 1 + ctx.sim.level[D.idx(x, y)]
+		if n > bn:
+			bn = n
+			best = e
+	return best
+
+
+## Photo tour hook: refill the street around the next shot (the tour holds sim speed 0) and time
+## the warm-up so it ends with the shot's approach on red and the cross street green, 5 s in:
+## the queue has formed and people are on the zebra in front of it.
 func photo_prepare() -> void:
 	_force_refill = true
+	_photo_stage = _photo.duplicate()

@@ -12,6 +12,9 @@ const LG := preload("res://scripts/fp/traffic/lane_graph.gd")
 const VH := preload("res://scripts/fp/traffic/vehicles.gd")
 const DWELL := 9.0
 const MAX_CREWS := 10
+## Crew routes are A* builds: at most this many per frame (the feature refills the budget), the
+## rest wait in `pending` (docs/fp/slices/E-traffic.md §1).
+const ASTAR_PER_FRAME := 4
 const CURB_LAT := 0.055
 const JOBS := {"bus": "bus driver", "truck": "truck driver", "garbage_truck": "sanitation worker",
 	"firetruck": "firefighter", "ambulance": "paramedic", "police": "police officer"}
@@ -33,8 +36,13 @@ var lg: LG
 var vh: VH
 var lines: Array = []
 var stop_sides: Dictionary = {}       # tile -> side index of its shelter
-## Why the last dispatch_crew call sent nobody ("" when it sent a crew); for tests and logs.
+## Why the last crew build sent nobody ("" when it sent a crew); for tests and logs.
 var last_dispatch_fail: String = ""
+## Crew requests waiting for an A* slot: [kind, station, target]; crews waiting to route home.
+var pending: Array = []
+var homing: Array = []
+## A* builds left this frame.
+var astar_left: int = ASTAR_PER_FRAME
 var _sig: String = ""
 var _rng := RandomNumberGenerator.new()
 
@@ -44,6 +52,8 @@ func setup(p_f: Object, p_sim: CitySim, p_lg: LG, p_vh: VH) -> void:
 	sim = p_sim
 	lg = p_lg
 	vh = p_vh
+	pending.clear()
+	homing.clear()
 
 
 ## Shelter side of every bus stop (G1 may store it as a Vector2i; else inferred like CityView).
@@ -295,8 +305,29 @@ func _next_leg(c: VH.Car, line: Line, k: int) -> void:
 	(c.owner as Dictionary)["next"] = nk
 
 
-## Sends a crew (CityLife.external.dispatch_crew).
+## Queues a crew (CityLife.external.dispatch_crew); it leaves when an A* slot is free.
 func dispatch_crew(kind: String, station: Vector2i, target: Vector2i) -> void:
+	for q: Array in pending:
+		if str(q[0]) == kind and q[2] == target:
+			return
+	pending.append([kind, station, target])
+	_drain()
+
+
+## Builds queued routes while this frame's A* budget lasts.
+func _drain() -> void:
+	while astar_left > 0 and not homing.is_empty():
+		var c: VH.Car = homing.pop_front()
+		if not c.dead and c.owner is Dictionary:
+			astar_left -= 1
+			_route_home(c, c.owner)
+	while astar_left > 0 and not pending.is_empty():
+		var q: Array = pending.pop_front()
+		astar_left -= 1
+		_send_crew(str(q[0]), q[1], q[2])
+
+
+func _send_crew(kind: String, station: Vector2i, target: Vector2i) -> void:
 	last_dispatch_fail = ""
 	if count("crew") >= MAX_CREWS:
 		last_dispatch_fail = "cap"
@@ -398,6 +429,7 @@ func _name_driver(c: VH.Car, kind: String) -> void:
 # ------------------------------------------------------------------ stepping
 
 func step(dt: float) -> void:
+	_drain()
 	var live := {}
 	for ev: Dictionary in sim.events:
 		live[int(ev.get("id", -1))] = true
@@ -464,6 +496,14 @@ func _go_home(c: VH.Car, o: Dictionary) -> void:
 	o["t"] = 0.0
 	c.siren = false
 	c.state = "returning to the station"
+	c.goal_lane = c.lane
+	c.goal_s = c.s
+	c.path.clear()
+	homing.append(c)
+	_drain()
+
+
+func _route_home(c: VH.Car, o: Dictionary) -> void:
 	var home: LG.Lane = lg.lanes[int(o.get("home", -1))] if int(o.get("home", -1)) >= 0 and int(o.get("home", -1)) < lg.lanes.size() else null
 	if c.lane == null or home == null:
 		c.goal_lane = null
