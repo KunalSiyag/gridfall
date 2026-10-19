@@ -21,6 +21,21 @@ func live_json(role: String, agent_id: String, model: String, system_prompt: Str
 	calls += 1
 	return await super(role, agent_id, model, system_prompt, user_prompt, day, max_tokens, timeout_s)
 """
+## E's traffic feature stand-in: two cars and a walker near p, and one visible resident.
+const STUB_TRAFFIC := """extends FpFeature
+var agent_calls: int = 0
+func feature_id() -> String:
+	return "traffic"
+func agents_near(p: Vector3, _r: float) -> Array:
+	agent_calls += 1
+	return [
+		{"id": 1, "pos": p + Vector3(2, 0, 0), "vel": Vector3(0, 0, -0.5), "speed": 0.5, "kind": "car", "driver_id": "", "heading": 0.0},
+		{"id": 2, "pos": p + Vector3(-3, 0, 1), "vel": Vector3.ZERO, "speed": 0.0, "kind": "bus", "driver_id": "", "heading": 1.57},
+		{"id": 3, "pos": p + Vector3(0, 0, 2), "vel": Vector3.ZERO, "speed": 0.0, "kind": "pedestrian", "driver_id": "", "heading": 0.0},
+	]
+func visible_near(p: Vector3, _r: float) -> Array:
+	return [{"id": "r1", "pos": p + Vector3(1, 0, 1)}]
+"""
 ## Main stand-in for the pause menu: save and load notify once each, like main.gd.
 const STUB_MAIN := """extends Node3D
 var bus: GameBus
@@ -59,6 +74,7 @@ func _init() -> void:
 	_check_pings(ctx)
 	await _check_toasts(ctx)
 	await _check_wheel_first(ctx)
+	await _check_agents(ctx)
 	await _check_card(ctx, client)
 	await _check_map(ctx, f)
 	await _check_reload(ctx)
@@ -235,6 +251,29 @@ func _check_wheel_first(ctx: FpContext) -> void:
 	_wheel(false)
 	await _frames(1)
 	K.check(fails, is_equal_approx(mm.ppt, 3.5), "first person: wheel down steps back to 3.5 (%.1f)" % mm.ppt)
+
+
+func _check_agents(ctx: FpContext) -> void:
+	var real: FpFeature = ctx.features.get("traffic", null)
+	var stub: FpFeature = _script(STUB_TRAFFIC).new()
+	ctx.features["traffic"] = stub
+	var mm := ctx.hud.minimap
+	mm._collect_markers()
+	mm._collect_people()
+	var draws0 := mm.marker_draws
+	mm._overlay.queue_redraw()
+	await _frames(2)
+	K.check(fails, mm._agents.size() == 3 and mm._people.size() == 1 and int(stub.get("agent_calls")) >= 1, "E's agents_near and visible_near feed the minimap (%d agents, %d people)" % [mm._agents.size(), mm._people.size()])
+	K.check(fails, mm.marker_draws > draws0, "the minimap draws the agents (%d draws)" % (mm.marker_draws - draws0))
+	var car_dir: Vector2 = mm._agents[0]["dir"]
+	K.check(fails, car_dir.is_equal_approx(Vector2(0, -1)), "a car blip points along its velocity (%s)" % str(car_dir))
+	if real != null:
+		ctx.features["traffic"] = real
+	else:
+		ctx.features.erase("traffic")
+	stub.free()
+	mm._collect_markers()
+	mm._collect_people()
 
 
 func _check_card(ctx: FpContext, client: GmiClient) -> void:
