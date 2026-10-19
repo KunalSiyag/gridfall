@@ -3,9 +3,10 @@
 importer="texture"
 type="CompressedTexture2D"
 uid="uid://b4vpwdcrgv37d"
-path="res://.godot/imported/park_leafcluster_conifer.png-f2e8ea7add3dd988f2ffdbf7c6e5ab9e.ctex"
+path.s3tc="res://.godot/imported/park_leafcluster_conifer.png-f2e8ea7add3dd988f2ffdbf7c6e5ab9e.s3tc.ctex"
 metadata={
-"vram_texture": false
+"imported_formats": ["s3tc_bptc"],
+"vram_texture": true
 }
 generator_parameters={
 "md5": "f7d33b9bf5cf89184e8a72cd2238fc3a"
@@ -14,11 +15,11 @@ generator_parameters={
 [deps]
 
 source_file="res://models/real/buildings/park_leafcluster_conifer.png"
-dest_files=["res://.godot/imported/park_leafcluster_conifer.png-f2e8ea7add3dd988f2ffdbf7c6e5ab9e.ctex"]
+dest_files=["res://.godot/imported/park_leafcluster_conifer.png-f2e8ea7add3dd988f2ffdbf7c6e5ab9e.s3tc.ctex"]
 
 [params]
 
-compress/mode=0
+compress/mode=2
 compress/high_quality=false
 compress/lossy_quality=0.7
 compress/uastc_level=0

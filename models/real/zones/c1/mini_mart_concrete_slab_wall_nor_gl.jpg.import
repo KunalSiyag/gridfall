@@ -3,9 +3,10 @@
 importer="texture"
 type="CompressedTexture2D"
 uid="uid://c2o0xj3yn140s"
-path="res://.godot/imported/mini_mart_concrete_slab_wall_nor_gl.jpg-20c2db068b7c9590f9e82450e90bcdb8.ctex"
+path.s3tc="res://.godot/imported/mini_mart_concrete_slab_wall_nor_gl.jpg-20c2db068b7c9590f9e82450e90bcdb8.s3tc.ctex"
 metadata={
-"vram_texture": false
+"imported_formats": ["s3tc_bptc"],
+"vram_texture": true
 }
 generator_parameters={
 "md5": "04792f410a605afcf2c061606cd5ef19"
@@ -14,17 +15,17 @@ generator_parameters={
 [deps]
 
 source_file="res://models/real/zones/c1/mini_mart_concrete_slab_wall_nor_gl.jpg"
-dest_files=["res://.godot/imported/mini_mart_concrete_slab_wall_nor_gl.jpg-20c2db068b7c9590f9e82450e90bcdb8.ctex"]
+dest_files=["res://.godot/imported/mini_mart_concrete_slab_wall_nor_gl.jpg-20c2db068b7c9590f9e82450e90bcdb8.s3tc.ctex"]
 
 [params]
 
-compress/mode=0
+compress/mode=2
 compress/high_quality=false
 compress/lossy_quality=0.7
 compress/uastc_level=0
 compress/rdo_quality_loss=0.0
 compress/hdr_compression=1
-compress/normal_map=0
+compress/normal_map=1
 compress/channel_pack=0
 mipmaps/generate=true
 mipmaps/limit=-1

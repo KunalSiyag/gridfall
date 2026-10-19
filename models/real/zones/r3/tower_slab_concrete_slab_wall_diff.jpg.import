@@ -3,9 +3,10 @@
 importer="texture"
 type="CompressedTexture2D"
 uid="uid://h6ebgb7mh6wv"
-path="res://.godot/imported/tower_slab_concrete_slab_wall_diff.jpg-fe79feb74f796f1f2fd77e00d5ca08a7.ctex"
+path.s3tc="res://.godot/imported/tower_slab_concrete_slab_wall_diff.jpg-fe79feb74f796f1f2fd77e00d5ca08a7.s3tc.ctex"
 metadata={
-"vram_texture": false
+"imported_formats": ["s3tc_bptc"],
+"vram_texture": true
 }
 generator_parameters={
 "md5": "0592ba320da427a449bb162bd84016bb"
@@ -14,11 +15,11 @@ generator_parameters={
 [deps]
 
 source_file="res://models/real/zones/r3/tower_slab_concrete_slab_wall_diff.jpg"
-dest_files=["res://.godot/imported/tower_slab_concrete_slab_wall_diff.jpg-fe79feb74f796f1f2fd77e00d5ca08a7.ctex"]
+dest_files=["res://.godot/imported/tower_slab_concrete_slab_wall_diff.jpg-fe79feb74f796f1f2fd77e00d5ca08a7.s3tc.ctex"]
 
 [params]
 
-compress/mode=0
+compress/mode=2
 compress/high_quality=false
 compress/lossy_quality=0.7
 compress/uastc_level=0

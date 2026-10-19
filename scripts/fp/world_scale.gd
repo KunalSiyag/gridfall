@@ -96,7 +96,7 @@ const FOG_DEPTH_BEGIN := 20.0            # 400 m
 const FOG_DEPTH_END := 58.0              # 1.16 km, just inside CAMERA_FAR
 
 # --- Visibility targets (G2, E)
-const VIS_BUILDING := 30.0               # 600 m
+const VIS_BUILDING := 15.0               # 300 m: real buildings; merged impostors beyond (G2)
 const VIS_PROP := 4.0                    # 80 m
 const VIS_PERSON := 4.0                  # 80 m
 const VIS_CAR := 10.0                    # 200 m
@@ -137,6 +137,7 @@ const TIME_SCALES := [1, 2, 4, 8]        # allowed first-person speeds (D4)
 
 
 # --- G2 render performance (owned by G2)
+const VIS_BUILDING_NEAR := 4.0          # 80 m: textured buildings; merged one-draw twins to VIS_BUILDING
 # end G2
 
 

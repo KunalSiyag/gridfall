@@ -3,9 +3,10 @@
 importer="texture"
 type="CompressedTexture2D"
 uid="uid://i3y42mfobaqe"
-path="res://.godot/imported/depot_cladded_bitumen_diff.jpg-17da98fe3ad8ef50f64d42297995378a.ctex"
+path.s3tc="res://.godot/imported/depot_cladded_bitumen_diff.jpg-17da98fe3ad8ef50f64d42297995378a.s3tc.ctex"
 metadata={
-"vram_texture": false
+"imported_formats": ["s3tc_bptc"],
+"vram_texture": true
 }
 generator_parameters={
 "md5": "b6d7c3096bc68eba624ec450f01b9294"
@@ -14,11 +15,11 @@ generator_parameters={
 [deps]
 
 source_file="res://models/real/zones/i1/depot_cladded_bitumen_diff.jpg"
-dest_files=["res://.godot/imported/depot_cladded_bitumen_diff.jpg-17da98fe3ad8ef50f64d42297995378a.ctex"]
+dest_files=["res://.godot/imported/depot_cladded_bitumen_diff.jpg-17da98fe3ad8ef50f64d42297995378a.s3tc.ctex"]
 
 [params]
 
-compress/mode=0
+compress/mode=2
 compress/high_quality=false
 compress/lossy_quality=0.7
 compress/uastc_level=0

@@ -3,9 +3,10 @@
 importer="texture"
 type="CompressedTexture2D"
 uid="uid://cag26ocb3v84x"
-path="res://.godot/imported/water_pump_leafcluster_conifer.png-ea79a770136356df6a2fd2b25eef3a56.ctex"
+path.s3tc="res://.godot/imported/water_pump_leafcluster_conifer.png-ea79a770136356df6a2fd2b25eef3a56.s3tc.ctex"
 metadata={
-"vram_texture": false
+"imported_formats": ["s3tc_bptc"],
+"vram_texture": true
 }
 generator_parameters={
 "md5": "f7d33b9bf5cf89184e8a72cd2238fc3a"
@@ -14,11 +15,11 @@ generator_parameters={
 [deps]
 
 source_file="res://models/real/buildings/water_pump_leafcluster_conifer.png"
-dest_files=["res://.godot/imported/water_pump_leafcluster_conifer.png-ea79a770136356df6a2fd2b25eef3a56.ctex"]
+dest_files=["res://.godot/imported/water_pump_leafcluster_conifer.png-ea79a770136356df6a2fd2b25eef3a56.s3tc.ctex"]
 
 [params]
 
-compress/mode=0
+compress/mode=2
 compress/high_quality=false
 compress/lossy_quality=0.7
 compress/uastc_level=0

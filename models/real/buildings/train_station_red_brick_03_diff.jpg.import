@@ -3,9 +3,10 @@
 importer="texture"
 type="CompressedTexture2D"
 uid="uid://b5sflecyiudhc"
-path="res://.godot/imported/train_station_red_brick_03_diff.jpg-1f329893d88349230f59d543f34ebe0d.ctex"
+path.s3tc="res://.godot/imported/train_station_red_brick_03_diff.jpg-1f329893d88349230f59d543f34ebe0d.s3tc.ctex"
 metadata={
-"vram_texture": false
+"imported_formats": ["s3tc_bptc"],
+"vram_texture": true
 }
 generator_parameters={
 "md5": "de6842c400ec2d175cae04c50e98ebfc"
@@ -14,11 +15,11 @@ generator_parameters={
 [deps]
 
 source_file="res://models/real/buildings/train_station_red_brick_03_diff.jpg"
-dest_files=["res://.godot/imported/train_station_red_brick_03_diff.jpg-1f329893d88349230f59d543f34ebe0d.ctex"]
+dest_files=["res://.godot/imported/train_station_red_brick_03_diff.jpg-1f329893d88349230f59d543f34ebe0d.s3tc.ctex"]
 
 [params]
 
-compress/mode=0
+compress/mode=2
 compress/high_quality=false
 compress/lossy_quality=0.7
 compress/uastc_level=0

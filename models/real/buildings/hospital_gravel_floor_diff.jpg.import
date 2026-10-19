@@ -3,9 +3,10 @@
 importer="texture"
 type="CompressedTexture2D"
 uid="uid://dwp1pmvxvdvrm"
-path="res://.godot/imported/hospital_gravel_floor_diff.jpg-cb26879ed079510a703cb61bbbce73c3.ctex"
+path.s3tc="res://.godot/imported/hospital_gravel_floor_diff.jpg-cb26879ed079510a703cb61bbbce73c3.s3tc.ctex"
 metadata={
-"vram_texture": false
+"imported_formats": ["s3tc_bptc"],
+"vram_texture": true
 }
 generator_parameters={
 "md5": "62a31373f346ee756fa10391b88850d6"
@@ -14,11 +15,11 @@ generator_parameters={
 [deps]
 
 source_file="res://models/real/buildings/hospital_gravel_floor_diff.jpg"
-dest_files=["res://.godot/imported/hospital_gravel_floor_diff.jpg-cb26879ed079510a703cb61bbbce73c3.ctex"]
+dest_files=["res://.godot/imported/hospital_gravel_floor_diff.jpg-cb26879ed079510a703cb61bbbce73c3.s3tc.ctex"]
 
 [params]
 
-compress/mode=0
+compress/mode=2
 compress/high_quality=false
 compress/lossy_quality=0.7
 compress/uastc_level=0

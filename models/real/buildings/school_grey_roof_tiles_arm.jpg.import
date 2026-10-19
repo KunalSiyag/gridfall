@@ -3,9 +3,10 @@
 importer="texture"
 type="CompressedTexture2D"
 uid="uid://chfca4cdc4f1e"
-path="res://.godot/imported/school_grey_roof_tiles_arm.jpg-1af23425512238689974ba76e1cdf893.ctex"
+path.s3tc="res://.godot/imported/school_grey_roof_tiles_arm.jpg-1af23425512238689974ba76e1cdf893.s3tc.ctex"
 metadata={
-"vram_texture": false
+"imported_formats": ["s3tc_bptc"],
+"vram_texture": true
 }
 generator_parameters={
 "md5": "341a894ca20ab959fb0bdabf89c1812f"
@@ -14,11 +15,11 @@ generator_parameters={
 [deps]
 
 source_file="res://models/real/buildings/school_grey_roof_tiles_arm.jpg"
-dest_files=["res://.godot/imported/school_grey_roof_tiles_arm.jpg-1af23425512238689974ba76e1cdf893.ctex"]
+dest_files=["res://.godot/imported/school_grey_roof_tiles_arm.jpg-1af23425512238689974ba76e1cdf893.s3tc.ctex"]
 
 [params]
 
-compress/mode=0
+compress/mode=2
 compress/high_quality=false
 compress/lossy_quality=0.7
 compress/uastc_level=0

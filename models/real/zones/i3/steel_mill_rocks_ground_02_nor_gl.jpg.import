@@ -3,9 +3,10 @@
 importer="texture"
 type="CompressedTexture2D"
 uid="uid://d18ve2086pnmo"
-path="res://.godot/imported/steel_mill_rocks_ground_02_nor_gl.jpg-8a151c77f246be8c355dc7e905dc4029.ctex"
+path.s3tc="res://.godot/imported/steel_mill_rocks_ground_02_nor_gl.jpg-8a151c77f246be8c355dc7e905dc4029.s3tc.ctex"
 metadata={
-"vram_texture": false
+"imported_formats": ["s3tc_bptc"],
+"vram_texture": true
 }
 generator_parameters={
 "md5": "5fe6b53b3dbc27358b4a6b7a58fa40f5"
@@ -14,17 +15,17 @@ generator_parameters={
 [deps]
 
 source_file="res://models/real/zones/i3/steel_mill_rocks_ground_02_nor_gl.jpg"
-dest_files=["res://.godot/imported/steel_mill_rocks_ground_02_nor_gl.jpg-8a151c77f246be8c355dc7e905dc4029.ctex"]
+dest_files=["res://.godot/imported/steel_mill_rocks_ground_02_nor_gl.jpg-8a151c77f246be8c355dc7e905dc4029.s3tc.ctex"]
 
 [params]
 
-compress/mode=0
+compress/mode=2
 compress/high_quality=false
 compress/lossy_quality=0.7
 compress/uastc_level=0
 compress/rdo_quality_loss=0.0
 compress/hdr_compression=1
-compress/normal_map=0
+compress/normal_map=1
 compress/channel_pack=0
 mipmaps/generate=true
 mipmaps/limit=-1

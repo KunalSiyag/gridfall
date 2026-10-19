@@ -3,9 +3,10 @@
 importer="texture"
 type="CompressedTexture2D"
 uid="uid://dli3kxxvxjhv0"
-path="res://.godot/imported/steel_mill_corrugated_iron_arm.jpg-a493486f53d6b4187d8797d111f54cad.ctex"
+path.s3tc="res://.godot/imported/steel_mill_corrugated_iron_arm.jpg-a493486f53d6b4187d8797d111f54cad.s3tc.ctex"
 metadata={
-"vram_texture": false
+"imported_formats": ["s3tc_bptc"],
+"vram_texture": true
 }
 generator_parameters={
 "md5": "f4e64b3490b6c330feebc15b878cfe5e"
@@ -14,11 +15,11 @@ generator_parameters={
 [deps]
 
 source_file="res://models/real/zones/i3/steel_mill_corrugated_iron_arm.jpg"
-dest_files=["res://.godot/imported/steel_mill_corrugated_iron_arm.jpg-a493486f53d6b4187d8797d111f54cad.ctex"]
+dest_files=["res://.godot/imported/steel_mill_corrugated_iron_arm.jpg-a493486f53d6b4187d8797d111f54cad.s3tc.ctex"]
 
 [params]
 
-compress/mode=0
+compress/mode=2
 compress/high_quality=false
 compress/lossy_quality=0.7
 compress/uastc_level=0

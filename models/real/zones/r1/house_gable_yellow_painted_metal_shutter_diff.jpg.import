@@ -3,9 +3,10 @@
 importer="texture"
 type="CompressedTexture2D"
 uid="uid://bbcpdf3n05wtk"
-path="res://.godot/imported/house_gable_yellow_painted_metal_shutter_diff.jpg-2b449eb04928d45325fdfb7efddd1b2c.ctex"
+path.s3tc="res://.godot/imported/house_gable_yellow_painted_metal_shutter_diff.jpg-2b449eb04928d45325fdfb7efddd1b2c.s3tc.ctex"
 metadata={
-"vram_texture": false
+"imported_formats": ["s3tc_bptc"],
+"vram_texture": true
 }
 generator_parameters={
 "md5": "4d05529f03151984d565b473e034bc2e"
@@ -14,11 +15,11 @@ generator_parameters={
 [deps]
 
 source_file="res://models/real/zones/r1/house_gable_yellow_painted_metal_shutter_diff.jpg"
-dest_files=["res://.godot/imported/house_gable_yellow_painted_metal_shutter_diff.jpg-2b449eb04928d45325fdfb7efddd1b2c.ctex"]
+dest_files=["res://.godot/imported/house_gable_yellow_painted_metal_shutter_diff.jpg-2b449eb04928d45325fdfb7efddd1b2c.s3tc.ctex"]
 
 [params]
 
-compress/mode=0
+compress/mode=2
 compress/high_quality=false
 compress/lossy_quality=0.7
 compress/uastc_level=0

@@ -3,9 +3,10 @@
 importer="texture"
 type="CompressedTexture2D"
 uid="uid://b0qynioa5vmjc"
-path="res://.godot/imported/landfill_corrugated_iron_diff.jpg-7e1732939a94ac69d795fd53d4aa929f.ctex"
+path.s3tc="res://.godot/imported/landfill_corrugated_iron_diff.jpg-7e1732939a94ac69d795fd53d4aa929f.s3tc.ctex"
 metadata={
-"vram_texture": false
+"imported_formats": ["s3tc_bptc"],
+"vram_texture": true
 }
 generator_parameters={
 "md5": "d5e96c3a100dfb057e330136f3b46794"
@@ -14,11 +15,11 @@ generator_parameters={
 [deps]
 
 source_file="res://models/real/buildings/landfill_corrugated_iron_diff.jpg"
-dest_files=["res://.godot/imported/landfill_corrugated_iron_diff.jpg-7e1732939a94ac69d795fd53d4aa929f.ctex"]
+dest_files=["res://.godot/imported/landfill_corrugated_iron_diff.jpg-7e1732939a94ac69d795fd53d4aa929f.s3tc.ctex"]
 
 [params]
 
-compress/mode=0
+compress/mode=2
 compress/high_quality=false
 compress/lossy_quality=0.7
 compress/uastc_level=0

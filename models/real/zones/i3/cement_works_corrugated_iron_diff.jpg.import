@@ -3,9 +3,10 @@
 importer="texture"
 type="CompressedTexture2D"
 uid="uid://b5i4n2uov3o8q"
-path="res://.godot/imported/cement_works_corrugated_iron_diff.jpg-2bc1edf167890e4746900d566c4f5510.ctex"
+path.s3tc="res://.godot/imported/cement_works_corrugated_iron_diff.jpg-2bc1edf167890e4746900d566c4f5510.s3tc.ctex"
 metadata={
-"vram_texture": false
+"imported_formats": ["s3tc_bptc"],
+"vram_texture": true
 }
 generator_parameters={
 "md5": "d5e96c3a100dfb057e330136f3b46794"
@@ -14,11 +15,11 @@ generator_parameters={
 [deps]
 
 source_file="res://models/real/zones/i3/cement_works_corrugated_iron_diff.jpg"
-dest_files=["res://.godot/imported/cement_works_corrugated_iron_diff.jpg-2bc1edf167890e4746900d566c4f5510.ctex"]
+dest_files=["res://.godot/imported/cement_works_corrugated_iron_diff.jpg-2bc1edf167890e4746900d566c4f5510.s3tc.ctex"]
 
 [params]
 
-compress/mode=0
+compress/mode=2
 compress/high_quality=false
 compress/lossy_quality=0.7
 compress/uastc_level=0

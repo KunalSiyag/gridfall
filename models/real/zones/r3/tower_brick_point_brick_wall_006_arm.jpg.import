@@ -3,9 +3,10 @@
 importer="texture"
 type="CompressedTexture2D"
 uid="uid://dye3ykdpq8gw0"
-path="res://.godot/imported/tower_brick_point_brick_wall_006_arm.jpg-6b91ccf23a1c5c827e0c722c80d31328.ctex"
+path.s3tc="res://.godot/imported/tower_brick_point_brick_wall_006_arm.jpg-6b91ccf23a1c5c827e0c722c80d31328.s3tc.ctex"
 metadata={
-"vram_texture": false
+"imported_formats": ["s3tc_bptc"],
+"vram_texture": true
 }
 generator_parameters={
 "md5": "bb2dbbb2f90bf4820290b973e092cc4b"
@@ -14,11 +15,11 @@ generator_parameters={
 [deps]
 
 source_file="res://models/real/zones/r3/tower_brick_point_brick_wall_006_arm.jpg"
-dest_files=["res://.godot/imported/tower_brick_point_brick_wall_006_arm.jpg-6b91ccf23a1c5c827e0c722c80d31328.ctex"]
+dest_files=["res://.godot/imported/tower_brick_point_brick_wall_006_arm.jpg-6b91ccf23a1c5c827e0c722c80d31328.s3tc.ctex"]
 
 [params]
 
-compress/mode=0
+compress/mode=2
 compress/high_quality=false
 compress/lossy_quality=0.7
 compress/uastc_level=0

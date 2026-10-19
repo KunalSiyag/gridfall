@@ -3,9 +3,10 @@
 importer="texture"
 type="CompressedTexture2D"
 uid="uid://cb81lo6d56xla"
-path="res://.godot/imported/trash_bin_metal_trash_can_diff_1k.jpg-b443f6d8b6fc59ff10e84972b98f57be.ctex"
+path.s3tc="res://.godot/imported/trash_bin_metal_trash_can_diff_1k.jpg-b443f6d8b6fc59ff10e84972b98f57be.s3tc.ctex"
 metadata={
-"vram_texture": false
+"imported_formats": ["s3tc_bptc"],
+"vram_texture": true
 }
 generator_parameters={
 "md5": "d46eda069d9f22d7dfb3f0740c34e36d"
@@ -14,11 +15,11 @@ generator_parameters={
 [deps]
 
 source_file="res://models/real/props/trash_bin_metal_trash_can_diff_1k.jpg"
-dest_files=["res://.godot/imported/trash_bin_metal_trash_can_diff_1k.jpg-b443f6d8b6fc59ff10e84972b98f57be.ctex"]
+dest_files=["res://.godot/imported/trash_bin_metal_trash_can_diff_1k.jpg-b443f6d8b6fc59ff10e84972b98f57be.s3tc.ctex"]
 
 [params]
 
-compress/mode=0
+compress/mode=2
 compress/high_quality=false
 compress/lossy_quality=0.7
 compress/uastc_level=0

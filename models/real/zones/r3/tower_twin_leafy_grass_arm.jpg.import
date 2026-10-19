@@ -3,9 +3,10 @@
 importer="texture"
 type="CompressedTexture2D"
 uid="uid://crdk0usxuxnci"
-path="res://.godot/imported/tower_twin_leafy_grass_arm.jpg-20d84351287e0f6b3bdc024bb1cb47d0.ctex"
+path.s3tc="res://.godot/imported/tower_twin_leafy_grass_arm.jpg-20d84351287e0f6b3bdc024bb1cb47d0.s3tc.ctex"
 metadata={
-"vram_texture": false
+"imported_formats": ["s3tc_bptc"],
+"vram_texture": true
 }
 generator_parameters={
 "md5": "7778c286c26314db36cb2eba18db7fa6"
@@ -14,11 +15,11 @@ generator_parameters={
 [deps]
 
 source_file="res://models/real/zones/r3/tower_twin_leafy_grass_arm.jpg"
-dest_files=["res://.godot/imported/tower_twin_leafy_grass_arm.jpg-20d84351287e0f6b3bdc024bb1cb47d0.ctex"]
+dest_files=["res://.godot/imported/tower_twin_leafy_grass_arm.jpg-20d84351287e0f6b3bdc024bb1cb47d0.s3tc.ctex"]
 
 [params]
 
-compress/mode=0
+compress/mode=2
 compress/high_quality=false
 compress/lossy_quality=0.7
 compress/uastc_level=0

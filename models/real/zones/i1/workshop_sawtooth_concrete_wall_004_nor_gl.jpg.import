@@ -3,9 +3,10 @@
 importer="texture"
 type="CompressedTexture2D"
 uid="uid://ms3ugbmblffb"
-path="res://.godot/imported/workshop_sawtooth_concrete_wall_004_nor_gl.jpg-66d038a406a6a1634259d278ed03fa42.ctex"
+path.s3tc="res://.godot/imported/workshop_sawtooth_concrete_wall_004_nor_gl.jpg-66d038a406a6a1634259d278ed03fa42.s3tc.ctex"
 metadata={
-"vram_texture": false
+"imported_formats": ["s3tc_bptc"],
+"vram_texture": true
 }
 generator_parameters={
 "md5": "3b0ea8d4ccb82d09db96bbc1237ce557"
@@ -14,17 +15,17 @@ generator_parameters={
 [deps]
 
 source_file="res://models/real/zones/i1/workshop_sawtooth_concrete_wall_004_nor_gl.jpg"
-dest_files=["res://.godot/imported/workshop_sawtooth_concrete_wall_004_nor_gl.jpg-66d038a406a6a1634259d278ed03fa42.ctex"]
+dest_files=["res://.godot/imported/workshop_sawtooth_concrete_wall_004_nor_gl.jpg-66d038a406a6a1634259d278ed03fa42.s3tc.ctex"]
 
 [params]
 
-compress/mode=0
+compress/mode=2
 compress/high_quality=false
 compress/lossy_quality=0.7
 compress/uastc_level=0
 compress/rdo_quality_loss=0.0
 compress/hdr_compression=1
-compress/normal_map=0
+compress/normal_map=1
 compress/channel_pack=0
 mipmaps/generate=true
 mipmaps/limit=-1

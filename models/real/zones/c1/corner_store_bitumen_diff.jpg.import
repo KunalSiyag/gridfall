@@ -3,9 +3,10 @@
 importer="texture"
 type="CompressedTexture2D"
 uid="uid://e74lmgsur6at"
-path="res://.godot/imported/corner_store_bitumen_diff.jpg-f3496e64ec5ee2d783e152d406d8f7c0.ctex"
+path.s3tc="res://.godot/imported/corner_store_bitumen_diff.jpg-f3496e64ec5ee2d783e152d406d8f7c0.s3tc.ctex"
 metadata={
-"vram_texture": false
+"imported_formats": ["s3tc_bptc"],
+"vram_texture": true
 }
 generator_parameters={
 "md5": "b6d7c3096bc68eba624ec450f01b9294"
@@ -14,11 +15,11 @@ generator_parameters={
 [deps]
 
 source_file="res://models/real/zones/c1/corner_store_bitumen_diff.jpg"
-dest_files=["res://.godot/imported/corner_store_bitumen_diff.jpg-f3496e64ec5ee2d783e152d406d8f7c0.ctex"]
+dest_files=["res://.godot/imported/corner_store_bitumen_diff.jpg-f3496e64ec5ee2d783e152d406d8f7c0.s3tc.ctex"]
 
 [params]
 
-compress/mode=0
+compress/mode=2
 compress/high_quality=false
 compress/lossy_quality=0.7
 compress/uastc_level=0

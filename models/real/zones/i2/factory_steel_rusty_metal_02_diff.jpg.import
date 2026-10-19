@@ -3,9 +3,10 @@
 importer="texture"
 type="CompressedTexture2D"
 uid="uid://dmt6fy316moqp"
-path="res://.godot/imported/factory_steel_rusty_metal_02_diff.jpg-eeb6bbf1790a5b7ac624e1b20dfca506.ctex"
+path.s3tc="res://.godot/imported/factory_steel_rusty_metal_02_diff.jpg-eeb6bbf1790a5b7ac624e1b20dfca506.s3tc.ctex"
 metadata={
-"vram_texture": false
+"imported_formats": ["s3tc_bptc"],
+"vram_texture": true
 }
 generator_parameters={
 "md5": "11e77a13199af5ff482df4bf3b469bc1"
@@ -14,11 +15,11 @@ generator_parameters={
 [deps]
 
 source_file="res://models/real/zones/i2/factory_steel_rusty_metal_02_diff.jpg"
-dest_files=["res://.godot/imported/factory_steel_rusty_metal_02_diff.jpg-eeb6bbf1790a5b7ac624e1b20dfca506.ctex"]
+dest_files=["res://.godot/imported/factory_steel_rusty_metal_02_diff.jpg-eeb6bbf1790a5b7ac624e1b20dfca506.s3tc.ctex"]
 
 [params]
 
-compress/mode=0
+compress/mode=2
 compress/high_quality=false
 compress/lossy_quality=0.7
 compress/uastc_level=0

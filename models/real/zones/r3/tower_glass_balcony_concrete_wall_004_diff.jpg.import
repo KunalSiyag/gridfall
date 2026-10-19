@@ -3,9 +3,10 @@
 importer="texture"
 type="CompressedTexture2D"
 uid="uid://2mwsxfnxf32"
-path="res://.godot/imported/tower_glass_balcony_concrete_wall_004_diff.jpg-4400d61fdbc3cf10f38a17e28e08e02e.ctex"
+path.s3tc="res://.godot/imported/tower_glass_balcony_concrete_wall_004_diff.jpg-4400d61fdbc3cf10f38a17e28e08e02e.s3tc.ctex"
 metadata={
-"vram_texture": false
+"imported_formats": ["s3tc_bptc"],
+"vram_texture": true
 }
 generator_parameters={
 "md5": "a56ea9d31c4356749fae1d4a6b151f99"
@@ -14,11 +15,11 @@ generator_parameters={
 [deps]
 
 source_file="res://models/real/zones/r3/tower_glass_balcony_concrete_wall_004_diff.jpg"
-dest_files=["res://.godot/imported/tower_glass_balcony_concrete_wall_004_diff.jpg-4400d61fdbc3cf10f38a17e28e08e02e.ctex"]
+dest_files=["res://.godot/imported/tower_glass_balcony_concrete_wall_004_diff.jpg-4400d61fdbc3cf10f38a17e28e08e02e.s3tc.ctex"]
 
 [params]
 
-compress/mode=0
+compress/mode=2
 compress/high_quality=false
 compress/lossy_quality=0.7
 compress/uastc_level=0

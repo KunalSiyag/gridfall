@@ -3,9 +3,10 @@
 importer="texture"
 type="CompressedTexture2D"
 uid="uid://886q20xmagx4"
-path="res://.godot/imported/bank_bitumen_diff.jpg-eb1bd6248675647257d3fb444f4e6399.ctex"
+path.s3tc="res://.godot/imported/bank_bitumen_diff.jpg-eb1bd6248675647257d3fb444f4e6399.s3tc.ctex"
 metadata={
-"vram_texture": false
+"imported_formats": ["s3tc_bptc"],
+"vram_texture": true
 }
 generator_parameters={
 "md5": "b6d7c3096bc68eba624ec450f01b9294"
@@ -14,11 +15,11 @@ generator_parameters={
 [deps]
 
 source_file="res://models/real/zones/c1/bank_bitumen_diff.jpg"
-dest_files=["res://.godot/imported/bank_bitumen_diff.jpg-eb1bd6248675647257d3fb444f4e6399.ctex"]
+dest_files=["res://.godot/imported/bank_bitumen_diff.jpg-eb1bd6248675647257d3fb444f4e6399.s3tc.ctex"]
 
 [params]
 
-compress/mode=0
+compress/mode=2
 compress/high_quality=false
 compress/lossy_quality=0.7
 compress/uastc_level=0

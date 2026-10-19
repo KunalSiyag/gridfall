@@ -3,9 +3,10 @@
 importer="texture"
 type="CompressedTexture2D"
 uid="uid://c56x6nqfrq55u"
-path="res://.godot/imported/sewage_plant_leafy_grass_diff.jpg-cda731c8d2d5e793f4fb8c3e7b401a98.ctex"
+path.s3tc="res://.godot/imported/sewage_plant_leafy_grass_diff.jpg-cda731c8d2d5e793f4fb8c3e7b401a98.s3tc.ctex"
 metadata={
-"vram_texture": false
+"imported_formats": ["s3tc_bptc"],
+"vram_texture": true
 }
 generator_parameters={
 "md5": "5289ac4c3bf240f677f5b31118faf1da"
@@ -14,11 +15,11 @@ generator_parameters={
 [deps]
 
 source_file="res://models/real/buildings/sewage_plant_leafy_grass_diff.jpg"
-dest_files=["res://.godot/imported/sewage_plant_leafy_grass_diff.jpg-cda731c8d2d5e793f4fb8c3e7b401a98.ctex"]
+dest_files=["res://.godot/imported/sewage_plant_leafy_grass_diff.jpg-cda731c8d2d5e793f4fb8c3e7b401a98.s3tc.ctex"]
 
 [params]
 
-compress/mode=0
+compress/mode=2
 compress/high_quality=false
 compress/lossy_quality=0.7
 compress/uastc_level=0

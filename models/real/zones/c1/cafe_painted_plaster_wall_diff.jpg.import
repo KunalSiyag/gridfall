@@ -3,9 +3,10 @@
 importer="texture"
 type="CompressedTexture2D"
 uid="uid://d8kimhcqy4hr"
-path="res://.godot/imported/cafe_painted_plaster_wall_diff.jpg-cae8091bf49d45066a1981b810c2a4f5.ctex"
+path.s3tc="res://.godot/imported/cafe_painted_plaster_wall_diff.jpg-cae8091bf49d45066a1981b810c2a4f5.s3tc.ctex"
 metadata={
-"vram_texture": false
+"imported_formats": ["s3tc_bptc"],
+"vram_texture": true
 }
 generator_parameters={
 "md5": "83ec6fa2677f3ced1a482ebbef209f41"
@@ -14,11 +15,11 @@ generator_parameters={
 [deps]
 
 source_file="res://models/real/zones/c1/cafe_painted_plaster_wall_diff.jpg"
-dest_files=["res://.godot/imported/cafe_painted_plaster_wall_diff.jpg-cae8091bf49d45066a1981b810c2a4f5.ctex"]
+dest_files=["res://.godot/imported/cafe_painted_plaster_wall_diff.jpg-cae8091bf49d45066a1981b810c2a4f5.s3tc.ctex"]
 
 [params]
 
-compress/mode=0
+compress/mode=2
 compress/high_quality=false
 compress/lossy_quality=0.7
 compress/uastc_level=0

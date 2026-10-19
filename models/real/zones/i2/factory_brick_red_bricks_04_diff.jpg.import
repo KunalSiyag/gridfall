@@ -3,9 +3,10 @@
 importer="texture"
 type="CompressedTexture2D"
 uid="uid://bna0kqk71rjre"
-path="res://.godot/imported/factory_brick_red_bricks_04_diff.jpg-a6e3cbb9b8b215c76983c0d6eac737e9.ctex"
+path.s3tc="res://.godot/imported/factory_brick_red_bricks_04_diff.jpg-a6e3cbb9b8b215c76983c0d6eac737e9.s3tc.ctex"
 metadata={
-"vram_texture": false
+"imported_formats": ["s3tc_bptc"],
+"vram_texture": true
 }
 generator_parameters={
 "md5": "2a5d9e63579be9e4ce4729c243f69ccf"
@@ -14,11 +15,11 @@ generator_parameters={
 [deps]
 
 source_file="res://models/real/zones/i2/factory_brick_red_bricks_04_diff.jpg"
-dest_files=["res://.godot/imported/factory_brick_red_bricks_04_diff.jpg-a6e3cbb9b8b215c76983c0d6eac737e9.ctex"]
+dest_files=["res://.godot/imported/factory_brick_red_bricks_04_diff.jpg-a6e3cbb9b8b215c76983c0d6eac737e9.s3tc.ctex"]
 
 [params]
 
-compress/mode=0
+compress/mode=2
 compress/high_quality=false
 compress/lossy_quality=0.7
 compress/uastc_level=0

@@ -3,9 +3,10 @@
 importer="texture"
 type="CompressedTexture2D"
 uid="uid://dkc2pg1pneg1r"
-path="res://.godot/imported/university_concrete_wall_008_diff.jpg-e6bb8c032cd44f7da087d43ff1dc3e36.ctex"
+path.s3tc="res://.godot/imported/university_concrete_wall_008_diff.jpg-e6bb8c032cd44f7da087d43ff1dc3e36.s3tc.ctex"
 metadata={
-"vram_texture": false
+"imported_formats": ["s3tc_bptc"],
+"vram_texture": true
 }
 generator_parameters={
 "md5": "b0f10da5a9326fc38d8df2f6d81e8daa"
@@ -14,11 +15,11 @@ generator_parameters={
 [deps]
 
 source_file="res://models/real/buildings/university_concrete_wall_008_diff.jpg"
-dest_files=["res://.godot/imported/university_concrete_wall_008_diff.jpg-e6bb8c032cd44f7da087d43ff1dc3e36.ctex"]
+dest_files=["res://.godot/imported/university_concrete_wall_008_diff.jpg-e6bb8c032cd44f7da087d43ff1dc3e36.s3tc.ctex"]
 
 [params]
 
-compress/mode=0
+compress/mode=2
 compress/high_quality=false
 compress/lossy_quality=0.7
 compress/uastc_level=0

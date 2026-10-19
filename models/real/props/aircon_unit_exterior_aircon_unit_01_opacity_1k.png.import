@@ -3,9 +3,10 @@
 importer="texture"
 type="CompressedTexture2D"
 uid="uid://x3wauep5edya"
-path="res://.godot/imported/aircon_unit_exterior_aircon_unit_01_opacity_1k.png-86d90ca84610a02eb40e140cffd87944.ctex"
+path.s3tc="res://.godot/imported/aircon_unit_exterior_aircon_unit_01_opacity_1k.png-86d90ca84610a02eb40e140cffd87944.s3tc.ctex"
 metadata={
-"vram_texture": false
+"imported_formats": ["s3tc_bptc"],
+"vram_texture": true
 }
 generator_parameters={
 "md5": "f091648ecfa40db67b74b163075e9376"
@@ -14,11 +15,11 @@ generator_parameters={
 [deps]
 
 source_file="res://models/real/props/aircon_unit_exterior_aircon_unit_01_opacity_1k.png"
-dest_files=["res://.godot/imported/aircon_unit_exterior_aircon_unit_01_opacity_1k.png-86d90ca84610a02eb40e140cffd87944.ctex"]
+dest_files=["res://.godot/imported/aircon_unit_exterior_aircon_unit_01_opacity_1k.png-86d90ca84610a02eb40e140cffd87944.s3tc.ctex"]
 
 [params]
 
-compress/mode=0
+compress/mode=2
 compress/high_quality=false
 compress/lossy_quality=0.7
 compress/uastc_level=0

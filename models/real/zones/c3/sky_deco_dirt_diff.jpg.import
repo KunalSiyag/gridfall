@@ -3,9 +3,10 @@
 importer="texture"
 type="CompressedTexture2D"
 uid="uid://baj208eik3we1"
-path="res://.godot/imported/sky_deco_dirt_diff.jpg-0d77c2ea87b76ab2de45c3e539a816ad.ctex"
+path.s3tc="res://.godot/imported/sky_deco_dirt_diff.jpg-0d77c2ea87b76ab2de45c3e539a816ad.s3tc.ctex"
 metadata={
-"vram_texture": false
+"imported_formats": ["s3tc_bptc"],
+"vram_texture": true
 }
 generator_parameters={
 "md5": "78709684b9cc1e983f7ed701279bbae0"
@@ -14,11 +15,11 @@ generator_parameters={
 [deps]
 
 source_file="res://models/real/zones/c3/sky_deco_dirt_diff.jpg"
-dest_files=["res://.godot/imported/sky_deco_dirt_diff.jpg-0d77c2ea87b76ab2de45c3e539a816ad.ctex"]
+dest_files=["res://.godot/imported/sky_deco_dirt_diff.jpg-0d77c2ea87b76ab2de45c3e539a816ad.s3tc.ctex"]
 
 [params]
 
-compress/mode=0
+compress/mode=2
 compress/high_quality=false
 compress/lossy_quality=0.7
 compress/uastc_level=0

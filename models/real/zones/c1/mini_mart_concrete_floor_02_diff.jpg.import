@@ -3,9 +3,10 @@
 importer="texture"
 type="CompressedTexture2D"
 uid="uid://cdcpsa5ya7uc8"
-path="res://.godot/imported/mini_mart_concrete_floor_02_diff.jpg-0ed796f121e72d9ccc8a3e1c4210a0bd.ctex"
+path.s3tc="res://.godot/imported/mini_mart_concrete_floor_02_diff.jpg-0ed796f121e72d9ccc8a3e1c4210a0bd.s3tc.ctex"
 metadata={
-"vram_texture": false
+"imported_formats": ["s3tc_bptc"],
+"vram_texture": true
 }
 generator_parameters={
 "md5": "241b3c4c14730e8fdb887e374af4e523"
@@ -14,11 +15,11 @@ generator_parameters={
 [deps]
 
 source_file="res://models/real/zones/c1/mini_mart_concrete_floor_02_diff.jpg"
-dest_files=["res://.godot/imported/mini_mart_concrete_floor_02_diff.jpg-0ed796f121e72d9ccc8a3e1c4210a0bd.ctex"]
+dest_files=["res://.godot/imported/mini_mart_concrete_floor_02_diff.jpg-0ed796f121e72d9ccc8a3e1c4210a0bd.s3tc.ctex"]
 
 [params]
 
-compress/mode=0
+compress/mode=2
 compress/high_quality=false
 compress/lossy_quality=0.7
 compress/uastc_level=0

@@ -3,9 +3,10 @@
 importer="texture"
 type="CompressedTexture2D"
 uid="uid://cmia5r005obw3"
-path="res://.godot/imported/sky_octagon_bark_brown_02_diff.jpg-668a7e3ad1eb3dd437f5dde972d97d3a.ctex"
+path.s3tc="res://.godot/imported/sky_octagon_bark_brown_02_diff.jpg-668a7e3ad1eb3dd437f5dde972d97d3a.s3tc.ctex"
 metadata={
-"vram_texture": false
+"imported_formats": ["s3tc_bptc"],
+"vram_texture": true
 }
 generator_parameters={
 "md5": "f8d30011de83e45c87949b73b176b428"
@@ -14,11 +15,11 @@ generator_parameters={
 [deps]
 
 source_file="res://models/real/zones/c3/sky_octagon_bark_brown_02_diff.jpg"
-dest_files=["res://.godot/imported/sky_octagon_bark_brown_02_diff.jpg-668a7e3ad1eb3dd437f5dde972d97d3a.ctex"]
+dest_files=["res://.godot/imported/sky_octagon_bark_brown_02_diff.jpg-668a7e3ad1eb3dd437f5dde972d97d3a.s3tc.ctex"]
 
 [params]
 
-compress/mode=0
+compress/mode=2
 compress/high_quality=false
 compress/lossy_quality=0.7
 compress/uastc_level=0

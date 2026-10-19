@@ -3,9 +3,10 @@
 importer="texture"
 type="CompressedTexture2D"
 uid="uid://1oihcrx1tqt2"
-path="res://.godot/imported/fire_station_red_brick_03_arm.jpg-da84d43427fc2d2a433002535a0110e2.ctex"
+path.s3tc="res://.godot/imported/fire_station_red_brick_03_arm.jpg-da84d43427fc2d2a433002535a0110e2.s3tc.ctex"
 metadata={
-"vram_texture": false
+"imported_formats": ["s3tc_bptc"],
+"vram_texture": true
 }
 generator_parameters={
 "md5": "458dfbad013b4052db61d54104168af1"
@@ -14,11 +15,11 @@ generator_parameters={
 [deps]
 
 source_file="res://models/real/buildings/fire_station_red_brick_03_arm.jpg"
-dest_files=["res://.godot/imported/fire_station_red_brick_03_arm.jpg-da84d43427fc2d2a433002535a0110e2.ctex"]
+dest_files=["res://.godot/imported/fire_station_red_brick_03_arm.jpg-da84d43427fc2d2a433002535a0110e2.s3tc.ctex"]
 
 [params]
 
-compress/mode=0
+compress/mode=2
 compress/high_quality=false
 compress/lossy_quality=0.7
 compress/uastc_level=0

@@ -3,9 +3,10 @@
 importer="texture"
 type="CompressedTexture2D"
 uid="uid://g4q7cd6qn7s2"
-path="res://.godot/imported/tower_twin_brown_brick_02_arm.jpg-02649d690b77d2fca1ee63f575323968.ctex"
+path.s3tc="res://.godot/imported/tower_twin_brown_brick_02_arm.jpg-02649d690b77d2fca1ee63f575323968.s3tc.ctex"
 metadata={
-"vram_texture": false
+"imported_formats": ["s3tc_bptc"],
+"vram_texture": true
 }
 generator_parameters={
 "md5": "6df19d096ecfd101562bd30d6d572903"
@@ -14,11 +15,11 @@ generator_parameters={
 [deps]
 
 source_file="res://models/real/zones/r3/tower_twin_brown_brick_02_arm.jpg"
-dest_files=["res://.godot/imported/tower_twin_brown_brick_02_arm.jpg-02649d690b77d2fca1ee63f575323968.ctex"]
+dest_files=["res://.godot/imported/tower_twin_brown_brick_02_arm.jpg-02649d690b77d2fca1ee63f575323968.s3tc.ctex"]
 
 [params]
 
-compress/mode=0
+compress/mode=2
 compress/high_quality=false
 compress/lossy_quality=0.7
 compress/uastc_level=0

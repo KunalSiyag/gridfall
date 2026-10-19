@@ -3,9 +3,10 @@
 importer="texture"
 type="CompressedTexture2D"
 uid="uid://dafvkynagehf0"
-path="res://.godot/imported/train_station_red_brick_03_arm.jpg-26b4fad56355e9051c285d942e7f56c2.ctex"
+path.s3tc="res://.godot/imported/train_station_red_brick_03_arm.jpg-26b4fad56355e9051c285d942e7f56c2.s3tc.ctex"
 metadata={
-"vram_texture": false
+"imported_formats": ["s3tc_bptc"],
+"vram_texture": true
 }
 generator_parameters={
 "md5": "458dfbad013b4052db61d54104168af1"
@@ -14,11 +15,11 @@ generator_parameters={
 [deps]
 
 source_file="res://models/real/buildings/train_station_red_brick_03_arm.jpg"
-dest_files=["res://.godot/imported/train_station_red_brick_03_arm.jpg-26b4fad56355e9051c285d942e7f56c2.ctex"]
+dest_files=["res://.godot/imported/train_station_red_brick_03_arm.jpg-26b4fad56355e9051c285d942e7f56c2.s3tc.ctex"]
 
 [params]
 
-compress/mode=0
+compress/mode=2
 compress/high_quality=false
 compress/lossy_quality=0.7
 compress/uastc_level=0

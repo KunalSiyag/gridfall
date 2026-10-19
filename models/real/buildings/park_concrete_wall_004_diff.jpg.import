@@ -3,9 +3,10 @@
 importer="texture"
 type="CompressedTexture2D"
 uid="uid://bvh0y70np2ypl"
-path="res://.godot/imported/park_concrete_wall_004_diff.jpg-d5a37d78fd1d11103d2ec090ea6d3ec4.ctex"
+path.s3tc="res://.godot/imported/park_concrete_wall_004_diff.jpg-d5a37d78fd1d11103d2ec090ea6d3ec4.s3tc.ctex"
 metadata={
-"vram_texture": false
+"imported_formats": ["s3tc_bptc"],
+"vram_texture": true
 }
 generator_parameters={
 "md5": "a56ea9d31c4356749fae1d4a6b151f99"
@@ -14,11 +15,11 @@ generator_parameters={
 [deps]
 
 source_file="res://models/real/buildings/park_concrete_wall_004_diff.jpg"
-dest_files=["res://.godot/imported/park_concrete_wall_004_diff.jpg-d5a37d78fd1d11103d2ec090ea6d3ec4.ctex"]
+dest_files=["res://.godot/imported/park_concrete_wall_004_diff.jpg-d5a37d78fd1d11103d2ec090ea6d3ec4.s3tc.ctex"]
 
 [params]
 
-compress/mode=0
+compress/mode=2
 compress/high_quality=false
 compress/lossy_quality=0.7
 compress/uastc_level=0

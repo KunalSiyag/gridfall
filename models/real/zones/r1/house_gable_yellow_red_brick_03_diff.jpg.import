@@ -3,9 +3,10 @@
 importer="texture"
 type="CompressedTexture2D"
 uid="uid://vlrms1qexupi"
-path="res://.godot/imported/house_gable_yellow_red_brick_03_diff.jpg-8913e01d5ea9f78f55bc9d90f2732d73.ctex"
+path.s3tc="res://.godot/imported/house_gable_yellow_red_brick_03_diff.jpg-8913e01d5ea9f78f55bc9d90f2732d73.s3tc.ctex"
 metadata={
-"vram_texture": false
+"imported_formats": ["s3tc_bptc"],
+"vram_texture": true
 }
 generator_parameters={
 "md5": "de6842c400ec2d175cae04c50e98ebfc"
@@ -14,11 +15,11 @@ generator_parameters={
 [deps]
 
 source_file="res://models/real/zones/r1/house_gable_yellow_red_brick_03_diff.jpg"
-dest_files=["res://.godot/imported/house_gable_yellow_red_brick_03_diff.jpg-8913e01d5ea9f78f55bc9d90f2732d73.ctex"]
+dest_files=["res://.godot/imported/house_gable_yellow_red_brick_03_diff.jpg-8913e01d5ea9f78f55bc9d90f2732d73.s3tc.ctex"]
 
 [params]
 
-compress/mode=0
+compress/mode=2
 compress/high_quality=false
 compress/lossy_quality=0.7
 compress/uastc_level=0

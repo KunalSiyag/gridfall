@@ -3,9 +3,10 @@
 importer="texture"
 type="CompressedTexture2D"
 uid="uid://hj1vw6afgoub"
-path="res://.godot/imported/police_colormap.png-f819459dfb74c44cdec384abaa68b3ee.ctex"
+path.s3tc="res://.godot/imported/police_colormap.png-f819459dfb74c44cdec384abaa68b3ee.s3tc.ctex"
 metadata={
-"vram_texture": false
+"imported_formats": ["s3tc_bptc"],
+"vram_texture": true
 }
 generator_parameters={
 "md5": "8fa2e771fb74ce0bd4942f13b0fb9a3c"
@@ -14,11 +15,11 @@ generator_parameters={
 [deps]
 
 source_file="res://models/vehicles/police_colormap.png"
-dest_files=["res://.godot/imported/police_colormap.png-f819459dfb74c44cdec384abaa68b3ee.ctex"]
+dest_files=["res://.godot/imported/police_colormap.png-f819459dfb74c44cdec384abaa68b3ee.s3tc.ctex"]
 
 [params]
 
-compress/mode=0
+compress/mode=2
 compress/high_quality=false
 compress/lossy_quality=0.7
 compress/uastc_level=0

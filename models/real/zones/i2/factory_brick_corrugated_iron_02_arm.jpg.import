@@ -3,9 +3,10 @@
 importer="texture"
 type="CompressedTexture2D"
 uid="uid://blkwxlcmhl268"
-path="res://.godot/imported/factory_brick_corrugated_iron_02_arm.jpg-bc8ea4063a81473d9ce5280c73460343.ctex"
+path.s3tc="res://.godot/imported/factory_brick_corrugated_iron_02_arm.jpg-bc8ea4063a81473d9ce5280c73460343.s3tc.ctex"
 metadata={
-"vram_texture": false
+"imported_formats": ["s3tc_bptc"],
+"vram_texture": true
 }
 generator_parameters={
 "md5": "58f58c7a7f675d429ada7297d8a30718"
@@ -14,11 +15,11 @@ generator_parameters={
 [deps]
 
 source_file="res://models/real/zones/i2/factory_brick_corrugated_iron_02_arm.jpg"
-dest_files=["res://.godot/imported/factory_brick_corrugated_iron_02_arm.jpg-bc8ea4063a81473d9ce5280c73460343.ctex"]
+dest_files=["res://.godot/imported/factory_brick_corrugated_iron_02_arm.jpg-bc8ea4063a81473d9ce5280c73460343.s3tc.ctex"]
 
 [params]
 
-compress/mode=0
+compress/mode=2
 compress/high_quality=false
 compress/lossy_quality=0.7
 compress/uastc_level=0

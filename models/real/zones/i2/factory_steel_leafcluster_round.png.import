@@ -3,9 +3,10 @@
 importer="texture"
 type="CompressedTexture2D"
 uid="uid://bmhqp8svu4pf4"
-path="res://.godot/imported/factory_steel_leafcluster_round.png-a5c1abf7a9dbdd1b5d5c046e674c74fa.ctex"
+path.s3tc="res://.godot/imported/factory_steel_leafcluster_round.png-a5c1abf7a9dbdd1b5d5c046e674c74fa.s3tc.ctex"
 metadata={
-"vram_texture": false
+"imported_formats": ["s3tc_bptc"],
+"vram_texture": true
 }
 generator_parameters={
 "md5": "211a0a3103a022e13d026903ac21b083"
@@ -14,11 +15,11 @@ generator_parameters={
 [deps]
 
 source_file="res://models/real/zones/i2/factory_steel_leafcluster_round.png"
-dest_files=["res://.godot/imported/factory_steel_leafcluster_round.png-a5c1abf7a9dbdd1b5d5c046e674c74fa.ctex"]
+dest_files=["res://.godot/imported/factory_steel_leafcluster_round.png-a5c1abf7a9dbdd1b5d5c046e674c74fa.s3tc.ctex"]
 
 [params]
 
-compress/mode=0
+compress/mode=2
 compress/high_quality=false
 compress/lossy_quality=0.7
 compress/uastc_level=0

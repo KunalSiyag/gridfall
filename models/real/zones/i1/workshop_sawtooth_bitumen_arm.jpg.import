@@ -3,9 +3,10 @@
 importer="texture"
 type="CompressedTexture2D"
 uid="uid://b10oh2eg5pc6t"
-path="res://.godot/imported/workshop_sawtooth_bitumen_arm.jpg-16a4c3e4e10501a7c53e6fac6132aec7.ctex"
+path.s3tc="res://.godot/imported/workshop_sawtooth_bitumen_arm.jpg-16a4c3e4e10501a7c53e6fac6132aec7.s3tc.ctex"
 metadata={
-"vram_texture": false
+"imported_formats": ["s3tc_bptc"],
+"vram_texture": true
 }
 generator_parameters={
 "md5": "4b2d48c5e4823e3214e7a4db914af61b"
@@ -14,11 +15,11 @@ generator_parameters={
 [deps]
 
 source_file="res://models/real/zones/i1/workshop_sawtooth_bitumen_arm.jpg"
-dest_files=["res://.godot/imported/workshop_sawtooth_bitumen_arm.jpg-16a4c3e4e10501a7c53e6fac6132aec7.ctex"]
+dest_files=["res://.godot/imported/workshop_sawtooth_bitumen_arm.jpg-16a4c3e4e10501a7c53e6fac6132aec7.s3tc.ctex"]
 
 [params]
 
-compress/mode=0
+compress/mode=2
 compress/high_quality=false
 compress/lossy_quality=0.7
 compress/uastc_level=0

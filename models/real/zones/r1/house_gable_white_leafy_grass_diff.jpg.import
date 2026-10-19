@@ -3,9 +3,10 @@
 importer="texture"
 type="CompressedTexture2D"
 uid="uid://ca023wyv22w32"
-path="res://.godot/imported/house_gable_white_leafy_grass_diff.jpg-d651c0a230a2e0744148f348507ac570.ctex"
+path.s3tc="res://.godot/imported/house_gable_white_leafy_grass_diff.jpg-d651c0a230a2e0744148f348507ac570.s3tc.ctex"
 metadata={
-"vram_texture": false
+"imported_formats": ["s3tc_bptc"],
+"vram_texture": true
 }
 generator_parameters={
 "md5": "5289ac4c3bf240f677f5b31118faf1da"
@@ -14,11 +15,11 @@ generator_parameters={
 [deps]
 
 source_file="res://models/real/zones/r1/house_gable_white_leafy_grass_diff.jpg"
-dest_files=["res://.godot/imported/house_gable_white_leafy_grass_diff.jpg-d651c0a230a2e0744148f348507ac570.ctex"]
+dest_files=["res://.godot/imported/house_gable_white_leafy_grass_diff.jpg-d651c0a230a2e0744148f348507ac570.s3tc.ctex"]
 
 [params]
 
-compress/mode=0
+compress/mode=2
 compress/high_quality=false
 compress/lossy_quality=0.7
 compress/uastc_level=0

@@ -3,9 +3,10 @@
 importer="texture"
 type="CompressedTexture2D"
 uid="uid://ivdspwasb03g"
-path="res://.godot/imported/park_rocks_ground_02_diff.jpg-705798a8053a264b2bdc3af3a5df2a7f.ctex"
+path.s3tc="res://.godot/imported/park_rocks_ground_02_diff.jpg-705798a8053a264b2bdc3af3a5df2a7f.s3tc.ctex"
 metadata={
-"vram_texture": false
+"imported_formats": ["s3tc_bptc"],
+"vram_texture": true
 }
 generator_parameters={
 "md5": "e65669460a2dc733ff923f427605f88a"
@@ -14,11 +15,11 @@ generator_parameters={
 [deps]
 
 source_file="res://models/real/buildings/park_rocks_ground_02_diff.jpg"
-dest_files=["res://.godot/imported/park_rocks_ground_02_diff.jpg-705798a8053a264b2bdc3af3a5df2a7f.ctex"]
+dest_files=["res://.godot/imported/park_rocks_ground_02_diff.jpg-705798a8053a264b2bdc3af3a5df2a7f.s3tc.ctex"]
 
 [params]
 
-compress/mode=0
+compress/mode=2
 compress/high_quality=false
 compress/lossy_quality=0.7
 compress/uastc_level=0

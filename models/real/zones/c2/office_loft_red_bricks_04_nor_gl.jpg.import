@@ -3,9 +3,10 @@
 importer="texture"
 type="CompressedTexture2D"
 uid="uid://dpynioyw1cndq"
-path="res://.godot/imported/office_loft_red_bricks_04_nor_gl.jpg-1d89283cdd8f9036a62cbc19252fdacb.ctex"
+path.s3tc="res://.godot/imported/office_loft_red_bricks_04_nor_gl.jpg-1d89283cdd8f9036a62cbc19252fdacb.s3tc.ctex"
 metadata={
-"vram_texture": false
+"imported_formats": ["s3tc_bptc"],
+"vram_texture": true
 }
 generator_parameters={
 "md5": "16cef197c565d2ebb14d254f17f90dac"
@@ -14,17 +15,17 @@ generator_parameters={
 [deps]
 
 source_file="res://models/real/zones/c2/office_loft_red_bricks_04_nor_gl.jpg"
-dest_files=["res://.godot/imported/office_loft_red_bricks_04_nor_gl.jpg-1d89283cdd8f9036a62cbc19252fdacb.ctex"]
+dest_files=["res://.godot/imported/office_loft_red_bricks_04_nor_gl.jpg-1d89283cdd8f9036a62cbc19252fdacb.s3tc.ctex"]
 
 [params]
 
-compress/mode=0
+compress/mode=2
 compress/high_quality=false
 compress/lossy_quality=0.7
 compress/uastc_level=0
 compress/rdo_quality_loss=0.0
 compress/hdr_compression=1
-compress/normal_map=0
+compress/normal_map=1
 compress/channel_pack=0
 mipmaps/generate=true
 mipmaps/limit=-1

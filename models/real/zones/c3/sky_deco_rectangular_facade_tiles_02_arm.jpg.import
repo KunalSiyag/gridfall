@@ -3,9 +3,10 @@
 importer="texture"
 type="CompressedTexture2D"
 uid="uid://urauh6my7xoc"
-path="res://.godot/imported/sky_deco_rectangular_facade_tiles_02_arm.jpg-05d5a0e32a58b81aba6928e8a659a94c.ctex"
+path.s3tc="res://.godot/imported/sky_deco_rectangular_facade_tiles_02_arm.jpg-05d5a0e32a58b81aba6928e8a659a94c.s3tc.ctex"
 metadata={
-"vram_texture": false
+"imported_formats": ["s3tc_bptc"],
+"vram_texture": true
 }
 generator_parameters={
 "md5": "798b9e8edb53c1f019fc9953efb473cd"
@@ -14,11 +15,11 @@ generator_parameters={
 [deps]
 
 source_file="res://models/real/zones/c3/sky_deco_rectangular_facade_tiles_02_arm.jpg"
-dest_files=["res://.godot/imported/sky_deco_rectangular_facade_tiles_02_arm.jpg-05d5a0e32a58b81aba6928e8a659a94c.ctex"]
+dest_files=["res://.godot/imported/sky_deco_rectangular_facade_tiles_02_arm.jpg-05d5a0e32a58b81aba6928e8a659a94c.s3tc.ctex"]
 
 [params]
 
-compress/mode=0
+compress/mode=2
 compress/high_quality=false
 compress/lossy_quality=0.7
 compress/uastc_level=0

@@ -3,9 +3,10 @@
 importer="texture"
 type="CompressedTexture2D"
 uid="uid://cax4vuwusqkap"
-path="res://.godot/imported/utility_box_utility_box_01_diff_1k.jpg-7801a697479a99255f53933b73ef8784.ctex"
+path.s3tc="res://.godot/imported/utility_box_utility_box_01_diff_1k.jpg-7801a697479a99255f53933b73ef8784.s3tc.ctex"
 metadata={
-"vram_texture": false
+"imported_formats": ["s3tc_bptc"],
+"vram_texture": true
 }
 generator_parameters={
 "md5": "040e719e74210963155e99c3c29b43fd"
@@ -14,11 +15,11 @@ generator_parameters={
 [deps]
 
 source_file="res://models/real/props/utility_box_utility_box_01_diff_1k.jpg"
-dest_files=["res://.godot/imported/utility_box_utility_box_01_diff_1k.jpg-7801a697479a99255f53933b73ef8784.ctex"]
+dest_files=["res://.godot/imported/utility_box_utility_box_01_diff_1k.jpg-7801a697479a99255f53933b73ef8784.s3tc.ctex"]
 
 [params]
 
-compress/mode=0
+compress/mode=2
 compress/high_quality=false
 compress/lossy_quality=0.7
 compress/uastc_level=0

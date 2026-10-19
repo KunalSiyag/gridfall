@@ -3,9 +3,10 @@
 importer="texture"
 type="CompressedTexture2D"
 uid="uid://qnli1f6r5tyb"
-path="res://.godot/imported/city_hall_bark_platanus_diff.jpg-7ff66ce0ca275db6885dfe4cfb4d534a.ctex"
+path.s3tc="res://.godot/imported/city_hall_bark_platanus_diff.jpg-7ff66ce0ca275db6885dfe4cfb4d534a.s3tc.ctex"
 metadata={
-"vram_texture": false
+"imported_formats": ["s3tc_bptc"],
+"vram_texture": true
 }
 generator_parameters={
 "md5": "bd7d557e09a64f0ed1338d39dc34892d"
@@ -14,11 +15,11 @@ generator_parameters={
 [deps]
 
 source_file="res://models/real/buildings/city_hall_bark_platanus_diff.jpg"
-dest_files=["res://.godot/imported/city_hall_bark_platanus_diff.jpg-7ff66ce0ca275db6885dfe4cfb4d534a.ctex"]
+dest_files=["res://.godot/imported/city_hall_bark_platanus_diff.jpg-7ff66ce0ca275db6885dfe4cfb4d534a.s3tc.ctex"]
 
 [params]
 
-compress/mode=0
+compress/mode=2
 compress/high_quality=false
 compress/lossy_quality=0.7
 compress/uastc_level=0

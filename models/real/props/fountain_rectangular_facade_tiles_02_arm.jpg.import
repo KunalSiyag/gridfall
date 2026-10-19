@@ -3,9 +3,10 @@
 importer="texture"
 type="CompressedTexture2D"
 uid="uid://cyp815envroej"
-path="res://.godot/imported/fountain_rectangular_facade_tiles_02_arm.jpg-de73449852a2f0ff264f6b4da2872d0d.ctex"
+path.s3tc="res://.godot/imported/fountain_rectangular_facade_tiles_02_arm.jpg-de73449852a2f0ff264f6b4da2872d0d.s3tc.ctex"
 metadata={
-"vram_texture": false
+"imported_formats": ["s3tc_bptc"],
+"vram_texture": true
 }
 generator_parameters={
 "md5": "798b9e8edb53c1f019fc9953efb473cd"
@@ -14,11 +15,11 @@ generator_parameters={
 [deps]
 
 source_file="res://models/real/props/fountain_rectangular_facade_tiles_02_arm.jpg"
-dest_files=["res://.godot/imported/fountain_rectangular_facade_tiles_02_arm.jpg-de73449852a2f0ff264f6b4da2872d0d.ctex"]
+dest_files=["res://.godot/imported/fountain_rectangular_facade_tiles_02_arm.jpg-de73449852a2f0ff264f6b4da2872d0d.s3tc.ctex"]
 
 [params]
 
-compress/mode=0
+compress/mode=2
 compress/high_quality=false
 compress/lossy_quality=0.7
 compress/uastc_level=0

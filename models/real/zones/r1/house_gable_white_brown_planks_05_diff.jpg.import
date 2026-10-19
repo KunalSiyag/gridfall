@@ -3,9 +3,10 @@
 importer="texture"
 type="CompressedTexture2D"
 uid="uid://m1bwx1ijg81f"
-path="res://.godot/imported/house_gable_white_brown_planks_05_diff.jpg-d16218de5be50248678ac428f771f5ef.ctex"
+path.s3tc="res://.godot/imported/house_gable_white_brown_planks_05_diff.jpg-d16218de5be50248678ac428f771f5ef.s3tc.ctex"
 metadata={
-"vram_texture": false
+"imported_formats": ["s3tc_bptc"],
+"vram_texture": true
 }
 generator_parameters={
 "md5": "e09432228eabcaf721508b585846a351"
@@ -14,11 +15,11 @@ generator_parameters={
 [deps]
 
 source_file="res://models/real/zones/r1/house_gable_white_brown_planks_05_diff.jpg"
-dest_files=["res://.godot/imported/house_gable_white_brown_planks_05_diff.jpg-d16218de5be50248678ac428f771f5ef.ctex"]
+dest_files=["res://.godot/imported/house_gable_white_brown_planks_05_diff.jpg-d16218de5be50248678ac428f771f5ef.s3tc.ctex"]
 
 [params]
 
-compress/mode=0
+compress/mode=2
 compress/high_quality=false
 compress/lossy_quality=0.7
 compress/uastc_level=0

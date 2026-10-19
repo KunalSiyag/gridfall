@@ -3,9 +3,10 @@
 importer="texture"
 type="CompressedTexture2D"
 uid="uid://yleki2eyq6ip"
-path="res://.godot/imported/tower_slab_concrete_wall_008_nor_gl.jpg-1cac84f026633e47cd5408a74e5271ce.ctex"
+path.s3tc="res://.godot/imported/tower_slab_concrete_wall_008_nor_gl.jpg-1cac84f026633e47cd5408a74e5271ce.s3tc.ctex"
 metadata={
-"vram_texture": false
+"imported_formats": ["s3tc_bptc"],
+"vram_texture": true
 }
 generator_parameters={
 "md5": "26f5fdf905de65b79544ee20de8a27c5"
@@ -14,17 +15,17 @@ generator_parameters={
 [deps]
 
 source_file="res://models/real/zones/r3/tower_slab_concrete_wall_008_nor_gl.jpg"
-dest_files=["res://.godot/imported/tower_slab_concrete_wall_008_nor_gl.jpg-1cac84f026633e47cd5408a74e5271ce.ctex"]
+dest_files=["res://.godot/imported/tower_slab_concrete_wall_008_nor_gl.jpg-1cac84f026633e47cd5408a74e5271ce.s3tc.ctex"]
 
 [params]
 
-compress/mode=0
+compress/mode=2
 compress/high_quality=false
 compress/lossy_quality=0.7
 compress/uastc_level=0
 compress/rdo_quality_loss=0.0
 compress/hdr_compression=1
-compress/normal_map=0
+compress/normal_map=1
 compress/channel_pack=0
 mipmaps/generate=true
 mipmaps/limit=-1
