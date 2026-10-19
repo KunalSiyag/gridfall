@@ -35,6 +35,9 @@ func setup(p_ctx: FpContext) -> void:
 	weather = WEATHER.new()
 	weather.name = "Weather"
 	weather.push_global = wetness_global
+	if OS.has_environment("GRIDFALL_FP_PHOTO_DIR") or OS.has_environment("FPBENCH_DIR"):
+		weather.baseline = "clear"
+		weather.forced = "clear"
 	add_child(weather)
 	weather.setup(ctx, preset)
 	lights = LIGHTS.new()

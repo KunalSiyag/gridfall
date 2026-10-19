@@ -26,6 +26,9 @@ var wet: float = 0.0
 var forced: String = ""
 ## Whether to write the `wetness` global shader parameter (the streetscape feature added it).
 var push_global: bool = false
+## The state clear_forced() returns to: "" (the day's weather) in play; "clear" in tool runs (photo
+## tour, fp_bench), so their baselines and timings do not depend on the day's weather.
+var baseline: String = ""
 var rain: GPUParticles3D
 var _look: Dictionary = {"energy": 1.0, "exposure": 1.0, "grey": 0.0, "fog": -1.0}
 var _smog: float = 0.0
@@ -138,9 +141,9 @@ func force_soaked() -> void:
 	_apply_hooks()
 
 
-## Back to the day's weather with dry streets and the hooks at their targets.
+## Back to the baseline weather with dry streets and the hooks at their targets.
 func clear_forced() -> void:
-	forced = ""
+	forced = baseline
 	wet = 0.0
 	state = target_state()
 	_look = (LOOK[state] as Dictionary).duplicate()
@@ -183,13 +186,13 @@ func _build_rain(preset: String) -> void:
 	pm.gravity = Vector3(0, -2.0 * WS.M, 0)
 	rain.process_material = pm
 	var q := QuadMesh.new()
-	q.size = Vector2(0.012, 0.42) * WS.M
+	q.size = Vector2(0.01, 0.3) * WS.M
 	var mat := StandardMaterial3D.new()
 	mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
 	mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
 	mat.billboard_mode = BaseMaterial3D.BILLBOARD_FIXED_Y
 	mat.billboard_keep_scale = true
-	mat.albedo_color = Color(0.78, 0.82, 0.88, 0.28)
+	mat.albedo_color = Color(0.8, 0.84, 0.9, 0.16)
 	mat.disable_receive_shadows = true
 	q.material = mat
 	rain.draw_pass_1 = q
