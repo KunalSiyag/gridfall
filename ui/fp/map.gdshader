@@ -19,6 +19,9 @@ uniform int shape = 0;
 uniform float corner = 16.0;
 uniform float opacity = 0.9;
 uniform float rim_shade = 0.35;
+// Circle only: pixels between the circle and the rect edge, holding the soft outer shadow.
+uniform float pad = 0.0;
+uniform float ring_alpha = 0.42;
 uniform bool borders = false;
 
 const int LAND = 0;
@@ -208,10 +211,21 @@ void fragment() {
 	// Shape mask and rim shading.
 	float a = opacity;
 	if (shape == 0) {
+		// The map inside the circle, a soft shadow under it and a thin light ring on its edge,
+		// composited here so the minimap is one draw.
 		float r = length(p);
-		float rad = min(rect_size.x, rect_size.y) * 0.5;
-		a *= clamp(rad - r - 0.5, 0.0, 1.0);
+		float rad = min(rect_size.x, rect_size.y) * 0.5 - pad;
 		col *= mix(1.0, 1.0 - rim_shade, smoothstep(rad * 0.62, rad, r));
+		float inside = clamp(rad - r + 0.5, 0.0, 1.0);
+		a *= inside;
+		float sh = 1.0 - smoothstep(0.0, 7.0, r - rad);
+		float sa = 0.3 * sh * sh * (1.0 - inside);
+		float oa = a + sa * (1.0 - a);
+		col = oa > 0.0 ? col * a / oa : col;
+		float ring = clamp(1.25 - abs(r - (rad - 0.75)), 0.0, 1.0) * ring_alpha;
+		float ra = ring + oa * (1.0 - ring);
+		col = ra > 0.0 ? (vec3(1.0) * ring + col * oa * (1.0 - ring)) / ra : col;
+		a = ra;
 	} else {
 		float d = sd_box(p, rect_size * 0.5, corner);
 		a *= clamp(0.5 - d, 0.0, 1.0);

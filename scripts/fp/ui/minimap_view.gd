@@ -11,6 +11,8 @@ const MinimapModel := preload("res://scripts/fp/ui/minimap_model.gd")
 const MAP_SHADER := preload("res://ui/fp/map.gdshader")
 
 const DIAM := 200.0
+## Pixels around the circle inside the map rect: the shader draws the soft shadow there.
+const PAD := 12.0
 ## The circle's top-left inside the slot: the slot starts 16 px from the screen edge, so 8 more
 ## puts the circle on the 24 px safe margin.
 const ORIGIN := Vector2(8.0, 0.0)
@@ -40,7 +42,6 @@ var marker_draws: int = 0
 var _map: TextureRect
 var _mat: ShaderMaterial
 var _overlay: Control
-var _ring: Control
 var _street: Label
 var _street_age: float = 1.0
 var _marker_t: float = 0.0
@@ -66,12 +67,13 @@ func setup(p_ctx: FpContext, p_hud: Node) -> void:
 	_map.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_map.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
 	_map.stretch_mode = TextureRect.STRETCH_SCALE
-	_map.position = ORIGIN
-	_map.size = Vector2(DIAM, DIAM)
-	_map.pivot_offset = Vector2(DIAM, DIAM) * 0.5
+	_map.position = ORIGIN - Vector2(PAD, PAD)
+	_map.size = Vector2(DIAM, DIAM) + Vector2(PAD, PAD) * 2.0
+	_map.pivot_offset = _map.size * 0.5
 	_mat = ShaderMaterial.new()
 	_mat.shader = MAP_SHADER
-	_mat.set_shader_parameter("rect_size", Vector2(DIAM, DIAM))
+	_mat.set_shader_parameter("rect_size", _map.size)
+	_mat.set_shader_parameter("pad", PAD)
 	_mat.set_shader_parameter("world_origin", Vector2(D.X0, D.Y0))
 	_mat.set_shader_parameter("world_size", Vector2(D.W, D.H))
 	_mat.set_shader_parameter("shape", 0)
@@ -79,19 +81,12 @@ func setup(p_ctx: FpContext, p_hud: Node) -> void:
 	_map.material = _mat
 	_map.visible = false
 	add_child(_map)
-	_ring = Control.new()
-	_ring.name = "Ring"
-	_ring.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	_ring.position = ORIGIN - Vector2(12, 12)
-	_ring.size = Vector2(DIAM + 24.0, DIAM + 24.0)
-	_ring.draw.connect(_draw_ring)
-	_ring.visible = false
-	add_child(_ring)
 	_overlay = Control.new()
 	_overlay.name = "Markers"
 	_overlay.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	_overlay.position = ORIGIN - Vector2(12, 12)
-	_overlay.size = Vector2(DIAM + 24.0, DIAM + 24.0)
+	_overlay.position = ORIGIN - Vector2(PAD, PAD)
+	_overlay.size = Vector2(DIAM, DIAM) + Vector2(PAD, PAD) * 2.0
+	_overlay.texture_filter = CanvasItem.TEXTURE_FILTER_LINEAR_WITH_MIPMAPS
 	_overlay.draw.connect(_draw_overlay)
 	add_child(_overlay)
 	_street = S.label("", 15, S.TEXT, S.bold(), 3)
@@ -110,7 +105,6 @@ func setup(p_ctx: FpContext, p_hud: Node) -> void:
 func bind(p_model: MinimapModel) -> void:
 	model = p_model
 	_map.visible = model != null
-	_ring.visible = model != null
 	if model != null:
 		_map.texture = model.texture
 		_mat.set_shader_parameter("col_tex", model.texture)
@@ -123,12 +117,12 @@ func bind(p_model: MinimapModel) -> void:
 
 ## The circle's centre in slot coordinates.
 func center_in_slot() -> Vector2:
-	return _map.get_transform() * (Vector2(DIAM, DIAM) * 0.5)
+	return _map.get_transform() * (_map.size * 0.5)
 
 
 ## Where world point p is drawn, in slot coordinates, through the map's own Control transform.
 func world_to_slot(p: Vector3) -> Vector2:
-	var local := Vector2(DIAM, DIAM) * 0.5 + (Vector2(p.x, p.z) - center) * ppt
+	var local := _map.size * 0.5 + (Vector2(p.x, p.z) - center) * ppt
 	return _map.get_transform() * local
 
 
@@ -289,7 +283,7 @@ func _to_overlay(w: Vector2, clamp_rim: bool = false) -> Vector2:
 		var lim := DIAM * 0.5 - RIM_PAD
 		if off.length() > lim:
 			off = off.normalized() * lim
-	return off + Vector2(DIAM, DIAM) * 0.5 + Vector2(12, 12)
+	return off + Vector2(DIAM, DIAM) * 0.5 + Vector2(PAD, PAD)
 
 
 func _draw_overlay() -> void:
@@ -299,28 +293,29 @@ func _draw_overlay() -> void:
 	if model == null:
 		return
 	var o := _overlay
-	var c := Vector2(DIAM, DIAM) * 0.5 + Vector2(12, 12)
+	var c := Vector2(DIAM, DIAM) * 0.5 + Vector2(PAD, PAD)
 	var r := DIAM * 0.5
 	var lim2 := (r - 2.0) * (r - 2.0)
-	# Residents, then agents.
+	# Residents and agents: one textured triangle array per shape (dots, car capsules).
+	var dots := _Quads.new()
+	var cars := _Quads.new()
 	for p in _people:
 		var q := _to_overlay(p)
 		if q.distance_squared_to(c) < lim2:
-			o.draw_circle(q, 2.6, Color(0.02, 0.03, 0.05, 0.55), true, -1.0, true)
-			o.draw_circle(q, 1.8, Color(0.94, 0.96, 1.0, 0.92), true, -1.0, true)
+			dots.add(q, Vector2(2.8, 2.8), Vector2(0, -1), Color(0.94, 0.96, 1.0, 0.95))
 	for a: Dictionary in _agents:
 		var q := _to_overlay(a["pos"])
 		if q.distance_squared_to(c) >= lim2:
 			continue
 		var kind := str(a["kind"])
 		if kind == "pedestrian":
-			o.draw_circle(q, 1.3, Color(1, 1, 1, 0.55), true, -1.0, true)
+			dots.add(q, Vector2(1.6, 1.6), Vector2(0, -1), Color(1, 1, 1, 0.6))
 			continue
-		var d: Vector2 = (a["dir"] as Vector2).rotated(yaw)
 		var big := kind == "bus" or kind == "truck"
-		var half := Vector2(1.7, 3.2) * (1.35 if big else 1.0)
-		var col := S.RED if kind == "emergency" else Color(0.86, 0.9, 0.96, 0.95)
-		_rot_rect(o, q, half, d, col)
+		var col := S.RED if kind == "emergency" else Color(0.86, 0.9, 0.96, 1.0)
+		cars.add(q, Vector2(2.2, 3.9) * (1.3 if big else 1.0), (a["dir"] as Vector2).rotated(yaw), col)
+	dots.flush(o, _dot_texture())
+	cars.flush(o, _car_texture())
 	# Pings (fading over their 30 s life), under the incidents; one on an incident is left out.
 	var pings: Array = hud.get("pings") if hud != null else []
 	for e: Dictionary in pings:
@@ -371,15 +366,6 @@ func _near_incident(w: Vector2) -> bool:
 	return false
 
 
-## The soft outer shadow and the thin ring (static: drawn once).
-func _draw_ring() -> void:
-	var c := Vector2(DIAM, DIAM) * 0.5 + Vector2(12, 12)
-	var r := DIAM * 0.5
-	for k in range(5):
-		_ring.draw_arc(c, r + 1.0 + k * 1.4, 0.0, TAU, 96, Color(0, 0, 0, 0.16 - k * 0.03), 1.6, true)
-	_ring.draw_arc(c, r - 0.75, 0.0, TAU, 128, Color(1, 1, 1, 0.42), 1.5, true)
-
-
 func _arrow(o: Control, c: Vector2, fwd: Vector2) -> void:
 	var side := Vector2(-fwd.y, fwd.x)
 	var tip := c + fwd * 9.0
@@ -399,15 +385,68 @@ func _diamond(o: Control, c: Vector2, r: float, col: Color) -> void:
 	o.draw_colored_polygon(PackedVector2Array([c + Vector2(0, -r), c + Vector2(r * 0.82, 0), c + Vector2(0, r), c + Vector2(-r * 0.82, 0)]), col)
 
 
-func _rot_rect(o: Control, c: Vector2, half: Vector2, d: Vector2, col: Color) -> void:
-	var fwd := d if d.length_squared() > 1e-6 else Vector2(0, -1)
-	var side := Vector2(-fwd.y, fwd.x)
-	var pts := PackedVector2Array([
-		c + fwd * half.y + side * half.x, c + fwd * half.y - side * half.x,
-		c - fwd * half.y - side * half.x, c - fwd * half.y + side * half.x,
-	])
-	var sh := PackedVector2Array()
-	for p in pts:
-		sh.append(p + Vector2(0, 0.8))
-	o.draw_colored_polygon(sh, Color(0, 0, 0, 0.5))
-	o.draw_colored_polygon(pts, col)
+static var _dot_tex: ImageTexture
+static var _car_tex: ImageTexture
+
+
+## A white dot with a dark rim (32 px); vertex colours tint the white and keep the rim dark.
+static func _dot_texture() -> ImageTexture:
+	if _dot_tex == null:
+		_dot_tex = _blip_texture(32, 32, 0.0)
+	return _dot_tex
+
+
+## A capsule blip for cars (16 x 32 px), same rim as the dot.
+static func _car_texture() -> ImageTexture:
+	if _car_tex == null:
+		_car_tex = _blip_texture(16, 32, 8.0)
+	return _car_tex
+
+
+## A rounded shape with a light fill and a dark rim; straight = half the straight segment length.
+static func _blip_texture(w: int, h: int, straight: float) -> ImageTexture:
+	var img := Image.create_empty(w, h, false, Image.FORMAT_RGBA8)
+	var c := Vector2(w, h) * 0.5
+	var rad := minf(w, h) * 0.5 - 0.5
+	var rim := Color(0.02, 0.03, 0.05)
+	for y in range(h):
+		for x in range(w):
+			var p := Vector2(x + 0.5, y + 0.5) - c
+			p.y = signf(p.y) * maxf(absf(p.y) - straight, 0.0)
+			var d := p.length()
+			var outer := clampf(rad - d + 0.5, 0.0, 1.0)
+			var inner := clampf(rad * 0.7 - d + 0.5, 0.0, 1.0)
+			var col := rim.lerp(Color.WHITE, inner)
+			img.set_pixel(x, y, Color(col.r, col.g, col.b, maxf(inner, 0.6 * outer)))
+	img.generate_mipmaps()
+	return ImageTexture.create_from_image(img)
+
+
+## Textured quads gathered for one triangle-array draw.
+class _Quads:
+	var pts := PackedVector2Array()
+	var cols := PackedColorArray()
+	var uvs := PackedVector2Array()
+	var idx := PackedInt32Array()
+
+	## A quad centred at c with half extents half (x across, y along fwd).
+	func add(c: Vector2, half: Vector2, fwd: Vector2, col: Color) -> void:
+		var f := fwd.normalized() if fwd.length_squared() > 1e-8 else Vector2(0, -1)
+		var s := Vector2(-f.y, f.x)
+		var k := pts.size()
+		pts.append(c - s * half.x + f * half.y)
+		pts.append(c + s * half.x + f * half.y)
+		pts.append(c + s * half.x - f * half.y)
+		pts.append(c - s * half.x - f * half.y)
+		uvs.append(Vector2(0, 0))
+		uvs.append(Vector2(1, 0))
+		uvs.append(Vector2(1, 1))
+		uvs.append(Vector2(0, 1))
+		for _j in range(4):
+			cols.append(col)
+		idx.append_array(PackedInt32Array([k, k + 1, k + 2, k, k + 2, k + 3]))
+
+	func flush(on: CanvasItem, tex: Texture2D) -> void:
+		if pts.is_empty():
+			return
+		RenderingServer.canvas_item_add_triangle_array(on.get_canvas_item(), idx, pts, cols, uvs, PackedInt32Array(), PackedFloat32Array(), tex.get_rid())

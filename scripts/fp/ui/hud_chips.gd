@@ -56,7 +56,7 @@ func setup(p_ctx: FpContext) -> void:
 	_chip(right, "power", "bolt")
 	_chip(right, "water", "drop")
 	_chip(right, "alerts", "alert")
-	_alert_text = S.label("", 15, S.TEXT_DIM, S.font(), 2)
+	_alert_text = S.chip_label("", 15, S.TEXT_DIM, S.font())
 	_alert_text.name = "Latest"
 	(_chips["alerts"]["panel"] as PanelContainer).get_child(0).add_child(_alert_text)
 	_session_chip(right)
@@ -226,10 +226,12 @@ func _chip(parent: Control, id: String, icon: String) -> Dictionary:
 	h.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	h.add_theme_constant_override("separation", 7)
 	p.add_child(h)
+	# On a backed pill the outline is enough: no icon or text shadow (fewer draw passes).
 	var ic := HudIcon.new(icon, S.TEXT, ICON_PX)
+	ic.shadow = false
 	ic.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 	h.add_child(ic)
-	var v := S.label("", VALUE_PX, S.TEXT, S.font(), 2)
+	var v := S.chip_label("", VALUE_PX, S.TEXT, S.font())
 	v.name = "Value"
 	v.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
 	h.add_child(v)
@@ -242,11 +244,11 @@ func _chip(parent: Control, id: String, icon: String) -> Dictionary:
 func _time_chip(parent: Control) -> void:
 	var c := _chip(parent, "time", "clock")
 	var h: HBoxContainer = (c["panel"] as PanelContainer).get_child(0)
-	_day = S.label("", VALUE_PX, S.TEXT_DIM, S.font(), 2)
+	_day = S.chip_label("", VALUE_PX, S.TEXT_DIM, S.font())
 	_day.name = "Day"
 	h.add_child(_day)
 	h.move_child(_day, 1)
-	_speed = S.label("", 13, S.TEXT_FAINT, S.bold(), 2)
+	_speed = S.chip_label("", 13, S.TEXT_FAINT, S.bold())
 	_speed.name = "Speed"
 	_speed.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
 	h.add_child(_speed)

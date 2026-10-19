@@ -10,6 +10,7 @@ const D := preload("res://scripts/sim/sim_defs.gd")
 const WS := preload("res://scripts/fp/world_scale.gd")
 const S := preload("res://scripts/fp/ui/hud_style.gd")
 const MinimapModel := preload("res://scripts/fp/ui/minimap_model.gd")
+const MinimapView := preload("res://scripts/fp/ui/minimap_view.gd")
 ## A GmiClient that counts every call (B must make none).
 const STUB_CLIENT := """extends GmiClient
 var calls: int = 0
@@ -164,7 +165,10 @@ func _check_minimap_image(ctx: FpContext, f: FpFeature) -> void:
 				hazed += 1
 	K.check(fails, hazed > 0 and clear > 0, "survey haze marks %d unsurveyed and %d surveyed plots" % [hazed, clear])
 	var view := ctx.hud.minimap
-	K.check(fails, view.map_rect().visible and view.map_rect().texture == m.texture and view.map_rect().size == Vector2(200, 200), "minimap shows the model texture in a 200 px circle")
+	var pad := MinimapView.PAD
+	K.check(fails, view.map_rect().visible and view.map_rect().texture == m.texture and is_equal_approx(MinimapView.DIAM, 200.0) and view.map_rect().size == Vector2(200 + 2 * pad, 200 + 2 * pad), "minimap shows the model texture in a 200 px circle (rect %s)" % str(view.map_rect().size))
+	var top_left := view.map_rect().position + Vector2(pad, pad) + hud_slot_origin(ctx)
+	K.check(fails, top_left.x >= 24.0 - 0.01, "the minimap circle keeps the 24 px safe margin (x %.1f)" % top_left.x)
 
 
 func _check_rotation(ctx: FpContext) -> void:
@@ -255,7 +259,7 @@ func _check_card(ctx: FpContext, client: GmiClient) -> void:
 	ctx.bus.card_action.disconnect(cb)
 	ctx.bus.interact_requested.emit({"kind": "vehicle", "id": "v1", "tile": -1, "pos": Vector3.ZERO, "label": "Priya Gupta, nurse", "data": {"driver_id": "r1", "state": "driving to work", "mood": 0.7}})
 	await _frames(1)
-	K.check(fails, card.is_open() and " ".join(card.texts()).contains("Priya Gupta") and " ".join(card.texts()).contains("mood 7/10"), "a vehicle card shows the driver and mood (%s)" % " | ".join(card.texts()))
+	K.check(fails, card.is_open() and " ".join(card.texts()).contains("Priya Gupta") and " ".join(card.texts()).contains("Mood 7/10"), "a vehicle card shows the driver and mood (%s)" % " | ".join(card.texts()))
 	_action("interact")
 	await _frames(1)
 	K.check(fails, not card.is_open() and not ctx.has_modal(&"card") and not ctx.is_modal(), "an interact press closes the card and pops &card")
@@ -430,6 +434,12 @@ func _perf(ctx: FpContext, f: FpFeature) -> void:
 	print("FP_HUD_TEST: perf full_repaint=%.2fms incremental=%.3fms markers=%.3fms hud_frame=%.3fms people=%d" % [full_ms, inc_ms, mk_ms, frame_ms, ctx.residents.people.size()])
 	K.check(fails, full_ms < 30.0, "full repaint %.1f ms (budget 15 ms)" % full_ms)
 	K.check(fails, frame_ms < 1.0, "HUD widgets cost %.3f ms per frame (budget 1.0 ms)" % frame_ms)
+
+
+## Screen position of minimap_slot's origin at the 1600 x 900 base.
+func hud_slot_origin(ctx: FpContext) -> Vector2:
+	var r: Array = FpHud.SLOT_RECTS["minimap_slot"]
+	return Vector2(float(r[4]), 0.0)
 
 
 func _frames(n: int) -> void:

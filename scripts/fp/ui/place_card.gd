@@ -197,19 +197,21 @@ func _build_building(i: int) -> void:
 func _build_vehicle(t: Dictionary) -> void:
 	var data: Dictionary = t.get("data", {})
 	var title := D.debrand(str(t.get("label", "A vehicle")))
-	_title(title.substr(0, 1).to_upper() + title.substr(1), "")
-	var bits := PackedStringArray()
 	var st := str(data.get("state", ""))
-	if not st.is_empty():
-		bits.append(st)
+	_title(title.substr(0, 1).to_upper() + title.substr(1), st.substr(0, 1).to_upper() + st.substr(1))
 	var dest := str(data.get("dest_label", ""))
 	if not dest.is_empty():
-		bits.append("to " + dest)
+		_line("Heading to " + D.debrand(dest), S.TEXT)
 	if data.has("mood"):
 		var m := float(data["mood"])
-		bits.append("mood %d/10" % roundi(m * 10.0 if m <= 1.0 else m))
-	if not bits.is_empty():
-		_line(D.debrand(" · ".join(bits)), S.TEXT)
+		var ten := roundi(m * 10.0 if m <= 1.0 else m)
+		var col := S.GOOD if ten >= 7 else (S.TEXT if ten >= 5 else (S.AMBER if ten >= 3 else S.RED))
+		var row := HFlowContainer.new()
+		row.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		var pill := _pill("face", "Mood %d/10" % ten, col)
+		(pill.get_child(0).get_child(0) as HudIcon).mood = ten / 10.0
+		row.add_child(pill)
+		_body.add_child(row)
 
 
 func _build_pedestrian(t: Dictionary) -> void:

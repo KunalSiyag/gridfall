@@ -12,7 +12,9 @@ const HEIGHT := 42.0
 const SPAN := deg_to_rad(160.0)
 const REFRESH := 0.25
 const LETTERS := {0: "N", 45: "NE", 90: "E", 135: "SE", 180: "S", 225: "SW", 270: "W", 315: "NW"}
-const LINE_Y := 13.0
+## Rows of the strip: markers above the letters, ticks and letters, distances under them.
+const MARK_Y := 9.0
+const LINE_Y := 17.0
 const MAX_PINGS := 3
 
 var ctx: FpContext
@@ -97,6 +99,8 @@ func _draw() -> void:
 	# Ticks every 15 degrees, letters on the cardinals and intercardinals.
 	var start := int(floor(rad_to_deg(bearing - SPAN * 0.5) / 15.0)) * 15
 	var deg := start
+	var ticks := PackedVector2Array()
+	var tick_cols := PackedColorArray()
 	while deg <= int(ceil(rad_to_deg(bearing + SPAN * 0.5))):
 		var x := x_of(deg_to_rad(float(deg)))
 		if not is_nan(x):
@@ -112,8 +116,12 @@ func _draw() -> void:
 				draw_string_outline(f, base, t, HORIZONTAL_ALIGNMENT_LEFT, -1, fs, 3, Color(0, 0, 0, 0.45 * fade))
 				draw_string(f, base, t, HORIZONTAL_ALIGNMENT_LEFT, -1, fs, col)
 			else:
-				draw_line(Vector2(x, LINE_Y + 2.0), Vector2(x, LINE_Y + 7.0), Color(1, 1, 1, 0.38 * fade), 1.5, true)
+				ticks.append(Vector2(x, LINE_Y + 2.0))
+				ticks.append(Vector2(x, LINE_Y + 7.0))
+				tick_cols.append(Color(1, 1, 1, 0.38 * fade))
 		deg += 15
+	if not ticks.is_empty():
+		draw_multiline_colors(ticks, tick_cols, 1.5)
 	# Centre notch.
 	var notch := PackedVector2Array([Vector2(cx - 4.5, 0.0), Vector2(cx + 4.5, 0.0), Vector2(cx, 5.5)])
 	draw_colored_polygon(notch, Color(1, 1, 1, 0.9))
@@ -125,7 +133,7 @@ func _draw() -> void:
 		var x := cx + clampf(rel / SPAN, -0.5, 0.5) * WIDTH
 		var col: Color = m["color"]
 		col.a *= float(m.get("alpha", 1.0)) * (1.0 if inside else 0.55)
-		var c := Vector2(x, LINE_Y + 4.5)
+		var c := Vector2(x, MARK_Y)
 		if not inside:
 			# Off the strip: a small chevron at the end, pointing the way to turn.
 			var s := signf(rel)
@@ -139,7 +147,7 @@ func _draw() -> void:
 		if inside:
 			var t: String = m["dist"]
 			var w := f.get_string_size(t, HORIZONTAL_ALIGNMENT_LEFT, -1, fs2).x
-			var base := Vector2(x - w * 0.5, LINE_Y + 23.0)
+			var base := Vector2(x - w * 0.5, LINE_Y + 22.0)
 			draw_string_outline(f, base, t, HORIZONTAL_ALIGNMENT_LEFT, -1, fs2, 3, Color(0, 0, 0, 0.5 * col.a))
 			draw_string(f, base, t, HORIZONTAL_ALIGNMENT_LEFT, -1, fs2, Color(col.r, col.g, col.b, col.a))
 

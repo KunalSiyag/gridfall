@@ -93,6 +93,13 @@ static func label(t: String, size_px: int, col: Color = TEXT, f: Font = null, ou
 	return l
 
 
+## A label on a chip's backing: a 2 px outline, no shadow pass.
+static func chip_label(t: String, size_px: int, col: Color = TEXT, f: Font = null) -> Label:
+	var l := label(t, size_px, col, f, 2)
+	l.add_theme_color_override("font_shadow_color", Color(0, 0, 0, 0))
+	return l
+
+
 ## A label for text inside a solid panel (no outline needed).
 static func plain(t: String, size_px: int, col: Color = TEXT, f: Font = null) -> Label:
 	var l := label(t, size_px, col, f, 0)
