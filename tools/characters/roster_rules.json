@@ -1,0 +1,39 @@
+{
+ "note": "Assignment data for roster.json (HC-characters.md deliverables 2 and 8). E picks a resident's body: job_pools[job] filtered by gender, else casual_pools[gender], indexed by crc32(resident_id) % n. Heroes are never residents.",
+ "heroes": {"m": "Male_Adult_06", "f": "Female_Adult_04"},
+ "drop_parts": ["pistol", "mask"],
+ "group_jobs": {
+  "casual": ["shop owner", "cashier", "barista", "artist", "student", "teacher", "retiree", "stadium staff", "airport worker", "bus driver"],
+  "business": ["software developer", "accountant", "city clerk", "professor", "civil engineer"],
+  "police": ["police officer"],
+  "medical": ["nurse", "caregiver", "doctor", "paramedic"],
+  "fire": ["firefighter"],
+  "trades": ["construction worker", "electrician", "power line technician", "plumber", "water utility engineer", "sanitation worker"],
+  "service": ["chef", "truck driver", "warehouse worker", "factory worker", "mechanic", "power plant operator"]
+ },
+ "job_refine": {
+  "retiree": ["Male_Adult_03", "Female_Adult_03", "Female_Adult_12"],
+  "nurse": ["Medical_Female_01", "Medical_Male_04"],
+  "caregiver": ["Medical_Female_01", "Medical_Male_04"],
+  "doctor": ["Medical_Female_02", "Medical_Male_04"],
+  "paramedic": ["Medical_Male_02", "Medical_Female_01"],
+  "chef": ["Chef_Female_01"],
+  "truck driver": ["Delivery_Male_01"],
+  "warehouse worker": ["Delivery_Male_01", "Wood_Male_01"],
+  "factory worker": ["Wood_Male_01", "Gardener_Male_01"],
+  "mechanic": ["Wood_Male_01", "Construction_Male_07"],
+  "power plant operator": ["Construction_Male_07", "Construction_Female_01"],
+  "sanitation worker": ["Construction_Male_07", "Gardener_Male_01", "Construction_Female_01"]
+ },
+ "ambient_weights": {"casual": 0.6, "business": 0.25, "uniform": 0.15},
+ "height": {"target_m": 1.75, "female_factor": 0.95, "jitter": [0.97, 1.03]},
+ "name_gender": {
+  "Ava": "f", "Ben": "m", "Eli": "m", "Fatima": "f", "Gus": "m", "Hana": "f", "Ivan": "m", "Jade": "f",
+  "Kofi": "m", "Lena": "f", "Mateo": "m", "Nia": "f", "Omar": "m", "Priya": "f", "Rosa": "f", "Tomas": "m",
+  "Uma": "f", "Vik": "m", "Zane": "m", "Aiko": "f", "Bruno": "m", "Carmen": "f", "Dmitri": "m", "Esi": "f",
+  "Farid": "m", "Greta": "f", "Hugo": "m", "Imani": "f", "Jonas": "m", "Keiko": "f", "Luis": "m", "Maya": "f",
+  "Nikhil": "m", "Olga": "f", "Pablo": "m", "Rania": "f", "Sven": "m", "Tara": "f", "Ugo": "m", "Valeria": "f",
+  "Ximena": "f", "Yara": "f", "Zoltan": "m", "Amara": "f", "Bilal": "m", "Clara": "f", "Desmond": "m", "Elif": "f",
+  "Gloria": "f", "Hamza": "m", "Ines": "f", "Jamal": "m"
+ }
+}
