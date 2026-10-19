@@ -9,6 +9,8 @@ const K := preload("res://tools/tests/fp_kit.gd")
 const D := preload("res://scripts/sim/sim_defs.gd")
 const WS := preload("res://scripts/fp/world_scale.gd")
 const STREET := preload("res://scripts/fp/street/street_dressing.gd")
+const LP := preload("res://scripts/fp/street/light_profile.gd")
+const WEATHER := preload("res://scripts/fp/street/weather.gd")
 
 var fails: Array[String] = []
 var _built_log: Array[int] = []
@@ -34,7 +36,7 @@ class PoleStub:
 
 func _init() -> void:
 	await process_frame
-	var ctx := K.make_ctx(get_root(), {"view": true, "grow": true, "render": true, "player": false, "hud": false})
+	var ctx := K.make_ctx(get_root(), {"view": true, "grow": true, "render": true, "hud": false})
 	var view := ctx.view
 	var sim := ctx.sim
 	K.check(fails, view != null and not view.fp_mode, "make_ctx built the view in orbit")
@@ -47,7 +49,18 @@ func _init() -> void:
 	_check_signs_with_poles(view, sim)
 	_check_lots(view, sim)
 	_check_trees(view)
+	_check_sites(view, sim)
 	await _check_queue(view, sim)
+	var f := K.make_feature(ctx, "streetscape")
+	K.check(fails, f != null, "the streetscape feature sets up")
+	if f != null:
+		_check_profile(ctx)
+		_check_sky_hooks(ctx, f)
+		_check_weather(ctx, f)
+		_check_lights(ctx, f)
+		_check_feature_hooks(ctx, f)
+		f.teardown()
+		K.check(fails, ctx.env.fog_mode == Environment.FOG_MODE_EXPONENTIAL and ctx.env.sky.process_mode == Sky.PROCESS_MODE_REALTIME, "teardown restores the orbit profile")
 	_check_imports()
 	K.finish(self, "FP_STREETSCAPE_TEST", fails)
 
@@ -460,6 +473,184 @@ func _pick_tiles(sim: CitySim, n: int, p: Vector3) -> Array[int]:
 			continue
 		out.append(i)
 	return out
+
+
+# ------------------------------------------------------------------ construction sites
+
+func _check_sites(view: CityView, sim: CitySim) -> void:
+	K.check(fails, is_equal_approx(ConstructionKit.MS, WS.MACHINE_SCALE), "construction machines at WS.MACHINE_SCALE")
+	# The hoarding on foot: 2.2 m, solid, with D's poster slot on the frontage side (gate or not).
+	var bad := []
+	for front: Vector2i in [Vector2i(0, 1), Vector2i(1, 0), Vector2i(0, -1), Vector2i(-1, 0)]:
+		for h: int in [0, 1, 2, 3]:
+			var root := Node3D.new()
+			view.kit._fence(root, h, front)
+			var segs := root.find_children("HoardingFront", "", true, false)
+			var ok := segs.size() == 1
+			if ok:
+				var seg := segs[0] as MeshInstance3D
+				var slot: Dictionary = seg.get_meta("poster_slot", {})
+				var normal := ((slot.get("xform", Transform3D()) as Transform3D).basis * Vector3.BACK)
+				ok = str(slot.get("kind", "")) == "hoarding" and Vector2(normal.x, normal.z).is_equal_approx(Vector2(front)) and seg.position.dot(Vector3(front.x, 0, front.y)) > 0.4
+				ok = ok and is_equal_approx((seg.mesh as BoxMesh).size.y, 2.2 * WS.M)
+			if not ok:
+				bad.append([front, h])
+			root.free()
+	K.check(fails, bad.is_empty(), "the hoarding has a poster slot facing the frontage road %s" % str(bad))
+
+
+# ------------------------------------------------------------------ light profile, sky, weather
+
+func _check_profile(ctx: FpContext) -> void:
+	var env := ctx.env
+	var sun := ctx.sun
+	K.check(fails, env.sky.process_mode == Sky.PROCESS_MODE_INCREMENTAL, "the sky updates incrementally on foot")
+	LP.apply(env, sun, "fp", "medium")
+	K.check(fails, is_equal_approx(env.ssao_radius, WS.SSAO_RADIUS) and is_equal_approx(env.ssil_radius, WS.SSIL_RADIUS), "SSAO and SSIL radii in metres")
+	K.check(fails, env.fog_mode == Environment.FOG_MODE_DEPTH and is_equal_approx(env.fog_density, 1.0), "depth fog at full density")
+	K.check(fails, is_equal_approx(sun.directional_shadow_max_distance, WS.SHADOW_MAX_DIST), "sun shadows end at SHADOW_MAX_DIST")
+	for preset: String in ["low", "medium", "high"]:
+		var far := LP.camera_far(preset)
+		K.check(fails, LP.fog_end(preset) < far, "%s fog ends inside the far plane (%.2f < %.1f)" % [preset, LP.fog_end(preset), far])
+	LP.apply(env, sun, "fp", "high")
+	K.check(fails, env.volumetric_fog_enabled and is_equal_approx(sun.directional_shadow_max_distance, 16.0), "high adds volumetric fog and 16 u shadows")
+	LP.apply(env, sun, "fp", "low")
+	K.check(fails, not env.ssil_enabled and not env.volumetric_fog_enabled, "low drops SSIL and volumetric fog")
+	# Orbit restores every owned key: env keys against a fresh load of the .tres, sun keys against
+	# main.tscn's Sun (defaults for keys it leaves unset), the sky against SkyDirector's own sky.
+	LP.apply(env, sun, "orbit", "low")
+	var tres := ResourceLoader.load("res://scenes/main-environment.tres", "", ResourceLoader.CACHE_MODE_IGNORE) as Environment
+	var bad := []
+	for k: String in LP.ENV_KEYS:
+		if not _same(env.get(k), tres.get(k)):
+			bad.append([k, env.get(k), tres.get(k)])
+	var ref := _main_sun()
+	for k: String in LP.SUN_KEYS:
+		if not _same(sun.get(k), ref.get(k)):
+			bad.append([k, sun.get(k), ref.get(k)])
+	ref.free()
+	if env.sky.process_mode != Sky.PROCESS_MODE_REALTIME or env.sky.radiance_size != Sky.RADIANCE_SIZE_256:
+		bad.append(["sky", env.sky.process_mode, env.sky.radiance_size])
+	K.check(fails, bad.is_empty(), "orbit restores every key the profile owns %s" % str(bad))
+	LP.apply(env, sun, "fp", "medium")
+
+
+func _same(a: Variant, b: Variant) -> bool:
+	if a is float or b is float:
+		return absf(float(a) - float(b)) < 1e-5
+	return a == b
+
+
+## A DirectionalLight3D with main.tscn's Sun properties (read from the scene state, not instanced).
+func _main_sun() -> DirectionalLight3D:
+	var sun := DirectionalLight3D.new()
+	var st := (load("res://scenes/main.tscn") as PackedScene).get_state()
+	for n in range(st.get_node_count()):
+		if str(st.get_node_name(n)) != "Sun":
+			continue
+		for k in range(st.get_node_property_count(n)):
+			sun.set(st.get_node_property_name(n, k), st.get_node_property_value(n, k))
+	return sun
+
+
+func _check_sky_hooks(ctx: FpContext, f: FpFeature) -> void:
+	var sky := ctx.sky
+	var weather: Node = f.get("weather")
+	weather.set_process(false)
+	sky.reset_weather()
+	sky.fixed_hour = 12.0
+	sky.hour = 12.0
+	sky.weather_energy_mult = 1.0
+	sky._apply(1.0)
+	var clear := ctx.sun.light_energy
+	sky.weather_energy_mult = 0.55
+	sky._apply(1.0)
+	K.check(fails, clear > 0.1 and is_equal_approx(ctx.sun.light_energy, clear * 0.55), "the weather energy multiplier survives SkyDirector's rewrite (%.3f vs %.3f)" % [ctx.sun.light_energy, clear])
+	var begin := ctx.env.fog_depth_begin
+	sky.fog_begin_override = 15.0
+	sky._apply(1.0)
+	var over := ctx.env.fog_depth_begin
+	sky.fog_begin_override = -1.0
+	sky._apply(1.0)
+	K.check(fails, is_equal_approx(over, 15.0) and is_equal_approx(ctx.env.fog_depth_begin, begin), "the fog-begin override applies and lets go")
+	sky.reset_weather()
+	weather.set_process(true)
+
+
+func _check_weather(ctx: FpContext, f: FpFeature) -> void:
+	var same := true
+	var counts := {"clear": 0, "overcast": 0, "rain": 0}
+	for day in range(400):
+		var s := WEATHER.daily_state(ctx.sim.city_seed, day)
+		same = same and s == WEATHER.daily_state(ctx.sim.city_seed, day)
+		counts[s] += 1
+	K.check(fails, same and counts["clear"] > 200 and counts["overcast"] > 70 and counts["rain"] > 30, "the daily weather is deterministic, about 60/25/15 (%s)" % str(counts))
+	var weather: Node = f.get("weather")
+	weather.set_process(false)
+	var speed := ctx.sim.speed
+	ctx.sim.speed = 1
+	var results: Array = []
+	for day_s: float in [12.0, 1200.0]:
+		ctx.sim.day_seconds = day_s
+		f.call("force_weather", "rain")
+		weather.set("wet", 0.0)
+		for _k in range(60):
+			weather.call("step", 1.0)
+		var w60 := float(weather.get("wet"))
+		for _k in range(60):
+			weather.call("step", 1.0)
+		results.append([w60, float(weather.get("wet"))])
+	ctx.sim.day_seconds = 12.0
+	ctx.sim.speed = speed
+	var r: Array = results[0]
+	K.check(fails, float(r[0]) < 0.6 and float(r[1]) > 0.9 and results[0] == results[1], "rain wets the streets over 120 s at 1x, whatever the day length (%s)" % str(results))
+	K.check(fails, is_equal_approx(ctx.view.wetness, float(r[1])) and ctx.sky.weather_grey > 0.0, "wetness reaches the view and the sky turns grey")
+	f.call("clear_forced_weather")
+	K.check(fails, is_equal_approx(ctx.view.wetness, 0.0), "clearing the forced weather dries the streets")
+	f.call("force_rain_for_photo")
+	K.check(fails, is_equal_approx(ctx.view.wetness, 1.0) and str((f.call("to_dict") as Dictionary).get("weather")) == "rain", "force_rain_for_photo soaks the streets at once")
+	f.call("clear_forced_weather")
+	weather.set_process(true)
+
+
+func _check_lights(ctx: FpContext, f: FpFeature) -> void:
+	var lights: Node = f.get("lights")
+	# Stand on a lit straight at midnight.
+	var spot := -1
+	for i in ctx.sim.active:
+		var h := ctx.view.tile_holder(i)
+		if h != null and ctx.sim.kind[i] == D.ROAD and not h.find_children("Bulb*", "MeshInstance3D", true, false).is_empty():
+			spot = i
+			break
+	K.check(fails, spot >= 0, "a road tile with lamps exists")
+	if spot < 0:
+		return
+	ctx.player.teleport(Vector3(D.tx(spot) + 0.4, WS.SIDEWALK_TOP, D.ty(spot)), 0.0)
+	ctx.view.night = 1.0
+	lights.call("_process", 0.3)
+	var lit := int(lights.call("lit_count"))
+	K.check(fails, lit > 0 and lit <= 16, "street lights light the nearby lamps at night (%d)" % lit)
+	for l: OmniLight3D in lights.get("pool"):
+		if l.shadow_enabled:
+			K.check(fails, false, "street lights cast no shadows")
+			break
+	ctx.view.night = 0.0
+	lights.call("_process", 0.3)
+	K.check(fails, int(lights.call("lit_count")) == 0, "street lights are off by day")
+
+
+func _check_feature_hooks(ctx: FpContext, f: FpFeature) -> void:
+	var st: Dictionary = f.self_test()
+	K.check(fails, bool(st.get("ok", false)), "streetscape self_test: %s" % str(st.get("detail", "")))
+	var names := []
+	for s: Dictionary in f.photo_shots():
+		names.append(str(s["name"]))
+		if str(s["name"]) == "rain":
+			K.check(fails, str(s.get("prepare", "")) == "force_rain_for_photo" and str(s.get("restore", "")) == "clear_forced_weather" and is_equal_approx(float(s["hour"]), 16.0), "the rain shot forces and clears the rain at 16:00")
+	K.check(fails, "street_sign" in names and "rain" in names, "photo shots: street_sign and rain (%s)" % str(names))
+	f._process(0.016)
+	K.check(fails, ctx.view.priority_point.distance_to(ctx.player_position()) < 1e-4, "the feature feeds the player position to the rebuild queue")
+	K.check(fails, RenderingServer.global_shader_parameter_get_list().has(&"wetness"), "the wetness global shader parameter exists on foot")
 
 
 # ------------------------------------------------------------------ imports

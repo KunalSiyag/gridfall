@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
-"""Road-wear decal textures for the street level (slice G1).
+"""Street-level textures for slice G1: road-wear decals and the site hoarding.
 
-Writes RGBA PNGs next to this file: crack_0/1, patch_0, oil_0/1, drain_0, stain_0, puddle_0 and the
-puddle ORM map. Deterministic (fixed seeds); needs numpy and Pillow.
+Writes PNGs next to this file: crack_0/1, patch_0, oil_0/1, drain_0, stain_0, puddle_0, the puddle
+ORM map, and hoarding.png (a greyscale painted-plywood hoarding, 4.8 m square, four 1.2 m panels,
+tinted per site). Deterministic (fixed seeds); needs numpy and Pillow.
 
     python3 textures/real/decals/make_decals.py
 """
@@ -147,6 +148,26 @@ def puddle(seed):
     return np.dstack([shade * 0.95, shade, shade * 1.1]), alpha
 
 
+def hoarding(seed):
+    """Painted plywood panels; content is uniform vertically so any vertical mapping works."""
+    rng = np.random.default_rng(seed)
+    n = 1024
+    xx = np.arange(n)[None, :].repeat(n, 0)
+    grain = value_noise(rng, n, 160) * 0.5 + value_noise(rng, n, 40) * 0.5
+    streak = np.asarray(Image.fromarray((rng.random((8, n)) * 255).astype(np.uint8)).resize((n, n), Image.BICUBIC), np.float32) / 255.0
+    base = 0.74 + 0.08 * (grain - 0.5) + 0.06 * (streak - 0.5)
+    panel = (xx // (n // 4)).astype(np.int32)
+    base *= np.array([1.0, 0.95, 1.03, 0.97])[panel]
+    joint = np.minimum(xx % (n // 4), (n // 4) - xx % (n // 4))
+    base *= np.where(joint < 3, 0.45, np.where(joint < 6, 0.8, 1.0))
+    # Screw heads along the panel edges.
+    yy = np.arange(n)[:, None].repeat(n, 1)
+    screws = ((joint > 10) & (joint < 15) & (yy % 128 < 5)).astype(np.float32)
+    base = base * (1 - screws * 0.35)
+    g = np.clip(base * 255, 0, 255).astype(np.uint8)
+    Image.fromarray(np.dstack([g, g, g]), "RGB").save(os.path.join(OUT, "hoarding.png"), optimize=True)
+
+
 def main():
     for k in range(2):
         save("crack_%d" % k, *cracks(11 + k))
@@ -158,6 +179,7 @@ def main():
     save("puddle_0", *puddle(61))
     # ORM for puddles: full AO, near-mirror roughness, no metal.
     Image.fromarray(np.full((16, 16, 3), (255, 12, 0), np.uint8), "RGB").save(os.path.join(OUT, "puddle_orm.png"))
+    hoarding(71)
 
 
 if __name__ == "__main__":

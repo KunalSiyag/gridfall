@@ -5,11 +5,20 @@ extends RefCounted
 ## cranes, bulldozers and road rollers. Machines are modelled in metres and scaled by MS.
 
 const D := preload("res://scripts/sim/sim_defs.gd")
-## One tile is roughly 16 m across next to the realistic cars (a 4.7 m sedan is 0.285 tiles).
-const MS := 1.0 / 16.0
-## Small parts stop drawing beyond this camera distance.
-const FAR := 70.0
+const WS := preload("res://scripts/fp/world_scale.gd")
+## Machines are modelled in metres: true scale is one tile per 20 m.
+const MS := WS.MACHINE_SCALE
+## Small parts stop drawing beyond this camera distance; the crane's big parts carry further.
+const FAR := WS.VIS_SITE_PART
+const CRANE_FAR := 30.0
 const FLOOR_H := 0.11
+## Site hoarding height: 1 m in orbit, 2.2 m of painted plywood on foot.
+const HOARDING_H := 0.05
+const HOARDING_H_FP := 2.2 * WS.M
+## Hoarding paint per site (hash): green, slate, raw plywood.
+const HOARDING_TINTS := [Color(0.33, 0.43, 0.34), Color(0.36, 0.4, 0.45), Color(0.86, 0.7, 0.5)]
+## Machines keep their footprint inside the hoarding at +-HOARDING_IN.
+const HOARDING_IN := 0.46
 
 var view: Node
 var _mats: Dictionary = {}
@@ -23,6 +32,9 @@ var _site_root: Node3D
 var _solids: Array[Dictionary] = []
 ## Machine kind -> its swept bounds in the machine's frame (machines are built the same every time).
 var _machine_bounds: Dictionary = {}
+## Machine kind -> its footprint bounds in the machine root's frame (unrotated, arms included).
+var _machine_foot: Dictionary = {}
+var _grime: Texture2D
 
 
 func _init(p_view: Node) -> void:
@@ -36,6 +48,8 @@ func mat(key: String) -> Material:
 		return _mats[key]
 	var m := StandardMaterial3D.new()
 	m.roughness = 0.6
+	if key in ["paint", "paint_dark", "white", "orange", "red", "steel", "rubber"]:
+		_add_grime(m)
 	match key:
 		"paint":
 			m.albedo_color = Color(0.93, 0.64, 0.06)
@@ -86,6 +100,17 @@ func mat(key: String) -> Material:
 		"hoarding":
 			m.albedo_color = Color(0.15, 0.3, 0.5)
 			m.roughness = 0.7
+		"hoarding_fp_0", "hoarding_fp_1", "hoarding_fp_2":
+			# Painted (or raw) plywood, one repeat per 4.8 m, tinted per site.
+			m.albedo_color = HOARDING_TINTS[int(key.right(1))]
+			m.roughness = 0.82
+			var tex := "res://textures/real/decals/hoarding.png"
+			if ResourceLoader.exists(tex):
+				m.albedo_texture = load(tex)
+				m.uv1_triplanar = true
+				m.uv1_world_triplanar = true
+				m.uv1_scale = Vector3.ONE / (4.8 * WS.M)
+				m.texture_filter = BaseMaterial3D.TEXTURE_FILTER_LINEAR_WITH_MIPMAPS_ANISOTROPIC
 		"gravel":
 			m.albedo_color = Color(0.52, 0.5, 0.47)
 			m.roughness = 1.0
@@ -115,6 +140,29 @@ func mat(key: String) -> Material:
 			m.albedo_color = Color.MAGENTA
 	_mats[key] = m
 	return m
+
+
+## Worn paint and dust on machine materials: a soft noise mask blends in a dusty brown, mapped in the
+## machine's own metres so it travels with it.
+func _add_grime(m: StandardMaterial3D) -> void:
+	if _grime == null:
+		var nz := FastNoiseLite.new()
+		nz.frequency = 0.035
+		nz.fractal_octaves = 4
+		var nt := NoiseTexture2D.new()
+		nt.width = 256
+		nt.height = 256
+		nt.seamless = true
+		nt.noise = nz
+		_grime = nt
+	var dust := Image.create(4, 4, false, Image.FORMAT_RGB8)
+	dust.fill(Color(0.42, 0.36, 0.29))
+	m.detail_enabled = true
+	m.detail_mask = _grime
+	m.detail_albedo = ImageTexture.create_from_image(dust)
+	m.detail_blend_mode = BaseMaterial3D.BLEND_MODE_MIX
+	m.uv1_triplanar = true
+	m.uv1_scale = Vector3.ONE * 0.35
 
 
 func _material(m: Variant) -> Material:
@@ -256,8 +304,42 @@ func machine(kind: String, parent: Node3D, pos: Vector3, yaw: float, phase := 0.
 			_bulldozer(b)
 		"roller":
 			_roller(b)
+	# Keep the machine (arms included) inside the hoarding.
+	var foot := _foot_of(kind, b)
+	var yb := Basis(Vector3.UP, yaw)
+	var lo := Vector2(INF, INF)
+	var hi := Vector2(-INF, -INF)
+	for cx: float in [foot.position.x, foot.end.x]:
+		for cz: float in [foot.position.z, foot.end.z]:
+			var c := yb * Vector3(cx, 0, cz)
+			lo = Vector2(minf(lo.x, c.x), minf(lo.y, c.z))
+			hi = Vector2(maxf(hi.x, c.x), maxf(hi.y, c.z))
+	if hi.x - lo.x < HOARDING_IN * 2.0:
+		root.position.x = clampf(pos.x, -HOARDING_IN - lo.x, HOARDING_IN - hi.x)
+	if hi.y - lo.y < HOARDING_IN * 2.0:
+		root.position.z = clampf(pos.z, -HOARDING_IN - lo.y, HOARDING_IN - hi.y)
 	_solids.append({"n": root, "arms": false, "anims": _anims.slice(a0), "kind": kind})
 	return root
+
+
+## Bounds of a freshly built machine body b in its root's frame (cached per kind).
+func _foot_of(kind: String, b: Node3D) -> AABB:
+	if _machine_foot.has(kind):
+		return _machine_foot[kind]
+	var bb := AABB()
+	var first := true
+	for n in b.find_children("*", "MeshInstance3D", true, false):
+		var mi := n as MeshInstance3D
+		var xf := Transform3D()
+		var q: Node = mi
+		while q != b:
+			xf = (q as Node3D).transform * xf
+			q = q.get_parent()
+		var a := (b.transform * xf) * mi.mesh.get_aabb()
+		bb = a if first else bb.merge(a)
+		first = false
+	_machine_foot[kind] = bb
+	return bb
 
 
 ## Sends a machine back and forth along dir (holder space) by amp tiles.
@@ -457,6 +539,8 @@ func tower_crane(parent: Node3D, pos: Vector3, h_m: float, yaw: float, phase := 
 	box(trolley, Vector3(4.0, 0.45, 0.9), Vector3(0, -drop - 0.8, 0), "rebar", Vector3(0, 0.4, 0), false)
 	_anim(slew, "yaw", 0.0, 0.9, 0.12, phase)
 	_anim(trolley, "slide", 11.0, 6.0, 0.3, phase)
+	for part in root.find_children("*", "GeometryInstance3D", true, false):
+		(part as GeometryInstance3D).visibility_range_end = CRANE_FAR
 	return root
 
 
@@ -485,7 +569,7 @@ func build_site(holder: Node3D, s: Dictionary, stage: String, f: float, ctx: Dic
 	var big := height > 0.55 or str(s["type"]) == "build" and int(s["target_kind"]) in [D.AIRPORT, D.STADIUM, D.UNIVERSITY, D.COAL, D.HOSPITAL, D.TRAIN]
 	if not overlay:
 		_ground(root, stage)
-		_fence(root, h)
+		_fence(root, h, ctx.get("front", Vector2i.ZERO))
 	match stage:
 		"clearing":
 			# Standing trees come down first, then the stumps get grubbed out.
@@ -579,9 +663,17 @@ func build_site(holder: Node3D, s: Dictionary, stage: String, f: float, ctx: Dic
 			machine("backhoe", root, Vector3(-0.3, 0, 0.32), -0.6, ph)
 			machine("dump_truck", root, Vector3(0.32, 0, -0.32), PI * 0.6, ph)
 	if big and stage in ["frame", "finishing"]:
-		tower_crane(root, Vector3(-foot.x * 0.5 - 0.1, 0, -foot.y * 0.5 - 0.1), clampf(height / MS + 9.0, 18.0, 40.0), float(h % 6), ph)
+		# An internal climbing crane in the footprint's corner, inside the hoarding (it used to stand
+		# 0.1 u outside the footprint, up to 4 m onto the neighbouring sidewalk).
+		var cp := Vector3(-clampf(foot.x * 0.5 - 0.1, 0.0, 0.36), 0, -clampf(foot.y * 0.5 - 0.1, 0.0, 0.36))
+		tower_crane(root, cp, clampf(height / MS + 9.0, 18.0, 52.0), float(h % 6), ph)
 	if not overlay or stage == "frame":
 		_floodlight(root, Vector3(foot.x * 0.5 + 0.06, 0, -foot.y * 0.5 - 0.06))
+	# Big parts (frame floors, scaffold faces, the hoarding runs) carry as far as the crane.
+	for part in root.find_children("*", "MeshInstance3D", true, false):
+		var mi := part as MeshInstance3D
+		if mi.mesh != null and mi.visibility_range_end == FAR and (mi.mesh.get_aabb().size * mi.scale).length() > 0.25:
+			mi.visibility_range_end = CRANE_FAR
 	_bake_colliders(root)
 	_apply_progress(root, f)
 	return root
@@ -785,24 +877,41 @@ func _ground(root: Node3D, stage: String) -> void:
 	var pm := PlaneMesh.new()
 	pm.size = Vector2(0.98, 0.98)
 	g.mesh = pm
-	g.position.y = 0.007
+	g.position.y = WS.GROUND_Y + 0.0004 if bool(view.get("fp_mode")) else 0.007
 	g.material_override = view.call("_pbr", "dirt", Color(0.38, 0.3, 0.22), 1.0) if stage != "landscaping" else mat("soil")
 	root.add_child(g)
 
 
-## Blue site hoarding with a gate gap on one side.
-func _fence(root: Node3D, h: int) -> void:
+## Site hoarding with a gate gap on one side: blue boards in orbit; on foot 2.2 m of painted plywood
+## whose segment on the frontage side (`front`, toward the lot's frontage road) carries D's
+## `poster_slot`.
+func _fence(root: Node3D, h: int, front: Vector2i = Vector2i.ZERO) -> void:
 	var gate := h % 4
+	var fp := bool(view.get("fp_mode"))
+	var hh := HOARDING_H_FP if fp else HOARDING_H
+	var m := "hoarding_fp_%d" % ((h >> 5) % 3) if fp else "hoarding"
+	var sides := [Vector2i(0, -1), Vector2i(1, 0), Vector2i(0, 1), Vector2i(-1, 0)]
 	for k in range(4):
-		var along := Vector3(0.94, 0.05, 0.008) if k % 2 == 0 else Vector3(0.008, 0.05, 0.94)
-		var pos := [Vector3(0, 0.025, -0.47), Vector3(0.47, 0.025, 0), Vector3(0, 0.025, 0.47), Vector3(-0.47, 0.025, 0)][k] as Vector3
+		var along := Vector3(0.94, hh, 0.008) if k % 2 == 0 else Vector3(0.008, hh, 0.94)
+		var pos := Vector3(sides[k].x * 0.47, hh * 0.5, sides[k].y * 0.47)
+		var seg: MeshInstance3D = null
 		if k == gate:
 			var half := Vector3(along.x * 0.35, along.y, along.z * 0.35)
 			var off := Vector3(0.3, 0, 0) if k % 2 == 0 else Vector3(0, 0, 0.3)
-			solid(box(root, half, pos - off, "hoarding", Vector3.ZERO, false))
-			solid(box(root, half, pos + off, "hoarding", Vector3.ZERO, false))
+			solid(box(root, half, pos - off, m, Vector3.ZERO, fp))
+			seg = solid(box(root, half, pos + off, m, Vector3.ZERO, fp)) as MeshInstance3D
 		else:
-			solid(box(root, along, pos, "hoarding", Vector3.ZERO, false))
+			seg = solid(box(root, along, pos, m, Vector3.ZERO, fp)) as MeshInstance3D
+		if fp and sides[k] == front:
+			_poster_slot(seg, Vector2(front), hh)
+
+
+## D's hoarding poster on segment seg: 3 m x 1.5 m on its outer face, facing out toward dv.
+func _poster_slot(seg: MeshInstance3D, dv: Vector2, hh: float) -> void:
+	var face := Basis(Vector3.UP, atan2(dv.x, dv.y))
+	var out := Vector3(dv.x, 0, dv.y) * (0.004 + 0.0004)
+	seg.name = "HoardingFront"
+	seg.set_meta("poster_slot", {"kind": "hoarding", "size": Vector2(3.0, 1.5) * WS.M, "xform": Transform3D(face, out + Vector3(0, hh * 0.05, 0))})
 
 
 func _floodlight(root: Node3D, pos: Vector3) -> void:
