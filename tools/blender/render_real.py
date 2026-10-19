@@ -3,6 +3,8 @@
     blender --background --python tools/blender/render_real.py -- --out shot.png [--cols 8] [--res 2400]
         [--hdri env/sky.hdr] [--view sheet|iso] models/real/zones/r1 ...
     blender --background --python tools/blender/render_real.py -- --hero block|crossing --out shot.png
+    blender --background --python tools/blender/render_real.py -- --hero eye --out shot.png [--cam az,el,dist]
+        [--spacing 6] model.glb ...   (eye level: models in a row on asphalt with a 1.8 m person for scale)
 """
 
 import glob
@@ -17,7 +19,8 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 PROJECT = os.path.abspath(os.path.join(HERE, "..", ".."))
 argv = sys.argv[sys.argv.index("--") + 1:] if "--" in sys.argv else []
 opts = {"--out": None, "--cols": "8", "--res": "2400", "--hdri": os.path.join(PROJECT, "env", "sky.hdr"),
-        "--view": "iso", "--hero": None, "--samples": "64", "--strength": "1.0", "--labels": "1"}
+        "--view": "iso", "--hero": None, "--samples": "64", "--strength": "1.0", "--labels": "1",
+        "--cam": "-35,12,9", "--spacing": "6", "--size": "1600x900", "--target": ""}
 paths = []
 i = 0
 while i < len(argv):
@@ -238,6 +241,31 @@ def hero(kind):
         loc = T(i, j) + Vector((dx, -dz, y))
         return import_glb(g(p), loc, rz=math.radians(90 * rot), scale=scale)
 
+    if kind == "eye":
+        # metres -> units; models stand in a row along X, front (Godot +Z = Blender -Y) toward the camera
+        Mu = 1.0 / 20.0
+        asphalt = _mat_flat("asphalt", (0.05, 0.05, 0.052), 0.85)
+        _plane(-5, -5, 5, 5, -0.0002, asphalt)
+        sp = float(opts["--spacing"]) * Mu
+        xs = [(i - (len(paths) - 1) / 2) * sp for i in range(len(paths))]
+        for x, p in zip(xs, paths):
+            ap = p if os.path.isabs(p) else os.path.join(PROJECT, p)
+            import_glb(ap, (x, 0, 0))
+        person = os.path.join(M, "people", "person_a.glb")
+        if os.path.exists(person):
+            import_glb(person, (xs[-1] + sp * 0.55, -1.2 * Mu, 0), rz=0.4)
+        az, el, dist = (float(v) for v in opts["--cam"].split(","))
+        tgt = Vector((0, 0, 0.9 * Mu))
+        if opts["--target"]:
+            tgt = Vector([float(v) * Mu for v in opts["--target"].split(",")])
+        d = Vector((math.sin(math.radians(az)) * math.cos(math.radians(el)), -math.cos(math.radians(az)) *
+                    math.cos(math.radians(el)), math.sin(math.radians(el))))
+        loc = tgt + d * dist * Mu
+        cam = camera(loc, tgt, lens=30)
+        cam.data.clip_start = 0.002
+        w, h = (int(v) for v in opts["--size"].split("x"))
+        setup_render(w, h, int(opts["--samples"]))
+        return
     if kind == "single":
         ground()
         import_glb(paths[0])
