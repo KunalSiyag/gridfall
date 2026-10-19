@@ -30,8 +30,10 @@ var hour: float = 9.0
 var night: float = 0.0
 ## Weather hooks (slice G1's streetscape weather), read inside _apply so they survive the per-frame
 ## rewrite: sun energy and exposure multipliers, a depth-fog begin override (negative: none), how
-## grey the sky is (0 clear .. 1 overcast) and a fog tint (smog).
+## grey the sky is (0 clear .. 1 overcast), a fog tint (smog) and how dark sun shadows are (cloud
+## cover diffuses them).
 var weather_energy_mult: float = 1.0
+var weather_shadow_mult: float = 1.0
 var weather_exposure_mult: float = 1.0
 var fog_begin_override: float = -1.0
 var weather_grey: float = 0.0
@@ -40,6 +42,8 @@ var _sky_mat: ShaderMaterial
 var _dusk_fp: bool = false
 ## The depth-fog begin that fog_begin_override replaced (negative: nothing replaced).
 var _fog_begin_saved: float = -1.0
+## The scene's sun shadow opacity, which weather_shadow_mult scales.
+var _shadow_opacity: float = 1.0
 
 
 func setup(p_sim: CitySim, p_env: Environment, p_sun: DirectionalLight3D, p_view: CityView) -> void:
@@ -47,6 +51,8 @@ func setup(p_sim: CitySim, p_env: Environment, p_sun: DirectionalLight3D, p_view
 	env = p_env
 	sun = p_sun
 	view = p_view
+	if sun != null:
+		_shadow_opacity = sun.shadow_opacity
 	if OS.has_environment("GRIDFALL_HOUR"):
 		fixed_hour = float(OS.get_environment("GRIDFALL_HOUR"))
 	if env != null and ResourceLoader.exists(SKY_SHADER) and ResourceLoader.exists(DAY_HDRI):
@@ -77,6 +83,7 @@ func _target_hour() -> float:
 ## Clear sky again: drops every weather hook and puts back the fog begin an override replaced.
 func reset_weather() -> void:
 	weather_energy_mult = 1.0
+	weather_shadow_mult = 1.0
 	weather_exposure_mult = 1.0
 	weather_grey = 0.0
 	weather_fog_tint = Color(1, 1, 1, 0)
@@ -119,6 +126,7 @@ func _apply(blend: float) -> void:
 		sun.light_energy = lerpf(sun.light_energy, energy, blend)
 		sun.light_color = sun.light_color.lerp(col, blend)
 		sun.shadow_enabled = energy > 0.02
+		sun.shadow_opacity = _shadow_opacity * weather_shadow_mult
 	if env != null:
 		# The night sky is nearly black, so a fixed moonlit blue keeps streets readable.
 		env.ambient_light_color = Color(0.16, 0.2, 0.32)

@@ -1,7 +1,8 @@
 extends Node3D
 ## Real light pools under the street lamps near the player (slice G1): a fixed pool of shadowless
 ## OmniLight3Ds, re-assigned four times a second to the nearest Bulb_* nodes within REACH of the
-## player and dimmed with the night. Bulbs are collected per tile on tile_built.
+## player and dimmed with the night. Bulbs are collected per tile on tile_built: Bulb* nodes, plus the
+## world positions in the holder's `bulbs` meta (the batched street lamps, which have no nodes).
 
 const WS := preload("res://scripts/fp/world_scale.gd")
 const D := preload("res://scripts/sim/sim_defs.gd")
@@ -12,7 +13,7 @@ const COLOR := Color(1.0, 0.8, 0.56)
 
 var ctx: FpContext
 var pool: Array[OmniLight3D] = []
-## Tile -> Array of Bulb nodes on its holder.
+## Tile -> Array of Bulb nodes on its holder and bulb world positions (Vector3).
 var _bulbs: Dictionary = {}
 var _t: float = 0.0
 
@@ -51,7 +52,9 @@ func rescan() -> void:
 
 
 func on_tile_built(i: int, holder: Node3D) -> void:
-	var found: Array = holder.find_children("Bulb*", "MeshInstance3D", true, false)
+	var found: Array = []
+	found.append_array(holder.find_children("Bulb*", "MeshInstance3D", true, false))
+	found.append_array(holder.get_meta("bulbs", []))
 	if found.is_empty():
 		_bulbs.erase(i)
 	else:
@@ -88,9 +91,13 @@ func _assign(glow: float) -> void:
 				if not D.in_bounds(x, y):
 					continue
 				for b: Variant in _bulbs.get(D.idx(x, y), []):
-					if not is_instance_valid(b) or not (b as Node3D).is_inside_tree():
+					var bp := Vector3.ZERO
+					if b is Vector3:
+						bp = b
+					elif is_instance_valid(b) and (b as Node3D).is_inside_tree():
+						bp = (b as Node3D).global_position
+					else:
 						continue
-					var bp := (b as Node3D).global_position
 					var d := Vector2(bp.x - p.x, bp.z - p.z).length()
 					if d <= REACH:
 						near.append([d, bp])

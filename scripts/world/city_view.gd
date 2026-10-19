@@ -83,8 +83,11 @@ const GROUND_MARGIN := 30
 const BANK_W := 0.1
 const GROUND_SHADER := "res://shaders/ground_detail.gdshader"
 const WINDOW_SHADER := "res://shaders/window_fp.gdshader"
+const ROAD_SHADER := "res://shaders/road_fp.gdshader"
 ## Road-surface materials that darken and turn glossy in the rain (by resource-name prefix).
-const WET_PREFIXES := ["Asphalt", "Sidewalk", "Curb", "Paint_White"]
+const WET_PREFIXES := ["Asphalt", "Sidewalk", "Curb", "Paint_White", "Paint_Yellow", "Concrete_Floor", "Court", "Track", "Turf"]
+## Walls, roofs and trim that rain darkens without making them glossy.
+const DAMP_PREFIXES := ["Brick", "Concrete", "Stone", "Plaster", "Roof", "Trim_Stone", "Wood"]
 ## Window glass tints: warm homes, cool offices, a dimmer warm, and mostly dark rooms.
 const WINDOW_TINTS := [Color(1.0, 0.76, 0.46), Color(0.84, 0.91, 1.0), Color(1.0, 0.86, 0.62), Color(1.0, 0.70, 0.40)]
 const WINDOW_GLOW := [3.4, 2.8, 1.9, 0.3]
@@ -185,6 +188,7 @@ var _ground_fp_mat: ShaderMaterial
 var _lot_mat: ShaderMaterial
 var _bank_mat: ShaderMaterial
 var _apron_mat: StandardMaterial3D
+var _road_fp_mat: ShaderMaterial
 var _water_node: MeshInstance3D
 var _bed_node: MeshInstance3D
 ## Shared road-surface materials -> [dry albedo, roughness, metallic_specular] for set_wetness().
@@ -360,9 +364,9 @@ func _tune_materials(ps: PackedScene) -> void:
 				continue
 			_tuned[m.get_instance_id()] = true
 			_tune_material(m)
-			for p: String in WET_PREFIXES:
+			for p: String in WET_PREFIXES + DAMP_PREFIXES:
 				if m.resource_name.begins_with(p):
-					_wet_mats[m] = [m.albedo_color, m.roughness, m.metallic_specular]
+					_wet_mats[m] = [m.albedo_color, m.roughness, m.metallic_specular, p in DAMP_PREFIXES]
 					_wet_material(m, wetness)
 					break
 	root.free()
@@ -640,6 +644,23 @@ func apron_material() -> Material:
 	return _apron_mat
 
 
+## Carriageway asphalt on foot (shaders/road_fp.gdshader): world-mapped, broken-up asphalt with lane
+## wear; road holders set its `lane_axis` instance parameter. Null when the shader or textures are
+## missing (the road models keep their own asphalt).
+func road_fp_material() -> ShaderMaterial:
+	if _road_fp_mat == null and ResourceLoader.exists(ROAD_SHADER) and ResourceLoader.exists(TEX + "asphalt_albedo.jpg"):
+		_road_fp_mat = ShaderMaterial.new()
+		_road_fp_mat.shader = load(ROAD_SHADER)
+		for pair: Array in [["albedo_tex", "asphalt_albedo.jpg"], ["normal_tex", "asphalt_normal.jpg"], ["rough_tex", "asphalt_rough.jpg"], ["noise_tex", "decals/grime_mask.png"]]:
+			if ResourceLoader.exists(TEX + str(pair[1])):
+				_road_fp_mat.set_shader_parameter(str(pair[0]), load(TEX + str(pair[1])))
+		_road_fp_mat.set_shader_parameter("metre", WS.M)
+		_road_fp_mat.set_shader_parameter("lane_offset", WS.LANE_OFFSET)
+		_road_fp_mat.set_shader_parameter("half_width", WS.ROAD_HALF)
+		_road_fp_mat.set_shader_parameter("wetness", wetness)
+	return _road_fp_mat
+
+
 ## Wet streets: road and sidewalk materials darken and turn glossy, the ground shaders and the water
 ## follow, and puddles appear by the curbs. w is 0 (dry) .. 1 (soaked).
 func set_wetness(w: float) -> void:
@@ -650,7 +671,7 @@ func set_wetness(w: float) -> void:
 	for m: BaseMaterial3D in _wet_mats.keys():
 		if is_instance_valid(m):
 			_wet_material(m, w)
-	for sm: ShaderMaterial in [_ground_fp_mat, _lot_mat]:
+	for sm: ShaderMaterial in [_ground_fp_mat, _lot_mat, _road_fp_mat]:
 		if sm != null:
 			sm.set_shader_parameter("wetness", w)
 	if _bank_mat != null:
@@ -668,10 +689,11 @@ func set_rain(r: float) -> void:
 func _wet_material(m: BaseMaterial3D, w: float) -> void:
 	var dry: Array = _wet_mats[m]
 	var c: Color = dry[0]
-	var k := lerpf(1.0, 0.62, w)
+	var damp := dry.size() > 3 and bool(dry[3])
+	var k := lerpf(1.0, 0.78 if damp else 0.62, w)
 	m.albedo_color = Color(c.r * k, c.g * k, c.b * k, c.a)
-	m.roughness = lerpf(float(dry[1]), 0.16, w)
-	m.metallic_specular = lerpf(float(dry[2]), 0.65, w)
+	m.roughness = lerpf(float(dry[1]), float(dry[1]) * 0.8 if damp else 0.16, w)
+	m.metallic_specular = lerpf(float(dry[2]), 0.4 if damp else 0.65, w)
 
 
 ## One merged quad mesh over every tile the predicate accepts, so water costs a single draw call.
@@ -2014,8 +2036,12 @@ func _register_animated(model: Node3D) -> void:
 					_add_light_pool(model, n as Node3D)
 
 
-## Fake pool of lamplight on the ground: an additive radial quad that fades in after dark.
+## Fake pool of lamplight on the ground: an additive radial quad that fades in after dark. On foot
+## an emissive decal instead, which lies on the road, kerb and paving rather than floating over them.
 func _add_light_pool(model: Node3D, bulb: Node3D) -> void:
+	if fp_mode and _street != null:
+		_street.light_pool(model, model.to_local(bulb.global_position))
+		return
 	if _pool_mat == null:
 		var grad := Gradient.new()
 		grad.set_color(0, Color(1, 1, 1, 1))
@@ -2111,6 +2137,8 @@ func _apply_night() -> void:
 		_water_mat.set_shader_parameter("night", night)
 	if _window_fp_mat != null:
 		_window_fp_mat.set_shader_parameter("night", glow)
+	if _street != null:
+		_street.set_night(glow)
 
 
 func _animate_parts(delta: float) -> void:

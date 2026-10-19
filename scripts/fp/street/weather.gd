@@ -10,11 +10,12 @@ const D := preload("res://scripts/sim/sim_defs.gd")
 const STATES := ["clear", "overcast", "rain"]
 const WET_SECONDS := 120.0
 const DRY_SECONDS := 300.0
-## Hook targets per state: sun energy and exposure multipliers, sky grey, fog-begin override.
+## Hook targets per state: sun energy and exposure multipliers, sky grey, fog-begin override and sun
+## shadow opacity (cloud cover leaves only soft, faint shadows).
 const LOOK := {
-	"clear": {"energy": 1.0, "exposure": 1.0, "grey": 0.0, "fog": -1.0},
-	"overcast": {"energy": 0.55, "exposure": 0.96, "grey": 0.85, "fog": 15.0},
-	"rain": {"energy": 0.32, "exposure": 0.86, "grey": 1.0, "fog": 9.0},
+	"clear": {"energy": 1.0, "exposure": 1.0, "grey": 0.0, "fog": -1.0, "shadow": 1.0},
+	"overcast": {"energy": 0.55, "exposure": 0.96, "grey": 0.85, "fog": 15.0, "shadow": 0.3},
+	"rain": {"energy": 0.32, "exposure": 0.86, "grey": 1.0, "fog": 9.0, "shadow": 0.12},
 }
 const RAIN_AMOUNT := {"low": 800, "medium": 1600, "high": 3000}
 
@@ -30,7 +31,7 @@ var push_global: bool = false
 ## tour, fp_bench), so their baselines and timings do not depend on the day's weather.
 var baseline: String = ""
 var rain: GPUParticles3D
-var _look: Dictionary = {"energy": 1.0, "exposure": 1.0, "grey": 0.0, "fog": -1.0}
+var _look: Dictionary = {"energy": 1.0, "exposure": 1.0, "grey": 0.0, "fog": -1.0, "shadow": 1.0}
 var _smog: float = 0.0
 
 
@@ -81,7 +82,7 @@ func step(delta: float) -> void:
 		wet = maxf(0.0, wet - delta * speed / DRY_SECONDS)
 	var goal: Dictionary = LOOK[state]
 	var k := minf(1.0, delta * 0.5)
-	for key: String in ["energy", "exposure", "grey"]:
+	for key: String in ["energy", "exposure", "grey", "shadow"]:
 		_look[key] = lerpf(float(_look[key]), float(goal[key]), k)
 	_look["fog"] = goal["fog"]
 	_smog = lerpf(_smog, _smog_near(), k)
@@ -99,6 +100,7 @@ func _apply_hooks() -> void:
 	if ctx.sky != null:
 		ctx.sky.weather_energy_mult = float(_look["energy"])
 		ctx.sky.weather_exposure_mult = float(_look["exposure"])
+		ctx.sky.weather_shadow_mult = float(_look["shadow"])
 		ctx.sky.weather_grey = float(_look["grey"])
 		var fog := float(_look["fog"])
 		if _smog > 0.01:
@@ -186,13 +188,17 @@ func _build_rain(preset: String) -> void:
 	pm.gravity = Vector3(0, -2.0 * WS.M, 0)
 	rain.process_material = pm
 	var q := QuadMesh.new()
-	q.size = Vector2(0.01, 0.3) * WS.M
+	q.size = Vector2(0.012, 0.55) * WS.M
 	var mat := StandardMaterial3D.new()
 	mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
 	mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
 	mat.billboard_mode = BaseMaterial3D.BILLBOARD_FIXED_Y
 	mat.billboard_keep_scale = true
-	mat.albedo_color = Color(0.8, 0.84, 0.9, 0.16)
+	mat.albedo_color = Color(0.78, 0.82, 0.88, 0.26)
+	# Drops passing right by the lens would be metre-long bars: fade them in from 0.4 to 1.6 m.
+	mat.distance_fade_mode = BaseMaterial3D.DISTANCE_FADE_PIXEL_ALPHA
+	mat.distance_fade_min_distance = 0.4 * WS.M
+	mat.distance_fade_max_distance = 1.6 * WS.M
 	mat.disable_receive_shadows = true
 	q.material = mat
 	rain.draw_pass_1 = q

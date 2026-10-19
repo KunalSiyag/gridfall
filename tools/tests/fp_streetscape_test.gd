@@ -180,6 +180,9 @@ func _check_furniture(view: CityView, sim: CitySim) -> void:
 	var bad_cross := []
 	var decal_bad := []
 	var decals := 0
+	var pool_bad := []
+	var lamp_bad := []
+	var straights := 0
 	for i in sim.active:
 		if sim.kind[i] != D.ROAD:
 			continue
@@ -238,14 +241,30 @@ func _check_furniture(view: CityView, sim: CitySim) -> void:
 			if signs.size() != 1 or (signs[0] as Node3D).position.distance_to(Vector3(0.345, WS.SIDEWALK_TOP, -0.345)) > 0.01 or not _blades_ok(view, i, holder):
 				bad_cross.append(i)
 		var nd := 0
+		var pools := 0
 		for c2 in holder.get_children():
-			if c2 is Decal:
+			if c2 is Decal and c2.has_meta("light_pool"):
+				pools += 1
+				if not (c2 as Decal).distance_fade_enabled:
+					pool_bad.append(i)
+			elif c2 is Decal:
 				nd += 1
 				decals += 1
 				if not (c2 as Decal).distance_fade_enabled:
 					decal_bad.append(i)
 		if nd > 3:
 			decal_bad.append(i)
+		# Unlit straights carry one batched lamp, with its bulb in the holder's `bulbs` meta and a
+		# lamplight decal under it.
+		var lamps := 0
+		for e4: Array in view._street.placements(i):
+			if str(e4[0]) == "lamp":
+				lamps += 1
+		var unlit := straight and not RoadTopology.is_bridge(sim, i) and holder.find_children("Bulb*", "", true, false).is_empty()
+		if unlit:
+			straights += 1
+		if (unlit and lamps != 1) or lamps != (holder.get_meta("bulbs", []) as Array).size() or lamps != pools:
+			lamp_bad.append([i, lamps, (holder.get_meta("bulbs", []) as Array).size(), pools])
 	K.check(fails, roads > 20 and furnished > 10 and batched > 20, "road sidewalks are furnished (%d of %d roads, %d batched items, %d prop roots)" % [furnished, roads, batched, props])
 	K.check(fails, on_road.is_empty(), "no furniture on the carriageway %s" % str(on_road.slice(0, 4)))
 	K.check(fails, in_band.is_empty(), "no furniture in the pedestrian band %s" % str(in_band.slice(0, 4)))
@@ -255,6 +274,7 @@ func _check_furniture(view: CityView, sim: CitySim) -> void:
 	K.check(fails, tees > 0 and bad_tee.is_empty(), "every tee has one street sign with the directory names (%d tees, bad %s)" % [tees, str(bad_tee.slice(0, 4))])
 	K.check(fails, bad_cross.is_empty(), "every cross tile has one G1 sign pole at NE without a traffic feature (%d, bad %s)" % [crosses, str(bad_cross.slice(0, 4))])
 	K.check(fails, decals > 0 and decal_bad.is_empty(), "road decals fade with distance, at most 3 per tile (%d decals, bad %s)" % [decals, str(decal_bad.slice(0, 4))])
+	K.check(fails, straights > 0 and lamp_bad.is_empty() and pool_bad.is_empty(), "unlit straights have a lamp with its bulb and a fading lamplight decal (%d, bad %s %s)" % [straights, str(lamp_bad.slice(0, 4)), str(pool_bad.slice(0, 4))])
 	var slots_bad := []
 	var boards := 0
 	var stops_bad := []
@@ -617,6 +637,17 @@ func _check_sky_hooks(ctx: FpContext, f: FpFeature) -> void:
 	sky.fog_begin_override = -1.0
 	sky._apply(1.0)
 	K.check(fails, is_equal_approx(over, 15.0) and is_equal_approx(ctx.env.fog_depth_begin, begin), "the fog-begin override applies and lets go")
+	var base_opacity := ctx.sun.shadow_opacity
+	sky.weather_shadow_mult = 0.12
+	sky._apply(1.0)
+	var faint := ctx.sun.shadow_opacity
+	sky.reset_weather()
+	sky._apply(1.0)
+	K.check(fails, is_equal_approx(faint, base_opacity * 0.12) and is_equal_approx(ctx.sun.shadow_opacity, base_opacity), "cloud cover fades sun shadows and lets go (%.3f of %.3f)" % [faint, base_opacity])
+	weather.call("force", "rain")
+	weather.call("step", 30.0)
+	K.check(fails, float(sky.weather_shadow_mult) < 0.5, "rain fades the sun shadows (%.2f)" % float(sky.weather_shadow_mult))
+	weather.call("clear_forced")
 	sky.reset_weather()
 	weather.set_process(true)
 

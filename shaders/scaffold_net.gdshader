@@ -20,11 +20,11 @@ void fragment() {
 	vec3 wn = abs((INV_VIEW_MATRIX * vec4(NORMAL, 0.0)).xyz);
 	float u = wn.x > wn.z ? wp.z : wp.x;
 	float v = wp.y;
-	vec2 cell = vec2(u + v, u - v) / 0.035;
+	vec2 cell = vec2(u + v, u - v) / 0.014;
 	vec2 f = abs(fract(cell) - 0.5);
 	float thread = smoothstep(0.28, 0.40, max(f.x, f.y));
 	float blur = clamp(length(fwidth(cell)) * 0.8, 0.0, 1.0);
-	float weave = mix(mix(cover * 0.6, 1.0, thread), cover, blur);
+	float weave = mix(mix(cover * 0.8, 1.0, thread), cover, blur);
 	// Each sheet sags between its ties: folds a few tens of centimetres apart, varying per sheet.
 	float sheet = floor(u / 2.5);
 	float fold = sin(u * (9.0 + 4.0 * hash1(sheet)) + sin(v * 0.7 + sheet) * 1.5) * 0.5 + 0.5;

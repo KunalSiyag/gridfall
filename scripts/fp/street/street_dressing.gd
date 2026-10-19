@@ -40,9 +40,15 @@ const KITS := {
 	"meter": [AP.PARKING_METER, 0.004],
 	"ramp": [AP.CROSSWALK_RAMP, -1.0],
 	"apron": ["", -1.0],
+	"lamp": [PROPS + "lamp_street.glb", 0.009],
 }
-## Kinds that stay visible out to the fog (street trees, lot aprons); the rest end at WS.VIS_PROP.
-const FAR_KINDS := ["tree", "apron"]
+## lamp_street.glb: its bulb, in the lamp's frame (the arm reaches 1.7 m toward the road, +Z).
+const LAMP_BULB := Vector3(0.0, 0.4112, 0.085)
+## Kinds that stay visible out to the fog (street trees, lamps, lot aprons); the rest end at
+## WS.VIS_PROP.
+const FAR_KINDS := ["tree", "lamp", "apron"]
+## Kinds whose batches cast shadows.
+const SHADOW_KINDS := ["tree", "lamp"]
 const SIGN_GREEN := Color(0.02, 0.36, 0.2)
 
 var view: CityView
@@ -59,6 +65,10 @@ var _decal_tex: Dictionary = {}
 ## Live puddle decals (they follow the wetness); pruned when their holder goes.
 var _puddles: Array[Decal] = []
 var wetness: float = 0.0
+## Live lamplight decals (they follow the night).
+var _pools: Array[Decal] = []
+var _pool_tex: GradientTexture2D
+var night_glow: float = 0.0
 
 
 func _init(p_view: CityView) -> void:
@@ -142,7 +152,7 @@ func _build_chunk(c: Vector2i) -> void:
 			mmi.visibility_range_end = (WS.FOG_DEPTH_BEGIN if far else WS.VIS_PROP) * view.vis_mult + CHUNK * 0.7
 			mmi.visibility_range_end_margin = 1.0
 			mmi.visibility_range_fade_mode = GeometryInstance3D.VISIBILITY_RANGE_FADE_SELF
-			mmi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_ON if kind == "tree" else GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+			mmi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_ON if kind in SHADOW_KINDS else GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 			mmi.set_meta("street_kind", kind)
 			root.add_child(mmi)
 			made.append(mmi)
@@ -190,6 +200,8 @@ func _kit(kind: String) -> Dictionary:
 		inst.free()
 		if kind == "tree":
 			parts = fp_tree_parts(parts)
+		elif kind == "lamp":
+			parts = _lamp_parts(parts)
 	if parts.is_empty():
 		parts = _procedural_kit(kind)
 	var bb := AABB()
@@ -204,9 +216,11 @@ func _kit(kind: String) -> Dictionary:
 
 ## Furniture, signs, ramps and decals for road tile i (holder-local). kind_name is CityView's piece
 ## name (straight, lights, corner, tee, cross, end, bridge); model is the road GLB instance.
-func dress_road(i: int, holder: Node3D, mask: int, kind_name: String, _model: Node3D) -> void:
+func dress_road(i: int, holder: Node3D, mask: int, kind_name: String, model: Node3D) -> void:
 	var cols: Array = holder.get_meta("colliders", [])
 	var rng := _rng(i, 11)
+	if model != null:
+		_asphalt(model, mask, kind_name)
 	match kind_name:
 		"straight", "lights":
 			_dress_straight(i, holder, mask, kind_name == "lights", rng, cols)
@@ -219,7 +233,36 @@ func dress_road(i: int, holder: Node3D, mask: int, kind_name: String, _model: No
 	holder.set_meta("colliders", cols)
 
 
-func _dress_straight(i: int, _holder: Node3D, mask: int, lit: bool, rng: RandomNumberGenerator, cols: Array) -> void:
+## Swaps the road model's Asphalt surfaces for CityView's street-level asphalt and tells it where the
+## lanes run (see shaders/road_fp.gdshader: 1 along z, 2 along x, 3-6 round a tile corner).
+func _asphalt(model: Node3D, mask: int, kind_name: String) -> void:
+	var mat := view.road_fp_material()
+	if mat == null:
+		return
+	var axis := 0
+	match kind_name:
+		"straight", "lights", "bridge":
+			axis = 2 if (mask & RoadTopology.NS) == 0 and mask != 0 else 1
+		"corner":
+			var c := Vector2.ZERO
+			for a: Vector2i in RoadTopology.arms(mask):
+				c += Vector2(a) * 0.5
+			axis = 3 + ([Vector2(0.5, 0.5), Vector2(-0.5, 0.5), Vector2(-0.5, -0.5), Vector2(0.5, -0.5)] as Array).find(c)
+	for n in model.find_children("*", "MeshInstance3D", true, false):
+		var mi := n as MeshInstance3D
+		if mi.mesh == null:
+			continue
+		var hit := false
+		for s in range(mi.mesh.get_surface_count()):
+			var m := mi.mesh.surface_get_material(s)
+			if m != null and m.resource_name == "Asphalt":
+				mi.set_surface_override_material(s, mat)
+				hit = true
+		if hit:
+			mi.set_instance_shader_parameter(&"lane_axis", float(axis))
+
+
+func _dress_straight(i: int, holder: Node3D, mask: int, lit: bool, rng: RandomNumberGenerator, cols: Array) -> void:
 	# Piece frame: the run is along z, across is x; EW runs turn it by +90 degrees.
 	var ew := (mask & RoadTopology.NS) == 0 and mask != 0
 	var rot := Basis(Vector3.UP, PI * 0.5) if ew else Basis()
@@ -232,24 +275,46 @@ func _dress_straight(i: int, _holder: Node3D, mask: int, lit: bool, rng: RandomN
 	if lit:
 		for lp: Vector2 in LAMP_POLES:
 			cols.append({"shape": "cyl", "pos": rot * Vector3(lp.x, WS.SIDEWALK_TOP, lp.y), "r": 0.009, "h": WS.LAMP_HEIGHT, "yaw": 0.0, "kind": "lamp"})
+	# Unlit straights get one lamp at the curb, sides alternating along the street and placed like the
+	# baked pairs of the lit straights, so lamps stand every 20-40 m on each side.
+	var lamp_side := 0
+	var lamp_along := 0.0
+	if not lit:
+		lamp_side = 1 if posmod(x + y, 2) == 1 else -1
+		lamp_along = -0.25 * lamp_side
+		if stop_side == lamp_side:
+			lamp_along = 0.375 * signf(lamp_along)
 	for side: int in [1, -1]:
 		var out := rot * Vector3(side, 0, 0)
 		var ctx := _lot_context(x + roundi(out.x), y + roundi(out.z))
 		var face := Vector2(-out.x, -out.z)   # toward the road
 		var blocked: Array[float] = []
+		var lamps_here: Array[float] = []
 		if lit:
 			for lp: Vector2 in LAMP_POLES:
 				if signf(lp.x) == float(side):
 					blocked.append(lp.y)
+					lamps_here.append(lp.y)
 		if stop_side == side:
 			blocked.append(0.0)
+		if lamp_side == side:
+			var lp3 := rot * Vector3(side * CURB, WS.SIDEWALK_TOP, lamp_along)
+			_put(i, "lamp", lp3, face, cols)
+			var bulb := lp3 + Basis(Vector3.UP, atan2(face.x, face.y)) * LAMP_BULB
+			light_pool(holder, bulb)
+			var bulbs: Array = holder.get_meta("bulbs", [])
+			bulbs.append(holder.position + bulb)
+			holder.set_meta("bulbs", bulbs)
+			blocked.append(lamp_along)
+			lamps_here.append(lamp_along)
 		var curb := _curb_recipe(ctx, rng)
 		var slots := CURB_SLOTS.duplicate()
 		_shuffle(slots, rng)
 		for kind: String in curb:
-			var along := _free_slot(slots, blocked, 0.12)
+			# Street trees keep 4 m from lamp heads (a lamp inside a crown burns it white at night).
+			var along := _free_slot(slots, blocked, 0.12, lamps_here if kind == "tree" else [], 0.2)
 			if is_nan(along):
-				break
+				continue
 			blocked.append(along)
 			_put_curb(i, kind, rot * Vector3(side * CURB, WS.SIDEWALK_TOP, along), face, rot * Vector3(0, 0, 1), cols, rng)
 		if stop_side == side:
@@ -345,12 +410,17 @@ func _lot_context(x: int, y: int) -> String:
 	return "vacant"
 
 
-## The first slot at least `gap` from every blocked along-position, or NAN.
-func _free_slot(slots: Array, blocked: Array, gap: float) -> float:
+## The first slot at least `gap` from every blocked along-position and `avoid_gap` from every one in
+## `avoid`, or NAN.
+func _free_slot(slots: Array, blocked: Array, gap: float, avoid: Array = [], avoid_gap: float = 0.0) -> float:
 	for s: float in slots:
 		var ok := true
 		for b: float in blocked:
 			if absf(s - b) < gap + 0.001:
+				ok = false
+				break
+		for a: float in avoid:
+			if absf(s - a) < avoid_gap:
 				ok = false
 				break
 		if ok:
@@ -496,6 +566,101 @@ func _blade(text: String) -> Node3D:
 		lbl.set_meta("sign_text", true)
 		b.add_child(lbl)
 	return b
+
+
+# ------------------------------------------------------------------ lamps
+
+## lamp_street.glb for batching: its body's three materials merged into one vertex-coloured surface
+## (one draw per chunk instead of three) and the bulb on CityView's night-driven lamp glass.
+func _lamp_parts(parts: Array) -> Array:
+	var out: Array = []
+	for p: Dictionary in parts:
+		var mesh := p["mesh"] as Mesh
+		var first := mesh.surface_get_material(0) if mesh.get_surface_count() > 0 else null
+		if first != null and first.resource_name.begins_with("Lamp"):
+			var q := p.duplicate()
+			q["mat"] = view._lamp_material()
+			out.append(q)
+			continue
+		var st := SurfaceTool.new()
+		st.begin(Mesh.PRIMITIVE_TRIANGLES)
+		for s in range(mesh.get_surface_count()):
+			var m := mesh.surface_get_material(s) as BaseMaterial3D
+			var c := Color(0.5, 0.5, 0.52)
+			if m != null:
+				c = m.albedo_color
+				if m.resource_name.begins_with("Concrete"):
+					c = Color(0.55, 0.54, 0.51)
+				elif m.resource_name == "Metal_Galv":
+					c = Color(0.52, 0.54, 0.55)
+			var arr := mesh.surface_get_arrays(s)
+			var v: PackedVector3Array = arr[Mesh.ARRAY_VERTEX]
+			var nrm: PackedVector3Array = arr[Mesh.ARRAY_NORMAL]
+			var idx: PackedInt32Array = arr[Mesh.ARRAY_INDEX] if arr[Mesh.ARRAY_INDEX] != null else PackedInt32Array()
+			var order: PackedInt32Array = idx
+			if order.is_empty():
+				order.resize(v.size())
+				for k in range(v.size()):
+					order[k] = k
+			for k: int in order:
+				st.set_color(c)
+				st.set_normal(nrm[k])
+				st.add_vertex(v[k])
+		var merged := StandardMaterial3D.new()
+		merged.resource_name = "Lamp_Body_FP"
+		merged.vertex_color_use_as_albedo = true
+		merged.metallic = 0.55
+		merged.roughness = 0.5
+		out.append({"mesh": st.commit(), "xform": p["xform"], "mat": merged})
+	return out
+
+
+## A pool of lamplight under a bulb at parent-local p: an emissive decal over the ground it falls on,
+## shown after dark (night_glow). It fades out beyond 8 u.
+func light_pool(parent: Node3D, p: Vector3) -> Decal:
+	if _pool_tex == null:
+		var grad := Gradient.new()
+		grad.offsets = PackedFloat32Array([0.0, 0.35, 1.0])
+		grad.colors = PackedColorArray([Color(1, 1, 1), Color(0.5, 0.5, 0.5), Color(0, 0, 0)])
+		_pool_tex = GradientTexture2D.new()
+		_pool_tex.gradient = grad
+		_pool_tex.fill = GradientTexture2D.FILL_RADIAL
+		_pool_tex.fill_from = Vector2(0.5, 0.5)
+		_pool_tex.fill_to = Vector2(1.0, 0.5)
+		_pool_tex.width = 64
+		_pool_tex.height = 64
+	var dc := Decal.new()
+	dc.name = "LightPool"
+	var h := maxf(p.y - WS.GROUND_Y + 0.02, 0.05)
+	dc.size = Vector3(0.46, h, 0.46)
+	dc.position = Vector3(p.x, p.y - h * 0.5 + 0.005, p.z)
+	dc.texture_emission = _pool_tex
+	dc.modulate = Color(1.0, 0.8, 0.56)
+	dc.albedo_mix = 0.0
+	dc.upper_fade = 0.0
+	dc.lower_fade = 0.05
+	dc.normal_fade = 0.4
+	dc.distance_fade_enabled = true
+	dc.distance_fade_begin = 8.0 * view.vis_mult
+	dc.distance_fade_length = 2.0
+	dc.emission_energy = 0.9 * night_glow
+	dc.visible = night_glow > 0.01
+	dc.set_meta("light_pool", true)
+	parent.add_child(dc)
+	_pools.append(dc)
+	return dc
+
+
+## Lamplight pools follow the night (glow 0 day .. 1 full night).
+func set_night(glow: float) -> void:
+	night_glow = glow
+	var live: Array[Decal] = []
+	for d in _pools:
+		if is_instance_valid(d) and not d.is_queued_for_deletion():
+			d.emission_energy = 0.9 * glow
+			d.visible = glow > 0.01
+			live.append(d)
+	_pools = live
 
 
 # ------------------------------------------------------------------ decals
