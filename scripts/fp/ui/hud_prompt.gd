@@ -77,12 +77,19 @@ func set_target(t: Dictionary) -> void:
 	target = t
 	if t.is_empty():
 		return
+	# Sentence case: E labels ambient targets "a commuter", "a pedestrian".
 	var label := D.debrand(str(t.get("label", "")))
+	label = label.substr(0, 1).to_upper() + label.substr(1)
 	if _label.text != label:
 		_label.text = label
 		_chip.reset_size()
 	if was != str(t.get("id", "")) + str(t.get("kind", "")) or _alpha <= 0.01:
 		_snap = true
+
+
+## The prompt's text ("Talk to Priya Gupta, nurse").
+func prompt_text() -> String:
+	return _label.text
 
 
 ## True while the crosshair is drawn (first person only).

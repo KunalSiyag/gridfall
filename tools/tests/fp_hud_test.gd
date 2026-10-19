@@ -500,6 +500,12 @@ func _check_third_person() -> void:
 	ctx.bus.interact_target_changed.emit(tgt)
 	pr._process(0.2)
 	K.check(fails, pr.prompt_visible(), "the prompt comes back in front")
+	var ped := tgt.duplicate()
+	ped["kind"] = "pedestrian"
+	ped["label"] = "a pedestrian"
+	ctx.bus.interact_target_changed.emit(ped)
+	K.check(fails, pr.prompt_text() == "A pedestrian", "prompt labels are sentence case (%s)" % pr.prompt_text())
+	ctx.bus.interact_target_changed.emit(tgt)
 	# The wheel is A's zoom in third person: the minimap keeps its scale.
 	_wheel(true)
 	await _frames(1)
