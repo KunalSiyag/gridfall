@@ -6,7 +6,8 @@ extends Node
 ## (budgeted, breaker-guarded, never in GRIDFALL_OFFLINE), then the pre-baked pool of the kind and
 ## a procedural gradient. While a live image is on the way the request also gets a provisional
 ## texture (meta.provisional). Every wait reads `clock` and advances in tick(), so tests run on
-## virtual time. The API key never appears in any printed, stored or saved string.
+## virtual time. Image processing runs on one background thread (poster_worker.gd). The API key
+## never appears in any printed, stored or saved string.
 
 signal image_ready(key: String, tex: Texture2D, meta: Dictionary)
 signal image_failed(key: String, reason: String)
@@ -19,6 +20,7 @@ const INDEX_PATH := "user://posters/index.json"
 const MANIFEST_PATH := "res://assets/posters/manifest.json"
 const PREBAKED_DIR := "res://assets/posters/"
 const ART := preload("res://scripts/fp/posters/poster_art.gd")
+const WORKER := preload("res://scripts/fp/posters/poster_worker.gd")
 ## Resident textures in the memory cache.
 const LRU_SIZE := 32
 ## D12 budgets.
@@ -68,7 +70,7 @@ var _lru_order: Array[String] = []
 var _serves: Array[Dictionary] = []
 var _queue: Array[Dictionary] = []
 var _active: Array[Dictionary] = []
-var _workers: Array[Dictionary] = []
+var _worker := WORKER.new()
 var _manifest_loaded: bool = false
 var _by_key: Dictionary = {}
 var _pools: Dictionary = {}
@@ -113,12 +115,10 @@ func _exit_tree() -> void:
 	close()
 
 
-## Stops every job (pending results are dropped) and waits for running workers.
+## Stops every job (pending results are dropped) and joins the processing thread.
 func close() -> void:
 	_closed = true
-	for w: Dictionary in _workers:
-		WorkerThreadPool.wait_for_task_completion(int(w["task"]))
-	_workers.clear()
+	_worker.stop()
 	_queue.clear()
 	_active.clear()
 	_serves.clear()
@@ -527,11 +527,10 @@ static func long_edge(kind: String, size: String) -> int:
 
 func _start_worker(input: Dictionary) -> void:
 	input["compress"] = OS.has_feature("s3tc")
-	var task := WorkerThreadPool.add_task(_process_image.bind(input), false, "poster image")
-	_workers.append({"task": task, "in": input})
+	_worker.push(GmiImageClient._process_image, input)
 
 
-## Worker thread: decode, crop to the requested aspect, resize, save WebP (live only), mipmaps and
+## Processing thread: decode, crop to the requested aspect, resize, save WebP (live only), mipmaps and
 ## VRAM compression. Touches nothing but its own input dictionary.
 static func _process_image(input: Dictionary) -> void:
 	var img := Image.new()
@@ -606,17 +605,8 @@ static func _crop_to_aspect(img: Image, aspect: float) -> void:
 
 
 func _drain_workers() -> void:
-	if _workers.is_empty():
-		return
-	var keep: Array[Dictionary] = []
-	for w: Dictionary in _workers:
-		var task := int(w["task"])
-		if not WorkerThreadPool.is_task_completed(task):
-			keep.append(w)
-			continue
-		WorkerThreadPool.wait_for_task_completion(task)
-		_finish_worker(w["in"])
-	_workers = keep
+	for input: Dictionary in _worker.take_done():
+		_finish_worker(input)
 
 
 func _finish_worker(input: Dictionary) -> void:
