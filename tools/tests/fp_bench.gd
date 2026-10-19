@@ -32,6 +32,9 @@ func _measure(label: String, secs: float) -> Dictionary:
 	var sim: CitySim = main.sim
 	if sim.has_method("reset_slice_stats"):
 		sim.call("reset_slice_stats")
+	var ro: Object = fp.ctx.feature("render_opt")
+	if ro != null and ro.has_method("reset_stats"):
+		ro.call("reset_stats")
 	var times: Array[float] = []
 	var gpu := 0.0
 	var cpu := 0.0
@@ -69,13 +72,13 @@ func _measure(label: String, secs: float) -> Dictionary:
 		"quality": str(fp.ctx.settings.get("quality", "medium")),
 		"camera": _camera_mode(),
 	}
-	var ro: Object = fp.ctx.feature("render_opt")
 	if ro != null and ro.get("hlod") != null:
 		var hl: Object = ro.get("hlod")
 		r["g2"] = {
 			"active": ro.get("active"), "tiles": (hl.get("tiles") as Dictionary).size(),
 			"impostor_chunks": (hl.get("chunk_nodes") as Dictionary).size(),
 			"occluder_boxes": (ro.get("occluders") as Object).call("box_count"), "vis_building": hl.get("vis_building"),
+			"frame_us_max": ro.get("frame_us_max"), "pass_us_max": ro.get("pass_us_max"),
 		}
 	var traffic: Object = fp.ctx.feature("traffic")
 	if traffic != null and traffic.has_method("anim_stats"):

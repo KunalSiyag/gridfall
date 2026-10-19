@@ -46,6 +46,7 @@ func _init() -> void:
 	_check_impostors(hlod, view, mult)
 	_check_bulldoze(f, hlod, occ, view, sim)
 	_check_presets(ctx, f, hlod)
+	_report_costs(f, hlod)
 	var st: Dictionary = f.self_test()
 	K.check(fails, bool(st["ok"]), "self_test ok: %s" % st["detail"])
 	_check_undo(ctx, f, hlod, view)
@@ -311,6 +312,20 @@ func _check_presets(ctx: FpContext, f: Node, hlod: RefCounted) -> void:
 	ctx.bus.quality_changed.emit("medium")
 	f.call("flush")
 	K.check(fails, bool(f.call("preset_applied", "medium")), "Medium applied again")
+
+
+## Report-only (load-dependent): post-pass cost per tile and the slowest chunk rebuild.
+func _report_costs(f: Node, hlod: RefCounted) -> void:
+	var t0 := Time.get_ticks_usec()
+	f.call("_activate")
+	var t1 := Time.get_ticks_usec()
+	var worst := 0
+	for c: Vector2i in hlod.chunk_tiles.keys():
+		var t := Time.get_ticks_usec()
+		hlod.rebuild_chunk(c)
+		(f.get("occluders") as RefCounted).rebuild_chunk(c, hlod)
+		worst = maxi(worst, Time.get_ticks_usec() - t)
+	print("  cost full pass %d tiles: %.3f ms per tile (budget 0.3, headless debug); slowest chunk rebuild %.2f ms (budget 4)" % [hlod.tiles.size(), float(t1 - t0) / 1000.0 / maxf(1.0, hlod.tiles.size()), float(worst) / 1000.0])
 
 
 func _check_undo(ctx: FpContext, f: Node, hlod: RefCounted, view: CityView) -> void:

@@ -40,6 +40,12 @@ var occluders: RefCounted
 var rs_calls: Dictionary = {}
 ## The post-pass is live (on foot, set up).
 var active: bool = false
+## Main-thread cost of this feature's per-frame work (µs): the last frame and the worst since
+## reset_stats(); the bench reports both.
+var frame_us: int = 0
+var frame_us_max: int = 0
+## Worst tile post-pass (µs, on tile_built) since reset_stats().
+var pass_us_max: int = 0
 var _vp: Viewport
 var _vp_snap: Dictionary = {}
 var _rs_snap: Dictionary = {}
@@ -232,9 +238,22 @@ func photo_shots() -> Array:
 	]
 
 
+## Clears frame_us_max (the bench calls it before each measurement).
+func reset_stats() -> void:
+	frame_us_max = 0
+	pass_us_max = 0
+
+
 func _process(_delta: float) -> void:
 	if not active:
 		return
+	var t0 := Time.get_ticks_usec()
+	_frame_work()
+	frame_us = Time.get_ticks_usec() - t0
+	frame_us_max = maxi(frame_us_max, frame_us)
+
+
+func _frame_work() -> void:
 	if not _job.is_empty():
 		_run_job(JOB_BUDGET_USEC)
 	if hlod.midlod.poll() > 0:
@@ -293,7 +312,9 @@ func _on_tile_built(i: int, holder: Node3D) -> void:
 	# G1 rebuilds every tile for orbit before it announces fp_mode_changed(false).
 	if not active or ctx.view.in_setup or not ctx.view.fp_mode:
 		return
+	var t0 := Time.get_ticks_usec()
 	_dirty[hlod.post_pass(i, holder)] = true
+	pass_us_max = maxi(pass_us_max, Time.get_ticks_usec() - t0)
 
 
 func _on_tile_cleared(i: int) -> void:
