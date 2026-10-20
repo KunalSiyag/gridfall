@@ -20,8 +20,11 @@ const BANNER_BLINK := 0.8
 ## The slot starts at y 76; the compass and its distance labels end at y 106.
 const TOP := 34.0
 const KIND_STYLE := {
-	"info": ["dot", S.TEXT], "success": ["check", S.GOOD], "alert": ["alert", S.AMBER],
-	"system": ["info", S.TEXT_DIM], "chat": ["dot", S.TEXT_DIM],
+	"info": ["dot", S.TEXT],
+	"success": ["check", S.GOOD],
+	"alert": ["alert", S.AMBER],
+	"system": ["info", S.TEXT_DIM],
+	"chat": ["dot", S.TEXT_DIM],
 }
 
 ## Each: {"panel": PanelContainer, "label": Label, "text": String, "count": int, "age": float, "life": float, "y": float}
@@ -40,12 +43,7 @@ func setup() -> void:
 	_banner = PanelContainer.new()
 	_banner.name = "Banner"
 	_banner.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	var sb := S.box(Color(0.32, 0.05, 0.06, 0.62), 8, 14, 7, Color(1.0, 0.35, 0.35, 0.55), 1)
-	sb.border_width_left = 4
-	sb.border_width_top = 0
-	sb.border_width_right = 0
-	sb.border_width_bottom = 0
-	sb.border_color = S.RED
+	var sb := S.stripe(S.box(Color(0.3, 0.04, 0.05, 0.72), S.RADIUS, 14, 7), S.RED, 3)
 	_banner.add_theme_stylebox_override("panel", sb)
 	var h := HBoxContainer.new()
 	h.mouse_filter = Control.MOUSE_FILTER_IGNORE
@@ -54,7 +52,7 @@ func setup() -> void:
 	var ic := HudIcon.new("alert", S.RED, 18.0)
 	ic.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 	h.add_child(ic)
-	_banner_label = S.label("", 17, S.WHITE, S.bold(), 2)
+	_banner_label = S.caps_label("", 15, S.WHITE, 2)
 	_banner_label.name = "BannerText"
 	_banner_label.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
 	h.add_child(_banner_label)
@@ -75,7 +73,10 @@ func show_toast(text: String, kind: String = "info") -> void:
 			last["life"] = LIFE
 			var ll: Label = last["label"]
 			ll.text = "%s  ×%d" % [t, int(last["count"])]
-			ll.custom_minimum_size.x = minf(ceilf(S.font().get_string_size(ll.text, HORIZONTAL_ALIGNMENT_LEFT, -1, 16).x) + 2.0, MAX_TEXT_W)
+			ll.custom_minimum_size.x = minf(
+				ceilf(S.font().get_string_size(ll.text, HORIZONTAL_ALIGNMENT_LEFT, -1, 16).x) + 2.0,
+				MAX_TEXT_W
+			)
 			(last["panel"] as Control).reset_size()
 			return
 	while _items.size() >= MAX_TOASTS:
@@ -85,7 +86,8 @@ func show_toast(text: String, kind: String = "info") -> void:
 	var p := PanelContainer.new()
 	p.name = "Toast"
 	p.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	p.add_theme_stylebox_override("panel", S.box(Color(0.04, 0.05, 0.08, 0.5), 8, 14, 6))
+	var sb := S.box(Color(0.04, 0.05, 0.08, 0.58), S.RADIUS, 12, 6)
+	p.add_theme_stylebox_override("panel", S.stripe(sb, Color(style[1], 0.9), 2))
 	var h := HBoxContainer.new()
 	h.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	h.add_theme_constant_override("separation", 9)
@@ -98,18 +100,31 @@ func show_toast(text: String, kind: String = "info") -> void:
 	l.autowrap_mode = TextServer.AUTOWRAP_OFF
 	# An ellipsis label has no minimum width of its own: size it to the text, capped.
 	l.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
-	l.custom_minimum_size.x = minf(ceilf(S.font().get_string_size(t, HORIZONTAL_ALIGNMENT_LEFT, -1, 16).x) + 2.0, MAX_TEXT_W)
+	l.custom_minimum_size.x = minf(
+		ceilf(S.font().get_string_size(t, HORIZONTAL_ALIGNMENT_LEFT, -1, 16).x) + 2.0, MAX_TEXT_W
+	)
 	h.add_child(l)
 	add_child(p)
 	p.reset_size()
 	p.modulate.a = 0.0
-	_items.append({"panel": p, "label": l, "text": t, "count": 1, "age": 0.0, "life": LIFE, "y": _stack_end() - SLIDE_PX})
+	_items.append(
+		{
+			"panel": p,
+			"label": l,
+			"text": t,
+			"count": 1,
+			"age": 0.0,
+			"life": LIFE,
+			"y": _stack_end() - SLIDE_PX
+		}
+	)
 
 
 ## Shows the red alert banner (replacing any current one); it blinks twice, then holds.
 func show_banner(text: String) -> void:
 	_banner_label.text = D.debrand(text)
-	_banner_label.custom_minimum_size.x = minf(ceilf(S.bold().get_string_size(_banner_label.text, HORIZONTAL_ALIGNMENT_LEFT, -1, 17).x) + 2.0, MAX_TEXT_W)
+	var w := ceilf(S.caps_width(_banner_label.text, 15)) + 2.0
+	_banner_label.custom_minimum_size.x = minf(w, MAX_TEXT_W)
 	_banner.reset_size()
 	_banner.visible = true
 	_banner_t = BANNER_LIFE
@@ -147,7 +162,11 @@ func _process(delta: float) -> void:
 			_banner.visible = false
 		else:
 			var a := clampf(_banner_age / FADE, 0.0, 1.0) * clampf(_banner_t / FADE, 0.0, 1.0)
-			if _banner_age < BANNER_LIFE and _banner_age > FADE and _banner_age < FADE + BANNER_BLINK:
+			if (
+				_banner_age < BANNER_LIFE
+				and _banner_age > FADE
+				and _banner_age < FADE + BANNER_BLINK
+			):
 				a *= 1.0 - 0.7 * absf(sin((_banner_age - FADE) / BANNER_BLINK * TAU))
 			_banner.modulate.a = a
 			_banner.position = Vector2(roundf((size.x - _banner.size.x) * 0.5), y)

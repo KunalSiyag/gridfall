@@ -19,7 +19,8 @@ const IDS := ["pop", "mood", "money", "power", "water", "time", "alerts", "sessi
 const STATE_COLORS := {"ok": S.TEXT, "good": S.GOOD, "warn": S.AMBER, "fail": S.RED}
 
 var ctx: FpContext
-## id -> {"panel": PanelContainer, "box": StyleBoxFlat, "icon": HudIcon, "value": Label, "state": String, "pulse": float}
+## id -> {"panel": PanelContainer, "box": StyleBoxFlat, "icon": HudIcon, "value": Label,
+## "state": String, "pulse": float, "line": Color}
 var _chips: Dictionary = {}
 var _day: Label
 var _speed: Label
@@ -85,13 +86,25 @@ func refresh() -> void:
 	var st := sim.stats
 	_put("pop", S.fmt(int(st.get("population", 0))), "ok")
 	var mood := mood_value()
-	var mood_state := "good" if mood >= 6.5 else ("ok" if mood >= 4.5 else ("warn" if mood >= 3.0 else "fail"))
+	var mood_state := (
+		"good" if mood >= 6.5 else ("ok" if mood >= 4.5 else ("warn" if mood >= 3.0 else "fail"))
+	)
 	_put("mood", "%.1f" % mood, mood_state)
 	(_chips["mood"]["icon"] as HudIcon).mood = clampf(mood / 10.0, 0.0, 1.0)
 	var funds := sim.total_funds()
 	_put("money", S.money(funds), "warn" if funds < 0 else "ok")
-	_util("power", float(st.get("power_need", 0.0)), float(st.get("power_cap", 0.0)), int(st.get("unpowered", 0)))
-	_util("water", float(st.get("water_need", 0.0)), float(st.get("water_cap", 0.0)), int(st.get("unwatered", 0)))
+	_util(
+		"power",
+		float(st.get("power_need", 0.0)),
+		float(st.get("power_cap", 0.0)),
+		int(st.get("unpowered", 0))
+	)
+	_util(
+		"water",
+		float(st.get("water_need", 0.0)),
+		float(st.get("water_cap", 0.0)),
+		int(st.get("unwatered", 0))
+	)
 	_refresh_clock()
 	var n := sim.events.size()
 	var alerts: Dictionary = _chips["alerts"]
@@ -150,7 +163,7 @@ func _process(delta: float) -> void:
 		var k := sin(p / PULSE * PI)
 		var sb: StyleBoxFlat = c["box"]
 		sb.bg_color = S.CHIP_BG.lerp(Color(0.12, 0.14, 0.2, 0.55), k)
-		sb.border_color = Color(1, 1, 1, 0.22 * k)
+		sb.border_color = (c["line"] as Color).lerp(Color(1, 1, 1, 0.5), k)
 	if _blink > 0.0:
 		_blink = maxf(0.0, _blink - delta)
 		var a := 1.0 - 0.75 * absf(sin((BLINK - _blink) / BLINK * TAU))
@@ -202,6 +215,9 @@ func _put(id: String, value: String, state: String, pulse: bool = true) -> void:
 		# "good" tints only the icon: values stay white unless something needs attention.
 		l.add_theme_color_override("font_color", S.TEXT if state == "good" else col)
 		(c["icon"] as HudIcon).color = col if state != "ok" else S.TEXT
+		# A chip that needs attention carries its colour on the hairline too.
+		c["line"] = Color(col, 0.9) if state in ["warn", "fail"] else S.CHIP_LINE
+		(c["box"] as StyleBoxFlat).border_color = c["line"]
 
 
 func _group(row: HBoxContainer, align: BoxContainer.AlignmentMode, expand: bool) -> HBoxContainer:
@@ -236,7 +252,15 @@ func _chip(parent: Control, id: String, icon: String) -> Dictionary:
 	v.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
 	h.add_child(v)
 	parent.add_child(p)
-	var c := {"panel": p, "box": sb, "icon": ic, "value": v, "state": "", "pulse": 0.0}
+	var c := {
+		"panel": p,
+		"box": sb,
+		"icon": ic,
+		"value": v,
+		"state": "",
+		"pulse": 0.0,
+		"line": S.CHIP_LINE
+	}
 	_chips[id] = c
 	return c
 

@@ -48,8 +48,9 @@ func setup(p_ctx: FpContext) -> void:
 	_box.offset_top = -SAFE - 90.0
 	_box.offset_bottom = -SAFE
 	add_child(_box)
-	_title = S.label("", 34, S.WHITE, S.title(), 0)
+	_title = S.label("", 30, S.WHITE, S.display(), 0)
 	_title.name = "District"
+	_title.uppercase = true
 	_title.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
 	_title.add_theme_color_override("font_shadow_color", Color(0, 0, 0, 0.5))
 	_title.add_theme_constant_override("shadow_offset_y", 2)
@@ -57,11 +58,11 @@ func setup(p_ctx: FpContext) -> void:
 	_box.add_child(_title)
 	_rule = ColorRect.new()
 	_rule.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	_rule.color = Color(1, 1, 1, 0.55)
+	_rule.color = S.ACCENT
 	_rule.custom_minimum_size = Vector2(56, 2)
 	_rule.size_flags_horizontal = Control.SIZE_SHRINK_END
 	_box.add_child(_rule)
-	_sub = S.label("", 16, S.TEXT, S.font(), 3)
+	_sub = S.caps_label("", 13, S.TEXT, 3)
 	_sub.name = "Mayor"
 	_sub.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
 	_box.add_child(_sub)
@@ -70,7 +71,9 @@ func setup(p_ctx: FpContext) -> void:
 	if ctx.bus != null:
 		ctx.bus.player_tile_changed.connect(func(_x: int, _y: int) -> void: check())
 		ctx.bus.world_ready.connect(arrive)
-		ctx.bus.conversation_changed.connect(func(_id: String, on: bool) -> void: _in_conversation = on)
+		ctx.bus.conversation_changed.connect(
+			func(_id: String, on: bool) -> void: _in_conversation = on
+		)
 	arrive.call_deferred()
 
 
@@ -127,7 +130,9 @@ func _process(delta: float) -> void:
 		_age = INF
 		_box.visible = false
 		return
-	var blocked := ctx.is_modal() or _in_conversation or (ctx.player != null and ctx.player.photo_mode)
+	var blocked := (
+		ctx.is_modal() or _in_conversation or (ctx.player != null and ctx.player.photo_mode)
+	)
 	var k_in := clampf(_age / FADE_IN, 0.0, 1.0)
 	var k_out := clampf((life - _age) / FADE_OUT, 0.0, 1.0)
 	var ease_in := 1.0 - (1.0 - k_in) * (1.0 - k_in) * (1.0 - k_in)

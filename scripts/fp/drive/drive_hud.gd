@@ -24,7 +24,7 @@ func setup() -> void:
 	_chip = PanelContainer.new()
 	_chip.name = "DriveChip"
 	_chip.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	_chip.add_theme_stylebox_override("panel", S.box(Color(0.04, 0.05, 0.08, 0.6), 8, 10, 6))
+	_chip.add_theme_stylebox_override("panel", S.box(Color(0.04, 0.05, 0.08, 0.6), S.RADIUS, 10, 6))
 	var h := HBoxContainer.new()
 	h.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	h.add_theme_constant_override("separation", 9)
@@ -41,7 +41,7 @@ func setup() -> void:
 
 
 func _build_speedo() -> void:
-	_speedo = S.panel(S.PANEL_BG, 10, 16, 8)
+	_speedo = S.panel(S.PANEL_BG, S.RADIUS_PANEL, 16, 8)
 	_speedo.name = "Speedometer"
 	var v := VBoxContainer.new()
 	v.mouse_filter = Control.MOUSE_FILTER_IGNORE
@@ -51,7 +51,7 @@ func _build_speedo() -> void:
 	row.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	row.add_theme_constant_override("separation", 8)
 	v.add_child(row)
-	_speed = S.plain("0", 40, S.WHITE, S.title())
+	_speed = S.plain("0", 40, S.WHITE, S.display())
 	_speed.name = "Speed"
 	_speed.custom_minimum_size = Vector2(84, 0)
 	_speed.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT

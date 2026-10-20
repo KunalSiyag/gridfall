@@ -36,7 +36,7 @@ func setup(p_ctx: FpContext, p_hud: Node) -> void:
 	set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	mouse_filter = Control.MOUSE_FILTER_IGNORE
 	visible = false
-	_panel = S.panel(S.PANEL_BG, 12, 22, 18)
+	_panel = S.panel(S.PANEL_BG, S.RADIUS_PANEL, 22, 18)
 	_panel.name = "Card"
 	_panel.mouse_filter = Control.MOUSE_FILTER_STOP
 	_panel.anchor_left = 1.0
@@ -276,7 +276,7 @@ func _section(head: String, names: PackedStringArray) -> void:
 func _pill(icon: String, t: String, col: Color) -> PanelContainer:
 	var p := PanelContainer.new()
 	p.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	p.add_theme_stylebox_override("panel", S.box(Color(col.r, col.g, col.b, 0.12), 6, 8, 3))
+	p.add_theme_stylebox_override("panel", S.box(Color(col.r, col.g, col.b, 0.12), S.RADIUS, 8, 3))
 	var h := HBoxContainer.new()
 	h.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	h.add_theme_constant_override("separation", 5)

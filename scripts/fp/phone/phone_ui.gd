@@ -27,7 +27,7 @@ func setup() -> void:
 	name = "BuildPhone"
 	mouse_filter = Control.MOUSE_FILTER_IGNORE
 	set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-	_panel = S.panel(Color(0.03, 0.04, 0.07, 0.9), 22, 16, 14, Color(1, 1, 1, 0.14))
+	_panel = S.panel(Color(0.03, 0.04, 0.07, 0.9), S.RADIUS_PANEL, 16, 14, Color(1, 1, 1, 0.14))
 	_panel.name = "Phone"
 	_panel.custom_minimum_size = Vector2(WIDTH, 0)
 	var v := VBoxContainer.new()
@@ -44,8 +44,9 @@ func setup() -> void:
 	_treasury = S.plain("", 15, S.GOOD, S.bold())
 	_treasury.name = "Treasury"
 	top.add_child(_treasury)
-	_district = S.plain("", 18, S.WHITE, S.title())
+	_district = S.plain("", 15, S.WHITE, S.display())
 	_district.name = "District"
+	_district.uppercase = true
 	_district.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	v.add_child(_district)
 	_mayor = S.plain("", 13, S.TEXT_DIM, S.font())
@@ -126,7 +127,7 @@ func show_state(st: Dictionary) -> void:
 		var bg := Color(0.0, 0.88, 1.0, 0.16) if on else Color(1, 1, 1, 0.05)
 		var line := S.ACCENT if on else Color(0, 0, 0, 0)
 		(_tools[id] as PanelContainer).add_theme_stylebox_override(
-			"panel", S.box(bg, 8, 8, 5, line, 1 if on else 0)
+			"panel", S.box(bg, S.RADIUS, 8, 5, line, 1 if on else 0)
 		)
 	_building.text = str(st.get("building", ""))
 	_building.visible = not _building.text.is_empty()

@@ -416,22 +416,29 @@ Shared look of the on-foot HUD (slice B): colour tokens, fonts with tabular figu
 - `SHADOW = Color(0, 0, 0, 0.45)`
 - `BRAND_RE = "(?i)(Argon|DeepSeek|Kimi|Qwen|Grok|GMI|gemini|MiniMax|model|latency|cache|heuristic)"`
 - `TITLE_FONT_PATH = "res://fonts/lilita_one_regular.ttf"`
+- `RADIUS = 2`: Corner radius of chips, toasts, prompts and buttons, and of panels: near-square, crisp edges.
+- `RADIUS_PANEL = 3`
+- `CHIP_LINE = Color(1, 1, 1, 0.16)`: The hairline under a chip; a chip in a warn or fail state tints it.
 
 ### Functions
 
 - `static func font() -> Font`: The UI font (the project's fallback sans) with tabular figures, so numbers do not jitter.
 - `static func bold() -> Font`: A heavier cut of font() for values and titles.
 - `static func caps() -> Font`: Tracked capitals for small headings ("SETTINGS", "CAMERA").
-- `static func title() -> Font`: The game's display face (pause title only).
+- `static func title() -> Font`: The game's display face (pause and map titles only).
+- `static func display() -> Font`: A heavy, tightly tracked cut for HUD headlines and big numbers (district caption, speedometer).
 - `static func own(n: Node) -> Node`: Marks n as created by slice B (meta OWNER_META), for the branding test and smoke.
 - `static func label(t: String, size_px: int, col: Color = TEXT, f: Font = null, outline: int = 3) -> Label`: A passive label: B's font, an outline and a soft shadow so it reads on sky and asphalt.
 - `static func chip_label(t: String, size_px: int, col: Color = TEXT, f: Font = null) -> Label`: A label on a chip's backing: a 2 px outline, no shadow pass.
 - `static func plain(t: String, size_px: int, col: Color = TEXT, f: Font = null) -> Label`: A label for text inside a solid panel (no outline needed).
+- `static func caps_label(t: String, size_px: int, col: Color = TEXT, outline: int = 2) -> Label`: Tracked capitals drawn from t; the Label keeps t as its text (only the drawing is upper-cased).
+- `static func caps_width(t: String, size_px: int) -> float`: Width of t drawn by caps_label at size_px.
+- `static func stripe(sb: StyleBoxFlat, col: Color, w: int = 3) -> StyleBoxFlat`: Turns sb's border into a single w px accent stripe down its left edge.
 - `static func box(bg: Color, radius: int, h: int, v: int, border: Color = Color(0, 0, 0, 0), bw: int = 0) -> StyleBoxFlat`: A StyleBoxFlat with one corner radius and content margins (h, v).
-- `static func chip_box(h: int = 11, v: int = 4) -> StyleBoxFlat`: The pill behind a passive indicator chip: at most CHIP_BG, fully rounded (own instance, so a chip can pulse its own backing).
-- `static func panel(bg: Color = PANEL_BG, radius: int = 10, h: int = 14, v: int = 10, border: Color = PANEL_LINE) -> PanelContainer`: A PanelContainer with a rounded, optionally bordered background (restyled CityHud._panel).
+- `static func chip_box(h: int = 11, v: int = 4) -> StyleBoxFlat`: The backing behind a passive indicator chip: at most CHIP_BG, near-square, with a hairline along its bottom edge (own instance, so a chip can pulse and tint its own backing).
+- `static func panel(bg: Color = PANEL_BG, radius: int = RADIUS_PANEL, h: int = 14, v: int = 10, border: Color = PANEL_LINE) -> PanelContainer`: A PanelContainer with a crisp, optionally bordered background (restyled CityHud._panel).
 - `static func menu_button(t: String, size_px: int = 19) -> Button`: A menu button: flat text on idle, a light bar when focused or hovered.
-- `static func pill_button(t: String, size_px: int = 15) -> Button`: A compact pill button (card actions, segmented choices).
+- `static func pill_button(t: String, size_px: int = 15) -> Button`: A compact button (card actions, segmented choices).
 - `static func key_cap(k: String, size_px: int = 13) -> PanelContainer`: A key cap ("E", "M", "Esc") for prompts and hints.
 - `static func fmt(n: int) -> String`: Thousands separators: 1168 -> "1,168", -3222 -> "−3,222" (true minus sign). Restyled CityHud._fmt.
 - `static func money(n: int) -> String`: Compact money: "$950", "$3.2k", "$124k", "$1.2M"; a deficit stays exact so it reads at a glance ("−$3,222", true minus sign) until it passes 100k ("−$124k").
