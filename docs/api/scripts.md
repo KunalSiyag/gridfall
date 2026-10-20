@@ -103,11 +103,12 @@ GridFall: a SimCity-style city run by five autonomous GMI Cloud AI mayors. Wires
 - `fp: FpMode`: First-person composition (null in orbit mode). Built by enter_fp(), freed by exit_fp().
 - `view_mode: String`: "orbit" or "fp"; tools and saves can read it.
 - `autosave_enabled: bool`: Autosaves (the first tick of each morning, quitting) are on only in normal play: tool runs, tests and the benchmark never touch the player's city.
+- `autosave_path: String`: Where autosaves go; tests point it away from the player's slot.
 
 ### Functions
 
 - `func save_game(path: String = SAVE_PATH) -> bool`
-- `func autosave(reason: String) -> bool`: Saves the city to SAVE_PATH while autosave_enabled. reason: "morning" (a small toast) or "quit" (silent: the window is closing).
+- `func autosave(reason: String) -> bool`: Saves the city to autosave_path while autosave_enabled. reason: "morning" (a small toast) or "quit" (silent: the window is closing).
 - `func quit_game() -> void`: The pause menu's Quit: saves the city, then quits.
 - `func load_game(path: String = SAVE_PATH) -> bool`
 - `func new_game() -> void`

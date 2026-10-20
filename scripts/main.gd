@@ -36,6 +36,8 @@ var _fp_saved: Dictionary = {}
 ## Autosaves (the first tick of each morning, quitting) are on only in normal play: tool runs,
 ## tests and the benchmark never touch the player's city.
 var autosave_enabled: bool = false
+## Where autosaves go; tests point it away from the player's slot.
+var autosave_path: String = SAVE_PATH
 var _autosave_due: bool = false
 
 
@@ -225,12 +227,12 @@ func save_game(path: String = SAVE_PATH) -> bool:
 	return true
 
 
-## Saves the city to SAVE_PATH while autosave_enabled. reason: "morning" (a small toast) or
+## Saves the city to autosave_path while autosave_enabled. reason: "morning" (a small toast) or
 ## "quit" (silent: the window is closing).
 func autosave(reason: String) -> bool:
 	if not autosave_enabled:
 		return false
-	var err := _write_save(SAVE_PATH, reason)
+	var err := _write_save(autosave_path, reason)
 	if err != OK:
 		notify("Autosave failed (%s)" % error_string(err), "alert")
 		return false

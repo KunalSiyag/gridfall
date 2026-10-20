@@ -16,6 +16,7 @@ const ACTIONS := [
 ]
 const BRANDS := ["Argon", "DeepSeek", "Kimi", "Qwen", "Grok"]
 const SAVE := "user://fp_smoke_save.json"
+const AUTOSAVE := "user://fp_smoke_autosave.json"
 const DT := 1.0 / 60.0
 
 var main: Node
@@ -32,10 +33,12 @@ var _started := int(Time.get_unix_time_from_system())
 ## 11c. Autosave writes main's slot on a window close request and once the morning's first tick has
 ## committed, and only while autosave_enabled (tool runs like this one leave it off).
 func _check_autosave(sim: CitySim) -> void:
-	var slot: String = main.SAVE_PATH
+	var real: String = main.SAVE_PATH
 	var off: bool = not main.autosave_enabled
-	var untouched := not SaveSlot.exists(slot) or FileAccess.get_modified_time(slot) < _started
+	var untouched := not SaveSlot.exists(real) or FileAccess.get_modified_time(real) < _started
 	check(off and untouched, "tool runs never autosave (flag off, slot untouched)")
+	var slot := AUTOSAVE
+	main.autosave_path = slot
 	var speed := sim.speed
 	sim.set_speed(0)
 	while sim.job_pending():
@@ -56,6 +59,7 @@ func _check_autosave(sim: CitySim) -> void:
 	check(not early and saved, "the morning autosave waits for the first tick, then saves")
 	sim.tick_in_day = tick
 	main.autosave_enabled = false
+	main.autosave_path = real
 	_remove_slot(slot)
 	sim.set_speed(speed)
 
