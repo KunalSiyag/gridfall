@@ -55,7 +55,7 @@ const LEGEND := [
 ]
 const KEYS := [
 	["M", "Map"], ["Tab", "City overview"], ["V", "Camera view"], ["Q", "Shoulder"], ["E", "Interact"], ["F", "Get in / out of a car"], ["B", "Build phone"],
-	["Enter", "Chat"],
+	["Enter", "Chat"], ["J", "AI activity"], ["G", "Route to AI decision"],
 	["[ ]", "Game speed"], ["T", "Skip to morning"], ["P", "Photo mode"], ["F1", "Hide HUD"],
 	["F5", "Quick save"], ["F9", "Quick load"],
 ]

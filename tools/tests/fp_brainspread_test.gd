@@ -3,10 +3,13 @@ extends SceneTree
 ## sliced day job only the first mayor runs in the day_started emission and the other pieces follow
 ## one per frame through sim.run_in_phase, while the synchronous path (step_tick) still runs the
 ## whole round inline. Both paths end in the same city and brain state, every call of a round
-## carries that round's trace id, and a save mid-round drains the round first. Headless, offline.
+## carries that round's trace id, and a save mid-round drains the round first. Staggered turns
+## (street mode) land without forcing a synchronous finish. Headless, offline.
 ## Prints FP_BRAINSPREAD_TEST: PASS|FAIL.
 
 const TICKS := 20
+## Frames per game day in _street_frames.
+const DAY_FRAMES := 1600
 const ROLES := ["mayor", "citizens", "news", "chaos", "operator", "council"]
 
 var fails: Array[String] = []
@@ -34,6 +37,8 @@ func _init() -> void:
 	_check_save_mid_round(b)
 	_free_world(a)
 	_free_world(b)
+	await process_frame
+	await _check_staggered()
 	await process_frame
 	print("FP_BRAINSPREAD_TEST: " + ("PASS" if fails.is_empty() else "FAIL " + str(fails)))
 	quit(0 if fails.is_empty() else 1)
@@ -217,6 +222,59 @@ func _check_save_mid_round(w: Dictionary) -> void:
 	brain.from_dict(saved)
 	check(not brain.spread_pending(), "from_dict drops a round in progress")
 	sim.to_dict()
+
+
+## Street mode (CityBrain.stagger_mayors) spreads the mayors' turns over the day. They start from
+## the brain's _process, mid-tick or between ticks, so their actions must not force the tick in
+## flight, or the spread work it waits for, to finish in a single frame.
+func _check_staggered() -> void:
+	var w := _world(true)
+	var sim: CitySim = w["sim"]
+	var brain: CityBrain = w["brain"]
+	brain.stagger_mayors = true
+	sim.slice_budget_ms = 0.0
+	sim.set_speed(1)
+	# Measured over the first whole staggered day, from its dawn to the next.
+	var day := sim.day + 1
+	var seen := {"queued": -1, "forced": 0, "ticks": []}
+	sim.day_started.connect(
+		func(d: int) -> void:
+			var n := int(sim.slice_stats().get("sync_finishes", 0))
+			if d == day:
+				seen["queued"] = brain.turns.due.size()
+				seen["forced"] = n
+			elif d == day + 1:
+				seen["forced"] = n - int(seen["forced"])
+	)
+	brain.mayor_decided.connect(
+		func(_mi: int, e: Dictionary) -> void:
+			if int(e.get("day", -1)) == day:
+				(seen["ticks"] as Array).append(sim.tick_in_day)
+	)
+	await _street_frames(sim, func() -> bool: return brain.turns.day > day)
+	var ticks: Array = seen["ticks"]
+	var spread := {}
+	for t: int in ticks:
+		spread[t] = true
+	check(
+		int(seen["queued"]) == 5 and ticks.size() == 5 and spread.size() >= 3,
+		"the five staggered turns land through the day (ticks %s)" % str(ticks)
+	)
+	check(
+		int(seen["forced"]) == 0, "and never force a synchronous finish (%d)" % int(seen["forced"])
+	)
+	_free_world(w)
+
+
+## Street-mode frames until done() holds: the sim's own sliced clock at a fixed DAY_FRAMES frames
+## per day, one job step per frame (a zero budget), so a tick spans many frames and the brain's
+## _process sees turns come due both mid-tick and between ticks, the same on every machine.
+func _street_frames(sim: CitySim, done: Callable) -> void:
+	var frame := 0
+	while not bool(done.call()) and frame < 20000:
+		frame += 1
+		sim._process(sim.day_seconds / float(DAY_FRAMES))
+		await process_frame
 
 
 func _node(path: String) -> Node:

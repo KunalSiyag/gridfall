@@ -21,6 +21,8 @@ signal inspector_answered(report: Dictionary)
 signal busy_changed(pending: int)
 
 const D := preload("res://scripts/sim/sim_defs.gd")
+const MayorTurns := preload("res://scripts/ai/mayor_turns.gd")
+const BrainText := preload("res://scripts/ai/brain_text.gd")
 const MAX_WAIT_MS := 75000
 
 var sim: CitySim
@@ -43,6 +45,10 @@ var minds: ResidentMinds = null
 var _mayor_in_flight: Array[bool] = [false, false, false, false, false]
 var _support_in_flight: Dictionary = {}
 var _wait_started_ms: int = 0
+## Street mode sets this: the mayors take the day's turns one by one through the day (turns), so
+## a player on foot sees decisions land every few minutes. Off (orbit, tests): all at dawn.
+var stagger_mayors: bool = false
+var turns: MayorTurns = MayorTurns.new()
 ## The day round's pieces still waiting for a frame, and the round's trace id and label.
 var _queue: Array[Callable] = []
 var _queue_trace: String = ""
@@ -68,6 +74,7 @@ func setup(p_sim: CitySim, p_client: GmiClient) -> void:
 	chaos_last_day = -10
 	day_feed.clear()
 	_queue.clear()
+	turns.clear()
 	if sim.has_method("add_spread_source"):
 		sim.add_spread_source(spread_pending, _finish_queue)
 	if sim.day_started.is_connected(_on_day_started):
@@ -100,6 +107,9 @@ func mayors_pending() -> int:
 
 
 func _day_gate() -> bool:
+	# A staggered mayor who was still deciding when the day ended takes the turn once free.
+	for mi: int in turns.take_all(_mayor_in_flight):
+		_run_turn(mi)
 	var busy := mayors_pending() + (minds.pending() if minds != null else 0)
 	if not wait_for_ai or busy == 0:
 		_wait_started_ms = 0
@@ -122,8 +132,9 @@ func send_decree(text: String) -> void:
 ## orbit, tests) runs it inline. Every piece runs under the round's trace id.
 func _on_day_started(day: int) -> void:
 	var pieces: Array[Callable] = []
-	for mi in range(D.MAYORS.size()):
-		pieces.append(_mayor_piece.bind(mi, day))
+	if not turns.start(day, stagger_mayors):
+		for mi in range(D.MAYORS.size()):
+			pieces.append(_mayor_piece.bind(mi, day))
 	for role: String in ["citizens", "news", "chaos", "operator", "council"]:
 		pieces.append(_support_piece.bind(role, day))
 	var prev := [Trace.current(), Trace.current_label()]
@@ -155,6 +166,18 @@ func _process(_delta: float) -> void:
 		_run_piece(_queue.pop_front())
 		if _queue.is_empty():
 			busy_changed.emit(pending_calls())
+	if not turns.due.is_empty() and MayorTurns.sim_idle(sim):
+		_run_turn(turns.take_due(sim.day_progress(), stagger_mayors, _mayor_in_flight))
+
+
+## A staggered mayor turn under its own trace id; -1 (none due) or a mayor still deciding: nothing.
+func _run_turn(mi: int) -> void:
+	if mi < 0 or _mayor_in_flight[mi]:
+		return
+	var prev := [Trace.current(), Trace.current_label()]
+	Trace.begin("day %d turn %s" % [turns.day, str(D.MAYORS[mi]["id"])])
+	_run_mayor(mi, turns.day)
+	Trace.set_current(prev[0], prev[1])
 
 
 ## One deferred piece under the round's trace id, as part of the sim's job phase.
@@ -208,6 +231,9 @@ func _support_due(role: String, day: int) -> bool:
 
 
 func _on_day_ended(_day: int) -> void:
+	# Staggered turns still waiting run now, on their own day and before its calls are flushed.
+	for mi: int in turns.take_all(_mayor_in_flight):
+		_run_turn(mi)
 	client.flush_cache()
 
 
@@ -337,15 +363,19 @@ func _run_mayor(mi: int, day: int) -> void:
 		if ok and focus == D.NO_TILE and a.has("x"):
 			focus = Vector2i(int(r.get("x", a.get("x", -1))), int(r.get("y", a.get("y", -1))))
 	var prop := str(data.get("propose_ordinance", "")).strip_edges().to_lower()
+	var proposed := ""
 	if D.ORDINANCES.has(prop) and not sim.ordinances.has(prop) and not proposals.has(prop):
 		proposals[prop] = {"by": m["display"], "day": day, "votes": {str(m["id"]): "yes"}}
+		proposed = prop
 		day_feed.append("%s proposed the %s ordinance." % [m["display"], D.ORDINANCES[prop]["label"]])
+	var cast := {}
 	var votes: Variant = data.get("votes", {})
 	if typeof(votes) == TYPE_DICTIONARY:
 		for key: Variant in (votes as Dictionary).keys():
 			var ks := str(key).to_lower()
 			if proposals.has(ks):
-				(proposals[ks]["votes"] as Dictionary)[str(m["id"])] = str((votes as Dictionary)[key]).to_lower()
+				cast[ks] = str((votes as Dictionary)[key]).to_lower()
+				(proposals[ks]["votes"] as Dictionary)[str(m["id"])] = cast[ks]
 	var ms: Dictionary = mayor_state[mi]
 	var thought := D.debrand(str(data.get("thought", ""))).left(260)
 	var post := D.debrand(str(data.get("public_post", ""))).left(200)
@@ -358,7 +388,7 @@ func _run_mayor(mi: int, day: int) -> void:
 	ms["source"] = res["source"]
 	ms["latency_ms"] = res["latency_ms"]
 	ms["day"] = day
-	var entry := {"day": day, "thought": thought, "post": post, "mood": ms["mood"], "actions": applied, "source": res["source"], "latency_ms": res["latency_ms"], "error": res.get("error", ""), "model": m["model"], "focus": focus}
+	var entry := {"day": day, "thought": thought, "post": post, "mood": ms["mood"], "actions": applied, "source": res["source"], "latency_ms": res["latency_ms"], "error": res.get("error", ""), "model": m["model"], "focus": focus, "proposal": proposed, "votes": cast}
 	(ms["log"] as Array).append(entry)
 	if (ms["log"] as Array).size() > 12:
 		(ms["log"] as Array).pop_front()
@@ -697,7 +727,7 @@ func _run_news(day: int) -> void:
 	var user := "Day %d front page.\nRecent events and statements:\n%s\nCity trend (last days): %s\nCity now: %s" % [day, "\n".join(PackedStringArray(feed)) if not feed.is_empty() else "(quiet day)", JSON.stringify(hist), JSON.stringify(sim.city_summary())]
 	var res: Dictionary = await client.chat_json("news", "gazette", str(agent["model"]), sys, user, day, 1000, 40.0, _heuristic_news.bind(feed))
 	var paper: Dictionary = res["data"].duplicate(true)
-	_debrand_paper(paper)
+	BrainText.debrand_paper(paper)
 	paper["day"] = day
 	paper["source"] = res["source"]
 	last_paper = paper
@@ -934,6 +964,7 @@ func to_dict() -> Dictionary:
 		"decree_day": decree_day, "last_paper": last_paper, "last_voices": last_voices, "last_council": last_council,
 		"last_chaos": last_chaos, "last_operator": last_operator, "chaos_last_day": chaos_last_day,
 		"complaints": complaints.duplicate(true), "client": client.to_dict(),
+		"turns": turns.to_dict(),
 	}
 
 
@@ -958,42 +989,6 @@ func from_dict(d: Dictionary) -> void:
 		complaints.append(c as Dictionary)
 	while complaints.size() < D.MAYORS.size():
 		complaints.append({})
+	turns.from_dict(d.get("turns", {}))
 	client.from_dict(d.get("client", {}))
-	_debrand_restored()
-
-
-## De-brands a Gazette front page in place: headline, editorial, and each story's title and body.
-func _debrand_paper(paper: Dictionary) -> void:
-	for key: String in ["headline", "editorial"]:
-		if paper.has(key):
-			paper[key] = D.debrand(str(paper[key]))
-	if typeof(paper.get("stories")) == TYPE_ARRAY:
-		for st: Variant in paper["stories"]:
-			if typeof(st) == TYPE_DICTIONARY:
-				for key: String in ["title", "body"]:
-					if (st as Dictionary).has(key):
-						(st as Dictionary)[key] = D.debrand(str((st as Dictionary)[key]))
-
-
-## Saves from before the display names carry brand names in text that feeds the prompts and the
-## HUDs: proposal authors, mayor posts, thoughts and log entries, the Gazette and the council ruling.
-func _debrand_restored() -> void:
-	for key: Variant in proposals.keys():
-		if typeof(proposals[key]) == TYPE_DICTIONARY:
-			var pr: Dictionary = proposals[key]
-			pr["by"] = D.debrand(str(pr.get("by", "")))
-	for ms: Dictionary in mayor_state:
-		ms["post"] = D.debrand(str(ms.get("post", "")))
-		if typeof(ms.get("thoughts")) == TYPE_ARRAY:
-			var th: Array = ms["thoughts"]
-			for k in range(th.size()):
-				th[k] = D.debrand(str(th[k]))
-		if typeof(ms.get("log")) == TYPE_ARRAY:
-			for e: Variant in ms["log"]:
-				if typeof(e) == TYPE_DICTIONARY:
-					for key: String in ["thought", "post"]:
-						if (e as Dictionary).has(key):
-							(e as Dictionary)[key] = D.debrand(str((e as Dictionary)[key]))
-	_debrand_paper(last_paper)
-	if last_council.has("statement"):
-		last_council["statement"] = D.debrand(str(last_council["statement"]))
+	BrainText.debrand_state(proposals, mayor_state, last_paper, last_council)

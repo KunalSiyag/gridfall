@@ -8,6 +8,8 @@ const WS := preload("res://scripts/fp/world_scale.gd")
 ## Every Label, RichTextLabel and Button slice B creates carries this meta (the branding test reads it).
 const OWNER_META := "fp_owner"
 const OWNER := "hud_widgets"
+## Meta on model and source badges (badge()): the only street text allowed to name a model.
+const BADGE_META := "fp_model_badge"
 
 const WHITE := Color(1, 1, 1)
 const TEXT := Color(0.96, 0.97, 0.99)
@@ -144,6 +146,43 @@ static func stripe(sb: StyleBoxFlat, col: Color, w: int = 3) -> StyleBoxFlat:
 	sb.set_border_width_all(0)
 	sb.border_width_left = w
 	return sb
+
+
+## A small tag that names a model or where an answer came from ("DeepSeek-V4", "LIVE"). Its label
+## carries BADGE_META instead of OWNER_META: badges are the one place street text names a model,
+## so the no-branding check over owned text (owned_texts) leaves them out.
+static func badge(t: String, col: Color, size_px: int = 11) -> PanelContainer:
+	var p := PanelContainer.new()
+	p.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	var bg := Color(col.r, col.g, col.b, 0.16)
+	var sb := box(bg, RADIUS, 5, 1, Color(col.r, col.g, col.b, 0.6), 1)
+	p.add_theme_stylebox_override("panel", sb)
+	var l := Label.new()
+	l.text = t
+	l.uppercase = true
+	l.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	l.add_theme_font_override("font", caps())
+	l.add_theme_font_size_override("font_size", size_px)
+	l.add_theme_color_override("font_color", col.lerp(WHITE, 0.4))
+	l.set_meta(BADGE_META, true)
+	p.add_child(l)
+	p.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	return p
+
+
+## Marker colour for a bus ping reason: incidents red, AI decisions in the deciding agent's colour
+## ("ai:1" a mayor, "ai:council" a support agent), anything else amber.
+static func ping_color(reason: String) -> Color:
+	if reason.begins_with("event:"):
+		return RED
+	if reason.begins_with("ai:"):
+		var who := reason.substr(3)
+		if who.is_valid_int() and int(who) >= 0 and int(who) < D.MAYORS.size():
+			return Color(str(D.MAYORS[int(who)]["color"]))
+		if D.SUPPORT_AGENTS.has(who):
+			return Color(str(D.SUPPORT_AGENTS[who]["color"]))
+		return ACCENT
+	return AMBER
 
 
 ## A StyleBoxFlat with one corner radius and content margins (h, v).

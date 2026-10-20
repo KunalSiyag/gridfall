@@ -234,6 +234,9 @@ func _on_ping(world_pos: Vector3, reason: String) -> void:
 	pings.append({"pos": Vector3(world_pos.x, 0.0, world_pos.z), "reason": reason, "age": 0.0, "alpha": 1.0})
 	while pings.size() > MAX_PINGS:
 		pings.pop_front()
+	# The activity feed already announces an AI decision; the marker is enough here.
+	if reason.begins_with("ai:"):
+		return
 	var where := _place_near(world_pos)
 	if reason.begins_with("event:"):
 		var t := reason.substr(6)

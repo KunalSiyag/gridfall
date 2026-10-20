@@ -100,7 +100,7 @@ func _collect() -> void:
 		var e: Dictionary = pings[k]
 		var p: Vector3 = e["pos"]
 		var is_event := str(e["reason"]).begins_with("event:")
-		markers.append({"bearing": bearing_to(me, p), "dist": S.distance(_flat(me, p)), "color": S.RED if is_event else S.AMBER, "kind": "event" if is_event else "ping", "alpha": float(e.get("alpha", 1.0))})
+		markers.append({"bearing": bearing_to(me, p), "dist": S.distance(_flat(me, p)), "color": S.ping_color(str(e["reason"])), "kind": "event" if is_event else "ping", "alpha": float(e.get("alpha", 1.0))})
 		n += 1
 
 
