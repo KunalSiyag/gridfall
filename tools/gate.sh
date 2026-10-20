@@ -103,8 +103,10 @@ run_step() {
 		# Every attempt gets a fresh XDG_DATA_HOME, so a retry never sees the failed run's saves.
 		xdg="$(mktemp -d "$GATE_TMP/gf-xdg.XXXXXX")"
 		XDG_DIRS+=("$xdg")
+		# A hung step gets SIGSEGV, not SIGTERM: Godot's crash handler then writes its C++ and
+		# GDScript backtraces into the step log (timeout still exits 124).
 		local cmd=(env -u GMI_API_KEY -u GRIDFALL_RECORD -u GRIDFALL_VIEW -u GRIDFALL_SPEED -u GRIDFALL_HOUR -u GRIDFALL_RESIDENTS
-			"XDG_DATA_HOME=$xdg" GRIDFALL_OFFLINE=1 "${envs[@]+"${envs[@]}"}" timeout "$tmo" "$GODOT" "$@")
+			"XDG_DATA_HOME=$xdg" GRIDFALL_OFFLINE=1 "${envs[@]+"${envs[@]}"}" timeout -s SEGV -k 30 "$tmo" "$GODOT" "$@")
 		if [ "$heavy" = "1" ]; then
 			cmd=(flock -w 3600 "$LOCK" "${cmd[@]}")
 		fi
