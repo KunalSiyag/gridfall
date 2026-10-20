@@ -85,12 +85,8 @@ func _measure(label: String, secs: float) -> Dictionary:
 	for _i in range(20):
 		await process_frame
 	var sim: CitySim = main.sim
-	if sim.has_method("reset_slice_stats"):
-		sim.call("reset_slice_stats")
 	var ro: Object = fp.ctx.feature("render_opt")
-	if ro != null and ro.has_method("reset_stats"):
-		ro.call("reset_stats")
-	main.view.reset_section_stats()
+	_reset_stats(sim, ro)
 	var times: Array[float] = []
 	var gpu := 0.0
 	var cpu := 0.0
@@ -120,17 +116,9 @@ func _measure(label: String, secs: float) -> Dictionary:
 			hitches.append(h)
 		added.clear()
 		pipes = p
-	var sorted := times.duplicate()
-	sorted.sort()
-	var avg := 0.0
-	for t in times:
-		avg += t
-	avg /= maxf(1.0, float(times.size()))
-	var r := {
-		"label": label, "frames": n, "fps": snappedf(1000.0 / maxf(avg, 0.001), 0.1), "avg_ms": snappedf(avg, 0.01),
-		"p50_ms": snappedf(sorted[int(sorted.size() * 0.5)], 0.01) if not sorted.is_empty() else 0.0,
-		"p99_ms": snappedf(sorted[mini(int(sorted.size() * 0.99), sorted.size() - 1)], 0.01) if not sorted.is_empty() else 0.0,
-		"max_ms": snappedf(sorted[-1], 0.01) if not sorted.is_empty() else 0.0,
+	var r := {"label": label, "frames": n}
+	r.merge(_frame_stats(times))
+	r.merge({
 		"gpu_ms": snappedf(gpu / maxf(1.0, n), 0.01), "rcpu_ms": snappedf(cpu / maxf(1.0, n), 0.01),
 		"draws": Performance.get_monitor(Performance.RENDER_TOTAL_DRAW_CALLS_IN_FRAME),
 		"objects": Performance.get_monitor(Performance.RENDER_TOTAL_OBJECTS_IN_FRAME),
@@ -143,7 +131,44 @@ func _measure(label: String, secs: float) -> Dictionary:
 		"quality": str(fp.ctx.settings.get("quality", "medium")),
 		"camera": _camera_mode(),
 		"drawn": Engine.get_frames_drawn() - drawn0,
+	})
+	_feature_stats(r, ro, sim, label)
+	_breakdown(r, hitches)
+	rows[label] = r
+	print("FPBENCH ", JSON.stringify(r))
+	if int(r["drawn"]) * 2 < n:
+		print("FPBENCH: WARNING %s drew %d of %d frames (window hidden?)" % [label, r["drawn"], n])
+	return r
+
+
+func _reset_stats(sim: CitySim, ro: Object) -> void:
+	if sim.has_method("reset_slice_stats"):
+		sim.call("reset_slice_stats")
+	if ro != null and ro.has_method("reset_stats"):
+		ro.call("reset_stats")
+	main.view.reset_section_stats()
+
+
+## fps, avg, p50, p99 and max of the frame times (ms) of one row.
+static func _frame_stats(times: Array[float]) -> Dictionary:
+	var sorted := times.duplicate()
+	sorted.sort()
+	var avg := 0.0
+	for t in times:
+		avg += t
+	avg /= maxf(1.0, float(times.size()))
+	var out := {
+		"fps": snappedf(1000.0 / maxf(avg, 0.001), 0.1), "avg_ms": snappedf(avg, 0.01),
+		"p50_ms": 0.0, "p99_ms": 0.0, "max_ms": 0.0,
 	}
+	if not sorted.is_empty():
+		out["p50_ms"] = snappedf(sorted[int(sorted.size() * 0.5)], 0.01)
+		out["p99_ms"] = snappedf(sorted[mini(int(sorted.size() * 0.99), sorted.size() - 1)], 0.01)
+		out["max_ms"] = snappedf(sorted[-1], 0.01)
+	return out
+
+
+func _feature_stats(r: Dictionary, ro: Object, sim: CitySim, label: String) -> void:
 	if ro != null and ro.get("hlod") != null:
 		var hl: Object = ro.get("hlod")
 		r["g2"] = {
@@ -165,6 +190,9 @@ func _measure(label: String, secs: float) -> Dictionary:
 		r["rig_us"] = rig.get("update_us")
 	if (label == "street_tick" or label == "street_day_end") and sim.has_method("slice_stats"):
 		r["sim"] = sim.call("slice_stats")
+
+
+func _breakdown(r: Dictionary, hitches: Array) -> void:
 	r["hitches"] = hitches
 	var sections := {}
 	for k: String in main.view.section_us_max:
@@ -173,11 +201,6 @@ func _measure(label: String, secs: float) -> Dictionary:
 	if not prof.is_empty():
 		r["signals"] = _top(prof, 12)
 		prof.clear()
-	rows[label] = r
-	print("FPBENCH ", JSON.stringify(r))
-	if int(r["drawn"]) * 2 < n:
-		print("FPBENCH: WARNING %s drew %d of %d frames (window hidden?)" % [label, r["drawn"], n])
-	return r
 
 
 ## Replaces every connection of the signals in names on obj with a timed call of the same callable,
