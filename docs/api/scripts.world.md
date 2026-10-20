@@ -129,6 +129,7 @@ Renders the CitySim grid in 3D: Kenney roads picked by neighbor mask, zone lots 
 - `directory: CityDirectory`: Street names and the lot frontage rule, rebuilt by setup().
 - `priority_point: Vector3`: The player's position on foot, set every frame by the streetscape feature. The FP rebuild queue builds nearest-first to it; close-range FX (dust puffs) test against it.
 - `rebuild_budget_ms: float`: FP rebuild budget per frame in milliseconds, tile_built emissions included.
+- `section_us_max: Dictionary`: Worst microseconds per _process section since reset_section_stats() (fp_bench's hitch rows).
 - `light_pole_source: Object`: Any object with light_pole(i: int, corner: int) -> Node3D (E's traffic feature). Cross tiles then mount their street-name blades on its NE pole instead of a G1 pole. Set by the streetscape feature.
 - `vis_mult: float`: Visibility multiplier for the props, decals and multimeshes G1 ranges itself (G2's vis_mult).
 - `wetness: float`: 0 dry .. 1 soaked; set by the streetscape weather through set_wetness().
@@ -146,6 +147,7 @@ Renders the CitySim grid in 3D: Kenney roads picked by neighbor mask, zone lots 
 - `func set_rain(r: float) -> void`: Rain falling now (0 none .. 1 full): rings on the river.
 - `func rebuild_all(animate: bool) -> void`
 - `func flush_rebuild_queue() -> void`: Builds every queued tile now (each emits tile_built), then the batched street props.
+- `func reset_section_stats() -> void`
 - `func rebuild_pending() -> int`: Tiles waiting in the FP rebuild queue.
 - `func warm_scenes(paths: Array) -> void`: Starts loading the scenes at paths on worker threads (the streetscape feature warms every zone, service and prop model at setup); _process tunes them in as they finish.
 - `func warm_paths() -> Array`: Scene paths a growing city can need on foot: every zone level option and service model.

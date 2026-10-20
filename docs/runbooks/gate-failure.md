@@ -22,6 +22,7 @@
 - **Test expectations broken by a deliberate change:** update the test in the same commit and say why in the PR.
 - **Timeouts on CI only:** the runner is slower and imports assets cold when the `.godot` cache misses. The job summary compares step times with the last green `main` run (`tools/checks/build_timing.py`); raise `GATE_IMPORT_TIMEOUT` only if the import itself grew.
 - **A step hangs (`TIMEOUT` well past its usual time):** the gate stops it with SIGSEGV, so the end of the step log holds Godot's C++ and GDScript backtraces. The GDScript one names the script line the main thread was stuck on.
+- **`fp_bench` rows with `FPBENCH: WARNING ... drew N of M frames`:** the window stopped drawing (minimised, on another workspace, or the screen locked) while frames kept running, so those rows measure an idle loop. Keep the bench window visible and re-run. Shots it could not take are skipped after 5 s instead of hanging the step.
 - **Repo checks (`checks` job):** run `python tools/checks/run_all.py -v`. Only findings beyond `tools/checks/baselines/` fail; fix the new finding rather than editing the baseline.
 - **Flaky test:** fix the race (usually waiting a fixed number of frames) and open an issue labelled `flaky` until it is fixed.
 
