@@ -285,7 +285,7 @@ func _build_left() -> void:
 
 
 func _build_legend() -> void:
-	var p := S.panel(Color(0.055, 0.07, 0.11, 0.55), 12, 22, 18)
+	var p := S.panel(Color(0.055, 0.07, 0.11, 0.55), S.RADIUS_PANEL, 22, 18)
 	p.name = "Legend"
 	_place_right(p, 560.0)
 	add_child(p)
@@ -331,7 +331,7 @@ func _build_legend() -> void:
 
 
 func _build_settings() -> void:
-	var p := S.panel(S.PANEL_BG, 12, 24, 20)
+	var p := S.panel(S.PANEL_BG, S.RADIUS_PANEL, 24, 20)
 	p.name = "Settings"
 	p.mouse_filter = Control.MOUSE_FILTER_STOP
 	_place_right(p, PANEL_W)
@@ -564,7 +564,8 @@ func _style_slider(s: HSlider) -> void:
 	s.add_theme_stylebox_override("grabber_area_highlight", fill_hi)
 	s.add_theme_icon_override("grabber", _grabber)
 	s.add_theme_icon_override("grabber_highlight", _grabber)
-	s.add_theme_stylebox_override("focus", S.box(Color(0, 0, 0, 0), 6, 0, 0, Color(1, 1, 1, 0.5), 1))
+	var focus := S.box(Color(0, 0, 0, 0), S.RADIUS, 0, 0, Color(1, 1, 1, 0.5), 1)
+	s.add_theme_stylebox_override("focus", focus)
 
 
 static func _same(a: Variant, b: Variant) -> bool:

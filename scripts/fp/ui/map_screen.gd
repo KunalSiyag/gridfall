@@ -648,7 +648,8 @@ func _draw_hover(o: Control, view: Vector2) -> void:
 		at.y = _hover_pos.y - 16.0 - sz.y
 	at = at.clamp(Vector2(12, 12), view - sz - Vector2(12, 12)).round()
 	if _card_box == null:
-		_card_box = S.box(Color(0.045, 0.055, 0.085, 0.9), 8, 12, 8, Color(1, 1, 1, 0.1), 1)
+		var line := Color(1, 1, 1, 0.1)
+		_card_box = S.box(Color(0.045, 0.055, 0.085, 0.9), S.RADIUS_PANEL, 12, 8, line, 1)
 		_card_box.shadow_color = Color(0, 0, 0, 0.35)
 		_card_box.shadow_size = 8
 	o.draw_style_box(_card_box, Rect2(at, sz))

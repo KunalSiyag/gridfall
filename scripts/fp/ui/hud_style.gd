@@ -26,10 +26,16 @@ const OUTLINE := Color(0.01, 0.02, 0.04, 0.62)
 const SHADOW := Color(0, 0, 0, 0.45)
 const BRAND_RE := "(?i)(Argon|DeepSeek|Kimi|Qwen|Grok|GMI|gemini|MiniMax|model|latency|cache|heuristic)"
 const TITLE_FONT_PATH := "res://fonts/lilita_one_regular.ttf"
+## Corner radius of chips, toasts, prompts and buttons, and of panels: near-square, crisp edges.
+const RADIUS := 2
+const RADIUS_PANEL := 3
+## The hairline under a chip; a chip in a warn or fail state tints it.
+const CHIP_LINE := Color(1, 1, 1, 0.16)
 
 static var _font: FontVariation
 static var _bold: FontVariation
 static var _caps: FontVariation
+static var _display: FontVariation
 static var _title: Font
 
 
@@ -62,11 +68,22 @@ static func caps() -> Font:
 	return _caps
 
 
-## The game's display face (pause title only).
+## The game's display face (pause and map titles only).
 static func title() -> Font:
 	if _title == null:
 		_title = load(TITLE_FONT_PATH) if ResourceLoader.exists(TITLE_FONT_PATH) else bold()
 	return _title
+
+
+## A heavy, tightly tracked cut for HUD headlines and big numbers (district caption, speedometer).
+static func display() -> Font:
+	if _display == null:
+		_display = FontVariation.new()
+		_display.base_font = ThemeDB.fallback_font
+		_display.opentype_features = {_tag("tnum"): 1, _tag("lnum"): 1}
+		_display.variation_embolden = 0.9
+		_display.spacing_glyph = 1
+	return _display
 
 
 ## Marks n as created by slice B (meta OWNER_META), for the branding test and smoke.
@@ -76,7 +93,9 @@ static func own(n: Node) -> Node:
 
 
 ## A passive label: B's font, an outline and a soft shadow so it reads on sky and asphalt.
-static func label(t: String, size_px: int, col: Color = TEXT, f: Font = null, outline: int = 3) -> Label:
+static func label(
+	t: String, size_px: int, col: Color = TEXT, f: Font = null, outline: int = 3
+) -> Label:
 	var l := Label.new()
 	l.text = t
 	l.mouse_filter = Control.MOUSE_FILTER_IGNORE
@@ -107,8 +126,30 @@ static func plain(t: String, size_px: int, col: Color = TEXT, f: Font = null) ->
 	return l
 
 
+## Tracked capitals drawn from t; the Label keeps t as its text (only the drawing is upper-cased).
+static func caps_label(t: String, size_px: int, col: Color = TEXT, outline: int = 2) -> Label:
+	var l := label(t, size_px, col, caps(), outline)
+	l.uppercase = true
+	return l
+
+
+## Width of t drawn by caps_label at size_px.
+static func caps_width(t: String, size_px: int) -> float:
+	return caps().get_string_size(t.to_upper(), HORIZONTAL_ALIGNMENT_LEFT, -1, size_px).x
+
+
+## Turns sb's border into a single w px accent stripe down its left edge.
+static func stripe(sb: StyleBoxFlat, col: Color, w: int = 3) -> StyleBoxFlat:
+	sb.border_color = col
+	sb.set_border_width_all(0)
+	sb.border_width_left = w
+	return sb
+
+
 ## A StyleBoxFlat with one corner radius and content margins (h, v).
-static func box(bg: Color, radius: int, h: int, v: int, border: Color = Color(0, 0, 0, 0), bw: int = 0) -> StyleBoxFlat:
+static func box(
+	bg: Color, radius: int, h: int, v: int, border: Color = Color(0, 0, 0, 0), bw: int = 0
+) -> StyleBoxFlat:
 	var sb := StyleBoxFlat.new()
 	sb.bg_color = bg
 	sb.set_corner_radius_all(radius)
@@ -123,16 +164,23 @@ static func box(bg: Color, radius: int, h: int, v: int, border: Color = Color(0,
 	return sb
 
 
-## The pill behind a passive indicator chip: at most CHIP_BG, fully rounded (own instance, so a
-## chip can pulse its own backing).
+## The backing behind a passive indicator chip: at most CHIP_BG, near-square, with a hairline
+## along its bottom edge (own instance, so a chip can pulse and tint its own backing).
 static func chip_box(h: int = 11, v: int = 4) -> StyleBoxFlat:
-	var sb := box(CHIP_BG, 15, h, v)
-	sb.corner_detail = 10
+	var sb := box(CHIP_BG, RADIUS, h, v)
+	sb.border_color = CHIP_LINE
+	sb.border_width_bottom = 1
 	return sb
 
 
-## A PanelContainer with a rounded, optionally bordered background (restyled CityHud._panel).
-static func panel(bg: Color = PANEL_BG, radius: int = 10, h: int = 14, v: int = 10, border: Color = PANEL_LINE) -> PanelContainer:
+## A PanelContainer with a crisp, optionally bordered background (restyled CityHud._panel).
+static func panel(
+	bg: Color = PANEL_BG,
+	radius: int = RADIUS_PANEL,
+	h: int = 14,
+	v: int = 10,
+	border: Color = PANEL_LINE
+) -> PanelContainer:
 	var p := PanelContainer.new()
 	p.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	var sb := box(bg, radius, h, v, border, 1 if border.a > 0.0 else 0)
@@ -156,9 +204,9 @@ static func menu_button(t: String, size_px: int = 19) -> Button:
 	b.add_theme_color_override("font_focus_color", Color(0.04, 0.05, 0.08))
 	b.add_theme_color_override("font_pressed_color", Color(0.04, 0.05, 0.08))
 	b.add_theme_color_override("font_hover_pressed_color", Color(0.04, 0.05, 0.08))
-	var idle := box(Color(1, 1, 1, 0.0), 6, 16, 9)
-	var hover := box(Color(1, 1, 1, 0.1), 6, 16, 9)
-	var focus := box(Color(1, 1, 1, 0.92), 6, 16, 9)
+	var idle := box(Color(1, 1, 1, 0.0), RADIUS, 16, 9)
+	var hover := box(Color(1, 1, 1, 0.1), RADIUS, 16, 9)
+	var focus := box(Color(1, 1, 1, 0.92), RADIUS, 16, 9)
 	b.add_theme_stylebox_override("normal", idle)
 	b.add_theme_stylebox_override("hover", hover)
 	b.add_theme_stylebox_override("pressed", focus)
@@ -168,7 +216,7 @@ static func menu_button(t: String, size_px: int = 19) -> Button:
 	return b
 
 
-## A compact pill button (card actions, segmented choices).
+## A compact button (card actions, segmented choices).
 static func pill_button(t: String, size_px: int = 15) -> Button:
 	var b := Button.new()
 	b.text = t
@@ -181,11 +229,17 @@ static func pill_button(t: String, size_px: int = 15) -> Button:
 	b.add_theme_color_override("font_pressed_color", Color(0.04, 0.05, 0.08))
 	b.add_theme_color_override("font_hover_pressed_color", Color(0.04, 0.05, 0.08))
 	b.add_theme_color_override("font_focus_color", WHITE)
-	b.add_theme_stylebox_override("normal", box(Color(1, 1, 1, 0.06), 6, 12, 6, Color(1, 1, 1, 0.12), 1))
-	b.add_theme_stylebox_override("hover", box(Color(1, 1, 1, 0.14), 6, 12, 6, Color(1, 1, 1, 0.2), 1))
-	b.add_theme_stylebox_override("pressed", box(Color(1, 1, 1, 0.92), 6, 12, 6))
-	b.add_theme_stylebox_override("hover_pressed", box(Color(1, 1, 1, 0.92), 6, 12, 6))
-	b.add_theme_stylebox_override("focus", box(Color(0, 0, 0, 0), 6, 12, 6, Color(1, 1, 1, 0.85), 2))
+	b.add_theme_stylebox_override(
+		"normal", box(Color(1, 1, 1, 0.06), RADIUS, 12, 6, Color(1, 1, 1, 0.12), 1)
+	)
+	b.add_theme_stylebox_override(
+		"hover", box(Color(1, 1, 1, 0.14), RADIUS, 12, 6, Color(1, 1, 1, 0.2), 1)
+	)
+	b.add_theme_stylebox_override("pressed", box(Color(1, 1, 1, 0.92), RADIUS, 12, 6))
+	b.add_theme_stylebox_override("hover_pressed", box(Color(1, 1, 1, 0.92), RADIUS, 12, 6))
+	b.add_theme_stylebox_override(
+		"focus", box(Color(0, 0, 0, 0), RADIUS, 12, 6, Color(1, 1, 1, 0.85), 2)
+	)
 	own(b)
 	return b
 
@@ -194,7 +248,7 @@ static func pill_button(t: String, size_px: int = 15) -> Button:
 static func key_cap(k: String, size_px: int = 13) -> PanelContainer:
 	var p := PanelContainer.new()
 	p.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	var sb := box(Color(1, 1, 1, 0.92), 4, 6, 1)
+	var sb := box(Color(1, 1, 1, 0.92), RADIUS, 6, 1)
 	sb.content_margin_left = 6 if k.length() == 1 else 7
 	sb.content_margin_right = sb.content_margin_left
 	p.add_theme_stylebox_override("panel", sb)

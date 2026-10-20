@@ -49,7 +49,7 @@ func setup(p_ctx: FpContext) -> void:
 	_chip = PanelContainer.new()
 	_chip.name = "Chip"
 	_chip.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	_chip.add_theme_stylebox_override("panel", S.box(Color(0.04, 0.05, 0.08, 0.55), 8, 8, 5))
+	_chip.add_theme_stylebox_override("panel", S.box(Color(0.04, 0.05, 0.08, 0.6), S.RADIUS, 8, 5))
 	var h := HBoxContainer.new()
 	h.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	h.add_theme_constant_override("separation", 9)
@@ -121,7 +121,9 @@ func _process(delta: float) -> void:
 		_mode = mode
 		_snap = true
 	var first := mode == "first"
-	var blocked := ctx.is_modal() or _in_conversation or (ctx.player != null and ctx.player.photo_mode)
+	var blocked := (
+		ctx.is_modal() or _in_conversation or (ctx.player != null and ctx.player.photo_mode)
+	)
 	var view := size if size.x > 0.0 and size.y > 0.0 else get_viewport_rect().size
 	var centre := (view * 0.5).round()
 	# Crosshair: first person only.
