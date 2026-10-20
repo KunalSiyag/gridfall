@@ -274,6 +274,9 @@ def test_changelog(monkeypatch, tmp_path, capsys):
     assert changelog.insert("", "## [1]\n").startswith("# Changelog")
     assert changelog.insert("# T\n\n## [0]\nold\n", "## [1]\n") == "# T\n\n## [1]\n\n## [0]\nold\n"
     assert changelog.insert("# T\n", "## [1]\n") == "# T\n\n## [1]\n"
+    unreleased = "# T\n\n## [Unreleased] - d\nnew\n\n## [0]\nold\n"
+    assert changelog.insert(unreleased, "## [1]\n") == "# T\n\n## [1]\n\n## [0]\nold\n"
+    assert changelog.insert("# T\n\n## [Unreleased] - d\nnew\n", "## [1]\n") == "# T\n\n## [1]\n"
     out = tmp_path / "CHANGELOG.md"
     assert changelog.main(["--root", str(tmp_path), "--version", "1.0.0", "--date", "2025-01-01", "--write", "CHANGELOG.md"]) == 0
     assert out.read_text().startswith("# Changelog")
