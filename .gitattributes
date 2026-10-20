@@ -25,6 +25,8 @@
 
 # The gate and tool scripts run on Linux runners.
 *.sh text eol=lf
+# Player launchers shipped in the Windows zip.
+*.bat text eol=crlf
 
 # Generated files, collapsed in pull request diffs.
 docs/api/** linguist-generated=true

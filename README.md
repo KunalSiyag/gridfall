@@ -186,7 +186,7 @@ tools/export.sh windows              # build/windows/gridfall.exe (+ .pck)
 tools/export.sh all                  # both presets in export_presets.cfg
 ```
 
-Export needs the Godot export templates for the version in `.godot-version` (Editor > Manage Export Templates, or `tools/export.sh` prints the download commands when they are missing). Releases are cut with `tools/release.sh <version>` (for example `tools/release.sh 0.2.0`), which updates `VERSION` and `CHANGELOG.md`, commits and tags; pushing the tag runs the `release` workflow, which runs the gate, exports both platforms and publishes a GitHub Release with zips, checksums and generated notes.
+Export needs the Godot export templates for the version in `.godot-version` (Editor > Manage Export Templates, or `tools/export.sh` prints the download commands when they are missing). Releases are cut with `tools/release.sh <version>` (for example `tools/release.sh 0.2.0`), which updates `VERSION` and `CHANGELOG.md`, commits and tags; pushing the tag runs the `release` workflow, which runs the gate, exports both platforms and publishes a GitHub Release with zips, checksums and generated notes. Each zip also carries the player guide `tools/release/PLAYING.md` (which heads the release notes) and a `play-orbit` launcher for the orbit view.
 
 ## Code map
 

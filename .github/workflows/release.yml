@@ -67,11 +67,15 @@ jobs:
           VER: ${{ steps.v.outputs.version }}
         run: |
           mkdir -p dist
+          for d in build/linux build/windows; do sed "s/@VERSION@/$VER/g" tools/release/PLAYING.md > "$d/PLAYING.md"; done
+          install -m 755 tools/release/play-orbit.sh build/linux/
+          cp tools/release/play-orbit.bat build/windows/
           (cd build/linux && zip -qr "../../dist/gridfall-$VER-linux-x86_64.zip" .)
           (cd build/windows && zip -qr "../../dist/gridfall-$VER-windows-x86_64.zip" .)
           (cd dist && sha256sum ./*.zip > SHA256SUMS.txt)
           prev="$(git describe --tags --abbrev=0 HEAD^ 2>/dev/null || true)"
           python3 tools/changelog.py --version "$VER" --since "$prev" > dist/CHANGES.md
+          { sed "s/@VERSION@/$VER/g" tools/release/PLAYING.md; echo; cat dist/CHANGES.md; } > dist/RELEASE.md
       - uses: actions/upload-artifact@v7
         with:
           name: gridfall-${{ steps.v.outputs.version }}
@@ -86,7 +90,7 @@ jobs:
         with:
           tag_name: v${{ steps.v.outputs.version }}
           name: GridFall v${{ steps.v.outputs.version }}
-          body_path: dist/CHANGES.md
+          body_path: dist/RELEASE.md
           generate_release_notes: true
           prerelease: ${{ steps.v.outputs.prerelease == 'true' }}
           files: |
