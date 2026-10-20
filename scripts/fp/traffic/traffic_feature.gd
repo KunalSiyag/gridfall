@@ -435,18 +435,38 @@ func _player_fwd() -> Vector3:
 func sync_visuals(delta: float) -> void:
 	var cam := _camera_pos()
 	if vehicles.parked_version != _static_ver or cam.distance_to(_static_cam) > 0.25:
-		_static_ver = vehicles.parked_version
-		_static_cam = cam
-		render.begin_static()
-		for c: VH.Car in vehicles.cars:
-			if c.dead or not c.parked:
-				continue
-			if c.slot_tile < 0:
-				render.release_car(c)
-				continue
-			render.draw_parked(c, vehicles.draw_xform(c), cam.distance_to(c.pos), WS.VIS_CAR)
-		render.finish_static()
+		_draw_parked(cam)
 	render.begin(delta)
+	_draw_moving(cam)
+	var hc := people.ok
+	if hc:
+		var eye := ctx.player_position() + Vector3(0, WS.EYE, 0)
+		people.begin(delta, delta * float(ctx.sim.speed), _camera(), cam, eye)
+	_draw_walkers(delta, cam, hc)
+	if hc:
+		people.finish()
+	render.finish()
+	_draw_contact(cam, hc)
+	render.set_glow(_night())
+	junctions.update_lamps(ctx.player_position(), WS.VIS_PROP + 1.0)
+
+
+## Rebuilds the static layer of parked cars from camera position cam.
+func _draw_parked(cam: Vector3) -> void:
+	_static_ver = vehicles.parked_version
+	_static_cam = cam
+	render.begin_static()
+	for c: VH.Car in vehicles.cars:
+		if c.dead or not c.parked:
+			continue
+		if c.slot_tile < 0:
+			render.release_car(c)
+			continue
+		render.draw_parked(c, vehicles.draw_xform(c), cam.distance_to(c.pos), WS.VIS_CAR)
+	render.finish_static()
+
+
+func _draw_moving(cam: Vector3) -> void:
 	for c: VH.Car in vehicles.cars:
 		if c.dead or c.parked:
 			continue
@@ -458,10 +478,10 @@ func sync_visuals(delta: float) -> void:
 			siren = str((c.owner as Dictionary).get("kind", ""))
 		var brake := c.a < -0.8 * WS.M or c.v < 0.05 * WS.M
 		render.draw_car(c, vehicles.draw_xform(c), cam.distance_to(c.pos), WS.VIS_CAR, brake, siren, c.wheel_spin)
-	var hc := people.ok
-	if hc:
-		var eye := ctx.player_position() + Vector3(0, WS.EYE, 0)
-		people.begin(delta, delta * float(ctx.sim.speed), _camera(), cam, eye)
+
+
+## Walkers through HC's people when hc, else the legacy merged bodies.
+func _draw_walkers(delta: float, cam: Vector3, hc: bool) -> void:
 	for w: WK.Walker in walkers.walkers:
 		if w.dead or w.state == "hidden" or w.far:
 			render.release_walker(w)
@@ -478,13 +498,6 @@ func sync_visuals(delta: float) -> void:
 			people.add(w, dw, ctx.residents)
 		else:
 			render.draw_walker(w, walkers.draw_xform(w), dw, WS.VIS_PERSON, walkers.draw_phase(w))
-	if hc:
-		people.finish()
-	render.finish()
-	_draw_contact(cam, hc)
-	render.set_glow(_night())
-	junctions.update_lamps(ctx.player_position(), WS.VIS_PROP + 1.0)
-
 
 ## Contact shadows under every vehicle and person drawn this frame.
 func _draw_contact(cam: Vector3, hc: bool) -> void:

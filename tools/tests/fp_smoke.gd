@@ -25,6 +25,8 @@ var scales: Array[int] = []
 var pauses: Array[bool] = []
 var tile_events: int = 0
 var world_ready: int = 0
+## A player's own save may sit in the slot (runs outside the gate share user://).
+var _started := int(Time.get_unix_time_from_system())
 
 
 ## 11c. Autosave writes main's slot on a window close request and once the morning's first tick has
@@ -32,7 +34,8 @@ var world_ready: int = 0
 func _check_autosave(sim: CitySim) -> void:
 	var slot: String = main.SAVE_PATH
 	var off: bool = not main.autosave_enabled
-	check(off and not SaveSlot.exists(slot), "tool runs never autosave (flag off, no slot)")
+	var untouched := not SaveSlot.exists(slot) or FileAccess.get_modified_time(slot) < _started
+	check(off and untouched, "tool runs never autosave (flag off, slot untouched)")
 	var speed := sim.speed
 	sim.set_speed(0)
 	while sim.job_pending():
