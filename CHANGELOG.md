@@ -2,10 +2,12 @@
 
 All notable changes to GridFall. Generated from conventional commits by tools/changelog.py.
 
-## [Unreleased] - 2026-10-20
+## [0.1.0] - 2026-10-20
 
 ### Features
 
+- **fp**: animated crowd, walk signals and stop lines outside the zebra (d43d631)
+- **fp**: landing footsteps and gamepad bindings (0b2c10c)
 - **fp**: city overview to watch construction, Tab between street and top views (f78e62e)
 - **fp/A**: both crouching feet on the ground, camera fade check (d75726e)
 - **fp/A**: grounded crouch and landing, moving landings, walk and run photo shots (8414d05)
@@ -59,6 +61,7 @@ All notable changes to GridFall. Generated from conventional commits by tools/ch
 
 ### Bug fixes
 
+- **ci**: quieter PR review, slow-frame-safe ops backoff check (c162df0)
 - **fp**: tests accept H's atlas-masked emission and nested SignText empties (35c53c7)
 - **fp**: fp_audio_test polls a plain walker now that FpPlayer has stepped (eb0cef5)
 - **fp**: G1 lamp heads baked into model bodies follow the night on foot (4d5ac05)
@@ -84,6 +87,9 @@ All notable changes to GridFall. Generated from conventional commits by tools/ch
 
 ### Performance
 
+- **world**: merge construction-site parts without GPU read-backs (7886420)
+- **fp**: bake mid-LOD building meshes offline (e1a8eb7)
+- **fp**: spread CityBrain rounds and time-slice the render pass (7c27cf8)
 - **fp/I**: per-frame emitter work scales with the pool, not the city (b3e2bb9)
 - **fp/E**: place cached lane shapes with one native transform (d4d8676)
 - **fp/E**: skip people out of drawing range, softer siren wash at night (b8ae4ab)
@@ -99,6 +105,10 @@ All notable changes to GridFall. Generated from conventional commits by tools/ch
 - **fp/F**: tune sliced work units, frame-aware pumps, profiling (42ecb7d)
 - **fp/F**: prune and skip the session cache flush (87b6238)
 - **fp/F**: resumable sliced sim tick with exact sync equivalence (5ffd3a4)
+
+### Refactoring
+
+- **ci**: split fp_bench _measure into stat helpers (6e53aaa)
 
 ### Documentation
 
@@ -119,6 +129,11 @@ All notable changes to GridFall. Generated from conventional commits by tools/ch
 
 ### Chores
 
+- **release**: ship a player guide and orbit launchers in the release zips (27beba8)
+- **ci**: break down fp_bench hitches and stop hanging on a hidden window (9f75b18)
+- **ci**: stop hung gate steps with SIGSEGV for backtraces (6f77b86)
+- **assets**: re-export parked-car zones and buildings with real cars (5dc0af3)
+- agent readiness (tooling, CI, runtime ops, docs) (8c60c33)
 - **fp**: apply G2 import settings to H vehicles_v2 and street textures (ecc0285)
 
 ### Other changes

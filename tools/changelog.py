@@ -92,13 +92,22 @@ def section(version: str, date: str, items: list[tuple[str, str, str]]) -> str:
 
 
 def insert(changelog: str, new_section: str) -> str:
-    """Puts new_section above the newest existing `## [` section (or after the title)."""
+    """Puts new_section above the newest existing `## [` section (or after the title).
+
+    A leading `## [Unreleased]` section is replaced: a release covers the same commits.
+    """
     if not changelog.strip():
         return TITLE + "\n" + new_section
     k = changelog.find("\n## [")
     if k < 0:
         return changelog.rstrip("\n") + "\n\n" + new_section
-    return changelog[: k + 1] + new_section + "\n" + changelog[k + 1 :]
+    rest = changelog[k + 1 :]
+    if rest.startswith("## [Unreleased]"):
+        nxt = rest.find("\n## [")
+        rest = rest[nxt + 1 :] if nxt >= 0 else ""
+    if not rest:
+        return changelog[: k + 1] + new_section
+    return changelog[: k + 1] + new_section + "\n" + rest
 
 
 def main(argv: list[str] | None = None) -> int:
