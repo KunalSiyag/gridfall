@@ -191,6 +191,21 @@ static func first_name(name: String) -> String:
 	return name.strip_edges().get_slice(" ", 0)
 
 
+## The typing line for who posts next ("Maya is typing…", "Maya and Theo are typing…", "Maya,
+## Theo and 2 others are typing…"); "Someone is typing…" while nobody is known yet.
+static func typing_line(names: Array[String]) -> String:
+	match names.size():
+		0:
+			return "Someone is typing…"
+		1:
+			return "%s is typing…" % names[0]
+		2:
+			return "%s and %s are typing…" % [names[0], names[1]]
+		3:
+			return "%s, %s and %s are typing…" % [names[0], names[1], names[2]]
+	return "%s, %s and %d others are typing…" % [names[0], names[1], names.size() - 2]
+
+
 ## Capitalises the first letter.
 static func cap(text: String) -> String:
 	return text.left(1).to_upper() + text.substr(1) if not text.is_empty() else text

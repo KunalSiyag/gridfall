@@ -4,11 +4,40 @@
 
 [Index](index.md)
 
+## `scripts/fp/chat/chat_facts.gd`
+
+extends `RefCounted`
+
+What is really going on in the city, for chat answers (slice C): what the district's mayor did on their last turn in spoken words, their latest post, the Gazette headline, the council's last ruling, incidents and sites being built, and the district's numbers. Names only, never coordinates. The live player-reply and talk prompts carry it as "city_facts"; the offline voices quote it. No nodes.
+
+### Constants
+
+- `D = preload("res://scripts/sim/sim_defs.gd")`
+- `T = preload("res://scripts/fp/chat/chat_text.gd")`
+- `LINE_CHARS = 140`
+- `MAX_DID = 2`
+- `MAX_LIST = 3`
+- `ZONE_NOUNS = { "R": ["home", "homes"], "C": ["shop lot", "shop lots"], "I": ["factory lot", "factory...`
+- `SIGN_OFF = [ "Power and water come first.", "I'm watching the numbers.", "Come by City Hall and te...`: How each mayor (by D.MAYORS index) signs off an offline reply.
+- `NUMBER_ANSWERS = { "power": [ "buildings_without_power", 1.0, "Power is holding across {where}.", "{n} b...`: A mayor's answer about one of the district's numbers, by intent: [numbers key, the value from which it is bad news, the line while it is fine, the line once it is not]. {where} is the district, {n} the value.
+- `COMPLAINT_NOUNS = { "power": "the power cuts", "water": "the water", "sewage": "the drains", "trash": "th...`: A resident's complaint key as people say it.
+
+### Functions
+
+- `static func build(sim: CitySim, brain: CityBrain, people: Residents, dir: CityDirectory, d: int) -> Dictionary`: The facts for district d (-1: the city as a whole): district, mayor, mayor_did ("zoned 6 homes near Elm Street and ordered a fire station"), mayor_when ("today", "yesterday", "recently" or ""), mayor_post, gazette, council ("passed the Youth Curfew"), incidents and building (up to 3 each, "building fire at Elm Street"), numbers ({} outside the districts) and complaints (the top 2 complaint keys).
+- `static func mayor_named(text: String, district: int) -> int`: Mayor index named in text: the last name, "mayor" and the first name, or the first name alone when no resident shares it (Rosa does); a bare "mayor" or "mayors" means the mayor of district (when there is one). -1 when none.
+- `static func did_words(applied: Variant, dir: CityDirectory) -> String`: A mayor's turn in spoken words, lower case, from CityBrain's applied list ([{"action", "ok"}]): the first MAX_DID orders that went through, joined by "and". "" when none did.
+- `static func order_words(a: Variant, dir: CityDirectory) -> String`: One mayor order in spoken words ({"type": "build", "building": "fire_station", "x", "y"} -> "ordered a fire station near Elm Street"), or "" for an unknown one.
+- `static func council_words(r: Dictionary) -> String`: What a council ruling changed, lower case ("passed the Youth Curfew"), or "".
+- `static func mayor_reply(mi: int, intent: String, f: Dictionary, rng: RandomNumberGenerator) -> String`: Mayor mi's offline answer to the visitor: first person, at most 2 sentences and LINE_CHARS. It answers the line's intent (ChatterMinds.intent_of) from facts f (build() for the mayor's district) and says what the mayor did last; with nothing specific to answer it follows the turn with the mayor's latest one-sentence post or their sign-off.
+- `static func city_line(f: Dictionary, rng: RandomNumberGenerator, about: String = "") -> String`: A resident's line about one fact in f. about picks it: "incident", "mayor" (their last turn), "building", "gazette", "council" or "complaint", "" when f has none of that; an empty about picks the most pressing fact (in that order, half the time the first). "" when nothing stands out.
+- `static func compact(f: Dictionary) -> Dictionary`: f without its empty fields (the "city_facts" block of a prompt).
+
 ## `scripts/fp/chat/chat_feature.gd`
 
 extends `FpFeature`
 
-Global chat and face-to-face conversations (slice C). Normalises every city source (residents, mayors, the Gazette, the council, incidents, openings, arrivals, deals) into the ChatFeed drip queue, runs ChatterMinds rounds about real events once a minute, answers the player's chat lines, and opens the talk dialogue on talk_requested. Owns the chat panel (chat_slot) and the talk card (overlay). Budgets (D12) are enforced here on the feed clock: one round per 60 s unpaused, one player-reply call per coalesced burst (6 per minute), one talk call per line and one inspect_tile per 20 s.
+Global chat and face-to-face conversations (slice C). Normalises every city source (residents, mayors, the Gazette, the council, incidents, openings, arrivals, deals) into the ChatFeed drip queue, runs ChatterMinds rounds about real events once a minute, answers the player's chat lines, and opens the talk dialogue on talk_requested. Owns the chat panel (chat_slot) and the talk card (overlay). Budgets (D12) are enforced here on the feed clock: one round per 60 s unpaused, one player-reply call per coalesced burst (6 per minute), one talk call per line and one inspect_tile per 20 s. While the player is being answered the drip holds everyday lines and the panel shows who is typing; a status card says when live replies fail or come back.
 
 ### Constants
 
@@ -24,6 +53,8 @@ Global chat and face-to-face conversations (slice C). Normalises every city sour
 - `REPLY_GAP_MS = 1100`
 - `OPENING_GAP_MS = 30000`
 - `INSPECT_GAP_MS = 20000`
+- `STATUS_DOWN = "Live replies are slow right now. Neighbours answer from what they know."`
+- `STATUS_UP = "Live replies are back."`
 - `SAVE_MESSAGES = 80`
 - `TOPICS_MAX = 10`
 - `EVENT_TITLE = { "fire": "Fire", "blackout": "Blackout", "sewage_burst": "Sewage main burst", "gridloc...`
@@ -50,6 +81,7 @@ Global chat and face-to-face conversations (slice C). Normalises every city sour
 - `func is_typing() -> bool`: True while the talk dialogue's free-text LineEdit has focus (the player is typing a line).
 - `func player_say(text: String) -> void`: The player's chat line: posted at once, queued as a topic, answered by 2-4 residents through one coalesced reply call. "/mayor <text>" also goes to every mayor (once a game day).
 - `func tour_open_chat() -> void`: Tour hook: opens the chat drawer.
+- `func tour_ask_mayor() -> void`: Tour hook: opens the drawer and asks the mayor of the player's district (or Ada Okafor) about their day, then runs the feed clock past the first answer while the next speaker is typing.
 - `func tour_open_talk() -> void`: Tour hook: talks to the resident nearest the player once the tour has placed the player.
 - `func tour_close() -> void`: Tour hook: closes the drawer and any conversation.
 
@@ -69,7 +101,7 @@ The global chat's message store and drip queue (slice C §1). Every source is no
 ### Constants
 
 - `T = preload("res://scripts/fp/chat/chat_text.gd")`
-- `PRIORITY = { "player": 7, "post": 6, "headline": 6, "ruling": 6, "alert": 5, "incident": 5, "notic...`: Release priority per message kind (higher first): player > mayor and press > alerts and incidents > react > chatter > say > letters and logs.
+- `PRIORITY = { "player": 7, "post": 6, "headline": 6, "ruling": 6, "alert": 5, "incident": 5, "notic...`: Release priority per message kind (higher first): player > mayor and press > alerts, incidents and chat status cards > react > chatter > say > letters and logs.
 - `RING = 120`
 - `QUEUE_MAX = 60`
 - `DEDUPE_ROWS = 40`
@@ -88,13 +120,14 @@ The global chat's message store and drip queue (slice C §1). Every source is no
 - `seq: int`: Last assigned message seq (shown messages are numbered 1, 2, 3 ...).
 - `messages: Array[Dictionary]`: The last RING shown messages, oldest first.
 - `queue: Array[Dictionary]`: Waiting entries (message dicts with internal _ keys).
+- `hold_low: bool`: While true the drip holds queued lines below alert priority: the room listens while the player is being answered (the chat feature sets it every pump).
 
 ### Functions
 
 - `func setup(p_ctx: FpContext) -> void`: Stores ctx and seeds the release jitter from the city seed.
 - `func reseed() -> void`: Re-seeds the release jitter (sim.city_seed) so two runs on one seed release identically.
 - `func make(author_id: String, author: String, role: String, district: int, text: String, kind: String, reply_to: int = -1, refs: Dictionary = {}) -> Dictionary`: A new message dict (S0 §9). text goes through the display filter; refs hold String/int only.
-- `func enqueue(msg: Dictionary, opts: Dictionary = {}) -> int`: Queues msg for the drip. opts: "skip" (bool: the fast lane for replies to the player, released after "delay_ms"), "exempt" (bool: no per-author limit), "reply_qid" (int: hold until that queue entry is shown, then reply to its seq). Returns the queue id, or -1 when dropped (empty, a duplicate, or replaced into an existing entry of the same author).
+- `func enqueue(msg: Dictionary, opts: Dictionary = {}) -> int`: Queues msg for the drip. opts: "skip" (bool: the fast lane for replies to the player, released after "delay_ms"), "exempt" (bool: no per-author limit), "force" (bool: a direct answer, only dropped as a copy of another fast-lane entry), "reply_qid" (int: hold until that queue entry is shown, then reply to its seq). Returns the queue id, or -1 when dropped (empty, a duplicate, or replaced into an existing entry of the same author).
 - `func post_now(msg: Dictionary) -> Dictionary`: Shows msg at once (player lines), bypassing the queue. Returns the shown dict (with its seq).
 - `func is_duplicate(norm: String) -> bool`: True when norm (a normalise() key) matches a queued entry or one of the last DEDUPE_ROWS shown messages from the last DEDUPE_MS.
 - `func pump(dt_seconds: float) -> void`: Advances the clock by dt seconds: releases due fast-lane entries, then drips the queue (one message every RELEASE_MIN_MS..RELEASE_MAX_MS), then emits pumped(now_ms).
@@ -105,6 +138,7 @@ The global chat's message store and drip queue (slice C §1). Every source is no
 - `func by_seq(s: int) -> Dictionary`: The shown message with this seq, or {}.
 - `func busy() -> bool`: True while entries wait in the queue or the fast lane.
 - `func fast_count() -> int`: Entries waiting in the fast lane (replies to the player).
+- `func fast_authors() -> Array[Dictionary]`: Who posts next from the fast lane, soonest first: [{"author", "role"}] (the typing line).
 - `func clear() -> void`: Drops every message and queued entry (load, New City). now_ms keeps running.
 - `func restore(list: Array, p_seq: int) -> void`: Restores shown messages from a save (already cast and filtered); t_ms becomes now ("now").
 
@@ -134,6 +168,7 @@ Text helpers for the global chat and conversations (slice C): the display filter
 - `static func rel_time(age_ms: int) -> String`: "now", "3m", "2h", "4d" for an age in milliseconds.
 - `static func initials(name: String) -> String`: Up to two upper-case initials ("Priya Gupta" -> "PG", "GridFall Gazette" -> "GG").
 - `static func first_name(name: String) -> String`: First name ("Priya Gupta" -> "Priya").
+- `static func typing_line(names: Array[String]) -> String`: The typing line for who posts next ("Maya is typing…", "Maya and Theo are typing…", "Maya, Theo and 2 others are typing…"); "Someone is typing…" while nobody is known yet.
 - `static func cap(text: String) -> String`: Capitalises the first letter.
 - `static func h(s: String) -> int`: Deterministic non-negative hash of a string (stable across runs).
 - `static func mix(s: String) -> int`: h(s) with its bits mixed (a murmur-style finaliser). Godot's String hash is djb2, whose value modulo 3 depends only on the last character, so "hash(id + day) % 3" would make every letter of a day public or none; mix() spreads it.

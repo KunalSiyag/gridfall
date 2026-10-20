@@ -5,7 +5,8 @@ extends FpFeature
 ## lines, and opens the talk dialogue on talk_requested. Owns the chat panel (chat_slot) and the
 ## talk card (overlay). Budgets (D12) are enforced here on the feed clock: one round per 60 s
 ## unpaused, one player-reply call per coalesced burst (6 per minute), one talk call per line and
-## one inspect_tile per 20 s.
+## one inspect_tile per 20 s. While the player is being answered the drip holds everyday lines and
+## the panel shows who is typing; a status card says when live replies fail or come back.
 
 const D := preload("res://scripts/sim/sim_defs.gd")
 const T := preload("res://scripts/fp/chat/chat_text.gd")
@@ -20,6 +21,8 @@ const REPLY_FIRST_MS := 600
 const REPLY_GAP_MS := 1100
 const OPENING_GAP_MS := 30000
 const INSPECT_GAP_MS := 20000
+const STATUS_DOWN := "Live replies are slow right now. Neighbours answer from what they know."
+const STATUS_UP := "Live replies are back."
 const SAVE_MESSAGES := 80
 const TOPICS_MAX := 10
 const EVENT_TITLE := {
@@ -92,6 +95,7 @@ func setup(p_ctx: FpContext) -> void:
 	add_child(minds)
 	minds.setup(ctx.sim, ctx.residents, ctx.client, ctx.brain, ctx.directory)
 	minds.recent_of = _recent_of
+	minds.live_changed.connect(_on_live_changed)
 	feed.shown.connect(_on_shown)
 	feed.changed.connect(_on_changed)
 	feed.pumped.connect(_on_pumped)
@@ -154,6 +158,7 @@ func from_dict(d: Dictionary) -> void:
 	_player_first_ms = -1
 	_round_accum = 0
 	feed.clear()
+	feed.hold_low = false
 	minds.reset()
 	if panel != null:
 		panel.clear_rows()
@@ -206,6 +211,8 @@ func photo_shots() -> Array:
 	var sp: Dictionary = ctx.mode.spawn_point()
 	return [
 		{"name": "chat_open", "pos": sp["pos"], "yaw": float(sp["yaw"]), "pitch": 0.0, "hour": 10.5, "prepare": "tour_open_chat", "restore": "tour_close"},
+		{"name": "chat_reply", "pos": sp["pos"], "yaw": float(sp["yaw"]), "pitch": 0.0,
+			"hour": 10.5, "prepare": "tour_ask_mayor", "restore": "tour_close"},
 		{"name": "chat_talk", "pos": sp["pos"], "yaw": float(sp["yaw"]), "pitch": 0.0, "hour": 10.5, "prepare": "tour_open_talk", "restore": "tour_close"},
 	]
 
@@ -237,7 +244,8 @@ func player_say(text: String) -> void:
 	var shown := feed.post_now(feed.make("player", "You", "player", d, t, "player"))
 	_player_last_seq = int(shown["seq"])
 	_push_topic({"kind": "player", "text": T.display(body, ctx.directory), "district": d})
-	_player_pending.append(body)
+	# The "To the mayors: " prefix stays in the reply text, so the district's mayor answers it.
+	_player_pending.append(t)
 	if _player_first_ms < 0:
 		_player_first_ms = feed.now_ms
 	_player_last_ms = feed.now_ms
@@ -248,6 +256,19 @@ func player_say(text: String) -> void:
 func tour_open_chat() -> void:
 	if panel != null:
 		panel.open()
+
+
+## Tour hook: opens the drawer and asks the mayor of the player's district (or Ada Okafor) about
+## their day, then runs the feed clock past the first answer while the next speaker is typing.
+func tour_ask_mayor() -> void:
+	if panel == null:
+		return
+	panel.open()
+	var mi := maxi(_player_district(), 0)
+	player_say("Mayor %s, what did you do today?" % D.mayor_display(mi).get_slice(" ", 1))
+	var until := feed.now_ms + PLAYER_DEBOUNCE_MS + REPLY_FIRST_MS + int(REPLY_GAP_MS * 0.5)
+	while feed.now_ms < until:
+		feed.pump(0.25)
 
 
 ## Tour hook: talks to the resident nearest the player once the tour has placed the player.
@@ -274,9 +295,12 @@ func _on_pumped(now: int) -> void:
 				_run_round()
 	if live_mode:
 		_pump_player(now)
+	var answering := _answering(now)
+	feed.hold_low = answering
 	if talk != null:
 		talk.on_pump(now)
 	if panel != null:
+		panel.set_typing(answering, _typing_names())
 		panel.on_pump(now)
 
 
@@ -323,8 +347,27 @@ func _reply_player(text: String, parent: int, district: int) -> void:
 		var ln: Dictionary = v
 		var msg := _line_msg(ln)
 		msg["reply_to"] = parent
-		feed.enqueue(msg, {"skip": true, "exempt": true, "delay_ms": delay})
+		feed.enqueue(msg, {"skip": true, "exempt": true, "force": true, "delay_ms": delay})
 		delay += REPLY_GAP_MS + T.h(str(ln.get("id", ""))) % 700
+
+
+## True while the player is being answered: their line waits for its reply call (at most
+## PLAYER_COALESCE_MS), the call is out, or the replies wait in the fast lane.
+func _answering(now: int) -> bool:
+	var waiting := not _player_pending.is_empty() and now - _player_first_ms <= PLAYER_COALESCE_MS
+	return waiting or minds.busy("player") or feed.fast_count() > 0
+
+
+## Who the typing row names: the fast lane's authors, soonest first (residents by full name, as
+## many share a first name; mayors as "Mayor <last name>").
+func _typing_names() -> Array[String]:
+	var out: Array[String] = []
+	for a: Dictionary in feed.fast_authors():
+		var n := str(a["author"])
+		var nm := ("Mayor " + n.get_slice(" ", 1)) if str(a["role"]) == "mayor" else n
+		if not out.has(nm):
+			out.append(nm)
+	return out
 
 
 # ---------------------------------------------------------------- topics
@@ -637,6 +680,12 @@ func _on_inspector(rep: Dictionary) -> void:
 func _on_shown(msg: Dictionary) -> void:
 	if panel != null:
 		panel.append(msg)
+
+
+## A status card when live replies stop working or come back (ChatterMinds.live_changed).
+func _on_live_changed(up: bool) -> void:
+	var text := STATUS_UP if up else STATUS_DOWN
+	feed.enqueue(feed.make("system", "Chat", "system", -1, text, "status"))
 
 
 func _on_changed(msg: Dictionary) -> void:

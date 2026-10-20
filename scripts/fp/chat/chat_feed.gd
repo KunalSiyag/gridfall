@@ -6,11 +6,12 @@ extends Node
 ## pump(), which _process calls, so pause freezes it and tests are deterministic.
 
 const T := preload("res://scripts/fp/chat/chat_text.gd")
-## Release priority per message kind (higher first): player > mayor and press > alerts and
-## incidents > react > chatter > say > letters and logs.
+## Release priority per message kind (higher first): player > mayor and press > alerts,
+## incidents and chat status cards > react > chatter > say > letters and logs.
 const PRIORITY := {
 	"player": 7, "post": 6, "headline": 6, "ruling": 6, "alert": 5, "incident": 5, "notice": 5,
-	"react": 4, "opened": 4, "chatter": 3, "say": 2, "people": 1, "letter": 1, "log": 1,
+	"status": 5, "react": 4, "opened": 4, "chatter": 3, "say": 2, "people": 1, "letter": 1,
+	"log": 1,
 }
 const RING := 120
 const QUEUE_MAX := 60
@@ -47,6 +48,9 @@ var messages: Array[Dictionary] = []
 var _norms: Array[String] = []
 ## Waiting entries (message dicts with internal _ keys).
 var queue: Array[Dictionary] = []
+## While true the drip holds queued lines below alert priority: the room listens while the
+## player is being answered (the chat feature sets it every pump).
+var hold_low: bool = false
 var _fast: Array[Dictionary] = []
 var _next_release_ms: int = 0
 var _qid: int = 0
@@ -82,15 +86,17 @@ func make(author_id: String, author: String, role: String, district: int, text: 
 
 
 ## Queues msg for the drip. opts: "skip" (bool: the fast lane for replies to the player, released
-## after "delay_ms"), "exempt" (bool: no per-author limit), "reply_qid" (int: hold until that
-## queue entry is shown, then reply to its seq). Returns the queue id, or -1 when dropped (empty,
-## a duplicate, or replaced into an existing entry of the same author).
+## after "delay_ms"), "exempt" (bool: no per-author limit), "force" (bool: a direct answer, only
+## dropped as a copy of another fast-lane entry), "reply_qid" (int: hold until that queue entry
+## is shown, then reply to its seq). Returns the queue id, or -1 when dropped (empty, a
+## duplicate, or replaced into an existing entry of the same author).
 func enqueue(msg: Dictionary, opts: Dictionary = {}) -> int:
 	var text := str(msg.get("text", "")).strip_edges()
 	if text.is_empty():
 		return -1
 	var norm := T.normalise(text)
-	if is_duplicate(norm):
+	var dup := _in_fast(norm) if bool(opts.get("force", false)) else is_duplicate(norm)
+	if dup:
 		return -1
 	var e := msg.duplicate()
 	_qid += 1
@@ -231,6 +237,18 @@ func fast_count() -> int:
 	return _fast.size()
 
 
+## Who posts next from the fast lane, soonest first: [{"author", "role"}] (the typing line).
+func fast_authors() -> Array[Dictionary]:
+	var lane := _fast.duplicate()
+	lane.sort_custom(
+		func(a: Dictionary, b: Dictionary) -> bool: return int(a["_due"]) < int(b["_due"])
+	)
+	var out: Array[Dictionary] = []
+	for e: Dictionary in lane:
+		out.append({"author": str(e["author"]), "role": str(e["role"])})
+	return out
+
+
 ## Drops every message and queued entry (load, New City). now_ms keeps running.
 func clear() -> void:
 	messages.clear()
@@ -314,6 +332,8 @@ func _pick() -> Dictionary:
 
 
 func _eligible(q: Dictionary) -> bool:
+	if hold_low and int(q["_prio"]) < int(PRIORITY["alert"]):
+		return false
 	var rq := int(q["_reply_qid"])
 	if rq >= 0 and not _qid_seq.has(rq):
 		for o: Dictionary in queue:
@@ -323,6 +343,13 @@ func _eligible(q: Dictionary) -> bool:
 		return true
 	var last: Variant = _author_last.get(str(q["author_id"]))
 	return last == null or now_ms - int(last) >= AUTHOR_MS
+
+
+func _in_fast(norm: String) -> bool:
+	for q: Dictionary in _fast:
+		if str(q["_norm"]) == norm:
+			return true
+	return false
 
 
 func _drop_lowest() -> void:

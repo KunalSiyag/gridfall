@@ -73,6 +73,8 @@ var _follow: bool = true
 var _last_refresh_ms: int = 0
 var _tween: Tween
 var _dots: Dictionary = {}
+var _typing: Control
+var _typing_label: Label
 
 
 ## Builds the drawer, the edge tab and the ticker inside chat_slot.
@@ -335,6 +337,20 @@ func pinned_text() -> String:
 	return _pinned_headline.text if _pinned.visible else ""
 
 
+## Shows the typing row above the input while on: "<names> is typing…" (ChatText.typing_line;
+## names are who answers next, soonest first, "Someone" while nobody is known yet).
+func set_typing(on: bool, names: Array[String]) -> void:
+	_typing.visible = on
+	var line := T.typing_line(names) if on else ""
+	if _typing_label.text != line:
+		_typing_label.text = line
+
+
+## The typing row's text ("" while it is hidden).
+func typing_text() -> String:
+	return _typing_label.text if _typing.visible else ""
+
+
 func _make_row(msg: Dictionary) -> ROW:
 	var row := ROW.new()
 	row.setup(msg, _parent_of(msg), ROW_W, T.rel_time(_now() - int(msg.get("t_ms", 0))), _row_district(msg))
@@ -564,6 +580,7 @@ func _build_drawer() -> void:
 	_pinned.visibility_changed.connect(func() -> void: pm.visible = _pinned.visible)
 	pm.visible = false
 	col.add_child(_build_list())
+	col.add_child(_build_typing())
 	col.add_child(_build_input())
 	_build_tab()
 
@@ -767,6 +784,28 @@ func _build_list() -> Control:
 		_scroll_to_end())
 	area.add_child(_pill)
 	return area
+
+
+func _build_typing() -> Control:
+	_typing = MarginContainer.new()
+	_typing.name = "Typing"
+	_typing.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_typing.add_theme_constant_override("margin_left", 14)
+	_typing.add_theme_constant_override("margin_right", 14)
+	_typing.add_theme_constant_override("margin_bottom", 5)
+	_typing.visible = false
+	var h := HBoxContainer.new()
+	h.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	h.add_theme_constant_override("separation", 6)
+	_typing.add_child(h)
+	var dots := W.Dots.new(Color(S.TEXT_DIM, 0.9))
+	dots.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	h.add_child(dots)
+	_typing_label = S.label("", S.italic_font(), 12, S.TEXT_DIM)
+	_typing_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_typing_label.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
+	h.add_child(_typing_label)
+	return _typing
 
 
 func _build_input() -> Control:

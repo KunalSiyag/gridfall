@@ -23,12 +23,17 @@ Removes model brand names from CityBrain text: a Gazette page as it comes in, an
 
 class_name `ChatterMinds` · extends `Node`
 
-The voices of the global chat and of face-to-face talk (slice C §3). Residents, and sometimes a mayor, talk about real city events in their own voices: one batched GMI call per ambient round, one per player chat message, one per spoken line in a conversation, all through GmiClient.live_json (never remember/lookup, so nothing reaches the session cache or a save). Offline a deterministic heuristic writes the lines from each resident's own say, thought, mood reason, job, skills, traits and home. Live answers live only in this node's in-memory LRU.
+The voices of the global chat and of face-to-face talk (slice C §3). Residents, and sometimes a mayor, talk about real city events in their own voices: one batched GMI call per ambient round, one per player chat message, one per spoken line in a conversation, all through GmiClient.live_json (never remember/lookup, so nothing reaches the session cache or a save). Offline a deterministic heuristic writes the lines from each resident's own say, thought, mood reason, job, skills, traits and home. Live answers live only in this node's in-memory LRU. Player replies and talk lines also get the city facts (ChatFacts: the mayor's last turn, the Gazette, incidents, sites, district numbers), and a mayor the player names answers in person.
+
+### Signals
+
+- `live_changed(up: bool)`: Live replies stopped working (up false: DOWN_AFTER failed calls in a row) or work again (up true: the first good call after that). Never emitted while the client is offline.
 
 ### Constants
 
 - `D = preload("res://scripts/sim/sim_defs.gd")`
 - `T = preload("res://scripts/fp/chat/chat_text.gd")`
+- `F = preload("res://scripts/fp/chat/chat_facts.gd")`
 - `MODEL_NAMES = ["deepseek-ai/DeepSeek-V4.1-Flash", "google/gemini-3.5-flash-lite", "Qwen/Qwen3.8-Flash"]`: The fast models chatter rotates across, taken from ResidentMinds.MODELS.
 - `ROUND_TOKENS = 600`
 - `ROUND_TIMEOUT = 30.0`
@@ -39,6 +44,9 @@ The voices of the global chat and of face-to-face talk (slice C §3). Residents,
 - `LRU_MAX = 256`
 - `EMOTES = ["wave", "shrug", "angry", "laugh", "none"]`
 - `MAYOR_LINE_CHANCE = 0.35`
+- `CITY_ABOUT = {"around": "", "incident": "incident", "mayor": "mayor", "news": "gazette"}`: Which ChatFacts.city_line fact answers a player line of this intent ("" = the most pressing).
+- `TALK_ABOUT = {"around": "mayor", "mayor": "mayor", "news": "council"}`: Which ChatFacts.city_line fact a face-to-face reply of this intent adds.
+- `DOWN_AFTER = 2`: Failed live calls in a row before live_down turns true.
 - `ROUND_SYSTEM = """`
 - `PLAYER_SYSTEM = """`
 - `TALK_SYSTEM = """`
@@ -55,17 +63,18 @@ The voices of the global chat and of face-to-face talk (slice C §3). Residents,
 
 - `last_system: String`: The last prompts built (tests read them; never saved, logged or printed).
 - `recent_of: Callable`: Optional: func(resident_id: String) -> Array[String], the resident's last chat lines (talk prompt).
+- `live_down: bool`: True after DOWN_AFTER failed live calls in a row, until a call succeeds (live_changed).
 
 ### Functions
 
 - `func setup(p_sim: CitySim, p_people: Residents, p_client: GmiClient, p_brain: CityBrain, p_directory: CityDirectory) -> void`: Wires the minds to the city. client may be offline (live_enabled false): then no call is made.
 - `func busy(kind: String) -> bool`: True while a call of this kind ("round", "player" or "talk") is in flight.
 - `func live() -> bool`: True when calls go to the network (offline gates: always false).
-- `func reset() -> void`: Forgets per-city state (load, New City); the LRU and stats survive.
+- `func reset() -> void`: Forgets per-city state (load, New City) and live_down; the LRU and stats survive.
 - `func run_round(topic: Dictionary, recent: Array) -> Array`: One batched round: 4-8 lines from 4-6 picked residents (and maybe a mayor) about a topic. Coroutine; returns validated lines [{"id", "author", "role", "district", "text", "reply_to", "reply_idx"}] (reply_to is a shown seq from recent, reply_idx an earlier line of this round).
-- `func reply_to_player(text: String, district: int, recent: Array) -> Array`: Replies to a player chat line (2-4 residents, district-weighted). text may hold several coalesced lines joined by "\n". Coroutine; same line dicts as run_round (reply_to -1: the caller points them at the player's message).
+- `func reply_to_player(text: String, district: int, recent: Array) -> Array`: Replies to a player chat line (2-4 residents, district-weighted). A mayor the line names (or, for a bare "mayor", the district's) answers first, about their own last turn. text may hold several coalesced lines joined by "\n". Each reply gets its own seed, so a question asked twice gets new words. Coroutine; same line dicts as run_round (reply_to -1: the caller points them at the player's message).
 - `func talk(r: Dictionary, turns: Array, player_text: String) -> Dictionary`: One face-to-face reply from resident r: {"reply", "mood_delta", "memory", "emote", "source"}. turns: earlier lines [{"who": "you"|"them", "text"}]. Coroutine: one live call when online (falls back to the LRU, then the heuristic), the heuristic offline.
-- `func talk_user(r: Dictionary, turns: Array, said: String) -> String`: The talk prompt's user JSON: the resident's card with directory names instead of coordinates, state, plan, thought, mood reason, last 8 memories, what is nearby, their last 3 chat lines, the last 6 turns and player_line (the only place the player's text appears).
+- `func talk_user(r: Dictionary, turns: Array, said: String) -> String`: The talk prompt's user JSON: the resident's card with directory names instead of coordinates, state, plan, thought, mood reason, last 8 memories, what is nearby, the city facts of their district, their last 3 chat lines, the last 6 turns and player_line (the only place the player's text appears).
 - `func validate_talk(data: Dictionary) -> Dictionary`: Validates a talk reply: reply <= 40 words (debranded, no URL, no model name), mood_delta in -1..1, memory <= 15 words, emote whitelisted. {} when the reply is unusable.
 - `func greeting(r: Dictionary) -> String`: The first thing r says when the player walks up: their own "say" line, else a greeting in their voice.
 - `func greeting_emote(r: Dictionary) -> String`: The emote that goes with r's greeting: a wave from friendly voices, a frown when miserable.
@@ -76,7 +85,7 @@ The voices of the global chat and of face-to-face talk (slice C §3). Residents,
 - `func topic_facts(topic: Dictionary) -> Dictionary`: Topic facts for prompts (names only, never coordinates).
 - `func validate_lines(data: Dictionary, picked: Array, mayor: int, recent: Array) -> Array`: Validates model lines (C §3): ids must be picked (or "m<mayor>"), text trimmed to 140 and debranded; empty lines, URLs, model names and more than 2 sentences are dropped; at most 8.
 - `func heuristic_round(topic: Dictionary, picked: Array, mayor: int, recent: Array, rng: RandomNumberGenerator) -> Array`: Deterministic offline round: an opener on the topic from the first participant, then reactions, agreements and disagreements in each participant's voice, threaded by reply_idx.
-- `func heuristic_player(said: String, picked: Array, rng: RandomNumberGenerator) -> Array`: Deterministic offline replies to the player's line, by what the line is about.
+- `func heuristic_player(said: String, picked: Array, rng: RandomNumberGenerator, city: Dictionary = {}, mi: int = -1) -> Array`: Deterministic offline replies to the player's line, by what the line is about. The first resident quotes the city fact the line asks about (CITY_ABOUT, from city: ChatFacts.build for the player's district; now and then for small talk too) and mayor mi, when the line names one, answers first from their own last turn.
 - `static func intent_of(text: String) -> String`: Coarse intent of a player line: greet, how, around, mayor, bye, power, water, traffic, money, jobs, incident, crime, food, fun, news, who, help or generic.
 - `static func voice(r: Dictionary) -> String`: A resident's voice: grump, worried, sunny, civic or plain (traits first, then mood).
 - `func facts(r: Dictionary, topic: Dictionary = {}) -> Dictionary`: Template tokens for r: first, name, job, district, street, work, mayor, mayor_last, place, ev, ev_cap, what, headline, label, tax (and the topic's when given).
