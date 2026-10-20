@@ -1,12 +1,29 @@
 extends SceneTree
 ## City overview (integration feature "overview"): Tab lifts the camera into an aerial view with a
 ## marker per open construction site; N / B select sites, F walks the hero there, G sets a waypoint,
-## Tab / Esc return to the hero's own camera. Runs in third person on a grown city.
+## Tab / Esc return to the hero's own camera; the same from a gamepad. Runs in third person on a
+## grown city.
 
 const K := preload("res://tools/tests/fp_kit.gd")
 const D := preload("res://scripts/sim/sim_defs.gd")
 const WS := preload("res://scripts/fp/world_scale.gd")
 const DT := 1.0 / 60.0
+## Actions a controller player needs on foot and in the overview.
+const ON_FOOT_PAD := [
+	"move_forward", "move_back", "move_left", "move_right",
+	"look_left", "look_right", "look_up", "look_down",
+	"jump", "crouch", "sprint", "interact", "view_toggle", "shoulder_swap",
+	"zoom_in", "zoom_out", "photo_mode", "map_toggle", "pause_menu",
+	"time_faster", "time_slower", "overview_toggle",
+	"site_next", "site_prev", "site_go", "site_waypoint",
+]
+## Live at the same time on the street; the overview's site actions reuse buttons while it owns
+## input.
+const ON_FOOT_UNIQUE := [
+	"jump", "crouch", "sprint", "interact", "view_toggle", "shoulder_swap", "zoom_in",
+	"zoom_out", "photo_mode", "map_toggle", "pause_menu", "time_faster", "time_slower",
+	"overview_toggle",
+]
 
 var fails: Array[String] = []
 
@@ -35,6 +52,7 @@ func _init() -> void:
 	_check_waypoint(ctx, f)
 	_check_walk(ctx, f)
 	_check_keys(ctx, f)
+	_check_gamepad(ctx, f)
 	_check_guards(ctx, f)
 	_check_first_person(ctx, f)
 	_check_toast(ctx, f)
@@ -164,6 +182,58 @@ func _check_keys(ctx: FpContext, f: FpFeature) -> void:
 	K.check(fails, not bool(f.get("active")), "Tab closes it again")
 	_step(ctx, f, 1.0)
 
+## Every on-foot action works from a controller, the on-foot buttons do not collide, and the
+## overview runs from the pad (Back opens it, the D-pad picks sites without touching time, Y sets
+## the waypoint).
+func _check_gamepad(ctx: FpContext, f: FpFeature) -> void:
+	var missing: Array[String] = []
+	var used := {}
+	var clash: Array[String] = []
+	for a: String in ON_FOOT_PAD:
+		var pad := _pad_key(a)
+		if pad.is_empty():
+			missing.append(a)
+		elif ON_FOOT_UNIQUE.has(a):
+			if used.has(pad):
+				clash.append("%s/%s" % [used[pad], a])
+			used[pad] = a
+	var miss_msg := "every on-foot action has a gamepad binding (missing %s)"
+	K.check(fails, missing.is_empty(), miss_msg % str(missing))
+	K.check(fails, clash.is_empty(), "no two on-foot actions share a pad input (%s)" % str(clash))
+	var before := ctx.mode.time_scale
+	f._unhandled_input(_pad(JOY_BUTTON_BACK))
+	K.check(fails, bool(f.get("active")), "Back opens the overview")
+	_step(ctx, f, 0.5)
+	var list: Array = f.call("site_list")
+	f.set("selected", -1)
+	f._unhandled_input(_pad(JOY_BUTTON_DPAD_RIGHT))
+	var picked := int(f.get("selected")) == int(list[0]["i"])
+	var time_kept := ctx.mode.time_scale == before
+	K.check(fails, picked and time_kept, "D-pad right picks the next site and leaves time alone")
+	f._unhandled_input(_pad(JOY_BUTTON_Y))
+	var waypoint_set := ctx.hud.waypoint() != null
+	var back := not bool(f.get("active"))
+	K.check(fails, waypoint_set and back, "Y sets the waypoint and returns to the hero")
+	ctx.hud.clear_waypoint()
+	_step(ctx, f, 1.0)
+
+
+## "b<index>" or "a<axis><sign>" for the action's first pad event, "" when it has none.
+func _pad_key(action: String) -> String:
+	for e: InputEvent in InputMap.action_get_events(action):
+		if e is InputEventJoypadButton:
+			return "b%d" % (e as InputEventJoypadButton).button_index
+		if e is InputEventJoypadMotion:
+			var m := e as InputEventJoypadMotion
+			return "a%d%s" % [m.axis, "+" if m.axis_value > 0.0 else "-"]
+	return ""
+
+
+func _pad(button: JoyButton) -> InputEventJoypadButton:
+	var e := InputEventJoypadButton.new()
+	e.button_index = button
+	e.pressed = true
+	return e
 
 func _check_guards(ctx: FpContext, f: FpFeature) -> void:
 	ctx.push_modal(&"test")

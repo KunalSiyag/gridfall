@@ -5,7 +5,9 @@ is open: each has a local fallback in `scripts/fp/audio/`, or the sound is simpl
 
 ## To A (player)
 
-1. **A landing is a foot contact.** `FpPlayer.stepped` fires on each heel strike of the gait
+1. **Done:** `FpPlayer` emits `stepped` on touchdown after 0.15 s or more in the air, then
+   `landed(speed_mps)`; footsteps add the other foot, 3 dB up, above 4 m/s.
+   **A landing is a foot contact.** `FpPlayer.stepped` fires on each heel strike of the gait
    (`_advance_phase`), but not on touchdown: `_vertical` sets `grounded = true` after a jump or
    a fall without emitting. The I contract (§5) and A2 count a landing as one more contact. Please
    emit `stepped(collision.surface_at(position), position)` once when the hero lands after more

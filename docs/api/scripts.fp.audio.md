@@ -224,6 +224,8 @@ The hero's footsteps (slice I). With FpPlayer's `stepped(surface, pos)` signal (
 - `RIGHT_VARIANTS = [2, 4, 6]`
 - `PAVED = ["asphalt", "sidewalk", "lot", "bridge"]`: Surfaces that hold a film of water when wet, and the wetness below which no splash plays.
 - `SPLASH_MIN_WET = 0.2`
+- `HEAVY_LAND_MPS = 4.0`: Landings faster than this (m/s down, FpPlayer's heavy landing) add the other foot, louder.
+- `HEAVY_LAND_DB = 3.0`
 
 ### Properties
 
@@ -236,6 +238,6 @@ The hero's footsteps (slice I). With FpPlayer's `stepped(surface, pos)` signal (
 - `func unbind() -> void`
 - `func poll(_dt: float) -> void`: The polling fallback; does nothing while the player has the stepped signal.
 - `static func stride_length(speed_mps: float) -> float`: Stride (m) for a speed in m/s.
-- `func play(surface: String) -> void`: Plays one step on surface (CollisionWorld.surface_at names; unknown ones sound like sidewalk).
+- `func play(surface: String, gain_db: float = 0.0) -> void`: Plays one step on surface (CollisionWorld.surface_at names; unknown ones sound like sidewalk).
 - `func wetness() -> float`: How wet the streets are, 0..1: G1's streetscape weather, read by name; 0 without it.
 - `static func is_left_variant(n: String) -> bool`: True when stream name n is a left-foot variant.
