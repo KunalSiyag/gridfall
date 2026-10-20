@@ -286,7 +286,8 @@ First-person world scale. One unit is one tile is 20 m; physical quantities are 
 - `CURB_FURNITURE = [0.305, 0.345]`: lamps, signs, bins, bollards (baked lamps at ±0.34, roads.py:166-167)
 - `PED_BAND = [0.355, 0.405]`: pedestrian centrelines (E), review DEH-20
 - `FRONT_FURNITURE = [0.415, 0.49]`: shelters, racks, meters against the lot edge, review DEH-20
-- `STOP_LINE = 0.35`: stop-line inner edge from the junction centre (roads.py:109-115)
+- `STOP_LINE = 0.475`: stop-line inner edge from the junction centre, outside the zebra (roads.py)
+- `STOP_BAR = 0.02`: painted stop-line width (0.4 m)
 - `ZEBRA_NEAR = 0.375`: roads.py:92-106
 - `ZEBRA_FAR = 0.47`: roads.py:92-106
 - `CORNER_INNER_R = 0.2`: corner carriageway inner radius about the tile corner (roads.py:173-181)

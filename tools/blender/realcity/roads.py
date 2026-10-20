@@ -104,15 +104,16 @@ def zebra(mb, arm):
             mark_rect(mb, 0.375, u0, 0.47, u1)
         else:
             mark_rect(mb, -0.47, u0, -0.375, u1)
-    # stop line on the inbound (right-hand) lane
+    # stop line on the inbound (right-hand) lane, on the approach side of the zebra (WS.STOP_LINE)
+    s0, s1 = 0.475, 0.495
     if arm == "S":
-        mark_rect(mb, 0.0, -0.36, HW - 0.02, -0.35)
+        mark_rect(mb, 0.0, -s1, HW - 0.02, -s0)
     elif arm == "N":
-        mark_rect(mb, -HW + 0.02, 0.35, 0.0, 0.36)
+        mark_rect(mb, -HW + 0.02, s0, 0.0, s1)
     elif arm == "E":
-        mark_rect(mb, 0.35, 0.0, 0.36, HW - 0.02)
+        mark_rect(mb, s0, 0.0, s1, HW - 0.02)
     else:
-        mark_rect(mb, -0.36, -HW + 0.02, -0.35, 0.0)
+        mark_rect(mb, -s1, -HW + 0.02, -s0, 0.0)
 
 
 def details(mb, drains=(), manholes=()):
@@ -165,7 +166,8 @@ def road_straight(c, lights=False, seed=0):
     if lights:
         street_lamp(c, -HW - 0.04, -0.25, 0.0 + math.pi, 0)
         street_lamp(c, HW + 0.04, 0.25, 0.0, 1)
-        for (x, y) in ((-0.4, 0.2), (0.4, -0.2)):
+        # in WS.CURB_FURNITURE, clear of the pedestrian band
+        for (x, y) in ((-0.325, 0.2), (0.325, -0.2)):
             mb.cyl((x, y, ZS), 0.0035, 0.025, "Metal_Dark", n=6)
 
 

@@ -488,7 +488,7 @@
  },
  "tools/tests/fp_traffic_test.gd": {
   "max-file-lines: Max allowed file lines num (1000) exceeded": 1,
-  "max-line-length: Max allowed line length (100) exceeded": 103
+  "max-line-length: Max allowed line length (100) exceeded": 133
  },
  "tools/tests/fp_world_scale_test.gd": {
   "max-line-length: Max allowed line length (100) exceeded": 9

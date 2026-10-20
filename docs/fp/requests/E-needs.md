@@ -5,7 +5,9 @@ item has a local fallback in E, so nothing here blocks E's merge.
 
 ## To G1 (road markings) and H (`tools/blender/roads.py`)
 
-1. **The stop line belongs on the approach side of the zebra.** `roads.py:109-115` paints the stop
+1. **Done:** the bar is painted at 0.475..0.495 u (`WS.STOP_LINE`, `WS.STOP_BAR`) and
+   `LaneGraph.STOP_FRONT` derives from it; movements still start at `LaneGraph.MOVE_FROM` (0.35).
+   **The stop line belongs on the approach side of the zebra.** `roads.py:109-115` paints the stop
    bar with its inner edge at `WS.STOP_LINE` (0.35 u from the junction centre), and the zebra spans
    `ZEBRA_NEAR`..`ZEBRA_FAR` (0.375..0.47). A car held at the painted line would stand on the
    crossing while people walk it, so E holds car fronts at

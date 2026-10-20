@@ -19,10 +19,12 @@ const CORNER := 1
 const APPROACH := 2
 const MOVE := 3
 const UTURN := 4
-## Car fronts stop here, measured from the junction centre: just outside the zebra. The painted
-## stop line (WS.STOP_LINE, roads.py) lies on the junction side of the zebra, so a car held on it
-## would stand on the crossing while people walk it (request to G1: docs/fp/requests/E-needs.md).
-const STOP_FRONT := WS.ZEBRA_FAR + 0.4 * WS.M
+## Car fronts stop here, measured from the junction centre: on the approach edge of the painted
+## stop line (WS.STOP_LINE, roads.py), which lies just outside the zebra.
+const STOP_FRONT := WS.STOP_LINE + WS.STOP_BAR
+## Where approaches hand over to junction movements. It predates the stop line's move outward and
+## stays put so the movement curves (and their timing) are unchanged; the hold is at STOP_FRONT.
+const MOVE_FROM := 0.35
 const ZEBRA_MID := (WS.ZEBRA_NEAR + WS.ZEBRA_FAR) * 0.5
 ## Curb parking: two slots per side of a straight tile, centres 3 m either side of the middle
 ## (6 m spacing); slot k: side k / 2 (0 = right of the run direction), along -/+ for k % 2.
@@ -671,14 +673,14 @@ func _corner_pts(fe: int, te: int) -> PackedVector2Array:
 func _approach_pts(e: int) -> PackedVector2Array:
 	var a := DIRS[e]
 	var p := entry_pt(e, WS.LANE_OFFSET)
-	var q := a * WS.STOP_LINE + _right(-a) * WS.LANE_OFFSET
+	var q := a * MOVE_FROM + _right(-a) * WS.LANE_OFFSET
 	return _line(p, q)
 
 
 func _move_pts(fe: int, te: int) -> PackedVector2Array:
 	var a := DIRS[fe]
 	var b := DIRS[te]
-	var s := a * WS.STOP_LINE + _right(-a) * WS.LANE_OFFSET
+	var s := a * MOVE_FROM + _right(-a) * WS.LANE_OFFSET
 	var t := exit_pt(te, WS.LANE_OFFSET)
 	if fe == OPP[te]:
 		return _line(s, t)

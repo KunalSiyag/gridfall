@@ -38,6 +38,12 @@ const WAIT_ALONG_BACK: Array[float] = [-0.55, 0.55, -1.15]
 const WAIT_ROW := 0.55
 ## Hip height of the legacy people (half their 1.83 m), the pivot of the leg swing.
 const HIP_M := 0.91
+## HC bodies (deliverable 9): walking speeds in m/s, and the share of walkers carrying a box or on
+## the phone, and the idle variants.
+const HC_SPEED := Vector2(1.15, 1.50)
+const CARRY := 0.10
+const PHONE := 0.08
+const IDLES: Array[StringName] = [&"idle", &"idle", &"idle_look", &"idle_wait"]
 
 
 ## One person on foot.
@@ -90,6 +96,18 @@ class Walker extends RefCounted:
 	var chat_lat: float = 0.0
 	var chat_with: Walker = null
 	var vis_off := Vector3.ZERO      # drawn offset from pos (eases; spreads a waiting crowd)
+	var vis_v: float = 0.0           # drawn speed (u/s): walking, or stepping into a crowd place
+	# HC bodies (people.gd): avatar, stature, what the hands are busy with, and the clip playing.
+	var av: int = -1                 # avatar index, -1 until first drawn
+	var h_m: float = 1.75            # stature in metres
+	var extra: int = 0               # 0 hands free, 1 carrying a box, 2 on the phone
+	var idle_clip: StringName = &"idle"
+	var talk_clip: StringName = &"talk"
+	var anim_clip: StringName = &""
+	var anim_t: float = 0.0          # seconds into anim_clip
+	var anim_rate: float = 1.0
+	var body: Object = null          # people.gd Body while it draws this walker
+	var tier: int = -1               # people.gd LOD tier, -1 not drawn
 
 
 var sw: SW
@@ -104,6 +122,11 @@ var posts: Array[Vector2] = []
 var _post_cells: Dictionary = {}
 var _next_id: int = 1
 var _rng := RandomNumberGenerator.new()
+## Looks (speed band, box, phone, idle variant, clip phase) draw from their own stream, so the
+## walking decisions stay the same with or without HC bodies.
+var _look_rng := RandomNumberGenerator.new()
+## True when HC's animated bodies draw people (people.gd): speeds follow HC_SPEED.
+var hc: bool = false
 var _grid: Dictionary = {}
 var on_done: Callable
 ## Called with (walker) when one is removed (the renderer frees its node).
@@ -116,6 +139,7 @@ func setup(p_sw: SW, p_lg: LG, p_jn: JN, p_vh: VH, seed: int) -> void:
 	jn = p_jn
 	vh = p_vh
 	_rng.seed = seed * 7027 + 11
+	_look_rng.seed = seed * 4099 + 23
 	walkers.clear()
 
 
@@ -129,6 +153,12 @@ func make(role: String) -> Walker:
 	w.lat = w.lat_jit
 	w.phase = _rng.randf() * TAU
 	w.chatty = role == "ambient" and _rng.randf() < CHATTY
+	if hc:
+		w.speed = _look_rng.randf_range(HC_SPEED.x, HC_SPEED.y) * WS.M
+	var roll := _look_rng.randf()
+	w.extra = 1 if roll < CARRY else (2 if roll < CARRY + PHONE else 0)
+	w.idle_clip = IDLES[_look_rng.randi() % IDLES.size()]
+	w.anim_t = _look_rng.randf() * 12.0
 	walkers.append(w)
 	return w
 
@@ -495,6 +525,8 @@ func _may_chat(w: Walker, e: SW.PedEdge) -> bool:
 ## the flow) and face each other for 10-40 s.
 func _start_chat(a: Walker, b: Walker) -> void:
 	var secs := _rng.randf_range(CHAT_MIN, CHAT_MAX)
+	a.talk_clip = &"talk"
+	b.talk_clip = &"talk_2"
 	for pair: Array in [[a, b], [b, a]]:
 		var w: Walker = pair[0]
 		w.state = "chat"
@@ -679,12 +711,15 @@ func start_plan(w: Walker, plan: Array) -> void:
 ## paused tour still settles).
 func ease_visuals(w: Walker, delta: float) -> void:
 	var want := clampf(w.v / (0.7 * WS.PED_WALK), 0.0, 1.0)
+	w.vis_v = w.v if (w.state == "walk" and not w.hold) else 0.0
 	var off := _wait_offset(w)
 	if off != w.vis_off:
 		var was := w.vis_off
 		w.vis_off = w.vis_off.move_toward(off, delta * WS.PED_WALK)
 		# Stepping into place in the crowd is walking too.
-		want = maxf(want, clampf((w.vis_off - was).length() / maxf(delta, 1e-4) / (0.7 * WS.PED_WALK), 0.0, 1.0))
+		var sv := (w.vis_off - was).length() / maxf(delta, 1e-4)
+		want = maxf(want, clampf(sv / (0.7 * WS.PED_WALK), 0.0, 1.0))
+		w.vis_v = maxf(w.vis_v, sv)
 		w.phase += (w.vis_off - was).length() / (0.75 * WS.M) * PI
 	w.gait = move_toward(w.gait, want, delta * 4.0)
 	if w.fade < 1.0:

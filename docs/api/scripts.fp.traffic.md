@@ -159,7 +159,7 @@ Junction control (docs/fp/slices/E-traffic.md §2): 4-way traffic lights on cros
 
 ### Properties
 
-- `props: Dictionary`: tile -> {"node": Node3D, "groups": Array[MeshInstance3D] (axis * 3 + colour), "peds": Array[MeshInstance3D] (axis * 2 + walk), "poles": Array[Node3D], "state": int}
+- `props: Dictionary`: tile -> {"node": Node3D, "groups": Array[MeshInstance3D] (axis * 3 + colour), "peds": Array[GeometryInstance3D] per (axis * 2 + walk), "poles": Array[Node3D], "state": int}
 
 ### Functions
 
@@ -194,7 +194,8 @@ Right-hand lane graph over the road tiles (docs/fp/slices/E-traffic.md §1). Pur
 - `APPROACH = 2`
 - `MOVE = 3`
 - `UTURN = 4`
-- `STOP_FRONT = WS.ZEBRA_FAR + 0.4 * WS.M`: Car fronts stop here, measured from the junction centre: just outside the zebra. The painted stop line (WS.STOP_LINE, roads.py) lies on the junction side of the zebra, so a car held on it would stand on the crossing while people walk it (request to G1: docs/fp/requests/E-needs.md).
+- `STOP_FRONT = WS.STOP_LINE + WS.STOP_BAR`: Car fronts stop here, measured from the junction centre: on the approach edge of the painted stop line (WS.STOP_LINE, roads.py), which lies just outside the zebra.
+- `MOVE_FROM = 0.35`: Where approaches hand over to junction movements. It predates the stop line's move outward and stays put so the movement curves (and their timing) are unchanged; the hold is at STOP_FRONT.
 - `ZEBRA_MID = (WS.ZEBRA_NEAR + WS.ZEBRA_FAR) * 0.5`
 - `SLOT_ALONG = 3.0 * WS.M`: Curb parking: two slots per side of a straight tile, centres 3 m either side of the middle (6 m spacing); slot k: side k / 2 (0 = right of the run direction), along -/+ for k % 2.
 - `SLOTS = 4`
@@ -287,6 +288,100 @@ Builds merged, vertex-coloured meshes for E's procedural stand-ins (traffic ligh
 - `func node(root: Node3D) -> void`: Merges every MeshInstance3D under root (in root space) into one vertex-coloured mesh.
 - `func commit() -> ArrayMesh`: The merged mesh (null when nothing was added).
 - `static func vc_material(rough: float = 0.6, metal: float = 0.0) -> StandardMaterial3D`: Shared opaque material for vertex-coloured meshes.
+
+## `scripts/fp/traffic/people.gd`
+
+extends `RefCounted`
+
+Animated people from HC's roster (docs/fp/slices/E-traffic.md deliverable 9, TPS_PLAN §1.10-1.11). Rocketbox bodies on Godot's humanoid skeleton, picked by job, gender and crc32(resident id) for residents and by HC's ambient weights for the crowd, each under a CharacterRoot scaled to a jittered stature, animated by the gender's shared library plus three clips layered here at load (walk_carry and carry_idle hold a box, walk_phone a phone at the ear), with the playback rate matched to the walking speed so feet do not slide. LOD tiers by camera distance, 10 % hysteresis: T0  <= 12 m, max 8   AnimationTree (state machine, 0.25 s crossfades), every frame, shadows T1  12-30 m           AnimationPlayer advanced by hand, 30 Hz to 20 m (shadows) else 15 Hz T2  30-60 m           the same at 10 Hz, no shadows T3  to VIS_PERSON     HC's static mid-stride <Name>_lod1 in one MultiMesh per avatar T1 and T2 share a cap of SKIN_CAP bodies on screen, and everything stays inside DRAW_CAP character draws. Off-screen bodies keep their pose with their mixer inactive (and go back to the pool after OFF_KEEP). Bodies are pooled per avatar and instanced at most NEW_PER_FRAME per frame. Body and lod1 scenes load on background threads when first needed (a first load takes 25-150 ms; loading every avatar up front costs ~100 MB of textures); a walker whose body is still loading waits at T3, undrawn while its lod1 loads too. Asset building lives in people_kit.gd.
+
+### Constants
+
+- `WS = preload("res://scripts/fp/world_scale.gd")`
+- `AP = preload("res://scripts/fp/asset_paths.gd")`
+- `WK = preload("res://scripts/fp/traffic/walkers.gd")`
+- `KIT = preload("res://scripts/fp/traffic/people_kit.gd")`
+- `T0_R = 12.0 * WS.M`
+- `T0_CAP = 8`
+- `T1_R = 30.0 * WS.M`
+- `T1_NEAR = 20.0 * WS.M`
+- `T2_R = 60.0 * WS.M`
+- `HYST = 1.1`
+- `SKIN_CAP = 40`
+- `DRAW_CAP = 150`
+- `HZ_NEAR = 30.0`
+- `HZ_MID = 15.0`
+- `HZ_FAR = 10.0`
+- `NEW_PER_FRAME = 4`
+- `OFF_KEEP = 4.0`
+- `LOOK_CAP = 6`
+- `XFADE = 0.25`
+- `WALK_ON = 0.35 * WS.M`: A person counts as walking above WALK_ON and as standing below WALK_OFF (u/s, as drawn).
+- `WALK_OFF = 0.2 * WS.M`
+- `RATE_MIN = 0.5`
+- `RATE_MAX = 1.6`
+- `PERSON_FADE = 0.4`: People fade out over this last stretch before VIS_PERSON (T3).
+- `CULL_UP = 0.9 * WS.M`: Frustum test: a sphere around the body (metres above the feet, radius).
+- `CULL_R = 1.3 * WS.M`
+- `STATES = [ &"idle", &"idle_look", &"idle_wait", &"walk", &"walk_carry", &"walk_phone", &"carry_i...`
+- `LOCO = [&"walk", &"walk_carry", &"walk_phone"]`
+- `STILL = [&"", &"carry_idle", &"phone"]`
+- `BOX_COLOR = Color(0.62, 0.47, 0.3)`
+
+### Properties
+
+- `blocking: bool`: Load body and lod1 scenes on the calling thread (deterministic tests), not in the background.
+
+### Inner classes
+
+- `Avatar`: One roster body (never a hero).
+- `Body`: One instanced body: CharacterRoot > the body scene (Armature/GeneralSkeleton/Body, Anim, Tree).
+
+### Functions
+
+- `func load_assets() -> bool`: Loads the roster and both libraries and builds the layered clips and the T0 tree. False (with `why`) when HC's characters are missing: E then draws the legacy static people.
+- `func reset(p_root: Node3D, city_seed: int) -> void`: Starts drawing under p_root (a new world): frees every body, keeps the loaded assets.
+- `func clear() -> void`: Frees every body and LOD layer.
+- `func crc32(s: String) -> int`: CRC-32 (IEEE, as zlib) of s's UTF-8 bytes.
+- `func resident_gender(rid: String, full_name: String) -> String`: Gender of a resident: HC's name_gender for the first name, else crc32(id) & 1 (1 = f).
+- `func resident_avatar(rid: String, full_name: String, job: String) -> int`: Avatar index for a resident: the job's pool for the gender, else the gender's casual pool, indexed by crc32(id). -1 when nothing fits.
+- `func stature(g: String, u: float) -> float`: Stature (m) for a gender and a 0..1 jitter value.
+- `func dress(w: WK.Walker, residents: Variant) -> void`: Gives w its avatar and stature (once): residents by their id, ambient walkers from the city seed.
+- `func avatar_name(w: WK.Walker) -> String`: Avatar name of walker w ("" before it is dressed).
+- `func scale_of(w: WK.Walker) -> float`: CharacterRoot scale of w: WS.M * h_target / rest_height_m.
+- `func authored_speed(w: WK.Walker, clip: StringName) -> float`: Ground speed (u/s) clip covers at playback rate 1 on w's body.
+- `func head_of(w: WK.Walker, base: Vector3) -> Vector3`: World position of w's Head bone while a body draws it, else an estimate from its stature.
+- `func begin(delta: float, adt: float, cam: Camera3D, cam_pos: Vector3, look_at: Vector3) -> void`: Starts a frame: delta is real seconds, adt game seconds (delta * sim.speed).
+- `func on_screen(p: Vector3) -> bool`: True when a body at feet position p could be on screen.
+- `func add(w: WK.Walker, d: float, residents: Variant) -> void`: Queues walker w (eased already, d = camera distance) and advances its clip.
+- `func finish() -> void`: Assigns tiers, attaches, advances and releases bodies, and fills the T3 layers.
+- `func release(w: WK.Walker) -> void`: A walker leaves for good (removed): its body goes back to the pool.
+- `func finish_loads() -> void`: Waits for every background scene load still running and keeps the results.
+- `func stats() -> Dictionary`: anim_stats() for G2's bench: tier counts on screen, microseconds advancing mixers this frame, character draws (skinned surfaces and boxes on screen plus two per T3 avatar layer).
+
+## `scripts/fp/traffic/people_kit.gd`
+
+extends `RefCounted`
+
+Asset building for people.gd: the layered clips (a box held in both hands, a phone at the ear), the shared T0 AnimationTree, and HC's lod1 meshes as dither-fading T3 MultiMesh layers.
+
+### Constants
+
+- `ARM_PARTS = [ "Shoulder", "UpperArm", "LowerArm", "Hand", "ThumbMetacarpal", "ThumbProximal", "Thum...`: Layered clips: the arm bones taken from another clip's pose at a fixed time.
+- `CARRY_AT = 0.0`
+- `PHONE_AT = 0.5`
+- `NEEDS = [ &"idle", &"walk", &"talk", &"talk_2", &"phone", &"carry", &"idle_look", &"idle_wait" ]`
+- `T3_SHADER = """`
+
+### Functions
+
+- `static func layered_library(hc: AnimationLibrary) -> Variant`: A copy of HC's library with walk_carry, carry_idle and walk_phone added; the name of the first missing clip in NEEDS instead when it lacks one.
+- `static func layer(base: Animation, over: Animation, bones: Array[String], at: float, nm: String) -> Animation`: base with the rotations of `bones` replaced by over's pose at time `at` (constant keys).
+- `static func build_tree(states: Array[StringName], xfade: float) -> AnimationNodeBlendTree`: The T0 tree, shared by every body: state machine (every state reaches every other with a crossfade) -> TimeSeek (handovers from T1) -> TimeScale (playback rate) -> output.
+- `static func t3_shader() -> Shader`
+- `static func lod_mesh(ps: PackedScene, shader: Shader) -> Array`: The first mesh of a lod1 scene as [ArrayMesh with the fade shader, its transform in the scene]; [] when the scene has no mesh.
+- `static func t3_layer(nm: String, mesh: Mesh) -> MultiMeshInstance3D`: An empty, hidden T3 layer for mesh (custom data carries the fade).
+- `static func fill(mmi: MultiMeshInstance3D, xfs: Array[Transform3D], cols: Array[Color]) -> void`: Shows xfs (fade in the alpha of cols) on mmi, growing its buffer by doubling.
 
 ## `scripts/fp/traffic/render.gd`
 
@@ -419,6 +514,7 @@ Traffic and pedestrians on lanes (slice E, docs/fp/slices/E-traffic.md): one roa
 - `TRIPS = preload("res://scripts/fp/traffic/trips.gd")`
 - `FLEETS = preload("res://scripts/fp/traffic/fleets.gd")`
 - `KIT = preload("res://scripts/fp/traffic/mesh_kit.gd")`
+- `PPL = preload("res://scripts/fp/traffic/people.gd")`
 - `MAX_STEP = 1.0 / 30.0`
 - `CAR_PREFIXES = ["sedan", "hatch", "suv", "taxi", "van", "pickup", "coupe"]`
 - `TELEPORT = 2.0`: A jump of the player beyond this in one frame is a teleport: the street is refilled around them.
@@ -429,6 +525,7 @@ Traffic and pedestrians on lanes (slice E, docs/fp/slices/E-traffic.md): one roa
 
 ### Properties
 
+- `people: PPL`: HC's animated people (deliverable 9); ok == false draws the legacy static people instead.
 - `jitter_enabled: bool`: Test hooks: departure jitter on or off; auto_step false keeps _process from advancing time.
 - `ambient_enabled: bool`: Test hook: false stops the ambient filler (no spawns, no removals).
 
@@ -472,8 +569,9 @@ Traffic and pedestrians on lanes (slice E, docs/fp/slices/E-traffic.md): one roa
 - `func pick(origin: Vector3, dir: Vector3, max_dist: float) -> Dictionary`: Interaction pick (S0 §10): residents on foot, ambient pedestrians, vehicles (parked included).
 - `func blockers_near(p: Vector3, r: float) -> Array`: Optional, for A: world AABBs of stopped vehicles near p (parked cars included).
 - `func light_pole(i: int, corner: int) -> Node3D`: The traffic-light pole on cross tile i at corner (0..3 = NE, SE, SW, NW), or null.
-- `func anchor_of(id: String) -> Vector3`: Live head anchor of resident id while drawn (else above where they are).
-- `func anim_stats() -> Dictionary`: Animated-people stats for G2's bench (stage E2; legacy static people until HC lands).
+- `func anchor_of(id: String) -> Vector3`: Live head anchor of resident id while drawn (else above where they are). With HC bodies it is the Head bone's world position (an estimate from the stature while no body draws them).
+- `func anim_stats() -> Dictionary`: Animated-people stats for G2's bench: {"t0", "t1", "t2", "t3"} people on screen per LOD tier, "anim_us" microseconds advancing mixers this frame (T0 trees included), "char_draws" character draws (shadows extra), plus "off" (off-screen bodies holding their pose), "bodies" (instanced) and "people_us" (the whole people pass). Legacy static people report their shader draws only.
+- `func resident_avatar(id: String) -> String`: The HC avatar a resident is drawn with ("" without HC bodies): job pool by gender, crc32(id).
 - `func to_dict() -> Dictionary`
 - `func from_dict(d: Dictionary) -> void`
 - `func self_test() -> Dictionary`
@@ -632,10 +730,15 @@ People on foot (docs/fp/slices/E-traffic.md §3 Pedestrians): they walk the side
 - `WAIT_ALONG_BACK = [-0.55, 0.55, -1.15]`
 - `WAIT_ROW = 0.55`
 - `HIP_M = 0.91`: Hip height of the legacy people (half their 1.83 m), the pivot of the leg swing.
+- `HC_SPEED = Vector2(1.15, 1.50)`: HC bodies (deliverable 9): walking speeds in m/s, and the share of walkers carrying a box or on the phone, and the idle variants.
+- `CARRY = 0.10`
+- `PHONE = 0.08`
+- `IDLES = [&"idle", &"idle", &"idle_look", &"idle_wait"]`
 
 ### Properties
 
 - `posts: Array[Vector2]`: Obstacles on sidewalks (the posts in lit straights): Array[Vector2].
+- `hc: bool`: True when HC's animated bodies draw people (people.gd): speeds follow HC_SPEED.
 - `on_removed: Callable`: Called with (walker) when one is removed (the renderer frees its node).
 
 ### Inner classes

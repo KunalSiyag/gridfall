@@ -17,6 +17,7 @@ const SW := preload("res://scripts/fp/traffic/sidewalks.gd")
 const JN := preload("res://scripts/fp/traffic/junctions.gd")
 const IDM := preload("res://scripts/fp/traffic/idm.gd")
 const TRIPS := preload("res://scripts/fp/traffic/trips.gd")
+const PPL := preload("res://scripts/fp/traffic/people.gd")
 const DT := 1.0 / 30.0
 
 var fails: Array[String] = []
@@ -38,6 +39,8 @@ func _init() -> void:
 		return
 	f = K.make_feature(ctx, "traffic")
 	f.set("auto_step", false)
+	if f.get("people") != null:
+		(f.get("people") as PPL).blocking = true
 	K.check(fails, f.self_test().get("ok", false), "self_test right after the first fill: %s" % f.self_test().get("detail", ""))
 	_check_attach()
 	_check_lane_graph()
@@ -61,6 +64,8 @@ func _init() -> void:
 	_check_save()
 	_check_buses()
 	_check_fleets()
+	_check_people_async()
+	_check_people_fallback()
 	K.finish(self, "FP_TRAFFIC_TEST", fails)
 
 
@@ -345,12 +350,41 @@ func _check_agents_api() -> void:
 
 
 ## People draw as the merged body through the people shader (never a full GLB), with stride data.
+## With HC's bodies (stage E2) they draw as skinned bodies near and lod1 MultiMeshes far instead.
 func _check_people_draw() -> void:
 	var wk: WK = f.get("walkers")
 	var rd = f.get("render")
 	for _k in range(20):
 		f.step(DT)
 		f.sync_visuals(DT)
+	var pp: PPL = f.get("people")
+	if pp != null and pp.ok:
+		# Look at the nearest walker, then every walker in view and range is drawn.
+		var cam0: Vector3 = f.call("_camera_pos")
+		var near: WK.Walker = null
+		for w: WK.Walker in wk.walkers:
+			if near == null or w.pos.distance_to(cam0) < near.pos.distance_to(cam0):
+				near = w
+		if near != null:
+			ctx.player.look_toward(near.pos + Vector3(0, 1.0 * WS.M, 0))
+		for _k in range(10):
+			f.step(DT)
+			f.sync_visuals(DT)
+		var legacy := 0
+		for m: Variant in rd.models:
+			if m.person:
+				legacy += 1
+		var in_view := 0
+		var drawn := 0
+		var cam1: Vector3 = f.call("_camera_pos")
+		for w: WK.Walker in wk.walkers:
+			if w.dead or w.far or w.state == "hidden" or w.pos.distance_to(cam1) > WS.VIS_PERSON * 0.98 or not pp.on_screen(w.pos + w.vis_off):
+				continue
+			in_view += 1
+			if w.tier >= 0 and w.tier <= 3:
+				drawn += 1
+		K.check(fails, legacy == 0 and in_view > 0 and drawn == in_view, "people: HC bodies draw all %d people in view and range (%d), no legacy people models (%d)" % [in_view, drawn, legacy])
+		return
 	var nodes := 0
 	var striding := 0
 	var cam: Vector3 = f.call("_camera_pos")
@@ -557,6 +591,44 @@ func _check_parking_clearance() -> void:
 
 # ------------------------------------------------------------------ lights
 
+## The asset poles' pedestrian heads (Walk_*, DontWalk_*) are bound to the zebra they look
+## across and follow its walk phase: at c0 E-W has just turned green, so the zebras across the
+## N/S arms (ped axis 1) show walk and those across E/W (axis 0) don't walk.
+func _check_walk_heads(jn: JN, x: int, c0: float) -> void:
+	if AP.load_scene(AP.TRAFFIC_LIGHT) == null:
+		print("  skip walk heads: no traffic light asset")
+		return
+	var peds: Array = jn.props[x]["peds"]
+	var mats: Array = jn.get("_walk_mats")
+	jn.clock = c0
+	jn.update_lamps(Vector3(D.tx(x), 0, D.ty(x)), 1.0)
+	var bad: Array[String] = []
+	var heads := 0
+	for corner in range(4):
+		var pole := jn.light_pole(x, corner)
+		var c := Vector2(pole.position.x, pole.position.z)
+		var face := -pole.global_transform.basis.x.normalized()
+		for n: Node in pole.find_children("*Walk_*", "GeometryInstance3D", true, false):
+			heads += 1
+			var k := -1
+			for g in range(4):
+				if (peds[g] as Array).has(n):
+					k = g
+			var axis := k / 2
+			var walk := k % 2 == 1
+			# The pole sits in the band of the zebra it serves and looks along it.
+			var across := absf(c.y) if axis == 1 else absf(c.x)
+			var along := absf(face.x) if axis == 1 else absf(face.z)
+			var in_band := across >= WS.ZEBRA_NEAR and across <= WS.ZEBRA_FAR
+			var lit := axis == 1
+			var want: Material = mats[3 if lit else 2] if walk else mats[0 if lit else 1]
+			var shown := (n as GeometryInstance3D).material_override
+			if k < 0 or not in_band or along < 0.9 or shown != want:
+				bad.append("%d:%s k%d band%.3f along%.2f" % [corner, n.name, k, across, along])
+	var msg := "walk heads: %d asset heads face their zebra and follow its phase %s"
+	K.check(fails, heads >= 8 and bad.is_empty(), msg % [heads, str(bad)])
+
+
 func _check_lights() -> void:
 	_quiet()
 	var lg := _lg()
@@ -617,6 +689,7 @@ func _check_lights() -> void:
 	K.check(fails, ns_red != null and ns_red.material_override == jn.get("_off_mats")[0] and ns_green.material_override == jn.get("_on_mats")[2], "lamps: N-S green lit after the change")
 	K.check(fails, is_equal_approx(on_red.emission_energy_multiplier, energy) and on_red.albedo_color == col, "lamps: the shared materials are never edited")
 	K.check(fails, f.light_pole(x, 0) != null and f.light_pole(x, 0).find_child("SignText_A", true, false) != null, "light_pole(i, 0) is the NE pole with SignText_A / SignText_B mounts")
+	_check_walk_heads(jn, x, c0)
 	# The poles and pedestrian signals stand beside the zebras, never in the walking line: every
 	# zebra point keeps 0.3 m clear even at the widest lateral offset a crosser takes (half the band).
 	var sw: SW = f.get("peds")
@@ -1053,7 +1126,24 @@ func _check_conversation() -> void:
 	var face := absf(wrapf(atan2(to_player.x, to_player.z) - w.yaw, -PI, PI))
 	K.check(fails, w.v < 0.01 * WS.M and face < deg_to_rad(15.0), "conversation: the resident stops within 2 s and turns to the player (%.0f deg off)" % rad_to_deg(face))
 	var head: Vector3 = f.anchor_of(rid)
-	K.check(fails, head.distance_to(w.pos + Vector3(0, TRIPS.HEAD, 0)) <= 0.1 * WS.M and absf(head.y - w.pos.y - 1.62 * WS.M) < 0.12 * WS.M, "conversation: anchor_of stays at the head while they stand")
+	var pp: PPL = f.get("people")
+	if pp != null and pp.ok:
+		# The resident's body draws (T0, the player looks at them): anchor_of is its Head bone.
+		ctx.player.look_toward(w.pos + Vector3(0, 1.5 * WS.M, 0))
+		for _k in range(8):
+			f.step(DT)
+			f.sync_visuals(DT)
+		head = f.anchor_of(rid)
+		var b: PPL.Body = w.body
+		var bone := Vector3(INF, INF, INF)
+		if b != null:
+			bone = (b.skel.global_transform * b.skel.get_bone_global_pose(b.head)).origin
+		var hy := (head.y - w.pos.y) / WS.M
+		K.check(fails, b != null and w.tier == 0 and head.distance_to(bone) <= 0.1 * WS.M and hy > 1.35 and hy < 1.75, "conversation: anchor_of is the drawn body's Head bone (%.3f m off, %.2f m up, tier %d)" % [head.distance_to(bone) / WS.M, hy, w.tier])
+		var looking: bool = b != null and b.look != null and b.look.active
+		K.check(fails, looking, "conversation: the partner's head turns to the player (LookAtModifier3D)")
+	else:
+		K.check(fails, head.distance_to(w.pos + Vector3(0, TRIPS.HEAD, 0)) <= 0.1 * WS.M and absf(head.y - w.pos.y - 1.62 * WS.M) < 0.12 * WS.M, "conversation: anchor_of stays at the head while they stand")
 	_check_street_bubble(r)
 	ctx.bus.conversation_changed.emit(rid, false)
 	_step(2.0)
@@ -1094,10 +1184,284 @@ func _check_street_bubble(r: Dictionary) -> void:
 # ------------------------------------------------------------------ people (stage E2)
 
 func _check_people_e2() -> void:
-	if not (AP as GDScript).get_script_constant_map().has("CHAR_ROSTER"):
-		print("  note: stage E2 people checks skipped (AP.CHAR_ROSTER missing; legacy static people)")
+	var pp: PPL = f.get("people")
+	if pp == null or not pp.ok:
+		print("  note: stage E2 people checks skipped (%s; legacy static people)" % (pp.why if pp != null else "no people module"))
 		return
-	print("  note: AP.CHAR_ROSTER exists; stage E2 checks live on branch fp/E2-people")
+	var speed := sim.speed
+	sim.speed = 1
+	_check_people_assignment(pp)
+	_check_people_tiers(pp)
+	_check_people_gait(pp)
+	sim.speed = speed
+	f.set("ambient_enabled", true)
+
+
+## Bodies by job, gender and crc32(id): stable across fresh loads and save/load, never a hero,
+## nurses from the medical pool; statures 1.61-1.80 m.
+func _check_people_assignment(pp: PPL) -> void:
+	K.check(fails, pp.crc32("hello") == 907060870 and pp.crc32("") == 0, "people: crc32 is zlib's CRC-32")
+	var heroes: Array = (pp.roster.get("heroes", {}) as Dictionary).values()
+	var bodies: Dictionary = pp.roster.get("bodies", {})
+	var fresh := PPL.new()
+	fresh.load_assets()
+	var n := 0
+	var same := 0
+	var bad := 0
+	for r: Dictionary in ctx.residents.people:
+		var id := str(r["id"])
+		var a: String = f.resident_avatar(id)
+		var ai := fresh.resident_avatar(id, str(r["name"]), str(r["job_title"]))
+		n += 1
+		if ai >= 0 and (fresh.avatars[ai] as PPL.Avatar).name == a:
+			same += 1
+		if a.is_empty() or a in heroes or not bodies.has(a):
+			bad += 1
+	K.check(fails, n > 0 and same == n and bad == 0, "people: all %d residents get the same body in a fresh load, never a hero (%d differ, %d bad)" % [n, n - same, bad])
+	# A resident's walker after a save and load (a new walker, new run of ids) looks the same.
+	var wk: WK = f.get("walkers")
+	var rid := fixture_rid
+	var w1 := wk.make("resident")
+	w1.resident_id = rid
+	pp.dress(w1, ctx.residents)
+	var d: Dictionary = JSON.parse_string(JSON.stringify(f.to_dict()))
+	f.from_dict(d)
+	var pp2: PPL = f.get("people")
+	var w2 := wk.make("resident")
+	w2.resident_id = rid
+	pp2.dress(w2, ctx.residents)
+	K.check(fails, w1.av >= 0 and w1.av == w2.av and is_equal_approx(w1.h_m, w2.h_m), "people: resident %s keeps body %s and stature %.3f m after to_dict -> from_dict" % [rid, pp.avatar_name(w1), w1.h_m])
+	wk.remove(w1)
+	wk.remove(w2)
+	# Nurses: the medical pool for their gender, else that gender's casual pool.
+	var pools: Dictionary = pp.roster.get("job_pools", {})
+	var casual: Dictionary = pp.roster.get("casual_pools", {})
+	var nurse_bad := 0
+	var nurse_n := 0
+	for k in range(24):
+		var full := ("Priya" if k % 2 == 0 else "Omar") + " Test"
+		var id := "nurse-%d" % k
+		var g := pp.resident_gender(id, full)
+		var want: Array = []
+		for nm: String in pools.get("nurse", []):
+			if (bodies.get(nm, {}) as Dictionary).get("gender", "") == g:
+				want.append(nm)
+		if want.is_empty():
+			want = casual.get(g, [])
+		var ai := pp.resident_avatar(id, full, "nurse")
+		nurse_n += 1
+		if ai < 0 or not (pp.avatars[ai] as PPL.Avatar).name in want:
+			nurse_bad += 1
+	K.check(fails, nurse_bad == 0, "people: %d nurses all get a medical (or casual) body of their gender (%d off)" % [nurse_n, nurse_bad])
+	# Ambient walkers: never a hero; roughly 60 % casual, 25 % business, 15 % uniforms.
+	var groups := {}
+	var amb_hero := 0
+	for k in range(400):
+		var w := wk.make("ambient")
+		pp.dress(w, ctx.residents)
+		var a: PPL.Avatar = pp.avatars[w.av]
+		var grp := a.group if a.group in ["casual", "business"] else "uniform"
+		groups[grp] = int(groups.get(grp, 0)) + 1
+		if a.name in heroes:
+			amb_hero += 1
+		wk.remove(w)
+	var c := float(groups.get("casual", 0)) / 400.0
+	var b := float(groups.get("business", 0)) / 400.0
+	var u := float(groups.get("uniform", 0)) / 400.0
+	K.check(fails, amb_hero == 0 and absf(c - 0.6) < 0.08 and absf(b - 0.25) < 0.07 and absf(u - 0.15) < 0.06, "people: ambient mix %.0f/%.0f/%.0f %% casual/business/uniform, no hero" % [c * 100.0, b * 100.0, u * 100.0])
+	# Statures: every avatar at both ends of the jitter stands 1.61-1.80 m (0.0805-0.090 u).
+	var h_bad := 0
+	for a: PPL.Avatar in pp.avatars:
+		for j: float in [0.0, 1.0]:
+			var h := pp.stature(a.gender, j)
+			if h < 1.61 - 0.005 or h > 1.80 + 0.005:
+				h_bad += 1
+	K.check(fails, h_bad == 0, "people: statures stay within 1.61-1.80 m (%d off)" % h_bad)
+
+
+## 80 people spread over 0-80 m, 64 in view and 16 behind: tier caps, T3 in MultiMeshes, off-screen
+## mixers inactive, at most 150 character draws; drawn bodies stand 1.61-1.80 m (hair and hats add
+## up to 4 %).
+func _check_people_tiers(pp: PPL) -> void:
+	_quiet()
+	var wk: WK = f.get("walkers")
+	var pl := ctx.player
+	var base := pl.position
+	var yaw := 0.0
+	pl.teleport(base, rad_to_deg(yaw), 0.0, false)
+	var fwd := Vector3(-sin(yaw), 0, -cos(yaw))
+	var crowd: Array = []
+	for k in range(80):
+		var w := wk.make("ambient")
+		var front := k < 64
+		var i := k if front else k - 64
+		var dist := (0.5 + 79.0 * float(i) / (63.0 if front else 15.0)) * WS.M
+		var ang := (float((i * 7) % 11) / 10.0 - 0.5) * deg_to_rad(40.0)
+		var dir := fwd.rotated(Vector3.UP, ang) * (1.0 if front else -1.0)
+		var p := base + dir * maxf(dist, 1.0 * WS.M)
+		wk.stand(w, p, randf() * TAU)
+		crowd.append(w)
+	# Face the 16 behind first (they get bodies), then the 64 in front.
+	pl.teleport(base, rad_to_deg(yaw) + 180.0, 0.0, false)
+	for _k in range(12):
+		f.sync_visuals(DT)
+	pl.teleport(base, rad_to_deg(yaw), 0.0, false)
+	for _k in range(30):
+		f.sync_visuals(DT)
+	var st: Dictionary = f.anim_stats()
+	var t3_drawn := 0
+	for a: PPL.Avatar in pp.avatars:
+		if a.mmi != null and a.mmi.visible:
+			t3_drawn += a.mmi.multimesh.visible_instance_count
+	var t3_bodies := 0
+	var off_active := 0
+	var off_n := 0
+	var t0_bad := 0
+	var t12_bad := 0
+	var surf := 0
+	var h_bad := 0
+	var h_lo := INF
+	var h_hi := -INF
+	for w: WK.Walker in crowd:
+		if w.tier == 3 and w.body != null:
+			t3_bodies += 1
+		var b: PPL.Body = w.body
+		if b == null:
+			continue
+		if w.tier == 4:
+			off_n += 1
+			if b.ap.active or b.tree.active:
+				off_active += 1
+			continue
+		if w.tier == 0 and not (b.tree.active and not b.ap.active and b.tree.callback_mode_process == AnimationMixer.ANIMATION_CALLBACK_MODE_PROCESS_MANUAL):
+			t0_bad += 1
+		if (w.tier == 1 or w.tier == 2) and not (b.ap.active and not b.tree.active and b.ap.callback_mode_process == AnimationMixer.ANIMATION_CALLBACK_MODE_PROCESS_MANUAL):
+			t12_bad += 1
+		for gi: GeometryInstance3D in b.meshes:
+			if gi is MeshInstance3D:
+				var mi := gi as MeshInstance3D
+				surf += mi.mesh.get_surface_count()
+				var hh := mi.mesh.get_aabb().size.y * b.root.scale.y
+				h_lo = minf(h_lo, hh)
+				h_hi = maxf(h_hi, hh)
+				if hh < 0.080 or hh > 0.095:
+					h_bad += 1
+		if b.box != null and b.box.visible:
+			surf += 1
+	print("  people tiers: %s" % str(st))
+	K.check(fails, int(st["t0"]) == PPL.T0_CAP and int(st["t1"]) + int(st["t2"]) <= PPL.SKIN_CAP and int(st["t1"]) > 0 and int(st["t2"]) > 0 and int(st["t3"]) > 0,
+		"people tiers: T0 %d (cap 8), T1 %d + T2 %d (cap 40), T3 %d" % [st["t0"], st["t1"], st["t2"], st["t3"]])
+	K.check(fails, t0_bad == 0 and t12_bad == 0, "people tiers: T0 bodies run the AnimationTree, T1/T2 a hand-advanced AnimationPlayer (%d, %d off)" % [t0_bad, t12_bad])
+	K.check(fails, t3_bodies == 0 and t3_drawn == int(st["t3"]), "people tiers: the %d T3 people are lod1 MultiMesh instances (%d drawn, %d with a body)" % [st["t3"], t3_drawn, t3_bodies])
+	K.check(fails, off_n > 0 and off_active == 0, "people tiers: %d off-screen bodies keep their pose with inactive mixers (%d active)" % [off_n, off_active])
+	K.check(fails, int(st["char_draws"]) <= PPL.DRAW_CAP and int(st["char_draws"]) >= surf, "people tiers: %d character draws (<= 150; %d skinned surfaces)" % [st["char_draws"], surf])
+	K.check(fails, h_bad == 0, "people tiers: drawn bodies' mesh heights %.4f-%.4f u (0.080-0.095 with hair and hats)" % [h_lo, h_hi])
+	for w: WK.Walker in crowd:
+		wk.remove(w)
+	f.sync_visuals(DT)
+	K.check(fails, pp.get("_active").is_empty(), "people: removed walkers return their bodies to the pools")
+
+
+## One walker at 1.30 m/s in view: playback rate matched to the ground speed (HC's exact authored
+## speed), feet on the ground, the planted foot not sliding, facing the way it walks.
+func _check_people_gait(pp: PPL) -> void:
+	_quiet()
+	var wk: WK = f.get("walkers")
+	var sw: SW = f.get("peds")
+	var pl := ctx.player
+	var saved := pl.position
+	var e: SW.PedEdge = null
+	for edge: Variant in sw.edges:
+		var pe := edge as SW.PedEdge
+		if pe != null and not pe.zebra and pe.length > 0.5:
+			var t: LG.TileInfo = _lg().info(pe.tile)
+			if t != null and t.piece == "straight":
+				e = pe
+				break
+	K.check(fails, e != null, "fixture: a straight sidewalk edge 10 m long")
+	if e == null:
+		return
+	var results := {}
+	for extra: int in [0, 1, 2]:
+		var w := wk.make("ambient")
+		w.chatty = false
+		w.extra = extra
+		w.speed = 1.30 * WS.M
+		wk.place(w, e, 0.05, 1)
+		# Stand 6 m to the side of the walker's path, looking at it.
+		var mid := sw.pos_at(e, 0.12)
+		var d := sw.dir_at(e, 0.12)
+		var side := Vector3(-d.y, 0, d.x) * (6.0 * WS.M)
+		pl.teleport(mid + side, 0.0, 0.0, false)
+		pl.look_toward(mid + Vector3(0, 1.0 * WS.M, 0))
+		var slip := 0.0
+		var slip_t := 0.0
+		var foot_lo := INF
+		var foot_hi := -INF
+		var face_min := 1.0
+		var last_foot := -1
+		var last_p := Vector3.ZERO
+		var rate_err := INF
+		var rate_info := ""
+		var tiers := {}
+		for k in range(75):
+			f.step(DT)
+			f.sync_visuals(DT)
+			var b: PPL.Body = w.body
+			tiers[w.tier] = true
+			if b == null or k < 20:
+				continue
+			var sk := b.skel
+			var xf := sk.global_transform
+			var low := INF
+			var low_i := -1
+			for bn: String in ["LeftFoot", "RightFoot", "LeftToes", "RightToes"]:
+				var y := (xf * sk.get_bone_global_pose(sk.find_bone(bn))).origin.y - w.pos.y
+				low = minf(low, y)
+			foot_lo = minf(foot_lo, low)
+			foot_hi = maxf(foot_hi, low)
+			var lf := (xf * sk.get_bone_global_pose(sk.find_bone("LeftFoot"))).origin
+			var rf := (xf * sk.get_bone_global_pose(sk.find_bone("RightFoot"))).origin
+			low_i = 0 if lf.y < rf.y else 1
+			var fp := lf if low_i == 0 else rf
+			if low_i == last_foot and minf(lf.y, rf.y) - w.pos.y < 0.12 * WS.M:
+				slip += Vector2(fp.x - last_p.x, fp.z - last_p.z).length()
+				slip_t += DT
+			last_foot = low_i
+			last_p = fp
+			if w.vel.length() > 0.1 * WS.M:
+				face_min = minf(face_min, b.root.transform.basis.z.normalized().dot(Vector3(w.vel.x, 0, w.vel.z).normalized()))
+			var rate: float = b.tree.get(&"parameters/rate/scale") if b.mode == 0 else b.ap.speed_scale
+			var a: PPL.Avatar = pp.avatars[w.av]
+			var clip := w.anim_clip
+			var lib := load(AP.CHAR_LIB_M if a.gender == "m" else AP.CHAR_LIB_F) as AnimationLibrary
+			var src := lib.get_animation(&"walk")
+			var authored := float(src.get_meta("speed_mps")) * a.hip_m / float(src.get_meta("speed_ref_hip_m")) * w.h_m / a.rest_h
+			var want := (w.vis_v / WS.M) / authored
+			var plan := (w.vis_v / WS.M) / (float(src.get_meta("speed_mps")) * w.h_m / 1.75)
+			rate_err = absf(rate - want) / want
+			rate_info = "%s %s at %.2f m/s: rate %.3f, exact %.3f, plan formula %.3f (%+.1f %%)" % [a.name, clip, w.vis_v / WS.M, rate, want, plan, (plan / want - 1.0) * 100.0]
+		var slip_v := (slip / maxf(slip_t, 1e-4)) / WS.M
+		results[extra] = [rate_err, foot_lo / WS.M, foot_hi / WS.M, slip_v, face_min, rate_info, tiers.keys()]
+		print("  gait extra=%d: %s; feet %.3f..%.3f m; planted foot slides %.3f m/s; facing %.3f; tiers %s" % [extra, rate_info, foot_lo / WS.M, foot_hi / WS.M, slip_v, face_min, str(tiers.keys())])
+		wk.remove(w)
+	var r0: Array = results[0]
+	K.check(fails, float(r0[0]) <= 0.02, "gait: playback rate within 2 %% of v / authored speed (%s)" % r0[5])
+	var feet_bad := 0
+	var slide_bad := 0
+	var face_bad := 0
+	for extra: int in results.keys():
+		var r: Array = results[extra]
+		if float(r[1]) < -0.03 or float(r[1]) > 0.04 or float(r[2]) > 0.08:
+			feet_bad += 1
+		if float(r[3]) > 0.25:
+			slide_bad += 1
+		if float(r[4]) < 0.95:
+			face_bad += 1
+	K.check(fails, feet_bad == 0, "gait: a foot is on the ground all the way (walk, carry, phone)")
+	K.check(fails, slide_bad == 0, "gait: the planted foot does not slide (< 0.25 m/s; walking 1.30 m/s)")
+	K.check(fails, face_bad == 0, "gait: bodies face the way they walk")
+	pl.teleport(saved, 0.0)
 
 
 # ------------------------------------------------------------------ save
@@ -1128,6 +1492,56 @@ func _check_save() -> void:
 		if not w.dead:
 			peds += 1
 	K.check(fails, cars >= 2 and peds >= 2, "save: right after from_dict there are cars (%d) and pedestrians (%d)" % [cars, peds])
+
+
+## Outside tests body scenes load in the background: a scene arrives within a few seconds and a
+## missing path resolves to null without a request.
+func _check_people_async() -> void:
+	var pp: PPL = f.get("people")
+	if pp == null or not pp.ok:
+		return
+	var bg := PPL.new()
+	bg.load_assets()
+	var path := (bg.avatars[bg.avatars.size() - 1] as PPL.Avatar).path.get_basename() + "_lod1.glb"
+	var ps: PackedScene = null
+	var waited := 0
+	while ps == null and waited < 10000:
+		ps = bg.call("_scene", path)
+		if ps == null:
+			OS.delay_msec(20)
+			waited += 20
+	var missing: Variant = bg.call("_scene", "res://models/characters/bodies/Nobody_00.glb")
+	K.check(fails, ps != null and missing == null and (bg.get("_pending") as Dictionary).is_empty(), "people: background scene loads arrive (%d ms) and a missing body is null" % waited)
+	var other := (bg.avatars[0] as PPL.Avatar).path.get_basename() + "_lod1.glb"
+	bg.call("_scene", other)
+	bg.finish_loads()
+	var kept: Variant = (bg.get("_scenes") as Dictionary).get(other)
+	var drained := (bg.get("_pending") as Dictionary).is_empty()
+	K.check(fails, drained and kept is PackedScene, "people: finish_loads() waits for a load")
+
+
+## Without HC's characters (people.ok false) a rebuilt world frees every HC body and draws the
+## legacy static people again.
+func _check_people_fallback() -> void:
+	var pp: PPL = f.get("people")
+	if pp == null or not pp.ok:
+		return
+	var off := PPL.new()
+	off.why = "forced off by the test"
+	f.set("people", off)
+	f.on_world_rebuilt()
+	var live := 0
+	for n: Node in (f.get("_agents_root") as Node).get_children():
+		if n.name.begins_with("CharacterRoot") and not n.is_queued_for_deletion():
+			live += 1
+	K.check(fails, live == 0 and not (f.get("walkers") as WK).hc, "people fallback: a rebuild without HC frees every body (%d left) and walkers leave HC speeds" % live)
+	f.set("ambient_enabled", true)
+	f.call("_refill", true)
+	_check_people_draw()
+	var st: Dictionary = f.anim_stats()
+	K.check(fails, int(st["t0"]) + int(st["t1"]) + int(st["t2"]) + int(st["t3"]) == 0 and int(st["char_draws"]) > 0, "people fallback: anim_stats reports only the legacy people draws (%s)" % str(st))
+	f.set("people", pp)
+	f.on_world_rebuilt()
 
 
 # ------------------------------------------------------------------ buses
