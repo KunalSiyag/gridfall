@@ -170,6 +170,8 @@ var directory: CityDirectory
 var priority_point: Vector3 = Vector3.ZERO
 ## FP rebuild budget per frame in milliseconds, tile_built emissions included.
 var rebuild_budget_ms: float = 3.0
+## Worst microseconds per _process section since reset_section_stats() (fp_bench's hitch rows).
+var section_us_max: Dictionary = {}
 ## Any object with light_pole(i: int, corner: int) -> Node3D (E's traffic feature). Cross tiles then
 ## mount their street-name blades on its NE pole instead of a G1 pole. Set by the streetscape feature.
 var light_pole_source: Object = null
@@ -1343,6 +1345,17 @@ func flush_rebuild_queue() -> void:
 	_street.flush()
 
 
+func reset_section_stats() -> void:
+	section_us_max.clear()
+
+
+## Records the time since t0 under name and returns now.
+func _section(name: String, t0: int) -> int:
+	var now := Time.get_ticks_usec()
+	section_us_max[name] = maxi(int(section_us_max.get(name, 0)), now - t0)
+	return now
+
+
 ## Tiles waiting in the FP rebuild queue.
 func rebuild_pending() -> int:
 	return _queue.size()
@@ -1368,13 +1381,17 @@ func _process_queue(delta: float) -> void:
 			continue
 		if not _models_ready(i):
 			continue
+		var tb := Time.get_ticks_usec()
 		_build_tile(i, true)
+		_section("one_tile", tb)
 		_queue.erase(i)
 		built += 1
 		if Time.get_ticks_usec() - t0 >= budget:
 			break
 	if built > 0:
+		var tf := Time.get_ticks_usec()
 		_street.flush()
+		_section("street_flush", tf)
 
 
 func _in_view(i: int) -> bool:
@@ -2701,19 +2718,23 @@ func _process(delta: float) -> void:
 	if sim == null:
 		return
 	_time += delta
+	var t := Time.get_ticks_usec()
 	if not _dirty_tree_chunks.is_empty():
 		for c: Vector3i in _dirty_tree_chunks.keys():
 			if c.z in _tree_layers():
 				_refresh_tree_chunk(c)
 		_dirty_tree_chunks.clear()
+	t = _section("trees", t)
 	if not _warming.is_empty():
 		_poll_warming()
+	t = _section("warming", t)
 	if not fp_mode:
 		_update_population(delta)
 	_status_timer += delta
 	if _status_timer > 0.6:
 		_status_timer = 0.0
 		_refresh_status()
+	t = _section("status", t)
 	var pulse := 0.85 + 0.15 * sin(_time * 4.0)
 	_power_icons.scale = Vector3.ONE * pulse
 	_power_icons.position = Vector3((1.0 - pulse) * 15.5, 0, (1.0 - pulse) * 15.5)
@@ -2757,8 +2778,11 @@ func _process(delta: float) -> void:
 				var idx := int(_time * 1.5) % path.size()
 				var ti := int(path[idx])
 				root2.position = root2.position.lerp(Vector3(D.tx(ti), 0.05, D.ty(ti)), minf(1.0, delta * 3.0))
+	t = _section("bubbles_events", t)
 	_animate_parts(delta)
+	t = _section("parts", t)
 	_animate_sites(delta)
+	t = _section("sites", t)
 	if not _flicker_lights.is_empty():
 		var live: Array[OmniLight3D] = []
 		for l: Variant in _flicker_lights:
@@ -2768,6 +2792,7 @@ func _process(delta: float) -> void:
 		_flicker_lights = live
 	if fp_mode and not _queue.is_empty():
 		_process_queue(delta)
+	_section("queue", t)
 	if not fp_mode:
 		if _shake > 0.0 and camera != null:
 			_shake = maxf(0.0, _shake - delta)

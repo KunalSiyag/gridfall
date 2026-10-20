@@ -42,6 +42,9 @@ var _machine_foot: Dictionary = {}
 var _merge_ok: Dictionary = {}
 var _floors: Array[Node3D] = []
 var _merged: Dictionary = {}
+## Primitive mesh id -> its unindexed [vertices, normals, uvs] (_soup), and the unit box's.
+var _soups: Dictionary = {}
+var _unit_box: Array = []
 var _grime: Texture2D
 var _dust: Texture2D
 
@@ -801,23 +804,106 @@ func _merged_mesh(items: Array) -> ArrayMesh:
 	var key := hash(sig)
 	if _merged.has(key):
 		return _merged[key]
+	# material -> transformed [vertices, normals, uvs] chunks, joined once per surface.
 	var by_mat := {}
 	var order: Array = []
 	for it: Array in items:
 		var m: Variant = it[2]
 		if not by_mat.has(m):
-			by_mat[m] = SurfaceTool.new()
-			(by_mat[m] as SurfaceTool).begin(Mesh.PRIMITIVE_TRIANGLES)
+			by_mat[m] = []
 			order.append(m)
-		(by_mat[m] as SurfaceTool).append_from(it[0] as Mesh, 0, it[1] as Transform3D)
+		var soup := _soup(it[0] as PrimitiveMesh)
+		var xf: Transform3D = it[1]
+		var part := [xf * (soup[0] as PackedVector3Array), _normals(xf.basis, soup[1]), soup[2]]
+		(by_mat[m] as Array).append(part)
 	var am := ArrayMesh.new()
 	for m: Variant in order:
-		(by_mat[m] as SurfaceTool).commit(am)
+		var v := PackedVector3Array()
+		var n := PackedVector3Array()
+		var uv := PackedVector2Array()
+		for c: Array in by_mat[m]:
+			v.append_array(c[0])
+			n.append_array(c[1])
+			uv.append_array(c[2])
+		var arrays := []
+		arrays.resize(Mesh.ARRAY_MAX)
+		arrays[Mesh.ARRAY_VERTEX] = v
+		arrays[Mesh.ARRAY_NORMAL] = n
+		arrays[Mesh.ARRAY_TEX_UV] = uv
+		am.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, arrays)
 		am.surface_set_material(am.get_surface_count() - 1, m as Material)
 	if _merged.size() > 512:
 		_merged.clear()
 	_merged[key] = am
 	return am
+
+
+## Unindexed triangles of a primitive mesh in its own space, [vertices, normals, uvs], cached per
+## mesh. Reading a mesh's arrays back from the GPU stalls about 0.1 ms, so it happens once per mesh,
+## and once in all for plain boxes: the unit box scaled (a box's normals and UVs ignore its size).
+func _soup(mesh: PrimitiveMesh) -> Array:
+	var id := mesh.get_instance_id()
+	if _soups.has(id):
+		return _soups[id]
+	var out: Array
+	var bm := mesh as BoxMesh
+	if bm != null and _plain_box(bm):
+		if _unit_box.is_empty():
+			_unit_box = _unindexed(BoxMesh.new().surface_get_arrays(0))
+		var sized := Transform3D(Basis.from_scale(bm.size), Vector3.ZERO)
+		out = [sized * (_unit_box[0] as PackedVector3Array), _unit_box[1], _unit_box[2]]
+	else:
+		out = _unindexed(mesh.surface_get_arrays(0))
+	_soups[id] = out
+	return out
+
+
+static func _plain_box(bm: BoxMesh) -> bool:
+	return bm.subdivide_width == 0 and bm.subdivide_height == 0 and bm.subdivide_depth == 0
+
+
+## Surface arrays as one vertex per triangle corner: [vertices, normals, uvs] (uvs zero-filled when
+## the surface has none).
+static func _unindexed(arr: Array) -> Array:
+	var v: PackedVector3Array = arr[Mesh.ARRAY_VERTEX]
+	var n: PackedVector3Array = arr[Mesh.ARRAY_NORMAL]
+	var uv_in: Variant = arr[Mesh.ARRAY_TEX_UV]
+	var uv: PackedVector2Array = uv_in if uv_in != null else PackedVector2Array()
+	if uv.size() != v.size():
+		uv.resize(v.size())
+	var idx_in: Variant = arr[Mesh.ARRAY_INDEX]
+	var idx: PackedInt32Array = idx_in if idx_in != null else PackedInt32Array()
+	if idx.is_empty():
+		return [v, n, uv]
+	var ov := PackedVector3Array()
+	var on := PackedVector3Array()
+	var ouv := PackedVector2Array()
+	ov.resize(idx.size())
+	on.resize(idx.size())
+	ouv.resize(idx.size())
+	for k in range(idx.size()):
+		ov[k] = v[idx[k]]
+		on[k] = n[idx[k]]
+		ouv[k] = uv[idx[k]]
+	return [ov, on, ouv]
+
+
+## Normals n carried through basis b (inverse transpose, renormalised; one packed multiply when b
+## is a rotation times a uniform scale).
+static func _normals(b: Basis, n: PackedVector3Array) -> PackedVector3Array:
+	if is_zero_approx(b.determinant()):
+		return n
+	var nb := b.inverse().transposed()
+	var s := nb.x.length()
+	var eps := 1e-4 * s
+	var even := absf(nb.y.length() - s) < eps and absf(nb.z.length() - s) < eps
+	var skew := absf(nb.x.dot(nb.y)) + absf(nb.y.dot(nb.z)) + absf(nb.x.dot(nb.z))
+	if even and skew < eps * s:
+		return Transform3D(nb.orthonormalized(), Vector3.ZERO) * n
+	var out: PackedVector3Array = Transform3D(nb, Vector3.ZERO) * n
+	for k in range(out.size()):
+		out[k] = out[k].normalized()
+	return out
 
 
 ## Grows a rising frame's floors with stage progress (called a few times a second).

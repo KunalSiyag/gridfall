@@ -684,6 +684,60 @@ func _check_sites(view: CityView, sim: CitySim) -> void:
 	var floors := frame.get_child_count()
 	holder.free()
 	K.check(fails, merged > 5 and surfaces <= 90 and low < high and high == floors, "a frame site draws %d surfaces (%d merged meshes), floors rise %d -> %d of %d" % [surfaces, merged, low, high, floors])
+	_check_site_merge(view.kit)
+
+
+## The merge builds its surfaces from cached triangles (no GPU read per part) and matches, vertex
+## for vertex, SurfaceTool.append_from's positions: a turned, scaled box, a squashed mound, two
+## materials. Normals are unit and use the inverse transpose (append_from leaves them scaled).
+func _check_site_merge(kit: ConstructionKit) -> void:
+	var bx := BoxMesh.new()
+	bx.size = Vector3(0.3, 0.1, 0.05)
+	var sp := SphereMesh.new()
+	sp.radius = 0.1
+	sp.height = 0.2
+	var concrete := kit.mat("concrete")
+	var steel := kit.mat("steel")
+	var turn := Basis(Vector3.UP, 0.7).scaled(Vector3.ONE * 2.0)
+	var items: Array = [
+		[bx, Transform3D(turn, Vector3(0.1, 0, 0)), concrete, null],
+		[sp, Transform3D(Basis.from_scale(Vector3(1, 0.4, 1)), Vector3(0, 0.2, 0)), concrete, null],
+		[bx, Transform3D(Basis(Vector3.RIGHT, 0.3), Vector3(0, 0.1, 0)), steel, null],
+	]
+	var got: ArrayMesh = kit._merged_mesh(items)
+	var ok := got.get_surface_count() == 2
+	var parts := [[items[0], items[1]], [items[2]]]
+	for s in range(mini(2, got.get_surface_count())):
+		var want_v := PackedVector3Array()
+		var want_n := PackedVector3Array()
+		for it: Array in parts[s]:
+			var xf: Transform3D = it[1]
+			want_v.append_array(_appended(it[0], xf)[0])
+			var nb := xf.basis.inverse().transposed()
+			for nv: Vector3 in _appended(it[0], Transform3D.IDENTITY)[1]:
+				want_n.append((nb * nv).normalized())
+		var have := got.surface_get_arrays(s)
+		ok = ok and got.surface_get_material(s) == (concrete if s == 0 else steel)
+		ok = ok and _same_points(have[Mesh.ARRAY_VERTEX], want_v)
+		ok = ok and _same_points(have[Mesh.ARRAY_NORMAL], want_n)
+	K.check(fails, ok, "site parts merge vertex for vertex like SurfaceTool, with unit normals")
+
+
+## mesh's surface 0 through SurfaceTool.append_from(xf), unindexed: [vertices, normals, uvs].
+static func _appended(mesh: Mesh, xf: Transform3D) -> Array:
+	var st := SurfaceTool.new()
+	st.begin(Mesh.PRIMITIVE_TRIANGLES)
+	st.append_from(mesh, 0, xf)
+	return ConstructionKit._unindexed(st.commit_to_arrays())
+
+
+static func _same_points(a: PackedVector3Array, b: PackedVector3Array) -> bool:
+	if a.size() != b.size() or a.is_empty():
+		return false
+	for k in range(a.size()):
+		if a[k].distance_to(b[k]) > 1e-3:
+			return false
+	return true
 
 
 func _shown(frame: Node3D) -> int:

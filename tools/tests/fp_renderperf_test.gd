@@ -11,6 +11,10 @@ const Q := preload("res://scripts/fp/render/quality.gd")
 const HLOD := preload("res://scripts/fp/render/hlod.gd")
 const OCC := preload("res://scripts/fp/render/occluders.gd")
 const PROXIES := preload("res://scripts/fp/render/proxies.gd")
+const MIDLOD := preload("res://scripts/fp/render/midlod.gd")
+const MODEL_DIRS := [
+	"res://models/real/zones/", "res://models/real/buildings/", "res://models/real/roads/"
+]
 const EPS := 1e-5
 ## A character scene import with HC's retarget settings (D13): must survive --apply untouched.
 const CHAR_GLB_IMPORT := "[remap]\n\nimporter=\"scene\"\nimporter_version=1\ntype=\"PackedScene\"\nuid=\"uid://g2testchar\"\npath=\"res://.godot/imported/hero.glb-0.scn\"\n\n[deps]\n\nsource_file=\"res://models/characters/bodies/hero.glb\"\ndest_files=[\"res://.godot/imported/hero.glb-0.scn\"]\n\n[params]\n\nnodes/use_name_suffixes=true\nmeshes/generate_lods=true\nanimation/fps=30\n_subresources={\n\"nodes\": {\n\"PATH:Armature/Skeleton3D\": {\n\"retarget/bone_map\": Resource(\"res://models/characters/bonemap.tres\"),\n\"retarget/bone_renamer/rename_bones\": true,\n\"retarget/rest_fixer/normalize_position_tracks\": true,\n\"retarget/remove_tracks/unmapped_bones\": true\n}\n}\n}\ngltf/embedded_image_handling=0\n"
@@ -46,6 +50,7 @@ func _init() -> void:
 	_check_occluders(hlod, occ, view, sim)
 	_check_impostors(hlod, view, mult)
 	_check_frame_budget(f, hlod, view)
+	_check_midlod_bake(hlod)
 	_check_bulldoze(f, hlod, occ, view, sim)
 	_check_presets(ctx, f, hlod)
 	_report_costs(f, hlod)
@@ -306,6 +311,70 @@ func _check_frame_budget(f: Node, hlod: RefCounted, view: CityView) -> void:
 	f.set("clock", Time.get_ticks_usec)
 	hlod.proxies = warm_proxies
 	f.call("flush")
+
+
+## Every mesh the runtime would merge has a fresh offline bake (proxy_bake.gd) that matches the
+## runtime merge, LODs included, and the tiles drew their twins from it.
+func _check_midlod_bake(hlod: RefCounted) -> void:
+	var missing: Array[String] = []
+	var meshes := 0
+	var sample: Array = []
+	for path: String in _glbs(MODEL_DIRS):
+		var root := (load(path) as PackedScene).instantiate()
+		if root.find_children("Rotor*", "", true, false).is_empty():
+			for n in root.find_children("*", "MeshInstance3D", true, false):
+				var mi := n as MeshInstance3D
+				if PROXIES._skipped(str(mi.name)) or not MIDLOD.mergeable(mi.mesh):
+					continue
+				meshes += 1
+				if MIDLOD.load_baked(mi.mesh, path) == null:
+					missing.append(MIDLOD.baked_path(mi.mesh, path))
+				elif sample.is_empty():
+					sample = [mi.mesh, path]
+		root.free()
+	var what := "%d of %d meshes lack a fresh mid-LOD bake %s (re-run proxy_bake.gd)"
+	what = what % [missing.size(), meshes, str(missing.slice(0, 3))]
+	K.check(fails, meshes > 40 and missing.is_empty(), what)
+	if sample.is_empty():
+		return
+	var src: Mesh = sample[0]
+	var baked := MIDLOD.load_baked(src, sample[1])
+	var live := MIDLOD.merged(src, sample[1])
+	var a := baked.surface_get_arrays(0)
+	var b := live.surface_get_arrays(0)
+	var lods_a := _lod_count(baked)
+	var lods_b := _lod_count(live)
+	var va: PackedVector3Array = a[Mesh.ARRAY_VERTEX]
+	var vb: PackedVector3Array = b[Mesh.ARRAY_VERTEX]
+	var same: bool = (
+		va.size() == vb.size()
+		and (a[Mesh.ARRAY_INDEX] as PackedInt32Array) == (b[Mesh.ARRAY_INDEX] as PackedInt32Array)
+		and (a[Mesh.ARRAY_COLOR] as PackedColorArray) == (b[Mesh.ARRAY_COLOR] as PackedColorArray)
+	)
+	var equal := same and lods_a > 0 and lods_a == lods_b
+	K.check(fails, equal, "the bake equals the runtime merge (%d LODs)" % lods_a)
+	var stale := not MIDLOD.fresh(baked, ArrayMesh.new()) and MIDLOD.fresh(baked, src)
+	K.check(fails, stale, "a bake of another mesh is stale")
+	var loads := int((hlod.get("midlod") as RefCounted).get("baked_loads"))
+	K.check(fails, loads > 0, "tiles draw baked twins (%d)" % loads)
+
+
+static func _lod_count(m: ArrayMesh) -> int:
+	return (RenderingServer.mesh_get_surface(m.get_rid(), 0).get("lods", []) as Array).size()
+
+
+static func _glbs(dirs: Array) -> Array[String]:
+	var out: Array[String] = []
+	var stack: Array = dirs.duplicate()
+	while not stack.is_empty():
+		var d: String = stack.pop_back()
+		for sub in DirAccess.get_directories_at(d):
+			stack.append(d + sub + "/")
+		for fn in DirAccess.get_files_at(d):
+			if fn.ends_with(".glb.import"):
+				out.append(d + fn.trim_suffix(".import"))
+	out.sort()
+	return out
 
 
 ## Up to n tiles with a building drawn as an impostor (a baked or bounds proxy).
