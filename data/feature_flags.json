@@ -12,6 +12,7 @@
     "audio": {"default": true, "description": "First-person feature: street sound: buses, positional emitters and ambience (slice I)."},
     "overview": {"default": true, "description": "First-person feature: Tab city overview to watch construction sites."},
     "drive": {"default": true, "description": "First-person feature: get into parked or stopped cars with F and drive them."},
+     "phone": {"default": true, "description": "First-person feature: B opens the phone Build app, which places roads, zones and buildings for the mayor who owns the land."},
     "gmi_live": {"default": true, "description": "Kill switch for live GMI Cloud calls. Off: every call uses the replay cache or heuristics, as with GRIDFALL_OFFLINE=1."},
     "analytics": {"default": false, "description": "Local product analytics to user://ops/analytics.jsonl (also GRIDFALL_ANALYTICS=1). Nothing is sent anywhere."},
     "error_tracking": {"default": false, "description": "Write contextual error records to user://ops/errors.jsonl (also GRIDFALL_ERROR_LOG=1). In-memory error counters are always on."},
