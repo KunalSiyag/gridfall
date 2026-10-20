@@ -61,6 +61,13 @@ Generated from the `##` doc comments in `scripts/`. Regenerate with `python3 too
 
 - [overview_feature.gd](scripts.fp.overview.md#scriptsfpoverviewoverview_featuregd): City overview: Tab lifts the camera off the hero into an aerial view of the city, with a marker over every open construction site and a list of them
 
+## [scripts/fp/phone/](scripts.fp.phone.md)
+
+- [build_ghost.gd](scripts.fp.phone.md#scriptsfpphonebuild_ghostgd): The Build app's marker in the world: on every tile the order would touch, a glowing floor slab and a faint column that reads from down the street, cyan when it can be placed and amber when not, and a ring on the first corner of a road or zone
+- [build_rules.gd](scripts.fp.phone.md#scriptsfpphonebuild_rulesgd): Read-only previews for the phone Build app
+- [phone_feature.gd](scripts.fp.phone.md#scriptsfpphonephone_featuregd): The phone and its Build app (integration feature "phone")
+- [phone_ui.gd](scripts.fp.phone.md#scriptsfpphonephone_uigd): The Build app's phone: who you build for (the district, its mayor and treasury), the six tools, the building picked for the Build tool, what placing here would do, and the keys
+
 ## [scripts/fp/player/](scripts.fp.player.md)
 
 - [body_bake.gd](scripts.fp.player.md#scriptsfpplayerbody_bakegd): Bakes the walking collision of every building and zone model into body_table.gd (slice A)
