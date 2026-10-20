@@ -18,12 +18,67 @@ const MAX_VRAM_MB := 1536.0
 ## TPS_PLAN T9 animated-people budget (enforced once E2 reports it).
 const MAX_ANIM_US := 1500.0
 const MAX_CHAR_DRAWS := 150
+const SIM_SIGNALS := [
+	"tiles_changed", "tick_done", "stats_updated", "day_started", "day_ended", "territory_changed",
+	"site_started", "site_stage", "site_finished", "event_started", "event_ended", "city_log",
+]
+const VIEW_SIGNALS := ["tile_built", "tile_cleared", "world_rebuilt"]
+const HITCH_MS := 33.3
+const MAX_HITCHES := 12
+const PIPELINES := [
+	Performance.PIPELINE_COMPILATIONS_CANVAS, Performance.PIPELINE_COMPILATIONS_MESH,
+	Performance.PIPELINE_COMPILATIONS_SURFACE, Performance.PIPELINE_COMPILATIONS_DRAW,
+	Performance.PIPELINE_COMPILATIONS_SPECIALIZATION,
+]
+const PIPELINE_KINDS := ["canvas", "mesh", "surface", "draw", "specialization"]
 
 var main: Node
 var fp: FpMode
 var out_dir := ""
 var vp_rid: RID
 var rows: Dictionary = {}
+var prof: Dictionary = {}
+var harness: ProcessHarness = null
+## Geometry that entered the tree since the last frame, by _added_key: what a slow frame drew
+## for the first time (new building models, sites, street props).
+var added: Dictionary = {}
+
+
+## Runs the _process of the nodes it took over (in tree order) and times each one, so a slow frame
+## can name the nodes it spent its script time in.
+class ProcessHarness extends Node:
+	var nodes: Array[Node] = []
+	var names: Array[String] = []
+	var frame: Dictionary = {}  # name -> ms in the last frame
+
+	func take(tree_root: Node) -> void:
+		for n in tree_root.find_children("*", "", true, false):
+			var sc: Script = n.get_script()
+			if n == self or sc == null or not n.is_processing() or not n.has_method("_process"):
+				continue
+			n.set_process(false)
+			nodes.append(n)
+			names.append("%s(%s)" % [n.name, sc.resource_path.get_file().get_basename()])
+
+	func _process(delta: float) -> void:
+		frame.clear()
+		for k in range(nodes.size()):
+			var n := nodes[k]
+			if not is_instance_valid(n) or not n.is_inside_tree() or not n.can_process():
+				continue
+			var t := Time.get_ticks_usec()
+			n.call("_process", delta)
+			frame[names[k]] = (Time.get_ticks_usec() - t) / 1000.0
+
+	## The n nodes that took longest in the last frame, [name, ms].
+	func top(n: int) -> Array:
+		var keys := frame.keys()
+		keys.sort_custom(func(a: String, b: String) -> bool:
+			return float(frame[a]) > float(frame[b]))
+		var out: Array = []
+		for k: String in keys.slice(0, n):
+			out.append([k, snappedf(float(frame[k]), 0.1)])
+		return out
 
 
 func _measure(label: String, secs: float) -> Dictionary:
@@ -35,20 +90,36 @@ func _measure(label: String, secs: float) -> Dictionary:
 	var ro: Object = fp.ctx.feature("render_opt")
 	if ro != null and ro.has_method("reset_stats"):
 		ro.call("reset_stats")
+	main.view.reset_section_stats()
 	var times: Array[float] = []
 	var gpu := 0.0
 	var cpu := 0.0
 	var n := 0
+	var hitches: Array = []
+	var pipes := _pipelines()
+	var drawn0 := Engine.get_frames_drawn()
 	var t0 := Time.get_ticks_usec()
 	var last := t0
 	while float(Time.get_ticks_usec() - t0) < secs * 1e6:
 		await process_frame
 		var now := Time.get_ticks_usec()
-		times.append(float(now - last) / 1000.0)
+		var dt := float(now - last) / 1000.0
+		times.append(dt)
 		last = now
-		gpu += RenderingServer.viewport_get_measured_render_time_gpu(vp_rid)
-		cpu += RenderingServer.viewport_get_measured_render_time_cpu(vp_rid)
+		var g := RenderingServer.viewport_get_measured_render_time_gpu(vp_rid)
+		var c := RenderingServer.viewport_get_measured_render_time_cpu(vp_rid)
+		gpu += g
+		cpu += c
 		n += 1
+		var p := _pipelines()
+		if dt > HITCH_MS and hitches.size() < MAX_HITCHES:
+			var h := _hitch(dt, g, c, _pipeline_delta(p, pipes))
+			if harness != null:
+				h["nodes"] = harness.top(4)
+			h["added"] = _top_counts(added, 6)
+			hitches.append(h)
+		added.clear()
+		pipes = p
 	var sorted := times.duplicate()
 	sorted.sort()
 	var avg := 0.0
@@ -71,6 +142,7 @@ func _measure(label: String, secs: float) -> Dictionary:
 		"viewport": "%dx%d" % [get_root().size.x, get_root().size.y],
 		"quality": str(fp.ctx.settings.get("quality", "medium")),
 		"camera": _camera_mode(),
+		"drawn": Engine.get_frames_drawn() - drawn0,
 	}
 	if ro != null and ro.get("hlod") != null:
 		var hl: Object = ro.get("hlod")
@@ -93,9 +165,119 @@ func _measure(label: String, secs: float) -> Dictionary:
 		r["rig_us"] = rig.get("update_us")
 	if (label == "street_tick" or label == "street_day_end") and sim.has_method("slice_stats"):
 		r["sim"] = sim.call("slice_stats")
+	r["hitches"] = hitches
+	var sections := {}
+	for k: String in main.view.section_us_max:
+		sections[k] = snappedf(int(main.view.section_us_max[k]) / 1000.0, 0.1)
+	r["view_sections_ms"] = sections
+	if not prof.is_empty():
+		r["signals"] = _top(prof, 12)
+		prof.clear()
 	rows[label] = r
 	print("FPBENCH ", JSON.stringify(r))
+	if int(r["drawn"]) * 2 < n:
+		print("FPBENCH: WARNING %s drew %d of %d frames (window hidden?)" % [label, r["drawn"], n])
 	return r
+
+
+## Replaces every connection of the signals in names on obj with a timed call of the same callable,
+## accumulating {"calls", "total_ms", "max_ms"} per handler into prof (the tick rows' breakdown).
+static func _time_signals(obj: Object, names: Array, prof: Dictionary) -> void:
+	for s: Dictionary in obj.get_signal_list():
+		var sig := str(s["name"])
+		if not names.has(sig):
+			continue
+		var argc := (s["args"] as Array).size()
+		for c: Dictionary in obj.get_signal_connection_list(sig):
+			var cb: Callable = c["callable"]
+			var key := "%s>%s.%s" % [sig, _owner_name(cb.get_object()), cb.get_method()]
+			var timed := func(a: Variant = null, b: Variant = null, d: Variant = null) -> void:
+				var t := Time.get_ticks_usec()
+				cb.callv([a, b, d].slice(0, argc))
+				var ms := (Time.get_ticks_usec() - t) / 1000.0
+				var blank := {"calls": 0, "total_ms": 0.0, "max_ms": 0.0}
+				var e: Dictionary = prof.get_or_add(key, blank)
+				e["calls"] = int(e["calls"]) + 1
+				e["total_ms"] = float(e["total_ms"]) + ms
+				e["max_ms"] = maxf(float(e["max_ms"]), ms)
+			obj.disconnect(sig, cb)
+			obj.connect(sig, timed, int(c["flags"]) & ~CONNECT_PERSIST)
+
+
+static func _owner_name(o: Object) -> String:
+	if o == null:
+		return "?"
+	var sc: Script = o.get_script()
+	if sc != null and not sc.resource_path.is_empty():
+		return sc.resource_path.get_file().get_basename()
+	return o.get_class()
+
+
+## The slowest handlers in prof, rounded, slowest worst call first.
+static func _top(prof: Dictionary, n: int) -> Array:
+	var keys := prof.keys()
+	keys.sort_custom(func(x: String, y: String) -> bool:
+		return float(prof[x]["max_ms"]) > float(prof[y]["max_ms"]))
+	var out: Array = []
+	for k: String in keys.slice(0, n):
+		var e: Dictionary = prof[k]
+		var total := snappedf(float(e["total_ms"]), 0.1)
+		out.append([k, int(e["calls"]), total, snappedf(float(e["max_ms"]), 0.1)])
+	return out
+
+
+func _on_node_added(n: Node) -> void:
+	if n is GeometryInstance3D:
+		var key := _added_key(n)
+		added[key] = int(added.get(key, 0)) + 1
+
+
+## The scene file that owns n, else the nearest ancestor with a given name ("Site", "StreetProps").
+static func _added_key(n: Node) -> String:
+	var o := n.owner
+	if o != null and not o.scene_file_path.is_empty():
+		return o.scene_file_path.get_file()
+	var p := n.get_parent()
+	while p != null and str(p.name).begins_with("@"):
+		p = p.get_parent()
+	return str(p.name) if p != null else n.get_class()
+
+
+## The n biggest counts, [key, count].
+static func _top_counts(counts: Dictionary, n: int) -> Array:
+	var keys := counts.keys()
+	keys.sort_custom(func(x: String, y: String) -> bool: return int(counts[x]) > int(counts[y]))
+	return keys.slice(0, n).map(func(k: String) -> Array: return [k, counts[k]])
+
+
+## Pipeline compilations so far, per kind (PIPELINE_KINDS). Draw compiles stall the frame that
+## needs them; surface ones run when a new mesh and material pair enters the scene (hidden or not),
+## mesh ones as meshes load, specialization ones in the background.
+static func _pipelines() -> PackedInt32Array:
+	var out := PackedInt32Array()
+	for m in PIPELINES:
+		out.append(int(Performance.get_monitor(m)))
+	return out
+
+
+static func _pipeline_delta(now: PackedInt32Array, before: PackedInt32Array) -> Dictionary:
+	var out := {}
+	for k in range(now.size()):
+		if now[k] != before[k]:
+			out[PIPELINE_KINDS[k]] = now[k] - before[k]
+	return out
+
+
+## Where a slow frame went: scripts (_process and signals), physics, render CPU and GPU (as
+## measured, a frame or two late) and the pipelines it compiled.
+static func _hitch(dt: float, gpu: float, rcpu: float, pipes: Dictionary) -> Dictionary:
+	var physics := Performance.get_monitor(Performance.TIME_PHYSICS_PROCESS)
+	return {
+		"ms": snappedf(dt, 0.1),
+		"process_ms": snappedf(Performance.get_monitor(Performance.TIME_PROCESS) * 1000.0, 0.1),
+		"physics_ms": snappedf(physics * 1000.0, 0.1),
+		"rcpu_ms": snappedf(rcpu, 0.1), "gpu_ms": snappedf(gpu, 0.1), "pipelines": pipes,
+	}
 
 
 ## The HUD's own cost: the HUD toggles every AB_FRAMES frames and each state sums the GPU and render
@@ -153,8 +335,19 @@ func _camera_mode() -> String:
 	return str(m) if m != null else "first"
 
 
+## Saves the next drawn frame. A window the window manager hides or minimises stops drawing while
+## frames still run (the bench used to wait forever for frame_post_draw), so give up after 5 s.
 func _shot(file: String) -> void:
-	await RenderingServer.frame_post_draw
+	var drew := [false]
+	var mark := func() -> void: drew[0] = true
+	RenderingServer.frame_post_draw.connect(mark, CONNECT_ONE_SHOT)
+	var t0 := Time.get_ticks_msec()
+	while not drew[0] and Time.get_ticks_msec() - t0 < 5000:
+		await process_frame
+	if not drew[0]:
+		RenderingServer.frame_post_draw.disconnect(mark)
+		print("FPBENCH: WARNING %s not saved, the window has not drawn for 5 s" % file)
+		return
 	get_root().get_texture().get_image().save_png(out_dir.path_join(file))
 
 
@@ -226,6 +419,15 @@ func _init() -> void:
 	fp.apply_settings({"camera_mode": "first"}, false)
 	player.teleport(street["pos"], eye_yaw, float(street["pitch"]))
 	# Two growth ticks through the normal _process path: the stall slice F must remove.
+	_time_signals(sim, SIM_SIGNALS, prof)
+	_time_signals(main.view, VIEW_SIGNALS, prof)
+	node_added.connect(_on_node_added)
+	harness = ProcessHarness.new()
+	harness.name = "BenchProcessHarness"
+	harness.process_priority = -1000
+	get_root().add_child(harness)
+	harness.take(get_root())
+	print("FPBENCH harness took %d nodes" % harness.nodes.size())
 	var saved_day := sim.day_seconds
 	sim.set_day_seconds(12.0)
 	sim.set_speed(1)
@@ -261,6 +463,9 @@ func _enforce() -> Array[String]:
 		if r.is_empty():
 			why.append("%s missing" % l)
 			continue
+		if int(r.get("drawn", 0)) * 2 < int(r["frames"]):
+			var drew := "%s drew %d of %d frames" % [l, int(r["drawn"]), int(r["frames"])]
+			why.append(drew + " (window hidden?)")
 		if float(r["p50_ms"]) > MAX_P50_MS:
 			why.append("%s p50 %.2f ms > %.1f" % [l, float(r["p50_ms"]), MAX_P50_MS])
 		if float(r["p99_ms"]) > MAX_P99_MS:
