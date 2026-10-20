@@ -29,8 +29,9 @@ const CARDS := {
 	"people": [Color(0.11, 0.17, 0.25, 0.84), Color("#8FB8E8"), "NEIGHBOURS"],
 	"notice": [Color(0.05, 0.22, 0.26, 0.84), Color("#6FD6E8"), "GRID"],
 	"log": [Color(0.13, 0.15, 0.19, 0.84), Color("#C9D2DE"), "CITY"],
+	"status": [Color(0.15, 0.12, 0.26, 0.84), Color("#B9A4FF"), "CHAT"],
 }
-const CARD_ICONS := {"alert": "alert", "incident": "fire", "opened": "door", "people": "person", "notice": "bolt", "log": "coin"}
+const CARD_ICONS := {"alert": "alert", "incident": "fire", "opened": "door", "people": "person", "notice": "bolt", "log": "coin", "status": "chat"}
 
 static var _display: Font
 static var _body: Font

@@ -52,6 +52,7 @@ Generated from the `##` doc comments in `scripts/`. Regenerate with `python3 too
 
 ## [scripts/fp/chat/](scripts.fp.chat.md)
 
+- [chat_facts.gd](scripts.fp.chat.md#scriptsfpchatchat_factsgd): What is really going on in the city, for chat answers (slice C): what the district's mayor did on their last turn in spoken words, their latest post, the Gazette headline, the council's last ruling, incidents and sites being built, and the district's numbers
 - [chat_feature.gd](scripts.fp.chat.md#scriptsfpchatchat_featuregd): Global chat and face-to-face conversations (slice C)
 - [chat_feed.gd](scripts.fp.chat.md#scriptsfpchatchat_feedgd) (`ChatFeed`): The global chat's message store and drip queue (slice C §1)
 - [chat_text.gd](scripts.fp.chat.md#scriptsfpchatchat_textgd): Text helpers for the global chat and conversations (slice C): the display filter every line passes before it is shown or put into a prompt, dedupe normalisation, the checks the reply validators use (URLs, model names, sentence count), trimming, relative times and initials

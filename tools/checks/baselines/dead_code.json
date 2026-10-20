@@ -9,7 +9,6 @@
  "scripts/episode_player.gd::func::step_prev",
  "scripts/episode_player.gd::func::toggle_play",
  "scripts/fp/asset_paths.gd::const::BOLLARD",
- "scripts/fp/chat/chat_feed.gd::func::fast_count",
  "scripts/fp/player/player.gd::func::conversation_id",
  "scripts/fp/player/player.gd::func::look_toward",
  "scripts/fp/player/spring_math.gd::func::damp_v3",

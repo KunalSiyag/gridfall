@@ -60,6 +60,8 @@ The global chat panel (slice C §2), Clash of Clans style: a drawer that slides 
 - `func set_player_district(d: int) -> void`: The player's district (from the tile under their feet); refilters the District tab.
 - `func set_pinned(paper: Dictionary) -> void`: Shows the pinned Gazette (paper: {"headline", "editorial", "stories": [{"title", "body"}], "day"}, already filtered); {} hides it.
 - `func pinned_text() -> String`: The pinned headline text ("" when none).
+- `func set_typing(on: bool, names: Array[String]) -> void`: Shows the typing row above the input while on: "<names> is typing…" (ChatText.typing_line; names are who answers next, soonest first, "Someone" while nobody is known yet).
+- `func typing_text() -> String`: The typing row's text ("" while it is hidden).
 
 ## `scripts/fp/ui/chat_panel_row.gd`
 
