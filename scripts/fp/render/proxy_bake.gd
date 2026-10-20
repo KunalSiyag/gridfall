@@ -6,13 +6,16 @@ extends SceneTree
 ## props excluded) with the colour of the surface on top of each cell, the facade colour, the share
 ## of the facade that is glass and of that the share that lights up at night, and the body box (the
 ## main mass: cells at least half the building's height, or H's ColBox_<n> empties when present),
-## and the average colour of every material (midlod.gd's vertex colours).
+## and the average colour of every material (midlod.gd's vertex colours). Then, with those colours,
+## every mesh midlod.gd would merge at runtime, merged into MIDLOD.BAKED_DIR (stale files removed).
 ## Colours are the materials' albedo_color times the average of their source albedo images (read
 ## from the source files here, never from the VRAM-compressed imports at runtime). Re-run after a
 ## model changes; the runtime falls back to surface bounds for any model missing from the file.
 
 const WS := preload("res://scripts/fp/world_scale.gd")
 const AP := preload("res://scripts/fp/asset_paths.gd")
+const MIDLOD := preload("res://scripts/fp/render/midlod.gd")
+const PROXIES := preload("res://scripts/fp/render/proxies.gd")
 const OUT := "res://scripts/fp/render/proxies.json"
 const DIRS := ["res://models/real/zones/", "res://models/real/buildings/"]
 ## Road pieces get material colours only (midlod.gd twins), no proxy.
@@ -46,7 +49,44 @@ func _init() -> void:
 	f.store_string(JSON.stringify({"version": 1, "grid": GRID, "half": HALF, "models": models, "road_mats": road_mats}, "", true, false))
 	f.close()
 	print("PROXY_BAKE: %d models in %d ms -> %s" % [models.size(), Time.get_ticks_msec() - t0, OUT])
+	# MIDLOD reads the colours through PROXIES.bake(), which loads OUT on its first call: now.
+	var t1 := Time.get_ticks_msec()
+	var mids := _bake_midlods(_model_paths(DIRS) + _model_paths(ROAD_DIRS))
+	var ms := Time.get_ticks_msec() - t1
+	print("PROXY_BAKE: %d mid-LOD meshes in %d ms -> %s" % [mids, ms, MIDLOD.BAKED_DIR])
 	quit(0)
+
+
+## Merges every mesh hlod.warm() would hand to midlod.gd and removes bakes nothing produced.
+func _bake_midlods(paths: Array[String]) -> int:
+	DirAccess.make_dir_recursive_absolute(MIDLOD.BAKED_DIR)
+	var written := {}
+	for path: String in paths:
+		var ps := load(path) as PackedScene
+		if ps == null:
+			continue
+		var root := ps.instantiate()
+		if root.find_children("Rotor*", "", true, false).is_empty():
+			for n in root.find_children("*", "MeshInstance3D", true, false):
+				var mi := n as MeshInstance3D
+				if mi.material_override != null or PROXIES._skipped(str(mi.name)):
+					continue
+				if not MIDLOD.mergeable(mi.mesh):
+					continue
+				var out := MIDLOD.baked_path(mi.mesh, path)
+				if written.has(out):
+					continue
+				var m := MIDLOD.merged(mi.mesh, path)
+				if m == null or ResourceSaver.save(m, out, ResourceSaver.FLAG_COMPRESS) != OK:
+					push_warning("proxy_bake: cannot write %s" % out)
+					continue
+				written[out] = true
+		root.free()
+	var da := DirAccess.open(MIDLOD.BAKED_DIR)
+	for fn in da.get_files():
+		if not written.has(MIDLOD.BAKED_DIR + fn):
+			da.remove(fn)
+	return written.size()
 
 
 func _model_paths(dirs: Array) -> Array[String]:
