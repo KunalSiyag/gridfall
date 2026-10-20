@@ -43,6 +43,7 @@ Visibility ranges and building LODs (slice G2). post_pass() classifies every dra
 - `func set_ranges(building: float, near: float, prop: float) -> void`: Sets the switch distances used from now on (cached parts are re-ranged by apply_ranges).
 - `static func chunk_of(i: int) -> Vector2i`
 - `func post_pass(i: int, holder: Node3D) -> Vector2i`: Classifies and ranges every drawn part of tile i's holder (replacing its mid-LOD twins); returns the tile's chunk, whose impostor and occluder need a rebuild.
+- `func warm(holder: Node3D) -> bool`: Does one piece of the cold work post_pass(i, holder) would otherwise do inline: the model's proxy, or one source mesh's mid-LOD gather. A gather's surface_get_arrays reads back from the GPU and waits for the frames in flight (10 to 140 ms for a building's first instance); one gather per step keeps that to one stall, splitting it by surface costs a stall per surface. True if it did something; false once post_pass will find everything cached or under way.
 - `func drop(i: int) -> Vector2i`: Forgets tile i (its holder was replaced or cleared); returns its chunk.
 - `func apply_ranges(e: Dictionary) -> void`: Visibility ranges of one cached entry at the current distances.
 - `static func restore(e: Dictionary) -> void`: Restores what post_pass changed on one entry: no range, shadows as authored, no g2 metas.
@@ -72,7 +73,8 @@ Mid-range building LOD (slice G2): a building mesh's surfaces merged into one, e
 
 - `static func mergeable(src: Mesh) -> bool`: True when src is worth merging.
 - `func mesh_for(src: Mesh, path: String) -> ArrayMesh`: The merged mesh for src, or null while it is being built (the build starts on the first call). path is the model's scene path (building or road piece, for the baked colours).
-- `func poll() -> int`: Uploads every finished build; returns how many finished.
+- `func started(src: Mesh) -> bool`: True once src's merge is built or under way (mesh_for() then does no gather).
+- `func poll(deadline: int = -1, clock: Callable = Time.get_ticks_usec) -> int`: Uploads finished builds; returns how many. With a deadline (clock() µs) it uploads at least one and starts no further upload once the deadline has passed.
 - `func pending() -> int`: Builds still running.
 - `func wait_all() -> void`: Waits for every running build and uploads it (tests, teardown).
 
@@ -120,6 +122,7 @@ Building proxies for far impostors and occluders (slice G2): per model path, the
 
 - `static func bake() -> Dictionary`: The baked data of every model (loaded once per process). {} when the bake file is missing.
 - `func proxy(path: String, model: Node3D = null) -> Dictionary`: The proxy of a model: {"verts": PackedVector3Array, "normals": PackedVector3Array, "colors": PackedColorArray, "win": float (glass share of the facade), "body": AABB (main mass), "baked"}. model is an instance of the scene at path, used only for the fallback (may be null).
+- `func cached(path: String) -> bool`: True when path's proxy is built (proxy() returns it without work).
 - `func has_mass(path: String, model: Node3D = null) -> bool`: True when the model has a proxy with some mass (always true for baked models).
 
 ## `scripts/fp/render/proxy_bake.gd`
@@ -170,7 +173,7 @@ First-person quality presets (slice G2): the knobs each preset sets, and the sta
 
 extends `FpFeature`
 
-Render performance (slice G2): applies the quality preset (FSR2 scaling, shadow atlas and filter, SSAO and SSIL quality, mesh LOD threshold, camera far plane) and restores every knob on teardown; on foot it ranges every tile holder's parts (hlod.gd), draws far buildings as merged chunk impostors and culls with per-chunk occluders (occluders.gd), rebuilding at most one chunk a frame.
+Render performance (slice G2): applies the quality preset (FSR2 scaling, shadow atlas and filter, SSAO and SSIL quality, mesh LOD threshold, camera far plane) and restores every knob on teardown; on foot it ranges every tile holder's parts (hlod.gd), draws far buildings as merged chunk impostors and culls with per-chunk occluders (occluders.gd). Tile post-passes queue on tile_built and run under a per-frame budget (FRAME_BUDGET_USEC), followed by at most one chunk rebuild.
 
 ### Constants
 
@@ -181,6 +184,7 @@ Render performance (slice G2): applies the quality preset (FSR2 scaling, shadow 
 - `OCCLUDERS = preload("res://scripts/fp/render/occluders.gd")`
 - `JOB_BUDGET_USEC = 3000`: A preset switch re-ranges cached parts for at most this long per frame.
 - `WAIT_BUDGET_USEC = 2000`: Tiles re-passed per frame once their mid-LOD merges finish, at most this long.
+- `FRAME_BUDGET_USEC = 2000`: Queued tile post-passes, mid-LOD uploads and the chunk rebuild share this much of a frame. A tick emission builds 10 to 40 tiles, so the queue drains within a few frames; one step always runs, so nothing starves on a slow frame.
 - `RS_SETTINGS = { "atlas": "rendering/lights_and_shadows/directional_shadow/size", "atlas_16": "renderi...`: Project defaults of the global RenderingServer knobs (headless has no getters for them).
 - `RS_DEFAULTS = { "atlas": 4096, "atlas_16": true, "soft": 2, "ssao": 2, "ssao_half": true, "ssao_targe...`
 - `VIEWPORT_KEYS = ["scaling_3d_mode", "scaling_3d_scale", "msaa_3d", "mesh_lod_threshold", "use_occlusion...`
@@ -191,7 +195,10 @@ Render performance (slice G2): applies the quality preset (FSR2 scaling, shadow 
 - `rs_calls: Dictionary`: Last arguments of every RenderingServer setter this feature called (headless has no getters).
 - `active: bool`: The post-pass is live (on foot, set up).
 - `frame_us: int`: Main-thread cost of this feature's per-frame work (µs): the last frame and the worst since reset_stats(); the bench reports both.
-- `pass_us_max: int`: Worst tile post-pass (µs, on tile_built) since reset_stats().
+- `pass_us_max: int`: Worst single tile post-pass (µs) since reset_stats().
+- `warm_us_max: int`: Worst warm step (one model proxy or one mid-LOD gather before a pass, µs) since reset_stats().
+- `rebuild_us_max: int`: Worst chunk rebuild (impostor and occluder, µs) since reset_stats().
+- `clock: Callable`: Microsecond clock for the frame budget; tests inject a fake one so budgets are deterministic.
 
 ### Functions
 
@@ -202,7 +209,8 @@ Render performance (slice G2): applies the quality preset (FSR2 scaling, shadow 
 - `func apply_preset(p: String) -> void`: Applies preset p (unknown names give Medium) to the viewport, the RenderingServer, the camera and the visibility ranges; cached parts are re-ranged over the next frames.
 - `func preset_applied(p: String) -> bool`: True when the viewport and camera carry preset p's knobs (self-test and tests).
 - `func job_pending() -> int`: Tiles still waiting to be re-ranged after a preset switch.
-- `func flush() -> void`: Runs every pending re-range, mid-LOD merge and chunk rebuild now (tests and tools).
+- `func pass_pending() -> int`: Tiles whose post-pass is still queued.
+- `func flush() -> void`: Runs every pending re-range, post-pass, mid-LOD merge and chunk rebuild now (tests and tools).
 - `func self_test() -> Dictionary`
 - `func photo_shots() -> Array`: A skyline from a road just beyond the impostor switch, facing the tallest part of the city, by day and by night (the far buildings there are impostors).
-- `func reset_stats() -> void`: Clears frame_us_max (the bench calls it before each measurement).
+- `func reset_stats() -> void`: Clears the worst-case timings (the bench calls it before each measurement).

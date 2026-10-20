@@ -22,9 +22,13 @@ const RIGHT_VARIANTS: Array[int] = [2, 4, 6]
 ## Surfaces that hold a film of water when wet, and the wetness below which no splash plays.
 const PAVED: Array[String] = ["asphalt", "sidewalk", "lot", "bridge"]
 const SPLASH_MIN_WET := 0.2
+## Landings faster than this (m/s down, FpPlayer's heavy landing) add the other foot, louder.
+const HEAVY_LAND_MPS := 4.0
+const HEAVY_LAND_DB := 3.0
 
 var ctx: FpContext
 var steps_played: int = 0
+var heavy_lands: int = 0
 var splashes_played: int = 0
 ## The last steps' stream names, newest last (tests).
 var history: Array[String] = []
@@ -38,6 +42,7 @@ var _last_variant: Dictionary = {true: 0, false: 0}
 var _bound: Node3D
 var _last_pos: Vector3 = Vector3(NAN, NAN, NAN)
 var _travel: float = 0.0
+var _last_surface: String = "sidewalk"
 
 
 func setup(p_ctx: FpContext) -> void:
@@ -65,13 +70,18 @@ func bind(p: Node3D) -> void:
 	if p != null and p.has_signal("stepped"):
 		p.connect("stepped", _on_stepped)
 		polling = false
+		if p.has_signal("landed"):
+			p.connect("landed", _on_landed)
 	else:
 		polling = p != null
 
 
 func unbind() -> void:
-	if _bound != null and is_instance_valid(_bound) and _bound.has_signal("stepped") and _bound.is_connected("stepped", _on_stepped):
-		_bound.disconnect("stepped", _on_stepped)
+	if _bound != null and is_instance_valid(_bound):
+		for c: Callable in [_on_stepped, _on_landed]:
+			var sig := "stepped" if c == _on_stepped else "landed"
+			if _bound.has_signal(sig) and _bound.is_connected(sig, c):
+				_bound.disconnect(sig, c)
 	_bound = null
 
 
@@ -104,7 +114,7 @@ static func stride_length(speed_mps: float) -> float:
 
 
 ## Plays one step on surface (CollisionWorld.surface_at names; unknown ones sound like sidewalk).
-func play(surface: String) -> void:
+func play(surface: String, gain_db: float = 0.0) -> void:
 	if not enabled:
 		return
 	var surf := surface if surface in BANK.SURFACES else "sidewalk"
@@ -125,7 +135,7 @@ func play(surface: String) -> void:
 		return
 	var p: AudioStreamPlayer = _feet[0 if left else 1]
 	var v := _speed_mps()
-	var vol := BANK.STEP_DB + _rng.randf_range(-1.5, 1.0)
+	var vol := BANK.STEP_DB + gain_db + _rng.randf_range(-1.5, 1.0)
 	if v > (WS.WALK + WS.RUN) * 0.5 / WS.M:
 		vol += BANK.STEP_RUN_DB
 	if _flag("crouched", false):
@@ -163,7 +173,16 @@ static func is_left_variant(n: String) -> bool:
 
 
 func _on_stepped(surface: String, _pos: Vector3) -> void:
+	_last_surface = surface
 	play(surface)
+
+
+## The landing's own contact already played (stepped comes first); a heavy one lands on both feet.
+func _on_landed(speed_mps: float) -> void:
+	if speed_mps < HEAVY_LAND_MPS:
+		return
+	heavy_lands += 1
+	play(_last_surface, HEAVY_LAND_DB)
 
 
 ## A bool property of the bound player, or fallback when it has none.

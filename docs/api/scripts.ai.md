@@ -98,6 +98,7 @@ Puts GMI model inference on every layer of the city. Each in-game day it batches
 - `func pending_calls() -> int`
 - `func mayors_pending() -> int`
 - `func send_decree(text: String) -> void`
+- `func spread_pending() -> bool`: True while the day round still has pieces waiting for a frame (the sim's spread gate).
 - `func day_of_sim() -> int`
 - `func residents_spoke(_day: int) -> void`: With AI residents, the voices the mayors hear are the residents' own words from today's plans.
 - `func inspect_tile(x: int, y: int) -> void`

@@ -195,6 +195,7 @@ The on-foot player (slice A): feet at `position`, a kinematic controller against
 ### Signals
 
 - `stepped(surface: String, pos: Vector3)`: A foot came down: on the gait's foot contacts (the left heel at phase 0, the right at PI; the placeholder's visible stride follows the same phase). pos is that foot's ground point, surface comes from CollisionWorld.surface_at.
+- `landed(speed_mps: float)`: The hero touched down after LAND_STEP_MIN_AIR or more in the air, right after that landing's stepped; speed_mps is the downward speed at touchdown.
 - `photo_mode_changed(on: bool)`: Photo mode was entered or left.
 
 ### Constants
@@ -222,6 +223,7 @@ The on-foot player (slice A): feet at `position`, a kinematic controller against
 - `JUMP_BUFFER = 0.12`
 - `HEAVY_LAND_SPEED = 4.0 * WS.M`
 - `HEAVY_LAND_TIME = 0.3`
+- `LAND_STEP_MIN_AIR = 0.15`: Shorter drops (a curb stepped off at a run) are not a foot contact of their own.
 - `HL_EYE = 0.06`: Eye height follows crouch and stand with this halflife.
 - `HL_FP_STEP = 0.08`: First-person eye catching up after a curb step.
 - `FACE_RATE = deg_to_rad(270.0)`: Scripted facing on interact: turn in place when the error is over FACE_MIN_ERROR.

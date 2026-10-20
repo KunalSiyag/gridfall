@@ -13,6 +13,9 @@ extends Node3D
 ## placeholder's visible stride follows the same phase). pos is that foot's ground point, surface
 ## comes from CollisionWorld.surface_at.
 signal stepped(surface: String, pos: Vector3)
+## The hero touched down after LAND_STEP_MIN_AIR or more in the air, right after that landing's
+## stepped; speed_mps is the downward speed at touchdown.
+signal landed(speed_mps: float)
 ## Photo mode was entered or left.
 signal photo_mode_changed(on: bool)
 
@@ -44,6 +47,8 @@ const COYOTE_TIME := 0.10
 const JUMP_BUFFER := 0.12
 const HEAVY_LAND_SPEED := 4.0 * WS.M
 const HEAVY_LAND_TIME := 0.3
+## Shorter drops (a curb stepped off at a run) are not a foot contact of their own.
+const LAND_STEP_MIN_AIR := 0.15
 ## Eye height follows crouch and stand with this halflife.
 const HL_EYE := 0.06
 ## First-person eye catching up after a curb step.
@@ -128,6 +133,7 @@ var _coyote: float = 0.0
 var _jump_buffer: float = 0.0
 var _jump_held: bool = false
 var _heavy: float = 0.0
+var _air_t: float = 0.0
 var _pivot_t: float = 0.0
 var _wish_dir: Vector2 = Vector2.ZERO
 var _yaw_v: float = 0.0
@@ -210,6 +216,7 @@ func teleport(pos: Vector3, yaw_deg: float, pitch_deg: float = 0.0, snap: bool =
 	_yaw_v = 0.0
 	_pivot_t = 0.0
 	_heavy = 0.0
+	_air_t = 0.0
 	_jump_buffer = 0.0
 	_coyote = 0.0
 	grounded = true
@@ -748,6 +755,7 @@ func _vertical(h: float, height: float) -> void:
 			velocity.y = 0.0
 	if grounded:
 		return
+	_air_t += h
 	_coyote -= h
 	if _jump_buffer > 0.0 and _coyote > 0.0 and velocity.y <= 0.0 and not crouched:
 		_jump()
@@ -759,12 +767,17 @@ func _vertical(h: float, height: float) -> void:
 		position.y = y0
 		velocity.y = 0.0
 	if position.y <= sup and velocity.y <= 0.0:
-		if -velocity.y > HEAVY_LAND_SPEED:
+		var land_v := -velocity.y
+		if land_v > HEAVY_LAND_SPEED:
 			_heavy = HEAVY_LAND_TIME
 		position.y = sup
 		velocity.y = 0.0
 		grounded = true
 		_coyote = 0.0
+		if _air_t >= LAND_STEP_MIN_AIR:
+			stepped.emit(col.surface_at(position), position)
+			landed.emit(land_v / WS.M)
+		_air_t = 0.0
 
 
 ## What the hero looks at (A 6.9): the conversation partner's head, else the focused interactable,

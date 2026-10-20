@@ -2,7 +2,8 @@ extends FpFeature
 ## Render performance (slice G2): applies the quality preset (FSR2 scaling, shadow atlas and filter,
 ## SSAO and SSIL quality, mesh LOD threshold, camera far plane) and restores every knob on teardown;
 ## on foot it ranges every tile holder's parts (hlod.gd), draws far buildings as merged chunk
-## impostors and culls with per-chunk occluders (occluders.gd), rebuilding at most one chunk a frame.
+## impostors and culls with per-chunk occluders (occluders.gd). Tile post-passes queue on tile_built
+## and run under a per-frame budget (FRAME_BUDGET_USEC), followed by at most one chunk rebuild.
 
 const WS := preload("res://scripts/fp/world_scale.gd")
 const D := preload("res://scripts/sim/sim_defs.gd")
@@ -13,6 +14,10 @@ const OCCLUDERS := preload("res://scripts/fp/render/occluders.gd")
 const JOB_BUDGET_USEC := 3000
 ## Tiles re-passed per frame once their mid-LOD merges finish, at most this long.
 const WAIT_BUDGET_USEC := 2000
+## Queued tile post-passes, mid-LOD uploads and the chunk rebuild share this much of a frame. A
+## tick emission builds 10 to 40 tiles, so the queue drains within a few frames; one step always
+## runs, so nothing starves on a slow frame.
+const FRAME_BUDGET_USEC := 2000
 ## Project defaults of the global RenderingServer knobs (headless has no getters for them).
 const RS_SETTINGS := {
 	"atlas": "rendering/lights_and_shadows/directional_shadow/size",
@@ -44,8 +49,14 @@ var active: bool = false
 ## reset_stats(); the bench reports both.
 var frame_us: int = 0
 var frame_us_max: int = 0
-## Worst tile post-pass (µs, on tile_built) since reset_stats().
+## Worst single tile post-pass (µs) since reset_stats().
 var pass_us_max: int = 0
+## Worst warm step (one model proxy or one mid-LOD gather before a pass, µs) since reset_stats().
+var warm_us_max: int = 0
+## Worst chunk rebuild (impostor and occluder, µs) since reset_stats().
+var rebuild_us_max: int = 0
+## Microsecond clock for the frame budget; tests inject a fake one so budgets are deterministic.
+var clock: Callable = Time.get_ticks_usec
 var _vp: Viewport
 var _vp_snap: Dictionary = {}
 var _rs_snap: Dictionary = {}
@@ -57,6 +68,8 @@ var _imp_root: Node3D
 var _occ_root: Node3D
 var _waiting_ready: bool = false
 var _wait_queue: Array = []
+## Tiles built since their last post-pass: tile index -> holder, in arrival order.
+var _pass_queue: Dictionary = {}
 
 
 func feature_id() -> String:
@@ -147,9 +160,15 @@ func job_pending() -> int:
 	return _job.size()
 
 
-## Runs every pending re-range, mid-LOD merge and chunk rebuild now (tests and tools).
+## Tiles whose post-pass is still queued.
+func pass_pending() -> int:
+	return _pass_queue.size()
+
+
+## Runs every pending re-range, post-pass, mid-LOD merge and chunk rebuild now (tests and tools).
 func flush() -> void:
 	if hlod.view != null:
+		_run_passes(1 << 62)
 		hlod.midlod.wait_all()
 		_run_waiting(1 << 30)
 	_run_job(1 << 30)
@@ -238,29 +257,34 @@ func photo_shots() -> Array:
 	]
 
 
-## Clears frame_us_max (the bench calls it before each measurement).
+## Clears the worst-case timings (the bench calls it before each measurement).
 func reset_stats() -> void:
 	frame_us_max = 0
 	pass_us_max = 0
+	warm_us_max = 0
+	rebuild_us_max = 0
 
 
 func _process(_delta: float) -> void:
 	if not active:
 		return
-	var t0 := Time.get_ticks_usec()
-	_frame_work()
-	frame_us = Time.get_ticks_usec() - t0
+	var t0: int = clock.call()
+	_frame_work(t0 + FRAME_BUDGET_USEC)
+	frame_us = int(clock.call()) - t0
 	frame_us_max = maxi(frame_us_max, frame_us)
 
 
-func _frame_work() -> void:
+## One frame's share: queued post-passes until deadline (at least one step), finished mid-LOD
+## merges, then one chunk rebuild if time is left once every queued tile has its pass.
+func _frame_work(deadline: int) -> void:
 	if not _job.is_empty():
 		_run_job(JOB_BUDGET_USEC)
-	if hlod.midlod.poll() > 0:
+	var ran := _run_passes(deadline)
+	if (not ran or int(clock.call()) < deadline) and hlod.midlod.poll(deadline, clock) > 0:
 		_waiting_ready = true
-	if _waiting_ready:
-		_run_waiting(WAIT_BUDGET_USEC)
-	if not _dirty.is_empty():
+	if _waiting_ready and _pass_queue.is_empty():
+		_run_waiting(mini(WAIT_BUDGET_USEC, maxi(0, deadline - int(clock.call()))))
+	if not _dirty.is_empty() and _pass_queue.is_empty() and (not ran or int(clock.call()) < deadline):
 		_rebuild_one()
 	var n: float = ctx.view.night
 	if absf(n - _night) > 0.002:
@@ -277,6 +301,7 @@ func _activate() -> void:
 	occluders.clear()
 	_dirty.clear()
 	_job.clear()
+	_pass_queue.clear()
 	for i: int in ctx.sim.active:
 		var h := ctx.view.tile_holder(i)
 		if h != null and is_instance_valid(h):
@@ -304,6 +329,7 @@ func _deactivate() -> void:
 	occluders.clear()
 	_dirty.clear()
 	_job.clear()
+	_pass_queue.clear()
 	if _vp != null and _vp_snap.has("use_occlusion_culling"):
 		_vp.use_occlusion_culling = bool(_vp_snap["use_occlusion_culling"])
 
@@ -312,14 +338,35 @@ func _on_tile_built(i: int, holder: Node3D) -> void:
 	# G1 rebuilds every tile for orbit before it announces fp_mode_changed(false).
 	if not active or ctx.view.in_setup or not ctx.view.fp_mode:
 		return
-	var t0 := Time.get_ticks_usec()
-	_dirty[hlod.post_pass(i, holder)] = true
-	pass_us_max = maxi(pass_us_max, Time.get_ticks_usec() - t0)
+	_pass_queue.erase(i)
+	_pass_queue[i] = holder
 
 
 func _on_tile_cleared(i: int) -> void:
 	if active:
+		_pass_queue.erase(i)
 		_dirty[hlod.drop(i)] = true
+
+
+## Post-passes queued tiles, oldest first, until deadline; the first step always runs. A tile whose
+## model is new first warms its proxy and mid-LOD merges, one step each. True if any step ran.
+func _run_passes(deadline: int) -> bool:
+	var ran := false
+	while not _pass_queue.is_empty() and (not ran or int(clock.call()) < deadline):
+		var i: int = _pass_queue.keys()[0]
+		var holder: Node3D = _pass_queue[i]
+		if holder == null or not is_instance_valid(holder):
+			holder = ctx.view.tile_holder(i)
+			_pass_queue[i] = holder
+		ran = true
+		var t0: int = clock.call()
+		if hlod.warm(holder):
+			warm_us_max = maxi(warm_us_max, int(clock.call()) - t0)
+			continue
+		_pass_queue.erase(i)
+		_dirty[hlod.post_pass(i, holder)] = true
+		pass_us_max = maxi(pass_us_max, int(clock.call()) - t0)
+	return ran
 
 
 func _on_fp_mode_changed(on: bool) -> void:
@@ -338,8 +385,8 @@ func _on_quality_changed(p: String) -> void:
 func _run_waiting(budget_usec: int) -> void:
 	if _wait_queue.is_empty():
 		_wait_queue = hlod.waiting.keys()
-	var t0 := Time.get_ticks_usec()
-	while not _wait_queue.is_empty() and Time.get_ticks_usec() - t0 < budget_usec:
+	var t0: int = clock.call()
+	while not _wait_queue.is_empty() and int(clock.call()) - t0 < budget_usec:
 		var i: int = _wait_queue.pop_back()
 		if not hlod.waiting.has(i):
 			continue
@@ -363,8 +410,10 @@ func _run_job(budget_usec: int) -> void:
 func _rebuild_one() -> void:
 	var c: Vector2i = _dirty.keys()[0]
 	_dirty.erase(c)
+	var t0: int = clock.call()
 	hlod.rebuild_chunk(c)
 	occluders.rebuild_chunk(c, hlod)
+	rebuild_us_max = maxi(rebuild_us_max, int(clock.call()) - t0)
 
 
 func _rs(fn: String, args: Array) -> void:

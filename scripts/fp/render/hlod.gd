@@ -112,6 +112,45 @@ func post_pass(i: int, holder: Node3D) -> Vector2i:
 	return ch
 
 
+## Does one piece of the cold work post_pass(i, holder) would otherwise do inline: the model's
+## proxy, or one source mesh's mid-LOD gather. A gather's surface_get_arrays reads back from the
+## GPU and waits for the frames in flight (10 to 140 ms for a building's first instance); one gather
+## per step keeps that to one stall, splitting it by surface costs a stall per surface. True if it
+## did something; false once post_pass will find everything cached or under way.
+func warm(holder: Node3D) -> bool:
+	if holder == null or not is_instance_valid(holder) or not holder.is_inside_tree():
+		return false
+	var model := _model_of(holder)
+	if model == null:
+		return false
+	var path := model.scene_file_path
+	if holder.has_meta("building_path") and not proxies.cached(path):
+		proxies.proxy(path, model)
+		return true
+	if not model.find_children("Rotor*", "", true, false).is_empty():
+		return false
+	for n in model.find_children("*", "MeshInstance3D", true, false):
+		var mi := n as MeshInstance3D
+		if mi.has_meta("g2_mid") or mi.material_override != null or PROXIES._skipped(str(mi.name)):
+			continue
+		if MIDLOD.mergeable(mi.mesh) and not midlod.started(mi.mesh):
+			midlod.mesh_for(mi.mesh, path)
+			return true
+	return false
+
+
+## The holder's building model or road piece (the node _add_twins merges), or null.
+static func _model_of(holder: Node3D) -> Node3D:
+	var path := str(holder.get_meta("building_path", ""))
+	for ch in holder.get_children():
+		if not (ch is Node3D):
+			continue
+		var sp: String = ch.scene_file_path
+		if (not path.is_empty() and sp == path) or (path.is_empty() and sp.begins_with(ROAD_SCENES)):
+			return ch
+	return null
+
+
 ## Forgets tile i (its holder was replaced or cleared); returns its chunk.
 func drop(i: int) -> Vector2i:
 	var c := chunk_of(i)
@@ -254,16 +293,8 @@ func clear() -> void:
 ## identity, so both share one bounding box and switch at the same point). Models with spinning
 ## parts keep theirs.
 func _add_twins(i: int, holder: Node3D, e: Dictionary) -> void:
-	var path := str(holder.get_meta("building_path", ""))
-	var model: Node3D = null
-	for ch in holder.get_children():
-		if not (ch is Node3D):
-			continue
-		var sp: String = ch.scene_file_path
-		if (not path.is_empty() and sp == path) or (path.is_empty() and sp.begins_with(ROAD_SCENES)):
-			model = ch
-			path = sp
-			break
+	var model := _model_of(holder)
+	var path := model.scene_file_path if model != null else ""
 	if model == null or not model.find_children("Rotor*", "", true, false).is_empty():
 		return
 	var gis: Array = e["gis"]

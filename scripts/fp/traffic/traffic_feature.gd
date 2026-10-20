@@ -19,6 +19,7 @@ const AMB := preload("res://scripts/fp/traffic/ambient.gd")
 const TRIPS := preload("res://scripts/fp/traffic/trips.gd")
 const FLEETS := preload("res://scripts/fp/traffic/fleets.gd")
 const KIT := preload("res://scripts/fp/traffic/mesh_kit.gd")
+const PPL := preload("res://scripts/fp/traffic/people.gd")
 const MAX_STEP := 1.0 / 30.0
 const CAR_PREFIXES := ["sedan", "hatch", "suv", "taxi", "van", "pickup", "coupe"]
 ## A jump of the player beyond this in one frame is a teleport: the street is refilled around them.
@@ -36,6 +37,8 @@ var junctions: JN
 var vehicles: VH
 var walkers: WK
 var render: RD
+## HC's animated people (deliverable 9); ok == false draws the legacy static people instead.
+var people: PPL
 var ambient: AMB
 var trips: TRIPS
 var fleets: FLEETS
@@ -95,6 +98,8 @@ func setup(p_ctx: FpContext) -> void:
 	vehicles = VH.new()
 	walkers = WK.new()
 	render = RD.new()
+	people = PPL.new()
+	people.load_assets()
 	ambient = AMB.new()
 	trips = TRIPS.new()
 	fleets = FLEETS.new()
@@ -138,6 +143,7 @@ func teardown() -> void:
 		if ctx.sim.day_started.is_connected(_on_day_started):
 			ctx.sim.day_started.disconnect(_on_day_started)
 	render.clear()
+	people.clear()
 	_built = false
 
 
@@ -150,9 +156,11 @@ func on_world_rebuilt() -> void:
 	_built = false
 	_rng.seed = sim.city_seed * 31337 + 1
 	render.clear()
+	people.clear()
 	for c in _agents_root.get_children():
 		c.queue_free()
 	render.setup(_agents_root)
+	people.reset(_agents_root, sim.city_seed)
 	_load_models()
 	lanes.setup(sim)
 	lanes.rebuild_all()
@@ -164,7 +172,10 @@ func on_world_rebuilt() -> void:
 	vehicles.on_arrive = _on_vehicle_arrived
 	vehicles.on_removed = _on_vehicle_removed
 	walkers.setup(peds, lanes, junctions, vehicles, sim.city_seed)
-	walkers.on_removed = func(w: WK.Walker) -> void: render.release_walker(w)
+	walkers.hc = people.ok
+	walkers.on_removed = func(w: WK.Walker) -> void:
+		render.release_walker(w)
+		people.release(w)
 	_static_ver = -1
 	ambient.setup(sim, ctx.residents, lanes, peds, vehicles, walkers)
 	ambient.car_model = func(seed: int) -> int: return _car_models[absi(seed) % _car_models.size()] if not _car_models.is_empty() else -1
@@ -440,6 +451,10 @@ func sync_visuals(delta: float) -> void:
 			siren = str((c.owner as Dictionary).get("kind", ""))
 		var brake := c.a < -0.8 * WS.M or c.v < 0.05 * WS.M
 		render.draw_car(c, vehicles.draw_xform(c), cam.distance_to(c.pos), WS.VIS_CAR, brake, siren, c.wheel_spin)
+	var hc := people.ok
+	if hc:
+		var eye := ctx.player_position() + Vector3(0, WS.EYE, 0)
+		people.begin(delta, delta * float(ctx.sim.speed), _camera(), cam, eye)
 	for w: WK.Walker in walkers.walkers:
 		if w.dead or w.state == "hidden" or w.far:
 			render.release_walker(w)
@@ -452,7 +467,12 @@ func sync_visuals(delta: float) -> void:
 				w.fade = minf(1.0, w.fade + delta / WK.FADE_IN)
 			continue
 		walkers.ease_visuals(w, delta)
-		render.draw_walker(w, walkers.draw_xform(w), dw, WS.VIS_PERSON, walkers.draw_phase(w))
+		if hc:
+			people.add(w, dw, ctx.residents)
+		else:
+			render.draw_walker(w, walkers.draw_xform(w), dw, WS.VIS_PERSON, walkers.draw_phase(w))
+	if hc:
+		people.finish()
 	render.finish()
 	render.set_glow(_night())
 	junctions.update_lamps(ctx.player_position(), WS.VIS_PROP + 1.0)
@@ -516,6 +536,8 @@ func _load_models() -> void:
 		var m := render.model_for(path, sc)
 		if m >= 0:
 			_car_models.append(m)
+	if people.ok:
+		return
 	for path: String in _list(AP.PEOPLE_LEGACY_DIR, ["person"]):
 		var m := render.model_for(path, WS.PEOPLE_SCALE, true)
 		if m >= 0:
@@ -1071,18 +1093,38 @@ func light_pole(i: int, corner: int) -> Node3D:
 	return junctions.light_pole(i, corner) if _built else null
 
 
-## Live head anchor of resident id while drawn (else above where they are).
+## Live head anchor of resident id while drawn (else above where they are). With HC bodies it is
+## the Head bone's world position (an estimate from the stature while no body draws them).
 func anchor_of(id: String) -> Vector3:
 	if _built:
+		if people.ok:
+			var w := trips.walker_of(id)
+			if w != null:
+				people.dress(w, ctx.residents)
+				return people.head_of(w, w.pos + w.vis_off)
 		var a := trips.anchor(id)
 		if not is_nan(a.x):
 			return a
 	return position_of(id) + Vector3(0, TRIPS.HEAD, 0)
 
 
-## Animated-people stats for G2's bench (stage E2; legacy static people until HC lands).
+## Animated-people stats for G2's bench: {"t0", "t1", "t2", "t3"} people on screen per LOD tier,
+## "anim_us" microseconds advancing mixers this frame (T0 trees included), "char_draws" character
+## draws (shadows extra), plus "off" (off-screen bodies holding their pose), "bodies" (instanced)
+## and "people_us" (the whole people pass). Legacy static people report their shader draws only.
 func anim_stats() -> Dictionary:
+	if people != null and people.ok:
+		return people.stats()
 	return {"t0": 0, "t1": 0, "t2": 0, "t3": 0, "anim_us": 0.0, "char_draws": render.draws_people if render != null else 0}
+
+
+## The HC avatar a resident is drawn with ("" without HC bodies): job pool by gender, crc32(id).
+func resident_avatar(id: String) -> String:
+	if people == null or not people.ok or ctx.residents == null:
+		return ""
+	var r := ctx.residents.find(id)
+	var ai := people.resident_avatar(id, str(r.get("name", "")), str(r.get("job_title", "")))
+	return (people.avatars[ai] as PPL.Avatar).name if ai >= 0 else ""
 
 
 # ------------------------------------------------------------------ save, smoke, photos

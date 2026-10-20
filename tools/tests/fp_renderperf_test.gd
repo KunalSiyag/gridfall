@@ -10,6 +10,7 @@ const WS := preload("res://scripts/fp/world_scale.gd")
 const Q := preload("res://scripts/fp/render/quality.gd")
 const HLOD := preload("res://scripts/fp/render/hlod.gd")
 const OCC := preload("res://scripts/fp/render/occluders.gd")
+const PROXIES := preload("res://scripts/fp/render/proxies.gd")
 const EPS := 1e-5
 ## A character scene import with HC's retarget settings (D13): must survive --apply untouched.
 const CHAR_GLB_IMPORT := "[remap]\n\nimporter=\"scene\"\nimporter_version=1\ntype=\"PackedScene\"\nuid=\"uid://g2testchar\"\npath=\"res://.godot/imported/hero.glb-0.scn\"\n\n[deps]\n\nsource_file=\"res://models/characters/bodies/hero.glb\"\ndest_files=[\"res://.godot/imported/hero.glb-0.scn\"]\n\n[params]\n\nnodes/use_name_suffixes=true\nmeshes/generate_lods=true\nanimation/fps=30\n_subresources={\n\"nodes\": {\n\"PATH:Armature/Skeleton3D\": {\n\"retarget/bone_map\": Resource(\"res://models/characters/bonemap.tres\"),\n\"retarget/bone_renamer/rename_bones\": true,\n\"retarget/rest_fixer/normalize_position_tracks\": true,\n\"retarget/remove_tracks/unmapped_bones\": true\n}\n}\n}\ngltf/embedded_image_handling=0\n"
@@ -44,6 +45,7 @@ func _init() -> void:
 	_check_ranges(f, hlod, view, mult, foreign)
 	_check_occluders(hlod, occ, view, sim)
 	_check_impostors(hlod, view, mult)
+	_check_frame_budget(f, hlod, view)
 	_check_bulldoze(f, hlod, occ, view, sim)
 	_check_presets(ctx, f, hlod)
 	_report_costs(f, hlod)
@@ -257,6 +259,63 @@ func _check_impostors(hlod: RefCounted, view: CityView, mult: float) -> void:
 		begin_ok = begin_ok and mi.cast_shadow == GeometryInstance3D.SHADOW_CASTING_SETTING_OFF and not view.is_ancestor_of(mi)
 		begin_ok = begin_ok and reach <= HLOD.CHUNK * 0.75 + 3.0 and mi.mesh != null and mi.mesh.get_surface_count() == 1
 	K.check(fails, begin_ok, "chunk impostors begin where their nearest building switches, cast no shadow, live outside CityView")
+
+
+## tile_built only queues the post-pass; frames then run it under FRAME_BUDGET_USEC (a fake clock
+## that advances 300 µs per read makes the split deterministic), a new model's proxy is warmed in
+## a step of its own, and chunk rebuilds wait until the queue is empty.
+func _check_frame_budget(f: Node, hlod: RefCounted, view: CityView) -> void:
+	var built := _impostor_tiles(hlod, view, 12)
+	K.check(fails, built.size() == 12, "fixture: 12 built tiles to re-pass (%d)" % built.size())
+	var now := [0]
+	f.set("clock", func() -> int:
+		now[0] += 300
+		return now[0]
+	)
+	# A fresh proxy cache: the models are cold again.
+	var warm_proxies: RefCounted = hlod.proxies
+	hlod.proxies = PROXIES.new()
+	var walks: int = hlod.walks
+	var rebuilds: int = hlod.builds
+	f.call("reset_stats")
+	for i in built:
+		view.tile_built.emit(i, view.tile_holder(i))
+	var queued := int(f.call("pass_pending"))
+	var ok: bool = queued == built.size() and hlod.walks == walks
+	K.check(fails, ok, "tile_built queues the pass (%d queued)" % queued)
+	var per_frame: Array[int] = []
+	var early := false
+	while int(f.call("pass_pending")) > 0 and per_frame.size() < 40:
+		var w0: int = hlod.walks
+		f.call("_process", 0.0)
+		per_frame.append(hlod.walks - w0)
+		early = early or (hlod.builds != rebuilds and int(f.call("pass_pending")) > 0)
+	var n := per_frame.size()
+	var most := int(per_frame.max())
+	var spread: bool = most >= 2 and most <= 3 and n >= 4 and n <= 2 * built.size()
+	var what: String = "the queue drains over %d frames, 2 to 3 passes a frame %s"
+	what = what % [n, str(per_frame)]
+	K.check(fails, spread, what)
+	var path := str((hlod.tiles[built[0]] as Dictionary)["path"])
+	var cold_ok: bool = int(f.get("warm_us_max")) > 0 and hlod.proxies.call("cached", path)
+	K.check(fails, cold_ok and not early, "cold models warm in steps; rebuilds wait for the queue")
+	var b0: int = hlod.builds
+	f.call("_process", 0.0)
+	var one: bool = b0 - rebuilds <= 1 and hlod.builds == b0 + 1
+	K.check(fails, one, "then one rebuild a frame (%d, %d)" % [b0 - rebuilds, hlod.builds - b0])
+	f.set("clock", Time.get_ticks_usec)
+	hlod.proxies = warm_proxies
+	f.call("flush")
+
+
+## Up to n tiles with a building drawn as an impostor (a baked or bounds proxy).
+static func _impostor_tiles(hlod: RefCounted, view: CityView, n: int) -> Array[int]:
+	var out: Array[int] = []
+	for i: int in hlod.tiles.keys():
+		var h := view.tile_holder(i)
+		if out.size() < n and h != null and bool((hlod.tiles[i] as Dictionary)["impostor"]):
+			out.append(i)
+	return out
 
 
 func _check_bulldoze(f: Node, hlod: RefCounted, occ: RefCounted, view: CityView, sim: CitySim) -> void:

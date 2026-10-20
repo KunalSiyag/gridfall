@@ -46,6 +46,11 @@ func proxy(path: String, model: Node3D = null) -> Dictionary:
 	return p
 
 
+## True when path's proxy is built (proxy() returns it without work).
+func cached(path: String) -> bool:
+	return _cache.has(path)
+
+
 ## True when the model has a proxy with some mass (always true for baked models).
 func has_mass(path: String, model: Node3D = null) -> bool:
 	return not (proxy(path, model)["verts"] as PackedVector3Array).is_empty()

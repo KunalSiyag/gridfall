@@ -297,12 +297,27 @@ func _surface_color(mat: Material) -> Color:
 
 
 static func _image_average(p: String) -> Color:
+	var fallback := Color(0.7, 0.7, 0.7)
 	var img := Image.load_from_file(ProjectSettings.globalize_path(p))
 	if img == null or img.is_empty():
-		return Color(0.7, 0.7, 0.7)
-	if img.is_compressed():
-		img.decompress()
+		return fallback
+	if img.is_compressed() and img.decompress() != OK:
+		push_warning("proxy_bake: cannot decompress %s; using grey" % p)
+		return fallback
 	img.convert(Image.FORMAT_RGBA8)
-	while img.get_width() > 1 or img.get_height() > 1:
+	if img.is_empty() or img.get_format() != Image.FORMAT_RGBA8:
+		push_warning("proxy_bake: cannot read %s as RGBA8; using grey" % p)
+		return fallback
+	# shrink_x2 halves both sides, so it fails (leaving the image as it was) once a non-square
+	# image is one pixel thin: halve while both sides allow it, then average the last row or column.
+	while img.get_width() > 1 and img.get_height() > 1:
+		var size := img.get_size()
 		img.shrink_x2()
-	return img.get_pixel(0, 0)
+		if img.get_size() == size or img.is_empty():
+			push_warning("proxy_bake: cannot shrink %s; using grey" % p)
+			return fallback
+	var sum := Color(0, 0, 0, 0)
+	for y in range(img.get_height()):
+		for x in range(img.get_width()):
+			sum += img.get_pixel(x, y)
+	return sum / float(img.get_width() * img.get_height())

@@ -344,6 +344,20 @@ func _check_sirens(ctx: FpContext, f: FpFeature) -> void:
 	K.check(fails, em.count_assigned("siren") == 0 and not em.has_source("evs:%d" % int(ev.get("id", -1))), "sirens: event_ended frees the siren (%.2f s)" % t)
 
 
+## A soft landing adds no step of its own (its stepped already played); a heavy one adds the
+## other foot.
+func _check_landings(fs: FS, p: Node3D) -> void:
+	var n := fs.steps_played
+	var h := fs.heavy_lands
+	p.emit_signal("landed", 3.4)
+	var soft_ok := fs.steps_played == n and fs.heavy_lands == h
+	p.emit_signal("landed", 6.0)
+	var heavy_ok := fs.steps_played == n + 1 and fs.heavy_lands == h + 1
+	var msg := "footsteps: a soft landing adds nothing, a heavy one the other foot"
+	var got := [msg, fs.steps_played - n, fs.heavy_lands - h]
+	K.check(fails, soft_ok and heavy_ok, "%s (%d steps, %d heavy)" % got)
+
+
 func _check_footsteps(ctx: FpContext, f: FpFeature) -> void:
 	var fs: FS = f.get("footsteps")
 	var sim := ctx.sim
@@ -392,6 +406,7 @@ func _check_footsteps(ctx: FpContext, f: FpFeature) -> void:
 		if FS.is_left_variant(hist[k]) == FS.is_left_variant(hist[k - 1]):
 			alt = false
 	K.check(fails, not fs.polling and fs.steps_played - n1 == 8 and alt, "footsteps: 8 stepped emissions -> %d steps, alternating feet %s" % [fs.steps_played - n1, str(hist)])
+	_check_landings(fs, sp)
 	var n2 := fs.steps_played
 	for _k in range(roundi(travel / inc)):
 		sp.position.x += inc

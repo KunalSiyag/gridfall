@@ -133,6 +133,14 @@ func _check_jump(ctx: FpContext) -> void:
 	var g0 := p.position.y
 	var top := g0
 	var landed := -1.0
+	var steps := [0]
+	var land_speeds: Array[float] = []
+	var on_step := func(_surface: String, _pos: Vector3) -> void:
+		steps[0] += 1
+	var on_land := func(speed: float) -> void:
+		land_speeds.append(speed)
+	p.stepped.connect(on_step)
+	p.landed.connect(on_land)
 	p.simulate(Vector2.ZERO, false, DT, false, true)
 	var left := not p.grounded
 	for k in range(90):
@@ -140,8 +148,13 @@ func _check_jump(ctx: FpContext) -> void:
 		top = maxf(top, p.position.y)
 		if landed < 0.0 and p.grounded:
 			landed = float(k + 2) * DT
+	p.stepped.disconnect(on_step)
+	p.landed.disconnect(on_land)
 	var apex := top - g0
 	K.check(fails, left and apex >= 0.5 * M and apex <= 0.7 * M and landed > 0.0 and landed <= 1.0, "jump: apex %.3f m, landed after %.2f s" % [apex / M, landed])
+	var land_ok := land_speeds.size() == 1 and absf(land_speeds[0] - WS.JUMP_SPEED / M) < 0.3
+	var land_msg := "a landing in place is one footstep (%d) and one landed at %s m/s"
+	K.check(fails, int(steps[0]) == 1 and land_ok, land_msg % [int(steps[0]), str(land_speeds)])
 	# Holding jump does not bounce; a press 0.1 s before landing is buffered.
 	p.teleport(s["pos"], s["yaw"])
 	var jumps := 0

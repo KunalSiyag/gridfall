@@ -44,7 +44,7 @@ var sim: CitySim
 var clock: float = 0.0
 var root: Node3D
 ## tile -> {"node": Node3D, "groups": Array[MeshInstance3D] (axis * 3 + colour), "peds":
-## Array[MeshInstance3D] (axis * 2 + walk), "poles": Array[Node3D], "state": int}
+## Array[GeometryInstance3D] per (axis * 2 + walk), "poles": Array[Node3D], "state": int}
 var props: Dictionary = {}
 var _on_mats: Array[StandardMaterial3D] = []
 var _off_mats: Array[StandardMaterial3D] = []
@@ -190,16 +190,20 @@ func update_lamps(p: Vector3, r: float) -> void:
 				for mi: GeometryInstance3D in groups[axis * 3 + col]:
 					if is_instance_valid(mi):
 						mi.material_override = _on_mats[col] if col == _col_index(st) else _off_mats[col]
-		var peds: Array = pr["peds"]
-		# axis 0: zebras across E/W arms (walk with N-S green); axis 1: across N/S arms.
-		for axis in range(2):
-			var walk := walk_ns if axis == 0 else walk_ew
-			var hand: GeometryInstance3D = peds[axis * 2]
-			var man: GeometryInstance3D = peds[axis * 2 + 1]
-			if hand != null:
-				hand.material_override = _walk_mats[0] if walk else _walk_mats[1]
-			if man != null:
-				man.material_override = _walk_mats[3] if walk else _walk_mats[2]
+		_show_peds(pr["peds"], walk_ns, walk_ew)
+
+
+## Pedestrian heads: axis 0 are the zebras across E/W arms (walk with N-S green), axis 1 those
+## across N/S arms; each zebra's hand and walking man swap materials together.
+func _show_peds(peds: Array, walk_ns: bool, walk_ew: bool) -> void:
+	for k in range(4):
+		var walk := walk_ns if k / 2 == 0 else walk_ew
+		var is_man := k % 2 == 1
+		var lit := walk == is_man
+		var mat := _walk_mats[(2 if is_man else 0) + (1 if lit else 0)]
+		for g: GeometryInstance3D in peds[k]:
+			if is_instance_valid(g):
+				g.material_override = mat
 
 
 static func _col_index(st: int) -> int:
@@ -230,6 +234,7 @@ func _build_cross(i: int) -> Dictionary:
 		var pk: KIT = KIT.new()
 		pk.begin()
 		peds.append(pk)
+	var ped_nodes: Array = [[], [], [], []]
 	var poles: Array = []
 	var asset_ok := _asset != null
 	for corner in range(4):
@@ -246,6 +251,7 @@ func _build_cross(i: int) -> Dictionary:
 			if inst != null:
 				pole.add_child(inst)
 				_bind_asset_lamps(inst, axis, groups)
+				_bind_asset_peds(inst, 1 - axis, ped_nodes)
 				continue
 		_pole_mesh(kit, xf, lamps, axis)
 		for nm: String in ["SignText_A", "SignText_B"]:
@@ -274,14 +280,12 @@ func _build_cross(i: int) -> Dictionary:
 			var g := _mi(lm, _off_mats[k % 3], false)
 			node.add_child(g)
 			(groups[k] as Array).append(g)
-	var ped_nodes: Array = []
 	for k in range(4):
 		var pm: ArrayMesh = (peds[k] as KIT).commit()
-		var g: MeshInstance3D = null
 		if pm != null:
-			g = _mi(pm, _walk_mats[k % 2 * 2], false)
+			var g := _mi(pm, _walk_mats[k % 2 * 2], false)
 			node.add_child(g)
-		ped_nodes.append(g)
+			(ped_nodes[k] as Array).append(g)
 	return {"node": node, "groups": groups, "peds": ped_nodes, "poles": poles, "state": -1}
 
 
@@ -361,6 +365,16 @@ func _bind_asset_lamps(inst: Node, axis: int, groups: Array) -> void:
 		for col in range(3):
 			if str(n.name).begins_with(prefixes[col]):
 				(groups[axis * 3 + col] as Array).append(n)
+
+
+## Binds the asset pole's pedestrian head (DontWalk_*, Walk_*) to the zebra it faces. The head
+## looks along the pole's -X, across the arm its traffic heads come from, so it serves the zebras
+## of ped axis 1 - (the light axis).
+func _bind_asset_peds(inst: Node, ped_axis: int, peds: Array) -> void:
+	for n in inst.find_children(AP.DONT_WALK_NODE_PREFIX + "*", "GeometryInstance3D", true, false):
+		(peds[ped_axis * 2] as Array).append(n)
+	for n in inst.find_children(AP.WALK_NODE_PREFIX + "*", "GeometryInstance3D", true, false):
+		(peds[ped_axis * 2 + 1] as Array).append(n)
 
 
 func _build_tee(i: int, t: LG.TileInfo) -> Dictionary:
