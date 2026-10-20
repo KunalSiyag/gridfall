@@ -48,10 +48,19 @@ func mesh_for(src: Mesh, path: String) -> ArrayMesh:
 	return _meshes[id]
 
 
-## Uploads every finished build; returns how many finished.
-func poll() -> int:
+## True once src's merge is built or under way (mesh_for() then does no gather).
+func started(src: Mesh) -> bool:
+	var id := src.get_instance_id()
+	return _meshes.has(id) or _jobs.has(id)
+
+
+## Uploads finished builds; returns how many. With a deadline (clock() µs) it uploads at least one
+## and starts no further upload once the deadline has passed.
+func poll(deadline: int = -1, clock: Callable = Time.get_ticks_usec) -> int:
 	var n := 0
 	for id: int in _jobs.keys():
+		if n > 0 and deadline >= 0 and int(clock.call()) >= deadline:
+			break
 		var job: Dictionary = _jobs[id]
 		if not WorkerThreadPool.is_task_completed(int(job["task"])):
 			continue

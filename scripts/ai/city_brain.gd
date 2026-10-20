@@ -43,6 +43,10 @@ var minds: ResidentMinds = null
 var _mayor_in_flight: Array[bool] = [false, false, false, false, false]
 var _support_in_flight: Dictionary = {}
 var _wait_started_ms: int = 0
+## The day round's pieces still waiting for a frame, and the round's trace id and label.
+var _queue: Array[Callable] = []
+var _queue_trace: String = ""
+var _queue_label: String = ""
 
 
 func setup(p_sim: CitySim, p_client: GmiClient) -> void:
@@ -63,6 +67,9 @@ func setup(p_sim: CitySim, p_client: GmiClient) -> void:
 	last_operator = {}
 	chaos_last_day = -10
 	day_feed.clear()
+	_queue.clear()
+	if sim.has_method("add_spread_source"):
+		sim.add_spread_source(spread_pending, _finish_queue)
 	if sim.day_started.is_connected(_on_day_started):
 		return
 	sim.day_started.connect(_on_day_started)
@@ -108,32 +115,96 @@ func send_decree(text: String) -> void:
 	sim.city_log.emit("Day %d: Player decree to all mayors: \"%s\"" % [sim.day, decree], "player")
 
 
+## Starts the day round: the five mayors, then the support roles in order, each judging whether it
+## is due when its turn comes. Inside the sim's sliced day job (sim.day_start_deferred()) the first
+## mayor runs in the emission and the rest one per frame through sim.run_in_phase while
+## spread_pending() holds the job, so the round lands where the synchronous path (step_tick,
+## orbit, tests) runs it inline. Every piece runs under the round's trace id.
 func _on_day_started(day: int) -> void:
-	# Every call below starts synchronously, so they all pick up this round's trace id.
-	Trace.begin("day %d" % day)
+	var pieces: Array[Callable] = []
 	for mi in range(D.MAYORS.size()):
-		if not _mayor_in_flight[mi]:
-			_run_mayor(mi, day)
-	if not sim.work_based():
-		_run_support("citizens", day, _run_citizens)
-	if day >= 2:
-		_run_support("news", day, _run_news)
-	if day >= 4 and day - chaos_last_day >= 2:
-		_run_support("chaos", day, _run_chaos)
-	var pcap := float(sim.stats.get("power_cap", 0.0))
-	var pneed := float(sim.stats.get("power_need", 0.0))
-	var wcap := float(sim.stats.get("water_cap", 0.0))
-	var wneed := float(sim.stats.get("water_need", 0.0))
-	if (pcap > 0.0 and pneed > pcap * 0.9) or (wcap > 0.0 and wneed > wcap * 0.9) or day % 5 == 0:
-		_run_support("operator", day, _run_operator)
-	var hot := false
-	for key: String in proposals.keys():
-		if (proposals[key]["votes"] as Dictionary).size() >= 3:
-			hot = true
-	if not proposals.is_empty() and (day % 3 == 0 or hot):
-		_run_support("council", day, _run_council)
-	Trace.end()
+		pieces.append(_mayor_piece.bind(mi, day))
+	for role: String in ["citizens", "news", "chaos", "operator", "council"]:
+		pieces.append(_support_piece.bind(role, day))
+	var prev := [Trace.current(), Trace.current_label()]
+	_queue_trace = Trace.begin("day %d" % day)
+	_queue_label = Trace.current_label()
+	(pieces.pop_front() as Callable).call()
+	if sim.has_method("day_start_deferred") and sim.day_start_deferred():
+		_queue.append_array(pieces)
+	else:
+		for p in pieces:
+			p.call()
+	Trace.set_current(prev[0], prev[1])
 	busy_changed.emit(pending_calls())
+
+
+## True while the day round still has pieces waiting for a frame (the sim's spread gate).
+func spread_pending() -> bool:
+	return not _queue.is_empty()
+
+
+## Runs the round's waiting pieces now (the sim drains its spread sources before a save or skip).
+func _finish_queue() -> void:
+	while not _queue.is_empty():
+		_run_piece(_queue.pop_front())
+
+
+func _process(_delta: float) -> void:
+	if not _queue.is_empty():
+		_run_piece(_queue.pop_front())
+		if _queue.is_empty():
+			busy_changed.emit(pending_calls())
+
+
+## One deferred piece under the round's trace id, as part of the sim's job phase.
+func _run_piece(piece: Callable) -> void:
+	var prev := [Trace.current(), Trace.current_label()]
+	Trace.set_current(_queue_trace, _queue_label)
+	if sim.has_method("run_in_phase"):
+		sim.run_in_phase(piece)
+	else:
+		piece.call()
+	Trace.set_current(prev[0], prev[1])
+
+
+static func _three_votes(p: Dictionary) -> bool:
+	return (p["votes"] as Dictionary).size() >= 3
+
+
+func _mayor_piece(mi: int, day: int) -> void:
+	if not _mayor_in_flight[mi]:
+		_run_mayor(mi, day)
+
+
+func _support_piece(role: String, day: int) -> void:
+	if _support_due(role, day):
+		var run := {
+			"citizens": _run_citizens, "news": _run_news, "chaos": _run_chaos,
+			"operator": _run_operator, "council": _run_council,
+		}
+		_run_support(role, day, run[role])
+
+
+func _support_due(role: String, day: int) -> bool:
+	var st := sim.stats
+	match role:
+		"citizens":
+			return not sim.work_based()
+		"news":
+			return day >= 2
+		"chaos":
+			return day >= 4 and day - chaos_last_day >= 2
+		"operator":
+			var pcap := float(st.get("power_cap", 0.0))
+			var wcap := float(st.get("water_cap", 0.0))
+			var low_p := pcap > 0.0 and float(st.get("power_need", 0.0)) > pcap * 0.9
+			var low_w := wcap > 0.0 and float(st.get("water_need", 0.0)) > wcap * 0.9
+			return low_p or low_w or day % 5 == 0
+		"council":
+			var hot := proposals.values().any(_three_votes)
+			return not proposals.is_empty() and (day % 3 == 0 or hot)
+	return false
 
 
 func _on_day_ended(_day: int) -> void:
@@ -857,6 +928,7 @@ func _heuristic_inspect(rep: Dictionary) -> Dictionary:
 # ------------------------------------------------------------------ save / load
 
 func to_dict() -> Dictionary:
+	_finish_queue()
 	return {
 		"mayor_state": mayor_state.duplicate(true), "proposals": proposals.duplicate(true), "decree": decree,
 		"decree_day": decree_day, "last_paper": last_paper, "last_voices": last_voices, "last_council": last_council,
@@ -866,6 +938,7 @@ func to_dict() -> Dictionary:
 
 
 func from_dict(d: Dictionary) -> void:
+	_queue.clear()
 	mayor_state.clear()
 	for ms: Variant in d.get("mayor_state", []):
 		mayor_state.append(ms as Dictionary)

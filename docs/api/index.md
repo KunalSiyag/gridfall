@@ -85,7 +85,7 @@ Generated from the `##` doc comments in `scripts/`. Regenerate with `python3 too
 - [proxies.gd](scripts.fp.render.md#scriptsfprenderproxiesgd): Building proxies for far impostors and occluders (slice G2): per model path, the body box and a low-poly stepped mass mesh template (tops coloured by what covers each cell, facades by the model's average facade colour) built from the offline bake in proxies.json (proxy_bake.gd)
 - [proxy_bake.gd](scripts.fp.render.md#scriptsfprenderproxy_bakegd): Offline bake of building proxies for G2's far impostors and occluders
 - [quality.gd](scripts.fp.render.md#scriptsfprenderqualitygd): First-person quality presets (slice G2): the knobs each preset sets, and the static helpers every slice reads without a feature lookup (vis_mult, max_street_lights, camera_far)
-- [render_opt_feature.gd](scripts.fp.render.md#scriptsfprenderrender_opt_featuregd): Render performance (slice G2): applies the quality preset (FSR2 scaling, shadow atlas and filter, SSAO and SSIL quality, mesh LOD threshold, camera far plane) and restores every knob on teardown; on foot it ranges every tile holder's parts (hlod.gd), draws far buildings as merged chunk impostors and culls with per-chunk occluders (occluders.gd), rebuilding at most one chunk a frame
+- [render_opt_feature.gd](scripts.fp.render.md#scriptsfprenderrender_opt_featuregd): Render performance (slice G2): applies the quality preset (FSR2 scaling, shadow atlas and filter, SSAO and SSIL quality, mesh LOD threshold, camera far plane) and restores every knob on teardown; on foot it ranges every tile holder's parts (hlod.gd), draws far buildings as merged chunk impostors and culls with per-chunk occluders (occluders.gd)
 
 ## [scripts/fp/sim/](scripts.fp.sim.md)
 

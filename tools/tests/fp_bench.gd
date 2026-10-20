@@ -79,6 +79,8 @@ func _measure(label: String, secs: float) -> Dictionary:
 			"impostor_chunks": (hl.get("chunk_nodes") as Dictionary).size(),
 			"occluder_boxes": (ro.get("occluders") as Object).call("box_count"), "vis_building": hl.get("vis_building"),
 			"frame_us_max": ro.get("frame_us_max"), "pass_us_max": ro.get("pass_us_max"),
+			"warm_us_max": ro.get("warm_us_max"), "rebuild_us_max": ro.get("rebuild_us_max"),
+			"pass_pending": ro.call("pass_pending") if ro.has_method("pass_pending") else 0,
 		}
 	var traffic: Object = fp.ctx.feature("traffic")
 	if traffic != null and traffic.has_method("anim_stats"):
@@ -94,6 +96,55 @@ func _measure(label: String, secs: float) -> Dictionary:
 	rows[label] = r
 	print("FPBENCH ", JSON.stringify(r))
 	return r
+
+
+## The HUD's own cost: the HUD toggles every AB_FRAMES frames and each state sums the GPU and render
+## CPU time of its frames, skipping AB_SKIP after a toggle (the measured times lag). Back-to-back
+## rows drift by several ms on a shared or throttling GPU; alternating cancels that.
+func _hud_ab(secs: float) -> void:
+	const AB_FRAMES := 12
+	const AB_SKIP := 3
+	var sums := {true: [0.0, 0.0, 0], false: [0.0, 0.0, 0]}
+	var on := false
+	var k := 0
+	var t0 := Time.get_ticks_usec()
+	while float(Time.get_ticks_usec() - t0) < secs * 1e6:
+		if k % AB_FRAMES == 0:
+			on = not on
+			fp.hud.set_hud_visible(on)
+		await process_frame
+		if k % AB_FRAMES >= AB_SKIP:
+			var s: Array = sums[on]
+			s[0] = float(s[0]) + RenderingServer.viewport_get_measured_render_time_gpu(vp_rid)
+			s[1] = float(s[1]) + RenderingServer.viewport_get_measured_render_time_cpu(vp_rid)
+			s[2] = int(s[2]) + 1
+		k += 1
+	fp.hud.set_hud_visible(false)
+	var avg := func(state: bool, j: int) -> float:
+		var s: Array = sums[state]
+		return snappedf(float(s[j]) / maxf(1.0, float(s[2])), 0.01)
+	var r := {"label": "street_eye_hud_ab", "frames": k}
+	r["gpu_on_ms"] = avg.call(true, 0)
+	r["gpu_off_ms"] = avg.call(false, 0)
+	r["rcpu_on_ms"] = avg.call(true, 1)
+	r["rcpu_off_ms"] = avg.call(false, 1)
+	r["hud_gpu_ms"] = snappedf(float(r["gpu_on_ms"]) - float(r["gpu_off_ms"]), 0.01)
+	r["hud_rcpu_ms"] = snappedf(float(r["rcpu_on_ms"]) - float(r["rcpu_off_ms"]), 0.01)
+	r["viewport"] = "%dx%d" % [get_root().size.x, get_root().size.y]
+	rows["street_eye_hud_ab"] = r
+	print("FPBENCH ", JSON.stringify(r))
+
+
+## FPBENCH_HUD_PROBE=1: the HUD's GPU cost per slot, interleaved so drift in the 3D scene cancels
+## out: every slot shown, none, and each slot alone, twice.
+func _hud_probe() -> void:
+	var slots: Array = ["top_bar", "minimap_slot", "chat_slot", "center", "toasts"]
+	for round_i in range(2):
+		for only: String in ["all", "none"] + slots:
+			for s: String in slots:
+				fp.hud.slot(s).visible = only == "all" or only == s
+			await _measure("probe%d_%s" % [round_i, only], 2.5)
+	fp.hud.set_hud_visible(true)
 
 
 ## The camera the player is actually using: A's player reports it; the S0 player is first person only.
@@ -146,10 +197,13 @@ func _init() -> void:
 	get_root().size = TARGET_SIZE
 	for _i in range(60):
 		await process_frame
+	if OS.get_environment("FPBENCH_HUD_PROBE") == "1":
+		await _hud_probe()
 	await _measure("street_eye_hud", 4.0)
 	await _shot("bench_street.png")
 	fp.hud.set_hud_visible(false)
 	await _measure("street_eye_nohud", 4.0)
+	await _hud_ab(6.0)
 	player.teleport(player.position, eye_yaw + 90.0, 0.0, false)
 	await _measure("street_cross_nohud", 4.0)
 	await _shot("bench_cross.png")
