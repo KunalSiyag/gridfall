@@ -601,7 +601,8 @@ func banner(msg: String, color: Color = Color(1.0, 0.35, 0.35)) -> void:
 
 func _unhandled_key_input(event: InputEvent) -> void:
 	var k := event as InputEventKey
-	if k == null or not k.pressed or k.echo:
+	# Keys can arrive in the frame main.gd awaits before setup().
+	if k == null or not k.pressed or k.echo or sim == null:
 		return
 	if _decree_edit != null and _decree_edit.has_focus():
 		return
