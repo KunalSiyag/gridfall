@@ -45,6 +45,37 @@ Ambient filler (docs/fp/slices/E-traffic.md §6): unnamed commuters and pedestri
 - `func maintain(p: Vector3, fwd: Vector3, sync: bool) -> void`: Removes ambient agents beyond the radius (out of sight) and tops up toward the targets. sync: fill completely now (first fill or after a teleport), anywhere out of the camera's view.
 - `func fill_parking() -> int`: Fills curb slots with parked cars, deterministically per slot (bulk: one lane rebuild after). Returns how many were parked.
 
+## `scripts/fp/traffic/contact_shadows.gd`
+
+extends `RefCounted`
+
+Contact shadows: a soft dark patch on the ground under every drawn vehicle and person, all in one MultiMesh draw. The sun's shadow maps reach only some of them (full and mid-LOD vehicles to render.SHADOW_DIST, people bodies to people.T1_NEAR, nothing after dark or under cloud), and without darkening where a body meets the road, a parked car or a walker seems to hover.
+
+### Constants
+
+- `WS = preload("res://scripts/fp/world_scale.gd")`
+- `LIFT = 0.0015`: Height above the surface: clear of depth fighting with the road, too thin to see from the side.
+- `CAR_PAD = Vector2(1.18, 1.08)`: Blob footprint against the body: vehicles a little wider and longer than their box, people a disc of PERSON_D.
+- `PERSON_D = 0.7 * WS.M`
+- `CAR_DARK = 0.62`: Darkness at the centre of the patch (0..1) and the patch's shape exponent (2 is an ellipse, larger is squarer: car bodies cover a rounded rectangle, feet an ellipse).
+- `PERSON_DARK = 0.42`
+- `CAR_SHAPE = 5.0`
+- `PERSON_SHAPE = 2.0`
+- `CAR_RANGE = 6.0`: Range, with a fade over the last FADE (vehicles beyond CAR_RANGE are a few pixels tall).
+- `FADE = 0.6`
+- `FLOATS = 16`
+- `SHADER = """`
+
+### Functions
+
+- `func setup(root: Node3D) -> void`
+- `func begin() -> void`
+- `func car(p: Vector3, yaw: float, hw: float, l: float, d: float) -> void`: A vehicle of half width hw and length l at ground point p, heading yaw, d from the camera.
+- `func person(p: Vector3, opacity: float) -> void`: A person standing at ground point p; opacity follows the body's own fade (0..1).
+- `func finish() -> void`: Uploads this frame's patches (one buffer write).
+- `func origin(k: int) -> Vector3`: Patch k's centre (tests).
+- `func clear() -> void`
+
 ## `scripts/fp/traffic/fleets.gd`
 
 extends `RefCounted`
@@ -515,6 +546,7 @@ Traffic and pedestrians on lanes (slice E, docs/fp/slices/E-traffic.md): one roa
 - `FLEETS = preload("res://scripts/fp/traffic/fleets.gd")`
 - `KIT = preload("res://scripts/fp/traffic/mesh_kit.gd")`
 - `PPL = preload("res://scripts/fp/traffic/people.gd")`
+- `CS = preload("res://scripts/fp/traffic/contact_shadows.gd")`
 - `MAX_STEP = 1.0 / 30.0`
 - `CAR_PREFIXES = ["sedan", "hatch", "suv", "taxi", "van", "pickup", "coupe"]`
 - `TELEPORT = 2.0`: A jump of the player beyond this in one frame is a teleport: the street is refilled around them.

@@ -94,6 +94,7 @@ GridFall: a SimCity-style city run by five autonomous GMI Cloud AI mayors. Wires
 ### Constants
 
 - `SAVE_PATH = "user://gridfall_save.json"`
+- `TOOL_MODES = [ "GRIDFALL_CINEMATIC", "GRIDFALL_SMOKE_TEST", "GRIDFALL_PHOTO_DIR", "GRIDFALL_FP_SMOKE...`: Environment switches that make a run a tool run (trailer, smokes, photo tours).
 - `D = preload("res://scripts/sim/sim_defs.gd")`
 - `WS = preload("res://scripts/fp/world_scale.gd")`
 
@@ -101,10 +102,14 @@ GridFall: a SimCity-style city run by five autonomous GMI Cloud AI mayors. Wires
 
 - `fp: FpMode`: First-person composition (null in orbit mode). Built by enter_fp(), freed by exit_fp().
 - `view_mode: String`: "orbit" or "fp"; tools and saves can read it.
+- `autosave_enabled: bool`: Autosaves (the first tick of each morning, quitting) are on only in normal play: tool runs, tests and the benchmark never touch the player's city.
+- `autosave_path: String`: Where autosaves go; tests point it away from the player's slot.
 
 ### Functions
 
-- `func save_game(path: String = SAVE_PATH) -> void`
+- `func save_game(path: String = SAVE_PATH) -> bool`
+- `func autosave(reason: String) -> bool`: Saves the city to autosave_path while autosave_enabled. reason: "morning" (a small toast) or "quit" (silent: the window is closing).
+- `func quit_game() -> void`: The pause menu's Quit: saves the city, then quits.
 - `func load_game(path: String = SAVE_PATH) -> bool`
 - `func new_game() -> void`
 - `static func wants_fp() -> bool`: True when this run will play in first person: no legacy tool mode (cinematic, orbit smoke, orbit photo tour) is selected, and either an FP tool mode is or GRIDFALL_VIEW is not "orbit". Mirrors the boot ladder in _ready(), so the early view flag and enter_fp() always agree.
@@ -114,3 +119,16 @@ GridFall: a SimCity-style city run by five autonomous GMI Cloud AI mayors. Wires
 - `func enter_fp() -> void`: Switches to first person (S0 §6.3). Safe to call twice.
 - `func exit_fp() -> void`: Back to the orbit view and CityHud (used by B's "Quit to orbit"). Safe to call twice. It frees FpHud, so a caller inside an FP node's signal (a Button's pressed) must use ctx.main.call_deferred("exit_fp"); a locked object cannot be freed mid-emit.
 - `func grow_offline(days: int, cap_ms: int) -> void`: Grows the city offline at full speed with the legacy 12 s day, for tests and tours, then restores the current day length and speed 0. The caller must have called sim.start(). Returns when sim.day >= days or after cap_ms of wall clock time.
+
+## `scripts/save_slot.gd`
+
+class_name `SaveSlot` · extends `RefCounted`
+
+One saved city on disk, written so a crash or a full disk mid-save never costs the player their city: the new save goes to <path>.tmp first, the previous one moves to <path>.bak, and only then does the new file take the slot's name. read() falls back to the backup when the slot is missing or unreadable (a crash between the two renames, or a truncated file).
+
+### Functions
+
+- `static func write(path: String, data: Dictionary) -> Error`: Writes data as JSON to path. OK, or the error that stopped it (the slot is then unchanged).
+- `static func read(path: String) -> Dictionary`: The saved city at path (or its backup), or {} when neither holds one.
+- `static func exists(path: String) -> bool`
+- `static func backup_path(path: String) -> String`

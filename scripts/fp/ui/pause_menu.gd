@@ -1,6 +1,7 @@
 extends Control
 ## Pause menu (slice B), shown on pause_changed(true) over a frosted blur of the paused world:
-## Resume, Save, Load, Settings, Quit to orbit, Quit, a legend of the HUD icons, and tabbed
+## Resume, Save, Load, New city (press twice), Settings, Quit to orbit, Quit (saves first), a
+## legend of the HUD icons, and tabbed
 ## settings (Camera, Controls, Display, Audio) written through mode.apply_settings(). FpMode owns
 ## the &"pause" modal; B never pushes or pops it. Keyboard navigable; Esc leaves the settings
 ## page, else resumes, and is consumed.
@@ -15,6 +16,8 @@ const LEFT_X := 96.0
 const PANEL_W := 600.0
 const ROW_H := 44.0
 const BASE_SENS := 0.0022
+const NEW_CITY := "New city"
+const NEW_CITY_CONFIRM := "Press again to start over"
 ## Settings rows per tab: [key, label, kind, args]. kind "slider": [min, max, step, unit];
 ## "choice": [[label, value], ...].
 const TABS := {
@@ -148,6 +151,8 @@ func _open() -> void:
 	_legend.visible = true
 	_buttons["Save"].disabled = ctx.main == null
 	_buttons["Load"].disabled = ctx.main == null
+	_buttons[NEW_CITY].disabled = ctx.main == null
+	_buttons[NEW_CITY].text = NEW_CITY
 	_buttons["Quit to orbit"].disabled = ctx.main == null
 	visible = true
 	_age = 0.0
@@ -193,6 +198,8 @@ func _on_button(text: String) -> void:
 				var ok: Variant = ctx.main.call("load_game")
 				if typeof(ok) == TYPE_BOOL and ok and ctx.mode != null:
 					ctx.mode.set_paused(false)
+		NEW_CITY:
+			_on_new_city()
 		"Settings":
 			if _settings.visible:
 				close_settings()
@@ -203,7 +210,23 @@ func _on_button(text: String) -> void:
 			if ctx.main != null:
 				ctx.main.call_deferred("exit_fp")
 		"Quit":
-			get_tree().quit()
+			if ctx.main != null and ctx.main.has_method("quit_game"):
+				ctx.main.call("quit_game")
+			else:
+				get_tree().quit()
+
+
+## The first press asks again; the second starts a new city and resumes.
+func _on_new_city() -> void:
+	var b: Button = _buttons[NEW_CITY]
+	if b.text != NEW_CITY_CONFIRM:
+		b.text = NEW_CITY_CONFIRM
+	elif ctx.main != null and ctx.main.has_method("new_game"):
+		b.text = NEW_CITY
+		# new_game() rebuilds the world; not from inside the button's own pressed emission.
+		ctx.main.call_deferred("new_game")
+		if ctx.mode != null:
+			ctx.mode.set_paused(false)
 
 
 func _build_left() -> void:
@@ -229,7 +252,7 @@ func _build_left() -> void:
 	gap.custom_minimum_size = Vector2(0, 26)
 	gap.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_left.add_child(gap)
-	for t: String in ["Resume", "Save", "Load", "Settings", "Quit to orbit", "Quit"]:
+	for t: String in ["Resume", "Save", "Load", NEW_CITY, "Settings", "Quit to orbit", "Quit"]:
 		if t == "Quit to orbit":
 			var sep := Control.new()
 			sep.custom_minimum_size = Vector2(0, 14)

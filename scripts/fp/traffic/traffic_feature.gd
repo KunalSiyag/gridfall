@@ -20,6 +20,7 @@ const TRIPS := preload("res://scripts/fp/traffic/trips.gd")
 const FLEETS := preload("res://scripts/fp/traffic/fleets.gd")
 const KIT := preload("res://scripts/fp/traffic/mesh_kit.gd")
 const PPL := preload("res://scripts/fp/traffic/people.gd")
+const CS := preload("res://scripts/fp/traffic/contact_shadows.gd")
 const MAX_STEP := 1.0 / 30.0
 const CAR_PREFIXES := ["sedan", "hatch", "suv", "taxi", "van", "pickup", "coupe"]
 ## A jump of the player beyond this in one frame is a teleport: the street is refilled around them.
@@ -39,6 +40,7 @@ var walkers: WK
 var render: RD
 ## HC's animated people (deliverable 9); ok == false draws the legacy static people instead.
 var people: PPL
+var contact: CS
 var ambient: AMB
 var trips: TRIPS
 var fleets: FLEETS
@@ -105,6 +107,8 @@ func setup(p_ctx: FpContext) -> void:
 	fleets = FLEETS.new()
 	trips.jitter_enabled = jitter_enabled
 	render.setup(_agents_root)
+	contact = CS.new()
+	contact.setup(_agents_root)
 	if ctx.view != null:
 		ctx.view.tile_built.connect(_on_tile_built)
 		ctx.view.tile_cleared.connect(_on_tile_cleared)
@@ -144,6 +148,7 @@ func teardown() -> void:
 			ctx.sim.day_started.disconnect(_on_day_started)
 	render.clear()
 	people.clear()
+	contact.clear()
 	_built = false
 
 
@@ -160,6 +165,8 @@ func on_world_rebuilt() -> void:
 	for c in _agents_root.get_children():
 		c.queue_free()
 	render.setup(_agents_root)
+	contact = CS.new()
+	contact.setup(_agents_root)
 	people.reset(_agents_root, sim.city_seed)
 	_load_models()
 	lanes.setup(sim)
@@ -428,18 +435,38 @@ func _player_fwd() -> Vector3:
 func sync_visuals(delta: float) -> void:
 	var cam := _camera_pos()
 	if vehicles.parked_version != _static_ver or cam.distance_to(_static_cam) > 0.25:
-		_static_ver = vehicles.parked_version
-		_static_cam = cam
-		render.begin_static()
-		for c: VH.Car in vehicles.cars:
-			if c.dead or not c.parked:
-				continue
-			if c.slot_tile < 0:
-				render.release_car(c)
-				continue
-			render.draw_parked(c, vehicles.draw_xform(c), cam.distance_to(c.pos), WS.VIS_CAR)
-		render.finish_static()
+		_draw_parked(cam)
 	render.begin(delta)
+	_draw_moving(cam)
+	var hc := people.ok
+	if hc:
+		var eye := ctx.player_position() + Vector3(0, WS.EYE, 0)
+		people.begin(delta, delta * float(ctx.sim.speed), _camera(), cam, eye)
+	_draw_walkers(delta, cam, hc)
+	if hc:
+		people.finish()
+	render.finish()
+	_draw_contact(cam, hc)
+	render.set_glow(_night())
+	junctions.update_lamps(ctx.player_position(), WS.VIS_PROP + 1.0)
+
+
+## Rebuilds the static layer of parked cars from camera position cam.
+func _draw_parked(cam: Vector3) -> void:
+	_static_ver = vehicles.parked_version
+	_static_cam = cam
+	render.begin_static()
+	for c: VH.Car in vehicles.cars:
+		if c.dead or not c.parked:
+			continue
+		if c.slot_tile < 0:
+			render.release_car(c)
+			continue
+		render.draw_parked(c, vehicles.draw_xform(c), cam.distance_to(c.pos), WS.VIS_CAR)
+	render.finish_static()
+
+
+func _draw_moving(cam: Vector3) -> void:
 	for c: VH.Car in vehicles.cars:
 		if c.dead or c.parked:
 			continue
@@ -451,10 +478,10 @@ func sync_visuals(delta: float) -> void:
 			siren = str((c.owner as Dictionary).get("kind", ""))
 		var brake := c.a < -0.8 * WS.M or c.v < 0.05 * WS.M
 		render.draw_car(c, vehicles.draw_xform(c), cam.distance_to(c.pos), WS.VIS_CAR, brake, siren, c.wheel_spin)
-	var hc := people.ok
-	if hc:
-		var eye := ctx.player_position() + Vector3(0, WS.EYE, 0)
-		people.begin(delta, delta * float(ctx.sim.speed), _camera(), cam, eye)
+
+
+## Walkers through HC's people when hc, else the legacy merged bodies.
+func _draw_walkers(delta: float, cam: Vector3, hc: bool) -> void:
 	for w: WK.Walker in walkers.walkers:
 		if w.dead or w.state == "hidden" or w.far:
 			render.release_walker(w)
@@ -471,11 +498,26 @@ func sync_visuals(delta: float) -> void:
 			people.add(w, dw, ctx.residents)
 		else:
 			render.draw_walker(w, walkers.draw_xform(w), dw, WS.VIS_PERSON, walkers.draw_phase(w))
-	if hc:
-		people.finish()
-	render.finish()
-	render.set_glow(_night())
-	junctions.update_lamps(ctx.player_position(), WS.VIS_PROP + 1.0)
+
+## Contact shadows under every vehicle and person drawn this frame.
+func _draw_contact(cam: Vector3, hc: bool) -> void:
+	contact.begin()
+	for c: VH.Car in vehicles.cars:
+		if c.dead or c.lod < 0:
+			continue
+		var d := cam.distance_to(c.pos)
+		contact.car(c.pos + c.vis_off, c.yaw + c.vis_yaw, c.half_w, c.length, d)
+	for w: WK.Walker in walkers.walkers:
+		var drawn := w.lod >= 0
+		if hc:
+			var t3 := w.tier == 3 and (people.avatars[w.av] as PPL.Avatar).lod_mesh != null
+			drawn = (w.tier >= 0 and w.tier <= 2) or t3
+		if w.dead or not drawn or w.state == "hidden":
+			continue
+		var p := w.pos + w.vis_off
+		var edge := clampf((WS.VIS_PERSON - cam.distance_to(p)) / RD.PERSON_FADE, 0.0, 1.0)
+		contact.person(p, minf(w.fade, edge))
+	contact.finish()
 
 
 ## 0 by day, 1 at night (the sky director's darkness; 0 without one).

@@ -35,6 +35,7 @@ The key stays on your machine and is only sent to `api.gmi-serving.com`.
 
 ## Saves and settings
 
+The game saves your city every morning and when you close the window, and continues it the next time you start. F5 also saves at any time. To start over, open the pause menu (Esc) and press **New city** twice. The previous save is kept as `gridfall_save.json.bak` next to it.
 - Windows: `%APPDATA%\Godot\app_userdata\GridFall — GMI Cloud Multi-Model Crisis Sim\`
 - Linux: `~/.local/share/godot/app_userdata/GridFall — GMI Cloud Multi-Model Crisis Sim/`
 

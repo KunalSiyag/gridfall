@@ -3,6 +3,11 @@ extends Node3D
 ## Wires the tile simulation, the GMI brain, the 3D city view, the HUD, camera and audio.
 
 const SAVE_PATH := "user://gridfall_save.json"
+## Environment switches that make a run a tool run (trailer, smokes, photo tours).
+const TOOL_MODES := [
+	"GRIDFALL_CINEMATIC", "GRIDFALL_SMOKE_TEST", "GRIDFALL_PHOTO_DIR",
+	"GRIDFALL_FP_SMOKE", "GRIDFALL_FP_PHOTO_DIR",
+]
 const D := preload("res://scripts/sim/sim_defs.gd")
 
 @onready var sim: CitySim = $CitySim
@@ -28,6 +33,12 @@ var view_mode: String = "orbit"
 var _orbit_speed: int = 1
 ## FpMode.to_dict() from the last exit_fp(), so Tab in orbit returns the hero to where they were.
 var _fp_saved: Dictionary = {}
+## Autosaves (the first tick of each morning, quitting) are on only in normal play: tool runs,
+## tests and the benchmark never touch the player's city.
+var autosave_enabled: bool = false
+## Where autosaves go; tests point it away from the player's slot.
+var autosave_path: String = SAVE_PATH
+var _autosave_due: bool = false
 
 
 func _ready() -> void:
@@ -48,6 +59,9 @@ func _ready() -> void:
 	brain.setup(sim, client)
 	_setup_people()
 	minds.plans_done.connect(brain.residents_spoke)
+	sim.tick_done.connect(_on_tick_done)
+	# Loaded before the first view.setup, so the city is built once.
+	var resume := _resume_data()
 	view.fp_mode = wants_fp()
 	view.setup(sim, camera)
 	hud.setup(sim, brain, client)
@@ -128,6 +142,15 @@ func _ready() -> void:
 		add_child(tour)
 		tour.call("run", self, fp_photo)
 		return
+	autosave_enabled = _plays_for_real()
+	if resume.is_empty():
+		_start_new()
+	else:
+		_continue(resume)
+
+
+## A fresh city at launch: day 1 starts and the clock runs at GRIDFALL_SPEED (default 1).
+func _start_new() -> void:
 	sim.start()
 	var start_speed := int(OS.get_environment("GRIDFALL_SPEED")) if OS.has_environment("GRIDFALL_SPEED") else 1
 	if fp != null:
@@ -159,6 +182,21 @@ func _exit_tree() -> void:
 func _process(delta: float) -> void:
 	if sky != null:
 		sky.crisis = lerpf(sky.crisis, _crisis, minf(1.0, delta * 2.0))
+	# After the morning's first tick has committed: today's mayor plans are in, and a load resumes
+	# mid-day instead of starting the day over.
+	if _autosave_due and sim.tick_in_day >= 1 and not sim.job_pending():
+		_autosave_due = false
+		autosave("morning")
+
+
+func _notification(what: int) -> void:
+	if what == NOTIFICATION_WM_CLOSE_REQUEST:
+		autosave("quit")
+
+
+func _on_tick_done(t: int) -> void:
+	if t == 0 and autosave_enabled:
+		_autosave_due = true
 
 
 func _update_mood() -> void:
@@ -180,38 +218,57 @@ func _focus_district(mi: int) -> void:
 	focus(Vector3(c.x, 0, c.y), 36.0, "district:%d" % mi)
 
 
-func save_game(path: String = SAVE_PATH) -> void:
+func save_game(path: String = SAVE_PATH) -> bool:
+	var err := _write_save(path, "manual")
+	if err != OK:
+		notify("Save failed: cannot write %s (%s)" % [path, error_string(err)], "alert")
+		return false
+	notify("City saved (Day %d)" % sim.day, "success")
+	return true
+
+
+## Saves the city to autosave_path while autosave_enabled. reason: "morning" (a small toast) or
+## "quit" (silent: the window is closing).
+func autosave(reason: String) -> bool:
+	if not autosave_enabled:
+		return false
+	var err := _write_save(autosave_path, reason)
+	if err != OK:
+		notify("Autosave failed (%s)" % error_string(err), "alert")
+		return false
+	if reason == "morning":
+		notify("Autosaved: Day %d" % sim.day, "system")
+	return true
+
+
+## The pause menu's Quit: saves the city, then quits.
+func quit_game() -> void:
+	autosave("quit")
+	get_tree().quit()
+
+
+func _write_save(path: String, reason: String) -> Error:
 	var data := {"sim": sim.to_dict(), "brain": brain.to_dict(), "client": client.to_dict(), "residents": residents.to_dict(), "minds": minds.to_dict(), "saved_at": Time.get_datetime_string_from_system()}
 	if fp != null:
 		data["fp"] = fp.to_dict()
 	elif not _fp_saved.is_empty():
 		data["fp"] = _fp_saved
-	var f := FileAccess.open(path, FileAccess.WRITE)
-	if f == null:
-		notify("Save failed: cannot write " + path, "alert")
-		return
-	f.store_string(JSON.stringify(data))
-	f.close()
-	client.flush_cache()
-	Analytics.track("save", {"day": sim.day, "view": view_mode})
-	notify("City saved (Day %d)" % sim.day, "success")
+	var err := SaveSlot.write(path, data)
+	if err == OK:
+		client.flush_cache()
+		Analytics.track("save", {"day": sim.day, "view": view_mode, "reason": reason})
+	return err
 
 
 func load_game(path: String = SAVE_PATH) -> bool:
-	if not FileAccess.file_exists(path):
-		notify("No saved city yet (press Save first)", "alert")
+	var d := SaveSlot.read(path)
+	if d.is_empty():
+		var why := "Save file is invalid" if SaveSlot.exists(path) else "No saved city yet (press Save first)"
+		notify(why, "alert")
 		return false
-	var parsed: Variant = JSON.parse_string(FileAccess.get_file_as_string(path))
-	if typeof(parsed) != TYPE_DICTIONARY or not sim.from_dict((parsed as Dictionary).get("sim", {})):
+	if not _restore(d):
 		notify("Save file is invalid", "alert")
 		return false
-	var d: Dictionary = parsed
-	brain.from_dict(d.get("brain", {}))
-	client.from_dict(d.get("client", {}))
-	_setup_people()
-	residents.from_dict(d.get("residents", {}))
-	minds.from_dict(d.get("minds", {}))
-	sim._recompute_all()
 	view.setup(sim, active_camera())
 	hud.setup(sim, brain, client)
 	hud.setup_people(residents, minds)
@@ -220,7 +277,6 @@ func load_game(path: String = SAVE_PATH) -> bool:
 		fp.from_dict(fd if typeof(fd) == TYPE_DICTIONARY else {})
 	else:
 		_fp_saved = fd if typeof(fd) == TYPE_DICTIONARY else {}
-	sim.waiting_for_ai = false
 	# Mid-day saves already have today's mayor decisions applied; only a boundary save needs a fresh day.
 	if sim.tick_in_day == 0:
 		sim.start()
@@ -228,6 +284,67 @@ func load_game(path: String = SAVE_PATH) -> bool:
 	Analytics.track("load", {"day": sim.day, "view": view_mode})
 	notify("Loaded city from Day %d" % sim.day, "success")
 	return true
+
+
+## Applies a save's data (sim, brain, client, people); false when the sim rejects it.
+func _restore(d: Dictionary) -> bool:
+	if not sim.from_dict(d.get("sim", {})):
+		return false
+	brain.from_dict(d.get("brain", {}))
+	client.from_dict(d.get("client", {}))
+	_setup_people()
+	residents.from_dict(d.get("residents", {}))
+	minds.from_dict(d.get("minds", {}))
+	sim._recompute_all()
+	sim.waiting_for_ai = false
+	return true
+
+
+## True for a player's own launch: main is the running scene (not inside a test or the benchmark)
+## and no tool mode is selected.
+func _plays_for_real() -> bool:
+	if get_tree().current_scene != self:
+		return false
+	for k: String in TOOL_MODES:
+		if OS.has_environment(k):
+			return false
+	return true
+
+
+## The saved city a normal launch continues, already applied to the sim, or {} for a new city (no
+## save, GRIDFALL_NEW_CITY=1, or a save the sim rejects).
+func _resume_data() -> Dictionary:
+	if not _plays_for_real() or OS.get_environment("GRIDFALL_NEW_CITY") == "1":
+		return {}
+	var d := SaveSlot.read(SAVE_PATH)
+	if d.is_empty():
+		return {}
+	if _restore(d):
+		return d
+	# from_dict can reject a save after applying part of it.
+	push_warning("GridFall: the saved city did not load; starting a new one")
+	sim.new_city(randi() % 100000)
+	brain.setup(sim, client)
+	_setup_people()
+	return {}
+
+
+## Continues the city _resume_data() restored: the player, the features and the time of day.
+func _continue(d: Dictionary) -> void:
+	var fd: Variant = d.get("fp", {})
+	if fp != null:
+		fp.from_dict(fd if typeof(fd) == TYPE_DICTIONARY else {})
+		fp.set_time_scale(fp.time_scale)
+	else:
+		_fp_saved = fd if typeof(fd) == TYPE_DICTIONARY else {}
+		sim.set_speed(1)
+		hud.set_speed_display(1)
+	if sim.tick_in_day == 0:
+		sim.start()
+	_update_mood()
+	Analytics.track("continue", {"day": sim.day, "view": view_mode})
+	print("GRIDFALL: continuing the saved city, day %d tick %d" % [sim.day, sim.tick_in_day])
+	notify("Welcome back: Day %d. New city in the pause menu starts over." % sim.day, "success")
 
 
 func new_game() -> void:
