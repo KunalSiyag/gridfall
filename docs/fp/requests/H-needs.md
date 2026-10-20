@@ -29,7 +29,8 @@ file is missing, so nothing here blocks a merge.
      4.35 m; B is turned 90°). G1's blades therefore land in the same place with or without the asset.
    - A pedestrian head on the pole at 2.7 m faces −X, toward the far corner of the crossing. Its nodes
      are `Walk_0` and `DontWalk_0`, with "don't walk" lit by default. Please bind them like `Signal_*`
-     (`AP.WALK_NODE_PREFIX`, `AP.DONT_WALK_NODE_PREFIX`).
+     (`AP.WALK_NODE_PREFIX`, `AP.DONT_WALK_NODE_PREFIX`). **Done:** `Junctions._bind_asset_peds`
+     binds them to the zebra each head faces.
 4. **`ped_signal.glb`** uses the contract names `Walk_0` and `DontWalk_0`, not your proposed
    `Ped_Walk` / `Ped_Stop`. It has a 2.6 m post, a head centred 2.25 m up facing +Z, and a push button
    at 1.05 m.
@@ -84,8 +85,9 @@ integrator section below). Keep your `wall_spots.json` fallback.
 1. **Import.** `tools/optimize_imports.py` did not exist at H's branch point. After merging G2, run
    `python3 -I tools/optimize_imports.py --apply models/real/vehicles_v2 models/real/street`, then one
    heavy `godot --headless --path . --import`. Only new files are affected.
-2. **Zone and building re-export (deferred).** These were not re-exported, to keep GLB churn out of
-   the repository while disk is tight (zones and buildings total about 180 MB).
+2. **Zone and building re-export.** Parked cars done: the 11 models with cars were re-exported
+   and imported, and the body and proxy tables re-baked. The door work below is still open.
+   (Originally deferred to keep GLB churn out of the repository while disk was tight.)
    - **Ready in the generator:** `arch.parked_car` now builds real-size (1.0×) cars from the
      `vehicles_v2` body generator: hatchback, coupe, sedan or SUV, whichever fits the bay, with
      opaque glass and merged wheels. They replace the blocky placeholder cars (G1 must-fix 13). The

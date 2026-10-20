@@ -6,13 +6,16 @@ metres are given.
 
 ## To H (`tools/blender/**`, `models/**`)
 
-1. **Box cars and a white carport frame in the R zone models** (G1 must-fix item 13). The
+1. **Done:** the 11 zone and building models with parked cars were re-exported with real-size
+   `vehicles_v2` cars.
+   **Box cars and a white carport frame in the R zone models** (G1 must-fix item 13). The
    residential zone GLBs bake `arch.parked_car` (`tools/blender/realcity/zones_res.py:100, 180, 208`,
    built by `arch.py:512`, also used by the C, I and service parking lots) as a black or red box on
    a white frame. At street level it is the most fake-looking thing on a residential street. Please
    rebuild it as a real car (or drop it: E parks the residents' own cars at the curb) on your next
    zone re-export. G1 cannot fix it by material.
-2. **Lit straights put two small posts in the pedestrian band.** `road_straight_lights.glb` has the
+2. **Done:** the posts stand at ±0.325 (`WS.CURB_FURNITURE`) in the re-exported road set.
+   **Lit straights put two small posts in the pedestrian band.** `road_straight_lights.glb` has the
    posts of `roads.py:168-169` at model-local (±0.4, ∓0.2), inside `WS.PED_BAND` (0.355-0.405),
    where E's pedestrians walk (A raised the same point). Please move them into `WS.CURB_FURNITURE`
    (0.305-0.345) when the road set is re-exported.

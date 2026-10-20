@@ -172,11 +172,14 @@ func _check_recenter(ctx: FpContext) -> void:
 			K.check(fails, absf(wrapf(p.cam_yaw - cy0, -PI, PI)) < 1e-4, "5. running toward the camera never swings it (moved %.4f deg)" % rad_to_deg(wrapf(p.cam_yaw - cy0, -PI, PI)))
 
 
-## 6. The same 2 s of input at 30 and at 144 fps ends with the camera within 2 cm.
+## 6. The same 2 s of input at 30 and at 144 fps ends with the camera within 2 cm. The path
+## (straight, a half-second veer right, straight again) stays on the sidewalk: sliding off an
+## obstacle's corner legitimately depends on the step, so a blocked path is a fixture failure.
 func _check_fps(ctx: FpContext) -> void:
 	var p := ctx.player
 	var s := _street(ctx)
 	var ends: Array[Vector3] = []
+	var touched := false
 	for fps: float in [30.0, 144.0]:
 		p.teleport((s["pos"] as Vector3) - (s["run"] as Vector3) * 0.3, s["yaw"])
 		p.rig.notify_look()
@@ -184,10 +187,12 @@ func _check_fps(ctx: FpContext) -> void:
 		var n := int(round(2.0 * fps))
 		for k in range(n):
 			var t := float(k) * dt
-			var w := Vector2(0.0, 1.0) if t < 1.0 else Vector2(0.7, 0.7)
+			var w := Vector2(0.7, 0.7) if t >= 1.0 and t < 1.5 else Vector2(0.0, 1.0)
 			p.simulate(w, t >= 0.5, dt)
 			p.update_view(dt)
+			touched = touched or ctx.collision.is_blocked(p.position, WS.PLAYER_RADIUS * 1.05)
 		ends.append(p.camera.global_position)
+	K.check(fails, not touched, "6. fixture: the 2 s path stays clear of obstacles")
 	var d := ends[0].distance_to(ends[1])
 	K.check(fails, d <= 0.02 * M, "6. 30 vs 144 fps: the camera ends %.2f cm apart (<= 2)" % (d / M * 100.0))
 
