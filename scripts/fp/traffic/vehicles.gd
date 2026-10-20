@@ -41,6 +41,8 @@ const LOD_NEAR := 6.0
 const LOD_DT := 1.0 / 10.0
 ## Data-only vehicles beyond the traffic radius cruise at this share of their own speed.
 const FAR_SPEED := 0.9
+## Role of the player's own cars: never on a lane, posed by the drive feature or left standing.
+const PLAYER := "player"
 
 
 ## One vehicle.
@@ -88,6 +90,7 @@ class Car extends RefCounted:
 	var node: Node3D = null         # full model (render)
 	var lod: int = -1
 	var wheel_spin: float = 0.0
+	var driven: bool = false        # the player is driving it (role "player": posed from outside)
 	var dead: bool = false
 	var arrived: bool = false
 	var stuck: bool = false         # its lane vanished in view: frozen until out of sight
@@ -104,6 +107,10 @@ var cars: Array = []
 var by_id: Dictionary = {}
 var player_pos := Vector3(INF, 0, INF)
 var player_on: bool = false
+## What lane traffic stops for, rebuilt each step: the player on foot and the player's cars, each
+## [xz centre, unit heading, half length, half width, xz velocity]; half length < 0 is the player
+## on foot (a circle).
+var _blocks: Array = []
 ## Bumped whenever the set of parked cars changes (the renderer's static layer rebuilds).
 var parked_version: int = 0
 var _next_id: int = 1
@@ -407,8 +414,9 @@ func step(dt: float) -> void:
 	var decay := exp(-dt * 1.6)
 	var near2 := LOD_NEAR * LOD_NEAR
 	var full2 := LOD_FULL * LOD_FULL
+	_gather_blocks()
 	for c: Car in cars.duplicate():
-		if c.dead or c.parked:
+		if c.dead or c.parked or c.role == PLAYER:
 			continue
 		var h := dt
 		if not c.far and c.park_t < 0.0:
@@ -457,11 +465,12 @@ func _drive(c: Car, dt: float) -> void:
 			gap = sgap + IDM.S0
 			vl = 0.0
 		hard = minf(hard, sgap)
-	var pg := _player_gap(c)
+	var pl := _player_gap(c)
+	var pg: float = pl[0]
 	if pg < INF:
 		if pg < gap:
 			gap = pg
-			vl = 0.0
+			vl = pl[1]
 		hard = minf(hard, pg - MIN_GAP - WS.PLAYER_RADIUS)
 	var acc := IDM.acc(c.v, vmax, gap, c.v - vl)
 	if c.hold:
@@ -619,24 +628,48 @@ func _stops(c: Car) -> Array:
 
 
 ## Gap from c's front to the player when they stand in its forward corridor, else INF.
-func _player_gap(c: Car) -> float:
-	if not player_on:
-		return INF
-	var pp := Vector2(player_pos.x, player_pos.z)
+func _gather_blocks() -> void:
+	_blocks.clear()
+	var driving := false
+	for c: Car in cars:
+		if c.role != PLAYER or c.dead:
+			continue
+		driving = driving or c.driven
+		var h := Vector2(sin(c.yaw), cos(c.yaw))
+		var v := Vector2(c.vel.x, c.vel.z)
+		_blocks.append([Vector2(c.pos.x, c.pos.z), h, c.length * 0.5, c.half_w, v])
+	if player_on and not driving:
+		_blocks.append([Vector2(player_pos.x, player_pos.z), Vector2.ZERO, -1.0, 0.0, Vector2.ZERO])
+
+
+## [gap, speed] to the nearest block on c's path: the distance from its front to the block's
+## edge along the path, and the block's speed along the path there; [INF, 0] when none.
+func _player_gap(c: Car) -> Array:
+	var best := [INF, 0.0]
+	if _blocks.is_empty():
+		return best
 	var front := lg.pos_at(c.lane, c.s)
 	var look := c.v * c.v / (2.0 * IDM.B) + 2.0 * WS.M + c.v * 0.5 + 0.1
-	if front.distance_to(pp) > look + 0.2:
-		return INF
-	var lat_max := WS.ROAD_HALF * 0.5
+	for b: Array in _blocks:
+		if front.distance_to(b[0]) > look + 0.2 + maxf(float(b[2]), 0.0):
+			continue
+		var g := _gap_to(c, b, look)
+		if float(g[0]) < float(best[0]):
+			best = g
+	return best
+
+
+func _gap_to(c: Car, b: Array, look: float) -> Array:
 	var d := 0.0
 	var x := c.lane
 	var s := c.s
 	var k := -1
 	while d <= look:
 		var q := lg.pos_at(x, s)
-		if q.distance_to(pp) <= lat_max:
-			# Distance from the front to the player's edge, along the path.
-			return maxf(d - WS.PLAYER_RADIUS, 0.0)
+		if _in_block(q, b, c.half_w):
+			var along := maxf(0.0, (b[4] as Vector2).dot(lg.tan_at(x, s)))
+			# Distance from the front to the player's edge (a car's box is grown by c's half width).
+			return [maxf(d - WS.PLAYER_RADIUS, 0.0) if float(b[2]) < 0.0 else d, along]
 		s += 0.02
 		d += 0.02
 		if s > x.length:
@@ -645,7 +678,16 @@ func _player_gap(c: Car) -> float:
 				break
 			s -= x.length
 			x = c.path[k]
-	return INF
+	return [INF, 0.0]
+
+
+static func _in_block(q: Vector2, b: Array, half_w: float) -> bool:
+	var rel: Vector2 = q - (b[0] as Vector2)
+	if float(b[2]) < 0.0:
+		return rel.length() <= WS.ROAD_HALF * 0.5
+	var h: Vector2 = b[1]
+	var grow := half_w + 0.2 * WS.M
+	return absf(rel.dot(h)) <= float(b[2]) + grow and absf(rel.cross(h)) <= float(b[3]) + grow
 
 
 ## True when walkers are on (or stepping onto) the zebra across `arm` of tile i.

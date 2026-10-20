@@ -47,6 +47,12 @@ Generated from the `##` doc comments in `scripts/`. Regenerate with `python3 too
 - [chat_text.gd](scripts.fp.chat.md#scriptsfpchatchat_textgd): Text helpers for the global chat and conversations (slice C): the display filter every line passes before it is shown or put into a prompt, dedupe normalisation, the checks the reply validators use (URLs, model names, sentence count), trimming, relative times and initials
 - [talk_dialog.gd](scripts.fp.chat.md#scriptsfpchattalk_dialoggd): Face-to-face conversation with a resident (slice C §4), and the "Ask someone here" answer
 
+## [scripts/fp/drive/](scripts.fp.drive.md)
+
+- [drive_feature.gd](scripts.fp.drive.md#scriptsfpdrivedrive_featuregd): Getting into cars and driving them
+- [drive_hud.gd](scripts.fp.drive.md#scriptsfpdrivedrive_hudgd): The drive feature's HUD: the get-in / get-out key chip above the minimap line and a speedometer (km/h and the gear) at the bottom centre while driving, clear of the corner captions
+- [drive_model.gd](scripts.fp.drive.md#scriptsfpdrivedrive_modelgd): Arcade handling for the player's car
+
 ## [scripts/fp/interact/](scripts.fp.interact.md)
 
 - [interact_feature.gd](scripts.fp.interact.md#scriptsfpinteractinteract_featuregd): Interaction with residents, buildings, posters and cars (slice A deliverables 3 and 6.7)

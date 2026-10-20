@@ -12,4 +12,5 @@ const FEATURES := [
 	{"id": "posters", "slice": "D", "path": "res://scripts/fp/posters/poster_feature.gd"},
 	{"id": "audio", "slice": "I", "path": "res://scripts/fp/audio/audio_feature.gd"},
 	{"id": "overview", "slice": "integration", "path": "res://scripts/fp/overview/overview_feature.gd"},
+	{"id": "drive", "slice": "integration", "path": "res://scripts/fp/drive/drive_feature.gd"},
 ]

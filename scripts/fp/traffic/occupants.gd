@@ -37,12 +37,14 @@ func setup(p_people: PPL) -> void:
 func sync(cars: Array, cam: Vector3, residents: Variant) -> void:
 	var cands: Array = []
 	for c: VH.Car in cars:
-		if c.dead or c.parked or c.far or c.node == null or not c.node.visible:
+		if c.dead or c.parked or c.far or c.role == VH.PLAYER:
+			continue
+		if c.node == null or not c.node.visible:
 			continue
 		var d := cam.distance_to(c.pos)
 		if d > RANGE:
 			continue
-		var seat: Variant = _seat(c.node)
+		var seat: Variant = seat_point(c.node)
 		if seat != null:
 			cands.append([d, c, seat])
 	cands.sort_custom(func(a: Array, b: Array) -> bool: return float(a[0]) < float(b[0]))
@@ -113,7 +115,7 @@ static func _pose_seated(b: PPL.Body) -> Vector3:
 
 
 ## The seat marker's position in the full model's space, cached on the node (null without one).
-func _seat(node: Node3D) -> Variant:
+func seat_point(node: Node3D) -> Variant:
 	if node.has_meta("seat_pos"):
 		return node.get_meta("seat_pos")
 	var pos: Variant = null

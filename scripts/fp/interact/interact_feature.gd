@@ -31,6 +31,7 @@ var _key: String = ""
 var _modal_frame: int = -1
 var _fallback_key: String = ""
 var _fallback_t: float = 0.0
+var _driving: bool = false
 
 
 func feature_id() -> String:
@@ -42,6 +43,7 @@ func setup(p_ctx: FpContext) -> void:
 	if ctx.bus != null:
 		ctx.bus.modal_changed.connect(_on_modal_changed)
 		ctx.bus.world_ready.connect(_on_world_ready)
+		ctx.bus.drive_changed.connect(_on_drive_changed)
 	if ctx.player != null:
 		ctx.player.photo_mode_changed.connect(_on_photo_mode_changed)
 
@@ -54,6 +56,8 @@ func teardown() -> void:
 			ctx.bus.modal_changed.disconnect(_on_modal_changed)
 		if ctx.bus.world_ready.is_connected(_on_world_ready):
 			ctx.bus.world_ready.disconnect(_on_world_ready)
+		if ctx.bus.drive_changed.is_connected(_on_drive_changed):
+			ctx.bus.drive_changed.disconnect(_on_drive_changed)
 	if ctx.player != null and is_instance_valid(ctx.player) and ctx.player.photo_mode_changed.is_connected(_on_photo_mode_changed):
 		ctx.player.photo_mode_changed.disconnect(_on_photo_mode_changed)
 
@@ -70,7 +74,7 @@ func from_dict(_d: Dictionary) -> void:
 func evaluate() -> Dictionary:
 	evaluations += 1
 	var p := ctx.player if ctx != null else null
-	if p == null or ctx.is_modal() or p.photo_mode:
+	if p == null or ctx.is_modal() or p.photo_mode or _driving:
 		_set_target({})
 		return target
 	var ray := view_ray()
@@ -385,6 +389,12 @@ func _on_photo_mode_changed(on: bool) -> void:
 
 func _on_world_ready() -> void:
 	_set_target({})
+
+
+## Nothing to interact with from behind the wheel.
+func _on_drive_changed(active: bool) -> void:
+	_driving = active
+	evaluate()
 
 
 ## A straight sidewalk with a long run ahead and the most built-up sides (fp_shots' street rule),

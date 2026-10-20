@@ -32,6 +32,8 @@ const PICK_PX := 26.0
 const PHOTO_BACK := 1.3
 ## Seconds between attempts to rebuild bus lines that no longer match the roads.
 const LINE_RETRY := 10.0
+## The player can take a parked car, their own, or an ambient car stopped below this speed.
+const CLAIM_SPEED := 0.5 * WS.M
 
 var lanes: LG
 var peds: SW
@@ -82,6 +84,8 @@ var _snap_head := PackedFloat32Array()
 var _snap_kind := PackedStringArray()
 var _snap_frame: int = -1
 var _snap_serial: int = 0
+## The player's car while they drive it (role VH.PLAYER), else null.
+var _driven: VH.Car = null
 
 
 func feature_id() -> String:
@@ -164,6 +168,7 @@ func on_world_rebuilt() -> void:
 		return
 	var sim := ctx.sim
 	_built = false
+	_driven = null
 	_rng.seed = sim.city_seed * 31337 + 1
 	render.clear()
 	occupants.clear()
@@ -362,6 +367,10 @@ func _maintain(sync: bool) -> void:
 	var p := ctx.player_position()
 	var r := WS.TRAFFIC_RADIUS
 	for c: VH.Car in vehicles.cars.duplicate():
+		if c.role == VH.PLAYER:
+			if not c.driven and not c.dead:
+				_drop_left(c, p, r)
+			continue
 		if c.parked or c.dead or c.role == "ambient" or c.role == "decor":
 			continue
 		var d := Vector2(c.pos.x - p.x, c.pos.z - p.z).length()
@@ -396,6 +405,12 @@ func _maintain(sync: bool) -> void:
 		fleets.rebuild_lines(ctx.view)
 		fleets.backoff = LINE_RETRY if not fleets.stale() else minf(fleets.backoff * 2.0, LINE_RETRY * 16.0)
 		fleets.retry_t = fleets.backoff
+
+
+## A car the player left goes once it is out of the traffic radius and out of sight.
+func _drop_left(c: VH.Car, p: Vector3, r: float) -> void:
+	if Vector2(c.pos.x - p.x, c.pos.z - p.z).length() > r and not on_screen(c.pos):
+		vehicles.remove(c)
 
 
 func _drop_stuck(c: VH.Car) -> void:
@@ -1053,7 +1068,7 @@ func pick(origin: Vector3, dir: Vector3, max_dist: float) -> Dictionary:
 			bt = t
 			best = _walker_target(w, t)
 	for c: VH.Car in vehicles.cars:
-		if c.dead or c.far or (c.parked and c.slot_tile < 0):
+		if c.dead or c.far or c.driven or (c.parked and c.slot_tile < 0):
 			continue
 		if c.pos.distance_to(origin) > max_dist + 0.4:
 			continue
@@ -1123,18 +1138,139 @@ static func _ray_box(o: Vector3, d: Vector3, xf: Transform3D, he: Vector3, h: fl
 	return maxf(t0, 0.0)
 
 
-## Optional, for A: world AABBs of stopped vehicles near p (parked cars included).
+## Optional, for A: world AABBs of stopped vehicles near p (parked cars included). While the
+## player drives, moving vehicles block too, and the player's own car does not.
 func blockers_near(p: Vector3, r: float) -> Array:
 	var out: Array = []
 	if not _built:
 		return out
+	var driving := _driven != null
 	for c: VH.Car in vehicles.cars:
-		if c.dead or c.far or (c.parked and c.slot_tile < 0):
+		if c.dead or c.far or c.driven or (c.parked and c.slot_tile < 0):
 			continue
-		if c.v > 0.1 * WS.M or c.pos.distance_to(p) > r + 0.3:
+		if (c.v > 0.1 * WS.M and not driving) or c.pos.distance_to(p) > r + 0.3:
 			continue
 		out.append(vehicles.aabb(c))
 	return out
+
+
+# ------------------------------------------------------------------ the player's car
+
+## The car the player could get into from p: the nearest one they may take whose body is within r
+## of p, as {"id", "label", "pos", "dist"}; {} when none (or while they drive).
+func enter_target(p: Vector3, r: float) -> Dictionary:
+	if not _built or _driven != null:
+		return {}
+	var best: VH.Car = null
+	var bd := r
+	for c: VH.Car in vehicles.cars:
+		if not _claimable(c) or c.pos.distance_to(p) > r + c.length:
+			continue
+		var d := _body_dist(c, p)
+		if d <= bd:
+			bd = d
+			best = c
+	if best == null:
+		return {}
+	var label := "your car" if best.role == VH.PLAYER else "the car"
+	return {"id": best.id, "label": label, "pos": best.pos, "dist": bd}
+
+
+## Hands car id to the player: an ambient, decor or resident car is swapped for a player car of
+## the same model where it stands (its owner's trip carries on without it). Returns the car's
+## {"id", "pos", "yaw", "length", "half_w", "height"}, or {} when it cannot be taken.
+func claim_car(id: int) -> Dictionary:
+	var c: VH.Car = vehicles.by_id.get(id)
+	if c == null or _driven != null or not _claimable(c):
+		return {}
+	if c.role != VH.PLAYER:
+		c = _take_over(c)
+	c.driven = true
+	_driven = c
+	return {
+		"id": c.id,
+		"pos": c.pos,
+		"yaw": c.yaw,
+		"length": c.length,
+		"half_w": c.half_w,
+		"height": c.height,
+	}
+
+
+## Poses the driven car (speed v signed, acceleration a) and its model at once, so the car and the
+## seated hero move in the same frame.
+func drive_car(pos: Vector3, yaw: float, v: float, a: float) -> void:
+	var c := _driven
+	if c == null or c.dead:
+		return
+	c.wheel_spin += Vector2(pos.x - c.pos.x, pos.z - c.pos.z).length() * signf(v)
+	c.pos = pos
+	c.yaw = yaw
+	c.v = absf(v)
+	c.a = a
+	c.vel = Vector3(sin(yaw), 0.0, cos(yaw)) * v
+	if c.node != null and c.lod == 0:
+		c.node.transform = vehicles.draw_xform(c) * render.model(c.model).offset
+
+
+## The player gets out: the car stays where it stands until it is far away and out of sight.
+func leave_car() -> void:
+	if _driven == null:
+		return
+	_driven.driven = false
+	_driven.v = 0.0
+	_driven.a = 0.0
+	_driven.vel = Vector3.ZERO
+	_driven = null
+
+
+## Id of the car the player drives, -1 on foot.
+func driven_id() -> int:
+	return _driven.id if _driven != null and not _driven.dead else -1
+
+
+## The driver's hip point in the driven car's own frame (+Z forward), or null until its full model
+## is drawn (the merged far LOD has no seat).
+func seat_offset() -> Variant:
+	if _driven == null or _driven.node == null:
+		return null
+	var s: Variant = occupants.seat_point(_driven.node)
+	if s == null:
+		return null
+	return render.model(_driven.model).offset * (s as Vector3)
+
+
+func _claimable(c: VH.Car) -> bool:
+	if c.dead or c.far or c.driven or c.kind != "car" or c.park_t >= 0.0 or c.model < 0:
+		return false
+	if c.role == VH.PLAYER:
+		return true
+	if c.parked:
+		return c.slot_tile >= 0
+	return c.role == "ambient" and c.v < CLAIM_SPEED
+
+
+func _take_over(o: VH.Car) -> VH.Car:
+	var c := vehicles.make("car", VH.PLAYER, Vector3(o.half_w * 2.0, o.height, o.length))
+	c.model = o.model
+	c.pos = o.pos + o.vis_off
+	c.yaw = o.yaw + o.vis_yaw
+	c.label = "Your car"
+	c.state = "yours"
+	if o.owner is TRIPS.Trip:
+		trips.complete_now(o.owner)
+	if not o.dead:
+		vehicles.remove(o)
+	return c
+
+
+## Distance in xz from p to c's body (0 inside it).
+static func _body_dist(c: VH.Car, p: Vector3) -> float:
+	var rel := Vector2(p.x - c.pos.x, p.z - c.pos.z)
+	var h := Vector2(sin(c.yaw), cos(c.yaw))
+	var along := maxf(absf(rel.dot(h)) - c.length * 0.5, 0.0)
+	var side := maxf(absf(rel.cross(h)) - c.half_w, 0.0)
+	return Vector2(along, side).length()
 
 
 ## The traffic-light pole on cross tile i at corner (0..3 = NE, SE, SW, NW), or null.

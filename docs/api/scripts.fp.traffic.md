@@ -346,6 +346,7 @@ Drivers seated in the moving vehicles nearest the camera. Only while a vehicle d
 - `func sync(cars: Array, cam: Vector3, residents: Variant) -> void`: Seats a driver in each of the CAP nearest moving vehicles within RANGE that show their full model, and releases the rest. Call between people.begin and people.finish.
 - `func clear() -> void`: Releases every seated body.
 - `func body_of(id: int) -> PPL.Body`: The seated body in car id (null when it has no driver drawn).
+- `func seat_point(node: Node3D) -> Variant`: The seat marker's position in the full model's space, cached on the node (null without one).
 
 ## `scripts/fp/traffic/people.gd`
 
@@ -585,6 +586,7 @@ Traffic and pedestrians on lanes (slice E, docs/fp/slices/E-traffic.md): one roa
 - `PICK_PX = 26.0`
 - `PHOTO_BACK = 1.3`: The traffic photo stands this far from the junction centre along the arm.
 - `LINE_RETRY = 10.0`: Seconds between attempts to rebuild bus lines that no longer match the roads.
+- `CLAIM_SPEED = 0.5 * WS.M`: The player can take a parked car, their own, or an ambient car stopped below this speed.
 
 ### Properties
 
@@ -630,7 +632,13 @@ Traffic and pedestrians on lanes (slice E, docs/fp/slices/E-traffic.md): one roa
 - `func visible_near(p: Vector3, r: float) -> Array`: Visible named residents near p (on foot, in a vehicle, or standing outdoors; never indoors).
 - `func is_resident_visible(id: String) -> bool`
 - `func pick(origin: Vector3, dir: Vector3, max_dist: float) -> Dictionary`: Interaction pick (S0 §10): residents on foot, ambient pedestrians, vehicles (parked included).
-- `func blockers_near(p: Vector3, r: float) -> Array`: Optional, for A: world AABBs of stopped vehicles near p (parked cars included).
+- `func blockers_near(p: Vector3, r: float) -> Array`: Optional, for A: world AABBs of stopped vehicles near p (parked cars included). While the player drives, moving vehicles block too, and the player's own car does not.
+- `func enter_target(p: Vector3, r: float) -> Dictionary`: The car the player could get into from p: the nearest one they may take whose body is within r of p, as {"id", "label", "pos", "dist"}; {} when none (or while they drive).
+- `func claim_car(id: int) -> Dictionary`: Hands car id to the player: an ambient, decor or resident car is swapped for a player car of the same model where it stands (its owner's trip carries on without it). Returns the car's {"id", "pos", "yaw", "length", "half_w", "height"}, or {} when it cannot be taken.
+- `func drive_car(pos: Vector3, yaw: float, v: float, a: float) -> void`: Poses the driven car (speed v signed, acceleration a) and its model at once, so the car and the seated hero move in the same frame.
+- `func leave_car() -> void`: The player gets out: the car stays where it stands until it is far away and out of sight.
+- `func driven_id() -> int`: Id of the car the player drives, -1 on foot.
+- `func seat_offset() -> Variant`: The driver's hip point in the driven car's own frame (+Z forward), or null until its full model is drawn (the merged far LOD has no seat).
 - `func light_pole(i: int, corner: int) -> Node3D`: The traffic-light pole on cross tile i at corner (0..3 = NE, SE, SW, NW), or null.
 - `func anchor_of(id: String) -> Vector3`: Live head anchor of resident id while drawn (else above where they are). With HC bodies it is the Head bone's world position (an estimate from the stature while no body draws them).
 - `func anim_stats() -> Dictionary`: Animated-people stats for G2's bench: {"t0", "t1", "t2", "t3"} people on screen per LOD tier, "anim_us" microseconds advancing mixers this frame (T0 trees included), "char_draws" character draws (shadows extra), plus "off" (off-screen bodies holding their pose), "bodies" (instanced) and "people_us" (the whole people pass). Legacy static people report their shader draws only.
@@ -728,6 +736,7 @@ Every road vehicle (docs/fp/slices/E-traffic.md §3): ambient filler, resident c
 - `LOD_NEAR = 6.0`
 - `LOD_DT = 1.0 / 10.0`
 - `FAR_SPEED = 0.9`: Data-only vehicles beyond the traffic radius cruise at this share of their own speed.
+- `PLAYER = "player"`: Role of the player's own cars: never on a lane, posed by the drive feature or left standing.
 
 ### Properties
 

@@ -279,6 +279,7 @@ The on-foot player (slice A): feet at `position`, a kinematic controller against
 
 - `func setup(p_ctx: FpContext) -> void`: Builds the camera (sharing ctx.env, so SkyDirector's sky applies), the avatar and the rig, applies the settings (camera mode included) and makes the camera current.
 - `func teleport(pos: Vector3, yaw_deg: float, pitch_deg: float = 0.0, snap: bool = true) -> void`: Places the feet at pos (y snapped to the ground when snap is true), sets the body and the view to yaw / pitch (degrees) and snaps the camera (springs, pivot, arm, blends): no swoop.
+- `func ride(pos: Vector3, body_yaw: float, view_yaw: float) -> void`: Carries the body with a vehicle (input off): feet at pos, body yaw and view yaw in radians, no ground snap and no camera snap (the vehicle owns the view through set_view_override).
 - `func look_toward(target: Vector3) -> void`: Faces a world point: the view (yaw and pitch) and the body.
 - `func eye_position() -> Vector3`: World position of the head (feet + current eye height; crouching lowers it). Talk and interact ranges are measured from here in both cameras.
 - `func view_position() -> Vector3`: Where the camera is (the arm end in third person).

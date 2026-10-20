@@ -216,6 +216,7 @@ Signals that cross first-person slices. Emitters and listeners are listed in doc
 - `modal_changed(active: bool)`: Some modal UI opened (true) or the last one closed (false).
 - `world_ready()`: The world was rebuilt and every feature ran on_world_rebuilt().
 - `card_action(action: String, tile: int)`: A button on a place card: action "ask_here" (C answers through brain.inspect_tile). Emitted by B.
+- `drive_changed(active: bool)`: The hero got into a car (true) or out of it (false). Emitted by the drive feature.
 
 ## `scripts/fp/road_topology.gd`
 
