@@ -81,7 +81,7 @@ Founding builds made before anyone lives in the city, and runs with residents of
 
 `godot --path .` starts in **first person** at street level. Set `GRIDFALL_VIEW=orbit` to play the orbit city builder with the full HUD described below.
 
-- **First person:** WASD or the arrow keys walk, Shift runs, mouse to look (click to capture the pointer), `]` and `[` change time speed (1x, 2x, 4x, 8x), `T` skips to the next morning, `Esc` pauses, `F1` hides the HUD, `F5` saves, `F9` loads.
+- **First person:** WASD or the arrow keys walk, Shift runs, mouse to look (click to capture the pointer), `]` and `[` change time speed (1x, 2x, 4x, 8x), `T` skips to the next morning, `Esc` pauses, `F1` hides the HUD, `F5` saves, `F9` loads. `F` by a car gets in (W/S throttle and brake or reverse, A/D steer, Space handbrake, V switches chase and driver view) and `F` again gets out once it slows down.
 
 The orbit view (`GRIDFALL_VIEW=orbit`):
 

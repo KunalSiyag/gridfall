@@ -226,6 +226,17 @@ func teleport(pos: Vector3, yaw_deg: float, pitch_deg: float = 0.0, snap: bool =
 	_update_tile()
 
 
+## Carries the body with a vehicle (input off): feet at pos, body yaw and view yaw in radians,
+## no ground snap and no camera snap (the vehicle owns the view through set_view_override).
+func ride(pos: Vector3, body_yaw: float, view_yaw: float) -> void:
+	position = pos
+	yaw = wrapf(body_yaw, -PI, PI)
+	cam_yaw = wrapf(view_yaw, -PI, PI)
+	velocity = Vector3.ZERO
+	_apply_rotation()
+	_update_tile()
+
+
 ## Faces a world point: the view (yaw and pitch) and the body.
 func look_toward(target: Vector3) -> void:
 	var d := target - eye_position()

@@ -19,7 +19,8 @@ The game starts at street level. To play the orbit city builder with the full HU
 
 ## Controls
 
-- **On foot:** WASD or arrow keys to walk, Shift to run, Space to jump, Ctrl to crouch, mouse to look (click to capture the pointer), E to interact, M for the map, Enter to chat, V for third person, Tab for the city overview, `[` and `]` for time speed, T to skip to the next morning, Esc to pause, F1 to hide the HUD, F5 to save, F9 to load. A gamepad also works.
+- **On foot:** WASD or arrow keys to walk, Shift to run, Space to jump, Ctrl to crouch, mouse to look (click to capture the pointer), E to interact, F to get in or out of a car, M for the map, Enter to chat, V for third person, Tab for the city overview, `[` and `]` for time speed, T to skip to the next morning, Esc to pause, F1 to hide the HUD, F5 to save, F9 to load. A gamepad also works.
+- **Driving:** W or the right trigger to accelerate, S or the left trigger to brake and reverse, A/D to steer, Space for the handbrake, V for the driver's view. Slow down to get out.
 - **Orbit builder:** WASD to pan, mouse wheel to zoom, right-drag to rotate, C to recenter, Space to pause, 1-4 for speed, F5 to save, F9 to load.
 
 ## AI mayors
