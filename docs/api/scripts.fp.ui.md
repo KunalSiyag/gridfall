@@ -653,7 +653,7 @@ The rotating circular minimap (slice B) in minimap_slot: the model's 192 x 192 t
 
 extends `Control`
 
-Pause menu (slice B), shown on pause_changed(true) over a frosted blur of the paused world: Resume, Save, Load, Settings, Quit to orbit, Quit, a legend of the HUD icons, and tabbed settings (Camera, Controls, Display, Audio) written through mode.apply_settings(). FpMode owns the &"pause" modal; B never pushes or pops it. Keyboard navigable; Esc leaves the settings page, else resumes, and is consumed.
+Pause menu (slice B), shown on pause_changed(true) over a frosted blur of the paused world: Resume, Save, Load, New city (press twice), Settings, Quit to orbit, Quit (saves first), a legend of the HUD icons, and tabbed settings (Camera, Controls, Display, Audio) written through mode.apply_settings(). FpMode owns the &"pause" modal; B never pushes or pops it. Keyboard navigable; Esc leaves the settings page, else resumes, and is consumed.
 
 ### Constants
 
@@ -666,6 +666,8 @@ Pause menu (slice B), shown on pause_changed(true) over a frosted blur of the pa
 - `PANEL_W = 600.0`
 - `ROW_H = 44.0`
 - `BASE_SENS = 0.0022`
+- `NEW_CITY = "New city"`
+- `NEW_CITY_CONFIRM = "Press again to start over"`
 - `TABS = { "Camera": [ ["camera_mode", "View", "choice", [["Third person", "third"], ["First per...`: Settings rows per tab: [key, label, kind, args]. kind "slider": [min, max, step, unit]; "choice": [[label, value], ...].
 - `LEGEND = [ ["person", "Population", "People living in the city"], ["face", "Mood", "How resident...`
 - `KEYS = [ ["M", "Map"], ["Tab", "City overview"], ["V", "Camera view"], ["Q", "Shoulder"], ["E"...`

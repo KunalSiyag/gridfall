@@ -41,6 +41,8 @@ const STUB_MAIN := """extends Node3D
 var bus: GameBus
 var saves: int = 0
 var loads: int = 0
+var new_games: int = 0
+var quits: int = 0
 func save_game() -> void:
 	saves += 1
 	bus.toast.emit("City saved (Day 1)", "success")
@@ -50,6 +52,10 @@ func load_game() -> bool:
 	return true
 func exit_fp() -> void:
 	pass
+func new_game() -> void:
+	new_games += 1
+func quit_game() -> void:
+	quits += 1
 """
 
 var fails: Array = []
@@ -468,6 +474,24 @@ func _check_pause(ctx: FpContext) -> void:
 	_action("pause_menu")
 	await _frames(1)
 	K.check(fails, not ctx.mode.paused and not menu.is_open() and not paused, "Esc on the menu resumes")
+	ctx.mode.set_paused(true)
+	await _frames(1)
+	var nc: Button = menu.button("New city")
+	nc.pressed.emit()
+	await _frames(1)
+	var asked := int(main.get("new_games")) == 0 and nc.text != "New city" and ctx.mode.paused
+	K.check(fails, asked, "New city asks again before starting over (%s)" % nc.text)
+	nc.pressed.emit()
+	await _frames(1)
+	var started := int(main.get("new_games")) == 1 and not ctx.mode.paused and nc.text == "New city"
+	K.check(fails, started, "the second press starts a new city and resumes")
+	ctx.mode.set_paused(true)
+	await _frames(1)
+	K.check(fails, nc.text == "New city", "reopening the menu resets the New city button")
+	menu.button("Quit").pressed.emit()
+	K.check(fails, int(main.get("quits")) == 1, "Quit goes through main.quit_game(), which saves")
+	ctx.mode.set_paused(false)
+	await _frames(1)
 	ctx.main = null
 	main.queue_free()
 

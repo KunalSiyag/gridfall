@@ -27,6 +27,42 @@ var tile_events: int = 0
 var world_ready: int = 0
 
 
+## 11c. Autosave writes main's slot on a window close request and once the morning's first tick has
+## committed, and only while autosave_enabled (tool runs like this one leave it off).
+func _check_autosave(sim: CitySim) -> void:
+	var slot: String = main.SAVE_PATH
+	var off: bool = not main.autosave_enabled
+	check(off and not SaveSlot.exists(slot), "tool runs never autosave (flag off, no slot)")
+	var speed := sim.speed
+	sim.set_speed(0)
+	while sim.job_pending():
+		await get_tree().process_frame
+	main.autosave_enabled = true
+	main.notification(NOTIFICATION_WM_CLOSE_REQUEST)
+	check(SaveSlot.read(slot).has("fp"), "a window close request saves the city")
+	_remove_slot(slot)
+	var tick := sim.tick_in_day
+	sim.tick_in_day = 0
+	sim.tick_done.emit(0)
+	await get_tree().process_frame
+	var early := FileAccess.file_exists(slot)
+	sim.tick_in_day = 1
+	await get_tree().process_frame
+	await get_tree().process_frame
+	var saved := SaveSlot.read(slot).has("fp")
+	check(not early and saved, "the morning autosave waits for the first tick, then saves")
+	sim.tick_in_day = tick
+	main.autosave_enabled = false
+	_remove_slot(slot)
+	sim.set_speed(speed)
+
+
+func _remove_slot(slot: String) -> void:
+	for p: String in [slot, SaveSlot.backup_path(slot)]:
+		if FileAccess.file_exists(p):
+			DirAccess.remove_absolute(ProjectSettings.globalize_path(p))
+
+
 func check(ok: bool, what: String) -> void:
 	print(("FP_SMOKE:   ok   " if ok else "FP_SMOKE:   FAIL ") + what)
 	if not ok:
@@ -191,6 +227,7 @@ func run(p_main: Node) -> void:
 			p.simulate(Vector2(0, 1), true, DT)
 		check(not fp.collision.is_blocked(p.position, WS.PLAYER_RADIUS), "the player can walk out of a box they stand in (to %s)" % str(p.position))
 	p.teleport(here, 0.0)
+	await _check_autosave(sim)
 	# 12. Feature self-tests.
 	for _k in range(30):
 		await get_tree().process_frame

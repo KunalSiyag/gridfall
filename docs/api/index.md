@@ -10,6 +10,7 @@ Generated from the `##` doc comments in `scripts/`. Regenerate with `python3 too
 - [cinematic.gd](scripts.md#scriptscinematicgd) (`Cinematic`): Scripted ~30 s trailer for social posts
 - [episode_player.gd](scripts.md#scriptsepisode_playergd) (`GridFallEpisodePlayer`): Loads and plays multi-model GMI Cloud crisis episodes (episodes/crisis_blackout_01.json)
 - [main.gd](scripts.md#scriptsmaingd): GridFall: a SimCity-style city run by five autonomous GMI Cloud AI mayors
+- [save_slot.gd](scripts.md#scriptssave_slotgd) (`SaveSlot`): One saved city on disk, written so a crash or a full disk mid-save never costs the player their city: the new save goes to <path>.tmp first, the previous one moves to <path>.bak, and only then does the new file take the slot's name
 
 ## [scripts/ai/](scripts.ai.md)
 
@@ -102,6 +103,7 @@ Generated from the `##` doc comments in `scripts/`. Regenerate with `python3 too
 ## [scripts/fp/traffic/](scripts.fp.traffic.md)
 
 - [ambient.gd](scripts.fp.traffic.md#scriptsfptrafficambientgd): Ambient filler (docs/fp/slices/E-traffic.md §6): unnamed commuters and pedestrians around the player, denser where sim.traffic and residents' trip_load are high (caps 40 cars, 60 people)
+- [contact_shadows.gd](scripts.fp.traffic.md#scriptsfptrafficcontact_shadowsgd): Contact shadows: a soft dark patch on the ground under every drawn vehicle and person, all in one MultiMesh draw
 - [fleets.gd](scripts.fp.traffic.md#scriptsfptrafficfleetsgd): City fleets on lanes in first person (docs/fp/slices/E-traffic.md §5): buses on 2-4 seeded closed lines through the bus stops (they pull in at each shelter, people board and alight), delivery and garbage trucks, and emergency crews that run to incidents with sirens (through red lights at walking pace once the box is clear), wait at the scene, and drive back to the station
 - [heap.gd](scripts.fp.traffic.md#scriptsfptrafficheapgd): Binary min-heap of (priority, int item) for the lane and sidewalk A* searches
 - [idm.gd](scripts.fp.traffic.md#scriptsfptrafficidmgd): Intelligent Driver Model (Treiber 2000) in world units (docs/fp/slices/E-traffic.md §3)
@@ -137,7 +139,7 @@ Generated from the `##` doc comments in `scripts/`. Regenerate with `python3 too
 - [map_screen.gd](scripts.fp.ui.md#scriptsfpuimap_screengd): Full-screen map (slice B) on M: the minimap's tile images at large size, north up, with district names, street names (from the directory) at 6 px per tile and closer, incidents, pings, the waypoint and the player
 - [minimap_model.gd](scripts.fp.ui.md#scriptsfpuiminimap_modelgd): The minimap's tile images (slice B), one pixel per tile of the 192 x 192 world: `image` holds the display colour, `data` the shape class, level and district the map shader draws from (roads joined to their neighbours, inset buildings, smooth shores), and `survey` one texel per 16 x 16 plot (unsurveyed land is hazed)
 - [minimap_view.gd](scripts.fp.ui.md#scriptsfpuiminimap_viewgd): The rotating circular minimap (slice B) in minimap_slot: the model's 192 x 192 tile images drawn by ui/fp/map.gdshader in a 200 px circle (soft edge, thin ring, no square frame), rotated every frame so the view heading points up, with markers drawn on top at 12 Hz (player arrow, waypoint, pings, incidents, nearby residents and E's agents) and the street label under it
-- [pause_menu.gd](scripts.fp.ui.md#scriptsfpuipause_menugd): Pause menu (slice B), shown on pause_changed(true) over a frosted blur of the paused world: Resume, Save, Load, Settings, Quit to orbit, Quit, a legend of the HUD icons, and tabbed settings (Camera, Controls, Display, Audio) written through mode.apply_settings()
+- [pause_menu.gd](scripts.fp.ui.md#scriptsfpuipause_menugd): Pause menu (slice B), shown on pause_changed(true) over a frosted blur of the paused world: Resume, Save, Load, New city (press twice), Settings, Quit to orbit, Quit (saves first), a legend of the HUD icons, and tabbed settings (Camera, Controls, Display, Audio) written through mode.apply_settings()
 - [place_card.gd](scripts.fp.ui.md#scriptsfpuiplace_cardgd): Place card (slice B) on interact_requested for kinds building, vehicle and pedestrian (a named resident is C's conversation, never a card)
 
 ## [scripts/fp/world/](scripts.fp.world.md)
