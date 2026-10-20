@@ -55,7 +55,7 @@ Visibility ranges and building LODs (slice G2). post_pass() classifies every dra
 
 extends `RefCounted`
 
-Mid-range building LOD (slice G2): a building mesh's surfaces merged into one, each carrying its material's average colour (proxies.json, else albedo_color) as vertex colour, with generated LODs. A building is one draw call instead of 17 to 30 between VIS_BUILDING_NEAR and VIS_BUILDING, where its textures are down to their smallest mips anyway. Merges run on the WorkerThreadPool (the main thread only copies the arrays and uploads the result); cached per source mesh, which every instance of a model shares.
+Mid-range building LOD (slice G2): a building mesh's surfaces merged into one, each carrying its material's average colour (proxies.json, else albedo_color) as vertex colour, with generated LODs. A building is one draw call instead of 17 to 30 between VIS_BUILDING_NEAR and VIS_BUILDING, where its textures are down to their smallest mips anyway. Merges run on the WorkerThreadPool (the main thread only copies the arrays and uploads the result); cached per source mesh, which every instance of a model shares. proxy_bake.gd bakes the merges offline into BAKED_DIR: copying a mesh's arrays reads them back from the GPU and waits for the frames in flight (10 to 140 ms), so the runtime merge is only the fallback for a model without a fresh bake.
 
 ### Constants
 
@@ -64,10 +64,13 @@ Mid-range building LOD (slice G2): a building mesh's surfaces merged into one, e
 - `GLASS_PREFIXES = ["Glass", "Window"]`
 - `LIT_PREFIXES = ["WindowLit"]`
 - `MIN_SURFACES = 3`: A mesh with fewer surfaces gains too little to replace.
+- `BAKED_DIR = "res://models/real/midlod/"`
+- `MODELS_DIR = "res://models/real/"`
 
 ### Properties
 
 - `threaded: bool`: false builds on the calling thread (tests).
+- `use_baked: bool`: false ignores BAKED_DIR and always merges at runtime (tests).
 
 ### Functions
 
@@ -77,6 +80,10 @@ Mid-range building LOD (slice G2): a building mesh's surfaces merged into one, e
 - `func poll(deadline: int = -1, clock: Callable = Time.get_ticks_usec) -> int`: Uploads finished builds; returns how many. With a deadline (clock() µs) it uploads at least one and starts no further upload once the deadline has passed.
 - `func pending() -> int`: Builds still running.
 - `func wait_all() -> void`: Waits for every running build and uploads it (tests, teardown).
+- `static func baked_path(src: Mesh, path: String) -> String`: Where proxy_bake.gd stores the merge of src, a mesh of the model at path.
+- `static func load_baked(src: Mesh, path: String) -> ArrayMesh`: The baked merge of src, or null when there is none or it was baked from another version of src.
+- `static func fresh(baked: Mesh, src: Mesh) -> bool`: True when baked was merged from src as it is now (same surfaces, same bounds).
+- `static func merged(src: Mesh, path: String) -> ArrayMesh`: Merges src on the calling thread and tags the result with what fresh() compares (the bake).
 
 ## `scripts/fp/render/occluders.gd`
 
@@ -129,12 +136,14 @@ Building proxies for far impostors and occluders (slice G2): per model path, the
 
 extends `SceneTree`
 
-Offline bake of building proxies for G2's far impostors and occluders. Run by hand, headless: godot --headless --path . -s res://scripts/fp/render/proxy_bake.gd For every building model it writes into proxies.json, in the model's own space (lot centred on the origin, ground at y = 0): a GRID x GRID height field of the building mass (lot slab, foliage and props excluded) with the colour of the surface on top of each cell, the facade colour, the share of the facade that is glass and of that the share that lights up at night, and the body box (the main mass: cells at least half the building's height, or H's ColBox_<n> empties when present), and the average colour of every material (midlod.gd's vertex colours). Colours are the materials' albedo_color times the average of their source albedo images (read from the source files here, never from the VRAM-compressed imports at runtime). Re-run after a model changes; the runtime falls back to surface bounds for any model missing from the file.
+Offline bake of building proxies for G2's far impostors and occluders. Run by hand, headless: godot --headless --path . -s res://scripts/fp/render/proxy_bake.gd For every building model it writes into proxies.json, in the model's own space (lot centred on the origin, ground at y = 0): a GRID x GRID height field of the building mass (lot slab, foliage and props excluded) with the colour of the surface on top of each cell, the facade colour, the share of the facade that is glass and of that the share that lights up at night, and the body box (the main mass: cells at least half the building's height, or H's ColBox_<n> empties when present), and the average colour of every material (midlod.gd's vertex colours). Then, with those colours, every mesh midlod.gd would merge at runtime, merged into MIDLOD.BAKED_DIR (stale files removed). Colours are the materials' albedo_color times the average of their source albedo images (read from the source files here, never from the VRAM-compressed imports at runtime). Re-run after a model changes; the runtime falls back to surface bounds for any model missing from the file.
 
 ### Constants
 
 - `WS = preload("res://scripts/fp/world_scale.gd")`
 - `AP = preload("res://scripts/fp/asset_paths.gd")`
+- `MIDLOD = preload("res://scripts/fp/render/midlod.gd")`
+- `PROXIES = preload("res://scripts/fp/render/proxies.gd")`
 - `OUT = "res://scripts/fp/render/proxies.json"`
 - `DIRS = ["res://models/real/zones/", "res://models/real/buildings/"]`
 - `ROAD_DIRS = ["res://models/real/roads/"]`: Road pieces get material colours only (midlod.gd twins), no proxy.

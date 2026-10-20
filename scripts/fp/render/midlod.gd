@@ -4,7 +4,10 @@ extends RefCounted
 ## LODs. A building is one draw call instead of 17 to 30 between VIS_BUILDING_NEAR and
 ## VIS_BUILDING, where its textures are down to their smallest mips anyway. Merges run on the
 ## WorkerThreadPool (the main thread only copies the arrays and uploads the result); cached per
-## source mesh, which every instance of a model shares.
+## source mesh, which every instance of a model shares. proxy_bake.gd bakes the merges offline into
+## BAKED_DIR: copying a mesh's arrays reads them back from the GPU and waits for the frames in
+## flight (10 to 140 ms), so the runtime merge is only the fallback for a model without a fresh
+## bake.
 
 const PROXIES := preload("res://scripts/fp/render/proxies.gd")
 const SHADER := preload("res://scripts/fp/render/midlod.gdshader")
@@ -12,10 +15,15 @@ const GLASS_PREFIXES := ["Glass", "Window"]
 const LIT_PREFIXES := ["WindowLit"]
 ## A mesh with fewer surfaces gains too little to replace.
 const MIN_SURFACES := 3
+const BAKED_DIR := "res://models/real/midlod/"
+const MODELS_DIR := "res://models/real/"
 
 var material: ShaderMaterial
 ## false builds on the calling thread (tests).
 var threaded: bool = true
+## false ignores BAKED_DIR and always merges at runtime (tests).
+var use_baked: bool = true
+var baked_loads: int = 0
 var _meshes: Dictionary = {}
 var _jobs: Dictionary = {}
 
@@ -38,6 +46,11 @@ func mesh_for(src: Mesh, path: String) -> ArrayMesh:
 		return _meshes[id]
 	if _jobs.has(id):
 		return null
+	var baked := load_baked(src, path) if use_baked else null
+	if baked != null:
+		_meshes[id] = baked
+		baked_loads += 1
+		return baked
 	var job := _gather(src, path)
 	if threaded:
 		job["task"] = WorkerThreadPool.add_task(_merge.bind(job), false, "G2 mid LOD")
@@ -81,6 +94,45 @@ func wait_all() -> void:
 	for id: int in _jobs.keys():
 		WorkerThreadPool.wait_for_task_completion(int((_jobs[id] as Dictionary)["task"]))
 	poll()
+
+
+## Where proxy_bake.gd stores the merge of src, a mesh of the model at path.
+static func baked_path(src: Mesh, path: String) -> String:
+	var key := path.trim_prefix(MODELS_DIR).get_basename().replace("/", "__")
+	return BAKED_DIR + key + "__" + src.resource_name.validate_filename() + ".res"
+
+
+## The baked merge of src, or null when there is none or it was baked from another version of src.
+static func load_baked(src: Mesh, path: String) -> ArrayMesh:
+	var p := baked_path(src, path)
+	if not ResourceLoader.exists(p):
+		return null
+	var m := load(p) as ArrayMesh
+	if m == null or not fresh(m, src):
+		push_warning("midlod: %s is stale; re-run proxy_bake.gd" % p)
+		return null
+	return m
+
+
+## True when baked was merged from src as it is now (same surfaces, same bounds).
+static func fresh(baked: Mesh, src: Mesh) -> bool:
+	var box: Variant = baked.get_meta("src_aabb", null)
+	return (
+		int(baked.get_meta("src_surfaces", -1)) == src.get_surface_count()
+		and box is AABB
+		and (box as AABB).is_equal_approx(src.get_aabb())
+	)
+
+
+## Merges src on the calling thread and tags the result with what fresh() compares (the bake).
+static func merged(src: Mesh, path: String) -> ArrayMesh:
+	var job := _gather(src, path)
+	_merge(job)
+	var m := _finish(job)
+	if m != null:
+		m.set_meta("src_surfaces", src.get_surface_count())
+		m.set_meta("src_aabb", src.get_aabb())
+	return m
 
 
 ## Main thread: copies the surfaces with their colour and kind.

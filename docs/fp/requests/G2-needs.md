@@ -15,10 +15,14 @@ integrator. Values are in world units (1 u = 20 m) unless metres are given.
    `tools/gate.sh full` (ARCHITECTURE §7).
 3. **Re-bake the building proxies when building models change** (H's re-export, new zone models):
    `godot --headless --path . -s res://scripts/fp/render/proxy_bake.gd` rewrites
-   `scripts/fp/render/proxies.json` (about 12 s). A model missing from the bake still gets a far
-   impostor and an occluder, from its surface bounds, but as a plain grey box.
+   `scripts/fp/render/proxies.json` and the merged mid-LOD meshes in `models/real/midlod/`
+   (62 meshes, about 4 MB; about 5 s in all). A model missing from the bake still gets a far
+   impostor and an occluder, from its surface bounds, but as a plain grey box; a mesh without a
+   fresh mid-LOD bake is merged at runtime, which stalls 10 to 140 ms on its first instance while
+   its arrays are read back from the GPU. `fp_renderperf_test` fails while any bake is stale.
 
-4. **The RTX 3050 is unavailable on this machine until a reboot.** The NVIDIA kernel module
+4. **Resolved after the reboot:** Vulkan uses the RTX 3050 again (fp_bench, 2026-10-20).
+   **The RTX 3050 is unavailable on this machine until a reboot.** The NVIDIA kernel module
    (580.173) and its user-space libraries (580.178) no longer match, so Vulkan lists only the AMD
    Renoir iGPU and llvmpipe, and every windowed run (gate render, fp_bench) now renders on the
    iGPU: frame times are about 4x the S0 gate's. Draw calls, render CPU and VRAM still compare;
