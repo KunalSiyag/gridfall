@@ -320,6 +320,33 @@ Builds merged, vertex-coloured meshes for E's procedural stand-ins (traffic ligh
 - `func commit() -> ArrayMesh`: The merged mesh (null when nothing was added).
 - `static func vc_material(rough: float = 0.6, metal: float = 0.0) -> StandardMaterial3D`: Shared opaque material for vertex-coloured meshes.
 
+## `scripts/fp/traffic/occupants.gd`
+
+extends `RefCounted`
+
+Drivers seated in the moving vehicles nearest the camera. Only while a vehicle draws its full model: those have see-through glass, a cabin and a Seat_Driver marker at the driver's hip point (tools/blender/realcity/vehicles2.py); the merged far LODs have opaque glass. A driver is the car's resident (people.dress picks the same avatar and stature the resident walks with) or an ambient body from the city seed, posed once in the sit loop with its mixers off, so a seated body costs its draws and nothing per frame beyond its transform.
+
+### Constants
+
+- `WS = preload("res://scripts/fp/world_scale.gd")`
+- `VH = preload("res://scripts/fp/traffic/vehicles.gd")`
+- `WK = preload("res://scripts/fp/traffic/walkers.gd")`
+- `PPL = preload("res://scripts/fp/traffic/people.gd")`
+- `KIT = preload("res://scripts/fp/traffic/people_kit.gd")`
+- `CAP = 12`
+- `RANGE = 30.0 * WS.M`
+- `SEAT_NODE = "Seat_Driver"`
+- `SIT = &"sit"`: The sit loop is held at this time (s): hands on the lap, head level.
+- `SIT_AT = 1.0`
+- `PROXY_ID = 1 << 24`: Walker ids seed ambient dressing; drivers use their own range so they do not copy a walker.
+
+### Functions
+
+- `func setup(p_people: PPL) -> void`
+- `func sync(cars: Array, cam: Vector3, residents: Variant) -> void`: Seats a driver in each of the CAP nearest moving vehicles within RANGE that show their full model, and releases the rest. Call between people.begin and people.finish.
+- `func clear() -> void`: Releases every seated body.
+- `func body_of(id: int) -> PPL.Body`: The seated body in car id (null when it has no driver drawn).
+
 ## `scripts/fp/traffic/people.gd`
 
 extends `RefCounted`
@@ -386,6 +413,7 @@ Animated people from HC's roster (docs/fp/slices/E-traffic.md deliverable 9, TPS
 - `func on_screen(p: Vector3) -> bool`: True when a body at feet position p could be on screen.
 - `func add(w: WK.Walker, d: float, residents: Variant) -> void`: Queues walker w (eased already, d = camera distance) and advances its clip.
 - `func finish() -> void`: Assigns tiers, attaches, advances and releases bodies, and fills the T3 layers.
+- `func seat(w: WK.Walker) -> bool`: Gives dressed walker w a body outside the tiers (a seated driver, posed by occupants.gd); false while none is free. release(w) hands it back.
 - `func release(w: WK.Walker) -> void`: A walker leaves for good (removed): its body goes back to the pool.
 - `func finish_loads() -> void`: Waits for every background scene load still running and keeps the results.
 - `func stats() -> Dictionary`: anim_stats() for G2's bench: tier counts on screen, microseconds advancing mixers this frame, character draws (skinned surfaces and boxes on screen plus two per T3 avatar layer).
@@ -401,7 +429,7 @@ Asset building for people.gd: the layered clips (a box held in both hands, a pho
 - `ARM_PARTS = [ "Shoulder", "UpperArm", "LowerArm", "Hand", "ThumbMetacarpal", "ThumbProximal", "Thum...`: Layered clips: the arm bones taken from another clip's pose at a fixed time.
 - `CARRY_AT = 0.0`
 - `PHONE_AT = 0.5`
-- `NEEDS = [ &"idle", &"walk", &"talk", &"talk_2", &"phone", &"carry", &"idle_look", &"idle_wait" ]`
+- `NEEDS = [ &"idle", &"walk", &"talk", &"talk_2", &"phone", &"carry", &"idle_look", &"idle_wait",...`
 - `T3_SHADER = """`
 
 ### Functions
@@ -413,6 +441,8 @@ Asset building for people.gd: the layered clips (a box held in both hands, a pho
 - `static func lod_mesh(ps: PackedScene, shader: Shader) -> Array`: The first mesh of a lod1 scene as [ArrayMesh with the fade shader, its transform in the scene]; [] when the scene has no mesh.
 - `static func t3_layer(nm: String, mesh: Mesh) -> MultiMeshInstance3D`: An empty, hidden T3 layer for mesh (custom data carries the fade).
 - `static func fill(mmi: MultiMeshInstance3D, xfs: Array[Transform3D], cols: Array[Color]) -> void`: Shows xfs (fade in the alpha of cols) on mmi, growing its buffer by doubling.
+- `static func crc32(s: String) -> int`: CRC-32 (IEEE, as zlib) of s's UTF-8 bytes.
+- `static func pose(sk: Skeleton3D, bone: int) -> Transform3D`: Bone pose in skeleton space from the local poses.
 
 ## `scripts/fp/traffic/render.gd`
 
@@ -547,6 +577,7 @@ Traffic and pedestrians on lanes (slice E, docs/fp/slices/E-traffic.md): one roa
 - `KIT = preload("res://scripts/fp/traffic/mesh_kit.gd")`
 - `PPL = preload("res://scripts/fp/traffic/people.gd")`
 - `CS = preload("res://scripts/fp/traffic/contact_shadows.gd")`
+- `OCC = preload("res://scripts/fp/traffic/occupants.gd")`
 - `MAX_STEP = 1.0 / 30.0`
 - `CAR_PREFIXES = ["sedan", "hatch", "suv", "taxi", "van", "pickup", "coupe"]`
 - `TELEPORT = 2.0`: A jump of the player beyond this in one frame is a teleport: the street is refilled around them.

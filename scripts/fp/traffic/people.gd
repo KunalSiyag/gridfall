@@ -128,7 +128,6 @@ var _t3_shader: Shader = null
 var _look_target: Node3D = null
 var _rng := RandomNumberGenerator.new()
 var _city_seed: int = 0
-var _crc_table: PackedInt64Array = PackedInt64Array()
 var _height: Dictionary = {"target_m": 1.75, "female_factor": 0.95, "jitter": [0.97, 1.03]}
 var _amb_groups: Array = []  # [[weight, [avatar indices]], ...]
 var _scenes: Dictionary = {}  # path -> PackedScene (null: missing or failed)
@@ -142,6 +141,7 @@ var _cam_pos := Vector3.ZERO
 var _planes: Array[Plane] = []
 var _cands: Array = []  # [distance, walker, on screen]
 var _active: Array = []  # Body instances attached to walkers
+var _seated: Array = []  # bodies lent by seat()
 var _made_frame: int = 0
 var _looks: int = 0
 # Stats for anim_stats() (G2's bench) and the tests.
@@ -285,6 +285,10 @@ func clear() -> void:
 		if is_instance_valid(b.root):
 			b.root.queue_free()
 	_active.clear()
+	for b: Body in _seated:
+		b.walker.set("body", null)
+		b.root.queue_free()
+	_seated.clear()
 	if _look_target != null and is_instance_valid(_look_target):
 		_look_target.queue_free()
 	_look_target = null
@@ -313,9 +317,9 @@ func _probe(g: String) -> void:
 	b.ap.play(&"walk_carry")
 	b.ap.seek(0.0, true)
 	b.ap.advance(0.0)
-	var lh := _pose(sk, sk.find_bone("LeftHand")).origin
-	var rh := _pose(sk, sk.find_bone("RightHand")).origin
-	var uc := _pose(sk, sk.find_bone("UpperChest"))
+	var lh := KIT.pose(sk, sk.find_bone("LeftHand")).origin
+	var rh := KIT.pose(sk, sk.find_bone("RightHand")).origin
+	var uc := KIT.pose(sk, sk.find_bone("UpperChest"))
 	var across := lh - rh
 	var w := clampf(across.length() - 0.06, 0.3, 0.5)
 	var x := across.normalized()
@@ -331,32 +335,12 @@ func _probe(g: String) -> void:
 	_release_body(b)
 
 
-## Bone pose in skeleton space from the local poses.
-static func _pose(sk: Skeleton3D, bone: int) -> Transform3D:
-	var t := sk.get_bone_pose(bone)
-	var p := sk.get_bone_parent(bone)
-	while p >= 0:
-		t = sk.get_bone_pose(p) * t
-		p = sk.get_bone_parent(p)
-	return t
-
-
 # ------------------------------------------------------------------ assignment
 
 
 ## CRC-32 (IEEE, as zlib) of s's UTF-8 bytes.
 func crc32(s: String) -> int:
-	if _crc_table.is_empty():
-		_crc_table.resize(256)
-		for i in range(256):
-			var c := i
-			for _k in range(8):
-				c = (0xEDB88320 ^ (c >> 1)) if (c & 1) != 0 else (c >> 1)
-			_crc_table[i] = c
-	var crc := 0xFFFFFFFF
-	for byte: int in s.to_utf8_buffer():
-		crc = _crc_table[(crc ^ byte) & 0xFF] ^ (crc >> 8)
-	return crc ^ 0xFFFFFFFF
+	return KIT.crc32(s)
 
 
 ## Gender of a resident: HC's name_gender for the first name, else crc32(id) & 1 (1 = f).
@@ -775,15 +759,34 @@ func _feet(w: WK.Walker) -> Vector3:
 	return p
 
 
+## Gives dressed walker w a body outside the tiers (a seated driver, posed by occupants.gd); false
+## while none is free. release(w) hands it back.
+func seat(w: WK.Walker) -> bool:
+	var b := _take(w.av)
+	if b == null:
+		return false
+	b.walker = w
+	w.body = b
+	b.root.visible = true
+	_seated.append(b)
+	return true
+
+
+## A pooled body of avatar ai, or a new one within this frame's budget once its scene has loaded.
+func _take(ai: int) -> Body:
+	var a: Avatar = avatars[ai]
+	if not a.pool.is_empty():
+		return a.pool.pop_back()
+	if _made_frame < NEW_PER_FRAME and _scene(a.path) != null:
+		_made_frame += 1
+		return _make(ai)
+	return null
+
+
 ## Gives w a body (pooled, or new within this frame's budget). False when none is available.
 func _attach(w: WK.Walker, tier: int) -> bool:
 	var a: Avatar = avatars[w.av]
-	var b: Body = null
-	if not a.pool.is_empty():
-		b = a.pool.pop_back()
-	elif _made_frame < NEW_PER_FRAME and _scene(a.path) != null:
-		_made_frame += 1
-		b = _make(w.av)
+	var b := _take(w.av)
 	if b == null:
 		return false
 	b.walker = w
@@ -813,6 +816,7 @@ func _detach(w: WK.Walker) -> void:
 		w.anim_t = b.ap.current_animation_position
 	w.body = null
 	_active.erase(b)
+	_seated.erase(b)
 	_release_body(b)
 
 
