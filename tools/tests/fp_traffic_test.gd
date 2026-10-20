@@ -47,6 +47,8 @@ func _init() -> void:
 	_check_api_compat()
 	_check_agents_api()
 	_check_people_draw()
+	_check_grounding()
+	_check_contact_shadows()
 	_check_wait_crowd()
 	_check_ambient_spawns()
 	_check_following()
@@ -140,6 +142,163 @@ func _fixtures() -> bool:
 
 
 # ------------------------------------------------------------------ hooks
+
+## Every walker's feet and every car's wheels sit on the surface under them (sidewalk, zebra,
+## carriageway or lot) while ambient traffic runs: nobody floats over the road or sinks into a kerb.
+func _check_grounding() -> void:
+	var col := ctx.collision
+	var wk: WK = f.get("walkers")
+	var vh := _vh()
+	var stats := {"walk": [0, 0, 0.0, ""], "car": [0, 0, 0.0, ""]}
+	for k in range(40):
+		_step(0.5)
+		for w: WK.Walker in wk.walkers:
+			if w.on_leg or w.state == "hidden":
+				continue
+			var zebra := w.edge != null and w.edge.zebra
+			var what := "%s %s zebra=%s" % [w.state, str(w.pos), str(zebra)]
+			_ground_sample(stats["walk"], w.pos, col.ground_height(w.pos), what)
+		for c: VH.Car in vh.cars:
+			var what := "%s %s" % ["parked" if c.parked else "moving", str(c.pos)]
+			_ground_sample(stats["car"], c.pos, col.ground_height(c.pos), what)
+	_check_body_feet()
+	for key: String in stats:
+		var s: Array = stats[key]
+		var gap := float(s[2]) / WS.M
+		print("GROUNDING %s samples=%d off=%d gap_m=%.3f %s" % [key, s[0], s[1], gap, s[3]])
+		var why := "%d of %d off by > 2 cm, worst %.3f m: %s" % [s[1], s[0], gap, s[3]]
+		var ok := int(s[0]) > 50 and int(s[1]) == 0
+		K.check(fails, ok, "grounding: %s stand on the surface (%s)" % [key, why])
+
+
+## Rendered feet: the lowest toe bone of every posed body (T0-T2, any clip) and the bottom of every
+## T3 lod mesh, against the ground under the walker.
+func _check_body_feet() -> void:
+	var pp: PPL = f.get("people")
+	if pp == null:
+		return
+	var wk: WK = f.get("walkers")
+	var by := {}
+	var pl := ctx.player
+	var saved := pl.position
+	for k in range(60):
+		if k % 10 == 0:
+			_look_at_walker(wk, true)
+		f.step(DT * 5.0)
+		f.sync_visuals(DT)
+		for w: WK.Walker in wk.walkers:
+			_feet_sample(by, pp, w)
+	pl.teleport(saved, 0.0)
+	# The lowest the feet get over a clip: a toe bone sits inside the shoe, a little above the sole
+	# (the highest is a stride's lifted foot, so it says nothing).
+	var bad: Array[String] = []
+	for key: String in by:
+		var e: Array = by[key]
+		if float(e[1]) < -0.04 or float(e[1]) > 0.05:
+			bad.append("%s %.3f..%.3f m" % [key, e[1], e[2]])
+	var what := "%d tier/clip groups, off: %s" % [by.size(), ", ".join(bad)]
+	var ok := not by.is_empty() and bad.is_empty()
+	K.check(fails, ok, "grounding: posed feet touch the ground (%s)" % what)
+
+
+## Points the camera at a visible walker: from 4 m away when stand_by, else from where it stands.
+func _look_at_walker(wk: WK, stand_by: bool) -> void:
+	var cam: Vector3 = f.call("_camera_pos")
+	var near: WK.Walker = null
+	for w: WK.Walker in wk.walkers:
+		if w.state == "hidden" or w.on_leg:
+			continue
+		if near == null or w.pos.distance_to(cam) < near.pos.distance_to(cam):
+			near = w
+	if near == null:
+		return
+	if stand_by:
+		ctx.player.teleport(near.pos + Vector3(4.0 * WS.M, 0, 4.0 * WS.M), 0.0, 0.0, false)
+	ctx.player.look_toward(near.pos + Vector3(0, 1.0 * WS.M, 0))
+
+
+## Adds w's lowest drawn foot point (m above the ground) to by["T<tier> <state> <clip>"].
+func _feet_sample(by: Dictionary, pp: PPL, w: WK.Walker) -> void:
+	if w.on_leg or w.state == "hidden" or w.tier < 0:
+		return
+	var g := ctx.collision.ground_height(w.pos)
+	var low := _lowest_foot(pp, w)
+	if is_nan(g) or is_inf(low):
+		return
+	var e: Array = by.get_or_add("T%d %s %s" % [w.tier, w.state, str(w.anim_clip)], [0, INF, -INF])
+	e[0] = int(e[0]) + 1
+	e[1] = minf(float(e[1]), (low - g) / WS.M)
+	e[2] = maxf(float(e[2]), (low - g) / WS.M)
+
+
+static func _lowest_foot(pp: PPL, w: WK.Walker) -> float:
+	var low := INF
+	var b: PPL.Body = w.body
+	if b != null and b.skel != null and b.root.visible:
+		var sk := b.skel
+		for bn: String in ["LeftToes", "RightToes"]:
+			var bi := sk.find_bone(bn)
+			if bi >= 0:
+				low = minf(low, (sk.global_transform * sk.get_bone_global_pose(bi)).origin.y)
+	elif w.tier == 3:
+		var a: PPL.Avatar = pp.avatars[w.av]
+		if a.lod_mesh != null:
+			var xf := Transform3D(Basis(Vector3.UP, w.yaw) * pp.scale_of(w), w.pos) * a.lod_xf
+			low = (xf * a.lod_mesh.get_aabb()).position.y
+	return low
+
+
+## A contact shadow lies on the ground under every vehicle and person drawn this frame.
+func _check_contact_shadows() -> void:
+	var cs = f.get("contact")
+	var wk: WK = f.get("walkers")
+	_look_at_walker(wk, false)
+	for _k in range(10):
+		f.step(DT)
+		f.sync_visuals(DT)
+	var cam: Vector3 = f.call("_camera_pos")
+	var cars := 0
+	for c: VH.Car in _vh().cars:
+		if not c.dead and c.lod >= 0 and cam.distance_to(c.pos) < cs.CAR_RANGE:
+			cars += 1
+	var people := _drawn_people(wk, cam)
+	var off := 0
+	for k in range(cs.count):
+		var o: Vector3 = cs.origin(k)
+		var g := ctx.collision.ground_height(o)
+		if not is_nan(g) and absf(o.y - g - cs.LIFT) > 0.02 * WS.M:
+			off += 1
+	var counts := "%d patches for %d vehicles and %d people drawn" % [cs.count, cars, people]
+	var ok_n: bool = cars > 0 and people > 0 and cs.count > cars and cs.count <= cars + people
+	K.check(fails, ok_n, "contact shadows: " + counts)
+	var shown: bool = cs.mmi.visible and cs.mmi.multimesh.visible_instance_count == cs.count
+	K.check(fails, off == 0 and shown, "contact shadows: every patch on the surface (%d off)" % off)
+
+
+## People drawn this frame within VIS_PERSON of cam (any tier, fading in or not).
+func _drawn_people(wk: WK, cam: Vector3) -> int:
+	var pp: PPL = f.get("people")
+	var hc := pp != null and pp.ok
+	var n := 0
+	for w: WK.Walker in wk.walkers:
+		var drawn := (w.tier >= 0 and w.tier <= 3) if hc else w.lod >= 0
+		if not drawn or w.dead or w.state == "hidden" or w.fade <= 0.0:
+			continue
+		if cam.distance_to(w.pos) < WS.VIS_PERSON:
+			n += 1
+	return n
+
+
+static func _ground_sample(s: Array, p: Vector3, g: float, what: String) -> void:
+	if is_nan(g):
+		return
+	s[0] = int(s[0]) + 1
+	var gap := p.y - g
+	if absf(gap) > 0.02 * WS.M:
+		s[1] = int(s[1]) + 1
+	if absf(gap) > absf(float(s[2])):
+		s[2] = gap
+		s[3] = what
 
 func _check_attach() -> void:
 	K.check(fails, ctx.view.life.external == f and ctx.view.avatars.external == f, "on_world_rebuilt sets CityLife.external and ResidentAvatars.external")
