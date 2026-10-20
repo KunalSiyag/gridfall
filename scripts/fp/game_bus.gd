@@ -3,7 +3,8 @@ extends Node
 ## Signals that cross first-person slices. Emitters and listeners are listed in docs/fp/S0-foundation.md §9.
 
 ## A world point that deserves attention (y = 0). reason: "event:<type>", "resident:<id>", "tile",
-## "district:<mi>" or "player" (a waypoint set on the map).
+## "district:<mi>", "ai:<mi or support role>" (an AI decision landed there) or "player" (a
+## waypoint set on the map).
 signal ping(world_pos: Vector3, reason: String)
 ## A player-facing notice. kind: "info", "alert", "success" or "system".
 signal toast(text: String, kind: String)

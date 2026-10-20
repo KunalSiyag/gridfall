@@ -14,4 +14,8 @@ const FEATURES := [
 	{"id": "overview", "slice": "integration", "path": "res://scripts/fp/overview/overview_feature.gd"},
 	{"id": "drive", "slice": "integration", "path": "res://scripts/fp/drive/drive_feature.gd"},
 	{"id": "phone", "slice": "integration", "path": "res://scripts/fp/phone/phone_feature.gd"},
+	{
+		"id": "activity", "slice": "integration",
+		"path": "res://scripts/fp/activity/activity_feature.gd",
+	},
 ]

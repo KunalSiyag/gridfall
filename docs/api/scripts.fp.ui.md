@@ -401,6 +401,7 @@ Shared look of the on-foot HUD (slice B): colour tokens, fonts with tabular figu
 - `WS = preload("res://scripts/fp/world_scale.gd")`
 - `OWNER_META = "fp_owner"`: Every Label, RichTextLabel and Button slice B creates carries this meta (the branding test reads it).
 - `OWNER = "hud_widgets"`
+- `BADGE_META = "fp_model_badge"`: Meta on model and source badges (badge()): the only street text allowed to name a model.
 - `WHITE = Color(1, 1, 1)`
 - `TEXT = Color(0.96, 0.97, 0.99)`
 - `TEXT_DIM = Color(0.86, 0.9, 0.96, 0.66)`
@@ -434,6 +435,8 @@ Shared look of the on-foot HUD (slice B): colour tokens, fonts with tabular figu
 - `static func caps_label(t: String, size_px: int, col: Color = TEXT, outline: int = 2) -> Label`: Tracked capitals drawn from t; the Label keeps t as its text (only the drawing is upper-cased).
 - `static func caps_width(t: String, size_px: int) -> float`: Width of t drawn by caps_label at size_px.
 - `static func stripe(sb: StyleBoxFlat, col: Color, w: int = 3) -> StyleBoxFlat`: Turns sb's border into a single w px accent stripe down its left edge.
+- `static func badge(t: String, col: Color, size_px: int = 11) -> PanelContainer`: A small tag that names a model or where an answer came from ("DeepSeek-V4", "LIVE"). Its label carries BADGE_META instead of OWNER_META: badges are the one place street text names a model, so the no-branding check over owned text (owned_texts) leaves them out.
+- `static func ping_color(reason: String) -> Color`: Marker colour for a bus ping reason: incidents red, AI decisions in the deciding agent's colour ("ai:1" a mayor, "ai:council" a support agent), anything else amber.
 - `static func box(bg: Color, radius: int, h: int, v: int, border: Color = Color(0, 0, 0, 0), bw: int = 0) -> StyleBoxFlat`: A StyleBoxFlat with one corner radius and content margins (h, v).
 - `static func chip_box(h: int = 11, v: int = 4) -> StyleBoxFlat`: The backing behind a passive indicator chip: at most CHIP_BG, near-square, with a hairline along its bottom edge (own instance, so a chip can pulse and tint its own backing).
 - `static func panel(bg: Color = PANEL_BG, radius: int = RADIUS_PANEL, h: int = 14, v: int = 10, border: Color = PANEL_LINE) -> PanelContainer`: A PanelContainer with a crisp, optionally bordered background (restyled CityHud._panel).

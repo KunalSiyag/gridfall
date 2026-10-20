@@ -200,7 +200,7 @@ Signals that cross first-person slices. Emitters and listeners are listed in doc
 
 ### Signals
 
-- `ping(world_pos: Vector3, reason: String)`: A world point that deserves attention (y = 0). reason: "event:<type>", "resident:<id>", "tile", "district:<mi>" or "player" (a waypoint set on the map).
+- `ping(world_pos: Vector3, reason: String)`: A world point that deserves attention (y = 0). reason: "event:<type>", "resident:<id>", "tile", "district:<mi>", "ai:<mi or support role>" (an AI decision landed there) or "player" (a waypoint set on the map).
 - `toast(text: String, kind: String)`: A player-facing notice. kind: "info", "alert", "success" or "system".
 - `interact_target_changed(target: Dictionary)`: The interaction target under the crosshair changed; {} when nothing is targeted.
 - `interact_requested(target: Dictionary)`: The player pressed interact on target.

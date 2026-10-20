@@ -14,10 +14,12 @@ Generated from the `##` doc comments in `scripts/`. Regenerate with `python3 too
 
 ## [scripts/ai/](scripts.ai.md)
 
+- [brain_text.gd](scripts.ai.md#scriptsaibrain_textgd): Removes model brand names from CityBrain text: a Gazette page as it comes in, and state restored from saves written before the display names, whose text feeds the prompts and the HUDs
 - [chatter_minds.gd](scripts.ai.md#scriptsaichatter_mindsgd) (`ChatterMinds`): The voices of the global chat and of face-to-face talk (slice C §3)
 - [city_brain.gd](scripts.ai.md#scriptsaicity_braingd) (`CityBrain`): Puts GMI model inference on every layer of the city
 - [gmi_client.gd](scripts.ai.md#scriptsaigmi_clientgd) (`GmiClient`): Async GMI Cloud chat client with JSON extraction, a recorded replay cache, and heuristic fallback
 - [gmi_image_client.gd](scripts.ai.md#scriptsaigmi_image_clientgd) (`GmiImageClient`): Async poster image client for GMI's hy-image-v3.5-preview (slice D)
+- [mayor_turns.gd](scripts.ai.md#scriptsaimayor_turnsgd): Staggered mayor turns (CityBrain.stagger_mayors, on in street mode)
 - [resident_minds.gd](scripts.ai.md#scriptsairesident_mindsgd) (`ResidentMinds`): Gives every resident a GMI brain
 
 ## [scripts/fp/](scripts.fp.md)
@@ -31,6 +33,14 @@ Generated from the `##` doc comments in `scripts/`. Regenerate with `python3 too
 - [game_bus.gd](scripts.fp.md#scriptsfpgame_busgd) (`GameBus`): Signals that cross first-person slices
 - [road_topology.gd](scripts.fp.md#scriptsfproad_topologygd) (`RoadTopology`): Static road-tile helpers shared by collision, traffic, the directory, the minimap and the streetscape
 - [world_scale.gd](scripts.fp.md#scriptsfpworld_scalegd): First-person world scale
+
+## [scripts/fp/activity/](scripts.fp.activity.md)
+
+- [activity_beacons.gd](scripts.fp.activity.md#scriptsfpactivityactivity_beaconsgd): World beacons for the AI activity layer: one per agent key ("mayor:1", "council", "chaos"), a tall light column in the agent's colour over the tile its latest decision touched, with a ring on the ground that pulses while the decision is new and dims once it is old
+- [activity_feature.gd](scripts.fp.activity.md#scriptsfpactivityactivity_featuregd): AI activity (integration feature "activity"): the city's AI decisions, visible from the street
+- [activity_feed.gd](scripts.fp.activity.md#scriptsfpactivityactivity_feedgd): The AI activity feed (feature "activity"), top right under the compass: a header with the key and whether the city's agents answer live, a line for who is deciding now (or who goes next), then the newest decisions as cards
+- [activity_tags.gd](scripts.fp.activity.md#scriptsfpactivityactivity_tagsgd): Floating tags over the AI beacons (feature "activity"): for each beacon in front of the camera and within RANGE, who decided and what, with the distance, pinned above the ground at the beacon (lower when near, so a close beacon's tag stays in view)
+- [activity_words.gd](scripts.fp.activity.md#scriptsfpactivityactivity_wordsgd): Plain words for the AI activity layer: what a mayor's turn did ("Zoned 6 homes · Ordered a Solar Farm"), council, chaos and grid rulings, a support agent's model badge, where an answer came from (live, replay or offline), "4 min" ages and compass directions
 
 ## [scripts/fp/audio/](scripts.fp.audio.md)
 

@@ -4,6 +4,21 @@
 
 [Index](index.md)
 
+## `scripts/ai/brain_text.gd`
+
+extends `RefCounted`
+
+Removes model brand names from CityBrain text: a Gazette page as it comes in, and state restored from saves written before the display names, whose text feeds the prompts and the HUDs. No nodes.
+
+### Constants
+
+- `D = preload("res://scripts/sim/sim_defs.gd")`
+
+### Functions
+
+- `static func debrand_paper(paper: Dictionary) -> void`: De-brands a Gazette front page in place: headline, editorial, and each story's title and body.
+- `static func debrand_state(proposals: Dictionary, mayor_state: Array[Dictionary], paper: Dictionary, council: Dictionary) -> void`: De-brands restored brain state in place: proposal authors, mayor posts, thoughts and log entries, the Gazette and the council ruling.
+
 ## `scripts/ai/chatter_minds.gd`
 
 class_name `ChatterMinds` · extends `Node`
@@ -90,7 +105,13 @@ Puts GMI model inference on every layer of the city. Each in-game day it batches
 ### Constants
 
 - `D = preload("res://scripts/sim/sim_defs.gd")`
+- `MayorTurns = preload("res://scripts/ai/mayor_turns.gd")`
+- `BrainText = preload("res://scripts/ai/brain_text.gd")`
 - `MAX_WAIT_MS = 75000`
+
+### Properties
+
+- `stagger_mayors: bool`: Street mode sets this: the mayors take the day's turns one by one through the day (turns), so a player on foot sees decisions land every few minutes. Off (orbit, tests): all at dawn.
 
 ### Functions
 
@@ -217,6 +238,35 @@ Async poster image client for GMI's hy-image-v3.5-preview (slice D). request() r
 - `func pool_files(kind: String) -> Array`: The pre-baked files that serve kind (its pool, else its family), sorted.
 - `func tick(_dt: float) -> void`: Advances polling, back-off and submit spacing; _process calls tick(delta), tests call it directly.
 - `static func long_edge(kind: String, size: String) -> int`: Long edge in pixels for a processed image: 1024 for wide (billboard, hoarding) art and the Gazette, 512 for portrait ads, walls and notices.
+
+## `scripts/ai/mayor_turns.gd`
+
+extends `RefCounted`
+
+Staggered mayor turns (CityBrain.stagger_mayors, on in street mode). Instead of all five mayors deciding at dawn, they take the day's turns one by one, spread over the first SPAN of the day in an order that rotates daily, so a player on foot sees decisions land every few minutes. A turn still waiting when the day ends runs then (CityBrain._on_day_ended). No nodes.
+
+### Constants
+
+- `D = preload("res://scripts/sim/sim_defs.gd")`
+- `SPAN = 0.9`: Share of the day the turns are spread over.
+
+### Properties
+
+- `due: Array[int]`: Mayors still to take the day's turn, in turn order.
+- `day: int`: The day the waiting turns belong to.
+
+### Functions
+
+- `func start(p_day: int, staggered: bool) -> bool`: Starts p_day: queues every mayor's turn when staggered. Returns staggered; false leaves the queue empty for the brain to run the mayors at dawn.
+- `func take_due(progress: float, staggered: bool, busy: Array = []) -> int`: The mayor whose turn has come at progress (0..1 through the day), taken off the queue, or -1. Not staggered (street mode left mid-day), the next waiting mayor goes at once. A mayor still deciding (busy[mi], e.g. a live call from the day before) keeps the turn and holds the queue.
+- `func take_all(busy: Array = []) -> Array[int]`: Every waiting turn whose mayor is free, taken off the queue (the day is ending). A mayor still deciding (busy[mi]) keeps the turn.
+- `func next_turn() -> Dictionary`: The next turn: {"mi": mayor index, "at": the day fraction it starts}, or {} when nobody waits.
+- `func clear() -> void`
+- `func to_dict() -> Dictionary`
+- `func from_dict(d: Variant) -> void`: Restores a saved queue; unknown or repeated mayor indices are dropped.
+- `static func order(p_day: int) -> Array[int]`: The order of p_day's turns, rotated daily so nobody always goes first.
+- `static func at(k: int) -> float`: The day fraction at which the k-th turn starts.
+- `static func sim_idle(sim: Object) -> bool`: True while sim has no sliced job or spread work in flight (always for a synchronous sim). A staggered turn starts only then: its actions come from outside any job, and a mutator from outside finishes the job in flight, and the spread work it waits for, in that one frame.
 
 ## `scripts/ai/resident_minds.gd`
 

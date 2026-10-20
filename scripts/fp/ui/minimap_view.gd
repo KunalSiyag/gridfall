@@ -339,7 +339,7 @@ func _draw_overlay() -> void:
 		if _near_incident(w):
 			continue
 		var a := float(e.get("alpha", 1.0))
-		var col := S.RED if str(e["reason"]).begins_with("event:") else S.AMBER
+		var col := S.ping_color(str(e["reason"]))
 		var q := _to_overlay(w, true)
 		o.draw_arc(q, 6.0, 0.0, TAU, 32, Color(col, 0.9 * a), 2.0, true)
 		o.draw_circle(q, 2.4, Color(col, a), true, -1.0, true)
