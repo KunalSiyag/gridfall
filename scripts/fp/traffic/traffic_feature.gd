@@ -21,6 +21,7 @@ const FLEETS := preload("res://scripts/fp/traffic/fleets.gd")
 const KIT := preload("res://scripts/fp/traffic/mesh_kit.gd")
 const PPL := preload("res://scripts/fp/traffic/people.gd")
 const CS := preload("res://scripts/fp/traffic/contact_shadows.gd")
+const OCC := preload("res://scripts/fp/traffic/occupants.gd")
 const MAX_STEP := 1.0 / 30.0
 const CAR_PREFIXES := ["sedan", "hatch", "suv", "taxi", "van", "pickup", "coupe"]
 ## A jump of the player beyond this in one frame is a teleport: the street is refilled around them.
@@ -41,6 +42,7 @@ var render: RD
 ## HC's animated people (deliverable 9); ok == false draws the legacy static people instead.
 var people: PPL
 var contact: CS
+var occupants: OCC
 var ambient: AMB
 var trips: TRIPS
 var fleets: FLEETS
@@ -109,6 +111,8 @@ func setup(p_ctx: FpContext) -> void:
 	render.setup(_agents_root)
 	contact = CS.new()
 	contact.setup(_agents_root)
+	occupants = OCC.new()
+	occupants.setup(people)
 	if ctx.view != null:
 		ctx.view.tile_built.connect(_on_tile_built)
 		ctx.view.tile_cleared.connect(_on_tile_cleared)
@@ -147,6 +151,7 @@ func teardown() -> void:
 		if ctx.sim.day_started.is_connected(_on_day_started):
 			ctx.sim.day_started.disconnect(_on_day_started)
 	render.clear()
+	occupants.clear()
 	people.clear()
 	contact.clear()
 	_built = false
@@ -161,6 +166,7 @@ func on_world_rebuilt() -> void:
 	_built = false
 	_rng.seed = sim.city_seed * 31337 + 1
 	render.clear()
+	occupants.clear()
 	people.clear()
 	for c in _agents_root.get_children():
 		c.queue_free()
@@ -444,6 +450,7 @@ func sync_visuals(delta: float) -> void:
 		people.begin(delta, delta * float(ctx.sim.speed), _camera(), cam, eye)
 	_draw_walkers(delta, cam, hc)
 	if hc:
+		occupants.sync(vehicles.cars, cam, ctx.residents)
 		people.finish()
 	render.finish()
 	_draw_contact(cam, hc)

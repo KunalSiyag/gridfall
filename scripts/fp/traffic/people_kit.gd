@@ -27,8 +27,9 @@ const ARM_PARTS := [
 const CARRY_AT := 0.0
 const PHONE_AT := 0.5
 const NEEDS: Array[StringName] = [
-	&"idle", &"walk", &"talk", &"talk_2", &"phone", &"carry", &"idle_look", &"idle_wait"
+	&"idle", &"walk", &"talk", &"talk_2", &"phone", &"carry", &"idle_look", &"idle_wait", &"sit"
 ]
+static var _crc_table := PackedInt64Array()
 const T3_SHADER := """
 shader_type spatial;
 render_mode cull_back, depth_draw_opaque;
@@ -202,3 +203,28 @@ static func fill(mmi: MultiMeshInstance3D, xfs: Array[Transform3D], cols: Array[
 		mm.set_instance_custom_data(k, cols[k])
 	mm.visible_instance_count = xfs.size()
 	mmi.visible = true
+
+
+## CRC-32 (IEEE, as zlib) of s's UTF-8 bytes.
+static func crc32(s: String) -> int:
+	if _crc_table.is_empty():
+		_crc_table.resize(256)
+		for i in range(256):
+			var c := i
+			for _k in range(8):
+				c = (0xEDB88320 ^ (c >> 1)) if (c & 1) != 0 else (c >> 1)
+			_crc_table[i] = c
+	var crc := 0xFFFFFFFF
+	for byte: int in s.to_utf8_buffer():
+		crc = _crc_table[(crc ^ byte) & 0xFF] ^ (crc >> 8)
+	return crc ^ 0xFFFFFFFF
+
+
+## Bone pose in skeleton space from the local poses.
+static func pose(sk: Skeleton3D, bone: int) -> Transform3D:
+	var t := sk.get_bone_pose(bone)
+	var p := sk.get_bone_parent(bone)
+	while p >= 0:
+		t = sk.get_bone_pose(p) * t
+		p = sk.get_bone_parent(p)
+	return t

@@ -49,6 +49,7 @@ func _init() -> void:
 	_check_people_draw()
 	_check_grounding()
 	_check_contact_shadows()
+	_check_drivers()
 	_check_wait_crowd()
 	_check_ambient_spawns()
 	_check_following()
@@ -273,6 +274,94 @@ func _check_contact_shadows() -> void:
 	K.check(fails, ok_n, "contact shadows: " + counts)
 	var shown: bool = cs.mmi.visible and cs.mmi.multimesh.visible_instance_count == cs.count
 	K.check(fails, off == 0 and shown, "contact shadows: every patch on the surface (%d off)" % off)
+
+
+## A seated driver in every nearby moving vehicle drawn in full: hips on the Seat_Driver marker,
+## facing the way the vehicle points, head under the roof, released once the car is not drawn.
+func _check_drivers() -> void:
+	var occ = f.get("occupants")
+	var pp: PPL = f.get("people")
+	if occ == null or pp == null or not pp.ok:
+		return
+	var pl := ctx.player
+	var saved := pl.position
+	var seated := {}
+	var bad: Array[String] = []
+	var missing := 0
+	for k in range(12):
+		if k % 4 == 0:
+			_look_at_car()
+		f.step(DT * 5.0)
+		f.sync_visuals(DT)
+		missing += _unseated(occ)
+		for c: VH.Car in _vh().cars:
+			var b: PPL.Body = occ.body_of(c.id)
+			if b != null:
+				seated[c.id] = true
+				_driver_sample(bad, c, b)
+	pl.teleport(saved, 0.0)
+	var off := ", ".join(bad.slice(0, 4))
+	var what := "%d vehicles seated, %d unseated, off: %s" % [seated.size(), missing, off]
+	var ok := seated.size() >= 1 and missing == 0 and bad.is_empty()
+	K.check(fails, ok, "drivers: seated in their cars (%s)" % what)
+	var ids: Array = seated.keys()
+	occ.clear()
+	var left := 0
+	for id: int in ids:
+		left += 1 if occ.body_of(id) != null else 0
+	K.check(fails, occ.seated == 0 and left == 0, "drivers: clear() releases every seated body")
+
+
+## Moving vehicles drawn in full within occ.RANGE of the camera, with a seat and no driver (all of
+## them are within the cap in this city).
+func _unseated(occ: Variant) -> int:
+	var cam: Vector3 = f.call("_camera_pos")
+	var n := 0
+	for c: VH.Car in _vh().cars:
+		if c.dead or c.parked or c.node == null or cam.distance_to(c.pos) > occ.RANGE:
+			continue
+		if c.node.find_child("Seat_Driver", true, false) != null and occ.body_of(c.id) == null:
+			n += 1
+	return n
+
+
+## Points the camera at the nearest moving vehicle from 5 m to its side.
+func _look_at_car() -> void:
+	var cam: Vector3 = f.call("_camera_pos")
+	var near: VH.Car = null
+	for c: VH.Car in _vh().cars:
+		if c.dead or c.parked or c.far or c.kind == "bike":
+			continue
+		if near == null or c.pos.distance_to(cam) < near.pos.distance_to(cam):
+			near = c
+	if near == null:
+		return
+	var side := Basis(Vector3.UP, near.yaw) * Vector3(5.0 * WS.M, 0, 0)
+	ctx.player.teleport(near.pos + side, 0.0, 0.0, false)
+	ctx.player.look_toward(near.pos + Vector3(0, 1.0 * WS.M, 0))
+
+
+func _driver_sample(bad: Array[String], c: VH.Car, b: PPL.Body) -> void:
+	var sk := b.skel
+	var hips := (sk.global_transform * sk.get_bone_global_pose(sk.find_bone("Hips"))).origin
+	var head := (sk.global_transform * sk.get_bone_global_pose(sk.find_bone("Head"))).origin
+	var seat_n: Node3D = null
+	if c.node != null:
+		seat_n = c.node.find_child("Seat_Driver", true, false) as Node3D
+	var fwd := Basis(Vector3.UP, c.yaw + c.vis_yaw) * Vector3(0, 0, 1)
+	var facing := b.root.global_transform.basis.z.normalized().dot(fwd)
+	var roof := c.pos.y + c.height
+	var why := ""
+	if seat_n == null or not c.node.visible or not b.root.visible:
+		why = "not drawn in full"
+	elif hips.distance_to(seat_n.global_position) > 0.03 * WS.M:
+		why = "hips %.3f m off the seat" % (hips.distance_to(seat_n.global_position) / WS.M)
+	elif facing < 0.99:
+		why = "facing %.2f" % facing
+	elif c.kind != "bike" and head.y > roof:
+		why = "head %.2f m over the roof" % ((head.y - roof) / WS.M)
+	if not why.is_empty():
+		bad.append("%s %s: %s" % [c.kind, c.label, why])
 
 
 ## People drawn this frame within VIS_PERSON of cam (any tier, fading in or not).
