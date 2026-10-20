@@ -79,7 +79,7 @@ func _check_registry(ctx: FpContext) -> void:
 		ids[str(e["id"])] = true
 		if f is Node:
 			(f as Node).free()
-	K.check(fails, ok and ids.size() == 13, "all 13 registry entries load as FpFeatures with matching unique ids")
+	K.check(fails, ok and ids.size() == 14, "all 14 registry entries load as FpFeatures with matching unique ids")
 	var feat := K.make_feature(ctx, "traffic")
 	K.check(fails, feat != null and feat.is_inside_tree() and ctx.feature("traffic") == feat, "make_feature puts the feature in the tree and ctx.features")
 	var st: Dictionary = feat.self_test() if feat != null else {}
@@ -317,7 +317,8 @@ func _check_site(ctx: FpContext) -> void:
 	sim.step_tick()
 	sim.construction_mode = mode
 	var r := WS.PLAYER_RADIUS
-	# Hoarding segments at ±0.47, 0.008 thick; side k of ConstructionKit._fence, gate side h % 4.
+	# Hoarding segments at ±0.47, 0.008 thick; side k of ConstructionKit._fence, the gate on the
+	# side CityView.site_gate names (toward the frontage road).
 	var face := 0.474
 	var sides := [Vector3(0, 0, -1), Vector3(1, 0, 0), Vector3(0, 0, 1), Vector3(-1, 0, 0)]
 	var walks := 0
@@ -332,7 +333,8 @@ func _check_site(ctx: FpContext) -> void:
 		if str((sim.sites[i] as Dictionary)["type"]) != "build" or sim.terrain[i] == D.WATER or ctx.view.site_boxes(i).is_empty():
 			continue
 		var c := _centre(i)
-		var gate := absi(D.tx(i) * 73856093 ^ D.ty(i) * 19349663) % 4
+		var open := ctx.view.site_gate(i)
+		var gate := sides.find(Vector3(open.x, 0, open.y))
 		for k in range(4):
 			var dir: Vector3 = sides[k]
 			var start := c + dir * 0.66

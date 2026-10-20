@@ -1,7 +1,7 @@
 extends Control
 ## The Build app's phone: who you build for (the district, its mayor and treasury), the six tools,
-## the building picked for the Build tool, what placing here would do, and the keys. The feature
-## fills it through show_state(); nothing here reads the sim.
+## the building picked for the Build tool, what placing here would do, the player's crews, and the
+## keys. The feature fills it through show_state(); nothing here reads the sim.
 
 const S := preload("res://scripts/fp/ui/hud_style.gd")
 const RULES := preload("res://scripts/fp/phone/build_rules.gd")
@@ -17,6 +17,7 @@ var _treasury: Label
 var _tools: Dictionary = {}
 var _building: Label
 var _line: Label
+var _crews: Label
 var _hint: Label
 var _shown: bool = false
 var _t: float = 0.0
@@ -63,6 +64,11 @@ func setup() -> void:
 	_line.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	_line.custom_minimum_size = Vector2(WIDTH - 32.0, 0)
 	v.add_child(_line)
+	_crews = S.plain("", 12, S.ACCENT, S.bold())
+	_crews.name = "Crews"
+	_crews.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	_crews.custom_minimum_size = Vector2(WIDTH - 32.0, 0)
+	v.add_child(_crews)
 	_hint = S.plain("", 12, S.TEXT_DIM, S.caps())
 	_hint.name = "Hint"
 	_hint.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
@@ -114,7 +120,7 @@ func is_shown() -> bool:
 
 
 ## st: {"district", "mayor", "treasury" (int or null), "tool", "building" (label, "" hides),
-## "line", "ok", "hint"}.
+## "line", "ok", "crews" ("" hides), "hint"}.
 func show_state(st: Dictionary) -> void:
 	_state = st
 	_district.text = str(st.get("district", ""))
@@ -133,6 +139,8 @@ func show_state(st: Dictionary) -> void:
 	_building.visible = not _building.text.is_empty()
 	_line.text = str(st.get("line", ""))
 	_line.add_theme_color_override("font_color", S.TEXT if bool(st.get("ok", false)) else S.AMBER)
+	_crews.text = str(st.get("crews", ""))
+	_crews.visible = not _crews.text.is_empty()
 	_hint.text = str(st.get("hint", ""))
 
 

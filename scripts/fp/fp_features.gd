@@ -18,4 +18,5 @@ const FEATURES := [
 		"id": "activity", "slice": "integration",
 		"path": "res://scripts/fp/activity/activity_feature.gd",
 	},
+	{"id": "crews", "slice": "integration", "path": "res://scripts/fp/crews/crews_feature.gd"},
 ]

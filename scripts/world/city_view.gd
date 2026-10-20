@@ -1927,15 +1927,37 @@ func building_aabb(i: int) -> AABB:
 ## tile (a tower crane's base up to 0.2 u into the neighbours). [] when no site is drawn on tile i.
 func site_boxes(i: int) -> Array[AABB]:
 	var out: Array[AABB] = []
-	var holder: Node3D = _tile_nodes.get(i, null)
-	if holder == null or not is_instance_valid(holder):
-		return out
-	var site := holder.get_node_or_null("Site") as Node3D
+	var site := _site_root(i)
 	if site == null:
 		return out
+	var holder := site.get_parent() as Node3D
 	for c: Dictionary in site.get_meta("colliders", []):
 		out.append(holder.transform * ConstructionKit.collider_aabb(c))
 	return out
+
+
+## The open side of site i's hoarding (ConstructionKit._fence: toward the frontage road), or
+## Vector2i.ZERO without a fenced site drawn on tile i.
+func site_gate(i: int) -> Vector2i:
+	var site := _site_root(i)
+	return site.get_meta("gate", Vector2i.ZERO) if site != null else Vector2i.ZERO
+
+
+## Where people stand on site i's own parts as drawn now (ConstructionKit.decks_of: the pit, the
+## slab as poured, the frame's floors shown so far, the scaffold's boards), in world space.
+func site_decks(i: int) -> Array[Dictionary]:
+	var site := _site_root(i)
+	if site == null:
+		var none: Array[Dictionary] = []
+		return none
+	return ConstructionKit.decks_of(site, (site.get_parent() as Node3D).transform)
+
+
+func _site_root(i: int) -> Node3D:
+	var holder: Node3D = _tile_nodes.get(i, null)
+	if holder == null or not is_instance_valid(holder):
+		return null
+	return holder.get_node_or_null("Site") as Node3D
 
 
 ## Merged world-space bound of site_boxes(i): contains every blocking part the construction kit

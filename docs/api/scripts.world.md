@@ -153,6 +153,8 @@ Renders the CitySim grid in 3D: Kenney roads picked by neighbor mask, zone lots 
 - `func warm_paths() -> Array`: Scene paths a growing city can need on foot: every zone level option and service model.
 - `func building_aabb(i: int) -> AABB`: World-space bounds of the building model on tile i (zone or service); AABB() (size zero) when the tile has no building model: roads, rubble, sites without a model, empty land, woods.
 - `func site_boxes(i: int) -> Array[AABB]`: World-space blocking boxes of the construction site drawn on tile i, one per entry of the `colliders` meta that ConstructionKit.build_site writes on the holder's "Site" node before tile_built fires: hoarding segments (with the gate gap), machine bodies (stretched over their shuttle run, without the swinging arms), the crane's base and mast, the floodlight pole, slabs, formwork, berms, mounds, the frame, the scaffold and the old or finished building. Each entry is a box yawed about +Y; this returns the box of its rotated corners. Parts can reach past the tile (a tower crane's base up to 0.2 u into the neighbours). [] when no site is drawn on tile i.
+- `func site_gate(i: int) -> Vector2i`: The open side of site i's hoarding (ConstructionKit._fence: toward the frontage road), or Vector2i.ZERO without a fenced site drawn on tile i.
+- `func site_decks(i: int) -> Array[Dictionary]`: Where people stand on site i's own parts as drawn now (ConstructionKit.decks_of: the pit, the slab as poured, the frame's floors shown so far, the scaffold's boards), in world space.
 - `func site_bounds(i: int) -> AABB`: Merged world-space bound of site_boxes(i): contains every blocking part the construction kit drew for the site on tile i, and can reach past the tile. AABB() when no site is drawn. For movement use site_boxes(i): this bound also covers the gaps between parts (the hoarding gate).
 - `func tile_holder(i: int) -> Node3D`: The Node3D holding everything drawn on tile i, or null.
 - `func set_camera(c: Camera3D) -> void`: Camera used for picking, shake and avatar picking (orbit rig camera or the FP camera).
@@ -184,6 +186,8 @@ Procedural construction sites and machines: staged ground works, rising concrete
 - `HOARDING_H_FP = 2.2 * WS.M`
 - `HOARDING_TINTS = [Color(0.33, 0.43, 0.34), Color(0.36, 0.4, 0.45), Color(0.86, 0.7, 0.5)]`: Hoarding paint per site (hash): green, slate, raw plywood.
 - `HOARDING_IN = 0.46`: Machines keep their footprint inside the hoarding at +-HOARDING_IN.
+- `DECK_IN = 0.025`: A crew among the rebar keeps this far inside the footprint (clear of the formwork).
+- `SLAB_H = 0.03`: The slab a frame stands on.
 - `GRIME = "res://textures/real/decals/"`
 
 ### Functions
@@ -203,6 +207,8 @@ Procedural construction sites and machines: staged ground works, rising concrete
 - `func solid(n: Node3D, arms := true) -> Node3D`: Marks n (all its meshes, at their built size) as a part of the site being built that blocks a walker. Without `arms`, subtrees named "Boom" (the swinging digger and backhoe arms) are left out. Colliders are baked once per build and do not follow progress, so parts that progress hides or reveals one by one (felled trees, stumps, rebar, debris, planting) are not marked; the frame is, since its first floor always stands. Every new blocking part must be marked.
 - `func solid_box(n: Node3D, local: AABB) -> void`: Marks an explicit blocking box, given in n's frame (the crane's base and mast, not its jib).
 - `static func collider_aabb(c: Dictionary) -> AABB`: Holder-space AABB of one `colliders` entry: the box of its corners, rotated by yaw about +Y around `pos`, the centre of its base.
+- `func deck(n: Node3D, rect: Rect2, y: float, t: float, posts: Array[Rect2] = []) -> void`: Marks where people stand on the site being built (crews on foot): rect (xz) at height y, the top of a part t thick, in n's frame, there while n shows. posts (xz, in the Site's frame) are kept clear on it (columns, a core).
+- `static func decks_of(site: Node3D, xf: Transform3D) -> Array[Dictionary]`: A built Site root's decks as drawn now, in the frame xf puts its holder in: [{"rect": Rect2 (xz), "y": the top, "t": the thickness, "posts": Array[Rect2] (xz)}]; hidden ones are left out.
 - `func track(n: Node3D, mode: String, f0 := 0.0, f1 := 1.0, a := 0.0, b := 1.0) -> Node3D`: Ties part of the site being built to stage progress. Between f0 and f1 the node scales from a to b times its built size ("sx", "sy", "sxz"), or shows ("reveal") / removes ("hide") its children one by one.
 
 ## `scripts/world/gridfall_world.gd`

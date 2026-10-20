@@ -14,6 +14,7 @@
     "drive": {"default": true, "description": "First-person feature: get into parked or stopped cars with F and drive them."},
      "phone": {"default": true, "description": "First-person feature: B opens the phone Build app, which places roads, zones and buildings for the mayor who owns the land."},
     "activity": {"default": true, "description": "First-person feature: AI activity feed, decision beacons and map pings showing which mayor or agent decided what, on which model, from which source, and where; mayors take staggered turns through the day on foot. J cycles the feed, G routes to the newest decision."},
+    "crews": {"default": true, "description": "First-person feature: the player's two building crews. Phone orders are built in real time (2-5 minutes for a building) by crews you can watch on site, with a board and a HUD card counting down; later orders queue for a free crew."},
     "gmi_live": {"default": true, "description": "Kill switch for live GMI Cloud calls. Off: every call uses the replay cache or heuristics, as with GRIDFALL_OFFLINE=1."},
     "analytics": {"default": false, "description": "Local product analytics to user://ops/analytics.jsonl (also GRIDFALL_ANALYTICS=1). Nothing is sent anywhere."},
     "error_tracking": {"default": false, "description": "Write contextual error records to user://ops/errors.jsonl (also GRIDFALL_ERROR_LOG=1). In-memory error counters are always on."},

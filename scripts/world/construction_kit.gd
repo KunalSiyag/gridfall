@@ -19,6 +19,10 @@ const HOARDING_H_FP := 2.2 * WS.M
 const HOARDING_TINTS := [Color(0.33, 0.43, 0.34), Color(0.36, 0.4, 0.45), Color(0.86, 0.7, 0.5)]
 ## Machines keep their footprint inside the hoarding at +-HOARDING_IN.
 const HOARDING_IN := 0.46
+## A crew among the rebar keeps this far inside the footprint (clear of the formwork).
+const DECK_IN := 0.025
+## The slab a frame stands on.
+const SLAB_H := 0.03
 const GRIME := "res://textures/real/decals/"
 
 var view: Node
@@ -605,19 +609,24 @@ func build_site(holder: Node3D, s: Dictionary, stage: String, f: float, ctx: Dic
 			shuttle(dz, Vector3.RIGHT, 0.18, 0.5, ph)
 			machine("dump_truck", root, Vector3(0.18, 0, -0.3), PI, ph)
 		"excavation":
-			# The pit widens and the spoil heaps grow as the digger works.
-			track(box(root, Vector3(foot.x, 0.004, foot.y), Vector3(0, 0.012, 0), "soil_dark", Vector3.ZERO, false), "sxz", 0.0, 1.0, 0.2, 1.0)
+			# The pit widens and the spoil heaps grow as the digger works. Each berm blocks on its own,
+			# so the pit inside is open ground a crew climbs into.
+			track(box(root, Vector3(foot.x, 0.004, foot.y), Vector3(0, _sheet_y(0.012, 0.004), 0), "soil_dark", Vector3.ZERO, false), "sxz", 0.0, 1.0, 0.2, 1.0)
 			var berms := _group(root, "Berms")
 			for side in [-1.0, 1.0]:
-				box(berms, Vector3(foot.x + 0.06, 0.035, 0.05), Vector3(0, 0.017, side * (foot.y * 0.5 + 0.02)), "soil")
-				box(berms, Vector3(0.05, 0.035, foot.y + 0.06), Vector3(side * (foot.x * 0.5 + 0.02), 0.017, 0), "soil")
-			solid(track(berms, "sy", 0.0, 1.0, 0.15, 1.0))
+				solid(box(berms, Vector3(foot.x + 0.06, 0.035, 0.05), Vector3(0, 0.017, side * (foot.y * 0.5 + 0.02)), "soil"))
+				solid(box(berms, Vector3(0.05, 0.035, foot.y + 0.06), Vector3(side * (foot.x * 0.5 + 0.02), 0.017, 0), "soil"))
+			track(berms, "sy", 0.0, 1.0, 0.15, 1.0)
 			solid(track(mound(root, 0.13, 0.08, Vector3(0.33, 0.0, 0.33), "soil"), "sy", 0.0, 1.0, 0.25, 1.3))
 			machine("excavator", root, Vector3(-0.3, 0.03, -0.18), 0.0, ph)
 			machine("dump_truck", root, Vector3(0.3, 0, -0.33), PI * 0.5, ph)
 		"foundation":
-			# Rebar goes in first, then the slab is poured across the formwork.
-			solid(track(box(root, Vector3(foot.x, 0.03, foot.y), Vector3(0, 0.015, 0), "concrete_wet"), "sx", 0.4, 1.0, 0.0, 1.0))
+			# Rebar goes in first, then the slab is poured across the formwork; the crew stands among
+			# the rebar, then on the slab where it is poured.
+			var slab := box(root, Vector3(foot.x, 0.03, foot.y), Vector3.UP * 0.015, "concrete_wet")
+			solid(track(slab, "sx", 0.4, 1.0, 0.0, 1.0))
+			deck(root, _inset(foot, DECK_IN), WS.GROUND_Y, 0.0)
+			deck(slab, _inset(foot, 0.0), 0.015, 0.03)
 			var bars := _group(root, "Rebar")
 			for side in [-1.0, 1.0]:
 				solid(box(root, Vector3(foot.x + 0.02, 0.045, 0.012), Vector3(0, 0.022, side * foot.y * 0.5), "timber", Vector3.ZERO, false))
@@ -631,10 +640,12 @@ func build_site(holder: Node3D, s: Dictionary, stage: String, f: float, ctx: Dic
 			machine("mixer", root, Vector3(0.28, 0, 0.36), PI, ph)
 			machine("backhoe", root, Vector3(-0.32, 0, -0.34), 0.4, ph)
 		"frame":
-			var base_h := float(ctx.get("base_height", 0.0)) if overlay else 0.0
+			# The frame stands on its slab, or on the roof it adds storeys to.
+			var base_h := float(ctx.get("base_height", 0.0)) if overlay else SLAB_H
 			if not overlay:
-				solid(box(root, Vector3(foot.x, 0.03, foot.y), Vector3(0, 0.015, 0), "concrete"))
-			_frame(root, foot, base_h, maxf(height, base_h + FLOOR_H), f)
+				var pad := Vector3(foot.x, SLAB_H, foot.y)
+				solid(box(root, pad, Vector3.UP * SLAB_H * 0.5, "concrete"))
+			_frame(root, foot, base_h, maxf(height, base_h + FLOOR_H), f, not overlay)
 			if overlay:
 				_scaffold(root, foot, height, false)
 			machine("mixer", root, Vector3(0.3, 0, 0.4), PI, ph)
@@ -649,7 +660,7 @@ func build_site(holder: Node3D, s: Dictionary, stage: String, f: float, ctx: Dic
 			if not overlay:
 				machine("dump_truck", root, Vector3(0.32, 0, 0.4), PI, ph + 2.0)
 		"landscaping":
-			track(box(root, Vector3(0.6, 0.006, 0.4), Vector3(-0.05, 0.012, 0.08), "grass", Vector3.ZERO, false), "sxz", 0.0, 0.7, 0.15, 1.0)
+			track(box(root, Vector3(0.6, 0.006, 0.4), Vector3(-0.05, _sheet_y(0.012, 0.006), 0.08), "grass", Vector3.ZERO, false), "sxz", 0.0, 0.7, 0.15, 1.0)
 			var planted := _group(root, "Planting")
 			for k in range(5):
 				var p := Vector3(float((h >> (k * 3)) % 7) * 0.1 - 0.3, 0, float((h >> (k * 2)) % 7) * 0.1 - 0.3)
@@ -950,6 +961,80 @@ static func collider_aabb(c: Dictionary) -> AABB:
 	return Transform3D(Basis(Vector3.UP, float(c.get("yaw", 0.0))), c["pos"] as Vector3) * local
 
 
+## Marks where people stand on the site being built (crews on foot): rect (xz) at height y, the
+## top of a part t thick, in n's frame, there while n shows. posts (xz, in the Site's frame) are
+## kept clear on it (columns, a core).
+func deck(n: Node3D, rect: Rect2, y: float, t: float, posts: Array[Rect2] = []) -> void:
+	var list: Array = _site_root.get_meta("decks", [])
+	list.append({"n": n, "rect": rect, "y": y, "t": t, "posts": posts})
+	_site_root.set_meta("decks", list)
+
+
+## A built Site root's decks as drawn now, in the frame xf puts its holder in: [{"rect": Rect2
+## (xz), "y": the top, "t": the thickness, "posts": Array[Rect2] (xz)}]; hidden ones are left out.
+static func decks_of(site: Node3D, xf: Transform3D) -> Array[Dictionary]:
+	var out: Array[Dictionary] = []
+	var holder := site.get_parent()
+	var at := xf * _to_holder(site, holder)
+	for d: Dictionary in site.get_meta("decks", []):
+		var n: Variant = d["n"]
+		if not is_instance_valid(n) or not _shown_to(n as Node3D, holder):
+			continue
+		var t := xf * _to_holder(n as Node3D, holder)
+		var r: Rect2 = d["rect"]
+		var y := float(d["y"])
+		var posts: Array[Rect2] = []
+		for p: Rect2 in d["posts"]:
+			posts.append(_xz(at, p, 0.0))
+		var top := (t * Vector3(r.get_center().x, y, r.get_center().y)).y
+		var thick := float(d["t"]) * t.basis.get_scale().y
+		out.append({"rect": _xz(t, r, y), "y": top, "t": thick, "posts": posts})
+	return out
+
+
+## The xz bounds of rect r (xz) at height y under t.
+static func _xz(t: Transform3D, r: Rect2, y: float) -> Rect2:
+	var a := t * Vector3(r.position.x, y, r.position.y)
+	var out := Rect2(Vector2(a.x, a.z), Vector2.ZERO)
+	for c: Vector2 in [r.end, Vector2(r.position.x, r.end.y), Vector2(r.end.x, r.position.y)]:
+		var q := t * Vector3(c.x, y, c.y)
+		out = out.expand(Vector2(q.x, q.z))
+	return out
+
+
+## True while n and every node above it up to holder are visible.
+static func _shown_to(n: Node3D, holder: Node) -> bool:
+	var x: Node = n
+	while x != null and x != holder:
+		if x is Node3D and not (x as Node3D).visible:
+			return false
+		x = x.get_parent()
+	return true
+
+
+## The footprint foot (centred on the tile) shrunk by m on every side.
+static func _inset(foot: Vector2, m: float) -> Rect2:
+	return Rect2(-foot * 0.5 + Vector2(m, m), foot - Vector2(m, m) * 2.0)
+
+
+## The xz footprints of a frame floor's g x g columns, then its core (the Site's frame).
+static func _frame_posts(foot: Vector2, g: int) -> Array[Rect2]:
+	var out: Array[Rect2] = []
+	for gx in range(g):
+		for gz in range(g):
+			var px := (float(gx) / float(g - 1) - 0.5) * foot.x * 0.92
+			var pz := (float(gz) / float(g - 1) - 0.5) * foot.y * 0.92
+			out.append(Rect2(px - 0.0125, pz - 0.0125, 0.025, 0.025))
+	out.append(Rect2(foot.x * 0.01, -foot.y * 0.11, foot.x * 0.22, foot.y * 0.22))
+	return out
+
+
+## The centre height of a ground sheet t thick (the pit floor, new turf): orbit_y over the orbit
+## view's raised site ground; on foot it lies on the ground plane (_ground), round a worker's feet.
+func _sheet_y(orbit_y: float, t: float) -> float:
+	return WS.GROUND_Y + 0.0004 + t * 0.5 if bool(view.get("fp_mode")) else orbit_y
+
+
 ## Writes the marked parts to the Site root's `colliders` meta, in holder space and at their full
 ## built size (before progress scales them): [{"shape": "box", "pos": Vector3 (centre of the base),
 ## "size": Vector3, "yaw": float}]. A shuttling machine's box is stretched over its whole run.
@@ -1109,15 +1194,17 @@ func _ground(root: Node3D, stage: String) -> void:
 	root.add_child(g)
 
 
-## Site hoarding with a gate gap on one side: blue boards in orbit; on foot 2.2 m of painted plywood
-## whose segment on the frontage side (`front`, toward the lot's frontage road) carries D's
-## `poster_slot`.
+## Site hoarding with a gate gap toward the frontage road (`front`; without one, side h % 4 of
+## sides) for the trucks and the crew: blue boards in orbit; on foot 2.2 m of painted plywood whose
+## segment on the frontage side carries D's `poster_slot`. The root's `gate` meta is the open side.
 func _fence(root: Node3D, h: int, front: Vector2i = Vector2i.ZERO) -> void:
-	var gate := h % 4
 	var fp := bool(view.get("fp_mode"))
 	var hh := HOARDING_H_FP if fp else HOARDING_H
 	var m := "hoarding_fp_%d" % ((h >> 5) % 3) if fp else "hoarding"
 	var sides := [Vector2i(0, -1), Vector2i(1, 0), Vector2i(0, 1), Vector2i(-1, 0)]
+	var gate := sides.find(front) if front != Vector2i.ZERO else -1
+	gate = gate if gate >= 0 else h % 4
+	root.set_meta("gate", sides[gate])
 	for k in range(4):
 		var along := Vector3(0.94, hh, 0.008) if k % 2 == 0 else Vector3(0.008, hh, 0.94)
 		var pos := Vector3(sides[k].x * 0.47, hh * 0.5, sides[k].y * 0.47)
@@ -1149,26 +1236,33 @@ func _floodlight(root: Node3D, pos: Vector3) -> void:
 	head.name = "FloodHead"
 
 
-## Concrete columns and floor slabs from base_h up to top_h, one child node per floor.
-func _frame(root: Node3D, foot: Vector2, base_h: float, top_h: float, f: float) -> void:
+## Concrete columns and floor slabs from base_h up to top_h, one child node per floor, each storey
+## at least FLOOR_H tall (room for a crew under the floor over it). on_slab: base_h is the top of
+## the slab, where a crew works among the ground floor's columns.
+func _frame(
+	root: Node3D, foot: Vector2, base_h: float, top_h: float, f: float, on_slab := false
+) -> void:
 	var frame := Node3D.new()
 	frame.name = "Frame"
 	root.add_child(frame)
 	solid(frame)
-	var floors := maxi(1, int(round((top_h - base_h) / FLOOR_H)))
+	var floors := maxi(1, int((top_h - base_h) / FLOOR_H))
 	var fh := (top_h - base_h) / float(floors)
 	var g := 3 if foot.x > 0.55 else 2
+	# A crew on a floor keeps off the columns and the core of the floor over it.
+	var posts := _frame_posts(foot, g)
+	if on_slab:
+		deck(frame, _inset(foot, 0.0), base_h, SLAB_H, posts)
 	for k in range(floors):
 		var fl := Node3D.new()
 		fl.position.y = base_h + float(k) * fh
 		frame.add_child(fl)
 		_floors.append(fl)
-		for gx in range(g):
-			for gz in range(g):
-				var px := (float(gx) / float(g - 1) - 0.5) * foot.x * 0.92
-				var pz := (float(gz) / float(g - 1) - 0.5) * foot.y * 0.92
-				box(fl, Vector3(0.025, fh, 0.025), Vector3(px, fh * 0.5, pz), "concrete", Vector3.ZERO, false)
+		for c: Rect2 in posts.slice(0, g * g):
+			var at := Vector3(c.get_center().x, fh * 0.5, c.get_center().y)
+			box(fl, Vector3(0.025, fh, 0.025), at, "concrete", Vector3.ZERO, false)
 		box(fl, Vector3(foot.x, 0.012, foot.y), Vector3(0, fh, 0), "concrete")
+		deck(fl, _inset(foot, 0.0), fh + 0.006, 0.012, posts)
 		box(fl, Vector3(foot.x * 0.22, fh, foot.y * 0.22), Vector3(foot.x * 0.12, fh * 0.5, 0), "concrete_wet", Vector3.ZERO, false)
 	for k in range(floors):
 		var show := clampi(int(ceil(float(floors) * maxf(f, 0.05))), 1, floors)
@@ -1201,6 +1295,11 @@ func _scaffold(root: Node3D, foot: Vector2, height: float, roll_net: bool) -> vo
 			box(sc, Vector3(hx * 2.0, 0.006, 0.006), Vector3(0, y, side * hz), "steel", Vector3.ZERO, false)
 			box(sc, Vector3(0.006, 0.006, hz * 2.0), Vector3(side * hx, y, 0), "steel", Vector3.ZERO, false)
 			box(sc, Vector3(hx * 2.0, 0.004, 0.03), Vector3(0, y - 0.003, side * (hz + 0.012)), "timber", Vector3.ZERO, false)
+			var bx := Vector3(side * (hx + 0.012), y - 0.003, 0)
+			box(sc, Vector3(0.03, 0.004, hz * 2.0), bx, "timber", Vector3.ZERO, false)
+			# A crew stands on the boards, all four sides round.
+			deck(sc, Rect2(-hx, side * (hz + 0.012) - 0.015, hx * 2.0, 0.03), y - 0.001, 0.004)
+			deck(sc, Rect2(side * (hx + 0.012) - 0.015, -hz, 0.03, hz * 2.0), y - 0.001, 0.004)
 	# Netting hangs from the top lift and is rolled up as the facade is finished.
 	var net := _group(sc, "Net")
 	net.position.y = top

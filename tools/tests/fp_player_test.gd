@@ -665,7 +665,8 @@ func _check_sites(ctx: FpContext) -> void:
 		if str((sim.sites[i] as Dictionary)["type"]) != "build" or sim.terrain[i] == D.WATER or ctx.view.site_boxes(i).is_empty():
 			continue
 		var c := Vector3(D.tx(i), 0, D.ty(i))
-		var gate := absi(D.tx(i) * 73856093 ^ D.ty(i) * 19349663) % 4
+		var open := ctx.view.site_gate(i)
+		var gate := sides.find(Vector3(open.x, 0, open.y))
 		for k in range(4):
 			var dir: Vector3 = sides[k]
 			var start := c + dir * 0.66

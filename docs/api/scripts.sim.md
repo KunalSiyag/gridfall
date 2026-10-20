@@ -26,6 +26,8 @@ Tile-based SimCity-style simulation: zoning + demand-driven growth, power/water/
 - `site_started(site: Dictionary)`
 - `site_stage(site: Dictionary)`
 - `site_finished(site: Dictionary)`
+- `crew_job_started(job: Dictionary)`: The player's crews (phone orders, apply_player_order): a crew took an order (also when it leaves the queue), and an order is done, or "cancelled" (true) when its sites were cleared.
+- `crew_job_finished(job: Dictionary)`
 - `tick_progress(phase: String, fraction: float)`: Progress of a sliced tick; phase is a stable name ("recompute", "growth", "construction", "incidents", "residents", "commit", "day_end"); fraction 0..1 within the whole tick.
 
 ### Constants
@@ -46,6 +48,7 @@ Tile-based SimCity-style simulation: zoning + demand-driven growth, power/water/
 - `broken_roads: Dictionary`: Road tiles cut by a downed power line: tile -> incident id.
 - `active`: Tiles the per-tick systems process: claimed land plus a small margin. Unclaimed wilds hold no roads or buildings, so skipping them keeps a 192x192 world as cheap as the founding city.
 - `sites: Dictionary`: Open construction sites: tile -> site. "auto" stages construction whenever residents run the city; "staged" / "instant" force it either way.
+- `crew_jobs: Array[Dictionary]`: The player's crew orders, oldest first: {"id", "owner", "label", "x", "y", "tiles" (its site tiles), "work" (the sites' contractor work), "total" and "done" (crew seconds), "crew" (crew index, -1 while it waits for a free crew)}. Their sites carry "job", the order id.
 - `load_remap: Dictionary`: Set by from_dict when the save used an older world layout: {w, h, x0, y0} of that layout, so other systems (residents) can move their saved tile indices across with remap_index.
 
 ### Functions
@@ -103,6 +106,12 @@ Tile-based SimCity-style simulation: zoning + demand-driven growth, power/water/
 - `func site_info(i: int) -> Dictionary`
 - `func site_summary(d: int, max_n: int = 8) -> Array`: Short lines describing a district's open sites, for prompts and the HUD.
 - `func total_funds() -> int`
+- `func apply_player_order(mi: int, a: Dictionary) -> Dictionary`: apply_action for the player's own orders (the phone). The construction sites an order opens go to the player's crews instead of the contractors: D.CREWS crews build one order each in real time (D.crew_seconds) and later orders wait for a free crew. The result then also has "job", the order's entry in crew_jobs.
+- `func advance_crews(seconds: float) -> void`: Moves the player's crews on by seconds of work (real seconds at game speed): their sites go through their stages, finished orders open, and waiting orders get the crews that free up. _process feeds it every frame; skip_to_next_day and tests call it directly.
+- `func crew_job_at(i: int) -> Dictionary`: The crew order building tile i, or {} when tile i is not a crew site.
+- `func crew_schedule() -> Dictionary`: When each crew order starts and is done, in crew seconds from now: {order id: Vector2(starts_in, done_in)}. Waiting orders go to whichever crew frees up first.
+- `func crew_wait() -> float`: Crew seconds until an order placed now would get a crew: 0 while one is free.
+- `func crews_free() -> int`: How many of the player's crews have no order.
 - `func apply_action(mi: int, a: Dictionary) -> Dictionary`: Applies one AI (or player) action for the mayor at index mi. Returns {ok, reason, cost}.
 - `func enact_ordinance(key: String) -> bool`
 - `func repeal_ordinance(key: String) -> bool`
@@ -263,6 +272,11 @@ Static rules, costs, and catalogs for the GridFall city simulation.
 - `SITE_STAGES = { "build": ["clearing", "excavation", "foundation", "frame", "finishing"], "light": ["c...`
 - `STAGE_LABELS = { "clearing": "clearing the land", "excavation": "digging the foundations", "foundation...`
 - `LIGHT_BUILDS = ["solar_farm", "wind_farm", "landfill"]`: Light structures skip the excavation stage.
+- `CREWS = 2`: The player's own building crews, for orders placed from the phone. A crew takes one order at a time and works it in real seconds at game speed; later orders wait for the next free crew.
+- `CREW_MIN_S = 120.0`: A park takes a crew CREW_MIN_S, the airport CREW_MAX_S, other buildings scale with their contractor time in between. Roads and clearing take CREW_TILE_S per tile. No order is quicker than CREW_JOB_MIN_S or slower than CREW_MAX_S.
+- `CREW_MAX_S = 300.0`
+- `CREW_JOB_MIN_S = 45.0`
+- `CREW_TILE_S = {"road": 10.0, "bridge": 24.0, "clear": 30.0, "haul": 45.0}`
 - `R_POP = [0, 16, 48, 120]`
 - `C_JOBS = [0, 10, 30, 72]`
 - `I_JOBS = [0, 14, 40, 90]`
@@ -288,6 +302,9 @@ Static rules, costs, and catalogs for the GridFall city simulation.
 - `static func is_zone(kind: int) -> bool`
 - `static func is_service(kind: int) -> bool`
 - `static func build_ticks(key: String) -> int`: Contractor-only build time in growth ticks (4 per day) for a service building.
+- `static func crew_seconds(plan: String, ticks: int) -> float`: Real seconds one of the player's crews needs for a site of plan that contractors alone would finish in ticks growth ticks.
+- `static func build_plan(key: String) -> String`: The site plan for building key: the park and the light builds go through fewer stages.
+- `static func build_crew_seconds(key: String) -> float`: Crew seconds for one building of type key, from the order to the opening.
 - `static func is_power_plant(kind: int) -> bool`
 - `static func building_key_for_kind(kind: int) -> String`
 - `static func mayor_index(mayor_id: String) -> int`

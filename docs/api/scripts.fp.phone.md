@@ -49,16 +49,18 @@ Read-only previews for the phone Build app. Each one mirrors CitySim's own check
 - `static func owner_of(sim: CitySim, x: int, y: int) -> int`: The mayor index that owns tile (x, y), or -1 for unclaimed land and outside the world.
 - `static func road_path(a: Vector2i, b: Vector2i) -> Array[Vector2i]`: The L-shaped road from a to b that CitySim builds: along x first, then along y.
 - `static func preview(sim: CitySim, tool: String, a: Vector2i, target: Vector2i, building: String) -> Dictionary`: What placing tool at target would do. a is the first corner of a two-point tool (D.NO_TILE before it is set). Returns {"ok", "mi", "tiles" (Array[Vector2i] to draw), "cost", "reason", "action" (the apply_action dict)}; reason says what is wrong when ok is false.
+- `static func crew_seconds(sim: CitySim, tool: String, building: String, p: Dictionary) -> float`: Crew seconds the previewed order p would take one of the player's crews (CitySim.apply_player_order), or -1 when there is no estimate: zoning and bulldozing (what is on the tile decides), a refused order, or instant construction.
 
 ## `scripts/fp/phone/phone_feature.gd`
 
 extends `FpFeature`
 
-The phone and its Build app (integration feature "phone"). B opens a phone that orders roads, zones, buildings and bulldozing on the tile the hero looks at. Each order is placed for the mayor who owns that land and paid from that district's treasury, through CitySim.apply_action, so it follows the same rules (and starts the same construction sites) as the mayors' own orders.
+The phone and its Build app (integration feature "phone"). B opens a phone that orders roads, zones, buildings and bulldozing on the tile the hero looks at. Each order is placed for the mayor who owns that land and paid from that district's treasury, through CitySim.apply_player_order, so it follows the same rules as the mayors' own orders; the construction sites it opens go to the player's crews, which build in real time (the crews feature draws them; with its flag off orders go to the contractors through apply_action). The phone says how many crews are free and how long an order would take.
 
 ### Constants
 
 - `D = preload("res://scripts/sim/sim_defs.gd")`
+- `S = preload("res://scripts/fp/ui/hud_style.gd")`
 - `WS = preload("res://scripts/fp/world_scale.gd")`
 - `RULES = preload("res://scripts/fp/phone/build_rules.gd")`
 - `PHONE = preload("res://scripts/fp/phone/phone_ui.gd")`
@@ -95,7 +97,7 @@ The phone and its Build app (integration feature "phone"). B opens a phone that 
 
 extends `Control`
 
-The Build app's phone: who you build for (the district, its mayor and treasury), the six tools, the building picked for the Build tool, what placing here would do, and the keys. The feature fills it through show_state(); nothing here reads the sim.
+The Build app's phone: who you build for (the district, its mayor and treasury), the six tools, the building picked for the Build tool, what placing here would do, the player's crews, and the keys. The feature fills it through show_state(); nothing here reads the sim.
 
 ### Constants
 
@@ -111,5 +113,5 @@ The Build app's phone: who you build for (the district, its mayor and treasury),
 - `func setup() -> void`
 - `func set_shown(on: bool) -> void`: Slides the phone in (true) or out.
 - `func is_shown() -> bool`
-- `func show_state(st: Dictionary) -> void`: st: {"district", "mayor", "treasury" (int or null), "tool", "building" (label, "" hides), "line", "ok", "hint"}.
+- `func show_state(st: Dictionary) -> void`: st: {"district", "mayor", "treasury" (int or null), "tool", "building" (label, "" hides), "line", "ok", "crews" ("" hides), "hint"}.
 - `func state() -> Dictionary`: The last state shown (tests read it).

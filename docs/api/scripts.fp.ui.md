@@ -448,6 +448,7 @@ Shared look of the on-foot HUD (slice B): colour tokens, fonts with tabular figu
 - `static func fmt(n: int) -> String`: Thousands separators: 1168 -> "1,168", -3222 -> "−3,222" (true minus sign). Restyled CityHud._fmt.
 - `static func money(n: int) -> String`: Compact money: "$950", "$3.2k", "$124k", "$1.2M"; a deficit stays exact so it reads at a glance ("−$3,222", true minus sign) until it passes 100k ("−$124k").
 - `static func distance(units: float) -> String`: Distance in metres from world units: "8 m", "45 m" (5 m steps from 20 m), "1.2 km".
+- `static func countdown(crew_secs: float, speed: int) -> String`: "2:05": crew seconds (sim time) as minutes and seconds of real time at game speed (paused or stepping: as at speed 1).
 - `static func branded(text: String) -> bool`: True when text matches the model-branding regex (the B contract's no-branding check).
 - `static func owned_texts(n: Node, out: PackedStringArray = PackedStringArray()) -> PackedStringArray`: Every Label, RichTextLabel and Button text under n that slice B created (OWNER_META).
 - `static func damp(halflife: float, dt: float) -> float`: Exponential smoothing factor for a halflife in seconds.
