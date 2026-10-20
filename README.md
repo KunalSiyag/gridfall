@@ -34,7 +34,7 @@ Once per in-game day, each mayor gets an ASCII map of its district, district and
 - **Disasters:** 8 types (fire, blackout, sewage burst, gridlock, smog, earthquake, flood, tornado).
 - **Staged construction:** see below.
 - Time speeds: pause, 1x, 2x, 4x, 8x. A day waits for the mayors' GMI calls (up to 75s).
-- Save and load to `user://gridfall_save.json`.
+- Save and load to `user://gridfall_save.json` (atomic write, previous save kept as `.bak`). On foot the game autosaves each morning and on quit, and continues the saved city on launch; `GRIDFALL_NEW_CITY=1` starts fresh.
 
 ## Residents
 
