@@ -1,10 +1,14 @@
 extends FpFeature
 ## The phone and its Build app (integration feature "phone"). B opens a phone that orders roads,
 ## zones, buildings and bulldozing on the tile the hero looks at. Each order is placed for the
-## mayor who owns that land and paid from that district's treasury, through CitySim.apply_action,
-## so it follows the same rules (and starts the same construction sites) as the mayors' own orders.
+## mayor who owns that land and paid from that district's treasury, through
+## CitySim.apply_player_order, so it follows the same rules as the mayors' own orders; the
+## construction sites it opens go to the player's crews, which build in real time (the crews
+## feature draws them; with its flag off orders go to the contractors through apply_action). The
+## phone says how many crews are free and how long an order would take.
 
 const D := preload("res://scripts/sim/sim_defs.gd")
+const S := preload("res://scripts/fp/ui/hud_style.gd")
 const WS := preload("res://scripts/fp/world_scale.gd")
 const RULES := preload("res://scripts/fp/phone/build_rules.gd")
 const PHONE := preload("res://scripts/fp/phone/phone_ui.gd")
@@ -174,7 +178,24 @@ func _state() -> Dictionary:
 		var spec: Dictionary = D.BUILDINGS[building]
 		st["building"] = "‹ %s  %s ›" % [spec["label"], "$" + str(spec["cost"])]
 	st["line"] = _line()
+	st["crews"] = _crews_line()
 	return st
+
+
+## How many of the player's crews are free and, for a road or a building, how long this order
+## would take or when a crew frees up for it. "" while construction is instant.
+func _crews_line() -> String:
+	var sim := ctx.sim
+	if not sim.staged() or not FeatureFlags.enabled("crews"):
+		return ""
+	var free := sim.crews_free()
+	var line := "Crews: %d of %d free" % [free, D.CREWS] if free > 0 else "Crews: all busy"
+	var secs := RULES.crew_seconds(sim, tool, building, preview)
+	if secs < 0.0:
+		return line
+	if free > 0:
+		return "%s · builds in %s" % [line, S.countdown(secs, sim.speed)]
+	return "%s · starts in %s" % [line, S.countdown(sim.crew_wait(), sim.speed)]
 
 
 ## True while a click here would do something: place the order, or set a first corner.
@@ -227,14 +248,32 @@ func place_at(t: Vector2i) -> Dictionary:
 		_toast(str(preview.get("reason", "")), "alert")
 		return {"ok": false, "reason": preview.get("reason", "")}
 	var mi := int(preview["mi"])
-	var res := ctx.sim.apply_action(mi, preview["action"])
+	var a: Dictionary = preview["action"]
+	var crews := FeatureFlags.enabled("crews")
+	var res := ctx.sim.apply_player_order(mi, a) if crews else ctx.sim.apply_action(mi, a)
 	if bool(res.get("ok", false)):
-		_toast("%s: %s" % [D.MAYORS[mi]["district"], _brief(str(res.get("reason", "")))], "success")
+		_toast(_placed(mi, res), "success")
+		if res.has("job"):
+			Analytics.track("crew_order", {"tool": tool, "queued": int(res["job"]["crew"]) < 0})
 	else:
 		_toast(_sentence(str(res.get("reason", ""))), "alert")
 	anchor = D.NO_TILE
 	refresh_at(t)
 	return res
+
+
+## The toast for a placed order: the district and what happened, or for a crew order who builds
+## it and when ("Police Station: crew 1 on it, ready in 2:19").
+func _placed(mi: int, res: Dictionary) -> String:
+	var j: Dictionary = res.get("job", {})
+	if j.is_empty():
+		return "%s: %s" % [D.MAYORS[mi]["district"], _brief(str(res.get("reason", "")))]
+	var when: Vector2 = ctx.sim.crew_schedule().get(int(j["id"]), Vector2.ZERO)
+	var sp := ctx.sim.speed
+	if int(j["crew"]) >= 0:
+		var c := int(j["crew"]) + 1
+		return "%s: crew %d on it, ready in %s" % [j["label"], c, S.countdown(when.y, sp)]
+	return "%s: all crews busy, starts in %s" % [j["label"], S.countdown(when.x, sp)]
 
 
 ## Drops the first corner, or closes the phone when there is none.

@@ -5,6 +5,8 @@ extends Node3D
 ## the lifecycle: setup -> on_world_rebuilt (after every view.setup) -> to_dict/from_dict -> teardown.
 
 var ctx: FpContext
+## [Signal, Callable] pairs connected through link_signal(), for unlink_signals().
+var _signal_links: Array[Array] = []
 
 
 ## Stable id; also the key in ctx.features and in save["fp"]. Override.
@@ -55,3 +57,20 @@ func self_test() -> Dictionary:
 ## the shot is placed and after it is saved, for example forcing rain and clearing it again.
 func photo_shots() -> Array:
 	return []
+
+
+## Connects c to sig (once) and remembers the pair for unlink_signals().
+func link_signal(sig: Signal, c: Callable) -> void:
+	if not sig.is_connected(c):
+		sig.connect(c)
+	_signal_links.append([sig, c])
+
+
+## Disconnects every pair link_signal() connected whose source is still alive. Call from teardown.
+func unlink_signals() -> void:
+	for l: Array in _signal_links:
+		var sig: Signal = l[0]
+		var src := sig.get_object()
+		if src != null and is_instance_valid(src) and sig.is_connected(l[1]):
+			sig.disconnect(l[1])
+	_signal_links.clear()

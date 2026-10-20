@@ -124,6 +124,16 @@ const STAGE_LABELS := {
 }
 ## Light structures skip the excavation stage.
 const LIGHT_BUILDS := ["solar_farm", "wind_farm", "landfill"]
+## The player's own building crews, for orders placed from the phone. A crew takes one order at a
+## time and works it in real seconds at game speed; later orders wait for the next free crew.
+const CREWS := 2
+## A park takes a crew CREW_MIN_S, the airport CREW_MAX_S, other buildings scale with their
+## contractor time in between. Roads and clearing take CREW_TILE_S per tile. No order is quicker
+## than CREW_JOB_MIN_S or slower than CREW_MAX_S.
+const CREW_MIN_S := 120.0
+const CREW_MAX_S := 300.0
+const CREW_JOB_MIN_S := 45.0
+const CREW_TILE_S := {"road": 10.0, "bridge": 24.0, "clear": 30.0, "haul": 45.0}
 
 # Capacity per density level (index = level 0..3)
 const R_POP := [0, 16, 48, 120]
@@ -258,6 +268,32 @@ static func build_ticks(key: String) -> int:
 		return 4
 	# A police station takes ~3 days, a stadium ~12 and the airport ~15.
 	return clampi(4 + int(BUILDINGS[key]["cost"]) / 90, 10, 60)
+
+
+## Real seconds one of the player's crews needs for a site of plan that contractors alone would
+## finish in ticks growth ticks.
+static func crew_seconds(plan: String, ticks: int) -> float:
+	match plan:
+		"build", "light", "park":
+			# build_ticks runs from 4 (park) to 60 (airport).
+			return lerpf(CREW_MIN_S, CREW_MAX_S, clampf(float(ticks - 4) / 56.0, 0.0, 1.0))
+		"demolish":
+			return 40.0 + 6.0 * float(ticks)
+	return float(CREW_TILE_S.get(plan, CREW_JOB_MIN_S))
+
+
+## The site plan for building key: the park and the light builds go through fewer stages.
+static func build_plan(key: String) -> String:
+	if key == "park":
+		return "park"
+	return "light" if LIGHT_BUILDS.has(key) else "build"
+
+
+## Crew seconds for one building of type key, from the order to the opening.
+static func build_crew_seconds(key: String) -> float:
+	var plan := build_plan(key)
+	var ticks := maxi(build_ticks(key), (SITE_STAGES[plan] as Array).size())
+	return clampf(crew_seconds(plan, ticks), CREW_JOB_MIN_S, CREW_MAX_S)
 
 
 static func is_power_plant(kind: int) -> bool:

@@ -146,6 +146,8 @@ A first-person feature module owned by one slice. FpMode instantiates it from th
 - `func pick(_origin: Vector3, _dir: Vector3, _max_dist: float) -> Dictionary`: Interaction pick along a ray (A's interact queries every feature). Return a target dict (§9) or {} when this feature owns nothing on the ray within max_dist.
 - `func self_test() -> Dictionary`: Called by the FP smoke after the world is up. {"ok": bool, "detail": String}.
 - `func photo_shots() -> Array`: Extra named eye-level shots for the FP photo tour: [{"name": String, "pos": Vector3 (feet), "yaw": float deg, "pitch": float deg, "hour": float, "prepare": String (optional), "restore": String (optional)}]. "prepare" / "restore" name methods on this feature that the tour calls (no arguments) before the shot is placed and after it is saved, for example forcing rain and clearing it again.
+- `func link_signal(sig: Signal, c: Callable) -> void`: Connects c to sig (once) and remembers the pair for unlink_signals().
+- `func unlink_signals() -> void`: Disconnects every pair link_signal() connected whose source is still alive. Call from teardown.
 
 ## `scripts/fp/fp_features.gd`
 

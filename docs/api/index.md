@@ -58,6 +58,15 @@ Generated from the `##` doc comments in `scripts/`. Regenerate with `python3 too
 - [chat_text.gd](scripts.fp.chat.md#scriptsfpchatchat_textgd): Text helpers for the global chat and conversations (slice C): the display filter every line passes before it is shown or put into a prompt, dedupe normalisation, the checks the reply validators use (URLs, model names, sentence count), trimming, relative times and initials
 - [talk_dialog.gd](scripts.fp.chat.md#scriptsfpchattalk_dialoggd): Face-to-face conversation with a resident (slice C §4), and the "Ask someone here" answer
 
+## [scripts/fp/crews/](scripts.fp.crews.md)
+
+- [crew_bodies.gd](scripts.fp.crews.md#scriptsfpcrewscrew_bodiesgd): The building crews' bodies: HC's trades avatars (roster group "trades"), each under a CharacterRoot scaled to a jittered stature and animated by its gender's clip library with the root motion pulled out, so a clip plays in place and the crew rig moves the worker
+- [crew_card.gd](scripts.fp.crews.md#scriptsfpcrewscrew_cardgd): The player's crews on the HUD (feature "crews"), top left under the top bar: how many crews are free, a row per order a crew is on (the crew, the order, the time left, what the crew does now, a progress bar and how far away the site is) and the orders still waiting for a crew
+- [crew_grid.gd](scripts.fp.crews.md#scriptsfpcrewscrew_gridgd): The places a crew can stand and walk on one construction site (feature "crews")
+- [crew_rig.gd](scripts.fp.crews.md#scriptsfpcrewscrew_riggd): One crew at work on its site (feature "crews"): a foreman beside the gate keeping an eye on things, two builders at the spots nearest the middle and a hauler carrying crates from a pile inside the gate to a drop point by the builders, under a board that names the crew, the order, the stage and the time left
+- [crew_spots.gd](scripts.fp.crews.md#scriptsfpcrewscrew_spotsgd): Where a crew works on a construction site, from the site's CrewGrid: the door just inside the gap ConstructionKit leaves in the hoarding toward the frontage road (a waypoint), the foreman's spot to one side of it and a pile to the other, work spots nearest the middle of the site (a little toward the gate) that the door reaches, a drop point by the first work spot with the hauler's way there and back, and the point outside the gate an arriving crew comes from
+- [crews_feature.gd](scripts.fp.crews.md#scriptsfpcrewscrews_featuregd): The player's building crews (integration feature "crews")
+
 ## [scripts/fp/drive/](scripts.fp.drive.md)
 
 - [drive_feature.gd](scripts.fp.drive.md#scriptsfpdrivedrive_featuregd): Getting into cars and driving them
@@ -77,7 +86,7 @@ Generated from the `##` doc comments in `scripts/`. Regenerate with `python3 too
 - [build_ghost.gd](scripts.fp.phone.md#scriptsfpphonebuild_ghostgd): The Build app's marker in the world: on every tile the order would touch, a glowing floor slab and a faint column that reads from down the street, cyan when it can be placed and amber when not, and a ring on the first corner of a road or zone
 - [build_rules.gd](scripts.fp.phone.md#scriptsfpphonebuild_rulesgd): Read-only previews for the phone Build app
 - [phone_feature.gd](scripts.fp.phone.md#scriptsfpphonephone_featuregd): The phone and its Build app (integration feature "phone")
-- [phone_ui.gd](scripts.fp.phone.md#scriptsfpphonephone_uigd): The Build app's phone: who you build for (the district, its mayor and treasury), the six tools, the building picked for the Build tool, what placing here would do, and the keys
+- [phone_ui.gd](scripts.fp.phone.md#scriptsfpphonephone_uigd): The Build app's phone: who you build for (the district, its mayor and treasury), the six tools, the building picked for the Build tool, what placing here would do, the player's crews, and the keys
 
 ## [scripts/fp/player/](scripts.fp.player.md)
 

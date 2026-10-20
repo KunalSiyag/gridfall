@@ -18,6 +18,10 @@ signal incident_progress(ev: Dictionary)
 signal site_started(site: Dictionary)
 signal site_stage(site: Dictionary)
 signal site_finished(site: Dictionary)
+## The player's crews (phone orders, apply_player_order): a crew took an order (also when it
+## leaves the queue), and an order is done, or "cancelled" (true) when its sites were cleared.
+signal crew_job_started(job: Dictionary)
+signal crew_job_finished(job: Dictionary)
 ## Progress of a sliced tick; phase is a stable name ("recompute", "growth", "construction",
 ## "incidents", "residents", "commit", "day_end"); fraction 0..1 within the whole tick.
 signal tick_progress(phase: String, fraction: float)
@@ -117,6 +121,16 @@ var active := PackedInt32Array()
 var sites: Dictionary = {}
 var construction_mode: String = "auto"
 var _site_seq: int = 0
+## The player's crew orders, oldest first: {"id", "owner", "label", "x", "y", "tiles" (its site
+## tiles), "work" (the sites' contractor work), "total" and "done" (crew seconds), "crew" (crew
+## index, -1 while it waits for a free crew)}. Their sites carry "job", the order id.
+var crew_jobs: Array[Dictionary] = []
+var _crew_seq: int = 0
+## Crew seconds that came in while a sliced tick or spread work ran, applied once it is done.
+var _crew_pending: float = 0.0
+## Set while apply_player_order places an order; the sites it opens are collected here.
+var _ordering: bool = false
+var _order_sites: Array[Dictionary] = []
 ## Surveyed plots (Vector2i -> true), rebuilt with the active area.
 var _surveyed: Dictionary = {}
 ## Set by from_dict when the save used an older world layout: {w, h, x0, y0} of that layout,
@@ -192,6 +206,9 @@ func new_city(seed_value: int) -> void:
 	cov_transit = _floats(n)
 	sites.clear()
 	_site_seq = 0
+	crew_jobs.clear()
+	_crew_seq = 0
+	_crew_pending = 0.0
 	day = 1
 	tick_in_day = 0
 	_time_accum = 0.0
@@ -452,6 +469,8 @@ func set_speed(s: int) -> void:
 func _process(delta: float) -> void:
 	if kind.is_empty():
 		return
+	if speed > 0 and not crew_jobs.is_empty():
+		_crew_frame(delta * float(speed))
 	if sliced:
 		_process_sliced(delta)
 		return
@@ -530,9 +549,14 @@ func skip_to_next_day() -> bool:
 		_time_accum = 0.0
 		return not waiting_for_ai
 	var n := D.GROWTH_TICKS_PER_DAY - tick_in_day
+	# The crews work through the skipped time too, a tick's worth before each growth tick.
+	var crew_s := maxf(tick_seconds() - _time_accum, 0.0) + _crew_pending
+	_crew_pending = 0.0
 	for _k in range(n):
 		if waiting_for_ai:
 			break
+		advance_crews(crew_s)
+		crew_s = tick_seconds()
 		step_tick()
 	_time_accum = 0.0
 	return not waiting_for_ai
@@ -2163,6 +2187,11 @@ func _start_site(i: int, type: String, mi: int, target_kind: int, target_level: 
 		"stages": stages, "stage": 0, "progress": 0.0, "stage_work": float(maxi(ticks, 1)) * D.CREW_RATE / float(stages.size()),
 		"crew": {}, "label": label, "start_tick": global_tick(), "rate": D.CREW_RATE, "tick_work": D.CREW_RATE,
 	}
+	if _ordering:
+		# A player's order: its crew job takes this id once the order is placed.
+		s["job"] = _crew_seq + 1
+		s["rate"] = 0.0
+		_order_sites.append(s)
 	sites[i] = s
 	if type != "zone":
 		_kind_set(i, D.SITE)
@@ -2195,6 +2224,9 @@ func add_site_work(i: int, amount: float, who: String) -> bool:
 		s["helper_work"] = used + amount
 	if amount <= 0.0:
 		return false
+	if int(s.get("job", 0)) > 0:
+		_help_crew(s, amount, who)
+		return false
 	s["progress"] = float(s["progress"]) + amount
 	s["tick_work"] = float(s.get("tick_work", 0.0)) + amount
 	var crew: Dictionary = s["crew"]
@@ -2217,7 +2249,8 @@ func _finish_site(s: Dictionary) -> void:
 	level[i] = int(s["target_level"])
 	burning[i] = 0
 	_mark(i)
-	if str(s["type"]) == "build" or str(s["plan"]) == "zone_tower" or str(s["plan"]) == "bridge":
+	var logged := str(s["type"]) == "build" or str(s["plan"]) in ["zone_tower", "bridge"]
+	if logged and not s.has("job"):
 		_log("%s at (%d,%d) is finished after %d ticks. Built by: %s." % [s["label"], int(s["x"]), int(s["y"]), global_tick() - int(s["start_tick"]), ", ".join(PackedStringArray(crew_names(s, 5)))], "build")
 	site_finished.emit(s)
 
@@ -2272,6 +2305,10 @@ func _task_construction(t: Dictionary) -> bool:
 		s["rate"] = float(s.get("tick_work", D.CREW_RATE))
 		s["tick_work"] = 0.0
 		s["helper_work"] = 0.0
+		if int(s.get("job", 0)) > 0:
+			# The player's crews move it on every frame (advance_crews), not per tick.
+			s["rate"] = 0.0
+			continue
 		if burning[i] > 0 or disabled_until.has(i):
 			s["rate"] = 0.0
 			continue
@@ -2288,6 +2325,10 @@ func finish_all_sites() -> void:
 			_finish_site(s)
 		else:
 			sites.erase(i)
+	var done := crew_jobs.duplicate()
+	crew_jobs.clear()
+	for j: Dictionary in done:
+		crew_job_finished.emit(j)
 	_recompute_deferred()
 	_flush_changes(true)
 
@@ -2493,6 +2534,260 @@ func total_funds() -> int:
 	return t
 
 
+# ---------------------------------------------------------------- player crews
+
+## apply_action for the player's own orders (the phone). The construction sites an order opens go
+## to the player's crews instead of the contractors: D.CREWS crews build one order each in real
+## time (D.crew_seconds) and later orders wait for a free crew. The result then also has "job",
+## the order's entry in crew_jobs.
+func apply_player_order(mi: int, a: Dictionary) -> Dictionary:
+	_external_entry()
+	_ordering = true
+	_order_sites.clear()
+	var res := apply_action(mi, a)
+	_ordering = false
+	if not _order_sites.is_empty():
+		res["job"] = _open_crew_job(mi, _order_sites)
+	_order_sites.clear()
+	return res
+
+
+func _open_crew_job(mi: int, order: Array[Dictionary]) -> Dictionary:
+	_crew_seq += 1
+	var first: Dictionary = order[0]
+	var tiles: Array = []
+	var secs := 0.0
+	var work := 0.0
+	for s: Dictionary in order:
+		var w := float(s["stage_work"]) * float((s["stages"] as Array).size())
+		secs += D.crew_seconds(str(s["plan"]), roundi(w / D.CREW_RATE))
+		work += w
+		tiles.append(int(s["i"]))
+	var label := str(first["label"])
+	if order.size() > 1:
+		label = "%s, %d tiles" % [label, order.size()]
+	var j := {
+		"id": _crew_seq, "owner": mi, "label": label, "x": int(first["x"]), "y": int(first["y"]),
+		"tiles": tiles, "work": work, "done": 0.0, "crew": -1,
+		"total": clampf(secs, D.CREW_JOB_MIN_S, D.CREW_MAX_S),
+	}
+	crew_jobs.append(j)
+	_assign_crews()
+	return j
+
+
+## Moves the player's crews on by seconds of work (real seconds at game speed): their sites go
+## through their stages, finished orders open, and waiting orders get the crews that free up.
+## _process feeds it every frame; skip_to_next_day and tests call it directly.
+func advance_crews(seconds: float) -> void:
+	_external_entry()
+	if crew_jobs.is_empty():
+		return
+	var left := maxf(seconds, 0.0)
+	var opened := _settle_crews()
+	# From one finish to the next, so a crew that finishes takes the next order in line with the
+	# rest of the time.
+	for _guard in range(2 * crew_jobs.size() + 2):
+		var nxt := _crew_next_finish()
+		var step := minf(left, nxt)
+		for j: Dictionary in crew_jobs:
+			if int(j["crew"]) >= 0:
+				j["done"] = float(j["done"]) + step
+		left -= step
+		if step < nxt:
+			break
+		opened = _settle_crews() or opened
+	for j: Dictionary in crew_jobs:
+		if int(j["crew"]) >= 0:
+			_crew_progress(j)
+	if opened:
+		_recompute_deferred()
+	if opened or not _changed.is_empty():
+		_flush_changes(true)
+
+
+## Crew time from _process. Sites change only between sliced ticks and spread work, so time that
+## comes in during either waits in _crew_pending.
+func _crew_frame(seconds: float) -> void:
+	_crew_pending += seconds
+	if _job.is_empty() and not _stepping and not _pumping and not _spread_pending():
+		var s := _crew_pending
+		_crew_pending = 0.0
+		advance_crews(s)
+
+
+## Drops orders whose sites are gone, opens the finished ones and gives free crews the oldest
+## waiting orders. Returns true when an order finished.
+func _settle_crews() -> bool:
+	var finished := false
+	var k := 0
+	while k < crew_jobs.size():
+		var j: Dictionary = crew_jobs[k]
+		if _crew_sites_left(j) == 0:
+			crew_jobs.remove_at(k)
+			j["cancelled"] = true
+			crew_job_finished.emit(j)
+		elif int(j["crew"]) >= 0 and float(j["done"]) >= float(j["total"]):
+			crew_jobs.remove_at(k)
+			_finish_crew_job(j)
+			finished = true
+		else:
+			k += 1
+	_assign_crews()
+	return finished
+
+
+## Keeps the tiles of order j whose site is still that order's; returns how many are left.
+func _crew_sites_left(j: Dictionary) -> int:
+	var keep: Array = []
+	for i: int in j["tiles"]:
+		if sites.has(i) and int((sites[i] as Dictionary).get("job", 0)) == int(j["id"]):
+			keep.append(i)
+	j["tiles"] = keep
+	return keep.size()
+
+
+func _finish_crew_job(j: Dictionary) -> void:
+	for i: int in j["tiles"]:
+		var s: Dictionary = sites[i]
+		if _site_valid(s):
+			_finish_site(s)
+		else:
+			sites.erase(i)
+			_mark(i)
+	var at := [j["label"], int(j["x"]), int(j["y"]), int(j["crew"]) + 1]
+	_log("%s at (%d,%d) is finished, built by the player's crew %d." % at, "build")
+	crew_job_finished.emit(j)
+
+
+## Gives free crews the oldest waiting orders.
+func _assign_crews() -> void:
+	var free: Array = range(D.CREWS)
+	for j: Dictionary in crew_jobs:
+		free.erase(int(j["crew"]))
+	for j: Dictionary in crew_jobs:
+		if free.is_empty():
+			return
+		if int(j["crew"]) < 0:
+			j["crew"] = int(free.pop_front())
+			crew_job_started.emit(j)
+
+
+func _crew_next_finish() -> float:
+	var nxt := INF
+	for j: Dictionary in crew_jobs:
+		if int(j["crew"]) >= 0:
+			nxt = minf(nxt, maxf(float(j["total"]) - float(j["done"]), 0.0))
+	return nxt
+
+
+## Puts each site of a working order at the order's share of its crew time.
+func _crew_progress(j: Dictionary) -> void:
+	var f := clampf(float(j["done"]) / maxf(float(j["total"]), 0.01), 0.0, 1.0)
+	for i: int in j["tiles"]:
+		var s: Dictionary = sites[i]
+		var n := (s["stages"] as Array).size()
+		var stage := mini(int(f * float(n)), n - 1)
+		s["progress"] = (f * float(n) - float(stage)) * float(s["stage_work"])
+		if stage != int(s["stage"]):
+			s["stage"] = stage
+			_mark(i)
+			site_stage.emit(s)
+
+
+## A resident's shift on a crew site moves the whole order on by the same share of its work.
+func _help_crew(s: Dictionary, amount: float, who: String) -> void:
+	var j := crew_job_at(int(s["i"]))
+	if j.is_empty() or int(j["crew"]) < 0:
+		return
+	var share := amount / maxf(float(j["work"]), 1.0)
+	j["done"] = minf(float(j["done"]) + share * float(j["total"]), float(j["total"]))
+	var crew: Dictionary = s["crew"]
+	crew[who] = float(crew.get(who, 0.0)) + amount
+
+
+## The crew order building tile i, or {} when tile i is not a crew site.
+func crew_job_at(i: int) -> Dictionary:
+	if not sites.has(i):
+		return {}
+	var id := int((sites[i] as Dictionary).get("job", 0))
+	for j: Dictionary in crew_jobs:
+		if int(j["id"]) == id:
+			return j
+	return {}
+
+
+## When each crew order starts and is done, in crew seconds from now: {order id:
+## Vector2(starts_in, done_in)}. Waiting orders go to whichever crew frees up first.
+func crew_schedule() -> Dictionary:
+	var out := {}
+	_crew_plan(out)
+	return out
+
+
+## Crew seconds until an order placed now would get a crew: 0 while one is free.
+func crew_wait() -> float:
+	var free_at := _crew_plan({})
+	var wait := INF
+	for t: float in free_at:
+		wait = minf(wait, t)
+	return wait
+
+
+## Fills out like crew_schedule(); returns when each crew is free again, in crew seconds.
+func _crew_plan(out: Dictionary) -> Array[float]:
+	var free_at: Array[float] = []
+	free_at.resize(D.CREWS)
+	free_at.fill(0.0)
+	for j: Dictionary in crew_jobs:
+		var c := int(j["crew"])
+		if c >= 0:
+			free_at[c] = maxf(float(j["total"]) - float(j["done"]), 0.0)
+			out[int(j["id"])] = Vector2(0.0, free_at[c])
+	for j: Dictionary in crew_jobs:
+		if int(j["crew"]) < 0:
+			var c := 0
+			for k in range(1, D.CREWS):
+				if free_at[k] < free_at[c]:
+					c = k
+			out[int(j["id"])] = Vector2(free_at[c], free_at[c] + float(j["total"]))
+			free_at[c] += float(j["total"])
+	return free_at
+
+
+## How many of the player's crews have no order.
+func crews_free() -> int:
+	var busy := 0
+	for j: Dictionary in crew_jobs:
+		busy += 1 if int(j["crew"]) >= 0 else 0
+	return maxi(D.CREWS - busy, 0)
+
+
+## Restores saved crew orders onto the loaded sites; a crew index that is out of range or taken
+## twice waits for a free crew again.
+func _load_crew_jobs(saved: Array, seq: int) -> void:
+	crew_jobs.clear()
+	var taken: Dictionary = {}
+	for v: Variant in saved:
+		var j: Dictionary = (v as Dictionary).duplicate(true)
+		for key: String in ["id", "owner", "x", "y", "crew"]:
+			j[key] = int(j.get(key, -1))
+		for key: String in ["work", "total", "done"]:
+			j[key] = float(j.get(key, 0.0))
+		var tiles: Array = []
+		for s: Dictionary in sites.values():
+			if int(s.get("job", 0)) == int(j["id"]):
+				tiles.append(int(s["i"]))
+		j["tiles"] = tiles
+		var c := int(j["crew"])
+		if c >= D.CREWS or taken.has(c):
+			j["crew"] = -1
+		elif c >= 0:
+			taken[c] = true
+		if not tiles.is_empty():
+			crew_jobs.append(j)
+	_crew_seq = maxi(seq, crew_jobs.size())
+
 # ---------------------------------------------------------------- mayor actions
 
 ## Applies one AI (or player) action for the mayor at index mi. Returns {ok, reason, cost}.
@@ -2648,7 +2943,7 @@ func _act_build(mi: int, a: Dictionary) -> Dictionary:
 	_spend(mi, cost)
 	var moved := "" if spot == Vector2i(x, y) else " (moved to %d,%d)" % [spot.x, spot.y]
 	if staged():
-		var plan := "park" if key == "park" else ("light" if D.LIGHT_BUILDS.has(key) else "build")
+		var plan := D.build_plan(key)
 		var ticks := maxi(D.build_ticks(key), (D.SITE_STAGES[plan] as Array).size())
 		_start_site(i, "build", mi, int(spec["kind"]), 1, plan, ticks, str(spec["label"]))
 		_log("%s broke ground on a %s at (%d,%d)." % [mayors[mi]["name"], spec["label"], spot.x, spot.y], "build")
@@ -3278,6 +3573,7 @@ func to_dict() -> Dictionary:
 		"disabled_until": disabled_until.duplicate(), "grid_priority": grid_priority.duplicate(), "broken_roads": broken_roads.duplicate(),
 		"history": history.duplicate(true), "log": log_lines.duplicate(), "event_seq": _event_seq,
 		"sites": sites.values().duplicate(true), "site_seq": _site_seq,
+		"crew_jobs": crew_jobs.duplicate(true), "crew_seq": _crew_seq,
 	}
 
 
@@ -3345,8 +3641,20 @@ func from_dict(data: Dictionary) -> bool:
 	for l in data.get("log", []):
 		log_lines.append(str(l))
 	_event_seq = int(data.get("event_seq", 0))
+	_load_sites(data.get("sites", []))
+	_site_seq = int(data.get("site_seq", sites.size()))
+	_load_crew_jobs(data.get("crew_jobs", []), int(data.get("crew_seq", 0)))
+	for i in range(n):
+		if kind[i] == D.SITE and not sites.has(i):
+			kind[i] = D.EMPTY
+	_recompute_all()
+	_flush_changes(true)
+	return true
+
+
+func _load_sites(saved: Array) -> void:
 	sites.clear()
-	for v: Variant in data.get("sites", []):
+	for v: Variant in saved:
 		var s: Dictionary = (v as Dictionary).duplicate(true)
 		for key in ["id", "i", "x", "y", "owner", "from_kind", "from_level", "target_kind", "target_level", "stage", "start_tick"]:
 			s[key] = int(s.get(key, 0))
@@ -3355,14 +3663,10 @@ func from_dict(data: Dictionary) -> bool:
 		s["stage_work"] = float(s.get("stage_work", D.CREW_RATE))
 		s["rate"] = float(s.get("rate", D.CREW_RATE))
 		s["tick_work"] = float(s.get("tick_work", D.CREW_RATE))
+		if s.has("job"):
+			s["job"] = int(s["job"])
+			s["rate"] = 0.0
 		sites[int(s["i"])] = s
-	_site_seq = int(data.get("site_seq", sites.size()))
-	for i in range(n):
-		if kind[i] == D.SITE and not sites.has(i):
-			kind[i] = D.EMPTY
-	_recompute_all()
-	_flush_changes(true)
-	return true
 
 
 ## Copies a saved per-tile array from the load_remap layout onto base (the current world).

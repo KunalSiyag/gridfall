@@ -208,3 +208,20 @@ static func _bulldoze(sim: CitySim, _mi: int, t: Vector2i, out: Dictionary) -> v
 	out["ok"] = true
 	out["cost"] = D.BULLDOZE_COST
 	out["action"] = {"type": "bulldoze", "x": t.x, "y": t.y}
+
+
+## Crew seconds the previewed order p would take one of the player's crews
+## (CitySim.apply_player_order), or -1 when there is no estimate: zoning and bulldozing (what is
+## on the tile decides), a refused order, or instant construction.
+static func crew_seconds(sim: CitySim, tool: String, building: String, p: Dictionary) -> float:
+	if not sim.staged() or not bool(p.get("ok", false)):
+		return -1.0
+	if tool == "build":
+		return D.build_crew_seconds(building)
+	if tool != "road":
+		return -1.0
+	var secs := 0.0
+	for t: Vector2i in p["tiles"]:
+		var wet := sim.terrain[D.idx(t.x, t.y)] == D.WATER
+		secs += float(D.CREW_TILE_S["bridge" if wet else "road"])
+	return clampf(secs, D.CREW_JOB_MIN_S, D.CREW_MAX_S)

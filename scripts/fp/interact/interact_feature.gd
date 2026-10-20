@@ -275,7 +275,18 @@ func _building_target(i: int, hit_pos: Vector3) -> Dictionary:
 		if not site.is_empty():
 			var planned := ctx.directory.planned_name(i, int(site.get("target_kind", -1)), int(site.get("target_level", 0)))
 			label = ("%s (under construction)" % planned) if not planned.is_empty() else "Construction site"
+			var job := ctx.sim.crew_job_at(i)
+			if not job.is_empty():
+				var what := planned if not planned.is_empty() else "Construction site"
+				label = "%s (%s)" % [what, _crew_note(job)]
 	return {"kind": "building", "id": str(i), "tile": i, "pos": hit_pos, "dist": 0.0, "label": label, "data": {}}
+
+
+## Who builds a player's order: "your crew 1 is on it", or "waiting for a free crew". No clock:
+## the label only refreshes when the target changes (the site's board counts down).
+func _crew_note(job: Dictionary) -> String:
+	var c := int(job.get("crew", -1))
+	return "your crew %d is on it" % (c + 1) if c >= 0 else "waiting for a free crew"
 
 
 ## Named residents on foot near the ray when no traffic feature draws them: one pass over

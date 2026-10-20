@@ -334,6 +334,13 @@ static func distance(units: float) -> String:
 	return "%d m" % int(round(m / 5.0) * 5.0) if m >= 20.0 else "%d m" % int(round(m))
 
 
+## "2:05": crew seconds (sim time) as minutes and seconds of real time at game speed (paused
+## or stepping: as at speed 1).
+static func countdown(crew_secs: float, speed: int) -> String:
+	var s := maxi(ceili(maxf(crew_secs, 0.0) / float(maxi(speed, 1))), 0)
+	return "%d:%02d" % [floori(s / 60.0), s % 60]
+
+
 ## True when text matches the model-branding regex (the B contract's no-branding check).
 static func branded(text: String) -> bool:
 	var re := RegEx.create_from_string(BRAND_RE)
