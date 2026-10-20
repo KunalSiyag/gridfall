@@ -366,20 +366,7 @@ func step(dt: float) -> void:
 func _maintain(sync: bool) -> void:
 	var p := ctx.player_position()
 	var r := WS.TRAFFIC_RADIUS
-	for c: VH.Car in vehicles.cars.duplicate():
-		if c.role == VH.PLAYER:
-			if not c.driven and not c.dead:
-				_drop_left(c, p, r)
-			continue
-		if c.parked or c.dead or c.role == "ambient" or c.role == "decor":
-			continue
-		var d := Vector2(c.pos.x - p.x, c.pos.z - p.z).length()
-		if not c.far and d > r + 0.5 and not on_screen(c.pos):
-			vehicles.make_far(c)
-		elif c.far and d < r - 0.5:
-			vehicles.make_near(c)
-		if c.stuck and not on_screen(c.pos):
-			_drop_stuck(c)
+	_maintain_cars(p, r)
 	for w: WK.Walker in walkers.walkers:
 		if w.role == "resident":
 			w.far = Vector2(w.pos.x - p.x, w.pos.z - p.z).length() > r
@@ -405,6 +392,24 @@ func _maintain(sync: bool) -> void:
 		fleets.rebuild_lines(ctx.view)
 		fleets.backoff = LINE_RETRY if not fleets.stale() else minf(fleets.backoff * 2.0, LINE_RETRY * 16.0)
 		fleets.retry_t = fleets.backoff
+
+
+## Near/far switching for lane cars around p, stuck cars and the cars the player left.
+func _maintain_cars(p: Vector3, r: float) -> void:
+	for c: VH.Car in vehicles.cars.duplicate():
+		if c.role == VH.PLAYER:
+			if not c.driven and not c.dead:
+				_drop_left(c, p, r)
+			continue
+		if c.parked or c.dead or c.role == "ambient" or c.role == "decor":
+			continue
+		var d := Vector2(c.pos.x - p.x, c.pos.z - p.z).length()
+		if not c.far and d > r + 0.5 and not on_screen(c.pos):
+			vehicles.make_far(c)
+		elif c.far and d < r - 0.5:
+			vehicles.make_near(c)
+		if c.stuck and not on_screen(c.pos):
+			_drop_stuck(c)
 
 
 ## A car the player left goes once it is out of the traffic radius and out of sight.
