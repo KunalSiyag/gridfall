@@ -94,6 +94,7 @@ class Car extends RefCounted:
 	var lod: int = -1
 	var wheel_spin: float = 0.0
 	var driven: bool = false        # the player is driving it (role "player": posed from outside)
+	var door: float = 0.0           # its driver's door: 0 shut .. 1 open (the player's cars)
 	var dead: bool = false
 	var arrived: bool = false
 	var stuck: bool = false         # its lane vanished in view: frozen until out of sight

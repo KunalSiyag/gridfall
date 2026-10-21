@@ -23,6 +23,7 @@ const PPL := preload("res://scripts/fp/traffic/people.gd")
 const CS := preload("res://scripts/fp/traffic/contact_shadows.gd")
 const OCC := preload("res://scripts/fp/traffic/occupants.gd")
 const SHOVES := preload("res://scripts/fp/traffic/shoves.gd")
+const DOORS := preload("res://scripts/fp/traffic/car_doors.gd")
 const MAX_STEP := 1.0 / 30.0
 const CAR_PREFIXES := ["sedan", "hatch", "suv", "taxi", "van", "pickup", "coupe"]
 ## A jump of the player beyond this in one frame is a teleport: the street is refilled around them.
@@ -1253,11 +1254,13 @@ func drive_car(pos: Vector3, yaw: float, v: float, a: float) -> void:
 		c.node.transform = vehicles.draw_xform(c) * render.model(c.model).offset
 
 
-## The player gets out: the car stays where it stands until it is far away and out of sight.
+## The player gets out: the car stays where it stands (its door shut) until it is far away and
+## out of sight.
 func leave_car() -> void:
 	if _driven == null:
 		return
 	_driven.driven = false
+	_driven.door = 0.0
 	_driven.v = 0.0
 	_driven.a = 0.0
 	_driven.vel = Vector3.ZERO
@@ -1278,6 +1281,32 @@ func seat_offset() -> Variant:
 	if s == null:
 		return null
 	return render.model(_driven.model).offset * (s as Vector3)
+
+
+## The driver's door of car id (the car the player drives when id < 0), in the car's frame (+Z
+## forward, +X its left and the driver's side, y up from the ground; world units): {"hinge",
+## "handle", "seat" (the hip point), "rear" (the rear edge at the belt line), "open_rear" (that
+## edge with the door wide open)}, or {} when its model has no door that opens (car_doors.gd).
+func door_info(id: int = -1) -> Dictionary:
+	var c: VH.Car = _driven if id < 0 else vehicles.by_id.get(id)
+	var m: RD.Model = render.model(c.model) if c != null and c.model >= 0 else null
+	if m == null or m.scene == null:
+		return {}
+	var d: DOORS.Door = DOORS.of(m.key, m.scene)
+	if not d.ok:
+		return {}
+	var out := {}
+	var pts := DOORS.points(d)
+	for k: String in pts:
+		out[k] = m.offset * (pts[k] as Vector3)
+	return out
+
+
+## Opens the driver's door of the car the player drives by amount (0 shut .. 1 open); drawn on its
+## full model.
+func set_door(amount: float) -> void:
+	if _driven != null:
+		_driven.door = clampf(amount, 0.0, 1.0)
 
 
 func _claimable(c: VH.Car) -> bool:

@@ -45,6 +45,51 @@ Ambient filler (docs/fp/slices/E-traffic.md §6): unnamed commuters and pedestri
 - `func maintain(p: Vector3, fwd: Vector3, sync: bool) -> void`: Removes ambient agents beyond the radius (out of sight) and tops up toward the targets. sync: fill completely now (first fill or after a teleport), anywhere out of the camera's view.
 - `func fill_parking() -> int`: Fills curb slots with parked cars, deterministically per slot (bulk: one lane rebuild after). Returns how many were parked.
 
+## `scripts/fp/traffic/car_doors.gd`
+
+extends `RefCounted`
+
+The driver's door of a full car model (vehicles_v2) as a part of its own that swings open on a hinge at its front edge. The generator (tools/blender/realcity/vehicles2.py) builds each body as one mesh and draws the doors' shut lines down its sides as thin dark strips from just above the sill to under the belt; the driver's door lies between the strips around the driver's seat (Seat_Driver, on +X; the models face +Z). The cut takes, between those lines and above the strips' foot: the outer skin and what sits on it (handle, trim, the mirror), the door card behind it, and above the belt the side glass with its frame. Triangles that cross a shut line or the foot are split there, so the shut door shows no seam. Once per model (cached); a drawn car gets its door on demand (pose) and keeps it, shut, when its node goes back to the pool. Lengths below are model units (the generator's metre is WS.M).
+
+### Constants
+
+- `WS = preload("res://scripts/fp/world_scale.gd")`
+- `SEAT_NODE = "Seat_Driver"`
+- `OPEN_ANGLE = deg_to_rad(68.0)`: Fully open, the rear edge has swung out by this angle (radians).
+- `STRIP_W = 0.03 * WS.M`: A shut-line strip: at most STRIP_W along the car, at least STRIP_SPAN of the body height tall, STRIP_TRIS triangles or more, facing out (+X) beyond STRIP_SIDE of the half width.
+- `STRIP_JOIN = 0.015 * WS.M`
+- `STRIP_SPAN = 0.35`
+- `STRIP_TRIS = 6`
+- `STRIP_SIDE = 0.6`
+- `STRIP_OFF = 0.0012 * WS.M`: The strips stand this far off the skin (side_line's out) and stop this far under the belt.
+- `BELT_ABOVE = 0.015 * WS.M`
+- `DOOR_MIN = 0.7 * WS.M`: A door is DOOR_MIN to DOOR_MAX long; vans draw no line behind the front door, which then ends DOOR_FALLBACK behind its front line.
+- `DOOR_MAX = 1.7 * WS.M`
+- `DOOR_FALLBACK = 0.95 * WS.M`
+- `SKIN_IN = 0.024 * WS.M`: Below the belt the door is the skin and what is on it (within SKIN_IN inside it) and the door card (facing in, within CARD_IN); above it the side glass and its frame (facing out, within GLASS_IN of the line from the belt to the glass top) and what stands out past the belt line (the mirror, within MIRROR_IN).
+- `CARD_IN = 0.12 * WS.M`
+- `GLASS_IN = 0.03 * WS.M`
+- `MIRROR_IN = 0.012 * WS.M`
+- `GLASS_NX = 0.85`
+- `CARD_NX = -0.7`
+- `GLASS_MIN = 0.2 * WS.M`: The side glass reaches at least this far over the belt (a truck's cab corner has none).
+- `HANDLE_BACK = 0.24 * WS.M`: The handle sits this far ahead of the door's rear edge and under the belt (vehicles2 handle).
+- `HANDLE_DOWN = 0.075 * WS.M`
+- `ON_PLANE = 1e-7`: Points this close to a cutting plane count as on it.
+
+### Inner classes
+
+- `Door`: One model's driver's door. Points and planes are in the body mesh's space.
+- `Cut`: Vertex arrays being cut: the source's attributes plus the points made on the cutting planes.
+
+### Functions
+
+- `static func of(key: String, scene: PackedScene) -> Door`: The door of the model `scene` (cached under key); check .ok.
+- `static func pose(node: Node3D, d: Door, amount: float) -> bool`: Shows node's door opened by amount (0 shut .. 1 open), cutting it out of the body the first time it opens. Returns false when the model has no door.
+- `static func points(d: Door) -> Dictionary`: The door's key points in the model's own space (its root node's): the hinge, the handle, the driver's seat (hip point), the rear edge at the belt and that edge with the door wide open.
+- `static func skin_x(d: Door, y: float, z: float) -> float`: The outer skin's x at height y (below the belt) at z, from the two lines' profiles.
+- `static func is_door(d: Door, c: Vector3, n: Vector3) -> bool`: True when a piece of surface centred at c, facing n, belongs to the door (inside its lines).
+
 ## `scripts/fp/traffic/contact_shadows.gd`
 
 extends `RefCounted`
@@ -449,7 +494,7 @@ Asset building for people.gd: the layered clips (a box held in both hands, a pho
 
 extends `RefCounted`
 
-Draws E's agents (docs/fp/slices/E-traffic.md §3 Draw calls). Vehicles: the full GLB only within NEAR of the camera (pooled per model, capped), beyond that one MultiMeshInstance3D per model built from a single-surface, vertex-coloured merge of the GLB (H's <name>_lod1.glb when it exists), with shadows to SHADOW_DIST and none beyond. Parked cars go through a static layer rebuilt only when the parked set changes or the camera moves. Brake lights, siren flashes and wheel spin on full models; after dark their head and tail lamps light up, the nearest moving vehicles throw headlight beams, and the head and tail lamps of the merged ones glow. Responding crews near the camera wash their surroundings in flashing siren light. People (the legacy static bodies, until HC's rigged ones): every distance draws the merged body through the people shader, which swings the legs and arms from per-instance stride data and dithers people in and out (spawned in view, or at the edge of VIS_PERSON). Same geometry and colours as the GLB, one draw per body model and layer.
+Draws E's agents (docs/fp/slices/E-traffic.md §3 Draw calls). Vehicles: the full GLB only within NEAR of the camera (pooled per model, capped), beyond that one MultiMeshInstance3D per model built from a single-surface, vertex-coloured merge of the GLB (H's <name>_lod1.glb when it exists), with shadows to SHADOW_DIST and none beyond. Parked cars go through a static layer rebuilt only when the parked set changes or the camera moves. Brake lights, siren flashes and wheel spin on full models; after dark their head and tail lamps light up, the nearest moving vehicles throw headlight beams, and the head and tail lamps of the merged ones glow. Responding crews near the camera wash their surroundings in flashing siren light. A car with its driver's door open (the player's) swings it out on a hinge cut from its body (car_doors.gd). People (the legacy static bodies, until HC's rigged ones): every distance draws the merged body through the people shader, which swings the legs and arms from per-instance stride data and dithers people in and out (spawned in view, or at the edge of VIS_PERSON). Same geometry and colours as the GLB, one draw per body model and layer.
 
 ### Constants
 
@@ -458,6 +503,7 @@ Draws E's agents (docs/fp/slices/E-traffic.md §3 Draw calls). Vehicles: the ful
 - `KIT = preload("res://scripts/fp/traffic/mesh_kit.gd")`
 - `VH = preload("res://scripts/fp/traffic/vehicles.gd")`
 - `WK = preload("res://scripts/fp/traffic/walkers.gd")`
+- `DOORS = preload("res://scripts/fp/traffic/car_doors.gd")`
 - `NEAR = 2.0`
 - `NEAR_OUT = 2.25`
 - `SHADOW_DIST = 3.0`
@@ -628,6 +674,7 @@ Traffic and pedestrians on lanes (slice E, docs/fp/slices/E-traffic.md): one roa
 - `CS = preload("res://scripts/fp/traffic/contact_shadows.gd")`
 - `OCC = preload("res://scripts/fp/traffic/occupants.gd")`
 - `SHOVES = preload("res://scripts/fp/traffic/shoves.gd")`
+- `DOORS = preload("res://scripts/fp/traffic/car_doors.gd")`
 - `MAX_STEP = 1.0 / 30.0`
 - `CAR_PREFIXES = ["sedan", "hatch", "suv", "taxi", "van", "pickup", "coupe"]`
 - `TELEPORT = 2.0`: A jump of the player beyond this in one frame is a teleport: the street is refilled around them.
@@ -688,9 +735,11 @@ Traffic and pedestrians on lanes (slice E, docs/fp/slices/E-traffic.md): one roa
 - `func enter_target(p: Vector3, r: float) -> Dictionary`: The car the player could get into from p: the nearest one they may take whose body is within r of p, as {"id", "label", "pos", "dist"}; {} when none (or while they drive).
 - `func claim_car(id: int) -> Dictionary`: Hands car id to the player: an ambient, decor or resident car is swapped for a player car of the same model where it stands (its owner's trip carries on without it). Returns the car's {"id", "pos", "yaw", "length", "half_w", "height"}, or {} when it cannot be taken.
 - `func drive_car(pos: Vector3, yaw: float, v: float, a: float) -> void`: Poses the driven car (speed v signed, acceleration a) and its model at once, so the car and the seated hero move in the same frame.
-- `func leave_car() -> void`: The player gets out: the car stays where it stands until it is far away and out of sight.
+- `func leave_car() -> void`: The player gets out: the car stays where it stands (its door shut) until it is far away and out of sight.
 - `func driven_id() -> int`: Id of the car the player drives, -1 on foot.
 - `func seat_offset() -> Variant`: The driver's hip point in the driven car's own frame (+Z forward), or null until its full model is drawn (the merged far LOD has no seat).
+- `func door_info(id: int = -1) -> Dictionary`: The driver's door of car id (the car the player drives when id < 0), in the car's frame (+Z forward, +X its left and the driver's side, y up from the ground; world units): {"hinge", "handle", "seat" (the hip point), "rear" (the rear edge at the belt line), "open_rear" (that edge with the door wide open)}, or {} when its model has no door that opens (car_doors.gd).
+- `func set_door(amount: float) -> void`: Opens the driver's door of the car the player drives by amount (0 shut .. 1 open); drawn on its full model.
 - `func light_pole(i: int, corner: int) -> Node3D`: The traffic-light pole on cross tile i at corner (0..3 = NE, SE, SW, NW), or null.
 - `func anchor_of(id: String) -> Vector3`: Live head anchor of resident id while drawn (else above where they are). With HC bodies it is the Head bone's world position (an estimate from the stature while no body draws them).
 - `func anim_stats() -> Dictionary`: Animated-people stats for G2's bench: {"t0", "t1", "t2", "t3"} people on screen per LOD tier, "anim_us" microseconds advancing mixers this frame (T0 trees included), "char_draws" character draws (shadows extra), plus "off" (off-screen bodies holding their pose), "bodies" (instanced) and "people_us" (the whole people pass). Legacy static people report their shader draws only.

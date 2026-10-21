@@ -1,7 +1,7 @@
 extends Node3D
 ## Positional city sound (slice I): logical sources (engines, horns, sirens, construction, fire,
-## fountains, power plants, river banks, passers-by's footsteps, crashes and knocked props) share
-## a pool of at most MAX_PLAYERS AudioStreamPlayer3D.
+## fountains, power plants, river banks, passers-by's footsteps, crashes, knocked props and car
+## doors) share a pool of at most MAX_PLAYERS AudioStreamPlayer3D.
 ## Every refresh scores the sources by their estimated level at the listener and gives the players
 ## to the loudest; the farthest or quietest lose theirs first. Doppler is computed by hand (the
 ## built-in effect works in world units against 343 u/s and is inaudible at 1 u = 20 m).
@@ -29,6 +29,7 @@ const TYPES := {
 	"step": {"max": 0.5, "db": -24.0, "near": 6.0, "stream": "footstep_sidewalk_1"},
 	"crash": {"max": 10.0, "db": -6.0, "near": 6.0, "stream": "crash_heavy"},
 	"knock": {"max": 4.0, "db": -10.0, "near": 6.0, "stream": "prop_clang"},
+	"door": {"max": 3.0, "db": -12.0, "near": 6.0, "stream": "car_door_close"},
 }
 ## Residents on foot (E's "pedestrian" agents): positional footsteps for the WALKER_MAX nearest
 ## walkers within WALKER_RADIUS of the hero, one per stride of their travel (E has no foot-contact

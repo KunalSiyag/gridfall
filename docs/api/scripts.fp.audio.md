@@ -78,6 +78,7 @@ Slice I's sound assets (sounds/fp/, made by tools/audio/synth_fp_sfx.py): names,
 - `KNOCK_STREAMS = { "bin": "prop_clatter", "bench_park": "prop_clatter", "planter": "crash_light", }`: The one-shot a knocked prop of each kind plays (KNOCK_DEFAULT for the metal ones), at most one per KNOCK_GAP (s).
 - `KNOCK_DEFAULT = "prop_clang"`
 - `KNOCK_GAP = 0.1`
+- `DOOR_OPEN_DB = -7.0`: The player's car door (car_door): the latch letting go plays this far under the slam.
 
 ### Functions
 
@@ -94,7 +95,7 @@ Slice I's sound assets (sounds/fp/, made by tools/audio/synth_fp_sfx.py): names,
 
 extends `FpFeature`
 
-City sound on foot (slice I). Owns the Music, SFX, Ambience and UI buses while on foot, puts the AudioDirector's music under the street (set_fp), and runs three parts: positional emitters (engines, horns, sirens, construction, fire, fountains, plants, the river, passers-by's steps, the player's car crashing and the street props it knocks over), the area beds (with rain from G1's weather) and the hero's footsteps (splashing on wet paving), plus the chat blip and alert stingers. Pausing muffles the music (the only thing still playing); talking to someone ducks the beds.
+City sound on foot (slice I). Owns the Music, SFX, Ambience and UI buses while on foot, puts the AudioDirector's music under the street (set_fp), and runs three parts: positional emitters (engines, horns, sirens, construction, fire, fountains, plants, the river, passers-by's steps, the player's car crashing, the street props it knocks over and its doors), the area beds (with rain from G1's weather) and the hero's footsteps (splashing on wet paving), plus the chat blip and alert stingers. Pausing muffles the music (the only thing still playing); talking to someone ducks the beds.
 
 ### Constants
 
@@ -138,7 +139,7 @@ City sound on foot (slice I). Owns the Music, SFX, Ambience and UI buses while o
 
 extends `Node3D`
 
-Positional city sound (slice I): logical sources (engines, horns, sirens, construction, fire, fountains, power plants, river banks, passers-by's footsteps, crashes and knocked props) share a pool of at most MAX_PLAYERS AudioStreamPlayer3D. Every refresh scores the sources by their estimated level at the listener and gives the players to the loudest; the farthest or quietest lose theirs first. Doppler is computed by hand (the built-in effect works in world units against 343 u/s and is inaudible at 1 u = 20 m). A grown city registers hundreds of static sources (every park's fountain, every site), so the per-frame work touches only the sources holding a player, the refresh only the volatile ones (agents, one-shots, sirens, river) and the static ones near the listener.
+Positional city sound (slice I): logical sources (engines, horns, sirens, construction, fire, fountains, power plants, river banks, passers-by's footsteps, crashes, knocked props and car doors) share a pool of at most MAX_PLAYERS AudioStreamPlayer3D. Every refresh scores the sources by their estimated level at the listener and gives the players to the loudest; the farthest or quietest lose theirs first. Doppler is computed by hand (the built-in effect works in world units against 343 u/s and is inaudible at 1 u = 20 m). A grown city registers hundreds of static sources (every park's fountain, every site), so the per-frame work touches only the sources holding a player, the refresh only the volatile ones (agents, one-shots, sirens, river) and the static ones near the listener.
 
 ### Constants
 

@@ -6,7 +6,8 @@ extends RefCounted
 ## rebuilt only when the parked set changes or the camera moves. Brake lights, siren flashes and
 ## wheel spin on full models; after dark their head and tail lamps light up, the nearest moving
 ## vehicles throw headlight beams, and the head and tail lamps of the merged ones glow. Responding
-## crews near the camera wash their surroundings in flashing siren light.
+## crews near the camera wash their surroundings in flashing siren light. A car with its driver's
+## door open (the player's) swings it out on a hinge cut from its body (car_doors.gd).
 ## People (the legacy static bodies, until HC's rigged ones): every distance draws the merged body
 ## through the people shader, which swings the legs and arms from per-instance stride data and
 ## dithers people in and out (spawned in view, or at the edge of VIS_PERSON). Same geometry and
@@ -17,6 +18,7 @@ const AP := preload("res://scripts/fp/asset_paths.gd")
 const KIT := preload("res://scripts/fp/traffic/mesh_kit.gd")
 const VH := preload("res://scripts/fp/traffic/vehicles.gd")
 const WK := preload("res://scripts/fp/traffic/walkers.gd")
+const DOORS := preload("res://scripts/fp/traffic/car_doors.gd")
 const NEAR := 2.0
 const NEAR_OUT := 2.25
 const SHADOW_DIST := 3.0
@@ -353,6 +355,10 @@ func draw_car(c: VH.Car, xf: Transform3D, d: float, vis_end: float, brake: bool,
 	c.lod = _last_lod
 	var lit := _glow > LAMPS_ON
 	if c.lod == 0:
+		# A pooled node keeps its cut door: shut it again for the next car of its model.
+		if c.door > 0.0 or c.node.has_meta("door"):
+			var m := model(c.model)
+			DOORS.pose(c.node, DOORS.of(m.key, m.scene), c.door)
 		_extras(c.node, model(c.model), brake, lit, siren, spin)
 	if c.lod >= 0:
 		if lit and d < BEAM_DIST and c.kind != "bike":

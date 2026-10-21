@@ -37,11 +37,82 @@ The player's car as a rigid box on the ground plane. Each step it moves by the h
 - `func setup(half_w: float, length: float, p_height: float) -> void`
 - `func move(model: MODEL, pos: Vector3, yaw0: float, dt: float, col: CollisionWorld, traffic: Object, props: Object) -> Vector3`: Moves the body from the feet position pos by the model's velocity over dt (the model's yaw has already turned from yaw0 this step), resolving contacts on the way; the model's velocity and spin take the impulses. traffic and props are those features, or null. Returns the new feet position with y unchanged.
 
+## `scripts/fp/drive/car_entry.gd`
+
+extends `RefCounted`
+
+Getting into the player's car and out of it on foot, for drive_feature.gd (car_doors flag). In: the hero walks round the car to the driver's door (jogging while it is far), reaches for the handle (door_try), pulls the door open and swings it wide, steps into the opening, turns its back to the seat and sits down onto the sill (sit_down; its root travel is walked back so the feet stay planted), swings round into the seat and the door shuts. Out: the door opens, the hero swings round onto the sill, stands up (stand_up, walked forward), steps clear of the door and it shuts. From the reach on, a camera beside the door watches and blends to and from the drive camera. The points come from the traffic feature's door_info, in the car's frame (+Z forward, +X the driver's side); the car stands still throughout. The hero's rig is reached by duck typing (the player folder is another slice): travel, root_travel, sit, play_gesture, stop_gesture, state and bone_world.
+
+### Constants
+
+- `WS = preload("res://scripts/fp/world_scale.gd")`
+- `STAND_OUT = 0.28 * WS.M`: The reach: the hero stands STAND_OUT out from the body side with the handle REACH_FWD ahead and REACH_SIDE to its right (door_try's hand at the grip), and clears the swinging door's edge by BODY_R.
+- `REACH_FWD = 0.44 * WS.M`
+- `REACH_SIDE = 0.26 * WS.M`
+- `BODY_R = 0.22 * WS.M`
+- `ROUTE_GAP = 0.45 * WS.M`: The walk keeps ROUTE_GAP off the car's body and comes in along its side from LEAD_IN behind the stand spot when it comes from behind; a corner counts as passed WP_REACH from it and a goal as reached ARRIVE from it. It slows down within SLOW_R and jogs while more than JOG_FROM is left. A way is checked for room every ROUTE_STEP.
+- `LEAD_IN = 0.45 * WS.M`
+- `WP_REACH = 0.3 * WS.M`
+- `ARRIVE = 0.08 * WS.M`
+- `SLOW_R = 0.6 * WS.M`
+- `JOG_FROM = 3.0 * WS.M`
+- `ROUTE_STEP = 0.25 * WS.M`
+- `ROUTE_REACH = 3.0 * WS.M`: How far round the car other cars can block the walk (drive_feature asks traffic for them).
+- `WALK_MAX = 8.0`: The walk gives up after WALK_MAX s, or STUCK_T s without getting STUCK_GAIN closer; the step into the opening (at STEP_PACE of a walk) after STEP_MAX s.
+- `STUCK_T = 1.0`
+- `STUCK_GAIN = 0.05 * WS.M`
+- `STEP_PACE = 0.55`
+- `STEP_MAX = 1.5`
+- `TURN_RATE = 5.0`: Lining up on a spot: turning at TURN_RATE (rad/s), sliding at ALIGN_SPEED, for at least ALIGN_MIN s.
+- `ALIGN_SPEED = 0.6 * WS.M`
+- `ALIGN_MIN = 0.2`
+- `REACH_AT = 0.75`: door_try: the hand is on the handle REACH_AT s in and the pull ends at PULL_END with the door PULL_OPEN open; it then swings wide over DOOR_WIDE s.
+- `PULL_END = 1.2`
+- `PULL_OPEN = 0.3`
+- `DOOR_WIDE = 0.45`
+- `SILL_IN = 0.06 * WS.M`: Sat down, the hips are SILL_IN inside the body side. Sitting takes at most SIT_MAX s, the swing into or out of the seat SWING_T s and the door's shutting CLOSE_T s.
+- `SIT_MAX = 1.3`
+- `SWING_T = 0.7`
+- `CLOSE_T = 0.35`
+- `OPEN_T = 0.45`: Out: the door opens over OPEN_T s, standing up takes at most STAND_MAX s, then the hero steps AWAY out and AWAY_BACK toward the rear (for at most AWAY_MAX s).
+- `STAND_MAX = 1.7`
+- `AWAY = 0.55 * WS.M`
+- `AWAY_BACK = 0.25 * WS.M`
+- `AWAY_MAX = 1.2`
+- `DOOR_R = 0.08 * WS.M`: Nothing fixed may stand within DOOR_R of the wide-open door's middle and edge.
+- `CAM_DIR = Vector3(0.72, 0.3, -0.62)`: The door camera looks along CAM_DIR (car frame: from behind the door, mirrored ahead of it when that has more room) at a point just outside the door from CAM_DIST (CAM_MIN at least, after the pull-in in front of walls). The view eases onto it over FRAME_BLEND s and between it and the drive camera over CAM_BLEND s.
+- `CAM_DIST = 3.2 * WS.M`
+- `CAM_MIN = 1.6 * WS.M`
+- `CAM_RADIUS = 0.25 * WS.M`
+- `FRAME_BLEND = 0.6`
+- `CAM_BLEND = 1.0`
+- `STOP_V = 0.15 * WS.M`: Getting out waits for the car to stop: below STOP_V (u/s), or after BRAKE_MAX s of braking.
+- `BRAKE_MAX = 2.5`
+
+### Properties
+
+- `kind: String`: "" (idle), "in" or "out".
+- `phase: String`: In: "walk", "align", "open", "step", "turn", "sit", "swing", "close". Out: "open", "swing", "stand", "away", "close".
+- `t: float`: Seconds into the phase.
+- `door: float`: The driver's door: 0 shut .. 1 open.
+- `hold: String`: A phase to wait at (the photo tour holds the climb in at "swing"); "" for none.
+
+### Functions
+
+- `func begin_in(ctx: FpContext, car: Dictionary, pts: Dictionary, boxes: Array = []) -> bool`: Starts getting into the claimed car `car` ({"pos", "yaw", "half_w", "length", "height"}) through its driver's door pts (door_info); boxes are the other cars round it. False when the hero cannot sit, the door or the ground beside it is blocked, or no way round the car is clear.
+- `func begin_out(ctx: FpContext, car: Dictionary, pts: Dictionary, boxes: Array = []) -> bool`: Starts getting out of the stopped car (same arguments). False when there is no room for the door or for the hero beside it.
+- `func step(dt: float) -> String`: Advances by dt s. Returns "" while under way, then "seated" (in), "out" (out) or "fail" (the walk could not reach the door; the hero is still on foot).
+- `func cancel() -> void`: Stops where it is: the door is shut and a gesture fades out.
+- `func framing() -> bool`: True once the door camera has the view: from the reach on the way in, at once on the way out (the walk to the door keeps the hero's own camera).
+- `func aboard() -> bool`: True while the hero is in the seat or half way through the door, where stopping leaves it inside the car (in: from the turn into the opening on; out: until it stands).
+- `func camera(drive: Transform3D) -> Transform3D`: The camera now: the door camera, blended toward drive (the drive camera).
+- `func route() -> PackedVector3Array`: The world points the walk to the door passes through (tests).
+
 ## `scripts/fp/drive/drive_feature.gd`
 
 extends `FpFeature`
 
-Getting into cars and driving them. Near a parked or stopped car, F (Y on a pad) gets in: the hero sits in the driver's seat and the camera chases the car. W / S or the triggers drive and brake (S reverses once stopped), A / D or the left stick steer, Space (A) is the handbrake, the mouse or right stick look around, V switches to the driver's view, and F again gets out beside the driver's door. The car belongs to the traffic feature (lane traffic stops for it and it stays where it is left). It is a rigid box (car_body.gd): it bounces off walls, slides along them at a glance, spins when hit off-centre, shoves the cars it hits and knocks street props over; car_impact on the bus reports the hard hits.
+Getting into cars and driving them. Near a parked or stopped car, F (Y on a pad) gets in: the hero walks round to the driver's door, opens it, climbs in and shuts it (car_entry.gd, the car_doors flag; at once without it), and the camera chases the car. W / S or the triggers drive and brake (S reverses once stopped), A / D or the left stick steer, Space (A) is the handbrake, the mouse or right stick look around, V switches to the driver's view, and F again stops the car and gets out through the driver's door (or at once beside it). The car belongs to the traffic feature (lane traffic stops for it and it stays where it is left). It is a rigid box (car_body.gd): it bounces off walls, slides along them at a glance, spins when hit off-centre, shoves the cars it hits and knocks street props over; car_impact on the bus reports the hard hits and car_door the door opening and shutting.
 
 ### Constants
 
@@ -49,6 +120,7 @@ Getting into cars and driving them. Near a parked or stopped car, F (Y on a pad)
 - `MODEL = preload("res://scripts/fp/drive/drive_model.gd")`
 - `HUD = preload("res://scripts/fp/drive/drive_hud.gd")`
 - `BODY = preload("res://scripts/fp/drive/car_body.gd")`
+- `ENTRY = preload("res://scripts/fp/drive/car_entry.gd")`
 - `ENTER_REACH = 2.0 * WS.M`: Reach from the hero to a car's body for the get-in prompt.
 - `EXIT_SPEED = 8.5 * WS.M`: Faster than this the hero stays in (about 30 km/h).
 - `EXIT_GAP = 0.7 * WS.M`: How far beside the body the hero steps out.
@@ -72,10 +144,15 @@ Getting into cars and driving them. Near a parked or stopped car, F (Y on a pad)
 - `SETTLE = 0.3`: Ground following: the body rises onto a curb at once and settles down at this rate (u/s).
 - `PROMPT_TICK = 0.15`
 - `IMPACT_GAP = 0.25`: car_impact goes out at most this often (s), for the hardest hit.
+- `BLOCKER_REACH = 2.0 * WS.M`: Stopped cars this close to the hero block it on foot (as FpPlayer polls them).
+- `PHOTO_REACH = 30.0 * WS.M`: The photo shot's car is the nearest one to get into this close to the spawn point, picked PHOTO_FRAMES frames after the tour puts the hero there (traffic fills the street round it).
+- `PHOTO_FRAMES = 3`
+- `PHOTO_DT = 1.0 / 60.0`
 
 ### Properties
 
 - `view: String`: "chase" or "driver".
+- `entry`: The walk to the door and the climb in, or the climb out (car_entry.gd).
 
 ### Functions
 
@@ -85,11 +162,17 @@ Getting into cars and driving them. Near a parked or stopped car, F (Y on a pad)
 - `func on_world_rebuilt() -> void`
 - `func from_dict(_d: Dictionary) -> void`
 - `func self_test() -> Dictionary`
-- `func enter_target() -> Dictionary`: The car the hero could get into now ({} when none or while driving).
-- `func enter() -> bool`: Gets into the nearest car in reach. Returns true when the hero is now driving.
-- `func exit(force: bool = false) -> bool`: Gets out beside the driver's door (force: at any speed, wherever there is room or on the spot). Returns true when the hero is on foot again.
+- `func enter_target() -> Dictionary`: The car the hero could get into now ({} when none, while driving or climbing in or out).
+- `func enter() -> bool`: Gets into the nearest car in reach at once. Returns true when the hero is now driving.
+- `func board() -> bool`: Gets into the nearest car in reach the long way (car_doors): the hero walks round to its driver's door, opens it, climbs in and shuts it, then drives (climb_step runs it). At once (enter) without the flag, or when the door cannot open (a model without one, the stand-in figure, no room beside it or no clear way round). Returns true when it started.
+- `func leave() -> bool`: Gets out the long way (car_doors): the car brakes to a stop, the door opens and the hero climbs out and shuts it (climb_step runs it). At once (exit) without the flag. False when the car is too fast (it says so).
+- `func exit(force: bool = false) -> bool`: Gets out at once beside the driver's door (force: at any speed, wherever there is room or on the spot); also ends a climb in or out half way (a hero still outside the car stays where it stands). Returns true when the hero is on foot again.
+- `func climb_step(dt: float) -> void`: One step of the climb in or out, or of braking to a stop for the climb out; _process runs it, tests call it with their own dt.
 - `func drive_step(throttle: float, brake: float, steer: float, hand: float, dt: float) -> void`: One driving step with the given controls (throttle, brake, handbrake 0..1, steer -1..1).
 - `func camera_xform() -> Transform3D`: The camera now: behind and above the car (pulled in front of walls), or at the driver's eyes.
+- `func photo_shots() -> Array`: The photo shot: the hero half way into the car nearest the spawn point, sat on the sill with the door wide open, seen from the door camera (car_doors).
+- `func photo_prepare() -> void`: Photo tour: the tour puts the hero at the spawn point after this, so the climb is staged once traffic has filled the street round it.
+- `func photo_restore() -> void`
 
 ## `scripts/fp/drive/drive_hud.gd`
 

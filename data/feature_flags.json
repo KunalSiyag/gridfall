@@ -12,6 +12,7 @@
     "audio": {"default": true, "description": "First-person feature: street sound: buses, positional emitters and ambience (slice I)."},
     "overview": {"default": true, "description": "First-person feature: Tab city overview to watch construction sites."},
     "drive": {"default": true, "description": "First-person feature: get into parked or stopped cars with F and drive them."},
+    "car_doors": {"default": true, "description": "Getting into and out of cars the long way: the hero walks round to the driver's door, opens it, climbs in and shuts it (and the reverse, once the car has stopped). Off: F gets in and out at once."},
      "phone": {"default": true, "description": "First-person feature: B opens the phone Build app, which places roads, zones and buildings for the mayor who owns the land."},
     "activity": {"default": true, "description": "First-person feature: AI activity feed, decision beacons and map pings showing which mayor or agent decided what, on which model, from which source, and where; mayors take staggered turns through the day on foot. J cycles the feed, G routes to the newest decision."},
     "crews": {"default": true, "description": "First-person feature: the player's two building crews. Phone orders are built in real time (2-5 minutes for a building) by crews you can watch on site, with a board and a HUD card counting down; later orders queue for a free crew."},

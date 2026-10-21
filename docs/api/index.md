@@ -49,7 +49,7 @@ Generated from the `##` doc comments in `scripts/`. Regenerate with `python3 too
 - [ambience.gd](scripts.fp.audio.md#scriptsfpaudioambiencegd): Area ambience (slice I): looping 2D beds on the Ambience bus (traffic hum, park birds, river, the quiet residential bed, night insects and rain), weighted by what lies around the player and by the weather, and cross-faded over CROSSFADE_S
 - [audio_bank.gd](scripts.fp.audio.md#scriptsfpaudioaudio_bankgd): Slice I's sound assets (sounds/fp/, made by tools/audio/synth_fp_sfx.py): names, a load-once stream cache and the mix
 - [audio_feature.gd](scripts.fp.audio.md#scriptsfpaudioaudio_featuregd): City sound on foot (slice I)
-- [emitters.gd](scripts.fp.audio.md#scriptsfpaudioemittersgd): Positional city sound (slice I): logical sources (engines, horns, sirens, construction, fire, fountains, power plants, river banks, passers-by's footsteps, crashes and knocked props) share a pool of at most MAX_PLAYERS AudioStreamPlayer3D
+- [emitters.gd](scripts.fp.audio.md#scriptsfpaudioemittersgd): Positional city sound (slice I): logical sources (engines, horns, sirens, construction, fire, fountains, power plants, river banks, passers-by's footsteps, crashes, knocked props and car doors) share a pool of at most MAX_PLAYERS AudioStreamPlayer3D
 - [footsteps.gd](scripts.fp.audio.md#scriptsfpaudiofootstepsgd): The hero's footsteps (slice I)
 
 ## [scripts/fp/chat/](scripts.fp.chat.md)
@@ -72,6 +72,7 @@ Generated from the `##` doc comments in `scripts/`. Regenerate with `python3 too
 ## [scripts/fp/drive/](scripts.fp.drive.md)
 
 - [car_body.gd](scripts.fp.drive.md#scriptsfpdrivecar_bodygd): The player's car as a rigid box on the ground plane
+- [car_entry.gd](scripts.fp.drive.md#scriptsfpdrivecar_entrygd): Getting into the player's car and out of it on foot, for drive_feature.gd (car_doors flag)
 - [drive_feature.gd](scripts.fp.drive.md#scriptsfpdrivedrive_featuregd): Getting into cars and driving them
 - [drive_hud.gd](scripts.fp.drive.md#scriptsfpdrivedrive_hudgd): The drive feature's HUD: the get-in / get-out key chip above the minimap line and a speedometer (km/h and the gear) at the bottom centre while driving, clear of the corner captions
 - [drive_model.gd](scripts.fp.drive.md#scriptsfpdrivedrive_modelgd): Arcade handling for the player's car
@@ -144,6 +145,7 @@ Generated from the `##` doc comments in `scripts/`. Regenerate with `python3 too
 ## [scripts/fp/traffic/](scripts.fp.traffic.md)
 
 - [ambient.gd](scripts.fp.traffic.md#scriptsfptrafficambientgd): Ambient filler (docs/fp/slices/E-traffic.md §6): unnamed commuters and pedestrians around the player, denser where sim.traffic and residents' trip_load are high (caps 40 cars, 60 people)
+- [car_doors.gd](scripts.fp.traffic.md#scriptsfptrafficcar_doorsgd): The driver's door of a full car model (vehicles_v2) as a part of its own that swings open on a hinge at its front edge
 - [contact_shadows.gd](scripts.fp.traffic.md#scriptsfptrafficcontact_shadowsgd): Contact shadows: a soft dark patch on the ground under every drawn vehicle and person, all in one MultiMesh draw
 - [fleets.gd](scripts.fp.traffic.md#scriptsfptrafficfleetsgd): City fleets on lanes in first person (docs/fp/slices/E-traffic.md §5): buses on 2-4 seeded closed lines through the bus stops (they pull in at each shelter, people board and alight), delivery and garbage trucks, and emergency crews that run to incidents with sirens (through red lights at walking pace once the box is clear), wait at the scene, and drive back to the station
 - [heap.gd](scripts.fp.traffic.md#scriptsfptrafficheapgd): Binary min-heap of (priority, int item) for the lane and sidewalk A* searches

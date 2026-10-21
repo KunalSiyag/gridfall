@@ -682,6 +682,9 @@ signal drive_changed(active: bool)
 ## The player's car hit something hard: the contact point, the closing speed (u/s) and what was
 ## hit, "wall" (anything fixed) or "car". Emitted by the drive feature.
 signal car_impact(at: Vector3, speed: float, what: String)
+## The driver's door of the player's car opened (true) or slammed shut (false), at its handle.
+## Emitted by the drive feature.
+signal car_door(at: Vector3, open: bool)
 ## A street prop was knocked over at a point (its StreetDressing kind: "bin", "bench" ...) and
 ## flies off at speed (u/s). Emitted by the props feature.
 signal prop_knocked(at: Vector3, kind: String, speed: float)
@@ -707,6 +710,7 @@ signal prop_knocked(at: Vector3, kind: String, speed: float)
 | `card_action` | `"ask_here"`, tile index | B (place-card button) | C (the "Ask someone here" answer) |
 | `drive_changed` | in a car | Integration: driving (getting in and out) | A's interact (no targets from behind the wheel), the phone (puts itself away) |
 | `car_impact` | `at`: the contact point, at half the car's height. `speed`: the closing speed (u/s), at least 1.5 m/s. `what`: `"wall"` or `"car"`. The hardest hit of a step, at most one every 0.25 s; knocked props report themselves | Integration: driving | I (crash sound at the contact) |
+| `car_door` | `at`: the driver's door handle. `open`: `true` as the latch lets go (the pull on the handle getting in, the door starting to open getting out), `false` as the door slams shut | Integration: driving (the `car_doors` climb in and out) | I (the latch and the slam at the door) |
 | `prop_knocked` | `at`: where the car hit it. `kind`: its StreetDressing kind. `speed`: how fast it flies off (u/s); a fallen prop hit again reports from 1 m/s | Integration: props | I (clatter or clang by kind) |
 
 The **target** dict: `{"kind": "resident"|"building"|"poster"|"vehicle"|"pedestrian", "id": String, "tile": int, "pos": Vector3, "dist": float, "label": String, "data": Dictionary}`.

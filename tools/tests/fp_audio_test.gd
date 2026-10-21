@@ -2,9 +2,9 @@ extends SceneTree
 ## Slice I audio (docs/fp/slices/I-audio.md, acceptance tests): the assets and their loop flags,
 ## the AudioDirector's tick throttle and on-foot routing, the initial scan, emitter settings, the
 ## 24-player cap and stealing, manual doppler, horns, sirens, footsteps by surface (polling and the
-## stepped signal), ambience beds, settings, the pause muffle, the talk duck, UI cues, crashes and
-## knocked props, the frame budget and teardown. Headless runs the Dummy audio driver, so this
-## asserts node state.
+## stepped signal), ambience beds, settings, the pause muffle, the talk duck, UI cues, crashes,
+## knocked props and car doors, the frame budget and teardown. Headless runs the Dummy audio
+## driver, so this asserts node state.
 
 const K := preload("res://tools/tests/fp_kit.gd")
 const D := preload("res://scripts/sim/sim_defs.gd")
@@ -43,6 +43,7 @@ func _init() -> void:
 	_check_pause_and_duck(ctx, f)
 	_check_ui(ctx, f)
 	_check_impacts(ctx, f)
+	_check_doors(ctx, f)
 	_check_budget(ctx, f)
 	var st: Dictionary = f.self_test()
 	K.check(fails, bool(st["ok"]), "self_test: %s" % st["detail"])
@@ -650,6 +651,27 @@ func _check_impacts(ctx: FpContext, f: FpFeature) -> void:
 			and _is_shot(box, "knock", "prop_clang")
 		),
 		"impacts: a knocked bin clatters, a second at once stays silent, a mailbox clangs"
+	)
+	_steps(f, 3.5)
+
+
+## car_door plays at the door: the latch as it opens (DOOR_OPEN_DB under the slam), the slam as
+## it shuts.
+func _check_doors(ctx: FpContext, f: FpFeature) -> void:
+	var at := _em(f).listener() + Vector3(0.05, 0.0, 0.0)
+	var open := _shot(f, func() -> void: ctx.bus.car_door.emit(at, true))
+	var slam := _shot(f, func() -> void: ctx.bus.car_door.emit(at, false))
+	K.check(
+		fails,
+		_is_shot(open, "door", "car_door_open") and _is_shot(slam, "door", "car_door_close"),
+		"car doors: opening plays car_door_open, shutting car_door_close, both started"
+	)
+	K.check(
+		fails,
+		open != null and slam != null and is_equal_approx(open.db, slam.db + BANK.DOOR_OPEN_DB),
+		"car doors: the latch plays under the slam (%.1f dB, %.1f dB)" % [
+			open.db if open != null else NAN, slam.db if slam != null else NAN
+		]
 	)
 	_steps(f, 3.5)
 

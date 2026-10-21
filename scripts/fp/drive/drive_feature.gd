@@ -1,17 +1,20 @@
 extends FpFeature
 ## Getting into cars and driving them. Near a parked or stopped car, F (Y on a pad) gets in: the
-## hero sits in the driver's seat and the camera chases the car. W / S or the triggers drive and
-## brake (S reverses once stopped), A / D or the left stick steer, Space (A) is the handbrake, the
-## mouse or right stick look around, V switches to the driver's view, and F again gets out beside
-## the driver's door. The car belongs to the traffic feature (lane traffic stops for it and it
-## stays where it is left). It is a rigid box (car_body.gd): it bounces off walls, slides along
-## them at a glance, spins when hit off-centre, shoves the cars it hits and knocks street props
-## over; car_impact on the bus reports the hard hits.
+## hero walks round to the driver's door, opens it, climbs in and shuts it (car_entry.gd, the
+## car_doors flag; at once without it), and the camera chases the car. W / S or the triggers drive
+## and brake (S reverses once stopped), A / D or the left stick steer, Space (A) is the handbrake,
+## the mouse or right stick look around, V switches to the driver's view, and F again stops the
+## car and gets out through the driver's door (or at once beside it). The car belongs to the
+## traffic feature (lane traffic stops for it and it stays where it is left). It is a rigid box
+## (car_body.gd): it bounces off walls, slides along them at a glance, spins when hit off-centre,
+## shoves the cars it hits and knocks street props over; car_impact on the bus reports the hard
+## hits and car_door the door opening and shutting.
 
 const WS := preload("res://scripts/fp/world_scale.gd")
 const MODEL := preload("res://scripts/fp/drive/drive_model.gd")
 const HUD := preload("res://scripts/fp/drive/drive_hud.gd")
 const BODY := preload("res://scripts/fp/drive/car_body.gd")
+const ENTRY := preload("res://scripts/fp/drive/car_entry.gd")
 
 ## Reach from the hero to a car's body for the get-in prompt.
 const ENTER_REACH := 2.0 * WS.M
@@ -43,6 +46,13 @@ const SETTLE := 0.3
 const PROMPT_TICK := 0.15
 ## car_impact goes out at most this often (s), for the hardest hit.
 const IMPACT_GAP := 0.25
+## Stopped cars this close to the hero block it on foot (as FpPlayer polls them).
+const BLOCKER_REACH := 2.0 * WS.M
+## The photo shot's car is the nearest one to get into this close to the spawn point, picked
+## PHOTO_FRAMES frames after the tour puts the hero there (traffic fills the street round it).
+const PHOTO_REACH := 30.0 * WS.M
+const PHOTO_FRAMES := 3
+const PHOTO_DT := 1.0 / 60.0
 
 var active: bool = false
 var car_id: int = -1
@@ -64,6 +74,12 @@ var _prev_mode: String = "first"
 var _target: Dictionary = {}
 var _t: float = 0.0
 var _impact_t: float = 0.0
+## The walk to the door and the climb in, or the climb out (car_entry.gd).
+var entry := ENTRY.new()
+## Seconds spent braking to a stop before the climb out, or -1.
+var _stop_t: float = -1.0
+## The hero's input before the photo shot.
+var _photo_input: bool = true
 
 
 func feature_id() -> String:
@@ -105,25 +121,111 @@ func self_test() -> Dictionary:
 # ------------------------------------------------------------------ getting in and out
 
 
-## The car the hero could get into now ({} when none or while driving).
+## The car the hero could get into now ({} when none, while driving or climbing in or out).
 func enter_target() -> Dictionary:
 	var p := ctx.player if ctx != null else null
 	var tr := _traffic()
-	if active or p == null or tr == null or ctx.is_modal() or p.photo_mode or p.in_conversation():
+	if active or _climbing() or p == null or tr == null or ctx.is_modal():
+		return {}
+	if p.photo_mode or p.in_conversation():
 		return {}
 	return tr.call("enter_target", p.position, ENTER_REACH)
 
 
-## Gets into the nearest car in reach. Returns true when the hero is now driving.
+## Gets into the nearest car in reach at once. Returns true when the hero is now driving.
 func enter() -> bool:
-	var t := enter_target()
-	if t.is_empty():
+	if _claim().is_empty():
 		return false
-	var info: Dictionary = _traffic().call("claim_car", int(t["id"]))
+	_take_wheel()
+	return true
+
+
+## Gets into the nearest car in reach the long way (car_doors): the hero walks round to its
+## driver's door, opens it, climbs in and shuts it, then drives (climb_step runs it). At once
+## (enter) without the flag, or when the door cannot open (a model without one, the stand-in
+## figure, no room beside it or no clear way round). Returns true when it started.
+func board() -> bool:
+	if not FeatureFlags.enabled("car_doors"):
+		return enter()
+	var info := _claim()
 	if info.is_empty():
 		return false
+	if not _climb_in(info):
+		_take_wheel()
+	return true
+
+
+## Gets out the long way (car_doors): the car brakes to a stop, the door opens and the hero
+## climbs out and shuts it (climb_step runs it). At once (exit) without the flag. False when the
+## car is too fast (it says so).
+func leave() -> bool:
+	if not active or _climbing():
+		return false
+	if not FeatureFlags.enabled("car_doors"):
+		return exit()
+	if absf(model.speed()) > EXIT_SPEED:
+		_toast("Slow down to get out")
+		return false
+	_stop_t = 0.0
+	if hud != null:
+		hud.set_prompt("")
+	return true
+
+
+## Gets out at once beside the driver's door (force: at any speed, wherever there is room or on
+## the spot); also ends a climb in or out half way (a hero still outside the car stays where it
+## stands). Returns true when the hero is on foot again.
+func exit(force: bool = false) -> bool:
+	var climbing := not entry.kind.is_empty()
+	if not active and not climbing:
+		return false
+	if not force and not climbing and absf(model.speed()) > EXIT_SPEED:
+		_toast("Slow down to get out")
+		return false
+	var spot := Vector3(NAN, NAN, NAN)
+	if not climbing or entry.aboard():
+		spot = _exit_spot()
+		if is_nan(spot.x):
+			if not force:
+				_toast("No room to get out here")
+				return false
+			spot = _pos
+	entry.cancel()
+	_on_foot(spot, 0.0 if force else EXIT_BLEND)
+	return true
+
+
+## One step of the climb in or out, or of braking to a stop for the climb out; _process runs it,
+## tests call it with their own dt.
+func climb_step(dt: float) -> void:
+	var tr := _traffic()
+	if tr == null or int(tr.call("driven_id")) != car_id:
+		exit(true)
+		return
+	if _stop_t >= 0.0:
+		_stop_for_exit(dt)
+		return
+	var done := entry.step(dt)
+	tr.call("set_door", entry.door)
+	if done == "seated" or done == "fail":
+		_take_wheel()
+		return
+	if entry.framing() or done == "out":
+		ctx.player.set_view_override(entry.camera(camera_xform()), _fov(), ENTRY.FRAME_BLEND)
+	if done == "out":
+		_stood_out()
+
+
+## Takes the car in reach from traffic and sets the drive state up on it (the hero is not at the
+## wheel yet): its claim_car info, or {} when there is none.
+func _claim() -> Dictionary:
+	var t := enter_target()
+	if t.is_empty():
+		return {}
+	var info: Dictionary = _traffic().call("claim_car", int(t["id"]))
+	if info.is_empty():
+		return {}
 	var p := ctx.player
-	active = true
 	car_id = int(info["id"])
 	_pos = info["pos"]
 	_dims = Vector3(float(info["half_w"]), float(info["height"]), float(info["length"]))
@@ -134,37 +236,81 @@ func enter() -> bool:
 	_cam_yaw = model.yaw
 	_orbit = 0.0
 	_orbit_pitch = 0.0
+	_stop_t = -1.0
 	_prev_mode = p.camera_mode
+	p.input_enabled = false
+	if hud != null:
+		hud.set_prompt("")
+	if ctx.bus != null:
+		ctx.bus.drive_changed.emit(true)
+	return info
+
+
+## Starts the walk to the claimed car's door; false when it cannot (see board).
+func _climb_in(info: Dictionary) -> bool:
+	var tr := _traffic()
+	var p := ctx.player
+	# The claimed car is no obstacle any more; the others near the hero still are.
+	var near: Array[AABB] = []
+	near.assign(tr.call("blockers_near", p.position, BLOCKER_REACH))
+	ctx.collision.dynamic_boxes = near
+	var boxes: Array = tr.call("blockers_near", _pos, _dims.z + ENTRY.ROUTE_REACH)
+	if not entry.begin_in(ctx, info, tr.call("door_info", -1), boxes):
+		return false
+	p.set_camera_mode("third", true)
+	return true
+
+
+## Behind the wheel: the drive camera takes the view and the hero sits in the driver's seat.
+func _take_wheel() -> void:
+	var p := ctx.player
+	active = true
 	p.input_enabled = false
 	ctx.collision.dynamic_boxes = []
 	p.set_view_override(camera_xform(), _fov(), ENTER_BLEND)
 	p.set_camera_mode("third", false)
 	_ride()
 	_sit(true)
-	if ctx.bus != null:
-		ctx.bus.drive_changed.emit(true)
-	return true
 
 
-## Gets out beside the driver's door (force: at any speed, wherever there is room or on the spot).
-## Returns true when the hero is on foot again.
-func exit(force: bool = false) -> bool:
-	if not active:
-		return false
-	if not force and absf(model.speed()) > EXIT_SPEED:
-		_toast("Slow down to get out")
-		return false
-	var spot := _exit_spot()
-	if is_nan(spot.x):
-		if not force:
-			_toast("No room to get out here")
-			return false
-		spot = _pos
+## Brakes to a stop for the climb out; stopped, the door opens (or, with no room for the door or
+## for the hero beside it, the hero gets out at once).
+func _stop_for_exit(dt: float) -> void:
+	drive_step(0.0, 1.0, 0.0, 1.0, dt)
+	_look(dt)
+	_stop_t += dt
+	ctx.player.set_view_override(camera_xform(), _fov())
+	if absf(model.speed()) > ENTRY.STOP_V and _stop_t < ENTRY.BRAKE_MAX:
+		return
+	_stop_t = -1.0
+	model.reset(model.yaw, _dims.z)
+	var tr := _traffic()
+	tr.call("drive_car", _pos, model.yaw, 0.0, 0.0)
+	if hud != null:
+		hud.set_speed(false, 0.0)
+	var boxes: Array = tr.call("blockers_near", _pos, _dims.z + ENTRY.ROUTE_REACH)
+	if not entry.begin_out(ctx, _car_info(), tr.call("door_info", -1), boxes):
+		exit()
+
+
+## Out and the door shut: the hero walks on from where it stands, the view along the car.
+func _stood_out() -> void:
+	var p := ctx.player
+	p.cam_yaw = wrapf(model.yaw + PI, -PI, PI)
+	p.cam_pitch = 0.0
+	p.pitch = 0.0
+	_on_foot(Vector3(NAN, NAN, NAN), EXIT_BLEND)
+
+
+## Back on foot (moved to spot unless it is NAN, facing along the car): the car goes back to
+## traffic, and walking input and the hero's own camera return, easing over blend s.
+func _on_foot(spot: Vector3, blend: float) -> void:
 	var tr := _traffic()
 	if tr != null:
 		tr.call("leave_car")
 	active = false
 	car_id = -1
+	_stop_t = -1.0
 	if hud != null:
 		hud.set_prompt("")
 		hud.set_speed(false, 0.0)
@@ -174,12 +320,12 @@ func exit(force: bool = false) -> bool:
 		if p.avatar != null:
 			p.avatar.visible = true
 		p.input_enabled = true
-		p.teleport(spot, rad_to_deg(model.yaw + PI), 0.0, true)
-		p.set_camera_mode(_prev_mode, false)
-		p.clear_view_override(0.0 if force else EXIT_BLEND)
+		if not is_nan(spot.x):
+			p.teleport(spot, rad_to_deg(model.yaw + PI), 0.0, true)
+		p.set_camera_mode(_prev_mode, blend > 0.0 and not p.view_override)
+		p.clear_view_override(blend)
 	if ctx.bus != null:
 		ctx.bus.drive_changed.emit(false)
-	return true
 
 
 ## Free ground beside the driver's door, then the other door, behind and in front; NAN when none.
@@ -200,27 +346,33 @@ func _exit_spot() -> Vector3:
 	return Vector3(NAN, NAN, NAN)
 
 
+func _car_info() -> Dictionary:
+	return {"pos": _pos, "yaw": model.yaw, "half_w": _dims.x, "length": _dims.z, "height": _dims.y}
+
+
+## True while climbing in or out, or braking to a stop for it.
+func _climbing() -> bool:
+	return not entry.kind.is_empty() or _stop_t >= 0.0
+
+
 # ------------------------------------------------------------------ driving
 
 
 func _process(delta: float) -> void:
 	if ctx == null or ctx.player == null:
 		return
+	var dt := minf(delta, 0.1)
+	if _climbing():
+		if not ctx.is_modal():
+			climb_step(dt)
+		return
 	if not active:
-		_t -= delta
-		if _t <= 0.0:
-			_t = PROMPT_TICK
-			_target = enter_target()
-			if hud != null:
-				hud.set_prompt(
-					"Get in %s" % str(_target["label"]) if not _target.is_empty() else ""
-				)
+		_poll_prompt(delta)
 		return
 	var tr := _traffic()
 	if tr == null or int(tr.call("driven_id")) != car_id:
 		exit(true)
 		return
-	var dt := minf(delta, 0.1)
 	var free := not ctx.is_modal()
 	var throttle := maxf(
 		Input.get_action_strength("move_forward"), Input.get_action_strength("drive_throttle")
@@ -239,6 +391,17 @@ func _process(delta: float) -> void:
 	if hud != null:
 		hud.set_prompt("Get out" if absf(model.speed()) <= EXIT_SPEED and free else "")
 		hud.set_speed(free, model.speed())
+
+
+## The get-in prompt, a few times a second while on foot.
+func _poll_prompt(delta: float) -> void:
+	_t -= delta
+	if _t > 0.0:
+		return
+	_t = PROMPT_TICK
+	_target = enter_target()
+	if hud != null:
+		hud.set_prompt("Get in %s" % str(_target["label"]) if not _target.is_empty() else "")
 
 
 ## One driving step with the given controls (throttle, brake, handbrake 0..1, steer -1..1).
@@ -321,18 +484,24 @@ func _input(event: InputEvent) -> void:
 	if ctx == null or ctx.player == null or ctx.is_modal() or event.is_echo():
 		return
 	var handled := false
+	var driving := active and not _climbing()
 	if event.is_action_pressed("vehicle_enter"):
-		# Driving, the key is always taken (a refusal toasts why); on foot only with a car near.
-		if active:
-			exit()
+		# Driving or climbing, the key is always taken (a refusal toasts why); on foot only with a
+		# car near. On the way to the door it turns back.
+		if _climbing():
+			if entry.kind == "in" and not entry.aboard():
+				exit()
+			handled = true
+		elif active:
+			leave()
 			handled = true
 		else:
-			handled = enter()
-	elif active and event.is_action_pressed("view_toggle"):
+			handled = board()
+	elif driving and event.is_action_pressed("view_toggle"):
 		view = "driver" if view == "chase" else "chase"
 		handled = true
 	elif (
-		active and event is InputEventMouseMotion and Input.mouse_mode == Input.MOUSE_MODE_CAPTURED
+		driving and event is InputEventMouseMotion and Input.mouse_mode == Input.MOUSE_MODE_CAPTURED
 	):
 		var rel := (event as InputEventMouseMotion).relative
 		var sens := float(ctx.settings.get("mouse_sensitivity", WS.MOUSE_SENSITIVITY))
@@ -391,6 +560,61 @@ func camera_xform() -> Transform3D:
 func _fov() -> float:
 	var base := float(ctx.settings.get("fov", WS.FOV))
 	return base + FOV_FAST * clampf(absf(model.speed()) / MODEL.TOP, 0.0, 1.0)
+
+
+# ------------------------------------------------------------------ photo tour
+
+
+## The photo shot: the hero half way into the car nearest the spawn point, sat on the sill with
+## the door wide open, seen from the door camera (car_doors).
+func photo_shots() -> Array:
+	if _traffic() == null or ctx.mode == null or not FeatureFlags.enabled("car_doors"):
+		return []
+	var sp: Dictionary = ctx.mode.spawn_point()
+	var shot := {"name": "car_door", "pos": sp["pos"], "yaw": float(sp["yaw"]), "pitch": 0.0}
+	shot.merge({"hour": 10.5, "prepare": "photo_prepare", "restore": "photo_restore"})
+	return [shot]
+
+
+## Photo tour: the tour puts the hero at the spawn point after this, so the climb is staged once
+## traffic has filled the street round it.
+func photo_prepare() -> void:
+	_photo_input = ctx.player.input_enabled
+	_photo_stage.call_deferred()
+
+
+func photo_restore() -> void:
+	exit(true)
+	ctx.player.input_enabled = _photo_input
+
+
+## Claims the car nearest the hero, walks it in from beside the driver's door and holds the climb
+## at the swing into the seat.
+func _photo_stage() -> void:
+	for _k in range(PHOTO_FRAMES):
+		await get_tree().process_frame
+	var p := ctx.player
+	var tr := _traffic()
+	if tr == null or active or _climbing():
+		return
+	var near: Dictionary = tr.call("enter_target", p.position, PHOTO_REACH)
+	if near.is_empty():
+		return
+	p.teleport(near["pos"], rad_to_deg(p.yaw))
+	var info := _claim()
+	if info.is_empty():
+		return
+	var car := Transform3D(Basis(Vector3.UP, model.yaw), _pos)
+	p.teleport(car * Vector3(_dims.x + 0.9 * WS.M, 0.0, -0.4 * _dims.z), rad_to_deg(model.yaw))
+	if not _climb_in(info):
+		exit(true)
+		return
+	entry.hold = "swing"
+	for _k in range(roundi(20.0 / PHOTO_DT)):
+		climb_step(PHOTO_DT)
+		p.update_view(PHOTO_DT)
+		if entry.phase == "swing" or entry.kind.is_empty():
+			break
 
 
 # ------------------------------------------------------------------ helpers

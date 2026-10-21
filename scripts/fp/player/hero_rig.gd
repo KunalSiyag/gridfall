@@ -76,6 +76,9 @@ const STEP_MIN_MOVE := 0.25
 ## Gesture one-shot fades (s).
 const SHOT_IN := 0.25
 const SHOT_OUT := 0.35
+## sit_down and stand_up play this much faster than authored (in and out of a car seat).
+const SIT_SPEED := 1.5
+const SIT_CLIPS := ["sit_down", "stand_up"]
 ## Head look (6.9): Head limits (yaw, pitch), the Neck's share and limit, the modifier's own
 ## interpolation, the influence fade when the target leaves the limits, and the halflife that
 ## smooths a jumping target.
@@ -287,6 +290,52 @@ func gesture_active() -> bool:
 	return bool(tree.get(P_SHOT_ACTIVE))
 
 
+## Fades the playing gesture out before its end.
+func stop_gesture() -> void:
+	tree.set(P_SHOT, AnimationNodeOneShot.ONE_SHOT_REQUEST_FADE_OUT)
+
+
+## How far clip has carried its root t seconds after its state began (0..1 of the whole clip's
+## horizontal root travel; sit_down and stand_up play at SIT_SPEED). The tree drops root motion,
+## so whoever moves the body through a clip (into a car seat) follows this curve; a clip without
+## travel runs linearly.
+func travel(clip: String, t: float) -> float:
+	var a := _clip(clip)
+	var ti := _root_track(a)
+	var length := a.length if a != null else 1.0
+	var tc := t * (SIT_SPEED if clip in SIT_CLIPS else 1.0)
+	if ti < 0:
+		return clampf(tc / length, 0.0, 1.0)
+	var p0 := a.position_track_interpolate(ti, 0.0)
+	var d := a.position_track_interpolate(ti, length) - p0
+	d.y = 0.0
+	if d.length_squared() < 1e-8:
+		return clampf(tc / length, 0.0, 1.0)
+	var p := a.position_track_interpolate(ti, clampf(tc, 0.0, length)) - p0
+	return clampf(Vector3(p.x, 0.0, p.z).dot(d) / d.length_squared(), 0.0, 1.0)
+
+
+## How far clip carries the body along the ground over its whole length (world units).
+func root_travel(clip: String) -> float:
+	var a := _clip(clip)
+	var ti := _root_track(a)
+	if ti < 0:
+		return 0.0
+	var d := a.position_track_interpolate(ti, a.length) - a.position_track_interpolate(ti, 0.0)
+	var sc := skeleton.global_transform.basis.get_scale().x if skeleton.is_inside_tree() else 1.0
+	return Vector2(d.x, d.z).length() * skeleton.motion_scale * sc
+
+
+func _clip(clip: String) -> Animation:
+	return _lib.get_animation(clip) if _lib != null and _lib.has_animation(clip) else null
+
+
+static func _root_track(a: Animation) -> int:
+	if a == null:
+		return -1
+	return a.find_track(NodePath(AP.CHAR_ROOT_MOTION_TRACK), Animation.TYPE_POSITION_3D)
+
+
 ## The world point the head turns toward; NAN components let the head return to the clip.
 func set_look_target(p: Vector3) -> void:
 	_look_goal = p
@@ -395,8 +444,14 @@ func _state_machine() -> AnimationNodeStateMachine:
 	land.connect_node("output", 0, "mix")
 	sm.add_node("land", land)
 	sm.add_node("talk", _anim("talk"))
-	for s: String in ["sit_down", "sit", "stand_up"]:
-		sm.add_node(s, _anim(s))
+	sm.add_node("sit", _anim("sit"))
+	for s: String in SIT_CLIPS:
+		var a := _anim(s)
+		a.use_custom_timeline = true
+		a.timeline_length = float(lengths[s]) / SIT_SPEED
+		a.stretch_time_scale = true
+		a.loop_mode = Animation.LOOP_NONE
+		sm.add_node(s, a)
 	_tr(sm, "Start", "loco", 0.0, true)
 	for pair: Array in [["loco", "crouch"], ["crouch", "loco"], ["land", "crouch"]]:
 		_tr(sm, pair[0], pair[1], XF_CROUCH)

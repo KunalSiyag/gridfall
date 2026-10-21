@@ -2,7 +2,7 @@ extends FpFeature
 ## City sound on foot (slice I). Owns the Music, SFX, Ambience and UI buses while on foot, puts
 ## the AudioDirector's music under the street (set_fp), and runs three parts: positional emitters
 ## (engines, horns, sirens, construction, fire, fountains, plants, the river, passers-by's steps,
-## the player's car crashing and the street props it knocks over),
+## the player's car crashing, the street props it knocks over and its doors),
 ## the area beds (with rain from G1's weather) and the hero's footsteps (splashing on wet paving),
 ## plus the chat blip and alert stingers. Pausing muffles the music (the only thing still
 ## playing); talking to someone ducks the beds.
@@ -101,6 +101,7 @@ func setup(p_ctx: FpContext) -> void:
 		_link(bus.time_scale_changed, _on_time_scale_changed)
 		_link(bus.car_impact, _on_car_impact)
 		_link(bus.prop_knocked, _on_prop_knocked)
+		_link(bus.car_door, _on_car_door)
 	if ctx.sim != null:
 		_link(ctx.sim.event_started, emitters.on_event)
 		_link(ctx.sim.event_ended, emitters.on_event_ended)
@@ -333,6 +334,14 @@ func _on_prop_knocked(at: Vector3, kind: String, speed: float) -> void:
 	var s := str(BANK.KNOCK_STREAMS.get(kind, BANK.KNOCK_DEFAULT))
 	var trim := _impact_db(speed / WS.M / BANK.KNOCK_FULL_MPS)
 	emitters.shot("knock", at, s, trim, _rng.randf_range(0.94, 1.06))
+
+
+## The player's car door opening (its handle and latch, BANK.DOOR_OPEN_DB under the slam) or
+## slamming shut (car_door), at the door.
+func _on_car_door(at: Vector3, open: bool) -> void:
+	var s := "car_door_open" if open else "car_door_close"
+	var trim := BANK.DOOR_OPEN_DB if open else 0.0
+	emitters.shot("door", at, s, trim, _rng.randf_range(0.96, 1.04))
 
 
 ## The level trim (dB) of a hit at share k of its full-level speed.
