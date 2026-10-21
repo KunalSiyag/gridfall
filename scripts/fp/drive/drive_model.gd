@@ -2,7 +2,8 @@ extends RefCounted
 ## Arcade handling for the player's car. Throttle and brake set the speed along the heading
 ## (brake reverses once stopped), the steering angle turns the car through a bicycle model, and
 ## the tyres bleed off sideways speed at a rate set by the surface, so a handbrake turn slides.
-## World units (WS.M per metre) and seconds; the heading at yaw 0 is +Z, as for every vehicle.
+## Knocks (car_body.gd) add to the velocity and to a spin the tyres damp out. World units (WS.M
+## per metre) and seconds; the heading at yaw 0 is +Z, as for every vehicle.
 
 const WS := preload("res://scripts/fp/world_scale.gd")
 
@@ -32,8 +33,9 @@ const SURFACES := {
 	"dirt": [0.6, 0.5],
 	"grass": [0.55, 0.45],
 }
-## Share of the speed kept (and reversed) after a crash.
-const BOUNCE := 0.2
+## Spin from knocks lost per second (1/s): tyres gripping, and on the handbrake.
+const SPIN_GRIP := 3.0
+const SPIN_GRIP_HANDBRAKE := 0.8
 
 var yaw: float = 0.0
 var vel := Vector2.ZERO
@@ -41,6 +43,9 @@ var steer: float = 0.0
 var length: float = 0.24
 ## Signed acceleration along the heading over the last step (brake lights).
 var accel: float = 0.0
+## Yaw rate from knocks (rad/s, positive turns the heading toward +X at yaw 0), on top of the
+## steering.
+var spin: float = 0.0
 
 
 func reset(p_yaw: float, p_length: float) -> void:
@@ -49,6 +54,7 @@ func reset(p_yaw: float, p_length: float) -> void:
 	vel = Vector2.ZERO
 	steer = 0.0
 	accel = 0.0
+	spin = 0.0
 
 
 func heading() -> Vector2:
@@ -79,7 +85,9 @@ func step(
 	var turn := vf * tan(steer) / maxf(length * WHEELBASE, 1e-4)
 	if handbrake > 0.0:
 		turn *= 1.0 + 0.4 * handbrake
-	yaw = wrapf(yaw - turn * dt, -PI, PI)
+	yaw = wrapf(yaw - turn * dt + spin * dt, -PI, PI)
+	var hb := clampf(handbrake, 0.0, 1.0)
+	spin *= exp(-lerpf(SPIN_GRIP, SPIN_GRIP_HANDBRAKE, hb) * dt)
 	var h := heading()
 	var side := Vector2(-h.y, h.x)
 	vf = vel.dot(h)
@@ -87,16 +95,10 @@ func step(
 	var before := vf
 	vf = _drive(vf, throttle, brake, handbrake, TOP * float(surf[1]), dt)
 	accel = (vf - before) / dt
-	var grip := lerpf(GRIP * float(surf[0]), GRIP_HANDBRAKE, clampf(handbrake, 0.0, 1.0))
+	var grip := lerpf(GRIP * float(surf[0]), GRIP_HANDBRAKE, hb)
 	vs *= exp(-grip * dt)
 	vel = h * vf + side * vs
 	return vel * dt
-
-
-## A crash: the car stops dead and rebounds a little.
-func crash() -> void:
-	vel *= -BOUNCE
-	steer *= 0.5
 
 
 ## Speed along the heading after throttle, brake (reverse once stopped), handbrake and coasting.

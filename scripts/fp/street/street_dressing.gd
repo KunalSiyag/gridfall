@@ -5,7 +5,8 @@ extends RefCounted
 ## the bus shelter, and the street-level glass and leaf materials.
 ##
 ## Every blocking item is listed in its holder's `colliders` meta (holder-local, `pos` = centre of the
-## base) before tile_built fires, and every prop root carries `prop` meta. Frequent small items are
+## base; batched items add their `slot` in placements()) before tile_built fires, and every prop
+## root carries `prop` meta. Frequent small items are
 ## batched per CHUNK x CHUNK tiles into MultiMeshes under CityView's StreetProps root; flush() rebuilds
 ## the chunks whose tiles changed.
 
@@ -69,6 +70,9 @@ var _placed: Dictionary = {}
 ## Chunk Vector2i -> Array[MultiMeshInstance3D]; dirty chunks rebuild on flush().
 var _chunks: Dictionary = {}
 var _dirty: Dictionary = {}
+## Tile -> {slot: true} for batched items knocked down (set_down): not drawn until stood up again
+## or the tile is rebuilt.
+var _hidden: Dictionary = {}
 ## Kind -> {"parts": Array, "aabb": AABB}.
 var _kits: Dictionary = {}
 var _mats: Dictionary = {}
@@ -93,6 +97,7 @@ func _init(p_view: CityView) -> void:
 
 ## Drops the batched items of tile i (its holder is being rebuilt or cleared).
 func forget(i: int) -> void:
+	_hidden.erase(i)
 	if _placed.has(i):
 		_placed.erase(i)
 		_dirty[_chunk_key(D.tx(i), D.ty(i))] = true
@@ -122,6 +127,37 @@ func placements(i: int) -> Array:
 	return _placed.get(i, [])
 
 
+## Knocks batched item `slot` of tile i down (or stands it up again), its index in placements(i)
+## and its collider's "slot": a street prop knocked over on foot is not drawn and its collider is
+## marked "down" (CollisionWorld skips it; the caller invalidates the tile there). Its chunk is
+## redrawn at once.
+func set_down(i: int, slot: int, down: bool) -> void:
+	var hid: Dictionary = _hidden.get(i, {})
+	if down == hid.has(slot):
+		return
+	if down:
+		hid[slot] = true
+		_hidden[i] = hid
+	else:
+		hid.erase(slot)
+		if hid.is_empty():
+			_hidden.erase(i)
+	var holder := view.tile_holder(i)
+	if holder != null:
+		for e: Variant in holder.get_meta("colliders", []):
+			if e is Dictionary and int((e as Dictionary).get("slot", -1)) == slot:
+				(e as Dictionary)["down"] = down
+	var c := _chunk_key(D.tx(i), D.ty(i))
+	_build_chunk(c)
+	_dirty.erase(c)
+
+
+## The mesh parts of a batched kind ({"mesh", "xform", "mat"} each) and their bounds, as
+## {"parts", "aabb"}; {} for an unknown kind.
+func kit_of(kind: String) -> Dictionary:
+	return _kit(kind) if KITS.has(kind) else {}
+
+
 func _chunk_key(x: int, y: int) -> Vector2i:
 	return Vector2i(floori(float(x) / CHUNK), floori(float(y) / CHUNK))
 
@@ -136,7 +172,13 @@ func _build_chunk(c: Vector2i) -> void:
 		for tx in range(c.x * CHUNK, c.x * CHUNK + CHUNK):
 			if not D.in_bounds(tx, ty):
 				continue
-			for e: Array in _placed.get(D.idx(tx, ty), []):
+			var i := D.idx(tx, ty)
+			var hid: Dictionary = _hidden.get(i, {})
+			var all: Array = _placed.get(i, [])
+			for k in range(all.size()):
+				if hid.has(k):
+					continue
+				var e: Array = all[k]
 				if not by_kind.has(e[0]):
 					by_kind[e[0]] = []
 				(by_kind[e[0]] as Array).append(e[1])
@@ -188,11 +230,12 @@ func _put(i: int, kind: String, pos: Vector3, face: Vector2, cols: Array, scale:
 	if r < 0.0:
 		return
 	var bb: AABB = kit["aabb"]
+	var slot := (_placed[i] as Array).size() - 1
 	if r > 0.0:
-		cols.append({"shape": "cyl", "pos": pos, "r": r * scale, "h": bb.end.y * scale, "yaw": yaw, "kind": kind})
+		cols.append({"shape": "cyl", "pos": pos, "r": r * scale, "h": bb.end.y * scale, "yaw": yaw, "kind": kind, "slot": slot})
 	else:
 		var c := Basis(Vector3.UP, yaw) * (Vector3(bb.get_center().x, 0.0, bb.get_center().z) * scale)
-		cols.append({"shape": "box", "pos": pos + c, "size": bb.size * scale, "yaw": yaw, "kind": kind})
+		cols.append({"shape": "box", "pos": pos + c, "size": bb.size * scale, "yaw": yaw, "kind": kind, "slot": slot})
 
 
 func _kit(kind: String) -> Dictionary:

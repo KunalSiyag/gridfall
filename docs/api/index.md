@@ -25,12 +25,14 @@ Generated from the `##` doc comments in `scripts/`. Regenerate with `python3 too
 ## [scripts/fp/](scripts.fp.md)
 
 - [asset_paths.gd](scripts.fp.md#scriptsfpasset_pathsgd): First-person asset paths
+- [body_contacts.gd](scripts.fp.md#scriptsfpbody_contactsgd): Contacts of a box body on the ground plane (a car) with the walker's world: CollisionWorld's boxes and cylinders that reach above the body's step and start below its roof, and ground it cannot drive onto (water and the bridge parapets, where walk_height is NAN, or a rise above WS.STEP_HEIGHT)
 - [city_directory.gd](scripts.fp.md#scriptsfpcity_directorygd) (`CityDirectory`): Human place names for the city: streets for road runs, addresses for lots, business and landmark names, district names
 - [fp_context.gd](scripts.fp.md#scriptsfpfp_contextgd) (`FpContext`): Service locator for first-person slices
 - [fp_feature.gd](scripts.fp.md#scriptsfpfp_featuregd) (`FpFeature`): A first-person feature module owned by one slice
 - [fp_features.gd](scripts.fp.md#scriptsfpfp_featuresgd): Every first-person feature, in setup order
 - [fp_mode.gd](scripts.fp.md#scriptsfpfp_modegd) (`FpMode`): First-person composition root: builds the context, bus, player, collision, HUD and every registered feature, owns time controls, pause, the mouse and the FP save section
 - [game_bus.gd](scripts.fp.md#scriptsfpgame_busgd) (`GameBus`): Signals that cross first-person slices
+- [obb2d.gd](scripts.fp.md#scriptsfpobb2dgd): Oriented boxes and circles on the ground plane, as Vector2(x, z): overlap tests, contacts and inertia for the player's car body and the street props it knocks over
 - [road_topology.gd](scripts.fp.md#scriptsfproad_topologygd) (`RoadTopology`): Static road-tile helpers shared by collision, traffic, the directory, the minimap and the streetscape
 - [world_scale.gd](scripts.fp.md#scriptsfpworld_scalegd): First-person world scale
 
@@ -47,7 +49,7 @@ Generated from the `##` doc comments in `scripts/`. Regenerate with `python3 too
 - [ambience.gd](scripts.fp.audio.md#scriptsfpaudioambiencegd): Area ambience (slice I): looping 2D beds on the Ambience bus (traffic hum, park birds, river, the quiet residential bed, night insects and rain), weighted by what lies around the player and by the weather, and cross-faded over CROSSFADE_S
 - [audio_bank.gd](scripts.fp.audio.md#scriptsfpaudioaudio_bankgd): Slice I's sound assets (sounds/fp/, made by tools/audio/synth_fp_sfx.py): names, a load-once stream cache and the mix
 - [audio_feature.gd](scripts.fp.audio.md#scriptsfpaudioaudio_featuregd): City sound on foot (slice I)
-- [emitters.gd](scripts.fp.audio.md#scriptsfpaudioemittersgd): Positional city sound (slice I): logical sources (engines, horns, sirens, construction, fire, fountains, power plants, river banks, passers-by's footsteps) share a pool of at most MAX_PLAYERS AudioStreamPlayer3D
+- [emitters.gd](scripts.fp.audio.md#scriptsfpaudioemittersgd): Positional city sound (slice I): logical sources (engines, horns, sirens, construction, fire, fountains, power plants, river banks, passers-by's footsteps, crashes and knocked props) share a pool of at most MAX_PLAYERS AudioStreamPlayer3D
 - [footsteps.gd](scripts.fp.audio.md#scriptsfpaudiofootstepsgd): The hero's footsteps (slice I)
 
 ## [scripts/fp/chat/](scripts.fp.chat.md)
@@ -69,6 +71,7 @@ Generated from the `##` doc comments in `scripts/`. Regenerate with `python3 too
 
 ## [scripts/fp/drive/](scripts.fp.drive.md)
 
+- [car_body.gd](scripts.fp.drive.md#scriptsfpdrivecar_bodygd): The player's car as a rigid box on the ground plane
 - [drive_feature.gd](scripts.fp.drive.md#scriptsfpdrivedrive_featuregd): Getting into cars and driving them
 - [drive_hud.gd](scripts.fp.drive.md#scriptsfpdrivedrive_hudgd): The drive feature's HUD: the get-in / get-out key chip above the minimap line and a speedometer (km/h and the gear) at the bottom centre while driving, clear of the corner captions
 - [drive_model.gd](scripts.fp.drive.md#scriptsfpdrivedrive_modelgd): Arcade handling for the player's car
@@ -111,6 +114,11 @@ Generated from the `##` doc comments in `scripts/`. Regenerate with `python3 too
 - [poster_worker.gd](scripts.fp.posters.md#scriptsfppostersposter_workergd): One background thread that runs poster image jobs in order (slice D): decode, resize, WebP, mipmaps and VRAM compression
 - [wall_spot_baker.gd](scripts.fp.posters.md#scriptsfpposterswall_spot_bakergd): Offline bake of wall-poster spots (slice D)
 
+## [scripts/fp/props/](scripts.fp.props.md)
+
+- [props_feature.gd](scripts.fp.props.md#scriptsfppropsprops_featuregd): Street props the player's car knocks over (integration feature "props")
+- [tumble.gd](scripts.fp.props.md#scriptsfppropstumblegd): A street prop knocked over (props feature): its bounding box flies off, tips over about one of its own level axes, lands, rolls on over its edges while it comes down hard, slides to a stop and lies on a face
+
 ## [scripts/fp/render/](scripts.fp.render.md)
 
 - [hlod.gd](scripts.fp.render.md#scriptsfprenderhlodgd): Visibility ranges and building LODs (slice G2)
@@ -147,6 +155,7 @@ Generated from the `##` doc comments in `scripts/`. Regenerate with `python3 too
 - [people.gd](scripts.fp.traffic.md#scriptsfptrafficpeoplegd): Animated people from HC's roster (docs/fp/slices/E-traffic.md deliverable 9, TPS_PLAN §1.10-1.11)
 - [people_kit.gd](scripts.fp.traffic.md#scriptsfptrafficpeople_kitgd): Asset building for people.gd: the layered clips (a box held in both hands, a phone at the ear), the shared T0 AnimationTree, and HC's lod1 meshes as dither-fading T3 MultiMesh layers
 - [render.gd](scripts.fp.traffic.md#scriptsfptrafficrendergd): Draws E's agents (docs/fp/slices/E-traffic.md §3 Draw calls)
+- [shoves.gd](scripts.fp.traffic.md#scriptsfptrafficshovesgd): Cars the player's car knocks (slice E): a hit car slides off with the momentum it was given and spins, braking on its tyres, and stops against walls and other cars
 - [sidewalks.gd](scripts.fp.traffic.md#scriptsfptrafficsidewalksgd): Pedestrian network (docs/fp/slices/E-traffic.md §3 Pedestrians): sidewalk polylines whose centrelines sit at the middle of WS.PED_BAND from the road centreline, joined around junction corners, around corner tiles and around cul-de-sacs, plus a zebra edge across every arm of a tee or cross
 - [traffic_feature.gd](scripts.fp.traffic.md#scriptsfptraffictraffic_featuregd): Traffic and pedestrians on lanes (slice E, docs/fp/slices/E-traffic.md): one road-agent system for first person
 - [trips.gd](scripts.fp.traffic.md#scriptsfptraffictripsgd): Resident trips (docs/fp/slices/E-traffic.md §4): the AI link

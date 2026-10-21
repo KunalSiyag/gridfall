@@ -61,6 +61,29 @@ First-person asset paths. Slice H owns this list and produces the files; every c
 - `static func first_existing(paths: Array) -> String`: First path in the list that load_scene() can load, or "".
 - `static func load_scene(path: String) -> PackedScene`: The PackedScene at path, or null. Returns non-null only when ResourceLoader.exists(path) is true, load(path) is non-null and the result is a PackedScene. Cached per path.
 
+## `scripts/fp/body_contacts.gd`
+
+extends `RefCounted`
+
+Contacts of a box body on the ground plane (a car) with the walker's world: CollisionWorld's boxes and cylinders that reach above the body's step and start below its roof, and ground it cannot drive onto (water and the bridge parapets, where walk_height is NAN, or a rise above WS.STEP_HEIGHT). Shared by the player's car (drive) and the cars it shoves (traffic). Points are Vector2(x, z); contacts are OBB2D's [normal, depth, point], the normal pushing the body out.
+
+### Constants
+
+- `D = preload("res://scripts/sim/sim_defs.gd")`
+- `WS = preload("res://scripts/fp/world_scale.gd")`
+- `OBB = preload("res://scripts/fp/obb2d.gd")`
+- `PROBES = [0.004, 0.012, 0.025, 0.045, 0.07]`: A blocked outline sample looks for drivable ground this far out along an axis (u), then bisects between the last blocked and the first free probe.
+- `BISECT = 4`
+- `AXES = [Vector2(1, 0), Vector2(-1, 0), Vector2(0, 1), Vector2(0, -1)]`
+
+### Functions
+
+- `static func gather(col: CollisionWorld, c: Vector2, reach: float, feet: float, height: float) -> Dictionary`: The obstacles a body with its feet at `feet`, `height` tall, can meet within `reach` of c: {"boxes": Array[AABB], "cyls": PackedFloat32Array of (x, z, r), "ground": true when the tiles around c hold ground it cannot drive onto (outline samples are tested only then)}.
+- `static func contacts(col: CollisionWorld, obs: Dictionary, c: Vector2, yaw: float, h: Vector2, feet: float) -> Array`: Contacts of the box (centre c, yaw, half extents h = (half width, half length)) with the gathered obstacles, and with undrivable ground when the gather found some, in no order.
+- `static func ground(col: CollisionWorld, c: Vector2, u: Vector2, v: Vector2, h: Vector2, feet: float) -> Array`: Contacts with ground the box cannot drive onto, from samples round its outline: a blocked sample is pushed back along the axis (every such edge in the city runs along x or z), toward the box's middle, where drivable ground is nearest.
+- `static func outline(c: Vector2, u: Vector2, v: Vector2, h: Vector2) -> PackedVector2Array`: Twelve points round the box: its corners, the middles of its ends and three more along each side.
+- `static func drivable(col: CollisionWorld, p: Vector2, feet: float) -> bool`: True when a body with its feet at `feet` can drive onto the ground at p.
+
 ## `scripts/fp/city_directory.gd`
 
 class_name `CityDirectory` · extends `RefCounted`
@@ -219,6 +242,29 @@ Signals that cross first-person slices. Emitters and listeners are listed in doc
 - `world_ready()`: The world was rebuilt and every feature ran on_world_rebuilt().
 - `card_action(action: String, tile: int)`: A button on a place card: action "ask_here" (C answers through brain.inspect_tile). Emitted by B.
 - `drive_changed(active: bool)`: The hero got into a car (true) or out of it (false). Emitted by the drive feature.
+- `car_impact(at: Vector3, speed: float, what: String)`: The player's car hit something hard: the contact point, the closing speed (u/s) and what was hit, "wall" (anything fixed) or "car". Emitted by the drive feature.
+- `prop_knocked(at: Vector3, kind: String, speed: float)`: A street prop was knocked over at a point (its StreetDressing kind: "bin", "bench" ...) and flies off at speed (u/s). Emitted by the props feature.
+
+## `scripts/fp/obb2d.gd`
+
+extends `RefCounted`
+
+Oriented boxes and circles on the ground plane, as Vector2(x, z): overlap tests, contacts and inertia for the player's car body and the street props it knocks over. A box is its centre, its unit axes u and v (perpendicular) and its half extents along them, Vector2(along u, along v). A contact is [normal, depth, point]: the unit normal that pushes the first shape out of the second, how far it has to go, and a point of contact inside the overlap.
+
+### Constants
+
+- `EPS = 1e-6`: A corner this close outside the other box's faces still counts as inside it (u).
+
+### Functions
+
+- `static func side_axis(yaw: float) -> Vector2`: A box's local +X axis at yaw (heading +Z at yaw 0, as for every vehicle).
+- `static func heading(yaw: float) -> Vector2`: A box's local +Z axis at yaw: its heading.
+- `static func box_inertia(h: Vector2, m: float) -> float`: Moment of inertia about its centre of a solid box with half extents h and mass m.
+- `static func near_rect(p: Vector2, r: float, lo: Vector2, hi: Vector2) -> bool`: True when the circle round p of radius r reaches into the rectangle lo..hi.
+- `static func box_box(ca: Vector2, ua: Vector2, va: Vector2, ha: Vector2, cb: Vector2, ub: Vector2, vb: Vector2, hb: Vector2) -> Array`: Contact of box A (centre ca, axes ua va, half extents ha) with box B, or [] when they do not overlap. The normal is the separating axis of least overlap; the point is the mean of the corners of either box inside the other (the midpoint of the centres when none are).
+- `static func box_aabb(ca: Vector2, ua: Vector2, va: Vector2, ha: Vector2, b: AABB) -> Array`: box_box() with the xz footprint of an axis-aligned world box.
+- `static func box_circle(ca: Vector2, ua: Vector2, va: Vector2, ha: Vector2, c: Vector2, r: float) -> Array`: Contact of box A with the circle round c of radius r, or [] when they do not overlap. The point is the box's point nearest the circle's centre.
+- `static func corners_inside(c: Vector2, u: Vector2, v: Vector2, h: Vector2, oc: Vector2, ou: Vector2, ov: Vector2, oh: Vector2) -> PackedVector2Array`: The corners of box O (centre oc, axes ou ov, half extents oh) that lie inside box C.
 
 ## `scripts/fp/road_topology.gd`
 

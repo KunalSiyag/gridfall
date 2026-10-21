@@ -509,6 +509,54 @@ Draws E's agents (docs/fp/slices/E-traffic.md §3 Draw calls). Vehicles: the ful
 - `func finish_static() -> void`: Writes the static (parked) layers.
 - `func clear() -> void`: Frees every pooled and live node.
 
+## `scripts/fp/traffic/shoves.gd`
+
+extends `RefCounted`
+
+Cars the player's car knocks (slice E): a hit car slides off with the momentum it was given and spins, braking on its tyres, and stops against walls and other cars. A lane car brakes hard on its lane (stunned, brake lights on) while its body slides off it as a drawn offset; after a pause, longer the harder it was hit, its driver steers the body back onto the lane and drives on. Parked cars and the cars the player left move for good, riding up onto a curb they are knocked over. While a knocked car stands off its lane or its parking slot it is a block for lane traffic, like the player's car; a parked car left in the way is put back in its slot (towed) once it has stood out of sight for a while.
+
+### Constants
+
+- `WS = preload("res://scripts/fp/world_scale.gd")`
+- `OBB = preload("res://scripts/fp/obb2d.gd")`
+- `BC = preload("res://scripts/fp/body_contacts.gd")`
+- `VH = preload("res://scripts/fp/traffic/vehicles.gd")`
+- `SLIDE_BRAKE = 6.9 * WS.M`: Sliding tyres brake a knocked body at this rate (about 0.7 g) and its spin at SPIN_BRAKE (1/s); a spin below MIN_SPIN (rad/s) stops.
+- `SPIN_BRAKE = 4.0`
+- `MIN_SPIN = 0.02`
+- `HOLD = 2.5`: A knocked lane car waits this long once its body stops, plus HOLD_PER_MPS for every m/s the hit gave it, at most HOLD_MAX (s).
+- `HOLD_PER_MPS = 0.5`
+- `HOLD_MAX = 12.0`
+- `RETURN_SPEED = 1.2 * WS.M`: Then its body steers back onto the lane at this speed (u/s) and turn rate (rad/s), the car staying stunned at least STUN_MIN (s) at a time until it is back.
+- `RETURN_TURN = 0.6`
+- `STUN_MIN = 0.1`
+- `MASS = {"car": 1.0, "bus": 6.0, "truck": 4.0, "emergency": 1.6, "bike": 0.12}`: Masses relative to a sedan (the player's car is 1), by kind; a car pulling into a slot does not give way (FIXED_MASS).
+- `SEDAN_LENGTH = 0.24`
+- `FIXED_MASS = 50.0`
+- `OFF_BLOCK = 0.3 * WS.M`: A body off its lane or slot by more than this (u), or turned by more than OFF_TURN (rad), blocks lane traffic.
+- `OFF_TURN = 0.2`
+- `TOUCH = 0.001`: A move into an overlap deeper than this (u) is refused and the slide stops.
+- `TOW_AFTER = 30.0`: A parked car knocked into the way is towed back to its slot after standing this long (s) out of sight.
+
+### Properties
+
+- `visible: Callable`: (p: Vector3) -> bool, true when p could be on screen (no towing in sight); unset: never.
+
+### Inner classes
+
+- `Shove`
+
+### Functions
+
+- `func setup(p_vehicles: VH, p_collision: CollisionWorld) -> void`
+- `func clear() -> void`
+- `static func mass_of(c: VH.Car) -> float`: Mass of c relative to a sedan.
+- `func body_vel(c: VH.Car) -> Vector2`: The velocity of c's body now (u/s, xz): its lane motion plus its slide.
+- `func is_shoved(c: VH.Car) -> bool`: True while c slides or makes its way back to its lane.
+- `func bump(c: VH.Car, j: Vector2, at: Vector2) -> void`: The player's car hit c with impulse j (u/s times a sedan's mass) at xz point `at`: c's body takes the change in velocity and spin. A lane car keeps what it can of the part along its heading as lane speed (it never rolls back along its lane) and slides off with the rest.
+- `func step(dt: float) -> void`: Moves every knocked body on by dt: slides, stops, waits and steers back; tows parked cars left in the way out of sight.
+- `func blocks() -> Array`: Lane blocks for vehicles.gd (_gather_blocks): [xz centre, heading, half length, half width, xz velocity, car id] of every knocked lane car off its lane and every parked car knocked out of its slot (the player's own cars are blocks already).
+
 ## `scripts/fp/traffic/sidewalks.gd`
 
 extends `RefCounted`
@@ -579,6 +627,7 @@ Traffic and pedestrians on lanes (slice E, docs/fp/slices/E-traffic.md): one roa
 - `PPL = preload("res://scripts/fp/traffic/people.gd")`
 - `CS = preload("res://scripts/fp/traffic/contact_shadows.gd")`
 - `OCC = preload("res://scripts/fp/traffic/occupants.gd")`
+- `SHOVES = preload("res://scripts/fp/traffic/shoves.gd")`
 - `MAX_STEP = 1.0 / 30.0`
 - `CAR_PREFIXES = ["sedan", "hatch", "suv", "taxi", "van", "pickup", "coupe"]`
 - `TELEPORT = 2.0`: A jump of the player beyond this in one frame is a teleport: the street is refilled around them.
@@ -591,6 +640,7 @@ Traffic and pedestrians on lanes (slice E, docs/fp/slices/E-traffic.md): one roa
 ### Properties
 
 - `people: PPL`: HC's animated people (deliverable 9); ok == false draws the legacy static people instead.
+- `shoves: SHOVES`: Cars the player's car knocked: their slides, stuns and the way back onto their lanes.
 - `jitter_enabled: bool`: Test hooks: departure jitter on or off; auto_step false keeps _process from advancing time.
 - `ambient_enabled: bool`: Test hook: false stops the ambient filler (no spawns, no removals).
 
@@ -632,7 +682,9 @@ Traffic and pedestrians on lanes (slice E, docs/fp/slices/E-traffic.md): one roa
 - `func visible_near(p: Vector3, r: float) -> Array`: Visible named residents near p (on foot, in a vehicle, or standing outdoors; never indoors).
 - `func is_resident_visible(id: String) -> bool`
 - `func pick(origin: Vector3, dir: Vector3, max_dist: float) -> Dictionary`: Interaction pick (S0 §10): residents on foot, ambient pedestrians, vehicles (parked included).
-- `func blockers_near(p: Vector3, r: float) -> Array`: Optional, for A: world AABBs of stopped vehicles near p (parked cars included). While the player drives, moving vehicles block too, and the player's own car does not.
+- `func blockers_near(p: Vector3, r: float) -> Array`: Optional, for A: world AABBs of stopped vehicles near p (parked cars included), never the car the player drives (its body meets the others through bodies_near).
+- `func bodies_near(p: Vector3, r: float) -> Array`: For the drive feature's car body: every vehicle body that may reach within r of p, as [id, xz centre, yaw, Vector2(half width, half length), xz velocity, mass (a sedan is 1)]. The car the player drives is not listed.
+- `func bump_car(id: int, j: Vector2, at: Vector2) -> void`: The player's car hit vehicle id with impulse j (xz, u/s times a sedan's mass) at xz point at: the car is knocked (shoves.gd).
 - `func enter_target(p: Vector3, r: float) -> Dictionary`: The car the player could get into from p: the nearest one they may take whose body is within r of p, as {"id", "label", "pos", "dist"}; {} when none (or while they drive).
 - `func claim_car(id: int) -> Dictionary`: Hands car id to the player: an ambient, decor or resident car is swapped for a player car of the same model where it stands (its owner's trip carries on without it). Returns the car's {"id", "pos", "yaw", "length", "half_w", "height"}, or {} when it cannot be taken.
 - `func drive_car(pos: Vector3, yaw: float, v: float, a: float) -> void`: Poses the driven car (speed v signed, acceleration a) and its model at once, so the car and the seated hero move in the same frame.
@@ -737,9 +789,11 @@ Every road vehicle (docs/fp/slices/E-traffic.md §3): ambient filler, resident c
 - `LOD_DT = 1.0 / 10.0`
 - `FAR_SPEED = 0.9`: Data-only vehicles beyond the traffic radius cruise at this share of their own speed.
 - `PLAYER = "player"`: Role of the player's own cars: never on a lane, posed by the drive feature or left standing.
+- `STUN_BRAKE = 6.0 * WS.M`: A car the player's car hit brakes this hard while stunned (its driver stands on the brakes).
 
 ### Properties
 
+- `extra_blocks: Callable`: Returns more blocks each step (shoves.gd: cars knocked off their lanes or slots).
 - `parked_version: int`: Bumped whenever the set of parked cars changes (the renderer's static layer rebuilds).
 - `on_arrive: Callable`: Called with (car) when a vehicle reaches its goal (owner reacts), and when one is removed.
 

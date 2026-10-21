@@ -5,7 +5,7 @@ Everything is built from numpy noise, oscillators, pulse trains and modal resona
 seeds, so a re-run gives the same samples and byte-identical files. Two formats:
 
 - WAV (16-bit PCM, imported uncompressed) for every sound the game starts often: footsteps,
-  horns, UI cues, the engine loops and the siren. Starting an Ogg Vorbis playback costs about
+  horns, crashes and knocked props, UI cues, the engine loops and the siren. Starting an Ogg Vorbis playback costs about
   0.4 ms on the main thread (a decoder per start), a WAV about 1 us, and the audio budget is
   0.3 ms per frame.
 - Ogg Vorbis (ffmpeg libvorbis -q 4, bit-exact) for the long loops started rarely: the beds,
@@ -828,6 +828,167 @@ def synth_rain() -> np.ndarray:
     return norm_rms(out, -20.0)
 
 
+# ------------------------------------------------------------------ impacts
+
+def clip_parts(parts: list[tuple[float, float, float]], top: float = 16000.0) -> list[tuple[float, float, float]]:
+    """Drops the modes above top, so a bright resonance never folds back past Nyquist."""
+    return [p for p in parts if p[0] < top]
+
+
+def thud(rng: np.random.Generator, n: int, f0: float, f1: float, decay: float) -> np.ndarray:
+    """A heavy body striking something: a damped sine falling from f0 to f1 Hz."""
+    t = secs(n)
+    fr = f1 + (f0 - f1) * np.exp(-t / (decay * 0.5))
+    ph = 2 * np.pi * np.cumsum(fr) / SR + rng.uniform(0, 2 * np.pi)
+    return np.sin(ph) * np.exp(-t / decay) * (1 - np.exp(-t / 0.0008))
+
+
+def crack(rng: np.random.Generator, n: int, decay: float, lo: float, hi: float) -> np.ndarray:
+    """The first instant of contact: a band of noise dying within a few milliseconds."""
+    c = bandpass(rng.standard_normal(n), lo, hi) * np.exp(-secs(n) / decay)
+    return c / (np.max(np.abs(c)) + 1e-9)
+
+
+def crunch(rng: np.random.Generator, n: int, rate: float, decay: float, lo: float, hi: float) -> np.ndarray:
+    """Sheet metal and plastic buckling: a burst of crackles thinning out over decay (s)."""
+    out = np.zeros(n)
+    for tk in poisson_times(rng, rate, min(n / SR, decay * 5.0)):
+        w = np.exp(-tk / decay)
+        if rng.uniform() > w:
+            continue
+        gl = int(rng.uniform(0.0004, 0.004) * SR) + 2
+        g = rng.standard_normal(gl) * np.exp(-secs(gl) / (gl / SR / 3.0))
+        add_at(out, g * min(rng.pareto(2.0) + 0.2, 6.0), int(tk * SR), wrap=False)
+    out = bandpass(out, lo, hi)
+    return out / (np.max(np.abs(out)) + 1e-9)
+
+
+def knock(rng: np.random.Generator, parts: list[tuple[float, float, float]], pitch: float, click: float) -> np.ndarray:
+    """A hollow object struck once: its modes (Hz, decay s, amplitude) at pitch, and a click."""
+    longest = max(d for _, d, _ in parts)
+    n = int(min(longest * 7.0, 1.2) * SR)
+    s = modes(n, clip_parts([(f * pitch, d, a) for f, d, a in parts]), rng)
+    s *= 1 - np.exp(-secs(n) / 0.0005)
+    s += click * crack(rng, n, 0.0012, 1500.0, 9000.0)
+    return s / (np.max(np.abs(s)) + 1e-9)
+
+
+def shards(rng: np.random.Generator, n: int, count: int, t0: float, spread: float) -> np.ndarray:
+    """Broken glass raining down: tiny bright resonances, most of them soon after t0 (s)."""
+    out = np.zeros(n)
+    for _ in range(count):
+        tk = t0 + rng.exponential(spread)
+        f = np.exp(rng.uniform(np.log(2400.0), np.log(8500.0)))
+        d = rng.uniform(0.006, 0.03)
+        gl = int(d * 5 * SR) + 8
+        parts = [(f, d, 1.0), (f * rng.uniform(1.5, 2.4), d * 0.6, 0.5), (f * rng.uniform(2.6, 3.8), d * 0.4, 0.3)]
+        s = modes(gl, clip_parts(parts), rng) + 0.3 * rng.standard_normal(gl) * np.exp(-secs(gl) / 0.0006)
+        add_at(out, s * rng.uniform(0.15, 1.0) ** 2, int(tk * SR), wrap=False)
+    return out / (np.max(np.abs(out)) + 1e-9)
+
+
+def scrape(rng: np.random.Generator, n: int, start: float, length: float, lo: float, hi: float, ridges: float) -> np.ndarray:
+    """Something dragged or rolled over asphalt: rough noise pulsing at ridges (Hz)."""
+    out = np.zeros(n)
+    sl = int(length * SR)
+    t = secs(sl)
+    s = bandpass(rng.standard_normal(sl), lo, hi) * env_ad(sl, 0.015, length * 0.35)
+    s *= 0.55 + 0.45 * np.abs(np.sin(np.pi * ridges * t + rng.uniform(0, np.pi))) ** 3
+    add_at(out, s / (np.max(np.abs(s)) + 1e-9), int(start * SR), wrap=False)
+    return out
+
+
+## A car body's panels, struck: inharmonic, damped within a tenth of a second.
+PANEL = [(182.0, 0.09, 1.0), (311.0, 0.07, 0.8), (468.0, 0.05, 0.6), (757.0, 0.04, 0.45), (1234.0, 0.03, 0.3), (1851.0, 0.02, 0.2)]
+## A plastic wheelie bin's hollow body and its lid.
+BIN_BODY = [(165.0, 0.06, 1.0), (241.0, 0.05, 0.7), (396.0, 0.035, 0.5), (611.0, 0.025, 0.35), (983.0, 0.015, 0.25)]
+BIN_LID = [(1310.0, 0.012, 1.0), (2090.0, 0.008, 0.6), (3270.0, 0.005, 0.3)]
+## Small plastic and trim bits a crash throws about.
+DEBRIS = [(820.0, 0.012, 1.0), (1370.0, 0.009, 0.6), (2240.0, 0.006, 0.35)]
+
+
+def synth_crash_heavy() -> np.ndarray:
+    """The player's car hitting a wall or a car hard: a bumper cracking, the body's thud, metal
+    buckling and ringing, glass raining down and bits of trim skittering away."""
+    rng = rng_for("crash_heavy")
+    n = int(1.5 * SR)
+    out = np.zeros(n)
+    out += 0.55 * crack(rng, n, 0.003, 900.0, 9000.0)
+    out += 0.75 * thud(rng, n, 72.0, 44.0, 0.14)
+    out += 0.4 * thud(rng, n, 128.0, 82.0, 0.08)
+    out += 0.35 * lowpass(rng.standard_normal(n), 220.0) * env_ad(n, 0.002, 0.12) / 0.2
+    out += 0.9 * crunch(rng, n, 1100.0, 0.08, 700.0, 7500.0)
+    add_at(out, 0.5 * knock(rng, PANEL, rng.uniform(0.97, 1.03), 0.2), int(0.004 * SR), wrap=False)
+    add_at(out, 0.3 * knock(rng, PANEL, rng.uniform(1.15, 1.25), 0.0), int(0.05 * SR), wrap=False)
+    out += 0.3 * shards(rng, n, 44, 0.03, 0.11)
+    out += 0.16 * shards(rng, n, 14, 0.32, 0.16)
+    for k in range(6):
+        tk = rng.uniform(0.12, 0.85)
+        add_at(out, 0.18 * (1.0 - tk) * knock(rng, DEBRIS, rng.uniform(0.7, 1.4), 0.4), int(tk * SR), wrap=False)
+    out += 0.08 * scrape(rng, n, 0.06, 0.5, 900.0, 5000.0, 9.0)
+    out = stereo_reverb(out, rng, 0.7, 0.12, 5000.0, circular=False).mean(axis=1)
+    return norm_peak(fade_edges(out, 0.0005, 0.12), -1.0)
+
+
+def synth_crash_light() -> np.ndarray:
+    """A bump: the car nudging a wall, a post or another car's bumper."""
+    rng = rng_for("crash_light")
+    n = int(0.65 * SR)
+    out = np.zeros(n)
+    out += 1.0 * thud(rng, n, 96.0, 70.0, 0.05)
+    out += 0.45 * crack(rng, n, 0.012, 500.0, 3000.0)
+    add_at(out, 0.5 * knock(rng, [(423.0, 0.02, 1.0), (781.0, 0.015, 0.6), (1352.0, 0.01, 0.4)], 1.0, 0.3), 0, wrap=False)
+    out += 0.25 * crunch(rng, n, 260.0, 0.03, 1000.0, 6000.0)
+    add_at(out, 0.22 * knock(rng, [(f, d * 0.5, a) for f, d, a in PANEL], 1.2, 0.0), int(0.003 * SR), wrap=False)
+    out += 0.1 * scrape(rng, n, 0.01, 0.12, 1500.0, 6000.0, 14.0)
+    out = stereo_reverb(out, rng, 0.5, 0.08, 5000.0, circular=False).mean(axis=1)
+    return norm_peak(fade_edges(out, 0.0005, 0.08), -1.0)
+
+
+def synth_prop_clatter() -> np.ndarray:
+    """A plastic bin knocked flying: the hit, its lid clacking, the fall onto the road, a bounce
+    or two and a short roll."""
+    rng = rng_for("prop_clatter")
+    n = int(1.1 * SR)
+    out = np.zeros(n)
+    add_at(out, 1.0 * knock(rng, BIN_BODY, 1.0, 0.5), 0, wrap=False)
+    add_at(out, 0.4 * knock(rng, BIN_LID, rng.uniform(0.95, 1.05), 0.6), int(rng.uniform(0.06, 0.09) * SR), wrap=False)
+    land = rng.uniform(0.28, 0.34)
+    add_at(out, 0.85 * knock(rng, BIN_BODY, 0.93, 0.7), int(land * SR), wrap=False)
+    add_at(out, 0.35 * knock(rng, BIN_LID, rng.uniform(0.9, 1.0), 0.8), int((land + 0.012) * SR), wrap=False)
+    tk = land
+    for amp in [0.45, 0.25]:
+        tk += rng.uniform(0.11, 0.18)
+        add_at(out, amp * knock(rng, BIN_BODY, rng.uniform(0.9, 1.05), 0.5), int(tk * SR), wrap=False)
+    grit = crunch(rng, int(0.05 * SR), 320.0, 0.02, 1500.0, 7000.0)
+    add_at(out, 0.25 * grit, int(land * SR), wrap=False)
+    out += 0.07 * scrape(rng, n, tk + 0.04, 0.4, 700.0, 4500.0, 6.0)
+    out = stereo_reverb(out, rng, 0.5, 0.1, 5000.0, circular=False).mean(axis=1)
+    return norm_peak(fade_edges(out, 0.0005, 0.1), -1.0)
+
+
+def synth_prop_clang() -> np.ndarray:
+    """A metal mailbox, parking meter, bike rack or bench knocked over: the clang of the hit, its
+    fall onto the road, a bounce and a rattle."""
+    rng = rng_for("prop_clang")
+    n = int(1.2 * SR)
+    out = np.zeros(n)
+    out += 0.6 * thud(rng, n, 112.0, 80.0, 0.04)
+    add_at(out, 1.0 * metal_hit(rng, 418.0, 0.22, 1.0), 0, wrap=False)
+    land = rng.uniform(0.3, 0.36)
+    add_at(out, 0.8 * metal_hit(rng, 523.0, 0.18, 1.0), int(land * SR), wrap=False)
+    add_at(out, 0.3 * crunch(rng, int(0.06 * SR), 380.0, 0.025, 1800.0, 8000.0), int(land * SR), wrap=False)
+    tk = land
+    for amp in [0.4, 0.22]:
+        tk += rng.uniform(0.09, 0.14)
+        add_at(out, amp * metal_hit(rng, 523.0 * rng.uniform(1.02, 1.1), 0.1, 1.0), int(tk * SR), wrap=False)
+    rattle = grains(rng, int(0.3 * SR), 160.0, 0.2, 2000.0, 8000.0, 0.08)
+    add_at(out, 0.15 * rattle / (np.max(np.abs(rattle)) + 1e-9), int(land * SR), wrap=False)
+    out += 0.06 * scrape(rng, n, tk + 0.03, 0.35, 1200.0, 6500.0, 10.0)
+    out = stereo_reverb(out, rng, 0.6, 0.1, 5500.0, circular=False).mean(axis=1)
+    return norm_peak(fade_edges(out, 0.0005, 0.1), -1.0)
+
+
 # ------------------------------------------------------------------ UI
 
 def bell_note(f: float, dur: float, index: float = 2.0, ratio: float = 1.4, decay: float = 0.4) -> np.ndarray:
@@ -872,7 +1033,7 @@ def synth_alert_stinger() -> np.ndarray:
 
 ## Sounds stored as WAV (started often; see the module docstring).
 WAV_SOUNDS = {"engine_idle", "engine_run", "siren_two_tone", "horn_short", "horn_long", "chat_blip",
-              "chat_blip_soft", "alert_stinger"}
+              "chat_blip_soft", "alert_stinger", "crash_heavy", "crash_light", "prop_clatter", "prop_clang"}
 
 
 def is_wav(name: str) -> bool:
@@ -900,6 +1061,10 @@ def catalogue() -> dict[str, tuple[object, bool]]:
         "chat_blip": (synth_chat_blip, False),
         "chat_blip_soft": (synth_chat_blip_soft, False),
         "alert_stinger": (synth_alert_stinger, False),
+        "crash_heavy": (synth_crash_heavy, False),
+        "crash_light": (synth_crash_light, False),
+        "prop_clatter": (synth_prop_clatter, False),
+        "prop_clang": (synth_prop_clang, False),
     }
     for s in SURFACES:
         for k in range(1, STEP_VARIANTS + 1):

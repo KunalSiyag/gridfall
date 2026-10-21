@@ -1,7 +1,8 @@
 extends FpFeature
 ## City sound on foot (slice I). Owns the Music, SFX, Ambience and UI buses while on foot, puts
 ## the AudioDirector's music under the street (set_fp), and runs three parts: positional emitters
-## (engines, horns, sirens, construction, fire, fountains, plants, the river, passers-by's steps),
+## (engines, horns, sirens, construction, fire, fountains, plants, the river, passers-by's steps,
+## the player's car crashing and the street props it knocks over),
 ## the area beds (with rain from G1's weather) and the hero's footsteps (splashing on wet paving),
 ## plus the chat blip and alert stingers. Pausing muffles the music (the only thing still
 ## playing); talking to someone ducks the beds.
@@ -52,6 +53,8 @@ var _last_stinger: float = -INF
 var _duck_target: float = 0.0
 var _sfx_db: float = 0.0
 var _talking: Dictionary = {}
+var _last_knock: float = -INF
+var _rng := RandomNumberGenerator.new()
 var _links: Array = []                 # [Signal, Callable]
 var _muffle: Tween
 
@@ -62,6 +65,7 @@ func feature_id() -> String:
 
 func setup(p_ctx: FpContext) -> void:
 	super.setup(p_ctx)
+	_rng.seed = 4421
 	BANK.preload_all()
 	_make_buses()
 	emitters = EMITTERS.new()
@@ -95,6 +99,8 @@ func setup(p_ctx: FpContext) -> void:
 		_link(bus.conversation_changed, _on_conversation_changed)
 		_link(bus.player_tile_changed, _on_player_tile_changed)
 		_link(bus.time_scale_changed, _on_time_scale_changed)
+		_link(bus.car_impact, _on_car_impact)
+		_link(bus.prop_knocked, _on_prop_knocked)
 	if ctx.sim != null:
 		_link(ctx.sim.event_started, emitters.on_event)
 		_link(ctx.sim.event_ended, emitters.on_event_ended)
@@ -306,6 +312,32 @@ func _on_player_tile_changed(_x: int, _y: int) -> void:
 
 func _on_time_scale_changed(s: int) -> void:
 	emitters.time_scale = s
+
+
+## The player's car hit a wall or a car (car_impact): a crash at the contact from BANK.CRASH_MPS
+## of closing speed, a bump below, louder the harder it closes.
+func _on_car_impact(at: Vector3, speed: float, _what: String) -> void:
+	var mps := speed / WS.M
+	var heavy := mps >= BANK.CRASH_MPS
+	var full := BANK.CRASH_FULL_MPS if heavy else BANK.CRASH_MPS
+	var s := "crash_heavy" if heavy else "crash_light"
+	emitters.shot("crash", at, s, _impact_db(mps / full), _rng.randf_range(0.92, 1.05))
+
+
+## A street prop knocked over or hit again (prop_knocked): its kind's clatter at the hit, at most
+## one per BANK.KNOCK_GAP.
+func _on_prop_knocked(at: Vector3, kind: String, speed: float) -> void:
+	if _now - _last_knock < BANK.KNOCK_GAP:
+		return
+	_last_knock = _now
+	var s := str(BANK.KNOCK_STREAMS.get(kind, BANK.KNOCK_DEFAULT))
+	var trim := _impact_db(speed / WS.M / BANK.KNOCK_FULL_MPS)
+	emitters.shot("knock", at, s, trim, _rng.randf_range(0.94, 1.06))
+
+
+## The level trim (dB) of a hit at share k of its full-level speed.
+static func _impact_db(k: float) -> float:
+	return linear_to_db(clampf(k, BANK.IMPACT_MIN_GAIN, 1.0))
 
 
 func _on_site_started(site: Dictionary) -> void:

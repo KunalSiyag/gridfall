@@ -2,8 +2,9 @@ extends SceneTree
 ## Slice I audio (docs/fp/slices/I-audio.md, acceptance tests): the assets and their loop flags,
 ## the AudioDirector's tick throttle and on-foot routing, the initial scan, emitter settings, the
 ## 24-player cap and stealing, manual doppler, horns, sirens, footsteps by surface (polling and the
-## stepped signal), ambience beds, settings, the pause muffle, the talk duck, UI cues, the frame
-## budget and teardown. Headless runs the Dummy audio driver, so this asserts node state.
+## stepped signal), ambience beds, settings, the pause muffle, the talk duck, UI cues, crashes and
+## knocked props, the frame budget and teardown. Headless runs the Dummy audio driver, so this
+## asserts node state.
 
 const K := preload("res://tools/tests/fp_kit.gd")
 const D := preload("res://scripts/sim/sim_defs.gd")
@@ -41,6 +42,7 @@ func _init() -> void:
 	_check_settings(ctx, f)
 	_check_pause_and_duck(ctx, f)
 	_check_ui(ctx, f)
+	_check_impacts(ctx, f)
 	_check_budget(ctx, f)
 	var st: Dictionary = f.self_test()
 	K.check(fails, bool(st["ok"]), "self_test: %s" % st["detail"])
@@ -615,6 +617,55 @@ func _check_ui(ctx: FpContext, f: FpFeature) -> void:
 	ctx.bus.toast.emit("Fire!", "alert")
 	ctx.bus.ping.emit(Vector3.ZERO, "resident:r1")
 	K.check(fails, int(f.get("stingers_played")) - s0 == 1, "alerts: an event ping plays the stinger once (toasts within 4 s share it)")
+
+
+## car_impact plays a crash at the contact (a bump below CRASH_MPS, quieter), prop_knocked the
+## prop's own clatter (at most one per KNOCK_GAP); each one-shot gets a player and starts.
+func _check_impacts(ctx: FpContext, f: FpFeature) -> void:
+	var em := _em(f)
+	var at := em.listener() + Vector3(0.1, 0.0, 0.0)
+	var hard := _shot(f, func() -> void: ctx.bus.car_impact.emit(at, 10.0 * WS.M, "wall"))
+	var soft := _shot(f, func() -> void: ctx.bus.car_impact.emit(at, 3.0 * WS.M, "car"))
+	K.check(
+		fails,
+		_is_shot(hard, "crash", "crash_heavy") and _is_shot(soft, "crash", "crash_light"),
+		"impacts: a 10 m/s hit plays crash_heavy, a 3 m/s bump crash_light, both started"
+	)
+	K.check(
+		fails,
+		hard != null and soft != null and soft.db < hard.db and hard.db <= EM.TYPES["crash"]["db"],
+		"impacts: the bump is quieter (%.1f dB < %.1f dB)" % [soft.db, hard.db]
+	)
+	var bin := _shot(f, func() -> void: ctx.bus.prop_knocked.emit(at, "bin", 5.0 * WS.M))
+	var n := em.shots_played
+	ctx.bus.prop_knocked.emit(at, "bin", 5.0 * WS.M)
+	var again := em.shots_played - n
+	_steps(f, BANK.KNOCK_GAP + 0.05)
+	var box := _shot(f, func() -> void: ctx.bus.prop_knocked.emit(at, "mailbox", 4.0 * WS.M))
+	K.check(
+		fails,
+		(
+			_is_shot(bin, "knock", "prop_clatter")
+			and again == 0
+			and _is_shot(box, "knock", "prop_clang")
+		),
+		"impacts: a knocked bin clatters, a second at once stays silent, a mailbox clangs"
+	)
+	_steps(f, 3.5)
+
+
+## The one-shot that fire() starts (after one step), or null.
+func _shot(f: FpFeature, fire: Callable) -> EM.Src:
+	var em := _em(f)
+	var n := em.shots_played
+	fire.call()
+	var s: EM.Src = em.source("shot:%d" % em.shots_played) if em.shots_played == n + 1 else null
+	f.call("step", DT)
+	return s
+
+
+func _is_shot(s: EM.Src, type: String, stream_name: String) -> bool:
+	return s != null and s.type == type and s.stream == BANK.stream(stream_name) and s.started
 
 
 func _check_budget(ctx: FpContext, f: FpFeature) -> void:

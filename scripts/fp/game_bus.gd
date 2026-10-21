@@ -38,3 +38,9 @@ signal world_ready()
 signal card_action(action: String, tile: int)
 ## The hero got into a car (true) or out of it (false). Emitted by the drive feature.
 signal drive_changed(active: bool)
+## The player's car hit something hard: the contact point, the closing speed (u/s) and what was
+## hit, "wall" (anything fixed) or "car". Emitted by the drive feature.
+signal car_impact(at: Vector3, speed: float, what: String)
+## A street prop was knocked over at a point (its StreetDressing kind: "bin", "bench" ...) and
+## flies off at speed (u/s). Emitted by the props feature.
+signal prop_knocked(at: Vector3, kind: String, speed: float)

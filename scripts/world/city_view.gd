@@ -1975,6 +1975,24 @@ func tile_holder(i: int) -> Node3D:
 	return _tile_nodes.get(i, null)
 
 
+## The batched street props of tile i on foot: Array of [kind, world Transform3D], indexed by
+## their colliders' "slot".
+func street_placements(i: int) -> Array:
+	return _street.placements(i)
+
+
+## Knocks batched street prop `slot` of tile i down (not drawn, its collider marked "down") or
+## stands it up again. CollisionWorld needs invalidate(i) after.
+func set_street_prop_down(i: int, slot: int, down: bool) -> void:
+	_street.set_down(i, slot, down)
+
+
+## A batched street prop kind's mesh parts ({"mesh", "xform", "mat"} each) and their bounds, as
+## {"parts", "aabb"}; {} for an unknown kind.
+func street_kit(kind: String) -> Dictionary:
+	return _street.kit_of(kind)
+
+
 ## Camera used for picking, shake and avatar picking (orbit rig camera or the FP camera).
 func set_camera(c: Camera3D) -> void:
 	camera = c

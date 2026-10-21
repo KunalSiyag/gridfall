@@ -43,6 +43,8 @@ const LOD_DT := 1.0 / 10.0
 const FAR_SPEED := 0.9
 ## Role of the player's own cars: never on a lane, posed by the drive feature or left standing.
 const PLAYER := "player"
+## A car the player's car hit brakes this hard while stunned (its driver stands on the brakes).
+const STUN_BRAKE := 6.0 * WS.M
 
 
 ## One vehicle.
@@ -68,6 +70,7 @@ class Car extends RefCounted:
 	var wait_t: float = 0.0
 	var stalled_s: float = 0.0
 	var hold: bool = false          # conversation: stop and wait
+	var stun_t: float = 0.0         # s it stays braking after the player's car hit it (shoves.gd)
 	var siren: bool = false
 	var far: bool = false
 	var parked: bool = false
@@ -107,10 +110,13 @@ var cars: Array = []
 var by_id: Dictionary = {}
 var player_pos := Vector3(INF, 0, INF)
 var player_on: bool = false
-## What lane traffic stops for, rebuilt each step: the player on foot and the player's cars, each
-## [xz centre, unit heading, half length, half width, xz velocity]; half length < 0 is the player
-## on foot (a circle).
+## What lane traffic stops for, rebuilt each step: the player on foot, the player's cars and the
+## extra_blocks, each [xz centre, unit heading, half length, half width, xz velocity] (an extra
+## block adds the car id it stands for, which does not stop for itself); half length < 0 is the
+## player on foot (a circle).
 var _blocks: Array = []
+## Returns more blocks each step (shoves.gd: cars knocked off their lanes or slots).
+var extra_blocks: Callable
 ## Bumped whenever the set of parked cars changes (the renderer's static layer rebuilds).
 var parked_version: int = 0
 var _next_id: int = 1
@@ -473,8 +479,10 @@ func _drive(c: Car, dt: float) -> void:
 			vl = pl[1]
 		hard = minf(hard, pg - MIN_GAP - WS.PLAYER_RADIUS)
 	var acc := IDM.acc(c.v, vmax, gap, c.v - vl)
-	if c.hold:
-		acc = minf(acc, -IDM.B * 1.5)
+	var hb := _hold_brake(c)
+	if hb > 0.0:
+		acc = minf(acc, -hb)
+	c.stun_t = maxf(0.0, c.stun_t - dt)
 	var v1 := maxf(0.0, c.v + acc * dt)
 	var ds := (c.v + v1) * 0.5 * dt
 	if ds > hard:
@@ -622,9 +630,17 @@ func _stops(c: Car) -> Array:
 		if k == n - 1 and c.goal_lane == null and lg.next_lanes(x).is_empty():
 			best = minf(best, maxf(d + x.length, 0.0))
 		d += x.length
-	if c.hold:
-		best = minf(best, maxf(c.v * c.v / (2.0 * IDM.B * 1.5), 0.0))
+	var hb := _hold_brake(c)
+	if hb > 0.0:
+		best = minf(best, c.v * c.v / (2.0 * hb))
 	return [best]
+
+
+## How hard c brakes to stand still: stunned by a knock, or held by a conversation; 0 when free.
+func _hold_brake(c: Car) -> float:
+	if c.stun_t > 0.0:
+		return STUN_BRAKE
+	return IDM.B * 1.5 if c.hold else 0.0
 
 
 ## Gap from c's front to the player when they stand in its forward corridor, else INF.
@@ -640,6 +656,8 @@ func _gather_blocks() -> void:
 		_blocks.append([Vector2(c.pos.x, c.pos.z), h, c.length * 0.5, c.half_w, v])
 	if player_on and not driving:
 		_blocks.append([Vector2(player_pos.x, player_pos.z), Vector2.ZERO, -1.0, 0.0, Vector2.ZERO])
+	if extra_blocks.is_valid():
+		_blocks.append_array(extra_blocks.call())
 
 
 ## [gap, speed] to the nearest block on c's path: the distance from its front to the block's
@@ -651,6 +669,8 @@ func _player_gap(c: Car) -> Array:
 	var front := lg.pos_at(c.lane, c.s)
 	var look := c.v * c.v / (2.0 * IDM.B) + 2.0 * WS.M + c.v * 0.5 + 0.1
 	for b: Array in _blocks:
+		if b.size() > 5 and int(b[5]) == c.id:
+			continue
 		if front.distance_to(b[0]) > look + 0.2 + maxf(float(b[2]), 0.0):
 			continue
 		var g := _gap_to(c, b, look)

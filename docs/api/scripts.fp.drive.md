@@ -4,17 +4,51 @@
 
 [Index](index.md)
 
+## `scripts/fp/drive/car_body.gd`
+
+extends `RefCounted`
+
+The player's car as a rigid box on the ground plane. Each step it moves by the handling model's velocity in short substeps and resolves its contacts, deepest first: walls, posts and water edges (body_contacts.gd), other vehicles (traffic's bodies_near, pushed through bump_car) and street props (the props feature knocks them over when hit hard enough, else they stand firm). A contact pushes the body out and, while closing, gives an impulse at the contact point, so the car bounces a little off what it hits head-on, slides along what it hits at a glance and spins when it is hit off-centre. Dynamic boxes (stopped cars listed for the walker) are not used: the vehicles themselves are.
+
+### Constants
+
+- `WS = preload("res://scripts/fp/world_scale.gd")`
+- `OBB = preload("res://scripts/fp/obb2d.gd")`
+- `BC = preload("res://scripts/fp/body_contacts.gd")`
+- `MODEL = preload("res://scripts/fp/drive/drive_model.gd")`
+- `RESTITUTION = 0.25`: Share of the closing speed the car bounces back with; contacts closing slower than REST_SPEED do not bounce (a car pushed against a wall rests on it).
+- `REST_SPEED = 1.0 * WS.M`
+- `PROP_BOUNCE = 0.1`: Bounce off a street prop as it is knocked away.
+- `FRICTION = 0.3`: Friction along a contact: a car scraping a wall loses some speed but keeps sliding.
+- `SUBSTEP = 0.5`: A substep moves at most this share of the half width, or turns at most TURN_STEP (rad).
+- `TURN_STEP = 0.08`
+- `ITERATIONS = 4`: Contacts resolved per substep.
+- `MAX_PUSH = 0.02`: The most one contact pushes the body out at once (u, at least a substep's travel): a car that starts overlapping something eases out instead of jumping.
+- `MASS = 1.0`: Mass of the player's car; other bodies are given relative to a sedan (1.0).
+- `IMPACT_SPEED = 1.5 * WS.M`: Hits closing faster than this are listed in hits.
+
+### Properties
+
+- `half`: Half width and half length (u), and height.
+- `hits: Array`: The last move's hits closing faster than IMPACT_SPEED: [point Vector2, speed (u/s), what], what "wall" (anything fixed), "car" or "prop".
+
+### Functions
+
+- `func setup(half_w: float, length: float, p_height: float) -> void`
+- `func move(model: MODEL, pos: Vector3, yaw0: float, dt: float, col: CollisionWorld, traffic: Object, props: Object) -> Vector3`: Moves the body from the feet position pos by the model's velocity over dt (the model's yaw has already turned from yaw0 this step), resolving contacts on the way; the model's velocity and spin take the impulses. traffic and props are those features, or null. Returns the new feet position with y unchanged.
+
 ## `scripts/fp/drive/drive_feature.gd`
 
 extends `FpFeature`
 
-Getting into cars and driving them. Near a parked or stopped car, F (Y on a pad) gets in: the hero sits in the driver's seat and the camera chases the car. W / S or the triggers drive and brake (S reverses once stopped), A / D or the left stick steer, Space (A) is the handbrake, the mouse or right stick look around, V switches to the driver's view, and F again gets out beside the driver's door. The car belongs to the traffic feature (lane traffic stops for it and it stays where it is left); it collides with the walker's world as three circles along its body.
+Getting into cars and driving them. Near a parked or stopped car, F (Y on a pad) gets in: the hero sits in the driver's seat and the camera chases the car. W / S or the triggers drive and brake (S reverses once stopped), A / D or the left stick steer, Space (A) is the handbrake, the mouse or right stick look around, V switches to the driver's view, and F again gets out beside the driver's door. The car belongs to the traffic feature (lane traffic stops for it and it stays where it is left). It is a rigid box (car_body.gd): it bounces off walls, slides along them at a glance, spins when hit off-centre, shoves the cars it hits and knocks street props over; car_impact on the bus reports the hard hits.
 
 ### Constants
 
 - `WS = preload("res://scripts/fp/world_scale.gd")`
 - `MODEL = preload("res://scripts/fp/drive/drive_model.gd")`
 - `HUD = preload("res://scripts/fp/drive/drive_hud.gd")`
+- `BODY = preload("res://scripts/fp/drive/car_body.gd")`
 - `ENTER_REACH = 2.0 * WS.M`: Reach from the hero to a car's body for the get-in prompt.
 - `EXIT_SPEED = 8.5 * WS.M`: Faster than this the hero stays in (about 30 km/h).
 - `EXIT_GAP = 0.7 * WS.M`: How far beside the body the hero steps out.
@@ -37,6 +71,7 @@ Getting into cars and driving them. Near a parked or stopped car, F (Y on a pad)
 - `EYE_INBOARD = 0.6`: The driver view sits a little toward the middle so the door pillar does not fill the left side.
 - `SETTLE = 0.3`: Ground following: the body rises onto a curb at once and settles down at this rate (u/s).
 - `PROMPT_TICK = 0.15`
+- `IMPACT_GAP = 0.25`: car_impact goes out at most this often (s), for the hardest hit.
 
 ### Properties
 
@@ -82,7 +117,7 @@ The drive feature's HUD: the get-in / get-out key chip above the minimap line an
 
 extends `RefCounted`
 
-Arcade handling for the player's car. Throttle and brake set the speed along the heading (brake reverses once stopped), the steering angle turns the car through a bicycle model, and the tyres bleed off sideways speed at a rate set by the surface, so a handbrake turn slides. World units (WS.M per metre) and seconds; the heading at yaw 0 is +Z, as for every vehicle.
+Arcade handling for the player's car. Throttle and brake set the speed along the heading (brake reverses once stopped), the steering angle turns the car through a bicycle model, and the tyres bleed off sideways speed at a rate set by the surface, so a handbrake turn slides. Knocks (car_body.gd) add to the velocity and to a spin the tyres damp out. World units (WS.M per metre) and seconds; the heading at yaw 0 is +Z, as for every vehicle.
 
 ### Constants
 
@@ -102,11 +137,13 @@ Arcade handling for the player's car. Throttle and brake set the speed along the
 - `GRIP = 9.0`: Sideways speed lost per second (1/s): tyres on asphalt, and on the handbrake.
 - `GRIP_HANDBRAKE = 1.4`
 - `SURFACES = { "asphalt": [1.0, 1.0], "bridge": [1.0, 1.0], "sidewalk": [0.9, 0.8], "lot": [0.85, 0....`: Grip and top-speed factors off the carriageway.
-- `BOUNCE = 0.2`: Share of the speed kept (and reversed) after a crash.
+- `SPIN_GRIP = 3.0`: Spin from knocks lost per second (1/s): tyres gripping, and on the handbrake.
+- `SPIN_GRIP_HANDBRAKE = 0.8`
 
 ### Properties
 
 - `accel: float`: Signed acceleration along the heading over the last step (brake lights).
+- `spin: float`: Yaw rate from knocks (rad/s, positive turns the heading toward +X at yaw 0), on top of the steering.
 
 ### Functions
 
@@ -114,4 +151,3 @@ Arcade handling for the player's car. Throttle and brake set the speed along the
 - `func heading() -> Vector2`
 - `func speed() -> float`: Signed speed along the heading (u/s, negative in reverse).
 - `func step(throttle: float, brake: float, steer_in: float, handbrake: float, surface: String, dt: float) -> Vector2`: One step: throttle, brake and handbrake 0..1, steer -1 (left) .. 1 (right). Returns the xz displacement; yaw and vel move on.
-- `func crash() -> void`: A crash: the car stops dead and rebounds a little.

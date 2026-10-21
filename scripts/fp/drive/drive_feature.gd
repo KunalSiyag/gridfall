@@ -4,11 +4,14 @@ extends FpFeature
 ## brake (S reverses once stopped), A / D or the left stick steer, Space (A) is the handbrake, the
 ## mouse or right stick look around, V switches to the driver's view, and F again gets out beside
 ## the driver's door. The car belongs to the traffic feature (lane traffic stops for it and it
-## stays where it is left); it collides with the walker's world as three circles along its body.
+## stays where it is left). It is a rigid box (car_body.gd): it bounces off walls, slides along
+## them at a glance, spins when hit off-centre, shoves the cars it hits and knocks street props
+## over; car_impact on the bus reports the hard hits.
 
 const WS := preload("res://scripts/fp/world_scale.gd")
 const MODEL := preload("res://scripts/fp/drive/drive_model.gd")
 const HUD := preload("res://scripts/fp/drive/drive_hud.gd")
+const BODY := preload("res://scripts/fp/drive/car_body.gd")
 
 ## Reach from the hero to a car's body for the get-in prompt.
 const ENTER_REACH := 2.0 * WS.M
@@ -38,10 +41,13 @@ const EYE_INBOARD := 0.6
 ## Ground following: the body rises onto a curb at once and settles down at this rate (u/s).
 const SETTLE := 0.3
 const PROMPT_TICK := 0.15
+## car_impact goes out at most this often (s), for the hardest hit.
+const IMPACT_GAP := 0.25
 
 var active: bool = false
 var car_id: int = -1
 var model := MODEL.new()
+var body := BODY.new()
 ## "chase" or "driver".
 var view: String = "chase"
 var hud: HUD
@@ -57,6 +63,7 @@ var _orbit_t: float = 0.0
 var _prev_mode: String = "first"
 var _target: Dictionary = {}
 var _t: float = 0.0
+var _impact_t: float = 0.0
 
 
 func feature_id() -> String:
@@ -121,6 +128,7 @@ func enter() -> bool:
 	_pos = info["pos"]
 	_dims = Vector3(float(info["half_w"]), float(info["height"]), float(info["length"]))
 	model.reset(float(info["yaw"]), _dims.z)
+	body.setup(_dims.x, _dims.z, _dims.y)
 	_seat = null
 	_hero_off = Vector3.ZERO
 	_cam_yaw = model.yaw
@@ -239,46 +247,32 @@ func drive_step(throttle: float, brake: float, steer: float, hand: float, dt: fl
 		return
 	var col := ctx.collision
 	var yaw0 := model.yaw
-	var disp := model.step(throttle, brake, steer, hand, col.surface_at(_pos), dt)
-	var n := maxi(1, ceili(disp.length() / (_dims.x * 0.8)))
-	var to := _pos
-	for _k in range(n):
-		to = col.move_body(
-			to, Vector3(disp.x, 0.0, disp.y) / float(n), _dims.x, _dims.y, WS.STEP_HEIGHT
-		)
-	var got := Vector2(to.x - _pos.x, to.z - _pos.z)
-	if not _ends_clear(to, _pos, yaw0):
-		model.yaw = yaw0
-		to = _pos
-		got = Vector2.ZERO
-	if got.length() < disp.length() * 0.7:
-		if absf(model.speed()) > 2.0 * WS.M and got.length() < disp.length() * 0.2:
-			model.crash()
-		else:
-			model.vel = got / dt
+	model.step(throttle, brake, steer, hand, col.surface_at(_pos), dt)
+	var to := body.move(model, _pos, yaw0, dt, col, _traffic(), _props())
 	var g := col.walk_height(to)
 	if not is_nan(g):
 		to.y = g if g > _pos.y else move_toward(_pos.y, g, SETTLE * dt)
 	_pos = to
 	_traffic().call("drive_car", _pos, model.yaw, model.speed(), model.accel)
 	_ride()
+	_impact_t -= dt
+	_report()
 
 
-## True unless the front or rear of the body (yaw now) runs into something it was clear of at
-## from (yaw0): a car that starts against a post can still drive away.
-func _ends_clear(to: Vector3, from: Vector3, yaw0: float) -> bool:
-	var reach := maxf(_dims.z * 0.5 - _dims.x, 0.0)
-	var h := Vector3(sin(model.yaw), 0.0, cos(model.yaw))
-	var h0 := Vector3(sin(yaw0), 0.0, cos(yaw0))
-	for k: float in [-1.0, 1.0]:
-		var e := to + h * (k * reach)
-		e.y = to.y
-		if ctx.collision.body_blocked(e, _dims.x * 0.95, _dims.y):
-			var e0 := from + h0 * (k * reach)
-			e0.y = from.y
-			if not ctx.collision.body_blocked(e0, _dims.x * 0.95, _dims.y):
-				return false
-	return true
+## Puts the last step's hardest hit on the bus (props report their own fall), at most once per
+## IMPACT_GAP.
+func _report() -> void:
+	if body.hits.is_empty() or ctx.bus == null or _impact_t > 0.0:
+		return
+	var best: Array = []
+	for h: Array in body.hits:
+		if str(h[2]) != "prop" and (best.is_empty() or float(h[1]) > float(best[1])):
+			best = h
+	if best.is_empty():
+		return
+	_impact_t = IMPACT_GAP
+	var p: Vector2 = best[0]
+	ctx.bus.car_impact.emit(Vector3(p.x, _pos.y + _dims.y * 0.5, p.y), float(best[1]), str(best[2]))
 
 
 ## The hero rides along, body turned to the car's heading, placed so that the seated hips are on
@@ -407,6 +401,11 @@ func _traffic() -> FpFeature:
 	if tr == null or not tr.has_method("claim_car"):
 		return null
 	return tr
+
+
+func _props() -> FpFeature:
+	var f := ctx.feature("props") if ctx != null else null
+	return f if f != null and f.has_method("knock") else null
 
 
 func _toast(text: String) -> void:

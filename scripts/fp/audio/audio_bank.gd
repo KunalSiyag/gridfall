@@ -19,10 +19,14 @@ const LOOPS: Array[String] = [
 	"engine_idle", "engine_run", "siren_two_tone", "construction_loop", "fire_crackle", "river_loop",
 	"river_bed", "fountain_loop", "plant_hum", "park_birds", "night_insects", "traffic_hum", "rain",
 ]
-const ONE_SHOTS: Array[String] = ["horn_short", "horn_long", "chat_blip", "chat_blip_soft", "alert_stinger"]
+const ONE_SHOTS: Array[String] = [
+	"horn_short", "horn_long", "chat_blip", "chat_blip_soft", "alert_stinger", "crash_heavy",
+	"crash_light", "prop_clatter", "prop_clang",
+]
 ## Stored as WAV (with every footstep_*); everything else is .ogg.
 const WAV_SOUNDS: Array[String] = [
-	"engine_idle", "engine_run", "siren_two_tone", "horn_short", "horn_long", "chat_blip", "chat_blip_soft", "alert_stinger",
+	"engine_idle", "engine_run", "siren_two_tone", "horn_short", "horn_long", "chat_blip",
+	"chat_blip_soft", "alert_stinger", "crash_heavy", "crash_light", "prop_clatter", "prop_clang",
 ]
 
 ## Bus names (created by audio_feature.setup when missing).
@@ -52,6 +56,21 @@ const BLIP_DB := -16.0
 const BLIP_SOFT_DB := -19.0
 const BLIP_CHATTER_DB := -24.0
 const STINGER_DB := -12.0
+## The player's car hitting walls and cars (car_impact): crash_heavy from CRASH_MPS (m/s of
+## closing speed) up, at full level from CRASH_FULL_MPS; crash_light below, at full level from
+## CRASH_MPS. Knocked props (prop_knocked) are at full level from KNOCK_FULL_MPS. A softer hit
+## keeps at least IMPACT_MIN_GAIN of the level.
+const CRASH_MPS := 6.0
+const CRASH_FULL_MPS := 14.0
+const KNOCK_FULL_MPS := 6.0
+const IMPACT_MIN_GAIN := 0.3
+## The one-shot a knocked prop of each kind plays (KNOCK_DEFAULT for the metal ones), at most one
+## per KNOCK_GAP (s).
+const KNOCK_STREAMS := {
+	"bin": "prop_clatter", "bench_park": "prop_clatter", "planter": "crash_light",
+}
+const KNOCK_DEFAULT := "prop_clang"
+const KNOCK_GAP := 0.1
 
 static var _cache: Dictionary = {}
 static var _legacy_loop: AudioStream = null

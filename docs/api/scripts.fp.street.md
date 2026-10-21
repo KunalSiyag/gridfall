@@ -33,7 +33,7 @@ First-person light profile (slice G1): shadow distance and cascades, SSAO and SS
 
 extends `RefCounted`
 
-Street-level dressing that CityView adds to its tile holders in fp_mode (slice G1): furniture and street trees on road sidewalks, street-name signs at junctions, road wear and puddle decals, crosswalk ramps, sidewalk aprons in front of lots, vacant lots with lease boards and billboards, the bus shelter, and the street-level glass and leaf materials. Every blocking item is listed in its holder's `colliders` meta (holder-local, `pos` = centre of the base) before tile_built fires, and every prop root carries `prop` meta. Frequent small items are batched per CHUNK x CHUNK tiles into MultiMeshes under CityView's StreetProps root; flush() rebuilds the chunks whose tiles changed.
+Street-level dressing that CityView adds to its tile holders in fp_mode (slice G1): furniture and street trees on road sidewalks, street-name signs at junctions, road wear and puddle decals, crosswalk ramps, sidewalk aprons in front of lots, vacant lots with lease boards and billboards, the bus shelter, and the street-level glass and leaf materials. Every blocking item is listed in its holder's `colliders` meta (holder-local, `pos` = centre of the base; batched items add their `slot` in placements()) before tile_built fires, and every prop root carries `prop` meta. Frequent small items are batched per CHUNK x CHUNK tiles into MultiMeshes under CityView's StreetProps root; flush() rebuilds the chunks whose tiles changed.
 
 ### Constants
 
@@ -65,6 +65,8 @@ Street-level dressing that CityView adds to its tile holders in fp_mode (slice G
 - `func flush() -> void`: Rebuilds the MultiMeshes of every chunk whose tiles changed since the last flush.
 - `func placed_count(i: int) -> int`: Number of batched items placed on tile i (tests).
 - `func placements(i: int) -> Array`: The batched placements on tile i: Array of [kind, world Transform3D] (tests, A's debugging).
+- `func set_down(i: int, slot: int, down: bool) -> void`: Knocks batched item `slot` of tile i down (or stands it up again), its index in placements(i) and its collider's "slot": a street prop knocked over on foot is not drawn and its collider is marked "down" (CollisionWorld skips it; the caller invalidates the tile there). Its chunk is redrawn at once.
+- `func kit_of(kind: String) -> Dictionary`: The mesh parts of a batched kind ({"mesh", "xform", "mat"} each) and their bounds, as {"parts", "aabb"}; {} for an unknown kind.
 - `func dress_road(i: int, holder: Node3D, mask: int, kind_name: String, model: Node3D) -> void`: Furniture, signs, ramps and decals for road tile i (holder-local). kind_name is CityView's piece name (straight, lights, corner, tee, cross, end, bridge); model is the road GLB instance.
 - `func remount_cross_signs() -> void`: Re-hangs the blades of every built cross tile after the traffic feature appeared or went: its NE pole replaces G1's own (or G1's comes back), and the holder's `colliders` meta follows. Tiles built at boot, before the features exist, need it; the streetscape feature calls it from setup, which runs before FpMode rebuilds collision.
 - `func light_pool(parent: Node3D, p: Vector3) -> Decal`: A pool of lamplight under a bulb at parent-local p: an emissive decal over the ground it falls on, shown after dark (night_glow). It fades out beyond 8 u.

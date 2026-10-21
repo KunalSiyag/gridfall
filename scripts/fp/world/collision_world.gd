@@ -74,18 +74,21 @@ func rebuild_all() -> void:
 	_esc_from = Vector3(NAN, NAN, NAN)
 
 
-## Invalidates tile i's colliders.
-func on_tile_built(i: int, _holder: Node3D) -> void:
+## Invalidates tile i's colliders: its holder changed (a street prop knocked down or put back).
+func invalidate(i: int) -> void:
 	_tiles.erase(i)
 	_bounds.erase(i)
 	_esc_from = Vector3(NAN, NAN, NAN)
+
+
+## Invalidates tile i's colliders.
+func on_tile_built(i: int, _holder: Node3D) -> void:
+	invalidate(i)
 
 
 ## Invalidates tile i's colliders.
 func on_tile_cleared(i: int) -> void:
-	_tiles.erase(i)
-	_bounds.erase(i)
-	_esc_from = Vector3(NAN, NAN, NAN)
+	invalidate(i)
 
 
 ## Test hook: a world box that blocks like any other (a ledge, a ceiling), listed in boxes() of
@@ -815,15 +818,7 @@ func _model_shapes(path: String, local: AABB) -> Dictionary:
 func _prop_shapes(i: int, holder: Node3D, props: Array[AABB], cyls: PackedFloat32Array) -> void:
 	var hx := holder.transform
 	if holder.has_meta("colliders"):
-		for c: Variant in holder.get_meta("colliders", []):
-			if typeof(c) != TYPE_DICTIONARY:
-				continue
-			var d: Dictionary = c
-			if str(d.get("shape", "box")) == "cyl":
-				var p := hx * (d.get("pos", Vector3.ZERO) as Vector3)
-				cyls.append_array([p.x, p.z, float(d.get("r", LAMP_R)), p.y + float(d.get("h", META_CYL_TOP))])
-			elif d.has("size"):
-				props.append(hx * ConstructionKit.collider_aabb(d))
+		_meta_shapes(holder, props, cyls)
 		return
 	var sim := ctx.sim
 	var is_road := sim.kind[i] == D.ROAD
@@ -869,6 +864,22 @@ func _prop_shapes(i: int, holder: Node3D, props: Array[AABB], cyls: PackedFloat3
 			var arm := Vector2(arms[0])
 			var c := Vector3(D.tx(i), 0.0, D.ty(i)) - Vector3(arm.x, 0.0, arm.y) * WS.END_CIRCLE_OFFSET
 			cyls.append_array([c.x, c.z, TRUNK_R, WS.SIDEWALK_TOP + 6.0 * WS.M])
+
+
+## The holder's `colliders` meta in world space; entries marked "down" (street props knocked
+## over) do not block.
+func _meta_shapes(holder: Node3D, props: Array[AABB], cyls: PackedFloat32Array) -> void:
+	var hx := holder.transform
+	for c: Variant in holder.get_meta("colliders", []):
+		if typeof(c) != TYPE_DICTIONARY or bool((c as Dictionary).get("down", false)):
+			continue
+		var d: Dictionary = c
+		if str(d.get("shape", "box")) == "cyl":
+			var p := hx * (d.get("pos", Vector3.ZERO) as Vector3)
+			var top := p.y + float(d.get("h", META_CYL_TOP))
+			cyls.append_array([p.x, p.z, float(d.get("r", LAMP_R)), top])
+		elif d.has("size"):
+			props.append(hx * ConstructionKit.collider_aabb(d))
 
 
 ## One prop model by file name: lamp pole, trunk, box or a footprint cylinder.
