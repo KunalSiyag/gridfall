@@ -5,7 +5,7 @@ Everything is built from numpy noise, oscillators, pulse trains and modal resona
 seeds, so a re-run gives the same samples and byte-identical files. Two formats:
 
 - WAV (16-bit PCM, imported uncompressed) for every sound the game starts often: footsteps,
-  horns, crashes and knocked props, UI cues, the engine loops and the siren. Starting an Ogg Vorbis playback costs about
+  horns, crashes, knocked props and car doors, UI cues, the engine loops and the siren. Starting an Ogg Vorbis playback costs about
   0.4 ms on the main thread (a decoder per start), a WAV about 1 us, and the audio budget is
   0.3 ms per frame.
 - Ogg Vorbis (ffmpeg libvorbis -q 4, bit-exact) for the long loops started rarely: the beds,
@@ -989,6 +989,51 @@ def synth_prop_clang() -> np.ndarray:
     return norm_peak(fade_edges(out, 0.0005, 0.1), -1.0)
 
 
+## A car door's handle and its latch: small, stiff plastic and steel parts.
+HANDLE = [(1720.0, 0.007, 1.0), (2630.0, 0.005, 0.6), (4180.0, 0.003, 0.35)]
+LATCH = [(980.0, 0.018, 1.0), (1530.0, 0.012, 0.7), (2710.0, 0.008, 0.45), (4350.0, 0.005, 0.25)]
+## The door's own skin and frame: smaller, stiffer and better damped than the whole body.
+DOOR_PANEL = [(f * 1.45, d * 0.7, a) for f, d, a in PANEL]
+
+
+def synth_car_door_open() -> np.ndarray:
+    """The player's car door opening: the handle pulled, the latch letting go with a clunk, the
+    rubber seal peeling off and the door check clicking twice as the door swings wide."""
+    rng = rng_for("car_door_open")
+    n = int(0.75 * SR)
+    out = np.zeros(n)
+    add_at(out, 0.45 * knock(rng, HANDLE, 1.0, 0.4), 0, wrap=False)
+    free = int(rng.uniform(0.07, 0.09) * SR)
+    add_at(out, 0.9 * knock(rng, LATCH, rng.uniform(0.97, 1.03), 0.6), free, wrap=False)
+    add_at(out, 0.55 * thud(rng, int(0.2 * SR), 150.0, 110.0, 0.035), free, wrap=False)
+    sl = int(0.25 * SR)
+    seal = bandpass(rng.standard_normal(sl), 180.0, 1400.0) * env_ad(sl, 0.012, 0.06)
+    add_at(out, 0.35 * seal / (np.max(np.abs(seal)) + 1e-9), free + int(0.01 * SR), wrap=False)
+    for tk, amp in [(0.36, 0.22), (0.55, 0.16)]:
+        add_at(out, amp * knock(rng, LATCH, rng.uniform(0.62, 0.7), 0.3), int(tk * SR), wrap=False)
+    out = stereo_reverb(out, rng, 0.45, 0.08, 5000.0, circular=False).mean(axis=1)
+    return norm_peak(fade_edges(out, 0.0005, 0.06), -1.0)
+
+
+def synth_car_door_close() -> np.ndarray:
+    """The slam: the door's weight meeting the body (a low, cushioned thud and the cabin's air
+    pushed out), the latch catching twice, the skin ringing briefly and the trim rattling."""
+    rng = rng_for("car_door_close")
+    n = int(0.9 * SR)
+    out = np.zeros(n)
+    out += 1.0 * thud(rng, n, 92.0, 58.0, 0.07)
+    out += 0.45 * thud(rng, n, 170.0, 120.0, 0.035)
+    out += 0.4 * lowpass(rng.standard_normal(n), 260.0) * env_ad(n, 0.003, 0.05) / 0.2
+    add_at(out, 0.5 * knock(rng, LATCH, 1.0, 0.8), int(0.002 * SR), wrap=False)
+    second = int(rng.uniform(0.012, 0.018) * SR)
+    add_at(out, 0.35 * knock(rng, LATCH, rng.uniform(1.08, 1.14), 0.6), second, wrap=False)
+    add_at(out, 0.28 * knock(rng, DOOR_PANEL, rng.uniform(0.98, 1.02), 0.0), int(0.003 * SR), wrap=False)
+    rattle = grains(rng, int(0.12 * SR), 220.0, 0.06, 2500.0, 9000.0, 0.03)
+    add_at(out, 0.06 * rattle / (np.max(np.abs(rattle)) + 1e-9), int(0.01 * SR), wrap=False)
+    out = stereo_reverb(out, rng, 0.6, 0.12, 4500.0, circular=False).mean(axis=1)
+    return norm_peak(fade_edges(out, 0.0005, 0.1), -1.0)
+
+
 # ------------------------------------------------------------------ UI
 
 def bell_note(f: float, dur: float, index: float = 2.0, ratio: float = 1.4, decay: float = 0.4) -> np.ndarray:
@@ -1033,7 +1078,8 @@ def synth_alert_stinger() -> np.ndarray:
 
 ## Sounds stored as WAV (started often; see the module docstring).
 WAV_SOUNDS = {"engine_idle", "engine_run", "siren_two_tone", "horn_short", "horn_long", "chat_blip",
-              "chat_blip_soft", "alert_stinger", "crash_heavy", "crash_light", "prop_clatter", "prop_clang"}
+              "chat_blip_soft", "alert_stinger", "crash_heavy", "crash_light", "prop_clatter", "prop_clang",
+              "car_door_open", "car_door_close"}
 
 
 def is_wav(name: str) -> bool:
@@ -1065,6 +1111,8 @@ def catalogue() -> dict[str, tuple[object, bool]]:
         "crash_light": (synth_crash_light, False),
         "prop_clatter": (synth_prop_clatter, False),
         "prop_clang": (synth_prop_clang, False),
+        "car_door_open": (synth_car_door_open, False),
+        "car_door_close": (synth_car_door_close, False),
     }
     for s in SURFACES:
         for k in range(1, STEP_VARIANTS + 1):

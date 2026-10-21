@@ -112,6 +112,8 @@ HC's animated hero for the player (slice A stage A2; A-player.md 6.9, TPS_PLAN 2
 - `STEP_MIN_MOVE = 0.25`: Footsteps sound while the walk blend is at least this strong.
 - `SHOT_IN = 0.25`: Gesture one-shot fades (s).
 - `SHOT_OUT = 0.35`
+- `SIT_SPEED = 1.5`: sit_down and stand_up play this much faster than authored (in and out of a car seat).
+- `SIT_CLIPS = ["sit_down", "stand_up"]`
 - `LOOK_YAW = deg_to_rad(70.0)`: Head look (6.9): Head limits (yaw, pitch), the Neck's share and limit, the modifier's own interpolation, the influence fade when the target leaves the limits, and the halflife that smooths a jumping target.
 - `LOOK_PITCH = deg_to_rad(35.0)`
 - `NECK_INFLUENCE = 0.35`
@@ -155,6 +157,9 @@ HC's animated hero for the player (slice A stage A2; A-player.md 6.9, TPS_PLAN 2
 - `func sit(on: bool) -> void`: Sits down (on) or stands up; moving stands up by itself.
 - `func play_gesture(g: String) -> void`: Plays an upper-body gesture over the current state ("interact", "wave", "phone", "door_try").
 - `func gesture_active() -> bool`
+- `func stop_gesture() -> void`: Fades the playing gesture out before its end.
+- `func travel(clip: String, t: float) -> float`: How far clip has carried its root t seconds after its state began (0..1 of the whole clip's horizontal root travel; sit_down and stand_up play at SIT_SPEED). The tree drops root motion, so whoever moves the body through a clip (into a car seat) follows this curve; a clip without travel runs linearly.
+- `func root_travel(clip: String) -> float`: How far clip carries the body along the ground over its whole length (world units).
 - `func set_look_target(p: Vector3) -> void`: The world point the head turns toward; NAN components let the head return to the clip.
 - `func snap(crouched: bool) -> void`: Back to standing (or crouched) locomotion at once: no cross-fade, no landing, no gesture.
 - `func bone_world(bone: String) -> Vector3`: A bone's world position (the animated pose, before the look-at modifiers).

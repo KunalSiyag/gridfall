@@ -21,12 +21,13 @@ const LOOPS: Array[String] = [
 ]
 const ONE_SHOTS: Array[String] = [
 	"horn_short", "horn_long", "chat_blip", "chat_blip_soft", "alert_stinger", "crash_heavy",
-	"crash_light", "prop_clatter", "prop_clang",
+	"crash_light", "prop_clatter", "prop_clang", "car_door_open", "car_door_close",
 ]
 ## Stored as WAV (with every footstep_*); everything else is .ogg.
 const WAV_SOUNDS: Array[String] = [
 	"engine_idle", "engine_run", "siren_two_tone", "horn_short", "horn_long", "chat_blip",
 	"chat_blip_soft", "alert_stinger", "crash_heavy", "crash_light", "prop_clatter", "prop_clang",
+	"car_door_open", "car_door_close",
 ]
 
 ## Bus names (created by audio_feature.setup when missing).
@@ -71,6 +72,8 @@ const KNOCK_STREAMS := {
 }
 const KNOCK_DEFAULT := "prop_clang"
 const KNOCK_GAP := 0.1
+## The player's car door (car_door): the latch letting go plays this far under the slam.
+const DOOR_OPEN_DB := -7.0
 
 static var _cache: Dictionary = {}
 static var _legacy_loop: AudioStream = null

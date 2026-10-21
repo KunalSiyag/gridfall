@@ -41,6 +41,9 @@ signal drive_changed(active: bool)
 ## The player's car hit something hard: the contact point, the closing speed (u/s) and what was
 ## hit, "wall" (anything fixed) or "car". Emitted by the drive feature.
 signal car_impact(at: Vector3, speed: float, what: String)
+## The driver's door of the player's car opened (true) or slammed shut (false), at its handle.
+## Emitted by the drive feature.
+signal car_door(at: Vector3, open: bool)
 ## A street prop was knocked over at a point (its StreetDressing kind: "bin", "bench" ...) and
 ## flies off at speed (u/s). Emitted by the props feature.
 signal prop_knocked(at: Vector3, kind: String, speed: float)

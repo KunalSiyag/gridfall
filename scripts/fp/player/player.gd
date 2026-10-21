@@ -233,6 +233,9 @@ func ride(pos: Vector3, body_yaw: float, view_yaw: float) -> void:
 	yaw = wrapf(body_yaw, -PI, PI)
 	cam_yaw = wrapf(view_yaw, -PI, PI)
 	velocity = Vector3.ZERO
+	# The avatar leans from the last walk's acceleration and turn rate: a carried body does not.
+	_fwd_acc = 0.0
+	_yaw_rate = 0.0
 	_apply_rotation()
 	_update_tile()
 
