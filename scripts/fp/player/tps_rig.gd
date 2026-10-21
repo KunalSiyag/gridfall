@@ -68,6 +68,8 @@ var yaw: float = 0.0
 var pitch: float = PITCH_REST
 ## Arm length goal before pitch scaling (settings.tps_distance_m, then the wheel).
 var zoom: float = DIST_DEFAULT
+## Factor on that goal (the actions feature pulls the arm in while the guard is up).
+var arm_scale: float = 1.0
 ## Shoulder goal: 1 right, -1 left.
 var side: float = 1.0
 var base_fov: float = 60.0
@@ -210,7 +212,8 @@ func _solve(dt: float, feet: Vector3, vel: Vector3, body_yaw: float, eye_h: floa
 	# Lateral look-ahead: leave screen space in front of a character crossing the frame.
 	var lead_goal := clampf(vel.dot(right) * LEAD_TIME, -LEAD_MAX, LEAD_MAX)
 	# Shoulder, zoom, run extension.
-	var want := zoom * _pitch_scale() + (DIST_RUN_ADD if running and flat > 0.5 * WS.RUN else 0.0)
+	var run_add := DIST_RUN_ADD if running and flat > 0.5 * WS.RUN else 0.0
+	var want := zoom * _pitch_scale() * arm_scale + run_add
 	var fov_goal := base_fov + (FOV_RUN_ADD if running and flat > 0.8 * WS.RUN else 0.0)
 	if snapping:
 		_lead = lead_goal

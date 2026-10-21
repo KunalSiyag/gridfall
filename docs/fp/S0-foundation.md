@@ -688,6 +688,13 @@ signal car_door(at: Vector3, open: bool)
 ## A street prop was knocked over at a point (its StreetDressing kind: "bin", "bench" ...) and
 ## flies off at speed (u/s). Emitted by the props feature.
 signal prop_knocked(at: Vector3, kind: String, speed: float)
+## Someone on foot was hit at a point (their feet): cause "shove" or "punch" (the hero) or "car"
+## (the car the player drives); info is traffic_feature.gd hit_walker()'s {"walker",
+## "resident_id", "name", "down", "street", "strength", "witnesses", "crew"}. Emitted by traffic.
+signal person_hit(at: Vector3, cause: String, info: Dictionary)
+## The hero swung or gestured: action "jab", "cross", "shove" or an emote ("wave", "yes", "no",
+## "shout", "dance"), at their feet. Emitted by the actions feature.
+signal hero_action(action: String, at: Vector3)
 ```
 
 | Signal | Payload | Emitted by | Typical listeners |
@@ -712,6 +719,8 @@ signal prop_knocked(at: Vector3, kind: String, speed: float)
 | `car_impact` | `at`: the contact point, at half the car's height. `speed`: the closing speed (u/s), at least 1.5 m/s. `what`: `"wall"` or `"car"`. The hardest hit of a step, at most one every 0.25 s; knocked props report themselves | Integration: driving | I (crash sound at the contact) |
 | `car_door` | `at`: the driver's door handle. `open`: `true` as the latch lets go (the pull on the handle getting in, the door starting to open getting out), `false` as the door slams shut | Integration: driving (the `car_doors` climb in and out) | I (the latch and the slam at the door) |
 | `prop_knocked` | `at`: where the car hit it. `kind`: its StreetDressing kind. `speed`: how fast it flies off (u/s); a fallen prop hit again reports from 1 m/s | Integration: props | I (clatter or clang by kind) |
+| `person_hit` | `at`: the person's drawn feet. `cause`: `"shove"` or `"punch"` (the hero) or `"car"` (the car the player drives). `info`: `walker` (the walker id), `resident_id` and `name` (`""` for an ambient walker), `down` (knocked down), `street` (the street label, may be `""`), `strength` 0..1, `witnesses` (the resident ids of those who saw it), `crew` (`"police"`, `"ambulance"` or `""`: the crew this blow called) | E (`hit_walker`, called by Integration: body actions and by the drive feature's car body) | C (the victim's and a witness's lines, a crew's City Alert card), I (the blow and the fall) |
+| `hero_action` | `action`: `"jab"`, `"cross"` or `"shove"` as a swing starts, or the emote as it starts (`"wave"`, `"yes"`, `"no"`, `"shout"`, `"dance"`). `at`: the hero's feet | Integration: body actions | I (the whoosh of a swing) |
 
 The **target** dict: `{"kind": "resident"|"building"|"poster"|"vehicle"|"pedestrian", "id": String, "tile": int, "pos": Vector3, "dist": float, "label": String, "data": Dictionary}`.
 

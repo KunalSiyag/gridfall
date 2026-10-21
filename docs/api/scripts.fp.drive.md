@@ -8,7 +8,7 @@
 
 extends `RefCounted`
 
-The player's car as a rigid box on the ground plane. Each step it moves by the handling model's velocity in short substeps and resolves its contacts, deepest first: walls, posts and water edges (body_contacts.gd), other vehicles (traffic's bodies_near, pushed through bump_car) and street props (the props feature knocks them over when hit hard enough, else they stand firm). A contact pushes the body out and, while closing, gives an impulse at the contact point, so the car bounces a little off what it hits head-on, slides along what it hits at a glance and spins when it is hit off-centre. Dynamic boxes (stopped cars listed for the walker) are not used: the vehicles themselves are.
+The player's car as a rigid box on the ground plane. Each step it moves by the handling model's velocity in short substeps and resolves its contacts, deepest first: walls, posts and water edges (body_contacts.gd), other vehicles (traffic's bodies_near, pushed through bump_car) and street props (the props feature knocks them over when hit hard enough, else they stand firm). People on foot are struck through traffic's hit_walker and barely slow the car. A contact pushes the body out and, while closing, gives an impulse at the contact point, so the car bounces a little off what it hits head-on, slides along what it hits at a glance and spins when it is hit off-centre. Dynamic boxes (stopped cars listed for the walker) are not used: the vehicles themselves are.
 
 ### Constants
 
@@ -26,11 +26,16 @@ The player's car as a rigid box on the ground plane. Each step it moves by the h
 - `MAX_PUSH = 0.02`: The most one contact pushes the body out at once (u, at least a substep's travel): a car that starts overlapping something eases out instead of jumping.
 - `MASS = 1.0`: Mass of the player's car; other bodies are given relative to a sedan (1.0).
 - `IMPACT_SPEED = 1.5 * WS.M`: Hits closing faster than this are listed in hits.
+- `PERSON_R = 0.3 * WS.M`: People: a body this wide (u) is struck when the car closes on them faster than PERSON_SPEED, each at most once per PERSON_COOL seconds, as hard as the closing speed over PERSON_FULL (1 knocks anyone down). They weigh PERSON_MASS of a sedan, so the car loses little speed.
+- `PERSON_SPEED = 0.5 * WS.M`
+- `PERSON_FULL = 12.0 * WS.M`
+- `PERSON_COOL = 1.5`
+- `PERSON_MASS = 0.08`
 
 ### Properties
 
 - `half`: Half width and half length (u), and height.
-- `hits: Array`: The last move's hits closing faster than IMPACT_SPEED: [point Vector2, speed (u/s), what], what "wall" (anything fixed), "car" or "prop".
+- `hits: Array`: The last move's hits closing faster than IMPACT_SPEED: [point Vector2, speed (u/s), what], what "wall" (anything fixed), "car", "prop" or "person".
 
 ### Functions
 

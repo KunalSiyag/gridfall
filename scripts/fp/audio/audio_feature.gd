@@ -2,7 +2,8 @@ extends FpFeature
 ## City sound on foot (slice I). Owns the Music, SFX, Ambience and UI buses while on foot, puts
 ## the AudioDirector's music under the street (set_fp), and runs three parts: positional emitters
 ## (engines, horns, sirens, construction, fire, fountains, plants, the river, passers-by's steps,
-## the player's car crashing, the street props it knocks over and its doors),
+## the player's car crashing, the street props it knocks over and its doors, people hit in the
+## street and the hero's swings),
 ## the area beds (with rain from G1's weather) and the hero's footsteps (splashing on wet paving),
 ## plus the chat blip and alert stingers. Pausing muffles the music (the only thing still
 ## playing); talking to someone ducks the beds.
@@ -54,6 +55,7 @@ var _duck_target: float = 0.0
 var _sfx_db: float = 0.0
 var _talking: Dictionary = {}
 var _last_knock: float = -INF
+var _falls: Array = []                 # [due on _now, feet] of people knocked down
 var _rng := RandomNumberGenerator.new()
 var _links: Array = []                 # [Signal, Callable]
 var _muffle: Tween
@@ -102,6 +104,8 @@ func setup(p_ctx: FpContext) -> void:
 		_link(bus.car_impact, _on_car_impact)
 		_link(bus.prop_knocked, _on_prop_knocked)
 		_link(bus.car_door, _on_car_door)
+		_link(bus.person_hit, _on_person_hit)
+		_link(bus.hero_action, _on_hero_action)
 	if ctx.sim != null:
 		_link(ctx.sim.event_started, emitters.on_event)
 		_link(ctx.sim.event_ended, emitters.on_event_ended)
@@ -129,6 +133,7 @@ func to_dict() -> Dictionary:
 ## Volumes live in the settings; a load re-registers the world's sources (initial scan).
 func from_dict(_d: Dictionary) -> void:
 	emitters.full_scan()
+	_falls.clear()
 	_talking.clear()
 	_duck_target = 0.0
 	_player_seq = -1
@@ -147,6 +152,7 @@ func teardown() -> void:
 		_muffle = null
 	if ctx != null and ctx.audio != null and is_instance_valid(ctx.audio):
 		ctx.audio.set_fp(false)
+	_falls.clear()
 	if emitters != null:
 		emitters.clear()
 	if ambience != null:
@@ -193,6 +199,9 @@ func _process(delta: float) -> void:
 func step(dt: float) -> void:
 	_now += dt
 	emitters.night = ambience.night
+	while not _falls.is_empty() and float(_falls[0][0]) <= _now:
+		var fall: Array = _falls.pop_front()
+		emitters.shot("hit", fall[1], "body_fall", BANK.BODY_FALL_DB, _rng.randf_range(0.92, 1.04))
 	emitters.step(dt)
 	ambience.step(dt)
 	footsteps.poll(dt)
@@ -347,6 +356,32 @@ func _on_car_door(at: Vector3, open: bool) -> void:
 ## The level trim (dB) of a hit at share k of its full-level speed.
 static func _impact_db(k: float) -> float:
 	return linear_to_db(clampf(k, BANK.IMPACT_MIN_GAIN, 1.0))
+
+
+## Someone hit in the street (person_hit): the blow's thump at their chest by its strength (a
+## shove's duller, a car's lower and louder); someone knocked down lands BANK.BODY_FALL_S later.
+func _on_person_hit(at: Vector3, cause: String, info: Dictionary) -> void:
+	var car := cause == "car"
+	var trim := _impact_db(float(info.get("strength", 0.5)) / BANK.HIT_FULL)
+	var pitch := _rng.randf_range(0.92, 1.08) * (0.85 if cause == "shove" else 1.0)
+	if car:
+		trim += BANK.HIT_CAR_DB
+		pitch = _rng.randf_range(0.72, 0.8)
+	emitters.shot("hit", at + Vector3(0.0, 1.3 * WS.M, 0.0), "punch_hit", trim, pitch)
+	if bool(info.get("down", false)):
+		_falls.append([_now + BANK.BODY_FALL_S, at])
+
+
+## The hero's swing (hero_action): a whoosh at their shoulder, a jab's higher, a shove's lower and
+## softer. Emotes make no sound here.
+func _on_hero_action(action: String, at: Vector3) -> void:
+	if action not in ["jab", "cross", "shove"]:
+		return
+	var shove := action == "shove"
+	var trim := BANK.WHOOSH_DB + (BANK.SHOVE_DB if shove else 0.0)
+	var pitch := 0.8 if shove else (1.1 if action == "jab" else 0.95)
+	var p := at + Vector3(0.0, 1.4 * WS.M, 0.0)
+	emitters.shot("hit", p, "punch_whoosh", trim, pitch * _rng.randf_range(0.96, 1.04))
 
 
 func _on_site_started(site: Dictionary) -> void:

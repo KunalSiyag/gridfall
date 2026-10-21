@@ -1,86 +1,100 @@
 [gd_resource type="AnimationLibrary" format=3]
 
-[ext_resource type="Animation" path="res://models/characters/anim/clips/u_carry.res" id="1_243gn"]
-[ext_resource type="Animation" path="res://models/characters/anim/clips/u_climb_1m.res" id="2_7t3d5"]
-[ext_resource type="Animation" path="res://models/characters/anim/clips/u_crouch_idle.res" id="3_o8wtc"]
-[ext_resource type="Animation" path="res://models/characters/anim/clips/u_crouch_walk.res" id="4_tcrrw"]
-[ext_resource type="Animation" path="res://models/characters/anim/clips/m_door_try.res" id="5_k6s6h"]
-[ext_resource type="Animation" path="res://models/characters/anim/clips/u_drive.res" id="6_6w0lv"]
-[ext_resource type="Animation" path="res://models/characters/anim/clips/u_fall.res" id="7_n02qs"]
-[ext_resource type="Animation" path="res://models/characters/anim/clips/u_fold_arms.res" id="8_uy1kx"]
-[ext_resource type="Animation" path="res://models/characters/anim/clips/m_idle.res" id="9_lkaxu"]
-[ext_resource type="Animation" path="res://models/characters/anim/clips/m_idle_look.res" id="10_esux0"]
-[ext_resource type="Animation" path="res://models/characters/anim/clips/m_idle_wait.res" id="11_y7ji3"]
-[ext_resource type="Animation" path="res://models/characters/anim/clips/u_interact.res" id="12_43fde"]
-[ext_resource type="Animation" path="res://models/characters/anim/clips/u_jump_start.res" id="13_ushye"]
-[ext_resource type="Animation" path="res://models/characters/anim/clips/m_knock.res" id="14_sbsa7"]
-[ext_resource type="Animation" path="res://models/characters/anim/clips/u_knockback.res" id="15_v2hsc"]
-[ext_resource type="Animation" path="res://models/characters/anim/clips/u_land.res" id="16_qbvid"]
-[ext_resource type="Animation" path="res://models/characters/anim/clips/u_no.res" id="17_ntea5"]
-[ext_resource type="Animation" path="res://models/characters/anim/clips/m_phone.res" id="18_1i0d3"]
-[ext_resource type="Animation" path="res://models/characters/anim/clips/u_phone_idle.res" id="19_1dws4"]
-[ext_resource type="Animation" path="res://models/characters/anim/clips/u_pickup.res" id="20_xmpiw"]
-[ext_resource type="Animation" path="res://models/characters/anim/clips/u_push.res" id="21_nm53i"]
-[ext_resource type="Animation" path="res://models/characters/anim/clips/m_run.res" id="22_wpbby"]
-[ext_resource type="Animation" path="res://models/characters/anim/clips/m_run_fast.res" id="23_suwkb"]
-[ext_resource type="Animation" path="res://models/characters/anim/clips/m_run_start.res" id="24_r55r1"]
-[ext_resource type="Animation" path="res://models/characters/anim/clips/m_run_stop.res" id="25_x7rlq"]
-[ext_resource type="Animation" path="res://models/characters/anim/clips/m_sit.res" id="26_yusn5"]
-[ext_resource type="Animation" path="res://models/characters/anim/clips/m_sit_down.res" id="27_7cf1d"]
-[ext_resource type="Animation" path="res://models/characters/anim/clips/m_stand_up.res" id="28_fcdh8"]
-[ext_resource type="Animation" path="res://models/characters/anim/clips/m_talk.res" id="29_aq7rn"]
-[ext_resource type="Animation" path="res://models/characters/anim/clips/m_talk_2.res" id="30_bcdpu"]
-[ext_resource type="Animation" path="res://models/characters/anim/clips/m_turn_l180_walk.res" id="31_xyssm"]
-[ext_resource type="Animation" path="res://models/characters/anim/clips/m_turn_l90.res" id="32_ei77u"]
-[ext_resource type="Animation" path="res://models/characters/anim/clips/m_turn_r180_walk.res" id="33_c4lhw"]
-[ext_resource type="Animation" path="res://models/characters/anim/clips/m_turn_r90.res" id="34_cua2r"]
-[ext_resource type="Animation" path="res://models/characters/anim/clips/m_walk.res" id="35_nu5s3"]
-[ext_resource type="Animation" path="res://models/characters/anim/clips/m_walk_fast.res" id="36_mpraf"]
-[ext_resource type="Animation" path="res://models/characters/anim/clips/m_walk_start.res" id="37_cl64j"]
-[ext_resource type="Animation" path="res://models/characters/anim/clips/m_walk_stop.res" id="38_fb22m"]
-[ext_resource type="Animation" path="res://models/characters/anim/clips/m_wave.res" id="39_e2evx"]
-[ext_resource type="Animation" path="res://models/characters/anim/clips/u_yes.res" id="40_mvrfi"]
+[ext_resource type="Animation" path="res://models/characters/anim/clips/u_carry.res" id="1_uy1kx"]
+[ext_resource type="Animation" path="res://models/characters/anim/clips/u_climb_1m.res" id="2_lkaxu"]
+[ext_resource type="Animation" path="res://models/characters/anim/clips/u_crouch_idle.res" id="3_esux0"]
+[ext_resource type="Animation" path="res://models/characters/anim/clips/u_crouch_walk.res" id="4_y7ji3"]
+[ext_resource type="Animation" path="res://models/characters/anim/clips/u_dance.res" id="5_43fde"]
+[ext_resource type="Animation" path="res://models/characters/anim/clips/m_door_try.res" id="6_ushye"]
+[ext_resource type="Animation" path="res://models/characters/anim/clips/u_drive.res" id="7_sbsa7"]
+[ext_resource type="Animation" path="res://models/characters/anim/clips/u_fall.res" id="8_v2hsc"]
+[ext_resource type="Animation" path="res://models/characters/anim/clips/u_fold_arms.res" id="9_qbvid"]
+[ext_resource type="Animation" path="res://models/characters/anim/clips/u_get_up.res" id="10_ntea5"]
+[ext_resource type="Animation" path="res://models/characters/anim/clips/u_hit_chest.res" id="11_1i0d3"]
+[ext_resource type="Animation" path="res://models/characters/anim/clips/u_hit_head.res" id="12_1dws4"]
+[ext_resource type="Animation" path="res://models/characters/anim/clips/m_idle.res" id="13_xmpiw"]
+[ext_resource type="Animation" path="res://models/characters/anim/clips/m_idle_look.res" id="14_nm53i"]
+[ext_resource type="Animation" path="res://models/characters/anim/clips/m_idle_wait.res" id="15_wpbby"]
+[ext_resource type="Animation" path="res://models/characters/anim/clips/u_interact.res" id="16_suwkb"]
+[ext_resource type="Animation" path="res://models/characters/anim/clips/u_jump_start.res" id="17_r55r1"]
+[ext_resource type="Animation" path="res://models/characters/anim/clips/m_knock.res" id="18_x7rlq"]
+[ext_resource type="Animation" path="res://models/characters/anim/clips/u_knockback.res" id="19_yusn5"]
+[ext_resource type="Animation" path="res://models/characters/anim/clips/u_land.res" id="20_7cf1d"]
+[ext_resource type="Animation" path="res://models/characters/anim/clips/u_no.res" id="21_fcdh8"]
+[ext_resource type="Animation" path="res://models/characters/anim/clips/m_phone.res" id="22_aq7rn"]
+[ext_resource type="Animation" path="res://models/characters/anim/clips/u_phone_idle.res" id="23_bcdpu"]
+[ext_resource type="Animation" path="res://models/characters/anim/clips/u_pickup.res" id="24_xyssm"]
+[ext_resource type="Animation" path="res://models/characters/anim/clips/u_punch_cross.res" id="25_ei77u"]
+[ext_resource type="Animation" path="res://models/characters/anim/clips/u_punch_jab.res" id="26_c4lhw"]
+[ext_resource type="Animation" path="res://models/characters/anim/clips/u_push.res" id="27_cua2r"]
+[ext_resource type="Animation" path="res://models/characters/anim/clips/m_run.res" id="28_nu5s3"]
+[ext_resource type="Animation" path="res://models/characters/anim/clips/m_run_fast.res" id="29_mpraf"]
+[ext_resource type="Animation" path="res://models/characters/anim/clips/m_run_start.res" id="30_cl64j"]
+[ext_resource type="Animation" path="res://models/characters/anim/clips/m_run_stop.res" id="31_fb22m"]
+[ext_resource type="Animation" path="res://models/characters/anim/clips/u_shout.res" id="32_e2evx"]
+[ext_resource type="Animation" path="res://models/characters/anim/clips/m_sit.res" id="33_mvrfi"]
+[ext_resource type="Animation" path="res://models/characters/anim/clips/m_sit_down.res" id="34_u21yj"]
+[ext_resource type="Animation" path="res://models/characters/anim/clips/m_stand_up.res" id="35_kai0f"]
+[ext_resource type="Animation" path="res://models/characters/anim/clips/m_talk.res" id="36_ovmll"]
+[ext_resource type="Animation" path="res://models/characters/anim/clips/m_talk_2.res" id="37_t3qh7"]
+[ext_resource type="Animation" path="res://models/characters/anim/clips/m_turn_l180_walk.res" id="38_1vos1"]
+[ext_resource type="Animation" path="res://models/characters/anim/clips/m_turn_l90.res" id="39_88sfj"]
+[ext_resource type="Animation" path="res://models/characters/anim/clips/m_turn_r180_walk.res" id="40_s4bho"]
+[ext_resource type="Animation" path="res://models/characters/anim/clips/m_turn_r90.res" id="41_8kpy6"]
+[ext_resource type="Animation" path="res://models/characters/anim/clips/m_walk.res" id="42_vqnir"]
+[ext_resource type="Animation" path="res://models/characters/anim/clips/m_walk_fast.res" id="43_k1d8b"]
+[ext_resource type="Animation" path="res://models/characters/anim/clips/m_walk_start.res" id="44_k5b1w"]
+[ext_resource type="Animation" path="res://models/characters/anim/clips/m_walk_stop.res" id="45_fxm67"]
+[ext_resource type="Animation" path="res://models/characters/anim/clips/m_wave.res" id="46_h1ix6"]
+[ext_resource type="Animation" path="res://models/characters/anim/clips/u_yes.res" id="47_b4lj3"]
 
 [resource]
 _data = {
-&"carry": ExtResource("1_243gn"),
-&"climb_1m": ExtResource("2_7t3d5"),
-&"crouch_idle": ExtResource("3_o8wtc"),
-&"crouch_walk": ExtResource("4_tcrrw"),
-&"door_try": ExtResource("5_k6s6h"),
-&"drive": ExtResource("6_6w0lv"),
-&"fall": ExtResource("7_n02qs"),
-&"fold_arms": ExtResource("8_uy1kx"),
-&"idle": ExtResource("9_lkaxu"),
-&"idle_look": ExtResource("10_esux0"),
-&"idle_wait": ExtResource("11_y7ji3"),
-&"interact": ExtResource("12_43fde"),
-&"jump_start": ExtResource("13_ushye"),
-&"knock": ExtResource("14_sbsa7"),
-&"knockback": ExtResource("15_v2hsc"),
-&"land": ExtResource("16_qbvid"),
-&"no": ExtResource("17_ntea5"),
-&"phone": ExtResource("18_1i0d3"),
-&"phone_idle": ExtResource("19_1dws4"),
-&"pickup": ExtResource("20_xmpiw"),
-&"push": ExtResource("21_nm53i"),
-&"run": ExtResource("22_wpbby"),
-&"run_fast": ExtResource("23_suwkb"),
-&"run_start": ExtResource("24_r55r1"),
-&"run_stop": ExtResource("25_x7rlq"),
-&"sit": ExtResource("26_yusn5"),
-&"sit_down": ExtResource("27_7cf1d"),
-&"stand_up": ExtResource("28_fcdh8"),
-&"talk": ExtResource("29_aq7rn"),
-&"talk_2": ExtResource("30_bcdpu"),
-&"turn_l180_walk": ExtResource("31_xyssm"),
-&"turn_l90": ExtResource("32_ei77u"),
-&"turn_r180_walk": ExtResource("33_c4lhw"),
-&"turn_r90": ExtResource("34_cua2r"),
-&"walk": ExtResource("35_nu5s3"),
-&"walk_fast": ExtResource("36_mpraf"),
-&"walk_start": ExtResource("37_cl64j"),
-&"walk_stop": ExtResource("38_fb22m"),
-&"wave": ExtResource("39_e2evx"),
-&"yes": ExtResource("40_mvrfi")
+&"carry": ExtResource("1_uy1kx"),
+&"climb_1m": ExtResource("2_lkaxu"),
+&"crouch_idle": ExtResource("3_esux0"),
+&"crouch_walk": ExtResource("4_y7ji3"),
+&"dance": ExtResource("5_43fde"),
+&"door_try": ExtResource("6_ushye"),
+&"drive": ExtResource("7_sbsa7"),
+&"fall": ExtResource("8_v2hsc"),
+&"fold_arms": ExtResource("9_qbvid"),
+&"get_up": ExtResource("10_ntea5"),
+&"hit_chest": ExtResource("11_1i0d3"),
+&"hit_head": ExtResource("12_1dws4"),
+&"idle": ExtResource("13_xmpiw"),
+&"idle_look": ExtResource("14_nm53i"),
+&"idle_wait": ExtResource("15_wpbby"),
+&"interact": ExtResource("16_suwkb"),
+&"jump_start": ExtResource("17_r55r1"),
+&"knock": ExtResource("18_x7rlq"),
+&"knockback": ExtResource("19_yusn5"),
+&"land": ExtResource("20_7cf1d"),
+&"no": ExtResource("21_fcdh8"),
+&"phone": ExtResource("22_aq7rn"),
+&"phone_idle": ExtResource("23_bcdpu"),
+&"pickup": ExtResource("24_xyssm"),
+&"punch_cross": ExtResource("25_ei77u"),
+&"punch_jab": ExtResource("26_c4lhw"),
+&"push": ExtResource("27_cua2r"),
+&"run": ExtResource("28_nu5s3"),
+&"run_fast": ExtResource("29_mpraf"),
+&"run_start": ExtResource("30_cl64j"),
+&"run_stop": ExtResource("31_fb22m"),
+&"shout": ExtResource("32_e2evx"),
+&"sit": ExtResource("33_mvrfi"),
+&"sit_down": ExtResource("34_u21yj"),
+&"stand_up": ExtResource("35_kai0f"),
+&"talk": ExtResource("36_ovmll"),
+&"talk_2": ExtResource("37_t3qh7"),
+&"turn_l180_walk": ExtResource("38_1vos1"),
+&"turn_l90": ExtResource("39_88sfj"),
+&"turn_r180_walk": ExtResource("40_s4bho"),
+&"turn_r90": ExtResource("41_8kpy6"),
+&"walk": ExtResource("42_vqnir"),
+&"walk_fast": ExtResource("43_k1d8b"),
+&"walk_start": ExtResource("44_k5b1w"),
+&"walk_stop": ExtResource("45_fxm67"),
+&"wave": ExtResource("46_h1ix6"),
+&"yes": ExtResource("47_b4lj3")
 }

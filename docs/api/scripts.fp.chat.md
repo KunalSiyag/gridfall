@@ -37,7 +37,7 @@ What is really going on in the city, for chat answers (slice C): what the distri
 
 extends `FpFeature`
 
-Global chat and face-to-face conversations (slice C). Normalises every city source (residents, mayors, the Gazette, the council, incidents, openings, arrivals, deals) into the ChatFeed drip queue, runs ChatterMinds rounds about real events once a minute, answers the player's chat lines, and opens the talk dialogue on talk_requested. Owns the chat panel (chat_slot) and the talk card (overlay). Budgets (D12) are enforced here on the feed clock: one round per 60 s unpaused, one player-reply call per coalesced burst (6 per minute), one talk call per line and one inspect_tile per 20 s. While the player is being answered the drip holds everyday lines and the panel shows who is typing; a status card says when live replies fail or come back.
+Global chat and face-to-face conversations (slice C). Normalises every city source (residents, mayors, the Gazette, the council, incidents, openings, arrivals, deals, people hit in the street) into the ChatFeed drip queue, runs ChatterMinds rounds about real events once a minute, answers the player's chat lines, and opens the talk dialogue on talk_requested. Owns the chat panel (chat_slot) and the talk card (overlay). Budgets (D12) are enforced here on the feed clock: one round per 60 s unpaused, one player-reply call per coalesced burst (6 per minute), one talk call per line and one inspect_tile per 20 s. While the player is being answered the drip holds everyday lines and the panel shows who is typing; a status card says when live replies fail or come back.
 
 ### Constants
 
@@ -45,6 +45,7 @@ Global chat and face-to-face conversations (slice C). Normalises every city sour
 - `T = preload("res://scripts/fp/chat/chat_text.gd")`
 - `PANEL = preload("res://scripts/fp/ui/chat_panel.gd")`
 - `TALK = preload("res://scripts/fp/chat/talk_dialog.gd")`
+- `STREET = preload("res://scripts/fp/chat/street_lines.gd")`
 - `ROUND_MS = 60000`
 - `PLAYER_DEBOUNCE_MS = 3000`
 - `PLAYER_COALESCE_MS = 10000`
@@ -173,6 +174,27 @@ Text helpers for the global chat and conversations (slice C): the display filter
 - `static func h(s: String) -> int`: Deterministic non-negative hash of a string (stable across runs).
 - `static func mix(s: String) -> int`: h(s) with its bits mixed (a murmur-style finaliser). Godot's String hash is djb2, whose value modulo 3 depends only on the last character, so "hash(id + day) % 3" would make every letter of a day public or none; mix() spreads it.
 - `static func district_badge(d: int) -> String`: Two-or-three letter badge for district d ("NW", "NE", "CTR", "SW", "SE"); "" outside them.
+
+## `scripts/fp/chat/street_lines.gd`
+
+extends `RefCounted`
+
+What the chat hears when the visitor hits someone in the street (game bus person_hit; see docs/fp/ARCHITECTURE.md, Body actions): the one who was hit says so (a shove, a punch, being knocked down, a car) and one of the residents who saw it adds a line, and a crew called to the scene (incidents.gd: police after an assault, an ambulance for someone a car knocked down) posts a City Alert card. One victim-and-witness pair per GAP_MS on the feed clock, so a flurry of jabs reads as one scene; a harder blow inside the gap still posts, and so does every crew.
+
+### Constants
+
+- `D = preload("res://scripts/sim/sim_defs.gd")`
+- `T = preload("res://scripts/fp/chat/chat_text.gd")`
+- `GAP_MS = 8000`
+- `SEVERITY = {"shove": 0, "punch": 1, "car": 2, "down": 3, "car_down": 3}`
+- `VICTIM = { "shove": [ "Some visitor just shoved me on {street}. Who does that?", "Got pushed out...`: What the one who was hit says ({street}: where).
+- `WITNESS = { "shove": [ "Did a visitor just shove {who} on {street}?", "Some visitor's pushing peo...`: What a resident who saw it says ({who}: the one hit, by first name, or "someone").
+- `CREW = { "police": "Police called to {street} after a visitor attacked people", "ambulance": "...`
+
+### Functions
+
+- `func setup(p_ctx: FpContext, p_feed: ChatFeed) -> void`
+- `func on_person_hit(at: Vector3, cause: String, info: Dictionary) -> void`: person_hit (game bus): queues the victim's line and a witness's, and a crew's City Alert card.
 
 ## `scripts/fp/chat/talk_dialog.gd`
 

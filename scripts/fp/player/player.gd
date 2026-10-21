@@ -73,6 +73,8 @@ const FOOT_SPREAD := 0.09 * WS.M
 const FP_SPRINT_FOV := 4.0
 const HL_FOV := 0.25
 const FP_PITCH_LIMIT := deg_to_rad(WS.PITCH_LIMIT_DEG)
+## A view kick (kick_view) dies away with this halflife (s).
+const HL_KICK := 0.07
 # --- Camera modes and the right stick
 const MODE_BLEND := 0.35
 const STICK_YAW := deg_to_rad(270.0)
@@ -167,6 +169,11 @@ var _set_up: bool = false
 var _traffic_t: float = 0.0
 ## True while another owner (the city overview) places the camera through set_view_override().
 var view_override: bool = false
+## Third person: while not NAN the body turns toward this yaw instead of its travel (the actions
+## feature: the guard faces where the camera looks, a blow faces its target).
+var aim_yaw: float = NAN
+## The view kick still applied (pitch, roll; radians).
+var _kick: Vector2 = Vector2.ZERO
 var _override_xf: Transform3D = Transform3D()
 var _override_fov: float = 50.0
 
@@ -377,6 +384,7 @@ func update_view(delta: float) -> void:
 	var dt := clampf(delta, 0.0, MAX_FRAME_DELTA)
 	var sp := speed()
 	_cam_dy = SM.damp(_cam_dy, 0.0, HL_FP_STEP, dt)
+	_kick *= pow(0.5, dt / HL_KICK)
 	_bob_amp = SM.damp(_bob_amp, sqrt(clampf(sp / WS.RUN, 0.0, 1.0)) if grounded else 0.0, HL_BOB, dt)
 	var fp_goal := _fov_setting + (FP_SPRINT_FOV if _head_bob and _running and sp > 0.8 * WS.RUN else 0.0)
 	_fp_fov = SM.damp(_fp_fov, fp_goal, HL_FOV, dt)
@@ -404,7 +412,7 @@ func update_view(delta: float) -> void:
 		xf = _conv_xform(dt)
 		fv = CONV_FOV
 	elif third:
-		xf = rig.cam_xform
+		xf = rig.cam_xform * _kick_xform()
 		fv = rig.fov
 	else:
 		xf = _fp_world()
@@ -440,6 +448,16 @@ func update_view(delta: float) -> void:
 			if avatar.is_animated():
 				_hero_steps()
 		_step_snap = 0.0
+
+
+## Jolts the view by d_pitch (positive up) and d_roll (radians; positive tips left), dying away
+## over HL_KICK: a blow landing.
+func kick_view(d_pitch: float, d_roll: float) -> void:
+	_kick += Vector2(d_pitch, d_roll)
+
+
+func _kick_xform() -> Transform3D:
+	return Transform3D(Basis.from_euler(Vector3(_kick.x, 0.0, _kick.y)), Vector3.ZERO)
 
 
 ## Mouse or stick look (radians): turns the view; in first person the body turns with it.
@@ -861,8 +879,8 @@ func _snap_y(y: float) -> void:
 	position.y = y
 
 
-## Third person: the body turns toward its travel (a spring, rate-limited; toward the wish during
-## a pivot). First person: the body follows the view.
+## Third person: the body turns toward aim_yaw, else its travel (a spring, rate-limited; toward
+## the wish during a pivot). First person: the body follows the view.
 func _body_yaw_step(h: float) -> void:
 	if camera_mode == "first":
 		if absf(yaw - cam_yaw) > 0.0:
@@ -873,7 +891,9 @@ func _body_yaw_step(h: float) -> void:
 	var flat := Vector2(velocity.x, velocity.z)
 	var sp := flat.length()
 	var goal := NAN
-	if _pivot_t > 0.0 and _wish_dir != Vector2.ZERO:
+	if not is_nan(aim_yaw):
+		goal = aim_yaw
+	elif _pivot_t > 0.0 and _wish_dir != Vector2.ZERO:
 		goal = atan2(-_wish_dir.x, -_wish_dir.y)
 	elif sp > TURN_MIN_SPEED:
 		goal = atan2(-flat.x, -flat.y)
@@ -1079,7 +1099,7 @@ func _fp_local() -> Transform3D:
 	if _head_bob:
 		bv = -BOB_V * _bob_amp * cos(2.0 * _gait_phase)
 		bl = BOB_L * _bob_amp * sin(_gait_phase)
-	return Transform3D(Basis.from_euler(Vector3(cam_pitch, 0.0, 0.0)), Vector3(bl, _eye_h + _cam_dy + bv, 0.0))
+	return Transform3D(Basis.from_euler(Vector3(cam_pitch, 0.0, 0.0)), Vector3(bl, _eye_h + _cam_dy + bv, 0.0)) * _kick_xform()
 
 
 func _fp_world() -> Transform3D:

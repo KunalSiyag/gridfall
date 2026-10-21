@@ -1,17 +1,19 @@
 extends FpFeature
 ## Global chat and face-to-face conversations (slice C). Normalises every city source (residents,
-## mayors, the Gazette, the council, incidents, openings, arrivals, deals) into the ChatFeed drip
-## queue, runs ChatterMinds rounds about real events once a minute, answers the player's chat
-## lines, and opens the talk dialogue on talk_requested. Owns the chat panel (chat_slot) and the
-## talk card (overlay). Budgets (D12) are enforced here on the feed clock: one round per 60 s
-## unpaused, one player-reply call per coalesced burst (6 per minute), one talk call per line and
-## one inspect_tile per 20 s. While the player is being answered the drip holds everyday lines and
-## the panel shows who is typing; a status card says when live replies fail or come back.
+## mayors, the Gazette, the council, incidents, openings, arrivals, deals, people hit in the
+## street) into the ChatFeed drip queue, runs ChatterMinds rounds about real events once a
+## minute, answers the player's chat lines, and opens the talk dialogue on talk_requested. Owns
+## the chat panel (chat_slot) and the talk card (overlay). Budgets (D12) are enforced here on the
+## feed clock: one round per 60 s unpaused, one player-reply call per coalesced burst (6 per
+## minute), one talk call per line and one inspect_tile per 20 s. While the player is being
+## answered the drip holds everyday lines and the panel shows who is typing; a status card says
+## when live replies fail or come back.
 
 const D := preload("res://scripts/sim/sim_defs.gd")
 const T := preload("res://scripts/fp/chat/chat_text.gd")
 const PANEL := preload("res://scripts/fp/ui/chat_panel.gd")
 const TALK := preload("res://scripts/fp/chat/talk_dialog.gd")
+const STREET := preload("res://scripts/fp/chat/street_lines.gd")
 
 const ROUND_MS := 60000
 const PLAYER_DEBOUNCE_MS := 3000
@@ -56,6 +58,7 @@ var feed: ChatFeed
 var minds: ChatterMinds
 var panel: PANEL
 var talk: TALK
+var street_lines: STREET
 ## The pinned Gazette: {"headline", "editorial", "stories": [{"title", "body"}], "day"} or {}.
 var pinned: Dictionary = {}
 ## Chatter topics, newest first.
@@ -90,6 +93,8 @@ func setup(p_ctx: FpContext) -> void:
 	feed.name = "Feed"
 	add_child(feed)
 	feed.setup(ctx)
+	street_lines = STREET.new()
+	street_lines.setup(ctx, feed)
 	minds = ChatterMinds.new()
 	minds.name = "ChatterMinds"
 	add_child(minds)
@@ -131,6 +136,7 @@ func setup(p_ctx: FpContext) -> void:
 		_link(ctx.bus.player_tile_changed, _on_player_tile_changed)
 		_link(ctx.bus.pause_changed, _on_pause_changed)
 		_link(ctx.bus.world_ready, _on_world_ready)
+		_link(ctx.bus.person_hit, street_lines.on_person_hit)
 	_snapshot_taxes()
 
 

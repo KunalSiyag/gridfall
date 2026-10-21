@@ -1,6 +1,7 @@
 extends RefCounted
 ## Asset building for people.gd: the layered clips (a box held in both hands, a phone at the ear),
-## the shared T0 AnimationTree, and HC's lod1 meshes as dither-fading T3 MultiMesh layers.
+## the shared T0 AnimationTree, and HC's lod1 meshes as dither-fading T3 MultiMesh layers; the
+## clips reactions.gd plays (blows, falls, running off) and how their time runs.
 
 ## Layered clips: the arm bones taken from another clip's pose at a fixed time.
 const ARM_PARTS := [
@@ -27,8 +28,55 @@ const ARM_PARTS := [
 const CARRY_AT := 0.0
 const PHONE_AT := 0.5
 const NEEDS: Array[StringName] = [
-	&"idle", &"walk", &"talk", &"talk_2", &"phone", &"carry", &"idle_look", &"idle_wait", &"sit"
+	&"idle",
+	&"walk",
+	&"talk",
+	&"talk_2",
+	&"phone",
+	&"carry",
+	&"idle_look",
+	&"idle_wait",
+	&"sit",
+	&"run",
+	&"knockback",
+	&"get_up",
+	&"hit_head",
+	&"hit_chest",
+	&"shout",
+	&"no",
+	&"wave",
+	&"yes"
 ]
+## Every clip the T0 tree holds: HC's walking and standing clips, the layered ones, and the
+## reactions (reactions.gd).
+const STATES: Array[StringName] = [
+	&"idle",
+	&"idle_look",
+	&"idle_wait",
+	&"walk",
+	&"walk_carry",
+	&"walk_phone",
+	&"carry_idle",
+	&"phone",
+	&"talk",
+	&"talk_2",
+	&"run",
+	&"knockback",
+	&"get_up",
+	&"hit_head",
+	&"hit_chest",
+	&"shout",
+	&"no",
+	&"wave",
+	&"yes"
+]
+## Reactions that play once and hold their last frame (the rest loop), the blows among them, and
+## the quicker crossfade into a blow (s): it lands at once.
+const ONE_SHOTS: Array[StringName] = [
+	&"knockback", &"get_up", &"hit_head", &"hit_chest", &"wave", &"yes"
+]
+const BLOWS: Array[StringName] = [&"knockback", &"hit_head", &"hit_chest"]
+const REACT_XFADE := 0.08
 static var _crc_table := PackedInt64Array()
 const T3_SHADER := """
 shader_type spatial;
@@ -106,7 +154,8 @@ static func layer(
 
 
 ## The T0 tree, shared by every body: state machine (every state reaches every other with a
-## crossfade) -> TimeSeek (handovers from T1) -> TimeScale (playback rate) -> output.
+## crossfade, REACT_XFADE into a blow) -> TimeSeek (handovers from T1) -> TimeScale (playback
+## rate) -> output.
 static func build_tree(states: Array[StringName], xfade: float) -> AnimationNodeBlendTree:
 	var sm := AnimationNodeStateMachine.new()
 	for n: StringName in states:
@@ -117,7 +166,7 @@ static func build_tree(states: Array[StringName], xfade: float) -> AnimationNode
 		for y: StringName in states:
 			if x != y:
 				var tr := AnimationNodeStateMachineTransition.new()
-				tr.xfade_time = xfade
+				tr.xfade_time = REACT_XFADE if y in BLOWS else xfade
 				sm.add_transition(x, y, tr)
 	var bt := AnimationNodeBlendTree.new()
 	bt.add_node(&"sm", sm)
@@ -127,6 +176,11 @@ static func build_tree(states: Array[StringName], xfade: float) -> AnimationNode
 	bt.connect_node(&"rate", 0, &"seek")
 	bt.connect_node(&"output", 0, &"rate")
 	return bt
+
+
+## Time t into a clip of length ln: one-shots stop on their last frame, loops wrap.
+static func clip_time(clip: StringName, t: float, ln: float) -> float:
+	return minf(t, ln) if clip in ONE_SHOTS else fposmod(t, ln)
 
 
 static func t3_shader() -> Shader:
