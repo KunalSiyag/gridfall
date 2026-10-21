@@ -55,7 +55,7 @@ Slice I's sound assets (sounds/fp/, made by tools/audio/synth_fp_sfx.py): names,
 - `STEP_VARIANTS = 6`
 - `SPLASH_VARIANTS = 4`: The wet layer played over a step on soaked paving: footstep_splash_<n>.
 - `LOOPS = [ "engine_idle", "engine_run", "siren_two_tone", "construction_loop", "fire_crackle", "...`: Every looping asset (their .import files set loop=true).
-- `ONE_SHOTS = ["horn_short", "horn_long", "chat_blip", "chat_blip_soft", "alert_stinger"]`
+- `ONE_SHOTS = [ "horn_short", "horn_long", "chat_blip", "chat_blip_soft", "alert_stinger", "crash_hea...`
 - `WAV_SOUNDS = [ "engine_idle", "engine_run", "siren_two_tone", "horn_short", "horn_long", "chat_blip"...`: Stored as WAV (with every footstep_*); everything else is .ogg.
 - `BUS_MUSIC = &"Music"`: Bus names (created by audio_feature.setup when missing).
 - `BUS_SFX = &"SFX"`
@@ -71,6 +71,13 @@ Slice I's sound assets (sounds/fp/, made by tools/audio/synth_fp_sfx.py): names,
 - `BLIP_SOFT_DB = -19.0`
 - `BLIP_CHATTER_DB = -24.0`
 - `STINGER_DB = -12.0`
+- `CRASH_MPS = 6.0`: The player's car hitting walls and cars (car_impact): crash_heavy from CRASH_MPS (m/s of closing speed) up, at full level from CRASH_FULL_MPS; crash_light below, at full level from CRASH_MPS. Knocked props (prop_knocked) are at full level from KNOCK_FULL_MPS. A softer hit keeps at least IMPACT_MIN_GAIN of the level.
+- `CRASH_FULL_MPS = 14.0`
+- `KNOCK_FULL_MPS = 6.0`
+- `IMPACT_MIN_GAIN = 0.3`
+- `KNOCK_STREAMS = { "bin": "prop_clatter", "bench_park": "prop_clatter", "planter": "crash_light", }`: The one-shot a knocked prop of each kind plays (KNOCK_DEFAULT for the metal ones), at most one per KNOCK_GAP (s).
+- `KNOCK_DEFAULT = "prop_clang"`
+- `KNOCK_GAP = 0.1`
 
 ### Functions
 
@@ -87,7 +94,7 @@ Slice I's sound assets (sounds/fp/, made by tools/audio/synth_fp_sfx.py): names,
 
 extends `FpFeature`
 
-City sound on foot (slice I). Owns the Music, SFX, Ambience and UI buses while on foot, puts the AudioDirector's music under the street (set_fp), and runs three parts: positional emitters (engines, horns, sirens, construction, fire, fountains, plants, the river, passers-by's steps), the area beds (with rain from G1's weather) and the hero's footsteps (splashing on wet paving), plus the chat blip and alert stingers. Pausing muffles the music (the only thing still playing); talking to someone ducks the beds.
+City sound on foot (slice I). Owns the Music, SFX, Ambience and UI buses while on foot, puts the AudioDirector's music under the street (set_fp), and runs three parts: positional emitters (engines, horns, sirens, construction, fire, fountains, plants, the river, passers-by's steps, the player's car crashing and the street props it knocks over), the area beds (with rain from G1's weather) and the hero's footsteps (splashing on wet paving), plus the chat blip and alert stingers. Pausing muffles the music (the only thing still playing); talking to someone ducks the beds.
 
 ### Constants
 
@@ -131,7 +138,7 @@ City sound on foot (slice I). Owns the Music, SFX, Ambience and UI buses while o
 
 extends `Node3D`
 
-Positional city sound (slice I): logical sources (engines, horns, sirens, construction, fire, fountains, power plants, river banks, passers-by's footsteps) share a pool of at most MAX_PLAYERS AudioStreamPlayer3D. Every refresh scores the sources by their estimated level at the listener and gives the players to the loudest; the farthest or quietest lose theirs first. Doppler is computed by hand (the built-in effect works in world units against 343 u/s and is inaudible at 1 u = 20 m). A grown city registers hundreds of static sources (every park's fountain, every site), so the per-frame work touches only the sources holding a player, the refresh only the volatile ones (agents, one-shots, sirens, river) and the static ones near the listener.
+Positional city sound (slice I): logical sources (engines, horns, sirens, construction, fire, fountains, power plants, river banks, passers-by's footsteps, crashes and knocked props) share a pool of at most MAX_PLAYERS AudioStreamPlayer3D. Every refresh scores the sources by their estimated level at the listener and gives the players to the loudest; the farthest or quietest lose theirs first. Doppler is computed by hand (the built-in effect works in world units against 343 u/s and is inaudible at 1 u = 20 m). A grown city registers hundreds of static sources (every park's fountain, every site), so the per-frame work touches only the sources holding a player, the refresh only the volatile ones (agents, one-shots, sirens, river) and the static ones near the listener.
 
 ### Constants
 
@@ -205,6 +212,7 @@ Positional city sound (slice I): logical sources (engines, horns, sirens, constr
 - `static func engine_pitch(speed: float) -> float`: Engine pitch for a speed in u/s: 0.8 near standstill to 1.4 at about 95 km/h (1.1 at 50 km/h).
 - `static func estimate_db(type: String, db: float, d: float) -> float`: Estimated level (dB) of s at distance d: volume + inverse-distance gain (capped at max_db) and the linear fade to zero at max_distance, as AudioStreamPlayer3D computes them.
 - `func horn(p: Vector3, stream_name: String = "horn_short", _speed: float = 0.`: A one-shot horn at p (tests call it directly).
+- `func shot(type: String, p: Vector3, stream_name: String, trim_db: float, pitch: float) -> Src`: A positional one-shot of `type` (a crash, a knocked prop) at p playing stream_name, trim_db on the type's level.
 
 ## `scripts/fp/audio/footsteps.gd`
 

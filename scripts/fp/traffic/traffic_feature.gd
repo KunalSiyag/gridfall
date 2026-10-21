@@ -22,6 +22,7 @@ const KIT := preload("res://scripts/fp/traffic/mesh_kit.gd")
 const PPL := preload("res://scripts/fp/traffic/people.gd")
 const CS := preload("res://scripts/fp/traffic/contact_shadows.gd")
 const OCC := preload("res://scripts/fp/traffic/occupants.gd")
+const SHOVES := preload("res://scripts/fp/traffic/shoves.gd")
 const MAX_STEP := 1.0 / 30.0
 const CAR_PREFIXES := ["sedan", "hatch", "suv", "taxi", "van", "pickup", "coupe"]
 ## A jump of the player beyond this in one frame is a teleport: the street is refilled around them.
@@ -48,6 +49,8 @@ var occupants: OCC
 var ambient: AMB
 var trips: TRIPS
 var fleets: FLEETS
+## Cars the player's car knocked: their slides, stuns and the way back onto their lanes.
+var shoves: SHOVES
 var clock: float = 0.0
 ## Test hooks: departure jitter on or off; auto_step false keeps _process from advancing time.
 var jitter_enabled: bool = true:
@@ -111,6 +114,7 @@ func setup(p_ctx: FpContext) -> void:
 	ambient = AMB.new()
 	trips = TRIPS.new()
 	fleets = FLEETS.new()
+	shoves = SHOVES.new()
 	trips.jitter_enabled = jitter_enabled
 	render.setup(_agents_root)
 	contact = CS.new()
@@ -189,6 +193,9 @@ func on_world_rebuilt() -> void:
 	vehicles.setup(lanes, junctions, peds, sim.city_seed)
 	vehicles.on_arrive = _on_vehicle_arrived
 	vehicles.on_removed = _on_vehicle_removed
+	shoves.setup(vehicles, ctx.collision)
+	shoves.visible = on_screen
+	vehicles.extra_blocks = shoves.blocks
 	walkers.setup(peds, lanes, junctions, vehicles, sim.city_seed)
 	walkers.hc = people.ok
 	walkers.on_removed = func(w: WK.Walker) -> void:
@@ -353,6 +360,7 @@ func step(dt: float) -> void:
 	walkers.player_pos = pp
 	walkers.player_on = has_player
 	vehicles.step(dt)
+	shoves.step(dt)
 	walkers.step(dt)
 	trips.step(dt)
 	fleets.step(dt)
@@ -1143,20 +1151,47 @@ static func _ray_box(o: Vector3, d: Vector3, xf: Transform3D, he: Vector3, h: fl
 	return maxf(t0, 0.0)
 
 
-## Optional, for A: world AABBs of stopped vehicles near p (parked cars included). While the
-## player drives, moving vehicles block too, and the player's own car does not.
+## Optional, for A: world AABBs of stopped vehicles near p (parked cars included), never the car
+## the player drives (its body meets the others through bodies_near).
 func blockers_near(p: Vector3, r: float) -> Array:
 	var out: Array = []
 	if not _built:
 		return out
-	var driving := _driven != null
 	for c: VH.Car in vehicles.cars:
 		if c.dead or c.far or c.driven or (c.parked and c.slot_tile < 0):
 			continue
-		if (c.v > 0.1 * WS.M and not driving) or c.pos.distance_to(p) > r + 0.3:
+		if c.v > 0.1 * WS.M or c.pos.distance_to(p) > r + 0.3:
 			continue
 		out.append(vehicles.aabb(c))
 	return out
+
+
+## For the drive feature's car body: every vehicle body that may reach within r of p, as
+## [id, xz centre, yaw, Vector2(half width, half length), xz velocity, mass (a sedan is 1)]. The
+## car the player drives is not listed.
+func bodies_near(p: Vector3, r: float) -> Array:
+	var out: Array = []
+	if not _built:
+		return out
+	for c: VH.Car in vehicles.cars:
+		if c.dead or c.far or c.driven or (c.parked and c.slot_tile < 0):
+			continue
+		var q := c.pos + c.vis_off
+		var reach := r + c.length * 0.5 + c.half_w
+		if absf(q.x - p.x) > reach or absf(q.z - p.z) > reach:
+			continue
+		var m := SHOVES.FIXED_MASS if c.park_t >= 0.0 else SHOVES.mass_of(c)
+		var hb := Vector2(c.half_w, c.length * 0.5)
+		out.append([c.id, Vector2(q.x, q.z), c.yaw + c.vis_yaw, hb, shoves.body_vel(c), m])
+	return out
+
+
+## The player's car hit vehicle id with impulse j (xz, u/s times a sedan's mass) at xz point at:
+## the car is knocked (shoves.gd).
+func bump_car(id: int, j: Vector2, at: Vector2) -> void:
+	var c: VH.Car = vehicles.by_id.get(id) if _built else null
+	if c != null:
+		shoves.bump(c, j, at)
 
 
 # ------------------------------------------------------------------ the player's car

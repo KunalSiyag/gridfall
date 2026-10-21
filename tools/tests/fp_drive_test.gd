@@ -1,11 +1,15 @@
 extends SceneTree
 ## Driving (integration feature "drive"): the handling model, getting into a stopped car, driving
-## it along a straight road, lane traffic stopping behind it, crashing into a wall, getting out
-## beside the door, the car left standing as an obstacle, the seated hero, keys and pad bindings,
-## and teardown. Time runs through drive_step(1/60) and the traffic feature's step(1/30).
+## it along a straight road, lane traffic stopping behind it, crashing into a wall (car_impact on
+## the bus), sliding along a wall it meets at a glance, knocking a lane car off its lane (which
+## finds its way back), getting out beside the door, the car left standing as an obstacle, the
+## seated hero, keys and pad bindings, and teardown. Time runs through drive_step(1/60) and the
+## traffic feature's step(1/30).
 
 const K := preload("res://tools/tests/fp_kit.gd")
+const D := preload("res://scripts/sim/sim_defs.gd")
 const WS := preload("res://scripts/fp/world_scale.gd")
+const OBB := preload("res://scripts/fp/obb2d.gd")
 const LG := preload("res://scripts/fp/traffic/lane_graph.gd")
 const VH := preload("res://scripts/fp/traffic/vehicles.gd")
 const MODEL := preload("res://scripts/fp/drive/drive_model.gd")
@@ -18,6 +22,10 @@ var tr: FpFeature
 var drive: FpFeature
 var lanes: Array = []
 var heading := Vector2.ZERO
+## The straight road's tiles, in the order heading runs along them.
+var road: Array[int] = []
+## [at, closing speed, what] of every car_impact.
+var impacts: Array = []
 
 
 func _init() -> void:
@@ -38,6 +46,9 @@ func _init() -> void:
 	tr.set("ambient_enabled", false)
 	drive.set_process(false)
 	it.set_process(false)
+	ctx.bus.car_impact.connect(
+		func(at: Vector3, v: float, what: String) -> void: impacts.append([at, v, what])
+	)
 	K.check(
 		fails,
 		drive.self_test().get("ok", false),
@@ -52,6 +63,8 @@ func _init() -> void:
 	_check_yield()
 	_check_exit()
 	_check_crash()
+	_check_glance()
+	_check_shove()
 	_check_keys()
 	_check_teardown()
 	K.finish(self, "FP_DRIVE_TEST", fails)
@@ -157,6 +170,7 @@ func _road() -> bool:
 		return false
 	lanes = lg.lanes_along(best, LG.OPP[best_e], best_e)
 	heading = LG.DIRS[best_e]
+	road = best
 	return not lanes.is_empty()
 
 
@@ -414,6 +428,7 @@ func _check_crash() -> void:
 		Vector3(wall_c.x - ext.x, 0.0, wall_c.z - ext.z), Vector3(ext.x * 2.0, 0.2, ext.z * 2.0)
 	)
 	ctx.collision.add_test_box(wall)
+	impacts.clear()
 	var deep := -INF
 	var near := (wall_c - start).dot(h3) - 0.5 * WS.M
 	for _k in range(roundi(5.0 / DT)):
@@ -427,8 +442,158 @@ func _check_crash() -> void:
 		"the car never drives into the wall (front %.2f m past its face)" % (deep / WS.M)
 	)
 	K.check(fails, absf(v) < 5.0 * KMH, "and stops against it (%.0f km/h)" % (v / KMH))
+	var hit: Array = impacts[0] if not impacts.is_empty() else [Vector3.ZERO, 0.0, ""]
+	K.check(
+		fails,
+		str(hit[2]) == "wall" and float(hit[1]) > 20.0 * KMH,
+		"car_impact reports the crash (%s at %.0f km/h)" % [str(hit[2]), float(hit[1]) / KMH]
+	)
 	ctx.collision.clear_test_boxes()
 	_drive(0.0, 1.0, 0.0, 1.0)
+
+
+## Meets a wall along the road at 15 degrees and 40 km/h: the car never enters it, turns along it
+## and slides on, and car_impact reports only the small speed it closed on the wall at.
+func _check_glance() -> void:
+	_clear_others()
+	var model: MODEL = drive.get("model")
+	var dims: Vector3 = drive.get("_dims")
+	var a := Vector2(D.tx(road[0]), D.ty(road[0]))
+	var side := Vector2(-heading.y, heading.x)
+	var face := 0.12
+	var mid := a + side * (face + 0.05) + heading * (road.size() * 0.5 - 0.5)
+	var ext := (
+		Vector3(absf(heading.x), 0.0, absf(heading.y)) * (road.size() * 0.5)
+		+ Vector3(absf(side.x), 0.0, absf(side.y)) * 0.05
+	)
+	ctx.collision.add_test_box(
+		AABB(Vector3(mid.x - ext.x, 0.0, mid.y - ext.z), Vector3(ext.x * 2.0, 0.2, ext.z * 2.0))
+	)
+	var dir := heading * cos(deg_to_rad(15.0)) + side * sin(deg_to_rad(15.0))
+	var start := Vector3(a.x, ctx.collision.walk_height(Vector3(a.x, 0.0, a.y)), a.y)
+	drive.set("_pos", start)
+	model.reset(atan2(dir.x, dir.y), dims.z)
+	model.vel = dir * (40.0 * KMH)
+	impacts.clear()
+	var deep := -INF
+	for _k in range(roundi(2.0 / DT)):
+		drive.call("drive_step", 0.4, 0.0, 0.0, 0.0, DT)
+		deep = maxf(deep, _reach(side, dims) - (a.dot(side) + face))
+	var turn := rad_to_deg(absf(model.heading().angle_to(heading)))
+	K.check(
+		fails,
+		deep < 0.1 * WS.M,
+		"at a glance the car never enters the wall (%.2f m past its face)" % (deep / WS.M)
+	)
+	K.check(
+		fails,
+		model.speed() > 20.0 * KMH and turn < 8.0,
+		"it turns along the wall (%.0f deg) and slides on (%.0f km/h)" % [turn, model.speed() / KMH]
+	)
+	var hit: Array = impacts[0] if not impacts.is_empty() else [Vector3.ZERO, INF, ""]
+	K.check(
+		fails,
+		str(hit[2]) == "wall" and float(hit[1]) < 15.0 * KMH,
+		"car_impact: it closed on the wall at %.0f km/h" % (float(hit[1]) / KMH)
+	)
+	ctx.collision.clear_test_boxes()
+	_drive(0.0, 1.0, 0.0, 2.0)
+
+
+## Runs into the side of a lane car crawling along at 25 km/h: it slides off its lane, braking,
+## the player's car loses speed, car_impact reports a car and the bodies never overlap. Once the
+## player backs off and it has waited, its driver steers it back onto the lane and drives on.
+func _check_shove() -> void:
+	_clear_others()
+	var vh := _vh()
+	var model: MODEL = drive.get("model")
+	var dims: Vector3 = drive.get("_dims")
+	var m: int = tr.call("car_model_for", "shove-test")
+	var ai := vh.make("car", "ambient", tr.call("dims", m))
+	ai.model = m
+	vh.place(ai, lanes[1], 0.5)
+	ai.path = lanes.slice(2)
+	ai.v0 = 0.5 * WS.M
+	ai.v = ai.v0
+	var q := Vector2(ai.pos.x, ai.pos.z)
+	var u := OBB.side_axis(ai.yaw)
+	if (Vector2(roundf(q.x), roundf(q.y)) - q).dot(u) < 0.0:
+		u = -u
+	var s2 := q + u * (ai.half_w + dims.z * 0.5 + 1.5 * WS.M)
+	drive.set("_pos", Vector3(s2.x, ai.pos.y, s2.y))
+	model.reset(atan2(-u.x, -u.y), dims.z)
+	model.vel = -u * (25.0 * KMH)
+	impacts.clear()
+	var deep := 0.0
+	var off := 0.0
+	var stunned := false
+	for _k in range(roundi(1.0 / (DT * 2.0))):
+		for _s in range(2):
+			drive.call("drive_step", 0.0, 0.0, 0.0, 0.0, DT)
+			deep = maxf(deep, _overlap(ai, dims))
+		tr.call("step", DT * 2.0)
+		off = maxf(off, Vector2(ai.vis_off.x, ai.vis_off.z).length())
+		stunned = stunned or ai.stun_t > 0.0
+	var cars := impacts.filter(func(h: Array) -> bool: return str(h[2]) == "car")
+	var v0 := float(cars[0][1]) / KMH if not cars.is_empty() else 0.0
+	K.check(fails, not cars.is_empty(), "car_impact reports hitting a car at %.0f km/h" % v0)
+	K.check(
+		fails,
+		off > 0.3 * WS.M and stunned,
+		"the lane car slides %.1f m off its lane, braking" % (off / WS.M)
+	)
+	K.check(
+		fails,
+		absf(model.speed()) < 15.0 * KMH and deep < 0.1 * WS.M,
+		(
+			"the player's car loses speed (%.0f km/h), the bodies never overlap (%.2f m)"
+			% [absf(model.speed()) / KMH, deep / WS.M]
+		)
+	)
+	_drive(0.0, 1.0, 0.0, 2.5)
+	model.vel = Vector2.ZERO
+	_drive(0.0, 0.0, 0.0, DT)
+	var back := false
+	for _k in range(roundi(20.0 / (DT * 2.0))):
+		tr.call("step", DT * 2.0)
+		if ai.vis_off == Vector3.ZERO and ai.vis_yaw == 0.0 and ai.stun_t <= 0.0:
+			back = true
+			break
+	K.check(
+		fails,
+		back and not ai.dead and not bool(tr.get("shoves").call("is_shoved", ai)),
+		"it steers back onto its lane and drives on (%.2f m off)" % (ai.vis_off.length() / WS.M)
+	)
+	_clear_others()
+
+
+## The farthest the player's car's body reaches along the unit vector side (a coordinate along it).
+func _reach(side: Vector2, dims: Vector3) -> float:
+	var p: Vector3 = drive.get("_pos")
+	var yaw := float((drive.get("model") as MODEL).yaw)
+	var u := OBB.side_axis(yaw)
+	var v := OBB.heading(yaw)
+	var c := Vector2(p.x, p.z).dot(side)
+	return c + absf(u.dot(side)) * dims.x + absf(v.dot(side)) * dims.z * 0.5
+
+
+## Depth of the player's car's body in car c's.
+func _overlap(c: VH.Car, dims: Vector3) -> float:
+	var p: Vector3 = drive.get("_pos")
+	var yaw := float((drive.get("model") as MODEL).yaw)
+	var q := c.pos + c.vis_off
+	var cy := c.yaw + c.vis_yaw
+	var k := OBB.box_box(
+		Vector2(p.x, p.z),
+		OBB.side_axis(yaw),
+		OBB.heading(yaw),
+		Vector2(dims.x, dims.z * 0.5),
+		Vector2(q.x, q.z),
+		OBB.side_axis(cy),
+		OBB.heading(cy),
+		Vector2(c.half_w, c.length * 0.5)
+	)
+	return float(k[1]) if not k.is_empty() else 0.0
 
 
 func _check_keys() -> void:

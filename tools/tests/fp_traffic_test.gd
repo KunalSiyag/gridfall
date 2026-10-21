@@ -1,7 +1,8 @@
 extends SceneTree
 ## Slice E acceptance (docs/fp/slices/E-traffic.md, Acceptance tests): fixtures, the lane graph
 ## (arms, shared endpoints, right-hand offsets beside parked cars, corner radii, carriageway,
-## rebuild on tile_cleared only), car following, parking clearance, traffic lights, tee yield,
+## rebuild on tile_cleared only), car following, parking clearance, a parked car the player's car
+## knocks out of its slot (and its tow back), traffic lights, tee yield,
 ## player yield, a resident driver (from trip_started to a curb slot, position_of, pick,
 ## visible_near), a walking trip on sidewalks and zebras, conversations, save and load, the
 ## CityLife and ResidentAvatars hooks, and API compatibility. Time runs through feature.step(1/30).
@@ -18,6 +19,8 @@ const JN := preload("res://scripts/fp/traffic/junctions.gd")
 const IDM := preload("res://scripts/fp/traffic/idm.gd")
 const TRIPS := preload("res://scripts/fp/traffic/trips.gd")
 const PPL := preload("res://scripts/fp/traffic/people.gd")
+const SHOVES := preload("res://scripts/fp/traffic/shoves.gd")
+const OBB := preload("res://scripts/fp/obb2d.gd")
 const DT := 1.0 / 30.0
 
 var fails: Array[String] = []
@@ -54,6 +57,7 @@ func _init() -> void:
 	_check_ambient_spawns()
 	_check_following()
 	_check_parking_clearance()
+	_check_parked_shove()
 	_check_lights()
 	_check_night_lamps()
 	_check_tee()
@@ -835,6 +839,53 @@ func _check_parking_clearance() -> void:
 						worst = "car %d (%s) at %s vs parked %d at %s" % [c.id, c.role, str(c.pos), p.id, str(p.pos)]
 	K.check(fails, passes > 0, "parking clearance: moving cars pass parked ones (%d close passes)" % passes)
 	K.check(fails, overlaps == 0, "parking clearance: no moving AABB overlaps a parked AABB in 60 s (%d) %s" % [overlaps, worst])
+
+
+# ------------------------------------------------------------------ shoves
+
+## The player's car knocks a parked car toward the road (bump_car): it slides off its slot for
+## good, braking on its tyres, and blocks lane traffic until, having stood out of sight for
+## TOW_AFTER s, it is towed back to its slot.
+func _check_parked_shove() -> void:
+	_quiet()
+	var c: VH.Car = null
+	for p: VH.Car in _vh().cars:
+		if p.parked and not p.dead and not p.far and p.slot_tile >= 0:
+			c = p
+			break
+	K.check(fails, c != null, "fixture: a parked car")
+	if c == null:
+		return
+	var sh: SHOVES = f.get("shoves")
+	var home := c.pos
+	var yaw0 := c.yaw
+	var q := Vector2(c.pos.x, c.pos.z)
+	var side := OBB.side_axis(c.yaw)
+	if (Vector2(roundf(q.x), roundf(q.y)) - q).dot(side) < 0.0:
+		side = -side
+	f.call("bump_car", c.id, side * (4.0 * WS.M * SHOVES.mass_of(c)), q)
+	var shoved := sh.is_shoved(c)
+	_step(3.0)
+	var moved := Vector2(c.pos.x - home.x, c.pos.z - home.z).length()
+	K.check(
+		fails,
+		shoved and not sh.is_shoved(c) and moved > 0.5 * WS.M and moved < 3.0 * WS.M,
+		"shoves: a parked car hit at 4 m/s slides %.1f m off its slot and stops" % (moved / WS.M)
+	)
+	var blocks := sh.blocks().filter(func(b: Array) -> bool: return int(b[5]) == c.id)
+	K.check(fails, not blocks.is_empty(), "shoves: out of its slot it blocks lane traffic")
+	sh.visible = func(_p: Vector3) -> bool: return false
+	_step(SHOVES.TOW_AFTER + 1.0)
+	K.check(
+		fails,
+		(
+			c.pos.distance_to(home) < 0.01 * WS.M
+			and is_equal_approx(c.yaw, yaw0)
+			and sh.blocks().is_empty()
+		),
+		"shoves: having stood out of sight %.0f s it is towed back to its slot" % SHOVES.TOW_AFTER
+	)
+	sh.visible = Callable(f, "on_screen")
 
 
 # ------------------------------------------------------------------ lights

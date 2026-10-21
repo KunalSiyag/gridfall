@@ -157,6 +157,9 @@ Renders the CitySim grid in 3D: Kenney roads picked by neighbor mask, zone lots 
 - `func site_decks(i: int) -> Array[Dictionary]`: Where people stand on site i's own parts as drawn now (ConstructionKit.decks_of: the pit, the slab as poured, the frame's floors shown so far, the scaffold's boards), in world space.
 - `func site_bounds(i: int) -> AABB`: Merged world-space bound of site_boxes(i): contains every blocking part the construction kit drew for the site on tile i, and can reach past the tile. AABB() when no site is drawn. For movement use site_boxes(i): this bound also covers the gaps between parts (the hoarding gate).
 - `func tile_holder(i: int) -> Node3D`: The Node3D holding everything drawn on tile i, or null.
+- `func street_placements(i: int) -> Array`: The batched street props of tile i on foot: Array of [kind, world Transform3D], indexed by their colliders' "slot".
+- `func set_street_prop_down(i: int, slot: int, down: bool) -> void`: Knocks batched street prop `slot` of tile i down (not drawn, its collider marked "down") or stands it up again. CollisionWorld needs invalidate(i) after.
+- `func street_kit(kind: String) -> Dictionary`: A batched street prop kind's mesh parts ({"mesh", "xform", "mat"} each) and their bounds, as {"parts", "aabb"}; {} for an unknown kind.
 - `func set_camera(c: Camera3D) -> void`: Camera used for picking, shake and avatar picking (orbit rig camera or the FP camera).
 - `func set_night(n: float) -> void`
 - `func set_overlay(mode: String) -> void`

@@ -122,6 +122,7 @@ Settings map `music_volume_db` to `Music` and `sfx_volume_db` to `SFX` and `Ambi
 | `night_insects` | |
 | `traffic_hum` | |
 | `chat_blip`, `chat_blip_soft`, `alert_stinger` | |
+| `crash_heavy`, `crash_light`, `prop_clatter`, `prop_clang` | the player's car hitting walls and cars (`car_impact`) and street props knocked over (`prop_knocked`); WAV |
 
 Total size must be at most 8 MB. The ACE-Step tool is optional and needs the GPU, so only under the heavy lock and only for the beds. Write the import settings so loops loop (OGG `loop=true` in each `sounds/fp/*.ogg.import`, which I owns).
 

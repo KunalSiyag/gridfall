@@ -44,6 +44,7 @@ Analytic on-foot collision (slice A; no physics engine, D2): walkable ground hei
 
 - `func setup(p_ctx: FpContext) -> void`: Stores the context; colliders are computed lazily from ctx.view.
 - `func rebuild_all() -> void`: Drops every cached collider (after view.setup).
+- `func invalidate(i: int) -> void`: Invalidates tile i's colliders: its holder changed (a street prop knocked down or put back).
 - `func on_tile_built(i: int, _holder: Node3D) -> void`: Invalidates tile i's colliders.
 - `func on_tile_cleared(i: int) -> void`: Invalidates tile i's colliders.
 - `func add_test_box(b: AABB) -> void`: Test hook: a world box that blocks like any other (a ledge, a ceiling), listed in boxes() of every tile it overlaps.

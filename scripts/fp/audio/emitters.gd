@@ -1,7 +1,7 @@
 extends Node3D
 ## Positional city sound (slice I): logical sources (engines, horns, sirens, construction, fire,
-## fountains, power plants, river banks, passers-by's footsteps) share a pool of at most
-## MAX_PLAYERS AudioStreamPlayer3D.
+## fountains, power plants, river banks, passers-by's footsteps, crashes and knocked props) share
+## a pool of at most MAX_PLAYERS AudioStreamPlayer3D.
 ## Every refresh scores the sources by their estimated level at the listener and gives the players
 ## to the loudest; the farthest or quietest lose theirs first. Doppler is computed by hand (the
 ## built-in effect works in world units against 343 u/s and is inaudible at 1 u = 20 m).
@@ -27,6 +27,8 @@ const TYPES := {
 	"plant": {"max": 6.0, "db": -2.0, "near": 6.0, "stream": "plant_hum"},
 	"river": {"max": 6.0, "db": -5.0, "near": 6.0, "stream": "river_loop"},
 	"step": {"max": 0.5, "db": -24.0, "near": 6.0, "stream": "footstep_sidewalk_1"},
+	"crash": {"max": 10.0, "db": -6.0, "near": 6.0, "stream": "crash_heavy"},
+	"knock": {"max": 4.0, "db": -10.0, "near": 6.0, "stream": "prop_clang"},
 }
 ## Residents on foot (E's "pedestrian" agents): positional footsteps for the WALKER_MAX nearest
 ## walkers within WALKER_RADIUS of the hero, one per stride of their travel (E has no foot-contact
@@ -99,6 +101,7 @@ var agents_provider: Callable = Callable()
 var time_scale: int = 1
 var enabled: bool = true
 var horns_played: int = 0
+var shots_played: int = 0
 var walker_steps: int = 0
 ## 0 day .. 1 night (SkyDirector.night); construction falls quiet at night.
 var night: float = 0.0
@@ -117,6 +120,7 @@ var _next_horn: float = -INF          # no horn before this time (the city-wide 
 var _honked: Dictionary = {}           # agent id -> time of its last horn
 var _now: float = 0.0
 var _horn_seq: int = 0
+var _shot_seq: int = 0
 var _banks: Dictionary = {}            # Vector2i chunk -> PackedVector3Array of bank points
 var _static_near: Array[Src] = []
 var _static_dirty: bool = true
@@ -747,6 +751,17 @@ func horn(p: Vector3, stream_name: String = "horn_short", _speed: float = 0.0) -
 	_force = true
 	return request("horn:%d" % _horn_seq, "horn", p, {"stream": stream_name, "one_shot": true,
 		"pitch": _rng.randf_range(0.96, 1.04), "trim_db": _rng.randf_range(-2.0, 1.0), "ttl": 2.5})
+
+
+## A positional one-shot of `type` (a crash, a knocked prop) at p playing stream_name, trim_db
+## on the type's level.
+func shot(type: String, p: Vector3, stream_name: String, trim_db: float, pitch: float) -> Src:
+	_shot_seq += 1
+	shots_played += 1
+	_force = true
+	var opts := {"stream": stream_name, "one_shot": true, "pitch": pitch, "trim_db": trim_db}
+	opts["ttl"] = 3.0
+	return request("shot:%d" % _shot_seq, type, p, opts)
 
 
 func _traffic() -> FpFeature:

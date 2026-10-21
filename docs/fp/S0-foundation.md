@@ -677,6 +677,14 @@ signal modal_changed(active: bool)
 signal world_ready()
 ## A button on a place card: action "ask_here" (C answers through brain.inspect_tile). Emitted by B.
 signal card_action(action: String, tile: int)
+## The hero got into a car (true) or out of it (false). Emitted by the drive feature.
+signal drive_changed(active: bool)
+## The player's car hit something hard: the contact point, the closing speed (u/s) and what was
+## hit, "wall" (anything fixed) or "car". Emitted by the drive feature.
+signal car_impact(at: Vector3, speed: float, what: String)
+## A street prop was knocked over at a point (its StreetDressing kind: "bin", "bench" ...) and
+## flies off at speed (u/s). Emitted by the props feature.
+signal prop_knocked(at: Vector3, kind: String, speed: float)
 ```
 
 | Signal | Payload | Emitted by | Typical listeners |
@@ -697,6 +705,9 @@ signal card_action(action: String, tile: int)
 | `modal_changed` | any modal UI is open | FpContext | A, B |
 | `world_ready` | none | FpMode after `on_world_rebuilt` | B (minimap full repaint), B, C, D (close transient UI, §7.2) |
 | `card_action` | `"ask_here"`, tile index | B (place-card button) | C (the "Ask someone here" answer) |
+| `drive_changed` | in a car | Integration: driving (getting in and out) | A's interact (no targets from behind the wheel), the phone (puts itself away) |
+| `car_impact` | `at`: the contact point, at half the car's height. `speed`: the closing speed (u/s), at least 1.5 m/s. `what`: `"wall"` or `"car"`. The hardest hit of a step, at most one every 0.25 s; knocked props report themselves | Integration: driving | I (crash sound at the contact) |
+| `prop_knocked` | `at`: where the car hit it. `kind`: its StreetDressing kind. `speed`: how fast it flies off (u/s); a fallen prop hit again reports from 1 m/s | Integration: props | I (clatter or clang by kind) |
 
 The **target** dict: `{"kind": "resident"|"building"|"poster"|"vehicle"|"pedestrian", "id": String, "tile": int, "pos": Vector3, "dist": float, "label": String, "data": Dictionary}`.
 
