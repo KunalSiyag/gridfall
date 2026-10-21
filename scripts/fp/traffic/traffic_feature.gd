@@ -24,6 +24,8 @@ const CS := preload("res://scripts/fp/traffic/contact_shadows.gd")
 const OCC := preload("res://scripts/fp/traffic/occupants.gd")
 const SHOVES := preload("res://scripts/fp/traffic/shoves.gd")
 const DOORS := preload("res://scripts/fp/traffic/car_doors.gd")
+const REACT := preload("res://scripts/fp/traffic/reactions.gd")
+const INCIDENTS := preload("res://scripts/fp/traffic/incidents.gd")
 const MAX_STEP := 1.0 / 30.0
 const CAR_PREFIXES := ["sedan", "hatch", "suv", "taxi", "van", "pickup", "coupe"]
 ## A jump of the player beyond this in one frame is a teleport: the street is refilled around them.
@@ -36,6 +38,8 @@ const PHOTO_BACK := 1.3
 const LINE_RETRY := 10.0
 ## The player can take a parked car, their own, or an ambient car stopped below this speed.
 const CLAIM_SPEED := 0.5 * WS.M
+## A crew called with no station in town sets off from a road at most this many tiles away.
+const STATION_FAR := 10
 
 var lanes: LG
 var peds: SW
@@ -52,6 +56,9 @@ var trips: TRIPS
 var fleets: FLEETS
 ## Cars the player's car knocked: their slides, stuns and the way back onto their lanes.
 var shoves: SHOVES
+## People hit in the street (reel, fall, get up, run off) and what that means for the city.
+var reactions: REACT
+var incidents: INCIDENTS
 var clock: float = 0.0
 ## Test hooks: departure jitter on or off; auto_step false keeps _process from advancing time.
 var jitter_enabled: bool = true:
@@ -116,6 +123,8 @@ func setup(p_ctx: FpContext) -> void:
 	trips = TRIPS.new()
 	fleets = FLEETS.new()
 	shoves = SHOVES.new()
+	reactions = REACT.new()
+	incidents = INCIDENTS.new()
 	trips.jitter_enabled = jitter_enabled
 	render.setup(_agents_root)
 	contact = CS.new()
@@ -196,8 +205,10 @@ func on_world_rebuilt() -> void:
 	vehicles.on_removed = _on_vehicle_removed
 	shoves.setup(vehicles, ctx.collision)
 	shoves.visible = on_screen
-	vehicles.extra_blocks = shoves.blocks
+	vehicles.extra_blocks = func() -> Array: return shoves.blocks() + reactions.blocks()
 	walkers.setup(peds, lanes, junctions, vehicles, sim.city_seed)
+	reactions.setup(walkers, ctx.collision, sim.city_seed)
+	incidents.setup(self)
 	walkers.hc = people.ok
 	walkers.on_removed = func(w: WK.Walker) -> void:
 		render.release_walker(w)
@@ -363,6 +374,7 @@ func step(dt: float) -> void:
 	vehicles.step(dt)
 	shoves.step(dt)
 	walkers.step(dt)
+	reactions.step(dt)
 	trips.step(dt)
 	fleets.step(dt)
 	_maint_t -= dt
@@ -1077,7 +1089,7 @@ func pick(origin: Vector3, dir: Vector3, max_dist: float) -> Dictionary:
 			continue
 		if w.pos.distance_to(origin) > max_dist + 0.1:
 			continue
-		var t := _ray_box(origin, d, Transform3D(Basis(Vector3.UP, w.yaw), w.pos), Vector3(0.32 * WS.M, 0.0, 0.25 * WS.M), 1.8 * WS.M)
+		var t := _ray_box(origin, d, Transform3D(Basis(Vector3.UP, w.yaw), w.pos + w.vis_off), Vector3(0.32 * WS.M, 0.0, 0.25 * WS.M), 1.8 * WS.M)
 		if t >= 0.0 and t < bt:
 			bt = t
 			best = _walker_target(w, t)
@@ -1193,6 +1205,122 @@ func bump_car(id: int, j: Vector2, at: Vector2) -> void:
 	var c: VH.Car = vehicles.by_id.get(id) if _built else null
 	if c != null:
 		shoves.bump(c, j, at)
+
+
+# ------------------------------------------------------------------ people hit
+
+## People on foot within r of p, for the player's blows and the car body: [{"id", "pos" (the
+## drawn feet), "yaw" (facing (sin, 0, cos)), "down", "resident_id"}].
+func walkers_near(p: Vector3, r: float) -> Array:
+	var out: Array = []
+	if not _built:
+		return out
+	for w: WK.Walker in walkers.walkers:
+		if w.dead or w.far or w.state == "hidden":
+			continue
+		var q := w.pos + w.vis_off
+		if Vector2(q.x - p.x, q.z - p.z).length_squared() > r * r:
+			continue
+		var down := reactions.is_down(w)
+		out.append({"id": w.id, "pos": q, "yaw": w.yaw, "down": down, "resident_id": w.resident_id})
+	return out
+
+
+## Person id (walkers_near) takes a blow from src (a world point) along push, of strength 0..1,
+## cause "shove", "punch" or "car": they react and the people around see it (reactions.gd), the
+## city hears of it (incidents.gd) and the bus emits person_hit. Returns that signal's info, {}
+## when they could not be hit now.
+func hit_walker(id: int, src: Vector3, push: Vector3, strength: float, cause: String) -> Dictionary:
+	var w := _walker_by_id(id) if _built else null
+	if w == null:
+		return {}
+	var res := reactions.hit(w, src, push, clampf(strength, 0.0, 1.0), cause)
+	if res.is_empty():
+		return {}
+	var sev := 2 if bool(res["down"]) else (0 if cause == "shove" else 1)
+	var seen := reactions.witness(w, src, sev)
+	var at := w.pos + w.vis_off
+	var info := incidents.report(w, at, strength, cause, res, seen)
+	if ctx.bus != null:
+		ctx.bus.person_hit.emit(at, cause, info)
+	return info
+
+
+## The hero's emote ("wave", "yes", "no", "shout", "dance") at p facing fwd: the people who
+## answer it (reactions.gd answer_emote). Returns how many do.
+func answer_emote(p: Vector3, fwd: Vector3, emote: String) -> int:
+	return reactions.answer_emote(p, fwd, emote).size() if _built else 0
+
+
+## Photo and test hook: person id plays reaction clip from t seconds in (held, sim paused or not).
+func pose_walker(id: int, clip: StringName, t: float) -> bool:
+	var w := _walker_by_id(id) if _built else null
+	if w == null:
+		return false
+	reactions.pose(w, clip, t)
+	people.release(w)
+	return true
+
+
+func _walker_by_id(id: int) -> WK.Walker:
+	for w: WK.Walker in walkers.walkers:
+		if w.id == id and not w.dead:
+			return w
+	return null
+
+
+## Calls a crew ("police" or "ambulance") to world point at, from the road beside the nearest
+## police station or hospital (a road some way off when the city has none), to stay that many
+## seconds once there (fleets.gd). False when no road is near at.
+func call_crew(kind: String, at: Vector3, stay: float) -> bool:
+	if not _built:
+		return false
+	var target := _road_near(Vector2i(roundi(at.x), roundi(at.z)))
+	if target.x < 0:
+		return false
+	var station := _station_road(D.POLICE if kind == "police" else D.HOSPITAL, target)
+	if station.x < 0:
+		return false
+	fleets.dispatch_crew(kind, station, target, stay)
+	return true
+
+
+## The road tile nearest c (within 2 tiles), or (-1, -1).
+func _road_near(c: Vector2i) -> Vector2i:
+	for ring in range(3):
+		for dy in range(-ring, ring + 1):
+			for dx in range(-ring, ring + 1):
+				var x := c.x + dx
+				var y := c.y + dy
+				var edge := maxi(absi(dx), absi(dy)) == ring
+				if edge and D.in_bounds(x, y) and lanes.tiles.has(D.idx(x, y)):
+					return Vector2i(x, y)
+	return Vector2i(-1, -1)
+
+
+## The road beside the station of sim kind nearest target, else the road tile farthest from
+## target within STATION_FAR tiles (a crew from out of town); (-1, -1) when there is none.
+func _station_road(kind: int, target: Vector2i) -> Vector2i:
+	var best := Vector2i(-1, -1)
+	var bd := 1 << 30
+	for i: int in ctx.sim.active:
+		if ctx.sim.kind[i] != kind:
+			continue
+		for dv: Vector2i in [Vector2i(1, 0), Vector2i(-1, 0), Vector2i(0, 1), Vector2i(0, -1)]:
+			var n := Vector2i(D.tx(i), D.ty(i)) + dv
+			var d := absi(n.x - target.x) + absi(n.y - target.y)
+			if D.in_bounds(n.x, n.y) and lanes.tiles.has(D.idx(n.x, n.y)) and d < bd:
+				bd = d
+				best = n
+	if best.x >= 0:
+		return best
+	var far := -1
+	for i: int in lanes.tiles.keys():
+		var d := absi(D.tx(i) - target.x) + absi(D.ty(i) - target.y)
+		if d > far and d <= STATION_FAR:
+			far = d
+			best = Vector2i(D.tx(i), D.ty(i))
+	return best
 
 
 # ------------------------------------------------------------------ the player's car

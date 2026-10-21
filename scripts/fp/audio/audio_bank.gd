@@ -21,13 +21,14 @@ const LOOPS: Array[String] = [
 ]
 const ONE_SHOTS: Array[String] = [
 	"horn_short", "horn_long", "chat_blip", "chat_blip_soft", "alert_stinger", "crash_heavy",
-	"crash_light", "prop_clatter", "prop_clang", "car_door_open", "car_door_close",
+	"crash_light", "prop_clatter", "prop_clang", "car_door_open", "car_door_close", "punch_hit",
+	"punch_whoosh", "body_fall",
 ]
 ## Stored as WAV (with every footstep_*); everything else is .ogg.
 const WAV_SOUNDS: Array[String] = [
 	"engine_idle", "engine_run", "siren_two_tone", "horn_short", "horn_long", "chat_blip",
 	"chat_blip_soft", "alert_stinger", "crash_heavy", "crash_light", "prop_clatter", "prop_clang",
-	"car_door_open", "car_door_close",
+	"car_door_open", "car_door_close", "punch_hit", "punch_whoosh", "body_fall",
 ]
 
 ## Bus names (created by audio_feature.setup when missing).
@@ -74,6 +75,16 @@ const KNOCK_DEFAULT := "prop_clang"
 const KNOCK_GAP := 0.1
 ## The player's car door (car_door): the latch letting go plays this far under the slam.
 const DOOR_OPEN_DB := -7.0
+## People hit in the street (person_hit): the blow's thump is at full level from HIT_FULL strength
+## (0..1), a car's lower and HIT_CAR_DB louder; someone knocked down lands BODY_FALL_S later
+## (body_fall, BODY_FALL_DB on the thump's level). The hero's swing (hero_action) whooshes
+## WHOOSH_DB under the thump, a shove SHOVE_DB lower still.
+const HIT_FULL := 0.6
+const HIT_CAR_DB := 4.0
+const BODY_FALL_S := 0.45
+const BODY_FALL_DB := 2.0
+const WHOOSH_DB := -8.0
+const SHOVE_DB := -6.0
 
 static var _cache: Dictionary = {}
 static var _legacy_loop: AudioStream = null

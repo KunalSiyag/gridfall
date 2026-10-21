@@ -13,13 +13,21 @@ extends RefCounted
 const WS := preload("res://scripts/fp/world_scale.gd")
 const AP := preload("res://scripts/fp/asset_paths.gd")
 const SM := preload("res://scripts/fp/player/spring_math.gd")
+const FK := preload("res://scripts/fp/player/hero_fk.gd")
 
 ## Locomotion loops in blend order; HC starts each on the left-heel strike.
 const LOCO := ["walk", "walk_fast", "run", "run_fast"]
 ## Upper-body one-shots (6.9 OneShot).
 const GESTURES := ["interact", "wave", "phone", "door_try"]
+## Body actions over the gestures (the actions feature): punches, the shove and emotes on the
+## upper body with quick fades; the dance on the whole body.
+const ACTIONS := ["punch_jab", "punch_cross", "push", "yes", "no", "shout"]
 ## Every clip the tree plays.
-const CLIPS := ["idle", "walk", "walk_fast", "run", "run_fast", "crouch_idle", "crouch_walk", "jump_start", "fall", "land", "talk", "sit_down", "sit", "stand_up", "interact", "wave", "phone", "door_try"]
+const CLIPS := [
+	"idle", "walk", "walk_fast", "run", "run_fast", "crouch_idle", "crouch_walk", "jump_start",
+	"fall", "land", "talk", "sit_down", "sit", "stand_up", "interact", "wave", "phone", "door_try",
+	"punch_jab", "punch_cross", "push", "yes", "no", "shout", "dance",
+]
 ## Foot-slide correction: TimeScale = clamp(v / v_anim, TS_MIN, TS_MAX).
 const TS_MIN := 0.5
 const TS_MAX := 1.5
@@ -76,6 +84,18 @@ const STEP_MIN_MOVE := 0.25
 ## Gesture one-shot fades (s).
 const SHOT_IN := 0.25
 const SHOT_OUT := 0.35
+## Action one-shot fades (a punch lands at once), the dance's, and the guard's halflife (s).
+const ACT_IN := 0.06
+const ACT_OUT := 0.2
+const DANCE_IN := 0.3
+const DANCE_OUT := 0.4
+const HL_GUARD := 0.06
+## The guard (fists up) is GUARD_CLIP held at GUARD_AT seconds on the upper body.
+const GUARD_CLIP := "punch_jab"
+const GUARD_AT := 0.0
+## strike_time samples this many poses over a clip's opening seconds.
+const STRIKE_SAMPLES := 48
+const STRIKE_WITHIN := 1.2
 ## sit_down and stand_up play this much faster than authored (in and out of a car seat).
 const SIT_SPEED := 1.5
 const SIT_CLIPS := ["sit_down", "stand_up"]
@@ -107,6 +127,14 @@ const P_LAND := "parameters/sm/land/mix/blend_amount"
 const P_GESTURE := "parameters/gesture/transition_request"
 const P_SHOT := "parameters/shot/request"
 const P_SHOT_ACTIVE := "parameters/shot/active"
+const P_ACTION := "parameters/action/transition_request"
+const P_ACT := "parameters/act/request"
+const P_ACT_ACTIVE := "parameters/act/active"
+const P_DANCE := "parameters/dance/request"
+const P_DANCE_ACTIVE := "parameters/dance/active"
+const P_GUARD := "parameters/guard/blend_amount"
+const P_GUARD_SEEK := "parameters/guard_at/seek_request"
+const P_GUARD_HOLD := "parameters/guard_hold/scale"
 
 ## The body's scene root (faces +Z, feet at y = 0, metric) and its parts.
 var body: Node3D
@@ -133,6 +161,8 @@ var move: float = 0.0
 var contacts: Array[Dictionary] = []
 ## How far the body is lowered to put the soles on the ground (skeleton metres; _update_ground).
 var ground_fix: float = 0.0
+## How far the guard is up (0..1).
+var guard: float = 0.0
 ## Head-look influence (0..1) and whether the modifier last found its target within its limits.
 var look_weight: float = 0.0
 var look_within: bool = false
@@ -142,8 +172,8 @@ var _head_bone: int = -1
 var _feet: Array[int] = []
 var _feet_rest: Array[float] = []
 var _contact: Dictionary = {}
-var _tracks: Dictionary = {}
 var _chains: Array = []
+var _fk: FK
 var _lib: AnimationLibrary
 var _look_goal: Vector3 = Vector3(NAN, NAN, NAN)
 var _look_dir: Vector3 = Vector3.ZERO
@@ -154,6 +184,11 @@ var _sit: bool = false
 var _prev_state: String = ""
 var _prev_phase: float = -1.0
 var _last_vy: float = 0.0
+var _guard_goal: float = 0.0
+## Seconds until the playing action (dance) fades out by itself; INF for at its own end.
+var _act_left: float = INF
+var _dance_left: float = INF
+var _strike: Dictionary = {}
 
 
 ## Instantiates the body at path with the AnimationLibrary at lib_path; k is the body's speed
@@ -196,6 +231,7 @@ func _setup(b: Node3D, sk: Skeleton3D, lib: AnimationLibrary, k: float, p_gender
 	for n: String in ["LeftFoot", "RightFoot", "LeftToes", "RightToes"]:
 		_feet.append(skeleton.find_bone(n))
 	_lib = lib
+	_fk = FK.new(skeleton)
 	_analyse_feet()
 	tree = AnimationTree.new()
 	tree.name = "AnimationTree"
@@ -258,6 +294,7 @@ func update(dt: float, v: float, grounded: bool, vy: float, crouched: bool, talk
 			_go(_base(a, crouched, talking))
 	_last_vy = vy
 	_set_locomotion(v, a)
+	_update_actions(dt, a)
 	tree.advance(dt)
 	_update_ground(dt)
 	_update_contacts()
@@ -293,6 +330,86 @@ func gesture_active() -> bool:
 ## Fades the playing gesture out before its end.
 func stop_gesture() -> void:
 	tree.set(P_SHOT, AnimationNodeOneShot.ONE_SHOT_REQUEST_FADE_OUT)
+
+
+## Plays a body action: one of ACTIONS on the upper body over whatever the legs do, or "dance"
+## on the whole body (standing only; moving ends it). secs > 0 fades it out that long after the
+## start; otherwise a clip plays to its end, a loop for one cycle and the dance until stopped.
+func play_action(a: String, secs: float = 0.0) -> bool:
+	var left := secs if secs > 0.0 else INF
+	if a == "dance":
+		if state() != "loco" or move * float(speeds["walk"]) > TALK_STILL:
+			return false
+		tree.set(P_DANCE, AnimationNodeOneShot.ONE_SHOT_REQUEST_FIRE)
+		_dance_left = left
+		return true
+	if a not in ACTIONS:
+		return false
+	tree.set(P_ACTION, a)
+	tree.set(P_ACT, AnimationNodeOneShot.ONE_SHOT_REQUEST_FIRE)
+	_act_left = left
+	return true
+
+
+## True while an action or the dance plays (fading out included).
+func action_active() -> bool:
+	return bool(tree.get(P_ACT_ACTIVE)) or bool(tree.get(P_DANCE_ACTIVE))
+
+
+## Fades the playing action and the dance out.
+func stop_action() -> void:
+	tree.set(P_ACT, AnimationNodeOneShot.ONE_SHOT_REQUEST_FADE_OUT)
+	tree.set(P_DANCE, AnimationNodeOneShot.ONE_SHOT_REQUEST_FADE_OUT)
+	_act_left = INF
+	_dance_left = INF
+
+
+## Raises (on) or drops the guard: fists up on the upper body, eased over HL_GUARD.
+func set_guard(on: bool) -> void:
+	_guard_goal = 1.0 if on else 0.0
+
+
+## When clip's fists (or palms) are furthest out in front within its first within seconds: where
+## a punch or the shove lands (s). Measured once per clip on this body's keys and cached.
+func strike_time(clip: String, within: float = STRIKE_WITHIN) -> float:
+	var key := "%s|%.3f" % [clip, within]
+	if _strike.has(key):
+		return _strike[key]
+	var a := _clip(clip)
+	if a == null:
+		return 0.0
+	var fwd := _fk.forward_of(body)
+	var hands := []
+	for h: String in ["LeftHand", "RightHand"]:
+		hands.append(_fk.chain_to(skeleton.find_bone(h)))
+	var span := minf(a.length, within)
+	var best := -INF
+	var at := 0.0
+	for k in range(STRIKE_SAMPLES + 1):
+		var t := span * float(k) / float(STRIKE_SAMPLES)
+		for c: Array in hands:
+			var reach := _fk.end_pos(a, a, 0.0, c, t / a.length).dot(fwd)
+			if reach > best + 1e-5:
+				best = reach
+				at = t
+	_strike[key] = at
+	return at
+
+
+## Times the playing action and the dance out, ends the dance once the body moves or leaves its
+## standing locomotion, and eases the guard.
+func _update_actions(dt: float, a: float) -> void:
+	_act_left -= dt
+	if _act_left <= 0.0:
+		_act_left = INF
+		tree.set(P_ACT, AnimationNodeOneShot.ONE_SHOT_REQUEST_FADE_OUT)
+	_dance_left -= dt
+	var ending := a > TALK_STILL or state() != "loco" or _dance_left <= 0.0
+	if ending and bool(tree.get(P_DANCE_ACTIVE)):
+		_dance_left = INF
+		tree.set(P_DANCE, AnimationNodeOneShot.ONE_SHOT_REQUEST_FADE_OUT)
+	guard = _guard_goal if dt <= 0.0 else SM.damp(guard, _guard_goal, HL_GUARD, dt)
+	tree.set(P_GUARD, guard)
 
 
 ## How far clip has carried its root t seconds after its state began (0..1 of the whole clip's
@@ -351,6 +468,12 @@ func snap(crouched: bool) -> void:
 	ground_fix = 0.0
 	body.position.y = 0.0
 	tree.set("parameters/shot/request", AnimationNodeOneShot.ONE_SHOT_REQUEST_ABORT)
+	tree.set(P_ACT, AnimationNodeOneShot.ONE_SHOT_REQUEST_ABORT)
+	tree.set(P_DANCE, AnimationNodeOneShot.ONE_SHOT_REQUEST_ABORT)
+	_guard_goal = 0.0
+	guard = 0.0
+	_act_left = INF
+	_dance_left = INF
 	playback.start("crouch" if crouched else "loco", true)
 	tree.advance(0.0)
 	_prev_state = state()
@@ -396,31 +519,70 @@ func _update_ground(dt: float) -> void:
 
 # --- Tree
 
+## sm -> shot (gestures, upper body) -> dance (whole body) -> guard (GUARD_CLIP held, upper
+## body) -> act (ACTIONS, upper body) -> output.
 func _root_tree() -> AnimationNodeBlendTree:
 	var bt := AnimationNodeBlendTree.new()
 	bt.add_node("sm", _state_machine())
-	var tr := AnimationNodeTransition.new()
-	tr.input_count = GESTURES.size()
-	for i in GESTURES.size():
-		tr.set_input_name(i, GESTURES[i])
-	tr.xfade_time = 0.0
-	bt.add_node("gesture", tr)
-	for i in GESTURES.size():
-		var n := "g_" + str(GESTURES[i])
-		bt.add_node(n, _anim(GESTURES[i]))
-		bt.connect_node("gesture", i, n)
-	var shot := AnimationNodeOneShot.new()
-	shot.fadein_time = SHOT_IN
-	shot.fadeout_time = SHOT_OUT
-	shot.break_loop_at_end = true
-	shot.filter_enabled = true
-	for b in _upper_bones():
-		shot.set_filter_path(NodePath("%GeneralSkeleton:" + b), true)
-	bt.add_node("shot", shot)
+	_switch(bt, "gesture", GESTURES, "g_")
+	bt.add_node("shot", _one_shot(SHOT_IN, SHOT_OUT, true))
 	bt.connect_node("shot", 0, "sm")
 	bt.connect_node("shot", 1, "gesture")
-	bt.connect_node("output", 0, "shot")
+	bt.add_node("dance", _one_shot(DANCE_IN, DANCE_OUT, false))
+	bt.add_node("a_dance", _anim("dance"))
+	bt.connect_node("dance", 0, "shot")
+	bt.connect_node("dance", 1, "a_dance")
+	# The guard pose: GUARD_CLIP sought to GUARD_AT and held there (time scale 0).
+	bt.add_node("guard_pose", _anim(GUARD_CLIP))
+	bt.add_node("guard_at", AnimationNodeTimeSeek.new())
+	bt.add_node("guard_hold", AnimationNodeTimeScale.new())
+	bt.connect_node("guard_at", 0, "guard_pose")
+	bt.connect_node("guard_hold", 0, "guard_at")
+	var guard_mix := AnimationNodeBlend2.new()
+	_filter_upper(guard_mix)
+	bt.add_node("guard", guard_mix)
+	bt.connect_node("guard", 0, "dance")
+	bt.connect_node("guard", 1, "guard_hold")
+	_switch(bt, "action", ACTIONS, "a_")
+	bt.add_node("act", _one_shot(ACT_IN, ACT_OUT, true))
+	bt.connect_node("act", 0, "guard")
+	bt.connect_node("act", 1, "action")
+	bt.connect_node("output", 0, "act")
 	return bt
+
+
+## A Transition n in bt over clips (no cross-fade; each input restarts its clip), the clips as
+## Animation nodes named prefix + clip.
+static func _switch(bt: AnimationNodeBlendTree, n: String, clips: Array, prefix: String) -> void:
+	var tr := AnimationNodeTransition.new()
+	tr.input_count = clips.size()
+	for i in clips.size():
+		tr.set_input_name(i, clips[i])
+	tr.xfade_time = 0.0
+	tr.allow_transition_to_self = true
+	bt.add_node(n, tr)
+	for i in clips.size():
+		var c := prefix + str(clips[i])
+		bt.add_node(c, _anim(clips[i]))
+		bt.connect_node(n, i, c)
+
+
+## A one-shot with these fades; upper filters it to the upper body. A looping clip in it plays one
+## cycle, except on the whole body (the dance), which loops until faded out.
+func _one_shot(fade_in: float, fade_out: float, upper: bool) -> AnimationNodeOneShot:
+	var s := AnimationNodeOneShot.new()
+	s.fadein_time = fade_in
+	s.fadeout_time = fade_out
+	s.break_loop_at_end = upper
+	if upper:
+		_filter_upper(s)
+	return s
+
+
+func _filter_upper(n: AnimationNode) -> void:
+	n.filter_enabled = true
+	for b in _upper_bones():
+		n.set_filter_path(NodePath("%GeneralSkeleton:" + b), true)
 
 
 func _state_machine() -> AnimationNodeStateMachine:
@@ -564,6 +726,9 @@ func _reset_params() -> void:
 	tree.set(P_CBS, 0.0)
 	tree.set(P_CTS, 1.0)
 	tree.set(P_LAND, LAND_MIN)
+	tree.set(P_GUARD, guard)
+	tree.set(P_GUARD_SEEK, GUARD_AT)
+	tree.set(P_GUARD_HOLD, 0.0)
 	time_scale = 1.0
 	move = 0.0
 
@@ -676,7 +841,7 @@ func _contacts_of(c0: String, c1: String, w: float) -> Vector2:
 		var h := PackedFloat32Array()
 		for k in range(CONTACT_SAMPLES):
 			var ph := float(k) / float(CONTACT_SAMPLES)
-			h.append(_fk_y(a0, a1, wq, _chains[f], ph))
+			h.append(_fk.end_pos(a0, a1, wq, _chains[f], ph).y)
 		out[f] = _down_phase(h, 0.5 * float(f))
 	_contact[key] = out
 	return out
@@ -687,56 +852,17 @@ func _contacts_of(c0: String, c1: String, w: float) -> Vector2:
 func _analyse_feet() -> void:
 	_chains.clear()
 	for b: int in _feet:
-		var chain: Array[int] = []
-		var i := b
-		while i >= 0:
-			chain.push_front(i)
-			i = skeleton.get_bone_parent(i)
-		_chains.append(chain)
+		_chains.append(_fk.chain_to(b))
 	var idle := _lib.get_animation("idle")
 	var stand := [INF, INF]
 	for k in range(IDLE_SAMPLES):
 		var ph := float(k) / float(IDLE_SAMPLES)
 		for f in range(4):
-			stand[f / 2] = minf(stand[f / 2], _fk_y(idle, idle, 0.0, _chains[f], ph))
+			stand[f / 2] = minf(stand[f / 2], _fk.end_pos(idle, idle, 0.0, _chains[f], ph).y)
 	_feet_rest.clear()
 	for f in range(4):
 		_feet_rest.append(stand[f / 2])
 
-
-## The y (skeleton metres) of the chain's last bone at phase ph of clip a0 blended toward a1 by w
-## (rotations slerped, positions lerped). Root stays at rest (its motion is extracted); position
-## keys scale by the skeleton's motion_scale, as the mixer applies them.
-func _fk_y(a0: Animation, a1: Animation, w: float, chain: Array, ph: float) -> float:
-	var t0 := ph * a0.length
-	var t1 := ph * a1.length
-	var xf := Transform3D.IDENTITY
-	for b: int in chain:
-		var rest := skeleton.get_bone_rest(b)
-		var pos := rest.origin
-		var rot := rest.basis.get_rotation_quaternion()
-		if b != chain[0]:
-			var k0 := _track(a0, b)
-			var k1 := _track(a1, b) if w > 0.0 else k0
-			var r0 := a0.rotation_track_interpolate(k0.x, t0) if k0.x >= 0 else rot
-			var r1 := a1.rotation_track_interpolate(k1.x, t1) if k1.x >= 0 else rot
-			rot = r0.slerp(r1, w) if w > 0.0 else r0
-			var p0 := a0.position_track_interpolate(k0.y, t0) * skeleton.motion_scale if k0.y >= 0 else pos
-			var p1 := a1.position_track_interpolate(k1.y, t1) * skeleton.motion_scale if k1.y >= 0 else pos
-			pos = p0.lerp(p1, w)
-		xf = xf * Transform3D(Basis(rot).scaled(rest.basis.get_scale()), pos)
-	return xf.origin.y
-
-
-## (rotation track, position track) of bone b in clip a; -1 where it has none. Cached per clip.
-func _track(a: Animation, b: int) -> Vector2i:
-	var key := "%d|%d" % [a.get_instance_id(), b]
-	if _tracks.has(key):
-		return _tracks[key]
-	var path := NodePath("%GeneralSkeleton:" + skeleton.get_bone_name(b))
-	var r := Vector2i(a.find_track(path, Animation.TYPE_ROTATION_3D), a.find_track(path, Animation.TYPE_POSITION_3D))
-	_tracks[key] = r
-	return r
 
 
 ## Where samples h (one cycle) come down to within CONTACT_EPS of their lowest value inside the

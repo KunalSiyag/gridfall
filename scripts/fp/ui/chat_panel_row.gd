@@ -23,10 +23,11 @@ const REPLY_H := 17.0
 const CHIP_H := 15.0
 const CARD_ICON := 22.0
 const ROLE_TAGS := {"mayor": "MAYOR", "press": "PRESS", "council": "COUNCIL"}
-## Card icon per incident type (refs.type).
+## Card icon per incident type (refs.type; "street": a crew called after someone was hit).
 const INCIDENT_ICONS := {
 	"fire": "fire", "blackout": "bolt", "power_line": "bolt", "sewage_burst": "drop", "water_main": "drop",
 	"flood": "drop", "gridlock": "alert", "car_crash": "alert", "smog": "alert", "earthquake": "alert", "tornado": "alert",
+	"street": "alert",
 }
 
 static var _cache: Dictionary = {}

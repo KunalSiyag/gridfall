@@ -245,6 +245,8 @@ Signals that cross first-person slices. Emitters and listeners are listed in doc
 - `car_impact(at: Vector3, speed: float, what: String)`: The player's car hit something hard: the contact point, the closing speed (u/s) and what was hit, "wall" (anything fixed) or "car". Emitted by the drive feature.
 - `car_door(at: Vector3, open: bool)`: The driver's door of the player's car opened (true) or slammed shut (false), at its handle. Emitted by the drive feature.
 - `prop_knocked(at: Vector3, kind: String, speed: float)`: A street prop was knocked over at a point (its StreetDressing kind: "bin", "bench" ...) and flies off at speed (u/s). Emitted by the props feature.
+- `person_hit(at: Vector3, cause: String, info: Dictionary)`: Someone on foot was hit at a point (their feet): cause "shove" or "punch" (the hero) or "car" (the car the player drives); info is traffic_feature.gd hit_walker()'s {"walker", "resident_id", "name", "down", "street", "strength", "witnesses", "crew"}. Emitted by traffic.
+- `hero_action(action: String, at: Vector3)`: The hero swung or gestured: action "jab", "cross", "shove" or an emote ("wave", "yes", "no", "shout", "dance"), at their feet. Emitted by the actions feature.
 
 ## `scripts/fp/obb2d.gd`
 

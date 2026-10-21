@@ -137,13 +137,14 @@ City fleets on lanes in first person (docs/fp/slices/E-traffic.md §5): buses on
 - `MAX_CREWS = 10`
 - `ASTAR_PER_FRAME = 4`: Crew routes are A* builds: at most this many per frame (the feature refills the budget), the rest wait in `pending` (docs/fp/slices/E-traffic.md §1).
 - `CURB_LAT = 0.055`
+- `CALL_MAX = 240.0`: A crew answering a call (stay > 0) gives up after this long (s) from setting off.
 - `JOBS = {"bus": "bus driver", "truck": "truck driver", "garbage_truck": "sanitation worker", "f...`
 
 ### Properties
 
 - `stop_sides: Dictionary`: tile -> side index of its shelter
 - `last_dispatch_fail: String`: Why the last crew build sent nobody ("" when it sent a crew); for tests and logs.
-- `pending: Array`: Crew requests waiting for an A* slot: [kind, station, target]; crews waiting to route home.
+- `pending: Array`: Crew requests waiting for an A* slot: [kind, station, target, stay]; crews waiting to route home.
 - `astar_left: int`: A* builds left this frame.
 - `retry_t: float`: Seconds before stale lines may be rebuilt again, and the current wait (it doubles while the rebuild keeps failing: a failed A* is the expensive case).
 
@@ -163,7 +164,7 @@ City fleets on lanes in first person (docs/fp/slices/E-traffic.md §5): buses on
 - `func count(role: String) -> int`
 - `func fleet_size(kind: String) -> int`: Fleet size for CityLife's census (kind as CityLife names it).
 - `func spawn_fleet(kind: String, start: Vector2i) -> void`: Adds one vehicle of a fleet (CityLife.external.spawn_fleet).
-- `func dispatch_crew(kind: String, station: Vector2i, target: Vector2i) -> void`: Queues a crew (CityLife.external.dispatch_crew); it leaves when an A* slot is free.
+- `func dispatch_crew(kind: String, station: Vector2i, target: Vector2i, stay: float = 0.0) -> void`: Queues a crew (CityLife.external.dispatch_crew); it leaves when an A* slot is free. A crew called with stay > 0 answers a call, not a sim event: it stays that many seconds at the scene.
 - `func step(dt: float) -> void`
 
 ## `scripts/fp/traffic/heap.gd`
@@ -199,6 +200,31 @@ Intelligent Driver Model (Treiber 2000) in world units (docs/fp/slices/E-traffic
 
 - `static func acc(v: float, v0: float, gap: float, dv: float) -> float`: Acceleration for speed v toward desired speed v0 with a leader gap (bumper to bumper) closing at dv = v - v_leader. gap = INF means a free road.
 - `static func approach_speed(v_end: float, d: float) -> float`: Speed a car may hold at distance d before a point it must pass at v_end (comfortable braking).
+
+## `scripts/fp/traffic/incidents.gd`
+
+extends `RefCounted`
+
+What a blow in the street means for the city (traffic_feature.gd hit_walker): a resident who was hit remembers it and their mood drops (a shove least, a car most, more when knocked down), and residents who saw it remember it too. A punch that knocks someone down, or the ASSAULT-th punch within ASSAULT_S, calls the police; someone a car knocks down, an ambulance (a crew from the nearest station that stays at the scene a while, fleets.gd), each kind at most once per CREW_COOL.
+
+### Constants
+
+- `D = preload("res://scripts/sim/sim_defs.gd")`
+- `WK = preload("res://scripts/fp/traffic/walkers.gd")`
+- `MOOD = {"shove": -0.5, "punch": -1.0, "car": -2.0}`
+- `DOWN_MOOD = 1.5`
+- `SAW_MOOD = -0.3`
+- `ASSAULT = 3`
+- `ASSAULT_S = 60.0`
+- `CREW_COOL = 90.0`
+- `STAY = {"police": 40.0, "ambulance": 30.0}`
+- `HIT_LINES = { "shove": "got shoved by a visitor %s", "punch": "was punched by a visitor %s", "down"...`: Memory lines (residents.gd remember): what happened to them and what they saw (%s is where).
+- `SAW_LINES = { "shove": "saw a visitor shove someone %s", "punch": "saw a visitor punch someone %s",...`
+
+### Functions
+
+- `func setup(p_f: Object) -> void`
+- `func report(w: WK.Walker, at: Vector3, strength: float, cause: String, res: Dictionary, seen: Array) -> Dictionary`: The person_hit info for walker w hit by cause at world point at (res: reactions.gd hit()'s result, seen: the walkers who saw it): {"walker", "resident_id", "name", "down", "street", "strength", "witnesses" (their resident ids), "crew" ("police", "ambulance" or "")}.
 
 ## `scripts/fp/traffic/junctions.gd`
 
@@ -427,7 +453,7 @@ Animated people from HC's roster (docs/fp/slices/E-traffic.md deliverable 9, TPS
 - `PERSON_FADE = 0.4`: People fade out over this last stretch before VIS_PERSON (T3).
 - `CULL_UP = 0.9 * WS.M`: Frustum test: a sphere around the body (metres above the feet, radius).
 - `CULL_R = 1.3 * WS.M`
-- `STATES = [ &"idle", &"idle_look", &"idle_wait", &"walk", &"walk_carry", &"walk_phone", &"carry_i...`
+- `STATES = KIT.STATES`
 - `LOCO = [&"walk", &"walk_carry", &"walk_phone"]`
 - `STILL = [&"", &"carry_idle", &"phone"]`
 - `BOX_COLOR = Color(0.62, 0.47, 0.3)`
@@ -468,7 +494,7 @@ Animated people from HC's roster (docs/fp/slices/E-traffic.md deliverable 9, TPS
 
 extends `RefCounted`
 
-Asset building for people.gd: the layered clips (a box held in both hands, a phone at the ear), the shared T0 AnimationTree, and HC's lod1 meshes as dither-fading T3 MultiMesh layers.
+Asset building for people.gd: the layered clips (a box held in both hands, a phone at the ear), the shared T0 AnimationTree, and HC's lod1 meshes as dither-fading T3 MultiMesh layers; the clips reactions.gd plays (blows, falls, running off) and how their time runs.
 
 ### Constants
 
@@ -476,19 +502,67 @@ Asset building for people.gd: the layered clips (a box held in both hands, a pho
 - `CARRY_AT = 0.0`
 - `PHONE_AT = 0.5`
 - `NEEDS = [ &"idle", &"walk", &"talk", &"talk_2", &"phone", &"carry", &"idle_look", &"idle_wait",...`
+- `STATES = [ &"idle", &"idle_look", &"idle_wait", &"walk", &"walk_carry", &"walk_phone", &"carry_i...`: Every clip the T0 tree holds: HC's walking and standing clips, the layered ones, and the reactions (reactions.gd).
+- `ONE_SHOTS = [ &"knockback", &"get_up", &"hit_head", &"hit_chest", &"wave", &"yes" ]`: Reactions that play once and hold their last frame (the rest loop), the blows among them, and the quicker crossfade into a blow (s): it lands at once.
+- `BLOWS = [&"knockback", &"hit_head", &"hit_chest"]`
+- `REACT_XFADE = 0.08`
 - `T3_SHADER = """`
 
 ### Functions
 
 - `static func layered_library(hc: AnimationLibrary) -> Variant`: A copy of HC's library with walk_carry, carry_idle and walk_phone added; the name of the first missing clip in NEEDS instead when it lacks one.
 - `static func layer(base: Animation, over: Animation, bones: Array[String], at: float, nm: String) -> Animation`: base with the rotations of `bones` replaced by over's pose at time `at` (constant keys).
-- `static func build_tree(states: Array[StringName], xfade: float) -> AnimationNodeBlendTree`: The T0 tree, shared by every body: state machine (every state reaches every other with a crossfade) -> TimeSeek (handovers from T1) -> TimeScale (playback rate) -> output.
+- `static func build_tree(states: Array[StringName], xfade: float) -> AnimationNodeBlendTree`: The T0 tree, shared by every body: state machine (every state reaches every other with a crossfade, REACT_XFADE into a blow) -> TimeSeek (handovers from T1) -> TimeScale (playback rate) -> output.
+- `static func clip_time(clip: StringName, t: float, ln: float) -> float`: Time t into a clip of length ln: one-shots stop on their last frame, loops wrap.
 - `static func t3_shader() -> Shader`
 - `static func lod_mesh(ps: PackedScene, shader: Shader) -> Array`: The first mesh of a lod1 scene as [ArrayMesh with the fade shader, its transform in the scene]; [] when the scene has no mesh.
 - `static func t3_layer(nm: String, mesh: Mesh) -> MultiMeshInstance3D`: An empty, hidden T3 layer for mesh (custom data carries the fade).
 - `static func fill(mmi: MultiMeshInstance3D, xfs: Array[Transform3D], cols: Array[Color]) -> void`: Shows xfs (fade in the alpha of cols) on mmi, growing its buffer by doubling.
 - `static func crc32(s: String) -> int`: CRC-32 (IEEE, as zlib) of s's UTF-8 bytes.
 - `static func pose(sk: Skeleton3D, bone: int) -> Transform3D`: Bone pose in skeleton space from the local poses.
+
+## `scripts/fp/traffic/reactions.gd`
+
+extends `RefCounted`
+
+People hit in the street (docs/fp/ARCHITECTURE.md, Body actions): shoved or punched by the player, or struck by the car they drive. A light blow makes the person reel (hit_chest, hit_head) and slide back a little; a hard one (DOWN), the HITS_DOWN-th punch in a row or a fast car knocks them down (knockback), and they lie a while before they get up (get_up). Then they shake their head or shout at whoever did it, run off, or walk back to where they were. People within WITNESS_R who see it run off or shout too. While a walker stands where the blow left it its state is "react" (it keeps its edge and plan; the slide and the walk back move only its drawn offset), and a run gives it its own state back at RUN_F times its pace with the run clip. What follows a blow for the city (memory, mood, crews) is incidents.gd's.
+
+### Constants
+
+- `WS = preload("res://scripts/fp/world_scale.gd")`
+- `AP = preload("res://scripts/fp/asset_paths.gd")`
+- `WK = preload("res://scripts/fp/traffic/walkers.gd")`
+- `LENGTHS = {&"knockback": 0.833, &"get_up": 1.54, &"hit_head": 0.417, &"hit_chest": 0.333}`: Clip lengths (s) in HC's libraries (the female clips match); setup() reads them again.
+- `ONCE = [&"knockback", &"get_up", &"hit_head", &"hit_chest"]`: Clips that play once: the walker does not turn while they run (it may be lying down).
+- `WITNESS_R = 8.0 * WS.M`
+- `DOWN = 0.7`: A blow this strong (0..1) knocks a person down, and so does the HITS_DOWN-th punch within HITS_S seconds.
+- `HITS_DOWN = 3`
+- `HITS_S = 8.0`
+- `RUN_F = 2.6`
+- `BACK_V = 1.1 * WS.M`
+- `BODY_R = 0.25 * WS.M`
+- `BODY_H = 1.7 * WS.M`
+- `SEE = [0.3, 0.6, 0.85]`: Share of the people around who react, and of those the share who run off, by severity (a shove, a punch, a knock-down).
+- `FLEE = [0.15, 0.5, 0.6]`
+- `ANSWERS = { "wave": [10.0, 0.75, 0.0, &"wave", 2.8], "yes": [5.0, 0.75, 0.0, &"yes", 2.5], "no": ...`: Who answers an emote of the hero's: [range (m), the cosine of the cone ahead, share, clip, seconds]. A share of 0 is the nearest person in the cone; otherwise each of those around answers with that chance, at most ANSWER_MAX of them.
+- `ANSWER_MAX = 4`
+
+### Inner classes
+
+- `Reaction`: One person reacting: the steps still to come, [mode, clip, seconds] with mode "place" (stand and play the clip), "back" (walk back to the walker's own place) or "run".
+
+### Functions
+
+- `func setup(p_wk: WK, p_collision: CollisionWorld, seed: int) -> void`
+- `func clear() -> void`
+- `func hit(w: WK.Walker, src: Vector3, push: Vector3, strength: float, cause: String) -> Dictionary`: w takes a blow from src (a world point) along push (xz, any length) of strength 0..1, cause "shove", "punch" or "car". Returns {"down": bool, "clip": StringName}, or {} when w cannot take one now (hidden, in a conversation, or down already).
+- `func witness(w: WK.Walker, src: Vector3, severity: int) -> Array`: People within WITNESS_R of w who see what happened to it (severity 0 a shove, 1 a punch, 2 a knock-down) and are not reacting already: some run off, some shout at src (shake their head at a shove). Returns them.
+- `func answer_emote(p: Vector3, fwd: Vector3, emote: String) -> Array`: People who answer the hero's emote ("wave", "yes", "no", "shout", "dance"; ANSWERS) made at p facing fwd (xz): after a moment they turn to p and wave, nod or shake their head. Returns them.
+- `func step(dt: float) -> void`
+- `func blocks() -> Array`: Lane blocks for vehicles.gd: the people hit, until they walk or run on, as circles at their drawn feet (on a sidewalk they are clear of every lane).
+- `func is_down(w: WK.Walker) -> bool`: True while w is knocked down (lying or getting up).
+- `func count() -> int`
+- `func pose(w: WK.Walker, clip: StringName, t: float, secs: float = 60.0) -> void`: Stages w playing clip from t seconds in, for secs (photos, tests). The caller releases its body so the next one starts at t.
 
 ## `scripts/fp/traffic/render.gd`
 
@@ -675,6 +749,8 @@ Traffic and pedestrians on lanes (slice E, docs/fp/slices/E-traffic.md): one roa
 - `OCC = preload("res://scripts/fp/traffic/occupants.gd")`
 - `SHOVES = preload("res://scripts/fp/traffic/shoves.gd")`
 - `DOORS = preload("res://scripts/fp/traffic/car_doors.gd")`
+- `REACT = preload("res://scripts/fp/traffic/reactions.gd")`
+- `INCIDENTS = preload("res://scripts/fp/traffic/incidents.gd")`
 - `MAX_STEP = 1.0 / 30.0`
 - `CAR_PREFIXES = ["sedan", "hatch", "suv", "taxi", "van", "pickup", "coupe"]`
 - `TELEPORT = 2.0`: A jump of the player beyond this in one frame is a teleport: the street is refilled around them.
@@ -683,11 +759,13 @@ Traffic and pedestrians on lanes (slice E, docs/fp/slices/E-traffic.md): one roa
 - `PHOTO_BACK = 1.3`: The traffic photo stands this far from the junction centre along the arm.
 - `LINE_RETRY = 10.0`: Seconds between attempts to rebuild bus lines that no longer match the roads.
 - `CLAIM_SPEED = 0.5 * WS.M`: The player can take a parked car, their own, or an ambient car stopped below this speed.
+- `STATION_FAR = 10`: A crew called with no station in town sets off from a road at most this many tiles away.
 
 ### Properties
 
 - `people: PPL`: HC's animated people (deliverable 9); ok == false draws the legacy static people instead.
 - `shoves: SHOVES`: Cars the player's car knocked: their slides, stuns and the way back onto their lanes.
+- `reactions: REACT`: People hit in the street (reel, fall, get up, run off) and what that means for the city.
 - `jitter_enabled: bool`: Test hooks: departure jitter on or off; auto_step false keeps _process from advancing time.
 - `ambient_enabled: bool`: Test hook: false stops the ambient filler (no spawns, no removals).
 
@@ -732,6 +810,11 @@ Traffic and pedestrians on lanes (slice E, docs/fp/slices/E-traffic.md): one roa
 - `func blockers_near(p: Vector3, r: float) -> Array`: Optional, for A: world AABBs of stopped vehicles near p (parked cars included), never the car the player drives (its body meets the others through bodies_near).
 - `func bodies_near(p: Vector3, r: float) -> Array`: For the drive feature's car body: every vehicle body that may reach within r of p, as [id, xz centre, yaw, Vector2(half width, half length), xz velocity, mass (a sedan is 1)]. The car the player drives is not listed.
 - `func bump_car(id: int, j: Vector2, at: Vector2) -> void`: The player's car hit vehicle id with impulse j (xz, u/s times a sedan's mass) at xz point at: the car is knocked (shoves.gd).
+- `func walkers_near(p: Vector3, r: float) -> Array`: People on foot within r of p, for the player's blows and the car body: [{"id", "pos" (the drawn feet), "yaw" (facing (sin, 0, cos)), "down", "resident_id"}].
+- `func hit_walker(id: int, src: Vector3, push: Vector3, strength: float, cause: String) -> Dictionary`: Person id (walkers_near) takes a blow from src (a world point) along push, of strength 0..1, cause "shove", "punch" or "car": they react and the people around see it (reactions.gd), the city hears of it (incidents.gd) and the bus emits person_hit. Returns that signal's info, {} when they could not be hit now.
+- `func answer_emote(p: Vector3, fwd: Vector3, emote: String) -> int`: The hero's emote ("wave", "yes", "no", "shout", "dance") at p facing fwd: the people who answer it (reactions.gd answer_emote). Returns how many do.
+- `func pose_walker(id: int, clip: StringName, t: float) -> bool`: Photo and test hook: person id plays reaction clip from t seconds in (held, sim paused or not).
+- `func call_crew(kind: String, at: Vector3, stay: float) -> bool`: Calls a crew ("police" or "ambulance") to world point at, from the road beside the nearest police station or hospital (a road some way off when the city has none), to stay that many seconds once there (fleets.gd). False when no road is near at.
 - `func enter_target(p: Vector3, r: float) -> Dictionary`: The car the player could get into from p: the nearest one they may take whose body is within r of p, as {"id", "label", "pos", "dist"}; {} when none (or while they drive).
 - `func claim_car(id: int) -> Dictionary`: Hands car id to the player: an ambient, decor or resident car is swapped for a player car of the same model where it stands (its owner's trip carries on without it). Returns the car's {"id", "pos", "yaw", "length", "half_w", "height"}, or {} when it cannot be taken.
 - `func drive_car(pos: Vector3, yaw: float, v: float, a: float) -> void`: Poses the driven car (speed v signed, acceleration a) and its model at once, so the car and the seated hero move in the same frame.
@@ -930,7 +1013,8 @@ People on foot (docs/fp/slices/E-traffic.md §3 Pedestrians): they walk the side
 - `func rebuild_posts(sim: CitySim) -> void`: Rebuilds the post obstacles: the posts baked into lit straights (model-local (±0.4, ∓0.2), roads.py) and the traffic-light poles at the corners of cross tiles (junctions.gd POLE_AT).
 - `func step(dt: float) -> void`
 - `func zebra_cars(i: int, arm: int, secs: float) -> bool`: True when a vehicle is on, or within `secs` of, the zebra across `arm` of junction tile i.
+- `func turn_from(w: Walker, src: Vector3) -> void`: Turns an ambient walker round on its edge when src lies ahead (it runs off from there); one on a plan, a free leg or a zebra keeps its way.
 - `func start_plan(w: Walker, plan: Array) -> void`: Starts w on a plan from where it stands (first step a free leg to the network or an edge).
-- `func ease_visuals(w: Walker, delta: float) -> void`: Eases the drawn stride toward the walking speed and the fade-in toward 1 (real seconds, so a paused tour still settles).
+- `func ease_visuals(w: Walker, delta: float) -> void`: Eases the drawn stride toward the walking speed and the fade-in toward 1 (real seconds, so a paused tour still settles). A reaction moves the drawn offset and sets the drawn speed itself.
 - `func draw_xform(w: Walker) -> Transform3D`: Draw transform of w: the legs and arms swing in the people shader (render.gd), and the body bobs with them, highest as the legs pass each other.
 - `func draw_phase(w: Walker) -> float`: Stride phase as drawn (carried on over the time the simulation LOD has not stepped yet).

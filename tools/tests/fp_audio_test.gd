@@ -3,8 +3,8 @@ extends SceneTree
 ## the AudioDirector's tick throttle and on-foot routing, the initial scan, emitter settings, the
 ## 24-player cap and stealing, manual doppler, horns, sirens, footsteps by surface (polling and the
 ## stepped signal), ambience beds, settings, the pause muffle, the talk duck, UI cues, crashes,
-## knocked props and car doors, the frame budget and teardown. Headless runs the Dummy audio
-## driver, so this asserts node state.
+## knocked props, car doors, blows and swings, the frame budget and teardown. Headless runs the
+## Dummy audio driver, so this asserts node state.
 
 const K := preload("res://tools/tests/fp_kit.gd")
 const D := preload("res://scripts/sim/sim_defs.gd")
@@ -44,6 +44,7 @@ func _init() -> void:
 	_check_ui(ctx, f)
 	_check_impacts(ctx, f)
 	_check_doors(ctx, f)
+	_check_blows(ctx, f)
 	_check_budget(ctx, f)
 	var st: Dictionary = f.self_test()
 	K.check(fails, bool(st["ok"]), "self_test: %s" % st["detail"])
@@ -675,6 +676,42 @@ func _check_doors(ctx: FpContext, f: FpFeature) -> void:
 	)
 	_steps(f, 3.5)
 
+
+## person_hit thumps at the chest (a car louder and lower), someone knocked down lands
+## BODY_FALL_S later (body_fall), and hero_action whooshes for a swing (a shove softer) but not
+## for an emote.
+func _check_blows(ctx: FpContext, f: FpFeature) -> void:
+	var em := _em(f)
+	var at := em.listener() + Vector3(0.05, 0.0, 0.0)
+	var punch := {"strength": BANK.HIT_FULL, "down": false}
+	var run_down := {"strength": 1.0, "down": true}
+	var jab := _shot(f, func() -> void: ctx.bus.person_hit.emit(at, "punch", punch))
+	var car := _shot(f, func() -> void: ctx.bus.person_hit.emit(at, "car", run_down))
+	var thumps := _is_shot(jab, "hit", "punch_hit") and _is_shot(car, "hit", "punch_hit")
+	K.check(fails, thumps, "blows: a punch and a car each thump (punch_hit), both started")
+	var heavier := jab != null and car != null and car.pitch_base < jab.pitch_base
+	heavier = heavier and is_equal_approx(car.db, jab.db + BANK.HIT_CAR_DB)
+	K.check(fails, heavier, "blows: a car's thump is HIT_CAR_DB louder and lower")
+	var n := em.shots_played
+	_steps(f, BANK.BODY_FALL_S - 0.1)
+	var early := em.shots_played - n
+	_steps(f, 0.2)
+	var fall: EM.Src = null
+	if em.shots_played == n + 1:
+		fall = em.source("shot:%d" % em.shots_played)
+	K.check(
+		fails,
+		early == 0 and _is_shot(fall, "hit", "body_fall"),
+		"blows: the one knocked down lands BODY_FALL_S later (body_fall), not before"
+	)
+	var swing := _shot(f, func() -> void: ctx.bus.hero_action.emit("jab", at))
+	var push := _shot(f, func() -> void: ctx.bus.hero_action.emit("shove", at))
+	n = em.shots_played
+	ctx.bus.hero_action.emit("wave", at)
+	var whoosh := _is_shot(swing, "hit", "punch_whoosh") and _is_shot(push, "hit", "punch_whoosh")
+	whoosh = whoosh and push.db < swing.db and em.shots_played == n
+	K.check(fails, whoosh, "swings: a jab and a shove whoosh (the shove softer), a wave is silent")
+	_steps(f, 3.5)
 
 ## The one-shot that fire() starts (after one step), or null.
 func _shot(f: FpFeature, fire: Callable) -> EM.Src:

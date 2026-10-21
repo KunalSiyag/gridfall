@@ -124,6 +124,7 @@ Settings map `music_volume_db` to `Music` and `sfx_volume_db` to `SFX` and `Ambi
 | `chat_blip`, `chat_blip_soft`, `alert_stinger` | |
 | `crash_heavy`, `crash_light`, `prop_clatter`, `prop_clang` | the player's car hitting walls and cars (`car_impact`) and street props knocked over (`prop_knocked`); WAV |
 | `car_door_open`, `car_door_close` | the player's car door (`car_door`): the handle, the latch letting go, the seal and the door check as it opens; the slam, the latch catching and the panel as it shuts; WAV |
+| `punch_hit`, `body_fall`, `punch_whoosh` | people hit in the street (`person_hit`): the thump of a punch, a shove or a car at the chest, scaled by the blow's strength (a car's lower and louder), and someone knocked down landing 0.45 s later; the hero's swing (`hero_action`: a jab, a cross or a shove, not an emote) whooshing at the shoulder; WAV, emitter type `hit` |
 
 Total size must be at most 8 MB. The ACE-Step tool is optional and needs the GPU, so only under the heavy lock and only for the beds. Write the import settings so loops loop (OGG `loop=true` in each `sounds/fp/*.ogg.import`, which I owns).
 

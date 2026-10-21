@@ -87,7 +87,7 @@ One chat message drawn as a single Control (slice C §2): a resident, mayor, pre
 - `CHIP_H = 15.0`
 - `CARD_ICON = 22.0`
 - `ROLE_TAGS = {"mayor": "MAYOR", "press": "PRESS", "council": "COUNCIL"}`
-- `INCIDENT_ICONS = { "fire": "fire", "blackout": "bolt", "power_line": "bolt", "sewage_burst": "drop", "wa...`: Card icon per incident type (refs.type).
+- `INCIDENT_ICONS = { "fire": "fire", "blackout": "bolt", "power_line": "bolt", "sewage_burst": "drop", "wa...`: Card icon per incident type (refs.type; "street": a crew called after someone was hit).
 
 ### Properties
 

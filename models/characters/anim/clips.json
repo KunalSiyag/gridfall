@@ -42,6 +42,16 @@
     "speed_mps": 0.6292
    }
   },
+  "dance": {
+   "u": {
+    "kind": "ual",
+    "loop": true,
+    "source": "quaternius:UAL1/Dance_Loop",
+    "frames": 25,
+    "seconds": 1.0,
+    "speed_mps": 0.0
+   }
+  },
   "door_try": {
    "m": {
     "kind": "static",
@@ -87,6 +97,36 @@
     "source": "quaternius:UAL2/Idle_FoldArms_Loop",
     "frames": 61,
     "seconds": 2.5,
+    "speed_mps": 0.0
+   }
+  },
+  "get_up": {
+   "u": {
+    "kind": "ual",
+    "loop": false,
+    "source": "quaternius:UAL2/LayToIdle",
+    "frames": 38,
+    "seconds": 1.5417,
+    "speed_mps": 0.0
+   }
+  },
+  "hit_chest": {
+   "u": {
+    "kind": "ual",
+    "loop": false,
+    "source": "quaternius:UAL1/Hit_Chest",
+    "frames": 9,
+    "seconds": 0.3333,
+    "speed_mps": 0.0
+   }
+  },
+  "hit_head": {
+   "u": {
+    "kind": "ual",
+    "loop": false,
+    "source": "quaternius:UAL1/Hit_Head",
+    "frames": 11,
+    "seconds": 0.4167,
     "speed_mps": 0.0
    }
   },
@@ -270,6 +310,26 @@
     "speed_mps": 0.0
    }
   },
+  "punch_cross": {
+   "u": {
+    "kind": "ual",
+    "loop": false,
+    "source": "quaternius:UAL1/Punch_Cross",
+    "frames": 25,
+    "seconds": 1.0,
+    "speed_mps": 0.0
+   }
+  },
+  "punch_jab": {
+   "u": {
+    "kind": "ual",
+    "loop": false,
+    "source": "quaternius:UAL1/Punch_Jab",
+    "frames": 22,
+    "seconds": 0.875,
+    "speed_mps": 0.0
+   }
+  },
   "push": {
    "u": {
     "kind": "ual",
@@ -377,6 +437,16 @@
     "seconds": 1.6667,
     "root_travel_m": 3.017,
     "root_yaw_deg": 0.0,
+    "speed_mps": 0.0
+   }
+  },
+  "shout": {
+   "u": {
+    "kind": "ual",
+    "loop": true,
+    "source": "quaternius:UAL2/Idle_Rail_Call",
+    "frames": 61,
+    "seconds": 2.5,
     "speed_mps": 0.0
    }
   },

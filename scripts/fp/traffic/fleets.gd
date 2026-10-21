@@ -16,6 +16,8 @@ const MAX_CREWS := 10
 ## rest wait in `pending` (docs/fp/slices/E-traffic.md §1).
 const ASTAR_PER_FRAME := 4
 const CURB_LAT := 0.055
+## A crew answering a call (stay > 0) gives up after this long (s) from setting off.
+const CALL_MAX := 240.0
 const JOBS := {"bus": "bus driver", "truck": "truck driver", "garbage_truck": "sanitation worker",
 	"firetruck": "firefighter", "ambulance": "paramedic", "police": "police officer"}
 
@@ -38,7 +40,8 @@ var lines: Array = []
 var stop_sides: Dictionary = {}       # tile -> side index of its shelter
 ## Why the last crew build sent nobody ("" when it sent a crew); for tests and logs.
 var last_dispatch_fail: String = ""
-## Crew requests waiting for an A* slot: [kind, station, target]; crews waiting to route home.
+## Crew requests waiting for an A* slot: [kind, station, target, stay]; crews waiting to route
+## home.
 var pending: Array = []
 var homing: Array = []
 ## A* builds left this frame.
@@ -328,12 +331,13 @@ func _next_leg(c: VH.Car, line: Line, k: int) -> void:
 	(c.owner as Dictionary)["next"] = nk
 
 
-## Queues a crew (CityLife.external.dispatch_crew); it leaves when an A* slot is free.
-func dispatch_crew(kind: String, station: Vector2i, target: Vector2i) -> void:
+## Queues a crew (CityLife.external.dispatch_crew); it leaves when an A* slot is free. A crew
+## called with stay > 0 answers a call, not a sim event: it stays that many seconds at the scene.
+func dispatch_crew(kind: String, station: Vector2i, target: Vector2i, stay: float = 0.0) -> void:
 	for q: Array in pending:
 		if str(q[0]) == kind and q[2] == target:
 			return
-	pending.append([kind, station, target])
+	pending.append([kind, station, target, stay])
 	_drain()
 
 
@@ -347,10 +351,10 @@ func _drain() -> void:
 	while astar_left > 0 and not pending.is_empty():
 		var q: Array = pending.pop_front()
 		astar_left -= 1
-		_send_crew(str(q[0]), q[1], q[2])
+		_send_crew(str(q[0]), q[1], q[2], float(q[3]))
 
 
-func _send_crew(kind: String, station: Vector2i, target: Vector2i) -> void:
+func _send_crew(kind: String, station: Vector2i, target: Vector2i, stay: float) -> void:
 	last_dispatch_fail = ""
 	if count("crew") >= MAX_CREWS:
 		last_dispatch_fail = "cap"
@@ -381,6 +385,9 @@ func _send_crew(kind: String, station: Vector2i, target: Vector2i) -> void:
 	c.siren = kind != "truck"
 	_name_driver(c, kind)
 	c.owner = {"kind": kind, "event_id": _event_at(target), "phase": "to_scene", "home": start.id, "t": 0.0}
+	if stay > 0.0:
+		c.owner["event_id"] = -1
+		c.owner["stay"] = stay
 	var s := clampf(start.length * 0.5 + c.length * 0.5, c.length, start.length)
 	if f.is_far(Vector3(D.tx(start.tile), 0, D.ty(start.tile))) or not vh.fits(start, s, c.length):
 		c.lane = start
@@ -499,6 +506,9 @@ func _step_crew(c: VH.Car, dt: float, live: Dictionary) -> void:
 	o["t"] = float(o.get("t", 0.0)) + dt
 	var phase := str(o.get("phase", ""))
 	var ev_live := live.has(int(o.get("event_id", -1)))
+	if o.has("stay"):
+		# Answering a call: there for its stay (and not for ever when the way there is long).
+		ev_live = float(o["stay"]) > 0.0 and float(o["t"]) < CALL_MAX
 	match phase:
 		"to_scene":
 			if not ev_live and float(o["t"]) > 5.0:
@@ -507,6 +517,8 @@ func _step_crew(c: VH.Car, dt: float, live: Dictionary) -> void:
 				o["phase"] = "at_scene"
 				c.state = "at the scene"
 		"at_scene":
+			if o.has("stay"):
+				o["stay"] = float(o["stay"]) - dt
 			if not ev_live:
 				_go_home(c, o)
 		"leaving":

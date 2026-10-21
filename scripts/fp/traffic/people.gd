@@ -46,18 +46,7 @@ const PERSON_FADE := 0.4
 ## Frustum test: a sphere around the body (metres above the feet, radius).
 const CULL_UP := 0.9 * WS.M
 const CULL_R := 1.3 * WS.M
-const STATES: Array[StringName] = [
-	&"idle",
-	&"idle_look",
-	&"idle_wait",
-	&"walk",
-	&"walk_carry",
-	&"walk_phone",
-	&"carry_idle",
-	&"phone",
-	&"talk",
-	&"talk_2"
-]
+const STATES := KIT.STATES
 const LOCO: Array[StringName] = [&"walk", &"walk_carry", &"walk_phone"]
 const STILL: Array[StringName] = [&"", &"carry_idle", &"phone"]
 const BOX_COLOR := Color(0.62, 0.47, 0.3)
@@ -475,12 +464,15 @@ func add(w: WK.Walker, d: float, residents: Variant) -> void:
 	_cands.append([d, w, on_screen(w.pos + w.vis_off)])
 
 
-## Picks w's clip from what it is doing and advances its time (anim_t mirrors the mixer).
+## Picks w's clip from what it is doing (a reaction first) and advances its time (anim_t mirrors
+## the mixer).
 func _animate(w: WK.Walker) -> void:
 	var g: String = (avatars[w.av] as Avatar).gender
 	var moving := w.vis_v > WALK_ON or (w.vis_v > WALK_OFF and w.anim_clip in LOCO)
 	var want: StringName
-	if w.hold:
+	if w.react != &"":
+		want = w.react
+	elif w.hold:
 		want = &"talk"
 	elif w.state == "chat":
 		want = w.talk_clip
@@ -491,13 +483,16 @@ func _animate(w: WK.Walker) -> void:
 	var lens: Dictionary = _len[g]
 	if want != w.anim_clip:
 		w.anim_clip = want
-		# A mixer starts the new clip from its beginning; a body-less walker picks a phase.
+		# A mixer starts the new clip from its beginning; a body-less walker picks a phase, and a
+		# reaction runs on its own clock.
 		w.anim_t = 0.0 if w.body != null else _rng.randf() * float(lens[want])
+		if w.react == want:
+			w.anim_t = w.react_t
 	var rate := 1.0
-	if want in LOCO:
+	if want in LOCO or want == &"run":
 		rate = clampf(w.vis_v / maxf(authored_speed(w, want), 1e-6), RATE_MIN, RATE_MAX)
 	w.anim_rate = rate
-	w.anim_t = fposmod(w.anim_t + _adt * rate, float(lens[want]))
+	w.anim_t = KIT.clip_time(want, w.anim_t + _adt * rate, float(lens[want]))
 
 
 ## Assigns tiers, attaches, advances and releases bodies, and fills the T3 layers.
@@ -670,7 +665,7 @@ func _drive(b: Body, w: WK.Walker, tier: int, d: float) -> int:
 	if b.since < 1.0 / hz and b.clip == w.anim_clip:
 		return 0
 	if b.clip != w.anim_clip:
-		b.ap.play(w.anim_clip, XFADE)
+		b.ap.play(w.anim_clip, KIT.REACT_XFADE if w.anim_clip in KIT.BLOWS else XFADE)
 		b.clip = w.anim_clip
 	# speed_scale applies to the whole interval since the last update (game seconds in acc).
 	b.ap.speed_scale = w.anim_rate

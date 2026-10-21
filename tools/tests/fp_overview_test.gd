@@ -14,7 +14,7 @@ const ON_FOOT_PAD := [
 	"look_left", "look_right", "look_up", "look_down",
 	"jump", "crouch", "sprint", "interact", "view_toggle", "shoulder_swap",
 	"zoom_in", "zoom_out", "photo_mode", "map_toggle", "pause_menu",
-	"time_faster", "time_slower", "overview_toggle",
+	"time_faster", "time_slower", "overview_toggle", "act_strike", "act_aim",
 	"site_next", "site_prev", "site_go", "site_waypoint",
 ]
 ## Live at the same time on the street; the overview's site actions reuse buttons while it owns
@@ -22,7 +22,7 @@ const ON_FOOT_PAD := [
 const ON_FOOT_UNIQUE := [
 	"jump", "crouch", "sprint", "interact", "view_toggle", "shoulder_swap", "zoom_in",
 	"zoom_out", "photo_mode", "map_toggle", "pause_menu", "time_faster", "time_slower",
-	"overview_toggle",
+	"overview_toggle", "act_strike", "act_aim",
 ]
 
 var fails: Array[String] = []

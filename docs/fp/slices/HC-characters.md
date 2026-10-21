@@ -107,7 +107,7 @@ Measured on `Male_Adult_06` with the scratch converter (`.../scratchpad/tps/veri
 3. **Phase-align** loops so frame 0 is the left-heel strike (lowest left-foot z with near-zero foot velocity). Two loops must be aligned before a BlendSpace blends them, or the legs scissor.
 4. Record `speed_mps` (the measured `Root` speed) as a custom property; it becomes the Godot meta `speed_mps`.
 
-**UAL clips:** `models/characters/anim/ual.glb` holds the 17 clips of deliverable 6, copied out of `UAL1_Standard.glb` and `UAL2_Standard.glb` (in place; root `root` → `Root`), with the mannequin mesh deleted.
+**UAL clips:** `models/characters/anim/ual.glb` holds the UAL clips of deliverable 6 and the body actions' clips (23 in all, `UAL_CLIPS` in `build_clips.py`), copied out of `UAL1_Standard.glb` and `UAL2_Standard.glb` (in place; root `root` → `Root`), with the mannequin mesh deleted.
 
 ### 6. Canonical clip set
 
@@ -131,6 +131,7 @@ Measured on `Male_Adult_06` with the scratch converter (`.../scratchpad/tps/veri
 | `crouch_idle`, `crouch_walk` | UAL1 Crouch_Idle_Loop, Crouch_Fwd_Loop | same | loop | 0 / **0.75** |
 | `interact`, `push`, `pickup`, `drive` | UAL1 Interact, Push_Loop, PickUp_Table, Driving_Loop | same | mixed | – |
 | `carry`, `phone_idle`, `fold_arms`, `yes`, `no`, `climb_1m`, `knockback` | UAL2 Walk_Carry_Loop, Idle_TalkingPhone_Loop, Idle_FoldArms_Loop, Yes, Idle_No_Loop, ClimbUp_1m, Hit_Knockback | same | mixed | Walk_Carry ≈ walk |
+| `punch_jab`, `punch_cross`, `hit_head`, `hit_chest`, `dance`, `get_up`, `shout` (body actions) | UAL1 Punch_Jab, Punch_Cross, Hit_Head, Hit_Chest, Dance_Loop; UAL2 LayToIdle, Idle_Rail_Call | same | one-shot (`dance` and `shout` loop) | – |
 
 ### 7. Godot import (HC owns these `.import` files) and `AP` entries
 

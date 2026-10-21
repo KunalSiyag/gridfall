@@ -95,6 +95,13 @@ UAL_CLIPS = {
 	"no": ("UAL2", "Idle_No_Loop", True, False),
 	"climb_1m": ("UAL2", "ClimbUp_1m", False, False),
 	"knockback": ("UAL2", "Hit_Knockback", False, False),
+	"punch_jab": ("UAL1", "Punch_Jab", False, False),
+	"punch_cross": ("UAL1", "Punch_Cross", False, False),
+	"hit_head": ("UAL1", "Hit_Head", False, False),
+	"hit_chest": ("UAL1", "Hit_Chest", False, False),
+	"dance": ("UAL1", "Dance_Loop", True, False),
+	"get_up": ("UAL2", "LayToIdle", False, False),
+	"shout": ("UAL2", "Idle_Rail_Call", True, False),
 }
 UAL_GLB = {"UAL1": "UAL1/UAL1_Standard.glb", "UAL2": "UAL2/UAL2_Standard.glb"}
 

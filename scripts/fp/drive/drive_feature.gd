@@ -429,7 +429,9 @@ func _report() -> void:
 		return
 	var best: Array = []
 	for h: Array in body.hits:
-		if str(h[2]) != "prop" and (best.is_empty() or float(h[1]) > float(best[1])):
+		# Props and people report themselves (prop_knocked, person_hit).
+		var own := str(h[2]) in ["prop", "person"]
+		if not own and (best.is_empty() or float(h[1]) > float(best[1])):
 			best = h
 	if best.is_empty():
 		return

@@ -47,3 +47,10 @@ signal car_door(at: Vector3, open: bool)
 ## A street prop was knocked over at a point (its StreetDressing kind: "bin", "bench" ...) and
 ## flies off at speed (u/s). Emitted by the props feature.
 signal prop_knocked(at: Vector3, kind: String, speed: float)
+## Someone on foot was hit at a point (their feet): cause "shove" or "punch" (the hero) or "car"
+## (the car the player drives); info is traffic_feature.gd hit_walker()'s {"walker",
+## "resident_id", "name", "down", "street", "strength", "witnesses", "crew"}. Emitted by traffic.
+signal person_hit(at: Vector3, cause: String, info: Dictionary)
+## The hero swung or gestured: action "jab", "cross", "shove" or an emote ("wave", "yes", "no",
+## "shout", "dance"), at their feet. Emitted by the actions feature.
+signal hero_action(action: String, at: Vector3)

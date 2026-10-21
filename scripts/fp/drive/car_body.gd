@@ -3,6 +3,7 @@ extends RefCounted
 ## velocity in short substeps and resolves its contacts, deepest first: walls, posts and water
 ## edges (body_contacts.gd), other vehicles (traffic's bodies_near, pushed through bump_car) and
 ## street props (the props feature knocks them over when hit hard enough, else they stand firm).
+## People on foot are struck through traffic's hit_walker and barely slow the car.
 ## A contact pushes the body out and, while closing, gives an impulse at the contact point, so the
 ## car bounces a little off what it hits head-on, slides along what it hits at a glance and spins
 ## when it is hit off-centre. Dynamic boxes (stopped cars listed for the walker) are not used: the
@@ -33,13 +34,21 @@ const MAX_PUSH := 0.02
 const MASS := 1.0
 ## Hits closing faster than this are listed in hits.
 const IMPACT_SPEED := 1.5 * WS.M
+## People: a body this wide (u) is struck when the car closes on them faster than PERSON_SPEED,
+## each at most once per PERSON_COOL seconds, as hard as the closing speed over PERSON_FULL (1
+## knocks anyone down). They weigh PERSON_MASS of a sedan, so the car loses little speed.
+const PERSON_R := 0.3 * WS.M
+const PERSON_SPEED := 0.5 * WS.M
+const PERSON_FULL := 12.0 * WS.M
+const PERSON_COOL := 1.5
+const PERSON_MASS := 0.08
 
 ## Half width and half length (u), and height.
 var half := Vector2(0.045, 0.12)
 var height: float = 0.075
 var inertia: float = OBB.box_inertia(Vector2(0.045, 0.12), MASS)
 ## The last move's hits closing faster than IMPACT_SPEED: [point Vector2, speed (u/s), what],
-## what "wall" (anything fixed), "car" or "prop".
+## what "wall" (anything fixed), "car", "prop" or "person".
 var hits: Array = []
 var _c := Vector2.ZERO
 var _feet: float = 0.0
@@ -52,6 +61,10 @@ var _props: Object
 var _obs: Dictionary = {}
 var _cars: Array = []
 var _knock: Array = []
+var _people: Array = []
+## Walker id -> _clock when the car last struck them.
+var _struck: Dictionary = {}
+var _clock: float = 0.0
 
 
 func setup(half_w: float, length: float, p_height: float) -> void:
@@ -74,6 +87,7 @@ func move(
 	props: Object
 ) -> Vector3:
 	hits.clear()
+	_clock += dt
 	_col = col
 	_traffic = traffic if traffic != null and traffic.has_method("bump_car") else null
 	_props = props if props != null and props.has_method("knock") else null
@@ -92,11 +106,13 @@ func move(
 		for _it in range(ITERATIONS):
 			if not _resolve(model):
 				break
+		_strike_people(model)
 	_col = null
 	_traffic = null
 	_props = null
 	_cars = []
 	_knock = []
+	_people = []
 	return Vector3(_c.x, pos.y, _c.y)
 
 
@@ -104,6 +120,12 @@ func _gather(pos: Vector3) -> void:
 	_obs = BC.gather(_col, _c, _reach, _feet, height)
 	_cars = _traffic.call("bodies_near", pos, _reach + 0.2) if _traffic != null else []
 	_knock = _props.call("knockables_near", pos, _reach) if _props != null else []
+	_people = []
+	if _traffic != null and _traffic.has_method("walkers_near"):
+		_people = _traffic.call("walkers_near", pos, _reach + PERSON_R)
+	for id: int in _struck.keys():
+		if _clock - float(_struck[id]) > PERSON_COOL:
+			_struck.erase(id)
 
 
 ## Resolves the deepest contact of the body as it stands; false when it touches nothing.
@@ -229,6 +251,33 @@ func _knock_props(model: MODEL, u: Vector2, v: Vector2) -> bool:
 		_obs = BC.gather(_col, _c, _reach, _feet, height)
 		return true
 	return false
+
+
+## Strikes the people on their feet the body runs into (traffic's hit_walker, cause "car"), pushed
+## away from the car, and takes the little impulse each gives back.
+func _strike_people(model: MODEL) -> void:
+	if _people.is_empty():
+		return
+	var u := OBB.side_axis(model.yaw)
+	var v := OBB.heading(model.yaw)
+	for w: Dictionary in _people:
+		var id := int(w["id"])
+		if bool(w["down"]) or _struck.has(id):
+			continue
+		var q: Vector3 = w["pos"]
+		var hit := OBB.box_circle(_c, u, v, half, Vector2(q.x, q.z), PERSON_R)
+		if hit.is_empty():
+			continue
+		var nrm: Vector2 = hit[0]
+		var p: Vector2 = hit[2]
+		var vn := (model.vel + _perp(p - _c) * _omega).dot(nrm)
+		if -vn < PERSON_SPEED:
+			continue
+		_struck[id] = _clock
+		var push := Vector3(-nrm.x, 0.0, -nrm.y)
+		var strength := clampf(-vn / PERSON_FULL, 0.0, 1.0)
+		_traffic.call("hit_walker", id, Vector3(p.x, _feet, p.y), push, strength, "car")
+		_impulse(model, nrm, p, Vector2.ZERO, Vector2.ZERO, 1.0 / PERSON_MASS, 0.0, "person")
 
 
 func _apply(model: MODEL, r: Vector2, j: Vector2) -> void:

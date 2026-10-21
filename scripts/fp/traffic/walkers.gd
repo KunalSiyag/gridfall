@@ -63,7 +63,7 @@ class Walker extends RefCounted:
 	var plan: Array = []             # steps: {"edge": id, "dir": d} or {"pt": Vector3}
 	var pt_target := Vector3.ZERO    # current free-leg target
 	var on_leg: bool = false
-	var state: String = "walk"       # walk | wait | stand | hidden
+	var state: String = "walk"       # walk | wait | stand | hidden | react (reactions.gd has it)
 	var wait_t: float = 0.0
 	var stand_yaw: float = 0.0
 	var crossing: SW.PedEdge = null  # zebra it is registered on
@@ -108,6 +108,8 @@ class Walker extends RefCounted:
 	var anim_rate: float = 1.0
 	var body: Object = null          # people.gd Body while it draws this walker
 	var tier: int = -1               # people.gd LOD tier, -1 not drawn
+	var react: StringName = &""      # clip a reaction plays instead of its own (reactions.gd)
+	var react_t: float = 0.0         # seconds into react
 
 
 var sw: SW
@@ -261,7 +263,7 @@ func _step_one(w: Walker, dt: float) -> void:
 			if d.length_squared() > 1e-8:
 				w.yaw = lerp_angle(w.yaw, atan2(d.x, d.z), minf(1.0, dt * 6.0))
 		return
-	if w.state == "stand":
+	if w.state == "stand" or w.state == "react":
 		w.v = 0.0
 		return
 	if w.state == "chat":
@@ -697,6 +699,20 @@ func _walk_leg(w: Walker, dt: float) -> void:
 	w.phase += dt * v / (0.75 * WS.M) * PI
 
 
+## Turns an ambient walker round on its edge when src lies ahead (it runs off from there); one on
+## a plan, a free leg or a zebra keeps its way.
+func turn_from(w: Walker, src: Vector3) -> void:
+	var e := w.edge
+	if e == null or w.on_leg or e.zebra or not w.plan.is_empty() or w.role != "ambient":
+		return
+	if _fwd(w).dot(Vector2(src.x - w.pos.x, src.z - w.pos.z)) <= 0.0:
+		return
+	w.dir = -w.dir
+	w.t = e.length - w.t
+	w.t_end = -1.0
+	w.lat = -w.lat
+
+
 ## Starts w on a plan from where it stands (first step a free leg to the network or an edge).
 func start_plan(w: Walker, plan: Array) -> void:
 	w.plan = plan
@@ -708,8 +724,12 @@ func start_plan(w: Walker, plan: Array) -> void:
 
 
 ## Eases the drawn stride toward the walking speed and the fade-in toward 1 (real seconds, so a
-## paused tour still settles).
+## paused tour still settles). A reaction moves the drawn offset and sets the drawn speed itself.
 func ease_visuals(w: Walker, delta: float) -> void:
+	if w.fade < 1.0:
+		w.fade = minf(1.0, w.fade + delta / FADE_IN)
+	if w.state == "react":
+		return
 	var want := clampf(w.v / (0.7 * WS.PED_WALK), 0.0, 1.0)
 	w.vis_v = w.v if (w.state == "walk" and not w.hold) else 0.0
 	var off := _wait_offset(w)
@@ -722,8 +742,6 @@ func ease_visuals(w: Walker, delta: float) -> void:
 		w.vis_v = maxf(w.vis_v, sv)
 		w.phase += (w.vis_off - was).length() / (0.75 * WS.M) * PI
 	w.gait = move_toward(w.gait, want, delta * 4.0)
-	if w.fade < 1.0:
-		w.fade = minf(1.0, w.fade + delta / FADE_IN)
 
 
 ## Draw transform of w: the legs and arms swing in the people shader (render.gd), and the body
