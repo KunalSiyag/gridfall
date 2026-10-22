@@ -534,7 +534,8 @@ func _look(dt: float) -> void:
 		_orbit_pitch = move_toward(_orbit_pitch, 0.0, ORBIT_RETURN * 0.5 * dt)
 
 
-## The camera now: behind and above the car (pulled in front of walls), or at the driver's eyes.
+## The camera now: behind and above the car (pulled in front of walls, lifted off the ground when
+## it looks up from low down), or at the driver's eyes.
 func camera_xform() -> Transform3D:
 	if view == "driver" and _seat != null:
 		var car := Transform3D(Basis(Vector3.UP, model.yaw), _pos)
@@ -555,8 +556,15 @@ func camera_xform() -> Transform3D:
 			CHASE_DIST
 		)
 	var eye := target + dir * dist
+	eye.y = maxf(eye.y, _ground_below(eye) + CAM_RADIUS)
 	var aim := target + Vector3(sin(y), 0.0, cos(y)) * LOOK_AHEAD
 	return Transform3D(Basis.looking_at(aim - eye, Vector3.UP), eye)
+
+
+## The ground under p (the water surface off the land and beside a bridge deck).
+func _ground_below(p: Vector3) -> float:
+	var g := ctx.collision.ground_height(p) if ctx.collision != null else WS.GROUND_Y
+	return WS.WATER_Y if is_nan(g) else g
 
 
 func _fov() -> float:

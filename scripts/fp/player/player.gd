@@ -985,6 +985,10 @@ func _photo_fly(wish: Vector2, sprint: bool, down: bool, up: bool, delta: float)
 	if v.length_squared() > 1.0:
 		v = v.normalized()
 	_photo_pos += v * WS.PHOTO_FLY_SPEED * (3.0 if sprint else 1.0) * delta
+	# The ground stops the camera: it never flies under the road.
+	if ctx != null and ctx.collision != null:
+		var g := ctx.collision.ground_height(_photo_pos)
+		_photo_pos.y = maxf(_photo_pos.y, (WS.WATER_Y if is_nan(g) else g) + TpsRig.GROUND_CLEAR)
 	position = _photo_pos - Vector3.UP * WS.EYE
 	_update_tile()
 

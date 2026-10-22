@@ -604,6 +604,13 @@ func _check_photo(ctx: FpContext) -> void:
 		p.update_view(DT)
 	var y2 := p.view_position().y
 	K.check(fails, y1 < y0 - 0.1 * M and y2 > y1 + 0.5 * M, "crouch flies down (%.2f m) and jump up (%.2f m)" % [(y1 - y0) / M, (y2 - y1) / M])
+	for _k in range(180):
+		p.simulate(Vector2.ZERO, false, DT, true, false)
+		p.update_view(DT)
+	var low := p.view_position()
+	var clear := (low.y - ctx.collision.ground_height(low)) / M
+	var stop_msg := "the ground stops the flight down (%.2f m above it)" % clear
+	K.check(fails, clear > 0.19 and clear < 0.21, stop_msg)
 	if feat != null:
 		feat.call("evaluate")
 	_press("interact")

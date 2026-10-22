@@ -62,6 +62,7 @@ func _init() -> void:
 	_check_enter(it)
 	_check_seated()
 	_check_drive()
+	_check_camera()
 	_check_yield()
 	_check_exit()
 	_check_crash()
@@ -323,6 +324,24 @@ func _check_drive() -> void:
 		fails, ctx.player.position.distance_to(car.pos) < car.length * 0.5, "the hero rides along"
 	)
 	_drive(0.0, 1.0, 0.0, 2.0)
+
+
+## The chase camera rides above the car; looking up from low down (the mouse pushed all the way)
+## lowers it but never under the road.
+func _check_camera() -> void:
+	var car := _car()
+	var high: Transform3D = drive.call("camera_xform")
+	var above := (high.origin.y - car.pos.y) / WS.M
+	K.check(fails, above > 1.0, "the chase camera rides above the car (%.2f m)" % above)
+	drive.call("_orbit_by", 0.0, -PI)
+	var low: Transform3D = drive.call("camera_xform")
+	var clear := (low.origin.y - ctx.collision.ground_height(low.origin)) / WS.M
+	K.check(
+		fails,
+		clear > 0.2 and low.origin.y < high.origin.y,
+		"looking up from low down it stays above the road (%.2f m)" % clear
+	)
+	drive.set("_orbit_pitch", 0.0)
 
 
 func _check_yield() -> void:

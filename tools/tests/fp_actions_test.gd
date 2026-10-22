@@ -1,10 +1,11 @@
 extends SceneTree
 ## Body actions (integration feature "actions"; docs/fp/ARCHITECTURE.md, Body actions): the hero
-## rig's action layer (strike times, the guard, punches, the dance); the strike button shoving
-## whoever stands in front, the guard turning it into a jab-cross combo whose third blow knocks
-## them down, swings at nobody; emotes the people around answer; the guard squaring the body to
-## the camera; what blocks the actions; presses (events, a trigger's edge) and held input; the
-## player's car striking people (car_body.gd); person_hit and hero_action on the bus; teardown.
+## rig's action layer (strike times, the guard, punches, the dance); the strike button punching
+## whoever stands in front (the body turned to them, a press near the end queuing the next) in a
+## jab-cross combo whose third blow knocks them down, R shoving, swings at nobody; emotes the
+## people around answer; the guard squaring the body to the camera; what blocks the actions;
+## presses (events, a trigger's edge) and held input; the player's car striking people
+## (car_body.gd); person_hit and hero_action on the bus; teardown.
 ## Third person on a grown city; time runs through the feature's tick(1/60), traffic's step and
 ## the player's update_view.
 
@@ -52,6 +53,7 @@ func _init() -> void:
 	_check_inputs()
 	if rig != null:
 		_check_rig()
+	_check_punch()
 	_check_shove()
 	_check_combo()
 	_check_miss()
@@ -144,6 +146,7 @@ func _check_inputs() -> void:
 		keys.append(_key(a))
 	var keys_ok := keys == [KEY_1, KEY_2, KEY_3, KEY_4, KEY_5]
 	K.check(fails, keys_ok, "keys 1-5 wave, nod, shake the head, shout and dance (%s)" % str(keys))
+	K.check(fails, _key("act_shove") == KEY_R, "R shoves (%d)" % _key("act_shove"))
 
 
 func _check_rig() -> void:
@@ -181,12 +184,48 @@ func _check_rig() -> void:
 	_step(1.0, false)
 
 
+## With the guard down the strike button throws a punch at whoever stands in front, and the body
+## turns to them; a press near the end of a swing queues the next punch.
+func _check_punch() -> void:
+	var p := ctx.player
+	var w := _person(0.8)
+	hits.clear()
+	acts.clear()
+	var d := w.pos - p.position
+	var to_w := atan2(-d.x, -d.z)
+	p.yaw = wrapf(to_w + 0.6, -PI, PI)
+	p.cam_yaw = to_w
+	var started: bool = f.call("strike") == true and str(f.get("swing")) == "jab"
+	K.check(fails, started, "with the guard down the strike button punches (a jab)")
+	K.check(fails, f.call("strike", "kick") == false, "an unknown swing is refused")
+	_step(0.4)
+	K.check(fails, _causes() == ["punch"], "it lands on the person in front (%s)" % str(_causes()))
+	var info: Dictionary = hits[0][2] if not hits.is_empty() else {}
+	K.check(
+		fails, absf(float(info.get("strength", 0.0)) - 0.45) < 0.01, "a standing jab (%s)" % info
+	)
+	var off := absf(angle_difference(p.yaw, to_w))
+	K.check(fails, off < 0.2, "the body turns to them (%.2f rad off)" % off)
+	K.check(fails, acts == ["jab"], "hero_action hears the jab (%s)" % str(acts))
+	_remove(w)
+	_step(1.1)
+	f.call("strike")
+	_step(0.3)
+	K.check(fails, f.call("strike") == false, "a press near the end of the swing is queued")
+	_step(0.15)
+	K.check(fails, str(f.get("swing")) == "cross", "and the cross follows (%s)" % f.get("swing"))
+	_step(0.7)
+	K.check(fails, str(f.get("swing")).is_empty(), "then the hands come down")
+	p.teleport(p.position, rad_to_deg(p.cam_yaw))
+	_step(1.1)
+
+
 func _check_shove() -> void:
 	var w := _person(0.8)
 	hits.clear()
 	acts.clear()
-	var started: bool = f.call("strike") == true and str(f.get("swing")) == "shove"
-	K.check(fails, started, "with the guard down the strike button shoves")
+	var started: bool = f.call("strike", "shove") == true and str(f.get("swing")) == "shove"
+	K.check(fails, started, 'strike("shove") shoves')
 	K.check(fails, f.call("strike") == false, "one swing at a time")
 	_step(0.1)
 	K.check(fails, hits.is_empty(), "the shove lands once the arms are out, not at once")
@@ -213,9 +252,6 @@ func _check_combo() -> void:
 	var w := _person(0.8)
 	hits.clear()
 	acts.clear()
-	f.call("set_guard", true)
-	_step(0.3)
-	K.check(fails, bool(f.get("guarding")), "set_guard raises the guard")
 	var downs: Array[bool] = []
 	for _k in range(3):
 		_close_in(w, 0.8)
@@ -224,7 +260,7 @@ func _check_combo() -> void:
 	for h: Array in hits:
 		downs.append(bool((h[2] as Dictionary).get("down", false)))
 	var combo := acts == ["jab", "cross", "jab"]
-	K.check(fails, combo, "with the guard up the punches go jab, cross, jab (%s)" % str(acts))
+	K.check(fails, combo, "the punches go jab, cross, jab (%s)" % str(acts))
 	K.check(fails, _causes() == ["punch", "punch", "punch"], "each lands (%s)" % str(_causes()))
 	K.check(
 		fails, downs == [false, false, true], "the third in a row knocks them down %s" % str(downs)
@@ -234,8 +270,6 @@ func _check_combo() -> void:
 	f.call("strike")
 	_step(0.55)
 	K.check(fails, hits.size() == 3, "nobody is punched lying down")
-	f.call("set_guard", false)
-	_step(0.3)
 	_remove(w)
 	_step(0.5)
 
@@ -290,6 +324,7 @@ func _check_guard() -> void:
 	f.call("set_guard", true)
 	p.cam_yaw = wrapf(p.yaw + 1.0, -PI, PI)
 	_step(1.0)
+	K.check(fails, bool(f.get("guarding")), "set_guard raises the guard")
 	K.check(
 		fails,
 		is_equal_approx(p.aim_yaw, p.cam_yaw),
@@ -362,6 +397,10 @@ func _check_held_input() -> void:
 	K.check(fails, acts.is_empty(), "a held key's echo does nothing")
 	_send(K.key_event(KEY_2))
 	K.check(fails, acts == ["yes"], "key 2 nods (%s)" % str(acts))
+	f.call("cancel")
+	_step(1.1)
+	_send(K.key_event(KEY_R))
+	K.check(fails, acts == ["yes", "shove"], "R shoves (%s)" % str(acts))
 	f.call("cancel")
 	_step(1.1)
 	Input.action_press("act_aim")
