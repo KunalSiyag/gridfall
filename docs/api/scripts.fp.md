@@ -247,6 +247,8 @@ Signals that cross first-person slices. Emitters and listeners are listed in doc
 - `prop_knocked(at: Vector3, kind: String, speed: float)`: A street prop was knocked over at a point (its StreetDressing kind: "bin", "bench" ...) and flies off at speed (u/s). Emitted by the props feature.
 - `person_hit(at: Vector3, cause: String, info: Dictionary)`: Someone on foot was hit at a point (their feet): cause "shove" or "punch" (the hero) or "car" (the car the player drives); info is traffic_feature.gd hit_walker()'s {"walker", "resident_id", "name", "down", "street", "strength", "witnesses", "crew"}. Emitted by traffic.
 - `hero_action(action: String, at: Vector3)`: The hero swung or gestured: action "jab", "cross", "shove" or an emote ("wave", "yes", "no", "shout", "dance"), at their feet. Emitted by the actions feature.
+- `talk_replied(resident_id: String, speaker: String, reply: String)`: Someone answered the hero: a resident face to face (their id and name), or whoever answered "Ask someone here" (resident_id "" and their role, "Shopkeeper"). reply is filtered for display. Emitted by chat.
+- `story_filed(story: Dictionary)`: The player filed a story for the Gazette: reporter_feature.gd file_story()'s {"agent", "headline", "place", "quote", "by", "tile", "district", "day", "scoop", "local", "sharp", "points", "text"}. Emitted by the reporter feature; chat runs "text" as a Gazette line.
 
 ## `scripts/fp/obb2d.gd`
 

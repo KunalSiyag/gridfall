@@ -137,6 +137,7 @@ func setup(p_ctx: FpContext) -> void:
 		_link(ctx.bus.pause_changed, _on_pause_changed)
 		_link(ctx.bus.world_ready, _on_world_ready)
 		_link(ctx.bus.person_hit, street_lines.on_person_hit)
+		_link(ctx.bus.story_filed, _on_story)
 	_snapshot_taxes()
 
 
@@ -724,6 +725,18 @@ func _on_card_action(action: String, tile: int) -> void:
 	if talk != null:
 		talk.open_ask(ctx.directory.place_label(tile))
 	ctx.brain.inspect_tile(D.tx(tile), D.ty(tile))
+
+
+## The player's story for the Gazette (bus.story_filed), as a press line of its own: each story
+## has its own author id, so a second one never replaces the first while it waits in the queue.
+func _on_story(s: Dictionary) -> void:
+	var text := str(s.get("text", ""))
+	var refs := {"day": int(s.get("day", 0)), "tile": int(s.get("tile", -1))}
+	var d := int(s.get("district", -1))
+	var id := "press:story:%d" % hash(text)
+	feed.enqueue(feed.make(id, "GridFall Gazette", "press", d, text, "headline", -1, refs))
+	if not str(s.get("headline", "")).is_empty():
+		_push_topic({"kind": "headline", "headline": str(s["headline"])})
 
 
 func _on_player_tile_changed(_x: int, _y: int) -> void:

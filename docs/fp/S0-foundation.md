@@ -695,6 +695,14 @@ signal person_hit(at: Vector3, cause: String, info: Dictionary)
 ## The hero swung or gestured: action "jab", "cross", "shove" or an emote ("wave", "yes", "no",
 ## "shout", "dance"), at their feet. Emitted by the actions feature.
 signal hero_action(action: String, at: Vector3)
+## Someone answered the hero: a resident face to face (their id and name), or whoever answered
+## "Ask someone here" (resident_id "" and their role, "Shopkeeper"). reply is filtered for
+## display. Emitted by chat.
+signal talk_replied(resident_id: String, speaker: String, reply: String)
+## The player filed a story for the Gazette: reporter_feature.gd file_story()'s {"agent",
+## "headline", "place", "quote", "by", "tile", "district", "day", "scoop", "local", "sharp",
+## "points", "text"}. Emitted by the reporter feature; chat runs "text" as a Gazette line.
+signal story_filed(story: Dictionary)
 ```
 
 | Signal | Payload | Emitted by | Typical listeners |
@@ -721,6 +729,8 @@ signal hero_action(action: String, at: Vector3)
 | `prop_knocked` | `at`: where the car hit it. `kind`: its StreetDressing kind. `speed`: how fast it flies off (u/s); a fallen prop hit again reports from 1 m/s | Integration: props | I (clatter or clang by kind) |
 | `person_hit` | `at`: the person's drawn feet. `cause`: `"shove"` or `"punch"` (the hero) or `"car"` (the car the player drives). `info`: `walker` (the walker id), `resident_id` and `name` (`""` for an ambient walker), `down` (knocked down), `street` (the street label, may be `""`), `strength` 0..1, `witnesses` (the resident ids of those who saw it), `crew` (`"police"`, `"ambulance"` or `""`: the crew this blow called) | E (`hit_walker`, called by Integration: body actions and by the drive feature's car body) | C (the victim's and a witness's lines, a crew's City Alert card), I (the blow and the fall) |
 | `hero_action` | `action`: `"jab"`, `"cross"` or `"shove"` as a swing starts, or the emote as it starts (`"wave"`, `"yes"`, `"no"`, `"shout"`, `"dance"`). `at`: the hero's feet | Integration: body actions | I (the whoosh of a swing) |
+| `talk_replied` | `resident_id`: the resident's id, `""` for the "Ask someone here" answer. `speaker`: the resident's name, or the role that answered (`"Shopkeeper"`). `reply`: the line as shown | C (`talk_dialog.gd`: each reply face to face, and the ask answer) | Integration: reporter (the quote for the story on assignment) |
+| `story_filed` | the story as filed: `agent` (`"0"`..`"4"`, `"council"` or `"chaos"`), `headline`, `place`, `quote`, `by`, `tile` (index), `district`, `day`, `scoop`, `local`, `sharp`, `points`, `text` (the Gazette's line) | Integration: reporter (K files) | C (a Gazette line in the chat and a chatter topic) |
 
 The **target** dict: `{"kind": "resident"|"building"|"poster"|"vehicle"|"pedestrian", "id": String, "tile": int, "pos": Vector3, "dist": float, "label": String, "data": Dictionary}`.
 

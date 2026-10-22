@@ -24,4 +24,8 @@ const FEATURES := [
 		"id": "actions", "slice": "integration",
 		"path": "res://scripts/fp/actions/actions_feature.gd",
 	},
+	{
+		"id": "reporter", "slice": "integration",
+		"path": "res://scripts/fp/reporter/reporter_feature.gd",
+	},
 ]

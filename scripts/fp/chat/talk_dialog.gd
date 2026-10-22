@@ -140,6 +140,8 @@ func set_ask_answer(speaker: String, place: String, says: String) -> void:
 	_name_l.text = speaker
 	_sub_l.text = place
 	_show_line(says, "none", "")
+	if ctx.bus != null:
+		ctx.bus.talk_replied.emit("", speaker, says)
 
 
 ## Ends the conversation (or closes the ask card): emits exactly one conversation_changed(id,
@@ -281,6 +283,8 @@ func _receive(res: Dictionary) -> void:
 		reply = "Hm."
 	_turns.append({"who": "them", "text": reply})
 	_show_line(reply, str(res.get("emote", "none")), _last_said)
+	if ctx.bus != null:
+		ctx.bus.talk_replied.emit(active_id, _name, reply)
 	var delta := clampf(float(res.get("mood_delta", 0.0)), -1.0, 1.0)
 	var allowed := clampf(_mood_total + delta, -1.0, 1.0) - _mood_total
 	if absf(allowed) > 0.0:
