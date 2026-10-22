@@ -136,6 +136,14 @@ Generated from the `##` doc comments in `scripts/`. Regenerate with `python3 too
 - [quality.gd](scripts.fp.render.md#scriptsfprenderqualitygd): First-person quality presets (slice G2): the knobs each preset sets, and the static helpers every slice reads without a feature lookup (vis_mult, max_street_lights, camera_far)
 - [render_opt_feature.gd](scripts.fp.render.md#scriptsfprenderrender_opt_featuregd): Render performance (slice G2): applies the quality preset (FSR2 scaling, shadow atlas and filter, SSAO and SSIL quality, mesh LOD threshold, camera far plane) and restores every knob on teardown; on foot it ranges every tile holder's parts (hlod.gd), draws far buildings as merged chunk impostors and culls with per-chunk occluders (occluders.gd)
 
+## [scripts/fp/reporter/](scripts.fp.reporter.md)
+
+- [reporter_card.gd](scripts.fp.reporter.md#scriptsfpreporterreporter_cardgd): The Gazette card on the HUD (feature "reporter"), bottom right above the district caption: the newest lead and the key to take it, or the story on assignment: what happened, where and how far, the scoop clock, the quote so far and what the story still needs (the scene, a quote, a photo), with the key to file it
+- [reporter_desk.gd](scripts.fp.reporter.md#scriptsfpreporterreporter_deskgd): The Gazette's desk (feature "reporter"): which AI decisions make a lead and how they read ("Viktor Han ordered a Police Station"), what a filed story says and earns, the press ranks, what a photo must frame, and the mayors' league (people, jobs, approval and funds, worth 25 points each)
+- [reporter_feature.gd](scripts.fp.reporter.md#scriptsfpreporterreporter_featuregd): The Gazette's stringer (integration feature "reporter"; docs/fp/ARCHITECTURE.md, Reporter)
+- [reporter_league.gd](scripts.fp.reporter.md#scriptsfpreporterreporter_leaguegd): The mayors' league (feature "reporter", L): the five AI mayors ranked on people, jobs, approval and funds (25 points each, ReporterDesk.standings), each with the badge of the model they run on, then the player's press card (rank, points, stories filed), the story on assignment, the open leads with a button to chase one, and the latest stories
+- [reporter_viewfinder.gd](scripts.fp.reporter.md#scriptsfpreporterreporter_viewfindergd): The press camera's viewfinder (feature "reporter"), over the view in photo mode while a story is on assignment: corner marks round the middle of the view a press photo must hold the scene in (ReporterDesk.FRAME), green while it does, the story above the marks and what to do below them, the last shot's result under that, and a white flash for the shutter
+
 ## [scripts/fp/sim/](scripts.fp.sim.md)
 
 - [sim_perf_feature.gd](scripts.fp.sim.md#scriptsfpsimsim_perf_featuregd): Time-sliced sim ticks for first person (slice F)

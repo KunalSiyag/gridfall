@@ -336,31 +336,31 @@ func _check_held_input() -> void:
 	p.input_enabled = true
 	_step(DT)
 	var n0 := int(f.get("swings"))
-	_send(_action("act_strike"))
+	_send(K.action_event("act_strike"))
 	K.check(fails, int(f.get("swings")) == n0 + 1, "a strike press swings")
 	_step(0.7)
 	K.check(fails, int(f.get("swings")) == n0 + 1, "once")
 	for v: float in [0.6, 1.0, 0.8]:
-		_send(_trigger(v))
+		_send(K.trigger_event(v))
 		_step(0.7)
 	var held := int(f.get("swings")) - n0
 	K.check(fails, held == 2, "a trigger held down swings once (%d)" % (held - 1))
-	_send(_trigger(0.1))
-	_send(_trigger(0.9))
+	_send(K.trigger_event(0.1))
+	_send(K.trigger_event(0.9))
 	K.check(fails, int(f.get("swings")) == n0 + 3, "pulled again, it swings again")
 	_step(0.7)
 	ctx.push_modal(&"test")
-	_send(_action("act_strike"))
+	_send(K.action_event("act_strike"))
 	ctx.pop_modal(&"test")
 	p.input_enabled = false
-	_send(_action("act_strike"))
+	_send(K.action_event("act_strike"))
 	p.input_enabled = true
 	var taken := int(f.get("swings")) - n0 - 3
 	K.check(fails, taken == 0, "no press is taken under a modal or with input off (%d)" % taken)
 	acts.clear()
-	_send(_key_event(KEY_2, true))
+	_send(K.key_event(KEY_2, true))
 	K.check(fails, acts.is_empty(), "a held key's echo does nothing")
-	_send(_key_event(KEY_2))
+	_send(K.key_event(KEY_2))
 	K.check(fails, acts == ["yes"], "key 2 nods (%s)" % str(acts))
 	f.call("cancel")
 	_step(1.1)
@@ -454,28 +454,6 @@ func _check_teardown() -> void:
 
 func _send(e: InputEvent) -> void:
 	f.call("_unhandled_input", e)
-
-
-func _action(a: String) -> InputEventAction:
-	var e := InputEventAction.new()
-	e.action = a
-	e.pressed = true
-	return e
-
-
-func _trigger(v: float) -> InputEventJoypadMotion:
-	var e := InputEventJoypadMotion.new()
-	e.axis = JOY_AXIS_TRIGGER_RIGHT
-	e.axis_value = v
-	return e
-
-
-func _key_event(k: Key, echo: bool = false) -> InputEventKey:
-	var e := InputEventKey.new()
-	e.physical_keycode = k
-	e.pressed = true
-	e.echo = echo
-	return e
 
 
 func _pad(action: String) -> String:

@@ -54,3 +54,11 @@ signal person_hit(at: Vector3, cause: String, info: Dictionary)
 ## The hero swung or gestured: action "jab", "cross", "shove" or an emote ("wave", "yes", "no",
 ## "shout", "dance"), at their feet. Emitted by the actions feature.
 signal hero_action(action: String, at: Vector3)
+## Someone answered the hero: a resident face to face (their id and name), or whoever answered
+## "Ask someone here" (resident_id "" and their role, "Shopkeeper"). reply is filtered for
+## display. Emitted by chat.
+signal talk_replied(resident_id: String, speaker: String, reply: String)
+## The player filed a story for the Gazette: reporter_feature.gd file_story()'s {"agent",
+## "headline", "place", "quote", "by", "tile", "district", "day", "scoop", "local", "sharp",
+## "points", "text"}. Emitted by the reporter feature; chat runs "text" as a Gazette line.
+signal story_filed(story: Dictionary)

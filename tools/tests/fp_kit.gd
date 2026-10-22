@@ -282,6 +282,31 @@ static func check(fails: Array, ok: bool, what: String) -> void:
 		fails.append(what)
 
 
+## Input events for a feature's _unhandled_input: action a pressed.
+static func action_event(a: String) -> InputEventAction:
+	var e := InputEventAction.new()
+	e.action = a
+	e.pressed = true
+	return e
+
+
+## The right trigger at axis value v.
+static func trigger_event(v: float) -> InputEventJoypadMotion:
+	var e := InputEventJoypadMotion.new()
+	e.axis = JOY_AXIS_TRIGGER_RIGHT
+	e.axis_value = v
+	return e
+
+
+## Physical key k pressed (echo: a key repeat).
+static func key_event(k: Key, echo: bool = false) -> InputEventKey:
+	var e := InputEventKey.new()
+	e.physical_keycode = k
+	e.pressed = true
+	e.echo = echo
+	return e
+
+
 static func _has_c_lot(sim: CitySim) -> bool:
 	for i in sim.active:
 		if sim.kind[i] == D.ZONE_C and sim.level[i] >= 1:
