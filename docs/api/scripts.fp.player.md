@@ -91,7 +91,7 @@ HC's animated hero for the player (slice A stage A2; A-player.md 6.9, TPS_PLAN 2
 - `FK = preload("res://scripts/fp/player/hero_fk.gd")`
 - `LOCO = ["walk", "walk_fast", "run", "run_fast"]`: Locomotion loops in blend order; HC starts each on the left-heel strike.
 - `GESTURES = ["interact", "wave", "phone", "door_try"]`: Upper-body one-shots (6.9 OneShot).
-- `ACTIONS = ["punch_jab", "punch_cross", "push", "yes", "no", "shout"]`: Body actions over the gestures (the actions feature): punches, the shove and emotes on the upper body with quick fades; the dance on the whole body.
+- `ACTIONS = [ "punch_jab", "punch_cross", "push", "yes", "no", "shout", "hit_head", "hit_chest", ]`: Body actions over the gestures (the actions feature): punches, the shove, emotes and the flinch of a blow taken (the health feature) on the upper body with quick fades; the dance on the whole body.
 - `CLIPS = [ "idle", "walk", "walk_fast", "run", "run_fast", "crouch_idle", "crouch_walk", "jump_s...`: Every clip the tree plays.
 - `TS_MIN = 0.5`: Foot-slide correction: TimeScale = clamp(v / v_anim, TS_MIN, TS_MAX).
 - `TS_MAX = 1.5`
@@ -185,12 +185,12 @@ HC's animated hero for the player (slice A stage A2; A-player.md 6.9, TPS_PLAN 2
 
 - `static func build(path: String, lib_path: String, k: float, p_gender: String) -> RefCounted`: Instantiates the body at path with the AnimationLibrary at lib_path; k is the body's speed factor (hip_m / speed_ref_hip_m * h_target / rest height). Null when a file is missing or the body has no %GeneralSkeleton.
 - `func update(dt: float, v: float, grounded: bool, vy: float, crouched: bool, talking: bool) -> void`: Per frame: v is the signed forward ground speed (m/s; negative walks backward), vy the vertical speed (m/s), crouched and talking the player's states. Advances the tree by dt and fills contacts with the heel strikes it crossed.
-- `func state() -> String`: The state machine's current state ("loco", "crouch", "jump", "fall", "land", "talk", "sit_down", "sit", "stand_up").
+- `func state() -> String`: The state machine's current state ("loco", "crouch", "jump", "fall", "land", "talk", "sit_down", "sit", "stand_up", "knockback", "get_up").
 - `func sit(on: bool) -> void`: Sits down (on) or stands up; moving stands up by itself.
 - `func play_gesture(g: String) -> void`: Plays an upper-body gesture over the current state ("interact", "wave", "phone", "door_try").
 - `func gesture_active() -> bool`
 - `func stop_gesture() -> void`: Fades the playing gesture out before its end.
-- `func play_action(a: String, secs: float = 0.0) -> bool`: Plays a body action: one of ACTIONS on the upper body over whatever the legs do, or "dance" on the whole body (standing only; moving ends it). secs > 0 fades it out that long after the start; otherwise a clip plays to its end, a loop for one cycle and the dance until stopped.
+- `func play_action(a: String, secs: float = 0.0) -> bool`: Plays a body action: one of ACTIONS on the upper body over whatever the legs do, "dance" on the whole body (standing only; moving ends it) or "knockdown" (the body falls onto its back, lies there secs and gets up). secs > 0 fades an action out that long after the start; otherwise a clip plays to its end, a loop for one cycle and the dance until stopped.
 - `func action_active() -> bool`: True while an action or the dance plays (fading out included).
 - `func stop_action() -> void`: Fades the playing action and the dance out.
 - `func set_guard(on: bool) -> void`: Raises (on) or drops the guard: fists up on the upper body, eased over HL_GUARD.

@@ -28,4 +28,8 @@ const FEATURES := [
 		"id": "reporter", "slice": "integration",
 		"path": "res://scripts/fp/reporter/reporter_feature.gd",
 	},
+	{
+		"id": "health", "slice": "integration",
+		"path": "res://scripts/fp/health/health_feature.gd",
+	},
 ]

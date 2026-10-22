@@ -249,6 +249,8 @@ Signals that cross first-person slices. Emitters and listeners are listed in doc
 - `hero_action(action: String, at: Vector3)`: The hero swung or gestured: action "jab", "cross", "shove" or an emote ("wave", "yes", "no", "shout", "dance"), at their feet. Emitted by the actions feature.
 - `talk_replied(resident_id: String, speaker: String, reply: String)`: Someone answered the hero: a resident face to face (their id and name), or whoever answered "Ask someone here" (resident_id "" and their role, "Shopkeeper"). reply is filtered for display. Emitted by chat.
 - `story_filed(story: Dictionary)`: The player filed a story for the Gazette: reporter_feature.gd file_story()'s {"agent", "headline", "place", "quote", "by", "tile", "district", "day", "scoop", "local", "sharp", "points", "text"}. Emitted by the reporter feature; chat runs "text" as a Gazette line.
+- `hero_hit(at: Vector3, cause: String, strength: float, push: Vector3)`: Something struck the hero on foot: at is where the blow came from (a fist, a car's front), cause "punch" (someone fighting back) or "car" (a car that could not stop for them), strength 0..1 and push the xz velocity (u/s) it throws the hero along. Emitted by traffic; the health feature takes the damage.
+- `hero_hurt(amount: float, cause: String, health: float, down: bool)`: The hero lost amount of health to cause: "punch" or "car" (hero_hit), "crash" (in the car they drive) or "fall" (a hard landing); health is what is left (0..100, 0 knocked out) and down is true when it put them on the ground. Emitted by the health feature.
 
 ## `scripts/fp/obb2d.gd`
 

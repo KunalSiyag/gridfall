@@ -82,6 +82,12 @@ Generated from the `##` doc comments in `scripts/`. Regenerate with `python3 too
 - [drive_hud.gd](scripts.fp.drive.md#scriptsfpdrivedrive_hudgd): The drive feature's HUD: the get-in / get-out key chip above the minimap line and a speedometer (km/h and the gear) at the bottom centre while driving, clear of the corner captions
 - [drive_model.gd](scripts.fp.drive.md#scriptsfpdrivedrive_modelgd): Arcade handling for the player's car
 
+## [scripts/fp/health/](scripts.fp.health.md)
+
+- [health_arc.gd](scripts.fp.health.md#scriptsfphealthhealth_arcgd): The hero's health (the health feature) as an arc round the left of the minimap in minimap_slot: it fills from the bottom up, green when well, amber below AMBER_AT and red below RED_AT, where it pulses; after a hurt a pale trail eats down to the new value
+- [health_feature.gd](scripts.fp.health.md#scriptsfphealthhealth_featuregd): The hero's health (integration slice; docs/fp/ARCHITECTURE.md, Health): MAX_HP points, shown as an arc round the left of the minimap
+- [health_screen.gd](scripts.fp.health.md#scriptsfphealthhealth_screengd): The health feature's full-screen layer in the overlay slot (under the pause menu): a red vignette that flashes with each hurt and stays, pulsing, while health is low, and the knock-out's fade to black with its caption
+
 ## [scripts/fp/interact/](scripts.fp.interact.md)
 
 - [interact_feature.gd](scripts.fp.interact.md#scriptsfpinteractinteract_featuregd): Interaction with residents, buildings, posters and cars (slice A deliverables 3 and 6.7)

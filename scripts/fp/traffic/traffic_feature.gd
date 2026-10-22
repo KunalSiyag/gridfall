@@ -4,7 +4,9 @@ extends FpFeature
 ## following, residents' own trips played out from their minds' plans (trip_started), ambient
 ## commuters and pedestrians around the player, curb parking, buses on seeded lines, trucks and
 ## emergency crews (CityLife.external), and the ResidentAvatars hooks (ResidentAvatars.external).
-## Everyone stops for the player. Motion runs on delta * sim.speed, so pause freezes it.
+## Everyone stops for the player, but a car too fast to stop short of them runs them down
+## (hit_by_cars) and some people they hit fight back (fight_back); both go out on the bus as
+## hero_hit. Motion runs on delta * sim.speed, so pause freezes it.
 
 const D := preload("res://scripts/sim/sim_defs.gd")
 const WS := preload("res://scripts/fp/world_scale.gd")
@@ -42,6 +44,9 @@ const LINE_RETRY := 10.0
 const CLAIM_SPEED := 0.5 * WS.M
 ## A crew called with no station in town sets off from a road at most this many tiles away.
 const STATION_FAR := 10
+## A car running the hero down (hit_by_cars) hits at full strength from HIT_FULL (u/s) and throws
+## them on along its heading at its own speed.
+const HIT_FULL := 14.0 * WS.M
 
 var lanes: LG
 var peds: SW
@@ -208,11 +213,13 @@ func on_world_rebuilt() -> void:
 	vehicles.setup(lanes, junctions, peds, sim.city_seed)
 	vehicles.on_arrive = _on_vehicle_arrived
 	vehicles.on_removed = _on_vehicle_removed
+	vehicles.on_hit_player = _on_car_hit_hero
 	shoves.setup(vehicles, ctx.collision)
 	shoves.visible = on_screen
 	vehicles.extra_blocks = func() -> Array: return shoves.blocks() + reactions.blocks()
 	walkers.setup(peds, lanes, junctions, vehicles, sim.city_seed)
 	reactions.setup(walkers, ctx.collision, sim.city_seed)
+	reactions.on_hero_hit = _on_hero_punched
 	incidents.setup(self)
 	carjack.setup(self)
 	walkers.hc = people.ok
@@ -377,6 +384,9 @@ func step(dt: float) -> void:
 	vehicles.player_on = has_player
 	walkers.player_pos = pp
 	walkers.player_on = has_player
+	var open := _hero_open()
+	reactions.hero_open = open
+	vehicles.player_hittable = open and FeatureFlags.enabled("hit_by_cars")
 	vehicles.step(dt)
 	shoves.step(dt)
 	walkers.step(dt)
@@ -1250,6 +1260,31 @@ func hit_walker(id: int, src: Vector3, push: Vector3, strength: float, cause: St
 	if ctx.bus != null:
 		ctx.bus.person_hit.emit(at, cause, info)
 	return info
+
+
+## True when the hero is on foot in the street and in control (not driving, down or posing for a
+## photo): people may fight them and cars may run them down.
+func _hero_open() -> bool:
+	var p := ctx.player
+	if p == null or not is_instance_valid(p) or _driven != null:
+		return false
+	return p.input_enabled and not p.photo_mode and ctx.feature("health") != null
+
+
+## A punch from someone fighting back lands on the hero (reactions.gd).
+func _on_hero_punched(at: Vector3, strength: float, push: Vector3) -> void:
+	if ctx.bus != null:
+		ctx.bus.hero_hit.emit(at, "punch", strength, push)
+
+
+## Car c runs the hero down (vehicles.gd): the blow comes from its front, by its speed.
+func _on_car_hit_hero(c: VH.Car) -> void:
+	if ctx.bus == null:
+		return
+	var head := Vector3(sin(c.yaw), 0.0, cos(c.yaw))
+	var at := ctx.player_position() - head * WS.PLAYER_RADIUS + Vector3(0.0, 0.5 * WS.M, 0.0)
+	var strength := clampf(c.v / HIT_FULL, 0.0, 1.0)
+	ctx.bus.hero_hit.emit(at, "car", strength, head * c.v)
 
 
 ## The hero's emote ("wave", "yes", "no", "shout", "dance") at p facing fwd: the people who
