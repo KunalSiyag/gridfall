@@ -26,6 +26,7 @@ const SHOVES := preload("res://scripts/fp/traffic/shoves.gd")
 const DOORS := preload("res://scripts/fp/traffic/car_doors.gd")
 const REACT := preload("res://scripts/fp/traffic/reactions.gd")
 const INCIDENTS := preload("res://scripts/fp/traffic/incidents.gd")
+const JACK := preload("res://scripts/fp/traffic/carjack.gd")
 const MAX_STEP := 1.0 / 30.0
 const CAR_PREFIXES := ["sedan", "hatch", "suv", "taxi", "van", "pickup", "coupe"]
 ## A jump of the player beyond this in one frame is a teleport: the street is refilled around them.
@@ -36,7 +37,8 @@ const PICK_PX := 26.0
 const PHOTO_BACK := 1.3
 ## Seconds between attempts to rebuild bus lines that no longer match the roads.
 const LINE_RETRY := 10.0
-## The player can take a parked car, their own, or an ambient car stopped below this speed.
+## The player can take a parked car, their own, or a car in traffic (an ambient one, or with
+## carjack a resident's) crawling below this speed.
 const CLAIM_SPEED := 0.5 * WS.M
 ## A crew called with no station in town sets off from a road at most this many tiles away.
 const STATION_FAR := 10
@@ -59,6 +61,8 @@ var shoves: SHOVES
 ## People hit in the street (reel, fall, get up, run off) and what that means for the city.
 var reactions: REACT
 var incidents: INCIDENTS
+## Drivers dragged out of the cars the player takes (the carjack flag).
+var carjack: JACK
 var clock: float = 0.0
 ## Test hooks: departure jitter on or off; auto_step false keeps _process from advancing time.
 var jitter_enabled: bool = true:
@@ -125,6 +129,7 @@ func setup(p_ctx: FpContext) -> void:
 	shoves = SHOVES.new()
 	reactions = REACT.new()
 	incidents = INCIDENTS.new()
+	carjack = JACK.new()
 	trips.jitter_enabled = jitter_enabled
 	render.setup(_agents_root)
 	contact = CS.new()
@@ -209,6 +214,7 @@ func on_world_rebuilt() -> void:
 	walkers.setup(peds, lanes, junctions, vehicles, sim.city_seed)
 	reactions.setup(walkers, ctx.collision, sim.city_seed)
 	incidents.setup(self)
+	carjack.setup(self)
 	walkers.hc = people.ok
 	walkers.on_removed = func(w: WK.Walker) -> void:
 		render.release_walker(w)
@@ -1165,13 +1171,13 @@ static func _ray_box(o: Vector3, d: Vector3, xf: Transform3D, he: Vector3, h: fl
 
 
 ## Optional, for A: world AABBs of stopped vehicles near p (parked cars included), never the car
-## the player drives (its body meets the others through bodies_near).
-func blockers_near(p: Vector3, r: float) -> Array:
+## the player drives (its body meets the others through bodies_near) nor car skip.
+func blockers_near(p: Vector3, r: float, skip: int = -1) -> Array:
 	var out: Array = []
 	if not _built:
 		return out
 	for c: VH.Car in vehicles.cars:
-		if c.dead or c.far or c.driven or (c.parked and c.slot_tile < 0):
+		if c.dead or c.far or c.driven or c.id == skip or (c.parked and c.slot_tile < 0):
 			continue
 		if c.v > 0.1 * WS.M or c.pos.distance_to(p) > r + 0.3:
 			continue
@@ -1227,9 +1233,9 @@ func walkers_near(p: Vector3, r: float) -> Array:
 
 
 ## Person id (walkers_near) takes a blow from src (a world point) along push, of strength 0..1,
-## cause "shove", "punch" or "car": they react and the people around see it (reactions.gd), the
-## city hears of it (incidents.gd) and the bus emits person_hit. Returns that signal's info, {}
-## when they could not be hit now.
+## cause "shove", "punch", "car" or "carjack" (dragged out of their car): they react and the
+## people around see it (reactions.gd), the city hears of it (incidents.gd) and the bus emits
+## person_hit. Returns that signal's info, {} when they could not be hit now.
 func hit_walker(id: int, src: Vector3, push: Vector3, strength: float, cause: String) -> Dictionary:
 	var w := _walker_by_id(id) if _built else null
 	if w == null:
@@ -1326,14 +1332,17 @@ func _station_road(kind: int, target: Vector2i) -> Vector2i:
 # ------------------------------------------------------------------ the player's car
 
 ## The car the player could get into from p: the nearest one they may take whose body is within r
-## of p, as {"id", "label", "pos", "dist"}; {} when none (or while they drive).
-func enter_target(p: Vector3, r: float) -> Dictionary:
+## of p (with occupied false, none with someone at the wheel), as {"id", "label", "pos", "dist",
+## "jack" (someone at the wheel is pulled out first: carjack)}; {} when none (or while they drive).
+func enter_target(p: Vector3, r: float, occupied: bool = true) -> Dictionary:
 	if not _built or _driven != null:
 		return {}
 	var best: VH.Car = null
 	var bd := r
 	for c: VH.Car in vehicles.cars:
 		if not _claimable(c) or c.pos.distance_to(p) > r + c.length:
+			continue
+		if not occupied and _jacks(c):
 			continue
 		var d := _body_dist(c, p)
 		if d <= bd:
@@ -1342,16 +1351,20 @@ func enter_target(p: Vector3, r: float) -> Dictionary:
 	if best == null:
 		return {}
 	var label := "your car" if best.role == VH.PLAYER else "the car"
-	return {"id": best.id, "label": label, "pos": best.pos, "dist": bd}
+	return {"id": best.id, "label": label, "pos": best.pos, "dist": bd, "jack": _jacks(best)}
 
 
 ## Hands car id to the player: an ambient, decor or resident car is swapped for a player car of
-## the same model where it stands (its owner's trip carries on without it). Returns the car's
-## {"id", "pos", "yaw", "length", "half_w", "height"}, or {} when it cannot be taken.
-func claim_car(id: int) -> Dictionary:
+## the same model where it stands (its owner's trip carries on without it). With someone at the
+## wheel (carjack) the driver is dragged out first by the hero standing at src (carjack.gd).
+## Returns the car's {"id", "pos", "yaw", "length", "half_w", "height"}, or {} when it cannot be
+## taken.
+func claim_car(id: int, src: Vector3 = Vector3.INF) -> Dictionary:
 	var c: VH.Car = vehicles.by_id.get(id)
 	if c == null or _driven != null or not _claimable(c):
 		return {}
+	if _jacks(c):
+		carjack.eject(c, src if src.is_finite() else c.pos)
 	if c.role != VH.PLAYER:
 		c = _take_over(c)
 	c.driven = true
@@ -1400,6 +1413,28 @@ func driven_id() -> int:
 	return _driven.id if _driven != null and not _driven.dead else -1
 
 
+## Car id's {"id", "pos", "yaw", "length", "half_w", "height"} as drawn, {} when it is gone.
+func car_info(id: int) -> Dictionary:
+	var c: VH.Car = vehicles.by_id.get(id) if _built else null
+	if c == null or c.dead:
+		return {}
+	var dims := {"length": c.length, "half_w": c.half_w, "height": c.height}
+	return dims.merged({"id": c.id, "pos": c.pos + c.vis_off, "yaw": c.yaw + c.vis_yaw})
+
+
+## True while car id can be taken with someone at the wheel to pull out (carjack).
+func jackable(id: int) -> bool:
+	var c: VH.Car = vehicles.by_id.get(id) if _built else null
+	return c != null and _driven == null and _claimable(c) and _jacks(c)
+
+
+## Holds car id where it stands (on) while the hero walks to its door, or lets it drive on.
+func hold_car(id: int, on: bool) -> void:
+	var c: VH.Car = vehicles.by_id.get(id) if _built else null
+	if c != null and c.role != VH.PLAYER:
+		c.hold = on
+
+
 ## The driver's hip point in the driven car's own frame (+Z forward), or null until its full model
 ## is drawn (the merged far LOD has no seat).
 func seat_offset() -> Variant:
@@ -1430,11 +1465,12 @@ func door_info(id: int = -1) -> Dictionary:
 	return out
 
 
-## Opens the driver's door of the car the player drives by amount (0 shut .. 1 open); drawn on its
-## full model.
-func set_door(amount: float) -> void:
-	if _driven != null:
-		_driven.door = clampf(amount, 0.0, 1.0)
+## Opens the driver's door by amount (0 shut .. 1 open): of the car the player drives, or of car
+## id (one they are taking from its driver). Drawn on its full model.
+func set_door(amount: float, id: int = -1) -> void:
+	var c: VH.Car = _driven if id < 0 else vehicles.by_id.get(id)
+	if c != null:
+		c.door = clampf(amount, 0.0, 1.0)
 
 
 func _claimable(c: VH.Car) -> bool:
@@ -1444,7 +1480,13 @@ func _claimable(c: VH.Car) -> bool:
 		return true
 	if c.parked:
 		return c.slot_tile >= 0
-	return c.role == "ambient" and c.v < CLAIM_SPEED
+	var who := c.role == "ambient" or (c.role == "resident" and _jacks(c))
+	return who and c.v < CLAIM_SPEED
+
+
+## True when taking c means dragging its driver out first (carjack).
+func _jacks(c: VH.Car) -> bool:
+	return JACK.occupied(c) and FeatureFlags.enabled("carjack")
 
 
 func _take_over(o: VH.Car) -> VH.Car:
@@ -1454,6 +1496,10 @@ func _take_over(o: VH.Car) -> VH.Car:
 	c.yaw = o.yaw + o.vis_yaw
 	c.label = "Your car"
 	c.state = "yours"
+	# Its drawn model carries over, so the car does not vanish for a frame.
+	c.node = o.node
+	c.lod = o.lod
+	o.node = null
 	if o.owner is TRIPS.Trip:
 		trips.complete_now(o.owner)
 	if not o.dead:

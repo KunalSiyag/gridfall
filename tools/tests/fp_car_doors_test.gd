@@ -3,7 +3,8 @@ extends SceneTree
 ## driver's door cut out of its body and swung on its hinge; the hero walking round a stopped car
 ## to that door, opening it, climbing in and shutting it, and the climb out once the car has
 ## braked to a stop; car_door on the bus; turning back on the way, a blocked door and the flag
-## off. Time runs through climb_step(1/60) and the player's update_view.
+## off. Its cars have nobody at the wheel to pull out (carjack off; fp_carjack_test). Time runs
+## through climb_step(1/60) and the player's update_view.
 
 const K := preload("res://tools/tests/fp_kit.gd")
 const WS := preload("res://scripts/fp/world_scale.gd")
@@ -41,6 +42,7 @@ func _init() -> void:
 	drive.set_process(false)
 	ctx.bus.car_door.connect(func(at: Vector3, open: bool) -> void: slams.append([at, open]))
 	FeatureFlags.set_override("car_doors", true)
+	FeatureFlags.set_override("carjack", false)
 	_check_split()
 	if door_model >= 0 and _find_spot():
 		_check_in()

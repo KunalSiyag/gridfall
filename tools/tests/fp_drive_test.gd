@@ -4,8 +4,9 @@ extends SceneTree
 ## the bus), sliding along a wall it meets at a glance, knocking a lane car off its lane (which
 ## finds its way back), getting out beside the door, the car left standing as an obstacle, the
 ## seated hero, keys and pad bindings, and teardown. Getting in and out is the instant way (the
-## car_doors flag off; fp_car_doors_test covers the walk to the door). Time runs through
-## drive_step(1/60) and the traffic feature's step(1/30).
+## car_doors flag off; fp_car_doors_test covers the walk to the door) and nobody is pulled out of
+## a car taken from traffic (carjack off; fp_carjack_test). Time runs through drive_step(1/60) and
+## the traffic feature's step(1/30).
 
 const K := preload("res://tools/tests/fp_kit.gd")
 const D := preload("res://scripts/sim/sim_defs.gd")
@@ -48,6 +49,7 @@ func _init() -> void:
 	drive.set_process(false)
 	it.set_process(false)
 	FeatureFlags.set_override("car_doors", false)
+	FeatureFlags.set_override("carjack", false)
 	ctx.bus.car_impact.connect(
 		func(at: Vector3, v: float, what: String) -> void: impacts.append([at, v, what])
 	)

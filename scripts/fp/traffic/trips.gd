@@ -792,7 +792,9 @@ func _finish(tr: Trip) -> void:
 			tr.car.state = "parked"
 
 
-func _walk_rest(tr: Trip, from: Vector3, tile: int) -> void:
+## tr goes on on foot from `from` (near road tile `tile`) to its destination, by way of the points
+## in via first when there are any.
+func _walk_rest(tr: Trip, from: Vector3, tile: int, via: Array = []) -> void:
 	tr.mode = "walk"
 	var b: Vector3 = f.door_point(tr.to_i)
 	var w := tr.walker
@@ -800,11 +802,27 @@ func _walk_rest(tr: Trip, from: Vector3, tile: int) -> void:
 		w = _person(tr.rid, from)
 		tr.walker = w
 	w.owner = tr
-	var plan := walk_plan(from, tile, b, tr.dest_tile) if tile >= 0 and tr.dest_tile >= 0 else []
+	var a: Vector3 = via.back() if not via.is_empty() else from
+	var plan := walk_plan(a, tile, b, tr.dest_tile) if tile >= 0 and tr.dest_tile >= 0 else []
 	if plan.is_empty():
 		plan = [{"pt": b}]
+	var lead: Array = []
+	for p: Vector3 in via:
+		lead.append({"pt": p})
 	tr.phase = "walk"
-	wk.start_plan(w, plan)
+	wk.start_plan(w, lead + plan)
+
+
+## The player took tr's car with the resident at the wheel (carjack.gd): it is theirs no more and
+## they go on on foot from at by way of via, near road tile `tile`. Returns their walker.
+func on_carjacked(tr: Trip, at: Vector3, via: Vector3, tile: int) -> WK.Walker:
+	if tr.slot.x >= 0:
+		lg.set_slot(tr.slot.x, tr.slot.y, "")
+		tr.slot = Vector2i(-1, -1)
+	tr.car = null
+	cars.erase(tr.rid)
+	_walk_rest(tr, at, tile, [via])
+	return tr.walker
 
 
 ## Bus hooks (fleets): a bus of `line` stands at stop `tile`.

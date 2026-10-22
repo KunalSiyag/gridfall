@@ -54,6 +54,8 @@ func _init() -> void:
 	tr.set("ambient_enabled", false)
 	f.set_process(false)
 	drive.set_process(false)
+	# The car it takes has nobody at the wheel to pull out (fp_carjack_test covers that).
+	FeatureFlags.set_override("carjack", false)
 	ctx.bus.prop_knocked.connect(
 		func(at: Vector3, kind: String, v: float) -> void: knocked.append([at, kind, v])
 	)

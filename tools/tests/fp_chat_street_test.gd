@@ -1,7 +1,8 @@
 extends SceneTree
 ## People hit in the street, in the chat (street_lines.gd): the one hit and one who saw it speak,
 ## by cause; a softer blow inside the gap stays quiet but a harder one posts; a crew posts a City
-## Alert card; a witness of someone with no record says "someone"; and the chat feature hears
+## Alert card; a driver dragged out of their car speaks of the car, not the fall, and the police
+## card says so; a witness of someone with no record says "someone"; and the chat feature hears
 ## person_hit on the game bus. Time only moves through ChatFeed.pump().
 
 const K := preload("res://tools/tests/fp_kit.gd")
@@ -39,6 +40,7 @@ func _init() -> void:
 	lines.setup(ctx, feed)
 	_check_punches()
 	_check_car()
+	_check_carjack()
 	_check_unnamed()
 	_check_bus()
 	K.finish(self, "FP_CHAT_STREET_TEST", fails)
@@ -142,6 +144,25 @@ func _check_car() -> void:
 	K.check(fails, car, "car: the one knocked down and a witness speak")
 	var amb := _cards(rows, "Ambulance called to %s: a car hit someone" % WHERE)
 	K.check(fails, amb == 1, "car: the ambulance posts one City Alert card (%d)" % amb)
+
+
+## A driver dragged out of their car and knocked down (carjack): they and a witness speak of the
+## car taken, not of a fall, and the police card says what happened.
+func _check_carjack() -> void:
+	_pump(feed, 9.0)
+	var seq0 := feed.seq
+	lines.on_person_hit(at, "carjack", _hit(ida, idb, true, "police"))
+	_pump(feed, 20.0)
+	var rows := _rows_since(feed, seq0)
+	var spoke := _said(rows, ida, STREET.VICTIM["carjack"]) == 1
+	spoke = spoke and _said(rows, idb, STREET.WITNESS["carjack"], _first(ida)) == 1
+	spoke = spoke and _said(rows, ida, STREET.VICTIM["down"]) == 0
+	K.check(fails, spoke, "carjack: the driver and a witness speak of the car, not of a fall")
+	var card := str(STREET.CREW_AFTER["carjack"]).format({"street": WHERE})
+	var police := _cards(rows, card)
+	K.check(
+		fails, police == 1, "carjack: the police card says a driver was pulled out (%d)" % police
+	)
 
 
 ## A walker with no resident record: only the witness speaks, of "someone"; with nobody named

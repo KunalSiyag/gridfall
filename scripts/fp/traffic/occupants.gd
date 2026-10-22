@@ -81,6 +81,12 @@ func body_of(id: int) -> PPL.Body:
 	return (e[0] as WK.Walker).body if not e.is_empty() else null
 
 
+## The driver drawn in car id (the stand-in walker carrying its avatar and stature), or null.
+func driver_of(id: int) -> WK.Walker:
+	var e: Array = _by_car.get(id, [])
+	return e[0] if not e.is_empty() else null
+
+
 func _seat_driver(c: VH.Car, residents: Variant) -> Array:
 	var w := WK.Walker.new()
 	w.id = PROXY_ID + c.id

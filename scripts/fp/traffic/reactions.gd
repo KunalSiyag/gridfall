@@ -1,13 +1,14 @@
 extends RefCounted
 ## People hit in the street (docs/fp/ARCHITECTURE.md, Body actions): shoved or punched by the
-## player, or struck by the car they drive. A light blow makes the person reel (hit_chest,
-## hit_head) and slide back a little; a hard one (DOWN), the HITS_DOWN-th punch in a row or a fast
-## car knocks them down (knockback), and they lie a while before they get up (get_up). Then they
-## shake their head or shout at whoever did it, run off, or walk back to where they were. People
-## within WITNESS_R who see it run off or shout too. While a walker stands where the blow left it
-## its state is "react" (it keeps its edge and plan; the slide and the walk back move only its
-## drawn offset), and a run gives it its own state back at RUN_F times its pace with the run clip.
-## What follows a blow for the city (memory, mood, crews) is incidents.gd's.
+## player, struck by the car they drive or dragged out of their own (carjack). A light blow makes
+## the person reel (hit_chest, hit_head) and slide back a little; a hard one (DOWN), the
+## HITS_DOWN-th punch in a row or a fast car knocks them down (knockback), and they lie a while
+## before they get up (get_up). Then they shake their head or shout at whoever did it, run off, or
+## walk back to where they were. People within WITNESS_R who see it run off or shout too. While a
+## walker stands where the blow left it its state is "react" (it keeps its edge and plan; the
+## slide and the walk back move only its drawn offset), and a run gives it its own state back at
+## RUN_F times its pace with the run clip. What follows a blow for the city (memory, mood, crews)
+## is incidents.gd's.
 
 const WS := preload("res://scripts/fp/world_scale.gd")
 const AP := preload("res://scripts/fp/asset_paths.gd")
@@ -91,8 +92,8 @@ func clear() -> void:
 
 
 ## w takes a blow from src (a world point) along push (xz, any length) of strength 0..1, cause
-## "shove", "punch" or "car". Returns {"down": bool, "clip": StringName}, or {} when w cannot take
-## one now (hidden, in a conversation, or down already).
+## "shove", "punch", "car" or "carjack". Returns {"down": bool, "clip": StringName}, or {} when w
+## cannot take one now (hidden, in a conversation, or down already).
 func hit(w: WK.Walker, src: Vector3, push: Vector3, strength: float, cause: String) -> Dictionary:
 	if w.dead or w.state == "hidden" or w.hold:
 		return {}
@@ -158,11 +159,12 @@ func _plan_reel(r: Reaction, d: Vector3, strength: float, cause: String) -> Stri
 	return clip
 
 
-## What a victim does once the blow is over: shakes their head at a shove or shouts at a punch or
-## a car; after a punch they run off when they can, else they walk back to their place.
+## What a victim does once the blow is over: shakes their head at a shove or shouts at a punch, a
+## car or a carjack; after a punch or a carjack they run off when they can, else they walk back to
+## their place.
 func _after(r: Reaction, cause: String) -> Array:
 	var shout := ["place", &"no" if cause == "shove" else &"shout", _rng.randf_range(1.6, 2.6)]
-	if cause == "punch" and _can_run(r):
+	if (cause == "punch" or cause == "carjack") and _can_run(r):
 		return [shout, _run_step()]
 	return [shout, ["back", &"", 30.0]]
 
@@ -266,6 +268,11 @@ func _next_step(r: Reaction) -> void:
 		w.state = r.was
 		w.react = &"run"
 		w.speed = r.speed * RUN_F
+		if w.on_leg:
+			# Off the network the run starts where the blow left the walker: easing its drawn
+			# offset out instead would slide it back toward the blow as it runs.
+			w.pos += w.vis_off
+			w.vis_off = Vector3.ZERO
 		wk.turn_from(w, r.src)
 		return
 	w.state = "react"

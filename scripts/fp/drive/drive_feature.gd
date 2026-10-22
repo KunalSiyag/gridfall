@@ -1,14 +1,16 @@
 extends FpFeature
 ## Getting into cars and driving them. Near a parked or stopped car, F (Y on a pad) gets in: the
 ## hero walks round to the driver's door, opens it, climbs in and shuts it (car_entry.gd, the
-## car_doors flag; at once without it), and the camera chases the car. W / S or the triggers drive
-## and brake (S reverses once stopped), A / D or the left stick steer, Space (A) is the handbrake,
-## the mouse or right stick look around, V switches to the driver's view, and F again stops the
-## car and gets out through the driver's door (or at once beside it). The car belongs to the
-## traffic feature (lane traffic stops for it and it stays where it is left). It is a rigid box
-## (car_body.gd): it bounces off walls, slides along them at a glance, spins when hit off-centre,
-## shoves the cars it hits and knocks street props over; car_impact on the bus reports the hard
-## hits and car_door the door opening and shutting.
+## car_doors flag; at once without it), and the camera chases the car. Someone at the wheel of a
+## car stopped in traffic is dragged out first (the carjack flag): the car waits while the hero
+## walks to its door, opens it and pulls them out. W / S or the triggers drive and brake (S
+## reverses once stopped), A / D or the left stick steer, Space (A) is the handbrake, the mouse or
+## right stick look around, V switches to the driver's view, and F again stops the car and gets
+## out through the driver's door (or at once beside it). The car belongs to the traffic feature
+## (lane traffic stops for it and it stays where it is left). It is a rigid box (car_body.gd): it
+## bounces off walls, slides along them at a glance, spins when hit off-centre, shoves the cars it
+## hits and knocks street props over; car_impact on the bus reports the hard hits and car_door the
+## door opening and shutting.
 
 const WS := preload("res://scripts/fp/world_scale.gd")
 const MODEL := preload("res://scripts/fp/drive/drive_model.gd")
@@ -80,6 +82,8 @@ var entry := ENTRY.new()
 var _stop_t: float = -1.0
 ## The hero's input before the photo shot.
 var _photo_input: bool = true
+## The car being taken from its driver (carjack) until they are dragged out, else -1.
+var _jack_id: int = -1
 
 
 func feature_id() -> String:
@@ -141,12 +145,16 @@ func enter() -> bool:
 
 
 ## Gets into the nearest car in reach the long way (car_doors): the hero walks round to its
-## driver's door, opens it, climbs in and shuts it, then drives (climb_step runs it). At once
+## driver's door, opens it, climbs in and shuts it, then drives (climb_step runs it); someone at
+## the wheel (carjack) is dragged out once the door is open, the car waiting till then. At once
 ## (enter) without the flag, or when the door cannot open (a model without one, the stand-in
 ## figure, no room beside it or no clear way round). Returns true when it started.
 func board() -> bool:
 	if not FeatureFlags.enabled("car_doors"):
 		return enter()
+	var t := enter_target()
+	if bool(t.get("jack", false)):
+		return _jack_in(int(t["id"]))
 	var info := _claim()
 	if info.is_empty():
 		return false
@@ -199,14 +207,18 @@ func exit(force: bool = false) -> bool:
 ## tests call it with their own dt.
 func climb_step(dt: float) -> void:
 	var tr := _traffic()
-	if tr == null or int(tr.call("driven_id")) != car_id:
+	if tr == null or not _still_there(tr):
 		exit(true)
 		return
 	if _stop_t >= 0.0:
 		_stop_for_exit(dt)
 		return
 	var done := entry.step(dt)
-	tr.call("set_door", entry.door)
+	# A walk to someone else's car that cannot reach its door takes it at once.
+	var pull := done == "pull" or (done == "fail" and _jack_id >= 0)
+	if pull and not _pull_out():
+		return
+	tr.call("set_door", entry.door, _jack_id)
 	if done == "seated" or done == "fail":
 		_take_wheel()
 		return
@@ -222,9 +234,15 @@ func _claim() -> Dictionary:
 	var t := enter_target()
 	if t.is_empty():
 		return {}
-	var info: Dictionary = _traffic().call("claim_car", int(t["id"]))
-	if info.is_empty():
-		return {}
+	var info: Dictionary = _traffic().call("claim_car", int(t["id"]), ctx.player.position)
+	if not info.is_empty():
+		_adopt(info)
+	return info
+
+
+## Sets the drive state up on car info (claim_car's, or car_info's for a car still to be taken);
+## the hero is not at the wheel yet.
+func _adopt(info: Dictionary) -> void:
 	var p := ctx.player
 	car_id = int(info["id"])
 	_pos = info["pos"]
@@ -243,22 +261,71 @@ func _claim() -> Dictionary:
 		hud.set_prompt("")
 	if ctx.bus != null:
 		ctx.bus.drive_changed.emit(true)
-	return info
 
 
-## Starts the walk to the claimed car's door; false when it cannot (see board).
-func _climb_in(info: Dictionary) -> bool:
+## Starts the walk to the door of the claimed car, or of car id with its driver still at the wheel
+## (carjack); false when it cannot (see board).
+func _climb_in(info: Dictionary, id: int = -1) -> bool:
 	var tr := _traffic()
-	var p := ctx.player
-	# The claimed car is no obstacle any more; the others near the hero still are.
-	var near: Array[AABB] = []
-	near.assign(tr.call("blockers_near", p.position, BLOCKER_REACH))
-	ctx.collision.dynamic_boxes = near
-	var boxes: Array = tr.call("blockers_near", _pos, _dims.z + ENTRY.ROUTE_REACH)
-	if not entry.begin_in(ctx, info, tr.call("door_info", -1), boxes):
+	# The car to get into is no obstacle any more; the others near the hero still are.
+	_block_others(id)
+	var boxes: Array = tr.call("blockers_near", _pos, _dims.z + ENTRY.ROUTE_REACH, id)
+	if not entry.begin_in(ctx, info, tr.call("door_info", id), boxes, id >= 0):
 		return false
-	p.set_camera_mode("third", true)
+	ctx.player.set_camera_mode("third", true)
 	return true
+
+
+## Starts taking car id from its driver: it waits while the hero walks round to its door and opens
+## it, then the driver is dragged out (climb_step's "pull") and the hero climbs in. With no way to
+## the door the driver is pulled out at once and the hero takes the wheel. False when it is gone.
+func _jack_in(id: int) -> bool:
+	var tr := _traffic()
+	var info: Dictionary = tr.call("car_info", id) if tr != null else {}
+	if info.is_empty():
+		return false
+	_adopt(info)
+	_jack_id = id
+	if _climb_in(info, id):
+		tr.call("hold_car", id, true)
+		return true
+	if not _pull_out():
+		return false
+	_take_wheel()
+	return true
+
+
+## The pull: traffic drags the driver out (knocked down beside the door) and hands the car over.
+## False, the hero back on foot, when it is no longer there to take.
+func _pull_out() -> bool:
+	var tr := _traffic()
+	var info: Dictionary = tr.call("claim_car", _jack_id, ctx.player.position)
+	if info.is_empty():
+		entry.cancel()
+		_on_foot(Vector3(NAN, NAN, NAN), EXIT_BLEND)
+		return false
+	_jack_id = -1
+	car_id = int(info["id"])
+	_pos = info["pos"]
+	model.reset(float(info["yaw"]), _dims.z)
+	_block_others()
+	return true
+
+
+## Stopped cars near the hero block it on foot, all but car skip (the one it is getting into; the
+## car it drives is never one).
+func _block_others(skip: int = -1) -> void:
+	var near: Array[AABB] = []
+	near.assign(_traffic().call("blockers_near", ctx.player.position, BLOCKER_REACH, skip))
+	ctx.collision.dynamic_boxes = near
+
+
+## True while the car being got into is still there: the one the hero has, or the one it is taking
+## from its driver.
+func _still_there(tr: FpFeature) -> bool:
+	if _jack_id >= 0:
+		return bool(tr.call("jackable", _jack_id))
+	return int(tr.call("driven_id")) == car_id
 
 
 ## Behind the wheel: the drive camera takes the view and the hero sits in the driver's seat.
@@ -308,6 +375,11 @@ func _on_foot(spot: Vector3, blend: float) -> void:
 	var tr := _traffic()
 	if tr != null:
 		tr.call("leave_car")
+		if _jack_id >= 0:
+			# Turned back before the pull: the door shuts and the car drives on.
+			tr.call("set_door", 0.0, _jack_id)
+			tr.call("hold_car", _jack_id, false)
+	_jack_id = -1
 	active = false
 	car_id = -1
 	_stop_t = -1.0
@@ -401,7 +473,17 @@ func _poll_prompt(delta: float) -> void:
 	_t = PROMPT_TICK
 	_target = enter_target()
 	if hud != null:
-		hud.set_prompt("Get in %s" % str(_target["label"]) if not _target.is_empty() else "")
+		hud.set_prompt(_prompt_for(_target))
+
+
+## The prompt for enter_target t: "Get in the car", or with someone at the wheel "Pull the driver
+## out"; "" with no car in reach.
+static func _prompt_for(t: Dictionary) -> String:
+	if t.is_empty():
+		return ""
+	if bool(t.get("jack", false)):
+		return "Pull the driver out"
+	return "Get in %s" % str(t["label"])
 
 
 ## One driving step with the given controls (throttle, brake, handbrake 0..1, steer -1..1).
@@ -598,8 +680,8 @@ func photo_restore() -> void:
 	ctx.player.input_enabled = _photo_input
 
 
-## Claims the car nearest the hero, walks it in from beside the driver's door and holds the climb
-## at the swing into the seat.
+## Claims the car nearest the hero that nobody sits in (no carjack for a photo), walks it in from
+## beside the driver's door and holds the climb at the swing into the seat.
 func _photo_stage() -> void:
 	for _k in range(PHOTO_FRAMES):
 		await get_tree().process_frame
@@ -607,7 +689,7 @@ func _photo_stage() -> void:
 	var tr := _traffic()
 	if tr == null or active or _climbing():
 		return
-	var near: Dictionary = tr.call("enter_target", p.position, PHOTO_REACH)
+	var near: Dictionary = tr.call("enter_target", p.position, PHOTO_REACH, false)
 	if near.is_empty():
 		return
 	p.teleport(near["pos"], rad_to_deg(p.yaw))
