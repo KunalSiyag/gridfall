@@ -1,15 +1,16 @@
 extends RefCounted
 ## What the chat hears when the visitor hits someone in the street (game bus person_hit; see
 ## docs/fp/ARCHITECTURE.md, Body actions): the one who was hit says so (a shove, a punch, being
-## knocked down, a car) and one of the residents who saw it adds a line, and a crew called to
-## the scene (incidents.gd: police after an assault, an ambulance for someone a car knocked down)
-## posts a City Alert card. One victim-and-witness pair per GAP_MS on the feed clock, so a flurry
-## of jabs reads as one scene; a harder blow inside the gap still posts, and so does every crew.
+## knocked down, a car, being dragged out of their car) and one of the residents who saw it adds
+## a line, and a crew called to the scene (incidents.gd: police after an assault or a carjack, an
+## ambulance for someone a car knocked down) posts a City Alert card. One victim-and-witness pair
+## per GAP_MS on the feed clock, so a flurry of jabs reads as one scene; a harder blow inside the
+## gap still posts, and so does every crew.
 
 const D := preload("res://scripts/sim/sim_defs.gd")
 const T := preload("res://scripts/fp/chat/chat_text.gd")
 const GAP_MS := 8000
-const SEVERITY := {"shove": 0, "punch": 1, "car": 2, "down": 3, "car_down": 3}
+const SEVERITY := {"shove": 0, "punch": 1, "car": 2, "down": 3, "car_down": 3, "carjack": 3}
 ## What the one who was hit says ({street}: where).
 const VICTIM := {
 	"shove":
@@ -41,6 +42,12 @@ const VICTIM := {
 		"Hit by a car on {street} and knocked flat. Somebody call an ambulance.",
 		"A visitor's car sent me flying on {street}.",
 		"Got run down on {street}. Everything hurts.",
+	],
+	"carjack":
+	[
+		"A visitor just dragged me out of my car on {street} and drove off in it!",
+		"My car! Some visitor pulled me out and took it on {street}. Call the police!",
+		"Carjacked on {street}, in broad daylight. By a visitor.",
 	],
 }
 ## What a resident who saw it says ({who}: the one hit, by first name, or "someone").
@@ -75,10 +82,20 @@ const WITNESS := {
 		"Someone got hit by a car on {street}. They're on the ground.",
 		"That visitor's car sent {who} flying on {street}!",
 	],
+	"carjack":
+	[
+		"A visitor just pulled {who} out of their car on {street} and took it!",
+		"Carjacking on {street}! Somebody call the police.",
+		"Did that visitor just steal {who}'s car on {street}?",
+	],
 }
 const CREW := {
 	"police": "Police called to {street} after a visitor attacked people",
 	"ambulance": "Ambulance called to {street}: a car hit someone",
+}
+## The crew's card after a blow of this cause, instead of CREW's.
+const CREW_AFTER := {
+	"carjack": "Police called to {street}: a visitor pulled a driver out and took the car",
 }
 
 var ctx: FpContext
@@ -99,7 +116,11 @@ func setup(p_ctx: FpContext, p_feed: ChatFeed) -> void:
 ## person_hit (game bus): queues the victim's line and a witness's, and a crew's City Alert card.
 func on_person_hit(at: Vector3, cause: String, info: Dictionary) -> void:
 	var down := bool(info.get("down", false))
-	var key := ("car_down" if down else "car") if cause == "car" else ("down" if down else cause)
+	var key := cause
+	if cause == "car":
+		key = "car_down" if down else "car"
+	elif down and cause != "carjack":
+		key = "down"
 	if not VICTIM.has(key):
 		return
 	var street := str(info.get("street", ""))
@@ -117,7 +138,7 @@ func on_person_hit(at: Vector3, cause: String, info: Dictionary) -> void:
 	if tile >= 0:
 		refs["tile"] = tile
 	var d := ctx.sim.district[tile] if tile >= 0 else -1
-	var text := str(CREW[crew]).format({"street": where})
+	var text := str(CREW_AFTER.get(cause, CREW[crew])).format({"street": where})
 	feed.enqueue(feed.make("system", "City Alert", "system", d, text, "incident", -1, refs))
 
 

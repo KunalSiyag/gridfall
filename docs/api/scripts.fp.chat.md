@@ -181,17 +181,18 @@ Text helpers for the global chat and conversations (slice C): the display filter
 
 extends `RefCounted`
 
-What the chat hears when the visitor hits someone in the street (game bus person_hit; see docs/fp/ARCHITECTURE.md, Body actions): the one who was hit says so (a shove, a punch, being knocked down, a car) and one of the residents who saw it adds a line, and a crew called to the scene (incidents.gd: police after an assault, an ambulance for someone a car knocked down) posts a City Alert card. One victim-and-witness pair per GAP_MS on the feed clock, so a flurry of jabs reads as one scene; a harder blow inside the gap still posts, and so does every crew.
+What the chat hears when the visitor hits someone in the street (game bus person_hit; see docs/fp/ARCHITECTURE.md, Body actions): the one who was hit says so (a shove, a punch, being knocked down, a car, being dragged out of their car) and one of the residents who saw it adds a line, and a crew called to the scene (incidents.gd: police after an assault or a carjack, an ambulance for someone a car knocked down) posts a City Alert card. One victim-and-witness pair per GAP_MS on the feed clock, so a flurry of jabs reads as one scene; a harder blow inside the gap still posts, and so does every crew.
 
 ### Constants
 
 - `D = preload("res://scripts/sim/sim_defs.gd")`
 - `T = preload("res://scripts/fp/chat/chat_text.gd")`
 - `GAP_MS = 8000`
-- `SEVERITY = {"shove": 0, "punch": 1, "car": 2, "down": 3, "car_down": 3}`
+- `SEVERITY = {"shove": 0, "punch": 1, "car": 2, "down": 3, "car_down": 3, "carjack": 3}`
 - `VICTIM = { "shove": [ "Some visitor just shoved me on {street}. Who does that?", "Got pushed out...`: What the one who was hit says ({street}: where).
 - `WITNESS = { "shove": [ "Did a visitor just shove {who} on {street}?", "Some visitor's pushing peo...`: What a resident who saw it says ({who}: the one hit, by first name, or "someone").
 - `CREW = { "police": "Police called to {street} after a visitor attacked people", "ambulance": "...`
+- `CREW_AFTER = { "carjack": "Police called to {street}: a visitor pulled a driver out and took the car...`: The crew's card after a blow of this cause, instead of CREW's.
 
 ### Functions
 

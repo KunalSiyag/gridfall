@@ -19,7 +19,7 @@ The game starts at street level. To play the orbit city builder with the full HU
 
 ## Controls
 
-- **On foot:** WASD or arrow keys to walk, Shift to run, Space to jump, Ctrl to crouch, mouse to look (click to capture the pointer), E to interact, F to get in or out of a car, B for the build phone, M for the map, Enter to chat, V for third person, Tab for the city overview, `[` and `]` for time speed, T to skip to the next morning, Esc to pause, F1 to hide the HUD, F5 to save, F9 to load. A gamepad also works.
+- **On foot:** WASD or arrow keys to walk, Shift to run, Space to jump, Ctrl to crouch, mouse to look (click to capture the pointer), E to interact, F to get in or out of a car (by a car stopped in traffic, F pulls its driver out first), B for the build phone, M for the map, Enter to chat, V for third person, Tab for the city overview, `[` and `]` for time speed, T to skip to the next morning, Esc to pause, F1 to hide the HUD, F5 to save, F9 to load. A gamepad also works.
 - **Driving:** W or the right trigger to accelerate, S or the left trigger to brake and reverse, A/D to steer, Space for the handbrake, V for the driver's view. Slow down to get out.
 - **Build phone (B):** 1-6 pick a tool (road, homes, shops, industry, a building, bulldoze), the mouse wheel picks the building, left click places it on the tile ahead (look up to reach farther), right click undoes. Roads and zones take a start and an end click. The district that owns the land pays, as if its mayor ordered it.
 - **Orbit builder:** WASD to pan, mouse wheel to zoom, right-drag to rotate, C to recenter, Space to pause, 1-4 for speed, F5 to save, F9 to load.

@@ -90,6 +90,34 @@ The driver's door of a full car model (vehicles_v2) as a part of its own that sw
 - `static func skin_x(d: Door, y: float, z: float) -> float`: The outer skin's x at height y (below the belt) at z, from the two lines' profiles.
 - `static func is_door(d: Door, c: Vector3, n: Vector3) -> bool`: True when a piece of surface centred at c, facing n, belongs to the door (inside its lines).
 
+## `scripts/fp/traffic/carjack.gd`
+
+extends `RefCounted`
+
+Taking a car with someone at the wheel (the carjack flag; docs/fp/ARCHITECTURE.md, Driving): a car stopped or crawling in traffic is the player's to take, an ambient driver's or a resident's, and its driver is dragged out first. They come out beside the driver's door and are knocked down away from the car by a blow of cause "carjack" (traffic_feature.gd hit_walker: reactions.gd has them lie a moment, get up, shout and run off; incidents.gd has them and those who saw it remember it, and calls the police). They run for the sidewalk round the car's rear, not through it. A resident's trip goes on on foot from there (trips.gd on_carjacked); an ambient driver wanders on along the sidewalk. Either keeps the look they had at the wheel (occupants.gd).
+
+### Constants
+
+- `WS = preload("res://scripts/fp/world_scale.gd")`
+- `D = preload("res://scripts/sim/sim_defs.gd")`
+- `VH = preload("res://scripts/fp/traffic/vehicles.gd")`
+- `SW = preload("res://scripts/fp/traffic/sidewalks.gd")`
+- `WK = preload("res://scripts/fp/traffic/walkers.gd")`
+- `TRIPS = preload("res://scripts/fp/traffic/trips.gd")`
+- `OUT = 0.3 * WS.M`: The driver comes out OUT beyond the body side, level with the seat, and takes a blow of STRENGTH (hard enough to knock them down, reactions.gd DOWN) straight out from the car. Their way off the road passes CLEAR out from the car's rear corner on that side.
+- `STRENGTH = 0.85`
+- `CLEAR = 1.2 * WS.M`
+
+### Properties
+
+- `f: Object`: the traffic feature
+
+### Functions
+
+- `func setup(p_f: Object) -> void`
+- `static func occupied(c: VH.Car) -> bool`: True when c is a car on the road with someone at the wheel: an ambient driver or a resident.
+- `func eject(c: VH.Car, src: Vector3) -> Dictionary`: Drags car c's driver out, the hero standing at src: they come out beside the driver's door, knocked down away from the car, and set off on foot once they are up. c is left for the caller to take (its trip let go). Returns the person_hit info, {} when nobody could be put there.
+
 ## `scripts/fp/traffic/contact_shadows.gd`
 
 extends `RefCounted`
@@ -205,13 +233,13 @@ Intelligent Driver Model (Treiber 2000) in world units (docs/fp/slices/E-traffic
 
 extends `RefCounted`
 
-What a blow in the street means for the city (traffic_feature.gd hit_walker): a resident who was hit remembers it and their mood drops (a shove least, a car most, more when knocked down), and residents who saw it remember it too. A punch that knocks someone down, or the ASSAULT-th punch within ASSAULT_S, calls the police; someone a car knocks down, an ambulance (a crew from the nearest station that stays at the scene a while, fleets.gd), each kind at most once per CREW_COOL.
+What a blow in the street means for the city (traffic_feature.gd hit_walker): a resident who was hit remembers it and their mood drops (a shove least, a car or a carjack most, more when knocked down), and residents who saw it remember it too. A punch that knocks someone down, the ASSAULT-th punch within ASSAULT_S or a carjack calls the police; someone a car knocks down, an ambulance (a crew from the nearest station that stays at the scene a while, fleets.gd), each kind at most once per CREW_COOL.
 
 ### Constants
 
 - `D = preload("res://scripts/sim/sim_defs.gd")`
 - `WK = preload("res://scripts/fp/traffic/walkers.gd")`
-- `MOOD = {"shove": -0.5, "punch": -1.0, "car": -2.0}`
+- `MOOD = {"shove": -0.5, "punch": -1.0, "car": -2.0, "carjack": -2.0}`
 - `DOWN_MOOD = 1.5`
 - `SAW_MOOD = -0.3`
 - `ASSAULT = 3`
@@ -417,6 +445,7 @@ Drivers seated in the moving vehicles nearest the camera. Only while a vehicle d
 - `func sync(cars: Array, cam: Vector3, residents: Variant) -> void`: Seats a driver in each of the CAP nearest moving vehicles within RANGE that show their full model, and releases the rest. Call between people.begin and people.finish.
 - `func clear() -> void`: Releases every seated body.
 - `func body_of(id: int) -> PPL.Body`: The seated body in car id (null when it has no driver drawn).
+- `func driver_of(id: int) -> WK.Walker`: The driver drawn in car id (the stand-in walker carrying its avatar and stature), or null.
 - `func seat_point(node: Node3D) -> Variant`: The seat marker's position in the full model's space, cached on the node (null without one).
 
 ## `scripts/fp/traffic/people.gd`
@@ -525,7 +554,7 @@ Asset building for people.gd: the layered clips (a box held in both hands, a pho
 
 extends `RefCounted`
 
-People hit in the street (docs/fp/ARCHITECTURE.md, Body actions): shoved or punched by the player, or struck by the car they drive. A light blow makes the person reel (hit_chest, hit_head) and slide back a little; a hard one (DOWN), the HITS_DOWN-th punch in a row or a fast car knocks them down (knockback), and they lie a while before they get up (get_up). Then they shake their head or shout at whoever did it, run off, or walk back to where they were. People within WITNESS_R who see it run off or shout too. While a walker stands where the blow left it its state is "react" (it keeps its edge and plan; the slide and the walk back move only its drawn offset), and a run gives it its own state back at RUN_F times its pace with the run clip. What follows a blow for the city (memory, mood, crews) is incidents.gd's.
+People hit in the street (docs/fp/ARCHITECTURE.md, Body actions): shoved or punched by the player, struck by the car they drive or dragged out of their own (carjack). A light blow makes the person reel (hit_chest, hit_head) and slide back a little; a hard one (DOWN), the HITS_DOWN-th punch in a row or a fast car knocks them down (knockback), and they lie a while before they get up (get_up). Then they shake their head or shout at whoever did it, run off, or walk back to where they were. People within WITNESS_R who see it run off or shout too. While a walker stands where the blow left it its state is "react" (it keeps its edge and plan; the slide and the walk back move only its drawn offset), and a run gives it its own state back at RUN_F times its pace with the run clip. What follows a blow for the city (memory, mood, crews) is incidents.gd's.
 
 ### Constants
 
@@ -555,7 +584,7 @@ People hit in the street (docs/fp/ARCHITECTURE.md, Body actions): shoved or punc
 
 - `func setup(p_wk: WK, p_collision: CollisionWorld, seed: int) -> void`
 - `func clear() -> void`
-- `func hit(w: WK.Walker, src: Vector3, push: Vector3, strength: float, cause: String) -> Dictionary`: w takes a blow from src (a world point) along push (xz, any length) of strength 0..1, cause "shove", "punch" or "car". Returns {"down": bool, "clip": StringName}, or {} when w cannot take one now (hidden, in a conversation, or down already).
+- `func hit(w: WK.Walker, src: Vector3, push: Vector3, strength: float, cause: String) -> Dictionary`: w takes a blow from src (a world point) along push (xz, any length) of strength 0..1, cause "shove", "punch", "car" or "carjack". Returns {"down": bool, "clip": StringName}, or {} when w cannot take one now (hidden, in a conversation, or down already).
 - `func witness(w: WK.Walker, src: Vector3, severity: int) -> Array`: People within WITNESS_R of w who see what happened to it (severity 0 a shove, 1 a punch, 2 a knock-down) and are not reacting already: some run off, some shout at src (shake their head at a shove). Returns them.
 - `func answer_emote(p: Vector3, fwd: Vector3, emote: String) -> Array`: People who answer the hero's emote ("wave", "yes", "no", "shout", "dance"; ANSWERS) made at p facing fwd (xz): after a moment they turn to p and wave, nod or shake their head. Returns them.
 - `func step(dt: float) -> void`
@@ -751,6 +780,7 @@ Traffic and pedestrians on lanes (slice E, docs/fp/slices/E-traffic.md): one roa
 - `DOORS = preload("res://scripts/fp/traffic/car_doors.gd")`
 - `REACT = preload("res://scripts/fp/traffic/reactions.gd")`
 - `INCIDENTS = preload("res://scripts/fp/traffic/incidents.gd")`
+- `JACK = preload("res://scripts/fp/traffic/carjack.gd")`
 - `MAX_STEP = 1.0 / 30.0`
 - `CAR_PREFIXES = ["sedan", "hatch", "suv", "taxi", "van", "pickup", "coupe"]`
 - `TELEPORT = 2.0`: A jump of the player beyond this in one frame is a teleport: the street is refilled around them.
@@ -758,7 +788,7 @@ Traffic and pedestrians on lanes (slice E, docs/fp/slices/E-traffic.md): one roa
 - `PICK_PX = 26.0`
 - `PHOTO_BACK = 1.3`: The traffic photo stands this far from the junction centre along the arm.
 - `LINE_RETRY = 10.0`: Seconds between attempts to rebuild bus lines that no longer match the roads.
-- `CLAIM_SPEED = 0.5 * WS.M`: The player can take a parked car, their own, or an ambient car stopped below this speed.
+- `CLAIM_SPEED = 0.5 * WS.M`: The player can take a parked car, their own, or a car in traffic (an ambient one, or with carjack a resident's) crawling below this speed.
 - `STATION_FAR = 10`: A crew called with no station in town sets off from a road at most this many tiles away.
 
 ### Properties
@@ -766,6 +796,7 @@ Traffic and pedestrians on lanes (slice E, docs/fp/slices/E-traffic.md): one roa
 - `people: PPL`: HC's animated people (deliverable 9); ok == false draws the legacy static people instead.
 - `shoves: SHOVES`: Cars the player's car knocked: their slides, stuns and the way back onto their lanes.
 - `reactions: REACT`: People hit in the street (reel, fall, get up, run off) and what that means for the city.
+- `carjack: JACK`: Drivers dragged out of the cars the player takes (the carjack flag).
 - `jitter_enabled: bool`: Test hooks: departure jitter on or off; auto_step false keeps _process from advancing time.
 - `ambient_enabled: bool`: Test hook: false stops the ambient filler (no spawns, no removals).
 
@@ -807,22 +838,25 @@ Traffic and pedestrians on lanes (slice E, docs/fp/slices/E-traffic.md): one roa
 - `func visible_near(p: Vector3, r: float) -> Array`: Visible named residents near p (on foot, in a vehicle, or standing outdoors; never indoors).
 - `func is_resident_visible(id: String) -> bool`
 - `func pick(origin: Vector3, dir: Vector3, max_dist: float) -> Dictionary`: Interaction pick (S0 §10): residents on foot, ambient pedestrians, vehicles (parked included).
-- `func blockers_near(p: Vector3, r: float) -> Array`: Optional, for A: world AABBs of stopped vehicles near p (parked cars included), never the car the player drives (its body meets the others through bodies_near).
+- `func blockers_near(p: Vector3, r: float, skip: int = -1) -> Array`: Optional, for A: world AABBs of stopped vehicles near p (parked cars included), never the car the player drives (its body meets the others through bodies_near) nor car skip.
 - `func bodies_near(p: Vector3, r: float) -> Array`: For the drive feature's car body: every vehicle body that may reach within r of p, as [id, xz centre, yaw, Vector2(half width, half length), xz velocity, mass (a sedan is 1)]. The car the player drives is not listed.
 - `func bump_car(id: int, j: Vector2, at: Vector2) -> void`: The player's car hit vehicle id with impulse j (xz, u/s times a sedan's mass) at xz point at: the car is knocked (shoves.gd).
 - `func walkers_near(p: Vector3, r: float) -> Array`: People on foot within r of p, for the player's blows and the car body: [{"id", "pos" (the drawn feet), "yaw" (facing (sin, 0, cos)), "down", "resident_id"}].
-- `func hit_walker(id: int, src: Vector3, push: Vector3, strength: float, cause: String) -> Dictionary`: Person id (walkers_near) takes a blow from src (a world point) along push, of strength 0..1, cause "shove", "punch" or "car": they react and the people around see it (reactions.gd), the city hears of it (incidents.gd) and the bus emits person_hit. Returns that signal's info, {} when they could not be hit now.
+- `func hit_walker(id: int, src: Vector3, push: Vector3, strength: float, cause: String) -> Dictionary`: Person id (walkers_near) takes a blow from src (a world point) along push, of strength 0..1, cause "shove", "punch", "car" or "carjack" (dragged out of their car): they react and the people around see it (reactions.gd), the city hears of it (incidents.gd) and the bus emits person_hit. Returns that signal's info, {} when they could not be hit now.
 - `func answer_emote(p: Vector3, fwd: Vector3, emote: String) -> int`: The hero's emote ("wave", "yes", "no", "shout", "dance") at p facing fwd: the people who answer it (reactions.gd answer_emote). Returns how many do.
 - `func pose_walker(id: int, clip: StringName, t: float) -> bool`: Photo and test hook: person id plays reaction clip from t seconds in (held, sim paused or not).
 - `func call_crew(kind: String, at: Vector3, stay: float) -> bool`: Calls a crew ("police" or "ambulance") to world point at, from the road beside the nearest police station or hospital (a road some way off when the city has none), to stay that many seconds once there (fleets.gd). False when no road is near at.
-- `func enter_target(p: Vector3, r: float) -> Dictionary`: The car the player could get into from p: the nearest one they may take whose body is within r of p, as {"id", "label", "pos", "dist"}; {} when none (or while they drive).
-- `func claim_car(id: int) -> Dictionary`: Hands car id to the player: an ambient, decor or resident car is swapped for a player car of the same model where it stands (its owner's trip carries on without it). Returns the car's {"id", "pos", "yaw", "length", "half_w", "height"}, or {} when it cannot be taken.
+- `func enter_target(p: Vector3, r: float, occupied: bool = true) -> Dictionary`: The car the player could get into from p: the nearest one they may take whose body is within r of p (with occupied false, none with someone at the wheel), as {"id", "label", "pos", "dist", "jack" (someone at the wheel is pulled out first: carjack)}; {} when none (or while they drive).
+- `func claim_car(id: int, src: Vector3 = Vector3.INF) -> Dictionary`: Hands car id to the player: an ambient, decor or resident car is swapped for a player car of the same model where it stands (its owner's trip carries on without it). With someone at the wheel (carjack) the driver is dragged out first by the hero standing at src (carjack.gd). Returns the car's {"id", "pos", "yaw", "length", "half_w", "height"}, or {} when it cannot be taken.
 - `func drive_car(pos: Vector3, yaw: float, v: float, a: float) -> void`: Poses the driven car (speed v signed, acceleration a) and its model at once, so the car and the seated hero move in the same frame.
 - `func leave_car() -> void`: The player gets out: the car stays where it stands (its door shut) until it is far away and out of sight.
 - `func driven_id() -> int`: Id of the car the player drives, -1 on foot.
+- `func car_info(id: int) -> Dictionary`: Car id's {"id", "pos", "yaw", "length", "half_w", "height"} as drawn, {} when it is gone.
+- `func jackable(id: int) -> bool`: True while car id can be taken with someone at the wheel to pull out (carjack).
+- `func hold_car(id: int, on: bool) -> void`: Holds car id where it stands (on) while the hero walks to its door, or lets it drive on.
 - `func seat_offset() -> Variant`: The driver's hip point in the driven car's own frame (+Z forward), or null until its full model is drawn (the merged far LOD has no seat).
 - `func door_info(id: int = -1) -> Dictionary`: The driver's door of car id (the car the player drives when id < 0), in the car's frame (+Z forward, +X its left and the driver's side, y up from the ground; world units): {"hinge", "handle", "seat" (the hip point), "rear" (the rear edge at the belt line), "open_rear" (that edge with the door wide open)}, or {} when its model has no door that opens (car_doors.gd).
-- `func set_door(amount: float) -> void`: Opens the driver's door of the car the player drives by amount (0 shut .. 1 open); drawn on its full model.
+- `func set_door(amount: float, id: int = -1) -> void`: Opens the driver's door by amount (0 shut .. 1 open): of the car the player drives, or of car id (one they are taking from its driver). Drawn on its full model.
 - `func light_pole(i: int, corner: int) -> Node3D`: The traffic-light pole on cross tile i at corner (0..3 = NE, SE, SW, NW), or null.
 - `func anchor_of(id: String) -> Vector3`: Live head anchor of resident id while drawn (else above where they are). With HC bodies it is the Head bone's world position (an estimate from the stature while no body draws them).
 - `func anim_stats() -> Dictionary`: Animated-people stats for G2's bench: {"t0", "t1", "t2", "t3"} people on screen per LOD tier, "anim_us" microseconds advancing mixers this frame (T0 trees included), "char_draws" character draws (shadows extra), plus "off" (off-screen bodies holding their pose), "bodies" (instanced) and "people_us" (the whole people pass). Legacy static people report their shader draws only.
@@ -880,6 +914,7 @@ Resident trips (docs/fp/slices/E-traffic.md §4): the AI link. Residents.trip_st
 - `func walk_plan(a: Vector3, ta: int, b: Vector3, tb: int) -> Array`: Walking plan from world point a (near road tile ta) to b (near tb): a free leg onto the nearest sidewalk, the network (zebras included), and a free leg off it. [] when unreachable.
 - `func step(dt: float) -> void`: Per-step trip logic (dt: game-scaled seconds).
 - `func on_car_arrived(c: VH.Car) -> void`: A vehicle reached its goal (vehicles.on_arrive).
+- `func on_carjacked(tr: Trip, at: Vector3, via: Vector3, tile: int) -> WK.Walker`: The player took tr's car with the resident at the wheel (carjack.gd): it is theirs no more and they go on on foot from at by way of via, near road tile `tile`. Returns their walker.
 - `func on_bus_at(bus: VH.Car, line: int, tile: int) -> void`: Bus hooks (fleets): a bus of `line` stands at stop `tile`.
 - `func complete_now(tr: Trip) -> void`: Finishes a trip at once: everyone jumps to the destination (a new trip, a load, a lost road).
 - `func seed_standing() -> void`: Standing residents for everyone outdoors without a trip (after a rebuild or load).

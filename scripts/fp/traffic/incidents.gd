@@ -1,14 +1,14 @@
 extends RefCounted
 ## What a blow in the street means for the city (traffic_feature.gd hit_walker): a resident who
-## was hit remembers it and their mood drops (a shove least, a car most, more when knocked down),
-## and residents who saw it remember it too. A punch that knocks someone down, or the ASSAULT-th
-## punch within ASSAULT_S, calls the police; someone a car knocks down, an ambulance (a crew from
-## the nearest station that stays at the scene a while, fleets.gd), each kind at most once per
-## CREW_COOL.
+## was hit remembers it and their mood drops (a shove least, a car or a carjack most, more when
+## knocked down), and residents who saw it remember it too. A punch that knocks someone down, the
+## ASSAULT-th punch within ASSAULT_S or a carjack calls the police; someone a car knocks down, an
+## ambulance (a crew from the nearest station that stays at the scene a while, fleets.gd), each
+## kind at most once per CREW_COOL.
 
 const D := preload("res://scripts/sim/sim_defs.gd")
 const WK := preload("res://scripts/fp/traffic/walkers.gd")
-const MOOD := {"shove": -0.5, "punch": -1.0, "car": -2.0}
+const MOOD := {"shove": -0.5, "punch": -1.0, "car": -2.0, "carjack": -2.0}
 const DOWN_MOOD := 1.5
 const SAW_MOOD := -0.3
 const ASSAULT := 3
@@ -21,11 +21,13 @@ const HIT_LINES := {
 	"punch": "was punched by a visitor %s",
 	"down": "was knocked down by a visitor %s",
 	"car": "was hit by a visitor's car %s",
+	"carjack": "was carjacked by a visitor %s",
 }
 const SAW_LINES := {
 	"shove": "saw a visitor shove someone %s",
 	"punch": "saw a visitor punch someone %s",
 	"car": "saw a visitor's car hit someone %s",
+	"carjack": "saw a visitor carjack someone %s",
 }
 
 var f: Object
@@ -88,8 +90,8 @@ func _street(at: Vector3) -> String:
 	return f.street_label(D.idx(x, y)) if D.in_bounds(x, y) else ""
 
 
-## Calls the police after an assault and an ambulance for someone a car knocked down; the kind
-## called, or "".
+## Calls the police after an assault or a carjack and an ambulance for someone a car knocked
+## down; the kind called, or "".
 func _crew(cause: String, down: bool, at: Vector3) -> String:
 	var now: float = f.clock
 	var kind := ""
@@ -101,6 +103,8 @@ func _crew(cause: String, down: bool, at: Vector3) -> String:
 			kind = "police"
 	elif cause == "car" and down:
 		kind = "ambulance"
+	elif cause == "carjack":
+		kind = "police"
 	if kind.is_empty() or now - float(_called.get(kind, -INF)) < CREW_COOL:
 		return ""
 	if not f.call_crew(kind, at, float(STAY[kind])):

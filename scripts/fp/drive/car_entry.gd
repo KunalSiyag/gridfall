@@ -1,7 +1,8 @@
 extends RefCounted
 ## Getting into the player's car and out of it on foot, for drive_feature.gd (car_doors flag).
 ## In: the hero walks round the car to the driver's door (jogging while it is far), reaches for
-## the handle (door_try), pulls the door open and swings it wide, steps into the opening, turns
+## the handle (door_try), pulls the door open and swings it wide; with someone at the wheel (jack)
+## it reaches in, drags them out and shoves them clear (push). It steps into the opening, turns
 ## its back to the seat and sits down onto the sill (sit_down; its root travel is walked back so
 ## the feet stay planted), swings round into the seat and the door shuts. Out: the door opens,
 ## the hero swings round onto the sill, stands up (stand_up, walked forward), steps clear of the
@@ -9,7 +10,7 @@ extends RefCounted
 ## the drive camera. The points come from the traffic feature's door_info, in the car's frame
 ## (+Z forward, +X the driver's side); the car stands still throughout. The hero's rig is reached
 ## by duck typing (the player folder is another slice): travel, root_travel, sit, play_gesture,
-## stop_gesture, state and bone_world.
+## stop_gesture, play_action, state and bone_world.
 
 const WS := preload("res://scripts/fp/world_scale.gd")
 
@@ -51,6 +52,13 @@ const REACH_AT := 0.75
 const PULL_END := 1.2
 const PULL_OPEN := 0.3
 const DOOR_WIDE := 0.45
+## Someone at the wheel (jack): the hero turns to the seat and reaches in (interact), drags them
+## out GRAB_AT s in, turns away over TURN_OUT s and shoves them clear (push, for SHOVE_T s), and
+## steps into the opening at JACK_T.
+const GRAB_AT := 0.55
+const TURN_OUT := 0.25
+const SHOVE_T := 0.6
+const JACK_T := 1.3
 ## Sat down, the hips are SILL_IN inside the body side. Sitting takes at most SIT_MAX s, the swing
 ## into or out of the seat SWING_T s and the door's shutting CLOSE_T s.
 const SILL_IN := 0.06 * WS.M
@@ -82,8 +90,8 @@ const BRAKE_MAX := 2.5
 
 ## "" (idle), "in" or "out".
 var kind: String = ""
-## In: "walk", "align", "open", "step", "turn", "sit", "swing", "close". Out: "open", "swing",
-## "stand", "away", "close".
+## In: "walk", "align", "open", "jack" (someone at the wheel), "step", "turn", "sit", "swing",
+## "close". Out: "open", "swing", "stand", "away", "close".
 var phase: String = ""
 ## Seconds into the phase.
 var t: float = 0.0
@@ -91,6 +99,8 @@ var t: float = 0.0
 var door: float = 0.0
 ## A phase to wait at (the photo tour holds the climb in at "swing"); "" for none.
 var hold: String = ""
+## Someone is at the wheel, to be dragged out once the door is open (begin_in's p_jack).
+var jack: bool = false
 var _ctx: FpContext
 var _car := Transform3D.IDENTITY
 var _pts: Dictionary = {}
@@ -128,9 +138,12 @@ var _cam_goal: float = 0.0
 
 
 ## Starts getting into the claimed car `car` ({"pos", "yaw", "half_w", "length", "height"})
-## through its driver's door pts (door_info); boxes are the other cars round it. False when the
-## hero cannot sit, the door or the ground beside it is blocked, or no way round the car is clear.
-func begin_in(ctx: FpContext, car: Dictionary, pts: Dictionary, boxes: Array = []) -> bool:
+## through its driver's door pts (door_info); boxes are the other cars round it, and with p_jack
+## someone at the wheel is dragged out first. False when the hero cannot sit, the door or the
+## ground beside it is blocked, or no way round the car is clear.
+func begin_in(
+	ctx: FpContext, car: Dictionary, pts: Dictionary, boxes: Array = [], p_jack: bool = false
+) -> bool:
 	_boxes = boxes
 	if not _setup(ctx, car, pts, "sit_down") or _blocked(_car * _stand):
 		return false
@@ -142,6 +155,7 @@ func begin_in(ctx: FpContext, car: Dictionary, pts: Dictionary, boxes: Array = [
 	_cam_goal = 0.0
 	door = 0.0
 	_ramp_v = Vector4.ZERO
+	jack = p_jack
 	kind = "in"
 	_go("walk")
 	ctx.player.avatar.visible = true
@@ -166,7 +180,8 @@ func begin_out(ctx: FpContext, car: Dictionary, pts: Dictionary, boxes: Array = 
 
 
 ## Advances by dt s. Returns "" while under way, then "seated" (in), "out" (out) or "fail" (the
-## walk could not reach the door; the hero is still on foot).
+## walk could not reach the door; the hero is still on foot). With jack it returns "pull" once on
+## the way in, as the driver is dragged out.
 func step(dt: float) -> String:
 	if kind.is_empty() or dt <= 0.0 or (not hold.is_empty() and phase == hold):
 		return ""
@@ -178,7 +193,7 @@ func step(dt: float) -> String:
 	var done := _step_in() if kind == "in" else _step_out()
 	if phase == was:
 		_fresh = false
-	if not done.is_empty():
+	if not done.is_empty() and done != "pull":
 		kind = ""
 		phase = ""
 	return done
@@ -188,13 +203,14 @@ func step(dt: float) -> String:
 func cancel() -> void:
 	if kind.is_empty():
 		return
-	if kind == "in" and phase == "open":
+	if kind == "in" and (phase == "open" or phase == "jack"):
 		_rig_call("stop_gesture", [])
 	door = 0.0
 	_ramp_v = Vector4.ZERO
 	kind = ""
 	phase = ""
 	hold = ""
+	jack = false
 
 
 ## True once the door camera has the view: from the reach on the way in, at once on the way out
@@ -378,6 +394,8 @@ func _step_in() -> String:
 			_align()
 		"open":
 			_open_in()
+		"jack":
+			return _jack()
 		"sit":
 			_sit_down()
 		"swing":
@@ -449,7 +467,7 @@ func _align() -> void:
 
 
 ## door_try: the hand meets the handle, the pull opens the door a little, then it swings wide and
-## the hero steps into the opening.
+## the hero steps into the opening (dragging out whoever is at the wheel first).
 func _open_in() -> void:
 	if _fresh:
 		_rig_call("play_gesture", ["door_try"])
@@ -459,9 +477,38 @@ func _open_in() -> void:
 	if t >= PULL_END:
 		_rig_call("stop_gesture", [])
 		_ramp(1.0, DOOR_WIDE, "out")
-		_route = PackedVector3Array([_ground(_car * _sill)])
-		_start_walk()
-		_go("step")
+		if jack:
+			_go("jack")
+		else:
+			_to_sill()
+
+
+## Someone at the wheel: the hero turns to the seat and reaches in, drags them out (step returns
+## "pull") and turns away to shove them clear, then steps into the opening.
+func _jack() -> String:
+	var p := _ctx.player
+	if _fresh:
+		_rig_call("play_gesture", ["interact"])
+		_from_yaw = p.yaw
+		_to_yaw = _yaw_of(_seat_world() - p.position)
+	var yaw := lerp_angle(_from_yaw, _to_yaw, smoothstep(0.0, GRAB_AT, t))
+	if t >= GRAB_AT:
+		yaw = lerp_angle(_to_yaw, _yaw_out, smoothstep(GRAB_AT, GRAB_AT + TURN_OUT, t))
+	_ride(p.position, yaw)
+	if t - _dt < GRAB_AT and t >= GRAB_AT:
+		_rig_call("stop_gesture", [])
+		_rig_call("play_action", ["push", SHOVE_T])
+		return "pull"
+	if t >= JACK_T:
+		_to_sill()
+	return ""
+
+
+## On into the door's opening, to the spot the feet sit down from.
+func _to_sill() -> void:
+	_route = PackedVector3Array([_ground(_car * _sill)])
+	_start_walk()
+	_go("step")
 
 
 ## sit_down onto the sill: the clip's root travel walks the feet back toward the car.
