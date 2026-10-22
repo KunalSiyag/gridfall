@@ -19,14 +19,18 @@ const FK := preload("res://scripts/fp/player/hero_fk.gd")
 const LOCO := ["walk", "walk_fast", "run", "run_fast"]
 ## Upper-body one-shots (6.9 OneShot).
 const GESTURES := ["interact", "wave", "phone", "door_try"]
-## Body actions over the gestures (the actions feature): punches, the shove and emotes on the
-## upper body with quick fades; the dance on the whole body.
-const ACTIONS := ["punch_jab", "punch_cross", "push", "yes", "no", "shout"]
+## Body actions over the gestures (the actions feature): punches, the shove, emotes and the
+## flinch of a blow taken (the health feature) on the upper body with quick fades; the dance on
+## the whole body.
+const ACTIONS := [
+	"punch_jab", "punch_cross", "push", "yes", "no", "shout", "hit_head", "hit_chest",
+]
 ## Every clip the tree plays.
 const CLIPS := [
 	"idle", "walk", "walk_fast", "run", "run_fast", "crouch_idle", "crouch_walk", "jump_start",
 	"fall", "land", "talk", "sit_down", "sit", "stand_up", "interact", "wave", "phone", "door_try",
-	"punch_jab", "punch_cross", "push", "yes", "no", "shout", "dance",
+	"punch_jab", "punch_cross", "push", "yes", "no", "shout", "dance", "hit_head", "hit_chest",
+	"knockback", "get_up",
 ]
 ## Foot-slide correction: TimeScale = clamp(v / v_anim, TS_MIN, TS_MAX).
 const TS_MIN := 0.5
@@ -188,6 +192,8 @@ var _guard_goal: float = 0.0
 ## Seconds until the playing action (dance) fades out by itself; INF for at its own end.
 var _act_left: float = INF
 var _dance_left: float = INF
+## Seconds until a body knocked down (play_action "knockdown") gets up; INF when it is not down.
+var _down_left: float = INF
 var _strike: Dictionary = {}
 
 
@@ -268,7 +274,10 @@ func update(dt: float, v: float, grounded: bool, vy: float, crouched: bool, talk
 	var st := state()
 	if _sit and a > TALK_STILL:
 		sit(false)
-	if not grounded:
+	if _down_left < INF:
+		# Knocked down: the fall and the get-up run by themselves (a landing must not cut in).
+		_air_t = 0.0 if grounded else _air_t + dt
+	elif not grounded:
 		_air_t += dt
 		if st in ["loco", "crouch", "land", "talk"]:
 			if vy > JUMP_VY * WS.JUMP_SPEED / WS.M:
@@ -277,21 +286,7 @@ func update(dt: float, v: float, grounded: bool, vy: float, crouched: bool, talk
 				_go("fall")
 	else:
 		_air_t = 0.0
-		if (st == "jump" or st == "fall") and a > LAND_MOVING:
-			_go(_base(a, crouched, talking))
-		elif st == "jump" or st == "fall":
-			var impact := maxf(0.0, -_last_vy)
-			tree.set(P_LAND, clampf(LAND_MIN + (1.0 - LAND_MIN) * impact / LAND_FULL, LAND_MIN, 1.0))
-			_land_t = 0.0
-			_go("land")
-		elif st == "land":
-			_land_t += dt
-			var len: float = lengths["land"]
-			var t := _land_t
-			if crouched or t >= len - XF_LAND_OUT or a > LAND_MOVING or (a > STILL and t >= LAND_INTERRUPT * len):
-				_go(_base(a, crouched, talking))
-		elif not _sit and st not in ["sit_down", "sit", "stand_up"]:
-			_go(_base(a, crouched, talking))
+		_on_ground(dt, st, a, crouched, talking)
 	_last_vy = vy
 	_set_locomotion(v, a)
 	_update_actions(dt, a)
@@ -301,8 +296,28 @@ func update(dt: float, v: float, grounded: bool, vy: float, crouched: bool, talk
 	_update_look(dt)
 
 
+## On the ground in state st: a jump or a fall lands (by the impact) and the landing gives way to
+## the base state, as does anything but sitting and a knock-down.
+func _on_ground(dt: float, st: String, a: float, crouched: bool, talking: bool) -> void:
+	if (st == "jump" or st == "fall") and a > LAND_MOVING:
+		_go(_base(a, crouched, talking))
+	elif st == "jump" or st == "fall":
+		var impact := maxf(0.0, -_last_vy)
+		tree.set(P_LAND, clampf(LAND_MIN + (1.0 - LAND_MIN) * impact / LAND_FULL, LAND_MIN, 1.0))
+		_land_t = 0.0
+		_go("land")
+	elif st == "land":
+		_land_t += dt
+		var len: float = lengths["land"]
+		var t := _land_t
+		if crouched or t >= len - XF_LAND_OUT or a > LAND_MOVING or (a > STILL and t >= LAND_INTERRUPT * len):
+			_go(_base(a, crouched, talking))
+	elif not _sit and st not in ["sit_down", "sit", "stand_up", "knockback", "get_up"]:
+		_go(_base(a, crouched, talking))
+
+
 ## The state machine's current state ("loco", "crouch", "jump", "fall", "land", "talk",
-## "sit_down", "sit", "stand_up").
+## "sit_down", "sit", "stand_up", "knockback", "get_up").
 func state() -> String:
 	return str(playback.get_current_node()) if playback != null else ""
 
@@ -332,11 +347,18 @@ func stop_gesture() -> void:
 	tree.set(P_SHOT, AnimationNodeOneShot.ONE_SHOT_REQUEST_FADE_OUT)
 
 
-## Plays a body action: one of ACTIONS on the upper body over whatever the legs do, or "dance"
-## on the whole body (standing only; moving ends it). secs > 0 fades it out that long after the
-## start; otherwise a clip plays to its end, a loop for one cycle and the dance until stopped.
+## Plays a body action: one of ACTIONS on the upper body over whatever the legs do, "dance" on
+## the whole body (standing only; moving ends it) or "knockdown" (the body falls onto its back,
+## lies there secs and gets up). secs > 0 fades an action out that long after the start;
+## otherwise a clip plays to its end, a loop for one cycle and the dance until stopped.
 func play_action(a: String, secs: float = 0.0) -> bool:
 	var left := secs if secs > 0.0 else INF
+	if a == "knockdown":
+		stop_gesture()
+		stop_action()
+		_down_left = float(lengths["knockback"]) + maxf(secs, 0.0)
+		_go("knockback")
+		return true
 	if a == "dance":
 		if state() != "loco" or move * float(speeds["walk"]) > TALK_STILL:
 			return false
@@ -403,6 +425,11 @@ func _update_actions(dt: float, a: float) -> void:
 	if _act_left <= 0.0:
 		_act_left = INF
 		tree.set(P_ACT, AnimationNodeOneShot.ONE_SHOT_REQUEST_FADE_OUT)
+	_down_left -= dt
+	if _down_left <= 0.0:
+		_down_left = INF
+		if state() == "knockback":
+			_go("get_up")
 	_dance_left -= dt
 	var ending := a > TALK_STILL or state() != "loco" or _dance_left <= 0.0
 	if ending and bool(tree.get(P_DANCE_ACTIVE)):
@@ -474,6 +501,7 @@ func snap(crouched: bool) -> void:
 	guard = 0.0
 	_act_left = INF
 	_dance_left = INF
+	_down_left = INF
 	playback.start("crouch" if crouched else "loco", true)
 	tree.advance(0.0)
 	_prev_state = state()
@@ -607,13 +635,8 @@ func _state_machine() -> AnimationNodeStateMachine:
 	sm.add_node("land", land)
 	sm.add_node("talk", _anim("talk"))
 	sm.add_node("sit", _anim("sit"))
-	for s: String in SIT_CLIPS:
-		var a := _anim(s)
-		a.use_custom_timeline = true
-		a.timeline_length = float(lengths[s]) / SIT_SPEED
-		a.stretch_time_scale = true
-		a.loop_mode = Animation.LOOP_NONE
-		sm.add_node(s, a)
+	for s: String in SIT_CLIPS + ["knockback", "get_up"]:
+		sm.add_node(s, _once(s, SIT_SPEED if s in SIT_CLIPS else 1.0))
 	_tr(sm, "Start", "loco", 0.0, true)
 	for pair: Array in [["loco", "crouch"], ["crouch", "loco"], ["land", "crouch"]]:
 		_tr(sm, pair[0], pair[1], XF_CROUCH)
@@ -637,6 +660,10 @@ func _state_machine() -> AnimationNodeStateMachine:
 	_tr(sm, "sit", "stand_up", XF_SIT)
 	_tr(sm, "stand_up", "loco", XF_SIT, true)
 	_tr(sm, "stand_up", "sit_down", XF_SIT)
+	for from: String in ["loco", "crouch", "land", "talk", "jump", "fall", "get_up"]:
+		_tr(sm, from, "knockback", XF_FALL)
+	_tr(sm, "knockback", "get_up", XF_FALL)
+	_tr(sm, "get_up", "loco", XF_LAND_OUT, true)
 	return sm
 
 
@@ -680,6 +707,16 @@ func _crouch() -> AnimationNodeBlendTree:
 static func _anim(clip: String) -> AnimationNodeAnimation:
 	var a := AnimationNodeAnimation.new()
 	a.animation = clip
+	return a
+
+
+## clip played once at speed times its own pace, holding its last frame.
+func _once(clip: String, speed: float) -> AnimationNodeAnimation:
+	var a := _anim(clip)
+	a.use_custom_timeline = true
+	a.timeline_length = float(lengths[clip]) / speed
+	a.stretch_time_scale = true
+	a.loop_mode = Animation.LOOP_NONE
 	return a
 
 

@@ -531,8 +531,8 @@ Asset building for people.gd: the layered clips (a box held in both hands, a pho
 - `CARRY_AT = 0.0`
 - `PHONE_AT = 0.5`
 - `NEEDS = [ &"idle", &"walk", &"talk", &"talk_2", &"phone", &"carry", &"idle_look", &"idle_wait",...`
-- `STATES = [ &"idle", &"idle_look", &"idle_wait", &"walk", &"walk_carry", &"walk_phone", &"carry_i...`: Every clip the T0 tree holds: HC's walking and standing clips, the layered ones, and the reactions (reactions.gd).
-- `ONE_SHOTS = [ &"knockback", &"get_up", &"hit_head", &"hit_chest", &"wave", &"yes" ]`: Reactions that play once and hold their last frame (the rest loop), the blows among them, and the quicker crossfade into a blow (s): it lands at once.
+- `STATES = [ &"idle", &"idle_look", &"idle_wait", &"walk", &"walk_carry", &"walk_phone", &"carry_i...`: Every clip the T0 tree holds: HC's walking and standing clips, the layered ones, and the reactions (reactions.gd), the punches of someone fighting back among them.
+- `ONE_SHOTS = [ &"knockback", &"get_up", &"hit_head", &"hit_chest", &"wave", &"yes", &"punch_jab", &"...`: Reactions that play once and hold their last frame (the rest loop), the blows among them, and the quicker crossfade into a blow (s): it lands at once.
 - `BLOWS = [&"knockback", &"hit_head", &"hit_chest"]`
 - `REACT_XFADE = 0.08`
 - `T3_SHADER = """`
@@ -554,7 +554,7 @@ Asset building for people.gd: the layered clips (a box held in both hands, a pho
 
 extends `RefCounted`
 
-People hit in the street (docs/fp/ARCHITECTURE.md, Body actions): shoved or punched by the player, struck by the car they drive or dragged out of their own (carjack). A light blow makes the person reel (hit_chest, hit_head) and slide back a little; a hard one (DOWN), the HITS_DOWN-th punch in a row or a fast car knocks them down (knockback), and they lie a while before they get up (get_up). Then they shake their head or shout at whoever did it, run off, or walk back to where they were. People within WITNESS_R who see it run off or shout too. While a walker stands where the blow left it its state is "react" (it keeps its edge and plan; the slide and the walk back move only its drawn offset), and a run gives it its own state back at RUN_F times its pace with the run clip. What follows a blow for the city (memory, mood, crews) is incidents.gd's.
+People hit in the street (docs/fp/ARCHITECTURE.md, Body actions): shoved or punched by the player, struck by the car they drive or dragged out of their own (carjack). A light blow makes the person reel (hit_chest, hit_head) and slide back a little; a hard one (DOWN), the HITS_DOWN-th punch in a row or a fast car knocks them down (knockback), and they lie a while before they get up (get_up). Then they shake their head or shout at whoever did it, run off, or walk back to where they were; some of those shoved or punched fight back instead (fight_back): they square up to the hero, close in and throw jabs and crosses (on_hero_hit) until the hero is down, gets away or drives off. People within WITNESS_R who see it run off or shout too. While a walker stands where the blow left it its state is "react" (it keeps its edge and plan; the slide and the walk back move only its drawn offset), and a run gives it its own state back at RUN_F times its pace with the run clip. What follows a blow for the city (memory, mood, crews) is incidents.gd's.
 
 ### Constants
 
@@ -575,10 +575,28 @@ People hit in the street (docs/fp/ARCHITECTURE.md, Body actions): shoved or punc
 - `FLEE = [0.15, 0.5, 0.6]`
 - `ANSWERS = { "wave": [10.0, 0.75, 0.0, &"wave", 2.8], "yes": [5.0, 0.75, 0.0, &"yes", 2.5], "no": ...`: Who answers an emote of the hero's: [range (m), the cosine of the cone ahead, share, clip, seconds]. A share of 0 is the nearest person in the cone; otherwise each of those around answers with that chance, at most ANSWER_MAX of them.
 - `ANSWER_MAX = 4`
+- `FIGHT_ODDS = {"shove": 0.3, "punch": 0.4}`: Fighting back (fight_back): the share of those shoved or punched (and not knocked down) who do, by cause (fight_odds starts as this); how long a fight may last (s); how close they come (feet to feet; within FIGHT_SLACK of it counts), from how far they run there and beyond how far they give up.
+- `FIGHT_S = 20.0`
+- `FIGHT_REACH = 0.9 * WS.M`
+- `FIGHT_SLACK = 0.05 * WS.M`
+- `FIGHT_RUN = 3.0 * WS.M`
+- `FIGHT_LOST = 12.0 * WS.M`
+- `FIGHT_BLOWS = [[&"punch_jab", 0.2, 0.45, 0.7], [&"punch_cross", 0.29, 0.6, 0.8]]`: Their punches in turn: [clip, contact time (s), strength 0..1, seconds the clip plays]; the pause between two (s) and before the first.
+- `FIGHT_GAP = Vector2(0.45, 1.1)`
+- `FIGHT_FIRST = 0.25`
+- `FIGHT_HIT = 1.25 * WS.M`: A punch lands on the hero within FIGHT_HIT (feet to feet) inside the cone ahead (the cosine), from the fist FIST ahead and up (metres), and pushes them on at FIGHT_PUSH (u/s).
+- `FIGHT_CONE = 0.5`
+- `FIST = Vector2(0.5, 1.45)`
+- `FIGHT_PUSH = 1.5 * WS.M`
+
+### Properties
+
+- `hero_open: bool`: The hero can be fought now (on foot and in control; traffic sets it every step), and who hears of a punch that lands on them: on_hero_hit(at, strength, push).
+- `fight_odds: Dictionary`: The share who fight back, by cause (test hook), and the punches that landed on the hero.
 
 ### Inner classes
 
-- `Reaction`: One person reacting: the steps still to come, [mode, clip, seconds] with mode "place" (stand and play the clip), "back" (walk back to the walker's own place) or "run".
+- `Reaction`: One person reacting: the steps still to come, [mode, clip, seconds] with mode "place" (stand and play the clip), "back" (walk back to the walker's own place), "run" or "fight".
 
 ### Functions
 
@@ -588,6 +606,7 @@ People hit in the street (docs/fp/ARCHITECTURE.md, Body actions): shoved or punc
 - `func witness(w: WK.Walker, src: Vector3, severity: int) -> Array`: People within WITNESS_R of w who see what happened to it (severity 0 a shove, 1 a punch, 2 a knock-down) and are not reacting already: some run off, some shout at src (shake their head at a shove). Returns them.
 - `func answer_emote(p: Vector3, fwd: Vector3, emote: String) -> Array`: People who answer the hero's emote ("wave", "yes", "no", "shout", "dance"; ANSWERS) made at p facing fwd (xz): after a moment they turn to p and wave, nod or shake their head. Returns them.
 - `func step(dt: float) -> void`
+- `func fighting(w: WK.Walker) -> bool`: True while w is fighting the hero (closing in or punching).
 - `func blocks() -> Array`: Lane blocks for vehicles.gd: the people hit, until they walk or run on, as circles at their drawn feet (on a sidewalk they are clear of every lane).
 - `func is_down(w: WK.Walker) -> bool`: True while w is knocked down (lying or getting up).
 - `func count() -> int`
@@ -756,7 +775,7 @@ Pedestrian network (docs/fp/slices/E-traffic.md §3 Pedestrians): sidewalk polyl
 
 extends `FpFeature`
 
-Traffic and pedestrians on lanes (slice E, docs/fp/slices/E-traffic.md): one road-agent system for first person. A right-hand lane graph with traffic lights and tee priority, IDM car following, residents' own trips played out from their minds' plans (trip_started), ambient commuters and pedestrians around the player, curb parking, buses on seeded lines, trucks and emergency crews (CityLife.external), and the ResidentAvatars hooks (ResidentAvatars.external). Everyone stops for the player. Motion runs on delta * sim.speed, so pause freezes it.
+Traffic and pedestrians on lanes (slice E, docs/fp/slices/E-traffic.md): one road-agent system for first person. A right-hand lane graph with traffic lights and tee priority, IDM car following, residents' own trips played out from their minds' plans (trip_started), ambient commuters and pedestrians around the player, curb parking, buses on seeded lines, trucks and emergency crews (CityLife.external), and the ResidentAvatars hooks (ResidentAvatars.external). Everyone stops for the player, but a car too fast to stop short of them runs them down (hit_by_cars) and some people they hit fight back (fight_back); both go out on the bus as hero_hit. Motion runs on delta * sim.speed, so pause freezes it.
 
 ### Constants
 
@@ -790,6 +809,7 @@ Traffic and pedestrians on lanes (slice E, docs/fp/slices/E-traffic.md): one roa
 - `LINE_RETRY = 10.0`: Seconds between attempts to rebuild bus lines that no longer match the roads.
 - `CLAIM_SPEED = 0.5 * WS.M`: The player can take a parked car, their own, or a car in traffic (an ambient one, or with carjack a resident's) crawling below this speed.
 - `STATION_FAR = 10`: A crew called with no station in town sets off from a road at most this many tiles away.
+- `HIT_FULL = 14.0 * WS.M`: A car running the hero down (hit_by_cars) hits at full strength from HIT_FULL (u/s) and throws them on along its heading at its own speed.
 
 ### Properties
 
@@ -957,12 +977,16 @@ Every road vehicle (docs/fp/slices/E-traffic.md §3): ambient filler, resident c
 - `FAR_SPEED = 0.9`: Data-only vehicles beyond the traffic radius cruise at this share of their own speed.
 - `PLAYER = "player"`: Role of the player's own cars: never on a lane, posed by the drive feature or left standing.
 - `STUN_BRAKE = 6.0 * WS.M`: A car the player's car hit brakes this hard while stunned (its driver stands on the brakes).
+- `HIT_MIN = 3.0 * WS.M`: Running the hero down (player_hittable): from HIT_MIN (u/s) on; the car that does brakes as hard as it can, kept off the hero's body, and waits HIT_STUN s before it drives on; another hit may come HIT_COOL s later.
+- `HIT_STUN = 5.0`
+- `HIT_COOL = 2.5`
 
 ### Properties
 
 - `extra_blocks: Callable`: Returns more blocks each step (shoves.gd: cars knocked off their lanes or slots).
 - `parked_version: int`: Bumped whenever the set of parked cars changes (the renderer's static layer rebuilds).
 - `on_arrive: Callable`: Called with (car) when a vehicle reaches its goal (owner reacts), and when one is removed.
+- `player_hittable: bool`: The hero on foot can be run down (traffic sets it every step): a car too fast to stop short of their body brakes as hard as it can and hits them, on_hit_player(car).
 
 ### Inner classes
 

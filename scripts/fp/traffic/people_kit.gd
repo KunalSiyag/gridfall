@@ -45,10 +45,12 @@ const NEEDS: Array[StringName] = [
 	&"shout",
 	&"no",
 	&"wave",
-	&"yes"
+	&"yes",
+	&"punch_jab",
+	&"punch_cross"
 ]
 ## Every clip the T0 tree holds: HC's walking and standing clips, the layered ones, and the
-## reactions (reactions.gd).
+## reactions (reactions.gd), the punches of someone fighting back among them.
 const STATES: Array[StringName] = [
 	&"idle",
 	&"idle_look",
@@ -68,12 +70,21 @@ const STATES: Array[StringName] = [
 	&"shout",
 	&"no",
 	&"wave",
-	&"yes"
+	&"yes",
+	&"punch_jab",
+	&"punch_cross"
 ]
 ## Reactions that play once and hold their last frame (the rest loop), the blows among them, and
 ## the quicker crossfade into a blow (s): it lands at once.
 const ONE_SHOTS: Array[StringName] = [
-	&"knockback", &"get_up", &"hit_head", &"hit_chest", &"wave", &"yes"
+	&"knockback",
+	&"get_up",
+	&"hit_head",
+	&"hit_chest",
+	&"wave",
+	&"yes",
+	&"punch_jab",
+	&"punch_cross"
 ]
 const BLOWS: Array[StringName] = [&"knockback", &"hit_head", &"hit_chest"]
 const REACT_XFADE := 0.08

@@ -45,6 +45,12 @@ const FAR_SPEED := 0.9
 const PLAYER := "player"
 ## A car the player's car hit brakes this hard while stunned (its driver stands on the brakes).
 const STUN_BRAKE := 6.0 * WS.M
+## Running the hero down (player_hittable): from HIT_MIN (u/s) on; the car that does brakes as
+## hard as it can, kept off the hero's body, and waits HIT_STUN s before it drives on; another hit
+## may come HIT_COOL s later.
+const HIT_MIN := 3.0 * WS.M
+const HIT_STUN := 5.0
+const HIT_COOL := 2.5
 
 
 ## One vehicle.
@@ -125,6 +131,18 @@ var _rng := RandomNumberGenerator.new()
 ## Called with (car) when a vehicle reaches its goal (owner reacts), and when one is removed.
 var on_arrive: Callable
 var on_removed: Callable
+## The hero on foot can be run down (traffic sets it every step): a car too fast to stop short of
+## their body brakes as hard as it can and hits them, on_hit_player(car).
+var player_hittable: bool = false
+var on_hit_player: Callable
+## _blocks index of the hero on foot, -1 when they are not in it.
+var _hero_block: int = -1
+## The car that last hit the hero, and seconds before another may.
+var _hit_id: int = -1
+var _hit_cool: float = 0.0
+## The hero's ground velocity (u/s) from step to step, and where they were at the last.
+var _hero_v := Vector2.ZERO
+var _hero_was := Vector2(INF, INF)
 
 
 func setup(p_lg: LG, p_jn: JN, p_sw: SW, seed: int) -> void:
@@ -421,6 +439,7 @@ func step(dt: float) -> void:
 	var decay := exp(-dt * 1.6)
 	var near2 := LOD_NEAR * LOD_NEAR
 	var full2 := LOD_FULL * LOD_FULL
+	_track_hero(dt)
 	_gather_blocks()
 	for c: Car in cars.duplicate():
 		if c.dead or c.parked or c.role == PLAYER:
@@ -473,12 +492,10 @@ func _drive(c: Car, dt: float) -> void:
 			vl = 0.0
 		hard = minf(hard, sgap)
 	var pl := _player_gap(c)
-	var pg: float = pl[0]
-	if pg < INF:
-		if pg < gap:
-			gap = pg
-			vl = pl[1]
-		hard = minf(hard, pg - MIN_GAP - WS.PLAYER_RADIUS)
+	if float(pl[0]) < gap:
+		gap = pl[0]
+		vl = pl[1]
+	hard = minf(hard, _block_room(c, pl, dt))
 	var acc := IDM.acc(c.v, vmax, gap, c.v - vl)
 	var hb := _hold_brake(c)
 	if hb > 0.0:
@@ -637,16 +654,28 @@ func _stops(c: Car) -> Array:
 	return [best]
 
 
-## How hard c brakes to stand still: stunned by a knock, or held by a conversation; 0 when free.
+## How hard c brakes to stand still: stunned by a knock (as hard as it can just after running the
+## hero down), or held by a conversation; 0 when free.
 func _hold_brake(c: Car) -> float:
 	if c.stun_t > 0.0:
-		return STUN_BRAKE
+		return IDM.B_MAX if c.id == _hit_id else STUN_BRAKE
 	return IDM.B * 1.5 if c.hold else 0.0
 
 
-## Gap from c's front to the player when they stand in its forward corridor, else INF.
+## Times the hit cool-down out and follows the hero's ground velocity.
+func _track_hero(dt: float) -> void:
+	_hit_cool = maxf(0.0, _hit_cool - dt)
+	if _hit_cool <= 0.0:
+		_hit_id = -1
+	var at := Vector2(player_pos.x, player_pos.z)
+	_hero_v = (at - _hero_was) / dt if dt > 0.0 and _hero_was.x < INF else Vector2.ZERO
+	_hero_was = at
+
+
+## Rebuilds _blocks: the player's cars, the player on foot (when not driving) and extra_blocks.
 func _gather_blocks() -> void:
 	_blocks.clear()
+	_hero_block = -1
 	var driving := false
 	for c: Car in cars:
 		if c.role != PLAYER or c.dead:
@@ -656,20 +685,24 @@ func _gather_blocks() -> void:
 		var v := Vector2(c.vel.x, c.vel.z)
 		_blocks.append([Vector2(c.pos.x, c.pos.z), h, c.length * 0.5, c.half_w, v])
 	if player_on and not driving:
+		_hero_block = _blocks.size()
 		_blocks.append([Vector2(player_pos.x, player_pos.z), Vector2.ZERO, -1.0, 0.0, Vector2.ZERO])
 	if extra_blocks.is_valid():
 		_blocks.append_array(extra_blocks.call())
 
 
-## [gap, speed] to the nearest block on c's path: the distance from its front to the block's
-## edge along the path, and the block's speed along the path there; [INF, 0] when none.
+## [gap, speed, hero] to the nearest block on c's path: the distance from its front to the
+## block's edge along the path, the block's speed along the path there and whether it is the hero
+## on foot; [INF, 0, false] when none.
 func _player_gap(c: Car) -> Array:
 	var best := [INF, 0.0]
+	var bi := -1
 	if _blocks.is_empty():
-		return best
+		return [INF, 0.0, false]
 	var front := lg.pos_at(c.lane, c.s)
 	var look := c.v * c.v / (2.0 * IDM.B) + 2.0 * WS.M + c.v * 0.5 + 0.1
-	for b: Array in _blocks:
+	for i in _blocks.size():
+		var b: Array = _blocks[i]
 		if b.size() > 5 and int(b[5]) == c.id:
 			continue
 		if front.distance_to(b[0]) > look + 0.2 + maxf(float(b[2]), 0.0):
@@ -677,6 +710,8 @@ func _player_gap(c: Car) -> Array:
 		var g := _gap_to(c, b, look)
 		if float(g[0]) < float(best[0]):
 			best = g
+			bi = i
+	best.append(bi >= 0 and bi == _hero_block)
 	return best
 
 
@@ -700,6 +735,59 @@ func _gap_to(c: Car, b: Array, look: float) -> Array:
 			s -= x.length
 			x = c.path[k]
 	return [INF, 0.0]
+
+
+## How far c may move this step for the block ahead (pl from _player_gap): short of it, as ever.
+## But while player_hittable a car from HIT_MIN on that cannot stop short of the hero on foot at
+## full braking (IDM caps it at B_MAX) may come up to their body instead, and if it cannot stop
+## short of that either, it hits them on reaching it (on_hit_player) and goes on: the blow throws
+## them clear, and it brakes to a stop kept off their body only.
+func _block_room(c: Car, pl: Array, dt: float) -> float:
+	var room: float = float(pl[0]) - MIN_GAP - WS.PLAYER_RADIUS
+	if not bool(pl[2]):
+		return room
+	if c.id == _hit_id:
+		# Thrown clear, the hero moves on ahead of it this step as well.
+		var away := _hero_v.dot(Vector2(sin(c.yaw), cos(c.yaw)))
+		return _touch_gap(c, dt) + maxf(0.0, away) * dt
+	var stop := c.v * c.v / (2.0 * IDM.B_MAX)
+	if not player_hittable or c.v < HIT_MIN or stop <= room:
+		return room
+	var touch := _touch_gap(c, dt)
+	if stop <= touch or touch > c.v * dt or _hit_cool > 0.0:
+		return touch
+	_hit_id = c.id
+	_hit_cool = HIT_COOL
+	c.stun_t = HIT_STUN
+	if on_hit_player.is_valid():
+		on_hit_player.call(c)
+	return INF
+
+
+## Distance along c's path from its front to where it would touch the hero on foot (its front
+## PLAYER_RADIUS short of them, them within its half width plus that of the path); INF when it
+## would pass them by, or they stand beyond its stopping distance at full braking.
+func _touch_gap(c: Car, dt: float) -> float:
+	var p := Vector2(player_pos.x, player_pos.z)
+	var look := c.v * c.v / (2.0 * IDM.B_MAX) + c.v * dt + 0.02
+	var reach := c.half_w + WS.PLAYER_RADIUS
+	# d0: the distance from c's front to the start of lane x.
+	var d0 := -c.s
+	for k in range(-1, c.path.size()):
+		var x: LG.Lane = c.lane if k < 0 else c.path[k]
+		var s := maxf(0.0, -d0)
+		while s <= x.length and d0 + s <= look:
+			var rel := p - lg.pos_at(x, s)
+			var t := lg.tan_at(x, s)
+			var along := rel.dot(t)
+			if along <= WS.PLAYER_RADIUS:
+				var by := absf(rel.cross(t)) > reach or along < -WS.PLAYER_RADIUS
+				return INF if by else maxf(0.0, d0 + s + along - WS.PLAYER_RADIUS)
+			s += 0.02
+		d0 += x.length
+		if d0 > look:
+			break
+	return INF
 
 
 static func _in_block(q: Vector2, b: Array, half_w: float) -> bool:

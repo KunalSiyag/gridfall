@@ -3,7 +3,7 @@ extends FpFeature
 ## the AudioDirector's music under the street (set_fp), and runs three parts: positional emitters
 ## (engines, horns, sirens, construction, fire, fountains, plants, the river, passers-by's steps,
 ## the player's car crashing, the street props it knocks over and its doors, people hit in the
-## street and the hero's swings),
+## street, the hero's swings and the blows they take),
 ## the area beds (with rain from G1's weather) and the hero's footsteps (splashing on wet paving),
 ## plus the chat blip and alert stingers. Pausing muffles the music (the only thing still
 ## playing); talking to someone ducks the beds.
@@ -31,6 +31,8 @@ const STINGER_GAP := 4.0
 const REVERB_WET_OPEN := 0.05
 const REVERB_WET_URBAN := 0.15
 const BLIP_PITCH := {"mayor": 0.94, "press": 1.06, "council": 0.9}
+## The health a blow on the hero takes (hero_hurt) to sound at full level, by cause.
+const HERO_HIT_FULL := {"punch": 12.0, "car": 60.0}
 
 var emitters: EMITTERS
 var ambience: AMBIENCE
@@ -106,6 +108,7 @@ func setup(p_ctx: FpContext) -> void:
 		_link(bus.car_door, _on_car_door)
 		_link(bus.person_hit, _on_person_hit)
 		_link(bus.hero_action, _on_hero_action)
+		_link(bus.hero_hurt, _on_hero_hurt)
 	if ctx.sim != null:
 		_link(ctx.sim.event_started, emitters.on_event)
 		_link(ctx.sim.event_ended, emitters.on_event_ended)
@@ -369,6 +372,21 @@ func _on_person_hit(at: Vector3, cause: String, info: Dictionary) -> void:
 		pitch = _rng.randf_range(0.72, 0.8)
 	emitters.shot("hit", at + Vector3(0.0, 1.3 * WS.M, 0.0), "punch_hit", trim, pitch)
 	if bool(info.get("down", false)):
+		_falls.append([_now + BANK.BODY_FALL_S, at])
+
+
+## The hero hurt (hero_hurt) by a punch or a car: the thump at their chest by the health it took
+## (full level at HERO_HIT_FULL), a car's lower and louder; knocked down, they land
+## BANK.BODY_FALL_S later. A crash sounds as the car's (car_impact) and a fall as the landing.
+func _on_hero_hurt(amount: float, cause: String, _health: float, down: bool) -> void:
+	if not HERO_HIT_FULL.has(cause):
+		return
+	var car := cause == "car"
+	var at := ctx.player_position()
+	var trim := _impact_db(amount / float(HERO_HIT_FULL[cause])) + (BANK.HIT_CAR_DB if car else 0.0)
+	var pitch := _rng.randf_range(0.72, 0.8) if car else _rng.randf_range(0.92, 1.08)
+	emitters.shot("hit", at + Vector3(0.0, 1.3 * WS.M, 0.0), "punch_hit", trim, pitch)
+	if down:
 		_falls.append([_now + BANK.BODY_FALL_S, at])
 
 

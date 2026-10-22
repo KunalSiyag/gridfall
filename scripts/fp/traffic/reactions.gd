@@ -4,7 +4,9 @@ extends RefCounted
 ## the person reel (hit_chest, hit_head) and slide back a little; a hard one (DOWN), the
 ## HITS_DOWN-th punch in a row or a fast car knocks them down (knockback), and they lie a while
 ## before they get up (get_up). Then they shake their head or shout at whoever did it, run off, or
-## walk back to where they were. People within WITNESS_R who see it run off or shout too. While a
+## walk back to where they were; some of those shoved or punched fight back instead (fight_back):
+## they square up to the hero, close in and throw jabs and crosses (on_hero_hit) until the hero is
+## down, gets away or drives off. People within WITNESS_R who see it run off or shout too. While a
 ## walker stands where the blow left it its state is "react" (it keeps its edge and plan; the
 ## slide and the walk back move only its drawn offset), and a run gives it its own state back at
 ## RUN_F times its pace with the run clip. What follows a blow for the city (memory, mood, crews)
@@ -42,10 +44,31 @@ const ANSWERS := {
 	"dance": [8.0, -1.0, 0.4, &"wave", 2.8],
 }
 const ANSWER_MAX := 4
+## Fighting back (fight_back): the share of those shoved or punched (and not knocked down) who do,
+## by cause (fight_odds starts as this); how long a fight may last (s); how close they come (feet
+## to feet; within FIGHT_SLACK of it counts), from how far they run there and beyond how far they
+## give up.
+const FIGHT_ODDS := {"shove": 0.3, "punch": 0.4}
+const FIGHT_S := 20.0
+const FIGHT_REACH := 0.9 * WS.M
+const FIGHT_SLACK := 0.05 * WS.M
+const FIGHT_RUN := 3.0 * WS.M
+const FIGHT_LOST := 12.0 * WS.M
+## Their punches in turn: [clip, contact time (s), strength 0..1, seconds the clip plays]; the
+## pause between two (s) and before the first.
+const FIGHT_BLOWS := [[&"punch_jab", 0.2, 0.45, 0.7], [&"punch_cross", 0.29, 0.6, 0.8]]
+const FIGHT_GAP := Vector2(0.45, 1.1)
+const FIGHT_FIRST := 0.25
+## A punch lands on the hero within FIGHT_HIT (feet to feet) inside the cone ahead (the cosine),
+## from the fist FIST ahead and up (metres), and pushes them on at FIGHT_PUSH (u/s).
+const FIGHT_HIT := 1.25 * WS.M
+const FIGHT_CONE := 0.5
+const FIST := Vector2(0.5, 1.45)
+const FIGHT_PUSH := 1.5 * WS.M
 
 
 ## One person reacting: the steps still to come, [mode, clip, seconds] with mode "place" (stand
-## and play the clip), "back" (walk back to the walker's own place) or "run".
+## and play the clip), "back" (walk back to the walker's own place), "run" or "fight".
 class Reaction:
 	extends RefCounted
 	var w: WK.Walker = null
@@ -63,6 +86,10 @@ class Reaction:
 	var down: bool = false
 	var hits: int = 0
 	var last: float = -INF
+	var fighter: bool = false  # fights the hero back (fight_back)
+	var blow: int = 0  # FIGHT_BLOWS index of the next punch
+	var blow_t: float = -1.0  # seconds into the punch under way; < 0 when none is
+	var pause: float = 0.0  # seconds before the next punch may start
 
 
 var wk: WK
@@ -71,6 +98,13 @@ var lengths: Dictionary = LENGTHS.duplicate()
 var clock: float = 0.0
 var _active: Dictionary = {}  # walker id -> Reaction
 var _rng := RandomNumberGenerator.new()
+## The hero can be fought now (on foot and in control; traffic sets it every step), and who hears
+## of a punch that lands on them: on_hero_hit(at, strength, push).
+var hero_open: bool = false
+var on_hero_hit: Callable
+## The share who fight back, by cause (test hook), and the punches that landed on the hero.
+var fight_odds: Dictionary = FIGHT_ODDS.duplicate()
+var punches_landed: int = 0
 
 
 func setup(p_wk: WK, p_collision: CollisionWorld, seed: int) -> void:
@@ -161,9 +195,15 @@ func _plan_reel(r: Reaction, d: Vector3, strength: float, cause: String) -> Stri
 
 ## What a victim does once the blow is over: shakes their head at a shove or shouts at a punch, a
 ## car or a carjack; after a punch or a carjack they run off when they can, else they walk back to
-## their place.
+## their place. One who fights back shouts, goes for the hero, then walks back (straight back at
+## it when hit mid-fight).
 func _after(r: Reaction, cause: String) -> Array:
 	var shout := ["place", &"no" if cause == "shove" else &"shout", _rng.randf_range(1.6, 2.6)]
+	if not r.down and _fights_back(r, cause):
+		var fight := ["fight", &"", FIGHT_S]
+		if r.mode == "fight":
+			return [fight, ["back", &"", 30.0]]
+		return [["place", &"shout", 0.8], fight, ["back", &"", 30.0]]
 	if (cause == "punch" or cause == "carjack") and _can_run(r):
 		return [shout, _run_step()]
 	return [shout, ["back", &"", 30.0]]
@@ -171,6 +211,14 @@ func _after(r: Reaction, cause: String) -> Array:
 
 func _run_step() -> Array:
 	return ["run", &"run", _rng.randf_range(4.0, 7.0)]
+
+
+## True when r's walker fights the hero back: always once they have, else by fight_odds for the
+## cause while the hero can be fought.
+func _fights_back(r: Reaction, cause: String) -> bool:
+	if not r.fighter and hero_open and FeatureFlags.enabled("fight_back"):
+		r.fighter = _rng.randf() < float(fight_odds.get(cause, 0.0))
+	return r.fighter
 
 
 ## True when r's walker can run off: it was walking somewhere (an edge or a free leg).
@@ -280,6 +328,9 @@ func _next_step(r: Reaction) -> void:
 	w.react_t = 0.0
 	w.v = 0.0
 	w.vel = Vector3.ZERO
+	if r.mode == "fight":
+		r.blow_t = -1.0
+		r.pause = FIGHT_FIRST
 
 
 func _finish(r: Reaction) -> void:
@@ -295,7 +346,7 @@ func step(dt: float) -> void:
 	clock += dt
 	for r: Reaction in _active.values():
 		var w := r.w
-		if w.dead or (r.mode in ["place", "back"] and w.state != "react"):
+		if w.dead or (r.mode in ["place", "back", "fight"] and w.state != "react"):
 			# Gone, or taken on by something else (a trip set off): let go.
 			_finish(r)
 			continue
@@ -311,6 +362,8 @@ func step(dt: float) -> void:
 				over = _place(r, dt)
 			"back":
 				over = _back(r, dt)
+			"fight":
+				over = _fight(r, dt)
 			_:
 				r.left -= dt
 				over = r.left <= 0.0 or w.state != "walk"
@@ -349,6 +402,86 @@ func _back(r: Reaction, dt: float) -> bool:
 	w.gait = move_toward(w.gait, 1.0, dt * 4.0)
 	w.phase += d / (0.75 * WS.M) * PI
 	return false
+
+
+## Fighting back: squares up to the hero, closes in to FIGHT_REACH and throws a punch whenever the
+## pause is over. Over (true) once the punch under way is done and the hero cannot be fought, is
+## FIGHT_LOST away or the step's time is up.
+func _fight(r: Reaction, dt: float) -> bool:
+	var w := r.w
+	r.left -= dt
+	var me := w.pos + w.vis_off
+	var to := Vector3(wk.player_pos.x - me.x, 0.0, wk.player_pos.z - me.z)
+	var dist := to.length()
+	if r.blow_t >= 0.0:
+		_punch(r, dt, dist)
+		return false
+	if not hero_open or dist > FIGHT_LOST or r.left <= 0.0:
+		return true
+	var dir := to / maxf(dist, 1e-6)
+	w.yaw = lerp_angle(w.yaw, atan2(dir.x, dir.z), minf(1.0, dt * 10.0))
+	r.pause -= dt
+	if dist > FIGHT_REACH + FIGHT_SLACK:
+		_close_in(r, dir, dist - FIGHT_REACH, dt)
+		return false
+	w.react = &""
+	w.vis_v = 0.0
+	w.gait = move_toward(w.gait, 0.0, dt * 4.0)
+	if r.pause <= 0.0:
+		r.blow_t = 0.0
+		w.react = FIGHT_BLOWS[r.blow][0]
+		w.react_t = 0.0
+	return false
+
+
+## Runs at the hero from afar and walks the last metres (by at most room), stopped by walls and
+## posts.
+func _close_in(r: Reaction, dir: Vector3, room: float, dt: float) -> void:
+	var w := r.w
+	var run := room > FIGHT_RUN
+	var v := r.speed * (RUN_F if run else 1.0)
+	var d := minf(v * dt, room)
+	var p := w.pos + w.vis_off
+	var q := p + dir * d
+	if collision != null:
+		q = collision.move_body(p, dir * d, BODY_R, BODY_H, WS.STEP_HEIGHT)
+	_set_feet(w, q)
+	w.react = &"run" if run else &""
+	w.vis_v = v
+	w.gait = move_toward(w.gait, 1.0, dt * 4.0)
+	w.phase += d / (0.75 * WS.M) * PI
+
+
+## The punch under way: at its contact time it lands on a hero still within FIGHT_HIT in the cone
+## ahead (on_hero_hit); once the clip has played, the next punch of the pair waits a pause.
+func _punch(r: Reaction, dt: float, dist: float) -> void:
+	var w := r.w
+	var spec: Array = FIGHT_BLOWS[r.blow]
+	var t0 := r.blow_t
+	r.blow_t += dt
+	w.react_t += dt
+	w.vis_v = 0.0
+	var fwd := Vector3(sin(w.yaw), 0.0, cos(w.yaw))
+	var me := w.pos + w.vis_off
+	var to := Vector3(wk.player_pos.x - me.x, 0.0, wk.player_pos.z - me.z)
+	var contact := float(spec[1])
+	var reach := hero_open and dist <= FIGHT_HIT and to.dot(fwd) >= FIGHT_CONE * dist
+	if t0 < contact and r.blow_t >= contact and reach:
+		punches_landed += 1
+		if on_hero_hit.is_valid():
+			var at := me + fwd * (FIST.x * WS.M) + Vector3(0.0, FIST.y * WS.M, 0.0)
+			on_hero_hit.call(at, float(spec[2]), fwd * FIGHT_PUSH)
+	if r.blow_t >= float(spec[3]):
+		r.blow_t = -1.0
+		r.blow = (r.blow + 1) % FIGHT_BLOWS.size()
+		r.pause = _rng.randf_range(FIGHT_GAP.x, FIGHT_GAP.y)
+		w.react = &""
+
+
+## True while w is fighting the hero (closing in or punching).
+func fighting(w: WK.Walker) -> bool:
+	var r: Reaction = _active.get(w.id)
+	return r != null and r.mode == "fight"
 
 
 ## Moves the drawn offset on along the blow's slide (easing out), stopped by walls and posts.

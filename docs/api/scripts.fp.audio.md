@@ -101,7 +101,7 @@ Slice I's sound assets (sounds/fp/, made by tools/audio/synth_fp_sfx.py): names,
 
 extends `FpFeature`
 
-City sound on foot (slice I). Owns the Music, SFX, Ambience and UI buses while on foot, puts the AudioDirector's music under the street (set_fp), and runs three parts: positional emitters (engines, horns, sirens, construction, fire, fountains, plants, the river, passers-by's steps, the player's car crashing, the street props it knocks over and its doors, people hit in the street and the hero's swings), the area beds (with rain from G1's weather) and the hero's footsteps (splashing on wet paving), plus the chat blip and alert stingers. Pausing muffles the music (the only thing still playing); talking to someone ducks the beds.
+City sound on foot (slice I). Owns the Music, SFX, Ambience and UI buses while on foot, puts the AudioDirector's music under the street (set_fp), and runs three parts: positional emitters (engines, horns, sirens, construction, fire, fountains, plants, the river, passers-by's steps, the player's car crashing, the street props it knocks over and its doors, people hit in the street, the hero's swings and the blows they take), the area beds (with rain from G1's weather) and the hero's footsteps (splashing on wet paving), plus the chat blip and alert stingers. Pausing muffles the music (the only thing still playing); talking to someone ducks the beds.
 
 ### Constants
 
@@ -124,6 +124,7 @@ City sound on foot (slice I). Owns the Music, SFX, Ambience and UI buses while o
 - `REVERB_WET_OPEN = 0.05`: Street reflections on the SFX bus: wet level from open land to a dense downtown street.
 - `REVERB_WET_URBAN = 0.15`
 - `BLIP_PITCH = {"mayor": 0.94, "press": 1.06, "council": 0.9}`
+- `HERO_HIT_FULL = {"punch": 12.0, "car": 60.0}`: The health a blow on the hero takes (hero_hurt) to sound at full level, by cause.
 
 ### Properties
 

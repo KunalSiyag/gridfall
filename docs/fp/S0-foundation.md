@@ -704,6 +704,15 @@ signal talk_replied(resident_id: String, speaker: String, reply: String)
 ## "headline", "place", "quote", "by", "tile", "district", "day", "scoop", "local", "sharp",
 ## "points", "text"}. Emitted by the reporter feature; chat runs "text" as a Gazette line.
 signal story_filed(story: Dictionary)
+## Something struck the hero on foot: at is where the blow came from (a fist, a car's front),
+## cause "punch" (someone fighting back) or "car" (a car that could not stop for them), strength
+## 0..1 and push the xz velocity (u/s) it throws the hero along. Emitted by traffic; the health
+## feature takes the damage.
+signal hero_hit(at: Vector3, cause: String, strength: float, push: Vector3)
+## The hero lost amount of health to cause: "punch" or "car" (hero_hit), "crash" (in the car they
+## drive) or "fall" (a hard landing); health is what is left (0..100, 0 knocked out) and down is
+## true when it put them on the ground. Emitted by the health feature.
+signal hero_hurt(amount: float, cause: String, health: float, down: bool)
 ```
 
 | Signal | Payload | Emitted by | Typical listeners |
@@ -732,6 +741,8 @@ signal story_filed(story: Dictionary)
 | `hero_action` | `action`: `"jab"`, `"cross"` or `"shove"` as a swing starts, or the emote as it starts (`"wave"`, `"yes"`, `"no"`, `"shout"`, `"dance"`). `at`: the hero's feet | Integration: body actions | I (the whoosh of a swing) |
 | `talk_replied` | `resident_id`: the resident's id, `""` for the "Ask someone here" answer. `speaker`: the resident's name, or the role that answered (`"Shopkeeper"`). `reply`: the line as shown | C (`talk_dialog.gd`: each reply face to face, and the ask answer) | Integration: reporter (the quote for the story on assignment) |
 | `story_filed` | the story as filed: `agent` (`"0"`..`"4"`, `"council"` or `"chaos"`), `headline`, `place`, `quote`, `by`, `tile` (index), `district`, `day`, `scoop`, `local`, `sharp`, `points`, `text` (the Gazette's line) | Integration: reporter (K files) | C (a Gazette line in the chat and a chatter topic) |
+| `hero_hit` | `at`: where the blow came from (the fist of someone fighting back, at shoulder height; a car's front, half a metre up). `cause`: `"punch"` (`fight_back`) or `"car"` (`hit_by_cars`). `strength` 0..1 (a jab 0.45, a cross 0.6; a car its speed over 14 m/s). `push`: the xz velocity (u/s) it throws the hero along (a car's heading at its speed) | E (`reactions.gd` through `on_hero_hit`, `vehicles.gd` through `on_hit_player`; only while the hero is on foot, in control and the health feature is on) | Integration: health (the damage, the flinch or the knock-down) |
+| `hero_hurt` | `amount`: the health it took. `cause`: `"punch"`, `"car"`, `"crash"` (`car_impact` over 7 m/s) or `"fall"` (landing over 6 m/s). `health`: what is left, 0..100 (0: knocked out). `down`: it put the hero on the ground | Integration: health | I (the thump of a punch or a car on the hero, and their fall) |
 
 The **target** dict: `{"kind": "resident"|"building"|"poster"|"vehicle"|"pedestrian", "id": String, "tile": int, "pos": Vector3, "dist": float, "label": String, "data": Dictionary}`.
 
