@@ -34,6 +34,7 @@ func _init() -> void:
 	_check_trace()
 	await _check_client_offline()
 	await _check_client_breaker()
+	await _check_client_temperature()
 	_check_flags()
 	_check_analytics()
 	_check_error_tracker()
@@ -186,6 +187,37 @@ func _check_client_breaker() -> void:
 	before = c.posts
 	var r8: Dictionary = await c.live_json("chatter", "round", "m", "s", "u", 1, 50, 0.5)
 	K.check(fails, c.posts - before == 1 and int(r8["attempts"]) == 1, "a retry that would overrun the 2 x timeout budget is skipped (%d attempts)" % (c.posts - before))
+	c.queue_free()
+
+
+## A model that refuses the temperature (an HTTP 400 naming it) gets 1.0 and one more try at
+## once; from then on its calls go out with 1.0 and are not tried twice.
+func _check_client_temperature() -> void:
+	var c := FakeNet.new()
+	c.name = "FakeNetTemperature"
+	get_root().add_child(c)
+	c.live_enabled = true
+	var kimi := "moonshotai/kimi-k3"
+	var body := c.request_body(kimi, "s", "u", 50)
+	var t0 := float(body["temperature"])
+	var plain := is_equal_approx(t0, GmiClient.TEMPERATURE) and body.has("thinking")
+	K.check(fails, plain, "request body: the default temperature and the model's extras")
+	var refusal := 'HTTP 400 {"error":"invalid temperature: only 1 is allowed for this model"}'
+	c.reply = {"ok": false, "error": refusal, "retryable": false, "service_fail": false}
+	var res: Dictionary = await c.live_json("chatter", "round", kimi, "s", "u", 1, 50, 5.0)
+	var again := c.posts == 2 and int(res["attempts"]) == 2
+	K.check(fails, again, "a refused temperature is tried once more at once (%d posts)" % c.posts)
+	var t1 := float(c.request_body(kimi, "s", "u", 50)["temperature"])
+	K.check(fails, is_equal_approx(t1, 1.0), "the model gets temperature 1 from then on")
+	await c.live_json("chatter", "round", kimi, "s", "u", 1, 50, 5.0)
+	K.check(fails, c.posts == 3, "a model already on 1 is not tried twice (%d posts)" % c.posts)
+	var t2 := float(c.request_body("x-ai/grok-4.5", "s", "u", 50)["temperature"])
+	K.check(fails, is_equal_approx(t2, GmiClient.TEMPERATURE), "other models keep the default")
+	var bad := "HTTP 400 bad max_tokens"
+	c.reply = {"ok": false, "error": bad, "retryable": false, "service_fail": false}
+	var before := c.posts
+	await c.live_json("chatter", "round", "x-ai/grok-4.5", "s", "u", 1, 50, 5.0)
+	K.check(fails, c.posts - before == 1, "another 400 is not retried")
 	c.queue_free()
 
 

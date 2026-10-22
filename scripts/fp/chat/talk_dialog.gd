@@ -3,7 +3,8 @@ extends Control
 ## A 600x220 card at bottom-centre over a soft bottom gradient (the upper 60 % of the screen stays
 ## clear for A's two-shot): avatar, name, job, mood face, where they are, their line, quick replies
 ## and a free-text line. Each player line makes one ChatterMinds.talk call (20 per conversation);
-## replies fall back to the offline voice after 8 s of feed time. C is the only emitter of
+## a reply still out after 8 s of feed time gets the resident's busy line (ChatterMinds.talk_busy),
+## and the late reply replaces it when it comes. C is the only emitter of
 ## bus.conversation_changed: (id, true) in the frame &"talk" is pushed, before the card shows, and
 ## exactly one (id, false) on every close path. Only the resident's id is stored; every turn looks
 ## them up again with residents.find(id).
@@ -41,6 +42,7 @@ var active_id: String = ""
 var anchor: Vector3 = Vector3.ZERO
 ## Player lines in this conversation (each made one talk call).
 var lines: int = 0
+## True while a reply is out (until it comes, or the busy line after FALLBACK_MS).
 var waiting: bool = false
 ## The free-text line (tests focus it).
 var input: LineEdit
@@ -52,6 +54,8 @@ var _wait_since: int = 0
 var _token: int = 0
 var _closing_ms: int = -1
 var _mood_total: float = 0.0
+## Replies in this conversation that answered the player (busy lines do not count).
+var _answered: int = 0
 var _subjects: Array[Dictionary] = []
 var _tween: Tween
 var _card: PanelContainer
@@ -181,7 +185,7 @@ func shown_text() -> String:
 
 
 ## The player says text (a quick reply or the free-text line). One talk call per line; ignored
-## while a reply is pending.
+## while a reply is pending (the free-text line then keeps what was typed).
 func say(text: String) -> void:
 	if mode == "ask":
 		end()
@@ -224,7 +228,7 @@ func say(text: String) -> void:
 
 
 ## Timed rules, driven by the feed clock: the distance rule (player feet vs anchor), the resident
-## leaving, the 8 s fallback and the goodbye hold.
+## leaving, the busy line after 8 s (the late reply still shows) and the goodbye hold.
 func on_pump(now_ms: int) -> void:
 	if mode == "":
 		return
@@ -238,9 +242,7 @@ func on_pump(now_ms: int) -> void:
 			end("%s has left." % _name)
 			return
 		if waiting and now_ms - _wait_since >= FALLBACK_MS:
-			_token += 1
-			var before := _turns.slice(0, _turns.size() - 1)
-			_receive(minds.talk_heuristic(r, before, _last_said))
+			_receive(minds.talk_busy(r, _last_said))
 	if _closing_ms >= 0 and now_ms >= _closing_ms:
 		end()
 
@@ -281,8 +283,12 @@ func _receive(res: Dictionary) -> void:
 	var reply := str(res.get("reply", "")).strip_edges()
 	if reply.is_empty():
 		reply = "Hm."
-	_turns.append({"who": "them", "text": reply})
 	_show_line(reply, str(res.get("emote", "none")), _last_said)
+	# A busy line answers nothing: it stays out of the turns, is no quote and changes no mood.
+	if str(res.get("source", "")) == "busy":
+		return
+	_answered += 1
+	_turns.append({"who": "them", "text": reply})
 	if ctx.bus != null:
 		ctx.bus.talk_replied.emit(active_id, _name, reply)
 	var delta := clampf(float(res.get("mood_delta", 0.0)), -1.0, 1.0)
@@ -298,7 +304,7 @@ func _receive(res: Dictionary) -> void:
 
 ## One memory per conversation (and sometimes a public chat line), when it ends.
 func _finish_effects(id: String) -> void:
-	if lines == 0 or ctx.residents == null:
+	if _answered == 0 or ctx.residents == null:
 		return
 	var r := ctx.residents.find(id)
 	if r.is_empty():
@@ -343,6 +349,7 @@ func _reset_turns() -> void:
 	_turns = []
 	_subjects.clear()
 	lines = 0
+	_answered = 0
 	waiting = false
 	_token += 1
 	_closing_ms = -1
@@ -604,6 +611,8 @@ func _build() -> void:
 			input.unedit()
 			input.release_focus()
 			return
+		if waiting:
+			return
 		input.clear()
 		say(t))
 	input.editing_toggled.connect(func(on: bool) -> void:
@@ -612,6 +621,8 @@ func _build() -> void:
 	_input_row.add_child(input)
 	var send := S.pill_button("Say", S.GOLD, Color(0.13, 0.09, 0.02), 14, S.display_font())
 	send.pressed.connect(func() -> void:
+		if waiting:
+			return
 		var t := input.text
 		input.clear()
 		say(t))

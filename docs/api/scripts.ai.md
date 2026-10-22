@@ -50,6 +50,12 @@ The voices of the global chat and of face-to-face talk (slice C §3). Residents,
 - `ROUND_SYSTEM = """`
 - `PLAYER_SYSTEM = """`
 - `TALK_SYSTEM = """`
+- `MAYORS_SYSTEM = ("You write the next few messages of GridFall's city-wide group chat. Nobody lives in t...`: The rival mayors arguing in the chat while nobody lives in the city yet.
+- `MAYORS_PLAYER_SYSTEM = ("You write replies in GridFall's city-wide group chat. Nobody lives in the city yet; i...`: The rival mayors answering a visitor's chat line while nobody lives in the city yet.
+- `TALK_BUSY = [ "Sorry, I can't think straight with the mayors fighting like this. Talk later?", "The...`: What a resident says when their live reply failed or is late: nothing made up.
+- `TALK_PARALLEL = 2`: Talk calls that may be out at once, so one slow reply never blocks the next line.
+- `MAYOR_ROUND_LINES = 5`: Lines kept from a mayors' round and from the mayors' answer to the player.
+- `MAYOR_REPLY_LINES = 3`
 - `EVENT_NOUN = { "fire": "fire", "blackout": "blackout", "sewage_burst": "sewage leak", "gridlock": "g...`: Short noun for each disaster type, as residents say it.
 - `COMPLAINT_LINES = { "power": ["Lights went out on my block again.", "No power at home since this morning....`
 - `AMBIENT_LINES = { "morning": ["Coffee first, city later.", "Morning, {district}. Bus was on time for on...`
@@ -72,8 +78,10 @@ The voices of the global chat and of face-to-face talk (slice C §3). Residents,
 - `func live() -> bool`: True when calls go to the network (offline gates: always false).
 - `func reset() -> void`: Forgets per-city state (load, New City) and live_down; the LRU and stats survive.
 - `func run_round(topic: Dictionary, recent: Array) -> Array`: One batched round: 4-8 lines from 4-6 picked residents (and maybe a mayor) about a topic. Coroutine; returns validated lines [{"id", "author", "role", "district", "text", "reply_to", "reply_idx"}] (reply_to is a shown seq from recent, reply_idx an earlier line of this round).
+- `func run_mayors_round(recent: Array) -> Array`: A round of the rival mayors arguing in the chat while nobody lives in the city yet: 3-5 lines from 2-3 mayors. Coroutine; live only ([] offline, while a round is out or when the call fails).
 - `func reply_to_player(text: String, district: int, recent: Array) -> Array`: Replies to a player chat line (2-4 residents, district-weighted). A mayor the line names (or, for a bare "mayor", the district's) answers first, about their own last turn. text may hold several coalesced lines joined by "\n". Each reply gets its own seed, so a question asked twice gets new words. Coroutine; same line dicts as run_round (reply_to -1: the caller points them at the player's message).
-- `func talk(r: Dictionary, turns: Array, player_text: String) -> Dictionary`: One face-to-face reply from resident r: {"reply", "mood_delta", "memory", "emote", "source"}. turns: earlier lines [{"who": "you"|"them", "text"}]. Coroutine: one live call when online (falls back to the LRU, then the heuristic), the heuristic offline.
+- `func talk(r: Dictionary, turns: Array, player_text: String) -> Dictionary`: One face-to-face reply from resident r: {"reply", "mood_delta", "memory", "emote", "source"}. turns: earlier lines [{"who": "you"|"them", "text"}]. Coroutine: one live call when online (falls back to the LRU, then talk_busy), the heuristic offline.
+- `func talk_busy(r: Dictionary, said: String = "") -> Dictionary`: What r says when the live reply failed or is late (source "busy"): an honest line in their world instead of a made-up answer. No mood change and nothing to remember.
 - `func talk_user(r: Dictionary, turns: Array, said: String) -> String`: The talk prompt's user JSON: the resident's card with directory names instead of coordinates, state, plan, thought, mood reason, last 8 memories, what is nearby, the city facts of their district, their last 3 chat lines, the last 6 turns and player_line (the only place the player's text appears).
 - `func validate_talk(data: Dictionary) -> Dictionary`: Validates a talk reply: reply <= 40 words (debranded, no URL, no model name), mood_delta in -1..1, memory <= 15 words, emote whitelisted. {} when the reply is unusable.
 - `func greeting(r: Dictionary) -> String`: The first thing r says when the player walks up: their own "say" line, else a greeting in their voice.
@@ -83,7 +91,7 @@ The voices of the global chat and of face-to-face talk (slice C §3). Residents,
 - `func chat_card(r: Dictionary) -> Dictionary`: The compact prompt card of a chat participant: id, name, job, traits, mood, mood reason, the last 2 memories, home and work as directory names (never coordinates).
 - `func clean_card(c: Dictionary) -> Dictionary`: resident.card() with every coordinate replaced by directory names (talk prompts).
 - `func topic_facts(topic: Dictionary) -> Dictionary`: Topic facts for prompts (names only, never coordinates).
-- `func validate_lines(data: Dictionary, picked: Array, mayor: int, recent: Array) -> Array`: Validates model lines (C §3): ids must be picked (or "m<mayor>"), text trimmed to 140 and debranded; empty lines, URLs, model names and more than 2 sentences are dropped; at most 8.
+- `func validate_lines(data: Dictionary, picked: Array, mayor: int, recent: Array, more_mayors: Array = []) -> Array`: Validates model lines (C §3): ids must be picked (or "m<k>" for mayor and more_mayors), text trimmed to 140 and debranded; empty lines, URLs, model names and more than 2 sentences are dropped; at most 8.
 - `func heuristic_round(topic: Dictionary, picked: Array, mayor: int, recent: Array, rng: RandomNumberGenerator) -> Array`: Deterministic offline round: an opener on the topic from the first participant, then reactions, agreements and disagreements in each participant's voice, threaded by reply_idx.
 - `func heuristic_player(said: String, picked: Array, rng: RandomNumberGenerator, city: Dictionary = {}, mi: int = -1) -> Array`: Deterministic offline replies to the player's line, by what the line is about. The first resident quotes the city fact the line asks about (CITY_ABOUT, from city: ChatFacts.build for the player's district; now and then for small talk too) and mayor mi, when the line names one, answers first from their own last turn.
 - `static func intent_of(text: String) -> String`: Coarse intent of a player line: greet, how, around, mayor, bye, power, water, traffic, money, jobs, incident, crime, food, fun, news, who, help or generic.
@@ -92,6 +100,7 @@ The voices of the global chat and of face-to-face talk (slice C §3). Residents,
 - `func lru_get(key: String) -> Variant`: The cached live answer for key, or null.
 - `func lru_put(key: String, value: Variant) -> void`: Stores a live answer (never saved, never flushed, never written through GmiClient).
 - `func lru_size() -> int`: Entries in the LRU.
+- `static func mayor_panel(lead: int, n: int, rng: RandomNumberGenerator) -> Array[int]`: n distinct mayor indices: lead first when it is one (else one by rng), then rivals by rng.
 
 ## `scripts/ai/city_brain.gd`
 
@@ -159,11 +168,13 @@ Async GMI Cloud chat client with JSON extraction, a recorded replay cache, and h
 - `SESSION_CACHE_PATH = "user://gmi_session_cache.json"`
 - `MAX_LOG = 300`
 - `MODEL_EXTRAS = { "deepseek-ai/": {"thinking": {"type": "disabled"}}, "moonshotai/": {"thinking": {"typ...`: Hybrid reasoning models spend the whole token budget thinking unless told not to. Keys are model-id prefixes; values are merged into the request body.
+- `TEMPERATURE = 0.7`: Sampling temperature of every call, unless the model refused it (temperature_of).
 
 ### Properties
 
 - `breaker`: Opens after 4 consecutive service failures; while open, chat_json goes straight to the cache or heuristic and live_json fails fast with "circuit open".
 - `live_outcomes: Array[bool]`: The last LIVE_WINDOW live outcomes (true = ok), oldest first.
+- `temperature_of: Dictionary`: Models that refused TEMPERATURE (an HTTP 400 naming the temperature) and get 1.0 instead.
 
 ### Functions
 
@@ -179,6 +190,7 @@ Async GMI Cloud chat client with JSON extraction, a recorded replay cache, and h
 - `func remember(key: String, day: int, data: Dictionary) -> void`
 - `func lookup(key: String, day: int) -> Dictionary`
 - `func count_source(source: String, n: int = 1) -> void`
+- `func request_body(model: String, system_prompt: String, user_prompt: String, max_tokens: int) -> Dictionary`: The chat completion request for model: both prompts, its temperature (temperature_of, else TEMPERATURE), max_tokens and the model's MODEL_EXTRAS.
 - `static func salvage_array(content: String) -> Dictionary`: Recovers the complete objects of a truncated {"key":[{...},{...},{... reply.
 - `static func extract_json(content: String) -> Dictionary`
 - `func flush_cache() -> void`: Writes the recorded live responses so offline runs can replay real model output. Outside record mode the session file keeps each key's last 3 days (a pruned copy: session_cache itself stays whole, lookups read it) and is not rewritten when nothing was added since the last flush (the brain flushes at every day end). Record mode writes exactly as before.

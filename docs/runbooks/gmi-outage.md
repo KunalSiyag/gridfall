@@ -3,7 +3,8 @@
 ## Symptoms
 
 - Mayor cards and the GMI Log show `cache` or `heuristic` instead of `live`.
-- Console lines like `OPS_ALERT gmi_breaker_open` or `GMI ... status 5xx / timeout`.
+- Console lines like `OPS_ALERT gmi_breaker_open` or `GMI_FAIL chatter/player on <model>: HTTP 503 ...` (one per failed live call; a repeat of the same line is not printed again).
+- The chat says "The mayors are busy fighting right now. Chat later." (no residents yet and the mayors' call failed), or a resident says they can't think straight with the mayors fighting (a talk reply failed or took over 8 s).
 - Days take the full 75 s wait before advancing.
 
 ## Confirm
@@ -26,6 +27,7 @@
 - **Outage / 5xx / timeouts:** nothing to do in game. `GmiClient` retries transient failures twice with jittered exponential backoff (honouring `Retry-After`). After 4 failed calls in a row the circuit breaker (`scripts/ops/circuit_breaker.gd`) opens for 30 s and calls go straight to the replay cache and heuristics; then one probe call goes out and a success closes it. Keep playing, or set `GRIDFALL_OFFLINE=1` (or `GRIDFALL_FLAGS=gmi_live=off`) to stop waiting on calls.
 - **429 rate limit:** lower parallel load (`LIVE_RESIDENTS`, fewer live residents) or disable the live toggle in the top bar for a while.
 - **401/403:** rotate the key in the GMI console, update `GMI_API_KEY` (or `~/.factory/settings.json`), restart the game.
+- **HTTP 400 naming the temperature:** nothing to do. The client retries that call once with temperature 1 and keeps 1 for that model until the game restarts. Any other 400 is a bad request: open an issue with the `GMI_FAIL` line.
 - **One model failing:** the breaker is shared, so one dead model can trip it for all. Swap the model id in `scripts/sim/sim_defs.gd` only if the model was retired; open an issue with the request id from the GMI Log.
 
 ## Verify

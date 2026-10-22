@@ -31,6 +31,8 @@ const MODEL_EXTRAS := {
 	"x-ai/": {"reasoning_effort": "low"},
 	"zai-org/": {"thinking": {"type": "disabled"}},
 }
+## Sampling temperature of every call, unless the model refused it (temperature_of).
+const TEMPERATURE := 0.7
 
 var api_key: String = ""
 var live_enabled: bool = true
@@ -45,6 +47,9 @@ var stats: Dictionary = {"live_ok": 0, "live_fail": 0, "cache": 0, "heuristic": 
 var breaker := CircuitBreaker.new(4, 30000)
 ## The last LIVE_WINDOW live outcomes (true = ok), oldest first.
 var live_outcomes: Array[bool] = []
+## Models that refused TEMPERATURE (an HTTP 400 naming the temperature) and get 1.0 instead.
+var temperature_of: Dictionary = {}
+var _last_failure: String = ""
 var _seq: int = 0
 var _hdr_request_id: String = ""
 var _hdr_trace_id: String = ""
@@ -160,6 +165,7 @@ func chat_json(role: String, agent_id: String, model: String, system_prompt: Str
 			return result
 		result["error"] = str(live.get("error", "unknown error"))
 		stats["live_fail"] = int(stats["live_fail"]) + 1
+		_report_failure(result)
 	var cached := _cache_lookup(key, day)
 	if not cached.is_empty():
 		result["ok"] = true
@@ -204,6 +210,7 @@ func live_json(role: String, agent_id: String, model: String, system_prompt: Str
 		result["error"] = str(live.get("error", "unknown error"))
 		result["source"] = "failed"
 		stats["live_fail"] = int(stats["live_fail"]) + 1
+		_report_failure(result)
 	_log(result)
 	return result
 
@@ -250,6 +257,8 @@ func _post_with_retry(model: String, system_prompt: String, user_prompt: String,
 		_hdr_trace_id = str(result.get("trace_id", ""))
 		live = await _post(model, system_prompt, user_prompt, max_tokens, clampf(left_s, 1.0, timeout_s))
 		attempt += 1
+		if _learn_temperature(model, live):
+			continue
 		if bool(live.get("ok", false)) or not bool(live.get("retryable", false)) or attempt > MAX_RETRIES or not is_inside_tree():
 			break
 		var wait_ms := maxi(backoff_ms(attempt - 1, randf()), int(live.get("retry_after_ms", 0)))
@@ -267,6 +276,32 @@ func _post_with_retry(model: String, system_prompt: String, user_prompt: String,
 	if live_outcomes.size() > LIVE_WINDOW:
 		live_outcomes.pop_front()
 	return live
+
+
+## True when live is an HTTP 400 refusing the temperature of a model that still had
+## TEMPERATURE (Kimi-K3 takes only 1): the model gets 1.0 from now on, and the call one more try.
+func _learn_temperature(model: String, live: Dictionary) -> bool:
+	var err := str(live.get("error", "")).to_lower()
+	if temperature_of.has(model) or not err.begins_with("http 400"):
+		return false
+	if not err.contains("temperature"):
+		return false
+	temperature_of[model] = 1.0
+	return true
+
+
+## Prints one scrubbed line for a failed live call (role, agent, model and error, never the
+## prompt), so a run from the editor shows why replies fell back. A repeat of the last line is
+## not printed again.
+func _report_failure(result: Dictionary) -> void:
+	var line := "GMI_FAIL %s/%s on %s: %s" % [
+		result["role"], result["agent"], result["model"], str(result["error"]).left(160)
+	]
+	line = Redact.scrub(line, PackedStringArray([api_key]))
+	if line == _last_failure:
+		return
+	_last_failure = line
+	print(line)
 
 
 func _on_breaker_changed(_from: String, to: String) -> void:
@@ -293,19 +328,7 @@ func _post(model: String, system_prompt: String, user_prompt: String, max_tokens
 		headers.append("X-Request-ID: " + request_id)
 	if not trace_id.is_empty():
 		headers.append("X-Trace-ID: " + trace_id)
-	var payload := {
-		"model": model,
-		"messages": [
-			{"role": "system", "content": system_prompt},
-			{"role": "user", "content": user_prompt},
-		],
-		"temperature": 0.7,
-		"max_tokens": max_tokens,
-	}
-	for prefix: String in MODEL_EXTRAS:
-		if model.begins_with(prefix):
-			payload.merge(MODEL_EXTRAS[prefix], true)
-	var body := JSON.stringify(payload)
+	var body := JSON.stringify(request_body(model, system_prompt, user_prompt, max_tokens))
 	var err := http.request(CHAT_URL, headers, HTTPClient.METHOD_POST, body)
 	if err != OK:
 		http.queue_free()
@@ -340,6 +363,26 @@ func _post(model: String, system_prompt: String, user_prompt: String, max_tokens
 	if data.is_empty():
 		return {"ok": false, "error": "no JSON in reply", "raw": content, "service_fail": false}
 	return {"ok": true, "data": data, "raw": content}
+
+
+## The chat completion request for model: both prompts, its temperature (temperature_of, else
+## TEMPERATURE), max_tokens and the model's MODEL_EXTRAS.
+func request_body(
+	model: String, system_prompt: String, user_prompt: String, max_tokens: int
+) -> Dictionary:
+	var payload := {
+		"model": model,
+		"messages": [
+			{"role": "system", "content": system_prompt},
+			{"role": "user", "content": user_prompt},
+		],
+		"temperature": float(temperature_of.get(model, TEMPERATURE)),
+		"max_tokens": max_tokens,
+	}
+	for prefix: String in MODEL_EXTRAS:
+		if model.begins_with(prefix):
+			payload.merge(MODEL_EXTRAS[prefix], true)
+	return payload
 
 
 ## Retry-After in ms from response headers (delta-seconds form only), capped at 2 x BACKOFF_CAP_MS; 0 if absent.
