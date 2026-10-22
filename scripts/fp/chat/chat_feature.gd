@@ -7,7 +7,9 @@ extends FpFeature
 ## feed clock: one round per 60 s unpaused, one player-reply call per coalesced burst (6 per
 ## minute), one talk call per line and one inspect_tile per 20 s. While the player is being
 ## answered the drip holds everyday lines and the panel shows who is typing; a status card says
-## when live replies fail or come back.
+## when live replies fail or come back. While nobody lives in the city yet, the rival mayors argue
+## in the chat once a minute and answer the player (live only); a player line nobody can answer
+## gets a status card saying the mayors are busy.
 
 const D := preload("res://scripts/sim/sim_defs.gd")
 const T := preload("res://scripts/fp/chat/chat_text.gd")
@@ -24,7 +26,11 @@ const REPLY_GAP_MS := 1100
 const OPENING_GAP_MS := 30000
 const INSPECT_GAP_MS := 20000
 const STATUS_DOWN := "Live replies are slow right now. Neighbours answer from what they know."
+const STATUS_DOWN_EMPTY := "Live replies are slow right now."
 const STATUS_UP := "Live replies are back."
+## The answer to a player line nobody can answer: no residents yet, and the mayors offline or
+## their live call failed.
+const STATUS_BUSY := "The mayors are busy fighting right now. Chat later."
 const SAVE_MESSAGES := 80
 const TOPICS_MAX := 10
 const EVENT_TITLE := {
@@ -294,12 +300,13 @@ func _on_pumped(now: int) -> void:
 	var dt := maxi(0, now - _last_now)
 	_last_now = now
 	var live_mode := not paused and not (ctx.mode != null and ctx.mode.paused)
-	if live_mode and ctx.residents != null and ctx.residents.is_active():
+	var talkers := ctx.residents != null and ctx.residents.is_active()
+	if live_mode and (talkers or minds.live()):
 		_round_accum += dt
 		if _round_accum >= ROUND_MS:
 			_round_accum = mini(_round_accum - ROUND_MS, ROUND_MS)
 			if not minds.busy("round"):
-				_run_round()
+				_run_round(not talkers)
 	if live_mode:
 		_pump_player(now)
 	var answering := _answering(now)
@@ -311,16 +318,23 @@ func _on_pumped(now: int) -> void:
 		panel.on_pump(now)
 
 
-func _run_round() -> void:
+## One chatter round: residents on the next topic, or (mayors_only) the rival mayors arguing
+## while nobody lives in the city yet. Their lines skip the per-author limit, so a mayor can
+## answer back within the round.
+func _run_round(mayors_only: bool = false) -> void:
 	var gen := _gen
-	var topic := _next_topic()
-	var lines: Array = await minds.run_round(topic, feed.messages.slice(-8))
+	var recent := feed.messages.slice(-8)
+	var lines: Array = []
+	if mayors_only:
+		lines = await minds.run_mayors_round(recent)
+	else:
+		lines = await minds.run_round(_next_topic(), recent)
 	if gen != _gen:
 		return
 	var qids: Array[int] = []
 	for v: Variant in lines:
 		var ln: Dictionary = v
-		var opts := {}
+		var opts := {"exempt": mayors_only}
 		var ri := int(ln.get("reply_idx", -1))
 		if ri >= 0 and ri < qids.size() and qids[ri] >= 0:
 			opts["reply_qid"] = qids[ri]
@@ -348,6 +362,9 @@ func _reply_player(text: String, parent: int, district: int) -> void:
 	var gen := _gen
 	var lines: Array = await minds.reply_to_player(text, district, feed.messages.slice(-8))
 	if gen != _gen:
+		return
+	if lines.is_empty():
+		feed.post_now(feed.make("system", "Chat", "system", -1, STATUS_BUSY, "status"))
 		return
 	var delay := REPLY_FIRST_MS
 	for v: Variant in lines:
@@ -689,9 +706,12 @@ func _on_shown(msg: Dictionary) -> void:
 		panel.append(msg)
 
 
-## A status card when live replies stop working or come back (ChatterMinds.live_changed).
+## A status card when live replies stop working or come back (ChatterMinds.live_changed). With
+## nobody living in the city there are no neighbours to answer instead.
 func _on_live_changed(up: bool) -> void:
 	var text := STATUS_UP if up else STATUS_DOWN
+	if not up and not (ctx.residents != null and ctx.residents.is_active()):
+		text = STATUS_DOWN_EMPTY
 	feed.enqueue(feed.make("system", "Chat", "system", -1, text, "status"))
 
 

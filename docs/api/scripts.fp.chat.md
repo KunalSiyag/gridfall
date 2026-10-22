@@ -37,7 +37,7 @@ What is really going on in the city, for chat answers (slice C): what the distri
 
 extends `FpFeature`
 
-Global chat and face-to-face conversations (slice C). Normalises every city source (residents, mayors, the Gazette, the council, incidents, openings, arrivals, deals, people hit in the street) into the ChatFeed drip queue, runs ChatterMinds rounds about real events once a minute, answers the player's chat lines, and opens the talk dialogue on talk_requested. Owns the chat panel (chat_slot) and the talk card (overlay). Budgets (D12) are enforced here on the feed clock: one round per 60 s unpaused, one player-reply call per coalesced burst (6 per minute), one talk call per line and one inspect_tile per 20 s. While the player is being answered the drip holds everyday lines and the panel shows who is typing; a status card says when live replies fail or come back.
+Global chat and face-to-face conversations (slice C). Normalises every city source (residents, mayors, the Gazette, the council, incidents, openings, arrivals, deals, people hit in the street) into the ChatFeed drip queue, runs ChatterMinds rounds about real events once a minute, answers the player's chat lines, and opens the talk dialogue on talk_requested. Owns the chat panel (chat_slot) and the talk card (overlay). Budgets (D12) are enforced here on the feed clock: one round per 60 s unpaused, one player-reply call per coalesced burst (6 per minute), one talk call per line and one inspect_tile per 20 s. While the player is being answered the drip holds everyday lines and the panel shows who is typing; a status card says when live replies fail or come back. While nobody lives in the city yet, the rival mayors argue in the chat once a minute and answer the player (live only); a player line nobody can answer gets a status card saying the mayors are busy.
 
 ### Constants
 
@@ -55,7 +55,9 @@ Global chat and face-to-face conversations (slice C). Normalises every city sour
 - `OPENING_GAP_MS = 30000`
 - `INSPECT_GAP_MS = 20000`
 - `STATUS_DOWN = "Live replies are slow right now. Neighbours answer from what they know."`
+- `STATUS_DOWN_EMPTY = "Live replies are slow right now."`
 - `STATUS_UP = "Live replies are back."`
+- `STATUS_BUSY = "The mayors are busy fighting right now. Chat later."`: The answer to a player line nobody can answer: no residents yet, and the mayors offline or their live call failed.
 - `SAVE_MESSAGES = 80`
 - `TOPICS_MAX = 10`
 - `EVENT_TITLE = { "fire": "Fire", "blackout": "Blackout", "sewage_burst": "Sewage main burst", "gridloc...`
@@ -200,7 +202,7 @@ What the chat hears when the visitor hits someone in the street (game bus person
 
 extends `Control`
 
-Face-to-face conversation with a resident (slice C §4), and the "Ask someone here" answer. A 600x220 card at bottom-centre over a soft bottom gradient (the upper 60 % of the screen stays clear for A's two-shot): avatar, name, job, mood face, where they are, their line, quick replies and a free-text line. Each player line makes one ChatterMinds.talk call (20 per conversation); replies fall back to the offline voice after 8 s of feed time. C is the only emitter of bus.conversation_changed: (id, true) in the frame &"talk" is pushed, before the card shows, and exactly one (id, false) on every close path. Only the resident's id is stored; every turn looks them up again with residents.find(id).
+Face-to-face conversation with a resident (slice C §4), and the "Ask someone here" answer. A 600x220 card at bottom-centre over a soft bottom gradient (the upper 60 % of the screen stays clear for A's two-shot): avatar, name, job, mood face, where they are, their line, quick replies and a free-text line. Each player line makes one ChatterMinds.talk call (20 per conversation); a reply still out after 8 s of feed time gets the resident's busy line (ChatterMinds.talk_busy), and the late reply replaces it when it comes. C is the only emitter of bus.conversation_changed: (id, true) in the frame &"talk" is pushed, before the card shows, and exactly one (id, false) on every close path. Only the resident's id is stored; every turn looks them up again with residents.find(id).
 
 ### Signals
 
@@ -231,6 +233,7 @@ Face-to-face conversation with a resident (slice C §4), and the "Ask someone he
 - `mode: String`: "" (closed), "talk" (a resident) or "ask" (an "Ask someone here" answer).
 - `anchor: Vector3`: The player's feet when the conversation opened (the distance rule).
 - `lines: int`: Player lines in this conversation (each made one talk call).
+- `waiting: bool`: True while a reply is out (until it comes, or the busy line after FALLBACK_MS).
 - `input: LineEdit`: The free-text line (tests focus it).
 
 ### Functions
@@ -242,5 +245,5 @@ Face-to-face conversation with a resident (slice C §4), and the "Ask someone he
 - `func end(notice: String = "") -> void`: Ends the conversation (or closes the ask card): emits exactly one conversation_changed(id, false) for a resident, pops &"talk" and fades out. notice (optional) becomes a toast.
 - `func is_typing() -> bool`: True while the free-text line has focus (the player is typing a line).
 - `func shown_text() -> String`: The line the card shows now (the resident's reply or the ask answer; "" while typing).
-- `func say(text: String) -> void`: The player says text (a quick reply or the free-text line). One talk call per line; ignored while a reply is pending.
-- `func on_pump(now_ms: int) -> void`: Timed rules, driven by the feed clock: the distance rule (player feet vs anchor), the resident leaving, the 8 s fallback and the goodbye hold.
+- `func say(text: String) -> void`: The player says text (a quick reply or the free-text line). One talk call per line; ignored while a reply is pending (the free-text line then keeps what was typed).
+- `func on_pump(now_ms: int) -> void`: Timed rules, driven by the feed clock: the distance rule (player feet vs anchor), the resident leaving, the busy line after 8 s (the late reply still shows) and the goodbye hold.

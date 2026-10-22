@@ -240,15 +240,17 @@ Replies answer what the player asked, with what is really going on in the city.
 - **Replies never vanish.** Replies to the player are enqueued with `force`: the feed drops one only as a copy of another reply waiting in the fast lane, never because an earlier row said the same thing. Each reply call is seeded with the player's line and the reply count, so a question asked twice gets two answers.
 - **The room listens.** While the player is being answered (their line waits for its call, the call is out, or replies wait in the fast lane), `ChatFeed.hold_low` holds queued lines below alert priority.
 - **Typing row.** Between the list and the input: animated dots and "Someone is typing…" while the call is out, then the next speakers by full name, since many residents share a first name ("Maya Diaz and Theo Park are typing…", "Mayor Han is typing…"). It hides once every reply is in.
-- **Live status.** After `ChatterMinds.DOWN_AFTER` (2) failed live calls in a row, `live_changed(false)` posts a `status` card from "Chat": "Live replies are slow right now. Neighbours answer from what they know." The next good call posts "Live replies are back." An offline client never counts as a failure.
+- **Live status.** After `ChatterMinds.DOWN_AFTER` (2) failed live calls in a row, `live_changed(false)` posts a `status` card from "Chat": "Live replies are slow right now. Neighbours answer from what they know." (just "Live replies are slow right now." while nobody lives in the city). The next good call posts "Live replies are back." An offline client never counts as a failure.
+- **Nobody lives here yet.** With no residents (a new city), the rival mayors run the chat, live only. A player line goes to 2 mayors in one call (`MAYORS_PLAYER_SYSTEM`): the one the line names, else the mayor of the player's district, answers first, then a rival needles them; at most 3 lines, each a reply to the player's line. Once a minute (the ambient budget) 2-3 mayors argue among themselves (`run_mayors_round`, `MAYORS_SYSTEM`): their own last turns, their rivals, what the city needs; at most 5 lines, free of the per-author limit so they can answer back. A player line nobody can answer (offline, or the call failed) gets a `status` card at once: "The mayors are busy fighting right now. Chat later." Nothing is made up.
+- **Slow talk replies.** At most `TALK_PARALLEL` (2) talk calls are out at once. A reply still out after 8 s of feed time gets the resident's busy line (`talk_busy`, source `busy`: "Sorry, I can't think straight with the mayors fighting like this. Talk later?"), and the late reply replaces it when it comes, unless the player has said something since. A failed live call with nothing in the LRU gets the busy line too. A busy line is not a turn, not a quote (`talk_replied`), moves no mood and leaves no memory. While a reply is out the free-text line keeps what the player typed instead of dropping it.
 
 ## LLM budget (D12, enforced in code and tested)
 
 | Trigger | Calls | Limits |
 |---|---|---|
-| Ambient chatter | 1 batched call every **60 s real time** while unpaused, 4–8 lines | max_tokens 600, timeout 30 s, 1 in flight, skipped if a call is still in flight |
+| Ambient chatter | 1 batched call every **60 s real time** while unpaused, 4–8 lines (the mayors' round while nobody lives in the city: live only, 3-5 lines) | max_tokens 600, timeout 30 s, 1 in flight, skipped if a call is still in flight |
 | Player chat message | **1** call per message | coalesce within 10 s; at most 6 per minute |
-| Face-to-face line | **1** call per player line | max_tokens 300, timeout 20 s, 1 in flight, at most 20 lines per conversation |
+| Face-to-face line | **1** call per player line | max_tokens 300, timeout 20 s, at most 2 in flight (a slow reply never blocks the next line), at most 20 lines per conversation |
 | "Ask someone here" | 1 `inspect_tile` per `card_action` | at most 1 per 20 s of `now_ms` |
 
 - **Day gate.** No call ever blocks the sim day gate or changes `minds.pending()`.
@@ -282,6 +284,8 @@ The feed exposes `pump(dt_seconds)` for tests, so time is simulated deterministi
 - **Replies and typing.** One question asked twice is answered twice. While replies wait, the typing row names who answers next and the drip holds; both end once every reply is in.
 - **Live status.** One failed call is no outage. Two in a row emit `live_changed(false)` once, a good call emits `live_changed(true)`, and the chat shows both status cards.
 
+`tools/tests/fp_chat_live_test.gd`, token `FP_CHAT_LIVE_TEST: PASS`, covers the live paths when the usual answer is missing. In a city nobody lives in yet: a player line gets one call with the mayors' prompt, the district's mayor answers first and a rival next, both replying to the player's line, and a line from outside the call is dropped; a line naming a mayor gets that mayor first; the mayors argue once a minute (5 ± 1 rounds in 5 minutes, none while paused); a failed call gets the busy card (two in a row also "Live replies are slow right now."); offline the busy card comes with no call and no rounds. Then the city grows, and with the fake holding the talk call: the card waits, a line typed meanwhile stays in the box without a second call, after 8 s the resident's busy line shows (no quote, no mood change), and the late live reply still shows and is the one quote. A third line while 2 calls are out gets the busy line without a call.
+
 `tools/tests/fp_chat_context_test.gd`, token `FP_CHAT_CONTEXT_TEST: PASS`, covers the parts that need no chat feature: a turn and a council ruling in words (failed orders left out), `mayor_named` cases (Rosa alone is a resident, "Hana" is not Han), a forced reply shown once even when it repeats a row, `hold_low` letting only alert-level cards through, and the typing line's wording.
 
 FP smoke: the `chat` `self_test()` checks that the panel exists in `chat_slot` and that at least one message was shown after 3 grown days, offline (plans make `say` lines).
@@ -299,7 +303,7 @@ Photo tour: the `*_hud.png` shots show the collapsed ticker above the minimap wi
 - **Spam.** Heuristic incident messages repeat ("Send crews to the X at (x,y) now."). Dedupe them, and rewrite `(x,y)` through the directory.
 - **Old text.** Replay cache text and old saves contain brand names. Always run `debrand()`.
 - **Prompt injection.** Cap lengths, keep player text as data, validate ids and enums, and clamp effects.
-- **Model latency.** Talk must feel responsive. Show a `"…"` typing indicator, and fall back to the heuristic after 8 s with no reply, while still accepting a late live answer for the next line.
+- **Model latency.** Talk must feel responsive. Show a `"…"` typing indicator, the resident's busy line after 8 s with no reply (never a made-up answer while live), and still accept the late live answer.
 
 ## Do NOT touch
 

@@ -97,7 +97,7 @@ The orbit view (`GRIDFALL_VIEW=orbit`):
 
 ## GMI inference and fallbacks
 
-`scripts/ai/gmi_client.gd` calls `https://api.gmi-serving.com/v1/chat/completions`. The API key comes from `GMI_API_KEY` or from the GMI entry in `~/.factory/settings.json`. Hybrid reasoning models get per-model settings so they answer instead of spending the whole token budget on reasoning: DeepSeek and Kimi get `thinking: disabled`, Qwen gets `enable_thinking: false`, and Grok gets `reasoning_effort: low`.
+`scripts/ai/gmi_client.gd` calls `https://api.gmi-serving.com/v1/chat/completions`. The API key comes from `GMI_API_KEY` or from the GMI entry in `~/.factory/settings.json`. Hybrid reasoning models get per-model settings so they answer instead of spending the whole token budget on reasoning: DeepSeek and Kimi get `thinking: disabled`, Qwen gets `enable_thinking: false`, and Grok gets `reasoning_effort: low`. A model that refuses the default temperature of 0.7 with an HTTP 400 (Kimi-K3 takes only 1) is tried again at once with 1 and keeps it for the session. Every failed live call prints one `GMI_FAIL <role>/<agent> on <model>: <error>` line to the output (scrubbed; never the prompt), so a run from the editor shows why replies fell back.
 
 Each call falls back in this order:
 
