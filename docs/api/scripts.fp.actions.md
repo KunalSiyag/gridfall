@@ -8,7 +8,7 @@
 
 extends `FpFeature`
 
-Body actions (integration slice; docs/fp/ARCHITECTURE.md, Body actions): the hero's fists and gestures on foot. The strike button (left mouse, right trigger) throws a jab and a cross in turn, the body turning to whoever it goes for (else to where the camera looks); R shoves. The guard (right mouse or left trigger held: fists up, the body squared to where the camera looks, the camera in closer) is the fighting stance. A blow lands when the rig's fist is furthest out (HeroRig.strike_time) on the person nearest in front within REACH, through the traffic feature's hit_walker: they reel or go down, the people around react and the city hears of it. Keys 1-5 wave, nod, shake the head, shout and dance, and the people around answer (traffic answer_emote). The bus hears every swing and emote (hero_action).
+Body actions (integration slice; docs/fp/ARCHITECTURE.md, Body actions): the hero's fists and gestures on foot. The strike button (left mouse, right trigger) throws a jab and a cross in turn, the body turning to whoever it goes for (else to where the camera looks); R shoves. The guard (right mouse or left trigger held: fists up, the body squared to where the camera looks, the camera in closer) is the fighting stance. A blow lands when the rig's fist is furthest out (HeroRig.strike_time) on the person nearest in front within REACH, through the traffic feature's hit_walker: they reel or go down, the people around react and the city hears of it. With nobody there it lands on the street prop in front (the props feature's strike): a bin, cone, wheelie bin or carton goes over, a fallen prop skids off. Keys 1-5 wave, nod, shake the head, shout and dance, and the people around answer (traffic answer_emote). The bus hears every swing and emote (hero_action).
 
 ### Constants
 
@@ -35,7 +35,7 @@ Body actions (integration slice; docs/fp/ARCHITECTURE.md, Body actions): the her
 
 - `guarding: bool`: The guard is up.
 - `swing: String`: The swing under way ("jab", "cross", "shove") or "".
-- `last_hit: Dictionary`: hit_walker's info for the last blow that landed; swings and blows landed so far; how many people answered the last emote.
+- `last_hit: Dictionary`: hit_walker's info for the last blow that landed; swings, blows landed on people and blows landed on street props so far; how many people answered the last emote.
 
 ### Functions
 

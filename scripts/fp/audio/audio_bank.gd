@@ -66,10 +66,11 @@ const CRASH_MPS := 6.0
 const CRASH_FULL_MPS := 14.0
 const KNOCK_FULL_MPS := 6.0
 const IMPACT_MIN_GAIN := 0.3
-## The one-shot a knocked prop of each kind plays (KNOCK_DEFAULT for the metal ones), at most one
-## per KNOCK_GAP (s).
+## The one-shot a knocked prop of each kind plays (KNOCK_DEFAULT for the metal ones; a carton
+## thuds), at most one per KNOCK_GAP (s).
 const KNOCK_STREAMS := {
 	"bin": "prop_clatter", "bench_park": "prop_clatter", "planter": "crash_light",
+	"cone": "prop_clatter", "wheelie": "prop_clatter", "carton": "body_fall",
 }
 const KNOCK_DEFAULT := "prop_clang"
 const KNOCK_GAP := 0.1

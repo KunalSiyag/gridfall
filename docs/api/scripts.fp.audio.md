@@ -75,7 +75,7 @@ Slice I's sound assets (sounds/fp/, made by tools/audio/synth_fp_sfx.py): names,
 - `CRASH_FULL_MPS = 14.0`
 - `KNOCK_FULL_MPS = 6.0`
 - `IMPACT_MIN_GAIN = 0.3`
-- `KNOCK_STREAMS = { "bin": "prop_clatter", "bench_park": "prop_clatter", "planter": "crash_light", }`: The one-shot a knocked prop of each kind plays (KNOCK_DEFAULT for the metal ones), at most one per KNOCK_GAP (s).
+- `KNOCK_STREAMS = { "bin": "prop_clatter", "bench_park": "prop_clatter", "planter": "crash_light", "cone"...`: The one-shot a knocked prop of each kind plays (KNOCK_DEFAULT for the metal ones; a carton thuds), at most one per KNOCK_GAP (s).
 - `KNOCK_DEFAULT = "prop_clang"`
 - `KNOCK_GAP = 0.1`
 - `DOOR_OPEN_DB = -7.0`: The player's car door (car_door): the latch letting go plays this far under the slam.
