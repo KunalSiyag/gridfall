@@ -11,6 +11,8 @@ const WS := preload("res://scripts/fp/world_scale.gd")
 const M := "res://models/"
 const ROAD_SCALE := 0.17
 const DIRS := [Vector2i(0, -1), Vector2i(1, 0), Vector2i(0, 1), Vector2i(-1, 0)]
+## How far boats bob above and below the water surface (u).
+const BOB := 0.006
 ## Which crews answer each disaster type; the first entry is the station kind they leave from.
 const RESPONSE := {
 	"fire": [["firetruck", D.FIRE], ["firetruck", D.FIRE], ["ambulance", D.HOSPITAL]],
@@ -65,7 +67,7 @@ func setup(p_sim: CitySim, p_view: Node3D) -> void:
 	_air_root = _root("Aircraft")
 	_water_tiles.clear()
 	for i in sim.active:
-		if sim.terrain[i] == D.WATER:
+		if _open_water(i):
 			_water_tiles.append(Vector2i(D.tx(i), D.ty(i)))
 	for _b in range(clampi(_water_tiles.size() / 18, 0, 5)):
 		_spawn_boat()
@@ -463,11 +465,16 @@ func _spawn_boat() -> void:
 	_boats.append(b)
 
 
+## Water a boat can sail: no bridge over it (a road is the only thing built on water).
+func _open_water(i: int) -> bool:
+	return sim.terrain[i] == D.WATER and sim.kind[i] != D.ROAD
+
+
 func _water_neighbors(p: Vector2i) -> Array[Vector2i]:
 	var out: Array[Vector2i] = []
 	for dv: Vector2i in DIRS:
 		var n := p + dv
-		if D.in_bounds(n.x, n.y) and sim.terrain[D.idx(n.x, n.y)] == D.WATER:
+		if D.in_bounds(n.x, n.y) and _open_water(D.idx(n.x, n.y)):
 			out.append(n)
 	return out
 
@@ -485,9 +492,17 @@ func _update_boats(delta: float) -> void:
 			b["to"] = nbrs[randi() % nbrs.size()] if not nbrs.is_empty() else cur
 		var from: Vector2i = b["from"]
 		var to: Vector2i = b["to"]
+		# A bridge built ahead of a boat turns it back.
+		if not _open_water(D.idx(to.x, to.y)) and _open_water(D.idx(from.x, from.y)):
+			b["from"] = to
+			b["to"] = from
+			b["t"] = 1.0 - float(b["t"])
+			from = b["from"]
+			to = b["to"]
 		var node: Node3D = b["node"]
 		var p := Vector3(from.x, 0, from.y).lerp(Vector3(to.x, 0, to.y), float(b["t"]))
-		node.position = Vector3(p.x, 0.02 + sin(_time * 2.0 + float(b["phase"])) * 0.012, p.z)
+		# The models' origin is their waterline.
+		node.position = Vector3(p.x, WS.WATER_Y + sin(_time * 2.0 + float(b["phase"])) * BOB, p.z)
 		var dir := Vector3(to.x - from.x, 0, to.y - from.y)
 		if dir.length_squared() > 0.0:
 			node.rotation.y = lerp_angle(node.rotation.y, atan2(dir.x, dir.z), minf(1.0, delta * 2.5))

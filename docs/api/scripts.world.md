@@ -39,6 +39,7 @@ Moving city life layered on top of CityView: buses that stop at bus stops, deliv
 - `M = "res://models/"`
 - `ROAD_SCALE = 0.17`
 - `DIRS = [Vector2i(0, -1), Vector2i(1, 0), Vector2i(0, 1), Vector2i(-1, 0)]`
+- `BOB = 0.006`: How far boats bob above and below the water surface (u).
 - `RESPONSE = { "fire": [["firetruck", D.FIRE], ["firetruck", D.FIRE], ["ambulance", D.HOSPITAL]], "t...`: Which crews answer each disaster type; the first entry is the station kind they leave from.
 - `SIREN_COLORS = { "firetruck": [Color(1.0, 0.15, 0.1), Color(1.0, 0.75, 0.2)], "ambulance": [Color(1.0,...`
 

@@ -174,7 +174,7 @@ Getting into cars and driving them. Near a parked or stopped car, F (Y on a pad)
 - `func exit(force: bool = false) -> bool`: Gets out at once beside the driver's door (force: at any speed, wherever there is room or on the spot); also ends a climb in or out half way (a hero still outside the car stays where it stands). Returns true when the hero is on foot again.
 - `func climb_step(dt: float) -> void`: One step of the climb in or out, or of braking to a stop for the climb out; _process runs it, tests call it with their own dt.
 - `func drive_step(throttle: float, brake: float, steer: float, hand: float, dt: float) -> void`: One driving step with the given controls (throttle, brake, handbrake 0..1, steer -1..1).
-- `func camera_xform() -> Transform3D`: The camera now: behind and above the car (pulled in front of walls), or at the driver's eyes.
+- `func camera_xform() -> Transform3D`: The camera now: behind and above the car (pulled in front of walls, lifted off the ground when it looks up from low down), or at the driver's eyes.
 - `func photo_shots() -> Array`: The photo shot: the hero half way into the car nearest the spawn point, sat on the sill with the door wide open, seen from the door camera (car_doors).
 - `func photo_prepare() -> void`: Photo tour: the tour puts the hero at the spawn point after this, so the climb is staged once traffic has filled the street round it.
 - `func photo_restore() -> void`

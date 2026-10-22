@@ -1,12 +1,13 @@
 extends FpFeature
 ## Body actions (integration slice; docs/fp/ARCHITECTURE.md, Body actions): the hero's fists and
-## gestures on foot. The strike button (left mouse, right trigger) shoves whoever stands in front;
-## with the guard up (right mouse or left trigger held: fists up, the body squared to where the
-## camera looks, the camera in closer) it throws a jab and a cross in turn instead. A blow lands
-## when the rig's fist is furthest out (HeroRig.strike_time) on the person nearest in front within
-## REACH, through the traffic feature's hit_walker: they reel or go down, the people around react
-## and the city hears of it. Keys 1-5 wave, nod, shake the head, shout and dance, and the people
-## around answer (traffic answer_emote). The bus hears every swing and emote (hero_action).
+## gestures on foot. The strike button (left mouse, right trigger) throws a jab and a cross in
+## turn, the body turning to whoever it goes for (else to where the camera looks); R shoves. The
+## guard (right mouse or left trigger held: fists up, the body squared to where the camera looks,
+## the camera in closer) is the fighting stance. A blow lands when the rig's fist is furthest out
+## (HeroRig.strike_time) on the person nearest in front within REACH, through the traffic
+## feature's hit_walker: they reel or go down, the people around react and the city hears of it.
+## Keys 1-5 wave, nod, shake the head, shout and dance, and the people around answer (traffic
+## answer_emote). The bus hears every swing and emote (hero_action).
 
 const WS := preload("res://scripts/fp/world_scale.gd")
 
@@ -26,7 +27,14 @@ const EMOTES := {
 	"emote_dance": ["dance", 8.0],
 }
 const INPUTS: Array[String] = [
-	"act_strike", "act_aim", "emote_wave", "emote_yes", "emote_no", "emote_shout", "emote_dance"
+	"act_strike",
+	"act_shove",
+	"act_aim",
+	"emote_wave",
+	"emote_yes",
+	"emote_no",
+	"emote_shout",
+	"emote_dance",
 ]
 ## Who a swing can reach: on their feet within REACH (feet to feet) inside the cone ahead (the
 ## cosine); at contact still within REACH * HOLD_REACH.
@@ -73,7 +81,8 @@ var _len: float = 0.0
 var _hit_at: float = 0.0
 var _landed: bool = true
 var _target: int = -1
-var _queued: bool = false
+## The swing a press near the end of the last one queued ("punch", "shove") or "".
+var _queued: String = ""
 var _combo_t: float = INF
 var _next_punch: String = "jab"
 var _emote_gap: float = 0.0
@@ -126,16 +135,18 @@ func can_act() -> bool:
 	return phone == null or not bool(phone.get("open"))
 
 
-## Starts a swing: a shove, or with the guard up the next punch of the combo. A press near the end
-## of a swing queues the next. False when none starts now.
-func strike() -> bool:
-	if not can_act():
+## Starts a swing: what "punch" throws the next punch of the combo (a jab, then a cross within
+## COMBO_S of the last), "shove" a shove. A press near the end of a swing queues the next. False
+## when none starts now.
+func strike(what: String = "punch") -> bool:
+	if not can_act() or (what != "punch" and what != "shove"):
 		return false
 	if not swing.is_empty():
-		_queued = _queued or _len - _t <= BUFFER_S
+		if _len - _t <= BUFFER_S:
+			_queued = what
 		return false
-	var kind := "shove"
-	if guarding:
+	var kind := what
+	if what == "punch":
 		kind = _next_punch if _combo_t < COMBO_S else "jab"
 		_next_punch = "cross" if kind == "jab" else "jab"
 		_combo_t = 0.0
@@ -154,10 +165,12 @@ func strike() -> bool:
 	var feet := ctx.player.position
 	var who := _find_target(_aim_dir())
 	_target = int(who.get("id", -1))
+	# The body turns to whoever the swing goes for, else to where the camera looks.
+	_face_yaw = ctx.player.cam_yaw
 	if not who.is_empty():
 		var d: Vector3 = (who["pos"] as Vector3) - feet
 		_face_yaw = atan2(-d.x, -d.z)
-		_face_t = maxf(_len, FACE_S)
+	_face_t = maxf(_len, FACE_S)
 	swings += 1
 	if ctx.bus != null:
 		ctx.bus.hero_action.emit(kind, feet)
@@ -200,7 +213,7 @@ func emote(e: String) -> bool:
 ## Ends the swing, the guard and any action on the rig, and gives the body and camera back.
 func cancel() -> void:
 	swing = ""
-	_queued = false
+	_queued = ""
 	_landed = true
 	_target = -1
 	_forced_guard = false
@@ -243,6 +256,8 @@ func _unhandled_input(event: InputEvent) -> void:
 		return
 	if press == "act_strike":
 		strike()
+	elif press == "act_shove":
+		strike("shove")
 	else:
 		emote(str(EMOTES[press][0]))
 	if is_inside_tree():
@@ -286,9 +301,10 @@ func _advance(dt: float) -> void:
 		_land()
 	if _t >= _len:
 		swing = ""
-		if _queued:
-			_queued = false
-			strike()
+		if not _queued.is_empty():
+			var next := _queued
+			_queued = ""
+			strike(next)
 
 
 ## The blow lands on the swing's target if they are still in reach and on their feet.

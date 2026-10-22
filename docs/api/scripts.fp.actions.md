@@ -8,14 +8,14 @@
 
 extends `FpFeature`
 
-Body actions (integration slice; docs/fp/ARCHITECTURE.md, Body actions): the hero's fists and gestures on foot. The strike button (left mouse, right trigger) shoves whoever stands in front; with the guard up (right mouse or left trigger held: fists up, the body squared to where the camera looks, the camera in closer) it throws a jab and a cross in turn instead. A blow lands when the rig's fist is furthest out (HeroRig.strike_time) on the person nearest in front within REACH, through the traffic feature's hit_walker: they reel or go down, the people around react and the city hears of it. Keys 1-5 wave, nod, shake the head, shout and dance, and the people around answer (traffic answer_emote). The bus hears every swing and emote (hero_action).
+Body actions (integration slice; docs/fp/ARCHITECTURE.md, Body actions): the hero's fists and gestures on foot. The strike button (left mouse, right trigger) throws a jab and a cross in turn, the body turning to whoever it goes for (else to where the camera looks); R shoves. The guard (right mouse or left trigger held: fists up, the body squared to where the camera looks, the camera in closer) is the fighting stance. A blow lands when the rig's fist is furthest out (HeroRig.strike_time) on the person nearest in front within REACH, through the traffic feature's hit_walker: they reel or go down, the people around react and the city hears of it. Keys 1-5 wave, nod, shake the head, shout and dance, and the people around answer (traffic answer_emote). The bus hears every swing and emote (hero_action).
 
 ### Constants
 
 - `WS = preload("res://scripts/fp/world_scale.gd")`
 - `SWINGS = { "jab": ["punch_jab", "punch", 0.45, 0.4, 0.55, 0.2], "cross": ["punch_cross", "punch"...`: Swings: [rig clip, hit_walker cause, strength 0..1, seconds until the next swing may start, seconds the clip plays, contact time (s) when the rig cannot measure it].
 - `EMOTES = { "emote_wave": ["wave", 0.0], "emote_yes": ["yes", 0.0], "emote_no": ["no", 2.0], "emo...`: Emote input actions: [emote, seconds it plays (0 for the clip's own length)].
-- `INPUTS = [ "act_strike", "act_aim", "emote_wave", "emote_yes", "emote_no", "emote_shout", "emote...`
+- `INPUTS = [ "act_strike", "act_shove", "act_aim", "emote_wave", "emote_yes", "emote_no", "emote_s...`
 - `REACH = 1.2 * WS.M`: Who a swing can reach: on their feet within REACH (feet to feet) inside the cone ahead (the cosine); at contact still within REACH * HOLD_REACH.
 - `CONE = 0.4`
 - `HOLD_REACH = 1.3`
@@ -46,7 +46,7 @@ Body actions (integration slice; docs/fp/ARCHITECTURE.md, Body actions): the her
 - `func teardown() -> void`
 - `func self_test() -> Dictionary`
 - `func can_act() -> bool`: Whether the hero may swing, guard or emote now: on foot and in control of the body, nothing modal open, not talking, not in photo mode, the phone put away.
-- `func strike() -> bool`: Starts a swing: a shove, or with the guard up the next punch of the combo. A press near the end of a swing queues the next. False when none starts now.
+- `func strike(what: String = "punch") ->`: Starts a swing: what "punch" throws the next punch of the combo (a jab, then a cross within COMBO_S of the last), "shove" a shove. A press near the end of a swing queues the next. False when none starts now.
 - `func set_guard(on: bool) -> void`: Raises or drops the guard for scripted play (tests, the photo tour); held input does the same.
 - `func emote(e: String) -> bool`: Plays an emote ("wave", "yes", "no", "shout", "dance") and lets the people around answer it. False when the hero cannot act now, swings or guards, the last emote was just now, or the dance is asked for on the move.
 - `func cancel() -> void`: Ends the swing, the guard and any action on the rig, and gives the body and camera back.

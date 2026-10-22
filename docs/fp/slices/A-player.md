@@ -111,7 +111,7 @@ Write requests to `docs/fp/requests/A-needs.md`:
      - vehicle and pedestrian: from E's target label
      - poster: from D
 4. **Photo mode** (`photo_mode` action, P, from `_unhandled_input`):
-   - Free-fly with no collision at `PHOTO_FLY_SPEED`, starting from the current camera transform (in third person, the arm's position). Down is `crouch` (Ctrl) and up is `jump` (Space); Q (`shoulder_swap`), V (`view_toggle`), the wheel and C are ignored, and E is `interact`. On exit the previous camera mode resumes with a snapped rig.
+   - Free-fly at `PHOTO_FLY_SPEED` through walls, but never lower than `TpsRig.GROUND_CLEAR` above the ground (the water surface off the land), starting from the current camera transform (in third person, the arm's position). Down is `crouch` (Ctrl) and up is `jump` (Space); Q (`shoulder_swap`), V (`view_toggle`), the wheel and C are ignored, and E is `interact`. On exit the previous camera mode resumes with a snapped rig.
    - In photo mode A ignores `interact`; FpMode ignores `hud_toggle` (F1) and C ignores `chat_open`. A sets S0's `FpPlayer.photo_mode` flag, which they read.
    - Hides the HUD (`hud.set_hud_visible(false)`) and pushes no modal, so the mouse stays captured.
    - The player position is saved on entry and restored on exit.
@@ -244,7 +244,7 @@ A1 merges like any slice (ARCHITECTURE §7) and must pass without `models/charac
 - **Water.** Walking toward a water tile stops at the edge: `ground_height` stays finite and the feet never end up over a water tile.
 - **Props.** On a lit straight road tile, the pole derived from `Bulb_0` blocks the player (the feet never come within `PLAYER_RADIUS + 0.008` of it). A bus-stop tile from `view.bus_stops` blocks at the shelter. A holder with a test-injected `colliders` meta uses only that meta.
 - **Interact.** Facing a building within `INTERACT_RANGE` produces exactly one `interact_target_changed` with kind `building` and a non-empty label. A fake resident, injected through a stub feature's `pick()` at 2 m, wins over a building 5 m away. A stub `pick()` returning kind `pedestrian` with `data.driver_id` is delivered as kind `resident` with that id. Pressing interact — `Input.parse_input_event(InputEventAction{action = "interact", pressed = true})`, `Input.flush_buffered_events()`, one frame — emits `interact_requested`, and `talk_requested` for residents. While modal (`ctx.push_modal(&"test")`), `simulate` moves nothing and interact does nothing; pushing a modal emits `interact_target_changed({})`; an interact event in the same frame as `pop_modal` does nothing.
-- **Photo mode.** Entering and exiting restores the position and the HUD visibility. Crouch moves down and jump moves up; interact does nothing while in photo mode.
+- **Photo mode.** Entering and exiting restores the position and the HUD visibility. Crouch moves down and jump moves up, and flying down stops 0.20 m above the road; interact does nothing while in photo mode.
 - **Save.** `to_dict` / `from_dict` round-trips, including crouch.
 
 **Third person: `tools/tests/fp_tps_test.gd`**, token `FP_TPS_TEST: PASS`, built on `fp_kit.make_ctx(root, {"view": true, "grow": true, "camera_mode": "third"})`:
