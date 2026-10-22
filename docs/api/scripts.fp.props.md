@@ -8,7 +8,7 @@
 
 extends `FpFeature`
 
-Street props the player's car knocks over (integration feature "props"). Bins, benches, planters, mailboxes, bike racks and parking meters hit hard enough for their kind fall: CityView knocks the batched prop down (not drawn, its collider out of CollisionWorld) and a copy of its meshes tumbles off (tumble.gd) over the walker's ground and off its walls, rolls over its edges and comes to rest on a face, where the car can hit it again. Hit slower, a prop holds and blocks like a wall; lamps, trees, bollards, hydrants, utility boxes and signs always hold. A fallen prop stands in its place again once it has lain RESPAWN seconds out of sight and away from the player, and at once when its tile is drawn again. The car's body (drive/car_body.gd) asks knockables_near() and knock(); prop_knocked on the bus reports every fall.
+Street props that the player's car, the hero on foot, people and traffic knock about (integration feature "props"). Bins, benches, planters, mailboxes, bike racks, parking meters, traffic cones, wheelie bins and cardboard cartons hit hard enough for their kind fall: CityView knocks the batched prop down (not drawn, its collider out of CollisionWorld) and a copy of its meshes tumbles off (tumble.gd) over the walker's ground and off its walls, rolls over its edges and comes to rest on a face, where it can be hit again. Hit slower, a prop holds and blocks like a wall; lamps, trees, bollards, hydrants, utility boxes and signs always hold. A fallen prop stands in its place again once it has lain RESPAWN seconds out of sight and away from the player, and at once when its tile is drawn again. The car's body (drive/car_body.gd) asks knockables_near() and knock(); prop_knocked on the bus reports every fall and every hard kick. On foot (flag prop_bumps): the hero running into a light prop (a bin, cone, wheelie bin or carton) fast enough for its kind knocks it over, and a blow with nobody in reach lands on the one in front (strike(), from the actions feature); the hero, people walking and traffic kick fallen props along; and a fallen prop sliding fast knocks into the props in its way.
 
 ### Constants
 
@@ -16,7 +16,7 @@ Street props the player's car knocks over (integration feature "props"). Bins, b
 - `WS = preload("res://scripts/fp/world_scale.gd")`
 - `TUMBLE = preload("res://scripts/fp/props/tumble.gd")`
 - `OBB = preload("res://scripts/fp/obb2d.gd")`
-- `KINDS = { "bin": [0.02, 0.8], "mailbox": [0.06, 2.5], "bench": [0.06, 2.0], "bench_park": [0.06...`: Knockable StreetDressing kinds: [mass (a sedan is 1), the slowest a hit may send the prop flying (m/s) for it to give way].
+- `KINDS = { "bin": [0.02, 0.8, 3.0], "mailbox": [0.06, 2.5, 0.0], "bench": [0.06, 2.0, 0.0], "ben...`: Knockable StreetDressing kinds: [mass (a sedan is 1), the slowest a hit may send the prop flying (m/s) for it to give way, the slowest (m/s) someone on foot must come at it for it to go over (0: it holds against people and their blows)].
 - `MAX_DOWN = 24`: At most this many props lie fallen at once; past it the oldest stands up again.
 - `RESPAWN = 20.0`: A fallen prop stands up again after lying this long (s) out of sight, with the player at least RESPAWN_CLEAR (u) from its place and no car on it.
 - `RESPAWN_CLEAR = 1.0`
@@ -25,10 +25,22 @@ Street props the player's car knocks over (integration feature "props"). Bins, b
 - `KICK_REPORT = 1.0 * WS.M`: Hits on a fallen prop slower than this (u/s) are not reported on the bus.
 - `PHOTO_BACK = 0.16`: The photo shot: the camera stands PHOTO_BACK (u) in front of the prop, which a hit sends along its sidewalk at PHOTO_FLY (u/s).
 - `PHOTO_FLY = 4.0 * WS.M`
+- `PERSON_MASS = 0.05`: Someone on foot: their mass (a sedan is 1) and reach round their feet (u). A bump hands a prop (1 + BUMP_BOUNCE) times its share of the closing speed; one that hands on less than BUMP_MIN (u/s) is none, and a fallen prop takes a bump from people and traffic at most every BUMP_GAP (s).
+- `PERSON_R = WS.PLAYER_RADIUS`
+- `BUMP_BOUNCE = 0.2`
+- `BUMP_MIN = 0.3 * WS.M`
+- `BUMP_GAP = 0.25`
+- `CONTACT = 0.05 * WS.M`: The hero touches a standing prop within CONTACT (u) of its side plus what they close on it in a frame (a blocked body stops up to a frame's move short: CollisionWorld.move_body); feet further than STEP_OFF (u) above or below a fallen prop's underside pass it by. Moved more than TELEPORT (u) since the last frame, the hero was put somewhere: the speed before brings no bump.
+- `STEP_OFF = 0.5 * WS.M`
+- `TELEPORT = 1.0 * WS.M`
+- `BLOW = 3.0 * WS.M`: A blow of full strength (actions' 0..1) hands a prop the momentum of someone on foot at BLOW (u/s); it flies off at most BLOW_FLY.
+- `BLOW_FLY = 6.0 * WS.M`
+- `TRAFFIC_R = 2.0`: People and traffic kick the fallen props within TRAFFIC_R (u) of the player.
+- `CHAIN_SPEED = 1.0 * WS.M`: A fallen prop sliding at least CHAIN_SPEED (u/s) knocks into the props in its way.
 
 ### Properties
 
-- `down: Array[Dictionary]`: Fallen props, oldest first: {"tile", "slot", "kind", "t": TUMBLE, "node": Node3D, "age": s}.
+- `down: Array[Dictionary]`: Fallen props, oldest first: {"tile", "slot", "kind", "t": TUMBLE, "node": Node3D, "age": s, "bump": s before people or traffic may bump it again}.
 
 ### Functions
 
@@ -37,9 +49,10 @@ Street props the player's car knocks over (integration feature "props"). Bins, b
 - `func on_world_rebuilt() -> void`: Boot, load or New City: every holder is new and every prop stands.
 - `func teardown() -> void`
 - `func self_test() -> Dictionary`
-- `func knockables_near(p: Vector3, r: float) -> Array`: The props within r of p (feet) that a car can knock over, standing or fallen: {"c": Vector2 (xz), "r": reach round c, "box": AABB (world; standing boxes), "mass", "tile", "slot"}.
+- `func knockables_near(p: Vector3, r: float) -> Array`: The props within r of p (feet) that can be knocked about, standing or fallen: {"c": Vector2 (xz), "r": reach round c, "box": AABB (world; standing boxes), "mass", "kind", "tile", "slot", "down": true (fallen ones)}.
 - `func knock(i: int, slot: int, at: Vector3, fly: Vector3) -> bool`: Knocks street prop `slot` of tile i over (fallen, hits it again): pushed at world point `at`, it flies off at the level velocity fly (u/s). False when it holds (not knockable, or standing and sent off slower than its kind gives way at) or, fallen, already moves away that fast.
 - `func stand_all() -> void`: Stands every fallen prop up again.
+- `func strike(from: Vector3, dir: Vector3, reach: float, cone: float, strength: float) -> bool`: A blow of strength 0..1 (actions' swings) from someone with their feet at `from`, aimed along the level dir: it lands on the nearest prop that gives way to people, inside the cone ahead (the cosine), with its side within reach (feet to feet, as for a person) less a person's girth of the body's centre. Standing, it falls; fallen, it is knocked along. False when there is none, or bumps are off.
 - `func photo_shots() -> Array`: The photo shot: the knockable prop nearest the spawn point knocked along its sidewalk, seen from the road in front of it where it comes to rest.
 - `func photo_prepare() -> void`: Photo tour: the shot's prop knocked over and already at rest.
 

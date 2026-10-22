@@ -44,8 +44,9 @@ signal car_impact(at: Vector3, speed: float, what: String)
 ## The driver's door of the player's car opened (true) or slammed shut (false), at its handle.
 ## Emitted by the drive feature.
 signal car_door(at: Vector3, open: bool)
-## A street prop was knocked over at a point (its StreetDressing kind: "bin", "bench" ...) and
-## flies off at speed (u/s). Emitted by the props feature.
+## A street prop was knocked over, or a fallen one kicked hard, at a point (its StreetDressing
+## kind: "bin", "cone" ...) and flies off at speed (u/s): by the player's car, the hero, people
+## walking, traffic or another prop. Emitted by the props feature.
 signal prop_knocked(at: Vector3, kind: String, speed: float)
 ## Someone on foot was hit at a point (their feet): cause "shove" or "punch" (the hero), "car"
 ## (the car the player drives) or "carjack" (dragged out of the car the player takes); info is

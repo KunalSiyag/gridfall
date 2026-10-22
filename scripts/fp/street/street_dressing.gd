@@ -1,8 +1,9 @@
 extends RefCounted
 ## Street-level dressing that CityView adds to its tile holders in fp_mode (slice G1): furniture and
-## street trees on road sidewalks, street-name signs at junctions, road wear and puddle decals,
-## crosswalk ramps, sidewalk aprons in front of lots, vacant lots with lease boards and billboards,
-## the bus shelter, and the street-level glass and leaf materials.
+## street trees on road sidewalks, everyday clutter (traffic cones by construction sites, wheelie
+## bins, cartons), street-name signs at junctions, road wear and puddle decals, crosswalk ramps,
+## sidewalk aprons in front of lots, vacant lots with lease boards and billboards, the bus shelter,
+## and the street-level glass and leaf materials.
 ##
 ## Every blocking item is listed in its holder's `colliders` meta (holder-local, `pos` = centre of the
 ## base; batched items add their `slot` in placements()) before tile_built fires, and every prop
@@ -22,6 +23,14 @@ const FRONT := 0.4525
 ## Along-run slots on a straight sidewalk, 5 m and 6 m apart.
 const CURB_SLOTS := [-0.375, -0.125, 0.125, 0.375]
 const FRONT_SLOTS := [-0.3, 0.0, 0.3]
+## Clutter (flag street_clutter): three cones CONE_GAP apart along the curb in front of a
+## construction site, a wheelie bin out at the curb of WHEELIE_SHARE of homes, and one or two
+## cartons BOX_GAP apart, BOX_ALONG off the middle of BOX_SHARE of shop fronts.
+const CONE_GAP := 0.05
+const WHEELIE_SHARE := 0.3
+const BOX_SHARE := 0.35
+const BOX_ALONG := 0.15
+const BOX_GAP := 0.032
 ## Lit straights: the baked lamp poles, (across, along) in the piece frame (roads.py:166-167).
 const LAMP_POLES := [Vector2(-0.34, 0.25), Vector2(0.34, -0.25)]
 ## Batched kinds: model path (or "" for a procedural kit) and the collider override
@@ -42,6 +51,9 @@ const KITS := {
 	"ramp": [AP.CROSSWALK_RAMP, -1.0],
 	"apron": ["", -1.0],
 	"lamp": [PROPS + "lamp_street.glb", 0.009],
+	"cone": [PROPS + "cone.glb", 0.009],
+	"wheelie": [PROPS + "trash_bin_wheelie.glb", 0.0],
+	"carton": ["", 0.0],
 }
 ## lamp_street.glb: its bulb, in the lamp's frame (the arm reaches 1.7 m toward the road, +Z).
 const LAMP_BULB := Vector3(0.0, 0.4112, 0.085)
@@ -257,7 +269,7 @@ func _kit(kind: String) -> Dictionary:
 		elif kind == "lamp":
 			parts = _lamp_parts(parts)
 	if parts.is_empty():
-		parts = _procedural_kit(kind)
+		parts = _carton() if kind == "carton" else _procedural_kit(kind)
 	if kind not in FLAT_KINDS:
 		parts = _near_faded(parts)
 	var bb := AABB()
@@ -379,6 +391,7 @@ func _dress_straight(i: int, holder: Node3D, mask: int, lit: bool, rng: RandomNu
 				continue
 			blocked.append(along)
 			_put_curb(i, kind, rot * Vector3(side * CURB, WS.SIDEWALK_TOP, along), face, rot * Vector3(0, 0, 1), cols, rng)
+		_clutter(i, ctx, side, rot, face, slots, blocked, stop_side == side, cols)
 		if stop_side == side:
 			continue
 		var front := _front_recipe(ctx, rng)
@@ -400,6 +413,46 @@ func _put_curb(i: int, kind: String, pos: Vector3, face: Vector2, along_dir: Vec
 				_put(i, "bollard", pos + along_dir * (0.03 * s), face, cols)
 		_:
 			_put(i, kind, pos, face, cols)
+
+
+## Everyday clutter the props feature knocks about (flag street_clutter), from its own random stream
+## so the furniture keeps its places: cones along the curb in front of a construction site, a
+## wheelie bin at the curb of some homes, and a carton or two by some shop doors (none on the side
+## of a bus stop).
+func _clutter(
+	i: int, lot: String, side: int, rot: Basis, face: Vector2, slots: Array, blocked: Array,
+	stop: bool, cols: Array
+) -> void:
+	if not FeatureFlags.enabled("street_clutter"):
+		return
+	var rng := _rng(i, 53 + side)
+	var out := rot * Vector3(side, 0, 0)
+	var x := D.tx(i) + roundi(out.x)
+	var y := D.ty(i) + roundi(out.z)
+	var site := D.in_bounds(x, y) and view.sim.sites.has(D.idx(x, y))
+	var wheelie := not site and lot == "home" and rng.randf() < WHEELIE_SHARE
+	var at := _free_slot(slots, blocked, 0.12) if site or wheelie else NAN
+	if not is_nan(at):
+		var pos := rot * Vector3(side * CURB, WS.SIDEWALK_TOP, at)
+		_curb_clutter(i, site, pos, rot * Vector3(0, 0, 1), cols, rng)
+	if lot == "shop" and not stop and rng.randf() < BOX_SHARE:
+		var along := BOX_ALONG * (1.0 if rng.randf() < 0.5 else -1.0)
+		for k in range(1 + rng.randi() % 2):
+			var p := rot * Vector3(side * FRONT, WS.SIDEWALK_TOP, along + k * BOX_GAP)
+			_put(i, "carton", p, face.rotated(rng.randf_range(-0.4, 0.4)), cols)
+
+
+## Curb clutter at pos: three cones CONE_GAP apart along run by a site, else a wheelie bin standing
+## side-on to the road (its 0.76 m width across the curb band).
+func _curb_clutter(
+	i: int, cones: bool, pos: Vector3, run: Vector3, cols: Array, rng: RandomNumberGenerator
+) -> void:
+	if not cones:
+		var dir := Vector2(run.x, run.z) * (1.0 if rng.randf() < 0.5 else -1.0)
+		_put(i, "wheelie", pos, dir.rotated(rng.randf_range(-0.1, 0.1)), cols)
+		return
+	for k in range(-1, 2):
+		_put(i, "cone", pos + run * (k * CONE_GAP), Vector2.from_angle(rng.randf() * TAU), cols)
 
 
 func _curb_recipe(ctx: String, rng: RandomNumberGenerator) -> Array[String]:
@@ -1344,6 +1397,21 @@ func _procedural_kit(kind: String) -> Array:
 				{"mesh": pad, "xform": Transform3D(Basis(), Vector3(0, WS.SIDEWALK_TOP + 0.0002, 0.016)), "mat": _tactile_mat()},
 			]
 	return []
+
+
+## A taped cardboard carton, 0.55 m wide, 0.42 m tall and 0.45 m deep, left out by a shop door.
+func _carton() -> Array:
+	var size := Vector3(0.55, 0.42, 0.45) * WS.M
+	var body := BoxMesh.new()
+	body.size = size
+	# The tape runs over the lid and down both flaps: a strip just proud of the body.
+	var tape := BoxMesh.new()
+	tape.size = Vector3(0.07 * WS.M, size.y + 0.004 * WS.M, size.z + 0.004 * WS.M)
+	var mid := Transform3D(Basis(), Vector3(0, size.y * 0.5, 0))
+	return [
+		{"mesh": body, "xform": mid, "mat": _std("carton", Color(0.55, 0.4, 0.25), 0.0, 0.92)},
+		{"mesh": tape, "xform": mid, "mat": _std("carton_tape", Color(0.74, 0.6, 0.38), 0.0, 0.45)},
+	]
 
 
 func _grate_mat() -> StandardMaterial3D:

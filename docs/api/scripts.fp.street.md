@@ -33,7 +33,7 @@ First-person light profile (slice G1): shadow distance and cascades, SSAO and SS
 
 extends `RefCounted`
 
-Street-level dressing that CityView adds to its tile holders in fp_mode (slice G1): furniture and street trees on road sidewalks, street-name signs at junctions, road wear and puddle decals, crosswalk ramps, sidewalk aprons in front of lots, vacant lots with lease boards and billboards, the bus shelter, and the street-level glass and leaf materials. Every blocking item is listed in its holder's `colliders` meta (holder-local, `pos` = centre of the base; batched items add their `slot` in placements()) before tile_built fires, and every prop root carries `prop` meta. Frequent small items are batched per CHUNK x CHUNK tiles into MultiMeshes under CityView's StreetProps root; flush() rebuilds the chunks whose tiles changed.
+Street-level dressing that CityView adds to its tile holders in fp_mode (slice G1): furniture and street trees on road sidewalks, everyday clutter (traffic cones by construction sites, wheelie bins, cartons), street-name signs at junctions, road wear and puddle decals, crosswalk ramps, sidewalk aprons in front of lots, vacant lots with lease boards and billboards, the bus shelter, and the street-level glass and leaf materials. Every blocking item is listed in its holder's `colliders` meta (holder-local, `pos` = centre of the base; batched items add their `slot` in placements()) before tile_built fires, and every prop root carries `prop` meta. Frequent small items are batched per CHUNK x CHUNK tiles into MultiMeshes under CityView's StreetProps root; flush() rebuilds the chunks whose tiles changed.
 
 ### Constants
 
@@ -47,6 +47,11 @@ Street-level dressing that CityView adds to its tile holders in fp_mode (slice G
 - `FRONT = 0.4525`
 - `CURB_SLOTS = [-0.375, -0.125, 0.125, 0.375]`: Along-run slots on a straight sidewalk, 5 m and 6 m apart.
 - `FRONT_SLOTS = [-0.3, 0.0, 0.3]`
+- `CONE_GAP = 0.05`: Clutter (flag street_clutter): three cones CONE_GAP apart along the curb in front of a construction site, a wheelie bin out at the curb of WHEELIE_SHARE of homes, and one or two cartons BOX_GAP apart, BOX_ALONG off the middle of BOX_SHARE of shop fronts.
+- `WHEELIE_SHARE = 0.3`
+- `BOX_SHARE = 0.35`
+- `BOX_ALONG = 0.15`
+- `BOX_GAP = 0.032`
 - `LAMP_POLES = [Vector2(-0.34, 0.25), Vector2(0.34, -0.25)]`: Lit straights: the baked lamp poles, (across, along) in the piece frame (roads.py:166-167).
 - `KITS = { "tree": [PROPS + "tree_small.glb", 0.009], "pit": ["", -1.0], "bench": [PROPS + "benc...`: Batched kinds: model path (or "" for a procedural kit) and the collider override (r > 0: a cylinder of that radius; r == 0: the kit's bounding box; r < 0: walkable, none).
 - `LAMP_BULB = Vector3(0.0, 0.4112, 0.085)`: lamp_street.glb: its bulb, in the lamp's frame (the arm reaches 1.7 m toward the road, +Z).

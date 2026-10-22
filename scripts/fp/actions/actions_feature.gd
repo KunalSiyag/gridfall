@@ -6,8 +6,10 @@ extends FpFeature
 ## the camera in closer) is the fighting stance. A blow lands when the rig's fist is furthest out
 ## (HeroRig.strike_time) on the person nearest in front within REACH, through the traffic
 ## feature's hit_walker: they reel or go down, the people around react and the city hears of it.
-## Keys 1-5 wave, nod, shake the head, shout and dance, and the people around answer (traffic
-## answer_emote). The bus hears every swing and emote (hero_action).
+## With nobody there it lands on the street prop in front (the props feature's strike): a bin,
+## cone, wheelie bin or carton goes over, a fallen prop skids off. Keys 1-5 wave, nod, shake the
+## head, shout and dance, and the people around answer (traffic answer_emote). The bus hears every
+## swing and emote (hero_action).
 
 const WS := preload("res://scripts/fp/world_scale.gd")
 
@@ -66,11 +68,12 @@ const PHOTO_SIDE := 0.55 * WS.M
 var guarding: bool = false
 ## The swing under way ("jab", "cross", "shove") or "".
 var swing: String = ""
-## hit_walker's info for the last blow that landed; swings and blows landed so far; how many
-## people answered the last emote.
+## hit_walker's info for the last blow that landed; swings, blows landed on people and blows
+## landed on street props so far; how many people answered the last emote.
 var last_hit: Dictionary = {}
 var swings: int = 0
 var hits: int = 0
+var prop_hits: int = 0
 var answered: int = 0
 var _forced_guard: bool = false
 var _driving: bool = false
@@ -120,7 +123,8 @@ func self_test() -> Dictionary:
 			missing.append(a)
 	if not missing.is_empty():
 		return {"ok": false, "detail": "missing inputs %s" % str(missing)}
-	return {"ok": true, "detail": "%d swings, %d blows landed" % [swings, hits]}
+	var detail := "%d swings, %d blows landed, %d on props" % [swings, hits, prop_hits]
+	return {"ok": true, "detail": detail}
 
 
 ## Whether the hero may swing, guard or emote now: on foot and in control of the body, nothing
@@ -307,11 +311,15 @@ func _advance(dt: float) -> void:
 			strike(next)
 
 
-## The blow lands on the swing's target if they are still in reach and on their feet.
+## The blow lands on the swing's target if they are still in reach and on their feet; a swing at
+## nobody lands on the street prop in front, if there is one.
 func _land() -> void:
 	_landed = true
+	if _target < 0:
+		_strike_prop()
+		return
 	var tr := ctx.feature("traffic")
-	if tr == null or _target < 0:
+	if tr == null:
 		return
 	var feet := ctx.player.position
 	var who := {}
@@ -322,13 +330,31 @@ func _land() -> void:
 		return
 	var d: Vector3 = (who["pos"] as Vector3) - feet
 	d.y = 0.0
-	var s: Array = SWINGS[swing]
-	var strength := float(s[2]) + RUN_BONUS * clampf(ctx.player.speed() / WS.RUN, 0.0, 1.0)
-	var info: Dictionary = tr.call("hit_walker", _target, feet, d.normalized(), strength, str(s[1]))
+	var cause := str(SWINGS[swing][1])
+	var info: Dictionary = tr.call("hit_walker", _target, feet, d.normalized(), _strength(), cause)
 	if info.is_empty():
 		return
 	last_hit = info
 	hits += 1
+	_kick_view()
+
+
+## A swing at nobody: the street prop in front within REACH takes the blow (props' strike).
+func _strike_prop() -> void:
+	var props := ctx.feature("props")
+	var feet := ctx.player.position
+	if props != null and bool(props.call("strike", feet, _aim_dir(), REACH, CONE, _strength())):
+		prop_hits += 1
+		_kick_view()
+
+
+## The swing's strength: its own, and up to RUN_BONUS more at a run.
+func _strength() -> float:
+	return float(SWINGS[swing][2]) + RUN_BONUS * clampf(ctx.player.speed() / WS.RUN, 0.0, 1.0)
+
+
+## The view kicks as a blow lands, rolled away from the punching hand.
+func _kick_view() -> void:
 	var side := {"jab": 1.0, "cross": -1.0}.get(swing, 0.0) as float
 	ctx.player.kick_view(KICK.x, KICK.y * side)
 
