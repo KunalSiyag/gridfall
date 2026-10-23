@@ -3,7 +3,8 @@ extends FpFeature
 ## the AudioDirector's music under the street (set_fp), and runs three parts: positional emitters
 ## (engines, horns, sirens, construction, fire, fountains, plants, the river, passers-by's steps,
 ## the player's car crashing, the street props it knocks over and its doors, people hit in the
-## street, the hero's swings, rolls and the blows they take, dogs barking, growling and whining),
+## street, the hero's swings, rolls and the blows they take, dogs barking, growling and whining,
+## pigeons and cats),
 ## the area beds (with rain from G1's weather) and the hero's footsteps (splashing on wet paving),
 ## plus the chat blip and alert stingers. Pausing muffles the music (the only thing still
 ## playing); talking to someone ducks the beds.
@@ -397,8 +398,17 @@ func _on_hero_hurt(amount: float, cause: String, _health: float, down: bool) -> 
 
 ## An animal calling (animal_called) at its head: a dog's bark (one of BANK.BARK_VARIANTS), growl
 ## or whine, BANK.DOG_DB under the bark, pitched by its size (BANK.DOG_PITCH_M); a pigeon's coo
-## (one of BANK.COO_VARIANTS), a lone bird's flap or a flock's take-off at BANK.PIGEON_DB.
+## (one of BANK.COO_VARIANTS), a lone bird's flap or a flock's take-off at BANK.PIGEON_DB; a cat's
+## meow (one of BANK.MEOW_VARIANTS), purr, hiss or chatter at BANK.CAT_DB, pitched by its size.
 func _on_animal_called(at: Vector3, call: String, size: float) -> void:
+	if BANK.CAT_DB.has(call):
+		var c := "cat_%s" % call
+		if call == "meow":
+			c = "cat_meow_%d" % _rng.randi_range(1, BANK.MEOW_VARIANTS)
+		var voice := sqrt(BANK.CAT_PITCH_M / maxf(size, 0.05))
+		voice *= 1.0 + _rng.randf_range(-BANK.CAT_PITCH, BANK.CAT_PITCH)
+		emitters.shot("cat", at, c, float(BANK.CAT_DB[call]), voice)
+		return
 	if BANK.PIGEON_DB.has(call):
 		var p := "pigeon_%s" % call
 		if call == "coo":

@@ -43,6 +43,11 @@ class Body:
 	var head: int = -1
 
 
+## The kinds this loader makes (BREEDS for the dogs), the shoulder's height in model units and the
+## name its bodies' nodes start with.
+var breeds: Dictionary = BREEDS
+var shoulder_units: float = SHOULDER_UNITS
+var label: String = "Dog"
 var ok: bool = false
 var why: String = "not loaded"
 var blocking: bool = false
@@ -56,8 +61,8 @@ var _pool: Dictionary = {}
 func check() -> bool:
 	ok = true
 	why = ""
-	for breed: String in BREEDS:
-		if not ResourceLoader.exists(str(BREEDS[breed]["path"])):
+	for breed: String in breeds:
+		if not ResourceLoader.exists(str(breeds[breed]["path"])):
 			ok = false
 			why = "%s model missing" % breed
 	return ok
@@ -65,8 +70,8 @@ func check() -> bool:
 
 ## Starts loading every breed's scene on a background thread.
 func start() -> void:
-	for breed: String in BREEDS:
-		_loads.request(str(BREEDS[breed]["path"]))
+	for breed: String in breeds:
+		_loads.request(str(breeds[breed]["path"]))
 
 
 ## Waits for the loads still in flight (quitting with one running aborts it noisily).
@@ -77,7 +82,7 @@ func finish_loads() -> void:
 ## A body of breed under parent, size times the breed's height, or null while its scene still
 ## loads. Reuses a released body of the same breed first.
 func make(breed: String, size: float, parent: Node3D) -> Body:
-	var key := breed if BREEDS.has(breed) else "shiba"
+	var key: String = breed if breeds.has(breed) else breeds.keys()[0]
 	var spare: Array = _pool.get(key, [])
 	if not spare.is_empty():
 		var again: Body = spare.pop_back()
@@ -86,14 +91,14 @@ func make(breed: String, size: float, parent: Node3D) -> Body:
 		again.clip = &""
 		_fit(again, size)
 		return again
-	var path := str(BREEDS[key]["path"])
+	var path := str(breeds[key]["path"])
 	var ps := _loads.scene(path, blocking)
 	if ps == null:
 		return null if _loads.pending(path) else _stand_in(key, size, parent)
 	var b := Body.new()
 	b.breed = key
 	b.root = Node3D.new()
-	b.root.name = "Dog_%s_%d" % [key, made]
+	b.root.name = "%s_%s_%d" % [label, key, made]
 	var scene := ps.instantiate() as Node3D
 	b.root.add_child(scene)
 	parent.add_child(b.root)
@@ -104,12 +109,7 @@ func make(breed: String, size: float, parent: Node3D) -> Body:
 	var found := scene.find_children("*", "Skeleton3D", true, false)
 	if not found.is_empty():
 		b.skel = found[0] as Skeleton3D
-		b.collar = b.skel.find_bone("Neck2")
-		b.head = b.skel.find_bone("Head")
-		b.rig = RIG.new()
-		b.rig.name = "DogRig"
-		b.skel.add_child(b.rig)
-		b.rig.bind(b.skel, scene)
+		_bind(b, scene)
 	_fit(b, size)
 	return b
 
@@ -170,9 +170,19 @@ static func bone_point(b: Body, k: int, fallback: Vector2) -> Vector3:
 	return xf * Vector3(0.0, fallback.y, fallback.x)
 
 
+## The collar and head bones of b's skeleton and its rig (the tail and the head).
+func _bind(b: Body, scene: Node3D) -> void:
+	b.collar = b.skel.find_bone("Neck2")
+	b.head = b.skel.find_bone("Head")
+	b.rig = RIG.new()
+	b.rig.name = "DogRig"
+	b.skel.add_child(b.rig)
+	b.rig.bind(b.skel, scene)
+
+
 func _fit(b: Body, size: float) -> void:
-	var shoulder := float(BREEDS[b.breed]["shoulder_m"])
-	b.unit = WS.M * shoulder * size / SHOULDER_UNITS
+	var shoulder := float(breeds[b.breed]["shoulder_m"])
+	b.unit = WS.M * shoulder * size / shoulder_units
 	b.root.scale = Vector3.ONE * b.unit
 
 
@@ -181,7 +191,7 @@ func _stand_in(breed: String, size: float, parent: Node3D) -> Body:
 	var b := Body.new()
 	b.breed = breed
 	b.root = Node3D.new()
-	b.root.name = "DogStandIn_%d" % made
+	b.root.name = "%sStandIn_%d" % [label, made]
 	made += 1
 	var box := BoxMesh.new()
 	box.size = Vector3(1.0, 1.4, 3.2)

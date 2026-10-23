@@ -1,0 +1,15 @@
+GridFall cat model - third-party content
+
+Model by Quaternius (https://quaternius.com), licensed CC0 1.0 (public domain,
+https://creativecommons.org/publicdomain/zero/1.0/). No attribution is required; it is listed
+here for provenance. From "Animal Pack Vol.2 by @Quaternius" (Blends/Cat.blend), fetched from
+OpenGameArt:
+
+  Cat  https://opengameart.org/content/animated-animales-low-poly  -> animals/cat.glb
+
+Changes for GridFall (tools/blender/make_cat.py): the bones are renamed, the source's Idle and
+Walking clips are baked to plain bone keys and its leg IK dropped, the mesh is smoothed once, the
+coat fields the game's cat shader reads are written into UV, UV2 and the vertex colours, the
+other clips (Trot, Run, Stalk, Crouch, Pounce, Sit, Loaf, Groom, Sleep, Hiss, Startle, Stretch)
+are posed in code, and looping clips carry the "-loop" suffix Godot's importer turns into a loop.
+

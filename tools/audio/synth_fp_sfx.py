@@ -5,7 +5,7 @@ Everything is built from numpy noise, oscillators, pulse trains and modal resona
 seeds, so a re-run gives the same samples and byte-identical files. Two formats:
 
 - WAV (16-bit PCM, imported uncompressed) for every sound the game starts often: footsteps,
-  horns, crashes, knocked props, car doors, blows, dogs and pigeons, UI cues, the engine loops and the siren. Starting an Ogg Vorbis playback costs about
+  horns, crashes, knocked props, car doors, blows, dogs, pigeons and cats, UI cues, the engine loops and the siren. Starting an Ogg Vorbis playback costs about
   0.4 ms on the main thread (a decoder per start), a WAV about 1 us, and the audio budget is
   0.3 ms per frame.
 - Ogg Vorbis (ffmpeg libvorbis -q 4, bit-exact) for the long loops started rarely: the beds,
@@ -1301,6 +1301,145 @@ def synth_pigeon_takeoff() -> np.ndarray:
     out = stereo_reverb(out, rng, 0.5, 0.12, 5000.0, circular=False).mean(axis=1)
     return norm_peak(fade_edges(out, 0.0005, 0.15), -1.0)
 
+# ------------------------------------------------------------------ cats
+
+## A house cat's meows ("mi-aa-ow"): length (s), pitch at the start, peak and end (Hz), and where
+## the peak falls (share of the length). The mouth opens from "i" to "a" by the peak and closes to
+## a rounded "ow", so the first formant rises and falls and the second slides down (CAT_VOWELS).
+MEOWS = [(0.62, 560.0, 760.0, 470.0, 0.35), (0.38, 640.0, 840.0, 660.0, 0.45), (0.95, 500.0, 700.0, 420.0, 0.3)]
+## Formants (Hz) of a cat's short vocal tract (about 7 cm) shut to "i", wide open on "a" and
+## rounded to "ow", with their bandwidths (Hz) and gains.
+CAT_VOWELS = [(900.0, 2500.0, 4300.0), (1500.0, 2150.0, 4000.0), (950.0, 1500.0, 3600.0)]
+CAT_FORMANT_BW = [(280.0, 1.0), (360.0, 0.6), (520.0, 0.3)]
+## A purr: the larynx buzzing PURR_HZ (Hz, a little faster breathing in) through breaths of
+## PURR_BREATHS s (out, in).
+PURR_HZ = (24.0, 26.5)
+PURR_BREATHS = (1.0, 0.75)
+
+
+def vowel_gain(f: np.ndarray, fm: list[np.ndarray]) -> np.ndarray:
+    """The mouth's gain at f Hz with its formants at fm (one curve per formant)."""
+    g = np.zeros_like(f)
+    for fc, (bw, a) in zip(fm, CAT_FORMANT_BW):
+        g = g + a / (1.0 + ((f - fc) / (0.5 * bw)) ** 2)
+    return g
+
+
+def meow(rng: np.random.Generator, dur: float, f_a: float, f_m: float, f_b: float, at: float) -> np.ndarray:
+    """One meow of dur seconds: the voice arching from f_a up to f_m (at that share of it) and down
+    to f_b, its harmonics shaped by the mouth opening and closing (CAT_VOWELS), with a breath."""
+    n = int(dur * SR)
+    t = secs(n)
+    u = t / dur
+    rise = np.minimum(u / at, 1.0)
+    fall = np.clip((u - at) / (1.0 - at), 0.0, 1.0)
+    f0 = np.where(u < at, f_a + (f_m - f_a) * np.sin(0.5 * np.pi * rise), f_m + (f_b - f_m) * fall ** 1.2)
+    f0 = f0 * (1.0 + 0.008 * wander(rng, n, 25.0) + 0.006 * np.sin(2 * np.pi * 6.0 * t))
+    w_open = np.where(u < at, np.sin(0.5 * np.pi * rise), 1.0 - fall ** 0.8)
+    shut, wide, round_ = CAT_VOWELS
+    fm = [np.where(u < at, s + (w - s) * w_open, r + (w - r) * w_open) for s, w, r in zip(shut, wide, round_)]
+    ph = 2 * np.pi * np.cumsum(f0) / SR
+    s = np.zeros(n)
+    for k in range(1, 16):
+        fk = k * f0
+        s += np.where(fk < 0.45 * SR, vowel_gain(fk, fm) / k ** 0.5, 0.0) * np.sin(k * ph)
+    b = bandpass(rng.standard_normal(n), 1500.0, 7500.0)
+    s = s + 0.06 * rms(s) / rms(b) * b
+    env = np.clip(t / 0.05, 0.0, 1.0) ** 2 * np.clip((dur - t) / (0.25 * dur), 0.0, 1.0) ** 1.5
+    return s * env * (0.85 + 0.15 * w_open)
+
+
+def synth_cat_meow(k: int) -> np.ndarray:
+    """A house cat's meow (one of MEOWS): "mi-aa-ow", arching up and back down around 600 Hz."""
+    rng = rng_for("cat_meow_%d" % k)
+    dur, f_a, f_m, f_b, at = MEOWS[k - 1]
+    out = np.zeros(int((dur + 0.4) * SR))
+    add_at(out, meow(rng, dur, f_a, f_m, f_b, at), int(0.005 * SR), wrap=False)
+    out = stereo_reverb(out, rng, 0.4, 0.08, 5000.0, circular=False).mean(axis=1)
+    return norm_peak(fade_edges(out, 0.0005, 0.08), -1.0)
+
+
+def purr_pulse(rng: np.random.Generator) -> np.ndarray:
+    """One beat of a purr: the vocal folds snapping apart, a dull knock in the chest and throat
+    (a damped low resonance) with a little rasp of air."""
+    n = int(0.03 * SR)
+    t = secs(n)
+    knock = np.sin(2 * np.pi * rng.uniform(140.0, 170.0) * t) * np.exp(-t / 0.007)
+    knock += 0.5 * np.sin(2 * np.pi * rng.uniform(330.0, 380.0) * t) * np.exp(-t / 0.004)
+    rasp = bandpass(rng.standard_normal(n), 300.0, 2200.0) * np.exp(-t / 0.003)
+    return knock + 0.5 * rasp / (np.max(np.abs(rasp)) + 1e-9)
+
+
+def synth_cat_purr() -> np.ndarray:
+    """A contented cat's purr, close to the hand stroking it: about 25 beats a second of a dull,
+    raspy rumble, swelling on each breath out and softer and a little faster on each breath in."""
+    rng = rng_for("cat_purr")
+    n = int(3.8 * SR)
+    out = np.zeros(n)
+    tk = 0.01
+    ph = 0
+    while tk < 3.6:
+        b_len = PURR_BREATHS[ph % 2]
+        hz = PURR_HZ[ph % 2]
+        lvl = 1.0 if ph % 2 == 0 else 0.55
+        t_end = min(tk + b_len, 3.6)
+        start = tk
+        while tk < t_end:
+            u = (tk - start) / b_len
+            amp = lvl * np.sin(np.pi * np.clip(u, 0.0, 1.0)) ** 0.6 * rng.uniform(0.8, 1.0)
+            add_at(out, amp * purr_pulse(rng), int(tk * SR), wrap=False)
+            tk += rng.uniform(0.95, 1.05) / hz
+        tk = t_end + 0.06
+        ph += 1
+    t = secs(n)
+    air = lowpass(bandpass(rng.standard_normal(n), 200.0, 3000.0), 1500.0)
+    out = out + 0.05 * rms(out) / rms(air) * air * (0.6 + 0.4 * wander(rng, n, 1.5) ** 2)
+    out = lowpass(out, 2500.0) * np.clip((3.75 - t) / 0.15, 0.0, 1.0)
+    out = stereo_reverb(out, rng, 0.3, 0.05, 4000.0, circular=False).mean(axis=1)
+    return norm_peak(fade_edges(out, 0.003, 0.1), -1.0)
+
+
+def synth_cat_hiss() -> np.ndarray:
+    """A frightened cat's hiss: a spit (a sharp burst of breath through the teeth) and a long hard
+    rush of air through the bared teeth (noise 2 to 10 kHz, ringing at the mouth's openings),
+    wavering, with a low growl under it."""
+    rng = rng_for("cat_hiss")
+    dur = 1.2
+    n = int(1.5 * SR)
+    t = secs(n)
+    air = rng.standard_normal(n)
+    rush = bandpass(air, 2000.0, 10000.0) + 0.7 * bandpass(air, 3200.0, 4200.0, 1) + 0.5 * bandpass(air, 5600.0, 7000.0, 1)
+    rush += 0.25 * bandpass(rng.standard_normal(n), 700.0, 2000.0)
+    env = np.clip(t / 0.02, 0.0, 1.0) * np.clip((dur - t) / 0.35, 0.0, 1.0) ** 1.3
+    env *= (0.85 + 0.15 * wander(rng, n, 5.0)) * (1.0 + 0.6 * np.exp(-t / 0.08))
+    out = rush * env / (np.max(np.abs(rush)) + 1e-9)
+    add_at(out, 0.9 * crack(rng, int(0.06 * SR), 0.012, 1200.0, 11000.0), int(0.004 * SR), wrap=False)
+    f0 = 95.0 * (1.0 + 0.05 * wander(rng, n, 4.0))
+    growl = tone(f0, [1.0 / k for k in range(1, 30)]) * (1.0 + 0.5 * np.sin(np.pi * np.cumsum(f0) / SR))
+    growl = bandpass(growl, 150.0, 1500.0) * env
+    out = out + 0.12 * rms(out) / rms(growl) * growl
+    out = stereo_reverb(out, rng, 0.35, 0.06, 6000.0, circular=False).mean(axis=1)
+    return norm_peak(fade_edges(out, 0.0005, 0.08), -1.0)
+
+
+def synth_cat_chatter() -> np.ndarray:
+    """A cat watching a bird it cannot reach: its jaw chattering a dozen times a second, each a
+    click of teeth and a tiny bleat ("ek-ek-ek"), in two runs."""
+    rng = rng_for("cat_chatter")
+    out = np.zeros(int(1.3 * SR))
+    m = int(0.045 * SR)
+    tt = secs(m)
+    for start, count in [(0.005, 7), (0.72, 5)]:
+        tk = start
+        for k in range(count):
+            fr = rng.uniform(1000.0, 1250.0) * (1.0 - 0.15 * tt / 0.045)
+            bleat = tone(fr, [1.0, 0.5, 0.25, 0.1]) * np.sin(np.pi * np.clip(tt / 0.035, 0.0, 1.0))
+            click = crack(rng, m, 0.0015, 2500.0, 9000.0)
+            amp = (1.0 - 0.4 * k / count) * rng.uniform(0.8, 1.0)
+            add_at(out, amp * (0.6 * bleat + 0.5 * click), int(tk * SR), wrap=False)
+            tk += rng.uniform(0.075, 0.09)
+    out = stereo_reverb(out, rng, 0.35, 0.08, 5000.0, circular=False).mean(axis=1)
+    return norm_peak(fade_edges(out, 0.0005, 0.08), -1.0)
 # ------------------------------------------------------------------ UI
 
 def bell_note(f: float, dur: float, index: float = 2.0, ratio: float = 1.4, decay: float = 0.4) -> np.ndarray:
@@ -1348,7 +1487,8 @@ WAV_SOUNDS = {"engine_idle", "engine_run", "siren_two_tone", "horn_short", "horn
               "chat_blip_soft", "alert_stinger", "crash_heavy", "crash_light", "prop_clatter", "prop_clang",
               "car_door_open", "car_door_close", "punch_hit", "punch_whoosh", "body_fall", "dog_bark_1",
               "dog_bark_2", "dog_bark_3", "dog_growl", "dog_whine", "dog_snap", "pigeon_coo_1", "pigeon_coo_2",
-              "pigeon_flap", "pigeon_takeoff"}
+              "pigeon_flap", "pigeon_takeoff", "cat_meow_1", "cat_meow_2", "cat_meow_3", "cat_purr",
+              "cat_hiss", "cat_chatter"}
 
 
 def is_wav(name: str) -> bool:
@@ -1390,11 +1530,16 @@ def catalogue() -> dict[str, tuple[object, bool]]:
         "dog_snap": (synth_dog_snap, False),
         "pigeon_flap": (synth_pigeon_flap, False),
         "pigeon_takeoff": (synth_pigeon_takeoff, False),
+        "cat_purr": (synth_cat_purr, False),
+        "cat_hiss": (synth_cat_hiss, False),
+        "cat_chatter": (synth_cat_chatter, False),
     }
     for k in range(1, len(BARKS) + 1):
         c["dog_bark_%d" % k] = ((lambda k=k: synth_dog_bark(k)), False)
     for k in range(1, len(COOS) + 1):
         c["pigeon_coo_%d" % k] = ((lambda k=k: synth_pigeon_coo(k)), False)
+    for k in range(1, len(MEOWS) + 1):
+        c["cat_meow_%d" % k] = ((lambda k=k: synth_cat_meow(k)), False)
     for s in SURFACES:
         for k in range(1, STEP_VARIANTS + 1):
             c["footstep_%s_%d" % (s, k)] = ((lambda s=s, k=k: synth_step(s, k)), False)

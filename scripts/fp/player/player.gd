@@ -1304,15 +1304,15 @@ func _on_conversation_changed(id: String, active: bool) -> void:
 			_start_transition(CONV_OUT, xf, fv)
 
 
-## The hero greets a resident with a wave and reaches toward a car, a poster, a dog to pet or the
-## pigeons to throw crumbs (6.9 OneShot).
+## The hero greets a resident with a wave and reaches toward a car, a poster, a dog or a cat to pet
+## or the pigeons to throw crumbs (6.9 OneShot).
 func _on_interact_requested(t: Dictionary) -> void:
 	if avatar == null or photo_mode:
 		return
 	var kind := str(t.get("kind", ""))
 	if kind == "resident" or kind == "pedestrian":
 		avatar.play_gesture("wave")
-	elif kind in ["vehicle", "poster", "dog", "pigeons"]:
+	elif kind in ["vehicle", "poster", "dog", "pigeons", "cat"]:
 		avatar.play_gesture("interact")
 
 

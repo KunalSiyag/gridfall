@@ -1,13 +1,13 @@
 extends Node3D
 ## Positional city sound (slice I): logical sources (engines, horns, sirens, construction, fire,
-## fountains, power plants, river banks, passers-by's footsteps, crashes, knocked props, car
-## doors, blows and swings, dogs, pigeons) share a pool of at most MAX_PLAYERS AudioStreamPlayer3D.
+## fountains, power plants, river banks, passers-by's footsteps, crashes, knocked props, car doors,
+## blows and swings, dogs, pigeons, cats) share a pool of at most MAX_PLAYERS AudioStreamPlayer3D.
 ## Every refresh scores the sources by their estimated level at the listener and gives the players
 ## to the loudest; the farthest or quietest lose theirs first. Doppler is computed by hand (the
-## built-in effect works in world units against 343 u/s and is inaudible at 1 u = 20 m).
-## A grown city registers hundreds of static sources (every park's fountain, every site), so the
-## per-frame work touches only the sources holding a player, the refresh only the volatile ones
-## (agents, one-shots, sirens, river) and the static ones near the listener.
+## built-in effect works in world units against 343 u/s and is inaudible at 1 u = 20 m). A grown
+## city registers hundreds of static sources (every park's fountain, every site), so the per-frame
+## work touches only the sources holding a player, the refresh only the volatile ones (agents,
+## one-shots, sirens, river) and the static ones near the listener.
 
 const D := preload("res://scripts/sim/sim_defs.gd")
 const WS := preload("res://scripts/fp/world_scale.gd")
@@ -33,6 +33,7 @@ const TYPES := {
 	"hit": {"max": 1.5, "db": -14.0, "near": 6.0, "stream": "punch_hit"},
 	"dog": {"max": 5.0, "db": -12.0, "near": 6.0, "stream": "dog_bark_1"},
 	"bird": {"max": 3.0, "db": -10.0, "near": 6.0, "stream": "pigeon_coo_1"},
+	"cat": {"max": 2.5, "db": -14.0, "near": 6.0, "stream": "cat_meow_1"},
 }
 ## Residents on foot (E's "pedestrian" agents): positional footsteps for the WALKER_MAX nearest
 ## walkers within WALKER_RADIUS of the hero, one per stride of their travel (E has no foot-contact

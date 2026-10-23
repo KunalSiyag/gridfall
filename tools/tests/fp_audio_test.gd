@@ -3,8 +3,8 @@ extends SceneTree
 ## the AudioDirector's tick throttle and on-foot routing, the initial scan, emitter settings, the
 ## 24-player cap and stealing, manual doppler, horns, sirens, footsteps by surface (polling and the
 ## stepped signal), ambience beds, settings, the pause muffle, the talk duck, UI cues, crashes,
-## knocked props, car doors, blows, swings and rolls, dogs, pigeons, the frame budget and teardown.
-## Headless runs the Dummy audio driver, so this asserts node state.
+## knocked props, car doors, blows, swings and rolls, dogs, pigeons, cats, the frame budget and
+## teardown. Headless runs the Dummy audio driver, so this asserts node state.
 
 const K := preload("res://tools/tests/fp_kit.gd")
 const D := preload("res://scripts/sim/sim_defs.gd")
@@ -47,6 +47,7 @@ func _init() -> void:
 	_check_blows(ctx, f)
 	_check_dogs(ctx, f)
 	_check_pigeons(ctx, f)
+	_check_cats(ctx, f)
 	_check_budget(ctx, f)
 	var st: Dictionary = f.self_test()
 	K.check(fails, bool(st["ok"]), "self_test: %s" % st["detail"])
@@ -746,7 +747,7 @@ func _check_dogs(ctx: FpContext, f: FpFeature) -> void:
 	calls = calls and is_equal_approx(growl.db, big.db + float(BANK.DOG_DB["growl"]))
 	calls = calls and is_equal_approx(whine.db, big.db + float(BANK.DOG_DB["whine"]))
 	var n := em.shots_played
-	ctx.bus.animal_called.emit(at, "purr", 0.3)
+	ctx.bus.animal_called.emit(at, "moo", 0.3)
 	K.check(
 		fails,
 		calls and em.shots_played == n,
@@ -783,6 +784,33 @@ func _check_pigeons(ctx: FpContext, f: FpFeature) -> void:
 		"pigeons: a lone bird's flap and a flock's take-off (pigeon_flap, pigeon_takeoff)"
 	)
 	_steps(f, 3.0)
+
+
+## A cat's calls (animal_called) play at its head (emitter type cat): a meow is one of
+## MEOW_VARIANTS, a kitten's higher; a purr, a hiss and a chatter their own, CAT_DB on the meow.
+func _check_cats(ctx: FpContext, f: FpFeature) -> void:
+	var at := _em(f).listener() + Vector3(0.05, 0.0, 0.0)
+	var cat := _shot(f, func() -> void: ctx.bus.animal_called.emit(at, "meow", 0.25))
+	var kit := _shot(f, func() -> void: ctx.bus.animal_called.emit(at, "meow", 0.15))
+	var purr := _shot(f, func() -> void: ctx.bus.animal_called.emit(at, "purr", 0.25))
+	var hiss := _shot(f, func() -> void: ctx.bus.animal_called.emit(at, "hiss", 0.25))
+	var chat := _shot(f, func() -> void: ctx.bus.animal_called.emit(at, "chatter", 0.25))
+	var mewed := false
+	var kit_mewed := false
+	for k in range(1, BANK.MEOW_VARIANTS + 1):
+		mewed = mewed or _is_shot(cat, "cat", "cat_meow_%d" % k)
+		kit_mewed = kit_mewed or _is_shot(kit, "cat", "cat_meow_%d" % k)
+	K.check(
+		fails,
+		mewed and kit_mewed and kit.pitch_base > cat.pitch_base,
+		"cats: a meow plays a cat_meow_<n> at the cat, a kitten's higher"
+	)
+	var calls := _is_shot(purr, "cat", "cat_purr") and _is_shot(hiss, "cat", "cat_hiss")
+	calls = calls and _is_shot(chat, "cat", "cat_chatter")
+	calls = calls and is_equal_approx(purr.db, cat.db + float(BANK.CAT_DB["purr"]))
+	calls = calls and is_equal_approx(hiss.db, cat.db + float(BANK.CAT_DB["hiss"]))
+	K.check(fails, calls, "cats: a purr, a hiss and a chatter play their own, CAT_DB on the meow")
+	_steps(f, 4.0)
 
 
 func _is_bark(s: EM.Src) -> bool:

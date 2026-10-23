@@ -114,4 +114,8 @@ const PERSON_TPS_ANIMS := [
 ## Jump_ToIdle.
 const DOG_SHIBA := "res://models/real/animals/shiba_inu.glb"
 const DOG_HUSKY := "res://models/real/animals/husky.glb"
+## Quaternius' Cat (CC0, models/real/LICENSES/quaternius-cat.txt), rebuilt by
+## tools/blender/make_cat.py: clips Idle, Walk, Trot, Run, Stalk, Crouch, Pounce, Sit, Loaf, Groom,
+## Sleep, Hiss, Startle and Stretch, and the coat fields cat_coat.gdshader reads.
+const CAT := "res://models/real/animals/cat.glb"
 # end animals

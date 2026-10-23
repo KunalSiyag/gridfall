@@ -37,6 +37,8 @@ var toasts: Array[String] = []
 
 func _init() -> void:
 	await process_frame
+	# A cat stalking the flock would send it up (fp_cats_test has that).
+	FeatureFlags.set_override("cats", false)
 	ctx = K.make_ctx(get_root(), {"view": true, "grow": true, "camera_mode": "third"})
 	ctx.player.set_process(false)
 	tr = K.make_feature(ctx, "traffic")
