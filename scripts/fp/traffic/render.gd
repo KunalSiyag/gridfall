@@ -56,6 +56,14 @@ const BEAM_HEIGHT := 0.65 * WS.M
 const WASHES := 3
 const WASH_DIST := 3.0
 const WASH_RANGE := 14.0 * WS.M
+## Car paint (the full models' Paint_* materials): a lacquer clear coat over the base, its
+## roughness from PAINT_COAT dry to PAINT_COAT_WET soaked; the wet base darkens by PAINT_WET_DARK
+## and turns PAINT_WET_GLOSS smoother. The merged bodies' roughness goes to LOD_WET_ROUGH soaked.
+const PAINT_COAT := 0.1
+const PAINT_COAT_WET := 0.03
+const PAINT_WET_DARK := 0.85
+const PAINT_WET_GLOSS := 0.6
+const LOD_WET_ROUGH := 0.2
 const PEOPLE_SHADER := """
 shader_type spatial;
 render_mode cull_back, depth_draw_opaque;
@@ -113,11 +121,15 @@ render_mode cull_back;
 uniform float glow = 0.0;
 uniform float rough = 0.5;
 uniform float metal = 0.15;
+// How wet the streets are (0..1): the bodies darken a little and turn glossy.
+uniform float wet = 0.0;
+uniform float wet_rough = 0.2;
+uniform float wet_dark = 0.85;
 
 void fragment() {
 	vec3 c = pow(COLOR.rgb, vec3(2.2));
-	ALBEDO = c;
-	ROUGHNESS = rough;
+	ALBEDO = c * mix(1.0, wet_dark, wet);
+	ROUGHNESS = mix(rough, wet_rough, wet);
 	METALLIC = metal;
 	if (COLOR.a < 0.75) {
 		EMISSION = c * glow * 6.0;
@@ -174,6 +186,9 @@ var draws_vehicles: int = 0
 var time: float = 0.0
 var _last_lod: int = -1
 var _glow: float = 0.0
+## Paint_* material -> its dry [albedo, roughness]; how wet the cars are now.
+var _paints: Dictionary = {}
+var _wet: float = 0.0
 
 
 func setup(p_root: Node3D) -> void:
@@ -184,6 +199,9 @@ func setup(p_root: Node3D) -> void:
 	_lod_mat.shader = vs
 	_lod_static_mat = ShaderMaterial.new()
 	_lod_static_mat.shader = vs
+	for lm: ShaderMaterial in [_lod_mat, _lod_static_mat]:
+		lm.set_shader_parameter("wet_rough", LOD_WET_ROUGH)
+		lm.set_shader_parameter("wet_dark", PAINT_WET_DARK)
 	var ps := Shader.new()
 	ps.code = PEOPLE_SHADER
 	_people_mat = ShaderMaterial.new()
@@ -236,6 +254,8 @@ func model_for(path: String, scale: float, person: bool = false) -> int:
 	m.scale = scale
 	m.person = person
 	var inst := ps.instantiate() as Node3D
+	if not person:
+		_lacquer(inst)
 	var bb := _bounds(inst, Transform3D.IDENTITY)
 	m.size = bb.size * scale
 	m.mesh_h = bb.size.y
@@ -340,6 +360,43 @@ func set_glow(g: float) -> void:
 	if _lod_mat != null and absf(g - _glow) > 0.004:
 		_glow = g
 		_lod_mat.set_shader_parameter("glow", g)
+
+
+## How wet the streets are (0..1): the paint of every car and the merged bodies follow.
+func set_wet(w: float) -> void:
+	w = clampf(w, 0.0, 1.0)
+	if absf(w - _wet) < 0.004 and (w > 0.0 or _wet == 0.0):
+		return
+	_wet = w
+	for lm: ShaderMaterial in [_lod_mat, _lod_static_mat]:
+		if lm != null:
+			lm.set_shader_parameter("wet", w)
+	for p: StandardMaterial3D in _paints.keys():
+		_wet_paint(p)
+
+
+## The clear coat on every Paint_* surface of a model (the imported materials, shared by every car
+## of that model), wet to how wet the streets are now.
+func _lacquer(n: Node) -> void:
+	for mi in n.find_children("*", "MeshInstance3D", true, false):
+		var mesh := (mi as MeshInstance3D).mesh
+		for s in range(mesh.get_surface_count() if mesh != null else 0):
+			var p := mesh.surface_get_material(s) as StandardMaterial3D
+			if p == null or not p.resource_name.begins_with("Paint_") or _paints.has(p):
+				continue
+			_paints[p] = [p.albedo_color, p.roughness]
+			p.clearcoat_enabled = true
+			p.clearcoat = 1.0
+			_wet_paint(p)
+
+
+func _wet_paint(p: StandardMaterial3D) -> void:
+	var dry: Array = _paints[p]
+	var c: Color = dry[0]
+	var k := lerpf(1.0, PAINT_WET_DARK, _wet)
+	p.albedo_color = Color(c.r * k, c.g * k, c.b * k, c.a)
+	p.roughness = lerpf(float(dry[1]), float(dry[1]) * PAINT_WET_GLOSS, _wet)
+	p.clearcoat_roughness = lerpf(PAINT_COAT, PAINT_COAT_WET, _wet)
 
 
 ## Starts a rebuild of the static (parked) layer.
@@ -672,8 +729,10 @@ func _fill(mmi: Variant, list: Array, custom: Array = []) -> void:
 	mmn.visible = true
 
 
-## Frees every pooled and live node.
+## Frees every pooled and live node; the paint dries.
 func clear() -> void:
+	set_wet(0.0)
+	_paints.clear()
 	for m: Model in models:
 		for n: Node3D in m.pool:
 			if is_instance_valid(n):

@@ -197,7 +197,7 @@ Further light-profile items:
 
 - A deterministic daily state from `hash(city_seed, day)`: clear 60%, overcast 25%, rain 15%. Events with a `weather` key in `D.DISASTERS` force it.
 - **Overcast:** `sky.weather_energy_mult = 0.55`, a sky tint, `sky.fog_begin_override = 15`.
-- **Rain:** GPUParticles3D in a 1-unit box following the camera (streaks, about 3,000 particles on High and 800 on Low), wetness 0→1 over **120 real seconds at 1×** (scaled by `sim.speed`; "2 game-minutes" would be 1.7 s in FP and 0.02 s at the kit's 12 s day), and a darker exposure through `sky.weather_exposure_mult`.
+- **Rain:** GPUParticles3D in a 1-unit box following the camera (streaks, about 3,000 particles on High and 800 on Low), wetness 0→1 over **120 real seconds at 1×** (scaled by `sim.speed`; "2 game-minutes" would be 1.7 s in FP and 0.02 s at the kit's 12 s day), and a darker exposure through `sky.weather_exposure_mult`. In rain the road shader's `rain` uniform ripples its puddles, and from wetness 0.3 drops splash in a box round the hero's feet (360 particles on Medium, 720 on High, none on Low). Screen-space reflections follow the wet (`light_profile.gd` `set_wet`): on Medium from wetness 0.15 (32 steps), always on High (56 steps), never on Low.
 - Save it in `to_dict` as `{"weather": state, "wet": f}`.
 - Test and photo hooks on the streetscape feature: `force_weather(state: String)`, `force_rain_for_photo()` (forces rain with wetness 1 at once) and `clear_forced_weather()`. The last two are the `"prepare"` / `"restore"` methods of the `"rain"` photo shot (S0 §10.1, no arguments).
 

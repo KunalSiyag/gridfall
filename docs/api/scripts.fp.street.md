@@ -8,7 +8,7 @@
 
 extends `RefCounted`
 
-First-person light profile (slice G1): shadow distance and cascades, SSAO and SSIL radii, depth fog, volumetric fog and the sky's radiance update, in world units for street level. Static: apply(env, sun, "fp", preset) snapshots every key it owns on the first first-person apply, and apply(env, sun, "orbit", preset) restores exactly those values (Main.exit_fp relies on it). Keys SkyDirector rewrites every frame (sun energy, colour, ambient, fog colour, exposure) are never touched here.
+First-person light profile (slice G1): shadow distance and cascades, SSAO and SSIL radii, depth fog, volumetric fog, screen-space reflections and the sky's radiance update, in world units for street level. Static: apply(env, sun, "fp", preset) snapshots every key it owns on the first first-person apply, and apply(env, sun, "orbit", preset) restores exactly those values (Main.exit_fp relies on it). Keys SkyDirector rewrites every frame (sun energy, colour, ambient, fog colour, exposure) are never touched here.
 
 ### Constants
 
@@ -19,11 +19,16 @@ First-person light profile (slice G1): shadow distance and cascades, SSAO and SS
 - `SKY_KEYS = ["process_mode", "radiance_size"]`
 - `SNAP = &"g1_orbit_profile"`
 - `PRESETS = { "low": {"shadow": 8.0, "splits": [0.1, 0.3, 0.6], "mode": DirectionalLight3D.SHADOW_P...`: Per preset: shadow distance, PSSM splits, blend, SSAO intensity, SSIL (radius 0 = off) and intensity, volumetric fog, sky radiance size.
+- `SSR = {"low": [0, false], "medium": [32, false], "high": [56, true]}`: Screen-space reflections per preset: ray-march steps (0 = never) and whether they stay on with the streets dry; otherwise they come on once the streets are WET_SSR wet (puddles and glossy asphalt, the paint of the cars), where they show. SSR_DEPTH is how thick (u) the march takes an object in front of the ray to be: a lamp post, not a whole house.
+- `WET_SSR = 0.15`
+- `SSR_DEPTH = 1.5 * WS.M`
 - `FAR_FALLBACK = {"low": 45.0, "medium": WS.CAMERA_FAR, "high": 75.0}`: Camera far plane per preset until G2's quality.gd provides camera_far().
 
 ### Functions
 
 - `static func apply(env: Environment, sun: DirectionalLight3D, mode: String, preset: String) -> void`: Applies the street-level profile (mode "fp") for preset low|medium|high, or restores the orbit values snapshotted on the first fp apply (mode "orbit"). Either env or sun may be null.
+- `static func reflections(preset: String, wet: float) -> bool`: Whether the preset reflects in screen space with the streets this wet (0..1).
+- `static func set_wet(env: Environment, preset: String, wet: float) -> void`: The weather's hook: reflections on or off for how wet the streets are, once the street profile is applied (the orbit view keeps its own).
 - `static func fog_end(preset: String) -> float`: Depth-fog end for a preset: WS.FOG_DEPTH_END, inside 95% of that preset's far plane.
 - `static func camera_far(preset: String) -> float`: The preset's camera far plane: G2's quality.camera_far() when it exists, else FAR_FALLBACK.
 - `static func quality_script() -> GDScript`: G2's static quality helper (scripts/fp/render/quality.gd), or null until G2 lands.
@@ -147,17 +152,23 @@ Street-level look on foot (slice G1). Applies the first-person light profile for
 
 extends `Node3D`
 
-Street weather (slice G1): a deterministic daily state (clear 60%, overcast 25%, rain 15%) from the city seed and day, forced by incidents (a flood brings rain, smog a brown haze), drives SkyDirector's weather hooks, CityView's wetness and the global `wetness` shader parameter, and a rain-streak emitter that follows the camera. Wetness rises 0 -> 1 over 120 real seconds of rain at 1x (scaled by sim.speed) and dries over 300.
+Street weather (slice G1): a deterministic daily state (clear 60%, overcast 25%, rain 15%) from the city seed and day, forced by incidents (a flood brings rain, smog a brown haze), drives SkyDirector's weather hooks, CityView's wetness and rain, the street profile's reflections and the global `wetness` shader parameter, a rain-streak emitter that follows the camera and drops splashing off the ground round the player. Wetness rises 0 -> 1 over 120 real seconds of rain at 1x (scaled by sim.speed) and dries over 300.
 
 ### Constants
 
 - `WS = preload("res://scripts/fp/world_scale.gd")`
 - `D = preload("res://scripts/sim/sim_defs.gd")`
+- `LP = preload("res://scripts/fp/street/light_profile.gd")`
 - `STATES = ["clear", "overcast", "rain"]`
 - `WET_SECONDS = 120.0`
 - `DRY_SECONDS = 300.0`
 - `LOOK = { "clear": {"energy": 1.0, "exposure": 1.0, "grey": 0.0, "fog": -1.0, "shadow": 1.0}, "...`: Hook targets per state: sun energy and exposure multipliers, sky grey, fog-begin override and sun shadow opacity (cloud cover leaves only soft, faint shadows).
 - `RAIN_AMOUNT = {"low": 800, "medium": 1600, "high": 3000}`
+- `SPLASH_AMOUNT = {"low": 0, "medium": 360, "high": 720}`: Drops splashing up off the ground round the player in the rain (none on low), once the streets are SPLASH_WET wet: SPLASH_BOX (u) either way of the feet, each a bead flung up SPLASH_MPS (m/s) that falls back within SPLASH_LIFE (s).
+- `SPLASH_WET = 0.3`
+- `SPLASH_BOX = 0.4`
+- `SPLASH_MPS = Vector2(0.6, 1.3)`
+- `SPLASH_LIFE = 0.3`
 
 ### Properties
 
@@ -174,6 +185,7 @@ Street weather (slice G1): a deterministic daily state (clear 60%, overcast 25%,
 - `static func daily_state(seed: int, day: int) -> String`: The weather for a city seed and day, the same on every run: clear 60%, overcast 25%, rain 15%.
 - `func target_state() -> String`: What the weather should be now: forced, else an incident's (flood rain, smog overcast), else the day's.
 - `func step(delta: float) -> void`: One weather update over delta real seconds (tests call it directly).
+- `func splashing() -> bool`: Whether drops splash off the ground now: raining on wet streets, on a preset with splashes.
 - `func force(s: String) -> void`: Forces a state ("clear", "overcast" or "rain"); "" goes back to the day's weather.
 - `func force_soaked() -> void`: Rain with the streets fully wet at once (the "rain" photo).
 - `func clear_forced() -> void`: Back to the baseline weather with dry streets and the hooks at their targets.

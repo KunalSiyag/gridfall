@@ -652,6 +652,11 @@ Draws E's agents (docs/fp/slices/E-traffic.md §3 Draw calls). Vehicles: the ful
 - `WASHES = 3`: Siren light washes: flashing omni lights on responding crews near the camera.
 - `WASH_DIST = 3.0`
 - `WASH_RANGE = 14.0 * WS.M`
+- `PAINT_COAT = 0.1`: Car paint (the full models' Paint_* materials): a lacquer clear coat over the base, its roughness from PAINT_COAT dry to PAINT_COAT_WET soaked; the wet base darkens by PAINT_WET_DARK and turns PAINT_WET_GLOSS smoother. The merged bodies' roughness goes to LOD_WET_ROUGH soaked.
+- `PAINT_COAT_WET = 0.03`
+- `PAINT_WET_DARK = 0.85`
+- `PAINT_WET_GLOSS = 0.6`
+- `LOD_WET_ROUGH = 0.2`
 - `PEOPLE_SHADER = """`
 - `VEHICLE_SHADER = """`
 
@@ -667,6 +672,7 @@ Draws E's agents (docs/fp/slices/E-traffic.md §3 Draw calls). Vehicles: the ful
 - `func model(i: int) -> Model`
 - `func begin(dt: float) -> void`: Starts a frame of moving agents (the static layer keeps its lists).
 - `func set_glow(g: float) -> void`: Lamp glow of the merged vehicles (0 by day, 1 at night).
+- `func set_wet(w: float) -> void`: How wet the streets are (0..1): the paint of every car and the merged bodies follow.
 - `func begin_static() -> void`: Starts a rebuild of the static (parked) layer.
 - `func draw_car(c: VH.Car, xf: Transform3D, d: float, vis_end: float, brake: bool, siren: String, spin: float) -> void`
 - `func draw_parked(c: VH.Car, xf: Transform3D, d: float, vis_end: float) -> void`: A parked car into the static layer (between begin_static and finish_static).
@@ -675,7 +681,7 @@ Draws E's agents (docs/fp/slices/E-traffic.md §3 Draw calls). Vehicles: the ful
 - `func release_walker(w: WK.Walker) -> void`
 - `func finish() -> void`: Writes the moving MultiMesh layers for this frame, and aims the headlight beams and siren washes at the nearest candidates.
 - `func finish_static() -> void`: Writes the static (parked) layers.
-- `func clear() -> void`: Frees every pooled and live node.
+- `func clear() -> void`: Frees every pooled and live node; the paint dries.
 
 ## `scripts/fp/traffic/shoves.gd`
 

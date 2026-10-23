@@ -4,7 +4,7 @@ shader_type spatial;
 // is mapped in world metres (continuous along the street) and broken up by a second rotated sample
 // and two noise scales; then the wear real roads show: a darker oil streak down each lane, polished
 // wheel tracks either side of it, grit and dust in the gutters, older greyer stretches, and in rain
-// water standing in the tracks and gutters. lane_axis (per instance) says where the lanes run:
+// water standing in the tracks and gutters, rings spreading across it where rain falls. lane_axis (per instance) says where the lanes run:
 // 0 none (junctions), 1 along z, 2 along x, 3-6 round the tile corner +x+z, -x+z, -x-z, +x-z.
 
 uniform sampler2D albedo_tex : source_color, filter_linear_mipmap_anisotropic, repeat_enable;
@@ -18,6 +18,8 @@ uniform float repeat_m = 4.0;
 uniform float lane_offset = 0.15;
 uniform float half_width = 0.3;
 uniform float wetness = 0.0;
+// Rain falling now (0..1): rings on the standing water.
+uniform float rain = 0.0;
 instance uniform float lane_axis = 0.0;
 
 varying vec3 wpos;
@@ -28,6 +30,20 @@ void vertex() {
 	mat3 inv = inverse(mat3(MODEL_MATRIX));
 	TANGENT = normalize(inv * vec3(1.0, 0.0, 0.0));
 	BINORMAL = normalize(inv * vec3(0.0, 0.0, 1.0));
+}
+
+// One layer of raindrop rings on standing water, p in metres over cells of 'cell' m: each cell gets
+// a drop at a random point and time; its ring spreads to 'reach' of the cell and fades. Returns the
+// ring's slope (a tangent-space tilt) at p.
+vec2 rings(vec2 p, float cell, float t) {
+	vec2 c = floor(p / cell);
+	vec2 h = fract(sin(vec2(dot(c, vec2(127.1, 311.7)), dot(c, vec2(269.5, 183.3)))) * 43758.5453);
+	vec2 d = p / cell - c - (0.25 + 0.5 * h);
+	float r = length(d);
+	float age = fract(t + h.x * 7.31);
+	float x = r - age * 0.45;
+	float ring = sin(x * 60.0) * (1.0 - age) * (1.0 - smoothstep(0.0, 0.05, abs(x)));
+	return d / max(r, 1e-4) * ring;
 }
 
 // Distance across the carriageway from its centreline (tile units), or -1 with no lanes.
@@ -95,5 +111,9 @@ void fragment() {
 	ROUGHNESS = mix(ROUGHNESS, 0.03, pool);
 	SPECULAR = mix(0.35, 0.6, wetness);
 	NORMAL_MAP = mix(nrm, vec3(0.5, 0.5, 1.0), pool * 0.9);
+	if (rain > 0.0 && pool > 0.0) {
+		vec2 tilt = rings(m, 0.35, TIME * 1.3) + rings(m + vec2(0.17, 0.41), 0.5, TIME * 1.05 + 0.5);
+		NORMAL_MAP.xy += 0.35 * rain * pool * tilt;
+	}
 	NORMAL_MAP_DEPTH = 1.0;
 }

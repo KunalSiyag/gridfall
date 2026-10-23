@@ -21,6 +21,7 @@ const TRIPS := preload("res://scripts/fp/traffic/trips.gd")
 const PPL := preload("res://scripts/fp/traffic/people.gd")
 const SHOVES := preload("res://scripts/fp/traffic/shoves.gd")
 const OBB := preload("res://scripts/fp/obb2d.gd")
+const RD := preload("res://scripts/fp/traffic/render.gd")
 const DT := 1.0 / 30.0
 
 var fails: Array[String] = []
@@ -1052,8 +1053,43 @@ func _check_night_lamps() -> void:
 		var head: Array = node.get_meta("head")
 		day_ok = (head[0] as MeshInstance3D).get_surface_override_material(int(head[1])) == null
 	K.check(fails, day_ok and int(rd.get("beams_on")) == 0, "night: by day the imported lamps are back and no beam is on")
+	_check_wet_paint(node)
 	_vh().remove(car)
 	ctx.player.teleport(saved, 0.0)
+
+
+## A full car's paint wears a clear coat; with the streets soaked it darkens and turns glossier (and
+## the merged bodies with it), and dried it is back to its own values.
+func _check_wet_paint(node: Node3D) -> void:
+	var rd = f.get("render")
+	var paint: StandardMaterial3D = null
+	for mi in (node.find_children("*", "MeshInstance3D", true, false) if node != null else []):
+		var mesh := (mi as MeshInstance3D).mesh
+		for s in range(mesh.get_surface_count() if mesh != null else 0):
+			var m := mesh.surface_get_material(s)
+			if m is StandardMaterial3D and m.resource_name.begins_with("Paint_"):
+				paint = m
+	if paint == null:
+		K.check(fails, false, "paint: the near car has a Paint_ surface")
+		return
+	var dry := [paint.roughness, paint.albedo_color, paint.clearcoat_roughness]
+	ctx.view.set_wetness(1.0)
+	f.sync_visuals(DT)
+	var lod: ShaderMaterial = rd.get("_lod_mat")
+	var wet_ok := paint.roughness < float(dry[0]) and paint.albedo_color.v < (dry[1] as Color).v
+	wet_ok = wet_ok and is_equal_approx(paint.clearcoat_roughness, RD.PAINT_COAT_WET)
+	wet_ok = wet_ok and is_equal_approx(float(lod.get_shader_parameter("wet")), 1.0)
+	ctx.view.set_wetness(0.0)
+	f.sync_visuals(DT)
+	var dry_ok := is_equal_approx(paint.roughness, float(dry[0]))
+	dry_ok = dry_ok and paint.albedo_color.is_equal_approx(dry[1])
+	dry_ok = dry_ok and is_equal_approx(paint.clearcoat_roughness, RD.PAINT_COAT)
+	dry_ok = dry_ok and float(lod.get_shader_parameter("wet")) == 0.0
+	K.check(
+		fails,
+		paint.clearcoat_enabled and wet_ok and dry_ok,
+		"paint: clear coat, darker and glossier in the wet, dry again after (%.2f)" % float(dry[0])
+	)
 
 
 # ------------------------------------------------------------------ tee yield

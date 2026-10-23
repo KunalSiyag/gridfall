@@ -1,6 +1,7 @@
 extends RefCounted
 ## First-person light profile (slice G1): shadow distance and cascades, SSAO and SSIL radii, depth
-## fog, volumetric fog and the sky's radiance update, in world units for street level. Static:
+## fog, volumetric fog, screen-space reflections and the sky's radiance update, in world units for
+## street level. Static:
 ## apply(env, sun, "fp", preset) snapshots every key it owns on the first first-person apply, and
 ## apply(env, sun, "orbit", preset) restores exactly those values (Main.exit_fp relies on it). Keys
 ## SkyDirector rewrites every frame (sun energy, colour, ambient, fog colour, exposure) are never
@@ -14,6 +15,7 @@ const ENV_KEYS := [
 	"fog_aerial_perspective", "fog_sky_affect",
 	"volumetric_fog_enabled", "volumetric_fog_length", "volumetric_fog_density",
 	"volumetric_fog_detail_spread", "volumetric_fog_anisotropy", "volumetric_fog_temporal_reprojection_enabled",
+	"ssr_enabled", "ssr_max_steps", "ssr_fade_in", "ssr_fade_out", "ssr_depth_tolerance",
 ]
 const SUN_KEYS := [
 	"directional_shadow_mode", "directional_shadow_max_distance", "directional_shadow_split_1",
@@ -31,6 +33,13 @@ const PRESETS := {
 	"medium": {"shadow": WS.SHADOW_MAX_DIST, "splits": [0.12, 0.3, 0.6], "mode": DirectionalLight3D.SHADOW_PARALLEL_2_SPLITS, "blend": false, "ao": 1.2, "il": WS.SSIL_RADIUS, "il_i": 0.6, "vol": false, "radiance": Sky.RADIANCE_SIZE_256},
 	"high": {"shadow": 16.0, "splits": [0.05, 0.14, 0.38], "mode": DirectionalLight3D.SHADOW_PARALLEL_4_SPLITS, "blend": true, "ao": 1.3, "il": WS.SSIL_RADIUS, "il_i": 0.7, "vol": true, "radiance": Sky.RADIANCE_SIZE_256},
 }
+## Screen-space reflections per preset: ray-march steps (0 = never) and whether they stay on with
+## the streets dry; otherwise they come on once the streets are WET_SSR wet (puddles and glossy
+## asphalt, the paint of the cars), where they show. SSR_DEPTH is how thick (u) the march takes an
+## object in front of the ray to be: a lamp post, not a whole house.
+const SSR := {"low": [0, false], "medium": [32, false], "high": [56, true]}
+const WET_SSR := 0.15
+const SSR_DEPTH := 1.5 * WS.M
 ## Camera far plane per preset until G2's quality.gd provides camera_far().
 const FAR_FALLBACK := {"low": 45.0, "medium": WS.CAMERA_FAR, "high": 75.0}
 
@@ -67,6 +76,13 @@ static func apply(env: Environment, sun: DirectionalLight3D, mode: String, prese
 			env.volumetric_fog_detail_spread = 2.0
 			env.volumetric_fog_anisotropy = 0.3
 			env.volumetric_fog_temporal_reprojection_enabled = true
+		var steps := int((SSR.get(preset, SSR["medium"]) as Array)[0])
+		if steps > 0:
+			env.ssr_max_steps = steps
+			env.ssr_fade_in = 0.15
+			env.ssr_fade_out = 2.0
+			env.ssr_depth_tolerance = SSR_DEPTH
+		env.ssr_enabled = reflections(preset, 0.0)
 		if env.sky != null:
 			_snapshot(env.sky, SKY_KEYS)
 			env.sky.process_mode = Sky.PROCESS_MODE_INCREMENTAL
@@ -83,6 +99,22 @@ static func apply(env: Environment, sun: DirectionalLight3D, mode: String, prese
 		# Tuned for 8 cm street details: tight enough for kerbs and bollards, no acne on the ground.
 		sun.shadow_bias = 0.02
 		sun.shadow_normal_bias = 0.6
+
+
+## Whether the preset reflects in screen space with the streets this wet (0..1).
+static func reflections(preset: String, wet: float) -> bool:
+	var s: Array = SSR.get(preset, SSR["medium"])
+	return int(s[0]) > 0 and (bool(s[1]) or wet >= WET_SSR)
+
+
+## The weather's hook: reflections on or off for how wet the streets are, once the street profile
+## is applied (the orbit view keeps its own).
+static func set_wet(env: Environment, preset: String, wet: float) -> void:
+	if env == null or not env.has_meta(SNAP):
+		return
+	var on := reflections(preset, wet)
+	if env.ssr_enabled != on:
+		env.ssr_enabled = on
 
 
 ## Depth-fog end for a preset: WS.FOG_DEPTH_END, inside 95% of that preset's far plane.

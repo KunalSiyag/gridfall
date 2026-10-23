@@ -512,6 +512,7 @@ func sync_visuals(delta: float) -> void:
 	render.finish()
 	_draw_contact(cam, hc)
 	render.set_glow(_night())
+	render.set_wet(ctx.view.wetness if ctx.view != null else 0.0)
 	junctions.update_lamps(ctx.player_position(), WS.VIS_PROP + 1.0)
 
 
