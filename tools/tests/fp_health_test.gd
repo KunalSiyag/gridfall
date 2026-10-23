@@ -1,12 +1,12 @@
 extends SceneTree
 ## Hero health (integration feature "health"; docs/fp/ARCHITECTURE.md, Health): the bar and its
 ## HUD (the arc round the minimap, the vignette, photo mode); crashes and hard landings by their
-## speed; punches and the guard; a car's blow knocking the hero down (the throw, the rig, input
-## back once up); health coming back; a knock-out (the fade, the wake outside the nearest hospital,
-## healed, the toast; City Hall without one); save and load; people who fight back (fight_back)
-## and cars that cannot stop running the hero down (hit_by_cars), each off with its flag; teardown.
-## Third person on a grown city; time runs through traffic's step, the features' tick(1/60) and
-## the player's simulate and update_view.
+## speed (softer rolled off); punches and the guard; a car's blow knocking the hero down (the
+## throw, the rig, input back once up); health coming back; a knock-out (the fade, the wake outside
+## the nearest hospital, healed, the toast; City Hall without one); save and load; people who fight
+## back (fight_back) and cars that cannot stop running the hero down (hit_by_cars), each off with
+## its flag; teardown. Third person on a grown city; time runs through traffic's step, the
+## features' tick(1/60) and the player's simulate and update_view.
 
 const K := preload("res://tools/tests/fp_kit.gd")
 const D := preload("res://scripts/sim/sim_defs.gd")
@@ -306,8 +306,9 @@ func _check_crash() -> void:
 func _check_fall() -> void:
 	_heal()
 	var p := ctx.player
-	p.landed.emit(HEALTH.FALL_SAFE - 0.5)
+	p.landed.emit(HEALTH.FALL_SAFE - 0.5, false)
 	K.check(fails, hurts.is_empty(), "landing at 5.5 m/s (a 1.5 m drop) costs nothing")
+	_check_rolled_fall()
 	p.teleport(p.position + Vector3(0.0, 6.0 * WS.M, 0.0), rad_to_deg(p.yaw), 0.0, false)
 	var t := 0.0
 	while hurts.is_empty() and t < 3.0:
@@ -328,6 +329,37 @@ func _check_fall() -> void:
 	K.check(fails, not bool(f.call("knocked")) and p.input_enabled, "up again: input back")
 	var st := str(rig.call("state"))
 	K.check(fails, st in ["get_up", "loco"], "on their feet (%s)" % st)
+
+
+## A landing rolled off (the parkour feature carrying the body on) counts ROLL_SAVE m/s slower and
+## never knocks the hero down: 9.5 m/s costs nothing; 13 m/s costs what 9 would, enough to knock
+## them down had they landed it, and leaves them standing. The carried body only feels it in the
+## view.
+func _check_rolled_fall() -> void:
+	var p := ctx.player
+	p.landed.emit(HEALTH.FALL_SAFE + HEALTH.ROLL_SAVE - 0.5, true)
+	K.check(fails, hurts.is_empty(), "rolled off, a landing at 9.5 m/s costs nothing")
+	p.carry(p.position, p.yaw, Vector3.ZERO, true)
+	p.landed.emit(13.0, true)
+	var v := 13.0 - HEALTH.ROLL_SAVE
+	var want := HEALTH.MAX_HP * (v - HEALTH.FALL_SAFE) / (HEALTH.FALL_KO - HEALTH.FALL_SAFE)
+	var got := _last("fall")
+	var cost := float(got[0]) if not got.is_empty() else 0.0
+	var standing := not got.is_empty() and not bool(got[3]) and not bool(f.call("knocked"))
+	K.check(
+		fails,
+		absf(cost - want) < 0.01 and want >= HEALTH.FALL_DOWN and standing,
+		"rolled off, one at 13 m/s costs %.1f (%.1f) and leaves the hero standing" % [want, cost]
+	)
+	_step(0.1)
+	var kick: Vector2 = p.get("_kick")
+	K.check(
+		fails,
+		not bool(rig.call("action_active")) and kick.length() > 1e-4,
+		"the carried body does not flinch, the view jolts"
+	)
+	p.release(true)
+	_heal()
 
 
 func _check_punch() -> void:

@@ -12,7 +12,12 @@ extends SceneTree
 ## far off head-on and the parkour flag off leave an ordinary jump, and no press no move. A climb
 ## cut short half over its ledge leaves the body clear of it; a knock-down, a teleport and a load
 ## end a move (on a wall too, as does the wall going away), photo mode does not start during one,
-## and teardown hands jumps back. Third person on a grown city; time runs through the features'
+## and teardown hands jumps and landings back. Walking off a 2.2 m box rolls on along the sidewalk
+## (flag landing_roll): the rig's roll clip, the feet on the ground, walking on after it, and the
+## drop costs nothing; off a 6 m box the roll costs a little and keeps the hero standing where the
+## landing alone knocks them down. The flag off, a standing drop, a low drop, a landing too hard
+## and a wall or a drop right ahead leave an ordinary landing (farther ones a shorter roll), and a
+## knock-down ends a roll. Third person on a grown city; time runs through the features'
 ## tick(1/60) and the player's simulate and update_view.
 
 const K := preload("res://tools/tests/fp_kit.gd")
@@ -20,6 +25,7 @@ const WS := preload("res://scripts/fp/world_scale.gd")
 const MOVES := preload("res://scripts/fp/parkour/moves.gd")
 const WALL := preload("res://scripts/fp/parkour/wall.gd")
 const HEALTH := preload("res://scripts/fp/health/health_feature.gd")
+const PARKOUR := preload("res://scripts/fp/parkour/parkour_feature.gd")
 const DT := 1.0 / 60.0
 const M := WS.M
 const R_M := WS.PLAYER_RADIUS / WS.M
@@ -34,9 +40,11 @@ var start: Vector3
 var run: Vector3
 var right: Vector3
 var yaw_deg: float
-## Every hero_action and every landing speed (m/s) since the last _press_at.
+## Every hero_action, and every landing's speed (m/s) and whether it was rolled, since the last
+## _press_at or _walk_off.
 var actions: Array[String] = []
 var landings: Array[float] = []
+var rolls: Array[bool] = []
 
 
 func _init() -> void:
@@ -55,7 +63,7 @@ func _init() -> void:
 	p.input_enabled = true
 	rig = p.avatar.get("rig")
 	ctx.bus.hero_action.connect(func(a: String, _at: Vector3) -> void: actions.append(a))
-	p.landed.connect(func(v: float) -> void: landings.append(v))
+	p.landed.connect(_on_landed)
 	var lane := K.sidewalk(ctx, 0.4)
 	K.check(fails, not lane.is_empty() and rig != null, "fixture: a clear sidewalk, HC's hero")
 	if lane.is_empty() or rig == null:
@@ -72,6 +80,10 @@ func _init() -> void:
 	_check_refusals()
 	_check_cut_short()
 	_check_interruptions()
+	_check_roll()
+	_check_roll_refusals()
+	_check_roll_room()
+	_check_roll_interrupted()
 	await _check_wall_grab()
 	_check_wall_moves()
 	_check_wall_limits()
@@ -83,6 +95,11 @@ func _init() -> void:
 
 
 # ------------------------------------------------------------------ helpers
+
+
+func _on_landed(v: float, rolled: bool) -> void:
+	landings.append(v)
+	rolls.append(rolled)
 
 
 ## One frame as _process runs it: parkour first, then health, then the player.
@@ -125,6 +142,7 @@ func _press_at(face: float, gap: float, dir: Vector3, sprint: bool, side: float 
 	p.teleport(_lane_point(0.0, side), yaw_deg)
 	actions.clear()
 	landings.clear()
+	rolls.clear()
 	for _k in range(240):
 		var press := face - _ahead() - R_M <= gap
 		_frame(_wish(dir), sprint, press)
@@ -134,8 +152,8 @@ func _press_at(face: float, gap: float, dir: Vector3, sprint: bool, side: float 
 
 
 ## Walks on along dir until the hero has stood 0.3 s after the move (or max_s), one entry a frame:
-## {"ahead", "side", "y" (metres along, right of and above the lane start), "carried", "grounded",
-## "state" (the rig's), "yaw" (degrees off the lane)}.
+## {"ahead", "side", "y" (metres along, right of and above the lane start), "v" (m/s along the
+## lane), "carried", "grounded", "state" (the rig's), "yaw" (degrees off the lane)}.
 func _finish(dir: Vector3, sprint: bool, max_s: float = 4.0) -> Array[Dictionary]:
 	var p := ctx.player
 	var out: Array[Dictionary] = []
@@ -152,6 +170,7 @@ func _finish(dir: Vector3, sprint: bool, max_s: float = 4.0) -> Array[Dictionary
 					"ahead": rel.dot(run) / M,
 					"side": rel.dot(right) / M,
 					"y": rel.y / M,
+					"v": p.velocity.dot(run) / M,
 					"carried": p.carried,
 					"grounded": p.grounded,
 					"state": str(rig.call("state")),
@@ -185,7 +204,7 @@ func _states(log: Array[Dictionary]) -> Array[String]:
 
 func _made() -> int:
 	var m: Dictionary = f.get("made")
-	return int(m["vault"]) + int(m["hop"]) + int(m["climb"]) + int(m["grab"])
+	return int(m["vault"]) + int(m["hop"]) + int(m["climb"]) + int(m["roll"]) + int(m["grab"])
 
 
 ## True when a whole standing body fits where the hero stands.
@@ -230,6 +249,49 @@ func _on_wall() -> bool:
 	return str(f.get("move")) == "wall" and ctx.player.carried
 
 
+## Puts the hero on top of the box `top` metres tall that _box(0.0, 1.5, top) makes, 0.3 m along
+## the lane, and walks them along it (a run with sprint) until they have walked off it and landed:
+## false when they did not within 4 s.
+func _walk_off(top: float, sprint: bool) -> bool:
+	var p := ctx.player
+	p.teleport(_lane_point(0.3, 0.0) + Vector3(0.0, top * M, 0.0), yaw_deg, 0.0, false)
+	actions.clear()
+	landings.clear()
+	rolls.clear()
+	for _k in range(240):
+		_frame(_wish(run), sprint, false)
+		if not landings.is_empty():
+			return true
+	return false
+
+
+## _walk_off, then _finish: the frames from the landing on, [] when there was none.
+func _drop_off(top: float, sprint: bool) -> Array[Dictionary]:
+	if not _walk_off(top, sprint):
+		return []
+	return _finish(run, sprint)
+
+
+## Steps standing still until a hero knocked down is up again (10 s at most).
+func _up_again() -> void:
+	for _k in range(600):
+		if not bool(health.call("knocked")):
+			break
+		_frame(Vector2.ZERO, false, false)
+
+
+## Where plan ends, in metres along the lane from the feet at from, and the most its feet ever
+## leave from's height (m); (-1, INF) for no plan.
+func _plan_end(plan: Dictionary, from: Vector3) -> Vector2:
+	if plan.is_empty():
+		return Vector2(-1.0, INF)
+	var length := float(plan["length"])
+	var off := 0.0
+	for k in range(21):
+		off = maxf(off, absf(MOVES.point(plan, length * k / 20.0).y - from.y))
+	return Vector2((MOVES.point(plan, length) - from).dot(run) / M, off / M)
+
+
 # ------------------------------------------------------------------ checks
 
 
@@ -237,8 +299,8 @@ func _check_setup() -> void:
 	var p := ctx.player
 	var st := f.self_test()
 	K.check(fails, bool(st.get("ok", false)), "self_test (%s)" % st.get("detail", ""))
-	var hooked := p.jump_hook == Callable(f, "try_move") and not p.carried
-	K.check(fails, hooked, "the player's jump hook is the feature's")
+	var hooked := p.jump_hook == Callable(f, "try_move") and p.land_hook == Callable(f, "try_roll")
+	K.check(fails, hooked and not p.carried, "the player's jump and land hooks are the feature's")
 
 
 ## A run at a 1 m wall, 0.3 m deep: vaulted, the feet above its top while over it, a soft landing
@@ -417,10 +479,7 @@ func _check_interruptions() -> void:
 	_frame(Vector2.ZERO, false, false)
 	var ended := mv == "vault" and not p.carried and str(f.get("move")) == ""
 	K.check(fails, ended and bool(health.call("knocked")), "a knock-down ends a vault")
-	for _k in range(600):
-		if not bool(health.call("knocked")):
-			break
-		_frame(Vector2.ZERO, false, false)
+	_up_again()
 	K.check(fails, _clear() and p.input_enabled, "the hero gets up clear of the wall")
 	health.call("from_dict", {"hp": HEALTH.MAX_HP})
 	mv = _press_at(2.5, 0.9, run, true)
@@ -440,6 +499,184 @@ func _check_interruptions() -> void:
 	f.call("from_dict", {})
 	K.check(fails, not p.carried and str(f.get("move")) == "", "a load ends a move")
 	_wait(1.0)
+	ctx.collision.clear_test_boxes()
+
+
+## A walk off a 2.2 m box (a 6.6 m/s landing) rolls on along the sidewalk: hero_action "roll", a
+## landing that says so, the rig's roll clip, the feet on the ground and the body going straight on
+## for ROLL_T s at ROLL_V_MIN, then ROLL_OUT_V (the first-person view turning over), then the hero
+## walks on, the rig back in locomotion. The drop costs nothing (landed, 7). Off a 6 m box the roll
+## costs what a landing ROLL_SAVE m/s slower would and the hero stays standing; with landing_roll
+## off the same landing knocks them down.
+func _check_roll() -> void:
+	var p := ctx.player
+	health.call("from_dict", {"hp": HEALTH.MAX_HP})
+	_box(0.0, 1.5, 2.2)
+	var log := _drop_off(2.2, false)
+	var hard := landings.size() == 1 and landings[0] > 6.0
+	K.check(
+		fails,
+		hard and rolls == [true] and actions == ["roll"],
+		"a walk off a 2.2 m box rolls on (%s m/s, %s)" % [str(landings), str(actions)]
+	)
+	var rolled := _carried(log)
+	var states := _states(rolled)
+	K.check(fails, "roll" in states, "the rig plays its roll clip (%s)" % str(states))
+	var flat := rolled.all(
+		func(e: Dictionary) -> bool:
+			var level := absf(float(e["y"])) < 1e-3 and bool(e["grounded"])
+			return level and absf(float(e["side"])) < 0.01
+	)
+	var secs := rolled.size() * DT
+	var along := 0.0
+	if rolled.size() > 1:
+		along = float(rolled[-1]["ahead"]) - float(rolled[0]["ahead"])
+	var over := MOVES.ROLL_V_MIN * MOVES.ROLL_OVER
+	var want := (over + MOVES.ROLL_OUT_V * (MOVES.ROLL_T - MOVES.ROLL_OVER)) / M
+	K.check(
+		fails,
+		flat and absf(secs - MOVES.ROLL_T) < 0.05 and absf(along - want) < 0.15,
+		"on the ground, straight on %.2f m (%.2f) in %.2f s" % [along, want, secs]
+	)
+	var after := log.filter(func(e: Dictionary) -> bool: return not bool(e["carried"]))
+	var v_on := float(after[0]["v"]) if not after.is_empty() else 0.0
+	var last: Dictionary = log[-1] if not log.is_empty() else {}
+	var loco := not last.is_empty() and str(last["state"]) == "loco" and bool(last["grounded"])
+	var state := str(last.get("state", ""))
+	K.check(
+		fails,
+		v_on > 1.2 and loco,
+		"and comes up walking on (%.2f m/s), the rig back in locomotion (%s)" % [v_on, state]
+	)
+	var cost := HEALTH.MAX_HP - float(health.get("hp"))
+	var turned := is_equal_approx(float(p.get("_tumble_len")), MOVES.ROLL_OVER)
+	K.check(
+		fails,
+		cost == 0.0 and not bool(health.call("knocked")) and turned,
+		"the drop costs nothing (%.1f) and the first-person view turned over" % cost
+	)
+	ctx.collision.clear_test_boxes()
+	_check_roll_hard()
+
+
+## Off a 6 m box: rolled, it costs what a landing ROLL_SAVE m/s slower would and the hero stays on
+## their feet; with landing_roll off the same landing knocks them down.
+func _check_roll_hard() -> void:
+	_box(0.0, 1.5, 6.0)
+	_drop_off(6.0, false)
+	var v := landings[0] if landings.size() == 1 else 0.0
+	var slower := v - HEALTH.ROLL_SAVE - HEALTH.FALL_SAFE
+	var want := HEALTH.MAX_HP * slower / (HEALTH.FALL_KO - HEALTH.FALL_SAFE)
+	var cost := HEALTH.MAX_HP - float(health.get("hp"))
+	var up := not bool(health.call("knocked")) and str(rig.call("state")) == "loco"
+	K.check(
+		fails,
+		rolls == [true] and absf(cost - want) < 0.01 and up,
+		"off a 6 m box (%.1f m/s) the roll costs %.1f (%.1f), the hero standing" % [v, want, cost]
+	)
+	health.call("from_dict", {"hp": HEALTH.MAX_HP})
+	FeatureFlags.set_override("landing_roll", false)
+	_walk_off(6.0, false)
+	FeatureFlags.set_override("landing_roll", true)
+	_wait(0.3)
+	var down := rolls == [false] and actions.is_empty() and bool(health.call("knocked"))
+	K.check(fails, down, "landed with landing_roll off, the same drop knocks the hero down")
+	_up_again()
+	health.call("from_dict", {"hp": HEALTH.MAX_HP})
+	ctx.collision.clear_test_boxes()
+
+
+## Ordinary landings off the 2.2 m box: landing_roll or parkour off, or a wall right ahead of
+## where the hero lands; dropped standing still; a run off a 1 m box (too soft). try_roll says no
+## to a landing too hard (past ROLL_MAX), too soft or too slow along the ground.
+func _check_roll_refusals() -> void:
+	var p := ctx.player
+	var before := _made()
+	_box(0.0, 1.5, 2.2)
+	for flag: String in ["landing_roll", "parkour"]:
+		FeatureFlags.set_override(flag, false)
+		_drop_off(2.2, false)
+		FeatureFlags.set_override(flag, true)
+		K.check(fails, rolls == [false] and actions.is_empty(), "%s off: a landing" % flag)
+	_box(3.2, 0.5, 3.0)
+	_drop_off(2.2, false)
+	K.check(fails, rolls == [false] and actions.is_empty(), "a wall right ahead: a landing")
+	ctx.collision.clear_test_boxes()
+	p.teleport(_lane_point(1.0, 0.0) + Vector3(0.0, 2.2 * M, 0.0), yaw_deg, 0.0, false)
+	rolls.clear()
+	_wait(1.0)
+	K.check(fails, rolls == [false], "dropped standing still: a landing (%s)" % str(rolls))
+	_box(0.0, 1.5, 1.0)
+	_drop_off(1.0, true)
+	var soft := landings.size() == 1 and landings[0] < 6.0 and rolls == [false]
+	K.check(fails, soft, "a run off a 1 m box: a landing (%s m/s)" % str(landings))
+	ctx.collision.clear_test_boxes()
+	p.teleport(_lane_point(1.0, 0.0), yaw_deg)
+	p.velocity = run * WS.RUN
+	var too_hard := not bool(f.call("try_roll", PARKOUR.ROLL_MAX + 0.5 * M))
+	var too_soft := not bool(f.call("try_roll", PARKOUR.ROLL_MIN - 0.5 * M))
+	p.velocity = run * (0.8 * M)
+	var too_slow := not bool(f.call("try_roll", PARKOUR.ROLL_MIN + 0.5 * M))
+	K.check(
+		fails,
+		too_hard and too_soft and too_slow and not p.carried,
+		"try_roll: none too hard (14.5 m/s), too soft (5.5 m/s) or too slow along (0.8 m/s)"
+	)
+	K.check(fails, _made() == before, "none of these rolled")
+	health.call("from_dict", {"hp": HEALTH.MAX_HP})
+	_wait(0.3)
+
+
+## Room ahead at a run (MOVES.roll): a wall 0.8 m ahead of the feet, or a drop 0.6 m ahead, leaves
+## no roll. One 2.5 m ahead leaves a roll as long but slower that stops short of the wall, a drop
+## 2 m ahead one that stays on top, the body over the edge a radius at most.
+func _check_roll_room() -> void:
+	var at := _lane_point(1.0, 0.0)
+	_box(1.8, 0.5, 3.0)
+	var walled := MOVES.roll(ctx.collision, at, run, WS.RUN).is_empty()
+	ctx.collision.clear_test_boxes()
+	_box(3.5, 0.5, 3.0)
+	var short := MOVES.roll(ctx.collision, at, run, WS.RUN)
+	ctx.collision.clear_test_boxes()
+	var end := _plan_end(short, at)
+	var as_long := not short.is_empty() and is_equal_approx(float(short["length"]), MOVES.ROLL_T)
+	var slower := as_long and (short["exit"] as Vector3).length() < MOVES.ROLL_OUT_V
+	K.check(
+		fails,
+		walled and slower and end.x > 1.5 and end.x <= 2.5 - R_M and end.y < 1e-4,
+		"a wall 0.8 m ahead: no roll; 2.5 m ahead: a slower one, %.2f m short of it" % (2.5 - end.x)
+	)
+	var top := _lane_point(0.0, 0.0) + Vector3(0.0, 2.0 * M, 0.0)
+	_box(-1.0, 1.6, 2.0)
+	var edge := MOVES.roll(ctx.collision, top, run, WS.RUN).is_empty()
+	ctx.collision.clear_test_boxes()
+	_box(-1.0, 3.0, 2.0)
+	end = _plan_end(MOVES.roll(ctx.collision, top, run, WS.RUN), top)
+	ctx.collision.clear_test_boxes()
+	K.check(
+		fails,
+		edge and end.x > 1.5 and end.x <= 2.0 + R_M and end.y < 1e-4,
+		"a drop 0.6 m ahead: no roll; 2 m ahead: one that stays on top (%.2f m along)" % end.x
+	)
+
+
+## A knock-down ends a roll where the body is, and the hero gets up there.
+func _check_roll_interrupted() -> void:
+	var p := ctx.player
+	_box(0.0, 1.5, 2.2)
+	var rolling := _walk_off(2.2, false) and str(f.get("move")) == "roll"
+	_wait(0.2)
+	health.call("hurt", 10.0, "car", Vector3.ZERO, true)
+	_frame(Vector2.ZERO, false, false)
+	var ended := rolling and not p.carried and str(f.get("move")) == ""
+	K.check(fails, ended and bool(health.call("knocked")), "a knock-down ends a roll")
+	_up_again()
+	K.check(
+		fails,
+		_clear() and p.input_enabled and absf(_up()) < 1e-3,
+		"the hero gets up where it stopped (%.3f m up)" % _up()
+	)
+	health.call("from_dict", {"hp": HEALTH.MAX_HP})
 	ctx.collision.clear_test_boxes()
 
 
@@ -625,10 +862,7 @@ func _check_wall_interruptions() -> void:
 	_frame(Vector2.ZERO, false, false)
 	var off := not p.carried and str(f.get("move")) == "" and f.get("climber") == null
 	K.check(fails, off and bool(health.call("knocked")), "a knock-down drops the body off the wall")
-	for _k in range(600):
-		if not bool(health.call("knocked")):
-			break
-		_frame(Vector2.ZERO, false, false)
+	_up_again()
 	K.check(
 		fails,
 		_clear() and p.input_enabled and absf(_up()) < 1e-3,
@@ -683,7 +917,8 @@ func _check_wall_refusals() -> void:
 	ctx.collision.clear_test_boxes()
 
 
-## Teardown hands the jump back: Space jumps at the wall it vaulted.
+## Teardown hands the jump and the landing back: Space jumps at the wall it vaulted, and a walk off
+## the box it rolled off from lands.
 func _check_teardown() -> void:
 	var p := ctx.player
 	var made := _made()
@@ -692,9 +927,14 @@ func _check_teardown() -> void:
 		fails, bool(st.get("ok", false)), "self_test after the moves (%s)" % st.get("detail", "")
 	)
 	f.teardown()
-	K.check(fails, not p.jump_hook.is_valid(), "teardown takes the jump hook back")
+	var unhooked := not p.jump_hook.is_valid() and not p.land_hook.is_valid()
+	K.check(fails, unhooked, "teardown takes the jump and land hooks back")
 	_box(2.5, 0.3, 1.0)
 	var mv := _press_at(2.5, 0.9, run, true)
 	var log := _finish(run, true)
 	K.check(fails, mv == "" and _made() == made and _max_y(log) > 0.3, "after it Space jumps")
+	ctx.collision.clear_test_boxes()
+	_box(0.0, 1.5, 2.2)
+	_drop_off(2.2, false)
+	K.check(fails, rolls == [false] and _made() == made, "and a walk off a 2.2 m box lands")
 	ctx.collision.clear_test_boxes()

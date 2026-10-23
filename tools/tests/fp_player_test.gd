@@ -1,6 +1,7 @@
 extends SceneTree
 ## Slice A player and interaction (docs/fp/slices/A-player.md "Acceptance tests"): speeds and
-## the crouched eye, curbs and ledges, the jump, walls and sliding, building bodies, the soft step,
+## the crouched eye, curbs and ledges, the jump, a landing taken over (land_hook) and the
+## first-person roll, walls and sliding, building bodies, the soft step,
 ## water, props, interaction (targets, priorities, normalising, E, modals), photo mode, the save
 ## and construction sites. First person (the kit default) on a grown city; movement asserts
 ## against collision.boxes(), never building_aabb.
@@ -40,6 +41,8 @@ func _init() -> void:
 	_check_speeds(ctx)
 	_check_curb(ctx)
 	_check_jump(ctx)
+	_check_land_hook(ctx)
+	_check_tumble(ctx)
 	_check_walls(ctx)
 	_check_slide(ctx)
 	_check_bodies(ctx)
@@ -137,7 +140,7 @@ func _check_jump(ctx: FpContext) -> void:
 	var land_speeds: Array[float] = []
 	var on_step := func(_surface: String, _pos: Vector3) -> void:
 		steps[0] += 1
-	var on_land := func(speed: float) -> void:
+	var on_land := func(speed: float, _rolled: bool) -> void:
 		land_speeds.append(speed)
 	p.stepped.connect(on_step)
 	p.landed.connect(on_land)
@@ -165,6 +168,88 @@ func _check_jump(ctx: FpContext) -> void:
 			jumps += 1
 		was = p.grounded
 	K.check(fails, jumps == 1, "holding jump jumps once (%d)" % jumps)
+
+
+## land_hook: a landing after LAND_STEP_MIN_AIR asks it once with the downward speed (u/s) and
+## landed says whether it took the landing over. A hook that carries the body ends the frame's
+## sub-steps there (the body stays where it was put); with no hook the hero just lands.
+func _check_land_hook(ctx: FpContext) -> void:
+	var p := ctx.player
+	var s := K.sidewalk(ctx, 0.2)
+	if s.is_empty():
+		return
+	var asked: Array[float] = []
+	var said: Array[bool] = []
+	var put: Array[Vector3] = []
+	var on_land := func(_speed: float, rolled: bool) -> void:
+		said.append(rolled)
+	p.landed.connect(on_land)
+	p.land_hook = func(v: float) -> bool:
+		asked.append(v)
+		p.carry(p.position, p.yaw, Vector3.ZERO, true)
+		put.append(p.position)
+		return true
+	var up := (s["pos"] as Vector3) + Vector3(0.0, 2.0 * M, 0.0)
+	p.teleport(up, s["yaw"], 0.0, false)
+	for k in range(60):
+		p.simulate(Vector2(0, 1), false, DT)
+	var v := sqrt(2.0 * 9.81 * 2.0)
+	var asked_v := asked[0] / M if asked.size() == 1 else -1.0
+	var held := put.size() == 1 and p.carried and p.position == put[0]
+	var took := "a 2 m drop asks land_hook once (%.2f m/s) and landed says it took over (%s)"
+	K.check(fails, absf(asked_v - v) < 0.3 and said == [true], took % [asked_v, str(said)])
+	K.check(fails, held, "the body stays where the hook put it")
+	p.release(true)
+	p.land_hook = Callable()
+	said.clear()
+	p.teleport(up, s["yaw"], 0.0, false)
+	for k in range(60):
+		p.simulate(Vector2.ZERO, false, DT)
+	var landed_ok := said == [false] and p.grounded and not p.carried
+	K.check(fails, landed_ok, "with no land_hook the hero lands (%s)" % str(said))
+	p.landed.disconnect(on_land)
+	p.teleport(s["pos"], s["yaw"])
+
+
+## tumble_view: the first-person view turns over forward once in the time given, looking straight
+## down and then upside down on the way, the eye down to TUMBLE_EYE half way, and comes back
+## level at the eye. A teleport stops it.
+func _check_tumble(ctx: FpContext) -> void:
+	var p := ctx.player
+	var s := K.sidewalk(ctx, 0.2)
+	if s.is_empty():
+		return
+	p.teleport(s["pos"], s["yaw"])
+	_settle(p, 30)
+	var level := p.camera.transform
+	p.tumble_view(0.4)
+	var down := false
+	var over := false
+	var low := INF
+	for k in range(30):
+		_settle(p, 1)
+		var xf := p.camera.transform
+		down = down or xf.basis.z.y > 0.95
+		over = over or xf.basis.y.y < -0.95
+		low = minf(low, xf.origin.y)
+	var back := p.camera.transform.is_equal_approx(level)
+	var eye := absf(low - FpPlayer.TUMBLE_EYE) < 0.02 * M
+	var what := "first-person roll: down %s, upside down %s, the eye down to %.2f m, level again %s"
+	K.check(fails, down and over and eye and back, what % [down, over, low / M, back])
+	p.tumble_view(0.4)
+	_settle(p, 6)
+	var mid := not p.camera.transform.is_equal_approx(level)
+	p.teleport(s["pos"], s["yaw"])
+	_settle(p, 1)
+	var stopped := mid and p.camera.transform.is_equal_approx(level)
+	K.check(fails, stopped, "a teleport stops a first-person roll")
+
+
+## n frames standing still: simulate and update_view at DT.
+func _settle(p: FpPlayer, n: int) -> void:
+	for k in range(n):
+		p.simulate(Vector2.ZERO, false, DT)
+		p.update_view(DT)
 
 
 ## Walking into every building within 3 tiles of City Hall for 4 s never enters a box.

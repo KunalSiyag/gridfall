@@ -3,7 +3,8 @@ extends RefCounted
 ## body (AP.HERO_M / AP.HERO_F) with the gender's shared library as the default library "" and an
 ## AnimationTree driven from code: MANUAL process, advanced by player_avatar.update_motion with the
 ## player's own dt, so tests and the game step it the same way. The tree is a StateMachine
-## (locomotion, crouch, jump / fall / land, talk, sit) under a OneShot for upper-body gestures.
+## (locomotion, crouch, jump / fall / land, the landing roll, talk, sit) under a OneShot for
+## upper-body gestures.
 ## Locomotion blends idle with a cyclic BlendSpace1D of walk, walk_fast, run and run_fast at their
 ## measured speeds (SYNC_MODE_CYCLIC_MUTABLE gives the blended loops one shared cycle, so their
 ## left-heel phases stay locked), then a TimeScale that matches the stride to the ground speed.
@@ -34,7 +35,7 @@ const CLIPS := [
 	"idle", "walk", "walk_fast", "run", "run_fast", "crouch_idle", "crouch_walk", "jump_start",
 	"fall", "land", "talk", "sit_down", "sit", "stand_up", "interact", "wave", "phone", "door_try",
 	"punch_jab", "punch_cross", "push", "yes", "no", "shout", "dance", "hit_head", "hit_chest",
-	"knockback", "get_up", "climb_1m",
+	"knockback", "get_up", "climb_1m", "roll",
 ]
 ## Foot-slide correction: TimeScale = clamp(v / v_anim, TS_MIN, TS_MAX).
 const TS_MIN := 0.5
@@ -52,6 +53,10 @@ const XF_LEDGE := 0.2
 ## jump_start opens on a crouch before take-off, but FpPlayer leaves the ground on the press: the
 ## clip starts at take-off.
 const JUMP_SKIP := 0.05
+## A landing roll (play_action "roll") enters the roll clip ROLL_SKIP seconds in, past the dive
+## that opens it, as the hands reach the ground, cross-fading over XF_ROLL.
+const ROLL_SKIP := 0.4
+const XF_ROLL := 0.1
 ## Rising faster than this fraction of JUMP_SPEED when the feet leave the ground is a jump.
 const JUMP_VY := 0.5
 ## Ungrounded this long without a jump (off a ledge) before the fall pose (s).
@@ -102,9 +107,9 @@ const STRIKE_WITHIN := 1.2
 ## sit_down and stand_up play this much faster than authored (in and out of a car seat).
 const SIT_SPEED := 1.5
 const SIT_CLIPS := ["sit_down", "stand_up"]
-## States the ground does not cut short for locomotion: sitting, the knock-down, the climb and
-## holding on to a wall.
-const HELD := ["sit_down", "sit", "stand_up", "knockback", "get_up", "climb", "wall"]
+## States the ground does not cut short for locomotion: sitting, the knock-down, the climb,
+## holding on to a wall and the roll.
+const HELD := ["sit_down", "sit", "stand_up", "knockback", "get_up", "climb", "wall", "roll"]
 ## On a wall (hold_wall) the body holds WALL_CLIP under the limbs' IK, faded in and out over
 ## XF_WALL (s).
 const WALL_CLIP := "idle"
@@ -177,6 +182,8 @@ var _act_left: float = INF
 var _dance_left: float = INF
 ## Seconds until a body knocked down (play_action "knockdown") gets up; INF when it is not down.
 var _down_left: float = INF
+## Seconds until a roll (play_action "roll") gives way to locomotion; INF when not rolling.
+var _roll_left: float = INF
 ## The climb state's clip (its timeline stretches to each climb's length).
 var _climb: AnimationNodeAnimation
 var _strike: Dictionary = {}
@@ -251,6 +258,8 @@ func update(dt: float, v: float, grounded: bool, vy: float, crouched: bool, talk
 	if _down_left < INF:
 		# Knocked down: the fall and the get-up run by themselves (a landing must not cut in).
 		_air_t = 0.0 if grounded else _air_t + dt
+	elif _roll_left < INF:
+		_rolling(dt, a, grounded, crouched, talking)
 	elif not grounded:
 		_air_t += dt
 		if st in ["loco", "crouch", "land", "talk"]:
@@ -291,8 +300,19 @@ func _on_ground(dt: float, st: String, a: float, crouched: bool, talking: bool) 
 		_go(_base(a, crouched, talking))
 
 
+## Rolling: the roll runs by itself (a landing must not cut in), then gives way to the base state,
+## or to the fall off a ledge.
+func _rolling(dt: float, a: float, grounded: bool, crouched: bool, talking: bool) -> void:
+	_air_t = 0.0
+	_roll_left -= dt
+	if _roll_left > 0.0:
+		return
+	_roll_left = INF
+	_go(_base(a, crouched, talking) if grounded else "fall")
+
+
 ## The state machine's current state ("loco", "crouch", "jump", "fall", "land", "talk",
-## "sit_down", "sit", "stand_up", "knockback", "get_up", "climb", "wall").
+## "sit_down", "sit", "stand_up", "knockback", "get_up", "climb", "wall", "roll").
 func state() -> String:
 	return str(playback.get_current_node()) if playback != null else ""
 
@@ -324,12 +344,14 @@ func stop_gesture() -> void:
 
 ## Plays a body action: one of ACTIONS on the upper body over whatever the legs do, "dance" on
 ## the whole body (standing only; moving ends it), "knockdown" (the body falls onto its back,
-## lies there secs and gets up) or "climb" (the body pulls itself up over secs, then walks on).
+## lies there secs and gets up), "climb" (the body pulls itself up over secs, then walks on) or
+## "roll" (from a landing the body rolls over a shoulder and comes up, on into locomotion after
+## secs).
 ## secs > 0 fades an action out that long after the start; otherwise a clip plays to its end, a
 ## loop for one cycle and the dance until stopped.
 func play_action(a: String, secs: float = 0.0) -> bool:
 	var left := secs if secs > 0.0 else INF
-	if a == "knockdown" or a == "climb":
+	if a in ["knockdown", "climb", "roll"]:
 		stop_gesture()
 		stop_action()
 		_whole_body(a, secs)
@@ -349,15 +371,25 @@ func play_action(a: String, secs: float = 0.0) -> bool:
 
 
 func _whole_body(a: String, secs: float) -> void:
+	_roll_left = INF
 	if a == "knockdown":
 		_down_left = float(lengths["knockback"]) + maxf(secs, 0.0)
 		_go("knockback")
 		return
+	if a == "roll":
+		_roll_left = secs if secs > 0.0 else float(lengths["roll"]) - ROLL_SKIP
+		_restart("roll")
+		return
 	_climb.timeline_length = secs if secs > 0.0 else float(lengths["climb_1m"])
-	if state() == "climb":
-		playback.start("climb", true)
+	_restart("climb")
+
+
+## Into state s, from its start again when the body is in it already.
+func _restart(s: String) -> void:
+	if state() == s:
+		playback.start(s, true)
 	else:
-		_go("climb")
+		_go(s)
 
 
 ## Takes hold of a wall (on: the wall pose, the limbs put on holds by reach) or lets go of it: the
@@ -510,6 +542,7 @@ func snap(crouched: bool) -> void:
 	_act_left = INF
 	_dance_left = INF
 	_down_left = INF
+	_roll_left = INF
 	playback.start("crouch" if crouched else "loco", true)
 	tree.advance(0.0)
 	_prev_state = state()
@@ -625,13 +658,7 @@ func _state_machine() -> AnimationNodeStateMachine:
 	var sm := AnimationNodeStateMachine.new()
 	sm.add_node("loco", _locomotion())
 	sm.add_node("crouch", _crouch())
-	var jump := _anim("jump_start")
-	jump.use_custom_timeline = true
-	jump.timeline_length = maxf(float(lengths["jump_start"]) - JUMP_SKIP, 0.1)
-	jump.start_offset = JUMP_SKIP
-	jump.stretch_time_scale = false
-	jump.loop_mode = Animation.LOOP_NONE
-	sm.add_node("jump", jump)
+	sm.add_node("jump", _skipped("jump_start", JUMP_SKIP))
 	sm.add_node("fall", _anim("fall"))
 	var land := AnimationNodeBlendTree.new()
 	land.add_node("idle", _anim("idle"))
@@ -648,6 +675,7 @@ func _state_machine() -> AnimationNodeStateMachine:
 	_climb = _once("climb_1m", 1.0)
 	sm.add_node("climb", _climb)
 	sm.add_node("wall", _anim(WALL_CLIP))
+	sm.add_node("roll", _skipped("roll", ROLL_SKIP))
 	_tr(sm, "Start", "loco", 0.0, true)
 	for pair: Array in [["loco", "crouch"], ["crouch", "loco"], ["land", "crouch"]]:
 		_tr(sm, pair[0], pair[1], XF_CROUCH)
@@ -665,8 +693,11 @@ func _state_machine() -> AnimationNodeStateMachine:
 	_tr(sm, "climb", "loco", XF_LAND_OUT, true)
 	for from: String in ["loco", "crouch", "land", "talk", "jump", "fall"]:
 		_tr(sm, from, "wall", XF_WALL)
+		_tr(sm, from, "roll", XF_ROLL)
 	for to: String in ["climb", "fall", "loco"]:
 		_tr(sm, "wall", to, XF_WALL)
+	for to: String in ["loco", "crouch", "talk", "fall"]:
+		_tr(sm, "roll", to, XF_LAND_OUT)
 	_tr(sm, "land", "loco", XF_LAND_OUT)
 	_tr(sm, "land", "talk", XF_TALK)
 	for pair: Array in [["loco", "talk"], ["talk", "loco"], ["crouch", "talk"], ["talk", "crouch"]]:
@@ -678,7 +709,10 @@ func _state_machine() -> AnimationNodeStateMachine:
 	_tr(sm, "sit", "stand_up", XF_SIT)
 	_tr(sm, "stand_up", "loco", XF_SIT, true)
 	_tr(sm, "stand_up", "sit_down", XF_SIT)
-	for from: String in ["loco", "crouch", "land", "talk", "jump", "fall", "get_up", "climb", "wall"]:
+	var into_knockback := [
+		"loco", "crouch", "land", "talk", "jump", "fall", "get_up", "climb", "wall", "roll"
+	]
+	for from: String in into_knockback:
 		_tr(sm, from, "knockback", XF_FALL)
 	_tr(sm, "knockback", "get_up", XF_FALL)
 	_tr(sm, "get_up", "loco", XF_LAND_OUT, true)
@@ -725,6 +759,17 @@ func _crouch() -> AnimationNodeBlendTree:
 static func _anim(clip: String) -> AnimationNodeAnimation:
 	var a := AnimationNodeAnimation.new()
 	a.animation = clip
+	return a
+
+
+## clip played once from skip seconds in at its own pace, holding its last frame.
+func _skipped(clip: String, skip: float) -> AnimationNodeAnimation:
+	var a := _anim(clip)
+	a.use_custom_timeline = true
+	a.timeline_length = maxf(float(lengths[clip]) - skip, 0.1)
+	a.start_offset = skip
+	a.stretch_time_scale = false
+	a.loop_mode = Animation.LOOP_NONE
 	return a
 
 

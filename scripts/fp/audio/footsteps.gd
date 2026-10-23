@@ -177,8 +177,9 @@ func _on_stepped(surface: String, _pos: Vector3) -> void:
 	play(surface)
 
 
-## The landing's own contact already played (stepped comes first); a heavy one lands on both feet.
-func _on_landed(speed_mps: float) -> void:
+## The landing's own contact already played (stepped comes first); a heavy one lands on both feet,
+## rolled off or not.
+func _on_landed(speed_mps: float, _rolled: bool = false) -> void:
 	if speed_mps < HEAVY_LAND_MPS:
 		return
 	heavy_lands += 1

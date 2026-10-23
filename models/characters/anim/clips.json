@@ -340,6 +340,16 @@
     "speed_mps": 0.0
    }
   },
+  "roll": {
+   "u": {
+    "kind": "ual",
+    "loop": false,
+    "source": "quaternius:UAL1/Roll",
+    "frames": 36,
+    "seconds": 1.4583,
+    "speed_mps": 0.0
+   }
+  },
   "run": {
    "m": {
     "kind": "travel",

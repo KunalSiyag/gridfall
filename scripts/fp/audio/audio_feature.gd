@@ -3,7 +3,7 @@ extends FpFeature
 ## the AudioDirector's music under the street (set_fp), and runs three parts: positional emitters
 ## (engines, horns, sirens, construction, fire, fountains, plants, the river, passers-by's steps,
 ## the player's car crashing, the street props it knocks over and its doors, people hit in the
-## street, the hero's swings and the blows they take),
+## street, the hero's swings, rolls and the blows they take),
 ## the area beds (with rain from G1's weather) and the hero's footsteps (splashing on wet paving),
 ## plus the chat blip and alert stingers. Pausing muffles the music (the only thing still
 ## playing); talking to someone ducks the beds.
@@ -57,7 +57,7 @@ var _duck_target: float = 0.0
 var _sfx_db: float = 0.0
 var _talking: Dictionary = {}
 var _last_knock: float = -INF
-var _falls: Array = []                 # [due on _now, feet] of people knocked down
+var _falls: Array = []                 # [due on _now, feet, dB] of bodies hitting the ground
 var _rng := RandomNumberGenerator.new()
 var _links: Array = []                 # [Signal, Callable]
 var _muffle: Tween
@@ -204,7 +204,7 @@ func step(dt: float) -> void:
 	emitters.night = ambience.night
 	while not _falls.is_empty() and float(_falls[0][0]) <= _now:
 		var fall: Array = _falls.pop_front()
-		emitters.shot("hit", fall[1], "body_fall", BANK.BODY_FALL_DB, _rng.randf_range(0.92, 1.04))
+		emitters.shot("hit", fall[1], "body_fall", float(fall[2]), _rng.randf_range(0.92, 1.04))
 	emitters.step(dt)
 	ambience.step(dt)
 	footsteps.poll(dt)
@@ -372,7 +372,7 @@ func _on_person_hit(at: Vector3, cause: String, info: Dictionary) -> void:
 		pitch = _rng.randf_range(0.72, 0.8)
 	emitters.shot("hit", at + Vector3(0.0, 1.3 * WS.M, 0.0), "punch_hit", trim, pitch)
 	if bool(info.get("down", false)):
-		_falls.append([_now + BANK.BODY_FALL_S, at])
+		_queue_fall(BANK.BODY_FALL_S, at, BANK.BODY_FALL_DB)
 
 
 ## The hero hurt (hero_hurt) by a punch or a car: the thump at their chest by the health it took
@@ -387,12 +387,25 @@ func _on_hero_hurt(amount: float, cause: String, _health: float, down: bool) -> 
 	var pitch := _rng.randf_range(0.72, 0.8) if car else _rng.randf_range(0.92, 1.08)
 	emitters.shot("hit", at + Vector3(0.0, 1.3 * WS.M, 0.0), "punch_hit", trim, pitch)
 	if down:
-		_falls.append([_now + BANK.BODY_FALL_S, at])
+		_queue_fall(BANK.BODY_FALL_S, at, BANK.BODY_FALL_DB)
+
+
+## A body_fall at at, delay seconds from now at db, in the queue by when it is due.
+func _queue_fall(delay: float, at: Vector3, db: float) -> void:
+	var due := _now + delay
+	var i := _falls.size()
+	while i > 0 and float(_falls[i - 1][0]) > due:
+		i -= 1
+	_falls.insert(i, [due, at, db])
 
 
 ## The hero's swing (hero_action): a whoosh at their shoulder, a jab's higher, a shove's lower and
-## softer. Emotes make no sound here.
+## softer; a landing roll's shoulder thuds on the ground BANK.ROLL_THUD_S later. Emotes and the
+## other parkour moves make no sound here.
 func _on_hero_action(action: String, at: Vector3) -> void:
+	if action == "roll":
+		_queue_fall(BANK.ROLL_THUD_S, at, BANK.BODY_FALL_DB + BANK.ROLL_DB)
+		return
 	if action not in ["jab", "cross", "shove"]:
 		return
 	var shove := action == "shove"

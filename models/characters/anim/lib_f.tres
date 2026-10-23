@@ -1,100 +1,102 @@
 [gd_resource type="AnimationLibrary" format=3]
 
-[ext_resource type="Animation" path="res://models/characters/anim/clips/u_carry.res" id="1_0skoq"]
-[ext_resource type="Animation" path="res://models/characters/anim/clips/u_climb_1m.res" id="2_ip7e5"]
-[ext_resource type="Animation" path="res://models/characters/anim/clips/u_crouch_idle.res" id="3_x1be5"]
-[ext_resource type="Animation" path="res://models/characters/anim/clips/u_crouch_walk.res" id="4_nv4rb"]
-[ext_resource type="Animation" path="res://models/characters/anim/clips/u_dance.res" id="5_8li0o"]
-[ext_resource type="Animation" path="res://models/characters/anim/clips/f_door_try.res" id="6_b36u2"]
-[ext_resource type="Animation" path="res://models/characters/anim/clips/u_drive.res" id="7_ofcld"]
-[ext_resource type="Animation" path="res://models/characters/anim/clips/u_fall.res" id="8_ghonb"]
-[ext_resource type="Animation" path="res://models/characters/anim/clips/u_fold_arms.res" id="9_gadsl"]
-[ext_resource type="Animation" path="res://models/characters/anim/clips/u_get_up.res" id="10_h3apn"]
-[ext_resource type="Animation" path="res://models/characters/anim/clips/u_hit_chest.res" id="11_hwh8e"]
-[ext_resource type="Animation" path="res://models/characters/anim/clips/u_hit_head.res" id="12_pxrho"]
-[ext_resource type="Animation" path="res://models/characters/anim/clips/f_idle.res" id="13_g3snm"]
-[ext_resource type="Animation" path="res://models/characters/anim/clips/f_idle_look.res" id="14_3l0uv"]
-[ext_resource type="Animation" path="res://models/characters/anim/clips/f_idle_wait.res" id="15_6e340"]
-[ext_resource type="Animation" path="res://models/characters/anim/clips/u_interact.res" id="16_enyhb"]
-[ext_resource type="Animation" path="res://models/characters/anim/clips/u_jump_start.res" id="17_qgek3"]
-[ext_resource type="Animation" path="res://models/characters/anim/clips/f_knock.res" id="18_f7pj5"]
-[ext_resource type="Animation" path="res://models/characters/anim/clips/u_knockback.res" id="19_k4pae"]
-[ext_resource type="Animation" path="res://models/characters/anim/clips/u_land.res" id="20_6ubva"]
-[ext_resource type="Animation" path="res://models/characters/anim/clips/u_no.res" id="21_446ks"]
-[ext_resource type="Animation" path="res://models/characters/anim/clips/f_phone.res" id="22_33ka6"]
-[ext_resource type="Animation" path="res://models/characters/anim/clips/u_phone_idle.res" id="23_y2tpj"]
-[ext_resource type="Animation" path="res://models/characters/anim/clips/u_pickup.res" id="24_3wwip"]
-[ext_resource type="Animation" path="res://models/characters/anim/clips/u_punch_cross.res" id="25_h56a0"]
-[ext_resource type="Animation" path="res://models/characters/anim/clips/u_punch_jab.res" id="26_8mlgv"]
-[ext_resource type="Animation" path="res://models/characters/anim/clips/u_push.res" id="27_hp1pt"]
-[ext_resource type="Animation" path="res://models/characters/anim/clips/f_run.res" id="28_7ajpk"]
-[ext_resource type="Animation" path="res://models/characters/anim/clips/f_run_fast.res" id="29_4vrwa"]
-[ext_resource type="Animation" path="res://models/characters/anim/clips/f_run_start.res" id="30_7k85i"]
-[ext_resource type="Animation" path="res://models/characters/anim/clips/f_run_stop.res" id="31_crajn"]
-[ext_resource type="Animation" path="res://models/characters/anim/clips/u_shout.res" id="32_8kxnf"]
-[ext_resource type="Animation" path="res://models/characters/anim/clips/f_sit.res" id="33_hh0te"]
-[ext_resource type="Animation" path="res://models/characters/anim/clips/f_sit_down.res" id="34_eqc0o"]
-[ext_resource type="Animation" path="res://models/characters/anim/clips/f_stand_up.res" id="35_a2uwb"]
-[ext_resource type="Animation" path="res://models/characters/anim/clips/f_talk.res" id="36_kkrc2"]
-[ext_resource type="Animation" path="res://models/characters/anim/clips/f_talk_2.res" id="37_qd27v"]
-[ext_resource type="Animation" path="res://models/characters/anim/clips/f_turn_l180_walk.res" id="38_1idye"]
-[ext_resource type="Animation" path="res://models/characters/anim/clips/f_turn_l90.res" id="39_gplja"]
-[ext_resource type="Animation" path="res://models/characters/anim/clips/f_turn_r180_walk.res" id="40_ajnkw"]
-[ext_resource type="Animation" path="res://models/characters/anim/clips/f_turn_r90.res" id="41_sox2c"]
-[ext_resource type="Animation" path="res://models/characters/anim/clips/f_walk.res" id="42_67u11"]
-[ext_resource type="Animation" path="res://models/characters/anim/clips/f_walk_fast.res" id="43_rphp5"]
-[ext_resource type="Animation" path="res://models/characters/anim/clips/f_walk_start.res" id="44_3c78d"]
-[ext_resource type="Animation" path="res://models/characters/anim/clips/f_walk_stop.res" id="45_cuh4e"]
-[ext_resource type="Animation" path="res://models/characters/anim/clips/f_wave.res" id="46_n48ax"]
-[ext_resource type="Animation" path="res://models/characters/anim/clips/u_yes.res" id="47_1vp02"]
+[ext_resource type="Animation" path="res://models/characters/anim/clips/u_carry.res" id="1_ip7e5"]
+[ext_resource type="Animation" path="res://models/characters/anim/clips/u_climb_1m.res" id="2_x1be5"]
+[ext_resource type="Animation" path="res://models/characters/anim/clips/u_crouch_idle.res" id="3_nv4rb"]
+[ext_resource type="Animation" path="res://models/characters/anim/clips/u_crouch_walk.res" id="4_8li0o"]
+[ext_resource type="Animation" path="res://models/characters/anim/clips/u_dance.res" id="5_b36u2"]
+[ext_resource type="Animation" path="res://models/characters/anim/clips/f_door_try.res" id="6_ofcld"]
+[ext_resource type="Animation" path="res://models/characters/anim/clips/u_drive.res" id="7_ghonb"]
+[ext_resource type="Animation" path="res://models/characters/anim/clips/u_fall.res" id="8_gadsl"]
+[ext_resource type="Animation" path="res://models/characters/anim/clips/u_fold_arms.res" id="9_h3apn"]
+[ext_resource type="Animation" path="res://models/characters/anim/clips/u_get_up.res" id="10_hwh8e"]
+[ext_resource type="Animation" path="res://models/characters/anim/clips/u_hit_chest.res" id="11_pxrho"]
+[ext_resource type="Animation" path="res://models/characters/anim/clips/u_hit_head.res" id="12_g3snm"]
+[ext_resource type="Animation" path="res://models/characters/anim/clips/f_idle.res" id="13_3l0uv"]
+[ext_resource type="Animation" path="res://models/characters/anim/clips/f_idle_look.res" id="14_6e340"]
+[ext_resource type="Animation" path="res://models/characters/anim/clips/f_idle_wait.res" id="15_enyhb"]
+[ext_resource type="Animation" path="res://models/characters/anim/clips/u_interact.res" id="16_qgek3"]
+[ext_resource type="Animation" path="res://models/characters/anim/clips/u_jump_start.res" id="17_f7pj5"]
+[ext_resource type="Animation" path="res://models/characters/anim/clips/f_knock.res" id="18_k4pae"]
+[ext_resource type="Animation" path="res://models/characters/anim/clips/u_knockback.res" id="19_6ubva"]
+[ext_resource type="Animation" path="res://models/characters/anim/clips/u_land.res" id="20_446ks"]
+[ext_resource type="Animation" path="res://models/characters/anim/clips/u_no.res" id="21_33ka6"]
+[ext_resource type="Animation" path="res://models/characters/anim/clips/f_phone.res" id="22_y2tpj"]
+[ext_resource type="Animation" path="res://models/characters/anim/clips/u_phone_idle.res" id="23_3wwip"]
+[ext_resource type="Animation" path="res://models/characters/anim/clips/u_pickup.res" id="24_h56a0"]
+[ext_resource type="Animation" path="res://models/characters/anim/clips/u_punch_cross.res" id="25_8mlgv"]
+[ext_resource type="Animation" path="res://models/characters/anim/clips/u_punch_jab.res" id="26_hp1pt"]
+[ext_resource type="Animation" path="res://models/characters/anim/clips/u_push.res" id="27_7ajpk"]
+[ext_resource type="Animation" path="res://models/characters/anim/clips/u_roll.res" id="28_4vrwa"]
+[ext_resource type="Animation" path="res://models/characters/anim/clips/f_run.res" id="29_7k85i"]
+[ext_resource type="Animation" path="res://models/characters/anim/clips/f_run_fast.res" id="30_crajn"]
+[ext_resource type="Animation" path="res://models/characters/anim/clips/f_run_start.res" id="31_8kxnf"]
+[ext_resource type="Animation" path="res://models/characters/anim/clips/f_run_stop.res" id="32_hh0te"]
+[ext_resource type="Animation" path="res://models/characters/anim/clips/u_shout.res" id="33_eqc0o"]
+[ext_resource type="Animation" path="res://models/characters/anim/clips/f_sit.res" id="34_a2uwb"]
+[ext_resource type="Animation" path="res://models/characters/anim/clips/f_sit_down.res" id="35_kkrc2"]
+[ext_resource type="Animation" path="res://models/characters/anim/clips/f_stand_up.res" id="36_qd27v"]
+[ext_resource type="Animation" path="res://models/characters/anim/clips/f_talk.res" id="37_1idye"]
+[ext_resource type="Animation" path="res://models/characters/anim/clips/f_talk_2.res" id="38_gplja"]
+[ext_resource type="Animation" path="res://models/characters/anim/clips/f_turn_l180_walk.res" id="39_ajnkw"]
+[ext_resource type="Animation" path="res://models/characters/anim/clips/f_turn_l90.res" id="40_sox2c"]
+[ext_resource type="Animation" path="res://models/characters/anim/clips/f_turn_r180_walk.res" id="41_67u11"]
+[ext_resource type="Animation" path="res://models/characters/anim/clips/f_turn_r90.res" id="42_rphp5"]
+[ext_resource type="Animation" path="res://models/characters/anim/clips/f_walk.res" id="43_3c78d"]
+[ext_resource type="Animation" path="res://models/characters/anim/clips/f_walk_fast.res" id="44_cuh4e"]
+[ext_resource type="Animation" path="res://models/characters/anim/clips/f_walk_start.res" id="45_n48ax"]
+[ext_resource type="Animation" path="res://models/characters/anim/clips/f_walk_stop.res" id="46_1vp02"]
+[ext_resource type="Animation" path="res://models/characters/anim/clips/f_wave.res" id="47_tf20y"]
+[ext_resource type="Animation" path="res://models/characters/anim/clips/u_yes.res" id="48_g1oy2"]
 
 [resource]
 _data = {
-&"carry": ExtResource("1_0skoq"),
-&"climb_1m": ExtResource("2_ip7e5"),
-&"crouch_idle": ExtResource("3_x1be5"),
-&"crouch_walk": ExtResource("4_nv4rb"),
-&"dance": ExtResource("5_8li0o"),
-&"door_try": ExtResource("6_b36u2"),
-&"drive": ExtResource("7_ofcld"),
-&"fall": ExtResource("8_ghonb"),
-&"fold_arms": ExtResource("9_gadsl"),
-&"get_up": ExtResource("10_h3apn"),
-&"hit_chest": ExtResource("11_hwh8e"),
-&"hit_head": ExtResource("12_pxrho"),
-&"idle": ExtResource("13_g3snm"),
-&"idle_look": ExtResource("14_3l0uv"),
-&"idle_wait": ExtResource("15_6e340"),
-&"interact": ExtResource("16_enyhb"),
-&"jump_start": ExtResource("17_qgek3"),
-&"knock": ExtResource("18_f7pj5"),
-&"knockback": ExtResource("19_k4pae"),
-&"land": ExtResource("20_6ubva"),
-&"no": ExtResource("21_446ks"),
-&"phone": ExtResource("22_33ka6"),
-&"phone_idle": ExtResource("23_y2tpj"),
-&"pickup": ExtResource("24_3wwip"),
-&"punch_cross": ExtResource("25_h56a0"),
-&"punch_jab": ExtResource("26_8mlgv"),
-&"push": ExtResource("27_hp1pt"),
-&"run": ExtResource("28_7ajpk"),
-&"run_fast": ExtResource("29_4vrwa"),
-&"run_start": ExtResource("30_7k85i"),
-&"run_stop": ExtResource("31_crajn"),
-&"shout": ExtResource("32_8kxnf"),
-&"sit": ExtResource("33_hh0te"),
-&"sit_down": ExtResource("34_eqc0o"),
-&"stand_up": ExtResource("35_a2uwb"),
-&"talk": ExtResource("36_kkrc2"),
-&"talk_2": ExtResource("37_qd27v"),
-&"turn_l180_walk": ExtResource("38_1idye"),
-&"turn_l90": ExtResource("39_gplja"),
-&"turn_r180_walk": ExtResource("40_ajnkw"),
-&"turn_r90": ExtResource("41_sox2c"),
-&"walk": ExtResource("42_67u11"),
-&"walk_fast": ExtResource("43_rphp5"),
-&"walk_start": ExtResource("44_3c78d"),
-&"walk_stop": ExtResource("45_cuh4e"),
-&"wave": ExtResource("46_n48ax"),
-&"yes": ExtResource("47_1vp02")
+&"carry": ExtResource("1_ip7e5"),
+&"climb_1m": ExtResource("2_x1be5"),
+&"crouch_idle": ExtResource("3_nv4rb"),
+&"crouch_walk": ExtResource("4_8li0o"),
+&"dance": ExtResource("5_b36u2"),
+&"door_try": ExtResource("6_ofcld"),
+&"drive": ExtResource("7_ghonb"),
+&"fall": ExtResource("8_gadsl"),
+&"fold_arms": ExtResource("9_h3apn"),
+&"get_up": ExtResource("10_hwh8e"),
+&"hit_chest": ExtResource("11_pxrho"),
+&"hit_head": ExtResource("12_g3snm"),
+&"idle": ExtResource("13_3l0uv"),
+&"idle_look": ExtResource("14_6e340"),
+&"idle_wait": ExtResource("15_enyhb"),
+&"interact": ExtResource("16_qgek3"),
+&"jump_start": ExtResource("17_f7pj5"),
+&"knock": ExtResource("18_k4pae"),
+&"knockback": ExtResource("19_6ubva"),
+&"land": ExtResource("20_446ks"),
+&"no": ExtResource("21_33ka6"),
+&"phone": ExtResource("22_y2tpj"),
+&"phone_idle": ExtResource("23_3wwip"),
+&"pickup": ExtResource("24_h56a0"),
+&"punch_cross": ExtResource("25_8mlgv"),
+&"punch_jab": ExtResource("26_hp1pt"),
+&"push": ExtResource("27_7ajpk"),
+&"roll": ExtResource("28_4vrwa"),
+&"run": ExtResource("29_7k85i"),
+&"run_fast": ExtResource("30_crajn"),
+&"run_start": ExtResource("31_8kxnf"),
+&"run_stop": ExtResource("32_hh0te"),
+&"shout": ExtResource("33_eqc0o"),
+&"sit": ExtResource("34_a2uwb"),
+&"sit_down": ExtResource("35_kkrc2"),
+&"stand_up": ExtResource("36_qd27v"),
+&"talk": ExtResource("37_1idye"),
+&"talk_2": ExtResource("38_gplja"),
+&"turn_l180_walk": ExtResource("39_ajnkw"),
+&"turn_l90": ExtResource("40_sox2c"),
+&"turn_r180_walk": ExtResource("41_67u11"),
+&"turn_r90": ExtResource("42_rphp5"),
+&"walk": ExtResource("43_3c78d"),
+&"walk_fast": ExtResource("44_cuh4e"),
+&"walk_start": ExtResource("45_n48ax"),
+&"walk_stop": ExtResource("46_1vp02"),
+&"wave": ExtResource("47_tf20y"),
+&"yes": ExtResource("48_g1oy2")
 }

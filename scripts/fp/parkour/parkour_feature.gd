@@ -5,11 +5,13 @@ extends FpFeature
 ## playing as the body pulls itself up (moves.gd plans each move). A wall taller than that is
 ## taken hold of (flag wall_climb; wall.gd finds it): the hero leaps onto it and climbs it with the
 ## move keys, hands and feet on holds (climb.gd), climbs over the top where there is room to stand
-## and steps off at its foot; crouch lets go and jump pushes off it. The player's jump hook hands
-## the press over; the move carries the body (FpPlayer.carry) and gives it back at the end, after
-## a vault, a hop or a let-go to land. A knock-down or a loss of control drops the body where it
-## is, and a teleport ends the move. Each move goes out on the bus (hero_action "vault", "hop",
-## "climb" or "grab").
+## and steps off at its foot; crouch lets go and jump pushes off it. A hard landing on the move
+## rolls on along the ground over a shoulder (flag landing_roll), the rig's roll clip playing and
+## the first-person view turning over; the health feature counts it softer. The player's jump and
+## land hooks hand the press or the landing over; the move carries the body (FpPlayer.carry) and
+## gives it back at the end, after a vault, a hop or a let-go to land. A knock-down or a loss of
+## control drops the body where it is, and a teleport ends the move. Each move goes out on the bus
+## (hero_action "vault", "hop", "climb", "roll" or "grab").
 
 const WS := preload("res://scripts/fp/world_scale.gd")
 const MOVES := preload("res://scripts/fp/parkour/moves.gd")
@@ -25,11 +27,16 @@ const KICK := -0.02
 ## Jump on a wall pushes off it, back from it and up at these speeds (u/s).
 const PUSH_BACK := 2.0 * WS.M
 const PUSH_UP := 2.5 * WS.M
+## A landing rolls (flag landing_roll) from ROLL_MIN down (u/s; about a 1.8 m drop) up to ROLL_MAX
+## (a 10 m one, past which it cannot be rolled off), moving at ROLL_MOVING or more.
+const ROLL_MIN := 6.0 * WS.M
+const ROLL_MAX := 14.0 * WS.M
+const ROLL_MOVING := 1.0 * WS.M
 
-## The move under way ("vault", "hop", "climb", or "wall" on a wall) or "".
+## The move under way ("vault", "hop", "climb", "roll", or "wall" on a wall) or "".
 var move: String = ""
 ## Moves made so far, by kind ("grab": walls taken hold of).
-var made: Dictionary = {"vault": 0, "hop": 0, "climb": 0, "grab": 0}
+var made: Dictionary = {"vault": 0, "hop": 0, "climb": 0, "roll": 0, "grab": 0}
 ## The body on a wall (climb.gd) while move is "wall", else null.
 var climber: CLIMB = null
 var _plan: Dictionary = {}
@@ -62,15 +69,18 @@ func teardown() -> void:
 	var p := ctx.player if ctx != null else null
 	if p != null and p.jump_hook == try_move:
 		p.jump_hook = Callable()
+	if p != null and p.land_hook == try_roll:
+		p.land_hook = Callable()
 
 
 func self_test() -> Dictionary:
 	var p := ctx.player
 	var detail := (
-		"%d vaults, %d hops, %d climbs, %d walls"
-		% [made["vault"], made["hop"], made["climb"], made["grab"]]
+		"%d vaults, %d hops, %d climbs, %d rolls, %d walls"
+		% [made["vault"], made["hop"], made["climb"], made["roll"], made["grab"]]
 	)
-	return {"ok": p == null or p.jump_hook == try_move, "detail": detail}
+	var hooked := p == null or (p.jump_hook == try_move and p.land_hook == try_roll)
+	return {"ok": hooked, "detail": detail}
 
 
 ## The player's jump hook: a jump press in front of an obstacle starts the move it allows, or at a
@@ -97,13 +107,36 @@ func try_move() -> bool:
 	return true
 
 
+## The player's land hook: a landing from ROLL_MIN to ROLL_MAX down (land_v, u/s) at ROLL_MOVING
+## or more rolls on along the ground where there is room (moves.gd plans it; true); otherwise the
+## hero just lands (false). Only on foot and in control, not talking or knocked down.
+func try_roll(land_v: float) -> bool:
+	var p := ctx.player if ctx != null else null
+	if p == null or not move.is_empty() or land_v < ROLL_MIN or land_v > ROLL_MAX:
+		return false
+	if not FeatureFlags.enabled("parkour") or not FeatureFlags.enabled("landing_roll"):
+		return false
+	if not p.input_enabled or p.photo_mode or p.in_conversation() or _knocked():
+		return false
+	var flat := Vector3(p.velocity.x, 0.0, p.velocity.z)
+	var plan := {}
+	if flat.length() >= ROLL_MOVING:
+		plan = MOVES.roll(ctx.collision, p.position, flat, flat.length())
+	if plan.is_empty():
+		return false
+	_start(plan)
+	_clip()
+	return true
+
+
 func _process(delta: float) -> void:
 	if ctx != null:
 		tick(minf(delta, 0.1))
 
 
 ## One step of the move under way: on a wall the climb; otherwise the body along the plan, turning
-## across the obstacle, the climb clip from the face, and the body handed back at the end.
+## across the obstacle (along a roll), the climb clip from the face, and the body handed back at
+## the end.
 func tick(dt: float) -> void:
 	if move.is_empty():
 		return
@@ -240,13 +273,17 @@ func _off_wall(vel: Vector3, on_ground: bool) -> void:
 	_forget()
 
 
-## The rig's climb clip for the climb under way, the view dipping as the hands take the edge.
+## The rig's clip for the climb or the roll under way (play_action with the move's name): the view
+## dips as the hands take the edge, or turns over in first person through a roll.
 func _clip() -> void:
 	_clip_on = true
-	ctx.player.kick_view(KICK, 0.0)
+	if move == "roll":
+		ctx.player.tumble_view(MOVES.ROLL_OVER)
+	else:
+		ctx.player.kick_view(KICK, 0.0)
 	var rig := _rig()
 	if rig != null:
-		rig.call("play_action", "climb", float(_plan["anim_len"]))
+		rig.call("play_action", move, float(_plan["anim_len"]))
 
 
 func _forget() -> void:
@@ -265,6 +302,7 @@ func _forget() -> void:
 func _hook() -> void:
 	if ctx != null and ctx.player != null:
 		ctx.player.jump_hook = try_move
+		ctx.player.land_hook = try_roll
 
 
 func _cancel_actions() -> void:
