@@ -91,6 +91,9 @@ Slice I's sound assets (sounds/fp/, made by tools/audio/synth_fp_sfx.py): names,
 - `DOG_DB = {"bark": 0.0, "growl": -6.0, "whine": -12.0}`
 - `DOG_PITCH_M = 0.5`
 - `SNAP_Y = 0.5`
+- `COO_VARIANTS = 2`: Pigeons (animal_called): a coo is one of COO_VARIANTS (pigeon_coo_<n>), a lone bird's flap and a flock's take-off play pigeon_flap and pigeon_takeoff; each at PIGEON_DB on the bird emitter's level, its pitch within PIGEON_PITCH of the sample's.
+- `PIGEON_DB = {"coo": -16.0, "flap": 0.0, "takeoff": 0.0}`
+- `PIGEON_PITCH = 0.06`
 
 ### Functions
 
@@ -152,7 +155,7 @@ City sound on foot (slice I). Owns the Music, SFX, Ambience and UI buses while o
 
 extends `Node3D`
 
-Positional city sound (slice I): logical sources (engines, horns, sirens, construction, fire, fountains, power plants, river banks, passers-by's footsteps, crashes, knocked props, car doors, blows and swings, dogs) share a pool of at most MAX_PLAYERS AudioStreamPlayer3D. Every refresh scores the sources by their estimated level at the listener and gives the players to the loudest; the farthest or quietest lose theirs first. Doppler is computed by hand (the built-in effect works in world units against 343 u/s and is inaudible at 1 u = 20 m). A grown city registers hundreds of static sources (every park's fountain, every site), so the per-frame work touches only the sources holding a player, the refresh only the volatile ones (agents, one-shots, sirens, river) and the static ones near the listener.
+Positional city sound (slice I): logical sources (engines, horns, sirens, construction, fire, fountains, power plants, river banks, passers-by's footsteps, crashes, knocked props, car doors, blows and swings, dogs, pigeons) share a pool of at most MAX_PLAYERS AudioStreamPlayer3D. Every refresh scores the sources by their estimated level at the listener and gives the players to the loudest; the farthest or quietest lose theirs first. Doppler is computed by hand (the built-in effect works in world units against 343 u/s and is inaudible at 1 u = 20 m). A grown city registers hundreds of static sources (every park's fountain, every site), so the per-frame work touches only the sources holding a player, the refresh only the volatile ones (agents, one-shots, sirens, river) and the static ones near the listener.
 
 ### Constants
 

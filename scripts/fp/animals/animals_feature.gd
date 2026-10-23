@@ -1,20 +1,23 @@
 extends FpFeature
-## Dogs in the street (integration feature "animals"). Some people out on foot walk a dog on a
-## lead: residents whose household lives with a dog (unless they are off to work) and a share of
-## everyone else, fewer at night and in the rain. A dog household's dog keeps to the front yard
-## of its house while nobody walks it, and a resident coming out takes it along. The dogs
+## Dogs and pigeons in the street (integration feature "animals"). Some people out on foot walk a
+## dog on a lead: residents whose household lives with a dog (unless they are off to work) and a
+## share of everyone else, fewer at night and in the rain. A dog household's dog keeps to the front
+## yard of its house while nobody walks it, and a resident coming out takes it along. The dogs
 ## (dog_pack.gd) heel, stop to sniff, roam round an owner who stands still, come over to a
 ## crouching hero, bark at the hero and at people going by, flinch at blows and shouts, defend an
 ## owner the hero hits (biting: hero_hit "bite") and leap clear of cars. E pets a dog close by.
-## Their barks, growls and whines go out on the bus (animal_called) for the audio feature. The
-## bodies are Shiba Inus and huskies (dog_bodies.gd) with leads from the owner's hand to the collar
-## (dog_leads.gd). Motion runs on delta * sim.speed, so pause freezes it.
+## The bodies are Shiba Inus and huskies (dog_bodies.gd) with leads from the owner's hand to the
+## collar (dog_leads.gd). Flocks of pigeons (pigeons.gd) forage on the sidewalks in front of shops
+## and civic buildings and in the parks by day, go up together at a fright and land again once it
+## is calm; E throws them crumbs. Barks, growls, whines, coos and wingbeats go out on the bus
+## (animal_called) for the audio feature. Motion runs on delta * sim.speed, so pause freezes it.
 
 const D := preload("res://scripts/sim/sim_defs.gd")
 const WS := preload("res://scripts/fp/world_scale.gd")
 const BODIES := preload("res://scripts/fp/animals/dog_bodies.gd")
 const PACK := preload("res://scripts/fp/animals/dog_pack.gd")
 const LEADS := preload("res://scripts/fp/animals/dog_leads.gd")
+const PIGEONS := preload("res://scripts/fp/animals/pigeons.gd")
 
 const MAX_STEP := 1.0 / 30.0
 ## Dogs come out within NEAR of the player (u, about their draw distance) and go beyond FAR, at
@@ -73,6 +76,7 @@ const PHOTO_DEPTH := 0.45
 var bodies: BODIES
 var pack: PACK
 var leads: LEADS
+var pigeons: PIGEONS
 ## The dogs live on game time even with the sim paused (the photo tour).
 var live: bool = false
 var pets: int = 0
@@ -110,10 +114,15 @@ func setup(p_ctx: FpContext) -> void:
 	add_child(_root)
 	leads = LEADS.new()
 	add_child(leads)
+	pigeons = PIGEONS.new()
+	add_child(pigeons)
+	pigeons.setup(ctx)
 	if ctx.bus != null:
 		link_signal(ctx.bus.interact_requested, _on_interact)
 		link_signal(ctx.bus.person_hit, _on_person_hit)
 		link_signal(ctx.bus.hero_action, _on_hero_action)
+		link_signal(ctx.bus.car_impact, pigeons.on_crash)
+		link_signal(ctx.bus.prop_knocked, pigeons.on_knock)
 	if ctx.view != null:
 		link_signal(ctx.view.tile_built, _on_tile_built)
 
@@ -121,6 +130,7 @@ func setup(p_ctx: FpContext) -> void:
 ## Boot, load or New City: no dogs until the next scan finds their owners and yards.
 func on_world_rebuilt() -> void:
 	_clear()
+	pigeons.rebuilt()
 	pack.col = ctx.collision
 	_yards.clear()
 	_decided.clear()
@@ -148,14 +158,26 @@ func self_test() -> Dictionary:
 	for d: PACK.Dog in pack.dogs:
 		if d.walker >= 0:
 			walked += 1
-	var out := "%s, %d dogs out (%d on leads)" % [looks, pack.dogs.size(), walked]
+	var out := (
+		"%s, %d dogs out (%d on leads), %s" % [looks, pack.dogs.size(), walked, pigeons.detail()]
+	)
 	return {"ok": leads != null and is_instance_valid(leads), "detail": out}
+
+
+## The nearer of the dog to pet (_pick_dog()) and the flock of pigeons to feed (pigeons.gd pick())
+## along the ray, or {}.
+func pick(origin: Vector3, dir: Vector3, max_dist: float) -> Dictionary:
+	var t := _pick_dog(origin, dir, max_dist)
+	var p := pigeons.pick(origin, dir, max_dist) if pigeons != null else {}
+	if t.is_empty() or (not p.is_empty() and float(p["dist"]) < float(t["dist"])):
+		return p
+	return t
 
 
 ## The dog nearest along the ray within PET_REACH of the eyes that nothing hides: {"kind": "dog",
 ## "id", "tile", "pos" (its back), "dist", "label", "data": {"breed", "owner" (resident id)}}, or
 ## {}.
-func pick(origin: Vector3, dir: Vector3, max_dist: float) -> Dictionary:
+func _pick_dog(origin: Vector3, dir: Vector3, max_dist: float) -> Dictionary:
 	if pack == null or ctx.player == null:
 		return {}
 	var head := ctx.player.eye_position()
@@ -184,19 +206,24 @@ func pick(origin: Vector3, dir: Vector3, max_dist: float) -> Dictionary:
 	}
 
 
-## One shot ("dogs"): a Shiba Inu and a husky in the front yard of the house nearest the player
-## with room for them, seen from the sidewalk; photo_prepare lets them out.
+## Two shots: "dogs", a Shiba Inu and a husky in the front yard of the house nearest the player
+## with room for them, seen from the sidewalk (photo_prepare lets them out), and "pigeons", the
+## nearest flock's spot with its birds feeding on crumbs (photo_pigeons).
 func photo_shots() -> Array:
+	var out: Array = []
 	_photo = _photo_yard()
-	if _photo.is_empty():
-		return []
-	var lot := int(_photo["lot"])
-	var pos := _photo_spot(lot)
-	var look: Vector3 = (_photo["at"] as Vector3) - pos
-	var shot := {"name": "dogs", "pos": pos, "yaw": rad_to_deg(atan2(-look.x, -look.z))}
-	shot.merge({"pitch": PHOTO_PITCH, "hour": 10.0})
-	shot.merge({"prepare": "photo_prepare", "restore": "photo_restore"})
-	return [shot]
+	if not _photo.is_empty():
+		var pos := _photo_spot(int(_photo["lot"]))
+		var look: Vector3 = (_photo["at"] as Vector3) - pos
+		var shot := {"name": "dogs", "pos": pos, "yaw": rad_to_deg(atan2(-look.x, -look.z))}
+		shot.merge({"pitch": PHOTO_PITCH, "hour": 10.0})
+		shot.merge({"prepare": "photo_prepare", "restore": "photo_restore"})
+		out.append(shot)
+	var birds := pigeons.photo_shot(ctx.player_position())
+	if not birds.is_empty():
+		birds.merge({"prepare": "photo_pigeons", "restore": "photo_restore"})
+		out.append(birds)
+	return out
 
 
 ## Photo tour: the two dogs in the yard of the shot, standing side by side and living on game time
@@ -224,12 +251,19 @@ func photo_prepare() -> void:
 		pack.step(MAX_STEP)
 
 
+## Photo tour: the pigeons feeding on crumbs, living on game time with the sim paused.
+func photo_pigeons() -> void:
+	live = true
+	pigeons.photo_prepare()
+
+
 func photo_restore() -> void:
 	live = false
 	bodies.blocking = false
 	for d: PACK.Dog in pack.dogs.duplicate():
 		if d.key.begins_with("photo:"):
 			_drop(d)
+	pigeons.photo_restore()
 
 
 func _process(delta: float) -> void:
@@ -248,6 +282,7 @@ func tick(delta: float) -> void:
 			_scan_t = SCAN_S
 			_scan()
 	_feed(dt, speed)
+	pigeons.world(pack, _driving(), delta)
 	if dt <= 0.0:
 		pack.step(0.0)
 	var left := dt
@@ -255,6 +290,7 @@ func tick(delta: float) -> void:
 		var h := minf(left, MAX_STEP)
 		pack.step(h)
 		left -= h
+	pigeons.step(dt)
 	_draw_leads()
 
 
@@ -262,6 +298,11 @@ func tick(delta: float) -> void:
 
 
 func _on_interact(t: Dictionary) -> void:
+	if str(t.get("kind", "")) == "pigeons" and pigeons.feed(t):
+		_toast("You scatter a handful of crumbs, and the pigeons come running.", "info")
+		Analytics.track(
+			"pigeons_fed", {"birds": int((t.get("data", {}) as Dictionary).get("birds", 0))}
+		)
 	if str(t.get("kind", "")) != "dog":
 		return
 	var d := _dog(str(t.get("id", "")).to_int())
@@ -280,6 +321,7 @@ func _on_interact(t: Dictionary) -> void:
 ## Someone hit in the street: their dog defends them from the hero's fists (a car only startles
 ## it), and the dogs around who saw it flinch.
 func _on_person_hit(at: Vector3, cause: String, info: Dictionary) -> void:
+	pigeons.startle(at, PIGEONS.SEEN_HIT)
 	var wid := int(info.get("walker", -1))
 	for d: PACK.Dog in pack.dogs:
 		if wid >= 0 and d.walker == wid and cause in ["punch", "shove"]:
@@ -290,8 +332,10 @@ func _on_person_hit(at: Vector3, cause: String, info: Dictionary) -> void:
 			pack.startle(d, at)
 
 
-## The hero's swings, shove and shout startle the dogs close by; a wave cheers friendly ones.
+## The hero's swings, shove and shout startle the dogs close by; a wave cheers friendly ones. The
+## pigeons go up at those and at a dance or a parkour move close by (PIGEONS.STARTLE).
 func _on_hero_action(action: String, at: Vector3) -> void:
+	pigeons.startle(at, float(PIGEONS.STARTLE.get(action, 0.0)))
 	if action == "wave":
 		for d: PACK.Dog in pack.dogs:
 			if d.temper == "friendly" and d.angry <= 0.0 and _flat(d.pos, at) < WAVE_AT:
@@ -307,10 +351,13 @@ func _on_hero_action(action: String, at: Vector3) -> void:
 
 func _on_tile_built(i: int, _holder: Node3D) -> void:
 	_yards.erase(i)
+	pigeons.tile_built(i)
 
 
 func _on_call(d: PACK.Dog, call: String) -> void:
 	calls[call] = int(calls.get(call, 0)) + 1
+	if call == "bark":
+		pigeons.startle(d.pos, PIGEONS.BARK_M)
 	if ctx.bus != null:
 		ctx.bus.animal_called.emit(pack.head_of(d), call, pack.shoulder_m(d))
 
@@ -340,7 +387,7 @@ func _feed(dt: float, speed: float) -> void:
 	pack.cars.clear()
 	pack.passers.clear()
 	var tr := ctx.feature("traffic")
-	if tr == null or pack.dogs.is_empty():
+	if tr == null or (pack.dogs.is_empty() and pigeons.flock.flocks.is_empty()):
 		return
 	_read_traffic(tr)
 	_owners_now(tr, dt)
@@ -408,12 +455,14 @@ func _draw_leads() -> void:
 # ------------------------------------------------------------------ who has a dog
 
 
-## Every SCAN_S: the dogs too far off go; owners and front yards near the player get theirs.
+## Every SCAN_S: the dogs too far off go; owners and front yards near the player get theirs, and
+## the pigeons' spots their flocks.
 func _scan() -> void:
 	var me := ctx.player_position()
 	for d: PACK.Dog in pack.dogs.duplicate():
 		if _flat(d.pos, me) > FAR and not d.key.begins_with("photo:"):
 			_drop(d)
+	pigeons.scan(me, _night() <= NIGHT)
 	_homes_t -= SCAN_S
 	if _homes_t <= 0.0:
 		_homes_t = HOMES_S
@@ -630,6 +679,8 @@ func _photo_spot(lot: int) -> Vector3:
 
 
 func _clear() -> void:
+	if pigeons != null:
+		pigeons.clear()
 	if pack == null:
 		return
 	for d: PACK.Dog in pack.dogs.duplicate():
