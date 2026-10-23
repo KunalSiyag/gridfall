@@ -3,8 +3,8 @@ extends SceneTree
 ## the AudioDirector's tick throttle and on-foot routing, the initial scan, emitter settings, the
 ## 24-player cap and stealing, manual doppler, horns, sirens, footsteps by surface (polling and the
 ## stepped signal), ambience beds, settings, the pause muffle, the talk duck, UI cues, crashes,
-## knocked props, car doors, blows and swings, the frame budget and teardown. Headless runs the
-## Dummy audio driver, so this asserts node state.
+## knocked props, car doors, blows, swings and rolls, the frame budget and teardown. Headless runs
+## the Dummy audio driver, so this asserts node state.
 
 const K := preload("res://tools/tests/fp_kit.gd")
 const D := preload("res://scripts/sim/sim_defs.gd")
@@ -353,9 +353,9 @@ func _check_sirens(ctx: FpContext, f: FpFeature) -> void:
 func _check_landings(fs: FS, p: Node3D) -> void:
 	var n := fs.steps_played
 	var h := fs.heavy_lands
-	p.emit_signal("landed", 3.4)
+	p.emit_signal("landed", 3.4, false)
 	var soft_ok := fs.steps_played == n and fs.heavy_lands == h
-	p.emit_signal("landed", 6.0)
+	p.emit_signal("landed", 6.0, false)
 	var heavy_ok := fs.steps_played == n + 1 and fs.heavy_lands == h + 1
 	var msg := "footsteps: a soft landing adds nothing, a heavy one the other foot"
 	var got := [msg, fs.steps_played - n, fs.heavy_lands - h]
@@ -678,8 +678,8 @@ func _check_doors(ctx: FpContext, f: FpFeature) -> void:
 
 
 ## person_hit thumps at the chest (a car louder and lower), someone knocked down lands
-## BODY_FALL_S later (body_fall), and hero_action whooshes for a swing (a shove softer) but not
-## for an emote.
+## BODY_FALL_S later (body_fall), hero_action whooshes for a swing (a shove softer) but not for an
+## emote, and a landing roll's shoulder thuds ROLL_THUD_S after it starts, ROLL_DB under the fall.
 func _check_blows(ctx: FpContext, f: FpFeature) -> void:
 	var em := _em(f)
 	var at := em.listener() + Vector3(0.05, 0.0, 0.0)
@@ -704,6 +704,7 @@ func _check_blows(ctx: FpContext, f: FpFeature) -> void:
 		early == 0 and _is_shot(fall, "hit", "body_fall"),
 		"blows: the one knocked down lands BODY_FALL_S later (body_fall), not before"
 	)
+	var fall_db := fall.db if fall != null else NAN
 	var swing := _shot(f, func() -> void: ctx.bus.hero_action.emit("jab", at))
 	var push := _shot(f, func() -> void: ctx.bus.hero_action.emit("shove", at))
 	n = em.shots_played
@@ -711,6 +712,20 @@ func _check_blows(ctx: FpContext, f: FpFeature) -> void:
 	var whoosh := _is_shot(swing, "hit", "punch_whoosh") and _is_shot(push, "hit", "punch_whoosh")
 	whoosh = whoosh and push.db < swing.db and em.shots_played == n
 	K.check(fails, whoosh, "swings: a jab and a shove whoosh (the shove softer), a wave is silent")
+	n = em.shots_played
+	ctx.bus.hero_action.emit("roll", at)
+	_steps(f, BANK.ROLL_THUD_S - 0.05)
+	var soon := em.shots_played - n
+	_steps(f, 0.1)
+	var thud: EM.Src = null
+	if em.shots_played == n + 1:
+		thud = em.source("shot:%d" % em.shots_played)
+	var softer := thud != null and is_equal_approx(thud.db, fall_db + BANK.ROLL_DB)
+	K.check(
+		fails,
+		soon == 0 and _is_shot(thud, "hit", "body_fall") and softer,
+		"rolls: the shoulder thuds ROLL_THUD_S after the roll starts (body_fall, ROLL_DB softer)"
+	)
 	_steps(f, 3.5)
 
 ## The one-shot that fire() starts (after one step), or null.

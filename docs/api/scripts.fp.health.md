@@ -41,7 +41,7 @@ The hero's health (the health feature) as an arc round the left of the minimap i
 
 extends `FpFeature`
 
-The hero's health (integration slice; docs/fp/ARCHITECTURE.md, Health): MAX_HP points, shown as an arc round the left of the minimap. Crashes in the car the hero drives (car_impact), hard landings (the player's landed signal), people who fight back (hero_hit "punch", the fight_back flag) and cars that cannot stop for the hero on foot (hero_hit "car", hit_by_cars) cost points, and REGEN_DELAY seconds after the last hurt they come back. A blow makes the body flinch (a guard raised toward it takes most of a punch); a car or a bad fall knocks the hero down, to lie a moment and get up. With nothing left they are knocked out: out of the car, down, the screen fades to black and they come round outside the nearest hospital (City Hall without one), healed. Every hurt goes out on the bus (hero_hurt); health is saved with the city.
+The hero's health (integration slice; docs/fp/ARCHITECTURE.md, Health): MAX_HP points, shown as an arc round the left of the minimap. Crashes in the car the hero drives (car_impact), hard landings (the player's landed signal; one rolled off counts softer), people who fight back (hero_hit "punch", the fight_back flag) and cars that cannot stop for the hero on foot (hero_hit "car", hit_by_cars) cost points, and REGEN_DELAY seconds after the last hurt they come back. A blow makes the body flinch (a guard raised toward it takes most of a punch); a car or a bad fall knocks the hero down, to lie a moment and get up. With nothing left they are knocked out: out of the car, down, the screen fades to black and they come round outside the nearest hospital (City Hall without one), healed. Every hurt goes out on the bus (hero_hurt); health is saved with the city.
 
 ### Constants
 
@@ -57,6 +57,7 @@ The hero's health (integration slice; docs/fp/ARCHITECTURE.md, Health): MAX_HP p
 - `FALL_SAFE = 6.0`: Landing faster than FALL_SAFE (m/s down; about a 1.8 m drop) hurts and FALL_KO (a 10 m drop) would empty a full bar; a landing that costs FALL_DOWN or more knocks the hero down.
 - `FALL_KO = 14.0`
 - `FALL_DOWN = 35.0`
+- `ROLL_SAVE = 4.0`: A landing rolled off (the parkour feature's landing roll) counts ROLL_SAVE m/s slower and does not knock the hero down.
 - `PUNCH = 5.0`: A punch costs PUNCH + PUNCH_K times its strength; the guard up toward it takes GUARD_K of that.
 - `PUNCH_K = 10.0`
 - `GUARD_K = 0.3`

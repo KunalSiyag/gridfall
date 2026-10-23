@@ -99,7 +99,7 @@ Generated from the `##` doc comments in `scripts/`. Regenerate with `python3 too
 ## [scripts/fp/parkour/](scripts.fp.parkour.md)
 
 - [climb.gd](scripts.fp.parkour.md#scriptsfpparkourclimbgd): The hero on a wall (the parkour feature's wall climb; wall.gd finds walls and the spots on them): the leap from the ground onto the wall, then up, down and along it at climbing pace, never past its ends, over its top or into anything in the way
-- [moves.gd](scripts.fp.parkour.md#scriptsfpparkourmovesgd): Plans what a jump press in front of an obstacle becomes (the parkour feature): a vault over a low, thin obstacle with room to land beyond it, a hop up onto a low ledge, or a climb up onto a higher one with room to stand on top
+- [moves.gd](scripts.fp.parkour.md#scriptsfpparkourmovesgd): Plans what a jump press in front of an obstacle becomes (the parkour feature): a vault over a low, thin obstacle with room to land beyond it, a hop up onto a low ledge, or a climb up onto a higher one with room to stand on top; and the roll a hard landing becomes (roll())
 - [parkour_feature.gd](scripts.fp.parkour.md#scriptsfpparkourparkour_featuregd): Parkour (integration slice; docs/fp/ARCHITECTURE.md, Parkour): jump in front of an obstacle and the hero gets over it instead of jumping against it
 - [wall.gd](scripts.fp.parkour.md#scriptsfpparkourwallgd): Where the hero can hang on a wall (the parkour feature's wall climb; climb.gd moves the body on it)
 

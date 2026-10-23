@@ -6,7 +6,8 @@ extends Node3D
 ## V switches to first person at eye height (the body then only casts its shadow). Walk, run,
 ## crouch, jump with coyote time and a buffer, curb steps, sliding along walls and poles, head
 ## bob, footsteps, shoulder swap, zoom, free-fly photo mode and the conversation two-shot. A jump
-## press can be taken over (jump_hook) by a move that carries the body itself (carry / release).
+## press (jump_hook) or a landing (land_hook) can be taken over by a move that carries the body
+## itself (carry / release).
 ## `yaw` is the body yaw (rotation.y); cam_yaw / cam_pitch are the view; movement input is
 ## relative to the view.
 
@@ -15,8 +16,9 @@ extends Node3D
 ## comes from CollisionWorld.surface_at.
 signal stepped(surface: String, pos: Vector3)
 ## The hero touched down after LAND_STEP_MIN_AIR or more in the air, right after that landing's
-## stepped; speed_mps is the downward speed at touchdown.
-signal landed(speed_mps: float)
+## stepped; speed_mps is the downward speed at touchdown, rolled true when land_hook took the
+## landing over (a roll).
+signal landed(speed_mps: float, rolled: bool)
 ## Photo mode was entered or left.
 signal photo_mode_changed(on: bool)
 
@@ -76,6 +78,8 @@ const HL_FOV := 0.25
 const FP_PITCH_LIMIT := deg_to_rad(WS.PITCH_LIMIT_DEG)
 ## A view kick (kick_view) dies away with this halflife (s).
 const HL_KICK := 0.07
+## Half way through a first-person roll (tumble_view) the eye is this high.
+const TUMBLE_EYE := 0.5 * WS.M
 # --- Camera modes and the right stick
 const MODE_BLEND := 0.35
 const STICK_YAW := deg_to_rad(270.0)
@@ -176,6 +180,10 @@ var aim_yaw: float = NAN
 ## Asked (no arguments) when a jump is about to leave the ground: true when it took the press over
 ## (the parkour feature vaults or climbs instead of the jump), false to jump. Empty for none.
 var jump_hook: Callable = Callable()
+## Asked with the downward speed (u/s) when the body touches down after LAND_STEP_MIN_AIR or more
+## in the air: true when it took the landing over (the parkour feature rolls the body on), false
+## to land. Empty for none.
+var land_hook: Callable = Callable()
 ## True while another owner moves the body through carry(): simulate leaves it alone until
 ## release(); teleport() and ride() end it.
 var carried: bool = false
@@ -187,6 +195,10 @@ var carry_sprint: bool = false
 var carry_crouch: bool = false
 ## The view kick still applied (pitch, roll; radians).
 var _kick: Vector2 = Vector2.ZERO
+## Seconds into the first-person roll (tumble_view) and its length: over once the one reaches the
+## other.
+var _tumble_t: float = 0.0
+var _tumble_len: float = 0.0
 var _override_xf: Transform3D = Transform3D()
 var _override_fov: float = 50.0
 
@@ -465,6 +477,7 @@ func update_view(delta: float) -> void:
 	var sp := speed()
 	_cam_dy = SM.damp(_cam_dy, 0.0, HL_FP_STEP, dt)
 	_kick *= pow(0.5, dt / HL_KICK)
+	_tumble_t += dt
 	_bob_amp = SM.damp(_bob_amp, sqrt(clampf(sp / WS.RUN, 0.0, 1.0)) if grounded else 0.0, HL_BOB, dt)
 	var fp_goal := _fov_setting + (FP_SPRINT_FOV if _head_bob and _running and sp > 0.8 * WS.RUN else 0.0)
 	_fp_fov = SM.damp(_fp_fov, fp_goal, HL_FOV, dt)
@@ -534,6 +547,13 @@ func update_view(delta: float) -> void:
 ## over HL_KICK: a blow landing.
 func kick_view(d_pitch: float, d_roll: float) -> void:
 	_kick += Vector2(d_pitch, d_roll)
+
+
+## Turns the first-person view over forward once in secs, the eye dipping toward the ground on the
+## way round (a landing roll). Third person leaves the view alone.
+func tumble_view(secs: float) -> void:
+	_tumble_t = 0.0
+	_tumble_len = maxf(secs, 0.0)
 
 
 func _kick_xform() -> Transform3D:
@@ -790,6 +810,9 @@ func _unhandled_input(event: InputEvent) -> void:
 ## One collision sub-step of at most PLAYER_RADIUS: the velocity spring, the slide, the world
 ## edge, steps, gravity, landing and the body yaw.
 func _step(goal: Vector2, h: float) -> void:
+	if carried:
+		# land_hook took a landing over earlier in this frame: its owner moves the body now.
+		return
 	var col := ctx.collision
 	_jump_buffer = maxf(0.0, _jump_buffer - h)
 	_heavy = maxf(0.0, _heavy - h)
@@ -879,17 +902,27 @@ func _vertical(h: float, height: float) -> void:
 		position.y = y0
 		velocity.y = 0.0
 	if position.y <= sup and velocity.y <= 0.0:
-		var land_v := -velocity.y
-		if land_v > HEAVY_LAND_SPEED:
-			_heavy = HEAVY_LAND_TIME
-		position.y = sup
-		velocity.y = 0.0
-		grounded = true
-		_coyote = 0.0
-		if _air_t >= LAND_STEP_MIN_AIR:
-			stepped.emit(col.surface_at(position), position)
-			landed.emit(land_v / WS.M)
-		_air_t = 0.0
+		_touch_down(col, sup)
+
+
+## Touchdown on the ground at height sup: a hard one slows the next steps, and after
+## LAND_STEP_MIN_AIR in the air it is a footstep and a landing, which land_hook may take over (a
+## roll then carries the body on instead of the slow-down).
+func _touch_down(col: CollisionWorld, sup: float) -> void:
+	var land_v := -velocity.y
+	if land_v > HEAVY_LAND_SPEED:
+		_heavy = HEAVY_LAND_TIME
+	position.y = sup
+	velocity.y = 0.0
+	grounded = true
+	_coyote = 0.0
+	if _air_t >= LAND_STEP_MIN_AIR:
+		var rolled := land_hook.is_valid() and bool(land_hook.call(land_v))
+		if rolled:
+			_heavy = 0.0
+		stepped.emit(col.surface_at(position), position)
+		landed.emit(land_v / WS.M, rolled)
+	_air_t = 0.0
 
 
 ## What the hero looks at (A 6.9): the conversation partner's head, else the focused interactable,
@@ -1146,6 +1179,7 @@ func _apply_rotation() -> void:
 ## Resets every spring, offset and blend for the current pose and writes the camera at once.
 func _snap_view() -> void:
 	_trans_len = 0.0
+	_tumble_len = 0.0
 	_cam_dy = 0.0
 	_step_snap = 0.0
 	_bob_amp = 0.0
@@ -1183,7 +1217,18 @@ func _fp_local() -> Transform3D:
 	if _head_bob:
 		bv = -BOB_V * _bob_amp * cos(2.0 * _gait_phase)
 		bl = BOB_L * _bob_amp * sin(_gait_phase)
-	return Transform3D(Basis.from_euler(Vector3(cam_pitch, 0.0, 0.0)), Vector3(bl, _eye_h + _cam_dy + bv, 0.0)) * _kick_xform()
+	var tb := _tumble()
+	var eye := Vector3(bl, _eye_h + _cam_dy + bv - tb.y, 0.0)
+	return Transform3D(Basis.from_euler(Vector3(cam_pitch + tb.x, 0.0, 0.0)), eye) * _kick_xform()
+
+
+## The first-person roll (tumble_view) now: the pitch it adds (radians, once round forward) and
+## how far it drops the eye (to TUMBLE_EYE half way).
+func _tumble() -> Vector2:
+	if _tumble_t >= _tumble_len:
+		return Vector2.ZERO
+	var w := _tumble_t / _tumble_len
+	return Vector2(-TAU * SM.smooth01(w), (_eye_h - TUMBLE_EYE) * sin(PI * w))
 
 
 func _fp_world() -> Transform3D:

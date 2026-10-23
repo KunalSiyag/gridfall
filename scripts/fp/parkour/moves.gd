@@ -1,10 +1,11 @@
 extends RefCounted
 ## Plans what a jump press in front of an obstacle becomes (the parkour feature): a vault over a
 ## low, thin obstacle with room to land beyond it, a hop up onto a low ledge, or a climb up onto a
-## higher one with room to stand on top. Obstacles are CollisionWorld boxes a walker cannot step
-## over; a move runs straight across the face it meets (the boxes are axis-aligned) along two
-## tracks of keys, the distance travelled and the height of the feet, that point() reads. Heights
-## are above the feet; lengths are world units, times seconds.
+## higher one with room to stand on top; and the roll a hard landing becomes (roll()). Obstacles
+## are CollisionWorld boxes a walker cannot step over; a move runs straight across the face it
+## meets (the boxes are axis-aligned), a roll straight on along the ground, along two tracks of
+## keys, the distance travelled and the height of the feet, that point() reads. Heights are above
+## the feet; lengths are world units, times seconds.
 
 const WS := preload("res://scripts/fp/world_scale.gd")
 
@@ -48,6 +49,17 @@ const CLIMB_STEP := 0.35
 const LAND_FRACTIONS := [1.0, 0.7, 0.4, 0.0]
 const LAND_GAP := 0.08 * WS.M
 const LAND_V := 3.5 * WS.M
+## Landing rolls: the body rolls on at its speed (ROLL_V_MIN at least, a run at most) for ROLL_OVER
+## s, then comes up at ROLL_OUT_V at most, ROLL_T s in all (the rig's roll clip from where it
+## enters, measured on it). It follows the ground (a curb up or down) checked every ROLL_STEP and
+## stops short of a wall or a drop, the roll as long but slower; with less than ROLL_MIN_D of room
+## there is none.
+const ROLL_T := 0.95
+const ROLL_OVER := 0.4
+const ROLL_V_MIN := 2.5 * WS.M
+const ROLL_OUT_V := 2.0 * WS.M
+const ROLL_MIN_D := 1.0 * WS.M
+const ROLL_STEP := 0.2 * WS.M
 ## The path is checked for room every PATH_STEP seconds of the move.
 const PATH_STEP := 0.04
 ## How a track eases into a key: linearly, fast then slow, slow then fast, or smoothstep.
@@ -86,6 +98,38 @@ static func find(col: CollisionWorld, pos: Vector3, dir: Vector3, speed: float) 
 	if h <= HOP_MAX:
 		return _hop(col, pos, u, face, top, speed)
 	return _climb(col, pos, u, face, top, speed)
+
+
+## The roll a landing with the feet at pos becomes, heading along dir (xz) at speed (u/s): find()'s
+## keys with "move" "roll", "anim_at" 0 and "anim_len" ROLL_T, on the ground all along, or {}
+## without ROLL_MIN_D of room ahead.
+static func roll(col: CollisionWorld, pos: Vector3, dir: Vector3, speed: float) -> Dictionary:
+	var d := Vector2(dir.x, dir.z)
+	if col == null or d.length_squared() < 1e-12:
+		return {}
+	var u := d.normalized()
+	var v := clampf(speed, ROLL_V_MIN, WS.RUN)
+	var v_out := minf(v, ROLL_OUT_V)
+	var full := v * ROLL_OVER + v_out * (ROLL_T - ROLL_OVER)
+	var ground := _ground_ahead(col, pos, u, full)
+	var reach := float(ground.back()[0])
+	if reach < ROLL_MIN_D:
+		return {}
+	# Short of room the roll keeps its length and slows down to fit.
+	var k := reach / full
+	var s_over := v * ROLL_OVER * k
+	var s := [[0.0, 0.0, LIN], [ROLL_OVER, s_over, LIN], [ROLL_T, reach, LIN]]
+	var y := []
+	for g: Array in ground:
+		var at := float(g[0])
+		var t := at / (v * k) if at <= s_over else ROLL_OVER + (at - s_over) / (v_out * k)
+		y.append([t, float(g[1]), LIN])
+	var plan := make_plan("roll", pos, u, pos.y, s, y)
+	plan["anim_at"] = 0.0
+	plan["anim_len"] = ROLL_T
+	plan["grounded"] = true
+	plan["exit"] = Vector3(u.x, 0.0, u.y) * (v_out * k)
+	return plan
 
 
 ## The feet t seconds into plan.
@@ -255,6 +299,22 @@ static func _climb(
 	plan["anim_len"] = tc
 	plan["grounded"] = true
 	return plan if _clear(col, plan, face) else {}
+
+
+## The ground along u from the feet at pos for up to dist, every ROLL_STEP or less: [[distance,
+## height], ...] from [0, pos.y], each sample within STEP_HEIGHT of the last with room for a
+## standing body on it, ending before a wall, a drop or water.
+static func _ground_ahead(col: CollisionWorld, pos: Vector3, u: Vector2, dist: float) -> Array:
+	var out := [[0.0, pos.y]]
+	var n := maxi(1, ceili(dist / ROLL_STEP))
+	for i in range(1, n + 1):
+		var s := dist * float(i) / float(n)
+		var y0 := float(out.back()[1])
+		var g := col.support_height(_at(pos, u, s, y0), R, y0, WS.STEP_HEIGHT)
+		if is_nan(g) or g < y0 - WS.STEP_HEIGHT or not fits(col, _at(pos, u, s, g)):
+			break
+		out.append([s, g])
+	return out
 
 
 ## A plan (find() lists its keys) of move from the feet at pos across u, over or onto top, along

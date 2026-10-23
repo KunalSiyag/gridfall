@@ -152,7 +152,7 @@ The hero's head look (A-player.md 6.9; hero_rig.gd): LookAtModifier3Ds on Neck a
 
 extends `RefCounted`
 
-HC's animated hero for the player (slice A stage A2; A-player.md 6.9, TPS_PLAN 2.9). A roster body (AP.HERO_M / AP.HERO_F) with the gender's shared library as the default library "" and an AnimationTree driven from code: MANUAL process, advanced by player_avatar.update_motion with the player's own dt, so tests and the game step it the same way. The tree is a StateMachine (locomotion, crouch, jump / fall / land, talk, sit) under a OneShot for upper-body gestures. Locomotion blends idle with a cyclic BlendSpace1D of walk, walk_fast, run and run_fast at their measured speeds (SYNC_MODE_CYCLIC_MUTABLE gives the blended loops one shared cycle, so their left-heel phases stay locked), then a TimeScale that matches the stride to the ground speed. Foot contacts are the locomotion phase crossing 0 (left heel) and one half (right heel). The head turns toward a look target (hero_look.gd); on a wall the hands and feet reach for holds (hero_limbs.gd).
+HC's animated hero for the player (slice A stage A2; A-player.md 6.9, TPS_PLAN 2.9). A roster body (AP.HERO_M / AP.HERO_F) with the gender's shared library as the default library "" and an AnimationTree driven from code: MANUAL process, advanced by player_avatar.update_motion with the player's own dt, so tests and the game step it the same way. The tree is a StateMachine (locomotion, crouch, jump / fall / land, the landing roll, talk, sit) under a OneShot for upper-body gestures. Locomotion blends idle with a cyclic BlendSpace1D of walk, walk_fast, run and run_fast at their measured speeds (SYNC_MODE_CYCLIC_MUTABLE gives the blended loops one shared cycle, so their left-heel phases stay locked), then a TimeScale that matches the stride to the ground speed. Foot contacts are the locomotion phase crossing 0 (left heel) and one half (right heel). The head turns toward a look target (hero_look.gd); on a wall the hands and feet reach for holds (hero_limbs.gd).
 
 ### Constants
 
@@ -178,6 +178,8 @@ HC's animated hero for the player (slice A stage A2; A-player.md 6.9, TPS_PLAN 2
 - `XF_SIT = 0.3`
 - `XF_LEDGE = 0.2`
 - `JUMP_SKIP = 0.05`: jump_start opens on a crouch before take-off, but FpPlayer leaves the ground on the press: the clip starts at take-off.
+- `ROLL_SKIP = 0.4`: A landing roll (play_action "roll") enters the roll clip ROLL_SKIP seconds in, past the dive that opens it, as the hands reach the ground, cross-fading over XF_ROLL.
+- `XF_ROLL = 0.1`
 - `JUMP_VY = 0.5`: Rising faster than this fraction of JUMP_SPEED when the feet leave the ground is a jump.
 - `AIR_DELAY = 0.12`: Ungrounded this long without a jump (off a ledge) before the fall pose (s).
 - `LAND_MIN = 0.2`: The landing dip: land is blended over idle by the impact speed, LAND_MIN of it for a soft landing, all of it from LAND_FULL m/s down (a 0.6 m hop lands at 3.4 m/s: about half).
@@ -208,7 +210,7 @@ HC's animated hero for the player (slice A stage A2; A-player.md 6.9, TPS_PLAN 2
 - `STRIKE_WITHIN = 1.2`
 - `SIT_SPEED = 1.5`: sit_down and stand_up play this much faster than authored (in and out of a car seat).
 - `SIT_CLIPS = ["sit_down", "stand_up"]`
-- `HELD = ["sit_down", "sit", "stand_up", "knockback", "get_up", "climb", "wall"]`: States the ground does not cut short for locomotion: sitting, the knock-down, the climb and holding on to a wall.
+- `HELD = ["sit_down", "sit", "stand_up", "knockback", "get_up", "climb", "wall", "roll"]`: States the ground does not cut short for locomotion: sitting, the knock-down, the climb, holding on to a wall and the roll.
 - `WALL_CLIP = "idle"`: On a wall (hold_wall) the body holds WALL_CLIP under the limbs' IK, faded in and out over XF_WALL (s).
 - `XF_WALL = 0.15`
 - `UPPER_ROOT = "Spine"`: A gesture moves the bones from here up; the legs keep their state.
@@ -249,12 +251,12 @@ HC's animated hero for the player (slice A stage A2; A-player.md 6.9, TPS_PLAN 2
 
 - `static func build(path: String, lib_path: String, k: float, p_gender: String) -> RefCounted`: Instantiates the body at path with the AnimationLibrary at lib_path; k is the body's speed factor (hip_m / speed_ref_hip_m * h_target / rest height). Null when a file is missing or the body has no %GeneralSkeleton.
 - `func update(dt: float, v: float, grounded: bool, vy: float, crouched: bool, talking: bool) -> void`: Per frame: v is the signed forward ground speed (m/s; negative walks backward), vy the vertical speed (m/s), crouched and talking the player's states. Advances the tree by dt and fills contacts with the heel strikes it crossed.
-- `func state() -> String`: The state machine's current state ("loco", "crouch", "jump", "fall", "land", "talk", "sit_down", "sit", "stand_up", "knockback", "get_up", "climb", "wall").
+- `func state() -> String`: The state machine's current state ("loco", "crouch", "jump", "fall", "land", "talk", "sit_down", "sit", "stand_up", "knockback", "get_up", "climb", "wall", "roll").
 - `func sit(on: bool) -> void`: Sits down (on) or stands up; moving stands up by itself.
 - `func play_gesture(g: String) -> void`: Plays an upper-body gesture over the current state ("interact", "wave", "phone", "door_try").
 - `func gesture_active() -> bool`
 - `func stop_gesture() -> void`: Fades the playing gesture out before its end.
-- `func play_action(a: String, secs: float = 0.0) -> bool`: Plays a body action: one of ACTIONS on the upper body over whatever the legs do, "dance" on the whole body (standing only; moving ends it), "knockdown" (the body falls onto its back, lies there secs and gets up) or "climb" (the body pulls itself up over secs, then walks on). secs > 0 fades an action out that long after the start; otherwise a clip plays to its end, a loop for one cycle and the dance until stopped.
+- `func play_action(a: String, secs: float = 0.0) -> bool`: Plays a body action: one of ACTIONS on the upper body over whatever the legs do, "dance" on the whole body (standing only; moving ends it), "knockdown" (the body falls onto its back, lies there secs and gets up), "climb" (the body pulls itself up over secs, then walks on) or "roll" (from a landing the body rolls over a shoulder and comes up, on into locomotion after secs). secs > 0 fades an action out that long after the start; otherwise a clip plays to its end, a loop for one cycle and the dance until stopped.
 - `func hold_wall(on: bool, grounded: bool = false) -> void`: Takes hold of a wall (on: the wall pose, the limbs put on holds by reach) or lets go of it: the limbs back to the clips and the body into the fall, or standing when grounded, unless another state takes over (play_action "climb" right after, over the top).
 - `func reach(i: int, target: Vector3, pole: Vector3, weight: float) -> void`: Puts limb i (0 left hand, 1 right hand, 2 left foot, 3 right foot) on target (world) with its elbow or knee bent toward pole, weight (0..1) of the way.
 - `func action_active() -> bool`: True while an action or the dance plays (fading out included).
@@ -297,12 +299,12 @@ The legacy person (models/real/people/person_*.glb) re-rigged as a jointed puppe
 
 class_name `FpPlayer` · extends `Node3D`
 
-The on-foot player (slice A): feet at `position`, a kinematic controller against the analytic CollisionWorld (no physics bodies, D2) and the one current Camera3D. Third person (the play default, D13) hangs the camera on TpsRig's over-the-shoulder spring arm and shows the Avatar; V switches to first person at eye height (the body then only casts its shadow). Walk, run, crouch, jump with coyote time and a buffer, curb steps, sliding along walls and poles, head bob, footsteps, shoulder swap, zoom, free-fly photo mode and the conversation two-shot. A jump press can be taken over (jump_hook) by a move that carries the body itself (carry / release). `yaw` is the body yaw (rotation.y); cam_yaw / cam_pitch are the view; movement input is relative to the view.
+The on-foot player (slice A): feet at `position`, a kinematic controller against the analytic CollisionWorld (no physics bodies, D2) and the one current Camera3D. Third person (the play default, D13) hangs the camera on TpsRig's over-the-shoulder spring arm and shows the Avatar; V switches to first person at eye height (the body then only casts its shadow). Walk, run, crouch, jump with coyote time and a buffer, curb steps, sliding along walls and poles, head bob, footsteps, shoulder swap, zoom, free-fly photo mode and the conversation two-shot. A jump press (jump_hook) or a landing (land_hook) can be taken over by a move that carries the body itself (carry / release). `yaw` is the body yaw (rotation.y); cam_yaw / cam_pitch are the view; movement input is relative to the view.
 
 ### Signals
 
 - `stepped(surface: String, pos: Vector3)`: A foot came down: on the gait's foot contacts (the left heel at phase 0, the right at PI; the placeholder's visible stride follows the same phase). pos is that foot's ground point, surface comes from CollisionWorld.surface_at.
-- `landed(speed_mps: float)`: The hero touched down after LAND_STEP_MIN_AIR or more in the air, right after that landing's stepped; speed_mps is the downward speed at touchdown.
+- `landed(speed_mps: float, rolled: bool)`: The hero touched down after LAND_STEP_MIN_AIR or more in the air, right after that landing's stepped; speed_mps is the downward speed at touchdown, rolled true when land_hook took the landing over (a roll).
 - `photo_mode_changed(on: bool)`: Photo mode was entered or left.
 
 ### Constants
@@ -348,6 +350,7 @@ The on-foot player (slice A): feet at `position`, a kinematic controller against
 - `HL_FOV = 0.25`
 - `FP_PITCH_LIMIT = deg_to_rad(WS.PITCH_LIMIT_DEG)`
 - `HL_KICK = 0.07`: A view kick (kick_view) dies away with this halflife (s).
+- `TUMBLE_EYE = 0.5 * WS.M`: Half way through a first-person roll (tumble_view) the eye is this high.
 - `MODE_BLEND = 0.35`
 - `STICK_YAW = deg_to_rad(270.0)`
 - `STICK_YAW_FAST = deg_to_rad(400.0)`
@@ -384,6 +387,7 @@ The on-foot player (slice A): feet at `position`, a kinematic controller against
 - `view_override: bool`: True while another owner (the city overview) places the camera through set_view_override().
 - `aim_yaw: float`: Third person: while not NAN the body turns toward this yaw instead of its travel (the actions feature: the guard faces where the camera looks, a blow faces its target).
 - `jump_hook: Callable`: Asked (no arguments) when a jump is about to leave the ground: true when it took the press over (the parkour feature vaults or climbs instead of the jump), false to jump. Empty for none.
+- `land_hook: Callable`: Asked with the downward speed (u/s) when the body touches down after LAND_STEP_MIN_AIR or more in the air: true when it took the landing over (the parkour feature rolls the body on), false to land. Empty for none.
 - `carried: bool`: True while another owner moves the body through carry(): simulate leaves it alone until release(); teleport() and ride() end it.
 - `carry_wish: Vector2`: While carried: the input simulate was last given (the view-relative wish, sprint and crouch; none while a modal is open) for the owner to read (a climb on a wall). A jump press is take_jump()'s.
 
@@ -407,6 +411,7 @@ The on-foot player (slice A): feet at `position`, a kinematic controller against
 - `func simulate(wish: Vector2, sprint: bool, delta: float, crouch: bool = false, jump: bool = false) -> void`: One deterministic movement step; _process calls it with the held input, tests call it directly. wish: x = strafe right, y = forward, each -1..1, relative to the view (cam_yaw). While ctx.is_modal(), simulate itself zeroes wish and jump (gravity and ground snap still run). crouch and jump are held states (a jump fires on the press, buffered JUMP_BUFFER s). In photo mode it flies the camera instead (jump up, crouch down). Any delta is safe: the step is split so that no collision sub-step moves farther than PLAYER_RADIUS (a 0.008 u hoarding grown by the radius is only 0.038 u thick), and a velocity component whose move was blocked drops to zero.
 - `func update_view(delta: float) -> void`: Places the camera for this frame: the first-person eye (bob, step smoothing), the rig, the conversation shot or the photo camera, through any running blend; updates the avatar (lean, fade, shadow-only). _process calls it every frame; tests driving simulate() call it with their own dt.
 - `func kick_view(d_pitch: float, d_roll: float) -> void`: Jolts the view by d_pitch (positive up) and d_roll (radians; positive tips left), dying away over HL_KICK: a blow landing.
+- `func tumble_view(secs: float) -> void`: Turns the first-person view over forward once in secs, the eye dipping toward the ground on the way round (a landing roll). Third person leaves the view alone.
 - `func look(d_yaw: float, d_pitch: float) -> void`: Mouse or stick look (radians): turns the view; in first person the body turns with it.
 - `func mouse_look(event: InputEventMouseMotion) -> void`: Turns the view by a mouse motion at mouse_sensitivity radians per screen pixel. Reads screen_relative: `relative` is scaled by the window's content-scale stretch (canvas_items, 1600x900 base), so look speed would change with the window size. Applied raw, never smoothed.
 - `func set_camera_mode(m: String, blend: bool = true) -> void`: Switches between "first" and "third" (V); blend eases over MODE_BLEND s. Does not write the settings (toggle_camera_mode does).

@@ -86,6 +86,10 @@ const BODY_FALL_S := 0.45
 const BODY_FALL_DB := 2.0
 const WHOOSH_DB := -8.0
 const SHOVE_DB := -6.0
+## The hero's landing roll (hero_action "roll"): the shoulder meets the ground ROLL_THUD_S after
+## the feet, a body_fall ROLL_DB under a knock-down's.
+const ROLL_THUD_S := 0.15
+const ROLL_DB := -8.0
 
 static var _cache: Dictionary = {}
 static var _legacy_loop: AudioStream = null

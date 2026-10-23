@@ -1,13 +1,14 @@
 extends FpFeature
 ## The hero's health (integration slice; docs/fp/ARCHITECTURE.md, Health): MAX_HP points, shown
 ## as an arc round the left of the minimap. Crashes in the car the hero drives (car_impact), hard
-## landings (the player's landed signal), people who fight back (hero_hit "punch", the fight_back
-## flag) and cars that cannot stop for the hero on foot (hero_hit "car", hit_by_cars) cost points,
-## and REGEN_DELAY seconds after the last hurt they come back. A blow makes the body flinch (a guard
-## raised toward it takes most of a punch); a car or a bad fall knocks the hero down, to lie a
-## moment and get up. With nothing left they are knocked out: out of the car, down, the screen
-## fades to black and they come round outside the nearest hospital (City Hall without one),
-## healed. Every hurt goes out on the bus (hero_hurt); health is saved with the city.
+## landings (the player's landed signal; one rolled off counts softer), people who fight back
+## (hero_hit "punch", the fight_back flag) and cars that cannot stop for the hero on foot
+## (hero_hit "car", hit_by_cars) cost points, and REGEN_DELAY seconds after the last hurt they
+## come back. A blow makes the body flinch (a guard raised toward it takes most of a punch); a car
+## or a bad fall knocks the hero down, to lie a moment and get up. With nothing left they are
+## knocked out: out of the car, down, the screen fades to black and they come round outside the
+## nearest hospital (City Hall without one), healed. Every hurt goes out on the bus (hero_hurt);
+## health is saved with the city.
 
 const WS := preload("res://scripts/fp/world_scale.gd")
 const D := preload("res://scripts/sim/sim_defs.gd")
@@ -28,6 +29,9 @@ const CRASH_KO := 32.0
 const FALL_SAFE := 6.0
 const FALL_KO := 14.0
 const FALL_DOWN := 35.0
+## A landing rolled off (the parkour feature's landing roll) counts ROLL_SAVE m/s slower and does
+## not knock the hero down.
+const ROLL_SAVE := 4.0
 ## A punch costs PUNCH + PUNCH_K times its strength; the guard up toward it takes GUARD_K of that.
 const PUNCH := 5.0
 const PUNCH_K := 10.0
@@ -223,7 +227,8 @@ func _flinch_body(push: Vector3) -> void:
 	var side := 1.0 if Vector2(push.x, push.z).dot(right) >= 0.0 else -1.0
 	p.kick_view(KICK.x, KICK.y * side)
 	var rig := _rig()
-	if rig != null and not bool(rig.call("action_active")):
+	# A body a move carries (a landing roll) only feels it in the view.
+	if rig != null and not p.carried and not bool(rig.call("action_active")):
 		_flinch = (_flinch + 1) % FLINCHES.size()
 		rig.call("play_action", FLINCHES[_flinch])
 
@@ -391,11 +396,12 @@ func _on_car_impact(_at: Vector3, speed: float, _what: String) -> void:
 		hurt(MAX_HP * (v - CRASH_SAFE) / (CRASH_KO - CRASH_SAFE), "crash")
 
 
-func _on_landed(speed_mps: float) -> void:
-	if speed_mps <= FALL_SAFE:
+func _on_landed(speed_mps: float, rolled: bool = false) -> void:
+	var v := speed_mps - (ROLL_SAVE if rolled else 0.0)
+	if v <= FALL_SAFE:
 		return
-	var amount := MAX_HP * (speed_mps - FALL_SAFE) / (FALL_KO - FALL_SAFE)
-	hurt(amount, "fall", Vector3.ZERO, amount >= FALL_DOWN)
+	var amount := MAX_HP * (v - FALL_SAFE) / (FALL_KO - FALL_SAFE)
+	hurt(amount, "fall", Vector3.ZERO, amount >= FALL_DOWN and not rolled)
 
 
 func _on_hero_hit(at: Vector3, cause: String, strength: float, push: Vector3) -> void:

@@ -50,7 +50,7 @@ The hero on a wall (the parkour feature's wall climb; wall.gd finds walls and th
 
 extends `RefCounted`
 
-Plans what a jump press in front of an obstacle becomes (the parkour feature): a vault over a low, thin obstacle with room to land beyond it, a hop up onto a low ledge, or a climb up onto a higher one with room to stand on top. Obstacles are CollisionWorld boxes a walker cannot step over; a move runs straight across the face it meets (the boxes are axis-aligned) along two tracks of keys, the distance travelled and the height of the feet, that point() reads. Heights are above the feet; lengths are world units, times seconds.
+Plans what a jump press in front of an obstacle becomes (the parkour feature): a vault over a low, thin obstacle with room to land beyond it, a hop up onto a low ledge, or a climb up onto a higher one with room to stand on top; and the roll a hard landing becomes (roll()). Obstacles are CollisionWorld boxes a walker cannot step over; a move runs straight across the face it meets (the boxes are axis-aligned), a roll straight on along the ground, along two tracks of keys, the distance travelled and the height of the feet, that point() reads. Heights are above the feet; lengths are world units, times seconds.
 
 ### Constants
 
@@ -80,6 +80,12 @@ Plans what a jump press in front of an obstacle becomes (the parkour feature): a
 - `LAND_FRACTIONS = [1.0, 0.7, 0.4, 0.0]`: A vault lands as far past the obstacle as the speed carries it (the first fraction) or nearer, down to LAND_GAP past its far side. A landing comes down at LAND_V (u/s) at most.
 - `LAND_GAP = 0.08 * WS.M`
 - `LAND_V = 3.5 * WS.M`
+- `ROLL_T = 0.95`: Landing rolls: the body rolls on at its speed (ROLL_V_MIN at least, a run at most) for ROLL_OVER s, then comes up at ROLL_OUT_V at most, ROLL_T s in all (the rig's roll clip from where it enters, measured on it). It follows the ground (a curb up or down) checked every ROLL_STEP and stops short of a wall or a drop, the roll as long but slower; with less than ROLL_MIN_D of room there is none.
+- `ROLL_OVER = 0.4`
+- `ROLL_V_MIN = 2.5 * WS.M`
+- `ROLL_OUT_V = 2.0 * WS.M`
+- `ROLL_MIN_D = 1.0 * WS.M`
+- `ROLL_STEP = 0.2 * WS.M`
 - `PATH_STEP = 0.04`: The path is checked for room every PATH_STEP seconds of the move.
 - `LIN = 0`: How a track eases into a key: linearly, fast then slow, slow then fast, or smoothstep.
 - `EASE_OUT = 1`
@@ -89,6 +95,7 @@ Plans what a jump press in front of an obstacle becomes (the parkour feature): a
 ### Functions
 
 - `static func find(col: CollisionWorld, pos: Vector3, dir: Vector3, speed: float) -> Dictionary`: The move a jump press with the feet at pos becomes, heading along dir (xz) at speed (u/s), or {} for an ordinary jump: {"move": "vault", "hop" or "climb", "from" (feet), "dir" (unit, across the face), "top" (its height), "s" and "y" (the tracks), "length", "anim_at" (when the climb clip starts; -1 for none) and "anim_len", "grounded" (the body counts as on the ground: the climb), "exit" (the velocity handed back at the end, u/s)}.
+- `static func roll(col: CollisionWorld, pos: Vector3, dir: Vector3, speed: float) -> Dictionary`: The roll a landing with the feet at pos becomes, heading along dir (xz) at speed (u/s): find()'s keys with "move" "roll", "anim_at" 0 and "anim_len" ROLL_T, on the ground all along, or {} without ROLL_MIN_D of room ahead.
 - `static func point(plan: Dictionary, t: float) -> Vector3`: The feet t seconds into plan.
 - `static func sample(keys: Array, t: float) -> float`: A track's value at time t: keys are [time (rising from 0), value, how it eases into the key].
 - `static func clear_point(col: CollisionWorld, plan: Dictionary, t: float) -> Vector3`: Where a move cut short t seconds in leaves the feet: the latest point of plan up to t where a standing body fits (half over a ledge it does not, so it goes back to the face), the start at worst.
@@ -100,7 +107,7 @@ Plans what a jump press in front of an obstacle becomes (the parkour feature): a
 
 extends `FpFeature`
 
-Parkour (integration slice; docs/fp/ARCHITECTURE.md, Parkour): jump in front of an obstacle and the hero gets over it instead of jumping against it. A low, thin one (a bench, a low wall, a railing) is vaulted, a low ledge hopped onto and one up to 2.1 m climbed, the rig's climb clip playing as the body pulls itself up (moves.gd plans each move). A wall taller than that is taken hold of (flag wall_climb; wall.gd finds it): the hero leaps onto it and climbs it with the move keys, hands and feet on holds (climb.gd), climbs over the top where there is room to stand and steps off at its foot; crouch lets go and jump pushes off it. The player's jump hook hands the press over; the move carries the body (FpPlayer.carry) and gives it back at the end, after a vault, a hop or a let-go to land. A knock-down or a loss of control drops the body where it is, and a teleport ends the move. Each move goes out on the bus (hero_action "vault", "hop", "climb" or "grab").
+Parkour (integration slice; docs/fp/ARCHITECTURE.md, Parkour): jump in front of an obstacle and the hero gets over it instead of jumping against it. A low, thin one (a bench, a low wall, a railing) is vaulted, a low ledge hopped onto and one up to 2.1 m climbed, the rig's climb clip playing as the body pulls itself up (moves.gd plans each move). A wall taller than that is taken hold of (flag wall_climb; wall.gd finds it): the hero leaps onto it and climbs it with the move keys, hands and feet on holds (climb.gd), climbs over the top where there is room to stand and steps off at its foot; crouch lets go and jump pushes off it. A hard landing on the move rolls on along the ground over a shoulder (flag landing_roll), the rig's roll clip playing and the first-person view turning over; the health feature counts it softer. The player's jump and land hooks hand the press or the landing over; the move carries the body (FpPlayer.carry) and gives it back at the end, after a vault, a hop or a let-go to land. A knock-down or a loss of control drops the body where it is, and a teleport ends the move. Each move goes out on the bus (hero_action "vault", "hop", "climb", "roll" or "grab").
 
 ### Constants
 
@@ -113,10 +120,13 @@ Parkour (integration slice; docs/fp/ARCHITECTURE.md, Parkour): jump in front of 
 - `KICK = -0.02`: The view dips (pitch, radians) as the hands take the ledge.
 - `PUSH_BACK = 2.0 * WS.M`: Jump on a wall pushes off it, back from it and up at these speeds (u/s).
 - `PUSH_UP = 2.5 * WS.M`
+- `ROLL_MIN = 6.0 * WS.M`: A landing rolls (flag landing_roll) from ROLL_MIN down (u/s; about a 1.8 m drop) up to ROLL_MAX (a 10 m one, past which it cannot be rolled off), moving at ROLL_MOVING or more.
+- `ROLL_MAX = 14.0 * WS.M`
+- `ROLL_MOVING = 1.0 * WS.M`
 
 ### Properties
 
-- `move: String`: The move under way ("vault", "hop", "climb", or "wall" on a wall) or "".
+- `move: String`: The move under way ("vault", "hop", "climb", "roll", or "wall" on a wall) or "".
 - `made: Dictionary`: Moves made so far, by kind ("grab": walls taken hold of).
 - `climber: CLIMB`: The body on a wall (climb.gd) while move is "wall", else null.
 
@@ -129,7 +139,8 @@ Parkour (integration slice; docs/fp/ARCHITECTURE.md, Parkour): jump in front of 
 - `func teardown() -> void`
 - `func self_test() -> Dictionary`
 - `func try_move() -> bool`: The player's jump hook: a jump press in front of an obstacle starts the move it allows, or at a wall too tall for that takes hold of it (true); otherwise the hero jumps (false). Only on foot and in control, not talking or knocked down.
-- `func tick(dt: float) -> void`: One step of the move under way: on a wall the climb; otherwise the body along the plan, turning across the obstacle, the climb clip from the face, and the body handed back at the end.
+- `func try_roll(land_v: float) -> bool`: The player's land hook: a landing from ROLL_MIN to ROLL_MAX down (land_v, u/s) at ROLL_MOVING or more rolls on along the ground where there is room (moves.gd plans it; true); otherwise the hero just lands (false). Only on foot and in control, not talking or knocked down.
+- `func tick(dt: float) -> void`: One step of the move under way: on a wall the climb; otherwise the body along the plan, turning across the obstacle (along a roll), the climb clip from the face, and the body handed back at the end.
 - `func stop() -> void`: Ends the move under way (a knock-down, a loss of control, a load, teardown): the body drops from where it is (off a wall), or from the last point of the move where it stood clear (cut short half over a ledge).
 
 ## `scripts/fp/parkour/wall.gd`

@@ -101,6 +101,7 @@ UAL_CLIPS = {
 	"hit_chest": ("UAL1", "Hit_Chest", False, False),
 	"dance": ("UAL1", "Dance_Loop", True, False),
 	"get_up": ("UAL2", "LayToIdle", False, False),
+	"roll": ("UAL1", "Roll", False, False),
 	"shout": ("UAL2", "Idle_Rail_Call", True, False),
 }
 UAL_GLB = {"UAL1": "UAL1/UAL1_Standard.glb", "UAL2": "UAL2/UAL2_Standard.glb"}
