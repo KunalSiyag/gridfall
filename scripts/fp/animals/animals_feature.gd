@@ -55,7 +55,9 @@ const PET_REACH := 2.4 * WS.M
 const OCCLUDE := 0.3 * WS.M
 ## The hero's swings, shove and shout startle the dogs within these (m); someone hit startles
 ## the dogs within SEEN_HIT (m) and a wave cheers the friendly ones within WAVE_AT.
-const STARTLE := {"jab": 3.0, "cross": 3.0, "hook": 3.0, "kick": 3.5, "shove": 3.0, "shout": 7.0}
+const STARTLE := {
+	"jab": 3.0, "cross": 3.0, "hook": 3.0, "kick": 3.5, "swing": 3.5, "shove": 3.0, "shout": 7.0
+}
 const SEEN_HIT := 8.0
 const WAVE_AT := 6.0 * WS.M
 ## A bite's hero_hit strength and push (u/s).

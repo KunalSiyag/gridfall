@@ -8,13 +8,14 @@
 
 extends `FpFeature`
 
-Body actions (integration slice; docs/fp/ARCHITECTURE.md, Body actions): the hero's fists and gestures on foot. The strike button (left mouse, right trigger) throws a jab, a cross and a hook in turn, the hook a finisher that puts them down, the body turning to whoever it goes for (else to where the camera looks); R shoves and X (middle mouse) kicks, further than a fist. The guard (right mouse or left trigger held: fists up, the body squared to where the camera looks, the camera in closer) is the fighting stance. A blow lands when the rig's fist is furthest out (HeroRig.strike_time; a kick at KICK_HIT) on the person nearest in front within reach, through the traffic feature's hit_walker: they reel or go down, the people around react and the city hears of it. With nobody there it lands on the street prop in front (the props feature's strike): a bin, cone, wheelie bin or carton goes over, a fallen prop skids off. Keys 1-5 wave, nod, shake the head, shout and dance, and the people around answer (traffic answer_emote). The bus hears every swing and emote (hero_action).
+Body actions (integration slice; docs/fp/ARCHITECTURE.md, Body actions): the hero's fists and gestures on foot. The strike button (left mouse, right trigger) throws a jab, a cross and a hook in turn, the hook a finisher that puts them down, the body turning to whoever it goes for (else to where the camera looks); R shoves and X (middle mouse) kicks, further than a fist. The guard (right mouse or left trigger held: fists up, the body squared to where the camera looks, the camera in closer) is the fighting stance. A blow lands when the rig's fist is furthest out (HeroRig.strike_time; a kick at KICK_HIT) on the person nearest in front within reach, through the traffic feature's hit_walker: they reel or go down, the people around react and the city hears of it. With a weapon in hand (the melee feature) the strike button swings it instead, further and harder, and the melee feature hears where it landed. With nobody there it lands on the street prop in front (the props feature's strike): a bin, cone, wheelie bin or carton goes over, a fallen prop skids off. Keys 1-5 wave, nod, shake the head, shout and dance, and the people around answer (traffic answer_emote). The bus hears every swing and emote (hero_action).
 
 ### Constants
 
 - `WS = preload("res://scripts/fp/world_scale.gd")`
 - `SWINGS = { "jab": ["punch_jab", "punch", 0.45, 0.4, 0.55, 0.2], "cross": ["punch_cross", "punch"...`: Swings: [rig clip, hit_walker cause, strength 0..1, seconds until the next swing may start, seconds the clip plays, contact time (s) when the rig cannot measure it]. The hook ends the combo hard enough to knock someone down, and so does a kick.
-- `COMBO = ["jab", "cross", "hook"]`: The punches of the combo in order.
+- `COMBO = ["jab", "cross", "hook"]`: The punches of the combo in order; with a weapon in hand (the melee feature's held()) the strike button swings it instead, forehand and backhand in turn (WEAPON_CLIPS), as hard as the weapon hits and further by its reach.
+- `WEAPON_CLIPS = ["swing_a", "swing_b"]`
 - `EMOTES = { "emote_wave": ["wave", 0.0], "emote_yes": ["yes", 0.0], "emote_no": ["no", 2.0], "emo...`: Emote input actions: [emote, seconds it plays (0 for the clip's own length)].
 - `INPUTS = [ "act_strike", "act_shove", "act_kick", "act_aim", "emote_wave", "emote_yes", "emote_n...`
 - `REACH = 1.2 * WS.M`: Who a swing can reach: on their feet within REACH (feet to feet) inside the cone ahead (the cosine); at contact still within REACH * HOLD_REACH.
@@ -37,7 +38,7 @@ Body actions (integration slice; docs/fp/ARCHITECTURE.md, Body actions): the her
 ### Properties
 
 - `guarding: bool`: The guard is up.
-- `swing: String`: The swing under way ("jab", "cross", "hook", "shove", "kick") or "".
+- `swing: String`: The swing under way ("jab", "cross", "hook", "shove", "kick", "swing" with a weapon) or "".
 - `last_hit: Dictionary`: hit_walker's info for the last blow that landed; swings, blows landed on people and blows landed on street props so far; how many people answered the last emote.
 
 ### Functions

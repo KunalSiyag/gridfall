@@ -44,4 +44,5 @@ const FEATURES := [
 		"id": "hit_feel", "slice": "integration",
 		"path": "res://scripts/fp/hitfeel/hitfeel_feature.gd",
 	},
+	{"id": "melee", "slice": "integration", "path": "res://scripts/fp/melee/melee_feature.gd"},
 ]

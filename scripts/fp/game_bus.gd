@@ -54,10 +54,14 @@ signal prop_knocked(at: Vector3, kind: String, speed: float)
 ## "street", "strength", "witnesses", "crew"}. Emitted by traffic.
 signal person_hit(at: Vector3, cause: String, info: Dictionary)
 ## The hero swung, gestured or got over something: action "jab", "cross", "hook", "shove",
-## "kick", an emote ("wave", "yes", "no", "shout", "dance") or a parkour move ("vault", "hop",
-## "climb", "roll" off a hard landing, or "grab" taking hold of a wall), as it starts, at their
-## feet. Emitted by the actions and parkour features.
+## "kick", "swing" (a weapon in hand), an emote ("wave", "yes", "no", "shout", "dance") or a
+## parkour move ("vault", "hop", "climb", "roll" off a hard landing, or "grab" taking hold of a
+## wall), as it starts, at their feet. Emitted by the actions and parkour features.
 signal hero_action(action: String, at: Vector3)
+## A weapon in the hero's hand landed a blow at a point on what ("person" or "prop"): kind "bat",
+## "pipe" or "bottle", broke true when it broke (a bottle does on its first). Emitted by the melee
+## feature.
+signal weapon_hit(at: Vector3, kind: String, what: String, broke: bool)
 ## Someone answered the hero: a resident face to face (their id and name), or whoever answered
 ## "Ask someone here" (resident_id "" and their role, "Shopkeeper"). reply is filtered for
 ## display. Emitted by chat.

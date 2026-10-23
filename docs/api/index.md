@@ -112,6 +112,11 @@ Generated from the `##` doc comments in `scripts/`. Regenerate with `python3 too
 
 - [interact_feature.gd](scripts.fp.interact.md#scriptsfpinteractinteract_featuregd): Interaction with residents, buildings, posters and cars (slice A deliverables 3 and 6.7)
 
+## [scripts/fp/melee/](scripts.fp.melee.md)
+
+- [melee_feature.gd](scripts.fp.melee.md#scriptsfpmeleemelee_featuregd): Melee weapons (integration feature "melee"; docs/fp/ARCHITECTURE.md, Melee weapons): a baseball bat, a steel pipe or a bottle lying about the city for the hero to pick up and swing
+- [weapon_kit.gd](scripts.fp.melee.md#scriptsfpmeleeweapon_kitgd): The weapons the hero can pick up (the melee feature): what each one is and its mesh, built here from a lathe profile, so no model files are needed
+
 ## [scripts/fp/overview/](scripts.fp.overview.md)
 
 - [overview_feature.gd](scripts.fp.overview.md#scriptsfpoverviewoverview_featuregd): City overview: Tab lifts the camera off the hero into an aerial view of the city, with a marker over every open construction site and a list of them

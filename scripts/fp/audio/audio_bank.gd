@@ -24,7 +24,8 @@ const ONE_SHOTS: Array[String] = [
 	"crash_light", "prop_clatter", "prop_clang", "car_door_open", "car_door_close", "punch_hit",
 	"punch_whoosh", "body_fall", "dog_bark_1", "dog_bark_2", "dog_bark_3", "dog_growl", "dog_whine",
 	"dog_snap", "pigeon_coo_1", "pigeon_coo_2", "pigeon_flap", "pigeon_takeoff", "cat_meow_1",
-	"cat_meow_2", "cat_meow_3", "cat_purr", "cat_hiss", "cat_chatter",
+	"cat_meow_2", "cat_meow_3", "cat_purr", "cat_hiss", "cat_chatter", "bat_hit", "pipe_hit",
+	"bottle_smash",
 ]
 ## Stored as WAV (with every footstep_*); everything else is .ogg.
 const WAV_SOUNDS: Array[String] = [
@@ -33,7 +34,7 @@ const WAV_SOUNDS: Array[String] = [
 	"car_door_open", "car_door_close", "punch_hit", "punch_whoosh", "body_fall", "dog_bark_1",
 	"dog_bark_2", "dog_bark_3", "dog_growl", "dog_whine", "dog_snap", "pigeon_coo_1", "pigeon_coo_2",
 	"pigeon_flap", "pigeon_takeoff", "cat_meow_1", "cat_meow_2", "cat_meow_3", "cat_purr", "cat_hiss",
-	"cat_chatter",
+	"cat_chatter", "bat_hit", "pipe_hit", "bottle_smash",
 ]
 
 ## Bus names (created by audio_feature.setup when missing).

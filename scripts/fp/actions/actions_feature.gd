@@ -7,7 +7,8 @@ extends FpFeature
 ## the camera in closer) is the fighting stance. A blow lands when the rig's fist is furthest out
 ## (HeroRig.strike_time; a kick at KICK_HIT) on the person nearest in front within reach,
 ## through the traffic feature's hit_walker: they reel or go down, the people around react and
-## the city hears of it.
+## the city hears of it. With a weapon in hand (the melee feature) the strike button swings it
+## instead, further and harder, and the melee feature hears where it landed.
 ## With nobody there it lands on the street prop in front (the props feature's strike): a bin,
 ## cone, wheelie bin or carton goes over, a fallen prop skids off. Keys 1-5 wave, nod, shake the
 ## head, shout and dance, and the people around answer (traffic answer_emote). The bus hears every
@@ -24,9 +25,13 @@ const SWINGS := {
 	"hook": ["punch_hook", "punch", 0.85, 0.65, 0.47, 0.22],
 	"shove": ["push", "shove", 0.35, 0.6, 0.55, 0.15],
 	"kick": ["kick", "punch", 0.75, 0.75, 0.7, 0.24],
+	"swing": ["swing_a", "punch", 0.6, 0.6, 0.55, 0.2],
 }
-## The punches of the combo in order.
+## The punches of the combo in order; with a weapon in hand (the melee feature's held()) the
+## strike button swings it instead, forehand and backhand in turn (WEAPON_CLIPS), as hard as the
+## weapon hits and further by its reach.
 const COMBO := ["jab", "cross", "hook"]
+const WEAPON_CLIPS := ["swing_a", "swing_b"]
 ## Emote input actions: [emote, seconds it plays (0 for the clip's own length)].
 const EMOTES := {
 	"emote_wave": ["wave", 0.0],
@@ -77,7 +82,7 @@ const PHOTO_SIDE := 0.55 * WS.M
 
 ## The guard is up.
 var guarding: bool = false
-## The swing under way ("jab", "cross", "hook", "shove", "kick") or "".
+## The swing under way ("jab", "cross", "hook", "shove", "kick", "swing" with a weapon) or "".
 var swing: String = ""
 ## hit_walker's info for the last blow that landed; swings, blows landed on people and blows
 ## landed on street props so far; how many people answered the last emote.
@@ -99,6 +104,9 @@ var _target: int = -1
 var _queued: String = ""
 var _combo_t: float = INF
 var _combo_i: int = 0
+var _combo_armed: bool = false
+## The weapon a swing under way swings (the melee feature's held()), {} for bare fists.
+var _weapon: Dictionary = {}
 var _emote_gap: float = 0.0
 var _face_t: float = 0.0
 var _face_yaw: float = NAN
@@ -165,13 +173,12 @@ func strike(what: String = "punch") -> bool:
 		if _len - _t <= BUFFER_S:
 			_queued = what
 		return false
-	var kind := what
-	if what == "punch":
-		_combo_i = _combo_i if _combo_t < COMBO_S else 0
-		kind = COMBO[_combo_i]
-		_combo_i = (_combo_i + 1) % COMBO.size()
-		_combo_t = 0.0
+	_weapon = _held_weapon() if what == "punch" else {}
+	var kind := _next_kind(what)
 	var s: Array = SWINGS[kind]
+	var clip := str(s[0])
+	if kind == "swing":
+		clip = WEAPON_CLIPS[_combo_i % WEAPON_CLIPS.size()]
 	swing = kind
 	_t = 0.0
 	_len = float(s[3])
@@ -180,9 +187,9 @@ func strike(what: String = "punch") -> bool:
 	var rig := _rig()
 	if rig != null:
 		rig.call("stop_action")
-		rig.call("play_action", str(s[0]), float(s[4]))
-		if kind in COMBO:
-			_hit_at = minf(float(rig.call("strike_time", str(s[0]))), _len)
+		rig.call("play_action", clip, float(s[4]))
+		if kind in COMBO or kind == "swing":
+			_hit_at = minf(float(rig.call("strike_time", clip)), _len)
 	var feet := ctx.player.position
 	var who := _find_target(_aim_dir())
 	_target = int(who.get("id", -1))
@@ -196,6 +203,27 @@ func strike(what: String = "punch") -> bool:
 	if ctx.bus != null:
 		ctx.bus.hero_action.emit(kind, feet)
 	return true
+
+
+## The swing a press of what starts: the next punch of the combo (or a swing of the weapon in
+## hand, the combo's count running on to alternate its clips; taking up or losing a weapon
+## starts it over), else what itself.
+func _next_kind(what: String) -> String:
+	if what != "punch":
+		return what
+	var armed := not _weapon.is_empty()
+	var n := WEAPON_CLIPS.size() if armed else COMBO.size()
+	var go_on := _combo_t < COMBO_S and armed == _combo_armed
+	_combo_i = (_combo_i + 1) % n if go_on else 0
+	_combo_armed = armed
+	_combo_t = 0.0
+	return "swing" if armed else COMBO[_combo_i]
+
+
+## The melee feature's weapon in the hero's hand, {} for none.
+func _held_weapon() -> Dictionary:
+	var m := ctx.feature("melee")
+	return m.call("held") as Dictionary if m != null else {}
 
 
 ## Raises or drops the guard for scripted play (tests, the photo tour); held input does the same.
@@ -356,6 +384,7 @@ func _land() -> void:
 	last_hit = info
 	hits += 1
 	_kick_view()
+	_weapon_landed("person", who["pos"] as Vector3)
 
 
 ## A swing at nobody: the street prop in front within reach takes the blow (props' strike).
@@ -366,23 +395,36 @@ func _strike_prop() -> void:
 	if props != null and bool(props.call("strike", feet, dir, _reach(), CONE, _strength())):
 		prop_hits += 1
 		_kick_view()
+		_weapon_landed("prop", feet + dir * _reach())
 
 
-## The swing's strength: its own, and up to RUN_BONUS more at a run.
+## Tells the melee feature a weapon swing landed on what ("person" or "prop") at a point.
+func _weapon_landed(what: String, at: Vector3) -> void:
+	var m := ctx.feature("melee")
+	if swing == "swing" and m != null:
+		m.call("landed", what, at)
+
+
+## The swing's strength: its own (the weapon's), and up to RUN_BONUS more at a run.
 func _strength() -> float:
-	return float(SWINGS[swing][2]) + RUN_BONUS * clampf(ctx.player.speed() / WS.RUN, 0.0, 1.0)
+	var own := float(SWINGS[swing][2])
+	if swing == "swing":
+		own = float(_weapon.get("strength", own))
+	return own + RUN_BONUS * clampf(ctx.player.speed() / WS.RUN, 0.0, 1.0)
 
 
 ## How far the swing under way reaches (feet to feet).
 func _reach() -> float:
+	if swing == "swing":
+		return REACH + float(_weapon.get("reach", 0.0)) * WS.M
 	return KICK_REACH if swing == "kick" else REACH
 
 
-## The view kicks as a blow lands, rolled away from the punching hand, harder for a hook or a
-## kick.
+## The view kicks as a blow lands, rolled away from the punching hand, harder for a hook, a kick
+## or a weapon.
 func _kick_view() -> void:
-	var side := {"jab": 1.0, "cross": -1.0, "hook": 1.0}.get(swing, 0.0) as float
-	var k := HEAVY_KICK if swing in ["hook", "kick"] else 1.0
+	var side := {"jab": 1.0, "cross": -1.0, "hook": 1.0, "swing": 1.0}.get(swing, 0.0) as float
+	var k := HEAVY_KICK if swing in ["hook", "kick", "swing"] else 1.0
 	ctx.player.kick_view(KICK.x * k, KICK.y * side * k)
 
 

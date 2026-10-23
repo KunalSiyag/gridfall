@@ -44,7 +44,7 @@ The scratch artefacts it cites (manifest, converters, BoneMaps, probes) are list
 |---|---|---|---|---|
 | **Microsoft Rocketbox**, pinned to `master` = `0943055db6ec570bcef9f2c8b41c9e5467c808f9` (repo archived 2022-10-02) | MIT, "Copyright (c) 2020 Microsoft" | 40 avatars (FBX plus `*_color` / `*_normal` TGAs; specular dropped) and 50 mocap clips | `https://cdn.jsdelivr.net/gh/microsoft/Microsoft-Rocketbox@0943055db6ec570bcef9f2c8b41c9e5467c808f9/<path>`, then `https://raw.githubusercontent.com/microsoft/Microsoft-Rocketbox/0943055db6ec570bcef9f2c8b41c9e5467c808f9/<path>` (works, about 14 KB/s). Listing: `https://api.github.com/repos/microsoft/Microsoft-Rocketbox/git/trees/0943055db6ec570bcef9f2c8b41c9e5467c808f9?recursive=1` | git blob SHA-1 per file, from the tree listing (recorded in the manifest) |
 | **Quaternius UAL1 Standard** (v3, 2026-06-16) | CC0 (bundled `License.txt`, itch page) | 15 clips from `Unreal-Godot/UAL1_Standard.glb` (in place) | `https://quaternius.itch.io/universal-animation-library` → POST `/download_url` → POST `/file/17958403?source=game_download` (signed CDN URL) | 15,904,933 B, sha256 `cc73fc4e495b82958207316596317a3f40b9fa38065bde1027937452da537724` |
-| **Quaternius UAL2 Standard** (2026-06-16) | CC0 (bundled `License.txt`, itch page) | 9 clips from `Unreal-Godot/UAL2_Standard.glb` | `https://quaternius.itch.io/universal-animation-library-2` → `/file/17958478?...` | 18,735,003 B, sha256 `4008ea208a604773a2b2177d965f0f5d3195498b5bf838c3f5785d68e95f2a68` |
+| **Quaternius UAL2 Standard** (2026-06-16) | CC0 (bundled `License.txt`, itch page) | 11 clips from `Unreal-Godot/UAL2_Standard.glb` | `https://quaternius.itch.io/universal-animation-library-2` → `/file/17958478?...` | 18,735,003 B, sha256 `4008ea208a604773a2b2177d965f0f5d3195498b5bf838c3f5785d68e95f2a68` |
 
 Not used: the OpenGameArt UAL2 mirror (an older January 2026 build with `_RM` clips mixed in; emergency mirror only), the OGA UAL1 copy (stale Rigify `DEF-*` bones), Universal Base Characters (underwear only), Ready Player Me (shut down), Kenney (blocky), Mixamo (excluded), MPFB2 (untested; a later variety option), H's procedural rigs (T-D4: "stiff, crouched, clay-figure" at 2–4 m).
 
@@ -107,7 +107,7 @@ Measured on `Male_Adult_06` with the scratch converter (`.../scratchpad/tps/veri
 3. **Phase-align** loops so frame 0 is the left-heel strike (lowest left-foot z with near-zero foot velocity). Two loops must be aligned before a BlendSpace blends them, or the legs scissor.
 4. Record `speed_mps` (the measured `Root` speed) as a custom property; it becomes the Godot meta `speed_mps`.
 
-**UAL clips:** `models/characters/anim/ual.glb` holds the UAL clips of deliverable 6 and the body actions' clips (25 in all, `UAL_CLIPS` in `build_clips.py`), copied out of `UAL1_Standard.glb` and `UAL2_Standard.glb` (in place; root `root` → `Root`), with the mannequin mesh deleted.
+**UAL clips:** `models/characters/anim/ual.glb` holds the UAL clips of deliverable 6 and the body actions' clips (27 in all, `UAL_CLIPS` in `build_clips.py`), copied out of `UAL1_Standard.glb` and `UAL2_Standard.glb` (in place; root `root` → `Root`), with the mannequin mesh deleted.
 
 ### 6. Canonical clip set
 
@@ -133,6 +133,7 @@ Measured on `Male_Adult_06` with the scratch converter (`.../scratchpad/tps/veri
 | `carry`, `phone_idle`, `fold_arms`, `yes`, `no`, `climb_1m`, `knockback` | UAL2 Walk_Carry_Loop, Idle_TalkingPhone_Loop, Idle_FoldArms_Loop, Yes, Idle_No_Loop, ClimbUp_1m, Hit_Knockback | same | mixed | Walk_Carry ≈ walk |
 | `punch_jab`, `punch_cross`, `punch_hook`, `hit_head`, `hit_chest`, `dance`, `roll`, `get_up`, `shout` (body actions) | UAL1 Punch_Jab, Punch_Cross, Hit_Head, Hit_Chest, Dance_Loop, Roll; UAL2 Melee_Hook, LayToIdle, Idle_Rail_Call | same | one-shot (`dance` and `shout` loop) | – |
 | `kick` (body actions) | procedural: a front kick with the right leg keyed over `punch_jab`'s stance (`procedural_clips.gd`, written by `build_anim_library.gd` to `clips/u_kick.res`) | same | one-shot, 0.7 s, foot out at 0.24 s | – |
+| `swing_a`, `swing_b` (melee weapons) | UAL2 Sword_Regular_A, Sword_Regular_B | same | one-shot, 0.43 s and 0.53 s | – |
 
 ### 7. Godot import (HC owns these `.import` files) and `AP` entries
 
