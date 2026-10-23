@@ -2,7 +2,8 @@ extends SceneTree
 ## Body actions (integration feature "actions"; docs/fp/ARCHITECTURE.md, Body actions): the hero
 ## rig's action layer (strike times, the guard, punches, the dance); the strike button punching
 ## whoever stands in front (the body turned to them, a press near the end queuing the next) in a
-## jab-cross combo whose third blow knocks them down, R shoving, swings at nobody; emotes the
+## jab-cross-hook combo whose hook knocks them down, R shoving, X kicking further than a fist (the
+## whole body, the foot out at contact), swings at nobody; emotes the
 ## people around answer; the guard squaring the body to the camera; what blocks the actions;
 ## presses (events, a trigger's edge) and held input; the player's car striking people
 ## (car_body.gd); person_hit and hero_action on the bus; teardown.
@@ -56,6 +57,7 @@ func _init() -> void:
 	_check_punch()
 	_check_shove()
 	_check_combo()
+	_check_kick()
 	_check_miss()
 	_check_emotes()
 	_check_guard()
@@ -147,6 +149,9 @@ func _check_inputs() -> void:
 	var keys_ok := keys == [KEY_1, KEY_2, KEY_3, KEY_4, KEY_5]
 	K.check(fails, keys_ok, "keys 1-5 wave, nod, shake the head, shout and dance (%s)" % str(keys))
 	K.check(fails, _key("act_shove") == KEY_R, "R shoves (%d)" % _key("act_shove"))
+	var kick := [_key("act_kick"), _mouse("act_kick")]
+	var kick_ok := kick == [KEY_X, MOUSE_BUTTON_MIDDLE]
+	K.check(fails, kick_ok, "X and the middle mouse button kick (%s)" % str(kick))
 
 
 func _check_rig() -> void:
@@ -175,6 +180,7 @@ func _check_rig() -> void:
 	_step(1.2, false)
 	K.check(fails, not bool(rig.call("action_active")), "and ends by itself")
 	K.check(fails, rig.call("play_action", "bogus") == false, "an unknown action is refused")
+	_check_rig_kick()
 	K.check(fails, rig.call("play_action", "dance") == true, "the hero dances standing")
 	_step(1.0, false)
 	K.check(fails, bool(rig.call("action_active")), "and keeps dancing")
@@ -197,7 +203,7 @@ func _check_punch() -> void:
 	p.cam_yaw = to_w
 	var started: bool = f.call("strike") == true and str(f.get("swing")) == "jab"
 	K.check(fails, started, "with the guard down the strike button punches (a jab)")
-	K.check(fails, f.call("strike", "kick") == false, "an unknown swing is refused")
+	K.check(fails, f.call("strike", "bogus") == false, "an unknown swing is refused")
 	_step(0.4)
 	K.check(fails, _causes() == ["punch"], "it lands on the person in front (%s)" % str(_causes()))
 	var info: Dictionary = hits[0][2] if not hits.is_empty() else {}
@@ -259,12 +265,13 @@ func _check_combo() -> void:
 		_step(0.55)
 	for h: Array in hits:
 		downs.append(bool((h[2] as Dictionary).get("down", false)))
-	var combo := acts == ["jab", "cross", "jab"]
-	K.check(fails, combo, "the punches go jab, cross, jab (%s)" % str(acts))
+	var combo := acts == ["jab", "cross", "hook"]
+	K.check(fails, combo, "the punches go jab, cross, hook (%s)" % str(acts))
 	K.check(fails, _causes() == ["punch", "punch", "punch"], "each lands (%s)" % str(_causes()))
-	K.check(
-		fails, downs == [false, false, true], "the third in a row knocks them down %s" % str(downs)
-	)
+	K.check(fails, downs == [false, false, true], "the hook knocks them down %s" % str(downs))
+	var hook: Dictionary = hits[2][2] if hits.size() == 3 else {}
+	var hard := float(hook.get("strength", 0.0)) >= 0.84
+	K.check(fails, hard, "a hook is the hardest punch (%s)" % hook.get("strength"))
 	K.check(fails, str(w.react) == "knockback", "they fall (%s)" % str(w.react))
 	_close_in(w, 0.8)
 	f.call("strike")
@@ -272,6 +279,49 @@ func _check_combo() -> void:
 	K.check(fails, hits.size() == 3, "nobody is punched lying down")
 	_remove(w)
 	_step(0.5)
+
+
+## A kick reaches someone a fist cannot and knocks them down; crouched the hero does not kick.
+func _check_kick() -> void:
+	var w := _person(1.35)
+	hits.clear()
+	acts.clear()
+	f.call("strike")
+	_step(0.7)
+	K.check(fails, hits.is_empty(), "a punch does not reach someone 1.35 m off")
+	acts.clear()
+	var started: bool = f.call("strike", "kick") == true and str(f.get("swing")) == "kick"
+	K.check(fails, started and acts == ["kick"], 'strike("kick") kicks (%s)' % str(acts))
+	_step(0.15)
+	K.check(fails, hits.is_empty(), "the kick lands once the leg is out, not at once")
+	_step(0.2)
+	K.check(fails, _causes() == ["punch"], "it lands on them (%s)" % str(_causes()))
+	var info: Dictionary = hits[0][2] if not hits.is_empty() else {}
+	var hard := absf(float(info.get("strength", 0.0)) - 0.75) < 0.01
+	var down := bool(info.get("down", false)) and hard
+	K.check(fails, down, "a standing kick knocks them down (%s)" % str(info))
+	_step(0.8)
+	K.check(fails, str(f.get("swing")).is_empty(), "the kick ends")
+	_remove(w)
+	ctx.player.crouched = true
+	K.check(fails, f.call("strike", "kick") == false, "no kick crouched")
+	ctx.player.crouched = false
+	_step(0.5)
+
+
+## The kick plays on the whole body: at contact the right foot is out in front at about hip height.
+func _check_rig_kick() -> void:
+	var p := ctx.player
+	K.check(fails, rig.call("play_action", "kick") == true, "a kick plays")
+	_step(0.24, false)
+	var foot: Vector3 = rig.call("bone_world", "RightFoot")
+	var rel := foot - p.position
+	var ahead := rel.dot(p.body_forward()) / WS.M
+	var up := rel.y / WS.M
+	var out_msg := "the kicking foot is out in front (%.2f m ahead, %.2f m up)" % [ahead, up]
+	K.check(fails, bool(rig.call("action_active")) and ahead > 0.5 and up > 0.5, out_msg)
+	_step(0.8, false)
+	K.check(fails, not bool(rig.call("action_active")), "and the kick ends by itself")
 
 
 func _check_miss() -> void:

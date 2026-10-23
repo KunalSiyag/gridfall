@@ -320,6 +320,16 @@
     "speed_mps": 0.0
    }
   },
+  "punch_hook": {
+   "u": {
+    "kind": "ual",
+    "loop": false,
+    "source": "quaternius:UAL2/Melee_Hook",
+    "frames": 12,
+    "seconds": 0.4583,
+    "speed_mps": 0.0
+   }
+  },
   "punch_jab": {
    "u": {
     "kind": "ual",

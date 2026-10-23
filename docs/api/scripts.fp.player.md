@@ -165,7 +165,7 @@ HC's animated hero for the player (slice A stage A2; A-player.md 6.9, TPS_PLAN 2
 - `LIMBS = preload("res://scripts/fp/player/hero_limbs.gd")`
 - `LOCO = ["walk", "walk_fast", "run", "run_fast"]`: Locomotion loops in blend order; HC starts each on the left-heel strike.
 - `GESTURES = ["interact", "wave", "phone", "door_try"]`: Upper-body one-shots (6.9 OneShot).
-- `ACTIONS = [ "punch_jab", "punch_cross", "push", "yes", "no", "shout", "hit_head", "hit_chest", ]`: Body actions over the gestures (the actions feature): punches, the shove, emotes and the flinch of a blow taken (the health feature) on the upper body with quick fades; the dance on the whole body.
+- `ACTIONS = [ "punch_jab", "punch_cross", "punch_hook", "push", "yes", "no", "shout", "hit_head", "...`: Body actions over the gestures (the actions feature): punches, the shove, emotes and the flinch of a blow taken (the health feature) on the upper body with quick fades; the kick and the dance on the whole body.
 - `CLIPS = [ "idle", "walk", "walk_fast", "run", "run_fast", "crouch_idle", "crouch_walk", "jump_s...`: Every clip the tree plays.
 - `TS_MIN = 0.5`: Foot-slide correction: TimeScale = clamp(v / v_anim, TS_MIN, TS_MAX).
 - `TS_MAX = 1.5`
@@ -231,6 +231,8 @@ HC's animated hero for the player (slice A stage A2; A-player.md 6.9, TPS_PLAN 2
 - `P_ACT_ACTIVE = "parameters/act/active"`
 - `P_DANCE = "parameters/dance/request"`
 - `P_DANCE_ACTIVE = "parameters/dance/active"`
+- `P_KICK = "parameters/kick/request"`
+- `P_KICK_ACTIVE = "parameters/kick/active"`
 - `P_GUARD = "parameters/guard/blend_amount"`
 - `P_GUARD_SEEK = "parameters/guard_at/seek_request"`
 - `P_GUARD_HOLD = "parameters/guard_hold/scale"`
@@ -256,7 +258,7 @@ HC's animated hero for the player (slice A stage A2; A-player.md 6.9, TPS_PLAN 2
 - `func play_gesture(g: String) -> void`: Plays an upper-body gesture over the current state ("interact", "wave", "phone", "door_try").
 - `func gesture_active() -> bool`
 - `func stop_gesture() -> void`: Fades the playing gesture out before its end.
-- `func play_action(a: String, secs: float = 0.0) -> bool`: Plays a body action: one of ACTIONS on the upper body over whatever the legs do, "dance" on the whole body (standing only; moving ends it), "knockdown" (the body falls onto its back, lies there secs and gets up), "climb" (the body pulls itself up over secs, then walks on) or "roll" (from a landing the body rolls over a shoulder and comes up, on into locomotion after secs). secs > 0 fades an action out that long after the start; otherwise a clip plays to its end, a loop for one cycle and the dance until stopped.
+- `func play_action(a: String, secs: float = 0.0) -> bool`: Plays a body action: one of ACTIONS on the upper body over whatever the legs do, "kick" on the whole body (on foot and upright only; it plays to its end), "dance" on the whole body (standing only; moving ends it), "knockdown" (the body falls onto its back, lies there secs and gets up), "climb" (the body pulls itself up over secs, then walks on) or "roll" (from a landing the body rolls over a shoulder and comes up, on into locomotion after secs). secs > 0 fades an action out that long after the start; otherwise a clip plays to its end, a loop for one cycle and the dance until stopped.
 - `func hold_wall(on: bool, grounded: bool = false) -> void`: Takes hold of a wall (on: the wall pose, the limbs put on holds by reach) or lets go of it: the limbs back to the clips and the body into the fall, or standing when grounded, unless another state takes over (play_action "climb" right after, over the top).
 - `func reach(i: int, target: Vector3, pole: Vector3, weight: float) -> void`: Puts limb i (0 left hand, 1 right hand, 2 left foot, 3 right foot) on target (world) with its elbow or knee bent toward pole, weight (0..1) of the way.
 - `func action_active() -> bool`: True while an action or the dance plays (fading out included).

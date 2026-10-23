@@ -25,17 +25,18 @@ const LOCO := ["walk", "walk_fast", "run", "run_fast"]
 ## Upper-body one-shots (6.9 OneShot).
 const GESTURES := ["interact", "wave", "phone", "door_try"]
 ## Body actions over the gestures (the actions feature): punches, the shove, emotes and the
-## flinch of a blow taken (the health feature) on the upper body with quick fades; the dance on
-## the whole body.
+## flinch of a blow taken (the health feature) on the upper body with quick fades; the kick and
+## the dance on the whole body.
 const ACTIONS := [
-	"punch_jab", "punch_cross", "push", "yes", "no", "shout", "hit_head", "hit_chest",
+	"punch_jab", "punch_cross", "punch_hook", "push", "yes", "no", "shout", "hit_head",
+	"hit_chest",
 ]
 ## Every clip the tree plays.
 const CLIPS := [
 	"idle", "walk", "walk_fast", "run", "run_fast", "crouch_idle", "crouch_walk", "jump_start",
 	"fall", "land", "talk", "sit_down", "sit", "stand_up", "interact", "wave", "phone", "door_try",
-	"punch_jab", "punch_cross", "push", "yes", "no", "shout", "dance", "hit_head", "hit_chest",
-	"knockback", "get_up", "climb_1m", "roll",
+	"punch_jab", "punch_cross", "punch_hook", "push", "yes", "no", "shout", "dance", "hit_head",
+	"hit_chest", "knockback", "get_up", "climb_1m", "roll", "kick",
 ]
 ## Foot-slide correction: TimeScale = clamp(v / v_anim, TS_MIN, TS_MAX).
 const TS_MIN := 0.5
@@ -133,6 +134,8 @@ const P_ACT := "parameters/act/request"
 const P_ACT_ACTIVE := "parameters/act/active"
 const P_DANCE := "parameters/dance/request"
 const P_DANCE_ACTIVE := "parameters/dance/active"
+const P_KICK := "parameters/kick/request"
+const P_KICK_ACTIVE := "parameters/kick/active"
 const P_GUARD := "parameters/guard/blend_amount"
 const P_GUARD_SEEK := "parameters/guard_at/seek_request"
 const P_GUARD_HOLD := "parameters/guard_hold/scale"
@@ -342,8 +345,9 @@ func stop_gesture() -> void:
 	tree.set(P_SHOT, AnimationNodeOneShot.ONE_SHOT_REQUEST_FADE_OUT)
 
 
-## Plays a body action: one of ACTIONS on the upper body over whatever the legs do, "dance" on
-## the whole body (standing only; moving ends it), "knockdown" (the body falls onto its back,
+## Plays a body action: one of ACTIONS on the upper body over whatever the legs do, "kick" on
+## the whole body (on foot and upright only; it plays to its end), "dance" on the whole body
+## (standing only; moving ends it), "knockdown" (the body falls onto its back,
 ## lies there secs and gets up), "climb" (the body pulls itself up over secs, then walks on) or
 ## "roll" (from a landing the body rolls over a shoulder and comes up, on into locomotion after
 ## secs).
@@ -356,6 +360,8 @@ func play_action(a: String, secs: float = 0.0) -> bool:
 		stop_action()
 		_whole_body(a, secs)
 		return true
+	if a == "kick":
+		return _kick()
 	if a == "dance":
 		if state() != "loco" or move * float(speeds["walk"]) > TALK_STILL:
 			return false
@@ -367,6 +373,14 @@ func play_action(a: String, secs: float = 0.0) -> bool:
 	tree.set(P_ACTION, a)
 	tree.set(P_ACT, AnimationNodeOneShot.ONE_SHOT_REQUEST_FIRE)
 	_act_left = left
+	return true
+
+
+func _kick() -> bool:
+	if state() not in ["loco", "talk"]:
+		return false
+	stop_action()
+	tree.set(P_KICK, AnimationNodeOneShot.ONE_SHOT_REQUEST_FIRE)
 	return true
 
 
@@ -414,13 +428,15 @@ func reach(i: int, target: Vector3, pole: Vector3, weight: float) -> void:
 
 ## True while an action or the dance plays (fading out included).
 func action_active() -> bool:
-	return bool(tree.get(P_ACT_ACTIVE)) or bool(tree.get(P_DANCE_ACTIVE))
+	var on := bool(tree.get(P_ACT_ACTIVE)) or bool(tree.get(P_DANCE_ACTIVE))
+	return on or bool(tree.get(P_KICK_ACTIVE))
 
 
 ## Fades the playing action and the dance out.
 func stop_action() -> void:
 	tree.set(P_ACT, AnimationNodeOneShot.ONE_SHOT_REQUEST_FADE_OUT)
 	tree.set(P_DANCE, AnimationNodeOneShot.ONE_SHOT_REQUEST_FADE_OUT)
+	tree.set(P_KICK, AnimationNodeOneShot.ONE_SHOT_REQUEST_FADE_OUT)
 	_act_left = INF
 	_dance_left = INF
 
@@ -616,7 +632,12 @@ func _root_tree() -> AnimationNodeBlendTree:
 	bt.add_node("act", _one_shot(ACT_IN, ACT_OUT, true))
 	bt.connect_node("act", 0, "guard")
 	bt.connect_node("act", 1, "action")
-	bt.connect_node("output", 0, "act")
+	# The kick moves the legs too: a whole-body one-shot over everything else.
+	bt.add_node("kick", _one_shot(ACT_IN, ACT_OUT, false))
+	bt.add_node("a_kick", _anim("kick"))
+	bt.connect_node("kick", 0, "act")
+	bt.connect_node("kick", 1, "a_kick")
+	bt.connect_node("output", 0, "kick")
 	return bt
 
 

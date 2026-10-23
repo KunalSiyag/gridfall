@@ -1,11 +1,13 @@
 extends FpFeature
 ## Body actions (integration slice; docs/fp/ARCHITECTURE.md, Body actions): the hero's fists and
-## gestures on foot. The strike button (left mouse, right trigger) throws a jab and a cross in
-## turn, the body turning to whoever it goes for (else to where the camera looks); R shoves. The
+## gestures on foot. The strike button (left mouse, right trigger) throws a jab, a cross and a
+## hook in turn, the hook a finisher that puts them down, the body turning to whoever it goes for
+## (else to where the camera looks); R shoves and X (middle mouse) kicks, further than a fist. The
 ## guard (right mouse or left trigger held: fists up, the body squared to where the camera looks,
 ## the camera in closer) is the fighting stance. A blow lands when the rig's fist is furthest out
-## (HeroRig.strike_time) on the person nearest in front within REACH, through the traffic
-## feature's hit_walker: they reel or go down, the people around react and the city hears of it.
+## (HeroRig.strike_time; a kick at KICK_HIT) on the person nearest in front within reach,
+## through the traffic feature's hit_walker: they reel or go down, the people around react and
+## the city hears of it.
 ## With nobody there it lands on the street prop in front (the props feature's strike): a bin,
 ## cone, wheelie bin or carton goes over, a fallen prop skids off. Keys 1-5 wave, nod, shake the
 ## head, shout and dance, and the people around answer (traffic answer_emote). The bus hears every
@@ -14,12 +16,17 @@ extends FpFeature
 const WS := preload("res://scripts/fp/world_scale.gd")
 
 ## Swings: [rig clip, hit_walker cause, strength 0..1, seconds until the next swing may start,
-## seconds the clip plays, contact time (s) when the rig cannot measure it].
+## seconds the clip plays, contact time (s) when the rig cannot measure it]. The hook ends the
+## combo hard enough to knock someone down, and so does a kick.
 const SWINGS := {
 	"jab": ["punch_jab", "punch", 0.45, 0.4, 0.55, 0.2],
 	"cross": ["punch_cross", "punch", 0.6, 0.5, 0.65, 0.29],
+	"hook": ["punch_hook", "punch", 0.85, 0.65, 0.47, 0.22],
 	"shove": ["push", "shove", 0.35, 0.6, 0.55, 0.15],
+	"kick": ["kick", "punch", 0.75, 0.75, 0.7, 0.24],
 }
+## The punches of the combo in order.
+const COMBO := ["jab", "cross", "hook"]
 ## Emote input actions: [emote, seconds it plays (0 for the clip's own length)].
 const EMOTES := {
 	"emote_wave": ["wave", 0.0],
@@ -31,6 +38,7 @@ const EMOTES := {
 const INPUTS: Array[String] = [
 	"act_strike",
 	"act_shove",
+	"act_kick",
 	"act_aim",
 	"emote_wave",
 	"emote_yes",
@@ -41,20 +49,23 @@ const INPUTS: Array[String] = [
 ## Who a swing can reach: on their feet within REACH (feet to feet) inside the cone ahead (the
 ## cosine); at contact still within REACH * HOLD_REACH.
 const REACH := 1.2 * WS.M
+## A kick reaches further.
+const KICK_REACH := 1.5 * WS.M
 const CONE := 0.4
 const HOLD_REACH := 1.3
 ## Running adds up to this much strength (at WS.RUN).
 const RUN_BONUS := 0.3
-## A press this close to the end of a swing queues the next one (s); punches alternate jab and
-## cross within COMBO_S of the last.
+## A press this close to the end of a swing queues the next one (s); punches go on through COMBO
+## within COMBO_S of the last and start again from the jab after it.
 const BUFFER_S := 0.2
 const COMBO_S := 1.0
 const EMOTE_GAP := 1.0
 ## The body faces whoever a swing went for at least this long (s).
 const FACE_S := 0.35
-## The view kick when a blow lands (pitch, roll; radians) and the camera arm while the guard is
-## up (TpsRig.arm_scale).
+## The view kick when a blow lands (pitch, roll; radians), HEAVY_KICK times that for a hook or a
+## kick, and the camera arm while the guard is up (TpsRig.arm_scale).
 const KICK := Vector2(-0.015, 0.025)
+const HEAVY_KICK := 1.6
 const GUARD_ARM := 0.8
 ## Photo tour: frames to wait for the tour's teleport, how far round the hero to look for someone
 ## to square up to, how far in front of them the hero stands, and how far to their left (so the
@@ -66,7 +77,7 @@ const PHOTO_SIDE := 0.55 * WS.M
 
 ## The guard is up.
 var guarding: bool = false
-## The swing under way ("jab", "cross", "shove") or "".
+## The swing under way ("jab", "cross", "hook", "shove", "kick") or "".
 var swing: String = ""
 ## hit_walker's info for the last blow that landed; swings, blows landed on people and blows
 ## landed on street props so far; how many people answered the last emote.
@@ -84,10 +95,10 @@ var _len: float = 0.0
 var _hit_at: float = 0.0
 var _landed: bool = true
 var _target: int = -1
-## The swing a press near the end of the last one queued ("punch", "shove") or "".
+## The swing a press near the end of the last one queued ("punch", "shove", "kick") or "".
 var _queued: String = ""
 var _combo_t: float = INF
-var _next_punch: String = "jab"
+var _combo_i: int = 0
 var _emote_gap: float = 0.0
 var _face_t: float = 0.0
 var _face_yaw: float = NAN
@@ -142,11 +153,13 @@ func can_act() -> bool:
 	return phone == null or not bool(phone.get("open"))
 
 
-## Starts a swing: what "punch" throws the next punch of the combo (a jab, then a cross within
-## COMBO_S of the last), "shove" a shove. A press near the end of a swing queues the next. False
-## when none starts now.
+## Starts a swing: what "punch" throws the next punch of the combo (a jab, a cross, then a hook,
+## each within COMBO_S of the last), "shove" a shove and "kick" a kick (on foot and upright). A
+## press near the end of a swing queues the next. False when none starts now.
 func strike(what: String = "punch") -> bool:
-	if not can_act() or (what != "punch" and what != "shove"):
+	if not can_act() or what not in ["punch", "shove", "kick"]:
+		return false
+	if what == "kick" and (ctx.player.crouched or not ctx.player.grounded):
 		return false
 	if not swing.is_empty():
 		if _len - _t <= BUFFER_S:
@@ -154,8 +167,9 @@ func strike(what: String = "punch") -> bool:
 		return false
 	var kind := what
 	if what == "punch":
-		kind = _next_punch if _combo_t < COMBO_S else "jab"
-		_next_punch = "cross" if kind == "jab" else "jab"
+		_combo_i = _combo_i if _combo_t < COMBO_S else 0
+		kind = COMBO[_combo_i]
+		_combo_i = (_combo_i + 1) % COMBO.size()
 		_combo_t = 0.0
 	var s: Array = SWINGS[kind]
 	swing = kind
@@ -167,7 +181,7 @@ func strike(what: String = "punch") -> bool:
 	if rig != null:
 		rig.call("stop_action")
 		rig.call("play_action", str(s[0]), float(s[4]))
-		if kind != "shove":
+		if kind in COMBO:
 			_hit_at = minf(float(rig.call("strike_time", str(s[0]))), _len)
 	var feet := ctx.player.position
 	var who := _find_target(_aim_dir())
@@ -265,6 +279,8 @@ func _unhandled_input(event: InputEvent) -> void:
 		strike()
 	elif press == "act_shove":
 		strike("shove")
+	elif press == "act_kick":
+		strike("kick")
 	else:
 		emote(str(EMOTES[press][0]))
 	if is_inside_tree():
@@ -326,7 +342,7 @@ func _land() -> void:
 		return
 	var feet := ctx.player.position
 	var who := {}
-	for w: Dictionary in tr.call("walkers_near", feet, REACH * HOLD_REACH):
+	for w: Dictionary in tr.call("walkers_near", feet, _reach() * HOLD_REACH):
 		if int(w["id"]) == _target:
 			who = w
 	if who.is_empty() or bool(who["down"]):
@@ -342,11 +358,12 @@ func _land() -> void:
 	_kick_view()
 
 
-## A swing at nobody: the street prop in front within REACH takes the blow (props' strike).
+## A swing at nobody: the street prop in front within reach takes the blow (props' strike).
 func _strike_prop() -> void:
 	var props := ctx.feature("props")
 	var feet := ctx.player.position
-	if props != null and bool(props.call("strike", feet, _aim_dir(), REACH, CONE, _strength())):
+	var dir := _aim_dir()
+	if props != null and bool(props.call("strike", feet, dir, _reach(), CONE, _strength())):
 		prop_hits += 1
 		_kick_view()
 
@@ -356,10 +373,17 @@ func _strength() -> float:
 	return float(SWINGS[swing][2]) + RUN_BONUS * clampf(ctx.player.speed() / WS.RUN, 0.0, 1.0)
 
 
-## The view kicks as a blow lands, rolled away from the punching hand.
+## How far the swing under way reaches (feet to feet).
+func _reach() -> float:
+	return KICK_REACH if swing == "kick" else REACH
+
+
+## The view kicks as a blow lands, rolled away from the punching hand, harder for a hook or a
+## kick.
 func _kick_view() -> void:
-	var side := {"jab": 1.0, "cross": -1.0}.get(swing, 0.0) as float
-	ctx.player.kick_view(KICK.x, KICK.y * side)
+	var side := {"jab": 1.0, "cross": -1.0, "hook": 1.0}.get(swing, 0.0) as float
+	var k := HEAVY_KICK if swing in ["hook", "kick"] else 1.0
+	ctx.player.kick_view(KICK.x * k, KICK.y * side * k)
 
 
 ## Third person: the body squares up to the camera while guarding and faces whoever a swing went
@@ -393,7 +417,7 @@ func _hand_back() -> void:
 		p.rig.arm_scale = 1.0
 
 
-## The person on their feet nearest the hero within REACH inside the cone around dir (walkers_near's
+## The person on their feet nearest the hero within reach inside the cone around dir (walkers_near's
 ## entry), {} for none.
 func _find_target(dir: Vector3) -> Dictionary:
 	var tr := ctx.feature("traffic")
@@ -402,7 +426,7 @@ func _find_target(dir: Vector3) -> Dictionary:
 	var feet := ctx.player.position
 	var best := {}
 	var bd := INF
-	for w: Dictionary in tr.call("walkers_near", feet, REACH):
+	for w: Dictionary in tr.call("walkers_near", feet, _reach()):
 		var d: Vector3 = (w["pos"] as Vector3) - feet
 		d.y = 0.0
 		var dist := d.length()
