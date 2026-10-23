@@ -74,7 +74,7 @@ func from_dict(_d: Dictionary) -> void:
 func evaluate() -> Dictionary:
 	evaluations += 1
 	var p := ctx.player if ctx != null else null
-	if p == null or ctx.is_modal() or p.photo_mode or _driving:
+	if p == null or ctx.is_modal() or p.photo_mode or _driving or p.carried:
 		_set_target({})
 		return target
 	var ray := view_ray()

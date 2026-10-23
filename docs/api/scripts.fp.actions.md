@@ -45,7 +45,7 @@ Body actions (integration slice; docs/fp/ARCHITECTURE.md, Body actions): the her
 - `func from_dict(_d: Dictionary) -> void`
 - `func teardown() -> void`
 - `func self_test() -> Dictionary`
-- `func can_act() -> bool`: Whether the hero may swing, guard or emote now: on foot and in control of the body, nothing modal open, not talking, not in photo mode, the phone put away.
+- `func can_act() -> bool`: Whether the hero may swing, guard or emote now: on foot and in control of the body (not in a parkour move or on a wall), nothing modal open, not talking, not in photo mode, the phone put away.
 - `func strike(what: String = "punch") ->`: Starts a swing: what "punch" throws the next punch of the combo (a jab, then a cross within COMBO_S of the last), "shove" a shove. A press near the end of a swing queues the next. False when none starts now.
 - `func set_guard(on: bool) -> void`: Raises or drops the guard for scripted play (tests, the photo tour); held input does the same.
 - `func emote(e: String) -> bool`: Plays an emote ("wave", "yes", "no", "shout", "dance") and lets the people around answer it. False when the hero cannot act now, swings or guards, the last emote was just now, or the dance is asked for on the move.

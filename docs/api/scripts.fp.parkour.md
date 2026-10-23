@@ -4,6 +4,48 @@
 
 [Index](index.md)
 
+## `scripts/fp/parkour/climb.gd`
+
+extends `RefCounted`
+
+The hero on a wall (the parkour feature's wall climb; wall.gd finds walls and the spots on them): the leap from the ground onto the wall, then up, down and along it at climbing pace, never past its ends, over its top or into anything in the way. The hands and feet hold on to the wall and move one at a time as the body goes: the one furthest behind its rest swings to a hold ahead of it, arcing off the wall. step() tells the feature when the body is at the top with up held, at the foot of the wall with down held, or when the wall is gone. Lengths are world units.
+
+### Constants
+
+- `WS = preload("res://scripts/fp/world_scale.gd")`
+- `WALL = preload("res://scripts/fp/parkour/wall.gd")`
+- `UP = 0.6 * WS.M`: Climbing pace (u/s): up, down and along the wall; FAST times that with sprint held.
+- `DOWN = 0.8 * WS.M`
+- `ALONG = 0.6 * WS.M`
+- `FAST = 1.6`
+- `DEAD = 0.25`: Input under DEAD on an axis counts as none.
+- `LEAP = 0.3`: The leap onto the wall takes LEAP (s).
+- `STRIDE = 0.56 * WS.M`: A limb moves STRIDE (STRIDE_ALONG along the wall) every four swings, one limb swinging while the body moves a quarter of that. It swings once it is SWING_LAG of a stride behind its rest, to LEAD of a stride ahead of it, coming ARC off the wall halfway; a swing still going when the body stops lands in SETTLE (s).
+- `STRIDE_ALONG = 0.4 * WS.M`
+- `SWING_LAG = 0.25`
+- `LEAD = 0.625`
+- `ARC = 0.06 * WS.M`
+- `SETTLE = 0.15`
+- `FIRST = [0.125, -0.375, -0.125, 0.375]`: The first holds, in strides above rest: on the way up the right hand swings first, then the left foot, the left hand and the right foot.
+- `EDGE = 0.03 * WS.M`: Hands hold at most EDGE under the top, feet at least FOOT_MIN over the ground.
+- `FOOT_MIN = 0.1 * WS.M`
+
+### Properties
+
+- `wall: Dictionary`: The wall (wall.gd's frame) and the body's spot on it: a along it, y the feet.
+- `top: float`: How high the wall stands where the body is, and the ground under it.
+- `velocity: Vector3`: The body's velocity over the last step (u/s).
+- `holds: Array[Vector2]`: Each limb's hold (a, y): left hand, right hand, left foot, right foot.
+- `swing: int`: The limb swinging (-1 for none) and the swings so far.
+
+### Functions
+
+- `func on_wall() -> bool`: True once the leap is over and the body hangs on the wall.
+- `func feet() -> Vector3`: Where the feet are: on the way up during the leap, then on the wall.
+- `func yaw() -> float`: The body yaw facing the wall (radians).
+- `func step(dt: float, wish: Vector2, fast: bool) -> String`: One step of dt (s): the leap goes on, or the body climbs along wish (x along the wall to the right, y up; each -1..1), faster with fast, and the limbs follow. "" while it hangs on, "top" at the top with up held, "foot" at the foot of the wall with down held, "lost" when the wall it hangs on is gone.
+- `func limb(i: int) -> Array`: Limb i's target and pole (world points) and how much it holds on (0..1; the feet come to the wall over the leap): [target, pole, weight]. The swinging limb is on its way, off the wall.
+
 ## `scripts/fp/parkour/moves.gd`
 
 extends `RefCounted`
@@ -50,25 +92,33 @@ Plans what a jump press in front of an obstacle becomes (the parkour feature): a
 - `static func point(plan: Dictionary, t: float) -> Vector3`: The feet t seconds into plan.
 - `static func sample(keys: Array, t: float) -> float`: A track's value at time t: keys are [time (rising from 0), value, how it eases into the key].
 - `static func clear_point(col: CollisionWorld, plan: Dictionary, t: float) -> Vector3`: Where a move cut short t seconds in leaves the feet: the latest point of plan up to t where a standing body fits (half over a ledge it does not, so it goes back to the face), the start at worst.
+- `static func find_face(col: CollisionWorld, pos: Vector3, d: Vector2, reach: float) -> Dictionary`: The nearest obstacle the body meets moving along d (unit) from pos with a gap of at most reach to its face: {"u": the unit axis into its face, "face" and "far": the distances along u from pos to its face and to its far side}, or {} (nothing there, or met at a glance).
+- `static func make_plan(move: String, pos: Vector3, u: Vector2, top: float, s: Array, y: Array) -> Dictionary`: A plan (find() lists its keys) of move from the feet at pos across u, over or onto top, along the tracks s and y.
+- `static func fits(col: CollisionWorld, p: Vector3) -> bool`: True when a whole standing body fits with the feet at p.
 
 ## `scripts/fp/parkour/parkour_feature.gd`
 
 extends `FpFeature`
 
-Parkour (integration slice; docs/fp/ARCHITECTURE.md, Parkour): jump in front of an obstacle and the hero gets over it instead of jumping against it. A low, thin one (a bench, a low wall, a railing) is vaulted, a low ledge hopped onto and one up to 2.1 m climbed, the rig's climb clip playing as the body pulls itself up (moves.gd plans each move). The player's jump hook hands the press over; the move carries the body (FpPlayer.carry) and gives it back at the end, after a vault or a hop to land. A knock-down or a loss of control drops the body where it is, and a teleport ends the move. Each move goes out on the bus (hero_action "vault", "hop" or "climb").
+Parkour (integration slice; docs/fp/ARCHITECTURE.md, Parkour): jump in front of an obstacle and the hero gets over it instead of jumping against it. A low, thin one (a bench, a low wall, a railing) is vaulted, a low ledge hopped onto and one up to 2.1 m climbed, the rig's climb clip playing as the body pulls itself up (moves.gd plans each move). A wall taller than that is taken hold of (flag wall_climb; wall.gd finds it): the hero leaps onto it and climbs it with the move keys, hands and feet on holds (climb.gd), climbs over the top where there is room to stand and steps off at its foot; crouch lets go and jump pushes off it. The player's jump hook hands the press over; the move carries the body (FpPlayer.carry) and gives it back at the end, after a vault, a hop or a let-go to land. A knock-down or a loss of control drops the body where it is, and a teleport ends the move. Each move goes out on the bus (hero_action "vault", "hop", "climb" or "grab").
 
 ### Constants
 
 - `WS = preload("res://scripts/fp/world_scale.gd")`
 - `MOVES = preload("res://scripts/fp/parkour/moves.gd")`
+- `WALL = preload("res://scripts/fp/parkour/wall.gd")`
+- `CLIMB = preload("res://scripts/fp/parkour/climb.gd")`
 - `MOVING = 0.3 * WS.M`: Below this speed (u/s) a press heads where the body faces, else along its travel.
 - `HL_TURN = 0.06`: The body turns to face across the obstacle with this halflife (s).
 - `KICK = -0.02`: The view dips (pitch, radians) as the hands take the ledge.
+- `PUSH_BACK = 2.0 * WS.M`: Jump on a wall pushes off it, back from it and up at these speeds (u/s).
+- `PUSH_UP = 2.5 * WS.M`
 
 ### Properties
 
-- `move: String`: The move under way ("vault", "hop", "climb") or "".
-- `made: Dictionary`: Moves made so far, by kind.
+- `move: String`: The move under way ("vault", "hop", "climb", or "wall" on a wall) or "".
+- `made: Dictionary`: Moves made so far, by kind ("grab": walls taken hold of).
+- `climber: CLIMB`: The body on a wall (climb.gd) while move is "wall", else null.
 
 ### Functions
 
@@ -78,6 +128,39 @@ Parkour (integration slice; docs/fp/ARCHITECTURE.md, Parkour): jump in front of 
 - `func from_dict(_d: Dictionary) -> void`
 - `func teardown() -> void`
 - `func self_test() -> Dictionary`
-- `func try_move() -> bool`: The player's jump hook: a jump press in front of an obstacle starts the move it allows (true); otherwise the hero jumps (false). Only on foot and in control, not talking or knocked down.
-- `func tick(dt: float) -> void`: One step of the move under way: the body along the plan, turning across the obstacle, the climb clip from the face, and the body handed back at the end.
-- `func stop() -> void`: Ends the move under way (a knock-down, a loss of control, a load, teardown): the body drops from where it is, or from the last point of the move where it stood clear (cut short half over a ledge).
+- `func try_move() -> bool`: The player's jump hook: a jump press in front of an obstacle starts the move it allows, or at a wall too tall for that takes hold of it (true); otherwise the hero jumps (false). Only on foot and in control, not talking or knocked down.
+- `func tick(dt: float) -> void`: One step of the move under way: on a wall the climb; otherwise the body along the plan, turning across the obstacle, the climb clip from the face, and the body handed back at the end.
+- `func stop() -> void`: Ends the move under way (a knock-down, a loss of control, a load, teardown): the body drops from where it is (off a wall), or from the last point of the move where it stood clear (cut short half over a ledge).
+
+## `scripts/fp/parkour/wall.gd`
+
+extends `RefCounted`
+
+Where the hero can hang on a wall (the parkour feature's wall climb; climb.gd moves the body on it). A wall is the face of the CollisionWorld boxes (axis-aligned) that a jump press meets, too tall to climb onto at once. Its frame is {"u": the unit xz axis into the face, "side": the unit xz axis along it (to the right of a body facing it), "face": where the face is along u}; a spot on it is (a, y), a along side and y the height of the feet. A body hangs R off the face with wall behind its hands and feet, HALF either side, and room for it in front of the wall. Lengths are world units.
+
+### Constants
+
+- `WS = preload("res://scripts/fp/world_scale.gd")`
+- `MOVES = preload("res://scripts/fp/parkour/moves.gd")`
+- `R = WS.PLAYER_RADIUS`
+- `REST = [ Vector3(-0.25, 1.68, 0.04) * WS.M, Vector3(0.25, 1.68, 0.04) * WS.M, Vector3(-0.17, 0...`: The hands and the feet at rest on a body hanging with its feet at (0, 0): (along the face, up, out from it); left hand, right hand, left foot, right foot.
+- `POLES = [ Vector3(-0.6, 1.0, 0.6) * WS.M, Vector3(0.6, 1.0, 0.6) * WS.M, Vector3(-0.5, 0.6, -0....`: Where the elbows and the knees bend toward, the same way: elbows out and back off the wall, knees out and into it.
+- `HALF = 0.5 * WS.M`: The wall stands behind the body HALF either side of it, from LOW (the feet's holds) to HIGH (the chest) above its feet, looking IN behind the face.
+- `LOW = 0.3 * WS.M`
+- `HIGH = 1.2 * WS.M`
+- `IN = 0.05 * WS.M`
+- `GRIP = 1.55 * WS.M`: The feet hang at most GRIP under the top (the hands on its edge), and a leap onto a wall takes them GRAB_RISE above the ground.
+- `GRAB_RISE = 0.5 * WS.M`
+- `ROOM_R = 0.9 * R`: The body's room in front of the wall: a column ROOM_R round and ROOM_H tall (to the hands).
+- `ROOM_H = 2.0 * WS.M`
+- `NEAR = 3.0 * WS.M`: Boxes within NEAR of the body are looked at, and up to STACK of them stacked behind a face.
+- `STACK = 8`
+
+### Functions
+
+- `static func grab(col: CollisionWorld, pos: Vector3, dir: Vector3, speed: float) -> Dictionary`: The wall a jump press with the feet at pos meets heading along dir (xz) at speed (u/s): its frame with the spot the body leaps to ("a", "y") and how high the wall stands there ("top"), or {} (no wall there, one low enough to climb onto, or no room to hang on it).
+- `static func hang_ok(col: CollisionWorld, boxes: Array[AABB], w: Dictionary, a: float, y: float) -> bool`: True when a body can hang at (a, y) on the wall w: wall behind it HALF either side from LOW to HIGH, and room for it in front of the wall over dry ground. boxes are the boxes near it.
+- `static func top_at(boxes: Array[AABB], w: Dictionary, a: float, y: float) -> float`: How high the wall w stands at a (along it) from height y up: the top of the boxes stacked just behind the face there, NAN with no wall at y.
+- `static func ground_at(col: CollisionWorld, w: Dictionary, a: float, y: float) -> float`: The ground under a body hanging at (a, y) on the wall w: what its feet would come down on, NAN over water.
+- `static func point(w: Dictionary, a: float, y: float, out: float) -> Vector3`: The world point at (a, y) on the wall w, out off its face (negative: behind it).
+- `static func yaw(w: Dictionary) -> float`: The body yaw (radians) facing the wall w.

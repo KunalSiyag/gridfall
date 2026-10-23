@@ -179,6 +179,12 @@ var jump_hook: Callable = Callable()
 ## True while another owner moves the body through carry(): simulate leaves it alone until
 ## release(); teleport() and ride() end it.
 var carried: bool = false
+## While carried: the input simulate was last given (the view-relative wish, sprint and crouch;
+## none while a modal is open) for the owner to read (a climb on a wall). A jump press is
+## take_jump()'s.
+var carry_wish: Vector2 = Vector2.ZERO
+var carry_sprint: bool = false
+var carry_crouch: bool = false
 ## The view kick still applied (pitch, roll; radians).
 var _kick: Vector2 = Vector2.ZERO
 var _override_xf: Transform3D = Transform3D()
@@ -260,6 +266,10 @@ func ride(pos: Vector3, body_yaw: float, view_yaw: float) -> void:
 ## turned to body_yaw (radians; first person keeps facing the view), velocity vel (u/s) for the
 ## camera and the avatar, on the ground or in the air. simulate leaves the body alone meanwhile.
 func carry(pos: Vector3, body_yaw: float, vel: Vector3, on_ground: bool) -> void:
+	if not carried:
+		carry_wish = Vector2.ZERO
+		carry_sprint = false
+		carry_crouch = false
 	carried = true
 	position = pos
 	if camera_mode != "first":
@@ -283,6 +293,14 @@ func release(on_ground: bool) -> void:
 	_coyote = 0.0
 	_jump_buffer = 0.0
 	_jump_held = true
+
+
+## Takes a jump pressed while the body is carried: true once per press.
+func take_jump() -> bool:
+	if not carried or _jump_buffer <= 0.0:
+		return false
+	_jump_buffer = 0.0
+	return true
 
 
 ## Faces a world point: the view (yaw and pitch) and the body.
@@ -366,6 +384,7 @@ func simulate(wish: Vector2, sprint: bool, delta: float, crouch: bool = false, j
 	if ctx.is_modal():
 		wish = Vector2.ZERO
 		jump = false
+		crouch = crouch and not carried
 	if wish.length_squared() > 1.0:
 		wish = wish.normalized()
 	if photo_mode:
@@ -374,7 +393,12 @@ func simulate(wish: Vector2, sprint: bool, delta: float, crouch: bool = false, j
 	if jump and not _jump_held:
 		_jump_buffer = JUMP_BUFFER
 	_jump_held = jump
-	if carried or _jump_taken():
+	if carried:
+		carry_wish = wish
+		carry_sprint = sprint
+		carry_crouch = crouch
+		return
+	if _jump_taken():
 		return
 	_set_crouch(crouch)
 	_eye_h = SM.damp(_eye_h, WS.CROUCH_EYE if crouched else WS.EYE, HL_EYE, delta)

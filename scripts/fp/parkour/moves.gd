@@ -66,7 +66,7 @@ static func find(col: CollisionWorld, pos: Vector3, dir: Vector3, speed: float) 
 	var d := Vector2(dir.x, dir.z)
 	if col == null or d.length_squared() < 1e-12:
 		return {}
-	var face := _face(col, pos, d.normalized(), REACH + REACH_T * speed)
+	var face := find_face(col, pos, d.normalized(), REACH + REACH_T * speed)
 	if face.is_empty():
 		return {}
 	var u: Vector2 = face["u"]
@@ -81,7 +81,7 @@ static func find(col: CollisionWorld, pos: Vector3, dir: Vector3, speed: float) 
 	var plan := {}
 	if h <= VAULT_MAX and depth <= VAULT_DEPTH:
 		plan = _vault(col, pos, u, face, top, speed)
-	if not plan.is_empty() or not _fits(col, _at(pos, u, stand, top)):
+	if not plan.is_empty() or not fits(col, _at(pos, u, stand, top)):
 		return plan
 	if h <= HOP_MAX:
 		return _hop(col, pos, u, face, top, speed)
@@ -115,7 +115,7 @@ static func clear_point(col: CollisionWorld, plan: Dictionary, t: float) -> Vect
 	var k := t
 	while k > 0.0:
 		var p := point(plan, k)
-		if _fits(col, p):
+		if fits(col, p):
 			return p
 		k -= PATH_STEP
 	return point(plan, 0.0)
@@ -135,7 +135,7 @@ static func _ease(w: float, how: int) -> float:
 ## The nearest obstacle the body meets moving along d (unit) from pos with a gap of at most reach
 ## to its face: {"u": the unit axis into its face, "face" and "far": the distances along u from pos
 ## to its face and to its far side}, or {} (nothing there, or met at a glance).
-static func _face(col: CollisionWorld, pos: Vector3, d: Vector2, reach: float) -> Dictionary:
+static func find_face(col: CollisionWorld, pos: Vector3, d: Vector2, reach: float) -> Dictionary:
 	var o := Vector2(pos.x, pos.z)
 	var grow := Vector2(R, R)
 	var best := INF
@@ -184,8 +184,8 @@ static func _enter(o: Vector2, d: Vector2, lo: Vector2, hi: Vector2) -> Vector2:
 
 
 ## Over a low, thin obstacle: up to CLEAR above its top by its face, across, and down beyond it as
-## far as the speed carries (nearer when that spot is taken). face is _face()'s answer. {} with
-## nowhere to land or no room on the way.
+## far as the speed carries (nearer when that spot is taken). face is find_face()'s answer. {}
+## with nowhere to land or no room on the way.
 static func _vault(
 	col: CollisionWorld, pos: Vector3, u: Vector2, face: Dictionary, top: float, speed: float
 ) -> Dictionary:
@@ -201,7 +201,7 @@ static func _vault(
 		var s_land := maxf(s_over + f * v * fall, far + R + LAND_GAP)
 		var land := _at(pos, u, s_land, pos.y)
 		var g := col.support_height(land, R, pos.y, WS.STEP_HEIGHT)
-		if is_nan(g) or g < pos.y - VAULT_DROP or not _fits(col, _at(pos, u, s_land, g)):
+		if is_nan(g) or g < pos.y - VAULT_DROP or not fits(col, _at(pos, u, s_land, g)):
 			continue
 		var t_drop := maxf(sqrt(2.0 * (peak - g) / WS.GRAVITY), DROP_MIN)
 		var t_end := t_over + t_drop
@@ -211,7 +211,7 @@ static func _vault(
 		var y := [
 			[0.0, pos.y, LIN], [t_rise, peak, EASE_OUT], [t_over, peak, LIN], [t_end, g, EASE_IN]
 		]
-		var plan := _plan("vault", pos, u, top, s, y)
+		var plan := make_plan("vault", pos, u, top, s, y)
 		plan["exit"] = _exit(u, (s_land - s_over) / t_drop, 2.0 * (peak - g) / t_drop)
 		if _clear(col, plan, face):
 			return plan
@@ -230,7 +230,7 @@ static func _hop(
 	var t_down := maxf((stand - s_rise) / v, DROP_MIN)
 	var s := [[0.0, 0.0, LIN], [t_rise, s_rise, LIN], [t_rise + t_down, stand, LIN]]
 	var y := [[0.0, pos.y, LIN], [t_rise, top + CLEAR, EASE_OUT], [t_rise + t_down, top, EASE_IN]]
-	var plan := _plan("hop", pos, u, top, s, y)
+	var plan := make_plan("hop", pos, u, top, s, y)
 	plan["exit"] = _exit(u, (stand - s_rise) / t_down, 2.0 * CLEAR / t_down)
 	return plan if _clear(col, plan, face) else {}
 
@@ -250,14 +250,16 @@ static func _climb(
 	var t_step := t0 + CLIMB_STEP * tc
 	var s := [[0.0, 0.0, LIN], [t0, s_touch, LIN], [t_step, s_touch, LIN], [t0 + tc, stand, SMOOTH]]
 	var y := [[0.0, pos.y, LIN], [t0 + CLIMB_RISE * tc, pos.y, LIN], [t0 + tc, top, SMOOTH]]
-	var plan := _plan("climb", pos, u, top, s, y)
+	var plan := make_plan("climb", pos, u, top, s, y)
 	plan["anim_at"] = t0
 	plan["anim_len"] = tc
 	plan["grounded"] = true
 	return plan if _clear(col, plan, face) else {}
 
 
-static func _plan(
+## A plan (find() lists its keys) of move from the feet at pos across u, over or onto top, along
+## the tracks s and y.
+static func make_plan(
 	move: String, pos: Vector3, u: Vector2, top: float, s: Array, y: Array
 ) -> Dictionary:
 	return {
@@ -280,9 +282,9 @@ static func _exit(u: Vector2, speed: float, sink: float) -> Vector3:
 	return Vector3(u.x * speed, -minf(sink, LAND_V), u.y * speed)
 
 
-## True when the tucked body has room all along plan. Over the obstacle (face: _face()'s answer)
-## it counts from the obstacle's top up: a climb comes over the edge from below it, and a vault or
-## a hop is above it there anyway.
+## True when the tucked body has room all along plan. Over the obstacle (face: find_face()'s
+## answer) it counts from the obstacle's top up: a climb comes over the edge from below it, and a
+## vault or a hop is above it there anyway.
 static func _clear(col: CollisionWorld, plan: Dictionary, face: Dictionary) -> bool:
 	var length: float = plan["length"]
 	var top: float = plan["top"]
@@ -301,7 +303,7 @@ static func _clear(col: CollisionWorld, plan: Dictionary, face: Dictionary) -> b
 
 
 ## True when a whole standing body fits with the feet at p.
-static func _fits(col: CollisionWorld, p: Vector3) -> bool:
+static func fits(col: CollisionWorld, p: Vector3) -> bool:
 	return not col.body_blocked(p, R * 0.99, WS.PLAYER_HEIGHT)
 
 

@@ -93,11 +93,66 @@ Forward kinematics over a body's own clip keys, without a tree or a scene: where
 - `func forward_of(root: Node3D) -> Vector3`: The +Z of root (the body's scene root above the skeleton) in skeleton space.
 - `func end_pos(a0: Animation, a1: Animation, w: float, chain: Array, ph: float) -> Vector3`: The position (skeleton metres) of the chain's last bone at phase ph of clip a0 blended toward a1 by w.
 
+## `scripts/fp/player/hero_limbs.gd`
+
+extends `RefCounted`
+
+The hero's hands and feet on holds (slice A; hero_rig.gd, for the parkour feature's wall climb): a TwoBoneIK3D a limb (upper arm, forearm and hand; thigh, shin and foot) reaches the end bone for a target with the elbow or knee bent toward a pole, both top-level Marker3Ds placed in world space. Each limb's influence eases toward its goal weight, and a limb let go is switched off. The IK runs in the skeleton's own update, after the AnimationTree has posed it.
+
+### Constants
+
+- `SM = preload("res://scripts/fp/player/spring_math.gd")`
+- `CHAINS = [ ["LeftUpperArm", "LeftLowerArm", "LeftHand"], ["RightUpperArm", "RightLowerArm", "Rig...`: Left hand, right hand, left foot, right foot: (root, middle, end) bones.
+- `HL_WEIGHT = 0.06`: The influences follow their goals with this halflife (s); a limb let go is off below OFF.
+- `OFF = 0.005`
+
+### Properties
+
+- `weights: PackedFloat32Array`: Each limb's influence (0..1).
+- `ends: Array[Vector3]`: Each end bone's world position after the IK, from the last frame it ran on that limb (tests).
+
+### Functions
+
+- `func set_goal(i: int, target: Vector3, pole: Vector3, weight: float) -> void`: Limb i (0 left hand, 1 right hand, 2 left foot, 3 right foot) reaches for target with its elbow or knee toward pole (world points), weight (0..1) of the way once eased in.
+- `func release(at_once: bool = false) -> void`: Lets every limb go back to the clip, eased out or at once.
+- `func active() -> bool`: True while any limb follows its target.
+- `func update(dt: float) -> void`: Per frame: eases each limb's influence toward its goal.
+
+## `scripts/fp/player/hero_look.gd`
+
+extends `RefCounted`
+
+The hero's head look (A-player.md 6.9; hero_rig.gd): LookAtModifier3Ds on Neck and Head turn the head toward a look target within the head's limits, the Neck taking a share of the turn. A target that jumps is smoothed (the head turns rather than snaps), and the influence fades out while the target is outside the limits and comes back once it is well inside them. The modifiers run in the skeleton's own update, after the AnimationTree has posed it.
+
+### Constants
+
+- `AP = preload("res://scripts/fp/asset_paths.gd")`
+- `LOOK_YAW = deg_to_rad(70.0)`: Head limits (yaw, pitch), the Neck's share and limit, the modifier's own interpolation, the influence fade when the target leaves the limits, and the halflife that smooths a jumping target.
+- `LOOK_PITCH = deg_to_rad(35.0)`
+- `NECK_INFLUENCE = 0.35`
+- `NECK_LIMIT = deg_to_rad(45.0)`
+- `LOOK_DURATION = 0.35`
+- `LOOK_FADE = 0.3`
+- `HL_LOOK = 0.12`
+- `LOOK_REARM = deg_to_rad(8.0)`: A faded-out look comes back once the target is this far inside the limits (no flicker at the edge).
+- `LOOK_SAFE_MARGIN = 0.5`: Skeleton-local (metres): closer targets interpolate (LookAtModifier3D.origin_safe_margin).
+
+### Properties
+
+- `look_weight: float`: Influence (0..1) and whether the modifier last found its target within its limits.
+- `head_forward: Vector3`: The head's forward (world) as the look-at modifiers left it, from the last frame they ran.
+
+### Functions
+
+- `func set_target(p: Vector3) -> void`: The world point the head turns toward; NAN components let the head return to the clip.
+- `func reset() -> void`: Forgets the smoothed direction (a teleport): the next target is taken at once.
+- `func update(dt: float) -> void`: Smooths the target's direction from the head (a jump between targets turns the head rather than snapping it) and fades the influence out while the target is outside the limits.
+
 ## `scripts/fp/player/hero_rig.gd`
 
 extends `RefCounted`
 
-HC's animated hero for the player (slice A stage A2; A-player.md 6.9, TPS_PLAN 2.9). A roster body (AP.HERO_M / AP.HERO_F) with the gender's shared library as the default library "" and an AnimationTree driven from code: MANUAL process, advanced by player_avatar.update_motion with the player's own dt, so tests and the game step it the same way. The tree is a StateMachine (locomotion, crouch, jump / fall / land, talk, sit) under a OneShot for upper-body gestures. Locomotion blends idle with a cyclic BlendSpace1D of walk, walk_fast, run and run_fast at their measured speeds (SYNC_MODE_CYCLIC_MUTABLE gives the blended loops one shared cycle, so their left-heel phases stay locked), then a TimeScale that matches the stride to the ground speed. Foot contacts are the locomotion phase crossing 0 (left heel) and one half (right heel). LookAtModifier3Ds on Neck and Head turn the head toward a look target.
+HC's animated hero for the player (slice A stage A2; A-player.md 6.9, TPS_PLAN 2.9). A roster body (AP.HERO_M / AP.HERO_F) with the gender's shared library as the default library "" and an AnimationTree driven from code: MANUAL process, advanced by player_avatar.update_motion with the player's own dt, so tests and the game step it the same way. The tree is a StateMachine (locomotion, crouch, jump / fall / land, talk, sit) under a OneShot for upper-body gestures. Locomotion blends idle with a cyclic BlendSpace1D of walk, walk_fast, run and run_fast at their measured speeds (SYNC_MODE_CYCLIC_MUTABLE gives the blended loops one shared cycle, so their left-heel phases stay locked), then a TimeScale that matches the stride to the ground speed. Foot contacts are the locomotion phase crossing 0 (left heel) and one half (right heel). The head turns toward a look target (hero_look.gd); on a wall the hands and feet reach for holds (hero_limbs.gd).
 
 ### Constants
 
@@ -106,6 +161,8 @@ HC's animated hero for the player (slice A stage A2; A-player.md 6.9, TPS_PLAN 2
 - `SM = preload("res://scripts/fp/player/spring_math.gd")`
 - `FK = preload("res://scripts/fp/player/hero_fk.gd")`
 - `HEEL = preload("res://scripts/fp/player/heel_strike.gd")`
+- `LOOK = preload("res://scripts/fp/player/hero_look.gd")`
+- `LIMBS = preload("res://scripts/fp/player/hero_limbs.gd")`
 - `LOCO = ["walk", "walk_fast", "run", "run_fast"]`: Locomotion loops in blend order; HC starts each on the left-heel strike.
 - `GESTURES = ["interact", "wave", "phone", "door_try"]`: Upper-body one-shots (6.9 OneShot).
 - `ACTIONS = [ "punch_jab", "punch_cross", "push", "yes", "no", "shout", "hit_head", "hit_chest", ]`: Body actions over the gestures (the actions feature): punches, the shove, emotes and the flinch of a blow taken (the health feature) on the upper body with quick fades; the dance on the whole body.
@@ -151,16 +208,9 @@ HC's animated hero for the player (slice A stage A2; A-player.md 6.9, TPS_PLAN 2
 - `STRIKE_WITHIN = 1.2`
 - `SIT_SPEED = 1.5`: sit_down and stand_up play this much faster than authored (in and out of a car seat).
 - `SIT_CLIPS = ["sit_down", "stand_up"]`
-- `HELD = ["sit_down", "sit", "stand_up", "knockback", "get_up", "climb"]`: States the ground does not cut short for locomotion: sitting, the knock-down and the climb.
-- `LOOK_YAW = deg_to_rad(70.0)`: Head look (6.9): Head limits (yaw, pitch), the Neck's share and limit, the modifier's own interpolation, the influence fade when the target leaves the limits, and the halflife that smooths a jumping target.
-- `LOOK_PITCH = deg_to_rad(35.0)`
-- `NECK_INFLUENCE = 0.35`
-- `NECK_LIMIT = deg_to_rad(45.0)`
-- `LOOK_DURATION = 0.35`
-- `LOOK_FADE = 0.3`
-- `HL_LOOK = 0.12`
-- `LOOK_REARM = deg_to_rad(8.0)`: A faded-out look comes back once the target is this far inside the limits (no flicker at the edge).
-- `LOOK_SAFE_MARGIN = 0.5`: Skeleton-local (metres): closer targets interpolate (LookAtModifier3D.origin_safe_margin).
+- `HELD = ["sit_down", "sit", "stand_up", "knockback", "get_up", "climb", "wall"]`: States the ground does not cut short for locomotion: sitting, the knock-down, the climb and holding on to a wall.
+- `WALL_CLIP = "idle"`: On a wall (hold_wall) the body holds WALL_CLIP under the limbs' IK, faded in and out over XF_WALL (s).
+- `XF_WALL = 0.15`
 - `UPPER_ROOT = "Spine"`: A gesture moves the bones from here up; the legs keep their state.
 - `P_SM = "parameters/sm/playback"`
 - `P_MOVE = "parameters/sm/loco/move/blend_amount"`
@@ -186,6 +236,7 @@ HC's animated hero for the player (slice A stage A2; A-player.md 6.9, TPS_PLAN 2
 ### Properties
 
 - `body: Node3D`: The body's scene root (faces +Z, feet at y = 0, metric) and its parts.
+- `look: LOOK`: The head look, and the hands and feet on holds.
 - `gender: String`: "m" or "f".
 - `speeds: Dictionary`: Clip -> ground speed in m/s on this body at its CharacterRoot scale (speed_mps * hip ratio * h_target / rest height), and clip -> length (s).
 - `time_scale: float`: The last foot-slide factor v / v_anim (clamped; 1 while standing) and the locomotion phase (cycles, 0..1: the left heel strikes at 0, the right at 0.5; -1 outside locomotion).
@@ -193,19 +244,19 @@ HC's animated hero for the player (slice A stage A2; A-player.md 6.9, TPS_PLAN 2
 - `contacts: Array[Dictionary]`: Foot contacts of the last update: [{"left": bool, "pos": Vector3 (world, the foot's ground point)}].
 - `ground_fix: float`: How far the body is lowered to put the soles on the ground (skeleton metres; _update_ground).
 - `guard: float`: How far the guard is up (0..1).
-- `look_weight: float`: Head-look influence (0..1) and whether the modifier last found its target within its limits.
-- `head_forward: Vector3`: The head's forward (world) as the look-at modifiers left it, from the last frame they ran.
 
 ### Functions
 
 - `static func build(path: String, lib_path: String, k: float, p_gender: String) -> RefCounted`: Instantiates the body at path with the AnimationLibrary at lib_path; k is the body's speed factor (hip_m / speed_ref_hip_m * h_target / rest height). Null when a file is missing or the body has no %GeneralSkeleton.
 - `func update(dt: float, v: float, grounded: bool, vy: float, crouched: bool, talking: bool) -> void`: Per frame: v is the signed forward ground speed (m/s; negative walks backward), vy the vertical speed (m/s), crouched and talking the player's states. Advances the tree by dt and fills contacts with the heel strikes it crossed.
-- `func state() -> String`: The state machine's current state ("loco", "crouch", "jump", "fall", "land", "talk", "sit_down", "sit", "stand_up", "knockback", "get_up", "climb").
+- `func state() -> String`: The state machine's current state ("loco", "crouch", "jump", "fall", "land", "talk", "sit_down", "sit", "stand_up", "knockback", "get_up", "climb", "wall").
 - `func sit(on: bool) -> void`: Sits down (on) or stands up; moving stands up by itself.
 - `func play_gesture(g: String) -> void`: Plays an upper-body gesture over the current state ("interact", "wave", "phone", "door_try").
 - `func gesture_active() -> bool`
 - `func stop_gesture() -> void`: Fades the playing gesture out before its end.
 - `func play_action(a: String, secs: float = 0.0) -> bool`: Plays a body action: one of ACTIONS on the upper body over whatever the legs do, "dance" on the whole body (standing only; moving ends it), "knockdown" (the body falls onto its back, lies there secs and gets up) or "climb" (the body pulls itself up over secs, then walks on). secs > 0 fades an action out that long after the start; otherwise a clip plays to its end, a loop for one cycle and the dance until stopped.
+- `func hold_wall(on: bool, grounded: bool = false) -> void`: Takes hold of a wall (on: the wall pose, the limbs put on holds by reach) or lets go of it: the limbs back to the clips and the body into the fall, or standing when grounded, unless another state takes over (play_action "climb" right after, over the top).
+- `func reach(i: int, target: Vector3, pole: Vector3, weight: float) -> void`: Puts limb i (0 left hand, 1 right hand, 2 left foot, 3 right foot) on target (world) with its elbow or knee bent toward pole, weight (0..1) of the way.
 - `func action_active() -> bool`: True while an action or the dance plays (fading out included).
 - `func stop_action() -> void`: Fades the playing action and the dance out.
 - `func set_guard(on: bool) -> void`: Raises (on) or drops the guard: fists up on the upper body, eased over HL_GUARD.
@@ -217,7 +268,6 @@ HC's animated hero for the player (slice A stage A2; A-player.md 6.9, TPS_PLAN 2
 - `func bone_world(bone: String) -> Vector3`: A bone's world position (the animated pose, before the look-at modifiers).
 - `func feet_low(ground_y: float) -> float`: How far the lowest part of either sole is above the given world height (world units): per foot the lower of the heel (the ankle bone above its standing height) and the toe (the toe bone above its standing height), for tests.
 - `func stride(a: float) -> float`: The ground one gait cycle (two steps) covers at speed a (m/s), in metres.
-- `func contact_phases(st: String = "loco") -> Vect`: The (left, right) heel contact phases of the current blend: "loco" those of the blended pose between the two clips around the blend position, "crouch" crouch_walk's.
 
 ## `scripts/fp/player/placeholder_puppet.gd`
 
@@ -335,6 +385,7 @@ The on-foot player (slice A): feet at `position`, a kinematic controller against
 - `aim_yaw: float`: Third person: while not NAN the body turns toward this yaw instead of its travel (the actions feature: the guard faces where the camera looks, a blow faces its target).
 - `jump_hook: Callable`: Asked (no arguments) when a jump is about to leave the ground: true when it took the press over (the parkour feature vaults or climbs instead of the jump), false to jump. Empty for none.
 - `carried: bool`: True while another owner moves the body through carry(): simulate leaves it alone until release(); teleport() and ride() end it.
+- `carry_wish: Vector2`: While carried: the input simulate was last given (the view-relative wish, sprint and crouch; none while a modal is open) for the owner to read (a climb on a wall). A jump press is take_jump()'s.
 
 ### Functions
 
@@ -343,6 +394,7 @@ The on-foot player (slice A): feet at `position`, a kinematic controller against
 - `func ride(pos: Vector3, body_yaw: float, view_yaw: float) -> void`: Carries the body with a vehicle (input off): feet at pos, body yaw and view yaw in radians, no ground snap and no camera snap (the vehicle owns the view through set_view_override).
 - `func carry(pos: Vector3, body_yaw: float, vel: Vector3, on_ground: bool) -> void`: Moves the body for another owner (a vault or a climb) until release(): feet at pos, the body turned to body_yaw (radians; first person keeps facing the view), velocity vel (u/s) for the camera and the avatar, on the ground or in the air. simulate leaves the body alone meanwhile.
 - `func release(on_ground: bool) -> void`: Gives a carried body back to simulate: standing, or in the air to land on the next step (with that landing's footstep and landed signal). A jump still held does not fire again.
+- `func take_jump() -> bool`: Takes a jump pressed while the body is carried: true once per press.
 - `func look_toward(target: Vector3) -> void`: Faces a world point: the view (yaw and pitch) and the body.
 - `func eye_position() -> Vector3`: World position of the head (feet + current eye height; crouching lowers it). Talk and interact ranges are measured from here in both cameras.
 - `func view_position() -> Vector3`: Where the camera is (the arm end in third person).

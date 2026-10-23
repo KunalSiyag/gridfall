@@ -8,13 +8,16 @@ extends RefCounted
 ## measured speeds (SYNC_MODE_CYCLIC_MUTABLE gives the blended loops one shared cycle, so their
 ## left-heel phases stay locked), then a TimeScale that matches the stride to the ground speed.
 ## Foot contacts are the locomotion phase crossing 0 (left heel) and one half (right heel).
-## LookAtModifier3Ds on Neck and Head turn the head toward a look target.
+## The head turns toward a look target (hero_look.gd); on a wall the hands and feet reach for
+## holds (hero_limbs.gd).
 
 const WS := preload("res://scripts/fp/world_scale.gd")
 const AP := preload("res://scripts/fp/asset_paths.gd")
 const SM := preload("res://scripts/fp/player/spring_math.gd")
 const FK := preload("res://scripts/fp/player/hero_fk.gd")
 const HEEL := preload("res://scripts/fp/player/heel_strike.gd")
+const LOOK := preload("res://scripts/fp/player/hero_look.gd")
+const LIMBS := preload("res://scripts/fp/player/hero_limbs.gd")
 
 ## Locomotion loops in blend order; HC starts each on the left-heel strike.
 const LOCO := ["walk", "walk_fast", "run", "run_fast"]
@@ -99,22 +102,13 @@ const STRIKE_WITHIN := 1.2
 ## sit_down and stand_up play this much faster than authored (in and out of a car seat).
 const SIT_SPEED := 1.5
 const SIT_CLIPS := ["sit_down", "stand_up"]
-## States the ground does not cut short for locomotion: sitting, the knock-down and the climb.
-const HELD := ["sit_down", "sit", "stand_up", "knockback", "get_up", "climb"]
-## Head look (6.9): Head limits (yaw, pitch), the Neck's share and limit, the modifier's own
-## interpolation, the influence fade when the target leaves the limits, and the halflife that
-## smooths a jumping target.
-const LOOK_YAW := deg_to_rad(70.0)
-const LOOK_PITCH := deg_to_rad(35.0)
-const NECK_INFLUENCE := 0.35
-const NECK_LIMIT := deg_to_rad(45.0)
-const LOOK_DURATION := 0.35
-const LOOK_FADE := 0.3
-const HL_LOOK := 0.12
-## A faded-out look comes back once the target is this far inside the limits (no flicker at the edge).
-const LOOK_REARM := deg_to_rad(8.0)
-## Skeleton-local (metres): closer targets interpolate (LookAtModifier3D.origin_safe_margin).
-const LOOK_SAFE_MARGIN := 0.5
+## States the ground does not cut short for locomotion: sitting, the knock-down, the climb and
+## holding on to a wall.
+const HELD := ["sit_down", "sit", "stand_up", "knockback", "get_up", "climb", "wall"]
+## On a wall (hold_wall) the body holds WALL_CLIP under the limbs' IK, faded in and out over
+## XF_WALL (s).
+const WALL_CLIP := "idle"
+const XF_WALL := 0.15
 ## A gesture moves the bones from here up; the legs keep their state.
 const UPPER_ROOT := "Spine"
 const P_SM := "parameters/sm/playback"
@@ -143,9 +137,9 @@ var body: Node3D
 var skeleton: Skeleton3D
 var tree: AnimationTree
 var playback: AnimationNodeStateMachinePlayback
-var head_look: LookAtModifier3D
-var neck_look: LookAtModifier3D
-var look_marker: Marker3D
+## The head look, and the hands and feet on holds.
+var look: LOOK
+var limbs: LIMBS
 var meshes: Array[GeometryInstance3D] = []
 ## "m" or "f".
 var gender: String = "m"
@@ -165,21 +159,12 @@ var contacts: Array[Dictionary] = []
 var ground_fix: float = 0.0
 ## How far the guard is up (0..1).
 var guard: float = 0.0
-## Head-look influence (0..1) and whether the modifier last found its target within its limits.
-var look_weight: float = 0.0
-var look_within: bool = false
-## The head's forward (world) as the look-at modifiers left it, from the last frame they ran.
-var head_forward: Vector3 = Vector3.ZERO
-var _head_bone: int = -1
 var _feet: Array[int] = []
 var _feet_rest: Array[float] = []
 var _contact: Dictionary = {}
 var _chains: Array = []
 var _fk: FK
 var _lib: AnimationLibrary
-var _look_goal: Vector3 = Vector3(NAN, NAN, NAN)
-var _look_dir: Vector3 = Vector3.ZERO
-var _look_dist: float = 0.0
 var _air_t: float = 0.0
 var _land_t: float = 0.0
 var _sit: bool = false
@@ -233,7 +218,6 @@ func _setup(b: Node3D, sk: Skeleton3D, lib: AnimationLibrary, k: float, p_gender
 		speeds[c] = float(a.get_meta("speed_mps", 0.0)) * k
 	for g: Node in body.find_children("*", "GeometryInstance3D", true, false):
 		meshes.append(g as GeometryInstance3D)
-	_head_bone = skeleton.find_bone("Head")
 	for n: String in ["LeftFoot", "RightFoot", "LeftToes", "RightToes"]:
 		_feet.append(skeleton.find_bone(n))
 	_lib = lib
@@ -250,18 +234,8 @@ func _setup(b: Node3D, sk: Skeleton3D, lib: AnimationLibrary, k: float, p_gender
 	tree.root_motion_track = NodePath(AP.CHAR_ROOT_MOTION_TRACK)
 	tree.active = true
 	playback = tree.get(P_SM)
-	# Look-at modifiers run in the skeleton's own update, after the tree has posed it; the Neck
-	# goes first so the Head resolves what remains.
-	neck_look = _look_modifier("NeckLook", "Neck", NECK_LIMIT, NECK_LIMIT)
-	head_look = _look_modifier("HeadLook", "Head", LOOK_YAW, LOOK_PITCH)
-	look_marker = Marker3D.new()
-	look_marker.name = "LookTarget"
-	look_marker.top_level = true
-	body.add_child(look_marker)
-	neck_look.target_node = neck_look.get_path_to(look_marker)
-	head_look.target_node = head_look.get_path_to(look_marker)
-	head_look.modification_processed.connect(_on_look_processed)
-	_set_look_weight(0.0)
+	look = LOOK.new(skeleton, body)
+	limbs = LIMBS.new(skeleton, body)
 	_reset_params()
 
 
@@ -293,7 +267,8 @@ func update(dt: float, v: float, grounded: bool, vy: float, crouched: bool, talk
 	tree.advance(dt)
 	_update_ground(dt)
 	_update_contacts()
-	_update_look(dt)
+	look.update(dt)
+	limbs.update(dt)
 
 
 ## On the ground in state st: a jump or a fall lands (by the impact) and the landing gives way to
@@ -317,7 +292,7 @@ func _on_ground(dt: float, st: String, a: float, crouched: bool, talking: bool) 
 
 
 ## The state machine's current state ("loco", "crouch", "jump", "fall", "land", "talk",
-## "sit_down", "sit", "stand_up", "knockback", "get_up", "climb").
+## "sit_down", "sit", "stand_up", "knockback", "get_up", "climb", "wall").
 func state() -> String:
 	return str(playback.get_current_node()) if playback != null else ""
 
@@ -383,6 +358,26 @@ func _whole_body(a: String, secs: float) -> void:
 		playback.start("climb", true)
 	else:
 		_go("climb")
+
+
+## Takes hold of a wall (on: the wall pose, the limbs put on holds by reach) or lets go of it: the
+## limbs back to the clips and the body into the fall, or standing when grounded, unless another
+## state takes over (play_action "climb" right after, over the top).
+func hold_wall(on: bool, grounded: bool = false) -> void:
+	if on:
+		stop_gesture()
+		stop_action()
+		_go("wall")
+		return
+	limbs.release()
+	if state() == "wall":
+		_go("loco" if grounded else "fall")
+
+
+## Puts limb i (0 left hand, 1 right hand, 2 left foot, 3 right foot) on target (world) with its
+## elbow or knee bent toward pole, weight (0..1) of the way.
+func reach(i: int, target: Vector3, pole: Vector3, weight: float) -> void:
+	limbs.set_goal(i, target, pole, weight)
 
 
 ## True while an action or the dance plays (fading out included).
@@ -494,7 +489,7 @@ static func _root_track(a: Animation) -> int:
 
 ## The world point the head turns toward; NAN components let the head return to the clip.
 func set_look_target(p: Vector3) -> void:
-	_look_goal = p
+	look.set_target(p)
 
 
 ## Back to standing (or crouched) locomotion at once: no cross-fade, no landing, no gesture.
@@ -502,7 +497,8 @@ func snap(crouched: bool) -> void:
 	_sit = false
 	_air_t = 0.0
 	_last_vy = 0.0
-	_look_dir = Vector3.ZERO
+	look.reset()
+	limbs.release(true)
 	_reset_params()
 	ground_fix = 0.0
 	body.position.y = 0.0
@@ -651,6 +647,7 @@ func _state_machine() -> AnimationNodeStateMachine:
 		sm.add_node(s, _once(s, SIT_SPEED if s in SIT_CLIPS else 1.0))
 	_climb = _once("climb_1m", 1.0)
 	sm.add_node("climb", _climb)
+	sm.add_node("wall", _anim(WALL_CLIP))
 	_tr(sm, "Start", "loco", 0.0, true)
 	for pair: Array in [["loco", "crouch"], ["crouch", "loco"], ["land", "crouch"]]:
 		_tr(sm, pair[0], pair[1], XF_CROUCH)
@@ -666,6 +663,10 @@ func _state_machine() -> AnimationNodeStateMachine:
 		_tr(sm, from, "crouch", XF_LAND_OUT)
 		_tr(sm, from, "climb", XF_JUMP)
 	_tr(sm, "climb", "loco", XF_LAND_OUT, true)
+	for from: String in ["loco", "crouch", "land", "talk", "jump", "fall"]:
+		_tr(sm, from, "wall", XF_WALL)
+	for to: String in ["climb", "fall", "loco"]:
+		_tr(sm, "wall", to, XF_WALL)
 	_tr(sm, "land", "loco", XF_LAND_OUT)
 	_tr(sm, "land", "talk", XF_TALK)
 	for pair: Array in [["loco", "talk"], ["talk", "loco"], ["crouch", "talk"], ["talk", "crouch"]]:
@@ -677,7 +678,7 @@ func _state_machine() -> AnimationNodeStateMachine:
 	_tr(sm, "sit", "stand_up", XF_SIT)
 	_tr(sm, "stand_up", "loco", XF_SIT, true)
 	_tr(sm, "stand_up", "sit_down", XF_SIT)
-	for from: String in ["loco", "crouch", "land", "talk", "jump", "fall", "get_up", "climb"]:
+	for from: String in ["loco", "crouch", "land", "talk", "jump", "fall", "get_up", "climb", "wall"]:
 		_tr(sm, from, "knockback", XF_FALL)
 	_tr(sm, "knockback", "get_up", XF_FALL)
 	_tr(sm, "get_up", "loco", XF_LAND_OUT, true)
@@ -849,7 +850,7 @@ func _update_contacts() -> void:
 	var walking := move >= STEP_MIN_MOVE if st == "loco" else float(tree.get(P_CBS)) >= STEP_MIN_MOVE * float(speeds["crouch_walk"])
 	if ph >= 0.0 and _prev_phase >= 0.0 and st == _prev_state and walking:
 		var d := wrapf(ph - _prev_phase, -0.5, 0.5)
-		var cp := contact_phases(st)
+		var cp := _contact_phases(st)
 		for f in range(2):
 			var c := cp.x if f == 0 else cp.y
 			var ahead := fposmod(c - _prev_phase, 1.0) if d > 0.0 else fposmod(_prev_phase - c, 1.0)
@@ -864,7 +865,7 @@ func _update_contacts() -> void:
 
 ## The (left, right) heel contact phases of the current blend: "loco" those of the blended pose
 ## between the two clips around the blend position, "crouch" crouch_walk's.
-func contact_phases(st: String = "loco") -> Vector2:
+func _contact_phases(st: String = "loco") -> Vector2:
 	if st == "crouch":
 		return _contacts_of("crouch_walk", "crouch_walk", 0.0)
 	var a := float(tree.get(P_BS))
@@ -916,79 +917,3 @@ func _analyse_feet() -> void:
 	_feet_rest.clear()
 	for f in range(4):
 		_feet_rest.append(stand[f / 2])
-
-
-# --- Head look
-
-func _look_modifier(n: String, bone: String, yaw_lim: float, pitch_lim: float) -> LookAtModifier3D:
-	var m := LookAtModifier3D.new()
-	m.name = n
-	m.bone_name = bone
-	m.forward_axis = AP.CHAR_LOOK_AXIS
-	m.primary_rotation_axis = Vector3.AXIS_Y
-	m.use_secondary_rotation = true
-	m.use_angle_limitation = true
-	m.symmetry_limitation = true
-	# The limit angles span both sides.
-	m.primary_limit_angle = yaw_lim * 2.0
-	m.secondary_limit_angle = pitch_lim * 2.0
-	m.duration = LOOK_DURATION
-	m.transition_type = Tween.TRANS_SINE
-	m.ease_type = Tween.EASE_IN_OUT
-	m.origin_safe_margin = LOOK_SAFE_MARGIN
-	skeleton.add_child(m)
-	return m
-
-
-func _on_look_processed() -> void:
-	look_within = head_look.is_target_within_limitation()
-	head_forward = (skeleton.global_transform.basis * skeleton.get_bone_global_pose(_head_bone).basis.z).normalized()
-
-
-## Smooths the target's direction from the head (a jump between targets turns the head rather
-## than snapping it) and fades the influence out while the target is outside the limits.
-func _update_look(dt: float) -> void:
-	var head := skeleton.global_transform * skeleton.get_bone_global_pose(_head_bone).origin
-	var want := 0.0
-	if not is_nan(_look_goal.x):
-		var d := _look_goal - head
-		var dist := d.length()
-		if dist > 1e-6:
-			var dir := d / dist
-			if _look_dir == Vector3.ZERO or dt <= 0.0:
-				_look_dir = dir
-				_look_dist = dist
-			else:
-				var s := 1.0 - pow(0.5, dt / HL_LOOK)
-				_look_dir = _look_dir.slerp(dir, s).normalized()
-				_look_dist = lerpf(_look_dist, dist, s)
-			if look_marker.is_inside_tree():
-				look_marker.global_position = head + _look_dir * _look_dist
-			else:
-				look_marker.position = head + _look_dir * _look_dist
-			want = 1.0 if look_within or look_weight <= 0.0 else 0.0
-	if look_weight <= 0.0 and want > 0.0 and not _within_limits(head, LOOK_REARM):
-		want = 0.0
-	var w := want if dt <= 0.0 else move_toward(look_weight, want, dt / LOOK_FADE)
-	_set_look_weight(w)
-
-
-## The analytic limit test, used while the modifier is faded out (its flag is then stale): the
-## target's yaw and pitch from the chest's forward.
-func _within_limits(head: Vector3, margin: float) -> bool:
-	var chest := skeleton.find_bone("UpperChest")
-	if chest < 0:
-		return true
-	var xf := skeleton.global_transform * skeleton.get_bone_global_pose(chest)
-	var local := xf.basis.inverse() * (look_marker.global_position - head)
-	var yaw := atan2(local.x, local.z)
-	var pitch := atan2(local.y, Vector2(local.x, local.z).length())
-	return absf(yaw) <= LOOK_YAW - margin and absf(pitch) <= LOOK_PITCH - margin
-
-
-func _set_look_weight(w: float) -> void:
-	look_weight = w
-	head_look.influence = w
-	neck_look.influence = NECK_INFLUENCE * w
-	head_look.active = w > 0.0
-	neck_look.active = w > 0.0
