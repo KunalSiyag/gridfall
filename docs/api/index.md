@@ -182,11 +182,11 @@ Generated from the `##` doc comments in `scripts/`. Regenerate with `python3 too
 
 ## [scripts/fp/street/](scripts.fp.street.md)
 
-- [light_profile.gd](scripts.fp.street.md#scriptsfpstreetlight_profilegd): First-person light profile (slice G1): shadow distance and cascades, SSAO and SSIL radii, depth fog, volumetric fog and the sky's radiance update, in world units for street level
+- [light_profile.gd](scripts.fp.street.md#scriptsfpstreetlight_profilegd): First-person light profile (slice G1): shadow distance and cascades, SSAO and SSIL radii, depth fog, volumetric fog, screen-space reflections and the sky's radiance update, in world units for street level
 - [street_dressing.gd](scripts.fp.street.md#scriptsfpstreetstreet_dressinggd): Street-level dressing that CityView adds to its tile holders in fp_mode (slice G1): furniture and street trees on road sidewalks, everyday clutter (traffic cones by construction sites, wheelie bins, cartons), street-name signs at junctions, road wear and puddle decals, crosswalk ramps, sidewalk aprons in front of lots, vacant lots with lease boards and billboards, the bus shelter, and the street-level glass and leaf materials
 - [street_lights.gd](scripts.fp.street.md#scriptsfpstreetstreet_lightsgd): Real light pools under the street lamps near the player (slice G1): a fixed pool of shadowless OmniLight3Ds, re-assigned four times a second to the nearest Bulb_* nodes within REACH of the player and dimmed with the night
 - [streetscape_feature.gd](scripts.fp.street.md#scriptsfpstreetstreetscape_featuregd): Street-level look on foot (slice G1)
-- [weather.gd](scripts.fp.street.md#scriptsfpstreetweathergd): Street weather (slice G1): a deterministic daily state (clear 60%, overcast 25%, rain 15%) from the city seed and day, forced by incidents (a flood brings rain, smog a brown haze), drives SkyDirector's weather hooks, CityView's wetness and the global `wetness` shader parameter, and a rain-streak emitter that follows the camera
+- [weather.gd](scripts.fp.street.md#scriptsfpstreetweathergd): Street weather (slice G1): a deterministic daily state (clear 60%, overcast 25%, rain 15%) from the city seed and day, forced by incidents (a flood brings rain, smog a brown haze), drives SkyDirector's weather hooks, CityView's wetness and rain, the street profile's reflections and the global `wetness` shader parameter, a rain-streak emitter that follows the camera and drops splashing off the ground round the player
 
 ## [scripts/fp/traffic/](scripts.fp.traffic.md)
 

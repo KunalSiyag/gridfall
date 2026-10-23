@@ -145,7 +145,7 @@ Renders the CitySim grid in 3D: Kenney roads picked by neighbor mask, zone lots 
 - `func road_fp_material() -> ShaderMaterial`: Carriageway asphalt on foot (shaders/road_fp.gdshader): world-mapped, broken-up asphalt with lane wear; road holders set its `lane_axis` instance parameter. Null when the shader or textures are missing (the road models keep their own asphalt).
 - `func set_light_pole_source(src: Object) -> void`: Sets light_pole_source (E's traffic feature, or null) and, on a change while on foot, re-hangs the street-name blades of the cross tiles already built (they were built before the source).
 - `func set_wetness(w: float) -> void`: Wet streets: road and sidewalk materials darken and turn glossy, the ground shaders and the water follow, and puddles appear by the curbs. w is 0 (dry) .. 1 (soaked).
-- `func set_rain(r: float) -> void`: Rain falling now (0 none .. 1 full): rings on the river.
+- `func set_rain(r: float) -> void`: Rain falling now (0 none .. 1 full): rings on the river and on the puddles in the road.
 - `func rebuild_all(animate: bool) -> void`
 - `func flush_rebuild_queue() -> void`: Builds every queued tile now (each emits tile_built), then the batched street props.
 - `func reset_section_stats() -> void`

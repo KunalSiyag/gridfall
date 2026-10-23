@@ -761,10 +761,30 @@ func _check_profile(ctx: FpContext) -> void:
 	for preset: String in ["low", "medium", "high"]:
 		var far := LP.camera_far(preset)
 		K.check(fails, LP.fog_end(preset) < far, "%s fog ends inside the far plane (%.2f < %.1f)" % [preset, LP.fog_end(preset), far])
+	var dry_ssr := env.ssr_enabled
+	LP.set_wet(env, "medium", 0.5)
+	var wet_ssr := env.ssr_enabled
+	LP.set_wet(env, "medium", 0.0)
+	K.check(
+		fails,
+		not dry_ssr and wet_ssr and not env.ssr_enabled and env.ssr_max_steps == 32,
+		"medium reflects in screen space only with the streets wet"
+	)
 	LP.apply(env, sun, "fp", "high")
 	K.check(fails, env.volumetric_fog_enabled and is_equal_approx(sun.directional_shadow_max_distance, 16.0), "high adds volumetric fog and 16 u shadows")
+	var deep := is_equal_approx(env.ssr_depth_tolerance, LP.SSR_DEPTH)
+	K.check(
+		fails,
+		env.ssr_enabled and env.ssr_max_steps == 56 and deep,
+		"high always reflects in screen space"
+	)
 	LP.apply(env, sun, "fp", "low")
-	K.check(fails, not env.ssil_enabled and not env.volumetric_fog_enabled, "low drops SSIL and volumetric fog")
+	LP.set_wet(env, "low", 1.0)
+	K.check(
+		fails,
+		not env.ssil_enabled and not env.volumetric_fog_enabled and not env.ssr_enabled,
+		"low drops SSIL, volumetric fog and reflections, wet or dry"
+	)
 	# Orbit restores every owned key: env keys against a fresh load of the .tres, sun keys against
 	# main.tscn's Sun (defaults for keys it leaves unset), the sky against SkyDirector's own sky.
 	LP.apply(env, sun, "orbit", "low")
@@ -869,7 +889,7 @@ func _check_weather(ctx: FpContext, f: FpFeature) -> void:
 	K.check(fails, is_equal_approx(ctx.view.wetness, 0.0), "clearing the forced weather dries the streets")
 	f.call("force_rain_for_photo")
 	K.check(fails, is_equal_approx(ctx.view.wetness, 1.0) and str((f.call("to_dict") as Dictionary).get("weather")) == "rain", "force_rain_for_photo soaks the streets at once")
-	f.call("clear_forced_weather")
+	_check_rain_look(ctx, f, weather)
 	# A smog incident: a FogVolume over its radius on High only, gone with the incident.
 	var ev := {"type": "smog", "x": 10, "y": 12, "radius": 3}
 	ctx.sim.events.append(ev)
@@ -885,6 +905,31 @@ func _check_weather(ctx: FpContext, f: FpFeature) -> void:
 	weather.call("set_rain_amount", "medium")
 	K.check(fails, on_medium == 0 and placed and after == 0, "smog gets a FogVolume on High only, and loses it with the incident (%d, %s, %d)" % [on_medium, placed, after])
 	weather.set_process(true)
+
+
+## Soaked in the rain (medium): drops splash round the player's feet, rings spread on the puddles in
+## the road and the street reflects in screen space; dried, none of them.
+func _check_rain_look(ctx: FpContext, f: FpFeature, weather: Node) -> void:
+	weather.call("step", 0.01)
+	var splash: GPUParticles3D = weather.get("splash")
+	var off := splash.global_position - ctx.player_position()
+	var many := splash.amount == int(WEATHER.SPLASH_AMOUNT["medium"])
+	K.check(
+		fails,
+		splash.emitting and Vector2(off.x, off.z).length() < 1e-3 and many,
+		"rain: drops splash round the player's feet"
+	)
+	var road: ShaderMaterial = ctx.view.get("_road_fp_mat")
+	K.check(fails, float(road.get_shader_parameter("rain")) == 1.0, "rain: rings on the road's puddles")
+	K.check(fails, ctx.env.ssr_enabled, "rain: the wet street reflects in screen space")
+	f.call("clear_forced_weather")
+	weather.call("step", 0.01)
+	var dry := not splash.emitting and float(road.get_shader_parameter("rain")) == 0.0
+	K.check(
+		fails,
+		dry and not ctx.env.ssr_enabled,
+		"dry streets: no splashes, no rings and (on medium) no reflections"
+	)
 
 
 func _check_lights(ctx: FpContext, f: FpFeature) -> void:

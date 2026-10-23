@@ -1,12 +1,14 @@
 extends Node3D
 ## Street weather (slice G1): a deterministic daily state (clear 60%, overcast 25%, rain 15%) from the
 ## city seed and day, forced by incidents (a flood brings rain, smog a brown haze), drives SkyDirector's
-## weather hooks, CityView's wetness and the global `wetness` shader parameter, and a rain-streak
-## emitter that follows the camera. Wetness rises 0 -> 1 over 120 real seconds of rain at 1x
+## weather hooks, CityView's wetness and rain, the street profile's reflections and the global
+## `wetness` shader parameter, a rain-streak emitter that follows the camera and drops splashing
+## off the ground round the player. Wetness rises 0 -> 1 over 120 real seconds of rain at 1x
 ## (scaled by sim.speed) and dries over 300.
 
 const WS := preload("res://scripts/fp/world_scale.gd")
 const D := preload("res://scripts/sim/sim_defs.gd")
+const LP := preload("res://scripts/fp/street/light_profile.gd")
 const STATES := ["clear", "overcast", "rain"]
 const WET_SECONDS := 120.0
 const DRY_SECONDS := 300.0
@@ -18,6 +20,14 @@ const LOOK := {
 	"rain": {"energy": 0.32, "exposure": 0.86, "grey": 1.0, "fog": 9.0, "shadow": 0.12},
 }
 const RAIN_AMOUNT := {"low": 800, "medium": 1600, "high": 3000}
+## Drops splashing up off the ground round the player in the rain (none on low), once the streets
+## are SPLASH_WET wet: SPLASH_BOX (u) either way of the feet, each a bead flung up SPLASH_MPS (m/s)
+## that falls back within SPLASH_LIFE (s).
+const SPLASH_AMOUNT := {"low": 0, "medium": 360, "high": 720}
+const SPLASH_WET := 0.3
+const SPLASH_BOX := 0.4
+const SPLASH_MPS := Vector2(0.6, 1.3)
+const SPLASH_LIFE := 0.3
 
 var ctx: FpContext
 ## The state shown now and how wet the streets are (0..1).
@@ -31,6 +41,7 @@ var push_global: bool = false
 ## tour, fp_bench), so their baselines and timings do not depend on the day's weather.
 var baseline: String = ""
 var rain: GPUParticles3D
+var splash: GPUParticles3D
 ## The quality preset: on "high" (the only preset with volumetric fog) a smog incident also gets a
 ## brown FogVolume box over its radius.
 var preset: String = "medium"
@@ -45,6 +56,7 @@ func setup(p_ctx: FpContext, p_preset: String) -> void:
 	ctx = p_ctx
 	preset = p_preset
 	_build_rain(preset)
+	_build_splash(preset)
 	state = target_state()
 	_look = (LOOK[state] as Dictionary).duplicate()
 	_apply_hooks()
@@ -100,6 +112,15 @@ func step(delta: float) -> void:
 		var cam := get_viewport().get_camera_3d() if is_inside_tree() else null
 		if cam != null:
 			rain.global_position = cam.global_position + Vector3(0, 0.35, 0)
+	if splash != null:
+		splash.emitting = splashing()
+		if splash.emitting and ctx != null and ctx.player != null:
+			splash.global_position = ctx.player_position() + Vector3(0, 0.02 * WS.M, 0)
+
+
+## Whether drops splash off the ground now: raining on wet streets, on a preset with splashes.
+func splashing() -> bool:
+	return state == "rain" and wet >= SPLASH_WET and int(SPLASH_AMOUNT.get(preset, 0)) > 0
 
 
 func _apply_hooks() -> void:
@@ -118,6 +139,7 @@ func _apply_hooks() -> void:
 	if ctx.view != null:
 		ctx.view.set_wetness(wet)
 		ctx.view.set_rain(1.0 if state == "rain" else 0.0)
+	LP.set_wet(ctx.env, preset, wet)
 	if push_global:
 		RenderingServer.global_shader_parameter_set(&"wetness", wet)
 
@@ -164,6 +186,9 @@ func set_rain_amount(p_preset: String) -> void:
 	preset = p_preset
 	if rain != null:
 		rain.amount = int(RAIN_AMOUNT.get(preset, 1600))
+	if splash != null:
+		splash.amount = maxi(1, int(SPLASH_AMOUNT.get(preset, 0)))
+	LP.set_wet(ctx.env if ctx != null else null, preset, wet)
 	_update_smog_volumes()
 
 
@@ -248,3 +273,48 @@ func _build_rain(p_preset: String) -> void:
 	q.material = mat
 	rain.draw_pass_1 = q
 	add_child(rain)
+
+
+## Splashes: beads of water flung up off the ground in a box round the player's feet that fall back
+## and fade, simulated in world space.
+func _build_splash(p_preset: String) -> void:
+	splash = GPUParticles3D.new()
+	splash.name = "Splash"
+	splash.amount = maxi(1, int(SPLASH_AMOUNT.get(p_preset, 0)))
+	splash.lifetime = SPLASH_LIFE
+	splash.local_coords = false
+	splash.emitting = false
+	splash.visibility_aabb = AABB(Vector3(-0.5, -0.05, -0.5), Vector3(1.0, 0.2, 1.0))
+	splash.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	var pm := ParticleProcessMaterial.new()
+	pm.emission_shape = ParticleProcessMaterial.EMISSION_SHAPE_BOX
+	pm.emission_box_extents = Vector3(SPLASH_BOX, 0.0, SPLASH_BOX)
+	pm.direction = Vector3.UP
+	pm.spread = 30.0
+	pm.initial_velocity_min = SPLASH_MPS.x * WS.M
+	pm.initial_velocity_max = SPLASH_MPS.y * WS.M
+	pm.gravity = Vector3(0, -9.8 * WS.M, 0)
+	pm.scale_min = 0.6
+	pm.scale_max = 1.3
+	var fade := Gradient.new()
+	fade.set_color(0, Color(1, 1, 1, 0.55))
+	fade.set_color(1, Color(1, 1, 1, 0.0))
+	var ramp := GradientTexture1D.new()
+	ramp.gradient = fade
+	pm.color_ramp = ramp
+	splash.process_material = pm
+	var q := QuadMesh.new()
+	q.size = Vector2(0.025, 0.04) * WS.M
+	var mat := StandardMaterial3D.new()
+	mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	mat.billboard_mode = BaseMaterial3D.BILLBOARD_PARTICLES
+	mat.vertex_color_use_as_albedo = true
+	mat.albedo_color = Color(0.8, 0.84, 0.9, 1.0)
+	mat.distance_fade_mode = BaseMaterial3D.DISTANCE_FADE_PIXEL_ALPHA
+	mat.distance_fade_min_distance = 0.4 * WS.M
+	mat.distance_fade_max_distance = 1.2 * WS.M
+	mat.disable_receive_shadows = true
+	q.material = mat
+	splash.draw_pass_1 = q
+	add_child(splash)

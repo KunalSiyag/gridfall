@@ -707,10 +707,13 @@ func set_wetness(w: float) -> void:
 		_street.set_wetness(w)
 
 
-## Rain falling now (0 none .. 1 full): rings on the river.
+## Rain falling now (0 none .. 1 full): rings on the river and on the puddles in the road.
 func set_rain(r: float) -> void:
+	var on := clampf(r, 0.0, 1.0) if fp_mode else 0.0
 	if _water_mat != null:
-		_water_mat.set_shader_parameter("rain", clampf(r, 0.0, 1.0) if fp_mode else 0.0)
+		_water_mat.set_shader_parameter("rain", on)
+	if _road_fp_mat != null:
+		_road_fp_mat.set_shader_parameter("rain", on)
 
 
 func _wet_material(m: BaseMaterial3D, w: float) -> void:
