@@ -3,7 +3,7 @@ extends FpFeature
 ## the AudioDirector's music under the street (set_fp), and runs three parts: positional emitters
 ## (engines, horns, sirens, construction, fire, fountains, plants, the river, passers-by's steps,
 ## the player's car crashing, the street props it knocks over and its doors, people hit in the
-## street, the hero's swings, rolls and the blows they take),
+## street, the hero's swings, rolls and the blows they take, dogs barking, growling and whining),
 ## the area beds (with rain from G1's weather) and the hero's footsteps (splashing on wet paving),
 ## plus the chat blip and alert stingers. Pausing muffles the music (the only thing still
 ## playing); talking to someone ducks the beds.
@@ -32,7 +32,7 @@ const REVERB_WET_OPEN := 0.05
 const REVERB_WET_URBAN := 0.15
 const BLIP_PITCH := {"mayor": 0.94, "press": 1.06, "council": 0.9}
 ## The health a blow on the hero takes (hero_hurt) to sound at full level, by cause.
-const HERO_HIT_FULL := {"punch": 12.0, "car": 60.0}
+const HERO_HIT_FULL := {"punch": 12.0, "car": 60.0, "bite": 7.5}
 
 var emitters: EMITTERS
 var ambience: AMBIENCE
@@ -109,6 +109,7 @@ func setup(p_ctx: FpContext) -> void:
 		_link(bus.person_hit, _on_person_hit)
 		_link(bus.hero_action, _on_hero_action)
 		_link(bus.hero_hurt, _on_hero_hurt)
+		_link(bus.animal_called, _on_animal_called)
 	if ctx.sim != null:
 		_link(ctx.sim.event_started, emitters.on_event)
 		_link(ctx.sim.event_ended, emitters.on_event_ended)
@@ -375,9 +376,10 @@ func _on_person_hit(at: Vector3, cause: String, info: Dictionary) -> void:
 		_queue_fall(BANK.BODY_FALL_S, at, BANK.BODY_FALL_DB)
 
 
-## The hero hurt (hero_hurt) by a punch or a car: the thump at their chest by the health it took
-## (full level at HERO_HIT_FULL), a car's lower and louder; knocked down, they land
-## BANK.BODY_FALL_S later. A crash sounds as the car's (car_impact) and a fall as the landing.
+## The hero hurt (hero_hurt) by a punch, a car or a dog: the thump at their chest by the health it
+## took (full level at HERO_HIT_FULL), a car's lower and louder, a bite's jaws snapping at the knee;
+## knocked down, they land BANK.BODY_FALL_S later. A crash sounds as the car's (car_impact) and a
+## fall as the landing.
 func _on_hero_hurt(amount: float, cause: String, _health: float, down: bool) -> void:
 	if not HERO_HIT_FULL.has(cause):
 		return
@@ -385,9 +387,24 @@ func _on_hero_hurt(amount: float, cause: String, _health: float, down: bool) -> 
 	var at := ctx.player_position()
 	var trim := _impact_db(amount / float(HERO_HIT_FULL[cause])) + (BANK.HIT_CAR_DB if car else 0.0)
 	var pitch := _rng.randf_range(0.72, 0.8) if car else _rng.randf_range(0.92, 1.08)
-	emitters.shot("hit", at + Vector3(0.0, 1.3 * WS.M, 0.0), "punch_hit", trim, pitch)
+	if cause == "bite":
+		emitters.shot("dog", at + Vector3(0.0, BANK.SNAP_Y * WS.M, 0.0), "dog_snap", trim, pitch)
+	else:
+		emitters.shot("hit", at + Vector3(0.0, 1.3 * WS.M, 0.0), "punch_hit", trim, pitch)
 	if down:
 		_queue_fall(BANK.BODY_FALL_S, at, BANK.BODY_FALL_DB)
+
+
+## An animal calling (animal_called) at its head: a dog's bark (one of BANK.BARK_VARIANTS), growl
+## or whine, BANK.DOG_DB under the bark, pitched by its size (BANK.DOG_PITCH_M).
+func _on_animal_called(at: Vector3, call: String, size: float) -> void:
+	if not BANK.DOG_DB.has(call):
+		return
+	var s := "dog_%s" % call
+	if call == "bark":
+		s = "dog_bark_%d" % _rng.randi_range(1, BANK.BARK_VARIANTS)
+	var pitch := sqrt(BANK.DOG_PITCH_M / maxf(size, 0.1)) * _rng.randf_range(0.96, 1.04)
+	emitters.shot("dog", at, s, float(BANK.DOG_DB[call]), pitch)
 
 
 ## A body_fall at at, delay seconds from now at db, in the queue by when it is due.

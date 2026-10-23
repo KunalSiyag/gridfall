@@ -66,12 +66,15 @@ signal talk_replied(resident_id: String, speaker: String, reply: String)
 ## "headline", "place", "quote", "by", "tile", "district", "day", "scoop", "local", "sharp",
 ## "points", "text"}. Emitted by the reporter feature; chat runs "text" as a Gazette line.
 signal story_filed(story: Dictionary)
-## Something struck the hero on foot: at is where the blow came from (a fist, a car's front),
-## cause "punch" (someone fighting back) or "car" (a car that could not stop for them), strength
-## 0..1 and push the xz velocity (u/s) it throws the hero along. Emitted by traffic; the health
-## feature takes the damage.
+## Something struck the hero on foot: at is where the blow came from (a fist, a car's front, a
+## dog's jaws), cause "punch" (someone fighting back), "car" (a car that could not stop for them)
+## or "bite" (a dog defending its owner), strength 0..1 and push the xz velocity (u/s) it throws
+## the hero along. Emitted by traffic and the animals feature; the health feature takes the damage.
 signal hero_hit(at: Vector3, cause: String, strength: float, push: Vector3)
-## The hero lost amount of health to cause: "punch" or "car" (hero_hit), "crash" (in the car they
-## drive) or "fall" (a hard landing); health is what is left (0..100, 0 knocked out) and down is
-## true when it put them on the ground. Emitted by the health feature.
+## The hero lost amount of health to cause: "punch", "car" or "bite" (hero_hit), "crash" (in the
+## car they drive) or "fall" (a hard landing); health is what is left (0..100, 0 knocked out) and
+## down is true when it put them on the ground. Emitted by the health feature.
 signal hero_hurt(amount: float, cause: String, health: float, down: bool)
+## An animal called out at a point (its head): a dog's "bark", "growl" or "whine"; size is its
+## height at the shoulder (m), so a small dog yaps higher. Emitted by the animals feature.
+signal animal_called(at: Vector3, call: String, size: float)

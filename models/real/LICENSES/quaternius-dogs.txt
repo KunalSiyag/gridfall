@@ -1,0 +1,14 @@
+GridFall dog models - third-party content
+
+Models by Quaternius (https://quaternius.com), licensed CC0 1.0 (public domain,
+https://creativecommons.org/publicdomain/zero/1.0/). No attribution is required; they are
+listed here for provenance. Fetched from Poly Pizza:
+
+  Shiba Inu  https://poly.pizza/m/y4wdQpg767  -> animals/shiba_inu.glb
+  Husky      https://poly.pizza/m/wcWiuEqwzq  -> animals/husky.glb
+
+Changes for GridFall: the duplicate "AnimalArmature|<clip>" animations were dropped (the plain
+clips are kept), the looping clips (Walk, Gallop, Idle, Idle_2, Idle_2_HeadLow, Eating) carry the
+"-loop" suffix Godot's importer turns into a looping animation, and the flat materials are matte
+(metallic 0, roughness 0.9 for the coat, 0.35 for the eyes and nose). Geometry, skeleton and
+keyframes are unchanged.

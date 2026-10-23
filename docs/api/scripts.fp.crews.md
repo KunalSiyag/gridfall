@@ -14,6 +14,7 @@ The building crews' bodies: HC's trades avatars (roster group "trades"), each un
 
 - `WS = preload("res://scripts/fp/world_scale.gd")`
 - `AP = preload("res://scripts/fp/asset_paths.gd")`
+- `LOADS = preload("res://scripts/fp/scene_loads.gd")`
 - `GROUP = "trades"`
 - `STAND_IN_COLOR = Color(1.0, 0.52, 0.1)`
 - `CRATE_COLOR = Color(0.62, 0.47, 0.3)`

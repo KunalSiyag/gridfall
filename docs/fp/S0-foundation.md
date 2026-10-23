@@ -706,15 +706,18 @@ signal talk_replied(resident_id: String, speaker: String, reply: String)
 ## "headline", "place", "quote", "by", "tile", "district", "day", "scoop", "local", "sharp",
 ## "points", "text"}. Emitted by the reporter feature; chat runs "text" as a Gazette line.
 signal story_filed(story: Dictionary)
-## Something struck the hero on foot: at is where the blow came from (a fist, a car's front),
-## cause "punch" (someone fighting back) or "car" (a car that could not stop for them), strength
-## 0..1 and push the xz velocity (u/s) it throws the hero along. Emitted by traffic; the health
-## feature takes the damage.
+## Something struck the hero on foot: at is where the blow came from (a fist, a car's front, a
+## dog's jaws), cause "punch" (someone fighting back), "car" (a car that could not stop for them)
+## or "bite" (a dog defending its owner), strength 0..1 and push the xz velocity (u/s) it throws
+## the hero along. Emitted by traffic and the animals feature; the health feature takes the damage.
 signal hero_hit(at: Vector3, cause: String, strength: float, push: Vector3)
-## The hero lost amount of health to cause: "punch" or "car" (hero_hit), "crash" (in the car they
-## drive) or "fall" (a hard landing); health is what is left (0..100, 0 knocked out) and down is
-## true when it put them on the ground. Emitted by the health feature.
+## The hero lost amount of health to cause: "punch", "car" or "bite" (hero_hit), "crash" (in the
+## car they drive) or "fall" (a hard landing); health is what is left (0..100, 0 knocked out) and
+## down is true when it put them on the ground. Emitted by the health feature.
 signal hero_hurt(amount: float, cause: String, health: float, down: bool)
+## An animal called out at a point (its head): a dog's "bark", "growl" or "whine"; size is its
+## height at the shoulder (m), so a small dog yaps higher. Emitted by the animals feature.
+signal animal_called(at: Vector3, call: String, size: float)
 ```
 
 | Signal | Payload | Emitted by | Typical listeners |
@@ -722,7 +725,7 @@ signal hero_hurt(amount: float, cause: String, health: float, down: bool)
 | `ping` | `world_pos` in world units at y = 0. `reason`: `"event:<type>"`, `"resident:<id>"`, `"tile"`, `"district:<mi>"`, `"player"` (waypoint set on the map) | `Main.focus()` (S0); B's map (`"player"`) | B (minimap and compass marker, toast), I (alert blip) |
 | `toast` | `kind`: `info`, `alert`, `success`, `system` | `Main.notify()`, FpMode, any slice | B (S0 placeholder until then) |
 | `interact_target_changed` | target dict (below), `{}` when nothing is targeted | A | B (centre prompt) |
-| `interact_requested` | target dict | A (E pressed) | B (building and vehicle cards), D (`kind == "poster"`) |
+| `interact_requested` | target dict | A (E pressed) | B (building and vehicle cards), D (`kind == "poster"`), Integration: animals (`kind == "dog"`: pets it) |
 | `talk_requested` | resident id | A (E on a resident within `TALK_RANGE`) | C |
 | `conversation_changed` | id, active | C | E (stop the agent and face the player), I (duck ambience) |
 | `chat_posted` | chat message dict (below) | C | I (chat blip), B (unread badge on the minimap, optional) |
@@ -739,18 +742,19 @@ signal hero_hurt(amount: float, cause: String, health: float, down: bool)
 | `car_impact` | `at`: the contact point, at half the car's height. `speed`: the closing speed (u/s), at least 1.5 m/s. `what`: `"wall"` or `"car"`. The hardest hit of a step, at most one every 0.25 s; knocked props report themselves | Integration: driving | I (crash sound at the contact) |
 | `car_door` | `at`: the driver's door handle. `open`: `true` as the latch lets go (the pull on the handle getting in, the door starting to open getting out), `false` as the door slams shut | Integration: driving (the `car_doors` climb in and out) | I (the latch and the slam at the door) |
 | `prop_knocked` | `at`: where it was hit (by the player's car, the hero, someone walking, traffic or another prop). `kind`: its StreetDressing kind. `speed`: how fast it flies off (u/s); a fallen prop hit again reports from 1 m/s | Integration: props | I (clatter, clang or thud by kind) |
-| `person_hit` | `at`: the person's drawn feet. `cause`: `"shove"` or `"punch"` (the hero), `"car"` (the car the player drives) or `"carjack"` (dragged out of the car the player takes). `info`: `walker` (the walker id), `resident_id` and `name` (`""` for an ambient walker), `down` (knocked down), `street` (the street label, may be `""`), `strength` 0..1, `witnesses` (the resident ids of those who saw it), `crew` (`"police"`, `"ambulance"` or `""`: the crew this blow called) | E (`hit_walker`, called by Integration: body actions and by the drive feature's car body; `carjack.gd` when the player takes a car from its driver) | C (the victim's and a witness's lines, a crew's City Alert card), I (the blow and the fall) |
-| `hero_action` | `action`: `"jab"`, `"cross"` or `"shove"` as a swing starts, or the emote as it starts (`"wave"`, `"yes"`, `"no"`, `"shout"`, `"dance"`), or the parkour move as it starts (`"vault"`, `"hop"`, `"climb"`, `"roll"` off a hard landing, or `"grab"` taking hold of a wall). `at`: the hero's feet | Integration: body actions, Integration: parkour | I (the whoosh of a swing, the thud of a roll) |
+| `person_hit` | `at`: the person's drawn feet. `cause`: `"shove"` or `"punch"` (the hero), `"car"` (the car the player drives) or `"carjack"` (dragged out of the car the player takes). `info`: `walker` (the walker id), `resident_id` and `name` (`""` for an ambient walker), `down` (knocked down), `street` (the street label, may be `""`), `strength` 0..1, `witnesses` (the resident ids of those who saw it), `crew` (`"police"`, `"ambulance"` or `""`: the crew this blow called) | E (`hit_walker`, called by Integration: body actions and by the drive feature's car body; `carjack.gd` when the player takes a car from its driver) | C (the victim's and a witness's lines, a crew's City Alert card), I (the blow and the fall), Integration: animals (the dog of someone the hero punches or shoves goes for the hero; the dogs within 8 m flinch) |
+| `hero_action` | `action`: `"jab"`, `"cross"` or `"shove"` as a swing starts, or the emote as it starts (`"wave"`, `"yes"`, `"no"`, `"shout"`, `"dance"`), or the parkour move as it starts (`"vault"`, `"hop"`, `"climb"`, `"roll"` off a hard landing, or `"grab"` taking hold of a wall). `at`: the hero's feet | Integration: body actions, Integration: parkour | I (the whoosh of a swing, the thud of a roll), Integration: animals (a swing, a shove or a shout startles the dogs close by; a wave cheers the friendly ones) |
 | `talk_replied` | `resident_id`: the resident's id, `""` for the "Ask someone here" answer. `speaker`: the resident's name, or the role that answered (`"Shopkeeper"`). `reply`: the line as shown | C (`talk_dialog.gd`: each reply face to face, and the ask answer) | Integration: reporter (the quote for the story on assignment) |
 | `story_filed` | the story as filed: `agent` (`"0"`..`"4"`, `"council"` or `"chaos"`), `headline`, `place`, `quote`, `by`, `tile` (index), `district`, `day`, `scoop`, `local`, `sharp`, `points`, `text` (the Gazette's line) | Integration: reporter (K files) | C (a Gazette line in the chat and a chatter topic) |
-| `hero_hit` | `at`: where the blow came from (the fist of someone fighting back, at shoulder height; a car's front, half a metre up). `cause`: `"punch"` (`fight_back`) or `"car"` (`hit_by_cars`). `strength` 0..1 (a jab 0.45, a cross 0.6; a car its speed over 14 m/s). `push`: the xz velocity (u/s) it throws the hero along (a car's heading at its speed) | E (`reactions.gd` through `on_hero_hit`, `vehicles.gd` through `on_hit_player`; only while the hero is on foot, in control and the health feature is on) | Integration: health (the damage, the flinch or the knock-down) |
-| `hero_hurt` | `amount`: the health it took. `cause`: `"punch"`, `"car"`, `"crash"` (`car_impact` over 7 m/s) or `"fall"` (landing over 6 m/s). `health`: what is left, 0..100 (0: knocked out). `down`: it put the hero on the ground | Integration: health | I (the thump of a punch or a car on the hero, and their fall) |
+| `hero_hit` | `at`: where the blow came from (the fist of someone fighting back, at shoulder height; a car's front, half a metre up). `cause`: `"punch"` (`fight_back`), `"car"` (`hit_by_cars`) or `"bite"` (a dog defending its owner, from its head). `strength` 0..1 (a jab 0.45, a cross 0.6; a car its speed over 14 m/s; a bite 0.25). `push`: the xz velocity (u/s) it throws the hero along (a car's heading at its speed; a bite 0.6 m/s away from the dog) | E (`reactions.gd` through `on_hero_hit`, `vehicles.gd` through `on_hit_player`), Integration: animals (`bite`); only while the hero is on foot, in control and the health feature is on | Integration: health (the damage, the flinch or the knock-down) |
+| `hero_hurt` | `amount`: the health it took. `cause`: `"punch"`, `"car"`, `"bite"`, `"crash"` (`car_impact` over 7 m/s) or `"fall"` (landing over 6 m/s). `health`: what is left, 0..100 (0: knocked out). `down`: it put the hero on the ground | Integration: health | I (the thump of a punch or a car on the hero, a bite's snap at the knee, and their fall) |
+| `animal_called` | `at`: the animal's head. `call`: a dog's `"bark"` (each bark of a volley), `"growl"` or `"whine"`. `size`: its height at the shoulder (m) | Integration: animals | I (one of three barks, a growl or a whine at the head, pitched by size) |
 
-The **target** dict: `{"kind": "resident"|"building"|"poster"|"vehicle"|"pedestrian", "id": String, "tile": int, "pos": Vector3, "dist": float, "label": String, "data": Dictionary}`.
+The **target** dict: `{"kind": "resident"|"building"|"poster"|"vehicle"|"pedestrian"|"dog", "id": String, "tile": int, "pos": Vector3, "dist": float, "label": String, "data": Dictionary}`.
 
 - `label` is the prompt text, for example `"Talk to Priya Gupta, nurse"` or `"Maple Street Bakery"`.
 - `data` holds kind-specific fields.
-- Kind ownership: `"resident"` is a **named resident** you can talk to (A's own candidates, or E's `pick()` for a resident on foot); `"vehicle"` is a car, bus or truck (`data.driver_id` names the resident driver when there is one); `"pedestrian"` is **only** an ambient, unnamed walker. A target of kind `"resident"` opens C's conversation, never B's card.
+- Kind ownership: `"resident"` is a **named resident** you can talk to (A's own candidates, or E's `pick()` for a resident on foot); `"vehicle"` is a car, bus or truck (`data.driver_id` names the resident driver when there is one); `"pedestrian"` is **only** an ambient, unnamed walker; `"dog"` is a dog within reach to pet (Integration: animals' `pick()`; `data.breed`, and `data.owner` the owner's resident id or `""`). A target of kind `"resident"` opens C's conversation, never B's card.
 
 The **chat message** dict: `{"seq": int, "author_id": String, "author": String, "role": "resident"|"mayor"|"press"|"council"|"system"|"player", "district": int, "text": String, "kind": String, "day": int, "clock": String, "t_ms": int, "reply_to": int, "refs": Dictionary}`.
 

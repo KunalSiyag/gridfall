@@ -27,7 +27,7 @@ REF_PATTERNS = ("*.gd", "*.tscn", "*.tres", "*.godot", "*.cfg", "*.json", "*.py"
 REF_EXCLUDE = ("tools/checks/baselines/**", "docs/api/**", "addons/**")
 
 # Engine callbacks (Object, Node, Control, CanvasItem, MainLoop/SceneTree, Logger, editor plugins,
-# physics bodies, iterators) that Godot calls by name.
+# physics bodies, skeleton modifiers, iterators) that Godot calls by name.
 ENGINE_VIRTUALS = {
     "_init", "_ready", "_process", "_physics_process", "_enter_tree", "_exit_tree", "_input",
     "_unhandled_input", "_unhandled_key_input", "_shortcut_input", "_gui_input", "_notification",
@@ -40,6 +40,7 @@ ENGINE_VIRTUALS = {
     "_has_main_screen", "_make_visible", "_get_plugin_name", "_handles", "_edit", "_forward_canvas_gui_input",
     "_forward_3d_gui_input", "_get_allowed_size_flags_horizontal", "_get_allowed_size_flags_vertical",
     "_sort_children", "_accessibility_get_contextual_info", "_get_accessibility_container_name",
+    "_process_modification", "_process_modification_with_delta",
 }
 # FpFeature (scripts/fp/fp_feature.gd) lifecycle; FpMode calls these on every registered feature.
 FEATURE_OVERRIDES = {

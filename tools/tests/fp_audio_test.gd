@@ -3,8 +3,8 @@ extends SceneTree
 ## the AudioDirector's tick throttle and on-foot routing, the initial scan, emitter settings, the
 ## 24-player cap and stealing, manual doppler, horns, sirens, footsteps by surface (polling and the
 ## stepped signal), ambience beds, settings, the pause muffle, the talk duck, UI cues, crashes,
-## knocked props, car doors, blows, swings and rolls, the frame budget and teardown. Headless runs
-## the Dummy audio driver, so this asserts node state.
+## knocked props, car doors, blows, swings and rolls, dogs, the frame budget and teardown. Headless
+## runs the Dummy audio driver, so this asserts node state.
 
 const K := preload("res://tools/tests/fp_kit.gd")
 const D := preload("res://scripts/sim/sim_defs.gd")
@@ -45,6 +45,7 @@ func _init() -> void:
 	_check_impacts(ctx, f)
 	_check_doors(ctx, f)
 	_check_blows(ctx, f)
+	_check_dogs(ctx, f)
 	_check_budget(ctx, f)
 	var st: Dictionary = f.self_test()
 	K.check(fails, bool(st["ok"]), "self_test: %s" % st["detail"])
@@ -727,6 +728,47 @@ func _check_blows(ctx: FpContext, f: FpFeature) -> void:
 		"rolls: the shoulder thuds ROLL_THUD_S after the roll starts (body_fall, ROLL_DB softer)"
 	)
 	_steps(f, 3.5)
+
+## animal_called plays the dog's call at its head (emitter type dog): a bark (one of BARK_VARIANTS,
+## a small dog's higher), a growl and a whine DOG_DB under it; an unknown call stays silent; a bite
+## on the hero (hero_hurt "bite") snaps the jaws (dog_snap) SNAP_Y up, at the knee.
+func _check_dogs(ctx: FpContext, f: FpFeature) -> void:
+	var em := _em(f)
+	var at := em.listener() + Vector3(0.05, 0.0, 0.0)
+	var big := _shot(f, func() -> void: ctx.bus.animal_called.emit(at, "bark", 0.55))
+	var small := _shot(f, func() -> void: ctx.bus.animal_called.emit(at, "bark", 0.38))
+	var growl := _shot(f, func() -> void: ctx.bus.animal_called.emit(at, "growl", 0.55))
+	var whine := _shot(f, func() -> void: ctx.bus.animal_called.emit(at, "whine", 0.55))
+	var barks := _is_bark(big) and _is_bark(small) and small.pitch_base > big.pitch_base
+	K.check(fails, barks, "dogs: a bark plays a dog_bark_<n> at the dog, a small dog's higher")
+	var calls := _is_shot(growl, "dog", "dog_growl") and _is_shot(whine, "dog", "dog_whine")
+	calls = calls and is_equal_approx(growl.db, big.db + float(BANK.DOG_DB["growl"]))
+	calls = calls and is_equal_approx(whine.db, big.db + float(BANK.DOG_DB["whine"]))
+	var n := em.shots_played
+	ctx.bus.animal_called.emit(at, "purr", 0.3)
+	K.check(
+		fails,
+		calls and em.shots_played == n,
+		"dogs: a growl and a whine play DOG_DB under the bark, an unknown call nothing"
+	)
+	var bite := _shot(f, func() -> void: ctx.bus.hero_hurt.emit(7.5, "bite", 90.0, false))
+	var knee := ctx.player_position().y + BANK.SNAP_Y * WS.M
+	K.check(
+		fails,
+		_is_shot(bite, "dog", "dog_snap") and absf(bite.pos.y - knee) < 1e-4,
+		"dogs: a bite on the hero snaps the jaws at the knee (dog_snap)"
+	)
+	_steps(f, 3.5)
+
+
+func _is_bark(s: EM.Src) -> bool:
+	if s == null or s.type != "dog" or not s.started:
+		return false
+	for k in range(1, BANK.BARK_VARIANTS + 1):
+		if s.stream == BANK.stream("dog_bark_%d" % k):
+			return true
+	return false
+
 
 ## The one-shot that fire() starts (after one step), or null.
 func _shot(f: FpFeature, fire: Callable) -> EM.Src:

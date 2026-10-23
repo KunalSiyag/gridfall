@@ -87,6 +87,10 @@ Slice I's sound assets (sounds/fp/, made by tools/audio/synth_fp_sfx.py): names,
 - `SHOVE_DB = -6.0`
 - `ROLL_THUD_S = 0.15`: The hero's landing roll (hero_action "roll"): the shoulder meets the ground ROLL_THUD_S after the feet, a body_fall ROLL_DB under a knock-down's.
 - `ROLL_DB = -8.0`
+- `BARK_VARIANTS = 3`: Dogs (animal_called): a bark is one of BARK_VARIANTS (dog_bark_<n>), a growl and a whine play DOG_DB under it. The samples are of a dog DOG_PITCH_M high at the shoulder; a dog h m high plays at sqrt(DOG_PITCH_M / h), so a small dog yaps higher. A dog's bite on the hero (hero_hurt "bite") snaps its jaws (dog_snap) SNAP_Y m up, at the knee.
+- `DOG_DB = {"bark": 0.0, "growl": -6.0, "whine": -12.0}`
+- `DOG_PITCH_M = 0.5`
+- `SNAP_Y = 0.5`
 
 ### Functions
 
@@ -103,7 +107,7 @@ Slice I's sound assets (sounds/fp/, made by tools/audio/synth_fp_sfx.py): names,
 
 extends `FpFeature`
 
-City sound on foot (slice I). Owns the Music, SFX, Ambience and UI buses while on foot, puts the AudioDirector's music under the street (set_fp), and runs three parts: positional emitters (engines, horns, sirens, construction, fire, fountains, plants, the river, passers-by's steps, the player's car crashing, the street props it knocks over and its doors, people hit in the street, the hero's swings, rolls and the blows they take), the area beds (with rain from G1's weather) and the hero's footsteps (splashing on wet paving), plus the chat blip and alert stingers. Pausing muffles the music (the only thing still playing); talking to someone ducks the beds.
+City sound on foot (slice I). Owns the Music, SFX, Ambience and UI buses while on foot, puts the AudioDirector's music under the street (set_fp), and runs three parts: positional emitters (engines, horns, sirens, construction, fire, fountains, plants, the river, passers-by's steps, the player's car crashing, the street props it knocks over and its doors, people hit in the street, the hero's swings, rolls and the blows they take, dogs barking, growling and whining), the area beds (with rain from G1's weather) and the hero's footsteps (splashing on wet paving), plus the chat blip and alert stingers. Pausing muffles the music (the only thing still playing); talking to someone ducks the beds.
 
 ### Constants
 
@@ -126,7 +130,7 @@ City sound on foot (slice I). Owns the Music, SFX, Ambience and UI buses while o
 - `REVERB_WET_OPEN = 0.05`: Street reflections on the SFX bus: wet level from open land to a dense downtown street.
 - `REVERB_WET_URBAN = 0.15`
 - `BLIP_PITCH = {"mayor": 0.94, "press": 1.06, "council": 0.9}`
-- `HERO_HIT_FULL = {"punch": 12.0, "car": 60.0}`: The health a blow on the hero takes (hero_hurt) to sound at full level, by cause.
+- `HERO_HIT_FULL = {"punch": 12.0, "car": 60.0, "bite": 7.5}`: The health a blow on the hero takes (hero_hurt) to sound at full level, by cause.
 
 ### Properties
 
@@ -148,7 +152,7 @@ City sound on foot (slice I). Owns the Music, SFX, Ambience and UI buses while o
 
 extends `Node3D`
 
-Positional city sound (slice I): logical sources (engines, horns, sirens, construction, fire, fountains, power plants, river banks, passers-by's footsteps, crashes, knocked props, car doors, blows and swings) share a pool of at most MAX_PLAYERS AudioStreamPlayer3D. Every refresh scores the sources by their estimated level at the listener and gives the players to the loudest; the farthest or quietest lose theirs first. Doppler is computed by hand (the built-in effect works in world units against 343 u/s and is inaudible at 1 u = 20 m). A grown city registers hundreds of static sources (every park's fountain, every site), so the per-frame work touches only the sources holding a player, the refresh only the volatile ones (agents, one-shots, sirens, river) and the static ones near the listener.
+Positional city sound (slice I): logical sources (engines, horns, sirens, construction, fire, fountains, power plants, river banks, passers-by's footsteps, crashes, knocked props, car doors, blows and swings, dogs) share a pool of at most MAX_PLAYERS AudioStreamPlayer3D. Every refresh scores the sources by their estimated level at the listener and gives the players to the loudest; the farthest or quietest lose theirs first. Doppler is computed by hand (the built-in effect works in world units against 343 u/s and is inaudible at 1 u = 20 m). A grown city registers hundreds of static sources (every park's fountain, every site), so the per-frame work touches only the sources holding a player, the refresh only the volatile ones (agents, one-shots, sirens, river) and the static ones near the listener.
 
 ### Constants
 

@@ -2,13 +2,13 @@ extends FpFeature
 ## The hero's health (integration slice; docs/fp/ARCHITECTURE.md, Health): MAX_HP points, shown
 ## as an arc round the left of the minimap. Crashes in the car the hero drives (car_impact), hard
 ## landings (the player's landed signal; one rolled off counts softer), people who fight back
-## (hero_hit "punch", the fight_back flag) and cars that cannot stop for the hero on foot
-## (hero_hit "car", hit_by_cars) cost points, and REGEN_DELAY seconds after the last hurt they
-## come back. A blow makes the body flinch (a guard raised toward it takes most of a punch); a car
-## or a bad fall knocks the hero down, to lie a moment and get up. With nothing left they are
-## knocked out: out of the car, down, the screen fades to black and they come round outside the
-## nearest hospital (City Hall without one), healed. Every hurt goes out on the bus (hero_hurt);
-## health is saved with the city.
+## (hero_hit "punch", the fight_back flag), dogs defending their owners (hero_hit "bite", the
+## animals feature) and cars that cannot stop for the hero on foot (hero_hit "car", hit_by_cars)
+## cost points, and REGEN_DELAY seconds after the last hurt they come back. A blow makes the body
+## flinch (a guard raised toward it takes most of a punch); a car or a bad fall knocks the hero
+## down, to lie a moment and get up. With nothing left they are knocked out: out of the car, down,
+## the screen fades to black and they come round outside the nearest hospital (City Hall without
+## one), healed. Every hurt goes out on the bus (hero_hurt); health is saved with the city.
 
 const WS := preload("res://scripts/fp/world_scale.gd")
 const D := preload("res://scripts/sim/sim_defs.gd")
@@ -32,7 +32,8 @@ const FALL_DOWN := 35.0
 ## A landing rolled off (the parkour feature's landing roll) counts ROLL_SAVE m/s slower and does
 ## not knock the hero down.
 const ROLL_SAVE := 4.0
-## A punch costs PUNCH + PUNCH_K times its strength; the guard up toward it takes GUARD_K of that.
+## A punch or a bite costs PUNCH + PUNCH_K times its strength; the guard up toward a punch takes
+## GUARD_K of that (a dog goes for the legs, under it).
 const PUNCH := 5.0
 const PUNCH_K := 10.0
 const GUARD_K := 0.3
@@ -134,9 +135,9 @@ func self_test() -> Dictionary:
 	return {"ok": ok, "detail": "%d hp, %d hurts, %d knock-outs" % [roundi(hp), hurts, knockouts]}
 
 
-## Takes amount of health for cause ("punch", "car", "crash", "fall"): the body flinches, or with
-## knock it goes down and slides on along push (xz, u/s); with nothing left the hero is knocked
-## out. bus.hero_hurt hears of it. Nothing while knocked out.
+## Takes amount of health for cause ("punch", "bite", "car", "crash", "fall"): the body flinches,
+## or with knock it goes down and slides on along push (xz, u/s); with nothing left the hero is
+## knocked out. bus.hero_hurt hears of it. Nothing while knocked out.
 func hurt(amount: float, cause: String, push: Vector3 = Vector3.ZERO, knock: bool = false) -> void:
 	if out or not (amount > 0.0) or ctx == null:
 		return
@@ -409,7 +410,7 @@ func _on_hero_hit(at: Vector3, cause: String, strength: float, push: Vector3) ->
 	if cause == "car":
 		hurt(CAR_K * s, "car", push, s >= CAR_DOWN)
 		return
-	var k := GUARD_K if _guarded(at) else 1.0
+	var k := GUARD_K if cause == "punch" and _guarded(at) else 1.0
 	hurt((PUNCH + PUNCH_K * s) * k, cause, push * k)
 
 

@@ -106,3 +106,12 @@ const PERSON_TPS_ANIMS := [
 	"turn_r180_walk",
 ]
 # end HC
+
+
+# --- animals (owned by the animals feature)
+## Quaternius' rigged dogs (CC0, models/real/LICENSES/quaternius-dogs.txt): one skeleton, clips
+## Walk, Gallop, Idle, Idle_2, Idle_2_HeadLow, Eating, Attack, Idle_HitReact_Left/Right and
+## Jump_ToIdle.
+const DOG_SHIBA := "res://models/real/animals/shiba_inu.glb"
+const DOG_HUSKY := "res://models/real/animals/husky.glb"
+# end animals

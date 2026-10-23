@@ -137,7 +137,7 @@ Sizes are in metres; divide by 20 for units. The front faces +Z, the base sits a
 ## Risks
 
 - **Re-export churn.** Re-exporting zones regenerates hundreds of extracted textures and `.import` files, a large diff. Do it once, at the end, after a dry run in a scratch copy under `$HOME`.
-- **Licences.** Everything H makes is procedural (own work) or Poly Haven (CC0). Do not import Mixamo or other third-party content into `models/real/**`. The MIT (Rocketbox) and CC0 (Quaternius) exception of T-D1 applies only to HC's `models/characters/**`, with its licence files.
+- **Licences.** Everything H makes is procedural (own work) or Poly Haven (CC0). Do not import Mixamo or other third-party content into `models/real/**`. The MIT (Rocketbox) and CC0 (Quaternius) exception of T-D1 applies only to HC's `models/characters/**`, with its licence files, and to the animals feature's dogs in `models/real/animals/` (Quaternius, CC0; `models/real/LICENSES/quaternius-dogs.txt`).
 
 ## Do NOT touch
 
