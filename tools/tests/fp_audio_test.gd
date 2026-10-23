@@ -3,8 +3,8 @@ extends SceneTree
 ## the AudioDirector's tick throttle and on-foot routing, the initial scan, emitter settings, the
 ## 24-player cap and stealing, manual doppler, horns, sirens, footsteps by surface (polling and the
 ## stepped signal), ambience beds, settings, the pause muffle, the talk duck, UI cues, crashes,
-## knocked props, car doors, blows, swings and rolls, dogs, the frame budget and teardown. Headless
-## runs the Dummy audio driver, so this asserts node state.
+## knocked props, car doors, blows, swings and rolls, dogs, pigeons, the frame budget and teardown.
+## Headless runs the Dummy audio driver, so this asserts node state.
 
 const K := preload("res://tools/tests/fp_kit.gd")
 const D := preload("res://scripts/sim/sim_defs.gd")
@@ -46,6 +46,7 @@ func _init() -> void:
 	_check_doors(ctx, f)
 	_check_blows(ctx, f)
 	_check_dogs(ctx, f)
+	_check_pigeons(ctx, f)
 	_check_budget(ctx, f)
 	var st: Dictionary = f.self_test()
 	K.check(fails, bool(st["ok"]), "self_test: %s" % st["detail"])
@@ -759,6 +760,29 @@ func _check_dogs(ctx: FpContext, f: FpFeature) -> void:
 		"dogs: a bite on the hero snaps the jaws at the knee (dog_snap)"
 	)
 	_steps(f, 3.5)
+
+
+## A pigeon's calls (animal_called) play at the bird (emitter type bird): a coo is one of
+## COO_VARIANTS, PIGEON_DB under a flap; a lone bird's flap and a flock's take-off their own.
+func _check_pigeons(ctx: FpContext, f: FpFeature) -> void:
+	var at := _em(f).listener() + Vector3(0.05, 0.0, 0.0)
+	var coo := _shot(f, func() -> void: ctx.bus.animal_called.emit(at, "coo", 0.13))
+	var flap := _shot(f, func() -> void: ctx.bus.animal_called.emit(at, "flap", 0.13))
+	var off := _shot(f, func() -> void: ctx.bus.animal_called.emit(at, "takeoff", 0.13))
+	var cooed := false
+	for k in range(1, BANK.COO_VARIANTS + 1):
+		cooed = cooed or _is_shot(coo, "bird", "pigeon_coo_%d" % k)
+	var under := float(BANK.PIGEON_DB["coo"]) - float(BANK.PIGEON_DB["flap"])
+	cooed = cooed and flap != null and is_equal_approx(coo.db, flap.db + under)
+	K.check(
+		fails, cooed, "pigeons: a coo plays a pigeon_coo_<n> at the bird, PIGEON_DB under a flap"
+	)
+	K.check(
+		fails,
+		_is_shot(flap, "bird", "pigeon_flap") and _is_shot(off, "bird", "pigeon_takeoff"),
+		"pigeons: a lone bird's flap and a flock's take-off (pigeon_flap, pigeon_takeoff)"
+	)
+	_steps(f, 3.0)
 
 
 func _is_bark(s: EM.Src) -> bool:

@@ -5,7 +5,7 @@ Everything is built from numpy noise, oscillators, pulse trains and modal resona
 seeds, so a re-run gives the same samples and byte-identical files. Two formats:
 
 - WAV (16-bit PCM, imported uncompressed) for every sound the game starts often: footsteps,
-  horns, crashes, knocked props, car doors, blows and dogs, UI cues, the engine loops and the siren. Starting an Ogg Vorbis playback costs about
+  horns, crashes, knocked props, car doors, blows, dogs and pigeons, UI cues, the engine loops and the siren. Starting an Ogg Vorbis playback costs about
   0.4 ms on the main thread (a decoder per start), a WAV about 1 us, and the audio budget is
   0.3 ms per frame.
 - Ogg Vorbis (ffmpeg libvorbis -q 4, bit-exact) for the long loops started rarely: the beds,
@@ -1201,6 +1201,106 @@ def synth_dog_snap() -> np.ndarray:
     out = stereo_reverb(out, rng, 0.35, 0.08, 5000.0, circular=False).mean(axis=1)
     return norm_peak(fade_edges(out, 0.0005, 0.06), -1.0)
 
+# ------------------------------------------------------------------ pigeons
+
+## A rock pigeon's coos ("coo, roo-c'too-coo"): notes of (start s, length s, pitch at the start, a
+## third of the way in and at the end Hz, roll 0..1). It coos with the beak shut into its blown-up
+## crop, so the voice is low, nearly pure and muffled, and a rolling note trembles at about 25 Hz.
+COOS = [
+    [(0.0, 0.3, 400.0, 455.0, 430.0, 0.1), (0.42, 0.24, 430.0, 470.0, 450.0, 0.8),
+     (0.7, 0.14, 470.0, 505.0, 480.0, 0.2), (0.88, 0.5, 470.0, 445.0, 380.0, 0.35)],
+    [(0.0, 0.22, 380.0, 430.0, 415.0, 0.7), (0.26, 0.13, 440.0, 480.0, 455.0, 0.2),
+     (0.44, 0.58, 445.0, 425.0, 360.0, 0.4)],
+]
+## A pigeon's wingbeat taking off (Hz) and the whistle of its outer primaries on the downstroke (Hz).
+WING_HZ = (8.5, 10.0)
+WHISTLE_HZ = (1050.0, 1350.0)
+
+
+def coo_note(rng: np.random.Generator, dur: float, f_a: float, f_m: float, f_b: float, roll: float) -> np.ndarray:
+    """One note of a coo: the pitch arching from f_a up to f_m and down to f_b, rolling (a tremble
+    of pitch and level) by `roll`, through the crop's muffle with a little breath."""
+    n = int(dur * SR)
+    t = secs(n)
+    u = t / dur
+    fr = np.where(u < 0.35, f_a + (f_m - f_a) * np.sin(0.5 * np.pi * np.minimum(u / 0.35, 1.0)),
+                  f_m + (f_b - f_m) * np.clip((u - 0.35) / 0.65, 0.0, 1.0) ** 1.4)
+    trem = np.sin(2 * np.pi * rng.uniform(22.0, 28.0) * t + rng.uniform(0, 2 * np.pi))
+    fr = fr * (1.0 + 0.015 * roll * trem + 0.006 * wander(rng, n, 15.0))
+    s = tone(fr, [1.0, 0.3, 0.1, 0.04]) * (1.0 - 0.6 * roll * (0.5 + 0.5 * trem))
+    b = bandpass(rng.standard_normal(n), 250.0, 900.0)
+    s = s + 0.06 * rms(s) / rms(b) * b
+    env = np.sin(np.pi * np.clip(u, 0.0, 1.0)) ** 0.7 * np.clip(t / 0.02, 0.0, 1.0)
+    return lowpass(s * env, 1100.0)
+
+
+def synth_pigeon_coo(k: int) -> np.ndarray:
+    """A rock pigeon's coo (one of COOS): low, soft, tremulous notes, "coo, roo-c'too-coo"."""
+    rng = rng_for("pigeon_coo_%d" % k)
+    notes = COOS[k - 1]
+    out = np.zeros(int((max(t0 + d for t0, d, *_ in notes) + 0.45) * SR))
+    for t0, d, f_a, f_m, f_b, roll in notes:
+        add_at(out, coo_note(rng, d, f_a, f_m, f_b, roll), int((0.005 + t0) * SR), wrap=False)
+    out = stereo_reverb(out, rng, 0.45, 0.1, 4000.0, circular=False).mean(axis=1)
+    return norm_peak(fade_edges(out, 0.0005, 0.1), -1.0)
+
+
+def wing_beat(rng: np.random.Generator, clap: bool) -> np.ndarray:
+    """One downstroke: the rush of air through the feathers (a band of noise swelling and dying
+    within 50 ms) with the outer primaries' whistle; on a clap, the wingtips striking over the
+    back first."""
+    n = int(0.09 * SR)
+    t = secs(n)
+    env = np.exp(-0.5 * ((t - 0.028) / 0.011) ** 2)
+    air = bandpass(rng.standard_normal(n), 300.0, 3800.0)
+    out = 0.8 * env * air / (np.max(np.abs(air)) + 1e-9)
+    f_w = rng.uniform(*WHISTLE_HZ) * (1.0 + 0.12 * t / 0.09)
+    out += 0.08 * env * np.sin(2 * np.pi * np.cumsum(f_w) / SR)
+    if clap:
+        out += 0.9 * crack(rng, n, 0.003, 700.0, 7000.0) + 0.3 * thud(rng, n, 380.0, 260.0, 0.008)
+    return out
+
+
+def wings(rng: np.random.Generator, n: int, t0: float, claps: int, beats: int, amp: float) -> np.ndarray:
+    """One bird taking off t0 s into a buffer of n samples: `claps` beats clapping, then `beats`
+    more fading as it climbs away, at its wingbeat (WING_HZ) slowing a little."""
+    out = np.zeros(n)
+    hz = rng.uniform(*WING_HZ)
+    tk = t0
+    for k in range(claps + beats):
+        fade = np.exp(-max(k - claps, 0) / max(0.45 * beats, 1.0)) * rng.uniform(0.8, 1.0)
+        add_at(out, amp * fade * wing_beat(rng, k < claps), int(tk * SR), wrap=False)
+        tk += rng.uniform(0.93, 1.07) / hz
+        hz *= 0.985
+    return out
+
+
+def synth_pigeon_flap() -> np.ndarray:
+    """A pigeon fluttering off a couple of metres: two claps of its wings and a few quick beats."""
+    rng = rng_for("pigeon_flap")
+    out = wings(rng, int(0.9 * SR), 0.005, 2, 4, 1.0)
+    out = stereo_reverb(out, rng, 0.4, 0.08, 5000.0, circular=False).mean(axis=1)
+    return norm_peak(fade_edges(out, 0.0005, 0.08), -1.0)
+
+
+def synth_pigeon_takeoff() -> np.ndarray:
+    """A flock going up together: a dozen birds' claps and beats overlapping into one clatter, the
+    nearest first, and the rush of air they stir dying away as they climb."""
+    rng = rng_for("pigeon_takeoff")
+    n = int(2.0 * SR)
+    t = secs(n)
+    out = np.zeros(n)
+    for b in range(12):
+        t0 = 0.005 + 0.3 * (b / 11.0) ** 0.7 + rng.uniform(0.0, 0.05)
+        claps = int(rng.integers(1, 4))
+        out += wings(rng, n, t0, claps, int(rng.integers(6, 11)), rng.uniform(0.45, 1.0))
+    rush = bandpass(rng.standard_normal(n), 150.0, 1600.0)
+    rush *= np.clip(t / 0.08, 0.0, 1.0) ** 2 * np.exp(-np.maximum(t - 0.25, 0.0) / 0.45)
+    head = int(0.6 * SR)
+    out += 0.25 * rms(out[:head]) / rms(rush[:head]) * rush
+    out = stereo_reverb(out, rng, 0.5, 0.12, 5000.0, circular=False).mean(axis=1)
+    return norm_peak(fade_edges(out, 0.0005, 0.15), -1.0)
+
 # ------------------------------------------------------------------ UI
 
 def bell_note(f: float, dur: float, index: float = 2.0, ratio: float = 1.4, decay: float = 0.4) -> np.ndarray:
@@ -1247,7 +1347,8 @@ def synth_alert_stinger() -> np.ndarray:
 WAV_SOUNDS = {"engine_idle", "engine_run", "siren_two_tone", "horn_short", "horn_long", "chat_blip",
               "chat_blip_soft", "alert_stinger", "crash_heavy", "crash_light", "prop_clatter", "prop_clang",
               "car_door_open", "car_door_close", "punch_hit", "punch_whoosh", "body_fall", "dog_bark_1",
-              "dog_bark_2", "dog_bark_3", "dog_growl", "dog_whine", "dog_snap"}
+              "dog_bark_2", "dog_bark_3", "dog_growl", "dog_whine", "dog_snap", "pigeon_coo_1", "pigeon_coo_2",
+              "pigeon_flap", "pigeon_takeoff"}
 
 
 def is_wav(name: str) -> bool:
@@ -1287,9 +1388,13 @@ def catalogue() -> dict[str, tuple[object, bool]]:
         "dog_growl": (synth_dog_growl, False),
         "dog_whine": (synth_dog_whine, False),
         "dog_snap": (synth_dog_snap, False),
+        "pigeon_flap": (synth_pigeon_flap, False),
+        "pigeon_takeoff": (synth_pigeon_takeoff, False),
     }
     for k in range(1, len(BARKS) + 1):
         c["dog_bark_%d" % k] = ((lambda k=k: synth_dog_bark(k)), False)
+    for k in range(1, len(COOS) + 1):
+        c["pigeon_coo_%d" % k] = ((lambda k=k: synth_pigeon_coo(k)), False)
     for s in SURFACES:
         for k in range(1, STEP_VARIANTS + 1):
             c["footstep_%s_%d" % (s, k)] = ((lambda s=s, k=k: synth_step(s, k)), False)

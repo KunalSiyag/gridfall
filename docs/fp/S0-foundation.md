@@ -715,8 +715,9 @@ signal hero_hit(at: Vector3, cause: String, strength: float, push: Vector3)
 ## car they drive) or "fall" (a hard landing); health is what is left (0..100, 0 knocked out) and
 ## down is true when it put them on the ground. Emitted by the health feature.
 signal hero_hurt(amount: float, cause: String, health: float, down: bool)
-## An animal called out at a point (its head): a dog's "bark", "growl" or "whine"; size is its
-## height at the shoulder (m), so a small dog yaps higher. Emitted by the animals feature.
+## An animal called out at a point (its head): a dog's "bark", "growl" or "whine", a pigeon's
+## "coo", a lone pigeon's "flap" or a flock's "takeoff"; size is its height at the shoulder (m),
+## so a small dog yaps higher. Emitted by the animals feature.
 signal animal_called(at: Vector3, call: String, size: float)
 ```
 
@@ -725,7 +726,7 @@ signal animal_called(at: Vector3, call: String, size: float)
 | `ping` | `world_pos` in world units at y = 0. `reason`: `"event:<type>"`, `"resident:<id>"`, `"tile"`, `"district:<mi>"`, `"player"` (waypoint set on the map) | `Main.focus()` (S0); B's map (`"player"`) | B (minimap and compass marker, toast), I (alert blip) |
 | `toast` | `kind`: `info`, `alert`, `success`, `system` | `Main.notify()`, FpMode, any slice | B (S0 placeholder until then) |
 | `interact_target_changed` | target dict (below), `{}` when nothing is targeted | A | B (centre prompt) |
-| `interact_requested` | target dict | A (E pressed) | B (building and vehicle cards), D (`kind == "poster"`), Integration: animals (`kind == "dog"`: pets it) |
+| `interact_requested` | target dict | A (E pressed) | B (building and vehicle cards), D (`kind == "poster"`), Integration: animals (`kind == "dog"`: pets it; `kind == "pigeons"`: throws the flock crumbs) |
 | `talk_requested` | resident id | A (E on a resident within `TALK_RANGE`) | C |
 | `conversation_changed` | id, active | C | E (stop the agent and face the player), I (duck ambience) |
 | `chat_posted` | chat message dict (below) | C | I (chat blip), B (unread badge on the minimap, optional) |
@@ -748,13 +749,13 @@ signal animal_called(at: Vector3, call: String, size: float)
 | `story_filed` | the story as filed: `agent` (`"0"`..`"4"`, `"council"` or `"chaos"`), `headline`, `place`, `quote`, `by`, `tile` (index), `district`, `day`, `scoop`, `local`, `sharp`, `points`, `text` (the Gazette's line) | Integration: reporter (K files) | C (a Gazette line in the chat and a chatter topic) |
 | `hero_hit` | `at`: where the blow came from (the fist of someone fighting back, at shoulder height; a car's front, half a metre up). `cause`: `"punch"` (`fight_back`), `"car"` (`hit_by_cars`) or `"bite"` (a dog defending its owner, from its head). `strength` 0..1 (a jab 0.45, a cross 0.6; a car its speed over 14 m/s; a bite 0.25). `push`: the xz velocity (u/s) it throws the hero along (a car's heading at its speed; a bite 0.6 m/s away from the dog) | E (`reactions.gd` through `on_hero_hit`, `vehicles.gd` through `on_hit_player`), Integration: animals (`bite`); only while the hero is on foot, in control and the health feature is on | Integration: health (the damage, the flinch or the knock-down) |
 | `hero_hurt` | `amount`: the health it took. `cause`: `"punch"`, `"car"`, `"bite"`, `"crash"` (`car_impact` over 7 m/s) or `"fall"` (landing over 6 m/s). `health`: what is left, 0..100 (0: knocked out). `down`: it put the hero on the ground | Integration: health | I (the thump of a punch or a car on the hero, a bite's snap at the knee, and their fall) |
-| `animal_called` | `at`: the animal's head. `call`: a dog's `"bark"` (each bark of a volley), `"growl"` or `"whine"`. `size`: its height at the shoulder (m) | Integration: animals | I (one of three barks, a growl or a whine at the head, pitched by size) |
+| `animal_called` | `at`: the animal's head. `call`: a dog's `"bark"` (each bark of a volley), `"growl"` or `"whine"`; a pigeon's `"coo"`, a lone pigeon's `"flap"` (fluttering off) or a flock's `"takeoff"` (going up together). `size`: its height at the shoulder (m) | Integration: animals | I (one of three barks, a growl or a whine at the head, pitched by size; one of two coos, a flutter or a flock's clatter of wings) |
 
-The **target** dict: `{"kind": "resident"|"building"|"poster"|"vehicle"|"pedestrian"|"dog", "id": String, "tile": int, "pos": Vector3, "dist": float, "label": String, "data": Dictionary}`.
+The **target** dict: `{"kind": "resident"|"building"|"poster"|"vehicle"|"pedestrian"|"dog"|"pigeons", "id": String, "tile": int, "pos": Vector3, "dist": float, "label": String, "data": Dictionary}`.
 
 - `label` is the prompt text, for example `"Talk to Priya Gupta, nurse"` or `"Maple Street Bakery"`.
 - `data` holds kind-specific fields.
-- Kind ownership: `"resident"` is a **named resident** you can talk to (A's own candidates, or E's `pick()` for a resident on foot); `"vehicle"` is a car, bus or truck (`data.driver_id` names the resident driver when there is one); `"pedestrian"` is **only** an ambient, unnamed walker; `"dog"` is a dog within reach to pet (Integration: animals' `pick()`; `data.breed`, and `data.owner` the owner's resident id or `""`). A target of kind `"resident"` opens C's conversation, never B's card.
+- Kind ownership: `"resident"` is a **named resident** you can talk to (A's own candidates, or E's `pick()` for a resident on foot); `"vehicle"` is a car, bus or truck (`data.driver_id` names the resident driver when there is one); `"pedestrian"` is **only** an ambient, unnamed walker; `"dog"` is a dog within reach to pet (Integration: animals' `pick()`; `data.breed`, and `data.owner` the owner's resident id or `""`); `"pigeons"` is a flock to feed (Integration: animals' `pick()`; `id` the flock's key, `pos` where the view meets the ground, `data.birds`). A target of kind `"resident"` opens C's conversation, never B's card.
 
 The **chat message** dict: `{"seq": int, "author_id": String, "author": String, "role": "resident"|"mayor"|"press"|"council"|"system"|"player", "district": int, "text": String, "kind": String, "day": int, "clock": String, "t_ms": int, "reply_to": int, "refs": Dictionary}`.
 

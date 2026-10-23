@@ -396,8 +396,16 @@ func _on_hero_hurt(amount: float, cause: String, _health: float, down: bool) -> 
 
 
 ## An animal calling (animal_called) at its head: a dog's bark (one of BANK.BARK_VARIANTS), growl
-## or whine, BANK.DOG_DB under the bark, pitched by its size (BANK.DOG_PITCH_M).
+## or whine, BANK.DOG_DB under the bark, pitched by its size (BANK.DOG_PITCH_M); a pigeon's coo
+## (one of BANK.COO_VARIANTS), a lone bird's flap or a flock's take-off at BANK.PIGEON_DB.
 func _on_animal_called(at: Vector3, call: String, size: float) -> void:
+	if BANK.PIGEON_DB.has(call):
+		var p := "pigeon_%s" % call
+		if call == "coo":
+			p = "pigeon_coo_%d" % _rng.randi_range(1, BANK.COO_VARIANTS)
+		var pitch := 1.0 + _rng.randf_range(-BANK.PIGEON_PITCH, BANK.PIGEON_PITCH)
+		emitters.shot("bird", at, p, float(BANK.PIGEON_DB[call]), pitch)
+		return
 	if not BANK.DOG_DB.has(call):
 		return
 	var s := "dog_%s" % call

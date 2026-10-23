@@ -23,14 +23,15 @@ const ONE_SHOTS: Array[String] = [
 	"horn_short", "horn_long", "chat_blip", "chat_blip_soft", "alert_stinger", "crash_heavy",
 	"crash_light", "prop_clatter", "prop_clang", "car_door_open", "car_door_close", "punch_hit",
 	"punch_whoosh", "body_fall", "dog_bark_1", "dog_bark_2", "dog_bark_3", "dog_growl", "dog_whine",
-	"dog_snap",
+	"dog_snap", "pigeon_coo_1", "pigeon_coo_2", "pigeon_flap", "pigeon_takeoff",
 ]
 ## Stored as WAV (with every footstep_*); everything else is .ogg.
 const WAV_SOUNDS: Array[String] = [
 	"engine_idle", "engine_run", "siren_two_tone", "horn_short", "horn_long", "chat_blip",
 	"chat_blip_soft", "alert_stinger", "crash_heavy", "crash_light", "prop_clatter", "prop_clang",
 	"car_door_open", "car_door_close", "punch_hit", "punch_whoosh", "body_fall", "dog_bark_1",
-	"dog_bark_2", "dog_bark_3", "dog_growl", "dog_whine", "dog_snap",
+	"dog_bark_2", "dog_bark_3", "dog_growl", "dog_whine", "dog_snap", "pigeon_coo_1", "pigeon_coo_2",
+	"pigeon_flap", "pigeon_takeoff",
 ]
 
 ## Bus names (created by audio_feature.setup when missing).
@@ -100,6 +101,12 @@ const BARK_VARIANTS := 3
 const DOG_DB := {"bark": 0.0, "growl": -6.0, "whine": -12.0}
 const DOG_PITCH_M := 0.5
 const SNAP_Y := 0.5
+## Pigeons (animal_called): a coo is one of COO_VARIANTS (pigeon_coo_<n>), a lone bird's flap and
+## a flock's take-off play pigeon_flap and pigeon_takeoff; each at PIGEON_DB on the bird emitter's
+## level, its pitch within PIGEON_PITCH of the sample's.
+const COO_VARIANTS := 2
+const PIGEON_DB := {"coo": -16.0, "flap": 0.0, "takeoff": 0.0}
+const PIGEON_PITCH := 0.06
 
 static var _cache: Dictionary = {}
 static var _legacy_loop: AudioStream = null
