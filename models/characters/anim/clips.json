@@ -540,6 +540,26 @@
     "speed_mps": 0.0
    }
   },
+  "swing_a": {
+   "u": {
+    "kind": "ual",
+    "loop": false,
+    "source": "quaternius:UAL2/Sword_Regular_A",
+    "frames": 11,
+    "seconds": 0.4167,
+    "speed_mps": 0.0
+   }
+  },
+  "swing_b": {
+   "u": {
+    "kind": "ual",
+    "loop": false,
+    "source": "quaternius:UAL2/Sword_Regular_B",
+    "frames": 14,
+    "seconds": 0.5417,
+    "speed_mps": 0.0
+   }
+  },
   "talk": {
    "m": {
     "kind": "static",

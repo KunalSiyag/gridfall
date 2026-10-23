@@ -66,6 +66,7 @@ const STARTLE := {
 	"cross": 2.5,
 	"hook": 2.5,
 	"kick": 3.0,
+	"swing": 3.0,
 	"shove": 2.5,
 	"dance": 2.0,
 	"shout": 10.0,

@@ -3,8 +3,8 @@ extends SceneTree
 ## the AudioDirector's tick throttle and on-foot routing, the initial scan, emitter settings, the
 ## 24-player cap and stealing, manual doppler, horns, sirens, footsteps by surface (polling and the
 ## stepped signal), ambience beds, settings, the pause muffle, the talk duck, UI cues, crashes,
-## knocked props, car doors, blows, swings and rolls, dogs, pigeons, cats, the frame budget and
-## teardown. Headless runs the Dummy audio driver, so this asserts node state.
+## knocked props, car doors, blows, swings and rolls, weapons, dogs, pigeons, cats, the frame
+## budget and teardown. Headless runs the Dummy audio driver, so this asserts node state.
 
 const K := preload("res://tools/tests/fp_kit.gd")
 const D := preload("res://scripts/sim/sim_defs.gd")
@@ -45,6 +45,7 @@ func _init() -> void:
 	_check_impacts(ctx, f)
 	_check_doors(ctx, f)
 	_check_blows(ctx, f)
+	_check_weapons(ctx, f)
 	_check_dogs(ctx, f)
 	_check_pigeons(ctx, f)
 	_check_cats(ctx, f)
@@ -729,6 +730,32 @@ func _check_blows(ctx: FpContext, f: FpFeature) -> void:
 		soon == 0 and _is_shot(thud, "hit", "body_fall") and softer,
 		"rolls: the shoulder thuds ROLL_THUD_S after the roll starts (body_fall, ROLL_DB softer)"
 	)
+	_steps(f, 3.5)
+
+
+## weapon_hit plays the weapon's own sound at the chest of whoever it hit (a bat's knock, a pipe's
+## clang, a bottle's smash), lower and WEAPON_PROP_DB quieter on a street prop; an unknown weapon is
+## silent; the swing whooshes.
+func _check_weapons(ctx: FpContext, f: FpFeature) -> void:
+	var em := _em(f)
+	var at := em.listener() + Vector3(0.05, 0.0, 0.0)
+	var consts: Dictionary = (f.get_script() as GDScript).get_script_constant_map()
+	var sounds: Dictionary = consts["WEAPON_SOUNDS"]
+	var got: Array[bool] = []
+	for kind: String in ["bat", "pipe", "bottle"]:
+		var s := _shot(f, func() -> void: ctx.bus.weapon_hit.emit(at, kind, "person", false))
+		got.append(_is_shot(s, "hit", str(sounds[kind])))
+	K.check(fails, got == [true, true, true], "weapons: each blow sounds its own (%s)" % str(got))
+	var man := _shot(f, func() -> void: ctx.bus.weapon_hit.emit(at, "pipe", "person", false))
+	var bin := _shot(f, func() -> void: ctx.bus.weapon_hit.emit(at, "pipe", "prop", false))
+	var low := man != null and bin != null and bin.pos.y < man.pos.y
+	low = low and is_equal_approx(bin.db, man.db + float(consts["WEAPON_PROP_DB"]))
+	K.check(fails, low, "weapons: on a street prop lower down and WEAPON_PROP_DB quieter")
+	var n := em.shots_played
+	ctx.bus.weapon_hit.emit(at, "sword", "person", false)
+	K.check(fails, em.shots_played == n, "weapons: an unknown weapon is silent")
+	var swing := _shot(f, func() -> void: ctx.bus.hero_action.emit("swing", at))
+	K.check(fails, _is_shot(swing, "hit", "punch_whoosh"), "weapons: the swing whooshes")
 	_steps(f, 3.5)
 
 ## animal_called plays the dog's call at its head (emitter type dog): a bark (one of BARK_VARIANTS,

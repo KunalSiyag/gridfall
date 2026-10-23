@@ -35,7 +35,12 @@ const BLIP_PITCH := {"mayor": 0.94, "press": 1.06, "council": 0.9}
 ## The health a blow on the hero takes (hero_hurt) to sound at full level, by cause.
 const HERO_HIT_FULL := {"punch": 12.0, "car": 60.0, "bite": 7.5}
 ## The pitch of each swing's whoosh (hero_action).
-const SWING_PITCH := {"jab": 1.1, "cross": 0.95, "hook": 0.85, "kick": 0.75, "shove": 0.8}
+const SWING_PITCH := {
+	"jab": 1.1, "cross": 0.95, "hook": 0.85, "kick": 0.75, "shove": 0.8, "swing": 0.7
+}
+## The sound of a weapon's blow (weapon_hit) by its kind, and how much quieter on a street prop.
+const WEAPON_SOUNDS := {"bat": "bat_hit", "pipe": "pipe_hit", "bottle": "bottle_smash"}
+const WEAPON_PROP_DB := -4.0
 
 var emitters: EMITTERS
 var ambience: AMBIENCE
@@ -111,6 +116,7 @@ func setup(p_ctx: FpContext) -> void:
 		_link(bus.car_door, _on_car_door)
 		_link(bus.person_hit, _on_person_hit)
 		_link(bus.hero_action, _on_hero_action)
+		_link(bus.weapon_hit, _on_weapon_hit)
 		_link(bus.hero_hurt, _on_hero_hurt)
 		_link(bus.animal_called, _on_animal_called)
 	if ctx.sim != null:
@@ -363,6 +369,17 @@ func _on_car_door(at: Vector3, open: bool) -> void:
 ## The level trim (dB) of a hit at share k of its full-level speed.
 static func _impact_db(k: float) -> float:
 	return linear_to_db(clampf(k, BANK.IMPACT_MIN_GAIN, 1.0))
+
+
+## A weapon's blow (weapon_hit): the wood's knock, the pipe's ring or the bottle breaking, at the
+## chest of whoever it hit (lower and quieter on a street prop).
+func _on_weapon_hit(at: Vector3, kind: String, what: String, _broke: bool) -> void:
+	if not WEAPON_SOUNDS.has(kind):
+		return
+	var person := what == "person"
+	var p := at + Vector3(0.0, (1.2 if person else 0.4) * WS.M, 0.0)
+	var trim := 0.0 if person else WEAPON_PROP_DB
+	emitters.shot("hit", p, str(WEAPON_SOUNDS[kind]), trim, _rng.randf_range(0.95, 1.05))
 
 
 ## Someone hit in the street (person_hit): the blow's thump at their chest by its strength (a

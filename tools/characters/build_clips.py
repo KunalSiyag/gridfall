@@ -98,6 +98,8 @@ UAL_CLIPS = {
 	"punch_jab": ("UAL1", "Punch_Jab", False, False),
 	"punch_cross": ("UAL1", "Punch_Cross", False, False),
 	"punch_hook": ("UAL2", "Melee_Hook", False, False),
+	"swing_a": ("UAL2", "Sword_Regular_A", False, False),
+	"swing_b": ("UAL2", "Sword_Regular_B", False, False),
 	"hit_head": ("UAL1", "Hit_Head", False, False),
 	"hit_chest": ("UAL1", "Hit_Chest", False, False),
 	"dance": ("UAL1", "Dance_Loop", True, False),

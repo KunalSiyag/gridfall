@@ -28,15 +28,15 @@ const GESTURES := ["interact", "wave", "phone", "door_try"]
 ## flinch of a blow taken (the health feature) on the upper body with quick fades; the kick and
 ## the dance on the whole body.
 const ACTIONS := [
-	"punch_jab", "punch_cross", "punch_hook", "push", "yes", "no", "shout", "hit_head",
-	"hit_chest",
+	"punch_jab", "punch_cross", "punch_hook", "swing_a", "swing_b", "push", "yes", "no", "shout",
+	"hit_head", "hit_chest",
 ]
 ## Every clip the tree plays.
 const CLIPS := [
 	"idle", "walk", "walk_fast", "run", "run_fast", "crouch_idle", "crouch_walk", "jump_start",
 	"fall", "land", "talk", "sit_down", "sit", "stand_up", "interact", "wave", "phone", "door_try",
-	"punch_jab", "punch_cross", "punch_hook", "push", "yes", "no", "shout", "dance", "hit_head",
-	"hit_chest", "knockback", "get_up", "climb_1m", "roll", "kick",
+	"punch_jab", "punch_cross", "punch_hook", "swing_a", "swing_b", "push", "yes", "no", "shout",
+	"dance", "hit_head", "hit_chest", "knockback", "get_up", "climb_1m", "roll", "kick",
 ]
 ## Foot-slide correction: TimeScale = clamp(v / v_anim, TS_MIN, TS_MAX).
 const TS_MIN := 0.5

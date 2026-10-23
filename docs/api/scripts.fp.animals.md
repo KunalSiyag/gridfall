@@ -38,7 +38,7 @@ Dogs, pigeons and cats in the street (integration feature "animals"). Some peopl
 - `LOST_S = 2.5`: A dog whose owner left the street goes after them this long after (game s).
 - `PET_REACH = 2.4 * WS.M`: E pets a dog within PET_REACH of the eyes that nothing hides (OCCLUDE before it).
 - `OCCLUDE = 0.3 * WS.M`
-- `STARTLE = {"jab": 3.0, "cross": 3.0, "hook": 3.0, "kick": 3.5, "shove": 3.0, "shout": 7.0}`: The hero's swings, shove and shout startle the dogs within these (m); someone hit startles the dogs within SEEN_HIT (m) and a wave cheers the friendly ones within WAVE_AT.
+- `STARTLE = { "jab": 3.0, "cross": 3.0, "hook": 3.0, "kick": 3.5, "swing": 3.5, "shove": 3.0, "shou...`: The hero's swings, shove and shout startle the dogs within these (m); someone hit startles the dogs within SEEN_HIT (m) and a wave cheers the friendly ones within WAVE_AT.
 - `SEEN_HIT = 8.0`
 - `WAVE_AT = 6.0 * WS.M`
 - `BITE = 0.25`: A bite's hero_hit strength and push (u/s).
@@ -226,7 +226,7 @@ The cats (part of the animals feature): where cats keep, coming out within NEAR 
 - `HE_NAMES = "Milo Oliver Leo Simba Jasper Oscar Tiger Felix Smokey Toby Ziggy Pumpkin"`
 - `SHE_NAMES = "Luna Bella Cleo Nala Mittens Pepper Willow Hazel Misty Kiki Maple Olive"`
 - `SIZES = Vector2(0.9, 1.1)`
-- `STARTLE = { "jab": 2.5, "cross": 2.5, "hook": 2.5, "kick": 3.0, "shove": 2.5, "dance": 2.0, "shou...`: The hero's swings, shove, shout, dance and parkour moves startle the cats within these (m); someone hit those within SEEN_HIT, a crash those within CRASH_M and a prop knocked over those within KNOCK_M.
+- `STARTLE = { "jab": 2.5, "cross": 2.5, "hook": 2.5, "kick": 3.0, "swing": 3.0, "shove": 2.5, "danc...`: The hero's swings, shove, shout, dance and parkour moves startle the cats within these (m); someone hit those within SEEN_HIT, a crash those within CRASH_M and a prop knocked over those within KNOCK_M.
 - `SEEN_HIT = 6.0`
 - `CRASH_M = 20.0`
 - `KNOCK_M = 6.0`
@@ -609,7 +609,7 @@ The pigeons (part of the animals feature): where flocks keep (the sidewalk in fr
 - `STREET_TRIES = [0.0, 0.12, -0.12, 0.24, -0.24]`: Homes tried along the street from the middle of the lot's front (u), and round a park's middle; a home needs HOME_ROOM (m) clear of props.
 - `PARK_TRIES = [ Vector2.ZERO, Vector2(0.15, 0.0), Vector2(-0.15, 0.0), Vector2(0.0, 0.15), Vector2(0....`
 - `HOME_ROOM = 0.6`
-- `STARTLE = { "jab": 3.0, "cross": 3.0, "hook": 3.0, "kick": 3.5, "shove": 3.0, "wave": 3.0, "dance...`: The hero's swings, shove, wave, dance, shout and parkour moves send up the flocks within these (m); someone hit in the street those within SEEN_HIT, a dog's bark those within BARK_M, a crash those within CRASH_M and a prop knocked over those within KNOCK_M.
+- `STARTLE = { "jab": 3.0, "cross": 3.0, "hook": 3.0, "kick": 3.5, "swing": 3.5, "shove": 3.0, "wave...`: The hero's swings, shove, wave, dance, shout and parkour moves send up the flocks within these (m); someone hit in the street those within SEEN_HIT, a dog's bark those within BARK_M, a crash those within CRASH_M and a prop knocked over those within KNOCK_M.
 - `SEEN_HIT = 8.0`
 - `BARK_M = 6.0`
 - `CRASH_M = 25.0`

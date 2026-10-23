@@ -1066,6 +1066,48 @@ def synth_punch_whoosh() -> np.ndarray:
     return norm_peak(fade_edges(out, 0.002, 0.05), -1.0)
 
 
+## A hardwood bat's body, struck: a dry, short knock.
+BAT_WOOD = [(612.0, 0.03, 1.0), (1349.0, 0.02, 0.6), (2214.0, 0.012, 0.35), (3390.0, 0.007, 0.2)]
+
+
+def synth_bat_hit() -> np.ndarray:
+    """A bat landing on someone: the wood's dry knock over the dull thump of the body."""
+    rng = rng_for("bat_hit")
+    n = int(0.45 * SR)
+    out = np.zeros(n)
+    out += 0.9 * thud(rng, n, 135.0, 85.0, 0.04)
+    add_at(out, 0.8 * knock(rng, BAT_WOOD, rng.uniform(0.97, 1.03), 0.7), 0, wrap=False)
+    out += 0.3 * crack(rng, n, 0.004, 600.0, 5000.0)
+    out = stereo_reverb(out, rng, 0.4, 0.08, 5000.0, circular=False).mean(axis=1)
+    return norm_peak(fade_edges(out, 0.0005, 0.06), -1.0)
+
+
+def synth_pipe_hit() -> np.ndarray:
+    """A steel pipe landing on someone: the body's thump and the pipe ringing on after it."""
+    rng = rng_for("pipe_hit")
+    n = int(0.9 * SR)
+    out = np.zeros(n)
+    out += 0.85 * thud(rng, n, 140.0, 90.0, 0.04)
+    add_at(out, 0.55 * metal_hit(rng, 1180.0, 0.16, 1.0), 0, wrap=False)
+    add_at(out, 0.25 * metal_hit(rng, 1910.0, 0.1, 1.0), int(0.001 * SR), wrap=False)
+    out = stereo_reverb(out, rng, 0.5, 0.1, 6000.0, circular=False).mean(axis=1)
+    return norm_peak(fade_edges(out, 0.0005, 0.1), -1.0)
+
+
+def synth_bottle_smash() -> np.ndarray:
+    """A glass bottle breaking over someone: the crack of the glass, a thump and shards
+    tinkling down onto the pavement."""
+    rng = rng_for("bottle_smash")
+    n = int(0.9 * SR)
+    out = np.zeros(n)
+    out += 0.7 * crack(rng, n, 0.003, 1500.0, 11000.0)
+    out += 0.5 * thud(rng, n, 150.0, 100.0, 0.03)
+    out += 0.7 * shards(rng, n, 40, 0.004, 0.05)
+    out += 0.35 * shards(rng, n, 18, 0.2, 0.12)
+    out = stereo_reverb(out, rng, 0.5, 0.1, 7000.0, circular=False).mean(axis=1)
+    return norm_peak(fade_edges(out, 0.0005, 0.12), -1.0)
+
+
 def synth_body_fall() -> np.ndarray:
     """Someone knocked down: the body meeting the pavement (a heavy, soft thud), an arm or the
     head following it down and a short scuff of clothes along the ground."""
@@ -1488,7 +1530,7 @@ WAV_SOUNDS = {"engine_idle", "engine_run", "siren_two_tone", "horn_short", "horn
               "car_door_open", "car_door_close", "punch_hit", "punch_whoosh", "body_fall", "dog_bark_1",
               "dog_bark_2", "dog_bark_3", "dog_growl", "dog_whine", "dog_snap", "pigeon_coo_1", "pigeon_coo_2",
               "pigeon_flap", "pigeon_takeoff", "cat_meow_1", "cat_meow_2", "cat_meow_3", "cat_purr",
-              "cat_hiss", "cat_chatter"}
+              "cat_hiss", "cat_chatter", "bat_hit", "pipe_hit", "bottle_smash"}
 
 
 def is_wav(name: str) -> bool:
@@ -1525,6 +1567,9 @@ def catalogue() -> dict[str, tuple[object, bool]]:
         "punch_hit": (synth_punch_hit, False),
         "punch_whoosh": (synth_punch_whoosh, False),
         "body_fall": (synth_body_fall, False),
+        "bat_hit": (synth_bat_hit, False),
+        "pipe_hit": (synth_pipe_hit, False),
+        "bottle_smash": (synth_bottle_smash, False),
         "dog_growl": (synth_dog_growl, False),
         "dog_whine": (synth_dog_whine, False),
         "dog_snap": (synth_dog_snap, False),
