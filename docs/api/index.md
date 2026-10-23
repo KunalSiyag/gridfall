@@ -51,7 +51,11 @@ Generated from the `##` doc comments in `scripts/`. Regenerate with `python3 too
 
 ## [scripts/fp/animals/](scripts.fp.animals.md)
 
-- [animals_feature.gd](scripts.fp.animals.md#scriptsfpanimalsanimals_featuregd): Dogs and pigeons in the street (integration feature "animals")
+- [animals_feature.gd](scripts.fp.animals.md#scriptsfpanimalsanimals_featuregd): Dogs, pigeons and cats in the street (integration feature "animals")
+- [cat_bodies.gd](scripts.fp.animals.md#scriptsfpanimalscat_bodiesgd): The cats' bodies: Quaternius' Cat (AP.CAT, built by tools/blender/make_cat.py), loaded, pooled and scaled as the dogs' bodies are (dog_bodies.gd), with a CatRig on the skeleton for the tail and the head and the coat shader (cat_coat.gdshader) on the body; dress() gives a body its coat
+- [cat_life.gd](scripts.fp.animals.md#scriptsfpanimalscat_lifegd): The cats' behaviour; cats.gd decides where cats keep and feeds in the world before every step()
+- [cat_rig.gd](scripts.fp.animals.md#scriptsfpanimalscat_riggd): A cat's life on top of its clip (CatBodies puts one on every cat skeleton): the tail sways from the tip (wag 0..1, from a lazy sway to the lashing of a hunter or an angry cat) and droops back from the clip's carriage (droop 0..1; the clips stand it up, a frightened cat's hangs low); the head turns toward look and lifts with each meow (bark) as a dog's does
+- [cats.gd](scripts.fp.animals.md#scriptsfpanimalscatsgd): The cats (part of the animals feature): where cats keep, coming out within NEAR of the player and going beyond FAR; the world fed to their behaviour (cat_life.gd) before every step; their bodies (cat_bodies.gd) in their coats; and E to pet one close by
 - [dog_bodies.gd](scripts.fp.animals.md#scriptsfpanimalsdog_bodiesgd): The dogs' bodies: Quaternius' Shiba Inu and Husky (AP.DOG_SHIBA, AP.DOG_HUSKY), each scene under a root scaled from model units to its breed's height at the shoulder, with the scene's own AnimationPlayer playing the clips in place (the dog pack moves the root) and a DogRig on the skeleton for the tail, the head and the barks
 - [dog_leads.gd](scripts.fp.animals.md#scriptsfpanimalsdog_leadsgd): The leads from owners' hands to their dogs' collars: one camera-facing ribbon each, sagging with the slack, redrawn every frame into a single ImmediateMesh (draw())
 - [dog_pack.gd](scripts.fp.animals.md#scriptsfpanimalsdog_packgd): The dogs' behaviour; the animals feature decides who has a dog and feeds in the world before every step()
@@ -65,7 +69,7 @@ Generated from the `##` doc comments in `scripts/`. Regenerate with `python3 too
 - [ambience.gd](scripts.fp.audio.md#scriptsfpaudioambiencegd): Area ambience (slice I): looping 2D beds on the Ambience bus (traffic hum, park birds, river, the quiet residential bed, night insects and rain), weighted by what lies around the player and by the weather, and cross-faded over CROSSFADE_S
 - [audio_bank.gd](scripts.fp.audio.md#scriptsfpaudioaudio_bankgd): Slice I's sound assets (sounds/fp/, made by tools/audio/synth_fp_sfx.py): names, a load-once stream cache and the mix
 - [audio_feature.gd](scripts.fp.audio.md#scriptsfpaudioaudio_featuregd): City sound on foot (slice I)
-- [emitters.gd](scripts.fp.audio.md#scriptsfpaudioemittersgd): Positional city sound (slice I): logical sources (engines, horns, sirens, construction, fire, fountains, power plants, river banks, passers-by's footsteps, crashes, knocked props, car doors, blows and swings, dogs, pigeons) share a pool of at most MAX_PLAYERS AudioStreamPlayer3D
+- [emitters.gd](scripts.fp.audio.md#scriptsfpaudioemittersgd): Positional city sound (slice I): logical sources (engines, horns, sirens, construction, fire, fountains, power plants, river banks, passers-by's footsteps, crashes, knocked props, car doors, blows and swings, dogs, pigeons, cats) share a pool of at most MAX_PLAYERS AudioStreamPlayer3D
 - [footsteps.gd](scripts.fp.audio.md#scriptsfpaudiofootstepsgd): The hero's footsteps (slice I)
 
 ## [scripts/fp/chat/](scripts.fp.chat.md)

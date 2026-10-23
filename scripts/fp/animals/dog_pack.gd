@@ -438,7 +438,7 @@ func _watch_passers(d: Dog) -> void:
 
 func _dodge(d: Dog) -> void:
 	for c: Array in cars:
-		var side := _danger(d, c)
+		var side := car_danger(d.pos, c, DODGE_SIDE)
 		if side == Vector3.ZERO:
 			continue
 		if d.act != "flee":
@@ -448,19 +448,20 @@ func _dodge(d: Dog) -> void:
 		return
 
 
-## The way to leap from car c ([pos, vel, half length, half width]) when it is about to run d down,
+## The way to leap from car c ([pos, vel, half length, half width]) when it is about to run down
+## an animal at p (within its length plus DODGE_S of travel ahead and side_m beside its path),
 ## else ZERO.
-func _danger(d: Dog, c: Array) -> Vector3:
+static func car_danger(p: Vector3, c: Array, side_m: float) -> Vector3:
 	var vel: Vector3 = c[1]
 	var sp := Vector2(vel.x, vel.z).length()
-	var rel: Vector3 = d.pos - (c[0] as Vector3)
+	var rel: Vector3 = p - (c[0] as Vector3)
 	if sp < 1.0 * WS.M or absf(rel.x) + absf(rel.z) > 1.0:
 		return Vector3.ZERO
 	var dir := Vector3(vel.x, 0.0, vel.z) / sp
 	var along := rel.x * dir.x + rel.z * dir.z
 	var lat := rel.z * dir.x - rel.x * dir.z
 	var hl := float(c[2])
-	if along < -hl or along > hl + sp * DODGE_S or absf(lat) > float(c[3]) + DODGE_SIDE:
+	if along < -hl or along > hl + sp * DODGE_S or absf(lat) > float(c[3]) + side_m:
 		return Vector3.ZERO
 	return Vector3(-dir.z, 0.0, dir.x) * (1.0 if lat >= 0.0 else -1.0)
 

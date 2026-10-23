@@ -94,6 +94,10 @@ Slice I's sound assets (sounds/fp/, made by tools/audio/synth_fp_sfx.py): names,
 - `COO_VARIANTS = 2`: Pigeons (animal_called): a coo is one of COO_VARIANTS (pigeon_coo_<n>), a lone bird's flap and a flock's take-off play pigeon_flap and pigeon_takeoff; each at PIGEON_DB on the bird emitter's level, its pitch within PIGEON_PITCH of the sample's.
 - `PIGEON_DB = {"coo": -16.0, "flap": 0.0, "takeoff": 0.0}`
 - `PIGEON_PITCH = 0.06`
+- `MEOW_VARIANTS = 3`: Cats (animal_called): a meow is one of MEOW_VARIANTS (cat_meow_<n>), a purr, a hiss and a hunter's chatter play cat_purr, cat_hiss and cat_chatter, each CAT_DB on the meow. The samples are of a cat CAT_PITCH_M high at the shoulder; a cat h m high plays at sqrt(CAT_PITCH_M / h) (a kitten mews higher), within CAT_PITCH of that.
+- `CAT_DB = {"meow": 0.0, "purr": -8.0, "hiss": -2.0, "chatter": -8.0}`
+- `CAT_PITCH_M = 0.25`
+- `CAT_PITCH = 0.05`
 
 ### Functions
 
@@ -110,7 +114,7 @@ Slice I's sound assets (sounds/fp/, made by tools/audio/synth_fp_sfx.py): names,
 
 extends `FpFeature`
 
-City sound on foot (slice I). Owns the Music, SFX, Ambience and UI buses while on foot, puts the AudioDirector's music under the street (set_fp), and runs three parts: positional emitters (engines, horns, sirens, construction, fire, fountains, plants, the river, passers-by's steps, the player's car crashing, the street props it knocks over and its doors, people hit in the street, the hero's swings, rolls and the blows they take, dogs barking, growling and whining), the area beds (with rain from G1's weather) and the hero's footsteps (splashing on wet paving), plus the chat blip and alert stingers. Pausing muffles the music (the only thing still playing); talking to someone ducks the beds.
+City sound on foot (slice I). Owns the Music, SFX, Ambience and UI buses while on foot, puts the AudioDirector's music under the street (set_fp), and runs three parts: positional emitters (engines, horns, sirens, construction, fire, fountains, plants, the river, passers-by's steps, the player's car crashing, the street props it knocks over and its doors, people hit in the street, the hero's swings, rolls and the blows they take, dogs barking, growling and whining, pigeons and cats), the area beds (with rain from G1's weather) and the hero's footsteps (splashing on wet paving), plus the chat blip and alert stingers. Pausing muffles the music (the only thing still playing); talking to someone ducks the beds.
 
 ### Constants
 
@@ -155,7 +159,7 @@ City sound on foot (slice I). Owns the Music, SFX, Ambience and UI buses while o
 
 extends `Node3D`
 
-Positional city sound (slice I): logical sources (engines, horns, sirens, construction, fire, fountains, power plants, river banks, passers-by's footsteps, crashes, knocked props, car doors, blows and swings, dogs, pigeons) share a pool of at most MAX_PLAYERS AudioStreamPlayer3D. Every refresh scores the sources by their estimated level at the listener and gives the players to the loudest; the farthest or quietest lose theirs first. Doppler is computed by hand (the built-in effect works in world units against 343 u/s and is inaudible at 1 u = 20 m). A grown city registers hundreds of static sources (every park's fountain, every site), so the per-frame work touches only the sources holding a player, the refresh only the volatile ones (agents, one-shots, sirens, river) and the static ones near the listener.
+Positional city sound (slice I): logical sources (engines, horns, sirens, construction, fire, fountains, power plants, river banks, passers-by's footsteps, crashes, knocked props, car doors, blows and swings, dogs, pigeons, cats) share a pool of at most MAX_PLAYERS AudioStreamPlayer3D. Every refresh scores the sources by their estimated level at the listener and gives the players to the loudest; the farthest or quietest lose theirs first. Doppler is computed by hand (the built-in effect works in world units against 343 u/s and is inaudible at 1 u = 20 m). A grown city registers hundreds of static sources (every park's fountain, every site), so the per-frame work touches only the sources holding a player, the refresh only the volatile ones (agents, one-shots, sirens, river) and the static ones near the listener.
 
 ### Constants
 

@@ -34,10 +34,12 @@ const FED_K := 0.3
 const MAKE_WAY := 1.3 * WS.M
 const TRAMPLE := 0.45 * WS.M
 ## A dog within DOG_NEAR (m) of a bird, or running (DOG_RUN_MPS, faster than a walk at heel)
-## within DOG_FAR, sends the flock up.
+## within DOG_FAR, sends the flock up; a cat only within CAT_NEAR (one stalking low and slow gets
+## that close) or running (a pounce). The flock lands again once they are twice their near off.
 const DOG_NEAR := 3.0 * WS.M
 const DOG_FAR := 6.0 * WS.M
 const DOG_RUN_MPS := 2.5 * WS.M
+const CAT_NEAR := 0.8 * WS.M
 ## A car within DODGE_S seconds of travel and DODGE_SIDE (m) of its path makes a bird flutter off;
 ## CROWD birds in its way at once send the flock up.
 const DODGE_S := 1.0
@@ -174,8 +176,8 @@ var col: CollisionWorld = null
 ## Called with (at, call) for a "coo", a lone bird's "flap" and a flock's "takeoff".
 var on_call: Callable
 ## The world this step, set by the pigeons node: the hero's feet and velocity and whether they are
-## on foot; dogs as [feet, velocity]; the feet of the people on foot around; moving cars as [pos,
-## vel, half length, half width].
+## on foot; dogs as [feet, velocity] (and cats as [feet, velocity, CAT_NEAR]); the feet of the
+## people on foot around; moving cars as [pos, vel, half length, half width].
 var hero := Vector3(INF, INF, INF)
 var hero_vel := Vector3.ZERO
 var hero_on_foot: bool = false
@@ -336,7 +338,7 @@ func _threat(f: Flock) -> Vector3:
 			continue
 		var d := _nearest(f, at)
 		var running := Vector2((dg[1] as Vector3).x, (dg[1] as Vector3).z).length() > DOG_RUN_MPS
-		if d < DOG_NEAR or (running and d < DOG_FAR):
+		if d < (float(dg[2]) if dg.size() > 2 else DOG_NEAR) or (running and d < DOG_FAR):
 			return at
 	for c: Array in cars:
 		var hit := 0
@@ -366,7 +368,8 @@ func _calm(f: Flock) -> bool:
 	if hero_on_foot and _flat(hero, f.home) < CALM + f.radius:
 		return false
 	for dg: Array in dogs:
-		if _flat(dg[0], f.home) < DOG_FAR + f.radius:
+		var near := 2.0 * float(dg[2]) if dg.size() > 2 else DOG_FAR
+		if _flat(dg[0], f.home) < near + f.radius:
 			return false
 	return true
 

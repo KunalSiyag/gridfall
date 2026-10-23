@@ -37,8 +37,10 @@ var toasts: Array[String] = []
 
 func _init() -> void:
 	await process_frame
-	# The pigeons' coos and wingbeats would mix with the dogs' calls (fp_pigeons_test has them).
+	# The pigeons' and the cats' calls would mix with the dogs' (fp_pigeons_test and fp_cats_test
+	# have them).
 	FeatureFlags.set_override("pigeons", false)
+	FeatureFlags.set_override("cats", false)
 	ctx = K.make_ctx(get_root(), {"view": true, "grow": true, "camera_mode": "third"})
 	ctx.player.set_process(false)
 	tr = K.make_feature(ctx, "traffic")

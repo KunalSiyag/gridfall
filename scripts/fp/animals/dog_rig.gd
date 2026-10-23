@@ -42,16 +42,16 @@ var _yaw: float = 0.0
 var _tilt: float = 0.0
 
 
-## Finds the bones and the model's axes in skeleton space (the dog faces +Z in scene, its right
-## is -X).
-func bind(skel: Skeleton3D, scene: Node3D) -> void:
+## Finds the bones (the tail's, root first, and the neck's) and the model's axes in skeleton space
+## (the animal faces +Z in scene, its right is -X).
+func bind(skel: Skeleton3D, scene: Node3D, tail: Array[String] = TAIL, neck := "Neck1") -> void:
 	_scene = scene
 	_tail.clear()
-	for n: String in TAIL:
+	for n: String in tail:
 		var k := skel.find_bone(n)
 		if k >= 0:
 			_tail.append(k)
-	_neck = skel.find_bone("Neck1")
+	_neck = skel.find_bone(neck)
 	_head = skel.find_bone("Head")
 	var xf := Transform3D.IDENTITY
 	var at: Node = skel
@@ -79,12 +79,20 @@ func _process_modification_with_delta(real_delta: float) -> void:
 		return
 	var delta := real_delta * pace
 	bark = maxf(0.0, bark - BARK_FALL * delta)
+	_tail_pose(sk, delta)
+	_head_pose(sk, delta)
+
+
+func _tail_pose(sk: Skeleton3D, delta: float) -> void:
 	var w := clampf(wag, 0.0, 1.0)
 	_phase = fmod(_phase + TAU * lerpf(WAG_HZ.x, WAG_HZ.y, w) * delta, TAU)
 	if w > 0.01:
 		for k in range(_tail.size()):
 			var a := WAG_ANGLE * w * (1.0 - 0.12 * k) * sin(_phase - WAG_LAG * k)
 			_turn(sk, _tail[k], _up, a)
+
+
+func _head_pose(sk: Skeleton3D, delta: float) -> void:
 	var want := _aim()
 	var f := 1.0 - exp(-LOOK_RATE * delta)
 	_yaw = lerpf(_yaw, want.x, f)

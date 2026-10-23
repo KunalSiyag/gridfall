@@ -57,6 +57,7 @@ First-person asset paths. Slice H owns this list and produces the files; every c
 - `PERSON_TPS_ANIMS = [ "idle", "walk", "walk_fast", "run", "run_fast", "crouch_idle", "crouch_walk", "jump_s...`: Clips the player uses (both libraries hold them, plus AP.PERSON_ANIMS and the crowd extras).
 - `DOG_SHIBA = "res://models/real/animals/shiba_inu.glb"`: Quaternius' rigged dogs (CC0, models/real/LICENSES/quaternius-dogs.txt): one skeleton, clips Walk, Gallop, Idle, Idle_2, Idle_2_HeadLow, Eating, Attack, Idle_HitReact_Left/Right and Jump_ToIdle.
 - `DOG_HUSKY = "res://models/real/animals/husky.glb"`
+- `CAT = "res://models/real/animals/cat.glb"`: Quaternius' Cat (CC0, models/real/LICENSES/quaternius-cat.txt), rebuilt by tools/blender/make_cat.py: clips Idle, Walk, Trot, Run, Stalk, Crouch, Pounce, Sit, Loaf, Groom, Sleep, Hiss, Startle and Stretch, and the coat fields cat_coat.gdshader reads.
 
 ### Functions
 
@@ -253,7 +254,7 @@ Signals that cross first-person slices. Emitters and listeners are listed in doc
 - `story_filed(story: Dictionary)`: The player filed a story for the Gazette: reporter_feature.gd file_story()'s {"agent", "headline", "place", "quote", "by", "tile", "district", "day", "scoop", "local", "sharp", "points", "text"}. Emitted by the reporter feature; chat runs "text" as a Gazette line.
 - `hero_hit(at: Vector3, cause: String, strength: float, push: Vector3)`: Something struck the hero on foot: at is where the blow came from (a fist, a car's front, a dog's jaws), cause "punch" (someone fighting back), "car" (a car that could not stop for them) or "bite" (a dog defending its owner), strength 0..1 and push the xz velocity (u/s) it throws the hero along. Emitted by traffic and the animals feature; the health feature takes the damage.
 - `hero_hurt(amount: float, cause: String, health: float, down: bool)`: The hero lost amount of health to cause: "punch", "car" or "bite" (hero_hit), "crash" (in the car they drive) or "fall" (a hard landing); health is what is left (0..100, 0 knocked out) and down is true when it put them on the ground. Emitted by the health feature.
-- `animal_called(at: Vector3, call: String, size: float)`: An animal called out at a point (its head): a dog's "bark", "growl" or "whine", a pigeon's "coo", a lone pigeon's "flap" or a flock's "takeoff"; size is its height at the shoulder (m), so a small dog yaps higher. Emitted by the animals feature.
+- `animal_called(at: Vector3, call: String, size: float)`: An animal called out at a point (its head): a dog's "bark", "growl" or "whine", a pigeon's "coo", a lone pigeon's "flap" or a flock's "takeoff", a cat's "meow", "purr", "hiss" or "chatter" (at a bird it stalks); size is its height at the shoulder (m), so a small dog yaps higher. Emitted by the animals feature.
 
 ## `scripts/fp/obb2d.gd`
 

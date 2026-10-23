@@ -23,7 +23,8 @@ const ONE_SHOTS: Array[String] = [
 	"horn_short", "horn_long", "chat_blip", "chat_blip_soft", "alert_stinger", "crash_heavy",
 	"crash_light", "prop_clatter", "prop_clang", "car_door_open", "car_door_close", "punch_hit",
 	"punch_whoosh", "body_fall", "dog_bark_1", "dog_bark_2", "dog_bark_3", "dog_growl", "dog_whine",
-	"dog_snap", "pigeon_coo_1", "pigeon_coo_2", "pigeon_flap", "pigeon_takeoff",
+	"dog_snap", "pigeon_coo_1", "pigeon_coo_2", "pigeon_flap", "pigeon_takeoff", "cat_meow_1",
+	"cat_meow_2", "cat_meow_3", "cat_purr", "cat_hiss", "cat_chatter",
 ]
 ## Stored as WAV (with every footstep_*); everything else is .ogg.
 const WAV_SOUNDS: Array[String] = [
@@ -31,7 +32,8 @@ const WAV_SOUNDS: Array[String] = [
 	"chat_blip_soft", "alert_stinger", "crash_heavy", "crash_light", "prop_clatter", "prop_clang",
 	"car_door_open", "car_door_close", "punch_hit", "punch_whoosh", "body_fall", "dog_bark_1",
 	"dog_bark_2", "dog_bark_3", "dog_growl", "dog_whine", "dog_snap", "pigeon_coo_1", "pigeon_coo_2",
-	"pigeon_flap", "pigeon_takeoff",
+	"pigeon_flap", "pigeon_takeoff", "cat_meow_1", "cat_meow_2", "cat_meow_3", "cat_purr", "cat_hiss",
+	"cat_chatter",
 ]
 
 ## Bus names (created by audio_feature.setup when missing).
@@ -107,6 +109,14 @@ const SNAP_Y := 0.5
 const COO_VARIANTS := 2
 const PIGEON_DB := {"coo": -16.0, "flap": 0.0, "takeoff": 0.0}
 const PIGEON_PITCH := 0.06
+## Cats (animal_called): a meow is one of MEOW_VARIANTS (cat_meow_<n>), a purr, a hiss and a
+## hunter's chatter play cat_purr, cat_hiss and cat_chatter, each CAT_DB on the meow. The samples
+## are of a cat CAT_PITCH_M high at the shoulder; a cat h m high plays at sqrt(CAT_PITCH_M / h)
+## (a kitten mews higher), within CAT_PITCH of that.
+const MEOW_VARIANTS := 3
+const CAT_DB := {"meow": 0.0, "purr": -8.0, "hiss": -2.0, "chatter": -8.0}
+const CAT_PITCH_M := 0.25
+const CAT_PITCH := 0.05
 
 static var _cache: Dictionary = {}
 static var _legacy_loop: AudioStream = null
