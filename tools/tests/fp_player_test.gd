@@ -528,6 +528,10 @@ func _check_interact(ctx: FpContext) -> void:
 	feat.call("evaluate")
 	feat.call("evaluate")
 	K.check(fails, targets.size() == 1 and str(targets[0].get("kind", "")) == "building" and int(targets[0].get("tile", -1)) == int(b["tile"]) and not str(targets[0].get("label", "")).is_empty(), "facing a building gives exactly one building target (%s)" % str(targets.map(func(t: Dictionary) -> String: return str(t.get("label", "")))))
+	p.carry(p.position, p.yaw, Vector3.ZERO, true)
+	var held: Dictionary = feat.call("evaluate")
+	p.release(true)
+	K.check(fails, held.is_empty(), "nothing to interact with while a parkour move carries the body")
 	# A resident 2 m away beats a building 5 m away.
 	# Back off along the ray until the building's bounds are 5 m ahead of the eye.
 	var bdir := Vector3(-sin(deg_to_rad(float(b["yaw"]))), 0, -cos(deg_to_rad(float(b["yaw"]))))

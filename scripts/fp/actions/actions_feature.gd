@@ -127,11 +127,14 @@ func self_test() -> Dictionary:
 	return {"ok": true, "detail": detail}
 
 
-## Whether the hero may swing, guard or emote now: on foot and in control of the body, nothing
-## modal open, not talking, not in photo mode, the phone put away.
+## Whether the hero may swing, guard or emote now: on foot and in control of the body (not in a
+## parkour move or on a wall), nothing modal open, not talking, not in photo mode, the phone put
+## away.
 func can_act() -> bool:
 	var p := ctx.player if ctx != null else null
 	if p == null or _driving or p.photo_mode or p.view_override or p.in_conversation():
+		return false
+	if p.carried:
 		return false
 	if ctx.is_modal():
 		return false

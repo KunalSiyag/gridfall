@@ -3,15 +3,22 @@ extends SceneTree
 ## front of obstacles on a clear sidewalk. A run at a low wall vaults it (over its top, a soft
 ## landing beyond it; from an angle the move goes straight across and turns the body); a low ledge
 ## is hopped onto and a higher one climbed (the rig's climb clip, the body leaving the ground only
-## at the face and ending on top). A wall too high, no room to land or stand, a crouch, an approach
-## far off head-on and the flag off leave an ordinary jump, and no press no move. A climb cut short
-## half over its ledge leaves the body clear of it; a knock-down, a teleport and a load end a move,
-## photo mode does not start during one, and teardown hands jumps back. Third person on a grown
-## city; time runs through the features' tick(1/60) and the player's simulate and update_view.
+## at the face and ending on top). A wall taller than that is taken hold of (flag wall_climb): the
+## hero leaps onto its face and hangs there in the rig's wall pose, the IK putting hands and feet on
+## their holds; the move keys climb it (faster with sprint), along it to short of its end, over the
+## top onto a roof with room to stand and down to its foot; with no room on top the hero hangs on,
+## and an overhang stops the climb. Crouch drops off it, a jump pushes off it. A wall too high with
+## wall_climb off, a post, a wall under an awning, no room to land or stand, a crouch, an approach
+## far off head-on and the parkour flag off leave an ordinary jump, and no press no move. A climb
+## cut short half over its ledge leaves the body clear of it; a knock-down, a teleport and a load
+## end a move (on a wall too, as does the wall going away), photo mode does not start during one,
+## and teardown hands jumps back. Third person on a grown city; time runs through the features'
+## tick(1/60) and the player's simulate and update_view.
 
 const K := preload("res://tools/tests/fp_kit.gd")
 const WS := preload("res://scripts/fp/world_scale.gd")
 const MOVES := preload("res://scripts/fp/parkour/moves.gd")
+const WALL := preload("res://scripts/fp/parkour/wall.gd")
 const HEALTH := preload("res://scripts/fp/health/health_feature.gd")
 const DT := 1.0 / 60.0
 const M := WS.M
@@ -65,6 +72,12 @@ func _init() -> void:
 	_check_refusals()
 	_check_cut_short()
 	_check_interruptions()
+	await _check_wall_grab()
+	_check_wall_moves()
+	_check_wall_limits()
+	_check_wall_off()
+	_check_wall_interruptions()
+	_check_wall_refusals()
 	_check_teardown()
 	K.finish(self, "FP_PARKOUR_TEST", fails)
 
@@ -95,12 +108,13 @@ func _ahead() -> float:
 	return (ctx.player.position - start).dot(run) / M
 
 
-## A box across the lane, its face ahead metres along it, depth and height in metres from the
-## sidewalk up, width wide.
-func _box(ahead: float, depth: float, height: float, width: float = 2.0) -> void:
+## A box across the lane, its face ahead metres along it, depth deep, height tall from base above
+## the sidewalk and width wide (metres).
+func _box(ahead: float, depth: float, height: float, width: float = 2.0, base: float = 0.0) -> void:
 	var c := _lane_point(ahead + depth * 0.5, 0.0)
 	var size := (run.abs() * depth + right.abs() * width + Vector3(0.0, height, 0.0)) * M
-	ctx.collision.add_test_box(AABB(Vector3(c.x - size.x * 0.5, start.y, c.z - size.z * 0.5), size))
+	var lo := Vector3(c.x - size.x * 0.5, start.y + base * M, c.z - size.z * 0.5)
+	ctx.collision.add_test_box(AABB(lo, size))
 
 
 ## Puts the hero at the lane start (side metres to its right) and walks them along dir (a run with
@@ -171,7 +185,7 @@ func _states(log: Array[Dictionary]) -> Array[String]:
 
 func _made() -> int:
 	var m: Dictionary = f.get("made")
-	return int(m["vault"]) + int(m["hop"]) + int(m["climb"])
+	return int(m["vault"]) + int(m["hop"]) + int(m["climb"]) + int(m["grab"])
 
 
 ## True when a whole standing body fits where the hero stands.
@@ -184,6 +198,36 @@ func _clear() -> bool:
 func _wait(secs: float) -> void:
 	for _k in range(ceili(secs / DT)):
 		_frame(Vector2.ZERO, false, false)
+
+
+## Metres to the right of the lane, and above its start, of the feet.
+func _side() -> float:
+	return (ctx.player.position - start).dot(right) / M
+
+
+func _up() -> float:
+	return (ctx.player.position.y - start.y) / M
+
+
+## Holds the move keys at wish (x right, y forward; on a wall along it and up) and sprint for secs,
+## or until until() is true when given.
+func _hold(wish: Vector2, sprint: bool, secs: float, until: Callable = Callable()) -> void:
+	for _k in range(roundi(secs / DT)):
+		if until.is_valid() and bool(until.call()):
+			return
+		_frame(wish, sprint, false)
+
+
+## Jumps at the wall whose face is face metres ahead of the lane start and waits out the leap onto
+## it: the move under way ("wall" on it).
+func _grab_wall(face: float) -> String:
+	_press_at(face, 0.3, run, false)
+	_wait(0.4)
+	return str(f.get("move"))
+
+
+func _on_wall() -> bool:
+	return str(f.get("move")) == "wall" and ctx.player.carried
 
 
 # ------------------------------------------------------------------ checks
@@ -290,14 +334,16 @@ func _check_climb() -> void:
 	ctx.collision.clear_test_boxes()
 
 
-## Ordinary jumps: a 2.5 m wall, a 1 m wall with a taller one right behind it, a crouch, 60
-## degrees off head-on and the flag off. No press, no move.
+## Ordinary jumps: a 2.5 m wall with wall_climb off, a 1 m wall with a taller one right behind
+## it, a crouch, 60 degrees off head-on and the flag off. No press, no move.
 func _check_refusals() -> void:
 	var before := _made()
 	_box(1.0, 0.5, 2.5)
+	FeatureFlags.set_override("wall_climb", false)
 	var mv := _press_at(1.0, 0.3, run, false)
+	FeatureFlags.set_override("wall_climb", true)
 	var log := _finish(run, false)
-	K.check(fails, mv == "" and _max_y(log) > 0.3, "a 2.5 m wall: a jump (%s)" % mv)
+	K.check(fails, mv == "" and _max_y(log) > 0.3, "a 2.5 m wall, wall_climb off: a jump (%s)" % mv)
 	ctx.collision.clear_test_boxes()
 	_box(1.5, 0.3, 1.0)
 	_box(1.9, 0.5, 3.0)
@@ -394,6 +440,246 @@ func _check_interruptions() -> void:
 	f.call("from_dict", {})
 	K.check(fails, not p.carried and str(f.get("move")) == "", "a load ends a move")
 	_wait(1.0)
+	ctx.collision.clear_test_boxes()
+
+
+## Jump at a 3 m wall, 2 m deep (too tall to climb onto): the hero leaps onto it and hangs on its
+## face, the feet 0.5 m up, facing it in the rig's wall pose, the IK putting hands and feet on their
+## holds. W climbs at 0.6 m/s (sprint 1.6 times that), the limbs moving hold to hold, and at the
+## top the hero climbs over onto the roof (the climb clip) and stands there.
+func _check_wall_grab() -> void:
+	var p := ctx.player
+	_box(1.0, 2.0, 3.0, 2.4)
+	var mv := _grab_wall(1.0)
+	var c: RefCounted = f.get("climber")
+	K.check(
+		fails,
+		mv == "wall" and actions == ["grab"] and c != null,
+		"jump at a 3 m wall takes hold of it (%s, %s)" % [mv, str(actions)]
+	)
+	var on_face := absf(_ahead() - (1.0 - R_M)) < 1e-3 and absf(_up() - 0.5) < 1e-3
+	var turn := rad_to_deg(absf(angle_difference(p.yaw, deg_to_rad(yaw_deg))))
+	K.check(
+		fails,
+		on_face and turn < 0.5 and _on_wall() and str(rig.call("state")) == "wall",
+		(
+			"hangs on its face 0.5 m up, facing it in the wall pose (%.3f m along, %.3f up)"
+			% [_ahead(), _up()]
+		)
+	)
+	if c == null:
+		ctx.collision.clear_test_boxes()
+		return
+	await _check_wall_reach(c)
+	var y0 := _up()
+	_hold(Vector2(0.0, 1.0), false, 0.5)
+	var slow := _up() - y0
+	y0 = _up()
+	_hold(Vector2(0.0, 1.0), true, 0.5)
+	var fast := _up() - y0
+	var straight := absf(_ahead() - (1.0 - R_M)) < 1e-3
+	K.check(
+		fails,
+		absf(slow - 0.3) < 0.02 and absf(fast - 0.48) < 0.02 and straight,
+		"W climbs at 0.6 m/s, faster with sprint (%.3f m, then %.3f m in 0.5 s)" % [slow, fast]
+	)
+	var swings := int(c.get("swings"))
+	K.check(fails, swings >= 3, "the hands and feet move hold to hold (%d swings)" % swings)
+	_hold(Vector2(0.0, 1.0), false, 2.0, func() -> bool: return not _on_wall())
+	var over := str(f.get("move"))
+	_hold(Vector2.ZERO, false, 2.0, func() -> bool: return not p.carried)
+	_wait(0.3)
+	K.check(
+		fails,
+		over == "climb" and actions == ["grab", "climb"],
+		"at the top the hero climbs over (%s, %s)" % [over, str(actions)]
+	)
+	var roof := absf(_up() - 3.0) < 1e-3 and _ahead() > 1.0 + R_M and p.grounded
+	K.check(
+		fails,
+		roof and not p.carried and str(rig.call("state")) == "loco",
+		"and stands on the roof (%.3f m along, %.3f up, %s)" % [_ahead(), _up(), rig.call("state")]
+	)
+	p.teleport(_lane_point(0.0, 0.0), yaw_deg)
+	ctx.collision.clear_test_boxes()
+
+
+## The IK puts each hand and foot on its hold once the limbs have eased in: the end bones within
+## 4 cm of their targets.
+func _check_wall_reach(c: RefCounted) -> void:
+	_wait(0.5)
+	await process_frame
+	await process_frame
+	var limbs: RefCounted = rig.get("limbs")
+	var ends: Array = limbs.get("ends")
+	var off: Array[float] = []
+	for i in range(ends.size()):
+		var want: Vector3 = (c.call("limb", i) as Array)[0]
+		off.append(snappedf((ends[i] as Vector3).distance_to(want) / M, 0.001))
+	var worst: float = off.max() if not off.is_empty() else INF
+	K.check(fails, worst < 0.04, "the hands and feet are on their holds (%s m off)" % str(off))
+
+
+## On the wall D moves along it at 0.6 m/s and stops with the body short of its end, A moves back;
+## S climbs down and steps off at its foot, standing.
+func _check_wall_moves() -> void:
+	var p := ctx.player
+	_box(1.0, 2.0, 3.0, 2.4)
+	var mv := _grab_wall(1.0)
+	_hold(Vector2(1.0, 0.0), false, 0.5)
+	var along := _side()
+	K.check(
+		fails,
+		mv == "wall" and absf(along - 0.3) < 0.02 and absf(_up() - 0.5) < 1e-3,
+		"D moves the hero right along the wall at 0.6 m/s (%.3f m in 0.5 s)" % along
+	)
+	_hold(Vector2(1.0, 0.0), true, 1.5)
+	K.check(
+		fails,
+		_on_wall() and _side() > 0.68 and _side() < 0.7,
+		"and stops with the body 0.5 m inside its end (%.3f m right)" % _side()
+	)
+	_hold(Vector2(-1.0, 0.0), false, 0.5)
+	K.check(fails, _on_wall() and _side() < 0.45, "A moves back (%.3f m right)" % _side())
+	_hold(Vector2(0.0, -1.0), false, 2.0, func() -> bool: return not p.carried)
+	var off := not p.carried and p.grounded and absf(_up()) < 1e-3 and str(f.get("move")) == ""
+	_wait(0.3)
+	var foot := absf(_ahead() - (1.0 - R_M)) < 0.05 and str(rig.call("state")) == "loco"
+	K.check(
+		fails,
+		off and foot,
+		"S climbs down and steps off at its foot (%.3f m along, %s)" % [_ahead(), rig.call("state")]
+	)
+	ctx.collision.clear_test_boxes()
+
+
+## With no room to stand on top (a taller wall right behind it) W held at the top hangs on there;
+## under an overhang 3 m up the climb stops with the hands below it.
+func _check_wall_limits() -> void:
+	var p := ctx.player
+	_box(1.0, 0.4, 3.0, 2.4)
+	_box(1.4, 1.0, 5.0, 2.4)
+	var mv := _grab_wall(1.0)
+	_hold(Vector2(0.0, 1.0), true, 2.0)
+	K.check(
+		fails,
+		mv == "wall" and _on_wall() and absf(_up() - 1.45) < 1e-3,
+		"no room on top: W hangs on at the top (%s, %.3f m up)" % [f.get("move"), _up()]
+	)
+	p.teleport(_lane_point(0.0, 0.0), yaw_deg)
+	ctx.collision.clear_test_boxes()
+	_box(1.0, 2.0, 4.0, 2.4)
+	_box(0.4, 1.0, 0.5, 2.4, 3.0)
+	mv = _grab_wall(1.0)
+	_hold(Vector2(0.0, 1.0), true, 2.0)
+	K.check(
+		fails,
+		mv == "wall" and _on_wall() and _up() > 0.97 and _up() <= 1.0 + 1e-4,
+		"an overhang 3 m up stops the climb under it (%.3f m up)" % _up()
+	)
+	p.teleport(_lane_point(0.0, 0.0), yaw_deg)
+	ctx.collision.clear_test_boxes()
+
+
+## Crouch lets go: the body drops to the foot of the wall. Jump pushes off it, up and back.
+func _check_wall_off() -> void:
+	var p := ctx.player
+	_box(1.0, 2.0, 3.0, 2.4)
+	_grab_wall(1.0)
+	_hold(Vector2(0.0, 1.0), false, 1.0)
+	var high := _up()
+	_frame(Vector2.ZERO, false, false, true)
+	_frame(Vector2.ZERO, false, false, true)
+	var dropped := not p.carried and str(f.get("move")) == ""
+	_wait(1.0)
+	var foot := p.grounded and absf(_up()) < 1e-3 and absf(_ahead() - (1.0 - R_M)) < 0.01
+	K.check(
+		fails,
+		dropped and foot and landings.size() == 1 and str(rig.call("state")) != "wall",
+		"crouch lets go %.2f m up: the body drops to the foot (%s m/s)" % [high, str(landings)]
+	)
+	_grab_wall(1.0)
+	_hold(Vector2(0.0, 1.0), false, 1.0)
+	high = _up()
+	_frame(Vector2.ZERO, false, true)
+	_frame(Vector2.ZERO, false, false)
+	var pushed := not p.carried and p.velocity.y > 0.0 and p.velocity.dot(run) < 0.0
+	var log := _finish(Vector3.ZERO, false)
+	var back := 1.0 - R_M - _ahead()
+	var rise := _max_y(log) - high
+	K.check(
+		fails,
+		pushed and rise > 0.2 and back > 0.5,
+		"jump pushes off it, up and back (%.2f m up, lands %.2f m back)" % [rise, back]
+	)
+	ctx.collision.clear_test_boxes()
+
+
+## On a wall a knock-down drops the body off it, a teleport ends the climb where the body was put,
+## a load lets go, and so does the wall going away.
+func _check_wall_interruptions() -> void:
+	var p := ctx.player
+	_box(1.0, 2.0, 3.0, 2.4)
+	_grab_wall(1.0)
+	health.call("hurt", 10.0, "car", Vector3.ZERO, true)
+	_frame(Vector2.ZERO, false, false)
+	var off := not p.carried and str(f.get("move")) == "" and f.get("climber") == null
+	K.check(fails, off and bool(health.call("knocked")), "a knock-down drops the body off the wall")
+	for _k in range(600):
+		if not bool(health.call("knocked")):
+			break
+		_frame(Vector2.ZERO, false, false)
+	K.check(
+		fails,
+		_clear() and p.input_enabled and absf(_up()) < 1e-3,
+		"the hero gets up at its foot (%.3f m up)" % _up()
+	)
+	health.call("from_dict", {"hp": HEALTH.MAX_HP})
+	_grab_wall(1.0)
+	var spot := _lane_point(0.0, 0.0)
+	p.teleport(spot, yaw_deg)
+	_wait(0.1)
+	var put := Vector2(p.position.x - spot.x, p.position.z - spot.z).length() < 1e-4
+	K.check(
+		fails,
+		put and str(f.get("move")) == "" and str(rig.call("state")) == "loco",
+		"a teleport ends the climb where the body was put (%s)" % rig.call("state")
+	)
+	_grab_wall(1.0)
+	f.call("from_dict", {})
+	K.check(fails, not p.carried and str(f.get("move")) == "", "a load lets go of the wall")
+	_wait(1.0)
+	_grab_wall(1.0)
+	ctx.collision.clear_test_boxes()
+	_frame(Vector2.ZERO, false, false)
+	K.check(fails, not p.carried and str(f.get("move")) == "", "the wall gone, the hero lets go")
+	_wait(1.0)
+
+
+## Ordinary jumps at a post 4 m tall and 0.2 m wide (no wall either side to hang on) and at a wall
+## under an awning 2.2 m up (no room to hang). 60 degrees off a tall wall nothing takes hold of it,
+## 25 degrees off a jump does.
+func _check_wall_refusals() -> void:
+	var before := _made()
+	_box(1.0, 0.2, 4.0, 0.2)
+	var mv := _press_at(1.0, 0.3, run, false)
+	var log := _finish(run, false)
+	K.check(fails, mv == "" and _max_y(log) > 0.3, "a 4 m post: a jump (%s)" % mv)
+	ctx.collision.clear_test_boxes()
+	_box(1.0, 2.0, 4.0, 2.4)
+	_box(-0.5, 1.5, 0.3, 2.4, 2.2)
+	mv = _press_at(1.0, 0.3, run, false)
+	log = _finish(Vector3.ZERO, false)
+	K.check(fails, mv == "" and _max_y(log) > 0.2, "a wall under an awning: a jump (%s)" % mv)
+	ctx.collision.clear_test_boxes()
+	_box(1.0, 2.0, 3.0, 2.4)
+	var at := _lane_point(1.0 - R_M - 0.4, 0.0)
+	var d60 := run * cos(deg_to_rad(60.0)) + right * sin(deg_to_rad(60.0))
+	var d25 := run * cos(deg_to_rad(25.0)) + right * sin(deg_to_rad(25.0))
+	var off := WALL.grab(ctx.collision, at, d60, WS.WALK).is_empty()
+	var near := not WALL.grab(ctx.collision, at, d25, WS.WALK).is_empty()
+	K.check(fails, off and near, "60 degrees off a tall wall: no hold; 25 degrees: a hold")
+	K.check(fails, _made() == before, "none of these jumps took hold")
 	ctx.collision.clear_test_boxes()
 
 

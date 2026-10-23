@@ -236,6 +236,11 @@ func _check_enter(it: FpFeature) -> void:
 		int(t.get("id", -1)) == c.id,
 		"a stopped car beside the hero is the get-in target (%s)" % str(t)
 	)
+	var p := ctx.player
+	p.carry(p.position, p.yaw, Vector3.ZERO, true)
+	var held: Dictionary = drive.call("enter_target")
+	p.release(true)
+	K.check(fails, held.is_empty(), "none while a parkour move carries the hero")
 	var got := []
 	ctx.bus.drive_changed.connect(func(on: bool) -> void: got.append(on))
 	K.check(fails, drive.call("enter") == true and bool(drive.get("active")), "enter() gets in")
@@ -250,7 +255,6 @@ func _check_enter(it: FpFeature) -> void:
 		not _vh().by_id.has(c.id) and int(tr.call("driven_id")) == car.id,
 		"the ambient car it replaced is gone"
 	)
-	var p := ctx.player
 	K.check(
 		fails,
 		not p.input_enabled and p.view_override and p.camera_mode == "third",

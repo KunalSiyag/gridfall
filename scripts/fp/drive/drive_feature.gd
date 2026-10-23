@@ -125,13 +125,14 @@ func self_test() -> Dictionary:
 # ------------------------------------------------------------------ getting in and out
 
 
-## The car the hero could get into now ({} when none, while driving or climbing in or out).
+## The car the hero could get into now ({} when none, while driving or climbing in or out, or while
+## a parkour move carries the hero).
 func enter_target() -> Dictionary:
 	var p := ctx.player if ctx != null else null
 	var tr := _traffic()
 	if active or _climbing() or p == null or tr == null or ctx.is_modal():
 		return {}
-	if p.photo_mode or p.in_conversation():
+	if p.photo_mode or p.in_conversation() or p.carried:
 		return {}
 	return tr.call("enter_target", p.position, ENTER_REACH)
 

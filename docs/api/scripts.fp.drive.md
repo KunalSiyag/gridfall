@@ -172,7 +172,7 @@ Getting into cars and driving them. Near a parked or stopped car, F (Y on a pad)
 - `func on_world_rebuilt() -> void`
 - `func from_dict(_d: Dictionary) -> void`
 - `func self_test() -> Dictionary`
-- `func enter_target() -> Dictionary`: The car the hero could get into now ({} when none, while driving or climbing in or out).
+- `func enter_target() -> Dictionary`: The car the hero could get into now ({} when none, while driving or climbing in or out, or while a parkour move carries the hero).
 - `func enter() -> bool`: Gets into the nearest car in reach at once. Returns true when the hero is now driving.
 - `func board() -> bool`: Gets into the nearest car in reach the long way (car_doors): the hero walks round to its driver's door, opens it, climbs in and shuts it, then drives (climb_step runs it); someone at the wheel (carjack) is dragged out once the door is open, the car waiting till then. At once (enter) without the flag, or when the door cannot open (a model without one, the stand-in figure, no room beside it or no clear way round). Returns true when it started.
 - `func leave() -> bool`: Gets out the long way (car_doors): the car brakes to a stop, the door opens and the hero climbs out and shuts it (climb_step runs it). At once (exit) without the flag. False when the car is too fast (it says so).
