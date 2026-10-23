@@ -48,15 +48,15 @@ signal car_door(at: Vector3, open: bool)
 ## kind: "bin", "cone" ...) and flies off at speed (u/s): by the player's car, the hero, people
 ## walking, traffic or another prop. Emitted by the props feature.
 signal prop_knocked(at: Vector3, kind: String, speed: float)
-## Someone on foot was hit at a point (their feet): cause "shove" or "punch" (the hero), "car"
-## (the car the player drives) or "carjack" (dragged out of the car the player takes); info is
-## traffic_feature.gd hit_walker()'s {"walker", "resident_id", "name", "down", "street",
-## "strength", "witnesses", "crew"}. Emitted by traffic.
+## Someone on foot was hit at a point (their feet): cause "shove" or "punch" (the hero's fists
+## and kicks), "car" (the car the player drives) or "carjack" (dragged out of the car the player
+## takes); info is traffic_feature.gd hit_walker()'s {"walker", "resident_id", "name", "down",
+## "street", "strength", "witnesses", "crew"}. Emitted by traffic.
 signal person_hit(at: Vector3, cause: String, info: Dictionary)
-## The hero swung, gestured or got over something: action "jab", "cross", "shove", an emote
-## ("wave", "yes", "no", "shout", "dance") or a parkour move ("vault", "hop", "climb", "roll" off
-## a hard landing, or "grab" taking hold of a wall), as it starts, at their feet. Emitted by the
-## actions and parkour features.
+## The hero swung, gestured or got over something: action "jab", "cross", "hook", "shove",
+## "kick", an emote ("wave", "yes", "no", "shout", "dance") or a parkour move ("vault", "hop",
+## "climb", "roll" off a hard landing, or "grab" taking hold of a wall), as it starts, at their
+## feet. Emitted by the actions and parkour features.
 signal hero_action(action: String, at: Vector3)
 ## Someone answered the hero: a resident face to face (their id and name), or whoever answered
 ## "Ask someone here" (resident_id "" and their role, "Shopkeeper"). reply is filtered for

@@ -138,6 +138,7 @@ City sound on foot (slice I). Owns the Music, SFX, Ambience and UI buses while o
 - `REVERB_WET_URBAN = 0.15`
 - `BLIP_PITCH = {"mayor": 0.94, "press": 1.06, "council": 0.9}`
 - `HERO_HIT_FULL = {"punch": 12.0, "car": 60.0, "bite": 7.5}`: The health a blow on the hero takes (hero_hurt) to sound at full level, by cause.
+- `SWING_PITCH = {"jab": 1.1, "cross": 0.95, "hook": 0.85, "kick": 0.75, "shove": 0.8}`: The pitch of each swing's whoosh (hero_action).
 
 ### Properties
 

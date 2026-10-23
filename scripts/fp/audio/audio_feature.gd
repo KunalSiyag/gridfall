@@ -34,6 +34,8 @@ const REVERB_WET_URBAN := 0.15
 const BLIP_PITCH := {"mayor": 0.94, "press": 1.06, "council": 0.9}
 ## The health a blow on the hero takes (hero_hurt) to sound at full level, by cause.
 const HERO_HIT_FULL := {"punch": 12.0, "car": 60.0, "bite": 7.5}
+## The pitch of each swing's whoosh (hero_action).
+const SWING_PITCH := {"jab": 1.1, "cross": 0.95, "hook": 0.85, "kick": 0.75, "shove": 0.8}
 
 var emitters: EMITTERS
 var ambience: AMBIENCE
@@ -434,18 +436,18 @@ func _queue_fall(delay: float, at: Vector3, db: float) -> void:
 	_falls.insert(i, [due, at, db])
 
 
-## The hero's swing (hero_action): a whoosh at their shoulder, a jab's higher, a shove's lower and
-## softer; a landing roll's shoulder thuds on the ground BANK.ROLL_THUD_S later. Emotes and the
-## other parkour moves make no sound here.
+## The hero's swing (hero_action): a whoosh at their shoulder, a jab's higher, a hook's and a
+## kick's lower, a shove's lower and softer; a landing roll's shoulder thuds on the ground
+## BANK.ROLL_THUD_S later. Emotes and the other parkour moves make no sound here.
 func _on_hero_action(action: String, at: Vector3) -> void:
 	if action == "roll":
 		_queue_fall(BANK.ROLL_THUD_S, at, BANK.BODY_FALL_DB + BANK.ROLL_DB)
 		return
-	if action not in ["jab", "cross", "shove"]:
+	if not SWING_PITCH.has(action):
 		return
 	var shove := action == "shove"
 	var trim := BANK.WHOOSH_DB + (BANK.SHOVE_DB if shove else 0.0)
-	var pitch := 0.8 if shove else (1.1 if action == "jab" else 0.95)
+	var pitch := float(SWING_PITCH[action])
 	var p := at + Vector3(0.0, 1.4 * WS.M, 0.0)
 	emitters.shot("hit", p, "punch_whoosh", trim, pitch * _rng.randf_range(0.96, 1.04))
 

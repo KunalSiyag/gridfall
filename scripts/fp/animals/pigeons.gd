@@ -41,6 +41,8 @@ const HOME_ROOM := 0.6
 const STARTLE := {
 	"jab": 3.0,
 	"cross": 3.0,
+	"hook": 3.0,
+	"kick": 3.5,
 	"shove": 3.0,
 	"wave": 3.0,
 	"dance": 3.5,

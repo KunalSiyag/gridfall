@@ -4,7 +4,8 @@ extends SceneTree
 ##
 ## Reads models/characters/anim/clips.json (build_clips.py) and the imported rb_m.glb, rb_f.glb and
 ## ual.glb, then writes every clip to models/characters/anim/clips/<m|f|u>_<canonical>.res and the two
-## AnimationLibrary resources lib_m.tres and lib_f.tres, which reference those files (the UAL clips
+## AnimationLibrary resources lib_m.tres and lib_f.tres (with the hand-keyed clips of
+## procedural_clips.gd), which reference those files (the UAL clips
 ## once, shared by both). Each Animation gets its loop mode and the metas `speed_mps` (Root speed in
 ## metres per second on the clip's own skeleton; UAL clips on the male hero's), `speed_ref_hip_m` (that
 ## skeleton's hip height, its motion_scale), `loop` and, for clips that turn, `root_turn_deg`.
@@ -13,6 +14,7 @@ extends SceneTree
 const DIR := "res://models/characters/anim/"
 const ROOT_TRACK := "%GeneralSkeleton:Root"
 const SOURCES := {"m": DIR + "rb_m.glb", "f": DIR + "rb_f.glb", "u": DIR + "ual.glb"}
+const PC := preload("res://tools/characters/procedural_clips.gd")
 
 var fails: Array[String] = []
 
@@ -52,6 +54,7 @@ func _initialize() -> void:
 				continue
 			saved[src][canon] = path
 			print("  %s_%-16s len=%6.3f loop=%s tracks=%d speed_mps=%.3f" % [src, canon, anim.length, looped, anim.get_track_count(), anim.get_meta("speed_mps")])
+	_add_procedural(saved["u"], male_scale)
 	for g: String in ["m", "f"]:
 		var lib := AnimationLibrary.new()
 		for src: String in [g, "u"]:
@@ -63,6 +66,24 @@ func _initialize() -> void:
 			fails.append("could not save %s (%d)" % [lib_path, err])
 		print("lib_%s: %d clips" % [g, lib.get_animation_list().size()])
 	_finish(fails)
+
+
+## The hand-keyed clips (procedural_clips.gd) as UAL clips: the kick, from punch_jab's stance.
+func _add_procedural(saved_u: Dictionary, scale: float) -> void:
+	if not saved_u.has("punch_jab"):
+		fails.append("kick: punch_jab is missing")
+		return
+	var anim := PC.kick(load(saved_u["punch_jab"]) as Animation)
+	anim.resource_name = "kick"
+	_set_metas(anim, scale, false)
+	var path := DIR + "clips/u_kick.res"
+	var err := ResourceSaver.save(anim, path, ResourceSaver.FLAG_COMPRESS)
+	if err != OK:
+		fails.append("could not save %s (%d)" % [path, err])
+		return
+	saved_u["kick"] = path
+	var n := anim.get_track_count()
+	print("  u_kick             len=%6.3f tracks=%d (procedural)" % [anim.length, n])
 
 
 ## Root speed (m/s on a skeleton with `scale` motion scale), that scale, the loop flag and the turn
