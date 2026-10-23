@@ -25,6 +25,7 @@ const PPL := preload("res://scripts/fp/traffic/people.gd")
 const CS := preload("res://scripts/fp/traffic/contact_shadows.gd")
 const OCC := preload("res://scripts/fp/traffic/occupants.gd")
 const SHOVES := preload("res://scripts/fp/traffic/shoves.gd")
+const IND := preload("res://scripts/fp/traffic/indicators.gd")
 const DOORS := preload("res://scripts/fp/traffic/car_doors.gd")
 const REACT := preload("res://scripts/fp/traffic/reactions.gd")
 const INCIDENTS := preload("res://scripts/fp/traffic/incidents.gd")
@@ -542,7 +543,7 @@ func _draw_moving(cam: Vector3) -> void:
 		if c.role == "crew" and c.owner is Dictionary and str((c.owner as Dictionary).get("phase", "")) != "leaving":
 			siren = str((c.owner as Dictionary).get("kind", ""))
 		var brake := c.a < -0.8 * WS.M or c.v < 0.05 * WS.M
-		render.draw_car(c, vehicles.draw_xform(c), cam.distance_to(c.pos), WS.VIS_CAR, brake, siren, c.wheel_spin)
+		render.draw_car(c, vehicles.draw_xform(c), cam.distance_to(c.pos), WS.VIS_CAR, brake, siren, c.wheel_spin, IND.side(c))
 
 
 ## Walkers through HC's people when hc, else the legacy merged bodies.

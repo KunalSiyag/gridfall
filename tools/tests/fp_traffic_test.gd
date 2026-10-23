@@ -22,6 +22,7 @@ const PPL := preload("res://scripts/fp/traffic/people.gd")
 const SHOVES := preload("res://scripts/fp/traffic/shoves.gd")
 const OBB := preload("res://scripts/fp/obb2d.gd")
 const RD := preload("res://scripts/fp/traffic/render.gd")
+const IND := preload("res://scripts/fp/traffic/indicators.gd")
 const DT := 1.0 / 30.0
 
 var fails: Array[String] = []
@@ -61,6 +62,7 @@ func _init() -> void:
 	_check_parked_shove()
 	_check_lights()
 	_check_night_lamps()
+	_check_indicators()
 	_check_tee()
 	_check_player_yield()
 	sim.set_day_seconds(WS.FP_DAY_SECONDS)
@@ -1090,6 +1092,103 @@ func _check_wet_paint(node: Node3D) -> void:
 		paint.clearcoat_enabled and wet_ok and dry_ok,
 		"paint: clear coat, darker and glossier in the wet, dry again after (%.2f)" % float(dry[0])
 	)
+
+
+## Turn signals (indicators.gd): a car waiting to turn left at a cross signals left and its full
+## model blinks the Light_Indicator_L surface (which sits on its left) and only that one; going
+## straight on it signals nothing, on the turn itself still left, pulling in to the curb right and
+## stunned after a knock its hazards.
+func _check_indicators() -> void:
+	_quiet()
+	var lg := _lg()
+	var t: LG.TileInfo = null
+	for i: int in lg.tiles.keys():
+		var ti: LG.TileInfo = lg.tiles[i]
+		if ti.lights and ti.approach[2] != null:
+			t = ti
+			break
+	var left: LG.Lane = null
+	var ahead: LG.Lane = null
+	for mv: LG.Lane in (t.moves[2] if t != null else []):
+		if mv.turn == IND.LEFT:
+			left = mv
+		elif mv.turn == 0:
+			ahead = mv
+	if left == null or ahead == null:
+		K.check(fails, false, "fixture: a cross with a left and a straight move from the south")
+		return
+	var a: LG.Lane = t.approach[2]
+	var car := _car(a, a.length * 0.5, [left], 0.0)
+	var sides := [IND.side(car)]
+	car.path = [ahead]
+	sides.append(IND.side(car))
+	car.path = [left]
+	car.park_t = 0.5
+	sides.append(IND.side(car))
+	car.park_t = -1.0
+	car.stun_t = 1.0
+	sides.append(IND.side(car))
+	car.stun_t = 0.0
+	var want := [IND.LEFT, IND.NONE, IND.RIGHT, IND.HAZARD]
+	var msg := "indicators: left turn, straight on, pulling in, stunned signal %s" % [sides]
+	K.check(fails, sides == want, msg)
+	var blinks := _blink_states(car)
+	var blink_ok := blinks == [true, false, false, false]
+	msg = "indicators: the left lamps blink on and off, the right stay dark %s" % [blinks]
+	K.check(fails, blink_ok, msg)
+	var side := _indicator_side(car, "Light_Indicator_L")
+	msg = "indicators: Light_Indicator_L sits on the car's left (%.3f u right)" % side
+	K.check(fails, side < 0.0, msg)
+	var on_turn := _car(left, left.length * 0.3, [], 0.0)
+	msg = "indicators: still signalling left on the turn itself"
+	K.check(fails, IND.side(on_turn) == IND.LEFT, msg)
+	_vh().remove(on_turn)
+	_vh().remove(car)
+
+
+## Whether the [left, right] lamps are lit in a lit blink phase, then in a dark one.
+func _blink_states(car: VH.Car) -> Array:
+	var rd = f.get("render")
+	var saved := ctx.player.position
+	ctx.player.teleport(car.pos + Vector3(0.3, 0.0, 0.3), 0.0)
+	var out := []
+	for phase: float in [0.1, 0.75]:
+		rd.set("time", phase / IND.RATE - DT)
+		f.sync_visuals(DT)
+		var node: Node3D = car.node
+		if node == null or car.lod != 0 or not node.has_meta("ind_l") or not node.has_meta("ind_r"):
+			out.append_array([null, null])
+			continue
+		for key: String in ["ind_l", "ind_r"]:
+			var surf: Array = node.get_meta(key)
+			var m := (surf[0] as MeshInstance3D).get_surface_override_material(int(surf[1]))
+			out.append(m == rd.get("_ind_mat"))
+	ctx.player.teleport(saved, 0.0)
+	return out
+
+
+## How far (u) to the car's right the centre of the surface with material mat_name lies.
+func _indicator_side(car: VH.Car, mat_name: String) -> float:
+	var node: Node3D = car.node
+	if node == null:
+		return INF
+	var xf: Transform3D = _vh().draw_xform(car)
+	var fwd := xf.basis.z.normalized()
+	var right := Vector3(-fwd.z, 0.0, fwd.x)
+	for mi in node.find_children("*", "MeshInstance3D", true, false):
+		var mesh := (mi as MeshInstance3D).mesh
+		for s in range(mesh.get_surface_count() if mesh != null else 0):
+			var m := mesh.surface_get_material(s)
+			if m == null or m.resource_name != mat_name:
+				continue
+			var verts: PackedVector3Array = mesh.surface_get_arrays(s)[Mesh.ARRAY_VERTEX]
+			var sum := Vector3.ZERO
+			for v in verts:
+				sum += v
+			var mean := sum / maxf(verts.size(), 1)
+			var ctr: Vector3 = (mi as MeshInstance3D).global_transform * mean
+			return (ctr - xf.origin).dot(right)
+	return INF
 
 
 # ------------------------------------------------------------------ tee yield

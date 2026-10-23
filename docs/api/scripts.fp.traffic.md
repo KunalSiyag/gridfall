@@ -254,6 +254,31 @@ What a blow in the street means for the city (traffic_feature.gd hit_walker): a 
 - `func setup(p_f: Object) -> void`
 - `func report(w: WK.Walker, at: Vector3, strength: float, cause: String, res: Dictionary, seen: Array) -> Dictionary`: The person_hit info for walker w hit by cause at world point at (res: reactions.gd hit()'s result, seen: the walkers who saw it): {"walker", "resident_id", "name", "down", "street", "strength", "witnesses" (their resident ids), "crew" ("police", "ambulance" or "")}.
 
+## `scripts/fp/traffic/indicators.gd`
+
+extends `RefCounted`
+
+Turn signals: which side a car's indicators blink on, and when a blinking lamp is lit. A car signals the turn of the next junction move (a left or right at a tee or cross, left for a cul-de-sac U-turn) from AHEAD before the move until it has left it; bends in the road are not signalled. A car pulling into a curb slot signals right (toward the curb, right-hand traffic), and one stopped stunned after a knock (shoves.gd) or after running the hero down shows its hazards. render.gd blinks the Light_Indicator_L/R surfaces of the full models.
+
+### Constants
+
+- `WS = preload("res://scripts/fp/world_scale.gd")`
+- `LG = preload("res://scripts/fp/traffic/lane_graph.gd")`
+- `VH = preload("res://scripts/fp/traffic/vehicles.gd")`
+- `NONE = 0`
+- `LEFT = -1`
+- `RIGHT = 1`
+- `HAZARD = 2`
+- `AHEAD = 30.0 * WS.M`: How far (u) before a junction move a car starts signalling it.
+- `RATE = 1.5`: Blinks per second and the lit share of each blink (about 90 a minute, as the rules ask).
+- `DUTY = 0.5`
+
+### Functions
+
+- `static func side(c: VH.Car) -> int`: The side c signals now: NONE, LEFT, RIGHT or HAZARD.
+- `static func lit(t: float) -> bool`: Whether a blinking lamp is lit at time t (s).
+- `static func on(side_: int, s: int, t: float) -> bool`: Whether the left (s < 0) or right lamps of a car signalling side are lit at time t.
+
 ## `scripts/fp/traffic/junctions.gd`
 
 extends `RefCounted`
@@ -616,7 +641,7 @@ People hit in the street (docs/fp/ARCHITECTURE.md, Body actions): shoved or punc
 
 extends `RefCounted`
 
-Draws E's agents (docs/fp/slices/E-traffic.md §3 Draw calls). Vehicles: the full GLB only within NEAR of the camera (pooled per model, capped), beyond that one MultiMeshInstance3D per model built from a single-surface, vertex-coloured merge of the GLB (H's <name>_lod1.glb when it exists), with shadows to SHADOW_DIST and none beyond. Parked cars go through a static layer rebuilt only when the parked set changes or the camera moves. Brake lights, siren flashes and wheel spin on full models; after dark their head and tail lamps light up, the nearest moving vehicles throw headlight beams, and the head and tail lamps of the merged ones glow. Responding crews near the camera wash their surroundings in flashing siren light. A car with its driver's door open (the player's) swings it out on a hinge cut from its body (car_doors.gd). People (the legacy static bodies, until HC's rigged ones): every distance draws the merged body through the people shader, which swings the legs and arms from per-instance stride data and dithers people in and out (spawned in view, or at the edge of VIS_PERSON). Same geometry and colours as the GLB, one draw per body model and layer.
+Draws E's agents (docs/fp/slices/E-traffic.md §3 Draw calls). Vehicles: the full GLB only within NEAR of the camera (pooled per model, capped), beyond that one MultiMeshInstance3D per model built from a single-surface, vertex-coloured merge of the GLB (H's <name>_lod1.glb when it exists), with shadows to SHADOW_DIST and none beyond. Parked cars go through a static layer rebuilt only when the parked set changes or the camera moves. Brake lights, siren flashes and wheel spin on full models, and their indicators blink (indicators.gd); after dark their head and tail lamps light up, the nearest moving vehicles throw headlight beams, and the head and tail lamps of the merged ones glow. Responding crews near the camera wash their surroundings in flashing siren light. A car with its driver's door open (the player's) swings it out on a hinge cut from its body (car_doors.gd). People (the legacy static bodies, until HC's rigged ones): every distance draws the merged body through the people shader, which swings the legs and arms from per-instance stride data and dithers people in and out (spawned in view, or at the edge of VIS_PERSON). Same geometry and colours as the GLB, one draw per body model and layer.
 
 ### Constants
 
@@ -626,6 +651,7 @@ Draws E's agents (docs/fp/slices/E-traffic.md §3 Draw calls). Vehicles: the ful
 - `VH = preload("res://scripts/fp/traffic/vehicles.gd")`
 - `WK = preload("res://scripts/fp/traffic/walkers.gd")`
 - `DOORS = preload("res://scripts/fp/traffic/car_doors.gd")`
+- `IND = preload("res://scripts/fp/traffic/indicators.gd")`
 - `NEAR = 2.0`
 - `NEAR_OUT = 2.25`
 - `SHADOW_DIST = 3.0`
@@ -674,7 +700,7 @@ Draws E's agents (docs/fp/slices/E-traffic.md §3 Draw calls). Vehicles: the ful
 - `func set_glow(g: float) -> void`: Lamp glow of the merged vehicles (0 by day, 1 at night).
 - `func set_wet(w: float) -> void`: How wet the streets are (0..1): the paint of every car and the merged bodies follow.
 - `func begin_static() -> void`: Starts a rebuild of the static (parked) layer.
-- `func draw_car(c: VH.Car, xf: Transform3D, d: float, vis_end: float, brake: bool, siren: String, spin: float) -> void`
+- `func draw_car(c: VH.Car, xf: Transform3D, d: float, vis_end: float, brake: bool, siren: String, spin: float, blink: int = 0) -> void`: blink: the side its indicators signal (indicators.gd side()).
 - `func draw_parked(c: VH.Car, xf: Transform3D, d: float, vis_end: float) -> void`: A parked car into the static layer (between begin_static and finish_static).
 - `func draw_walker(w: WK.Walker, xf: Transform3D, d: float, vis_end: float, phase: float = 0.0) -> void`: A person: always the merged body through the people shader (stride and opacity per instance).
 - `func release_car(c: VH.Car) -> void`: Returns a vehicle's full node to its pool.
@@ -802,6 +828,7 @@ Traffic and pedestrians on lanes (slice E, docs/fp/slices/E-traffic.md): one roa
 - `CS = preload("res://scripts/fp/traffic/contact_shadows.gd")`
 - `OCC = preload("res://scripts/fp/traffic/occupants.gd")`
 - `SHOVES = preload("res://scripts/fp/traffic/shoves.gd")`
+- `IND = preload("res://scripts/fp/traffic/indicators.gd")`
 - `DOORS = preload("res://scripts/fp/traffic/car_doors.gd")`
 - `REACT = preload("res://scripts/fp/traffic/reactions.gd")`
 - `INCIDENTS = preload("res://scripts/fp/traffic/incidents.gd")`
