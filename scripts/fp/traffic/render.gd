@@ -4,7 +4,8 @@ extends RefCounted
 ## model built from a single-surface, vertex-coloured merge of the GLB (H's <name>_lod1.glb when it
 ## exists), with shadows to SHADOW_DIST and none beyond. Parked cars go through a static layer
 ## rebuilt only when the parked set changes or the camera moves. Brake lights, siren flashes and
-## wheel spin on full models; after dark their head and tail lamps light up, the nearest moving
+## wheel spin on full models, and their indicators blink (indicators.gd); after dark their head
+## and tail lamps light up, the nearest moving
 ## vehicles throw headlight beams, and the head and tail lamps of the merged ones glow. Responding
 ## crews near the camera wash their surroundings in flashing siren light. A car with its driver's
 ## door open (the player's) swings it out on a hinge cut from its body (car_doors.gd).
@@ -19,6 +20,7 @@ const KIT := preload("res://scripts/fp/traffic/mesh_kit.gd")
 const VH := preload("res://scripts/fp/traffic/vehicles.gd")
 const WK := preload("res://scripts/fp/traffic/walkers.gd")
 const DOORS := preload("res://scripts/fp/traffic/car_doors.gd")
+const IND := preload("res://scripts/fp/traffic/indicators.gd")
 const NEAR := 2.0
 const NEAR_OUT := 2.25
 const SHADOW_DIST := 3.0
@@ -167,6 +169,8 @@ var _brake_mat: StandardMaterial3D
 ## Full models after dark: head lamps and tail lamps lit (per-instance surface overrides).
 var _head_mat: StandardMaterial3D
 var _tail_mat: StandardMaterial3D
+## A blinking indicator's lit lamps (amber).
+var _ind_mat: StandardMaterial3D
 var _beams: Array[SpotLight3D] = []
 var _washes: Array[OmniLight3D] = []
 ## This frame's candidates: [distance, transform, length] for beams, [distance, transform, siren
@@ -223,6 +227,11 @@ func setup(p_root: Node3D) -> void:
 	_tail_mat.emission_enabled = true
 	_tail_mat.emission = Color(1.0, 0.06, 0.03)
 	_tail_mat.emission_energy_multiplier = 2.2
+	_ind_mat = StandardMaterial3D.new()
+	_ind_mat.albedo_color = Color(1.0, 0.55, 0.08)
+	_ind_mat.emission_enabled = true
+	_ind_mat.emission = Color(1.0, 0.45, 0.02)
+	_ind_mat.emission_energy_multiplier = 6.0
 	for k: String in SIREN_COLS.keys():
 		var mats: Array = []
 		for c: Color in SIREN_COLS[k]:
@@ -407,7 +416,8 @@ func begin_static() -> void:
 		(m.lists[L_SFAR] as Array).clear()
 
 
-func draw_car(c: VH.Car, xf: Transform3D, d: float, vis_end: float, brake: bool, siren: String, spin: float) -> void:
+## blink: the side its indicators signal (indicators.gd side()).
+func draw_car(c: VH.Car, xf: Transform3D, d: float, vis_end: float, brake: bool, siren: String, spin: float, blink: int = 0) -> void:
 	c.node = _place(c.model, c.node, c.lod, xf, d, vis_end, false)
 	c.lod = _last_lod
 	var lit := _glow > LAMPS_ON
@@ -417,6 +427,7 @@ func draw_car(c: VH.Car, xf: Transform3D, d: float, vis_end: float, brake: bool,
 			var m := model(c.model)
 			DOORS.pose(c.node, DOORS.of(m.key, m.scene), c.door)
 		_extras(c.node, model(c.model), brake, lit, siren, spin)
+		_blink(c.node, blink)
 	if c.lod >= 0:
 		if lit and d < BEAM_DIST and c.kind != "bike":
 			_beam_cands.append([d, xf, c.length])
@@ -431,6 +442,7 @@ func draw_parked(c: VH.Car, xf: Transform3D, d: float, vis_end: float) -> void:
 	if c.lod == 0:
 		full_static += 1
 		_extras(c.node, model(c.model), false, false, "", 0.0)
+		_blink(c.node, IND.NONE)
 
 
 ## A person: always the merged body through the people shader (stride and opacity per instance).
@@ -537,6 +549,8 @@ func _index_parts(n: Node3D) -> void:
 				n.set_meta("tail", [mi, s])
 			if mat != null and mat.resource_name == "Light_Head":
 				n.set_meta("head", [mi, s])
+			if mat != null and mat.resource_name in ["Light_Indicator_L", "Light_Indicator_R"]:
+				n.set_meta("ind_" + mat.resource_name.right(1).to_lower(), [mi, s])
 			if mat != null and mat.resource_name.begins_with("Siren"):
 				if not n.has_meta("siren_surf"):
 					n.set_meta("siren_surf", [])
@@ -597,6 +611,23 @@ func _extras(node: Node3D, m: Model, brake: bool, lit: bool, siren: String, spin
 		var ang := spin / (r * m.scale)
 		for w: Node3D in node.get_meta("wheels"):
 			w.rotation.x = fposmod(ang, TAU)
+
+
+## Indicators: the left and right lamps lit or dark for a car signalling side now.
+func _blink(node: Node3D, side: int) -> void:
+	if node == null:
+		return
+	var l := IND.on(side, IND.LEFT, time)
+	var r := IND.on(side, IND.RIGHT, time)
+	var key := (1 if l else 0) + (2 if r else 0)
+	if int(node.get_meta("ind_key", 0)) == key:
+		return
+	node.set_meta("ind_key", key)
+	for e: Array in [["ind_l", l], ["ind_r", r]]:
+		if node.has_meta(e[0]):
+			var surf: Array = node.get_meta(e[0])
+			var mat: Material = _ind_mat if e[1] else null
+			(surf[0] as MeshInstance3D).set_surface_override_material(int(surf[1]), mat)
 
 
 ## Writes the moving MultiMesh layers for this frame, and aims the headlight beams and siren
