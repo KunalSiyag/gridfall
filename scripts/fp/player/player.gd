@@ -78,6 +78,11 @@ const HL_FOV := 0.25
 const FP_PITCH_LIMIT := deg_to_rad(WS.PITCH_LIMIT_DEG)
 ## A view kick (kick_view) dies away with this halflife (s).
 const HL_KICK := 0.07
+## Camera shake (shake): trauma 0..1 drains at SHAKE_DECAY a second, and the view turns by up to
+## SHAKE_MAX (pitch, yaw, roll; radians) times trauma squared, wobbling at about SHAKE_HZ.
+const SHAKE_DECAY := 1.6
+const SHAKE_MAX := Vector3(0.03, 0.025, 0.04)
+const SHAKE_HZ := 9.0
 ## Half way through a first-person roll (tumble_view) the eye is this high.
 const TUMBLE_EYE := 0.5 * WS.M
 # --- Camera modes and the right stick
@@ -195,6 +200,10 @@ var carry_sprint: bool = false
 var carry_crouch: bool = false
 ## The view kick still applied (pitch, roll; radians).
 var _kick: Vector2 = Vector2.ZERO
+## Shake trauma (0..1), the clock its wobble runs on and the turn it gives now (radians).
+var _trauma: float = 0.0
+var _shake_t: float = 0.0
+var _shake: Vector3 = Vector3.ZERO
 ## Seconds into the first-person roll (tumble_view) and its length: over once the one reaches the
 ## other.
 var _tumble_t: float = 0.0
@@ -477,6 +486,7 @@ func update_view(delta: float) -> void:
 	var sp := speed()
 	_cam_dy = SM.damp(_cam_dy, 0.0, HL_FP_STEP, dt)
 	_kick *= pow(0.5, dt / HL_KICK)
+	_update_shake(dt)
 	_tumble_t += dt
 	_bob_amp = SM.damp(_bob_amp, sqrt(clampf(sp / WS.RUN, 0.0, 1.0)) if grounded else 0.0, HL_BOB, dt)
 	var fp_goal := _fov_setting + (FP_SPRINT_FOV if _head_bob and _running and sp > 0.8 * WS.RUN else 0.0)
@@ -496,7 +506,7 @@ func update_view(delta: float) -> void:
 	var fv: float
 	var pure_fp := false
 	if view_override:
-		xf = _override_xf
+		xf = _override_xf * _shake_xform()
 		fv = _override_fov
 	elif photo_mode:
 		xf = Transform3D(SM.look_basis(cam_yaw, cam_pitch), _photo_pos)
@@ -556,8 +566,37 @@ func tumble_view(secs: float) -> void:
 	_tumble_len = maxf(secs, 0.0)
 
 
+## Shakes the view (a blow landing or taken, a crash): adds trauma (0..1, 1 the most), which
+## drains away over a second or so; a strong shake is far more than twice a weak one.
+func shake(trauma: float) -> void:
+	_trauma = clampf(_trauma + maxf(trauma, 0.0), 0.0, 1.0)
+
+
+## The shake trauma left (0..1).
+func shake_amount() -> float:
+	return _trauma
+
+
+func _update_shake(dt: float) -> void:
+	_trauma = maxf(0.0, _trauma - SHAKE_DECAY * dt)
+	_shake_t += dt
+	var s := _trauma * _trauma
+	_shake = Vector3(_wobble(0.0), _wobble(1.7), _wobble(3.1)) * SHAKE_MAX * s
+
+
+## Smooth noise in -1..1 along the shake clock, a different line for each phase.
+func _wobble(phase: float) -> float:
+	var t := _shake_t * SHAKE_HZ * TAU
+	return 0.6 * sin(t + phase * 2.3) + 0.4 * sin(t * 1.73 + phase * 5.1)
+
+
+func _shake_xform() -> Transform3D:
+	return Transform3D(Basis.from_euler(_shake), Vector3.ZERO)
+
+
 func _kick_xform() -> Transform3D:
-	return Transform3D(Basis.from_euler(Vector3(_kick.x, 0.0, _kick.y)), Vector3.ZERO)
+	var e := Vector3(_kick.x + _shake.x, _shake.y, _kick.y + _shake.z)
+	return Transform3D(Basis.from_euler(e), Vector3.ZERO)
 
 
 ## Mouse or stick look (radians): turns the view; in first person the body turns with it.

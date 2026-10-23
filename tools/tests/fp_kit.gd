@@ -6,6 +6,7 @@ extends RefCounted
 const D := preload("res://scripts/sim/sim_defs.gd")
 const WS := preload("res://scripts/fp/world_scale.gd")
 const REGISTRY := preload("res://scripts/fp/fp_features.gd")
+const WK := preload("res://scripts/fp/traffic/walkers.gd")
 ## The scripted growth recipe used by "grow" (probe-verified on seed 7): the nine actions at
 ## residents_test.gd:29-37 plus an L-shaped road (corner at (4,12), tee at (10,12)).
 const GROW_ACTIONS := [
@@ -265,6 +266,24 @@ static func make_feature(ctx: FpContext, id: String) -> FpFeature:
 	f.setup(ctx)
 	f.on_world_rebuilt()
 	return f
+
+
+## Removes every walker the traffic feature has, so only a test's own people are about.
+static func quiet_walkers(traffic: FpFeature) -> void:
+	var wk: WK = traffic.get("walkers")
+	for w: WK.Walker in wk.walkers.duplicate():
+		wk.remove(w)
+
+
+## Someone standing dist_m metres ahead of the hero (behind for a negative distance), facing them.
+static func person_ahead(ctx: FpContext, traffic: FpFeature, dist_m: float) -> WK.Walker:
+	var wk: WK = traffic.get("walkers")
+	var p := ctx.player
+	var fwd := p.body_forward()
+	var w := wk.make("ambient")
+	w.extra = 0
+	wk.stand(w, p.position + fwd * dist_m * WS.M, atan2(-fwd.x, -fwd.z))
+	return w
 
 
 ## A sidewalk point on a straight road with a clear line `length` (u) ahead along the run, nothing

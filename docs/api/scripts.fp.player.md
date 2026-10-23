@@ -352,6 +352,9 @@ The on-foot player (slice A): feet at `position`, a kinematic controller against
 - `HL_FOV = 0.25`
 - `FP_PITCH_LIMIT = deg_to_rad(WS.PITCH_LIMIT_DEG)`
 - `HL_KICK = 0.07`: A view kick (kick_view) dies away with this halflife (s).
+- `SHAKE_DECAY = 1.6`: Camera shake (shake): trauma 0..1 drains at SHAKE_DECAY a second, and the view turns by up to SHAKE_MAX (pitch, yaw, roll; radians) times trauma squared, wobbling at about SHAKE_HZ.
+- `SHAKE_MAX = Vector3(0.03, 0.025, 0.04)`
+- `SHAKE_HZ = 9.0`
 - `TUMBLE_EYE = 0.5 * WS.M`: Half way through a first-person roll (tumble_view) the eye is this high.
 - `MODE_BLEND = 0.35`
 - `STICK_YAW = deg_to_rad(270.0)`
@@ -414,6 +417,8 @@ The on-foot player (slice A): feet at `position`, a kinematic controller against
 - `func update_view(delta: float) -> void`: Places the camera for this frame: the first-person eye (bob, step smoothing), the rig, the conversation shot or the photo camera, through any running blend; updates the avatar (lean, fade, shadow-only). _process calls it every frame; tests driving simulate() call it with their own dt.
 - `func kick_view(d_pitch: float, d_roll: float) -> void`: Jolts the view by d_pitch (positive up) and d_roll (radians; positive tips left), dying away over HL_KICK: a blow landing.
 - `func tumble_view(secs: float) -> void`: Turns the first-person view over forward once in secs, the eye dipping toward the ground on the way round (a landing roll). Third person leaves the view alone.
+- `func shake(trauma: float) -> void`: Shakes the view (a blow landing or taken, a crash): adds trauma (0..1, 1 the most), which drains away over a second or so; a strong shake is far more than twice a weak one.
+- `func shake_amount() -> float`: The shake trauma left (0..1).
 - `func look(d_yaw: float, d_pitch: float) -> void`: Mouse or stick look (radians): turns the view; in first person the body turns with it.
 - `func mouse_look(event: InputEventMouseMotion) -> void`: Turns the view by a mouse motion at mouse_sensitivity radians per screen pixel. Reads screen_relative: `relative` is scaled by the window's content-scale stretch (canvas_items, 1600x900 base), so look speed would change with the window size. Applied raw, never smoothed.
 - `func set_camera_mode(m: String, blend: bool = true) -> void`: Switches between "first" and "third" (V); blend eases over MODE_BLEND s. Does not write the settings (toggle_camera_mode does).
