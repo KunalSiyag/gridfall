@@ -56,7 +56,7 @@ const LEGEND := [
 const KEYS := [
 	["M", "Map"], ["Tab", "City overview"], ["V", "Camera view"], ["Q", "Shoulder"], ["E", "Interact"], ["F", "Get in / out of a car"], ["B", "Build phone"],
 	["Space", "Jump / vault / climb walls"], ["Click", "Punch"], ["Right-click", "Guard"],
-	["R", "Shove"], ["1-5", "Emotes"],
+	["R", "Shove"], ["X", "Kick"], ["1-5", "Emotes"],
 	["Enter", "Chat"], ["J", "AI activity"], ["G", "Route to AI decision"],
 	["K", "Take lead / file story"], ["L", "Mayors' league"],
 	["[ ]", "Game speed"], ["T", "Skip to morning"], ["P", "Photo mode"], ["F1", "Hide HUD"],
