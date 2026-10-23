@@ -4,6 +4,7 @@ extends RefCounted
 ## wired without Main (stub FpMode, headless FpPlayer, FpHud, SkyDirector, optional render/audio).
 
 const D := preload("res://scripts/sim/sim_defs.gd")
+const WS := preload("res://scripts/fp/world_scale.gd")
 const REGISTRY := preload("res://scripts/fp/fp_features.gd")
 ## The scripted growth recipe used by "grow" (probe-verified on seed 7): the nine actions at
 ## residents_test.gd:29-37 plus an L-shaped road (corner at (4,12), tee at (10,12)).
@@ -264,6 +265,32 @@ static func make_feature(ctx: FpContext, id: String) -> FpFeature:
 	f.setup(ctx)
 	f.on_world_rebuilt()
 	return f
+
+
+## A sidewalk point on a straight road with a clear line `length` (u) ahead along the run, nothing
+## within 1.5 player radii of it: {"pos" (the feet), "yaw" (deg, along the run), "run" (unit)}, or
+## {} when the city has none.
+static func sidewalk(ctx: FpContext, length: float) -> Dictionary:
+	var sim := ctx.sim
+	var col := ctx.collision
+	for i in sim.active:
+		if sim.kind[i] != D.ROAD or sim.terrain[i] == D.WATER:
+			continue
+		var m := RoadTopology.mask(sim, D.tx(i), D.ty(i))
+		if m != RoadTopology.NS and m != RoadTopology.EW:
+			continue
+		var run := RoadTopology.run_dir(m)
+		var start := RoadTopology.sidewalk_point(sim, i, 1) - run * 0.3
+		var ok := true
+		for k in range(int(length / 0.02) + 4):
+			var q := start + run * (0.02 * k)
+			var g := col.walk_height(q)
+			ok = ok and not is_nan(g) and absf(g - WS.SIDEWALK_TOP) < 1e-6
+			ok = ok and not col.is_blocked(Vector3(q.x, g, q.z), WS.PLAYER_RADIUS * 1.5)
+		if ok:
+			start.y = col.walk_height(start)
+			return {"pos": start, "yaw": rad_to_deg(atan2(-run.x, -run.z)), "run": run}
+	return {}
 
 
 ## Prints "<TOKEN>: PASS" or "<TOKEN>: FAIL <fails>" and quits 0/1. fails is Array[String].

@@ -53,8 +53,9 @@ signal prop_knocked(at: Vector3, kind: String, speed: float)
 ## traffic_feature.gd hit_walker()'s {"walker", "resident_id", "name", "down", "street",
 ## "strength", "witnesses", "crew"}. Emitted by traffic.
 signal person_hit(at: Vector3, cause: String, info: Dictionary)
-## The hero swung or gestured: action "jab", "cross", "shove" or an emote ("wave", "yes", "no",
-## "shout", "dance"), at their feet. Emitted by the actions feature.
+## The hero swung, gestured or got over something: action "jab", "cross", "shove", an emote
+## ("wave", "yes", "no", "shout", "dance") or a parkour move ("vault", "hop", "climb"), as it
+## starts, at their feet. Emitted by the actions and parkour features.
 signal hero_action(action: String, at: Vector3)
 ## Someone answered the hero: a resident face to face (their id and name), or whoever answered
 ## "Ask someone here" (resident_id "" and their role, "Shopkeeper"). reply is filtered for

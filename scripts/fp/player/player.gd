@@ -5,7 +5,8 @@ extends Node3D
 ## default, D13) hangs the camera on TpsRig's over-the-shoulder spring arm and shows the Avatar;
 ## V switches to first person at eye height (the body then only casts its shadow). Walk, run,
 ## crouch, jump with coyote time and a buffer, curb steps, sliding along walls and poles, head
-## bob, footsteps, shoulder swap, zoom, free-fly photo mode and the conversation two-shot.
+## bob, footsteps, shoulder swap, zoom, free-fly photo mode and the conversation two-shot. A jump
+## press can be taken over (jump_hook) by a move that carries the body itself (carry / release).
 ## `yaw` is the body yaw (rotation.y); cam_yaw / cam_pitch are the view; movement input is
 ## relative to the view.
 
@@ -172,6 +173,12 @@ var view_override: bool = false
 ## Third person: while not NAN the body turns toward this yaw instead of its travel (the actions
 ## feature: the guard faces where the camera looks, a blow faces its target).
 var aim_yaw: float = NAN
+## Asked (no arguments) when a jump is about to leave the ground: true when it took the press over
+## (the parkour feature vaults or climbs instead of the jump), false to jump. Empty for none.
+var jump_hook: Callable = Callable()
+## True while another owner moves the body through carry(): simulate leaves it alone until
+## release(); teleport() and ride() end it.
+var carried: bool = false
 ## The view kick still applied (pitch, roll; radians).
 var _kick: Vector2 = Vector2.ZERO
 var _override_xf: Transform3D = Transform3D()
@@ -220,6 +227,7 @@ func teleport(pos: Vector3, yaw_deg: float, pitch_deg: float = 0.0, snap: bool =
 	pitch = cam_pitch
 	velocity = Vector3.ZERO
 	_acc = Vector2.ZERO
+	carried = false
 	_yaw_v = 0.0
 	_pivot_t = 0.0
 	_heavy = 0.0
@@ -236,6 +244,7 @@ func teleport(pos: Vector3, yaw_deg: float, pitch_deg: float = 0.0, snap: bool =
 ## Carries the body with a vehicle (input off): feet at pos, body yaw and view yaw in radians,
 ## no ground snap and no camera snap (the vehicle owns the view through set_view_override).
 func ride(pos: Vector3, body_yaw: float, view_yaw: float) -> void:
+	carried = false
 	position = pos
 	yaw = wrapf(body_yaw, -PI, PI)
 	cam_yaw = wrapf(view_yaw, -PI, PI)
@@ -245,6 +254,35 @@ func ride(pos: Vector3, body_yaw: float, view_yaw: float) -> void:
 	_yaw_rate = 0.0
 	_apply_rotation()
 	_update_tile()
+
+
+## Moves the body for another owner (a vault or a climb) until release(): feet at pos, the body
+## turned to body_yaw (radians; first person keeps facing the view), velocity vel (u/s) for the
+## camera and the avatar, on the ground or in the air. simulate leaves the body alone meanwhile.
+func carry(pos: Vector3, body_yaw: float, vel: Vector3, on_ground: bool) -> void:
+	carried = true
+	position = pos
+	if camera_mode != "first":
+		yaw = wrapf(body_yaw, -PI, PI)
+	velocity = vel
+	grounded = on_ground
+	_acc = Vector2.ZERO
+	_pivot_t = 0.0
+	_fwd_acc = 0.0
+	_yaw_rate = 0.0
+	_apply_rotation()
+	_update_tile()
+
+
+## Gives a carried body back to simulate: standing, or in the air to land on the next step (with
+## that landing's footstep and landed signal). A jump still held does not fire again.
+func release(on_ground: bool) -> void:
+	carried = false
+	grounded = on_ground
+	_air_t = 0.0 if on_ground else LAND_STEP_MIN_AIR
+	_coyote = 0.0
+	_jump_buffer = 0.0
+	_jump_held = true
 
 
 ## Faces a world point: the view (yaw and pitch) and the body.
@@ -336,6 +374,8 @@ func simulate(wish: Vector2, sprint: bool, delta: float, crouch: bool = false, j
 	if jump and not _jump_held:
 		_jump_buffer = JUMP_BUFFER
 	_jump_held = jump
+	if carried or _jump_taken():
+		return
 	_set_crouch(crouch)
 	_eye_h = SM.damp(_eye_h, WS.CROUCH_EYE if crouched else WS.EYE, HL_EYE, delta)
 	var top_speed := WS.CROUCH_WALK if crouched else (WS.RUN if sprint else WS.WALK)
@@ -343,8 +383,7 @@ func simulate(wish: Vector2, sprint: bool, delta: float, crouch: bool = false, j
 	_target_speed = top_speed * wish.length()
 	var flat := Vector2(velocity.x, velocity.z)
 	var goal := _wish_goal(wish, top_speed)
-	if grounded and _pivot_t <= 0.0 and flat.length() > PIVOT_MIN_SPEED and goal.length_squared() > 1e-12 and absf(flat.angle_to(goal)) > PIVOT_ANGLE:
-		_pivot_t = PIVOT_TIME
+	_start_pivot(flat, goal)
 	# The spring can overshoot its goal a little while turning; 1.25 keeps each step under the radius.
 	var top := maxf(maxf(flat.length(), _target_speed) * 1.25, absf(velocity.y) + WS.GRAVITY * delta)
 	var n := clampi(ceili(top * delta / WS.PLAYER_RADIUS), 1, MAX_SUBSTEPS)
@@ -365,6 +404,23 @@ func simulate(wish: Vector2, sprint: bool, delta: float, crouch: bool = false, j
 	_fwd_acc = (flat1 - flat).dot(Vector2(-sin(yaw), -cos(yaw))) / delta
 	_yaw_rate = wrapf(yaw - yaw0, -PI, PI) / delta
 	_update_tile()
+
+
+## A jump about to leave the ground that jump_hook takes over: true (the press is spent) when the
+## hook moves the body instead.
+func _jump_taken() -> bool:
+	if _jump_buffer <= 0.0 or not grounded or crouched or not jump_hook.is_valid():
+		return false
+	if not bool(jump_hook.call()):
+		return false
+	_jump_buffer = 0.0
+	return true
+
+
+## Turning hard against the travel at speed on the ground pivots: the body stops, then turns.
+func _start_pivot(flat: Vector2, goal: Vector2) -> void:
+	if grounded and _pivot_t <= 0.0 and flat.length() > PIVOT_MIN_SPEED and goal.length_squared() > 1e-12 and absf(flat.angle_to(goal)) > PIVOT_ANGLE:
+		_pivot_t = PIVOT_TIME
 
 
 ## The goal velocity (xz, u/s) for a view-relative wish.
@@ -558,7 +614,7 @@ func swap_shoulder() -> void:
 ## P: enters or leaves the free-fly photo mode (HUD hidden, no modal, the sim keeps running). The
 ## feet follow the camera while flying and return on exit; the body stays where it stood.
 func set_photo_mode(on: bool) -> void:
-	if on == photo_mode:
+	if on == photo_mode or (on and carried):
 		return
 	if on:
 		var xf := _camera_world()

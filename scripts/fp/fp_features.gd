@@ -32,4 +32,8 @@ const FEATURES := [
 		"id": "health", "slice": "integration",
 		"path": "res://scripts/fp/health/health_feature.gd",
 	},
+	{
+		"id": "parkour", "slice": "integration",
+		"path": "res://scripts/fp/parkour/parkour_feature.gd",
+	},
 ]

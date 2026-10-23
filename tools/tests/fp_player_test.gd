@@ -58,7 +58,7 @@ func _init() -> void:
 ## The crouched eye sits at CROUCH_EYE.
 func _check_speeds(ctx: FpContext) -> void:
 	var p := ctx.player
-	var s := _sidewalk(ctx, 0.7)
+	var s := K.sidewalk(ctx, 0.7)
 	K.check(fails, not s.is_empty(), "fixture: a clear straight sidewalk")
 	if s.is_empty():
 		return
@@ -126,7 +126,7 @@ func _check_curb(ctx: FpContext) -> void:
 ## Jump: apex 0.5-0.7 m above the take-off ground, back on the ground within 1 s.
 func _check_jump(ctx: FpContext) -> void:
 	var p := ctx.player
-	var s := _sidewalk(ctx, 0.2)
+	var s := K.sidewalk(ctx, 0.2)
 	if s.is_empty():
 		return
 	p.teleport(s["pos"], s["yaw"])
@@ -585,7 +585,7 @@ func _check_interact(ctx: FpContext) -> void:
 func _check_photo(ctx: FpContext) -> void:
 	var p := ctx.player
 	var feat := ctx.feature("interact")
-	var s := _sidewalk(ctx, 0.2)
+	var s := K.sidewalk(ctx, 0.2)
 	p.teleport(s["pos"], s["yaw"])
 	var feet := p.position
 	var hud_was := ctx.hud.is_hud_visible()
@@ -624,7 +624,7 @@ func _check_photo(ctx: FpContext) -> void:
 ## Save: to_dict / from_dict round-trips the pose, the view and crouch; old saves load.
 func _check_save(ctx: FpContext) -> void:
 	var p := ctx.player
-	var s := _sidewalk(ctx, 0.2)
+	var s := K.sidewalk(ctx, 0.2)
 	p.teleport(s["pos"], s["yaw"])
 	for k in range(30):
 		p.simulate(Vector2.ZERO, false, DT, true)
@@ -796,30 +796,6 @@ func _straight_road(ctx: FpContext) -> int:
 		if m == RoadTopology.NS or m == RoadTopology.EW:
 			return i
 	return -1
-
-
-## A sidewalk point on a straight road with a clear line `length` ahead along the run:
-## {"pos", "yaw" (deg), "run"}.
-func _sidewalk(ctx: FpContext, length: float) -> Dictionary:
-	var sim := ctx.sim
-	var col := ctx.collision
-	for i in sim.active:
-		if sim.kind[i] != D.ROAD or sim.terrain[i] == D.WATER:
-			continue
-		var m := RoadTopology.mask(sim, D.tx(i), D.ty(i))
-		if m != RoadTopology.NS and m != RoadTopology.EW:
-			continue
-		var run := RoadTopology.run_dir(m)
-		var start := RoadTopology.sidewalk_point(sim, i, 1) - run * 0.3
-		var ok := true
-		for k in range(int(length / 0.02) + 4):
-			var q := start + run * (0.02 * k)
-			var g := col.walk_height(q)
-			ok = ok and not is_nan(g) and absf(g - WS.SIDEWALK_TOP) < 1e-6 and not col.is_blocked(Vector3(q.x, g, q.z), R * 1.5)
-		if ok:
-			start.y = col.walk_height(start)
-			return {"pos": start, "yaw": rad_to_deg(atan2(-run.x, -run.z)), "run": run}
-	return {}
 
 
 ## A built lot facing its frontage road, standing `off` from the road centre toward it:
