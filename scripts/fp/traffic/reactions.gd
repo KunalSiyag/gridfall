@@ -65,6 +65,12 @@ const FIGHT_HIT := 1.25 * WS.M
 const FIGHT_CONE := 0.5
 const FIST := Vector2(0.5, 1.45)
 const FIGHT_PUSH := 1.5 * WS.M
+## A knock-down throws the body (hit_feel flag): up LIFT (metres, by strength: a blow, a car) over
+## FLY_S seconds, back to the ground, then up BOUNCE of that again over BOUNCE_S.
+const LIFT := {"blow": Vector2(0.12, 0.3), "car": Vector2(0.3, 0.9)}
+const FLY_S := 0.32
+const BOUNCE := 0.2
+const BOUNCE_S := 0.18
 
 
 ## One person reacting: the steps still to come, [mode, clip, seconds] with mode "place" (stand
@@ -80,6 +86,9 @@ class Reaction:
 	var slide := Vector3.ZERO  # drawn offset the blow adds, eased out over slide_s
 	var slide_t: float = 0.0
 	var slide_s: float = 0.0
+	var lift: float = 0.0  # how high a knock-down throws the body (u); 0 for none
+	var fly_t: float = 0.0  # seconds since the blow, for the throw
+	var bump: float = 0.0  # the throw's height in the drawn feet now (u)
 	var was: String = ""  # walker state to give back ("" until the first step starts)
 	var speed: float = 0.0  # pace to give back after a run
 	var victim: bool = false
@@ -152,6 +161,7 @@ func hit(w: WK.Walker, src: Vector3, push: Vector3, strength: float, cause: Stri
 	var clip := _plan_down(r, d, strength, cause) if r.down else _plan_reel(r, d, strength, cause)
 	r.steps.append_array(_after(r, cause))
 	r.slide_t = 0.0
+	r.fly_t = 0.0
 	_next_step(r)
 	return {"down": r.down, "clip": clip}
 
@@ -177,6 +187,10 @@ func _plan_down(r: Reaction, d: Vector3, strength: float, cause: String) -> Stri
 	]
 	r.slide = d * (m * WS.M)
 	r.slide_s = 0.55
+	var lift: Vector2 = LIFT["car" if car else "blow"]
+	r.lift = lerpf(lift.x, lift.y, clampf(strength, 0.0, 1.0)) * WS.M
+	if not FeatureFlags.enabled("hit_feel"):
+		r.lift = 0.0
 	return &"knockback"
 
 
@@ -188,6 +202,7 @@ func _plan_reel(r: Reaction, d: Vector3, strength: float, cause: String) -> Stri
 		clip = &"hit_chest" if clip == &"hit_head" else &"hit_head"
 	var ln := float(lengths[clip])
 	r.steps = [["place", clip, ln]]
+	r.lift = 0.0
 	r.slide = d * (lerpf(0.25, 0.6, strength) * WS.M)
 	r.slide_s = ln * 0.8
 	return clip
@@ -335,6 +350,7 @@ func _next_step(r: Reaction) -> void:
 
 func _finish(r: Reaction) -> void:
 	var w := r.w
+	_drop(r)
 	_active.erase(w.id)
 	w.react = &""
 	w.speed = r.speed
@@ -355,7 +371,9 @@ func step(dt: float) -> void:
 			if r.delay <= 0.0:
 				_next_step(r)
 			continue
+		_drop(r)
 		_slide(r, dt)
+		_throw(r, dt)
 		var over := false
 		match r.mode:
 			"place":
@@ -496,6 +514,35 @@ func _slide(r: Reaction, dt: float) -> void:
 	if collision != null:
 		q = collision.move_body(p, move, BODY_R, BODY_H, WS.STEP_HEIGHT)
 	_set_feet(r.w, q)
+
+
+## Lifts the drawn feet along a knock-down's throw: one arc up and down, then a small bounce.
+func _throw(r: Reaction, dt: float) -> void:
+	if r.lift <= 0.0 and r.bump == 0.0:
+		return
+	r.fly_t += dt
+	var h := throw_height(r.fly_t, r.lift)
+	r.w.vis_off.y += h
+	r.bump = h
+	if h == 0.0 and r.fly_t > FLY_S:
+		r.lift = 0.0
+
+
+## Takes the throw's height back out of the drawn feet (before they move on the ground).
+func _drop(r: Reaction) -> void:
+	r.w.vis_off.y -= r.bump
+	r.bump = 0.0
+
+
+## How high a body thrown up to lift sits t seconds after the blow (0 once it has landed).
+static func throw_height(t: float, lift: float) -> float:
+	if t < FLY_S:
+		var x := t / FLY_S
+		return 4.0 * lift * x * (1.0 - x)
+	var b := (t - FLY_S) / BOUNCE_S
+	if b < 1.0:
+		return 4.0 * lift * BOUNCE * b * (1.0 - b)
+	return 0.0
 
 
 static func _ease(x: float) -> float:

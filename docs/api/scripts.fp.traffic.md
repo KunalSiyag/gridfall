@@ -613,6 +613,10 @@ People hit in the street (docs/fp/ARCHITECTURE.md, Body actions): shoved or punc
 - `FIGHT_CONE = 0.5`
 - `FIST = Vector2(0.5, 1.45)`
 - `FIGHT_PUSH = 1.5 * WS.M`
+- `LIFT = {"blow": Vector2(0.12, 0.3), "car": Vector2(0.3, 0.9)}`: A knock-down throws the body (hit_feel flag): up LIFT (metres, by strength: a blow, a car) over FLY_S seconds, back to the ground, then up BOUNCE of that again over BOUNCE_S.
+- `FLY_S = 0.32`
+- `BOUNCE = 0.2`
+- `BOUNCE_S = 0.18`
 
 ### Properties
 
@@ -632,6 +636,7 @@ People hit in the street (docs/fp/ARCHITECTURE.md, Body actions): shoved or punc
 - `func answer_emote(p: Vector3, fwd: Vector3, emote: String) -> Array`: People who answer the hero's emote ("wave", "yes", "no", "shout", "dance"; ANSWERS) made at p facing fwd (xz): after a moment they turn to p and wave, nod or shake their head. Returns them.
 - `func step(dt: float) -> void`
 - `func fighting(w: WK.Walker) -> bool`: True while w is fighting the hero (closing in or punching).
+- `static func throw_height(t: float, lift: float) -> float`: How high a body thrown up to lift sits t seconds after the blow (0 once it has landed).
 - `func blocks() -> Array`: Lane blocks for vehicles.gd: the people hit, until they walk or run on, as circles at their drawn feet (on a sidewalk they are clear of every lane).
 - `func is_down(w: WK.Walker) -> bool`: True while w is knocked down (lying or getting up).
 - `func count() -> int`

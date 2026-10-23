@@ -40,4 +40,8 @@ const FEATURES := [
 		"id": "animals", "slice": "integration",
 		"path": "res://scripts/fp/animals/animals_feature.gd",
 	},
+	{
+		"id": "hit_feel", "slice": "integration",
+		"path": "res://scripts/fp/hitfeel/hitfeel_feature.gd",
+	},
 ]

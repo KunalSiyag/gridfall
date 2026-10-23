@@ -104,6 +104,10 @@ Generated from the `##` doc comments in `scripts/`. Regenerate with `python3 too
 - [health_feature.gd](scripts.fp.health.md#scriptsfphealthhealth_featuregd): The hero's health (integration slice; docs/fp/ARCHITECTURE.md, Health): MAX_HP points, shown as an arc round the left of the minimap
 - [health_screen.gd](scripts.fp.health.md#scriptsfphealthhealth_screengd): The health feature's full-screen layer in the overlay slot (under the pause menu): a red vignette that flashes with each hurt and stays, pulsing, while health is low, and the knock-out's fade to black with its caption
 
+## [scripts/fp/hitfeel/](scripts.fp.hitfeel.md)
+
+- [hitfeel_feature.gd](scripts.fp.hitfeel.md#scriptsfphitfeelhitfeel_featuregd): Hit feel (integration feature "hit_feel"; docs/fp/ARCHITECTURE.md, Hit feel): what a blow feels like
+
 ## [scripts/fp/interact/](scripts.fp.interact.md)
 
 - [interact_feature.gd](scripts.fp.interact.md#scriptsfpinteractinteract_featuregd): Interaction with residents, buildings, posters and cars (slice A deliverables 3 and 6.7)

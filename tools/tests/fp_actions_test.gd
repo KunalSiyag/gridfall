@@ -83,20 +83,12 @@ func _step(secs: float, feature: bool = true) -> void:
 
 ## Removes every walker, so only the test's own people are about.
 func _quiet() -> void:
-	var wk: WK = tr.get("walkers")
-	for w: WK.Walker in wk.walkers.duplicate():
-		wk.remove(w)
+	K.quiet_walkers(tr)
 
 
 ## Someone standing dist_m metres ahead of the hero (behind for a negative distance), facing them.
 func _person(dist_m: float) -> WK.Walker:
-	var wk: WK = tr.get("walkers")
-	var p := ctx.player
-	var fwd := p.body_forward()
-	var w := wk.make("ambient")
-	w.extra = 0
-	wk.stand(w, p.position + fwd * dist_m * WS.M, atan2(-fwd.x, -fwd.z))
-	return w
+	return K.person_ahead(ctx, tr, dist_m)
 
 
 func _remove(w: WK.Walker) -> void:
