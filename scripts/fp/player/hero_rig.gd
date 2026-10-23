@@ -14,6 +14,7 @@ const WS := preload("res://scripts/fp/world_scale.gd")
 const AP := preload("res://scripts/fp/asset_paths.gd")
 const SM := preload("res://scripts/fp/player/spring_math.gd")
 const FK := preload("res://scripts/fp/player/hero_fk.gd")
+const HEEL := preload("res://scripts/fp/player/heel_strike.gd")
 
 ## Locomotion loops in blend order; HC starts each on the left-heel strike.
 const LOCO := ["walk", "walk_fast", "run", "run_fast"]
@@ -30,7 +31,7 @@ const CLIPS := [
 	"idle", "walk", "walk_fast", "run", "run_fast", "crouch_idle", "crouch_walk", "jump_start",
 	"fall", "land", "talk", "sit_down", "sit", "stand_up", "interact", "wave", "phone", "door_try",
 	"punch_jab", "punch_cross", "push", "yes", "no", "shout", "dance", "hit_head", "hit_chest",
-	"knockback", "get_up",
+	"knockback", "get_up", "climb_1m",
 ]
 ## Foot-slide correction: TimeScale = clamp(v / v_anim, TS_MIN, TS_MAX).
 const TS_MIN := 0.5
@@ -64,15 +65,10 @@ const LAND_MOVING := 0.6
 ## Below this (m/s) the body stands; talk and gestures need it below TALK_STILL.
 const STILL := 0.05
 const TALK_STILL := 0.3
-## Feet analysis: samples per locomotion cycle and over idle, and how close (m) to its lowest
-## point near the nominal strike a heel counts as down.
+## Feet analysis: samples per locomotion cycle and over idle (HEEL finds the strikes in them);
+## blends are measured at 1 / BLEND_STEPS steps of weight.
 const CONTACT_SAMPLES := 64
 const IDLE_SAMPLES := 24
-const CONTACT_EPS := 0.005
-## The window, in cycles around the nominal heel strike, that the contact search covers; blends
-## are measured at 1 / BLEND_STEPS steps of weight.
-const CONTACT_BEFORE := 0.2
-const CONTACT_AFTER := 0.15
 const BLEND_STEPS := 8
 ## UAL's crouch and landing clips, retargeted onto Rocketbox legs, hold the feet a few centimetres
 ## above the ground: in those states the body is lowered until both feet rest on it (each foot's
@@ -103,6 +99,8 @@ const STRIKE_WITHIN := 1.2
 ## sit_down and stand_up play this much faster than authored (in and out of a car seat).
 const SIT_SPEED := 1.5
 const SIT_CLIPS := ["sit_down", "stand_up"]
+## States the ground does not cut short for locomotion: sitting, the knock-down and the climb.
+const HELD := ["sit_down", "sit", "stand_up", "knockback", "get_up", "climb"]
 ## Head look (6.9): Head limits (yaw, pitch), the Neck's share and limit, the modifier's own
 ## interpolation, the influence fade when the target leaves the limits, and the halflife that
 ## smooths a jumping target.
@@ -194,6 +192,8 @@ var _act_left: float = INF
 var _dance_left: float = INF
 ## Seconds until a body knocked down (play_action "knockdown") gets up; INF when it is not down.
 var _down_left: float = INF
+## The climb state's clip (its timeline stretches to each climb's length).
+var _climb: AnimationNodeAnimation
 var _strike: Dictionary = {}
 
 
@@ -312,12 +312,12 @@ func _on_ground(dt: float, st: String, a: float, crouched: bool, talking: bool) 
 		var t := _land_t
 		if crouched or t >= len - XF_LAND_OUT or a > LAND_MOVING or (a > STILL and t >= LAND_INTERRUPT * len):
 			_go(_base(a, crouched, talking))
-	elif not _sit and st not in ["sit_down", "sit", "stand_up", "knockback", "get_up"]:
+	elif not _sit and st not in HELD:
 		_go(_base(a, crouched, talking))
 
 
 ## The state machine's current state ("loco", "crouch", "jump", "fall", "land", "talk",
-## "sit_down", "sit", "stand_up", "knockback", "get_up").
+## "sit_down", "sit", "stand_up", "knockback", "get_up", "climb").
 func state() -> String:
 	return str(playback.get_current_node()) if playback != null else ""
 
@@ -348,16 +348,16 @@ func stop_gesture() -> void:
 
 
 ## Plays a body action: one of ACTIONS on the upper body over whatever the legs do, "dance" on
-## the whole body (standing only; moving ends it) or "knockdown" (the body falls onto its back,
-## lies there secs and gets up). secs > 0 fades an action out that long after the start;
-## otherwise a clip plays to its end, a loop for one cycle and the dance until stopped.
+## the whole body (standing only; moving ends it), "knockdown" (the body falls onto its back,
+## lies there secs and gets up) or "climb" (the body pulls itself up over secs, then walks on).
+## secs > 0 fades an action out that long after the start; otherwise a clip plays to its end, a
+## loop for one cycle and the dance until stopped.
 func play_action(a: String, secs: float = 0.0) -> bool:
 	var left := secs if secs > 0.0 else INF
-	if a == "knockdown":
+	if a == "knockdown" or a == "climb":
 		stop_gesture()
 		stop_action()
-		_down_left = float(lengths["knockback"]) + maxf(secs, 0.0)
-		_go("knockback")
+		_whole_body(a, secs)
 		return true
 	if a == "dance":
 		if state() != "loco" or move * float(speeds["walk"]) > TALK_STILL:
@@ -371,6 +371,18 @@ func play_action(a: String, secs: float = 0.0) -> bool:
 	tree.set(P_ACT, AnimationNodeOneShot.ONE_SHOT_REQUEST_FIRE)
 	_act_left = left
 	return true
+
+
+func _whole_body(a: String, secs: float) -> void:
+	if a == "knockdown":
+		_down_left = float(lengths["knockback"]) + maxf(secs, 0.0)
+		_go("knockback")
+		return
+	_climb.timeline_length = secs if secs > 0.0 else float(lengths["climb_1m"])
+	if state() == "climb":
+		playback.start("climb", true)
+	else:
+		_go("climb")
 
 
 ## True while an action or the dance plays (fading out included).
@@ -637,18 +649,23 @@ func _state_machine() -> AnimationNodeStateMachine:
 	sm.add_node("sit", _anim("sit"))
 	for s: String in SIT_CLIPS + ["knockback", "get_up"]:
 		sm.add_node(s, _once(s, SIT_SPEED if s in SIT_CLIPS else 1.0))
+	_climb = _once("climb_1m", 1.0)
+	sm.add_node("climb", _climb)
 	_tr(sm, "Start", "loco", 0.0, true)
 	for pair: Array in [["loco", "crouch"], ["crouch", "loco"], ["land", "crouch"]]:
 		_tr(sm, pair[0], pair[1], XF_CROUCH)
 	for from: String in ["loco", "crouch", "land", "talk"]:
 		_tr(sm, from, "jump", XF_JUMP)
 		_tr(sm, from, "fall", XF_LEDGE)
+		_tr(sm, from, "climb", XF_JUMP)
 	_tr(sm, "jump", "fall", XF_FALL, true)
 	_tr(sm, "jump", "land", XF_LAND)
 	_tr(sm, "fall", "land", XF_LAND)
 	for from: String in ["jump", "fall"]:
 		_tr(sm, from, "loco", XF_LAND_OUT)
 		_tr(sm, from, "crouch", XF_LAND_OUT)
+		_tr(sm, from, "climb", XF_JUMP)
+	_tr(sm, "climb", "loco", XF_LAND_OUT, true)
 	_tr(sm, "land", "loco", XF_LAND_OUT)
 	_tr(sm, "land", "talk", XF_TALK)
 	for pair: Array in [["loco", "talk"], ["talk", "loco"], ["crouch", "talk"], ["talk", "crouch"]]:
@@ -660,7 +677,7 @@ func _state_machine() -> AnimationNodeStateMachine:
 	_tr(sm, "sit", "stand_up", XF_SIT)
 	_tr(sm, "stand_up", "loco", XF_SIT, true)
 	_tr(sm, "stand_up", "sit_down", XF_SIT)
-	for from: String in ["loco", "crouch", "land", "talk", "jump", "fall", "get_up"]:
+	for from: String in ["loco", "crouch", "land", "talk", "jump", "fall", "get_up", "climb"]:
 		_tr(sm, from, "knockback", XF_FALL)
 	_tr(sm, "knockback", "get_up", XF_FALL)
 	_tr(sm, "get_up", "loco", XF_LAND_OUT, true)
@@ -863,7 +880,7 @@ func contact_phases(st: String = "loco") -> Vector2:
 
 ## The heel contact phases (left, right) of clip c0 blended toward c1 by w (quantised to
 ## 1 / BLEND_STEPS; both clips on one shared cycle, as the cyclic blend space plays them). Each is
-## where that ankle comes down to within CONTACT_EPS of its lowest height near HC's nominal phase
+## where that ankle comes down to within HEEL.EPS of its lowest height near HC's nominal phase
 ## (0 for the left heel, 0.5 for the right). Computed on first use and cached.
 func _contacts_of(c0: String, c1: String, w: float) -> Vector2:
 	var q := roundi(w * BLEND_STEPS) if c0 != c1 else 0
@@ -879,7 +896,7 @@ func _contacts_of(c0: String, c1: String, w: float) -> Vector2:
 		for k in range(CONTACT_SAMPLES):
 			var ph := float(k) / float(CONTACT_SAMPLES)
 			h.append(_fk.end_pos(a0, a1, wq, _chains[f], ph).y)
-		out[f] = _down_phase(h, 0.5 * float(f))
+		out[f] = HEEL.down_phase(h, 0.5 * float(f))
 	_contact[key] = out
 	return out
 
@@ -899,26 +916,6 @@ func _analyse_feet() -> void:
 	_feet_rest.clear()
 	for f in range(4):
 		_feet_rest.append(stand[f / 2])
-
-
-
-## Where samples h (one cycle) come down to within CONTACT_EPS of their lowest value inside the
-## window around nominal (the heel strike after the swing), interpolated between samples.
-static func _down_phase(h: PackedFloat32Array, nominal: float) -> float:
-	var n := h.size()
-	var i0 := roundi((nominal - CONTACT_BEFORE) * n)
-	var i1 := roundi((nominal + CONTACT_AFTER) * n)
-	var lo := INF
-	for i in range(i0, i1 + 1):
-		lo = minf(lo, h[posmod(i, n)])
-	var thr := lo + CONTACT_EPS
-	for i in range(i0 + 1, i1 + 1):
-		var prev := h[posmod(i - 1, n)]
-		var cur := h[posmod(i, n)]
-		if prev > thr and cur <= thr:
-			var f := clampf((prev - thr) / maxf(prev - cur, 1e-6), 0.0, 1.0)
-			return fposmod((float(i) - 1.0 + f) / float(n), 1.0)
-	return fposmod(nominal, 1.0)
 
 
 # --- Head look

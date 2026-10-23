@@ -12,7 +12,6 @@
  "scripts/fp/player/body_shapes.gd::Grid.rects": 23,
  "scripts/fp/player/body_shapes.gd::analyse": 40,
  "scripts/fp/player/placeholder_puppet.gd::_layout": 28,
- "scripts/fp/player/player.gd::simulate": 22,
  "scripts/fp/player/player.gd::update_view": 23,
  "scripts/fp/player/tps_rig.gd::_solve": 36,
  "scripts/fp/posters/poster_feature.gd::update_composites": 24,
