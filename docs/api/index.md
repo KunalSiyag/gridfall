@@ -34,6 +34,7 @@ Generated from the `##` doc comments in `scripts/`. Regenerate with `python3 too
 - [game_bus.gd](scripts.fp.md#scriptsfpgame_busgd) (`GameBus`): Signals that cross first-person slices
 - [obb2d.gd](scripts.fp.md#scriptsfpobb2dgd): Oriented boxes and circles on the ground plane, as Vector2(x, z): overlap tests, contacts and inertia for the player's car body and the street props it knocks over
 - [road_topology.gd](scripts.fp.md#scriptsfproad_topologygd) (`RoadTopology`): Static road-tile helpers shared by collision, traffic, the directory, the minimap and the streetscape
+- [scene_loads.gd](scripts.fp.md#scriptsfpscene_loadsgd): PackedScenes loaded on background threads (ResourceLoader's threaded loads), for the features that stream bodies in (the crews' workers, the dogs): request() starts a load, scene() hands the scene out once it is in, and finish() waits for the loads still in flight
 - [world_scale.gd](scripts.fp.md#scriptsfpworld_scalegd): First-person world scale
 
 ## [scripts/fp/actions/](scripts.fp.actions.md)
@@ -48,12 +49,20 @@ Generated from the `##` doc comments in `scripts/`. Regenerate with `python3 too
 - [activity_tags.gd](scripts.fp.activity.md#scriptsfpactivityactivity_tagsgd): Floating tags over the AI beacons (feature "activity"): for each beacon in front of the camera and within RANGE, who decided and what, with the distance, pinned above the ground at the beacon (lower when near, so a close beacon's tag stays in view)
 - [activity_words.gd](scripts.fp.activity.md#scriptsfpactivityactivity_wordsgd): Plain words for the AI activity layer: what a mayor's turn did ("Zoned 6 homes · Ordered a Solar Farm"), council, chaos and grid rulings, a support agent's model badge, where an answer came from (live, replay or offline), "4 min" ages and compass directions
 
+## [scripts/fp/animals/](scripts.fp.animals.md)
+
+- [animals_feature.gd](scripts.fp.animals.md#scriptsfpanimalsanimals_featuregd): Dogs in the street (integration feature "animals")
+- [dog_bodies.gd](scripts.fp.animals.md#scriptsfpanimalsdog_bodiesgd): The dogs' bodies: Quaternius' Shiba Inu and Husky (AP.DOG_SHIBA, AP.DOG_HUSKY), each scene under a root scaled from model units to its breed's height at the shoulder, with the scene's own AnimationPlayer playing the clips in place (the dog pack moves the root) and a DogRig on the skeleton for the tail, the head and the barks
+- [dog_leads.gd](scripts.fp.animals.md#scriptsfpanimalsdog_leadsgd): The leads from owners' hands to their dogs' collars: one camera-facing ribbon each, sagging with the slack, redrawn every frame into a single ImmediateMesh (draw())
+- [dog_pack.gd](scripts.fp.animals.md#scriptsfpanimalsdog_packgd): The dogs' behaviour; the animals feature decides who has a dog and feeds in the world before every step()
+- [dog_rig.gd](scripts.fp.animals.md#scriptsfpanimalsdog_riggd): A dog's life on top of its clip (DogBodies puts one on every dog skeleton): the tail wags (wag 0..1, faster as it grows), the head turns and tilts toward a world point (look) and jerks up with each bark (bark 1, easing back to 0 here)
+
 ## [scripts/fp/audio/](scripts.fp.audio.md)
 
 - [ambience.gd](scripts.fp.audio.md#scriptsfpaudioambiencegd): Area ambience (slice I): looping 2D beds on the Ambience bus (traffic hum, park birds, river, the quiet residential bed, night insects and rain), weighted by what lies around the player and by the weather, and cross-faded over CROSSFADE_S
 - [audio_bank.gd](scripts.fp.audio.md#scriptsfpaudioaudio_bankgd): Slice I's sound assets (sounds/fp/, made by tools/audio/synth_fp_sfx.py): names, a load-once stream cache and the mix
 - [audio_feature.gd](scripts.fp.audio.md#scriptsfpaudioaudio_featuregd): City sound on foot (slice I)
-- [emitters.gd](scripts.fp.audio.md#scriptsfpaudioemittersgd): Positional city sound (slice I): logical sources (engines, horns, sirens, construction, fire, fountains, power plants, river banks, passers-by's footsteps, crashes, knocked props, car doors, blows and swings) share a pool of at most MAX_PLAYERS AudioStreamPlayer3D
+- [emitters.gd](scripts.fp.audio.md#scriptsfpaudioemittersgd): Positional city sound (slice I): logical sources (engines, horns, sirens, construction, fire, fountains, power plants, river banks, passers-by's footsteps, crashes, knocked props, car doors, blows and swings, dogs) share a pool of at most MAX_PLAYERS AudioStreamPlayer3D
 - [footsteps.gd](scripts.fp.audio.md#scriptsfpaudiofootstepsgd): The hero's footsteps (slice I)
 
 ## [scripts/fp/chat/](scripts.fp.chat.md)

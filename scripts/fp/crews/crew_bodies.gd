@@ -7,6 +7,7 @@ extends RefCounted
 
 const WS := preload("res://scripts/fp/world_scale.gd")
 const AP := preload("res://scripts/fp/asset_paths.gd")
+const LOADS := preload("res://scripts/fp/scene_loads.gd")
 const GROUP := "trades"
 const STAND_IN_COLOR := Color(1.0, 0.52, 0.1)
 const CRATE_COLOR := Color(0.62, 0.47, 0.3)
@@ -44,8 +45,7 @@ var _clip_speed: Dictionary = {}
 ## gender -> [crate transform in the UpperChest bone's frame, crate BoxMesh]
 var _crate_fit: Dictionary = {}
 var _height: Dictionary = {"target_m": 1.75, "female_factor": 0.95, "jitter": [0.97, 1.03]}
-var _loading: Dictionary = {}
-var _loaded: Dictionary = {}
+var _loads := LOADS.new()
 var _pool: Dictionary = {}
 var _crate_mat: StandardMaterial3D = null
 
@@ -97,14 +97,12 @@ func load_roster() -> bool:
 ## Starts loading every trades body on a background thread.
 func start() -> void:
 	for kd: Dictionary in kinds:
-		_request(str(kd["path"]))
+		_loads.request(str(kd["path"]))
 
 
 ## Waits for the loads still in flight (quitting with one running aborts it noisily).
 func finish_loads() -> void:
-	for path: String in _loading.keys():
-		_loaded[path] = ResourceLoader.load_threaded_get(path) as PackedScene
-	_loading.clear()
+	_loads.finish()
 
 
 ## A body of kinds[k] (any k, wrapped) under parent, its stature picked by jitter (0..1), or null
@@ -122,9 +120,9 @@ func make(k: int, jitter: float, parent: Node3D) -> Body:
 		return _stand_in(parent)
 	var kd: Dictionary = kinds[kk]
 	var path := str(kd["path"])
-	var ps := _scene(path)
+	var ps := _loads.scene(path, blocking)
 	if ps == null:
-		return null if _loading.has(path) else _stand_in(parent)
+		return null if _loads.pending(path) else _stand_in(parent)
 	var b := Body.new()
 	b.kind = kk
 	b.gender = str(kd["gender"])
@@ -267,32 +265,6 @@ static func _bone_in_skeleton(sk: Skeleton3D, bone: int) -> Transform3D:
 		out = sk.get_bone_pose(at) * out
 		at = sk.get_bone_parent(at)
 	return out
-
-
-func _request(path: String) -> void:
-	if _loaded.has(path) or _loading.has(path):
-		return
-	if ResourceLoader.load_threaded_request(path, "PackedScene") == OK:
-		_loading[path] = true
-	else:
-		_loaded[path] = null
-
-
-## The scene at path once it is in; null while it loads (unless blocking) or when it failed.
-func _scene(path: String) -> PackedScene:
-	if _loaded.has(path):
-		return _loaded[path]
-	_request(path)
-	if not _loading.has(path):
-		return null
-	var busy := (
-		ResourceLoader.load_threaded_get_status(path) == ResourceLoader.THREAD_LOAD_IN_PROGRESS
-	)
-	if busy and not blocking:
-		return null
-	_loading.erase(path)
-	_loaded[path] = ResourceLoader.load_threaded_get(path) as PackedScene
-	return _loaded[path]
 
 
 func _stand_in(parent: Node3D) -> Body:

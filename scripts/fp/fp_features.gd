@@ -36,4 +36,8 @@ const FEATURES := [
 		"id": "parkour", "slice": "integration",
 		"path": "res://scripts/fp/parkour/parkour_feature.gd",
 	},
+	{
+		"id": "animals", "slice": "integration",
+		"path": "res://scripts/fp/animals/animals_feature.gd",
+	},
 ]

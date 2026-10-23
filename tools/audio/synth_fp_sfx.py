@@ -5,7 +5,7 @@ Everything is built from numpy noise, oscillators, pulse trains and modal resona
 seeds, so a re-run gives the same samples and byte-identical files. Two formats:
 
 - WAV (16-bit PCM, imported uncompressed) for every sound the game starts often: footsteps,
-  horns, crashes, knocked props, car doors and blows, UI cues, the engine loops and the siren. Starting an Ogg Vorbis playback costs about
+  horns, crashes, knocked props, car doors, blows and dogs, UI cues, the engine loops and the siren. Starting an Ogg Vorbis playback costs about
   0.4 ms on the main thread (a decoder per start), a WAV about 1 us, and the audio budget is
   0.3 ms per frame.
 - Ogg Vorbis (ffmpeg libvorbis -q 4, bit-exact) for the long loops started rarely: the beds,
@@ -1085,6 +1085,122 @@ def synth_body_fall() -> np.ndarray:
     out = stereo_reverb(out, rng, 0.5, 0.1, 4500.0, circular=False).mean(axis=1)
     return norm_peak(fade_edges(out, 0.0005, 0.12), -1.0)
 
+
+# ------------------------------------------------------------------ dogs
+
+## A medium dog's mouth open to bark (a vocal tract about 15 cm long): formants (Hz, bandwidth Hz,
+## gain), and the same tract lowered and drawn back to growl.
+DOG_FORMANTS = [(650.0, 180.0, 1.0), (1650.0, 260.0, 0.55), (2800.0, 360.0, 0.3), (3900.0, 480.0, 0.16)]
+GROWL_FORMANTS = [(430.0, 150.0, 1.0), (1150.0, 220.0, 0.5), (2300.0, 320.0, 0.25), (3300.0, 420.0, 0.12)]
+## The three barks: peak pitch (Hz), length (s), roughness (0..1) and the share of it the pitch takes
+## to reach its peak.
+BARKS = [(470.0, 0.19, 0.35, 0.22), (540.0, 0.13, 0.5, 0.3), (610.0, 0.16, 0.25, 0.18)]
+
+
+def resonate(x: np.ndarray, formants: list[tuple[float, float, float]], direct: float) -> np.ndarray:
+    """x through parallel formant resonators (Hz, bandwidth Hz, gain), plus `direct` of x itself."""
+    out = direct * x
+    for f, bw, g in formants:
+        out = out + g * bandpass(x, f - bw / 2.0, f + bw / 2.0, 1)
+    return out
+
+
+def bark(rng: np.random.Generator, f_peak: float, dur: float, rough: float, rise: float) -> np.ndarray:
+    """One bark of dur seconds: the voice jumps up to f_peak Hz within `rise` of it and falls away,
+    rough with period doubling and breathy at the onset, through the open mouth (DOG_FORMANTS)."""
+    n = int((dur + 0.02) * SR)
+    t = secs(n)
+    u = np.clip(t / dur, 0.0, 1.0)
+    shape = np.where(u < rise, 0.72 + 0.28 * np.sin(0.5 * np.pi * u / rise),
+                     1.0 - 0.42 * np.clip((u - rise) / (1.0 - rise), 0.0, 1.0) ** 1.3)
+    f0 = f_peak * shape * (1.0 + 0.02 * wander(rng, n, 40.0))
+    src = tone(f0, [1.0 / k ** 0.9 for k in range(1, 25)])
+    src *= 1.0 + rough * np.sin(np.pi * np.cumsum(f0) / SR + rng.uniform(0, 2 * np.pi))
+    breath = bandpass(rng.standard_normal(n), 700.0, 6500.0)
+    breath *= 0.35 * rms(src) / rms(breath) * (0.5 + np.exp(-t / 0.02))
+    env = env_ad(n, 0.01, dur * 0.42) * np.clip((dur - t) / 0.03, 0.0, 1.0)
+    out = resonate(src * env, DOG_FORMANTS, 0.15) + resonate(breath * env, DOG_FORMANTS, 0.3)
+    return out / (np.max(np.abs(out)) + 1e-9)
+
+
+def synth_dog_bark(k: int) -> np.ndarray:
+    """A medium dog's bark (one of BARKS): a short burst of rough voice that jumps up in pitch and
+    falls away, with the street's slap after it."""
+    rng = rng_for("dog_bark_%d" % k)
+    f_peak, dur, rough, rise = BARKS[k - 1]
+    out = np.zeros(int(0.55 * SR))
+    add_at(out, bark(rng, f_peak, dur, rough, rise), int(0.003 * SR), wrap=False)
+    out = stereo_reverb(out, rng, 0.45, 0.1, 5000.0, circular=False).mean(axis=1)
+    return norm_peak(fade_edges(out, 0.0005, 0.08), -1.0)
+
+
+def synth_dog_growl() -> np.ndarray:
+    """A dog's warning growl: a low, rough voice (about 100 Hz, jittered, with period doubling)
+    fluttering into a "grrr", through the lowered mouth (GROWL_FORMANTS) with a snarl's breath,
+    swelling and easing over a second."""
+    rng = rng_for("dog_growl")
+    dur = 1.1
+    n = int(1.4 * SR)
+    t = secs(n)
+    f0 = 100.0 * (1.0 + 0.06 * wander(rng, n, 3.0) + 0.03 * wander(rng, n, 70.0))
+    f0 *= 1.0 + 0.12 * np.exp(-((t - 0.3) / 0.25) ** 2)
+    src = tone(f0, [1.0 / k for k in range(1, 60)])
+    src *= 1.0 + 0.6 * np.sin(np.pi * np.cumsum(f0) / SR)
+    flutter = 0.5 + 0.5 * np.sin(2 * np.pi * 27.0 * t + 2.0 * wander(rng, n, 3.0))
+    env = np.clip(t / 0.09, 0.0, 1.0) ** 2 * np.clip((dur - t) / 0.2, 0.0, 1.0)
+    env *= (0.8 + 0.2 * wander(rng, n, 2.5)) * (0.4 + 0.6 * flutter ** 2)
+    voiced = resonate(src * env, GROWL_FORMANTS, 0.25)
+    breath = bandpass(rng.standard_normal(n), 250.0, 3500.0) * env
+    out = voiced + 0.3 * rms(voiced) / rms(breath) * resonate(breath, GROWL_FORMANTS, 0.4)
+    out = stereo_reverb(out, rng, 0.45, 0.08, 4500.0, circular=False).mean(axis=1)
+    return norm_peak(fade_edges(out, 0.0005, 0.1), -1.0)
+
+
+def synth_dog_whine() -> np.ndarray:
+    """A dog's whine: two high, nasal whimpers (a short one, then a long one) arching up and back
+    down around 1 kHz, with a tremble and a little breath."""
+    rng = rng_for("dog_whine")
+    out = np.zeros(int(1.05 * SR))
+    for t0, dur, lo, hi in [(0.0, 0.2, 820.0, 1150.0), (0.27, 0.55, 880.0, 1320.0)]:
+        m = int(dur * SR)
+        tt = secs(m)
+        u = tt / dur
+        fr = lo + (hi - lo) * np.sin(np.pi * np.clip(u, 0.0, 1.0) ** 0.6)
+        fr *= 1.0 + 0.012 * np.sin(2 * np.pi * 7.0 * tt + rng.uniform(0, 2 * np.pi)) + 0.01 * wander(rng, m, 12.0)
+        s = tone(fr, [1.0, 0.4, 0.18, 0.1, 0.05])
+        s = s + 0.5 * bandpass(s, 2300.0, 3300.0, 1)
+        b = bandpass(rng.standard_normal(m), 1500.0, 6000.0)
+        s = s + 0.05 * rms(s) / rms(b) * b
+        add_at(out, s * np.sin(np.pi * np.clip(u, 0.0, 1.0)) ** 0.7, int((0.005 + t0) * SR), wrap=False)
+    out = stereo_reverb(out, rng, 0.45, 0.1, 5000.0, circular=False).mean(axis=1)
+    return norm_peak(fade_edges(out, 0.0005, 0.1), -1.0)
+
+
+def synth_dog_snap() -> np.ndarray:
+    """A dog's bite: a snarl rising into the snap of its jaws (teeth meeting and the mouth's hollow
+    knock) and the tug at the trouser leg it caught."""
+    rng = rng_for("dog_snap")
+    out = np.zeros(int(0.5 * SR))
+    sn = int(0.15 * SR)
+    tt = secs(sn)
+    fr = (170.0 + 160.0 * tt / 0.15) * (1.0 + 0.04 * wander(rng, sn, 40.0))
+    rise = np.clip(tt / 0.1, 0.0, 1.0) ** 2 * np.clip((0.15 - tt) / 0.005, 0.0, 1.0)
+    snarl = tone(fr, [1.0 / k for k in range(1, 30)]) * (1.0 + 0.5 * np.sin(np.pi * np.cumsum(fr) / SR))
+    snarl = resonate(snarl * rise, DOG_FORMANTS, 0.15)
+    b = bandpass(rng.standard_normal(sn), 500.0, 5000.0) * rise
+    snarl = snarl + 0.4 * rms(snarl) / rms(b) * b
+    add_at(out, 0.55 * snarl / (np.max(np.abs(snarl)) + 1e-9), 0, wrap=False)
+    at = sn - int(0.004 * SR)
+    m = int(0.2 * SR)
+    jaws = modes(m, [(1050.0, 0.012, 1.0), (2250.0, 0.007, 0.6), (3400.0, 0.004, 0.4)], rng)
+    snap = crack(rng, m, 0.0018, 2500.0, 10000.0) + 0.6 * jaws / (np.max(np.abs(jaws)) + 1e-9)
+    add_at(out, snap / (np.max(np.abs(snap)) + 1e-9), at, wrap=False)
+    cl = int(0.12 * SR)
+    cloth = bandpass(rng.standard_normal(cl), 1200.0, 7000.0) * env_ad(cl, 0.006, 0.035)
+    add_at(out, 0.25 * cloth / (np.max(np.abs(cloth)) + 1e-9), at + int(0.01 * SR), wrap=False)
+    out = stereo_reverb(out, rng, 0.35, 0.08, 5000.0, circular=False).mean(axis=1)
+    return norm_peak(fade_edges(out, 0.0005, 0.06), -1.0)
+
 # ------------------------------------------------------------------ UI
 
 def bell_note(f: float, dur: float, index: float = 2.0, ratio: float = 1.4, decay: float = 0.4) -> np.ndarray:
@@ -1130,7 +1246,8 @@ def synth_alert_stinger() -> np.ndarray:
 ## Sounds stored as WAV (started often; see the module docstring).
 WAV_SOUNDS = {"engine_idle", "engine_run", "siren_two_tone", "horn_short", "horn_long", "chat_blip",
               "chat_blip_soft", "alert_stinger", "crash_heavy", "crash_light", "prop_clatter", "prop_clang",
-              "car_door_open", "car_door_close", "punch_hit", "punch_whoosh", "body_fall"}
+              "car_door_open", "car_door_close", "punch_hit", "punch_whoosh", "body_fall", "dog_bark_1",
+              "dog_bark_2", "dog_bark_3", "dog_growl", "dog_whine", "dog_snap"}
 
 
 def is_wav(name: str) -> bool:
@@ -1167,7 +1284,12 @@ def catalogue() -> dict[str, tuple[object, bool]]:
         "punch_hit": (synth_punch_hit, False),
         "punch_whoosh": (synth_punch_whoosh, False),
         "body_fall": (synth_body_fall, False),
+        "dog_growl": (synth_dog_growl, False),
+        "dog_whine": (synth_dog_whine, False),
+        "dog_snap": (synth_dog_snap, False),
     }
+    for k in range(1, len(BARKS) + 1):
+        c["dog_bark_%d" % k] = ((lambda k=k: synth_dog_bark(k)), False)
     for s in SURFACES:
         for k in range(1, STEP_VARIANTS + 1):
             c["footstep_%s_%d" % (s, k)] = ((lambda s=s, k=k: synth_step(s, k)), False)

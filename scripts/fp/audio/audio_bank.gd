@@ -22,13 +22,15 @@ const LOOPS: Array[String] = [
 const ONE_SHOTS: Array[String] = [
 	"horn_short", "horn_long", "chat_blip", "chat_blip_soft", "alert_stinger", "crash_heavy",
 	"crash_light", "prop_clatter", "prop_clang", "car_door_open", "car_door_close", "punch_hit",
-	"punch_whoosh", "body_fall",
+	"punch_whoosh", "body_fall", "dog_bark_1", "dog_bark_2", "dog_bark_3", "dog_growl", "dog_whine",
+	"dog_snap",
 ]
 ## Stored as WAV (with every footstep_*); everything else is .ogg.
 const WAV_SOUNDS: Array[String] = [
 	"engine_idle", "engine_run", "siren_two_tone", "horn_short", "horn_long", "chat_blip",
 	"chat_blip_soft", "alert_stinger", "crash_heavy", "crash_light", "prop_clatter", "prop_clang",
-	"car_door_open", "car_door_close", "punch_hit", "punch_whoosh", "body_fall",
+	"car_door_open", "car_door_close", "punch_hit", "punch_whoosh", "body_fall", "dog_bark_1",
+	"dog_bark_2", "dog_bark_3", "dog_growl", "dog_whine", "dog_snap",
 ]
 
 ## Bus names (created by audio_feature.setup when missing).
@@ -90,6 +92,14 @@ const SHOVE_DB := -6.0
 ## the feet, a body_fall ROLL_DB under a knock-down's.
 const ROLL_THUD_S := 0.15
 const ROLL_DB := -8.0
+## Dogs (animal_called): a bark is one of BARK_VARIANTS (dog_bark_<n>), a growl and a whine play
+## DOG_DB under it. The samples are of a dog DOG_PITCH_M high at the shoulder; a dog h m high
+## plays at sqrt(DOG_PITCH_M / h), so a small dog yaps higher. A dog's bite on the hero (hero_hurt
+## "bite") snaps its jaws (dog_snap) SNAP_Y m up, at the knee.
+const BARK_VARIANTS := 3
+const DOG_DB := {"bark": 0.0, "growl": -6.0, "whine": -12.0}
+const DOG_PITCH_M := 0.5
+const SNAP_Y := 0.5
 
 static var _cache: Dictionary = {}
 static var _legacy_loop: AudioStream = null

@@ -55,6 +55,8 @@ First-person asset paths. Slice H owns this list and produces the files; every c
 - `CHAR_ROOT_MOTION_TRACK = "%GeneralSkeleton:Root"`
 - `CHAR_LOOK_AXIS = SkeletonModifier3D.BONE_AXIS_PLUS_Z`: LookAtModifier3D.forward_axis for the Head and Neck bones of every character rig.
 - `PERSON_TPS_ANIMS = [ "idle", "walk", "walk_fast", "run", "run_fast", "crouch_idle", "crouch_walk", "jump_s...`: Clips the player uses (both libraries hold them, plus AP.PERSON_ANIMS and the crowd extras).
+- `DOG_SHIBA = "res://models/real/animals/shiba_inu.glb"`: Quaternius' rigged dogs (CC0, models/real/LICENSES/quaternius-dogs.txt): one skeleton, clips Walk, Gallop, Idle, Idle_2, Idle_2_HeadLow, Eating, Attack, Idle_HitReact_Left/Right and Jump_ToIdle.
+- `DOG_HUSKY = "res://models/real/animals/husky.glb"`
 
 ### Functions
 
@@ -249,8 +251,9 @@ Signals that cross first-person slices. Emitters and listeners are listed in doc
 - `hero_action(action: String, at: Vector3)`: The hero swung, gestured or got over something: action "jab", "cross", "shove", an emote ("wave", "yes", "no", "shout", "dance") or a parkour move ("vault", "hop", "climb", "roll" off a hard landing, or "grab" taking hold of a wall), as it starts, at their feet. Emitted by the actions and parkour features.
 - `talk_replied(resident_id: String, speaker: String, reply: String)`: Someone answered the hero: a resident face to face (their id and name), or whoever answered "Ask someone here" (resident_id "" and their role, "Shopkeeper"). reply is filtered for display. Emitted by chat.
 - `story_filed(story: Dictionary)`: The player filed a story for the Gazette: reporter_feature.gd file_story()'s {"agent", "headline", "place", "quote", "by", "tile", "district", "day", "scoop", "local", "sharp", "points", "text"}. Emitted by the reporter feature; chat runs "text" as a Gazette line.
-- `hero_hit(at: Vector3, cause: String, strength: float, push: Vector3)`: Something struck the hero on foot: at is where the blow came from (a fist, a car's front), cause "punch" (someone fighting back) or "car" (a car that could not stop for them), strength 0..1 and push the xz velocity (u/s) it throws the hero along. Emitted by traffic; the health feature takes the damage.
-- `hero_hurt(amount: float, cause: String, health: float, down: bool)`: The hero lost amount of health to cause: "punch" or "car" (hero_hit), "crash" (in the car they drive) or "fall" (a hard landing); health is what is left (0..100, 0 knocked out) and down is true when it put them on the ground. Emitted by the health feature.
+- `hero_hit(at: Vector3, cause: String, strength: float, push: Vector3)`: Something struck the hero on foot: at is where the blow came from (a fist, a car's front, a dog's jaws), cause "punch" (someone fighting back), "car" (a car that could not stop for them) or "bite" (a dog defending its owner), strength 0..1 and push the xz velocity (u/s) it throws the hero along. Emitted by traffic and the animals feature; the health feature takes the damage.
+- `hero_hurt(amount: float, cause: String, health: float, down: bool)`: The hero lost amount of health to cause: "punch", "car" or "bite" (hero_hit), "crash" (in the car they drive) or "fall" (a hard landing); health is what is left (0..100, 0 knocked out) and down is true when it put them on the ground. Emitted by the health feature.
+- `animal_called(at: Vector3, call: String, size: float)`: An animal called out at a point (its head): a dog's "bark", "growl" or "whine"; size is its height at the shoulder (m), so a small dog yaps higher. Emitted by the animals feature.
 
 ## `scripts/fp/obb2d.gd`
 
@@ -301,6 +304,19 @@ Static road-tile helpers shared by collision, traffic, the directory, the minima
 - `static func run_dir(m: int) -> Vector3`: Unit run direction of a road tile with mask m: east (+X) when it has only E/W arms, else north (-Z).
 - `static func run_right(m: int) -> Vector3`: Unit vector to the right of run_dir(m).
 - `static func is_bridge(sim: CitySim, i: int) -> bool`: True if road tile i is a bridge (ROAD on WATER terrain).
+
+## `scripts/fp/scene_loads.gd`
+
+extends `RefCounted`
+
+PackedScenes loaded on background threads (ResourceLoader's threaded loads), for the features that stream bodies in (the crews' workers, the dogs): request() starts a load, scene() hands the scene out once it is in, and finish() waits for the loads still in flight.
+
+### Functions
+
+- `func request(path: String) -> void`: Starts loading the scene at path on a background thread (once).
+- `func pending(path: String) -> bool`: True while the scene at path is still on its way.
+- `func scene(path: String, wait: bool) -> PackedScene`: The scene at path once it is in; null while it loads (unless wait, which blocks until it is in) or when it failed. Asks for it first when nobody did.
+- `func finish() -> void`: Waits for the loads still in flight (quitting with one running aborts it noisily).
 
 ## `scripts/fp/world_scale.gd`
 

@@ -1225,8 +1225,9 @@ func bump_car(id: int, j: Vector2, at: Vector2) -> void:
 
 # ------------------------------------------------------------------ people hit
 
-## People on foot within r of p, for the player's blows and the car body: [{"id", "pos" (the
-## drawn feet), "yaw" (facing (sin, 0, cos)), "down", "resident_id"}].
+## People on foot within r of p, for the player's blows, the car body and the dogs: [{"id", "pos"
+## (the drawn feet), "yaw" (facing (sin, 0, cos)), "down", "resident_id", "extra" (0 hands free,
+## 1 carrying a box, 2 on the phone)}].
 func walkers_near(p: Vector3, r: float) -> Array:
 	var out: Array = []
 	if not _built:
@@ -1238,8 +1239,42 @@ func walkers_near(p: Vector3, r: float) -> Array:
 		if Vector2(q.x - p.x, q.z - p.z).length_squared() > r * r:
 			continue
 		var down := reactions.is_down(w)
-		out.append({"id": w.id, "pos": q, "yaw": w.yaw, "down": down, "resident_id": w.resident_id})
+		out.append(
+			{"id": w.id, "pos": q, "yaw": w.yaw, "down": down, "resident_id": w.resident_id,
+			"extra": w.extra}
+		)
 	return out
+
+
+## For the dogs on their leads: the people on foot ids (walkers_near ids) as drawn now, by id:
+## {"pos" (the feet), "yaw", "down", "hand" (the left hand, world)}. An id left out is off the
+## street (gone, beyond the traffic radius or indoors).
+func walkers_by_id(ids: Array) -> Dictionary:
+	var out := {}
+	if not _built or ids.is_empty():
+		return out
+	var want := {}
+	for id: Variant in ids:
+		want[int(id)] = true
+	for w: WK.Walker in walkers.walkers:
+		if not want.has(w.id) or w.dead or w.far or w.state == "hidden":
+			continue
+		var q := w.pos + w.vis_off
+		var hand := _left_hand(w, q)
+		out[w.id] = {"pos": q, "yaw": w.yaw, "down": reactions.is_down(w), "hand": hand}
+	return out
+
+
+## The left hand of w's animated body, else where it hangs at the side of a body w's height
+## standing at q.
+func _left_hand(w: WK.Walker, q: Vector3) -> Vector3:
+	var b: PPL.Body = w.body
+	if b != null and is_instance_valid(b.skel) and b.skel.is_inside_tree():
+		var k := b.skel.find_bone("LeftHand")
+		if k >= 0:
+			return b.skel.global_transform * b.skel.get_bone_global_pose(k).origin
+	var left := Vector3(cos(w.yaw), 0.0, -sin(w.yaw))
+	return q + Vector3(0.0, 0.44 * w.h_m * WS.M, 0.0) + left * 0.2 * WS.M
 
 
 ## Person id (walkers_near) takes a blow from src (a world point) along push, of strength 0..1,

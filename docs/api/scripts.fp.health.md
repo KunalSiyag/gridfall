@@ -41,7 +41,7 @@ The hero's health (the health feature) as an arc round the left of the minimap i
 
 extends `FpFeature`
 
-The hero's health (integration slice; docs/fp/ARCHITECTURE.md, Health): MAX_HP points, shown as an arc round the left of the minimap. Crashes in the car the hero drives (car_impact), hard landings (the player's landed signal; one rolled off counts softer), people who fight back (hero_hit "punch", the fight_back flag) and cars that cannot stop for the hero on foot (hero_hit "car", hit_by_cars) cost points, and REGEN_DELAY seconds after the last hurt they come back. A blow makes the body flinch (a guard raised toward it takes most of a punch); a car or a bad fall knocks the hero down, to lie a moment and get up. With nothing left they are knocked out: out of the car, down, the screen fades to black and they come round outside the nearest hospital (City Hall without one), healed. Every hurt goes out on the bus (hero_hurt); health is saved with the city.
+The hero's health (integration slice; docs/fp/ARCHITECTURE.md, Health): MAX_HP points, shown as an arc round the left of the minimap. Crashes in the car the hero drives (car_impact), hard landings (the player's landed signal; one rolled off counts softer), people who fight back (hero_hit "punch", the fight_back flag), dogs defending their owners (hero_hit "bite", the animals feature) and cars that cannot stop for the hero on foot (hero_hit "car", hit_by_cars) cost points, and REGEN_DELAY seconds after the last hurt they come back. A blow makes the body flinch (a guard raised toward it takes most of a punch); a car or a bad fall knocks the hero down, to lie a moment and get up. With nothing left they are knocked out: out of the car, down, the screen fades to black and they come round outside the nearest hospital (City Hall without one), healed. Every hurt goes out on the bus (hero_hurt); health is saved with the city.
 
 ### Constants
 
@@ -58,7 +58,7 @@ The hero's health (integration slice; docs/fp/ARCHITECTURE.md, Health): MAX_HP p
 - `FALL_KO = 14.0`
 - `FALL_DOWN = 35.0`
 - `ROLL_SAVE = 4.0`: A landing rolled off (the parkour feature's landing roll) counts ROLL_SAVE m/s slower and does not knock the hero down.
-- `PUNCH = 5.0`: A punch costs PUNCH + PUNCH_K times its strength; the guard up toward it takes GUARD_K of that.
+- `PUNCH = 5.0`: A punch or a bite costs PUNCH + PUNCH_K times its strength; the guard up toward a punch takes GUARD_K of that (a dog goes for the legs, under it).
 - `PUNCH_K = 10.0`
 - `GUARD_K = 0.3`
 - `CAR_K = 100.0`: A car's blow costs CAR_K times its strength (0..1) and from CAR_DOWN on knocks the hero down.
@@ -88,7 +88,7 @@ The hero's health (integration slice; docs/fp/ARCHITECTURE.md, Health): MAX_HP p
 - `func from_dict(d: Dictionary) -> void`
 - `func teardown() -> void`
 - `func self_test() -> Dictionary`
-- `func hurt(amount: float, cause: String, push: Vector3 = Vector3.ZERO, knock: bool = false) -> void`: Takes amount of health for cause ("punch", "car", "crash", "fall"): the body flinches, or with knock it goes down and slides on along push (xz, u/s); with nothing left the hero is knocked out. bus.hero_hurt hears of it. Nothing while knocked out.
+- `func hurt(amount: float, cause: String, push: Vector3 = Vector3.ZERO, knock: bool = false) -> void`: Takes amount of health for cause ("punch", "bite", "car", "crash", "fall"): the body flinches, or with knock it goes down and slides on along push (xz, u/s); with nothing left the hero is knocked out. bus.hero_hurt hears of it. Nothing while knocked out.
 - `func knocked() -> bool`: True while the hero is on the ground (knocked down or out) or coming round.
 - `func tick(dt: float) -> void`: One step: health comes back, a knock-down runs out and the hero gets up, a knock-out runs its fade and moves the hero; the slide and the HUD follow.
 - `func hospital_spot(from: Vector3) -> Dictionary`: Where a hero knocked out near from comes round: the sidewalk outside the nearest hospital, facing the street ({"pos", "yaw" (deg), "name"}), else City Hall's spawn point (name "").
