@@ -79,7 +79,7 @@ func _check_registry(ctx: FpContext) -> void:
 		ids[str(e["id"])] = true
 		if f is Node:
 			(f as Node).free()
-	K.check(fails, ok and ids.size() == 22, "all 22 registry entries load as FpFeatures with matching unique ids")
+	K.check(fails, ok and ids.size() == 23, "all 23 registry entries load as FpFeatures with matching unique ids")
 	var feat := K.make_feature(ctx, "traffic")
 	K.check(fails, feat != null and feat.is_inside_tree() and ctx.feature("traffic") == feat, "make_feature puts the feature in the tree and ctx.features")
 	var st: Dictionary = feat.self_test() if feat != null else {}

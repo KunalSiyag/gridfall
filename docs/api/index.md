@@ -72,6 +72,10 @@ Generated from the `##` doc comments in `scripts/`. Regenerate with `python3 too
 - [emitters.gd](scripts.fp.audio.md#scriptsfpaudioemittersgd): Positional city sound (slice I): logical sources (engines, horns, sirens, construction, fire, fountains, power plants, river banks, passers-by's footsteps, crashes, knocked props, car doors, blows and swings, dogs, pigeons, cats) share a pool of at most MAX_PLAYERS AudioStreamPlayer3D
 - [footsteps.gd](scripts.fp.audio.md#scriptsfpaudiofootstepsgd): The hero's footsteps (slice I)
 
+## [scripts/fp/brawl/](scripts.fp.brawl.md)
+
+- [brawl_feature.gd](scripts.fp.brawl.md#scriptsfpbrawlbrawl_featuregd): Close combat (integration feature "brawl"; docs/fp/ARCHITECTURE.md, Brawl): grapples and the counter cue
+
 ## [scripts/fp/chat/](scripts.fp.chat.md)
 
 - [chat_facts.gd](scripts.fp.chat.md#scriptsfpchatchat_factsgd): What is really going on in the city, for chat answers (slice C): what the district's mayor did on their last turn in spoken words, their latest post, the Gazette headline, the council's last ruling, incidents and sites being built, and the district's numbers

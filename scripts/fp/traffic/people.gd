@@ -488,7 +488,7 @@ func _animate(w: WK.Walker) -> void:
 		w.anim_t = 0.0 if w.body != null else _rng.randf() * float(lens[want])
 		if w.react == want:
 			w.anim_t = w.react_t
-	var rate := 1.0
+	var rate := w.react_rate if want == w.react else 1.0
 	if want in LOCO or want == &"run":
 		rate = clampf(w.vis_v / maxf(authored_speed(w, want), 1e-6), RATE_MIN, RATE_MAX)
 	w.anim_rate = rate

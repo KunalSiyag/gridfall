@@ -8,12 +8,14 @@
 
 extends `FpFeature`
 
-Body actions (integration slice; docs/fp/ARCHITECTURE.md, Body actions): the hero's fists and gestures on foot. The strike button (left mouse, right trigger) throws a jab, a cross and a hook in turn, the hook a finisher that puts them down, the body turning to whoever it goes for (else to where the camera looks); R shoves and X (middle mouse) kicks, further than a fist. The guard (right mouse or left trigger held: fists up, the body squared to where the camera looks, the camera in closer) is the fighting stance. A blow lands when the rig's fist is furthest out (HeroRig.strike_time; a kick at KICK_HIT) on the person nearest in front within reach, through the traffic feature's hit_walker: they reel or go down, the people around react and the city hears of it. With a weapon in hand (the melee feature) the strike button swings it instead, further and harder, and the melee feature hears where it landed. With nobody there a kick or a weapon swing lands on the dog, cat or pigeon in front (the animals feature's strike; a fist goes over them), else the blow lands on the street prop in front (the props feature's strike): a bin, cone, wheelie bin or carton goes over, a fallen prop skids off. Keys 1-5 wave, nod, shake the head, shout and dance, and the people around answer (traffic answer_emote). The bus hears every swing and emote (hero_action).
+Body actions (integration slice; docs/fp/ARCHITECTURE.md, Body actions): the hero's fists and gestures on foot. The strike button (left mouse, right trigger) throws a jab, a cross and a hook in turn, the hook a finisher that puts them down, the body turning to whoever it goes for (else to where the camera looks); R shoves and X (middle mouse) kicks, further than a fist. The guard (right mouse or left trigger held: fists up, the body squared to where the camera looks, the camera in closer) is the fighting stance. A blow lands when the rig's fist is furthest out (HeroRig.strike_time; a kick at KICK_HIT) on the person nearest in front within reach, through the traffic feature's hit_walker: they reel or go down, the people around react and the city hears of it. With a weapon in hand (the melee feature) the strike button swings it instead, further and harder, and the melee feature hears where it landed. With nobody there a kick or a weapon swing lands on the dog, cat or pigeon in front (the animals feature's strike; a fist goes over them), else the blow lands on the street prop in front (the props feature's strike): a bin, cone, wheelie bin or carton goes over, a fallen prop skids off. Keys 1-5 wave, nod, shake the head, shout and dance, and the people around answer (traffic answer_emote). The bus hears every swing and emote (hero_action). The guard raised just before a punch lands (COUNTER_LEAD, the counters flag) counters it: the punch misses and the hero's hook puts them down (parry). With someone held (the brawl feature) the fists stay up, punches land on them and R throws them.
 
 ### Constants
 
 - `WS = preload("res://scripts/fp/world_scale.gd")`
 - `SWINGS = { "jab": ["punch_jab", "punch", 0.45, 0.4, 0.55, 0.2], "cross": ["punch_cross", "punch"...`: Swings: [rig clip, hit_walker cause, strength 0..1, seconds until the next swing may start, seconds the clip plays, contact time (s) when the rig cannot measure it]. The hook ends the combo hard enough to knock someone down, and so does a kick.
+- `COUNTER_LEAD = 0.4`: A counter: the guard raised at most COUNTER_LEAD seconds before a punch reaches the hero. A throw flings whoever it knocks down THROW_FLING metres.
+- `THROW_FLING = 3.0`
 - `COMBO = ["jab", "cross", "hook"]`: The punches of the combo in order; with a weapon in hand (the melee feature's held()) the strike button swings it instead, forehand and backhand in turn (WEAPON_CLIPS), as hard as the weapon hits and further by its reach.
 - `WEAPON_CLIPS = ["swing_a", "swing_b"]`
 - `LOW_SWINGS = ["kick", "swing"]`: The swings low enough to land on an animal (a fist goes over them).
@@ -39,9 +41,10 @@ Body actions (integration slice; docs/fp/ARCHITECTURE.md, Body actions): the her
 ### Properties
 
 - `guarding: bool`: The guard is up.
-- `swing: String`: The swing under way ("jab", "cross", "hook", "shove", "kick", "swing" with a weapon) or "".
+- `swing: String`: The swing under way ("jab", "cross", "hook", "shove", "kick", "swing" with a weapon, "counter", "throw") or "".
 - `last_hit: Dictionary`: hit_walker's info for the last blow that landed; swings, blows landed on people and blows landed on street props so far; how many people answered the last emote.
 - `animal_hits: int`: Blows landed on animals so far.
+- `counters: int`: Punches countered so far.
 
 ### Functions
 
@@ -52,7 +55,8 @@ Body actions (integration slice; docs/fp/ARCHITECTURE.md, Body actions): the her
 - `func teardown() -> void`
 - `func self_test() -> Dictionary`
 - `func can_act() -> bool`: Whether the hero may swing, guard or emote now: on foot and in control of the body (not in a parkour move or on a wall), nothing modal open, not talking, not in photo mode, the phone put away.
-- `func strike(what: String = "punch") ->`: Starts a swing: what "punch" throws the next punch of the combo (a jab, a cross, then a hook, each within COMBO_S of the last), "shove" a shove and "kick" a kick (on foot and upright). A press near the end of a swing queues the next. False when none starts now.
+- `func strike(what: String = "punch") ->`: Starts a swing: what "punch" throws the next punch of the combo (a jab, a cross, then a hook, each within COMBO_S of the last), "shove" a shove and "kick" a kick (on foot and upright). With someone held every swing goes for them and a shove throws them. A press near the end of a swing queues the next. False when none starts now.
+- `func parry(id: int, fist: Vector3) -> bool`: A punch of person id's reaches the hero from fist (traffic's reactions on_hero_parry). With the guard raised at most COUNTER_LEAD before (fist ahead, the hero free to swing) the hero counters: a hook at them and the punch misses (true). Once per raise of the guard.
 - `func set_guard(on: bool) -> void`: Raises or drops the guard for scripted play (tests, the photo tour); held input does the same.
 - `func emote(e: String) -> bool`: Plays an emote ("wave", "yes", "no", "shout", "dance") and lets the people around answer it. False when the hero cannot act now, swings or guards, the last emote was just now, or the dance is asked for on the move.
 - `func cancel() -> void`: Ends the swing, the guard and any action on the rig, and gives the body and camera back.

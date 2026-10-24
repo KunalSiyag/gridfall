@@ -36,7 +36,8 @@ const BLIP_PITCH := {"mayor": 0.94, "press": 1.06, "council": 0.9}
 const HERO_HIT_FULL := {"punch": 12.0, "car": 60.0, "bite": 7.5}
 ## The pitch of each swing's whoosh (hero_action).
 const SWING_PITCH := {
-	"jab": 1.1, "cross": 0.95, "hook": 0.85, "kick": 0.75, "shove": 0.8, "swing": 0.7
+	"jab": 1.1, "cross": 0.95, "hook": 0.85, "kick": 0.75, "shove": 0.8, "swing": 0.7,
+	"counter": 0.85, "throw": 0.75,
 }
 ## The sound of a weapon's blow (weapon_hit) by its kind, and how much quieter on a street prop.
 const WEAPON_SOUNDS := {"bat": "bat_hit", "pipe": "pipe_hit", "bottle": "bottle_smash"}
