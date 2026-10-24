@@ -9,6 +9,8 @@ extends SceneTree
 const K := preload("res://tools/tests/fp_kit.gd")
 const D := preload("res://scripts/sim/sim_defs.gd")
 const WS := preload("res://scripts/fp/world_scale.gd")
+const SM := preload("res://scripts/fp/player/spring_math.gd")
+const PL := preload("res://scripts/fp/player/player.gd")
 const DT := 1.0 / 60.0
 const M := WS.M
 const R := WS.PLAYER_RADIUS
@@ -57,7 +59,8 @@ func _init() -> void:
 	K.finish(self, "FP_PLAYER_TEST", fails)
 
 
-## Walk, run and crouch-walk for 3 s from rest along a clear sidewalk: within 10 % of speed * 3.
+## Walk, run and crouch-walk for 3 s from rest along a clear sidewalk: within 3 % of speed * 3
+## less the velocity spring's lag at its start half-life (a run starts slower, fp_momentum_test).
 ## The crouched eye sits at CROUCH_EYE.
 func _check_speeds(ctx: FpContext) -> void:
 	var p := ctx.player
@@ -66,13 +69,14 @@ func _check_speeds(ctx: FpContext) -> void:
 	if s.is_empty():
 		return
 	var start: Vector3 = s["pos"]
-	for row: Array in [["walk", false, false, WS.WALK], ["run", true, false, WS.RUN], ["crouch-walk", false, true, WS.CROUCH_WALK]]:
+	var run_hl := PL.HL_SPEED_UP_RUN if p.momentum else PL.HL_SPEED_UP
+	for row: Array in [["walk", false, false, WS.WALK, PL.HL_SPEED_UP], ["run", true, false, WS.RUN, run_hl], ["crouch-walk", false, true, WS.CROUCH_WALK, PL.HL_SPEED_UP]]:
 		p.teleport(start, s["yaw"])
 		for k in range(180):
 			p.simulate(Vector2(0, 1), row[1], DT, row[2])
 		var d := Vector2(p.position.x - start.x, p.position.z - start.z).length()
-		var want: float = float(row[3]) * 3.0
-		K.check(fails, absf(d - want) <= want * 0.1, "%s 3 s covers %.3f m (%.1f %% of %.3f m)" % [row[0], d / M, d / want * 100.0, want / M])
+		var want: float = float(row[3]) * 3.0 - SM.stop_distance(float(row[3]), float(row[4]))
+		K.check(fails, absf(d - want) <= want * 0.03, "%s 3 s covers %.3f m (%.1f %% of %.3f m)" % [row[0], d / M, d / want * 100.0, want / M])
 	for k in range(60):
 		p.simulate(Vector2.ZERO, false, DT, true)
 	var eye := p.eye_position().y - ctx.collision.walk_height(p.position)

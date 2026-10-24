@@ -169,10 +169,10 @@ HC's animated hero for the player (slice A stage A2; A-player.md 6.9, TPS_PLAN 2
 - `CLIPS = [ "idle", "walk", "walk_fast", "run", "run_fast", "crouch_idle", "crouch_walk", "jump_s...`: Every clip the tree plays.
 - `TS_MIN = 0.5`: Foot-slide correction: TimeScale = clamp(v / v_anim, TS_MIN, TS_MAX).
 - `TS_MAX = 1.5`
-- `XF_JUMP = 0.08`: Cross-fades (s): into the jump, jump to fall, into the landing, landing out, crouch, talk, sit, and walking off a ledge into the fall.
-- `XF_FALL = 0.1`
+- `XF_JUMP = 0.1`: Cross-fades (s): into the jump, jump to fall, into the landing, landing out, crouch, talk, sit, and walking off a ledge into the fall.
+- `XF_FALL = 0.14`
 - `XF_LAND = 0.06`
-- `XF_LAND_OUT = 0.15`
+- `XF_LAND_OUT = 0.22`
 - `XF_CROUCH = 0.2`
 - `XF_TALK = 0.3`
 - `XF_SIT = 0.3`
@@ -330,6 +330,12 @@ The on-foot player (slice A): feet at `position`, a kinematic controller against
 - `PIVOT_TIME = 0.3`
 - `HL_PIVOT_VEL = 0.06`
 - `HL_PIVOT_YAW = 0.08`
+- `HL_SPEED_UP_RUN = 0.24`: Momentum (the "momentum" flag): the half-lives at RUN pace, eased in from the walk's above, so a run takes about 0.7 s to reach and 1.2 m to pull up from while a walk stays brisk; a run turns at most YAW_RATE_RUN_HEAVY; and a turn at a run sheds the pace above WALK, down to TURN_KEEP of it once the body is TURN_LOSS_FULL off the wish (from TURN_LOSS_FROM).
+- `HL_SLOW_DOWN_RUN = 0.18`
+- `YAW_RATE_RUN_HEAVY = deg_to_rad(360.0)`
+- `TURN_LOSS_FROM = deg_to_rad(30.0)`
+- `TURN_LOSS_FULL = deg_to_rad(110.0)`
+- `TURN_KEEP = 0.55`
 - `COYOTE_TIME = 0.10`
 - `JUMP_BUFFER = 0.12`
 - `HEAVY_LAND_SPEED = 4.0 * WS.M`
@@ -389,6 +395,7 @@ The on-foot player (slice A): feet at `position`, a kinematic controller against
 - `photo_mode: bool`: free-fly photo mode; FpMode ignores hud_toggle and C ignores chat_open while true
 - `cam_yaw: float`: View angles (radians). Movement input is rotated by cam_yaw; forward() looks along them.
 - `camera_mode: String`: "third" (over the shoulder) or "first" (eye height).
+- `momentum: bool`: The "momentum" flag, read at setup (tests may set it).
 - `view_override: bool`: True while another owner (the city overview) places the camera through set_view_override().
 - `aim_yaw: float`: Third person: while not NAN the body turns toward this yaw instead of its travel (the actions feature: the guard faces where the camera looks, a blow faces its target).
 - `jump_hook: Callable`: Asked (no arguments) when a jump is about to leave the ground: true when it took the press over (the parkour feature vaults or climbs instead of the jump), false to jump. Empty for none.
@@ -433,6 +440,8 @@ The on-foot player (slice A): feet at `position`, a kinematic controller against
 - `func in_conversation() -> bool`: True while the conversation two-shot (or its first-person turn) is active.
 - `func conversation_id() -> String`: The resident id of the active conversation, or "".
 - `func gait_phase() -> float`: The gait phase in radians (the left heel strikes at 0, the right at PI).
+- `static func run_pace(sp: float) -> float`: 0 at WALK pace (or slower) to 1 at RUN.
+- `func turn_keep(g: Vector2) -> float`: The share of goal g the body keeps while it turns toward it (third person, a run): the pace above WALK fades to TURN_KEEP as the body's facing falls TURN_LOSS_FULL behind g. 1 otherwise.
 
 ## `scripts/fp/player/player_avatar.gd`
 

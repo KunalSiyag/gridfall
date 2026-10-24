@@ -46,6 +46,16 @@ const PIVOT_MIN_SPEED := 2.5 * WS.M
 const PIVOT_TIME := 0.3
 const HL_PIVOT_VEL := 0.06
 const HL_PIVOT_YAW := 0.08
+## Momentum (the "momentum" flag): the half-lives at RUN pace, eased in from the walk's above, so
+## a run takes about 0.7 s to reach and 1.2 m to pull up from while a walk stays brisk; a run
+## turns at most YAW_RATE_RUN_HEAVY; and a turn at a run sheds the pace above WALK, down to
+## TURN_KEEP of it once the body is TURN_LOSS_FULL off the wish (from TURN_LOSS_FROM).
+const HL_SPEED_UP_RUN := 0.24
+const HL_SLOW_DOWN_RUN := 0.18
+const YAW_RATE_RUN_HEAVY := deg_to_rad(360.0)
+const TURN_LOSS_FROM := deg_to_rad(30.0)
+const TURN_LOSS_FULL := deg_to_rad(110.0)
+const TURN_KEEP := 0.55
 const COYOTE_TIME := 0.10
 const JUMP_BUFFER := 0.12
 const HEAVY_LAND_SPEED := 4.0 * WS.M
@@ -147,6 +157,8 @@ var _jump_held: bool = false
 var _heavy: float = 0.0
 var _air_t: float = 0.0
 var _pivot_t: float = 0.0
+## The "momentum" flag, read at setup (tests may set it).
+var momentum: bool = true
 var _wish_dir: Vector2 = Vector2.ZERO
 var _yaw_v: float = 0.0
 var _yaw_rate: float = 0.0
@@ -216,6 +228,7 @@ var _override_fov: float = 50.0
 ## applies the settings (camera mode included) and makes the camera current.
 func setup(p_ctx: FpContext) -> void:
 	ctx = p_ctx
+	momentum = FeatureFlags.enabled("momentum")
 	rig = TpsRig.new()
 	camera = Camera3D.new()
 	camera.name = "Camera"
@@ -857,15 +870,12 @@ func _step(goal: Vector2, h: float) -> void:
 	_heavy = maxf(0.0, _heavy - h)
 	var flat := Vector2(velocity.x, velocity.z)
 	var g := goal * (0.5 if _heavy > 0.0 else 1.0)
-	var hl := HL_SLOW_DOWN
+	var hl := _velocity_halflife(g, flat)
 	if _pivot_t > 0.0:
 		_pivot_t -= h
 		g = Vector2.ZERO
-		hl = HL_PIVOT_VEL
-	elif not grounded:
-		hl = HL_AIR
-	elif g.length_squared() > flat.length_squared():
-		hl = HL_SPEED_UP
+	elif momentum and grounded:
+		g *= turn_keep(g)
 	var r := SM.velocity_spring(flat, _acc, g, hl, h)
 	var nv: Vector2 = r[0]
 	var na: Vector2 = r[1]
@@ -1031,6 +1041,36 @@ func _snap_y(y: float) -> void:
 	position.y = y
 
 
+## The velocity spring's half-life for goal g from flat: a pivot's, the air's, else speeding up or
+## slowing down (eased toward the run's half-lives with momentum).
+func _velocity_halflife(g: Vector2, flat: Vector2) -> float:
+	var pace := run_pace(maxf(g.length(), flat.length())) if momentum else 0.0
+	if _pivot_t > 0.0:
+		return HL_PIVOT_VEL
+	if not grounded:
+		return HL_AIR
+	if g.length_squared() > flat.length_squared():
+		return lerpf(HL_SPEED_UP, HL_SPEED_UP_RUN, pace)
+	return lerpf(HL_SLOW_DOWN, HL_SLOW_DOWN_RUN, pace)
+
+
+## 0 at WALK pace (or slower) to 1 at RUN.
+static func run_pace(sp: float) -> float:
+	return clampf((sp - WS.WALK) / (WS.RUN - WS.WALK), 0.0, 1.0)
+
+
+## The share of goal g the body keeps while it turns toward it (third person, a run): the pace
+## above WALK fades to TURN_KEEP as the body's facing falls TURN_LOSS_FULL behind g. 1 otherwise.
+func turn_keep(g: Vector2) -> float:
+	var sp := g.length()
+	if camera_mode != "third" or not is_nan(aim_yaw) or sp <= WS.WALK:
+		return 1.0
+	var err := absf(Vector2(-sin(yaw), -cos(yaw)).angle_to(g))
+	var t := SM.smooth01((err - TURN_LOSS_FROM) / (TURN_LOSS_FULL - TURN_LOSS_FROM))
+	var keep := lerpf(1.0, TURN_KEEP, t)
+	return (WS.WALK + (sp - WS.WALK) * keep) / sp
+
+
 ## Third person: the body turns toward aim_yaw, else its travel (a spring, rate-limited; toward
 ## the wish during a pivot). First person: the body follows the view.
 func _body_yaw_step(h: float) -> void:
@@ -1053,7 +1093,8 @@ func _body_yaw_step(h: float) -> void:
 		return
 	_face_goal = NAN
 	var r := SM.spring_angle(yaw, _yaw_v, goal, HL_PIVOT_YAW if _pivot_t > 0.0 else HL_BODY_YAW, h)
-	var max_rate := lerpf(YAW_RATE_WALK, YAW_RATE_RUN, clampf((sp - WS.WALK) / (WS.RUN - WS.WALK), 0.0, 1.0))
+	var run_rate := YAW_RATE_RUN_HEAVY if momentum else YAW_RATE_RUN
+	var max_rate := lerpf(YAW_RATE_WALK, run_rate, run_pace(sp))
 	var dy := clampf(wrapf(r.x - yaw, -PI, PI), -max_rate * h, max_rate * h)
 	yaw = wrapf(yaw + dy, -PI, PI)
 	_yaw_v = clampf(r.y, -max_rate, max_rate)
