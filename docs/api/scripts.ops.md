@@ -137,6 +137,35 @@ Feature flags. Defaults and descriptions live in res://data/feature_flags.json; 
 - `static func read_user(path: String) -> Dictionary`: {name: bool} from a user override file: {"name": bool|0|1} or {"flags": {...}}.
 - `static func parse_overrides(spec: String) -> Dictionary`: Parses "a=0,b=1,c,!d" into {"a": false, "b": true, "c": true, "d": false}; bad items are skipped.
 
+## `scripts/ops/gpu_memory.gd`
+
+class_name `GpuMemory` · extends `RefCounted`
+
+Low-GPU-memory mode. decide() reads the graphics card once per process (the RenderingServer's adapter name, vendor and type, then its memory from nvidia-smi on NVIDIA or from the amdgpu sysfs files on Linux) and turns the mode on for an integrated or software GPU, a card with 4 GB or less, or one with less than LOW_FREE_MIB free (another program, such as a local LLM server, holding the rest). apply_to() then shrinks what the renderer allocates before the city is built, and FpMode defaults the quality preset to Low. GRIDFALL_LOW_VRAM=1 or 0 forces the mode on or off; with the "low_vram_auto" flag off only that switch turns it on.
+
+### Constants
+
+- `LOW_TOTAL_MIB = 4608`: A "4 GB" card reports 4096 MiB (some a little less); the next common size is 6 GB.
+- `LOW_FREE_MIB = 1536`
+- `SUN_ATLAS = 4096`
+- `LAMP_ATLAS = 2048`
+- `SETTINGS = { "rendering/lights_and_shadows/directional_shadow/size": SUN_ATLAS, "rendering/lights_...`: Project values set for this process, so first person's render_opt restores to them on exit.
+- `TRUE_WORDS = ["1", "true", "on", "yes"]`
+- `FALSE_WORDS = ["0", "false", "off", "no"]`
+
+### Functions
+
+- `static func probe() -> Dictionary`: The card: {"adapter", "vendor", "type" (RenderingDevice.DeviceType), "total_mib", "free_mib", "source"}; memory is -1 when unknown (headless, or no tool reports it).
+- `static func reason(info: Dictionary, env: String, auto: bool) -> String`: Why the mode is on for this card, or "" when it is off. env is GRIDFALL_LOW_VRAM; auto is the "low_vram_auto" flag.
+- `static func decide() -> Dictionary`: probe() with "low" and "reason", decided on the first call and cached for the process.
+- `static func low() -> bool`: Whether the low-GPU-memory mode is on.
+- `static func set_override(on: bool, why: String = "test") -> v`: Sets the decision for this process (tests); clear() forgets it.
+- `static func clear() -> void`
+- `static func apply_to(vp: Viewport) -> void`: Shrinks what the renderer allocates: the sun's shadow atlas 8192 -> 4096 and its filter, SSAO quality, MSAA off (FXAA instead) and the lamp shadow atlas of vp. Also sets SETTINGS as project values for this process (never saved).
+- `static func describe(info: Dictionary) -> String`: One line for the log: the card, its memory and the decision.
+- `static func parse_nvidia(text: String) -> Array[Dictionary]`: Rows of `nvidia-smi --query-gpu=name,memory.total,memory.free --format=csv,noheader,nounits`: [{"name", "total_mib", "free_mib"}]; malformed lines are skipped.
+- `static func pick_row(rows: Array[Dictionary], adapter: String) -> Dictionary`: The row whose name the adapter carries (several cards), else the first; {} when there is none.
+
 ## `scripts/ops/ops_sink.gd`
 
 class_name `OpsSink` · extends `RefCounted`

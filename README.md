@@ -82,6 +82,7 @@ Founding builds made before anyone lives in the city, and runs with residents of
 - Realistic models in `models/real/` (zones, service buildings, roads, props, vehicles, people) are used whenever they exist, with the Kenney and earlier Blender models as fallbacks.
 - HDRI sky that blends day, dusk and a procedural starry night; a 24-hour day/night cycle (`scripts/world/sky_director.gd`) drives the sun, fog, exposure, lit windows and street lamps with pools of light.
 - PBR grass, dirt, asphalt and sidewalk (Poly Haven CC0), a water shader with moving normals and fresnel, ACES tonemapping, SSAO, SSIL, glow and aerial-perspective fog.
+- Low GPU memory mode: on a card with 4 GB or less, an integrated GPU, or with under 1.5 GB of GPU memory free at startup (another program, such as a local LLM server, holding the rest), the game uses smaller shadow maps, FXAA instead of MSAA and lighter SSAO, and first person starts on the Low preset until you pick one (about 0.9 GB instead of 1.2 GB at 720p). `GRIDFALL_LOW_VRAM=1` or `0` forces it on or off; see [docs/runbooks/gpu-memory.md](docs/runbooks/gpu-memory.md).
 - Model materials are tuned at load: roofs, brick, concrete, plaster, stone, wood and paving are matte (the source textures marked them fully metallic, which made roofs mirror the sky), sheet metal is semi-matte, and glass and chrome keep a soft sheen.
 
 ## Player controls

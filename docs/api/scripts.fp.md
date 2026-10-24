@@ -205,6 +205,7 @@ First-person composition root: builds the context, bus, player, collision, HUD a
 
 - `settings_log: Array[Dictionary]`: Every patch passed to apply_settings, in order (tests read it; also filled when not set up).
 - `capture_mouse: bool`: False keeps the pointer free (scripted tours and benchmarks; GRIDFALL_FP_PHOTO_DIR or GRIDFALL_MOUSE=free), so a windowed test run never grabs the desktop pointer.
+- `auto_low_quality: bool`: The quality preset came from GpuMemory's low mode, not from the player's saved settings.
 
 ### Functions
 

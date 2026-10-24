@@ -257,6 +257,7 @@ Generated from the `##` doc comments in `scripts/`. Regenerate with `python3 too
 - [circuit_breaker.gd](scripts.ops.md#scriptsopscircuit_breakergd) (`CircuitBreaker`): Consecutive-failure circuit breaker
 - [error_tracker.gd](scripts.ops.md#scriptsopserror_trackergd) (`ErrorTracker`): Contextual error tracking, registered with OS.add_logger()
 - [feature_flags.gd](scripts.ops.md#scriptsopsfeature_flagsgd) (`FeatureFlags`): Feature flags
+- [gpu_memory.gd](scripts.ops.md#scriptsopsgpu_memorygd) (`GpuMemory`): Low-GPU-memory mode
 - [ops_sink.gd](scripts.ops.md#scriptsopsops_sinkgd) (`OpsSink`): Local JSON-lines files for the opt-in ops features (errors, analytics, alerts)
 - [redact.gd](scripts.ops.md#scriptsopsredactgd) (`Redact`): Masks secrets and personal data in text bound for logs and the local ops files: bearer and basic credentials, key=value secrets, sk- keys, JWTs, long random tokens, e-mail addresses and every value registered with add_secret() (the live GMI key)
 - [trace.gd](scripts.ops.md#scriptsopstracegd) (`Trace`): Request and trace ids
