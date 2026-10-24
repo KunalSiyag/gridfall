@@ -122,8 +122,8 @@ func held() -> Dictionary:
 	}
 
 
-## A swing of the weapon in hand landed at a point on what ("person" or "prop"): weapon_hit, and a
-## bottle breaks. Returns true when it broke.
+## A swing of the weapon in hand landed at a point on what ("person", "animal" or "prop"):
+## weapon_hit, and a bottle breaks. Returns true when it broke.
 func landed(what: String, at: Vector3) -> bool:
 	if held_kind.is_empty():
 		return false

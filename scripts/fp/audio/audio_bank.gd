@@ -25,7 +25,7 @@ const ONE_SHOTS: Array[String] = [
 	"punch_whoosh", "body_fall", "dog_bark_1", "dog_bark_2", "dog_bark_3", "dog_growl", "dog_whine",
 	"dog_snap", "pigeon_coo_1", "pigeon_coo_2", "pigeon_flap", "pigeon_takeoff", "cat_meow_1",
 	"cat_meow_2", "cat_meow_3", "cat_purr", "cat_hiss", "cat_chatter", "bat_hit", "pipe_hit",
-	"bottle_smash",
+	"bottle_smash", "dog_yelp", "cat_yowl",
 ]
 ## Stored as WAV (with every footstep_*); everything else is .ogg.
 const WAV_SOUNDS: Array[String] = [
@@ -34,7 +34,7 @@ const WAV_SOUNDS: Array[String] = [
 	"car_door_open", "car_door_close", "punch_hit", "punch_whoosh", "body_fall", "dog_bark_1",
 	"dog_bark_2", "dog_bark_3", "dog_growl", "dog_whine", "dog_snap", "pigeon_coo_1", "pigeon_coo_2",
 	"pigeon_flap", "pigeon_takeoff", "cat_meow_1", "cat_meow_2", "cat_meow_3", "cat_purr", "cat_hiss",
-	"cat_chatter", "bat_hit", "pipe_hit", "bottle_smash",
+	"cat_chatter", "bat_hit", "pipe_hit", "bottle_smash", "dog_yelp", "cat_yowl",
 ]
 
 ## Bus names (created by audio_feature.setup when missing).
@@ -96,26 +96,33 @@ const SHOVE_DB := -6.0
 ## the feet, a body_fall ROLL_DB under a knock-down's.
 const ROLL_THUD_S := 0.15
 const ROLL_DB := -8.0
-## Dogs (animal_called): a bark is one of BARK_VARIANTS (dog_bark_<n>), a growl and a whine play
-## DOG_DB under it. The samples are of a dog DOG_PITCH_M high at the shoulder; a dog h m high
-## plays at sqrt(DOG_PITCH_M / h), so a small dog yaps higher. A dog's bite on the hero (hero_hurt
-## "bite") snaps its jaws (dog_snap) SNAP_Y m up, at the knee.
+## Dogs (animal_called): a bark is one of BARK_VARIANTS (dog_bark_<n>), a growl, a whine and a
+## struck dog's yelp play dog_growl, dog_whine and dog_yelp, each DOG_DB on the bark. The samples
+## are of a dog DOG_PITCH_M high at the shoulder; a dog h m high plays at sqrt(DOG_PITCH_M / h), so
+## a small dog yaps higher. A dog's bite on the hero (hero_hurt "bite") snaps its jaws (dog_snap)
+## SNAP_Y m up, at the knee.
 const BARK_VARIANTS := 3
-const DOG_DB := {"bark": 0.0, "growl": -6.0, "whine": -12.0}
+const DOG_DB := {"bark": 0.0, "growl": -6.0, "whine": -12.0, "yelp": 0.0}
 const DOG_PITCH_M := 0.5
 const SNAP_Y := 0.5
+## A blow of the hero's on an animal (animal_hit): the thump (punch_hit) at ANIMAL_HIT_Y m up,
+## ANIMAL_HIT_DB on a blow on a person of the same strength, pitched up ANIMAL_HIT_PITCH for the
+## smaller body (a pigeon's twice that).
+const ANIMAL_HIT_Y := 0.3
+const ANIMAL_HIT_DB := -5.0
+const ANIMAL_HIT_PITCH := 1.25
 ## Pigeons (animal_called): a coo is one of COO_VARIANTS (pigeon_coo_<n>), a lone bird's flap and
 ## a flock's take-off play pigeon_flap and pigeon_takeoff; each at PIGEON_DB on the bird emitter's
 ## level, its pitch within PIGEON_PITCH of the sample's.
 const COO_VARIANTS := 2
 const PIGEON_DB := {"coo": -16.0, "flap": 0.0, "takeoff": 0.0}
 const PIGEON_PITCH := 0.06
-## Cats (animal_called): a meow is one of MEOW_VARIANTS (cat_meow_<n>), a purr, a hiss and a
-## hunter's chatter play cat_purr, cat_hiss and cat_chatter, each CAT_DB on the meow. The samples
-## are of a cat CAT_PITCH_M high at the shoulder; a cat h m high plays at sqrt(CAT_PITCH_M / h)
-## (a kitten mews higher), within CAT_PITCH of that.
+## Cats (animal_called): a meow is one of MEOW_VARIANTS (cat_meow_<n>), a purr, a hiss, a hunter's
+## chatter and a struck cat's yowl play cat_purr, cat_hiss, cat_chatter and cat_yowl, each CAT_DB on
+## the meow. The samples are of a cat CAT_PITCH_M high at the shoulder; a cat h m high plays at
+## sqrt(CAT_PITCH_M / h) (a kitten mews higher), within CAT_PITCH of that.
 const MEOW_VARIANTS := 3
-const CAT_DB := {"meow": 0.0, "purr": -8.0, "hiss": -2.0, "chatter": -8.0}
+const CAT_DB := {"meow": 0.0, "purr": -8.0, "hiss": -2.0, "chatter": -8.0, "yowl": 0.0}
 const CAT_PITCH_M := 0.25
 const CAT_PITCH := 0.05
 

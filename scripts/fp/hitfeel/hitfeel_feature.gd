@@ -1,10 +1,11 @@
 extends FpFeature
 ## Hit feel (integration feature "hit_feel"; docs/fp/ARCHITECTURE.md, Hit feel): what a blow feels
-## like. A blow of the hero's that lands (person_hit "punch" or "shove") freezes the world for a
-## few hundredths of a second (hit-stop: Engine.time_scale dips to STOP_SCALE for real seconds,
-## longer for a harder blow and one that knocks them down) and shakes the camera (the player's
-## shake). Someone the player's car knocks down, a blow on the hero (hero_hurt) and a crash in the
-## car (car_impact) shake it too, the hardest of them with a shorter stop. The thrown body of a
+## like. A blow of the hero's that lands (person_hit "punch" or "shove") freezes the world for a few
+## hundredths of a second (hit-stop: Engine.time_scale dips to STOP_SCALE for real seconds, longer
+## for a harder blow and one that knocks them down) and shakes the camera (the player's shake).
+## Someone the player's car knocks down, a blow on the hero (hero_hurt) and a crash in the car
+## (car_impact) shake it too, the hardest of them with a shorter stop; a kick or a swing landing on
+## an animal (animal_hit) stops and shakes less than one on a person. The thrown body of a
 ## knock-down is traffic's (reactions.gd, under the same flag). Nothing stops in photo mode, while
 ## the game is paused or at sim speeds above 1.
 
@@ -20,6 +21,9 @@ const DOWN_SHAKE := 0.15
 ## Someone the player's car hits: shake trauma by strength, and the stop when they go down.
 const CAR_SHAKE := Vector2(0.25, 0.6)
 const CAR_STOP := 0.06
+## A blow of the hero's on an animal (animal_hit): the stop and the trauma by strength.
+const ANIMAL_STOP := Vector2(0.03, 0.06)
+const ANIMAL_SHAKE := Vector2(0.08, 0.25)
 ## A blow on the hero (hero_hurt): trauma HURT_SHAKE.x plus the health lost over HURT_SHAKE.y, and
 ## the stop by cause (none for a fall or a crash, which car_impact shakes).
 const HURT_SHAKE := Vector2(0.2, 50.0)
@@ -51,6 +55,7 @@ func setup(p_ctx: FpContext) -> void:
 		link_signal(ctx.bus.person_hit, _on_person_hit)
 		link_signal(ctx.bus.hero_hurt, _on_hero_hurt)
 		link_signal(ctx.bus.car_impact, _on_car_impact)
+		link_signal(ctx.bus.animal_hit, _on_animal_hit)
 
 
 func teardown() -> void:
@@ -123,6 +128,12 @@ func _on_person_hit(_at: Vector3, cause: String, info: Dictionary) -> void:
 			if down:
 				hit_stop(CAR_STOP)
 			shake(lerpf(CAR_SHAKE.x, CAR_SHAKE.y, s))
+
+
+func _on_animal_hit(_at: Vector3, _kind: String, strength: float) -> void:
+	var s := clampf(strength, 0.0, 1.0)
+	hit_stop(lerpf(ANIMAL_STOP.x, ANIMAL_STOP.y, s))
+	shake(lerpf(ANIMAL_SHAKE.x, ANIMAL_SHAKE.y, s))
 
 
 func _on_hero_hurt(amount: float, cause: String, _health: float, _down: bool) -> void:

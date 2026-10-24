@@ -1218,6 +1218,26 @@ def synth_dog_whine() -> np.ndarray:
     return norm_peak(fade_edges(out, 0.0005, 0.1), -1.0)
 
 
+def synth_dog_yelp() -> np.ndarray:
+    """A dog struck: a high, sharp yelp of pain ("ki-yi"), the voice leaping to about 1.5 kHz and
+    sliding down, then a shorter one, rough and through the open mouth (DOG_FORMANTS)."""
+    rng = rng_for("dog_yelp")
+    out = np.zeros(int(0.6 * SR))
+    for t0, dur, hi, lo, rough in [(0.0, 0.17, 1500.0, 950.0, 0.3), (0.22, 0.12, 1300.0, 880.0, 0.2)]:
+        m = int(dur * SR)
+        tt = secs(m)
+        u = tt / dur
+        fr = np.where(u < 0.12, lo + (hi - lo) * np.sin(0.5 * np.pi * u / 0.12), hi + (lo - hi) * np.clip((u - 0.12) / 0.88, 0.0, 1.0) ** 0.8)
+        fr = fr * (1.0 + 0.015 * wander(rng, m, 30.0))
+        s = tone(fr, [1.0 / k ** 1.1 for k in range(1, 12)])
+        s *= 1.0 + rough * np.sin(np.pi * np.cumsum(fr) / SR + rng.uniform(0, 2 * np.pi))
+        b = bandpass(rng.standard_normal(m), 1200.0, 7000.0)
+        s = s + 0.15 * rms(s) / rms(b) * b * np.exp(-tt / 0.03)
+        env = np.clip(tt / 0.006, 0.0, 1.0) * np.clip((dur - tt) / (0.45 * dur), 0.0, 1.0) ** 1.2
+        add_at(out, resonate(s * env, DOG_FORMANTS, 0.5), int((0.003 + t0) * SR), wrap=False)
+    out = stereo_reverb(out, rng, 0.4, 0.1, 5000.0, circular=False).mean(axis=1)
+    return norm_peak(fade_edges(out, 0.0005, 0.08), -1.0)
+
 def synth_dog_snap() -> np.ndarray:
     """A dog's bite: a snarl rising into the snap of its jaws (teeth meeting and the mouth's hollow
     knock) and the tug at the trouser leg it caught."""
@@ -1464,6 +1484,23 @@ def synth_cat_hiss() -> np.ndarray:
     return norm_peak(fade_edges(out, 0.0005, 0.08), -1.0)
 
 
+def synth_cat_yowl() -> np.ndarray:
+    """A cat struck: a harsh, high yowl of pain ("mrrAOW!"), a meow pushed up past 1 kHz in a moment
+    and torn rough (period doubling and a rasp of breath), cut short as it bolts."""
+    rng = rng_for("cat_yowl")
+    dur = 0.5
+    n = int(dur * SR)
+    t = secs(n)
+    v = meow(rng, dur, 820.0, 1180.0, 700.0, 0.18)
+    f0 = np.where(t / dur < 0.18, 820.0 + 360.0 * t / (0.18 * dur), 1180.0 - 480.0 * (t / dur - 0.18) / 0.82)
+    v *= 1.0 + 0.45 * np.sin(np.pi * np.cumsum(f0) / SR + rng.uniform(0, 2 * np.pi))
+    b = bandpass(rng.standard_normal(n), 2000.0, 9000.0)
+    v = v + 0.2 * rms(v) / rms(b) * b * np.clip((dur - t) / (0.4 * dur), 0.0, 1.0)
+    out = np.zeros(int((dur + 0.25) * SR))
+    add_at(out, v, int(0.003 * SR), wrap=False)
+    out = stereo_reverb(out, rng, 0.35, 0.08, 5500.0, circular=False).mean(axis=1)
+    return norm_peak(fade_edges(out, 0.0005, 0.08), -1.0)
+
 def synth_cat_chatter() -> np.ndarray:
     """A cat watching a bird it cannot reach: its jaw chattering a dozen times a second, each a
     click of teeth and a tiny bleat ("ek-ek-ek"), in two runs."""
@@ -1530,7 +1567,7 @@ WAV_SOUNDS = {"engine_idle", "engine_run", "siren_two_tone", "horn_short", "horn
               "car_door_open", "car_door_close", "punch_hit", "punch_whoosh", "body_fall", "dog_bark_1",
               "dog_bark_2", "dog_bark_3", "dog_growl", "dog_whine", "dog_snap", "pigeon_coo_1", "pigeon_coo_2",
               "pigeon_flap", "pigeon_takeoff", "cat_meow_1", "cat_meow_2", "cat_meow_3", "cat_purr",
-              "cat_hiss", "cat_chatter", "bat_hit", "pipe_hit", "bottle_smash"}
+              "cat_hiss", "cat_chatter", "bat_hit", "pipe_hit", "bottle_smash", "dog_yelp", "cat_yowl"}
 
 
 def is_wav(name: str) -> bool:
@@ -1573,11 +1610,13 @@ def catalogue() -> dict[str, tuple[object, bool]]:
         "dog_growl": (synth_dog_growl, False),
         "dog_whine": (synth_dog_whine, False),
         "dog_snap": (synth_dog_snap, False),
+        "dog_yelp": (synth_dog_yelp, False),
         "pigeon_flap": (synth_pigeon_flap, False),
         "pigeon_takeoff": (synth_pigeon_takeoff, False),
         "cat_purr": (synth_cat_purr, False),
         "cat_hiss": (synth_cat_hiss, False),
         "cat_chatter": (synth_cat_chatter, False),
+        "cat_yowl": (synth_cat_yowl, False),
     }
     for k in range(1, len(BARKS) + 1):
         c["dog_bark_%d" % k] = ((lambda k=k: synth_dog_bark(k)), False)

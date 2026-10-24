@@ -1,13 +1,13 @@
 extends FpFeature
-## City sound on foot (slice I). Owns the Music, SFX, Ambience and UI buses while on foot, puts
-## the AudioDirector's music under the street (set_fp), and runs three parts: positional emitters
+## City sound on foot (slice I). Owns the Music, SFX, Ambience and UI buses while on foot, puts the
+## AudioDirector's music under the street (set_fp), and runs three parts: positional emitters
 ## (engines, horns, sirens, construction, fire, fountains, plants, the river, passers-by's steps,
 ## the player's car crashing, the street props it knocks over and its doors, people hit in the
-## street, the hero's swings, rolls and the blows they take, dogs barking, growling and whining,
-## pigeons and cats),
-## the area beds (with rain from G1's weather) and the hero's footsteps (splashing on wet paving),
-## plus the chat blip and alert stingers. Pausing muffles the music (the only thing still
-## playing); talking to someone ducks the beds.
+## street, the hero's swings, rolls and the blows they take, dogs barking, growling, whining and
+## yelping, pigeons, cats, and the hero's kicks and swings landing on them), the area beds (with
+## rain from G1's weather) and the hero's footsteps (splashing on wet paving), plus the chat blip
+## and alert stingers. Pausing muffles the music (the only thing still playing); talking to someone
+## ducks the beds.
 
 const WS := preload("res://scripts/fp/world_scale.gd")
 const BANK := preload("res://scripts/fp/audio/audio_bank.gd")
@@ -119,6 +119,7 @@ func setup(p_ctx: FpContext) -> void:
 		_link(bus.weapon_hit, _on_weapon_hit)
 		_link(bus.hero_hurt, _on_hero_hurt)
 		_link(bus.animal_called, _on_animal_called)
+		_link(bus.animal_hit, _on_animal_hit)
 	if ctx.sim != null:
 		_link(ctx.sim.event_started, emitters.on_event)
 		_link(ctx.sim.event_ended, emitters.on_event_ended)
@@ -372,7 +373,7 @@ static func _impact_db(k: float) -> float:
 
 
 ## A weapon's blow (weapon_hit): the wood's knock, the pipe's ring or the bottle breaking, at the
-## chest of whoever it hit (lower and quieter on a street prop).
+## chest of whoever it hit (lower and quieter on a street prop or an animal).
 func _on_weapon_hit(at: Vector3, kind: String, what: String, _broke: bool) -> void:
 	if not WEAPON_SOUNDS.has(kind):
 		return
@@ -415,10 +416,10 @@ func _on_hero_hurt(amount: float, cause: String, _health: float, down: bool) -> 
 		_queue_fall(BANK.BODY_FALL_S, at, BANK.BODY_FALL_DB)
 
 
-## An animal calling (animal_called) at its head: a dog's bark (one of BANK.BARK_VARIANTS), growl
-## or whine, BANK.DOG_DB under the bark, pitched by its size (BANK.DOG_PITCH_M); a pigeon's coo
-## (one of BANK.COO_VARIANTS), a lone bird's flap or a flock's take-off at BANK.PIGEON_DB; a cat's
-## meow (one of BANK.MEOW_VARIANTS), purr, hiss or chatter at BANK.CAT_DB, pitched by its size.
+## An animal calling (animal_called) at its head: a dog's bark (one of BANK.BARK_VARIANTS), growl,
+## whine or yelp at BANK.DOG_DB, pitched by its size (BANK.DOG_PITCH_M); a pigeon's coo (one of
+## BANK.COO_VARIANTS), a lone bird's flap or a flock's take-off at BANK.PIGEON_DB; a cat's meow
+## (one of BANK.MEOW_VARIANTS), purr, hiss, chatter or yowl at BANK.CAT_DB, pitched by its size.
 func _on_animal_called(at: Vector3, call: String, size: float) -> void:
 	if BANK.CAT_DB.has(call):
 		var c := "cat_%s" % call
@@ -442,6 +443,16 @@ func _on_animal_called(at: Vector3, call: String, size: float) -> void:
 		s = "dog_bark_%d" % _rng.randi_range(1, BANK.BARK_VARIANTS)
 	var pitch := sqrt(BANK.DOG_PITCH_M / maxf(size, 0.1)) * _rng.randf_range(0.96, 1.04)
 	emitters.shot("dog", at, s, float(BANK.DOG_DB[call]), pitch)
+
+
+## A blow of the hero's on an animal (animal_hit): a lighter, higher thump at its body by the
+## blow's strength (BANK.ANIMAL_HIT_DB, BANK.ANIMAL_HIT_PITCH); the animal's cry is its own call.
+func _on_animal_hit(at: Vector3, kind: String, strength: float) -> void:
+	var trim := _impact_db(strength / BANK.HIT_FULL) + BANK.ANIMAL_HIT_DB
+	var pitch := BANK.ANIMAL_HIT_PITCH * (2.0 if kind == "pigeon" else 1.0)
+	pitch *= _rng.randf_range(0.94, 1.06)
+	var p := at + Vector3(0.0, BANK.ANIMAL_HIT_Y * WS.M, 0.0)
+	emitters.shot("hit", p, "punch_hit", trim, pitch)
 
 
 ## A body_fall at at, delay seconds from now at db, in the queue by when it is due.

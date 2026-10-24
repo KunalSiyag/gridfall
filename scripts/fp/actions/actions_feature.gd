@@ -1,15 +1,16 @@
 extends FpFeature
 ## Body actions (integration slice; docs/fp/ARCHITECTURE.md, Body actions): the hero's fists and
-## gestures on foot. The strike button (left mouse, right trigger) throws a jab, a cross and a
-## hook in turn, the hook a finisher that puts them down, the body turning to whoever it goes for
-## (else to where the camera looks); R shoves and X (middle mouse) kicks, further than a fist. The
-## guard (right mouse or left trigger held: fists up, the body squared to where the camera looks,
-## the camera in closer) is the fighting stance. A blow lands when the rig's fist is furthest out
-## (HeroRig.strike_time; a kick at KICK_HIT) on the person nearest in front within reach,
-## through the traffic feature's hit_walker: they reel or go down, the people around react and
-## the city hears of it. With a weapon in hand (the melee feature) the strike button swings it
-## instead, further and harder, and the melee feature hears where it landed.
-## With nobody there it lands on the street prop in front (the props feature's strike): a bin,
+## gestures on foot. The strike button (left mouse, right trigger) throws a jab, a cross and a hook
+## in turn, the hook a finisher that puts them down, the body turning to whoever it goes for (else
+## to where the camera looks); R shoves and X (middle mouse) kicks, further than a fist. The guard
+## (right mouse or left trigger held: fists up, the body squared to where the camera looks, the
+## camera in closer) is the fighting stance. A blow lands when the rig's fist is furthest out
+## (HeroRig.strike_time; a kick at KICK_HIT) on the person nearest in front within reach, through
+## the traffic feature's hit_walker: they reel or go down, the people around react and the city
+## hears of it. With a weapon in hand (the melee feature) the strike button swings it instead,
+## further and harder, and the melee feature hears where it landed. With nobody there a kick or a
+## weapon swing lands on the dog, cat or pigeon in front (the animals feature's strike; a fist goes
+## over them), else the blow lands on the street prop in front (the props feature's strike): a bin,
 ## cone, wheelie bin or carton goes over, a fallen prop skids off. Keys 1-5 wave, nod, shake the
 ## head, shout and dance, and the people around answer (traffic answer_emote). The bus hears every
 ## swing and emote (hero_action).
@@ -32,6 +33,8 @@ const SWINGS := {
 ## weapon hits and further by its reach.
 const COMBO := ["jab", "cross", "hook"]
 const WEAPON_CLIPS := ["swing_a", "swing_b"]
+## The swings low enough to land on an animal (a fist goes over them).
+const LOW_SWINGS := ["kick", "swing"]
 ## Emote input actions: [emote, seconds it plays (0 for the clip's own length)].
 const EMOTES := {
 	"emote_wave": ["wave", 0.0],
@@ -90,6 +93,8 @@ var last_hit: Dictionary = {}
 var swings: int = 0
 var hits: int = 0
 var prop_hits: int = 0
+## Blows landed on animals so far.
+var animal_hits: int = 0
 var answered: int = 0
 var _forced_guard: bool = false
 var _driving: bool = false
@@ -142,7 +147,10 @@ func self_test() -> Dictionary:
 			missing.append(a)
 	if not missing.is_empty():
 		return {"ok": false, "detail": "missing inputs %s" % str(missing)}
-	var detail := "%d swings, %d blows landed, %d on props" % [swings, hits, prop_hits]
+	var detail := (
+		"%d swings, %d blows landed, %d on props, %d on animals"
+		% [swings, hits, prop_hits, animal_hits]
+	)
 	return {"ok": true, "detail": detail}
 
 
@@ -363,7 +371,8 @@ func _advance(dt: float) -> void:
 func _land() -> void:
 	_landed = true
 	if _target < 0:
-		_strike_prop()
+		if not _strike_animal():
+			_strike_prop()
 		return
 	var tr := ctx.feature("traffic")
 	if tr == null:
@@ -387,6 +396,22 @@ func _land() -> void:
 	_weapon_landed("person", who["pos"] as Vector3)
 
 
+## A kick or a weapon swing at nobody: the dog, cat or pigeon in front within reach takes the blow
+## (the animals feature's strike; a fist goes over them). False when it hits none.
+func _strike_animal() -> bool:
+	var animals := ctx.feature("animals")
+	if animals == null or swing not in LOW_SWINGS:
+		return false
+	var feet := ctx.player.position
+	var hit: Dictionary = animals.call("strike", feet, _aim_dir(), _reach(), CONE, _strength())
+	if hit.is_empty():
+		return false
+	animal_hits += 1
+	_kick_view()
+	_weapon_landed("animal", hit["pos"] as Vector3)
+	return true
+
+
 ## A swing at nobody: the street prop in front within reach takes the blow (props' strike).
 func _strike_prop() -> void:
 	var props := ctx.feature("props")
@@ -398,7 +423,7 @@ func _strike_prop() -> void:
 		_weapon_landed("prop", feet + dir * _reach())
 
 
-## Tells the melee feature a weapon swing landed on what ("person" or "prop") at a point.
+## Tells the melee feature a weapon swing landed on what ("person", "animal" or "prop") at a point.
 func _weapon_landed(what: String, at: Vector3) -> void:
 	var m := ctx.feature("melee")
 	if swing == "swing" and m != null:

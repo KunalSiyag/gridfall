@@ -1,14 +1,15 @@
 extends RefCounted
 ## The dogs' behaviour; the animals feature decides who has a dog and feeds in the world before
-## every step(). A dog on its lead walks at its owner's left, stops now and then to sniff until
-## the lead pulls it on, and is let off the lead to roam around an owner who stands still (in a
-## park, say); a yard dog keeps to the front of its home and barks at people going by when it is
-## the barking kind. Around the hero a friendly dog looks up and wags, trots over to a crouching
-## hero and hops when petted; a barky one barks, a shy one backs off. Swings, blows and shouts
-## close by make dogs flinch and bark; a dog whose owner the hero hits defends them, growling,
-## barking and going for the hero's legs (on_bite). A car about to run a dog down makes it leap
-## aside. Every dog plays Walk or Gallop at the rate its speed asks for, and its DogRig wags the
-## tail, turns the head to what it watches and jerks it up with each bark.
+## every step(). A dog on its lead walks at its owner's left, stops now and then to sniff until the
+## lead pulls it on, and is let off the lead to roam around an owner who stands still (in a park,
+## say); a yard dog keeps to the front of its home and barks at people going by when it is the
+## barking kind. Around the hero a friendly dog looks up and wags, trots over to a crouching hero
+## and hops when petted; a barky one barks, a shy one backs off. Swings, blows and shouts close by
+## make dogs flinch and bark; a dog the hero strikes yelps, is knocked away and runs off (a barky
+## one turns on the hero instead); a dog whose owner the hero hits defends them, growling, barking
+## and going for the hero's legs (on_bite). A car about to run a dog down makes it leap aside. Every
+## dog plays Walk or Gallop at the rate its speed asks for, and its DogRig wags the tail, turns the
+## head to what it watches and jerks it up with each bark.
 
 const WS := preload("res://scripts/fp/world_scale.gd")
 const BODIES := preload("res://scripts/fp/animals/dog_bodies.gd")
@@ -62,6 +63,14 @@ const BITE_AT := 0.4
 const BITE_REACH := 0.8 * WS.M
 const BITES := 2
 const LUNGE_COOL := 2.0
+## Struck by the hero (hit): knocked away at KNOCK (m/s) plus KNOCK_K times the blow's strength,
+## flinching HIT_FLINCH s. A barky or angry dog struck softer than RUN_OFF then goes for the hero;
+## any other runs off for HIT_FLEE s.
+const KNOCK := 2.0 * WS.M
+const KNOCK_K := 3.0 * WS.M
+const HIT_FLINCH := 0.35
+const RUN_OFF := 0.7
+const HIT_FLEE := 3.0
 ## A volley's gap between barks (s) and the rest before a dog barks again on its own (s).
 const BARK_GAP := Vector2(0.32, 0.6)
 const BARK_REST := Vector2(10.0, 20.0)
@@ -119,6 +128,9 @@ class Dog:
 	var act_age: float = 0.0
 	var act_dir := Vector3.ZERO
 	var flinch: StringName = &"Idle_HitReact_Left"
+	## Where it runs off once the act under way ends (a struck dog, after the flinch); zero for
+	## nowhere.
+	var flee_after := Vector3.ZERO
 	var restart: bool = false
 	var goal := NO_POINT
 	var goal_t: float = 0.0
@@ -259,19 +271,39 @@ func bark(d: Dog, n: int, force: bool) -> void:
 func startle(d: Dog, src: Vector3) -> void:
 	if d.act == "lunge" or d.act == "flee":
 		return
-	var away := d.pos - src
-	away.y = 0.0
-	if away.length_squared() < 1e-12:
-		away = -Vector3(sin(d.yaw), 0.0, cos(d.yaw))
-	away = away.normalized()
-	var right := Vector3(-cos(d.yaw), 0.0, sin(d.yaw))
-	d.flinch = &"Idle_HitReact_Left" if away.dot(right) > 0.0 else &"Idle_HitReact_Right"
-	_start(d, "flinch", 0.6)
+	var away := _away_from(d, src)
+	_flinch_from(d, away, 0.6)
 	d.push = away * TROT
 	if d.temper == "shy":
 		_whine(d)
 	else:
 		bark(d, 2, d.temper == "barky")
+
+
+## The hero struck the dog (a kick or a weapon) from src at strength 0..1: it yelps and is knocked
+## away, flinching. A barky dog, or one angry already, struck softer than RUN_OFF goes for the hero
+## (defend); any other runs off whining once the flinch is over and is shy of the hero from then
+## on. Returns true when it goes for the hero.
+func hit(d: Dog, src: Vector3, strength: float) -> bool:
+	var away := _away_from(d, src)
+	_flinch_from(d, away, HIT_FLINCH)
+	d.push = away * (KNOCK + KNOCK_K * strength)
+	d.barks = 0
+	d.happy = 0.0
+	d.flee_after = Vector3.ZERO
+	_call(d, "yelp")
+	if strength < RUN_OFF and (d.temper == "barky" or d.angry > 0.0):
+		defend(d)
+		return true
+	d.angry = 0.0
+	d.temper = "shy"
+	d.flee_after = away
+	return false
+
+
+## The dog's collision radius (u).
+func girth(d: Dog) -> float:
+	return _radius(d)
 
 
 ## The hero hit the dog's owner: it growls and barks, and goes for the hero while they are close.
@@ -332,7 +364,7 @@ func _tick(d: Dog, dt: float) -> void:
 		d.bit = true
 		_bite(d)
 	if d.act != "" and d.act_t <= 0.0:
-		d.act = ""
+		_act_over(d)
 	for k: String in ["bark_cool", "lunge_cool", "whine_cool", "goal_t", "sniff_t", "watch_t"]:
 		d.set(k, float(d.get(k)) - dt)
 	var far := _flat(d.pos, hero) > NOTICE * 2.0
@@ -726,12 +758,38 @@ func _start(d: Dog, act: String, secs: float) -> void:
 	d.restart = true
 
 
+## The act ran its time: the dog stands, or runs off whining when it was struck.
+func _act_over(d: Dog) -> void:
+	d.act = ""
+	if d.flee_after != Vector3.ZERO:
+		_flee(d, d.flee_after, HIT_FLEE)
+		d.flee_after = Vector3.ZERO
+		_whine(d)
+
+
+## The way from src to the dog (flat, unit), or behind it when they coincide.
+func _away_from(d: Dog, src: Vector3) -> Vector3:
+	var away := d.pos - src
+	away.y = 0.0
+	if away.length_squared() < 1e-12:
+		away = -Vector3(sin(d.yaw), 0.0, cos(d.yaw))
+	return away.normalized()
+
+
+## Flinches away (the hit reaction to that side) for secs.
+func _flinch_from(d: Dog, away: Vector3, secs: float) -> void:
+	var right := Vector3(-cos(d.yaw), 0.0, sin(d.yaw))
+	d.flinch = &"Idle_HitReact_Left" if away.dot(right) > 0.0 else &"Idle_HitReact_Right"
+	_start(d, "flinch", secs)
+
+
 func _flee(d: Dog, dir: Vector3, secs: float) -> void:
 	dir.y = 0.0
 	if dir.length_squared() < 1e-12:
 		return
 	_start(d, "flee", secs)
 	d.act_dir = dir.normalized()
+	d.flee_after = Vector3.ZERO
 
 
 func _maybe_sniff(d: Dog) -> void:
