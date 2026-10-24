@@ -54,9 +54,10 @@ signal prop_knocked(at: Vector3, kind: String, speed: float)
 ## "street", "strength", "witnesses", "crew"}. Emitted by traffic.
 signal person_hit(at: Vector3, cause: String, info: Dictionary)
 ## The hero swung, gestured or got over something: action "jab", "cross", "hook", "shove",
-## "kick", "swing" (a weapon in hand), an emote ("wave", "yes", "no", "shout", "dance") or a
-## parkour move ("vault", "hop", "climb", "roll" off a hard landing, or "grab" taking hold of a
-## wall), as it starts, at their feet. Emitted by the actions and parkour features.
+## "kick", "swing" (a weapon in hand), "counter" (a hook countering a punch), "throw" (someone
+## held), "grapple" (taking hold of someone), an emote ("wave", "yes", "no", "shout", "dance") or
+## a parkour move ("vault", "hop", "climb", "roll" off a hard landing, or "grab" taking hold of a
+## wall), as it starts, at their feet. Emitted by the actions, brawl and parkour features.
 signal hero_action(action: String, at: Vector3)
 ## A weapon in the hero's hand landed a blow at a point on what ("person" or "prop"): kind "bat",
 ## "pipe" or "bottle", broke true when it broke (a bottle does on its first). Emitted by the melee
@@ -78,6 +79,9 @@ signal story_filed(story: Dictionary)
 ## or "bite" (a dog defending its owner), strength 0..1 and push the xz velocity (u/s) it throws
 ## the hero along. Emitted by traffic and the animals feature; the health feature takes the damage.
 signal hero_hit(at: Vector3, cause: String, strength: float, push: Vector3)
+## Someone fighting the hero started a punch from their fist at that lands in secs, unless the
+## guard goes up in time to counter it (the actions feature's parry). Emitted by traffic.
+signal hero_threatened(at: Vector3, secs: float)
 ## The hero lost amount of health to cause: "punch", "car" or "bite" (hero_hit), "crash" (in the
 ## car they drive) or "fall" (a hard landing); health is what is left (0..100, 0 knocked out) and
 ## down is true when it put them on the ground. Emitted by the health feature.

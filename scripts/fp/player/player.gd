@@ -210,6 +210,8 @@ var carried: bool = false
 var carry_wish: Vector2 = Vector2.ZERO
 var carry_sprint: bool = false
 var carry_crouch: bool = false
+## The most the body walks or runs at (u/s), INF for no limit: dragging someone held, say.
+var speed_cap: float = INF
 ## The view kick still applied (pitch, roll; radians).
 var _kick: Vector2 = Vector2.ZERO
 ## Shake trauma (0..1), the clock its wobble runs on and the turn it gives now (radians).
@@ -437,6 +439,7 @@ func simulate(wish: Vector2, sprint: bool, delta: float, crouch: bool = false, j
 	_set_crouch(crouch)
 	_eye_h = SM.damp(_eye_h, WS.CROUCH_EYE if crouched else WS.EYE, HL_EYE, delta)
 	var top_speed := WS.CROUCH_WALK if crouched else (WS.RUN if sprint else WS.WALK)
+	top_speed = minf(top_speed, speed_cap)
 	_running = sprint and not crouched and wish.length_squared() > 0.01
 	_target_speed = top_speed * wish.length()
 	var flat := Vector2(velocity.x, velocity.z)

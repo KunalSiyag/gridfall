@@ -9,8 +9,11 @@ extends RefCounted
 ## down, gets away or drives off. People within WITNESS_R who see it run off or shout too. While a
 ## walker stands where the blow left it its state is "react" (it keeps its edge and plan; the
 ## slide and the walk back move only its drawn offset), and a run gives it its own state back at
-## RUN_F times its pace with the run clip. What follows a blow for the city (memory, mood, crews)
-## is incidents.gd's.
+## RUN_F times its pace with the run clip. The hero may take hold of someone (grab): they hang in
+## the hero's hands (hold_to) in HOLD_CLIP, reeling from blows without falling free, until let go
+## (release), knocked down or HOLD_S is up, then react as to a shove. A punch thrown at the hero
+## is announced as it starts (on_wind_up) and may be countered as it arrives (on_hero_parry). What
+## follows a blow for the city (memory, mood, crews) is incidents.gd's.
 
 const WS := preload("res://scripts/fp/world_scale.gd")
 const AP := preload("res://scripts/fp/asset_paths.gd")
@@ -71,10 +74,17 @@ const LIFT := {"blow": Vector2(0.12, 0.3), "car": Vector2(0.3, 0.9)}
 const FLY_S := 0.32
 const BOUNCE := 0.2
 const BOUNCE_S := 0.18
+## Held by the hero: HOLD_CLIP stopped HOLD_AT seconds in (recoiling); they break free after
+## HOLD_S. A throw (hit's fling) slides the body over FLING_S.
+const HOLD_CLIP := &"hit_chest"
+const HOLD_AT := 0.12
+const HOLD_S := 6.0
+const FLING_S := 0.7
 
 
 ## One person reacting: the steps still to come, [mode, clip, seconds] with mode "place" (stand
-## and play the clip), "back" (walk back to the walker's own place), "run" or "fight".
+## and play the clip), "back" (walk back to the walker's own place), "run", "fight" or "held" (in
+## the hero's hands).
 class Reaction:
 	extends RefCounted
 	var w: WK.Walker = null
@@ -99,6 +109,10 @@ class Reaction:
 	var blow: int = 0  # FIGHT_BLOWS index of the next punch
 	var blow_t: float = -1.0  # seconds into the punch under way; < 0 when none is
 	var pause: float = 0.0  # seconds before the next punch may start
+	var held: bool = false  # the hero holds them (grab), reeling from a blow included
+	var hold_left: float = 0.0  # seconds before they break free
+	var hold_p := Vector3.ZERO  # where the hero's hands put their feet
+	var hold_yaw: float = 0.0
 
 
 var wk: WK
@@ -111,9 +125,16 @@ var _rng := RandomNumberGenerator.new()
 ## of a punch that lands on them: on_hero_hit(at, strength, push).
 var hero_open: bool = false
 var on_hero_hit: Callable
-## The share who fight back, by cause (test hook), and the punches that landed on the hero.
+## Who hears of a punch thrown at the hero as it starts: on_wind_up(walker id, fist, seconds until
+## it lands); and who may counter it as it lands: on_hero_parry(walker id, fist) -> true when it
+## is countered (it then misses).
+var on_wind_up: Callable
+var on_hero_parry: Callable
+## The share who fight back, by cause (test hook), and the punches that landed on the hero or
+## were countered.
 var fight_odds: Dictionary = FIGHT_ODDS.duplicate()
 var punches_landed: int = 0
+var punches_parried: int = 0
 
 
 func setup(p_wk: WK, p_collision: CollisionWorld, seed: int) -> void:
@@ -135,19 +156,15 @@ func clear() -> void:
 
 
 ## w takes a blow from src (a world point) along push (xz, any length) of strength 0..1, cause
-## "shove", "punch", "car" or "carjack". Returns {"down": bool, "clip": StringName}, or {} when w
-## cannot take one now (hidden, in a conversation, or down already).
-func hit(w: WK.Walker, src: Vector3, push: Vector3, strength: float, cause: String) -> Dictionary:
-	if w.dead or w.state == "hidden" or w.hold:
-		return {}
-	var r: Reaction = _active.get(w.id)
-	if r != null and r.down:
-		return {}
+## "shove", "punch", "car" or "carjack"; fling (m) > 0 throws a body it knocks down that far. Held
+## (grab) and not knocked down, w reels and hangs on. Returns {"down": bool, "clip": StringName},
+## or {} when w cannot take one now (hidden, in a conversation, or down already).
+func hit(
+	w: WK.Walker, src: Vector3, push: Vector3, strength: float, cause: String, fling: float = 0.0
+) -> Dictionary:
+	var r := _take(w)
 	if r == null:
-		r = _new(w)
-	elif r.mode == "run":
-		w.speed = r.speed
-		w.react = &""
+		return {}
 	r.victim = true
 	r.delay = 0.0
 	r.hits = r.hits + 1 if clock - r.last < HITS_S else 1
@@ -158,12 +175,95 @@ func hit(w: WK.Walker, src: Vector3, push: Vector3, strength: float, cause: Stri
 	# Facing the blow; a box in the hands is dropped.
 	w.yaw = atan2(-d.x, -d.z)
 	w.extra = 0 if w.extra == 1 else w.extra
-	var clip := _plan_down(r, d, strength, cause) if r.down else _plan_reel(r, d, strength, cause)
+	var clip: StringName
+	if r.down:
+		clip = _plan_down(r, d, strength, cause, fling)
+	else:
+		clip = _plan_reel(r, d, strength, cause)
+	if r.held:
+		_keep_held(r)
 	r.steps.append_array(_after(r, cause))
 	r.slide_t = 0.0
 	r.fly_t = 0.0
 	_next_step(r)
 	return {"down": r.down, "clip": clip}
+
+
+## w's reaction, made for it when it has none; null when it cannot react now (dead, hidden, in a
+## conversation or down). A run is called off.
+func _take(w: WK.Walker) -> Reaction:
+	if w.dead or w.state == "hidden" or w.hold:
+		return null
+	var r: Reaction = _active.get(w.id)
+	if r != null and r.down:
+		return null
+	if r == null:
+		return _new(w)
+	if r.mode == "run":
+		w.speed = r.speed
+		w.react = &""
+	return r
+
+
+## A blow on someone held: knocked down they fall free, else they hang on in the hands (no slide)
+## once the reel is over.
+func _keep_held(r: Reaction) -> void:
+	if r.down:
+		r.held = false
+		return
+	r.slide = Vector3.ZERO
+	r.steps.append(["held", HOLD_CLIP, r.hold_left])
+
+
+## The hero takes hold of w (src: the hero's feet): it hangs in the hero's hands, where hold_to
+## puts it, until let go (release), knocked down or HOLD_S is up, then reacts as to a shove. False
+## when w cannot be held now (as hit()).
+func grab(w: WK.Walker, src: Vector3) -> bool:
+	var r := _take(w)
+	if r == null:
+		return false
+	r.victim = true
+	r.delay = 0.0
+	r.src = src
+	r.held = true
+	r.hold_left = HOLD_S
+	r.hold_p = w.pos + w.vis_off
+	r.hold_yaw = w.yaw
+	r.blow_t = -1.0
+	r.slide_t = r.slide_s
+	w.extra = 0 if w.extra == 1 else w.extra
+	r.steps = [["held", HOLD_CLIP, HOLD_S]]
+	r.steps.append_array(_after(r, "shove"))
+	_next_step(r)
+	return true
+
+
+## Where the hero's hands hold w now: its feet go to p (stopped by walls and posts), turned to
+## yaw. False once w is no longer held.
+func hold_to(w: WK.Walker, p: Vector3, yaw: float) -> bool:
+	var r: Reaction = _active.get(w.id)
+	if r == null or not r.held:
+		return false
+	r.hold_p = p
+	r.hold_yaw = yaw
+	return true
+
+
+## The hero lets go of w: it reacts as to a shove from where it stands.
+func release(w: WK.Walker) -> void:
+	var r: Reaction = _active.get(w.id)
+	if r == null or not r.held:
+		return
+	r.held = false
+	r.steps = r.steps.filter(func(s: Array) -> bool: return str(s[0]) != "held")
+	if r.mode == "held":
+		_next_step(r)
+
+
+## True while the hero holds w.
+func held(w: WK.Walker) -> bool:
+	var r: Reaction = _active.get(w.id)
+	return r != null and r.held
 
 
 ## Unit xz direction the blow pushes w: push, else away from src, else backward.
@@ -176,8 +276,11 @@ static func _away(w: WK.Walker, src: Vector3, push: Vector3) -> Vector3:
 	return d.normalized()
 
 
-## Knocked down: the fall and its slide (further for a car), a while on the ground, getting up.
-func _plan_down(r: Reaction, d: Vector3, strength: float, cause: String) -> StringName:
+## Knocked down: the fall and its slide (further for a car, fling metres for a throw), a while on
+## the ground, getting up.
+func _plan_down(
+	r: Reaction, d: Vector3, strength: float, cause: String, fling: float = 0.0
+) -> StringName:
 	var car := cause == "car"
 	var lie := lerpf(2.5, 6.0, strength) if car else _rng.randf_range(1.2, 2.4)
 	var m := lerpf(1.5, 4.0, strength) if car else lerpf(0.8, 1.4, strength)
@@ -185,8 +288,8 @@ func _plan_down(r: Reaction, d: Vector3, strength: float, cause: String) -> Stri
 		["place", &"knockback", float(lengths[&"knockback"]) + lie],
 		["place", &"get_up", float(lengths[&"get_up"])],
 	]
-	r.slide = d * (m * WS.M)
-	r.slide_s = 0.55
+	r.slide = d * ((fling if fling > 0.0 else m) * WS.M)
+	r.slide_s = FLING_S if fling > 0.0 else 0.55
 	var lift: Vector2 = LIFT["car" if car else "blow"]
 	r.lift = lerpf(lift.x, lift.y, clampf(strength, 0.0, 1.0)) * WS.M
 	if not FeatureFlags.enabled("hit_feel"):
@@ -340,7 +443,8 @@ func _next_step(r: Reaction) -> void:
 		return
 	w.state = "react"
 	w.react = st[1]
-	w.react_t = 0.0
+	w.react_t = HOLD_AT if r.mode == "held" else 0.0
+	w.react_rate = 0.0 if r.mode == "held" else 1.0
 	w.v = 0.0
 	w.vel = Vector3.ZERO
 	if r.mode == "fight":
@@ -353,6 +457,7 @@ func _finish(r: Reaction) -> void:
 	_drop(r)
 	_active.erase(w.id)
 	w.react = &""
+	w.react_rate = 1.0
 	w.speed = r.speed
 	if w.state == "react":
 		w.state = r.was if not r.was.is_empty() else "walk"
@@ -362,7 +467,7 @@ func step(dt: float) -> void:
 	clock += dt
 	for r: Reaction in _active.values():
 		var w := r.w
-		if w.dead or (r.mode in ["place", "back", "fight"] and w.state != "react"):
+		if w.dead or (r.mode in ["place", "back", "fight", "held"] and w.state != "react"):
 			# Gone, or taken on by something else (a trip set off): let go.
 			_finish(r)
 			continue
@@ -382,6 +487,8 @@ func step(dt: float) -> void:
 				over = _back(r, dt)
 			"fight":
 				over = _fight(r, dt)
+			"held":
+				over = _held(r, dt)
 			_:
 				r.left -= dt
 				over = r.left <= 0.0 or w.state != "walk"
@@ -422,6 +529,26 @@ func _back(r: Reaction, dt: float) -> bool:
 	return false
 
 
+## In the hero's hands: the feet follow the hold (dragged along, stopped by walls and posts), the
+## body turned to the hero, the clip stopped; true once let go or HOLD_S is up (breaking free).
+func _held(r: Reaction, dt: float) -> bool:
+	var w := r.w
+	r.left -= dt
+	r.hold_left = r.left
+	var p := w.pos + w.vis_off
+	var move := Vector3(r.hold_p.x - p.x, 0.0, r.hold_p.z - p.z)
+	var q := p + move
+	if collision != null:
+		q = collision.move_body(p, move, BODY_R, BODY_H, WS.STEP_HEIGHT)
+	_set_feet(w, q)
+	w.vis_v = 0.0
+	w.gait = 0.0
+	w.yaw = lerp_angle(w.yaw, r.hold_yaw, minf(1.0, dt * 12.0))
+	if r.left <= 0.0:
+		r.held = false
+	return not r.held
+
+
 ## Fighting back: squares up to the hero, closes in to FIGHT_REACH and throws a punch whenever the
 ## pause is over. Over (true) once the punch under way is done and the hero cannot be fought, is
 ## FIGHT_LOST away or the step's time is up.
@@ -449,6 +576,8 @@ func _fight(r: Reaction, dt: float) -> bool:
 		r.blow_t = 0.0
 		w.react = FIGHT_BLOWS[r.blow][0]
 		w.react_t = 0.0
+		if on_wind_up.is_valid() and dist <= FIGHT_HIT:
+			on_wind_up.call(w.id, _fist(w), float(FIGHT_BLOWS[r.blow][1]))
 	return false
 
 
@@ -470,8 +599,8 @@ func _close_in(r: Reaction, dir: Vector3, room: float, dt: float) -> void:
 	w.phase += d / (0.75 * WS.M) * PI
 
 
-## The punch under way: at its contact time it lands on a hero still within FIGHT_HIT in the cone
-## ahead (on_hero_hit); once the clip has played, the next punch of the pair waits a pause.
+## The punch under way: at its contact time it reaches a hero still within FIGHT_HIT in the cone
+## ahead (_reach_hero); once the clip has played, the next punch of the pair waits a pause.
 func _punch(r: Reaction, dt: float, dist: float) -> void:
 	var w := r.w
 	var spec: Array = FIGHT_BLOWS[r.blow]
@@ -485,15 +614,30 @@ func _punch(r: Reaction, dt: float, dist: float) -> void:
 	var contact := float(spec[1])
 	var reach := hero_open and dist <= FIGHT_HIT and to.dot(fwd) >= FIGHT_CONE * dist
 	if t0 < contact and r.blow_t >= contact and reach:
-		punches_landed += 1
-		if on_hero_hit.is_valid():
-			var at := me + fwd * (FIST.x * WS.M) + Vector3(0.0, FIST.y * WS.M, 0.0)
-			on_hero_hit.call(at, float(spec[2]), fwd * FIGHT_PUSH)
+		_reach_hero(w, float(spec[2]))
 	if r.blow_t >= float(spec[3]):
 		r.blow_t = -1.0
 		r.blow = (r.blow + 1) % FIGHT_BLOWS.size()
 		r.pause = _rng.randf_range(FIGHT_GAP.x, FIGHT_GAP.y)
 		w.react = &""
+
+
+## w's punch of strength reaches the hero: countered (on_hero_parry), it misses; else it lands
+## (on_hero_hit).
+func _reach_hero(w: WK.Walker, strength: float) -> void:
+	var at := _fist(w)
+	if on_hero_parry.is_valid() and bool(on_hero_parry.call(w.id, at)):
+		punches_parried += 1
+		return
+	punches_landed += 1
+	if on_hero_hit.is_valid():
+		on_hero_hit.call(at, strength, Vector3(sin(w.yaw), 0.0, cos(w.yaw)) * FIGHT_PUSH)
+
+
+## Where w's fist lands: FIST ahead of and up from its drawn feet.
+static func _fist(w: WK.Walker) -> Vector3:
+	var fwd := Vector3(sin(w.yaw), 0.0, cos(w.yaw))
+	return w.pos + w.vis_off + fwd * (FIST.x * WS.M) + Vector3(0.0, FIST.y * WS.M, 0.0)
 
 
 ## True while w is fighting the hero (closing in or punching).

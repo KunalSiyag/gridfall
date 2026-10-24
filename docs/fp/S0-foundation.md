@@ -693,10 +693,11 @@ signal prop_knocked(at: Vector3, kind: String, speed: float)
 ## traffic_feature.gd hit_walker()'s {"walker", "resident_id", "name", "down", "street",
 ## "strength", "witnesses", "crew"}. Emitted by traffic.
 signal person_hit(at: Vector3, cause: String, info: Dictionary)
-## The hero swung, gestured or got over something: action "jab", "cross", "shove", an emote
-## ("wave", "yes", "no", "shout", "dance") or a parkour move ("vault", "hop", "climb", "roll" off
-## a hard landing, or "grab" taking hold of a wall), as it starts, at their feet. Emitted by the
-## actions and parkour features.
+## The hero swung, gestured or got over something: action "jab", "cross", "hook", "shove",
+## "kick", "swing" (a weapon in hand), "counter" (a hook countering a punch), "throw" (someone
+## held), "grapple" (taking hold of someone), an emote ("wave", "yes", "no", "shout", "dance") or
+## a parkour move ("vault", "hop", "climb", "roll" off a hard landing, or "grab" taking hold of a
+## wall), as it starts, at their feet. Emitted by the actions, brawl and parkour features.
 signal hero_action(action: String, at: Vector3)
 ## Someone answered the hero: a resident face to face (their id and name), or whoever answered
 ## "Ask someone here" (resident_id "" and their role, "Shopkeeper"). reply is filtered for
@@ -711,6 +712,9 @@ signal story_filed(story: Dictionary)
 ## or "bite" (a dog defending its owner), strength 0..1 and push the xz velocity (u/s) it throws
 ## the hero along. Emitted by traffic and the animals feature; the health feature takes the damage.
 signal hero_hit(at: Vector3, cause: String, strength: float, push: Vector3)
+## Someone fighting the hero started a punch from their fist at that lands in secs, unless the
+## guard goes up in time to counter it (the actions feature's parry). Emitted by traffic.
+signal hero_threatened(at: Vector3, secs: float)
 ## The hero lost amount of health to cause: "punch", "car" or "bite" (hero_hit), "crash" (in the
 ## car they drive) or "fall" (a hard landing); health is what is left (0..100, 0 knocked out) and
 ## down is true when it put them on the ground. Emitted by the health feature.
@@ -745,10 +749,11 @@ signal animal_called(at: Vector3, call: String, size: float)
 | `car_door` | `at`: the driver's door handle. `open`: `true` as the latch lets go (the pull on the handle getting in, the door starting to open getting out), `false` as the door slams shut | Integration: driving (the `car_doors` climb in and out) | I (the latch and the slam at the door) |
 | `prop_knocked` | `at`: where it was hit (by the player's car, the hero, someone walking, traffic or another prop). `kind`: its StreetDressing kind. `speed`: how fast it flies off (u/s); a fallen prop hit again reports from 1 m/s | Integration: props | I (clatter, clang or thud by kind) |
 | `person_hit` | `at`: the person's drawn feet. `cause`: `"shove"` or `"punch"` (the hero), `"car"` (the car the player drives) or `"carjack"` (dragged out of the car the player takes). `info`: `walker` (the walker id), `resident_id` and `name` (`""` for an ambient walker), `down` (knocked down), `street` (the street label, may be `""`), `strength` 0..1, `witnesses` (the resident ids of those who saw it), `crew` (`"police"`, `"ambulance"` or `""`: the crew this blow called) | E (`hit_walker`, called by Integration: body actions and by the drive feature's car body; `carjack.gd` when the player takes a car from its driver) | C (the victim's and a witness's lines, a crew's City Alert card), I (the blow and the fall), Integration: animals (the dog of someone the hero punches or shoves goes for the hero; the dogs within 8 m flinch) |
-| `hero_action` | `action`: `"jab"`, `"cross"` or `"shove"` as a swing starts, or the emote as it starts (`"wave"`, `"yes"`, `"no"`, `"shout"`, `"dance"`), or the parkour move as it starts (`"vault"`, `"hop"`, `"climb"`, `"roll"` off a hard landing, or `"grab"` taking hold of a wall). `at`: the hero's feet | Integration: body actions, Integration: parkour | I (the whoosh of a swing, the thud of a roll), Integration: animals (a swing, a shove or a shout startles the dogs close by; a wave cheers the friendly ones) |
+| `hero_action` | `action`: `"jab"`, `"cross"`, `"hook"`, `"shove"`, `"kick"`, `"swing"`, `"counter"` or `"throw"` as a swing starts, `"grapple"` as the hero takes hold of someone (Integration: brawl), or the emote as it starts (`"wave"`, `"yes"`, `"no"`, `"shout"`, `"dance"`), or the parkour move as it starts (`"vault"`, `"hop"`, `"climb"`, `"roll"` off a hard landing, or `"grab"` taking hold of a wall). `at`: the hero's feet | Integration: body actions, Integration: parkour | I (the whoosh of a swing, the thud of a roll), Integration: animals (a swing, a shove or a shout startles the dogs close by; a wave cheers the friendly ones) |
 | `talk_replied` | `resident_id`: the resident's id, `""` for the "Ask someone here" answer. `speaker`: the resident's name, or the role that answered (`"Shopkeeper"`). `reply`: the line as shown | C (`talk_dialog.gd`: each reply face to face, and the ask answer) | Integration: reporter (the quote for the story on assignment) |
 | `story_filed` | the story as filed: `agent` (`"0"`..`"4"`, `"council"` or `"chaos"`), `headline`, `place`, `quote`, `by`, `tile` (index), `district`, `day`, `scoop`, `local`, `sharp`, `points`, `text` (the Gazette's line) | Integration: reporter (K files) | C (a Gazette line in the chat and a chatter topic) |
 | `hero_hit` | `at`: where the blow came from (the fist of someone fighting back, at shoulder height; a car's front, half a metre up). `cause`: `"punch"` (`fight_back`), `"car"` (`hit_by_cars`) or `"bite"` (a dog defending its owner, from its head). `strength` 0..1 (a jab 0.45, a cross 0.6; a car its speed over 14 m/s; a bite 0.25). `push`: the xz velocity (u/s) it throws the hero along (a car's heading at its speed; a bite 0.6 m/s away from the dog) | E (`reactions.gd` through `on_hero_hit`, `vehicles.gd` through `on_hit_player`), Integration: animals (`bite`); only while the hero is on foot, in control and the health feature is on | Integration: health (the damage, the flinch or the knock-down) |
+| `hero_threatened` | `at`: the fist of someone fighting the hero as their punch starts (within reach). `secs`: until it lands (a jab 0.2, a cross 0.29) | E (`reactions.gd` through `on_wind_up`) | Integration: brawl (the counter cue under the crosshair) |
 | `hero_hurt` | `amount`: the health it took. `cause`: `"punch"`, `"car"`, `"bite"`, `"crash"` (`car_impact` over 7 m/s) or `"fall"` (landing over 6 m/s). `health`: what is left, 0..100 (0: knocked out). `down`: it put the hero on the ground | Integration: health | I (the thump of a punch or a car on the hero, a bite's snap at the knee, and their fall) |
 | `animal_called` | `at`: the animal's head. `call`: a dog's `"bark"` (each bark of a volley), `"growl"` or `"whine"`; a pigeon's `"coo"`, a lone pigeon's `"flap"` (fluttering off) or a flock's `"takeoff"` (going up together); a cat's `"meow"`, `"purr"` (petted), `"hiss"` (at a dog or a hand it fears) or `"chatter"` (at a pigeon it stalks). `size`: its height at the shoulder (m) | Integration: animals | I (one of three barks, a growl or a whine at the head, pitched by size; one of two coos, a flutter or a flock's clatter of wings; one of three meows, a purr, a hiss or a chatter, pitched by size) |
 

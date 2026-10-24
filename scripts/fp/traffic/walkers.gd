@@ -110,6 +110,7 @@ class Walker extends RefCounted:
 	var tier: int = -1               # people.gd LOD tier, -1 not drawn
 	var react: StringName = &""      # clip a reaction plays instead of its own (reactions.gd)
 	var react_t: float = 0.0         # seconds into react
+	var react_rate: float = 1.0      # pace react plays at (0 holds its pose)
 
 
 var sw: SW

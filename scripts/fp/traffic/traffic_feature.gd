@@ -221,6 +221,8 @@ func on_world_rebuilt() -> void:
 	walkers.setup(peds, lanes, junctions, vehicles, sim.city_seed)
 	reactions.setup(walkers, ctx.collision, sim.city_seed)
 	reactions.on_hero_hit = _on_hero_punched
+	reactions.on_wind_up = _on_wind_up
+	reactions.on_hero_parry = _on_hero_parry
 	incidents.setup(self)
 	carjack.setup(self)
 	walkers.hc = people.ok
@@ -1280,14 +1282,17 @@ func _left_hand(w: WK.Walker, q: Vector3) -> Vector3:
 
 
 ## Person id (walkers_near) takes a blow from src (a world point) along push, of strength 0..1,
-## cause "shove", "punch", "car" or "carjack" (dragged out of their car): they react and the
-## people around see it (reactions.gd), the city hears of it (incidents.gd) and the bus emits
-## person_hit. Returns that signal's info, {} when they could not be hit now.
-func hit_walker(id: int, src: Vector3, push: Vector3, strength: float, cause: String) -> Dictionary:
+## cause "shove", "punch", "car" or "carjack" (dragged out of their car); fling (m) > 0 throws them
+## that far if it knocks them down. They react and the people around see it (reactions.gd), the
+## city hears of it (incidents.gd) and the bus emits person_hit. Returns that signal's info, {}
+## when they could not be hit now.
+func hit_walker(
+	id: int, src: Vector3, push: Vector3, strength: float, cause: String, fling: float = 0.0
+) -> Dictionary:
 	var w := _walker_by_id(id) if _built else null
 	if w == null:
 		return {}
-	var res := reactions.hit(w, src, push, clampf(strength, 0.0, 1.0), cause)
+	var res := reactions.hit(w, src, push, clampf(strength, 0.0, 1.0), cause, fling)
 	if res.is_empty():
 		return {}
 	var sev := 2 if bool(res["down"]) else (0 if cause == "shove" else 1)
@@ -1297,6 +1302,27 @@ func hit_walker(id: int, src: Vector3, push: Vector3, strength: float, cause: St
 	if ctx.bus != null:
 		ctx.bus.person_hit.emit(at, cause, info)
 	return info
+
+
+## The hero takes hold of person id (walkers_near) from src, their feet (reactions.gd grab). False
+## when they cannot be held now.
+func grab_walker(id: int, src: Vector3) -> bool:
+	var w := _walker_by_id(id) if _built else null
+	return w != null and reactions.grab(w, src)
+
+
+## Person id, held, goes where the hero's hands are: feet at p, turned to yaw. False once they are
+## no longer held (let go, knocked down, broken free or gone).
+func hold_walker(id: int, p: Vector3, yaw: float) -> bool:
+	var w := _walker_by_id(id) if _built else null
+	return w != null and reactions.hold_to(w, p, yaw)
+
+
+## The hero lets go of person id.
+func release_walker(id: int) -> void:
+	var w := _walker_by_id(id) if _built else null
+	if w != null:
+		reactions.release(w)
 
 
 ## True when the hero is on foot in the street and in control (not driving, down or posing for a
@@ -1312,6 +1338,19 @@ func _hero_open() -> bool:
 func _on_hero_punched(at: Vector3, strength: float, push: Vector3) -> void:
 	if ctx.bus != null:
 		ctx.bus.hero_hit.emit(at, "punch", strength, push)
+
+
+## Someone fighting the hero throws a punch from fist that lands in secs (reactions.gd).
+func _on_wind_up(_id: int, fist: Vector3, secs: float) -> void:
+	if ctx.bus != null:
+		ctx.bus.hero_threatened.emit(fist, secs)
+
+
+## The punch of person id reaches the hero from fist: true when the hero counters it (the actions
+## feature's parry), and it misses.
+func _on_hero_parry(id: int, fist: Vector3) -> bool:
+	var a := ctx.feature("actions")
+	return a != null and bool(a.call("parry", id, fist))
 
 
 ## Car c runs the hero down (vehicles.gd): the blow comes from its front, by its speed.

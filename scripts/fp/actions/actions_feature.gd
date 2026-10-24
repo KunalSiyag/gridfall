@@ -13,7 +13,9 @@ extends FpFeature
 ## over them), else the blow lands on the street prop in front (the props feature's strike): a bin,
 ## cone, wheelie bin or carton goes over, a fallen prop skids off. Keys 1-5 wave, nod, shake the
 ## head, shout and dance, and the people around answer (traffic answer_emote). The bus hears every
-## swing and emote (hero_action).
+## swing and emote (hero_action). The guard raised just before a punch lands (COUNTER_LEAD, the
+## counters flag) counters it: the punch misses and the hero's hook puts them down (parry). With
+## someone held (the brawl feature) the fists stay up, punches land on them and R throws them.
 
 const WS := preload("res://scripts/fp/world_scale.gd")
 
@@ -27,7 +29,13 @@ const SWINGS := {
 	"shove": ["push", "shove", 0.35, 0.6, 0.55, 0.15],
 	"kick": ["kick", "punch", 0.75, 0.75, 0.7, 0.24],
 	"swing": ["swing_a", "punch", 0.6, 0.6, 0.55, 0.2],
+	"counter": ["punch_hook", "punch", 0.8, 0.6, 0.47, 0.22],
+	"throw": ["push", "punch", 0.8, 0.7, 0.6, 0.18],
 }
+## A counter: the guard raised at most COUNTER_LEAD seconds before a punch reaches the hero. A
+## throw flings whoever it knocks down THROW_FLING metres.
+const COUNTER_LEAD := 0.4
+const THROW_FLING := 3.0
 ## The punches of the combo in order; with a weapon in hand (the melee feature's held()) the
 ## strike button swings it instead, forehand and backhand in turn (WEAPON_CLIPS), as hard as the
 ## weapon hits and further by its reach.
@@ -85,7 +93,8 @@ const PHOTO_SIDE := 0.55 * WS.M
 
 ## The guard is up.
 var guarding: bool = false
-## The swing under way ("jab", "cross", "hook", "shove", "kick", "swing" with a weapon) or "".
+## The swing under way ("jab", "cross", "hook", "shove", "kick", "swing" with a weapon, "counter",
+## "throw") or "".
 var swing: String = ""
 ## hit_walker's info for the last blow that landed; swings, blows landed on people and blows
 ## landed on street props so far; how many people answered the last emote.
@@ -96,7 +105,11 @@ var prop_hits: int = 0
 ## Blows landed on animals so far.
 var animal_hits: int = 0
 var answered: int = 0
+## Punches countered so far.
+var counters: int = 0
 var _forced_guard: bool = false
+## Seconds since the guard went up (INF once a counter used it).
+var _guard_t: float = INF
 var _driving: bool = false
 ## Input action -> its trigger is past the dead zone (_pressed).
 var _pad_held: Dictionary = {}
@@ -148,8 +161,8 @@ func self_test() -> Dictionary:
 	if not missing.is_empty():
 		return {"ok": false, "detail": "missing inputs %s" % str(missing)}
 	var detail := (
-		"%d swings, %d blows landed, %d on props, %d on animals"
-		% [swings, hits, prop_hits, animal_hits]
+		"%d swings, %d blows landed, %d on props, %d on animals, %d counters"
+		% [swings, hits, prop_hits, animal_hits, counters]
 	)
 	return {"ok": true, "detail": detail}
 
@@ -170,8 +183,9 @@ func can_act() -> bool:
 
 
 ## Starts a swing: what "punch" throws the next punch of the combo (a jab, a cross, then a hook,
-## each within COMBO_S of the last), "shove" a shove and "kick" a kick (on foot and upright). A
-## press near the end of a swing queues the next. False when none starts now.
+## each within COMBO_S of the last), "shove" a shove and "kick" a kick (on foot and upright). With
+## someone held every swing goes for them and a shove throws them. A press near the end of a swing
+## queues the next. False when none starts now.
 func strike(what: String = "punch") -> bool:
 	if not can_act() or what not in ["punch", "shove", "kick"]:
 		return false
@@ -181,12 +195,25 @@ func strike(what: String = "punch") -> bool:
 		if _len - _t <= BUFFER_S:
 			_queued = what
 		return false
+	var held := _held_id()
+	if what == "shove" and held >= 0:
+		what = "throw"
 	_weapon = _held_weapon() if what == "punch" else {}
 	var kind := _next_kind(what)
-	var s: Array = SWINGS[kind]
-	var clip := str(s[0])
+	var clip := str(SWINGS[kind][0])
 	if kind == "swing":
 		clip = WEAPON_CLIPS[_combo_i % WEAPON_CLIPS.size()]
+	# The reach a target is looked for within is the swing's own.
+	swing = kind
+	var who := _walker(held, REACH * HOLD_REACH) if held >= 0 else _find_target(_aim_dir())
+	_begin(kind, clip, who)
+	return true
+
+
+## Starts swing kind playing clip at who (walkers_near's entry, {} for nobody): the body turns to
+## them, else to where the camera looks, and the blow lands at the clip's contact time.
+func _begin(kind: String, clip: String, who: Dictionary) -> void:
+	var s: Array = SWINGS[kind]
 	swing = kind
 	_t = 0.0
 	_len = float(s[3])
@@ -196,10 +223,9 @@ func strike(what: String = "punch") -> bool:
 	if rig != null:
 		rig.call("stop_action")
 		rig.call("play_action", clip, float(s[4]))
-		if kind in COMBO or kind == "swing":
+		if kind in COMBO or kind in ["swing", "counter"]:
 			_hit_at = minf(float(rig.call("strike_time", clip)), _len)
 	var feet := ctx.player.position
-	var who := _find_target(_aim_dir())
 	_target = int(who.get("id", -1))
 	# The body turns to whoever the swing goes for, else to where the camera looks.
 	_face_yaw = ctx.player.cam_yaw
@@ -210,7 +236,41 @@ func strike(what: String = "punch") -> bool:
 	swings += 1
 	if ctx.bus != null:
 		ctx.bus.hero_action.emit(kind, feet)
+
+
+## A punch of person id's reaches the hero from fist (traffic's reactions on_hero_parry). With the
+## guard raised at most COUNTER_LEAD before (fist ahead, the hero free to swing) the hero counters:
+## a hook at them and the punch misses (true). Once per raise of the guard.
+func parry(id: int, fist: Vector3) -> bool:
+	if not FeatureFlags.enabled("counters") or not guarding or _guard_t > COUNTER_LEAD:
+		return false
+	var d := fist - ctx.player.position
+	if not swing.is_empty() or not can_act() or Vector2(d.x, d.z).dot(_aim_2d()) <= 0.0:
+		return false
+	var who := _walker(id, REACH * HOLD_REACH)
+	if who.is_empty():
+		return false
+	_guard_t = INF
+	counters += 1
+	_begin("counter", "punch_hook", who)
 	return true
+
+
+## The id (walkers_near's) of the person the brawl feature holds, -1 for none.
+func _held_id() -> int:
+	var b := ctx.feature("brawl") if ctx != null else null
+	return int(b.get("held_id")) if b != null else -1
+
+
+## Person id's walkers_near entry within r of the hero, {} when they are not there.
+func _walker(id: int, r: float) -> Dictionary:
+	var tr := ctx.feature("traffic")
+	if tr == null or id < 0:
+		return {}
+	for w: Dictionary in tr.call("walkers_near", ctx.player.position, r):
+		if int(w["id"]) == id:
+			return w
+	return {}
 
 
 ## The swing a press of what starts: the next punch of the combo (or a swing of the weapon in
@@ -294,6 +354,7 @@ func _process(delta: float) -> void:
 func tick(dt: float) -> void:
 	var held := _input_live() and Input.is_action_pressed("act_aim")
 	var want := (_forced_guard or held) and can_act()
+	_guard_t = 0.0 if want and not guarding else _guard_t + dt
 	# Every frame: a teleport snaps the rig's guard down, and the body may change.
 	_set_guarding(want)
 	_advance(dt)
@@ -375,19 +436,20 @@ func _land() -> void:
 			_strike_prop()
 		return
 	var tr := ctx.feature("traffic")
-	if tr == null:
+	var who := _walker(_target, _reach() * HOLD_REACH)
+	if tr == null or who.is_empty() or bool(who["down"]):
 		return
 	var feet := ctx.player.position
-	var who := {}
-	for w: Dictionary in tr.call("walkers_near", feet, _reach() * HOLD_REACH):
-		if int(w["id"]) == _target:
-			who = w
-	if who.is_empty() or bool(who["down"]):
-		return
 	var d: Vector3 = (who["pos"] as Vector3) - feet
 	d.y = 0.0
+	var fling := 0.0
+	if swing == "throw":
+		d = _aim_dir()
+		fling = THROW_FLING
 	var cause := str(SWINGS[swing][1])
-	var info: Dictionary = tr.call("hit_walker", _target, feet, d.normalized(), _strength(), cause)
+	var info: Dictionary = tr.call(
+		"hit_walker", _target, feet, d.normalized(), _strength(), cause, fling
+	)
 	if info.is_empty():
 		return
 	last_hit = info
@@ -448,31 +510,36 @@ func _reach() -> float:
 ## The view kicks as a blow lands, rolled away from the punching hand, harder for a hook, a kick
 ## or a weapon.
 func _kick_view() -> void:
-	var side := {"jab": 1.0, "cross": -1.0, "hook": 1.0, "swing": 1.0}.get(swing, 0.0) as float
-	var k := HEAVY_KICK if swing in ["hook", "kick", "swing"] else 1.0
+	var side := (
+		{"jab": 1.0, "cross": -1.0, "hook": 1.0, "swing": 1.0, "counter": 1.0}.get(swing, 0.0)
+		as float
+	)
+	var k := HEAVY_KICK if swing in ["hook", "kick", "swing", "counter", "throw"] else 1.0
 	ctx.player.kick_view(KICK.x * k, KICK.y * side * k)
 
 
-## Third person: the body squares up to the camera while guarding and faces whoever a swing went
-## for; the camera closes in on the guard.
+## Third person: the body squares up to the camera while guarding or holding someone and faces
+## whoever a swing went for; the camera closes in.
 func _face(dt: float) -> void:
 	var p := ctx.player
+	var up := guarding or _held_id() >= 0
 	_face_t = maxf(0.0, _face_t - dt)
 	if _face_t > 0.0 and not is_nan(_face_yaw):
 		p.aim_yaw = _face_yaw
-	elif guarding:
+	elif up:
 		p.aim_yaw = p.cam_yaw
 	else:
 		p.aim_yaw = NAN
 	if p.rig != null:
-		p.rig.arm_scale = GUARD_ARM if guarding else 1.0
+		p.rig.arm_scale = GUARD_ARM if up else 1.0
 
 
+## The guard (on) is up; the fists are up on the rig with it or while someone is held.
 func _set_guarding(on: bool) -> void:
 	guarding = on
 	var rig := _rig()
 	if rig != null:
-		rig.call("set_guard", on)
+		rig.call("set_guard", on or _held_id() >= 0)
 
 
 func _hand_back() -> void:
@@ -508,6 +575,11 @@ func _find_target(dir: Vector3) -> Dictionary:
 func _aim_dir() -> Vector3:
 	var y := ctx.player.cam_yaw
 	return Vector3(-sin(y), 0.0, -cos(y))
+
+
+func _aim_2d() -> Vector2:
+	var a := _aim_dir()
+	return Vector2(a.x, a.z)
 
 
 ## The hero's animated rig (HeroRig), or null for the placeholder body.

@@ -579,7 +579,7 @@ Asset building for people.gd: the layered clips (a box held in both hands, a pho
 
 extends `RefCounted`
 
-People hit in the street (docs/fp/ARCHITECTURE.md, Body actions): shoved or punched by the player, struck by the car they drive or dragged out of their own (carjack). A light blow makes the person reel (hit_chest, hit_head) and slide back a little; a hard one (DOWN), the HITS_DOWN-th punch in a row or a fast car knocks them down (knockback), and they lie a while before they get up (get_up). Then they shake their head or shout at whoever did it, run off, or walk back to where they were; some of those shoved or punched fight back instead (fight_back): they square up to the hero, close in and throw jabs and crosses (on_hero_hit) until the hero is down, gets away or drives off. People within WITNESS_R who see it run off or shout too. While a walker stands where the blow left it its state is "react" (it keeps its edge and plan; the slide and the walk back move only its drawn offset), and a run gives it its own state back at RUN_F times its pace with the run clip. What follows a blow for the city (memory, mood, crews) is incidents.gd's.
+People hit in the street (docs/fp/ARCHITECTURE.md, Body actions): shoved or punched by the player, struck by the car they drive or dragged out of their own (carjack). A light blow makes the person reel (hit_chest, hit_head) and slide back a little; a hard one (DOWN), the HITS_DOWN-th punch in a row or a fast car knocks them down (knockback), and they lie a while before they get up (get_up). Then they shake their head or shout at whoever did it, run off, or walk back to where they were; some of those shoved or punched fight back instead (fight_back): they square up to the hero, close in and throw jabs and crosses (on_hero_hit) until the hero is down, gets away or drives off. People within WITNESS_R who see it run off or shout too. While a walker stands where the blow left it its state is "react" (it keeps its edge and plan; the slide and the walk back move only its drawn offset), and a run gives it its own state back at RUN_F times its pace with the run clip. The hero may take hold of someone (grab): they hang in the hero's hands (hold_to) in HOLD_CLIP, reeling from blows without falling free, until let go (release), knocked down or HOLD_S is up, then react as to a shove. A punch thrown at the hero is announced as it starts (on_wind_up) and may be countered as it arrives (on_hero_parry). What follows a blow for the city (memory, mood, crews) is incidents.gd's.
 
 ### Constants
 
@@ -617,21 +617,30 @@ People hit in the street (docs/fp/ARCHITECTURE.md, Body actions): shoved or punc
 - `FLY_S = 0.32`
 - `BOUNCE = 0.2`
 - `BOUNCE_S = 0.18`
+- `HOLD_CLIP = &"hit_chest"`: Held by the hero: HOLD_CLIP stopped HOLD_AT seconds in (recoiling); they break free after HOLD_S. A throw (hit's fling) slides the body over FLING_S.
+- `HOLD_AT = 0.12`
+- `HOLD_S = 6.0`
+- `FLING_S = 0.7`
 
 ### Properties
 
 - `hero_open: bool`: The hero can be fought now (on foot and in control; traffic sets it every step), and who hears of a punch that lands on them: on_hero_hit(at, strength, push).
-- `fight_odds: Dictionary`: The share who fight back, by cause (test hook), and the punches that landed on the hero.
+- `on_wind_up: Callable`: Who hears of a punch thrown at the hero as it starts: on_wind_up(walker id, fist, seconds until it lands); and who may counter it as it lands: on_hero_parry(walker id, fist) -> true when it is countered (it then misses).
+- `fight_odds: Dictionary`: The share who fight back, by cause (test hook), and the punches that landed on the hero or were countered.
 
 ### Inner classes
 
-- `Reaction`: One person reacting: the steps still to come, [mode, clip, seconds] with mode "place" (stand and play the clip), "back" (walk back to the walker's own place), "run" or "fight".
+- `Reaction`: One person reacting: the steps still to come, [mode, clip, seconds] with mode "place" (stand and play the clip), "back" (walk back to the walker's own place), "run", "fight" or "held" (in the hero's hands).
 
 ### Functions
 
 - `func setup(p_wk: WK, p_collision: CollisionWorld, seed: int) -> void`
 - `func clear() -> void`
-- `func hit(w: WK.Walker, src: Vector3, push: Vector3, strength: float, cause: String) -> Dictionary`: w takes a blow from src (a world point) along push (xz, any length) of strength 0..1, cause "shove", "punch", "car" or "carjack". Returns {"down": bool, "clip": StringName}, or {} when w cannot take one now (hidden, in a conversation, or down already).
+- `func hit(w: WK.Walker, src: Vector3, push: Vector3, strength: float, cause: String, fling: float = 0.0) -> Dictionary`: w takes a blow from src (a world point) along push (xz, any length) of strength 0..1, cause "shove", "punch", "car" or "carjack"; fling (m) > 0 throws a body it knocks down that far. Held (grab) and not knocked down, w reels and hangs on. Returns {"down": bool, "clip": StringName}, or {} when w cannot take one now (hidden, in a conversation, or down already).
+- `func grab(w: WK.Walker, src: Vector3) -> bool`: The hero takes hold of w (src: the hero's feet): it hangs in the hero's hands, where hold_to puts it, until let go (release), knocked down or HOLD_S is up, then reacts as to a shove. False when w cannot be held now (as hit()).
+- `func hold_to(w: WK.Walker, p: Vector3, yaw: float) -> bool`: Where the hero's hands hold w now: its feet go to p (stopped by walls and posts), turned to yaw. False once w is no longer held.
+- `func release(w: WK.Walker) -> void`: The hero lets go of w: it reacts as to a shove from where it stands.
+- `func held(w: WK.Walker) -> bool`: True while the hero holds w.
 - `func witness(w: WK.Walker, src: Vector3, severity: int) -> Array`: People within WITNESS_R of w who see what happened to it (severity 0 a shove, 1 a punch, 2 a knock-down) and are not reacting already: some run off, some shout at src (shake their head at a shove). Returns them.
 - `func answer_emote(p: Vector3, fwd: Vector3, emote: String) -> Array`: People who answer the hero's emote ("wave", "yes", "no", "shout", "dance"; ANSWERS) made at p facing fwd (xz): after a moment they turn to p and wave, nod or shake their head. Returns them.
 - `func step(dt: float) -> void`
@@ -901,7 +910,10 @@ Traffic and pedestrians on lanes (slice E, docs/fp/slices/E-traffic.md): one roa
 - `func bump_car(id: int, j: Vector2, at: Vector2) -> void`: The player's car hit vehicle id with impulse j (xz, u/s times a sedan's mass) at xz point at: the car is knocked (shoves.gd).
 - `func walkers_near(p: Vector3, r: float) -> Array`: People on foot within r of p, for the player's blows, the car body and the dogs: [{"id", "pos" (the drawn feet), "yaw" (facing (sin, 0, cos)), "down", "resident_id", "extra" (0 hands free, 1 carrying a box, 2 on the phone)}].
 - `func walkers_by_id(ids: Array) -> Dictionary`: For the dogs on their leads: the people on foot ids (walkers_near ids) as drawn now, by id: {"pos" (the feet), "yaw", "down", "hand" (the left hand, world)}. An id left out is off the street (gone, beyond the traffic radius or indoors).
-- `func hit_walker(id: int, src: Vector3, push: Vector3, strength: float, cause: String) -> Dictionary`: Person id (walkers_near) takes a blow from src (a world point) along push, of strength 0..1, cause "shove", "punch", "car" or "carjack" (dragged out of their car): they react and the people around see it (reactions.gd), the city hears of it (incidents.gd) and the bus emits person_hit. Returns that signal's info, {} when they could not be hit now.
+- `func hit_walker(id: int, src: Vector3, push: Vector3, strength: float, cause: String, fling: float = 0.0) -> Dictionary`: Person id (walkers_near) takes a blow from src (a world point) along push, of strength 0..1, cause "shove", "punch", "car" or "carjack" (dragged out of their car); fling (m) > 0 throws them that far if it knocks them down. They react and the people around see it (reactions.gd), the city hears of it (incidents.gd) and the bus emits person_hit. Returns that signal's info, {} when they could not be hit now.
+- `func grab_walker(id: int, src: Vector3) -> bool`: The hero takes hold of person id (walkers_near) from src, their feet (reactions.gd grab). False when they cannot be held now.
+- `func hold_walker(id: int, p: Vector3, yaw: float) -> bool`: Person id, held, goes where the hero's hands are: feet at p, turned to yaw. False once they are no longer held (let go, knocked down, broken free or gone).
+- `func release_walker(id: int) -> void`: The hero lets go of person id.
 - `func answer_emote(p: Vector3, fwd: Vector3, emote: String) -> int`: The hero's emote ("wave", "yes", "no", "shout", "dance") at p facing fwd: the people who answer it (reactions.gd answer_emote). Returns how many do.
 - `func pose_walker(id: int, clip: StringName, t: float) -> bool`: Photo and test hook: person id plays reaction clip from t seconds in (held, sim paused or not).
 - `func call_crew(kind: String, at: Vector3, stay: float) -> bool`: Calls a crew ("police" or "ambulance") to world point at, from the road beside the nearest police station or hospital (a road some way off when the city has none), to stay that many seconds once there (fleets.gd). False when no road is near at.

@@ -402,6 +402,7 @@ The on-foot player (slice A): feet at `position`, a kinematic controller against
 - `land_hook: Callable`: Asked with the downward speed (u/s) when the body touches down after LAND_STEP_MIN_AIR or more in the air: true when it took the landing over (the parkour feature rolls the body on), false to land. Empty for none.
 - `carried: bool`: True while another owner moves the body through carry(): simulate leaves it alone until release(); teleport() and ride() end it.
 - `carry_wish: Vector2`: While carried: the input simulate was last given (the view-relative wish, sprint and crouch; none while a modal is open) for the owner to read (a climb on a wall). A jump press is take_jump()'s.
+- `speed_cap: float`: The most the body walks or runs at (u/s), INF for no limit: dragging someone held, say.
 
 ### Functions
 
