@@ -43,10 +43,10 @@ const TS_MIN := 0.5
 const TS_MAX := 1.5
 ## Cross-fades (s): into the jump, jump to fall, into the landing, landing out, crouch, talk, sit,
 ## and walking off a ledge into the fall.
-const XF_JUMP := 0.08
-const XF_FALL := 0.1
+const XF_JUMP := 0.1
+const XF_FALL := 0.14
 const XF_LAND := 0.06
-const XF_LAND_OUT := 0.15
+const XF_LAND_OUT := 0.22
 const XF_CROUCH := 0.2
 const XF_TALK := 0.3
 const XF_SIT := 0.3

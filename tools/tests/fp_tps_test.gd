@@ -433,7 +433,7 @@ func _check_hero(ctx: FpContext, s: Dictionary) -> void:
 	K.check(fails, float(walk["low_min"]) > -0.02 and float(walk["low_max"]) < 0.04, "13a. walking: the lowest foot stays at the ground (%.1f..%.1f cm)" % [float(walk["low_min"]) * 100.0, float(walk["low_max"]) * 100.0])
 	K.check(fails, bool(walk["alternate"]) and int(walk["steps"]) >= 4 and absf(float(walk["steps"]) - float(walk["expect"])) <= 1.5, "13a. walking: %d footsteps alternate feet (%.1f expected from the stride)" % [int(walk["steps"]), float(walk["expect"])])
 	K.check(fails, int(walk["late"]) == 0, "13a. walking: every footstep is within 1 frame of its heel strike (%d off, worst %d frames)" % [int(walk["late"]), int(walk["worst"])])
-	var run := _gait(p, true, 150)
+	var run := _gait(p, true, 195, 90)
 	K.check(fails, float(run["ts"]) >= 0.85 and float(run["ts"]) <= 1.15 and float(run["slide"]) < 0.1, "13a. running: TimeScale %.3f, the planted foot slides %.1f %% (< 10)" % [float(run["ts"]), float(run["slide"]) * 100.0])
 	K.check(fails, float(run["low_min"]) > -0.02 and bool(run["alternate"]) and int(run["late"]) == 0, "13a. running: no foot below the ground (%.1f cm), %d alternating footsteps on the heel strikes (worst %d frames)" % [float(run["low_min"]) * 100.0, int(run["steps"]), int(run["worst"])])
 	_run(p, Vector2.ZERO, false, 60)
@@ -557,13 +557,14 @@ func _check_hero(ctx: FpContext, s: Dictionary) -> void:
 
 ## Walks (or runs) along the view for n frames at DT and measures the gait: the mean TimeScale,
 ## the planted foot's slide as a fraction of the ground speed, the lowest foot's range (metres),
-## and the footsteps (count, alternation, frames from the nearest heel strike of that foot).
-func _gait(p: FpPlayer, sprint: bool, n: int) -> Dictionary:
+## and the footsteps (count, alternation, frames from the nearest heel strike of that foot), from
+## frame warm on (the gait has settled by then: a run takes longer to reach than a walk).
+func _gait(p: FpPlayer, sprint: bool, n: int, warm: int = 45) -> Dictionary:
 	var rig: RefCounted = p.avatar.rig
 	var steps: Array[Dictionary] = []
 	var frame := [0]
 	var on_step := func(_surface: String, pos: Vector3) -> void:
-		if frame[0] >= 45:
+		if frame[0] >= warm:
 			steps.append({"f": frame[0], "pos": pos})
 	p.stepped.connect(on_step)
 	var ts := 0.0
@@ -574,14 +575,14 @@ func _gait(p: FpPlayer, sprint: bool, n: int) -> Dictionary:
 	var low_max := -INF
 	var prev_toe: Array[Vector3] = []
 	var prev_planted: Array[bool] = [false, false]
-	var ankles: Array = [[], []]   # per frame from 45, above the ground
+	var ankles: Array = [[], []]   # per frame from warm, above the ground
 	var start := p.position
 	for k in range(n):
 		frame[0] = k
 		var before := p.position
 		p.simulate(Vector2(0.0, 1.0), sprint, DT)
 		p.update_view(DT)
-		if k < 45:
+		if k < warm:
 			prev_toe.clear()
 			start = p.position
 			continue
@@ -611,7 +612,7 @@ func _gait(p: FpPlayer, sprint: bool, n: int) -> Dictionary:
 			lo = minf(lo, v)
 		for i in range(1, h.size()):
 			if h[i - 1] > lo + HEEL_DOWN * M and h[i] <= lo + HEEL_DOWN * M:
-				(heel[f] as Array).append(45 + i)
+				(heel[f] as Array).append(warm + i)
 	var dist := Vector2(p.position.x - start.x, p.position.z - start.z).length() / M
 	var alternate := steps.size() >= 2
 	var late := 0
@@ -624,7 +625,7 @@ func _gait(p: FpPlayer, sprint: bool, n: int) -> Dictionary:
 		if i > 0:
 			var prev_left := (((steps[i - 1] as Dictionary)["pos"] as Vector3) - p.position).dot(right) < 0.0
 			alternate = alternate and side_left != prev_left
-		if int(e["f"]) < 50 or int(e["f"]) > n - 5:
+		if int(e["f"]) < warm + 5 or int(e["f"]) > n - 5:
 			continue
 		counted += 1
 		var best := 99
