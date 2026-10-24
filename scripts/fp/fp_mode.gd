@@ -33,6 +33,10 @@ var settings_log: Array[Dictionary] = []
 ## False keeps the pointer free (scripted tours and benchmarks; GRIDFALL_FP_PHOTO_DIR or
 ## GRIDFALL_MOUSE=free), so a windowed test run never grabs the desktop pointer.
 var capture_mouse: bool = true
+## The quality preset came from GpuMemory's low mode, not from the player's saved settings.
+var auto_low_quality: bool = false
+## The low-GPU-memory toast shows once per process, not on every return to the street.
+static var _low_vram_told: bool = false
 var _set_up: bool = false
 var _features_node: Node3D
 var _focused: bool = true
@@ -119,6 +123,11 @@ func setup(main: Node3D) -> void:
 	_on_world_rebuilt()
 	from_dict({})
 	_update_mouse_mode.call_deferred()
+	if auto_low_quality and not _low_vram_told:
+		_low_vram_told = true
+		var why := str(GpuMemory.decide()["reason"])
+		var note := "Low GPU memory (%s): quality set to Low. Esc > Display changes it." % why
+		bus.toast.emit.call_deferred(note, "system")
 
 
 ## Tears down the features (reverse order) and the HUD, releases the mouse, unpauses.
@@ -391,21 +400,29 @@ func _feature_list() -> Array[FpFeature]:
 	return out
 
 
+## DEFAULT_SETTINGS with the saved values over them. A card short of GPU memory (GpuMemory.low())
+## starts on the Low preset until the player saves a choice.
 func _load_settings() -> Dictionary:
 	var s := DEFAULT_SETTINGS.duplicate(true)
-	if not FileAccess.file_exists(SETTINGS_PATH):
-		return s
-	var parsed: Variant = JSON.parse_string(FileAccess.get_file_as_string(SETTINGS_PATH))
-	if typeof(parsed) != TYPE_DICTIONARY:
-		return s
-	for k: Variant in (parsed as Dictionary).keys():
+	var saved := _read_settings_file()
+	auto_low_quality = GpuMemory.low() and not saved.has("quality")
+	if auto_low_quality:
+		s["quality"] = "low"
+	for k: Variant in saved.keys():
 		if not s.has(k):
 			continue
-		var v: Variant = (parsed as Dictionary)[k]
+		var v: Variant = saved[k]
 		var numeric := typeof(v) in [TYPE_INT, TYPE_FLOAT] and typeof(s[k]) in [TYPE_INT, TYPE_FLOAT]
 		if typeof(v) == typeof(s[k]) or numeric:
 			s[k] = v
 	return s
+
+
+func _read_settings_file() -> Dictionary:
+	if not FileAccess.file_exists(SETTINGS_PATH):
+		return {}
+	var parsed: Variant = JSON.parse_string(FileAccess.get_file_as_string(SETTINGS_PATH))
+	return parsed if typeof(parsed) == TYPE_DICTIONARY else {}
 
 
 func _save_settings() -> void:

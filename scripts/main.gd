@@ -42,11 +42,19 @@ var _autosave_due: bool = false
 
 
 func _ready() -> void:
+	# Before the city is built, so the smaller shadow maps and buffers are the first allocated.
+	var gpu := GpuMemory.decide()
+	if bool(gpu["low"]):
+		GpuMemory.apply_to(get_viewport())
+	if bool(gpu["low"]) or DisplayServer.get_name() != "headless":
+		print(GpuMemory.describe(gpu))
 	var ops := OpsAlerts.new()
 	ops.name = "OpsAlerts"
 	ops.main = self
 	add_child(ops)
-	Analytics.track("session_start", {"view": "fp" if wants_fp() else "orbit", "flags": FeatureFlags.snapshot()})
+	var start := {"view": "fp" if wants_fp() else "orbit", "flags": FeatureFlags.snapshot()}
+	start["low_vram"] = bool(gpu["low"])
+	Analytics.track("session_start", start)
 	sim.set_speed(0)
 	residents = Residents.new()
 	residents.name = "Residents"
