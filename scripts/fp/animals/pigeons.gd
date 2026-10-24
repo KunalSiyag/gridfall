@@ -65,6 +65,8 @@ const FEED_NEAR := 1.5
 const FEED_TOSS := 1.2
 ## A pigeon's height at the shoulder (m): animal_called's size.
 const SIZE_M := 0.13
+## Feathers in the puff of a bird the hero strikes.
+const FEATHERS := 14
 ## A crumb's size (m) and colour.
 const CRUMB := Vector3(0.016, 0.007, 0.012)
 const CRUMB_COL := Color(0.86, 0.74, 0.52)
@@ -178,6 +180,41 @@ func step(dt: float) -> void:
 func startle(at: Vector3, r_m: float) -> void:
 	if r_m > 0.0:
 		flock.startle(at, r_m * WS.M)
+
+
+## The hero struck bird b of flock f from src at strength 0..1: it is knocked off in a puff of
+## feathers and the flock goes up.
+func hit(f: FLOCK.Flock, b: FLOCK.Bird, src: Vector3, strength: float) -> void:
+	flock.hit(f, b, src, strength)
+	if not is_inside_tree():
+		return
+	var fx := CPUParticles3D.new()
+	fx.name = "Feathers"
+	fx.top_level = true
+	fx.one_shot = true
+	fx.amount = FEATHERS
+	fx.lifetime = 1.4
+	fx.explosiveness = 0.9
+	fx.direction = Vector3.UP
+	fx.spread = 80.0
+	fx.initial_velocity_min = 0.4 * WS.M
+	fx.initial_velocity_max = 1.2 * WS.M
+	fx.gravity = Vector3.DOWN * 0.8 * WS.M
+	fx.damping_min = 1.5 * WS.M
+	fx.damping_max = 2.5 * WS.M
+	fx.angular_velocity_min = -360.0
+	fx.angular_velocity_max = 360.0
+	var quill := QuadMesh.new()
+	quill.size = Vector2(0.03, 0.012) * WS.M
+	var mat := StandardMaterial3D.new()
+	mat.albedo_color = Color(0.72, 0.74, 0.78)
+	mat.cull_mode = BaseMaterial3D.CULL_DISABLED
+	quill.material = mat
+	fx.mesh = quill
+	add_child(fx)
+	fx.global_position = b.pos + Vector3.UP * 0.12 * WS.M
+	fx.emitting = true
+	get_tree().create_timer(fx.lifetime + 0.5).timeout.connect(fx.queue_free)
 
 
 func on_crash(at: Vector3, _speed: float, _what: String) -> void:

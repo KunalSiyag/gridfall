@@ -87,15 +87,18 @@ Slice I's sound assets (sounds/fp/, made by tools/audio/synth_fp_sfx.py): names,
 - `SHOVE_DB = -6.0`
 - `ROLL_THUD_S = 0.15`: The hero's landing roll (hero_action "roll"): the shoulder meets the ground ROLL_THUD_S after the feet, a body_fall ROLL_DB under a knock-down's.
 - `ROLL_DB = -8.0`
-- `BARK_VARIANTS = 3`: Dogs (animal_called): a bark is one of BARK_VARIANTS (dog_bark_<n>), a growl and a whine play DOG_DB under it. The samples are of a dog DOG_PITCH_M high at the shoulder; a dog h m high plays at sqrt(DOG_PITCH_M / h), so a small dog yaps higher. A dog's bite on the hero (hero_hurt "bite") snaps its jaws (dog_snap) SNAP_Y m up, at the knee.
-- `DOG_DB = {"bark": 0.0, "growl": -6.0, "whine": -12.0}`
+- `BARK_VARIANTS = 3`: Dogs (animal_called): a bark is one of BARK_VARIANTS (dog_bark_<n>), a growl, a whine and a struck dog's yelp play dog_growl, dog_whine and dog_yelp, each DOG_DB on the bark. The samples are of a dog DOG_PITCH_M high at the shoulder; a dog h m high plays at sqrt(DOG_PITCH_M / h), so a small dog yaps higher. A dog's bite on the hero (hero_hurt "bite") snaps its jaws (dog_snap) SNAP_Y m up, at the knee.
+- `DOG_DB = {"bark": 0.0, "growl": -6.0, "whine": -12.0, "yelp": 0.0}`
 - `DOG_PITCH_M = 0.5`
 - `SNAP_Y = 0.5`
+- `ANIMAL_HIT_Y = 0.3`: A blow of the hero's on an animal (animal_hit): the thump (punch_hit) at ANIMAL_HIT_Y m up, ANIMAL_HIT_DB on a blow on a person of the same strength, pitched up ANIMAL_HIT_PITCH for the smaller body (a pigeon's twice that).
+- `ANIMAL_HIT_DB = -5.0`
+- `ANIMAL_HIT_PITCH = 1.25`
 - `COO_VARIANTS = 2`: Pigeons (animal_called): a coo is one of COO_VARIANTS (pigeon_coo_<n>), a lone bird's flap and a flock's take-off play pigeon_flap and pigeon_takeoff; each at PIGEON_DB on the bird emitter's level, its pitch within PIGEON_PITCH of the sample's.
 - `PIGEON_DB = {"coo": -16.0, "flap": 0.0, "takeoff": 0.0}`
 - `PIGEON_PITCH = 0.06`
-- `MEOW_VARIANTS = 3`: Cats (animal_called): a meow is one of MEOW_VARIANTS (cat_meow_<n>), a purr, a hiss and a hunter's chatter play cat_purr, cat_hiss and cat_chatter, each CAT_DB on the meow. The samples are of a cat CAT_PITCH_M high at the shoulder; a cat h m high plays at sqrt(CAT_PITCH_M / h) (a kitten mews higher), within CAT_PITCH of that.
-- `CAT_DB = {"meow": 0.0, "purr": -8.0, "hiss": -2.0, "chatter": -8.0}`
+- `MEOW_VARIANTS = 3`: Cats (animal_called): a meow is one of MEOW_VARIANTS (cat_meow_<n>), a purr, a hiss, a hunter's chatter and a struck cat's yowl play cat_purr, cat_hiss, cat_chatter and cat_yowl, each CAT_DB on the meow. The samples are of a cat CAT_PITCH_M high at the shoulder; a cat h m high plays at sqrt(CAT_PITCH_M / h) (a kitten mews higher), within CAT_PITCH of that.
+- `CAT_DB = {"meow": 0.0, "purr": -8.0, "hiss": -2.0, "chatter": -8.0, "yowl": 0.0}`
 - `CAT_PITCH_M = 0.25`
 - `CAT_PITCH = 0.05`
 
@@ -114,7 +117,7 @@ Slice I's sound assets (sounds/fp/, made by tools/audio/synth_fp_sfx.py): names,
 
 extends `FpFeature`
 
-City sound on foot (slice I). Owns the Music, SFX, Ambience and UI buses while on foot, puts the AudioDirector's music under the street (set_fp), and runs three parts: positional emitters (engines, horns, sirens, construction, fire, fountains, plants, the river, passers-by's steps, the player's car crashing, the street props it knocks over and its doors, people hit in the street, the hero's swings, rolls and the blows they take, dogs barking, growling and whining, pigeons and cats), the area beds (with rain from G1's weather) and the hero's footsteps (splashing on wet paving), plus the chat blip and alert stingers. Pausing muffles the music (the only thing still playing); talking to someone ducks the beds.
+City sound on foot (slice I). Owns the Music, SFX, Ambience and UI buses while on foot, puts the AudioDirector's music under the street (set_fp), and runs three parts: positional emitters (engines, horns, sirens, construction, fire, fountains, plants, the river, passers-by's steps, the player's car crashing, the street props it knocks over and its doors, people hit in the street, the hero's swings, rolls and the blows they take, dogs barking, growling, whining and yelping, pigeons, cats, and the hero's kicks and swings landing on them), the area beds (with rain from G1's weather) and the hero's footsteps (splashing on wet paving), plus the chat blip and alert stingers. Pausing muffles the music (the only thing still playing); talking to someone ducks the beds.
 
 ### Constants
 

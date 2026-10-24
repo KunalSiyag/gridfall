@@ -8,7 +8,7 @@
 
 extends `FpFeature`
 
-Dogs, pigeons and cats in the street (integration feature "animals"). Some people out on foot walk a dog on a lead: residents whose household lives with a dog (unless they are off to work) and a share of everyone else, fewer at night and in the rain. A dog household's dog keeps to the front yard of its house while nobody walks it, and a resident coming out takes it along. The dogs (dog_pack.gd) heel, stop to sniff, roam round an owner who stands still, come over to a crouching hero, bark at the hero and at people going by, flinch at blows and shouts, defend an owner the hero hits (biting: hero_hit "bite") and leap clear of cars. E pets a dog close by. The bodies are Shiba Inus and huskies (dog_bodies.gd) with leads from the owner's hand to the collar (dog_leads.gd). Flocks of pigeons (pigeons.gd) forage on the sidewalks in front of shops and civic buildings and in the parks by day, go up together at a fright and land again once it is calm; E throws them crumbs. Cats (cats.gd) keep to some front yards and shop doors, and by night strays to the works yards and the parks: they rest, stroll, greet a crouching hero, hiss at dogs, stalk the pigeons and run from frights; E pets one. Barks, growls, whines, coos, wingbeats, meows, purrs, hisses and chatter go out on the bus (animal_called) for the audio feature. Motion runs on delta * sim.speed, so pause freezes it.
+Dogs, pigeons and cats in the street (integration feature "animals"). Some people out on foot walk a dog on a lead: residents whose household lives with a dog (unless they are off to work) and a share of everyone else, fewer at night and in the rain. A dog household's dog keeps to the front yard of its house while nobody walks it, and a resident coming out takes it along. The dogs (dog_pack.gd) heel, stop to sniff, roam round an owner who stands still, come over to a crouching hero, bark at the hero and at people going by, flinch at blows and shouts, defend an owner the hero hits (biting: hero_hit "bite") and leap clear of cars. A kick or a weapon swing of the hero's lands on a dog, a cat or a pigeon in front (strike(): animal_hit). E pets a dog close by. The bodies are Shiba Inus and huskies (dog_bodies.gd) with leads from the owner's hand to the collar (dog_leads.gd). Flocks of pigeons (pigeons.gd) forage on the sidewalks in front of shops and civic buildings and in the parks by day, go up together at a fright and land again once it is calm; E throws them crumbs. Cats (cats.gd) keep to some front yards and shop doors, and by night strays to the works yards and the parks: they rest, stroll, greet a crouching hero, hiss at dogs, stalk the pigeons and run from frights; E pets one. Barks, growls, whines, coos, wingbeats, meows, purrs, hisses and chatter go out on the bus (animal_called) for the audio feature. Motion runs on delta * sim.speed, so pause freezes it.
 
 ### Constants
 
@@ -19,6 +19,8 @@ Dogs, pigeons and cats in the street (integration feature "animals"). Some peopl
 - `LEADS = preload("res://scripts/fp/animals/dog_leads.gd")`
 - `PIGEONS = preload("res://scripts/fp/animals/pigeons.gd")`
 - `CATS = preload("res://scripts/fp/animals/cats.gd")`
+- `LIFE = preload("res://scripts/fp/animals/cat_life.gd")`
+- `FLOCK = preload("res://scripts/fp/animals/pigeon_flock.gd")`
 - `MAX_STEP = 1.0 / 30.0`
 - `NEAR = 3.0`: Dogs come out within NEAR of the player (u, about their draw distance) and go beyond FAR, at most MAX_DOGS at a time. Owners and yards are looked over every SCAN_S (s), the dog households every HOMES_S.
 - `FAR = 3.6`
@@ -41,6 +43,7 @@ Dogs, pigeons and cats in the street (integration feature "animals"). Some peopl
 - `STARTLE = { "jab": 3.0, "cross": 3.0, "hook": 3.0, "kick": 3.5, "swing": 3.5, "shove": 3.0, "shou...`: The hero's swings, shove and shout startle the dogs within these (m); someone hit startles the dogs within SEEN_HIT (m) and a wave cheers the friendly ones within WAVE_AT.
 - `SEEN_HIT = 8.0`
 - `WAVE_AT = 6.0 * WS.M`
+- `BIRD_LOW = 0.6 * WS.M`: A blow of the hero's (strike()) reaches a pigeon up to BIRD_LOW (m) above the hero's feet: one on the ground or just taking off.
 - `BITE = 0.25`: A bite's hero_hit strength and push (u/s).
 - `BITE_PUSH = 0.6 * WS.M`
 - `LEAD_VIS = 2.0`: Leads further than this from the camera are not drawn (u).
@@ -56,6 +59,7 @@ Dogs, pigeons and cats in the street (integration feature "animals"). Some peopl
 ### Properties
 
 - `live: bool`: The dogs live on game time even with the sim paused (the photo tour).
+- `struck: int`: Animals the hero struck so far.
 - `calls: Dictionary`: Calls made so far by kind ("bark", "growl", "whine").
 
 ### Functions
@@ -72,6 +76,7 @@ Dogs, pigeons and cats in the street (integration feature "animals"). Some peopl
 - `func photo_cats() -> void`: Photo tour: three cats resting on a front yard, living on game time with the sim paused.
 - `func photo_restore() -> void`
 - `func tick(delta: float) -> void`: One frame of delta real seconds (_process; tests call it with processing off).
+- `func strike(feet: Vector3, dir: Vector3, reach: float, cone: float, strength: float) -> Dictionary`: A blow of the hero's (actions' kicks and weapon swings: a fist goes over the animals) from their feet along the level dir, reaching reach (u, feet to feet less the hero's girth, to the animal's side) inside the cone ahead (the cosine): it lands on the nearest dog, cat or pigeon there (flag animal_hits). A dog yelps, is knocked away and runs off or turns on the hero, a cat yowls, is knocked away and bolts, a pigeon is knocked up and away in a puff of feathers and its flock goes up; animal_hit tells the bus. Returns {"kind" ("dog", "cat" or "pigeon"), "pos", "name"}, or {} when the blow hits none.
 
 ## `scripts/fp/animals/cat_bodies.gd`
 
@@ -99,7 +104,7 @@ The cats' bodies: Quaternius' Cat (AP.CAT, built by tools/blender/make_cat.py), 
 
 extends `RefCounted`
 
-The cats' behaviour; cats.gd decides where cats keep and feeds in the world before every step(). A cat keeps to its spot (a house's front yard, the sidewalk by a shop's door, or by night a stray's patch of sidewalk by a works yard or a park): it sits, loafs, grooms and sleeps there, and now and then stretches and strolls to another place round it. A friendly cat comes over to a crouching hero with its tail up and meows, and purrs when petted; an aloof one walks off from the first pet and from the hero walking at it; a skittish one runs from the hero coming near. A sprint past, a blow or a shout makes a cat jump and run; a dog close by makes it arch its back and hiss, and one coming at it (or still there after the hiss) sends it running. A hunter chatters at the pigeons on the ground nearby, stalks them low and slow, crouches with its tail twitching and pounces (the flock goes up: pigeon_flock.gd's cats), then sits down to groom as if nothing happened. A car about to run a cat down sends it running. Each cat plays its gait at the rate its speed asks for, and its CatRig sways the tail, lowers it on a frightened or wary cat and turns the head to what it watches.
+The cats' behaviour; cats.gd decides where cats keep and feeds in the world before every step(). A cat keeps to its spot (a house's front yard, the sidewalk by a shop's door, or by night a stray's patch of sidewalk by a works yard or a park): it sits, loafs, grooms and sleeps there, and now and then stretches and strolls to another place round it. A friendly cat comes over to a crouching hero with its tail up and meows, and purrs when petted; an aloof one walks off from the first pet and from the hero walking at it; a skittish one runs from the hero coming near. A sprint past, a blow or a shout makes a cat jump and run (one the hero strikes yowls, is knocked away and bolts); a dog close by makes it arch its back and hiss, and one coming at it (or still there after the hiss) sends it running. A hunter chatters at the pigeons on the ground nearby, stalks them low and slow, crouches with its tail twitching and pounces (the flock goes up: pigeon_flock.gd's cats), then sits down to groom as if nothing happened. A car about to run a cat down sends it running. Each cat plays its gait at the rate its speed asks for, and its CatRig sways the tail, lowers it on a frightened or wary cat and turns the head to what it watches.
 
 ### Constants
 
@@ -139,6 +144,10 @@ The cats' behaviour; cats.gd decides where cats keep and feeds in the world befo
 - `FLEE_S = 4.0`
 - `SCARED_S = 10.0`
 - `STARTLE_S = 0.75`
+- `KNOCK = 1.5 * WS.M`: Struck by the hero (hit): knocked away at KNOCK (m/s) plus KNOCK_K times the blow's strength, sliding to a stop at PUSH_BRAKE (m/s²), and frightened HIT_FEAR times as long.
+- `KNOCK_K = 3.0 * WS.M`
+- `PUSH_BRAKE = 14.0 * WS.M`
+- `HIT_FEAR = 3.0`
 - `PREY = 9.0 * WS.M`: Hunting: a hunter sees a pigeon on the ground within PREY (m), stalks to POUNCE_AT, crouches CROUCH_S and pounces, leaping at LEAP (m/s) through LEAP_T (s into the clip); after a hunt it leaves the birds be for HUNT_REST (s).
 - `POUNCE_AT = 1.0 * WS.M`
 - `CROUCH_S = Vector2(0.8, 1.8)`
@@ -171,6 +180,8 @@ The cats' behaviour; cats.gd decides where cats keep and feeds in the world befo
 - `func remove(c: Cat) -> void`
 - `func step(dt: float) -> void`: One step of dt game seconds for every cat.
 - `func startle(c: Cat, src: Vector3) -> void`: Something went off at src close by (a blow, a shout, a sprint past): the cat jumps and runs.
+- `func hit(c: Cat, src: Vector3, strength: float) -> void`: The hero struck the cat (a kick or a weapon) from src at strength 0..1: it yowls, is knocked away and bolts, frightened HIT_FEAR times as long, and is skittish of the hero from then on.
+- `func girth(c: Cat) -> float`: The cat's collision radius (u).
 - `func pet(c: Cat) -> String`: The hero pets the cat: "purr" (it leans in and purrs), "snub" (an aloof cat's first pet: it sniffs the hand and strolls off) or "hiss" (a frightened or skittish cat hisses and runs).
 - `func shoulder_m(c: Cat) -> float`: Height at the shoulder (m).
 - `func head_of(c: Cat) -> Vector3`: The cat's head (a world point).
@@ -334,7 +345,7 @@ The leads from owners' hands to their dogs' collars: one camera-facing ribbon ea
 
 extends `RefCounted`
 
-The dogs' behaviour; the animals feature decides who has a dog and feeds in the world before every step(). A dog on its lead walks at its owner's left, stops now and then to sniff until the lead pulls it on, and is let off the lead to roam around an owner who stands still (in a park, say); a yard dog keeps to the front of its home and barks at people going by when it is the barking kind. Around the hero a friendly dog looks up and wags, trots over to a crouching hero and hops when petted; a barky one barks, a shy one backs off. Swings, blows and shouts close by make dogs flinch and bark; a dog whose owner the hero hits defends them, growling, barking and going for the hero's legs (on_bite). A car about to run a dog down makes it leap aside. Every dog plays Walk or Gallop at the rate its speed asks for, and its DogRig wags the tail, turns the head to what it watches and jerks it up with each bark.
+The dogs' behaviour; the animals feature decides who has a dog and feeds in the world before every step(). A dog on its lead walks at its owner's left, stops now and then to sniff until the lead pulls it on, and is let off the lead to roam around an owner who stands still (in a park, say); a yard dog keeps to the front of its home and barks at people going by when it is the barking kind. Around the hero a friendly dog looks up and wags, trots over to a crouching hero and hops when petted; a barky one barks, a shy one backs off. Swings, blows and shouts close by make dogs flinch and bark; a dog the hero strikes yelps, is knocked away and runs off (a barky one turns on the hero instead); a dog whose owner the hero hits defends them, growling, barking and going for the hero's legs (on_bite). A car about to run a dog down makes it leap aside. Every dog plays Walk or Gallop at the rate its speed asks for, and its DogRig wags the tail, turns the head to what it watches and jerks it up with each bark.
 
 ### Constants
 
@@ -373,6 +384,11 @@ The dogs' behaviour; the animals feature decides who has a dog and feeds in the 
 - `BITE_REACH = 0.8 * WS.M`
 - `BITES = 2`
 - `LUNGE_COOL = 2.0`
+- `KNOCK = 2.0 * WS.M`: Struck by the hero (hit): knocked away at KNOCK (m/s) plus KNOCK_K times the blow's strength, flinching HIT_FLINCH s. A barky or angry dog struck softer than RUN_OFF then goes for the hero; any other runs off for HIT_FLEE s.
+- `KNOCK_K = 3.0 * WS.M`
+- `HIT_FLINCH = 0.35`
+- `RUN_OFF = 0.7`
+- `HIT_FLEE = 3.0`
 - `BARK_GAP = Vector2(0.32, 0.6)`: A volley's gap between barks (s) and the rest before a dog barks again on its own (s).
 - `BARK_REST = Vector2(10.0, 20.0)`
 - `DODGE_S = 1.2`: A car within its length plus DODGE_S seconds of travel ahead and DODGE_SIDE (m) beside its path makes a dog leap aside.
@@ -402,6 +418,8 @@ The dogs' behaviour; the animals feature decides who has a dog and feeds in the 
 - `func step(dt: float) -> void`: One step of dt game seconds for every dog.
 - `func bark(d: Dog, n: int, force: bool) -> void`: Starts a volley of n barks, unless the dog is barking or barked lately (force: anyway).
 - `func startle(d: Dog, src: Vector3) -> void`: Something went off at src close by (a blow, a swing, a sprint past): the dog flinches away and barks; a shy one whines instead.
+- `func hit(d: Dog, src: Vector3, strength: float) -> bool`: The hero struck the dog (a kick or a weapon) from src at strength 0..1: it yelps and is knocked away, flinching. A barky dog, or one angry already, struck softer than RUN_OFF goes for the hero (defend); any other runs off whining once the flinch is over and is shy of the hero from then on. Returns true when it goes for the hero.
+- `func girth(d: Dog) -> float`: The dog's collision radius (u).
 - `func defend(d: Dog) -> void`: The hero hit the dog's owner: it growls and barks, and goes for the hero while they are close.
 - `func pet(d: Dog) -> bool`: The hero pets the dog: it hops and wags, and a barky or shy dog warms to them. False, with a growl, while it is angry.
 - `func head_of(d: Dog) -> Vector3`: The dog's head, and the ring on its collar the lead clips to (world points).
@@ -502,7 +520,7 @@ The pigeon every pigeon MultiMesh draws: one ArrayMesh built in code (metres, fa
 
 extends `RefCounted`
 
-The pigeons' behaviour; the pigeons node (pigeons.gd) decides where flocks live and feeds in the world before every step(). A flock forages round its spot: each bird walks from place to place with the pigeon's head bob, pecks at the ground, stands about, and now and then a cock puffs up and turns round cooing. Birds walk out of the way of people and off from the hero walking at them; one too close, or about to be run over, flutters a few metres off. A sprint close by, a swing or a shout, a blow, a dog near or running, or a crowd of birds in a car's way sends the flock up together (scatter()): they burst off with a clatter of wings, climb away from the fright, wheel round over the street or the park and glide back down to land once it is calm. Crumbs (feed()) bring the flock in close, round the hero's feet, until they are eaten.
+The pigeons' behaviour; the pigeons node (pigeons.gd) decides where flocks live and feeds in the world before every step(). A flock forages round its spot: each bird walks from place to place with the pigeon's head bob, pecks at the ground, stands about, and now and then a cock puffs up and turns round cooing. Birds walk out of the way of people and off from the hero walking at them; one too close, or about to be run over, flutters a few metres off. A sprint close by, a swing or a shout, a blow, a dog near or running, or a crowd of birds in a car's way sends the flock up together (scatter(); a bird the hero strikes is knocked up and away first, hit()): they burst off with a clatter of wings, climb away from the fright, wheel round over the street or the park and glide back down to land once it is calm. Crumbs (feed()) bring the flock in close, round the hero's feet, until they are eaten.
 
 ### Constants
 
@@ -537,6 +555,8 @@ The pigeons' behaviour; the pigeons node (pigeons.gd) decides where flocks live 
 - `UP_S = Vector2(0.9, 1.3)`
 - `DELAY_S = 0.25`
 - `CRUISE = 8.5 * WS.M`
+- `KNOCK = 2.5 * WS.M`: Struck by the hero (hit): the bird is knocked up and away at KNOCK (m/s) plus KNOCK_K times the blow's strength.
+- `KNOCK_K = 4.0 * WS.M`
 - `AIR_ACCEL = 9.0 * WS.M`
 - `ALARM_S = Vector2(6.0, 9.0)`: A fright keeps the flock up ALARM_S (s). It wheels at least WHEEL_S, then lands once nothing is within CALM (m) of its spot, and after WHEEL_MAX anyway (as far from the trouble as it can).
 - `WHEEL_S = 6.0`
@@ -579,6 +599,7 @@ The pigeons' behaviour; the pigeons node (pigeons.gd) decides where flocks live 
 - `func step(dt: float) -> void`: One step of dt game seconds for every flock.
 - `func scatter(f: Flock, src: Vector3) -> void`: A fright at src sends the whole flock up, the birds nearest it first, with one clatter of wings (a lone bird's flap); birds coming down climb again.
 - `func startle(src: Vector3, r: float) -> int`: A fright at src (a blow, a shout, a bark) sends up every flock with a bird on the ground within r (u) of it. Returns how many flocks went.
+- `func hit(f: Flock, b: Bird, src: Vector3, strength: float) -> void`: The hero struck bird b of flock f (a kick or a weapon) from src at strength 0..1: it is knocked up and away, and the whole flock goes up.
 - `func feed(f: Flock, at: Vector3) -> void`: Crumbs scattered at at (on the ground): the flock comes for them, walking or flying in, and pecks round them until they are eaten.
 - `static func pose(b: Bird) -> Color`: The pose the shader takes from INSTANCE_CUSTOM.
 - `static func xform(b: Bird) -> Transform3D`: The bird's transform, scale the units per metre of its mesh times its size.
@@ -618,6 +639,7 @@ The pigeons (part of the animals feature): where flocks keep (the sidewalk in fr
 - `FEED_NEAR = 1.5`
 - `FEED_TOSS = 1.2`
 - `SIZE_M = 0.13`: A pigeon's height at the shoulder (m): animal_called's size.
+- `FEATHERS = 14`: Feathers in the puff of a bird the hero strikes.
 - `CRUMB = Vector3(0.016, 0.007, 0.012)`: A crumb's size (m) and colour.
 - `CRUMB_COL = Color(0.86, 0.74, 0.52)`
 - `CAR = Vector2(2.3, 1.0)`: The player's car while they drive, half length and half width (m), for the birds' dodge.
@@ -640,6 +662,7 @@ The pigeons (part of the animals feature): where flocks keep (the sidewalk in fr
 - `func world(pack: PACK, driving: bool, delta: float) -> void`: The world for this step from the dogs' pack: the hero on foot, the traffic's cars (and the player's while they drive) and the people on foot around, and the dogs. delta is real seconds.
 - `func step(dt: float) -> void`: dt game seconds of the flocks (in MAX_STEP steps), then their draw. The flag off takes them away.
 - `func startle(at: Vector3, r_m: float) -> void`: A fright at at (a blow, a shout, a bark, a crash) sends up the flocks with a bird on the ground within r_m metres of it.
+- `func hit(f: FLOCK.Flock, b: FLOCK.Bird, src: Vector3, strength: float) -> void`: The hero struck bird b of flock f from src at strength 0..1: it is knocked off in a puff of feathers and the flock goes up.
 - `func on_crash(at: Vector3, _speed: float, _what: String) -> void`
 - `func on_knock(at: Vector3, _kind: String, _speed: float) -> void`
 - `func pick(origin: Vector3, dir: Vector3, max_dist: float) -> Dictionary`: The flock the hero can feed: the view meets the ground FEED_REACH or less from their feet and within FEED_NEAR of one of its birds there. {"kind": "pigeons", "id" (its key), "tile", "pos" (that point), "dist", "label", "data": {"birds"}}, or {}.

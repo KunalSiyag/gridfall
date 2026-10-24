@@ -5,13 +5,13 @@ extends RefCounted
 ## and now and then stretches and strolls to another place round it. A friendly cat comes over to a
 ## crouching hero with its tail up and meows, and purrs when petted; an aloof one walks off from the
 ## first pet and from the hero walking at it; a skittish one runs from the hero coming near. A
-## sprint past, a blow or a shout makes a cat jump and run; a dog close by makes it arch its back
-## and hiss, and one coming at it (or still there after the hiss) sends it running. A hunter
-## chatters at the pigeons on the ground nearby, stalks them low and slow, crouches with its tail
-## twitching and pounces (the flock goes up: pigeon_flock.gd's cats), then sits down to groom as if
-## nothing happened. A car about to run a cat down sends it running. Each cat plays its gait at the
-## rate its speed asks for, and its CatRig sways the tail, lowers it on a frightened or wary cat and
-## turns the head to what it watches.
+## sprint past, a blow or a shout makes a cat jump and run (one the hero strikes yowls, is knocked
+## away and bolts); a dog close by makes it arch its back and hiss, and one coming at it (or still
+## there after the hiss) sends it running. A hunter chatters at the pigeons on the ground nearby,
+## stalks them low and slow, crouches with its tail twitching and pounces (the flock goes up:
+## pigeon_flock.gd's cats), then sits down to groom as if nothing happened. A car about to run a cat
+## down sends it running. Each cat plays its gait at the rate its speed asks for, and its CatRig
+## sways the tail, lowers it on a frightened or wary cat and turns the head to what it watches.
 
 const WS := preload("res://scripts/fp/world_scale.gd")
 const DB := preload("res://scripts/fp/animals/dog_bodies.gd")
@@ -69,6 +69,12 @@ const FLEE_M := Vector2(5.0, 9.0)
 const FLEE_S := 4.0
 const SCARED_S := 10.0
 const STARTLE_S := 0.75
+## Struck by the hero (hit): knocked away at KNOCK (m/s) plus KNOCK_K times the blow's strength,
+## sliding to a stop at PUSH_BRAKE (m/s²), and frightened HIT_FEAR times as long.
+const KNOCK := 1.5 * WS.M
+const KNOCK_K := 3.0 * WS.M
+const PUSH_BRAKE := 14.0 * WS.M
+const HIT_FEAR := 3.0
 ## Hunting: a hunter sees a pigeon on the ground within PREY (m), stalks to POUNCE_AT, crouches
 ## CROUCH_S and pounces, leaping at LEAP (m/s) through LEAP_T (s into the clip); after a hunt it
 ## leaves the birds be for HUNT_REST (s).
@@ -127,6 +133,8 @@ class Cat:
 	## Facing (sin yaw, 0, cos yaw).
 	var yaw: float = 0.0
 	var speed: float = 0.0
+	## A knock (u/s) from a blow, dying away.
+	var push := Vector3.ZERO
 	## What it does: "rest" (in its pose), "stretch", "stroll", "greet", "purr", "startle", "flee",
 	## "hiss", "stalk", "crouch" or "pounce".
 	var act: String = "rest"
@@ -213,6 +221,25 @@ func startle(c: Cat, src: Vector3) -> void:
 	c.threat = src
 	c.scared = SCARED_S
 	_start(c, "startle", STARTLE_S)
+
+
+## The hero struck the cat (a kick or a weapon) from src at strength 0..1: it yowls, is knocked
+## away and bolts, frightened HIT_FEAR times as long, and is skittish of the hero from then on.
+func hit(c: Cat, src: Vector3, strength: float) -> void:
+	var away := c.pos - src
+	away.y = 0.0
+	away = away.normalized() if away.length_squared() > 1e-12 else -_fwd(c)
+	c.push = away * (KNOCK + KNOCK_K * strength)
+	c.temper = "skittish"
+	c.prey = NO_POINT
+	_call(c, "yowl")
+	_flee(c, away, src)
+	c.scared = SCARED_S * HIT_FEAR
+
+
+## The cat's collision radius (u).
+func girth(c: Cat) -> float:
+	return _radius(c)
 
 
 ## The hero pets the cat: "purr" (it leans in and purrs), "snub" (an aloof cat's first pet: it
@@ -446,6 +473,9 @@ func _arrive(c: Cat, target: Vector3, vmax: float) -> Vector3:
 ## Turns toward want (or what it faces) and moves at want's speed as far as it faces it; a pounce
 ## leaps along its way.
 func _move(c: Cat, want: Vector3, dt: float) -> void:
+	if c.push != Vector3.ZERO:
+		_slide(c, c.push * dt)
+		c.push = c.push.move_toward(Vector3.ZERO, PUSH_BRAKE * dt)
 	if c.act == "pounce":
 		var leaping := c.act_age >= LEAP_T.x and c.act_age <= LEAP_T.y
 		c.speed = LEAP if leaping else 0.0

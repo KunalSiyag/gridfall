@@ -5,10 +5,11 @@ extends FpFeature
 ## front yard of its house while nobody walks it, and a resident coming out takes it along. The dogs
 ## (dog_pack.gd) heel, stop to sniff, roam round an owner who stands still, come over to a crouching
 ## hero, bark at the hero and at people going by, flinch at blows and shouts, defend an owner the
-## hero hits (biting: hero_hit "bite") and leap clear of cars. E pets a dog close by. The bodies are
-## Shiba Inus and huskies (dog_bodies.gd) with leads from the owner's hand to the collar
-## (dog_leads.gd). Flocks of pigeons (pigeons.gd) forage on the sidewalks in front of shops and
-## civic buildings and in the parks by day, go up together at a fright and land again once it is
+## hero hits (biting: hero_hit "bite") and leap clear of cars. A kick or a weapon swing of the
+## hero's lands on a dog, a cat or a pigeon in front (strike(): animal_hit). E pets a dog close by.
+## The bodies are Shiba Inus and huskies (dog_bodies.gd) with leads from the owner's hand to the
+## collar (dog_leads.gd). Flocks of pigeons (pigeons.gd) forage on the sidewalks in front of shops
+## and civic buildings and in the parks by day, go up together at a fright and land again once it is
 ## calm; E throws them crumbs. Cats (cats.gd) keep to some front yards and shop doors, and by night
 ## strays to the works yards and the parks: they rest, stroll, greet a crouching hero, hiss at dogs,
 ## stalk the pigeons and run from frights; E pets one. Barks, growls, whines, coos, wingbeats,
@@ -22,6 +23,8 @@ const PACK := preload("res://scripts/fp/animals/dog_pack.gd")
 const LEADS := preload("res://scripts/fp/animals/dog_leads.gd")
 const PIGEONS := preload("res://scripts/fp/animals/pigeons.gd")
 const CATS := preload("res://scripts/fp/animals/cats.gd")
+const LIFE := preload("res://scripts/fp/animals/cat_life.gd")
+const FLOCK := preload("res://scripts/fp/animals/pigeon_flock.gd")
 
 const MAX_STEP := 1.0 / 30.0
 ## Dogs come out within NEAR of the player (u, about their draw distance) and go beyond FAR, at
@@ -60,6 +63,9 @@ const STARTLE := {
 }
 const SEEN_HIT := 8.0
 const WAVE_AT := 6.0 * WS.M
+## A blow of the hero's (strike()) reaches a pigeon up to BIRD_LOW (m) above the hero's feet: one
+## on the ground or just taking off.
+const BIRD_LOW := 0.6 * WS.M
 ## A bite's hero_hit strength and push (u/s).
 const BITE := 0.25
 const BITE_PUSH := 0.6 * WS.M
@@ -88,6 +94,8 @@ var cats: CATS
 var live: bool = false
 var pets: int = 0
 var bites: int = 0
+## Animals the hero struck so far.
+var struck: int = 0
 ## Calls made so far by kind ("bark", "growl", "whine").
 var calls: Dictionary = {}
 var _root: Node3D
@@ -387,6 +395,63 @@ func _on_hero_action(action: String, at: Vector3) -> void:
 	for d: PACK.Dog in pack.dogs:
 		if _flat(d.pos, at) < r:
 			pack.startle(d, at)
+
+
+## A blow of the hero's (actions' kicks and weapon swings: a fist goes over the animals) from their
+## feet along the level dir, reaching reach (u, feet to feet less the hero's girth, to the
+## animal's side) inside the cone ahead (the cosine): it lands on the nearest dog, cat or pigeon
+## there (flag animal_hits). A dog yelps, is knocked away and runs off or turns on the hero, a cat
+## yowls, is knocked away and bolts, a pigeon is knocked up and away in a puff of feathers and its
+## flock goes up; animal_hit tells the bus. Returns {"kind" ("dog", "cat" or "pigeon"), "pos",
+## "name"}, or {} when the blow hits none.
+func strike(feet: Vector3, dir: Vector3, reach: float, cone: float, strength: float) -> Dictionary:
+	if not FeatureFlags.enabled("animal_hits"):
+		return {}
+	var aim := Vector3(dir.x, 0.0, dir.z).normalized()
+	var best: Array = []
+	var bg := reach - WS.PLAYER_RADIUS
+	for d: PACK.Dog in pack.dogs:
+		var g := _gap(feet, aim, d.pos, pack.girth(d), cone)
+		if g <= bg:
+			bg = g
+			best = ["dog", d]
+	for c: LIFE.Cat in cats.life.cats:
+		var g := _gap(feet, aim, c.pos, cats.life.girth(c), cone)
+		if g <= bg:
+			bg = g
+			best = ["cat", c]
+	for f: FLOCK.Flock in pigeons.flock.flocks:
+		for b: FLOCK.Bird in f.birds:
+			var g := _gap(feet, aim, b.pos, 0.0, cone) if b.pos.y - feet.y < BIRD_LOW else INF
+			if g <= bg:
+				bg = g
+				best = ["pigeon", b, f]
+	return _struck(best, feet, strength) if not best.is_empty() else {}
+
+
+## The blow lands on what strike() found ([kind, the animal, its flock for a pigeon]).
+func _struck(what: Array, feet: Vector3, strength: float) -> Dictionary:
+	var kind := str(what[0])
+	var at: Vector3 = (what[1] as Object).get("pos")
+	var who := ""
+	match kind:
+		"dog":
+			var d: PACK.Dog = what[1]
+			who = d.name
+			var turns := pack.hit(d, feet, strength)
+			var line := "%s yelps and goes for you!" if turns else "%s yelps and runs off."
+			_toast(line % who, "info")
+		"cat":
+			var c: LIFE.Cat = what[1]
+			who = c.name
+			cats.life.hit(c, feet, strength)
+			_toast("%s yowls and bolts." % who, "info")
+		_:
+			pigeons.hit(what[2], what[1], feet, strength)
+	struck += 1
+	if ctx.bus != null:
+		ctx.bus.animal_hit.emit(at, kind, strength)
+	return {"kind": kind, "pos": at, "name": who}
 
 
 func _on_tile_built(i: int, _holder: Node3D) -> void:
@@ -823,6 +888,16 @@ static func _tile_pos(i: int) -> Vector3:
 
 static func _flat(a: Vector3, b: Vector3) -> float:
 	return Vector2(a.x - b.x, a.z - b.z).length()
+
+
+## How far the side of something r (u) round at pos is from the feet (flat), INF outside the cone
+## round aim (the cosine).
+static func _gap(feet: Vector3, aim: Vector3, pos: Vector3, r: float, cone: float) -> float:
+	var d := Vector3(pos.x - feet.x, 0.0, pos.z - feet.z)
+	var dist := d.length()
+	if dist > 1e-5 and d.dot(aim) / dist < cone:
+		return INF
+	return maxf(dist - r, 0.0)
 
 
 ## Distance along the ray (o, unit d) to the ball (c, r), or -1 when it misses.

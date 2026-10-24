@@ -5,9 +5,10 @@ extends RefCounted
 ## and turns round cooing. Birds walk out of the way of people and off from the hero walking at
 ## them; one too close, or about to be run over, flutters a few metres off. A sprint close by, a
 ## swing or a shout, a blow, a dog near or running, or a crowd of birds in a car's way sends the
-## flock up together (scatter()): they burst off with a clatter of wings, climb away from the
-## fright, wheel round over the street or the park and glide back down to land once it is calm.
-## Crumbs (feed()) bring the flock in close, round the hero's feet, until they are eaten.
+## flock up together (scatter(); a bird the hero strikes is knocked up and away first, hit()): they
+## burst off with a clatter of wings, climb away from the fright, wheel round over the street or the
+## park and glide back down to land once it is calm. Crumbs (feed()) bring the flock in close, round
+## the hero's feet, until they are eaten.
 
 const WS := preload("res://scripts/fp/world_scale.gd")
 
@@ -56,6 +57,10 @@ const AWAY := 2.4 * WS.M
 const UP_S := Vector2(0.9, 1.3)
 const DELAY_S := 0.25
 const CRUISE := 8.5 * WS.M
+## Struck by the hero (hit): the bird is knocked up and away at KNOCK (m/s) plus KNOCK_K times the
+## blow's strength.
+const KNOCK := 2.5 * WS.M
+const KNOCK_K := 4.0 * WS.M
 const AIR_ACCEL := 9.0 * WS.M
 ## A fright keeps the flock up ALARM_S (s). It wheels at least WHEEL_S, then lands once nothing is
 ## within CALM (m) of its spot, and after WHEEL_MAX anyway (as far from the trouble as it can).
@@ -269,6 +274,14 @@ func startle(src: Vector3, r: float) -> int:
 				n += 1
 				break
 	return n
+
+
+## The hero struck bird b of flock f (a kick or a weapon) from src at strength 0..1: it is knocked
+## up and away, and the whole flock goes up.
+func hit(f: Flock, b: Bird, src: Vector3, strength: float) -> void:
+	scatter(f, src)
+	_take_off(f, b)
+	b.vel = _away(b, src) * (KNOCK + KNOCK_K * strength) + Vector3.UP * LIFT
 
 
 ## Crumbs scattered at at (on the ground): the flock comes for them, walking or flying in, and

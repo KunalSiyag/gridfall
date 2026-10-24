@@ -49,7 +49,7 @@ Melee weapons (integration feature "melee"; docs/fp/ARCHITECTURE.md, Melee weapo
 - `func from_dict(d: Dictionary) -> void`
 - `func tick(dt: float) -> void`: Moves the weapon in hand with the fist and, every REFRESH_S, draws the weapons near the hero.
 - `func held() -> Dictionary`: What the hero swings: {} for bare fists, else {"kind", "strength", "reach" (m past a fist's), "breaks"}.
-- `func landed(what: String, at: Vector3) -> bool`: A swing of the weapon in hand landed at a point on what ("person" or "prop"): weapon_hit, and a bottle breaks. Returns true when it broke.
+- `func landed(what: String, at: Vector3) -> bool`: A swing of the weapon in hand landed at a point on what ("person", "animal" or "prop"): weapon_hit, and a bottle breaks. Returns true when it broke.
 - `func take(id: int) -> bool`: Picks up the weapon with this id (one in hand is put down where it lay). False when there is no such weapon.
 - `func drop() -> bool`: Puts the weapon in hand down in front of the hero's feet; false with nothing in hand.
 - `func refresh() -> void`: Draws the weapons at the spots within SHOW_R of the hero and lets those beyond HIDE_R go (a taken spot's weapon comes back once the hero is that far away).

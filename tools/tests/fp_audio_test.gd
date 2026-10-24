@@ -49,6 +49,7 @@ func _init() -> void:
 	_check_dogs(ctx, f)
 	_check_pigeons(ctx, f)
 	_check_cats(ctx, f)
+	_check_animal_hits(ctx, f)
 	_check_budget(ctx, f)
 	var st: Dictionary = f.self_test()
 	K.check(fails, bool(st["ok"]), "self_test: %s" % st["detail"])
@@ -759,8 +760,9 @@ func _check_weapons(ctx: FpContext, f: FpFeature) -> void:
 	_steps(f, 3.5)
 
 ## animal_called plays the dog's call at its head (emitter type dog): a bark (one of BARK_VARIANTS,
-## a small dog's higher), a growl and a whine DOG_DB under it; an unknown call stays silent; a bite
-## on the hero (hero_hurt "bite") snaps the jaws (dog_snap) SNAP_Y up, at the knee.
+## a small dog's higher), a growl, a whine and a struck dog's yelp at DOG_DB on it; an unknown call
+## stays silent; a bite on the hero (hero_hurt "bite") snaps the jaws (dog_snap) SNAP_Y up, at the
+## knee.
 func _check_dogs(ctx: FpContext, f: FpFeature) -> void:
 	var em := _em(f)
 	var at := em.listener() + Vector3(0.05, 0.0, 0.0)
@@ -768,17 +770,20 @@ func _check_dogs(ctx: FpContext, f: FpFeature) -> void:
 	var small := _shot(f, func() -> void: ctx.bus.animal_called.emit(at, "bark", 0.38))
 	var growl := _shot(f, func() -> void: ctx.bus.animal_called.emit(at, "growl", 0.55))
 	var whine := _shot(f, func() -> void: ctx.bus.animal_called.emit(at, "whine", 0.55))
+	var yelp := _shot(f, func() -> void: ctx.bus.animal_called.emit(at, "yelp", 0.55))
 	var barks := _is_bark(big) and _is_bark(small) and small.pitch_base > big.pitch_base
 	K.check(fails, barks, "dogs: a bark plays a dog_bark_<n> at the dog, a small dog's higher")
 	var calls := _is_shot(growl, "dog", "dog_growl") and _is_shot(whine, "dog", "dog_whine")
 	calls = calls and is_equal_approx(growl.db, big.db + float(BANK.DOG_DB["growl"]))
 	calls = calls and is_equal_approx(whine.db, big.db + float(BANK.DOG_DB["whine"]))
+	calls = calls and _is_shot(yelp, "dog", "dog_yelp")
+	calls = calls and is_equal_approx(yelp.db, big.db + float(BANK.DOG_DB["yelp"]))
 	var n := em.shots_played
 	ctx.bus.animal_called.emit(at, "moo", 0.3)
 	K.check(
 		fails,
 		calls and em.shots_played == n,
-		"dogs: a growl and a whine play DOG_DB under the bark, an unknown call nothing"
+		"dogs: a growl, a whine and a yelp play at DOG_DB on the bark, an unknown call nothing"
 	)
 	var bite := _shot(f, func() -> void: ctx.bus.hero_hurt.emit(7.5, "bite", 90.0, false))
 	var knee := ctx.player_position().y + BANK.SNAP_Y * WS.M
@@ -822,6 +827,7 @@ func _check_cats(ctx: FpContext, f: FpFeature) -> void:
 	var purr := _shot(f, func() -> void: ctx.bus.animal_called.emit(at, "purr", 0.25))
 	var hiss := _shot(f, func() -> void: ctx.bus.animal_called.emit(at, "hiss", 0.25))
 	var chat := _shot(f, func() -> void: ctx.bus.animal_called.emit(at, "chatter", 0.25))
+	var yowl := _shot(f, func() -> void: ctx.bus.animal_called.emit(at, "yowl", 0.25))
 	var mewed := false
 	var kit_mewed := false
 	for k in range(1, BANK.MEOW_VARIANTS + 1):
@@ -833,11 +839,32 @@ func _check_cats(ctx: FpContext, f: FpFeature) -> void:
 		"cats: a meow plays a cat_meow_<n> at the cat, a kitten's higher"
 	)
 	var calls := _is_shot(purr, "cat", "cat_purr") and _is_shot(hiss, "cat", "cat_hiss")
-	calls = calls and _is_shot(chat, "cat", "cat_chatter")
+	calls = calls and _is_shot(chat, "cat", "cat_chatter") and _is_shot(yowl, "cat", "cat_yowl")
+	calls = calls and is_equal_approx(yowl.db, cat.db + float(BANK.CAT_DB["yowl"]))
 	calls = calls and is_equal_approx(purr.db, cat.db + float(BANK.CAT_DB["purr"]))
 	calls = calls and is_equal_approx(hiss.db, cat.db + float(BANK.CAT_DB["hiss"]))
-	K.check(fails, calls, "cats: a purr, a hiss and a chatter play their own, CAT_DB on the meow")
+	K.check(fails, calls, "cats: a purr, a hiss, a chatter and a yowl play their own at CAT_DB")
 	_steps(f, 4.0)
+
+
+## A kick or a swing landing on an animal (animal_hit) thumps (punch_hit) ANIMAL_HIT_Y up its body,
+## ANIMAL_HIT_DB under a blow on a person of the same strength and higher (a pigeon's higher still).
+func _check_animal_hits(ctx: FpContext, f: FpFeature) -> void:
+	var at := _em(f).listener() + Vector3(0.05, 0.0, 0.0)
+	var blow := {"strength": 0.75, "down": false}
+	var man := _shot(f, func() -> void: ctx.bus.person_hit.emit(at, "punch", blow))
+	var dog := _shot(f, func() -> void: ctx.bus.animal_hit.emit(at, "dog", 0.75))
+	var bird := _shot(f, func() -> void: ctx.bus.animal_hit.emit(at, "pigeon", 0.75))
+	var ok := _is_shot(dog, "hit", "punch_hit") and _is_shot(bird, "hit", "punch_hit")
+	ok = ok and man != null and is_equal_approx(dog.db, man.db + BANK.ANIMAL_HIT_DB)
+	ok = ok and dog.pitch_base > man.pitch_base and bird.pitch_base > dog.pitch_base
+	ok = ok and absf(dog.pos.y - (at.y + BANK.ANIMAL_HIT_Y * WS.M)) < 1e-4
+	K.check(
+		fails,
+		ok,
+		"animal hits: a lighter, higher thump (punch_hit) at the animal's body, a pigeon's higher"
+	)
+	_steps(f, 3.0)
 
 
 func _is_bark(s: EM.Src) -> bool:

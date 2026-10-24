@@ -62,6 +62,9 @@ signal hero_action(action: String, at: Vector3)
 ## "pipe" or "bottle", broke true when it broke (a bottle does on its first). Emitted by the melee
 ## feature.
 signal weapon_hit(at: Vector3, kind: String, what: String, broke: bool)
+## A blow of the hero's (a kick or a weapon) landed on an animal at at: kind "dog", "cat" or
+## "pigeon", strength 0..1. Emitted by the animals feature.
+signal animal_hit(at: Vector3, kind: String, strength: float)
 ## Someone answered the hero: a resident face to face (their id and name), or whoever answered
 ## "Ask someone here" (resident_id "" and their role, "Shopkeeper"). reply is filtered for
 ## display. Emitted by chat.
