@@ -2,7 +2,7 @@
 
 ![Day 12 in GridFall: the chaos director bursts a sewage main while Mayor Argon-4 explains, in a private thought and a public post, how it will pay for the repairs](screenshots/v4/chaos_director.png)
 
-**[Website](https://kunalsiyag.github.io/gridfall/)** · **[Download v0.1.0](https://github.com/KunalSiyag/gridfall/releases/latest)** · **[Write-up on DEV](https://dev.to/kunalsiyag/why-every-roof-in-my-ai-run-city-was-a-mirror-and-two-other-fixes-2l8a)**
+**[Watch the trailer](https://x.com/kunal_twts/status/2111453764465160532)** · **[Website](https://kunalsiyag.github.io/gridfall/)** · **[Download v0.1.0](https://github.com/KunalSiyag/gridfall/releases/latest)** · **[Write-up on DEV](https://dev.to/kunalsiyag/why-every-roof-in-my-ai-run-city-was-a-mirror-and-two-other-fixes-2l8a)**
 
 **GridFall** is a 3D SimCity-style city builder made with **Godot 4.7 (Forward+)**, **Blender**, **GMI Cloud** inference and **ACE-Step 1.5** audio. You don't build the city. Five autonomous AI mayors do, each running on a different GMI Cloud model. Every other layer of the city also has a GMI model behind it. You watch, inspect and intervene.
 
