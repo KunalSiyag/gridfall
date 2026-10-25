@@ -582,6 +582,7 @@ The minimap's tile images (slice B), one pixel per tile of the 192 x 192 world: 
 - `COL_WILD = Color(0.105, 0.12, 0.14)`
 - `COL_WATER = Color(0.125, 0.265, 0.365)`
 - `COL_ROAD = Color(0.86, 0.88, 0.91)`
+- `COL_UNPAVED = [Color(0.62, 0.6, 0.56), Color(0.5, 0.42, 0.32), Color(0.36, 0.4, 0.3)]`: Unpaved road grades (gravel, dirt track, grass trail): fainter and warmer than paved roads.
 - `COL_PARK = Color(0.19, 0.30, 0.215)`
 - `COL_FOREST = Color(0.135, 0.19, 0.16)`
 - `COL_SITE = Color(0.36, 0.31, 0.245)`

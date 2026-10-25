@@ -111,6 +111,9 @@ const SITE_STAGES := {
 	"zone_up": ["frame", "finishing"],
 	"zone_tower": ["foundation", "frame", "finishing"],
 	"road": ["clearing", "grading", "paving"],
+	"gravel": ["clearing", "grading", "graveling"],
+	"track": ["clearing", "grading"],
+	"trail": ["clearing"],
 	"bridge": ["piling", "decking", "paving"],
 	"demolish": ["demolition", "hauling"],
 	"haul": ["hauling"],
@@ -119,7 +122,8 @@ const SITE_STAGES := {
 const STAGE_LABELS := {
 	"clearing": "clearing the land", "excavation": "digging the foundations", "foundation": "pouring concrete",
 	"frame": "raising the frame", "finishing": "finishing the facade", "landscaping": "landscaping",
-	"grading": "grading the roadbed", "paving": "paving", "piling": "driving piles", "decking": "laying the deck",
+	"grading": "grading the roadbed", "paving": "paving", "graveling": "spreading gravel",
+	"piling": "driving piles", "decking": "laying the deck",
 	"demolition": "demolishing", "hauling": "hauling debris away",
 }
 ## Light structures skip the excavation stage.
@@ -133,7 +137,40 @@ const CREWS := 2
 const CREW_MIN_S := 120.0
 const CREW_MAX_S := 300.0
 const CREW_JOB_MIN_S := 45.0
-const CREW_TILE_S := {"road": 10.0, "bridge": 24.0, "clear": 30.0, "haul": 45.0}
+const CREW_TILE_S := {
+	"road": 10.0, "gravel": 7.0, "track": 5.0, "trail": 3.0,
+	"bridge": 24.0, "clear": 30.0, "haul": 45.0,
+}
+## Road grades: a ROAD tile's level says how it is surfaced. 0 is the paved street every road was
+## before grades, so old saves load paved. The cheaper grades cost less to build and keep up, but
+## they are slower to drive, and a zoned lot whose best road within 2 tiles is of that grade grows
+## no denser than max_density. ticks: contractor build time; plan: the site's stages. Bridges are
+## always paved.
+const GRADE_PAVED := 0
+const GRADE_GRAVEL := 1
+const GRADE_DIRT := 2
+const GRADE_TRAIL := 3
+const ROAD_GRADES := [
+	{
+		"key": "paved", "label": "Road", "cost": ROAD_COST, "upkeep": 0.15, "speed": 1.0,
+		"max_density": 3, "ticks": ROAD_TICKS, "plan": "road",
+	},
+	{
+		"key": "gravel", "label": "Gravel road", "cost": 6, "upkeep": 0.08, "speed": 0.7,
+		"max_density": 2, "ticks": 3, "plan": "gravel",
+	},
+	{
+		"key": "dirt", "label": "Dirt track", "cost": 3, "upkeep": 0.04, "speed": 0.5,
+		"max_density": 1, "ticks": 2, "plan": "track",
+	},
+	{
+		"key": "trail", "label": "Grass trail", "cost": 1, "upkeep": 0.01, "speed": 0.35,
+		"max_density": 1, "ticks": 1, "plan": "trail",
+	},
+]
+const GRADE_ALIASES := {
+	"paved": 0, "asphalt": 0, "road": 0, "gravel": 1, "dirt": 2, "track": 2, "trail": 3, "grass": 3,
+}
 
 # Capacity per density level (index = level 0..3)
 const R_POP := [0, 16, 48, 120]
@@ -221,7 +258,9 @@ const MAP_CHAR := {
 	FIRE: "F", HOSPITAL: "H", SCHOOL: "U", PARK: "T", HALL: "M", RUBBLE: "#", FOREST: "^",
 	WIND: "V", STADIUM: "O", TRAIN: "Q", UNIVERSITY: "N", LANDFILL: "L", AIRPORT: "P", SITE: "+",
 }
-const MAP_LEGEND := ". empty land, ^ forest (zoning clears it), ~ water, = road, r/c/i zoned empty lot, R/C/I developed (digit after = density not shown), E coal plant, S solar, V wind farm, W water pump, X sewage plant, L landfill, K police, F fire station, H hospital, U school, N university, T park, O stadium, Q train station, P airport, M city hall, # rubble, + construction site (being built or demolished), * on fire, space = outside your district"
+## Map characters of the road grades (ROAD_GRADES order).
+const GRADE_CHAR := ["=", ":", "-", ";"]
+const MAP_LEGEND := ". empty land, ^ forest (zoning clears it), ~ water, = paved road, : gravel road, - dirt track, ; grass trail, r/c/i zoned empty lot, R/C/I developed (digit after = density not shown), E coal plant, S solar, V wind farm, W water pump, X sewage plant, L landfill, K police, F fire station, H hospital, U school, N university, T park, O stadium, Q train station, P airport, M city hall, # rubble, + construction site (being built or demolished), * on fire, space = outside your district"
 
 
 ## The founding city keeps coordinates 0..31 so recorded mayor actions and saves stay valid;
@@ -280,6 +319,19 @@ static func crew_seconds(plan: String, ticks: int) -> float:
 		"demolish":
 			return 40.0 + 6.0 * float(ticks)
 	return float(CREW_TILE_S.get(plan, CREW_JOB_MIN_S))
+
+
+## Road grade for an order's "grade" value (see GRADE_ALIASES; empty means paved), or -1.
+static func grade_of(key: String) -> int:
+	var k := key.strip_edges().to_lower()
+	if k.is_empty():
+		return GRADE_PAVED
+	return int(GRADE_ALIASES.get(k, -1))
+
+
+## The ROAD_GRADES entry of grade g (paved for anything out of range).
+static func grade_info(g: int) -> Dictionary:
+	return ROAD_GRADES[g] if g >= 0 and g < ROAD_GRADES.size() else ROAD_GRADES[GRADE_PAVED]
 
 
 ## The site plan for building key: the park and the light builds go through fewer stages.

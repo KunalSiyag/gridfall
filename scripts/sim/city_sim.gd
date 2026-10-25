@@ -108,6 +108,9 @@ var log_lines: Array[String] = []
 var people: Residents = null
 ## Road tiles cut by a downed power line: tile -> incident id.
 var broken_roads: Dictionary = {}
+## Road orders may ask for a cheaper grade (D.ROAD_GRADES); off: every road is paved (main.gd:
+## the road_grades flag). Not saved.
+var road_grades: bool = true
 
 var _time_accum: float = 0.0
 var _event_seq: int = 0
@@ -450,6 +453,24 @@ func _seed_road(x: int, y: int) -> void:
 	var i := D.idx(x, y)
 	_kind_set(i, D.ROAD)
 	level[i] = 0
+
+
+## The highest density a zoned lot at i may grow to for its roads: max_density of the best-graded
+## road within 2 tiles (D.ROAD_GRADES; 3 with a paved one, 1 with none).
+func road_density_cap(i: int) -> int:
+	var x := D.tx(i)
+	var y := D.ty(i)
+	var best := D.GRADE_TRAIL
+	for dy in range(-2, 3):
+		for dx in range(-2 + absi(dy), 3 - absi(dy)):
+			if not D.in_bounds(x + dx, y + dy):
+				continue
+			var j := D.idx(x + dx, y + dy)
+			if kind[j] == D.ROAD and level[j] < best:
+				best = level[j]
+				if best == D.GRADE_PAVED:
+					return int(D.grade_info(best)["max_density"])
+	return int(D.grade_info(best)["max_density"])
 
 
 ## Writes kind[i] and bumps road_epoch when a road appears or disappears.
@@ -2132,6 +2153,8 @@ func _task_grow_zones(t: Dictionary) -> bool:
 						max_lvl = 3
 				D.ZONE_I:
 					max_lvl = 3
+		if max_lvl > 1:
+			max_lvl = mini(max_lvl, road_density_cap(i))
 		var desir := 0.0
 		match k:
 			D.ZONE_R:
@@ -2510,7 +2533,7 @@ func _task_budget(t: Dictionary) -> bool:
 				var att := float(people.sentiment["attendance"]) if wb else 1.0
 				income[d] += float(tile_jobs(i)) * float(m["tax_i"]) * 0.04 * att
 			D.ROAD:
-				upkeep[d] += 0.15
+				upkeep[d] += float(D.grade_info(level[i])["upkeep"])
 			_:
 				var bk := D.building_key_for_kind(k)
 				if not bk.is_empty():
@@ -2851,40 +2874,78 @@ func _act_road(mi: int, a: Dictionary) -> Dictionary:
 			path.append(Vector2i(x2, y))
 	if path.size() > D.MAX_ROAD_LEN:
 		path.resize(D.MAX_ROAD_LEN)
+	var g := D.grade_of(str(a.get("grade", ""))) if road_grades else D.GRADE_PAVED
+	if g < 0:
+		var bad := str(a.get("grade", ""))
+		return {"ok": false, "reason": "unknown road grade '%s' (paved, gravel, dirt or trail)" % bad}
+	var info := D.grade_info(g)
 	var to_build: Array[int] = []
+	var upgrades := 0
 	var cost := 0
 	for p in path:
 		if not D.in_bounds(p.x, p.y):
 			return {"ok": false, "reason": "road leaves the map at (%d,%d)" % [p.x, p.y]}
 		var i := D.idx(p.x, p.y)
-		if kind[i] == D.ROAD or (sites.has(i) and int(sites[i]["target_kind"]) == D.ROAD):
+		var why := _road_tile_blocker(mi, i, g)
+		if why == "skip":
 			continue
-		if district[i] != mi:
-			return {"ok": false, "reason": "road tile (%d,%d) is outside your district" % [p.x, p.y]}
-		var k := kind[i]
-		if not (k == D.EMPTY or k == D.FOREST or k == D.RUBBLE or (D.is_zone(k) and level[i] == 0)):
-			return {"ok": false, "reason": "road blocked by %s at (%d,%d)" % [D.KIND_NAMES[k], p.x, p.y]}
+		if why != "":
+			return {"ok": false, "reason": why % [p.x, p.y]}
 		to_build.append(i)
-		cost += D.ROAD_COST * (5 if terrain[i] == D.WATER else 1)
+		upgrades += 1 if kind[i] == D.ROAD else 0
+		cost += D.ROAD_COST * 5 if terrain[i] == D.WATER else int(info["cost"])
 	if to_build.is_empty():
 		return {"ok": false, "reason": "road already exists there"}
 	if not _can_afford(mi, cost):
 		return {"ok": false, "reason": "cannot afford road ($%d)" % cost}
 	_spend(mi, cost)
+	var what := "road" if g == D.GRADE_PAVED else str(info["label"]).to_lower()
+	var note := " (%d resurfaced)" % upgrades if upgrades > 0 else ""
 	if staged():
-		var bridges := 0
-		for i in to_build:
-			var wet := terrain[i] == D.WATER
-			bridges += 1 if wet else 0
-			_start_site(i, "road", mi, D.ROAD, 0, "bridge" if wet else "road", D.BRIDGE_TICKS if wet else D.ROAD_TICKS, "Bridge" if wet else "Road")
-		var note := " including %d bridge spans" % bridges if bridges > 0 else ""
-		_log("%s's road crews started %d tiles of road%s." % [mayors[mi]["name"], to_build.size(), note], "build")
-		return {"ok": true, "reason": "road construction started on %d tiles%s (open in about %s with contractors alone)" % [to_build.size(), note, "two and a half days" if bridges > 0 else "a day"], "cost": cost}
+		return _start_road_sites(mi, to_build, g, what, note, cost)
 	for i in to_build:
 		_kind_set(i, D.ROAD)
-		level[i] = 0
+		level[i] = D.GRADE_PAVED if terrain[i] == D.WATER else g
 		_mark(i)
-	return {"ok": true, "reason": "built %d road tiles" % to_build.size(), "cost": cost}
+	return {"ok": true, "reason": "built %d tiles of %s%s" % [to_build.size(), what, note], "cost": cost}
+
+
+## Why a road of grade g cannot go on tile i (a format string taking the tile's x and y), "skip"
+## when a road of this grade or better is already there or being built, or "" to build. A rougher
+## road is resurfaced.
+func _road_tile_blocker(mi: int, i: int, g: int) -> String:
+	var resurface := kind[i] == D.ROAD and level[i] > g
+	if kind[i] == D.ROAD and not resurface:
+		return "skip"
+	if sites.has(i) and int(sites[i]["target_kind"]) == D.ROAD:
+		return "skip"
+	if district[i] != mi:
+		return "road tile (%d,%d) is outside your district"
+	var k := kind[i]
+	if resurface or k == D.EMPTY or k == D.FOREST or k == D.RUBBLE or (D.is_zone(k) and level[i] == 0):
+		return ""
+	return "road blocked by " + str(D.KIND_NAMES[k]).replace("%", "%%") + " at (%d,%d)"
+
+
+func _start_road_sites(
+	mi: int, to_build: Array[int], g: int, what: String, note: String, cost: int
+) -> Dictionary:
+	var info := D.grade_info(g)
+	var bridges := 0
+	for i in to_build:
+		if terrain[i] == D.WATER:
+			bridges += 1
+			_start_site(i, "road", mi, D.ROAD, D.GRADE_PAVED, "bridge", D.BRIDGE_TICKS, "Bridge")
+		else:
+			var plan := str(info["plan"])
+			_start_site(i, "road", mi, D.ROAD, g, plan, int(info["ticks"]), str(info["label"]))
+	note += " including %d bridge spans" % bridges if bridges > 0 else ""
+	var n := to_build.size()
+	_log("%s's road crews started %d tiles of %s%s." % [mayors[mi]["name"], n, what, note], "build")
+	var eta := "two and a half days" if bridges > 0 else "a day"
+	var msg := "%s construction started on %d tiles%s" % [what, n, note]
+	msg += " (open in about %s with contractors alone)" % eta
+	return {"ok": true, "reason": msg, "cost": cost}
 
 
 func _act_zone(mi: int, a: Dictionary) -> Dictionary:
@@ -3381,7 +3442,11 @@ func clear_all_events() -> void:
 
 func district_summary(d: int) -> Dictionary:
 	var b := district_rect(d)
-	var counts := {"r": 0, "c": 0, "i": 0, "r_dev": 0, "c_dev": 0, "i_dev": 0, "roads": 0, "empty": 0, "forest": 0, "rubble": 0, "burning": 0, "unpowered": 0, "unwatered": 0, "no_road": 0}
+	var counts := {
+		"r": 0, "c": 0, "i": 0, "r_dev": 0, "c_dev": 0, "i_dev": 0, "roads": 0, "unpaved_roads": 0,
+		"empty": 0, "forest": 0, "rubble": 0, "burning": 0, "unpowered": 0, "unwatered": 0,
+		"no_road": 0,
+	}
 	var services := {}
 	var poll := 0.0
 	var cr := 0.0
@@ -3410,6 +3475,8 @@ func district_summary(d: int) -> Dictionary:
 						counts["no_road"] = int(counts["no_road"]) + 1
 				D.ROAD:
 					counts["roads"] = int(counts["roads"]) + 1
+					if level[i] > D.GRADE_PAVED:
+						counts["unpaved_roads"] = int(counts["unpaved_roads"]) + 1
 					tr += traffic[i]
 				D.EMPTY:
 					if terrain[i] == D.LAND:
@@ -3446,6 +3513,8 @@ func tile_char(i: int) -> String:
 		return "~"
 	if D.is_zone(k):
 		return str(D.DEV_CHAR[k]) if level[i] > 0 else str(D.ZONE_CHAR[k])
+	if k == D.ROAD:
+		return str(D.GRADE_CHAR[clampi(level[i], 0, D.GRADE_CHAR.size() - 1)])
 	return str(D.MAP_CHAR.get(k, "?"))
 
 

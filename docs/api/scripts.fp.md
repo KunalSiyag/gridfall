@@ -306,8 +306,10 @@ Static road-tile helpers shared by collision, traffic, the directory, the minima
 - `static func piece(m: int) -> Array`: [piece: String, yaw_deg: float] for a mask; piece in straight|corner|tee|cross|end. Mirrors _road_piece with real roads present.
 - `static func arms(m: int) -> Array[Vector2i]`: Unit directions (dx, dy) of the open arms, in N, E, S, W order. dy is world +Z.
 - `static func is_carriageway(m: int, lp: Vector2) -> bool`: True when local point lp = (wx - x, wz - y) of a road tile with mask m is on the carriageway.
-- `static func surface_height(sim: CitySim, i: int, lp: Vector2) -> float`: Walkable surface height at lp on road tile i: ASPHALT_TOP on the carriageway, SIDEWALK_TOP on the sidewalk, NAN outside the bridge parapet (bridge = ROAD on WATER terrain, straight only).
-- `static func sidewalk_point(sim: CitySim, i: int, side: int) -> Vector3`: World point at the centre of the sidewalk on `side` (+1 right, -1 left of the run) of a straight road tile. The run points north (-Z) for N-S tiles and east (+X) for E-W tiles, so +1 is east of a N-S run and south of an E-W run. y is SIDEWALK_TOP.
+- `static func grade(sim: CitySim, i: int) -> int`: Grade of road tile i (D.ROAD_GRADES, kept in its level); paved for bridges and non-roads.
+- `static func paved(sim: CitySim, i: int) -> bool`: True when road tile i is a paved street (curbs, sidewalks, street furniture).
+- `static func surface_height(sim: CitySim, i: int, lp: Vector2) -> float`: Walkable surface height at lp on road tile i: ASPHALT_TOP on the carriageway, SIDEWALK_TOP on the sidewalk, NAN outside the bridge parapet (bridge = ROAD on WATER terrain, straight only). Unpaved grades have no curb: the whole tile is ASPHALT_TOP.
+- `static func sidewalk_point(sim: CitySim, i: int, side: int) -> Vector3`: World point at the centre of the sidewalk on `side` (+1 right, -1 left of the run) of a straight road tile. The run points north (-Z) for N-S tiles and east (+X) for E-W tiles, so +1 is east of a N-S run and south of an E-W run. y is SIDEWALK_TOP (ASPHALT_TOP on the verge of an unpaved road).
 - `static func run_dir(m: int) -> Vector3`: Unit run direction of a road tile with mask m: east (+X) when it has only E/W arms, else north (-Z).
 - `static func run_right(m: int) -> Vector3`: Unit vector to the right of run_dir(m).
 - `static func is_bridge(sim: CitySim, i: int) -> bool`: True if road tile i is a bridge (ROAD on WATER terrain).

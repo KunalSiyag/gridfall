@@ -11,6 +11,8 @@ const DIR := "res://sounds/fp/"
 ## looping duplicate.
 const LEGACY_AMBIENCE := "res://sounds/ambience.ogg"
 const SURFACES: Array[String] = ["asphalt", "sidewalk", "lot", "grass", "dirt", "bridge"]
+## Surfaces without their own steps: unpaved road grades borrow the nearest recorded one.
+const STEP_ALIASES := {"gravel": "dirt", "trail": "grass"}
 const STEP_VARIANTS := 6
 ## The wet layer played over a step on soaked paving: footstep_splash_<n>.
 const SPLASH_VARIANTS := 4
@@ -173,6 +175,13 @@ static func preload_all() -> void:
 ## footstep_<surface>_<n> (n in 1..STEP_VARIANTS).
 static func step_name(surface: String, n: int) -> String:
 	return "footstep_%s_%d" % [surface, n]
+
+
+## The SURFACES entry whose steps play on surface (CollisionWorld.surface_at names): itself, its
+## STEP_ALIASES stand-in, or sidewalk for anything else.
+static func step_surface(surface: String) -> String:
+	var s := str(STEP_ALIASES.get(surface, surface))
+	return s if s in SURFACES else "sidewalk"
 
 
 ## A looping duplicate of LEGACY_AMBIENCE (the imported resource keeps loop=false), or null.

@@ -93,9 +93,24 @@ static func is_carriageway(m: int, lp: Vector2) -> bool:
 	return false
 
 
+## Grade of road tile i (D.ROAD_GRADES, kept in its level); paved for bridges and non-roads.
+static func grade(sim: CitySim, i: int) -> int:
+	if sim.kind[i] != D.ROAD or sim.terrain[i] == D.WATER:
+		return D.GRADE_PAVED
+	return clampi(sim.level[i], D.GRADE_PAVED, D.GRADE_TRAIL)
+
+
+## True when road tile i is a paved street (curbs, sidewalks, street furniture).
+static func paved(sim: CitySim, i: int) -> bool:
+	return grade(sim, i) == D.GRADE_PAVED
+
+
 ## Walkable surface height at lp on road tile i: ASPHALT_TOP on the carriageway, SIDEWALK_TOP on the sidewalk,
-## NAN outside the bridge parapet (bridge = ROAD on WATER terrain, straight only).
+## NAN outside the bridge parapet (bridge = ROAD on WATER terrain, straight only). Unpaved grades
+## have no curb: the whole tile is ASPHALT_TOP.
 static func surface_height(sim: CitySim, i: int, lp: Vector2) -> float:
+	if not paved(sim, i):
+		return WS.ASPHALT_TOP
 	var m := mask(sim, D.tx(i), D.ty(i))
 	if is_bridge(sim, i) and str(piece(m)[0]) == "straight":
 		var perp := absf(lp.y) if m == EW else absf(lp.x)
@@ -109,11 +124,12 @@ static func surface_height(sim: CitySim, i: int, lp: Vector2) -> float:
 
 ## World point at the centre of the sidewalk on `side` (+1 right, -1 left of the run) of a straight road tile.
 ## The run points north (-Z) for N-S tiles and east (+X) for E-W tiles, so +1 is east of a N-S run
-## and south of an E-W run. y is SIDEWALK_TOP.
+## and south of an E-W run. y is SIDEWALK_TOP (ASPHALT_TOP on the verge of an unpaved road).
 static func sidewalk_point(sim: CitySim, i: int, side: int) -> Vector3:
 	var right := run_right(mask(sim, D.tx(i), D.ty(i)))
 	var s := 1.0 if side >= 0 else -1.0
-	return Vector3(D.tx(i), WS.SIDEWALK_TOP, D.ty(i)) + right * (s * WS.SIDEWALK_CENTER)
+	var y := WS.SIDEWALK_TOP if paved(sim, i) else WS.ASPHALT_TOP
+	return Vector3(D.tx(i), y, D.ty(i)) + right * (s * WS.SIDEWALK_CENTER)
 
 
 ## Unit run direction of a road tile with mask m: east (+X) when it has only E/W arms, else north (-Z).

@@ -239,6 +239,7 @@ func _add(i: int, local: PackedVector2Array, zebra: bool = false, arm: int = -1)
 	e.zebra = zebra
 	e.arm = arm
 	var m := RoadTopology.mask(sim, D.tx(i), D.ty(i))
+	var curb := RoadTopology.paved(sim, i)
 	var n := local.size()
 	e.pts.resize(n)
 	e.ys.resize(n)
@@ -246,7 +247,8 @@ func _add(i: int, local: PackedVector2Array, zebra: bool = false, arm: int = -1)
 	var acc := 0.0
 	for k in range(n):
 		e.pts[k] = local[k] + c
-		e.ys[k] = WS.ASPHALT_TOP if zebra and RoadTopology.is_carriageway(m, local[k]) else WS.SIDEWALK_TOP
+		var down := not curb or (zebra and RoadTopology.is_carriageway(m, local[k]))
+		e.ys[k] = WS.ASPHALT_TOP if down else WS.SIDEWALK_TOP
 		if k > 0:
 			acc += e.pts[k].distance_to(e.pts[k - 1])
 		e.cum[k] = acc

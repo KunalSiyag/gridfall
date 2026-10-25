@@ -27,6 +27,8 @@ const COL_LAND := Color(0.125, 0.145, 0.165)
 const COL_WILD := Color(0.105, 0.12, 0.14)
 const COL_WATER := Color(0.125, 0.265, 0.365)
 const COL_ROAD := Color(0.86, 0.88, 0.91)
+## Unpaved road grades (gravel, dirt track, grass trail): fainter and warmer than paved roads.
+const COL_UNPAVED := [Color(0.62, 0.6, 0.56), Color(0.5, 0.42, 0.32), Color(0.36, 0.4, 0.3)]
 const COL_PARK := Color(0.19, 0.30, 0.215)
 const COL_FOREST := Color(0.135, 0.19, 0.16)
 const COL_SITE := Color(0.36, 0.31, 0.245)
@@ -196,7 +198,9 @@ static func tile_class(k: int, l: int, t: int) -> int:
 static func tile_color(k: int, l: int, t: int, d: int) -> Color:
 	var cls := tile_class(k, l, t)
 	match cls:
-		CLS_ROAD, CLS_BRIDGE:
+		CLS_ROAD:
+			return COL_ROAD if l <= D.GRADE_PAVED else COL_UNPAVED[mini(l, D.GRADE_TRAIL) - 1]
+		CLS_BRIDGE:
 			return COL_ROAD
 		CLS_WATER:
 			return COL_WATER

@@ -192,6 +192,9 @@ var _lawn_mat: ShaderMaterial
 var _bank_mat: ShaderMaterial
 var _apron_mat: StandardMaterial3D
 var _road_fp_mat: ShaderMaterial
+## Unpaved road tiles: their shared material and quad (track_material, _track).
+var _track_mat: Material
+var _track_mesh: Mesh
 var _water_node: MeshInstance3D
 var _bed_node: MeshInstance3D
 ## Shared road-surface materials -> [dry albedo, roughness, metallic_specular] for set_wetness().
@@ -564,6 +567,8 @@ func _apply_ground_mode() -> void:
 	for g in _ground_chunks:
 		if is_instance_valid(g):
 			g.material_override = gm
+	if _track_mat is ShaderMaterial:
+		(_track_mat as ShaderMaterial).set_shader_parameter("cut_grass", not fp_mode)
 	if _bed_node != null:
 		_bed_node.material_override = _bank_material() if fp_mode else _pbr("dirt", Color(0.22, 0.2, 0.17), 0.6)
 	if _water_mat != null:
@@ -583,17 +588,63 @@ func _ground_material() -> Material:
 		m.normal_scale = 0.45
 		return m
 	if _ground_fp_mat == null:
-		_ground_fp_mat = ShaderMaterial.new()
-		_ground_fp_mat.shader = load(GROUND_SHADER)
-		for key: String in ["grass_albedo", "grass_normal", "grass_rough", "dirt_albedo", "dirt_normal"]:
-			var p := TEX + key + ".jpg"
-			if ResourceLoader.exists(p):
-				_ground_fp_mat.set_shader_parameter(key, load(p))
-		_ground_fp_mat.set_shader_parameter("detail_scale", 1.0 / (3.0 * WS.M))
-		_ground_fp_mat.set_shader_parameter("macro_scale", 1.0 / (40.0 * WS.M))
-		_ground_fp_mat.set_shader_parameter("grass_tint", Color(1.0, 1.04, 0.96))
-		_ground_fp_mat.set_shader_parameter("wetness", wetness)
+		_ground_fp_mat = _ground_shader_material()
 	return _ground_fp_mat
+
+
+## A fresh street-level ground ShaderMaterial (shaders/ground_detail.gdshader) with its textures.
+func _ground_shader_material() -> ShaderMaterial:
+	var sm := ShaderMaterial.new()
+	sm.shader = load(GROUND_SHADER)
+	var keys: Array[String] = ["grass_albedo", "grass_normal", "grass_rough", "dirt_albedo", "dirt_normal"]
+	for key: String in keys:
+		var p := TEX + key + ".jpg"
+		if ResourceLoader.exists(p):
+			sm.set_shader_parameter(key, load(p))
+	sm.set_shader_parameter("detail_scale", 1.0 / (3.0 * WS.M))
+	sm.set_shader_parameter("macro_scale", 1.0 / (40.0 * WS.M))
+	sm.set_shader_parameter("grass_tint", Color(1.0, 1.04, 0.96))
+	sm.set_shader_parameter("wetness", wetness)
+	return sm
+
+
+## The surface of unpaved road tiles (gravel, dirt track, grass trail): the ground shader in track
+## mode, drawn on a quad over the whole tile (see _track). Its grass matches the street-level
+## ground exactly; in orbit, where the ground is plain, the grass part is cut away.
+func track_material() -> Material:
+	if _track_mat != null:
+		return _track_mat
+	var have_tex := ResourceLoader.exists(TEX + "grass_albedo.jpg")
+	if not ResourceLoader.exists(GROUND_SHADER) or not have_tex:
+		_track_mat = _pbr("dirt", Color(0.42, 0.36, 0.3), 1.0 / (3.0 * WS.M))
+		return _track_mat
+	var sm := _ground_shader_material()
+	sm.set_shader_parameter("track", true)
+	sm.set_shader_parameter("cut_grass", not fp_mode)
+	sm.set_shader_parameter("road_half", WS.ROAD_HALF)
+	sm.set_shader_parameter("lane_offset", WS.LANE_OFFSET)
+	sm.set_shader_parameter("corner_radii", Vector2(WS.CORNER_INNER_R, WS.CORNER_OUTER_R))
+	sm.set_shader_parameter("end_circle", Vector2(WS.END_CIRCLE_OFFSET, WS.END_CIRCLE_R))
+	_track_mat = sm
+	return _track_mat
+
+
+## An unpaved road tile's surface: one quad at ASPHALT_TOP (the height the tile's walkers and cars
+## keep) told the tile's road mask and grade.
+func _track(mask: int, grade: int) -> MeshInstance3D:
+	if _track_mesh == null:
+		var pm := PlaneMesh.new()
+		pm.size = Vector2.ONE
+		_track_mesh = pm
+	var mi := MeshInstance3D.new()
+	mi.name = "Track"
+	mi.mesh = _track_mesh
+	mi.position.y = WS.ASPHALT_TOP
+	mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	mi.material_override = track_material()
+	mi.set_instance_shader_parameter(&"track_mask", float(mask))
+	mi.set_instance_shader_parameter(&"track_grade", float(grade))
+	return mi
 
 
 ## River banks and bed on foot: the ground shader turned mostly to wet earth with grassy tufts.
@@ -698,7 +749,8 @@ func set_wetness(w: float) -> void:
 	for m: BaseMaterial3D in _wet_mats.keys():
 		if is_instance_valid(m):
 			_wet_material(m, w)
-	for sm: ShaderMaterial in [_ground_fp_mat, _lot_mat, _road_fp_mat, _lawn_mat]:
+	var shaded: Array = [_ground_fp_mat, _lot_mat, _road_fp_mat, _lawn_mat, _track_mat as ShaderMaterial]
+	for sm: ShaderMaterial in shaded:
 		if sm != null:
 			sm.set_shader_parameter("wetness", w)
 	if _bank_mat != null:
@@ -1570,32 +1622,11 @@ func _build_tile(i: int, animate: bool) -> void:
 	var site: Dictionary = sim.sites.get(i, {})
 	match k:
 		D.ROAD:
-			var mask := _road_mask(x, y)
-			var piece := _road_piece(mask)
-			var kind_name: String = piece[0]
-			var on_water := sim.terrain[i] == D.WATER
-			if kind_name == "straight" and on_water and _real_roads and ResourceLoader.exists(REAL_ROADS["bridge"]):
-				kind_name = "bridge"
-			elif kind_name == "straight" and (x + y) % 4 == 0:
-				kind_name = "lights"
-			model = _inst(_road_path(kind_name))
-			if model != null:
-				model.rotation_degrees.y = piece[1]
-				holder.add_child(model)
-			if kind_name == "bridge":
-				pass
-			elif on_water:
-				var deck := MeshInstance3D.new()
-				var bm := BoxMesh.new()
-				bm.size = Vector3(1.0, 0.12, 1.0)
-				deck.mesh = bm
-				deck.position.y = WS.GROUND_Y - 0.06
-				deck.material_override = _mat("bridge", Color(0.45, 0.45, 0.5))
-				holder.add_child(deck)
+			if sim.terrain[i] != D.WATER and l > D.GRADE_PAVED:
+				# Gravel, dirt and grass: no curbs, sidewalks, lamps or furniture, just the surface.
+				holder.add_child(_track(_road_mask(x, y), mini(l, D.GRADE_TRAIL)))
 			else:
-				_maybe_bus_stop(i, x, y, holder)
-			if fp_mode:
-				_street.dress_road(i, holder, mask, kind_name, model)
+				model = _build_street(i, x, y, holder)
 		D.FOREST:
 			pass
 		D.ZONE_R, D.ZONE_C, D.ZONE_I:
@@ -2058,6 +2089,39 @@ func _add_zone_prop(k: int, h: int, holder: Node3D) -> void:
 		prop.set_meta("poster_slot", STREET.billboard_slot())
 	holder.add_child(prop)
 	_register_animated(prop)
+
+
+## A paved road tile: the road piece model (bridge on water, lamp posts every few tiles), a bus
+## stop, and on foot the street dressing. Returns the road model.
+func _build_street(i: int, x: int, y: int, holder: Node3D) -> Node3D:
+	var mask := _road_mask(x, y)
+	var piece := _road_piece(mask)
+	var kind_name: String = piece[0]
+	var on_water := sim.terrain[i] == D.WATER
+	var real_bridge := _real_roads and ResourceLoader.exists(REAL_ROADS["bridge"])
+	if kind_name == "straight" and on_water and real_bridge:
+		kind_name = "bridge"
+	elif kind_name == "straight" and (x + y) % 4 == 0:
+		kind_name = "lights"
+	var model := _inst(_road_path(kind_name))
+	if model != null:
+		model.rotation_degrees.y = piece[1]
+		holder.add_child(model)
+	if kind_name == "bridge":
+		pass
+	elif on_water:
+		var deck := MeshInstance3D.new()
+		var bm := BoxMesh.new()
+		bm.size = Vector3(1.0, 0.12, 1.0)
+		deck.mesh = bm
+		deck.position.y = WS.GROUND_Y - 0.06
+		deck.material_override = _mat("bridge", Color(0.45, 0.45, 0.5))
+		holder.add_child(deck)
+	else:
+		_maybe_bus_stop(i, x, y, holder)
+	if fp_mode:
+		_street.dress_road(i, holder, mask, kind_name, model)
+	return model
 
 
 ## Bus stops sit on the sidewalk of straight roads that face built-up homes or shops.

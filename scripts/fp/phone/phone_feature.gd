@@ -20,11 +20,13 @@ const NEAR := 0.6
 const AIM_UP := deg_to_rad(25.0)
 const AIM_DOWN := deg_to_rad(40.0)
 const REFRESH := 0.1
-const HINT := "LMB place   RMB undo   B close\n1-6 tools   Wheel building"
+const HINT := "LMB place   RMB undo   B close\n1-6 tools   Wheel surface or building"
 
 var open: bool = false
 var tool: String = "road"
 var building: String = "park"
+## The road tool's surface, a D.ROAD_GRADES index (paved unless the road_grades flag is on).
+var grade: int = D.GRADE_PAVED
 var anchor: Vector2i = D.NO_TILE
 var target: Vector2i = D.NO_TILE
 var preview: Dictionary = {}
@@ -121,6 +123,12 @@ func cycle_building(d: int) -> void:
 	refresh()
 
 
+## Steps through the road surfaces, paved to grass trail (d = +1 or -1).
+func cycle_grade(d: int) -> void:
+	grade = posmod(grade + d, D.ROAD_GRADES.size())
+	refresh()
+
+
 ## The tile ahead of the hero along the camera's heading. A tile is 20 m and the eye under 2 m up,
 ## so a ray to the ground would swing by tiles per degree: the pitch picks the distance instead.
 func aim_tile() -> Vector2i:
@@ -154,7 +162,7 @@ func refresh_at(t: Vector2i) -> void:
 	if not open:
 		return
 	target = t
-	preview = RULES.preview(ctx.sim, tool, anchor, target, building)
+	preview = RULES.preview(ctx.sim, tool, anchor, target, building, grade)
 	var tiles: Array = preview["tiles"]
 	if tiles.is_empty():
 		tiles = [target]
@@ -177,6 +185,9 @@ func _state() -> Dictionary:
 	if tool == "build":
 		var spec: Dictionary = D.BUILDINGS[building]
 		st["building"] = "‹ %s  %s ›" % [spec["label"], "$" + str(spec["cost"])]
+	elif tool == "road" and ctx.sim.road_grades:
+		var g := D.grade_info(grade)
+		st["building"] = "‹ %s  $%d a tile ›" % [g["label"], int(g["cost"])]
 	st["line"] = _line()
 	st["crews"] = _crews_line()
 	return st
@@ -216,7 +227,10 @@ func _line() -> String:
 	var cost := "$%d" % int(preview["cost"])
 	match tool:
 		"road":
-			return "%d tiles of road, %s" % [n, cost]
+			var what := (
+				"road" if grade == D.GRADE_PAVED else str(D.grade_info(grade)["label"]).to_lower()
+			)
+			return "%d tiles of %s, %s" % [n, what, cost]
 		"zone_r", "zone_c", "zone_i":
 			var what := str(RULES.TOOL_LABELS[tool]).to_lower()
 			return "Zone %d tiles for %s, %s" % [n, what, cost]
@@ -332,9 +346,13 @@ func _click(mb: InputEventMouseButton) -> bool:
 		MOUSE_BUTTON_RIGHT:
 			cancel()
 		MOUSE_BUTTON_WHEEL_UP, MOUSE_BUTTON_WHEEL_DOWN:
-			if tool != "build":
+			var d := -1 if mb.button_index == MOUSE_BUTTON_WHEEL_UP else 1
+			if tool == "build":
+				cycle_building(d)
+			elif tool == "road" and ctx.sim.road_grades:
+				cycle_grade(d)
+			else:
 				return false
-			cycle_building(-1 if mb.button_index == MOUSE_BUTTON_WHEEL_UP else 1)
 		_:
 			return false
 	return true

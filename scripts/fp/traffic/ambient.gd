@@ -43,6 +43,11 @@ const PARK_OTHER := 0.18
 const BIKE_CHANCE := 0.18
 const BIKE_V0 := 4.0 * WS.M
 const BIKE_DIMS := Vector3(0.6 * WS.M, 1.8 * WS.M, 1.8 * WS.M)
+## On an unpaved road (D.ROAD_GRADES) the cyclist chance is TRACK_BIKE_BOOST times higher (at most
+## TRACK_BIKE_MAX), and only TRACK_CARS of the cars that would spawn there do.
+const TRACK_BIKE_BOOST := 3.0
+const TRACK_BIKE_MAX := 0.6
+const TRACK_CARS := 0.35
 
 var sim: CitySim
 var people: Residents
@@ -219,7 +224,10 @@ func _spawn_car(p: Vector3, fwd: Vector3, sync: bool) -> bool:
 	if opts.is_empty():
 		return false
 	var l: LG.Lane = opts[_rng.randi() % opts.size()]
-	var bike := bike_chance > 0.0 and bike_model.is_valid() and _rng.randf() < bike_chance
+	var pick := _bike_or_car(t)
+	if pick < 0:
+		return false
+	var bike := pick == 1
 	var m := _model(bike)
 	if m < 0:
 		return false
@@ -239,6 +247,18 @@ func _spawn_car(p: Vector3, fwd: Vector3, sync: bool) -> bool:
 				return false
 	_place_new(l, s, m, dims, bike, sync)
 	return true
+
+
+## 1 to spawn a cyclist on tile t, 0 for a car, -1 for nothing. Tracks and trails carry more
+## cyclists, and most cars keep to paved streets.
+func _bike_or_car(t: LG.TileInfo) -> int:
+	var rough := t.grade != D.GRADE_PAVED
+	var chance := minf(bike_chance * TRACK_BIKE_BOOST, TRACK_BIKE_MAX) if rough else bike_chance
+	if bike_chance > 0.0 and bike_model.is_valid() and _rng.randf() < chance:
+		return 1
+	if rough and _rng.randf() > TRACK_CARS:
+		return -1
+	return 0
 
 
 ## The model of a new ambient vehicle: the bicycle, else a car model by the stream.

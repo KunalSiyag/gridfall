@@ -89,6 +89,7 @@ class TileInfo extends RefCounted:
 	var stem: int = -1                    # tee: the arm that yields
 	var stem_residential: bool = false
 	var residential: bool = false
+	var grade: int = 0                    # D.ROAD_GRADES: unpaved tiles are slower, unsignalled
 
 
 var sim: CitySim
@@ -301,10 +302,13 @@ func is_blocked(i: int) -> bool:
 	return blocked.has(i)
 
 
-## True when straight tile i can take curb parking at all (not a bridge, not a junction).
+## True when straight tile i can take curb parking at all (paved: not a bridge, a junction or a
+## track without curbs).
 func parkable(i: int) -> bool:
 	var t: TileInfo = tiles.get(i, null)
-	return t != null and t.piece == "straight" and not t.bridge and t.mask != 0
+	if t == null or t.grade != D.GRADE_PAVED:
+		return false
+	return t.piece == "straight" and not t.bridge and t.mask != 0
 
 
 ## Run direction (xz) of straight tile i.
@@ -465,6 +469,7 @@ func rebuild_tile(i: int) -> void:
 	t.piece = str(RoadTopology.piece(m)[0])
 	t.bridge = RoadTopology.is_bridge(sim, i)
 	t.residential = _residential(x, y)
+	t.grade = RoadTopology.grade(sim, i)
 	tiles[i] = t
 	var keep := {}
 	var arms: Array[int] = []
@@ -473,6 +478,7 @@ func rebuild_tile(i: int) -> void:
 			arms.append(e)
 	var c := Vector2(x, y)
 	var limit := WS.CAR_RESIDENTIAL if t.residential else WS.CAR_CITY
+	limit *= float(D.grade_info(t.grade)["speed"])
 	if arms.size() == 1:
 		var l := _lane(i, arms[0], arms[0], UTURN, keep)
 		var ue: int = arms[0]
@@ -499,7 +505,8 @@ func rebuild_tile(i: int) -> void:
 			t.lanes.append(l)
 			t.entry[e].append(l)
 	elif arms.size() >= 3:
-		t.lights = arms.size() == 4
+		# An unpaved crossroads has no signals: everyone gives way to the right (_junction_rules).
+		t.lights = arms.size() == 4 and t.grade == D.GRADE_PAVED
 		if arms.size() == 3:
 			for e in range(4):
 				if not (m & (1 << e)):
@@ -854,6 +861,10 @@ func _junction_rules(t: TileInfo) -> void:
 			elif mv.turn == -1:
 				y.append(OPP[mv.from_e])
 				gap = 2.5
+		elif t.mask == 15:
+			# Unsignalled crossroads: traffic from the arm on the right goes first.
+			y.append((mv.from_e + 3) % 4)
+			gap = 2.5
 		mv.yield_to = y
 		mv.gap_s = gap
 

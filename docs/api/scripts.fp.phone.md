@@ -48,8 +48,8 @@ Read-only previews for the phone Build app. Each one mirrors CitySim's own check
 
 - `static func owner_of(sim: CitySim, x: int, y: int) -> int`: The mayor index that owns tile (x, y), or -1 for unclaimed land and outside the world.
 - `static func road_path(a: Vector2i, b: Vector2i) -> Array[Vector2i]`: The L-shaped road from a to b that CitySim builds: along x first, then along y.
-- `static func preview(sim: CitySim, tool: String, a: Vector2i, target: Vector2i, building: String) -> Dictionary`: What placing tool at target would do. a is the first corner of a two-point tool (D.NO_TILE before it is set). Returns {"ok", "mi", "tiles" (Array[Vector2i] to draw), "cost", "reason", "action" (the apply_action dict)}; reason says what is wrong when ok is false.
-- `static func crew_seconds(sim: CitySim, tool: String, building: String, p: Dictionary) -> float`: Crew seconds the previewed order p would take one of the player's crews (CitySim.apply_player_order), or -1 when there is no estimate: zoning and bulldozing (what is on the tile decides), a refused order, or instant construction.
+- `static func preview(sim: CitySim, tool: String, a: Vector2i, target: Vector2i, building: String, grade: int = D.GRADE_PAVED) -> Dictionary`: What placing tool at target would do. a is the first corner of a two-point tool (D.NO_TILE before it is set). Returns {"ok", "mi", "tiles" (Array[Vector2i] to draw), "cost", "reason", "action" (the apply_action dict)}; reason says what is wrong when ok is false. grade is the road tool's surface (D.ROAD_GRADES index).
+- `static func crew_seconds(sim: CitySim, tool: String, building: String, p: Dictionary) -> float`: Crew seconds the previewed order p would take one of the player's crews (CitySim.apply_player_order), or -1 when there is no estimate: zoning and bulldozing (what is on the tile decides), a refused order, or instant construction. A road's grade comes from p.
 
 ## `scripts/fp/phone/phone_feature.gd`
 
@@ -71,7 +71,11 @@ The phone and its Build app (integration feature "phone"). B opens a phone that 
 - `AIM_UP = deg_to_rad(25.0)`
 - `AIM_DOWN = deg_to_rad(40.0)`
 - `REFRESH = 0.1`
-- `HINT = "LMB place RMB undo B close\n1-6 tools Wheel building"`
+- `HINT = "LMB place RMB undo B close\n1-6 tools Wheel surface or building"`
+
+### Properties
+
+- `grade: int`: The road tool's surface, a D.ROAD_GRADES index (paved unless the road_grades flag is on).
 
 ### Functions
 
@@ -85,6 +89,7 @@ The phone and its Build app (integration feature "phone"). B opens a phone that 
 - `func close_phone() -> void`
 - `func set_tool(id: String) -> void`
 - `func cycle_building(d: int) -> void`: Steps through the Build tool's list (d = +1 or -1).
+- `func cycle_grade(d: int) -> void`: Steps through the road surfaces, paved to grass trail (d = +1 or -1).
 - `func aim_tile() -> Vector2i`: The tile ahead of the hero along the camera's heading. A tile is 20 m and the eye under 2 m up, so a ray to the ground would swing by tiles per degree: the pitch picks the distance instead.
 - `static func aim_distance(pitch: float) -> float`: Tiles ahead for a view pitch: AIM_LEVEL looking straight ahead, out to REACH looking up by AIM_UP, in to NEAR looking down by AIM_DOWN.
 - `func refresh() -> void`: Re-aims and re-checks the order, then redraws the ghost and the phone.

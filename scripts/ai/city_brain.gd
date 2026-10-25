@@ -23,6 +23,7 @@ signal busy_changed(pending: int)
 const D := preload("res://scripts/sim/sim_defs.gd")
 const MayorTurns := preload("res://scripts/ai/mayor_turns.gd")
 const BrainText := preload("res://scripts/ai/brain_text.gd")
+const RoadPlans := preload("res://scripts/ai/road_plans.gd")
 const MAX_WAIT_MS := 75000
 
 var sim: CitySim
@@ -261,10 +262,11 @@ RULES
 - The people are AI residents with their own minds. They choose whether to go to work, how to commute, where to spend, whether to help fix what breaks, whether to protest, and whether to move away. Unhappy residents leave, which empties homes and shrinks your tax base. Incidents (fires, broken water mains, downed power lines, crashes...) stay broken until residents and paid crews put in enough repair work.
 - Daily income = income tax on what your residents earned plus sales tax on what they spent in your shops, plus industry. Upkeep = buildings + roads + share of ordinances. Taxes above ~9% slow growth and anger residents. You cannot go below -$2000.
 - Costs: road $10/tile ($50 on water), zone $5/tile, bulldoze $5/tile, emergency crews $300.
+- Road grades: a road order may set "grade". paved ($10/tile, upkeep 0.15) is the default; gravel ($6, upkeep 0.08, 70% speed) only lets nearby lots reach density 2; dirt ($3, upkeep 0.04, half speed) and trail ($1, upkeep 0.01, a third of the speed) only density 1. Bridges are always paved. A lot grows as dense as its best road within 2 tiles allows. Ordering a better grade over an existing rougher road resurfaces it (the road closes while crews work). Cheap tracks open new land quickly; pave them as the district densifies.
 - Construction takes time. A build order opens a construction site (+ on the map, listed under under_construction) that your paid contractors work through in stages: clearing, excavation, foundation, frame, finishing. A building does nothing until it is finished: a park takes about 1 day, a police station about 3, a hospital about 4, a coal plant about 9, a stadium about 12, an airport about 15. Roads open after about a day, bridges after about 2.5 days. Private developers build zoned lots up the same way (houses about 2 days, towers about 6) and only run about 10 sites per district at once. Residents who are construction workers, electricians or engineers join nearby sites and finish them faster, but never more than about 1.6x. Plan ahead: order power and water before you need them. Bulldozing sends a demolition crew. Never order a building again while its site is still open.
 - The city can grow: the founding city covers x,y 0..31 inside a wide frontier (x,y """ + "%d..%d" % [D.X0, D.X0 + D.W - 1] + """) of unclaimed woods, lakes and the river. You may annex an unclaimed 16x16 plot that borders your district (LAND YOU CAN ANNEX lists them with prices); the price rises with each plot you add. Land is cheap, so keep claiming plots ahead of demand: surveyors map the frontier further out as the city grows. New land is empty: it needs roads connected to the city, power and zoning before anyone lives there.
 ACTIONS (max 7 per day). Coordinates are absolute world coordinates x,y and must be inside your district (except annex).
- {"type":"road","x":X,"y":Y,"x2":X2,"y2":Y2}  straight or L-shaped (horizontal leg first), max 16 tiles
+ {"type":"road","x":X,"y":Y,"x2":X2,"y2":Y2,"grade":"paved|gravel|dirt|trail"}  straight or L-shaped (horizontal leg first), max 16 tiles; grade is optional (paved)
  {"type":"zone","zone":"R|C|I","x":X,"y":Y,"w":W,"h":H}  rectangle up to 6x6 on empty or forest land, top-left corner at x,y
  {"type":"build","building":"coal_plant|solar_farm|wind_farm|water_pump|sewage_plant|landfill|police|fire_station|hospital|school|park|train_station|university|stadium|airport","x":X,"y":Y}
  {"type":"bulldoze","x":X,"y":Y,"w":1,"h":1}
@@ -526,11 +528,7 @@ func _heuristic_mayor(mi: int) -> Dictionary:
 			actions.append({"type": "annex", "x": int(plot["x"]), "y": int(plot["y"])})
 			funds -= int(plot["cost"])
 			notes.append("annexing new land to the %s" % _direction_of(mi, plot))
-	if lots.size() - lot_i < 6 and funds > 300:
-		var road := _plan_road(mi)
-		if not road.is_empty():
-			actions.append(road)
-			notes.append("extending roads to open land")
+	RoadPlans.road_step(sim, mi, lots.size() - lot_i, funds, actions, notes)
 	if pop > 120 and float(m["happiness"]) < 0.45 and funds > 400 and lot_i < lots.size():
 		actions.append({"type": "build", "building": "park", "x": int(lots[lot_i][0]), "y": int(lots[lot_i][1])})
 		notes.append("a park for unhappy residents")
@@ -580,41 +578,6 @@ func _direction_of(mi: int, plot: Dictionary) -> String:
 
 
 func day_of_sim() -> int:	return sim.day
-
-
-func _plan_road(mi: int) -> Dictionary:
-	var b := sim.district_rect(mi)
-	for step in range(2, 16, 4):
-		for horizontal in [true, false]:
-			var line: Array[Vector2i] = []
-			if horizontal:
-				var y := b.position.y + step
-				if y >= b.end.y:
-					continue
-				for x in range(b.position.x, b.end.x):
-					line.append(Vector2i(x, y))
-			else:
-				var x2 := b.position.x + step
-				if x2 >= b.end.x:
-					continue
-				for y2 in range(b.position.y, b.end.y):
-					line.append(Vector2i(x2, y2))
-			var seg: Array[Vector2i] = []
-			for p in line:
-				var i := D.idx(p.x, p.y)
-				if sim.district[i] != mi:
-					continue
-				var k := sim.kind[i]
-				if k == D.EMPTY or k == D.FOREST:
-					seg.append(p)
-				elif k != D.ROAD:
-					break
-			if seg.size() >= 3:
-				var first: Vector2i = seg[0]
-				var last: Vector2i = seg[mini(seg.size() - 1, 11)]
-				if sim.road_dist[D.idx(first.x, first.y)] <= 1 or sim.road_dist[D.idx(last.x, last.y)] <= 1:
-					return {"type": "road", "x": first.x, "y": first.y, "x2": last.x, "y2": last.y}
-	return {}
 
 
 # ------------------------------------------------------------------ citizens

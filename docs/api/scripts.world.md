@@ -139,6 +139,7 @@ Renders the CitySim grid in 3D: Kenney roads picked by neighbor mask, zone lots 
 
 - `func setup(p_sim: CitySim, p_camera: Camera3D) -> void`
 - `func set_fp_mode(on: bool) -> void`: Switches between the orbit and the street-level presentation. On a real change it also rebuilds the mode-specific geometry synchronously (tree chunks, every tile: lots, pads, furniture, FX), bypassing the rebuild queue, then emits world_rebuilt and fp_mode_changed. Setting the same value again does nothing; the boot path sets the field before the first setup() instead.
+- `func track_material() -> Material`: The surface of unpaved road tiles (gravel, dirt track, grass trail): the ground shader in track mode, drawn on a quad over the whole tile (see _track). Its grass matches the street-level ground exactly; in orbit, where the ground is plain, the grass part is cut away.
 - `func lot_ground_material() -> Material`: Ground for a vacant lot on foot: the detail shader turned to patchy earth that fades back to grass at the lot's edges.
 - `func lawn_material() -> ShaderMaterial`: Lawns and park grass of the building models on foot (their flat "Grass" surfaces): the street's metric grass, a little lusher and with fewer worn patches. Null without the ground shader.
 - `func apron_material() -> Material`: Paving for the aprons between lots and road sidewalks: the road's own sidewalk material, world tiled at the road's density (one repeat per 3 m).

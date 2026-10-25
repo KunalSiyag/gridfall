@@ -1397,7 +1397,7 @@ func _go(r: Dictionary, to: int, state: String) -> bool:
 	r["route"] = route
 	r["at"] = to
 	r["state"] = state
-	r["mode"] = trip_mode(r, route.size(), state)
+	r["mode"] = trip_mode(r, route.size(), state, is_rural(route))
 	if from != to:
 		trip_started.emit(str(r["id"]), from, to, _trip_mode(str(r["mode"])))
 	resident_moved.emit(r)
@@ -1411,21 +1411,38 @@ func _trip_mode(m: String) -> String:
 
 ## How r makes a trip of tiles road tiles for state: the commute in r's plan to work (anything
 ## short on foot otherwise), on the bicycle instead of the car when r keeps one and it is not far.
-func trip_mode(r: Dictionary, tiles: int, state: String) -> String:
+## rural: most of the way is unpaved (is_rural), where twice as many people keep a bicycle.
+func trip_mode(r: Dictionary, tiles: int, state: String, rural: bool = false) -> String:
 	var p: Dictionary = r.get("plan", {})
 	var m := str(p.get("commute", "car"))
 	if state != "work" and tiles <= 6:
 		return "walk"
-	if m == "car" and tiles <= BIKE_TILES and keeps_bike(r):
+	if m == "car" and tiles <= BIKE_TILES and keeps_bike(r, rural):
 		return "bike"
 	return m
 
 
-## True when r keeps a bicycle (see BIKE_SHARE); the same answer every day.
-func keeps_bike(r: Dictionary) -> bool:
+## True when at least half of route's road tiles (Vector2i, as route_between gives them) are
+## gravel, dirt or trail.
+func is_rural(route: Array) -> bool:
+	var roads := 0
+	var rough := 0
+	for t: Vector2i in route:
+		if not D.in_bounds(t.x, t.y):
+			continue
+		var i := D.idx(t.x, t.y)
+		if sim.kind[i] == D.ROAD:
+			roads += 1
+			rough += 1 if sim.level[i] > D.GRADE_PAVED else 0
+	return roads > 0 and rough * 2 >= roads
+
+
+## True when r keeps a bicycle (see BIKE_SHARE; twice the share for a rural trip); the same answer
+## every day for the same kind of trip.
+func keeps_bike(r: Dictionary, rural: bool = false) -> bool:
 	if bike_share <= 0.0:
 		return false
-	var share := bike_share
+	var share := bike_share * (2.0 if rural else 1.0)
 	for t: Variant in r.get("traits", []):
 		if str(t) in BIKE_TRAITS:
 			share *= 2.0

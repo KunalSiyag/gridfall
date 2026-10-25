@@ -145,7 +145,8 @@ func rebuild_all() -> void:
 func build_props(i: int) -> void:
 	_free_props(i)
 	var t: LG.TileInfo = lg.info(i)
-	if t == null or root == null:
+	# Tracks have no curb to stand signs on and no signals.
+	if t == null or root == null or t.grade != 0:
 		return
 	if t.lights:
 		props[i] = _build_cross(i)
