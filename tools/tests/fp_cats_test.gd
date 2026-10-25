@@ -7,11 +7,14 @@ extends SceneTree
 ## tail low; a dog close by makes it hiss and then run; a car coming makes it bolt; a hunter
 ## chatters at a pigeon, stalks it, crouches and pounces, then grooms; a cat stalking a flock does
 ## not send it up but its pounce does; pause freezes it; strays come out only at night; beyond FAR
-## they go and come back; the flag off takes them away; the photo shot; self_test and teardown.
+## they go and come back; the flag off takes them away; the photo shot; a fresh city (only the
+## founding roads and City Hall) keeps one ambient stray near the player, day and night, in from
+## the rain, and none once the city has grown; self_test and teardown.
 ## Third person on a grown city; the behaviour is stepped directly (cat_life.gd step) where the
 ## test sets the world, else through traffic's step and the feature's tick(1/60).
 
 const K := preload("res://tools/tests/fp_kit.gd")
+const FRESH := preload("res://tools/tests/fp_fresh_city.gd")
 const WS := preload("res://scripts/fp/world_scale.gd")
 const WK := preload("res://scripts/fp/traffic/walkers.gd")
 const AF := preload("res://scripts/fp/animals/animals_feature.gd")
@@ -75,6 +78,7 @@ func _init() -> void:
 		_check_far()
 		_check_flag()
 	_check_photo()
+	_check_fresh_city()
 	_check_teardown()
 	K.finish(self, "FP_CATS_TEST", fails)
 
@@ -561,6 +565,79 @@ func _check_photo() -> void:
 	f.call(str(shot["restore"]))
 	ctx.sim.speed = 1
 	K.check(fails, _cat("photo:0") == null, "photo: restore takes them away")
+
+
+## A fresh city (no growth: only the founding roads and City Hall) is young: with no house, shop,
+## works yard or park for a cat anywhere, one ambient stray keeps to a sidewalk near the player by
+## day and by night, the rain takes it in and it comes back after; once the city has grown past
+## YOUNG_LOTS built lots no ambient stray comes out.
+func _check_fresh_city() -> void:
+	var fresh := FRESH.make(get_root())
+	if not bool(fresh["ok"]):
+		K.check(fails, false, "fresh: fixture: traffic and animals registered")
+		return
+	var fcats: CATS = fresh["cats"]
+	fcats.bodies.blocking = true
+	var flife: LIFE = fresh["life"]
+	var fctx: FpContext = fresh["ctx"]
+	var ftr: FpFeature = fresh["traffic"]
+	var ff: FpFeature = fresh["animals"]
+	FRESH.step(ftr, ff, AF.SCAN_S + 0.1)
+	var c := _cat_of(flife, CATS.AMBIENT_KEY)
+	var out := (
+		c != null
+		and c.home == "ambient"
+		and str(c.temper) in ["aloof", "skittish", "friendly"]
+		and _flat(c.pos, fctx.player.position) <= CATS.NEAR
+		and fctx.collision.surface_at(c.pos) != "asphalt"
+	)
+	K.check(
+		fails,
+		out and bool(fcats.call("_young")),
+		(
+			"fresh: a young city keeps an ambient stray near the player by day (%s)"
+			% (c.temper if c != null else "-")
+		)
+	)
+	fctx.sky.night = 1.0
+	FRESH.step(ftr, ff, AF.SCAN_S + 0.1)
+	K.check(
+		fails,
+		_cat_of(flife, CATS.AMBIENT_KEY) != null and flife.cats.size() == 1,
+		"fresh: by night the same stray is still about"
+	)
+	fctx.sky.night = 0.0
+	fcats.call("scan", fctx.player_position(), false, true, {})
+	K.check(fails, _cat_of(flife, CATS.AMBIENT_KEY) == null, "fresh: the rain takes the stray in")
+	FRESH.step(ftr, ff, AF.SCAN_S + 0.1)
+	K.check(
+		fails, _cat_of(flife, CATS.AMBIENT_KEY) != null, "fresh: after the rain it comes out again"
+	)
+	K.grow(fctx.sim, fctx.residents)
+	var tries := 0
+	while bool(fcats.call("_young")) and tries < 6:
+		K.ticks(fctx.sim, 40)
+		tries += 1
+	K.check(
+		fails,
+		not bool(fcats.call("_young")),
+		"fresh: grown past YOUNG_LOTS built lots the city is not young anymore"
+	)
+	fctx.player.teleport(fctx.player_position() + Vector3(CATS.FAR + 1.0, 0.0, 0.0), 0.0)
+	fcats.call("scan", fctx.player_position(), false, false, {})
+	K.check(
+		fails,
+		_cat_of(flife, CATS.AMBIENT_KEY) == null,
+		"fresh: grown, no ambient stray comes out where no spot is"
+	)
+
+
+## The cat of key in the cats of another context's life.
+func _cat_of(cats_life: LIFE, k: String) -> LIFE.Cat:
+	for c: LIFE.Cat in cats_life.cats:
+		if c.key == k:
+			return c
+	return null
 
 
 func _check_teardown() -> void:

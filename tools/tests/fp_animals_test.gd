@@ -9,10 +9,13 @@ extends SceneTree
 ## whining; pause freezes it; walking off beyond FAR takes the dogs away and coming back brings
 ## the same dog; the photo shot (a Shiba Inu and a husky in a front yard); a dog household keeps
 ## its dog in the front yard, the resident coming out takes it along and it goes back when they
-## go in; self_test and teardown. Third person on a grown city; time runs through the feature's
-## tick(1/60), traffic's step and the player's update_view.
+## go in; a young city (only the founding roads and City Hall) has nearly twice as many of the
+## people passing through walking a dog, and grown the share settles back; self_test and teardown.
+## Third person on a grown city; time runs through the feature's tick(1/60), traffic's step and
+## the player's update_view.
 
 const K := preload("res://tools/tests/fp_kit.gd")
+const FRESH := preload("res://tools/tests/fp_fresh_city.gd")
 const WS := preload("res://scripts/fp/world_scale.gd")
 const WK := preload("res://scripts/fp/traffic/walkers.gd")
 const AF := preload("res://scripts/fp/animals/animals_feature.gd")
@@ -85,6 +88,7 @@ func _init() -> void:
 		_check_pause(d)
 		_check_far(w, d)
 	_check_yard()
+	_check_young_city()
 	_check_teardown()
 	K.finish(self, "FP_ANIMALS_TEST", fails)
 
@@ -472,6 +476,52 @@ func _check_yard() -> void:
 		fails,
 		d.walker == -1 and d.mode == "yard" and d.lot == lot,
 		"yard: back to its yard when they go in"
+	)
+
+
+## A young city (no growth: only the founding roads and City Hall): nearly twice as many of the
+## people passing through walk a dog (WALK_SHARE_EARLY), so with walkers about near the player a
+## dog is out within the first minute; once the city has grown the share settles back
+## (WALK_SHARE).
+func _check_young_city() -> void:
+	var fresh := FRESH.make(get_root())
+	if not bool(fresh["ok"]):
+		K.check(fails, false, "young: fixture: traffic and animals registered")
+		return
+	(fresh["bodies"] as BODIES).blocking = true
+	var fpack: PACK = fresh["pack"]
+	var fctx: FpContext = fresh["ctx"]
+	var ftr: FpFeature = fresh["traffic"]
+	var ff: FpFeature = fresh["animals"]
+	var wks: WK = ftr.get("walkers")
+	var me: Vector3 = fctx.player.position
+	for k in range(20):
+		var w := wks.make("ambient")
+		w.extra = 0
+		var at := me + Vector3((k - 10) * 0.12, 0.0, 0.0)
+		var y := fctx.collision.walk_height(at)
+		wks.stand(w, Vector3(at.x, y if not is_nan(y) else at.y, at.z), 0.0)
+	FRESH.step(ftr, ff, AF.SCAN_S + 0.1)
+	var dogs := 0
+	for d: PACK.Dog in fpack.dogs:
+		dogs += 1 if d.walker >= 0 else 0
+	var share: float = ff.call("_walk_share")
+	K.check(
+		fails,
+		dogs >= 1 and is_equal_approx(share, AF.WALK_SHARE_EARLY),
+		"young: with people passing, a dog is out at once (%d dogs, share %.2f)" % [dogs, share]
+	)
+	K.grow(fctx.sim, fctx.residents)
+	var tries := 0
+	while ff.call("_built_lots") < AF.YOUNG_LOTS and tries < 6:
+		K.ticks(fctx.sim, 40)
+		tries += 1
+	ff.call("_read_homes")
+	var grown: float = ff.call("_walk_share")
+	K.check(
+		fails,
+		is_equal_approx(grown, AF.WALK_SHARE),
+		"young: grown, the share settles back (%.2f)" % grown
 	)
 
 

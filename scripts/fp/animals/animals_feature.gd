@@ -1,8 +1,9 @@
 extends FpFeature
 ## Dogs, pigeons and cats in the street (integration feature "animals"). Some people out on foot
 ## walk a dog on a lead: residents whose household lives with a dog (unless they are off to work)
-## and a share of everyone else, fewer at night and in the rain. A dog household's dog keeps to the
-## front yard of its house while nobody walks it, and a resident coming out takes it along. The dogs
+## and a share of everyone else, fewer at night and in the rain, more of them while the city is
+## young. A dog household's dog keeps to the front yard of its house while nobody walks it, and a
+## resident coming out takes it along. The dogs
 ## (dog_pack.gd) heel, stop to sniff, roam round an owner who stands still, come over to a crouching
 ## hero, bark at the hero and at people going by, flinch at blows and shouts, defend an owner the
 ## hero hits (biting: hero_hit "bite") and leap clear of cars. A kick or a weapon swing of the
@@ -36,8 +37,12 @@ const MAX_DOGS := 10
 const SCAN_S := 0.5
 const HOMES_S := 10.0
 ## Share of the people out on foot who walk a dog, and what the night (sky.night above NIGHT)
-## and the rain leave of it.
+## and the rain leave of it. While the city is young (fewer built homes and shops than YOUNG_LOTS,
+## measured with the dog households) nearly twice as many of them do, so a young city still shows
+## dogs about.
 const WALK_SHARE := 0.08
+const WALK_SHARE_EARLY := 0.18
+const YOUNG_LOTS := 8
 const NIGHT := 0.5
 const NIGHT_K := 0.4
 const RAIN_K := 0.25
@@ -104,6 +109,8 @@ var _homes_t: float = 0.0
 ## The dog households: [resident id, home lot], and their lots (lot -> true).
 var _homes: Array = []
 var _dog_lots: Dictionary = {}
+## The city's dog households read, and whether it is still young (_read_homes()).
+var _young := true
 ## Walker id -> whether they walk a dog (people passing through, decided when first seen).
 var _decided: Dictionary = {}
 ## Lot -> its front yard (_yard()), {} for none.
@@ -585,12 +592,23 @@ func _scan() -> void:
 func _read_homes() -> void:
 	_homes.clear()
 	_dog_lots.clear()
+	_young = _built_lots() < YOUNG_LOTS
 	if ctx.residents == null:
 		return
 	for r: Dictionary in ctx.residents.people:
 		if str(r.get("household", "")) == DOG_HOUSEHOLD:
 			_homes.append([str(r["id"]), int(r["home"])])
 			_dog_lots[int(r["home"])] = true
+
+
+## Built homes and shops so far: a young city has few yards and doors for its animals.
+func _built_lots() -> int:
+	var n := 0
+	for i: int in ctx.sim.active:
+		var k := ctx.sim.kind[i]
+		if (k == D.ZONE_R or k == D.ZONE_C) and ctx.sim.level[i] > 0:
+			n += 1
+	return n
 
 
 ## People on foot near the player who walk a dog get it at their side.
@@ -861,10 +879,11 @@ func _raining() -> bool:
 	return w is Object and is_instance_valid(w) and str((w as Object).get("state")) == "rain"
 
 
-## The share of people passing through who walk a dog now.
+## The share of people passing through who walk a dog now (more of them while the city is young).
 func _walk_share() -> float:
 	var k := NIGHT_K if _night() > NIGHT else 1.0
-	return WALK_SHARE * k * (RAIN_K if _raining() else 1.0)
+	var share := WALK_SHARE_EARLY if _young else WALK_SHARE
+	return share * k * (RAIN_K if _raining() else 1.0)
 
 
 ## A number in [0, 1) that stays the same for key in this city.
