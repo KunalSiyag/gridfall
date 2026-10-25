@@ -49,6 +49,11 @@ coverage.xml
 *.log
 reports/
 
+# Godot MCP harness drops these into the project root at runtime; local only, never committed
+mcp_interaction_server.gd*
+# Godot API dumps written to the project root by editor/tooling runs; local only
+extension_api.json
+
 # Editors and IDEs
 .vscode/*
 !.vscode/extensions.json

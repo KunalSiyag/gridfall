@@ -23,11 +23,11 @@ Analytic on-foot collision (slice A; no physics engine, D2): walkable ground hei
 - `LAMP_OUT = 0.08`
 - `LAMP_POST_R = 0.0035`
 - `LAMP_POSTS = [Vector2(-0.4, -0.2), Vector2(0.4, 0.2)]`
-- `BUS_STOP_PATHS = ["res://models/props/bus_stop.glb", "res://models/real/props/bus_stop.glb", AP.BUS_SHEL...`
+- `BUS_STOP_PATHS = [ "res://models/props/bus_stop.glb", "res://models/real/props/bus_stop.glb", AP.BUS_SHE...`
 - `PROC_STOP_OFFSET = 0.43`: CityView's procedural shelter (no model file) stands 0.43 from the road centre.
 - `PROC_STOP_SIZE = Vector3(0.34, 0.21, 0.20)`
 - `PROP_DIRS = ["res://models/real/props/", "res://models/props/"]`
-- `BOX_PROPS = ["bench", "picnic", "planter_box", "planter_long", "barrier", "utility_box", "aircon", ...`: Street props by file name: trunks and lamp poles are thin cylinders, these are boxes, foliage does not block, anything else is a cylinder of its footprint within PROP_R_MIN..PROP_R_MAX.
+- `BOX_PROPS = [ "bench", "picnic", "planter_box", "planter_long", "barrier", "utility_box", "aircon",...`: Street props by file name: trunks and lamp poles are thin cylinders, these are boxes, foliage does not block, anything else is a cylinder of its footprint within PROP_R_MIN..PROP_R_MAX.
 - `SOFT_PROPS = ["tree_bush", "tree_fern"]`
 - `LAMP_R = 0.15 * WS.M`
 - `TRUNK_R = 0.25 * WS.M`
@@ -35,11 +35,17 @@ Analytic on-foot collision (slice A; no physics engine, D2): walkable ground hei
 - `PROP_R_MAX = 0.5 * WS.M`
 - `ROUND_SLIDE = 0.45`: Walking head-on into a pole keeps this fraction of the speed, sliding round it.
 - `META_CYL_TOP = 3.0 * WS.M`: Cylinders from a G1 `colliders` meta carry no height: they block up to this.
+- `PERSON_R = 0.22 * WS.M`: A person on foot is a soft circle this wide (half a shoulder): the hero cannot walk through them, but they are not a wall either (soft_people_move; walkers.gd gives way in turn).
+- `SOFT_RATE = 0.35`: How much of a person overlap the hero eases out per collision sub-step: gentle, so a sidewalk still flows; the into-person speed is damped player-side, so the overlap never persists.
+- `SOFT_Y = 1.2 * WS.M`: A person's circle only presses the hero when their feet are within this height (a walker under a ledge the hero stands on is not in the way).
+- `RESOLVE_STEP = 2.0 * WS.M`: resolve_out() moves at most this far per pass and makes at most this many passes, deepest face first: a teleport left inside a building steps straight out, a spawn deep inside never flings through walls.
+- `RESOLVE_PASSES = 6`
 - `GRADE_SURFACES = ["asphalt", "gravel", "dirt", "trail"]`: surface_at() on the carriageway of each road grade (D.ROAD_GRADES order).
 
 ### Properties
 
 - `dynamic_boxes: Array[AABB]`: Boxes that move with the traffic (stopped cars from E's blockers_near), refreshed by the player a few times a second; they block like walls while listed.
+- `people_circles`: People on foot near the hero, as soft circles the player refreshes every frame from traffic's walkers_near: (x, y, z, r) quadruples in world units. They are not walls (soft_people_move), but the hero cannot pass through them either.
 
 ### Functions
 
@@ -59,6 +65,8 @@ Analytic on-foot collision (slice A; no physics engine, D2): walkable ground hei
 - `func body_blocked(p: Vector3, radius: float, height: float) -> bool`: is_blocked() for a body `height` tall: boxes and cylinders entirely above p.y + height (an awning, a ceiling) let it pass.
 - `func move_and_slide(from: Vector3, motion: Vector3, radius: float) -> Vector3`: Moves from `from` by `motion` (y ignored), sliding along blockers. S0 rules: try the full move, else x only, else z only, else stay; a player who already overlaps a box may take any of them that enters nothing new and goes no deeper. Returns the new feet position (y unchanged).
 - `func move_body(from: Vector3, motion: Vector3, radius: float, height: float, max_rise: float) -> Vector3`: The walker's move: like move_and_slide() for a body `height` tall that can rise at most max_rise onto higher walkable ground (STEP_HEIGHT on foot, 0 in the air). A blocked move first slides along the contact (a pole's tangent, a wall's face), then along x or z alone. Returns the new feet position with y unchanged (the caller follows walk_height()).
+- `func soft_people_move(p: Vector3, radius: float, height: float) -> Vector3`: The hero's soft push out of the people circles at p, one nudge per collision sub-step (SOFT_RATE of each overlap): the point eased clear of everyone standing near, never through a hard blocker and never onto ground it could not stand on. Returns p unchanged when nobody overlaps. The walkers give way as well (walkers.gd), so a sidewalk keeps flowing.
+- `func resolve_out(p: Vector3, radius: float, height: float) -> Vector3`: Pushes a body (radius, height) that sits inside blockers out to the nearest free side: a teleport or a load may leave it half inside a building or a car box, and the walk-out rule of move_body only helps once it moves. Deepest face first, at most RESOLVE_STEP a pass and RESOLVE_PASSES passes, and it stops the moment a pass makes things no shallower, so a body deep inside works its way out over a few steps instead of being flung through walls. Returns the pushed point (y unchanged); p itself when nothing overlaps or there was no way out.
 - `func nearest_free(p: Vector3, radius: float, max_dist: float) -> Vector3`: The closest point to p (xz, y on the ground) where a circle of `radius` is not blocked, searched on rings 1 m apart out to max_dist; Vector3(NAN, NAN, NAN) when there is none.
 - `func raycast(origin: Vector3, dir: Vector3, max_dist: float, include_props: bool = true) -> Dictionary`: Ray against each tile's pickable bounds (tile DDA, <= max_dist) and the ground: a building's full view.building_aabb(i) (kind "building", so a set-back house is still picked from the sidewalk), a site's parts (kind "building", the site tile), street props (kind "prop", when include_props) and the ground (kind "ground"). {"hit": bool, "pos": Vector3, "normal": Vector3, "tile": int, "kind": String, "dist": float}
 - `func line_of_sight(a: Vector3, b: Vector3) -> bool`: True when the segment a -> b clears every movement box (bodies, walls, site parts, prop boxes) of the tiles it crosses; thin cylinders (poles, trunks) never hide anyone.

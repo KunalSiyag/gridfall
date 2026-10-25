@@ -133,12 +133,14 @@ Renders the CitySim grid in 3D: Kenney roads picked by neighbor mask, zone lots 
 - `section_us_max: Dictionary`: Worst microseconds per _process section since reset_section_stats() (fp_bench's hitch rows).
 - `light_pole_source: Object`: Any object with light_pole(i: int, corner: int) -> Node3D (E's traffic feature). Cross tiles then mount their street-name blades on its NE pole instead of a G1 pole. Set by the streetscape feature.
 - `vis_mult: float`: Visibility multiplier for the props, decals and multimeshes G1 ranges itself (G2's vis_mult).
+- `aerial_trees: bool`: Aerial coverage (render_opt): while the camera is over the city, the far tree layers draw to the horizon instead of ending where the street fog would take over.
 - `wetness: float`: 0 dry .. 1 soaked; set by the streetscape weather through set_wetness().
 
 ### Functions
 
 - `func setup(p_sim: CitySim, p_camera: Camera3D) -> void`
 - `func set_fp_mode(on: bool) -> void`: Switches between the orbit and the street-level presentation. On a real change it also rebuilds the mode-specific geometry synchronously (tree chunks, every tile: lots, pads, furniture, FX), bypassing the rebuild queue, then emits world_rebuilt and fp_mode_changed. Setting the same value again does nothing; the boot path sets the field before the first setup() instead.
+- `func set_aerial(on: bool) -> void`: Aerial coverage (render_opt): while on, every far tree layer draws to the horizon, so woods and street trees stay visible from the sky. Only the street chunks change (the orbit far layers already have no end); chunks rebuilt later read the flag where they are built.
 - `func track_material() -> Material`: The surface of unpaved road tiles (gravel, dirt track, grass trail): the ground shader in track mode, drawn on a quad over the whole tile (see _track). Its grass matches the street-level ground exactly; in orbit, where the ground is plain, the grass part is cut away.
 - `func lot_ground_material() -> Material`: Ground for a vacant lot on foot: the detail shader turned to patchy earth that fades back to grass at the lot's edges.
 - `func lawn_material() -> ShaderMaterial`: Lawns and park grass of the building models on foot (their flat "Grass" surfaces): the street's metric grass, a little lusher and with fewer worn patches. Null without the ground shader.
@@ -157,6 +159,7 @@ Renders the CitySim grid in 3D: Kenney roads picked by neighbor mask, zone lots 
 - `func site_boxes(i: int) -> Array[AABB]`: World-space blocking boxes of the construction site drawn on tile i, one per entry of the `colliders` meta that ConstructionKit.build_site writes on the holder's "Site" node before tile_built fires: hoarding segments (with the gate gap), machine bodies (stretched over their shuttle run, without the swinging arms), the crane's base and mast, the floodlight pole, slabs, formwork, berms, mounds, the frame, the scaffold and the old or finished building. Each entry is a box yawed about +Y; this returns the box of its rotated corners. Parts can reach past the tile (a tower crane's base up to 0.2 u into the neighbours). [] when no site is drawn on tile i.
 - `func site_gate(i: int) -> Vector2i`: The open side of site i's hoarding (ConstructionKit._fence: toward the frontage road), or Vector2i.ZERO without a fenced site drawn on tile i.
 - `func site_decks(i: int) -> Array[Dictionary]`: Where people stand on site i's own parts as drawn now (ConstructionKit.decks_of: the pit, the slab as poured, the frame's floors shown so far, the scaffold's boards), in world space.
+- `func site_parts() -> Array`: Every drawn part of every open construction site, in tile order: the aerial coverage re-ranges exactly these parts, and the render tests check exactly these.
 - `func site_bounds(i: int) -> AABB`: Merged world-space bound of site_boxes(i): contains every blocking part the construction kit drew for the site on tile i, and can reach past the tile. AABB() when no site is drawn. For movement use site_boxes(i): this bound also covers the gaps between parts (the hoarding gate).
 - `func tile_holder(i: int) -> Node3D`: The Node3D holding everything drawn on tile i, or null.
 - `func street_placements(i: int) -> Array`: The batched street props of tile i on foot: Array of [kind, world Transform3D], indexed by their colliders' "slot".
@@ -184,7 +187,7 @@ Procedural construction sites and machines: staged ground works, rising concrete
 - `D = preload("res://scripts/sim/sim_defs.gd")`
 - `WS = preload("res://scripts/fp/world_scale.gd")`
 - `MS = WS.MACHINE_SCALE`: Machines are modelled in metres: true scale is one tile per 20 m.
-- `FAR = WS.VIS_SITE_PART`: Small parts stop drawing beyond this camera distance; the crane's big parts carry further.
+- `FAR = WS.VIS_SITE_PART`: Small parts stop drawing beyond this camera distance on foot; the crane's big parts carry further. In orbit every part draws at every zoom (the kit's ranges are a street-level budget).
 - `CRANE_FAR = 30.0`
 - `FLOOR_H = 0.11`
 - `HOARDING_H = 0.05`: Site hoarding height: 1 m in orbit, 2.2 m of painted plywood on foot.
@@ -197,6 +200,7 @@ Procedural construction sites and machines: staged ground works, rising concrete
 
 ### Functions
 
+- `func aerial_ranges(site: Node3D, on: bool) -> void`: The aerial coverage (render_opt): while the camera is over the city, every part of an open site draws to the horizon, so cranes, machines and hoardings stay visible from the sky. Each part's own end is kept in its "ck_aerial_far" meta and put back when the camera returns to the street.
 - `func mat(key: String) -> Material`
 - `func box(p: Node3D, size: Vector3, pos: Vector3, m: Variant, rot := Vector3.ZERO, shadow := true) -> MeshInstance3D`
 - `func cyl(p: Node3D, r: float, h: float, pos: Vector3, m: Variant, rot := Vector3.ZERO, r_top := -1.0) -> MeshInstance3D`: Cylinder with its axis on local Y (rotate it to lay it down).

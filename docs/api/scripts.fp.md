@@ -36,6 +36,7 @@ First-person asset paths. Slice H owns this list and produces the files; every c
 - `PERSON_LOOPING = ["idle", "walk", "run", "talk"]`
 - `WHEEL_NODES = ["Wheel_FL", "Wheel_FR", "Wheel_RL", "Wheel_RR"]`: Separate wheel nodes on vehicles_v2 road vehicles (origin at the hub, spin about local X).
 - `BIKE_WHEEL_NODES = ["Wheel_F", "Wheel_R"]`
+- `DRIVER_MARKERS = ["Pedal_L", "Pedal_R", "Wheel_L", "Wheel_R", "Cab_Roof"]`: Driver contact markers in vehicles_v2 road vehicles with a driver's seat (empties, like Seat_Driver): Pedal_L / Pedal_R at the ankle targets on the footwell floor (the driver's side is +X), Wheel_L / Wheel_R on the steering rim, Cab_Roof on the headliner above the seat. The drive feature seats the hero's feet and hands on them and sinks the hips until the head clears Cab_Roof, so the seated pose fits every cabin.
 - `CRANK_NODE = "Crank"`: The bicycle's cranks and pedals (origin at the bottom bracket, spin about local X; the left pedal, on +X, straight up at rest).
 - `VEHICLE_LOD_SUFFIX = "_lod1.glb"`: Far LOD next to each vehicles_v2 model (<name>_lod1.glb): one mesh, wheels merged, at most 1,500 triangles, a few flat untextured materials (colour in the albedo); the lamp lenses are the emissive Light_Head / Light_Tail.
 - `SIGNAL_NODE_PREFIXES = ["Signal_Red_", "Signal_Amber_", "Signal_Green_"]`: Traffic-signal lens nodes in TRAFFIC_LIGHT (<prefix><n>, one material each), and the pedestrian head nodes in TRAFFIC_LIGHT and PED_SIGNAL.

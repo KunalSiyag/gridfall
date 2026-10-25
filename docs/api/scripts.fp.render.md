@@ -8,11 +8,11 @@
 
 extends `RefCounted`
 
-Visibility ranges and building LODs (slice G2). post_pass() classifies every drawn part of a tile holder once (building, prop or road), sets its visibility range and shadow casting, and caches the list so a preset switch never walks the scene again. Buildings have three levels: the real textured model up to VIS_BUILDING_NEAR, a merged one-draw twin of each building mesh (midlod.gd) up to VIS_BUILDING, then stepped mass proxies (proxies.gd) merged into one mesh per 8x8-tile chunk. Each switch happens at one exact distance from the same point, so levels never overlap.
+Visibility ranges and building LODs (slice G2). post_pass() classifies every drawn part of a tile holder once (building, prop or road), sets its visibility range and shadow casting, and caches the list so a preset switch never walks the scene again. Buildings have three levels: the real textured model up to VIS_BUILDING_NEAR, a merged one-draw twin of each building mesh (midlod.gd) up to VIS_BUILDING, then stepped mass proxies (proxies.gd) merged into one mesh per 8x8-tile chunk. Each switch happens at one exact distance from the same point, so levels never overlap. Sparse kinds (parks, wind farms, solar, rubble) have no useful far shape and never number many: theirs stay full-detail at every distance (Cls.FULL). While the camera is aerial (the city overview, a high photo fly), road mains and twins lose their end so the street grid reaches the horizon; set_aerial() switches that, render_opt re-ranges the cache.
 
 ### Enums
 
-- `Cls { BUILDING, PROP, ROAD, NEAR, MID }`: BUILDING / ROAD: holder parts ending at VIS_BUILDING; NEAR: a building or road mesh ending at VIS_BUILDING_NEAR; MID: its merged twin, from VIS_BUILDING_NEAR to VIS_BUILDING.
+- `Cls { BUILDING, PROP, ROAD, NEAR, MID, FULL }`: BUILDING / ROAD: holder parts ending at VIS_BUILDING; NEAR: a building or road mesh ending at VIS_BUILDING_NEAR; MID: its merged twin, from VIS_BUILDING_NEAR to VIS_BUILDING; FULL: a sparse kind's part, always drawn (no far representation exists and there are never many).
 
 ### Constants
 
@@ -22,15 +22,17 @@ Visibility ranges and building LODs (slice G2). post_pass() classifies every dra
 - `MIDLOD = preload("res://scripts/fp/render/midlod.gd")`
 - `SHADER = preload("res://scripts/fp/render/impostor.gdshader")`
 - `CHUNK = 8`
+- `FULL_KINDS = [D.PARK, D.WIND, D.SOLAR, D.LANDFILL, D.RUBBLE]`: Sparse kinds whose models would proxy badly (a park is not a box) and whose tiles never number many: drawn in full at every distance instead of popping to nothing at VIS_BUILDING.
 - `SMALL = 0.05`: Meshes smaller than this (longest side, world units) never cast shadows (1 m).
 - `PROP_SCENES = ["res://models/real/props/", "res://models/props/"]`
 - `ROAD_SCENES = "res://models/real/roads/"`
-- `IMPOSTOR_SERVICES = [D.HALL, D.HOSPITAL, D.SCHOOL, D.POLICE, D.FIRE, D.UNIVERSITY, D.TRAIN, D.COAL, D.PUMP,...`: Service kinds drawn as far impostors (open or sparse ones, like parks and wind farms, are not).
+- `IMPOSTOR_SERVICES = [D.HALL, D.HOSPITAL, D.SCHOOL, D.POLICE, D.FIRE, D.UNIVERSITY, D.TRAIN, D.COAL, D.PUMP,...`: Service kinds drawn as far impostors (the closed ones; sparse ones are Cls.FULL instead).
 - `SOLID_SERVICES = [D.HALL, D.HOSPITAL, D.SCHOOL, D.POLICE, D.FIRE, D.UNIVERSITY, D.TRAIN]`: Closed services that occlude (G2 contract: solid kinds).
 
 ### Properties
 
 - `vis_building: float`: Visibility ranges in world units after the preset multiplier.
+- `aerial: bool`: Aerial coverage on: the camera is over the city (render_opt decides), so road mains and twins draw to the horizon. Cached parts are re-ranged by render_opt through apply_ranges().
 - `tiles: Dictionary`: tile index -> entry {"holder", "gis": Array of GeometryInstance3D, "cls": PackedByteArray, "chunk": Vector2i, "path", "xf": Transform3D (model to world), "center": Vector3 (the engine's range point of the main mesh), "impostor": bool, "solid": bool}
 - `chunk_tiles: Dictionary`: chunk -> {tile index: true}
 - `chunk_nodes: Dictionary`: chunk -> MeshInstance3D
@@ -44,8 +46,10 @@ Visibility ranges and building LODs (slice G2). post_pass() classifies every dra
 - `static func chunk_of(i: int) -> Vector2i`
 - `func post_pass(i: int, holder: Node3D) -> Vector2i`: Classifies and ranges every drawn part of tile i's holder (replacing its mid-LOD twins); returns the tile's chunk, whose impostor and occluder need a rebuild.
 - `func warm(holder: Node3D) -> bool`: Does one piece of the cold work post_pass(i, holder) would otherwise do inline: the model's proxy, or one source mesh's mid-LOD gather. A gather's surface_get_arrays reads back from the GPU and waits for the frames in flight (10 to 140 ms for a building's first instance); one gather per step keeps that to one stall, splitting it by surface costs a stall per surface. True if it did something; false once post_pass will find everything cached or under way.
+- `static func tile_of(holder: Node3D) -> int`: The tile a holder stands on (holders sit at their tile's centre).
 - `func drop(i: int) -> Vector2i`: Forgets tile i (its holder was replaced or cleared); returns its chunk.
-- `func apply_ranges(e: Dictionary) -> void`: Visibility ranges of one cached entry at the current distances.
+- `func set_aerial(on: bool) -> void`: Switches the aerial road coverage; cached parts are re-ranged by render_opt's job queue, and post_pass applies the new value to every tile it passes from here on.
+- `func apply_ranges(e: Dictionary) -> void`: Visibility ranges of one cached entry at the current distances. While aerial, road mains and twins lose their end (the street grid reaches the horizon); everything else keeps its ladder.
 - `static func restore(e: Dictionary) -> void`: Restores what post_pass changed on one entry: no range, shadows as authored, no g2 metas.
 - `func rebuild_chunk(c: Vector2i) -> void`: Rebuilds the merged impostor mesh of chunk c from the cached entries.
 - `func set_visible(on: bool) -> void`: Shows or hides every impostor.
@@ -169,6 +173,7 @@ First-person quality presets (slice G2): the knobs each preset sets, and the sta
 - `NAMES = ["low", "medium", "high"]`
 - `DEFAULT = "medium"`
 - `PRESETS = { "low": { "scaling_mode": Viewport.SCALING_3D_MODE_FSR2, "scale": 0.59, "msaa": Viewpo...`: Per preset: 3D scaling (FSR2 also brings its own temporal AA, so MSAA stays off), directional shadow atlas and filter, SSAO and SSIL quality and half size, the VIS_* multiplier, the first-person camera far plane, the mesh LOD threshold (pixels of error) and G1's street lights.
+- `AERIAL_FAR = {"low": 80.0, "medium": 110.0, "high": 110.0}`: How far the camera must see while it is over the city (the overview lifts it up to 32 u, and a photo fly can go higher): past every visible ground point at the lowest pitch, with margin. Low keeps the tightest plane that still covers the overview horizon (the low_vram budget).
 
 ### Functions
 
@@ -177,12 +182,15 @@ First-person quality presets (slice G2): the knobs each preset sets, and the sta
 - `static func vis_mult(preset: String) -> float`: Multiplier on every WS.VIS_* range: 0.7 / 1.0 / 1.3.
 - `static func max_street_lights(preset: String) -> int`: Street lights G1 keeps lit around the player: 6 / 12 / 16.
 - `static func camera_far(preset: String) -> float`: First-person camera far plane in world units: 45 / WS.CAMERA_FAR (60) / 75.
+- `static func aerial_far(preset: String) -> float`: The far plane while the camera is aerial (render_opt's aerial coverage), never below the street-plane value.
+- `static func aerial_fog_end(preset: String) -> float`: Depth-fog end while the camera is aerial, inside 95% of the aerial far plane (the same rule the street profile applies to its own plane: light_profile.fog_end).
+- `static func street_fog_end(preset: String) -> float`: The street fog end for a preset (light_profile.fog_end's rule, for restoring it on exit).
 
 ## `scripts/fp/render/render_opt_feature.gd`
 
 extends `FpFeature`
 
-Render performance (slice G2): applies the quality preset (FSR2 scaling, shadow atlas and filter, SSAO and SSIL quality, mesh LOD threshold, camera far plane) and restores every knob on teardown; on foot it ranges every tile holder's parts (hlod.gd), draws far buildings as merged chunk impostors and culls with per-chunk occluders (occluders.gd). Tile post-passes queue on tile_built and run under a per-frame budget (FRAME_BUDGET_USEC), followed by at most one chunk rebuild.
+Render performance (slice G2): applies the quality preset (FSR2 scaling, shadow atlas and filter, SSAO and SSIL quality, mesh LOD threshold, camera far plane) and restores every knob on teardown; on foot it ranges every tile holder's parts (hlod.gd), draws far buildings as merged chunk impostors and culls with per-chunk occluders (occluders.gd). Tile post-passes queue on tile_built and run under a per-frame budget (FRAME_BUDGET_USEC), followed by at most one chunk rebuild. Aerial coverage: once the camera is AERIAL_MIN above the hero (the city overview lifts it, and so does a photo fly), roads, open construction sites, far trees, the fog end and the far plane widen so the city stays whole from the sky at every zoom. Every value is re-derived on exit, so a preset or weather change mid-air never leaves a stale value behind.
 
 ### Constants
 
@@ -194,6 +202,9 @@ Render performance (slice G2): applies the quality preset (FSR2 scaling, shadow 
 - `JOB_BUDGET_USEC = 3000`: A preset switch re-ranges cached parts for at most this long per frame.
 - `WAIT_BUDGET_USEC = 2000`: Tiles re-passed per frame once their mid-LOD merges finish, at most this long.
 - `FRAME_BUDGET_USEC = 2000`: Queued tile post-passes, mid-LOD uploads and the chunk rebuild share this much of a frame. A tick emission builds 10 to 40 tiles, so the queue drains within a few frames; one step always runs, so nothing starves on a slow frame.
+- `AERIAL_MIN = 3.0`: The camera is aerial once it is this far above the hero's feet (60 m: over every roof), and stops once it sinks back below AERIAL_OFF (hysteresis, so the toggle never flaps at the line).
+- `AERIAL_OFF = 2.4`
+- `SITE_RESCAN = 0.5`: While aerial, open sites re-scan for parts this often (update_site adds parts without a tile_built), so a rising frame's new floor shows from the sky too.
 - `RS_SETTINGS = { "atlas": "rendering/lights_and_shadows/directional_shadow/size", "atlas_16": "renderi...`: Project defaults of the global RenderingServer knobs (headless has no getters for them).
 - `RS_DEFAULTS = { "atlas": 4096, "atlas_16": true, "soft": 2, "ssao": 2, "ssao_half": true, "ssao_targe...`
 - `VIEWPORT_KEYS = ["scaling_3d_mode", "scaling_3d_scale", "msaa_3d", "mesh_lod_threshold", "use_occlusion...`
@@ -201,6 +212,7 @@ Render performance (slice G2): applies the quality preset (FSR2 scaling, shadow 
 ### Properties
 
 - `preset: String`: The applied preset: "low", "medium" or "high".
+- `aerial: bool`: Aerial coverage on: the camera is over the city (the overview, a photo fly).
 - `rs_calls: Dictionary`: Last arguments of every RenderingServer setter this feature called (headless has no getters).
 - `active: bool`: The post-pass is live (on foot, set up).
 - `frame_us: int`: Main-thread cost of this feature's per-frame work (µs): the last frame and the worst since reset_stats(); the bench reports both.
@@ -217,6 +229,7 @@ Render performance (slice G2): applies the quality preset (FSR2 scaling, shadow 
 - `func teardown() -> void`
 - `func apply_preset(p: String) -> void`: Applies preset p (unknown names give Medium) to the viewport, the RenderingServer, the camera and the visibility ranges; cached parts are re-ranged over the next frames.
 - `func preset_applied(p: String) -> bool`: True when the viewport and camera carry preset p's knobs (self-test and tests).
+- `func set_aerial(on: bool) -> void`: Turns the aerial coverage on or off: while on, the camera is over the city, so road mains and twins (hlod.set_aerial, re-ranged through _job), far trees (CityView.set_aerial), open site parts (ConstructionKit.aerial_ranges), the fog end and the far plane widen to keep the whole city visible at every zoom. On exit each value is re-derived from the preset and the kit, never from an entry snapshot, so a preset or weather change mid-air cannot leave a stale value.
 - `func job_pending() -> int`: Tiles still waiting to be re-ranged after a preset switch.
 - `func pass_pending() -> int`: Tiles whose post-pass is still queued.
 - `func flush() -> void`: Runs every pending re-range, post-pass, mid-LOD merge and chunk rebuild now (tests and tools).

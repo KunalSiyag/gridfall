@@ -163,6 +163,7 @@ HC's animated hero for the player (slice A stage A2; A-player.md 6.9, TPS_PLAN 2
 - `HEEL = preload("res://scripts/fp/player/heel_strike.gd")`
 - `LOOK = preload("res://scripts/fp/player/hero_look.gd")`
 - `LIMBS = preload("res://scripts/fp/player/hero_limbs.gd")`
+- `POSE = preload("res://scripts/fp/player/hero_strike_pose.gd")`
 - `LOCO = ["walk", "walk_fast", "run", "run_fast"]`: Locomotion loops in blend order; HC starts each on the left-heel strike.
 - `GESTURES = ["interact", "wave", "phone", "door_try"]`: Upper-body one-shots (6.9 OneShot).
 - `ACTIONS = [ "punch_jab", "punch_cross", "punch_hook", "swing_a", "swing_b", "push", "yes", "no", ...`: Body actions over the gestures (the actions feature): punches, the shove, the throw, emotes and the flinch of a blow taken (the health feature) on the upper body with quick fades; the kick and the dance on the whole body.
@@ -206,8 +207,6 @@ HC's animated hero for the player (slice A stage A2; A-player.md 6.9, TPS_PLAN 2
 - `HL_GUARD = 0.06`
 - `GUARD_CLIP = "punch_jab"`: The guard (fists up) is GUARD_CLIP held at GUARD_AT seconds on the upper body.
 - `GUARD_AT = 0.0`
-- `STRIKE_SAMPLES = 48`: strike_time samples this many poses over a clip's opening seconds.
-- `STRIKE_WITHIN = 1.2`
 - `CLIP_SPEED = {"sit_down": 1.5, "stand_up": 1.5, "car_in": 1.25, "car_out": 1.35}`: Clips played this much faster than authored: sitting down and standing up, getting into a car's driver's seat and out of it.
 - `HELD = [ "sit_down", "sit", "stand_up", "car_in", "drive", "car_out", "knockback", "get_up", "...`: States the ground does not cut short for locomotion: sitting, the car's seat, the knock-down, the climb, holding on to a wall and the roll.
 - `WALL_CLIP = "idle"`: On a wall (hold_wall) the body holds WALL_CLIP under the limbs' IK, faded in and out over XF_WALL (s).
@@ -240,6 +239,7 @@ HC's animated hero for the player (slice A stage A2; A-player.md 6.9, TPS_PLAN 2
 
 - `body: Node3D`: The body's scene root (faces +Z, feet at y = 0, metric) and its parts.
 - `look: LOOK`: The head look, and the hands and feet on holds.
+- `strike_pose: POSE`: The strike pose layer (the strike clips' turn into the blow, and their measurement).
 - `gender: String`: "m" or "f".
 - `speeds: Dictionary`: Clip -> ground speed in m/s on this body at its CharacterRoot scale (speed_mps * hip ratio * h_target / rest height), and clip -> length (s).
 - `time_scale: float`: The last foot-slide factor v / v_anim (clamped; 1 while standing) and the locomotion phase (cycles, 0..1: the left heel strikes at 0, the right at 0.5; -1 outside locomotion).
@@ -263,13 +263,55 @@ HC's animated hero for the player (slice A stage A2; A-player.md 6.9, TPS_PLAN 2
 - `func action_active() -> bool`: True while an action or the dance plays (fading out included).
 - `func stop_action() -> void`: Fades the playing action and the dance out.
 - `func set_guard(on: bool) -> void`: Raises (on) or drops the guard: fists up on the upper body, eased over HL_GUARD.
-- `func strike_time(clip: String, within: float = STRIKE_WITHIN) -> float`: When clip's fists (or palms) are furthest out in front within its first within seconds: where a punch or the shove lands (s). Measured once per clip on this body's keys and cached.
 - `func travel(clip: String, t: float) -> float`: How far clip has carried its root t seconds after its state began (0..1 of the whole clip's horizontal root travel; at their CLIP_SPEED). The tree drops root motion, so whoever moves the body through a clip (into a car seat) follows this curve; a clip without travel runs linearly.
 - `func set_look_target(p: Vector3) -> void`: The world point the head turns toward; NAN components let the head return to the clip.
 - `func snap(crouched: bool) -> void`: Back to standing (or crouched) locomotion at once: no cross-fade, no landing, no gesture.
 - `func bone_world(bone: String) -> Vector3`: A bone's world position (the animated pose, before the look-at modifiers).
 - `func feet_low(ground_y: float) -> float`: How far the lowest part of either sole is above the given world height (world units): per foot the lower of the heel (the ankle bone above its standing height) and the toe (the toe bone above its standing height), for tests.
 - `func stride(a: float) -> float`: The ground one gait cycle (two steps) covers at speed a (m/s), in metres.
+
+## `scripts/fp/player/hero_strike_pose.gd`
+
+extends `RefCounted`
+
+The hero's strike pose layer (hero_rig.gd, like hero_look.gd and hero_limbs.gd): what makes a strike read as the whole body's work. On top of each strike clip's own upper-body keys (the tree plays them SPEED times as fast as authored) the spine and chest coil back through the windup, then turn and lean into the blow, peaking as the fist (or the foot) arrives and easing back over the recovery. A SkeletonModifier3D applies it after the tree and the other modifiers; it runs only while a strike clip plays, so it never touches the body seated, in the car, on a wall or climbing. The rig owns the clock (tick) and the tree the clock gates on; the measurement (measure) is the same one the actions feature lands its blows at.
+
+### Constants
+
+- `SPEED = { "punch_jab": 1.25, "punch_cross": 1.2, "punch_hook": 1.2, "swing_a": 1.15, "swing_b":...`: Strike clips play this much faster than authored: the windup snaps and the fist is out sooner.
+- `POSE = { "punch_jab": [6.0, 5.0, -1.0], "punch_cross": [14.0, 7.0, -1.0], "punch_hook": [20.0,...`: Per clip: [chest yaw (deg, toward the punching side), lean (deg, forward), when the blow lands (s; -1 for the measurement's own contact)]. The push clip holds its palms out from near its start, so its contact stands as authored.
+- `SPINE_SHARE = 0.45`: The envelope: the spine bone's share of the turn (the chest takes the rest), the windup's coil back as a share of the strike turn (none for a contact too soon to read), how far into the windup the coil is at its deepest (of the contact), and the ease back to nothing once the blow has landed (s).
+- `COIL = 0.35`
+- `COIL_SNAP = 0.12`
+- `COIL_AT = 0.55`
+- `RECOVER = 0.3`
+- `BONES = [["Spine", SPINE_SHARE], ["UpperChest", 1.0 - SPINE_SHARE]]`: The bones the turn spreads over.
+- `SAMPLES = 48`: The measurement: this many poses sampled over a clip's opening WITHIN seconds; a fist counts as out once it comes within ARRIVE (skeleton metres) of its furthest reach, so a blow lands as the fist arrives, not wherever a held extension creeps to.
+- `WITHIN = 1.2`
+- `ARRIVE = 0.03`
+- `P_ACT = "parameters/act/active"`: The rig's tree: the action and kick one-shots' active flags, which tell the layer its strike is still the one playing.
+- `P_KICK = "parameters/kick/active"`
+
+### Properties
+
+- `clip: String`: The strike under way: its clip ("" for none), which hand it drives (1 the left, -1 the right), its seconds, when its blow lands, and the frames its start still has to show up in the tree.
+
+### Inner classes
+
+- `Mod`: The layer's modifier: runs after the tree and the other modifiers (it is added last) and hands the skeleton to the layer.
+
+### Functions
+
+- `func measure(clip: String, within: float = WITHIN) -> float`: When clip's fists (or palms) first reach furthest out in front within its first WITHIN seconds: where a punch or the shove lands (s), as the clip plays (SPEED). Measured once per clip on the body's own keys and cached.
+- `func hand(clip: String) -> float`: Which hand clip strikes with (1 the left, -1 the right), measured once with its contact.
+- `func note(a: String) -> void`: Notes the action clip the rig's tree was asked for: a strike clip starts the layer on it, anything else ends it (the tree resets its transition request, so the layer keeps the record).
+- `func start(a: String) -> void`: Starts the layer on strike clip a.
+- `func end() -> void`: Ends the layer (the strike over, faded out or stopped).
+- `func tick(dt: float) -> void`: Runs the layer's clock on by dt, ending it once its strike is no longer the one playing (a start waits a frame or two for the tree to take its request; stop_action ends it at once).
+- `static func paced(a: AnimationNodeAnimation, clip: String) -> AnimationNode`: Clip's AnimationNode played at its SPEED (a clip SPEED does not name unchanged), through a time scale, so the tree and measure() agree on when its blow lands.
+- `func weight() -> float`: The layer's envelope now (0 with no strike under way), for tests.
+- `func apply(sk: Skeleton3D) -> void`: Applies the layer to sk (the modifier's callback): the spine and chest turned and leaned into the blow by the envelope, on top of the tree's own pose.
+- `static func envelope(t: float, c: float) -> float`: The envelope t seconds into a strike whose blow lands at c: a coil back through the windup (none once the windup is too short to read), the full turn into the blow at the contact, eased back to nothing RECOVER after it.
 
 ## `scripts/fp/player/placeholder_puppet.gd`
 
@@ -385,7 +427,8 @@ The on-foot player (slice A): feet at `position`, a kinematic controller against
 - `TRAFFIC_POLL = 0.1`
 - `BLOCKER_REACH = 2.0 * WS.M`
 - `AGENT_REACH = 8.0 * WS.M`
-- `AGENT_SIZES = {"car": Vector3(2.3, 1.0, 1.6), "emergency": Vector3(2.8, 1.1, 2.4), "bus": Vector3(6.0...`: Approximate agent boxes for the camera (half length, half width, height), metres * M.
+- `PEOPLE_REACH = 2.5 * WS.M`: People on foot (E's walkers_near) become the soft circles CollisionWorld pushes the hero out of: everyone within this reach of the feet is listed, once a frame (a sprint covers 0.65 m in one TRAFFIC_POLL, more than a person is wide, so the circles cannot be that stale).
+- `AGENT_SIZES = { "car": Vector3(2.3, 1.0, 1.6), "emergency": Vector3(2.8, 1.1, 2.4), "bus": Vector3(6....`: Approximate agent boxes for the camera (half length, half width, height), metres * M.
 
 ### Properties
 
