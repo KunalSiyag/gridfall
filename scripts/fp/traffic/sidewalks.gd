@@ -104,8 +104,12 @@ func pos_at(e: PedEdge, t: float) -> Vector3:
 		k += 1
 	var f := clampf((t - e.cum[k]) / maxf(e.cum[k + 1] - e.cum[k], 1e-6), 0.0, 1.0)
 	var p := e.pts[k].lerp(e.pts[k + 1], f)
-	# Heights step at the curb rather than ramping over a whole sample.
-	var y := e.ys[k] if f < 0.5 else e.ys[k + 1]
+	# Heights step at the curb itself rather than ramping over (or snapping to) a whole sample.
+	var y := e.ys[k]
+	if e.ys[k + 1] != y:
+		var m := RoadTopology.mask(sim, D.tx(e.tile), D.ty(e.tile))
+		var lp := p - Vector2(D.tx(e.tile), D.ty(e.tile))
+		y = WS.ASPHALT_TOP if RoadTopology.is_carriageway(m, lp) else WS.SIDEWALK_TOP
 	return Vector3(p.x, y, p.y)
 
 

@@ -5,6 +5,7 @@
     "streetscape": {"default": true, "description": "First-person feature: street-level light profile, weather and street lights (slice G1)."},
     "render_opt": {"default": true, "description": "First-person feature: quality preset application, LOD ranges and far-building chunks (slice G2)."},
     "traffic": {"default": true, "description": "First-person feature: lane traffic, buses and walking residents (slice E)."},
+    "cyclists": {"default": true, "description": "People on bicycles. A quarter of the residents (more of the adventurous and thrifty) keep a bicycle and ride it instead of driving on trips of up to 16 road tiles, and about one in six of the unnamed vehicles in the street is a cyclist. Off: only residents whose day's plan says bike ride, and the street traffic is all motor vehicles."},
     "interact": {"default": true, "description": "First-person feature: interaction with residents, buildings, posters and cars (slice A)."},
     "hud_widgets": {"default": true, "description": "First-person feature: minimap, full map, compass and waypoint widgets (slice B)."},
     "chat": {"default": true, "description": "First-person feature: city chat feed, talk dialog and /mayor decrees (slice C)."},

@@ -11,6 +11,8 @@ const REQUIRED_BONES := ["Root", "Hips", "Spine", "Chest", "Neck", "Head", "Left
 const FOOT_BONES := ["LeftFoot", "RightFoot", "LeftToes", "RightToes"]
 const LOOP_TRAVEL := ["walk", "walk_fast", "run", "run_fast", "crouch_walk", "carry"]
 const HEEL_STRIKE := ["walk", "run", "run_fast"]
+## Looping clips build_anim_library makes itself (not in the manifest or PERSON_LOOPING).
+const LOOP_BUILT := ["ride"]
 const FPS := 30.0
 ## roster.json rest_height_m is the stature to the skull top: eye height times this (build_bodies.py).
 const STATURE_PER_EYE := 1.0647
@@ -71,7 +73,7 @@ func _check_libraries() -> void:
 			var a := lib.get_animation(n)
 			var info: Dictionary = clip_info.get(String(n), {})
 			var want_loop: bool = (info.get(g, info.get("u", {})) as Dictionary).get("loop", false)
-			if String(n) in AP.PERSON_LOOPING:
+			if String(n) in AP.PERSON_LOOPING or String(n) in LOOP_BUILT:
 				want_loop = true
 			if (a.loop_mode == Animation.LOOP_LINEAR) != want_loop:
 				bad_loop.append(String(n))

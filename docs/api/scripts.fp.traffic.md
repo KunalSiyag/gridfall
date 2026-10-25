@@ -8,7 +8,7 @@
 
 extends `RefCounted`
 
-Ambient filler (docs/fp/slices/E-traffic.md §6): unnamed commuters and pedestrians around the player, denser where sim.traffic and residents' trip_load are high (caps 40 cars, 60 people). The caps are spent where they can be seen: cars live within CAR_RING (just past VIS_CAR) and people within PED_RING (just past VIS_PERSON), both inside TRAFFIC_RADIUS. Cars appear and vanish only beyond MIN_SPAWN and out of the camera's view; people appear out of view beyond PED_MIN_SPAWN, or fade in (render.gd) far enough away that the fade is all one sees. A synchronous fill (first fill, load, teleport: the whole view is new) places agents anywhere outside the player's personal space. Also the curb parking that makes streets look lived in: deterministic per slot, so it never changes as the player walks.
+Ambient filler (docs/fp/slices/E-traffic.md §6): unnamed commuters (some of them cyclists) and pedestrians around the player, denser where sim.traffic and residents' trip_load are high (caps 40 vehicles, 60 people). The caps are spent where they can be seen: cars live within CAR_RING (just past VIS_CAR) and people within PED_RING (just past VIS_PERSON), both inside TRAFFIC_RADIUS. Cars appear and vanish only beyond MIN_SPAWN and out of the camera's view; people appear out of view beyond PED_MIN_SPAWN, or fade in (render.gd) far enough away that the fade is all one sees. A synchronous fill (first fill, load, teleport: the whole view is new) places agents anywhere outside the player's personal space. Also the curb parking that makes streets look lived in: deterministic per slot, so it never changes as the player walks.
 
 ### Constants
 
@@ -31,10 +31,14 @@ Ambient filler (docs/fp/slices/E-traffic.md §6): unnamed commuters and pedestri
 - `SYNC_CAR_CLEAR = 0.35`: A synchronous fill keeps cars at least this far from the camera (no car parked in one's face).
 - `PARK_CHANCE = {D.ZONE_C: 0.55, D.ZONE_R: 0.45, D.ZONE_I: 0.25}`: Kerbside parking density by the lot beside the slot.
 - `PARK_OTHER = 0.18`
+- `BIKE_CHANCE = 0.18`: Share of the ambient traffic that is cyclists (the cyclists flag; 0 off), riding at about BIKE_V0 on a bicycle of BIKE_DIMS (as a resident's, trips.gd).
+- `BIKE_V0 = 4.0 * WS.M`
+- `BIKE_DIMS = Vector3(0.6 * WS.M, 1.8 * WS.M, 1.8 * WS.M)`
 
 ### Properties
 
 - `car_model: Callable`: Callables set by the feature: car_model(seed) -> int, person_model(seed) -> int, dims(model) -> Vector3, visible(pos) -> bool (inside the camera frustum and within car range).
+- `bike_model: Callable`: bike_model() -> int (traffic_feature.bike_model), and the share of cyclists.
 
 ### Functions
 
@@ -449,7 +453,7 @@ Builds merged, vertex-coloured meshes for E's procedural stand-ins (traffic ligh
 
 extends `RefCounted`
 
-Drivers seated in the moving vehicles nearest the camera. Only while a vehicle draws its full model: those have see-through glass, a cabin and a Seat_Driver marker at the driver's hip point (tools/blender/realcity/vehicles2.py); the merged far LODs have opaque glass. A driver is the car's resident (people.dress picks the same avatar and stature the resident walks with) or an ambient body from the city seed, posed once in the sit loop with its mixers off, so a seated body costs its draws and nothing per frame beyond its transform.
+Drivers seated in the moving vehicles nearest the camera. Only while a vehicle draws its full model: those have see-through glass, a cabin and a Seat_Driver marker at the driver's hip point (tools/blender/realcity/vehicles2.py); the merged far LODs have opaque glass. A driver is the car's resident (people.dress picks the same avatar and stature the resident walks with) or an ambient body from the city seed, posed once in the sit loop with its mixers off, so a seated body costs its draws and nothing per frame beyond its transform. A bicycle's rider pedals instead (the ride loop, casting a shadow), on every bicycle drawn in full (a bicycle's far LOD carries a rough rider of its own).
 
 ### Constants
 
@@ -460,18 +464,30 @@ Drivers seated in the moving vehicles nearest the camera. Only while a vehicle d
 - `KIT = preload("res://scripts/fp/traffic/people_kit.gd")`
 - `CAP = 12`
 - `RANGE = 30.0 * WS.M`
+- `BIKE_CAP = 10`: Riders: their own cap, out to where render.gd stops drawing the full bicycle (NEAR).
+- `BIKE_RANGE = 40.0 * WS.M`
 - `SEAT_NODE = "Seat_Driver"`
 - `SIT = &"sit"`: The sit loop is held at this time (s): hands on the lap, head level.
 - `SIT_AT = 1.0`
+- `RIDE = &"ride"`: One turn of a bicycle's cranks; held each frame at the turn render.gd gave the cranks (crank_th on the node), so the feet stay on the pedals.
+- `PEDAL_X = 0.11`: The pedals from the cranks' axle and the wrists from the saddle (m, +Z forward; vehicles2.py bicycle(), as in procedural_clips.gd's ride clip).
+- `CRANK_R = 0.17`
+- `WRIST = Vector3(0.26, 0.06, 0.54)`
+- `LIMBS = ["UpperLeg", "LowerLeg", "Foot", "Toes", "UpperArm", "LowerArm", "Hand"]`
 - `PROXY_ID = 1 << 24`: Walker ids seed ambient dressing; drivers use their own range so they do not copy a walker.
+
+### Properties
+
+- `riding: int`: How many of the seated are riding bicycles.
 
 ### Functions
 
 - `func setup(p_people: PPL) -> void`
-- `func sync(cars: Array, cam: Vector3, residents: Variant) -> void`: Seats a driver in each of the CAP nearest moving vehicles within RANGE that show their full model, and releases the rest. Call between people.begin and people.finish.
+- `func sync(cars: Array, cam: Vector3, residents: Variant) -> void`: Seats a driver in each of the CAP nearest moving vehicles within RANGE (a rider on each of the BIKE_CAP nearest bicycles within BIKE_RANGE) that show their full model, and releases the rest. Call between people.begin and people.finish, after render.draw_car.
 - `func clear() -> void`: Releases every seated body.
 - `func body_of(id: int) -> PPL.Body`: The seated body in car id (null when it has no driver drawn).
 - `func driver_of(id: int) -> WK.Walker`: The driver drawn in car id (the stand-in walker carrying its avatar and stature), or null.
+- `func is_riding(id: int) -> bool`: True when the body drawn in car id is pedalling a bicycle.
 - `func seat_point(node: Node3D) -> Variant`: The seat marker's position in the full model's space, cached on the node (null without one).
 
 ## `scripts/fp/traffic/people.gd`
@@ -667,7 +683,7 @@ People hit in the street (docs/fp/ARCHITECTURE.md, Body actions): shoved or punc
 
 extends `RefCounted`
 
-Draws E's agents (docs/fp/slices/E-traffic.md §3 Draw calls). Vehicles: the full GLB only within NEAR of the camera (pooled per model, capped), beyond that one MultiMeshInstance3D per model built from a single-surface, vertex-coloured merge of the GLB (H's <name>_lod1.glb when it exists), with shadows to SHADOW_DIST and none beyond. Parked cars go through a static layer rebuilt only when the parked set changes or the camera moves. Brake lights, siren flashes and wheel spin on full models, and their indicators blink (indicators.gd); after dark their head and tail lamps light up, the nearest moving vehicles throw headlight beams, and the head and tail lamps of the merged ones glow. Responding crews near the camera wash their surroundings in flashing siren light. A car with its driver's door open (the player's) swings it out on a hinge cut from its body (car_doors.gd). People (the legacy static bodies, until HC's rigged ones): every distance draws the merged body through the people shader, which swings the legs and arms from per-instance stride data and dithers people in and out (spawned in view, or at the edge of VIS_PERSON). Same geometry and colours as the GLB, one draw per body model and layer.
+Draws E's agents (docs/fp/slices/E-traffic.md §3 Draw calls). Vehicles: the full GLB only within NEAR of the camera (pooled per model, capped), beyond that one MultiMeshInstance3D per model built from a single-surface, vertex-coloured merge of the GLB (H's <name>_lod1.glb when it exists), with shadows to SHADOW_DIST and none beyond. Parked cars go through a static layer rebuilt only when the parked set changes or the camera moves. Brake lights, siren flashes and wheel spin (and a bicycle's cranks) on full models, and their indicators blink (indicators.gd); after dark their head and tail lamps light up, the nearest moving vehicles throw headlight beams, and the head and tail lamps of the merged ones glow. Responding crews near the camera wash their surroundings in flashing siren light. A car with its driver's door open (the player's) swings it out on a hinge cut from its body (car_doors.gd). People (the legacy static bodies, until HC's rigged ones): every distance draws the merged body through the people shader, which swings the legs and arms from per-instance stride data and dithers people in and out (spawned in view, or at the edge of VIS_PERSON). Same geometry and colours as the GLB, one draw per body model and layer.
 
 ### Constants
 
@@ -684,6 +700,7 @@ Draws E's agents (docs/fp/slices/E-traffic.md §3 Draw calls). Vehicles: the ful
 - `CAP_VEHICLES = 40`: Full-detail caps until H's lod1 files and HC's tiers land (contract: 40).
 - `CAP_PEOPLE = 40`
 - `MAX_INSTANCE_PER_FRAME = 4`
+- `CRANK_GEAR = 2.0`: A bicycle's wheels turn this many times per turn of its cranks.
 - `SIREN_COLS = {"firetruck": [Color(1.0, 0.12, 0.08), Color(1.0, 0.7, 0.15)], "ambulance": [Color(1.0,...`
 - `L_MID = 0`: MultiMesh layers per model: moving mid (shadows), moving far, static mid (shadows), static far.
 - `L_FAR = 1`

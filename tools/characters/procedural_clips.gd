@@ -1,7 +1,7 @@
 extends RefCounted
 ## Clips made from the mocap ones by hand-keyed bone rotations (build_anim_library.gd adds them to
-## both libraries: the kick and the throw as UAL clips, the get-in and get-out of a car per gender,
-## see car_in).
+## both libraries: the kick and the throw as UAL clips, the get-in and get-out of a car and the
+## pedalling on a bicycle per gender, see car_in and ride).
 ## The kick: a front kick with the right (rear) leg out of the guard
 ## stance (the first frame of punch_jab): the knee comes up, the leg snaps out along the body's +Z
 ## at contact (KICK_HIT), comes back and goes down, the hips leaning back over the standing leg.
@@ -380,3 +380,156 @@ static func _ry(angle: float) -> Quaternion:
 
 static func _rz(angle: float) -> Quaternion:
 	return Quaternion(Vector3.BACK, angle)
+
+
+# ------------------------------------------------------------------ riding a bicycle
+
+## Pedalling (ride): one turn of the cranks over RIDE_LEN, looped, on a body whose Hips bone sits
+## on a bicycle's saddle (the Seat_Driver point of bicycle.glb). The hips and back lean forward
+## (RIDE_LEAN), the head comes up to look ahead, the hands hold the grips and each foot stays on
+## its pedal as the cranks turn (two-bone IK in skeleton space; the right pedal half a turn ahead
+## of the left), the toes dipping most just past the bottom of the stroke and the hips rocking
+## with each push. The arms start from the drive pose (bent at the elbow, fingers closed). Points
+## are metres from the Hips bone (+Y up, +Z forward), from tools/blender/realcity/vehicles2.py
+## bicycle(): the bottom bracket, the crank, the pedals' offset and the grips.
+const RIDE_LEN := 1.0
+const RIDE_BB := Vector3(0.0, -0.7, 0.23)
+const RIDE_CRANK := 0.17
+const RIDE_PEDAL_X := 0.11
+const RIDE_GRIP := Vector3(0.26, 0.04, 0.61)
+## The wrist sits this far from the middle of the grip.
+const RIDE_PALM := Vector3(0.0, 0.02, -0.07)
+## Forward lean of the hips and of the back, head lift, hip rock (degrees).
+const RIDE_LEAN := Vector2(15.0, 20.0)
+const RIDE_HEAD := 25.0
+const RIDE_ROCK := 3.0
+## Toes down (degrees): the mean and the swing about it, deepest RIDE_DIP past the bottom.
+const RIDE_ANKLE := Vector2(15.0, 10.0)
+const RIDE_DIP := 200.0
+## The ball of the foot from the ankle with the foot flat ([down, forward], m).
+const RIDE_BALL := Vector2(-0.1, 0.17)
+
+
+## The ride loop from stand's first frame (idle), the arms and fingers from grip's (drive), posed
+## through skeleton sk.
+static func ride(stand: Animation, grip: Animation, sk: Skeleton3D) -> Animation:
+	var a := Animation.new()
+	a.length = RIDE_LEN
+	a.loop_mode = Animation.LOOP_LINEAR
+	var pose := {}
+	for i in range(stand.get_track_count()):
+		var path := str(stand.track_get_path(i))
+		var bone := path.trim_prefix(SKEL)
+		if stand.track_get_type(i) == Animation.TYPE_ROTATION_3D:
+			pose[bone] = stand.rotation_track_interpolate(i, 0.0)
+			var j := grip.find_track(NodePath(path), Animation.TYPE_ROTATION_3D)
+			if j >= 0 and _car_part(bone) == "arms":
+				pose[bone] = grip.rotation_track_interpolate(j, 0.0)
+		elif stand.track_get_type(i) == Animation.TYPE_POSITION_3D:
+			var k := a.add_track(Animation.TYPE_POSITION_3D)
+			a.track_set_path(k, path)
+			a.position_track_insert_key(k, 0.0, stand.position_track_interpolate(i, 0.0))
+	var tracks := {}
+	for bone: String in pose:
+		var k := a.add_track(Animation.TYPE_ROTATION_3D)
+		a.track_set_path(k, SKEL + bone)
+		tracks[bone] = k
+	var frames := int(round(RIDE_LEN * FPS))
+	for f in range(frames + 1):
+		var t := float(f) / float(frames) * RIDE_LEN
+		var out := _ride_pose(sk, pose, TAU * t / RIDE_LEN)
+		for bone: String in tracks:
+			a.rotation_track_insert_key(tracks[bone], t, out[bone])
+	return a
+
+
+## Local rotations of every bone with the cranks at th (radians; 0 the left pedal at the top).
+static func _ride_pose(sk: Skeleton3D, pose: Dictionary, th: float) -> Dictionary:
+	sk.reset_bone_poses()
+	for bone: String in pose:
+		var i := sk.find_bone(bone)
+		if i >= 0:
+			sk.set_bone_pose_rotation(i, pose[bone])
+	var rock := deg_to_rad(RIDE_ROCK) * sin(th)
+	_turn_now(sk, "Hips", _rz(rock) * _rx(deg_to_rad(RIDE_LEAN.x)))
+	for b: String in SPINE:
+		_turn_now(sk, b, _rz(-rock / SPINE.size()) * _rx(deg_to_rad(RIDE_LEAN.y) / SPINE.size()))
+	for b: String in NECK:
+		_turn_now(sk, b, _rx(-deg_to_rad(RIDE_HEAD) / NECK.size()))
+	var hips := _at(sk, "Hips")
+	for side: String in ["Left", "Right"]:
+		var sx := 1.0 if side == "Left" else -1.0
+		var ang := th + (0.0 if side == "Left" else PI)
+		var crank := Vector3(sx * RIDE_PEDAL_X, RIDE_CRANK * cos(ang), RIDE_CRANK * sin(ang))
+		var toe := deg_to_rad(RIDE_ANKLE.x - RIDE_ANKLE.y * cos(ang - deg_to_rad(RIDE_DIP)))
+		var ball := Vector3(
+			0.0,
+			RIDE_BALL.x * cos(toe) - RIDE_BALL.y * sin(toe),
+			RIDE_BALL.y * cos(toe) + RIDE_BALL.x * sin(toe)
+		)
+		var ankle := hips + RIDE_BB + crank - ball
+		_reach(sk, [side + "UpperLeg", side + "LowerLeg", side + "Foot"], ankle, Vector3(0, 0.2, 1))
+		_aim(sk, side + "Foot", side + "Toes", Vector3(0.0, -sin(toe), cos(toe)))
+		var grip := Vector3(sx * RIDE_GRIP.x, RIDE_GRIP.y, RIDE_GRIP.z) + RIDE_PALM
+		var elbow := Vector3(sx * 0.6, -1.0, -0.2)
+		_reach(sk, [side + "UpperArm", side + "LowerArm", side + "Hand"], hips + grip, elbow)
+	var out := {}
+	for bone: String in pose:
+		var i := sk.find_bone(bone)
+		out[bone] = sk.get_bone_pose_rotation(i).normalized() if i >= 0 else pose[bone]
+	return out
+
+
+## Bends the limb chain [upper, lower, end] so end reaches target (as near as it can), the middle
+## joint bending toward pole.
+static func _reach(sk: Skeleton3D, chain: Array, target: Vector3, pole: Vector3) -> void:
+	var a := _at(sk, chain[0])
+	var b := _at(sk, chain[1])
+	var c := _at(sk, chain[2])
+	var l1 := a.distance_to(b)
+	var l2 := b.distance_to(c)
+	var to := target - a
+	var d := clampf(to.length(), absf(l1 - l2) + 1e-4, l1 + l2 - 1e-4)
+	var dir := to.normalized()
+	var side := (pole - dir * dir.dot(pole)).normalized()
+	var ang := acos(clampf((l1 * l1 + d * d - l2 * l2) / (2.0 * l1 * d), -1.0, 1.0))
+	var mid := a + (dir * cos(ang) + side * sin(ang)) * l1
+	_turn_now(sk, chain[0], Quaternion((b - a).normalized(), (mid - a).normalized()))
+	b = _at(sk, chain[1])
+	c = _at(sk, chain[2])
+	_turn_now(sk, chain[1], Quaternion((c - b).normalized(), (a + dir * d - b).normalized()))
+
+
+## Turns bone b so the direction from it to its child bone tip points along want.
+static func _aim(sk: Skeleton3D, b: String, tip: String, want: Vector3) -> void:
+	if sk.find_bone(tip) < 0:
+		return
+	_turn_now(sk, b, Quaternion((_at(sk, tip) - _at(sk, b)).normalized(), want.normalized()))
+
+
+## Turns bone b by q in skeleton space about its own head, its parent's pose composed from the
+## local poses (a skeleton outside the tree, as the library builder's, never refreshes its global
+## poses, so the IK cannot read them).
+static func _turn_now(sk: Skeleton3D, b: String, q: Quaternion) -> void:
+	var i := sk.find_bone(b)
+	if i < 0:
+		return
+	var p := sk.get_bone_parent(i)
+	var gp := _global(sk, p).basis.get_rotation_quaternion() if p >= 0 else Quaternion()
+	var g := gp * sk.get_bone_pose_rotation(i)
+	sk.set_bone_pose_rotation(i, (gp.inverse() * q * g).normalized())
+
+
+## Bone i's pose in skeleton space, composed from the local poses up the chain.
+static func _global(sk: Skeleton3D, i: int) -> Transform3D:
+	var xf := Transform3D.IDENTITY
+	while i >= 0:
+		xf = sk.get_bone_pose(i) * xf
+		i = sk.get_bone_parent(i)
+	return xf
+
+
+## Bone b's head in skeleton space.
+static func _at(sk: Skeleton3D, b: String) -> Vector3:
+	var i := sk.find_bone(b)
+	return _global(sk, i).origin if i >= 0 else Vector3.ZERO

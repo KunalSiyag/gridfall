@@ -319,7 +319,7 @@ func _heuristic_plan(r: Dictionary) -> Dictionary:
 	var commute := "car"
 	if dist <= 3:
 		commute = "walk"
-	elif dist <= 6 and (traits.has("adventurous") or traits.has("thrifty")):
+	elif dist <= 10 and _cyclist(traits):
 		commute = "bike"
 	elif jam > 0.45 and sim.cov_transit[int(r["home"])] > 0.2:
 		commute = "bus"
@@ -368,6 +368,14 @@ func _heuristic_plan(r: Dictionary) -> Dictionary:
 		"recommend": clampi(int(round(mood)), 0, 10), "approve_mayor": clampi(int(round(mood - 0.5)), 0, 10),
 		"complaint": complaint, "message_to_mayor": msg, "thought": thought, "say": "",
 	}
+
+
+## True when traits make someone cycle to a job up to 10 tiles away.
+static func _cyclist(traits: Array) -> bool:
+	for t: String in ["adventurous", "thrifty", "restless"]:
+		if traits.has(t):
+			return true
+	return false
 
 
 # ---------------------------------------------------------------- reacting to incidents

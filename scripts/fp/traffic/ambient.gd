@@ -1,10 +1,11 @@
 extends RefCounted
-## Ambient filler (docs/fp/slices/E-traffic.md §6): unnamed commuters and pedestrians around the
-## player, denser where sim.traffic and residents' trip_load are high (caps 40 cars, 60 people).
-## The caps are spent where they can be seen: cars live within CAR_RING (just past VIS_CAR) and
-## people within PED_RING (just past VIS_PERSON), both inside TRAFFIC_RADIUS. Cars appear and
-## vanish only beyond MIN_SPAWN and out of the camera's view; people appear out of view beyond
-## PED_MIN_SPAWN, or fade in (render.gd) far enough away that the fade is all one sees. A
+## Ambient filler (docs/fp/slices/E-traffic.md §6): unnamed commuters (some of them cyclists)
+## and pedestrians around the player, denser where sim.traffic and residents' trip_load are high
+## (caps 40 vehicles, 60 people). The caps are spent where they can be seen: cars live within
+## CAR_RING (just past VIS_CAR) and people within PED_RING (just past VIS_PERSON), both inside
+## TRAFFIC_RADIUS. Cars appear and vanish only beyond MIN_SPAWN and out of the camera's view;
+## people appear out of view beyond PED_MIN_SPAWN, or fade in (render.gd) far enough away that
+## the fade is all one sees. A
 ## synchronous fill (first fill, load, teleport: the whole view is new) places agents anywhere
 ## outside the player's personal space. Also the curb parking that makes streets look lived in:
 ## deterministic per slot, so it never changes as the player walks.
@@ -37,6 +38,11 @@ const SYNC_CAR_CLEAR := 0.35
 ## Kerbside parking density by the lot beside the slot.
 const PARK_CHANCE := {D.ZONE_C: 0.55, D.ZONE_R: 0.45, D.ZONE_I: 0.25}
 const PARK_OTHER := 0.18
+## Share of the ambient traffic that is cyclists (the cyclists flag; 0 off), riding at about
+## BIKE_V0 on a bicycle of BIKE_DIMS (as a resident's, trips.gd).
+const BIKE_CHANCE := 0.18
+const BIKE_V0 := 4.0 * WS.M
+const BIKE_DIMS := Vector3(0.6 * WS.M, 1.8 * WS.M, 1.8 * WS.M)
 
 var sim: CitySim
 var people: Residents
@@ -51,6 +57,9 @@ var car_model: Callable
 var person_model: Callable
 var dims_of: Callable
 var visible: Callable
+## bike_model() -> int (traffic_feature.bike_model), and the share of cyclists.
+var bike_model: Callable
+var bike_chance: float = 0.0
 var _rng := RandomNumberGenerator.new()
 var _road_tiles: PackedInt32Array = PackedInt32Array()
 var _near_cache: Dictionary = {}
@@ -210,8 +219,11 @@ func _spawn_car(p: Vector3, fwd: Vector3, sync: bool) -> bool:
 	if opts.is_empty():
 		return false
 	var l: LG.Lane = opts[_rng.randi() % opts.size()]
-	var m := int(car_model.call(_rng.randi()))
-	var dims: Vector3 = dims_of.call(m)
+	var bike := bike_chance > 0.0 and bike_model.is_valid() and _rng.randf() < bike_chance
+	var m := _model(bike)
+	if m < 0:
+		return false
+	var dims: Vector3 = BIKE_DIMS if bike else dims_of.call(m)
 	if l.length < dims.z + 0.05:
 		return false
 	var s := _rng.randf_range(dims.z + 0.02, l.length - 0.02)
@@ -225,12 +237,26 @@ func _spawn_car(p: Vector3, fwd: Vector3, sync: bool) -> bool:
 		for q: Vector2 in [lg.pos_at(l, s), lg.pos_at(l, s - dims.z)]:
 			if visible.call(Vector3(q.x, 0.03, q.y)):
 				return false
-	var c := vh.make("car", "ambient", dims)
+	_place_new(l, s, m, dims, bike, sync)
+	return true
+
+
+## The model of a new ambient vehicle: the bicycle, else a car model by the stream.
+func _model(bike: bool) -> int:
+	return int(bike_model.call()) if bike else int(car_model.call(_rng.randi()))
+
+
+## A new ambient car (or cyclist, at their own speed) of model m on l at s.
+func _place_new(l: LG.Lane, s: float, m: int, dims: Vector3, bike: bool, sync: bool) -> void:
+	var c := vh.make("bike" if bike else "car", "ambient", dims)
 	c.model = m
-	c.label = "a commuter"
+	c.label = "a cyclist" if bike else "a commuter"
+	if bike:
+		c.v0 = BIKE_V0 * _rng.randf_range(0.85, 1.15)
 	vh.place(c, l, s)
 	c.v = l.limit * c.speed_f * (_rng.randf_range(0.6, 1.0) if sync else 0.9)
-	return true
+	if bike:
+		c.v = minf(c.v, c.v0)
 
 
 func _spawn_ped(p: Vector3, fwd: Vector3, sync: bool) -> bool:

@@ -49,7 +49,7 @@ H builds no people. Rigged, animated people come from slice HC (`models/characte
 
 - Same keys as `vehicles/`: sedan_*, hatchback_*, suv_*, coupe_*, pickup_*, van_*, taxi, police, ambulance, firetruck, bus, truck, garbage_truck. Add `bicycle`.
 - Built with `VS = M` (real size), using a `vehicles.py` parameter that leaves the legacy `VS = 1.2*M` path and its outputs unchanged.
-- **Wheels are separate nodes** `Wheel_FL`, `Wheel_FR`, `Wheel_RL` and `Wheel_RR` (`AP.WHEEL_NODES`), with the origin at the hub so they spin about local X. The bicycle has `Wheel_F` and `Wheel_R` (`AP.BIKE_WHEEL_NODES`).
+- **Wheels are separate nodes** `Wheel_FL`, `Wheel_FR`, `Wheel_RL` and `Wheel_RR` (`AP.WHEEL_NODES`), with the origin at the hub so they spin about local X. The bicycle has `Wheel_F` and `Wheel_R` (`AP.BIKE_WHEEL_NODES`), and its cranks and pedals are the `Crank` node (`AP.CRANK_NODE`; origin at the bottom bracket, spinning about local X, the left pedal straight up at rest).
 - A `Seat_Driver` empty.
 - `Glass_Car` is semi-transparent and tinted (alpha about 0.55).
 - Separate light surfaces with the materials `Light_Head`, `Light_Tail`, `Light_Brake`, `Light_Indicator_L` and `Light_Indicator_R`.

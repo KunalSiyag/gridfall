@@ -4,9 +4,9 @@ extends RefCounted
 ## model built from a single-surface, vertex-coloured merge of the GLB (H's <name>_lod1.glb when it
 ## exists), with shadows to SHADOW_DIST and none beyond. Parked cars go through a static layer
 ## rebuilt only when the parked set changes or the camera moves. Brake lights, siren flashes and
-## wheel spin on full models, and their indicators blink (indicators.gd); after dark their head
-## and tail lamps light up, the nearest moving
-## vehicles throw headlight beams, and the head and tail lamps of the merged ones glow. Responding
+## wheel spin (and a bicycle's cranks) on full models, and their indicators blink
+## (indicators.gd); after dark their head and tail lamps light up, the nearest moving vehicles
+## throw headlight beams, and the head and tail lamps of the merged ones glow. Responding
 ## crews near the camera wash their surroundings in flashing siren light. A car with its driver's
 ## door open (the player's) swings it out on a hinge cut from its body (car_doors.gd).
 ## People (the legacy static bodies, until HC's rigged ones): every distance draws the merged body
@@ -28,6 +28,8 @@ const SHADOW_DIST := 3.0
 const CAP_VEHICLES := 40
 const CAP_PEOPLE := 40
 const MAX_INSTANCE_PER_FRAME := 4
+## A bicycle's wheels turn this many times per turn of its cranks.
+const CRANK_GEAR := 2.0
 const SIREN_COLS := {"firetruck": [Color(1.0, 0.12, 0.08), Color(1.0, 0.7, 0.15)], "ambulance": [Color(1.0, 0.12, 0.08), Color(0.25, 0.45, 1.0)],
 	"police": [Color(0.2, 0.4, 1.0), Color(1.0, 0.1, 0.12)]}
 ## MultiMesh layers per model: moving mid (shadows), moving far, static mid (shadows), static far.
@@ -561,7 +563,7 @@ func _index_parts(n: Node3D) -> void:
 	if not sirens.is_empty():
 		n.set_meta("sirens", sirens)
 	var wheels: Array = []
-	for w: String in AP.WHEEL_NODES:
+	for w: String in AP.WHEEL_NODES + AP.BIKE_WHEEL_NODES:
 		var wn := n.find_child(w, true, false)
 		if wn != null:
 			wheels.append(wn)
@@ -569,7 +571,9 @@ func _index_parts(n: Node3D) -> void:
 		n.set_meta("wheels", wheels)
 		var wb := _bounds(wheels[0], Transform3D.IDENTITY)
 		n.set_meta("wheel_r", maxf(wb.size.y * 0.5, 0.001))
-
+	var crank := n.find_child(AP.CRANK_NODE, true, false)
+	if crank != null:
+		n.set_meta("crank", crank)
 
 func _extras(node: Node3D, m: Model, brake: bool, lit: bool, siren: String, spin: float) -> void:
 	if node == null or m == null:
@@ -607,11 +611,18 @@ func _extras(node: Node3D, m: Model, brake: bool, lit: bool, siren: String, spin
 				var mat: Material = (_siren_mats[siren][j % 2] as Material) if bank else _siren_dark
 				(e[0] as MeshInstance3D).set_surface_override_material(int(e[1]), mat)
 	if node.has_meta("wheels"):
-		var r: float = node.get_meta("wheel_r")
-		var ang := spin / (r * m.scale)
-		for w: Node3D in node.get_meta("wheels"):
-			w.rotation.x = fposmod(ang, TAU)
+		_spin(node, spin / (float(node.get_meta("wheel_r")) * m.scale))
 
+
+## Turns node's wheels to ang radians, and a bicycle's cranks with them (crank_th on the node:
+## the rider's pedalling, occupants.gd, follows it so feet and pedals turn together).
+static func _spin(node: Node3D, ang: float) -> void:
+	for w: Node3D in node.get_meta("wheels"):
+		w.rotation.x = fposmod(ang, TAU)
+	if node.has_meta("crank"):
+		var th := ang / CRANK_GEAR
+		(node.get_meta("crank") as Node3D).rotation.x = fposmod(th, TAU)
+		node.set_meta("crank_th", th)
 
 ## Indicators: the left and right lamps lit or dark for a car signalling side now.
 func _blink(node: Node3D, side: int) -> void:
