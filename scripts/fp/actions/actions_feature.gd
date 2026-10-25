@@ -32,8 +32,8 @@ const SWINGS := {
 	"kick": ["kick", "punch", 0.75, 0.75, 0.7, 0.24],
 	"swing": ["swing_a", "punch", 0.6, 0.6, 0.55, 0.2],
 	"counter": ["punch_hook", "punch", 0.8, 0.6, 0.47, 0.22],
-	"throw": ["push", "punch", 0.8, 0.7, 0.6, 0.18],
-	"slam": ["push", "punch", 1.0, 0.8, 0.6, 0.18],
+	"throw": ["throw", "punch", 0.8, 0.8, 0.8, 0.3],
+	"slam": ["throw", "punch", 1.0, 0.8, 0.8, 0.3],
 }
 ## A counter: the guard raised at most COUNTER_LEAD seconds before a punch reaches the hero. A
 ## throw flings whoever it knocks down THROW_FLING metres. A slam puts them down SLAM_OVER metres

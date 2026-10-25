@@ -4,8 +4,10 @@ extends RefCounted
 ## and its driver is dragged out first. They come out beside the driver's door and are knocked down
 ## away from the car by a blow of cause "carjack" (traffic_feature.gd hit_walker: reactions.gd has
 ## them lie a moment, get up, shout and run off; incidents.gd has them and those who saw it
-## remember it, and calls the police). They run for the sidewalk round the car's rear, not through
-## it. A resident's trip goes on on foot from there (trips.gd on_carjacked); an ambient driver
+## remember it, and calls the police). Drawn at the wheel, they are dragged out of the seat over
+## the sill first (reactions.gd drag_out) and the blow throws them JACK_FLING clear of the door.
+## They run for the sidewalk round the car's rear, not through it. A resident's trip goes on on
+## foot from there (trips.gd on_carjacked); an ambient driver
 ## wanders on along the sidewalk. Either keeps the look they had at the wheel (occupants.gd).
 
 const WS := preload("res://scripts/fp/world_scale.gd")
@@ -20,6 +22,7 @@ const TRIPS := preload("res://scripts/fp/traffic/trips.gd")
 const OUT := 0.3 * WS.M
 const STRENGTH := 0.85
 const CLEAR := 1.2 * WS.M
+const JACK_FLING := 1.8
 
 var f: Object  # the traffic feature
 
@@ -52,10 +55,15 @@ func eject(c: VH.Car, src: Vector3) -> Dictionary:
 	if w == null:
 		return {}
 	var proxy: WK.Walker = f.occupants.driver_of(c.id)
+	var seated: Node3D = proxy.body.get("root") if proxy != null and proxy.body != null else null
+	var from := seated.global_position if seated != null else Vector3(NAN, NAN, NAN)
 	if proxy != null:
 		w.av = proxy.av
 		w.h_m = proxy.h_m
-	return f.hit_walker(w.id, src, xf.basis.x, STRENGTH, "carjack")
+	var info: Dictionary = f.hit_walker(w.id, src, xf.basis.x, STRENGTH, "carjack", JACK_FLING)
+	if not info.is_empty() and from.is_finite():
+		f.reactions.drag_out(w, from, c.yaw + c.vis_yaw)
+	return info
 
 
 ## An ambient driver on foot at at, making by way of via for the sidewalk nearest it on tile and

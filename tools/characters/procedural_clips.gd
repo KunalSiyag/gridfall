@@ -1,6 +1,7 @@
 extends RefCounted
 ## Clips made from the mocap ones by hand-keyed bone rotations (build_anim_library.gd adds them to
-## both libraries: the kick as a UAL clip, the get-in and get-out of a car per gender, see car_in).
+## both libraries: the kick and the throw as UAL clips, the get-in and get-out of a car per gender,
+## see car_in).
 ## The kick: a front kick with the right (rear) leg out of the guard
 ## stance (the first frame of punch_jab): the knee comes up, the leg snaps out along the body's +Z
 ## at contact (KICK_HIT), comes back and goes down, the hips leaning back over the standing leg.
@@ -103,6 +104,83 @@ static func _kick_pose(stance: Dictionary, p: Array) -> Dictionary:
 
 static func _rx(angle: float) -> Quaternion:
 	return Quaternion(Vector3.RIGHT, angle)
+
+
+# ------------------------------------------------------------------ the throw
+
+## The throw, on the upper body over the guard stance at the start of base (punch_jab): holding
+## someone in front, the hands drop and the back winds up to the right, then it unwinds and
+## straightens as both arms swing up and out, the elbows opening, letting go at THROW_HIT, and the
+## body comes back to the guard.
+const THROW_LEN := 0.8
+const THROW_HIT := 0.3
+## Moves by channel as CAR_KEYS: duck bends the back forward (negative: back), twist turns the
+## chest to the right, arms raise both arms forward, reach opens the elbows (0..1 of the way to
+## straight).
+const THROW_KEYS := {
+	"duck": [[0.0, 0.0], [0.14, 18.0], [0.3, -12.0], [0.45, 6.0], [THROW_LEN, 0.0]],
+	"twist": [[0.0, 0.0], [0.14, 25.0], [0.3, -15.0], [0.45, -10.0], [THROW_LEN, 0.0]],
+	"arms": [[0.0, 0.0], [0.14, -25.0], [THROW_HIT, 70.0], [0.42, 95.0], [THROW_LEN, 0.0]],
+	"reach": [[0.0, 0.0], [0.14, 0.0], [THROW_HIT, 0.8], [0.45, 0.9], [THROW_LEN, 0.0]],
+}
+
+
+## The throw from base's first frame, posed through skeleton sk.
+static func throw(base: Animation, sk: Skeleton3D) -> Animation:
+	var a := Animation.new()
+	a.length = THROW_LEN
+	a.loop_mode = Animation.LOOP_NONE
+	var stance := {}
+	for i in range(base.get_track_count()):
+		var path := str(base.track_get_path(i))
+		var t := base.track_get_type(i)
+		if t == Animation.TYPE_ROTATION_3D:
+			stance[path.trim_prefix(SKEL)] = base.rotation_track_interpolate(i, 0.0)
+		elif t == Animation.TYPE_POSITION_3D:
+			var k := a.add_track(Animation.TYPE_POSITION_3D)
+			a.track_set_path(k, path)
+			a.position_track_insert_key(k, 0.0, base.position_track_interpolate(i, 0.0))
+	var tracks := {}
+	for bone: String in stance:
+		var k := a.add_track(Animation.TYPE_ROTATION_3D)
+		a.track_set_path(k, SKEL + bone)
+		tracks[bone] = k
+	var frames := int(round(THROW_LEN * FPS))
+	for f in range(frames + 1):
+		var t := minf(float(f) / FPS, THROW_LEN)
+		var pose := _throw_pose(sk, stance, t)
+		for bone: String in tracks:
+			a.rotation_track_insert_key(tracks[bone], t, pose[bone])
+	return a
+
+
+static func _throw_pose(sk: Skeleton3D, stance: Dictionary, t: float) -> Dictionary:
+	sk.reset_bone_poses()
+	for bone: String in stance:
+		var i := sk.find_bone(bone)
+		if i >= 0:
+			sk.set_bone_pose_rotation(i, stance[bone])
+	var reach := _keyed(THROW_KEYS, "reach", t)
+	for b: String in ["LeftLowerArm", "RightLowerArm"]:
+		var i := sk.find_bone(b)
+		if i >= 0:
+			var straight := sk.get_bone_rest(i).basis.get_rotation_quaternion()
+			sk.set_bone_pose_rotation(i, sk.get_bone_pose_rotation(i).slerp(straight, reach))
+	var duck := deg_to_rad(_keyed(THROW_KEYS, "duck", t)) / SPINE.size()
+	var twist := deg_to_rad(_keyed(THROW_KEYS, "twist", t)) / SPINE.size()
+	for b: String in SPINE:
+		_turn(sk, b, _ry(-twist) * _rx(duck))
+	# The head keeps its eyes on whoever is thrown.
+	for b: String in NECK:
+		_turn(sk, b, _rx(-duck * SPINE.size() * 0.5))
+	var arms := deg_to_rad(_keyed(THROW_KEYS, "arms", t))
+	for b: String in ["LeftUpperArm", "RightUpperArm"]:
+		_turn(sk, b, _rx(-arms))
+	var out := {}
+	for bone: String in stance:
+		var i := sk.find_bone(bone)
+		out[bone] = sk.get_bone_pose_rotation(i).normalized() if i >= 0 else stance[bone]
+	return out
 
 
 # ------------------------------------------------------------------ getting into a car
@@ -279,16 +357,21 @@ static func _car_w(part: String, t: float) -> float:
 	return smoothstep(float(r[0]), float(r[1]), t)
 
 
-## Channel c at t (radians), eased between its keys.
+## Channel c of CAR_KEYS at t (radians), eased between its keys.
 static func _car_key(c: String, t: float) -> float:
-	var keys: Array = CAR_KEYS[c]
+	return deg_to_rad(_keyed(CAR_KEYS, c, t))
+
+
+## Channel c of table at t (its own units), eased between its keys.
+static func _keyed(table: Dictionary, c: String, t: float) -> float:
+	var keys: Array = table[c]
 	for i in range(keys.size() - 1):
 		var k0: Array = keys[i]
 		var k1: Array = keys[i + 1]
 		if t <= float(k1[0]):
 			var u := smoothstep(float(k0[0]), float(k1[0]), t)
-			return deg_to_rad(lerpf(float(k0[1]), float(k1[1]), u))
-	return deg_to_rad(float((keys.back() as Array)[1]))
+			return lerpf(float(k0[1]), float(k1[1]), u)
+	return float((keys.back() as Array)[1])
 
 
 static func _ry(angle: float) -> Quaternion:

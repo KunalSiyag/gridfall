@@ -94,7 +94,7 @@ The driver's door of a full car model (vehicles_v2) as a part of its own that sw
 
 extends `RefCounted`
 
-Taking a car with someone at the wheel (the carjack flag; docs/fp/ARCHITECTURE.md, Driving): a car stopped or crawling in traffic is the player's to take, an ambient driver's or a resident's, and its driver is dragged out first. They come out beside the driver's door and are knocked down away from the car by a blow of cause "carjack" (traffic_feature.gd hit_walker: reactions.gd has them lie a moment, get up, shout and run off; incidents.gd has them and those who saw it remember it, and calls the police). They run for the sidewalk round the car's rear, not through it. A resident's trip goes on on foot from there (trips.gd on_carjacked); an ambient driver wanders on along the sidewalk. Either keeps the look they had at the wheel (occupants.gd).
+Taking a car with someone at the wheel (the carjack flag; docs/fp/ARCHITECTURE.md, Driving): a car stopped or crawling in traffic is the player's to take, an ambient driver's or a resident's, and its driver is dragged out first. They come out beside the driver's door and are knocked down away from the car by a blow of cause "carjack" (traffic_feature.gd hit_walker: reactions.gd has them lie a moment, get up, shout and run off; incidents.gd has them and those who saw it remember it, and calls the police). Drawn at the wheel, they are dragged out of the seat over the sill first (reactions.gd drag_out) and the blow throws them JACK_FLING clear of the door. They run for the sidewalk round the car's rear, not through it. A resident's trip goes on on foot from there (trips.gd on_carjacked); an ambient driver wanders on along the sidewalk. Either keeps the look they had at the wheel (occupants.gd).
 
 ### Constants
 
@@ -107,6 +107,7 @@ Taking a car with someone at the wheel (the carjack flag; docs/fp/ARCHITECTURE.m
 - `OUT = 0.3 * WS.M`: The driver comes out OUT beyond the body side, level with the seat, and takes a blow of STRENGTH (hard enough to knock them down, reactions.gd DOWN) straight out from the car. Their way off the road passes CLEAR out from the car's rear corner on that side.
 - `STRENGTH = 0.85`
 - `CLEAR = 1.2 * WS.M`
+- `JACK_FLING = 1.8`
 
 ### Properties
 
@@ -621,6 +622,16 @@ People hit in the street (docs/fp/ARCHITECTURE.md, Body actions): shoved or punc
 - `HOLD_AT = 0.12`
 - `HOLD_S = 6.0`
 - `FLING_S = 0.7`
+- `THROW_LIFT = 0.3`: With hit_feel a throw flies the body up THROW_LIFT times the fling (metres) on a ballistic arc (gravity G, m/s²), tipped back by up to THROW_TILT (rad) at its height, across all but THROW_SKID metres of the fling, which it skids along the ground over SKID_S.
+- `G = 9.8`
+- `THROW_TILT = 0.7`
+- `THROW_SKID = 0.5`
+- `SKID_S = 0.35`
+- `DRAG_S = 0.5`: Dragged out of a car (drag_out): from the seat to beside the door over DRAG_S, in DRAG_CLIP held at DRAG_AT, lifted DRAG_LIFT over the sill and tipped back up to DRAG_TILT (rad).
+- `DRAG_CLIP = &"sit"`
+- `DRAG_AT = 1.0`
+- `DRAG_LIFT = 0.2 * WS.M`
+- `DRAG_TILT = 0.5`
 
 ### Properties
 
@@ -645,8 +656,9 @@ People hit in the street (docs/fp/ARCHITECTURE.md, Body actions): shoved or punc
 - `func answer_emote(p: Vector3, fwd: Vector3, emote: String) -> Array`: People who answer the hero's emote ("wave", "yes", "no", "shout", "dance"; ANSWERS) made at p facing fwd (xz): after a moment they turn to p and wave, nod or shake their head. Returns them.
 - `func step(dt: float) -> void`
 - `func fighting(w: WK.Walker) -> bool`: True while w is fighting the hero (closing in or punching).
-- `static func throw_height(t: float, lift: float) -> float`: How high a body thrown up to lift sits t seconds after the blow (0 once it has landed).
+- `static func throw_height(t: float, lift: float, fly: float = FLY_S) -> float`: How high a body thrown up to lift for fly seconds sits t seconds after the blow (0 once it has landed).
 - `func blocks() -> Array`: Lane blocks for vehicles.gd: the people hit, until they walk or run on, as circles at their drawn feet (on a sidewalk they are clear of every lane).
+- `func drag_out(w: WK.Walker, from: Vector3, from_yaw: float) -> void`: Car-jacked w (just knocked down by the carjack's blow) is dragged out of the car first: drawn from from (its feet in the driver's seat, facing from_yaw) out to where the blow found it over DRAG_S in the sit pose, then it falls.
 - `func is_down(w: WK.Walker) -> bool`: True while w is knocked down (lying or getting up).
 - `func count() -> int`
 - `func pose(w: WK.Walker, clip: StringName, t: float, secs: float = 60.0) -> void`: Stages w playing clip from t seconds in, for secs (photos, tests). The caller releases its body so the next one starts at t.
@@ -1124,6 +1136,7 @@ People on foot (docs/fp/slices/E-traffic.md §3 Pedestrians): they walk the side
 ### Functions
 
 - `func setup(p_sw: SW, p_lg: LG, p_jn: JN, p_vh: VH, seed: int) -> void`
+- `static func body_xf(w: Walker, s: float, feet: Vector3) -> Transform3D`: The drawn body's transform: at feet turned to w's yaw, scaled by s (the body faces +Z) and tipped by its vis_tilt about the hips (HIP_M up in the body's own metres).
 - `func make(role: String) -> Walker`
 - `func remove(w: Walker) -> void`
 - `func place(w: Walker, e: SW.PedEdge, t: float, dir: int) -> void`: Puts w on edge e at distance t (walking direction dir).

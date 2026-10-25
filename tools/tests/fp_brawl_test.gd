@@ -1,12 +1,12 @@
 extends SceneTree
 ## Brawl (integration feature "brawl"; docs/fp/ARCHITECTURE.md, Brawl): grabbing the person in
 ## front (held in the hands, the clip stopped, the hero slowed to a drag), dragging them along,
-## punches landing on someone held (they hang on until the hook floors them), throwing them (R),
-## letting go and breaking free, the hold ending in a car; counters (the counters flag): the cue as
-## a fighter's punch starts, the guard raised in time countering it (the punch misses, the hook
-## floors them), a guard held up since earlier only blocking, and the flag off; teardown. Third
-## person on a grown city; time runs through traffic's step, the features' tick(1/60) and the
-## player's simulate and update_view.
+## punches landing on someone held (they hang on until the hook floors them), throwing them (R;
+## with hit_feel up on an arc and tipped back), letting go and breaking free, the hold ending in a
+## car; counters (the counters flag): the cue as a fighter's punch starts, the guard raised in time
+## countering it (the punch misses, the hook floors them), a guard held up since earlier only
+## blocking, and the flag off; teardown. Third person on a grown city; time runs through traffic's
+## step, the features' tick(1/60) and the player's simulate and update_view.
 
 const K := preload("res://tools/tests/fp_kit.gd")
 const WS := preload("res://scripts/fp/world_scale.gd")
@@ -112,6 +112,13 @@ func _feet(w: WK.Walker) -> Vector3:
 	return w.pos + w.vis_off
 
 
+## How high w's drawn feet are off the ground under them (m).
+func _air(w: WK.Walker) -> float:
+	var q := _feet(w)
+	var g := ctx.collision.walk_height(q)
+	return (q.y - (w.pos.y if is_nan(g) else g)) / WS.M
+
+
 func _flat(a: Vector3, b: Vector3) -> float:
 	return Vector2(a.x - b.x, a.z - b.z).length()
 
@@ -215,13 +222,25 @@ func _check_throw() -> void:
 	var aim := Vector3(-sin(p.cam_yaw), 0.0, -cos(p.cam_yaw))
 	K.check(fails, bool(act.call("strike", "shove")), "R with someone held throws")
 	K.check(fails, str(act.get("swing")) == "throw", "a throw (%s)" % act.get("swing"))
-	_step(1.5)
+	var peak := 0.0
+	var tip := 0.0
+	for _k in range(30):
+		_step(0.05)
+		peak = maxf(peak, _air(w))
+		tip = minf(tip, w.vis_tilt)
 	var flung := (_feet(w) - before).dot(aim) / WS.M
 	var down := bool(react.call("is_down", w)) and int(f.get("held_id")) == -1
 	K.check(fails, down, "they go down out of the hands")
 	K.check(
 		fails, flung > 1.8, "flung %.2f m along the camera (a punch slides 1.4 at most)" % flung
 	)
+	if FeatureFlags.enabled("hit_feel"):
+		var arc := peak > 0.6 and tip < -0.5 and w.vis_tilt == 0.0 and absf(_air(w)) < 0.005
+		K.check(
+			fails,
+			arc,
+			"up on an arc (%.2f m), tipped back (%.2f rad), down again flat" % [peak, tip]
+		)
 
 
 func _check_let_go() -> void:

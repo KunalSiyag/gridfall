@@ -80,6 +80,21 @@ const HOLD_CLIP := &"hit_chest"
 const HOLD_AT := 0.12
 const HOLD_S := 6.0
 const FLING_S := 0.7
+## With hit_feel a throw flies the body up THROW_LIFT times the fling (metres) on a ballistic arc
+## (gravity G, m/s²), tipped back by up to THROW_TILT (rad) at its height, across all but
+## THROW_SKID metres of the fling, which it skids along the ground over SKID_S.
+const THROW_LIFT := 0.3
+const G := 9.8
+const THROW_TILT := 0.7
+const THROW_SKID := 0.5
+const SKID_S := 0.35
+## Dragged out of a car (drag_out): from the seat to beside the door over DRAG_S, in DRAG_CLIP held
+## at DRAG_AT, lifted DRAG_LIFT over the sill and tipped back up to DRAG_TILT (rad).
+const DRAG_S := 0.5
+const DRAG_CLIP := &"sit"
+const DRAG_AT := 1.0
+const DRAG_LIFT := 0.2 * WS.M
+const DRAG_TILT := 0.5
 
 
 ## One person reacting: the steps still to come, [mode, clip, seconds] with mode "place" (stand
@@ -99,6 +114,11 @@ class Reaction:
 	var lift: float = 0.0  # how high a knock-down throws the body (u); 0 for none
 	var fly_t: float = 0.0  # seconds since the blow, for the throw
 	var bump: float = 0.0  # the throw's height in the drawn feet now (u)
+	var fly_s: float = FLY_S  # seconds the body is in the air
+	var tilt: float = 0.0  # how far a throw tips the body back at its height (rad)
+	var air: float = 0.0  # a throw's seconds in the air, its slide steady; 0 for an eased slide
+	var skid: float = 0.0  # the share of a throw's slide skidded along the ground
+	var drag: Array = []  # dragged out of a car: [from, to, yaw from, yaw to]
 	var was: String = ""  # walker state to give back ("" until the first step starts)
 	var speed: float = 0.0  # pace to give back after a run
 	var victim: bool = false
@@ -292,8 +312,20 @@ func _plan_down(
 	r.slide_s = FLING_S if fling > 0.0 else 0.55
 	var lift: Vector2 = LIFT["car" if car else "blow"]
 	r.lift = lerpf(lift.x, lift.y, clampf(strength, 0.0, 1.0)) * WS.M
+	r.fly_s = FLY_S
+	r.air = 0.0
+	r.tilt = 0.0
 	if not FeatureFlags.enabled("hit_feel"):
 		r.lift = 0.0
+	elif fling > 0.0:
+		# Thrown: up on a real arc, tipped back, and down onto the ground to skid the rest.
+		var h := fling * THROW_LIFT
+		r.lift = h * WS.M
+		r.fly_s = 2.0 * sqrt(2.0 * h / G)
+		r.air = r.fly_s
+		r.skid = clampf(THROW_SKID / fling, 0.0, 0.5)
+		r.slide_s = r.air + SKID_S
+		r.tilt = THROW_TILT
 	return &"knockback"
 
 
@@ -455,6 +487,7 @@ func _next_step(r: Reaction) -> void:
 func _finish(r: Reaction) -> void:
 	var w := r.w
 	_drop(r)
+	w.vis_tilt = 0.0
 	_active.erase(w.id)
 	w.react = &""
 	w.react_rate = 1.0
@@ -467,7 +500,7 @@ func step(dt: float) -> void:
 	clock += dt
 	for r: Reaction in _active.values():
 		var w := r.w
-		if w.dead or (r.mode in ["place", "back", "fight", "held"] and w.state != "react"):
+		if w.dead or (r.mode in ["place", "back", "fight", "held", "drag"] and w.state != "react"):
 			# Gone, or taken on by something else (a trip set off): let go.
 			_finish(r)
 			continue
@@ -477,12 +510,15 @@ func step(dt: float) -> void:
 				_next_step(r)
 			continue
 		_drop(r)
-		_slide(r, dt)
-		_throw(r, dt)
+		if r.mode != "drag":
+			_slide(r, dt)
+			_throw(r, dt)
 		var over := false
 		match r.mode:
 			"place":
 				over = _place(r, dt)
+			"drag":
+				over = _drag(r, dt)
 			"back":
 				over = _back(r, dt)
 			"fight":
@@ -650,9 +686,9 @@ func fighting(w: WK.Walker) -> bool:
 func _slide(r: Reaction, dt: float) -> void:
 	if r.slide_t >= r.slide_s:
 		return
-	var a := _ease(r.slide_t / r.slide_s)
+	var a := _slide_k(r, r.slide_t)
 	r.slide_t = minf(r.slide_t + dt, r.slide_s)
-	var move := r.slide * (_ease(r.slide_t / r.slide_s) - a)
+	var move := r.slide * (_slide_k(r, r.slide_t) - a)
 	var p := r.w.pos + r.w.vis_off
 	var q := p + move
 	if collision != null:
@@ -660,16 +696,43 @@ func _slide(r: Reaction, dt: float) -> void:
 	_set_feet(r.w, q)
 
 
-## Lifts the drawn feet along a knock-down's throw: one arc up and down, then a small bounce.
+## How much of its slide r has covered t s in: eased out, or for a throw at a steady pace through
+## the air and eased out over the skid.
+static func _slide_k(r: Reaction, t: float) -> float:
+	if r.air <= 0.0:
+		return _ease(t / r.slide_s)
+	if t <= r.air:
+		return (1.0 - r.skid) * t / r.air
+	return 1.0 - r.skid + r.skid * _ease((t - r.air) / maxf(r.slide_s - r.air, 1e-3))
+
+
+## Lifts the drawn feet along a knock-down's throw: one arc up and down, then a small bounce; a
+## throw tips the body back on the way.
 func _throw(r: Reaction, dt: float) -> void:
 	if r.lift <= 0.0 and r.bump == 0.0:
 		return
 	r.fly_t += dt
-	var h := throw_height(r.fly_t, r.lift)
+	var h := throw_height(r.fly_t, r.lift, r.fly_s)
 	r.w.vis_off.y += h
 	r.bump = h
-	if h == 0.0 and r.fly_t > FLY_S:
+	r.w.vis_tilt = -r.tilt * sin(PI * r.fly_t / r.fly_s) if r.fly_t < r.fly_s else 0.0
+	if h == 0.0 and r.fly_t > r.fly_s:
 		r.lift = 0.0
+
+
+## Dragged out of a car: w is drawn on from the seat out over the sill to beside the door, turning
+## to face the car and tipping back as it comes; true once out.
+func _drag(r: Reaction, dt: float) -> bool:
+	var w := r.w
+	r.left -= dt
+	var x := clampf(1.0 - r.left / DRAG_S, 0.0, 1.0)
+	var k := smoothstep(0.0, 1.0, x)
+	var at := (r.drag[0] as Vector3).lerp(r.drag[1], k) + Vector3(0.0, DRAG_LIFT * sin(PI * x), 0.0)
+	w.vis_off = at - w.pos
+	w.yaw = lerp_angle(float(r.drag[2]), float(r.drag[3]), k)
+	w.vis_tilt = -DRAG_TILT * sin(PI * x)
+	w.vis_v = 0.0
+	return r.left <= 0.0
 
 
 ## Takes the throw's height back out of the drawn feet (before they move on the ground).
@@ -678,12 +741,13 @@ func _drop(r: Reaction) -> void:
 	r.bump = 0.0
 
 
-## How high a body thrown up to lift sits t seconds after the blow (0 once it has landed).
-static func throw_height(t: float, lift: float) -> float:
-	if t < FLY_S:
-		var x := t / FLY_S
+## How high a body thrown up to lift for fly seconds sits t seconds after the blow (0 once it has
+## landed).
+static func throw_height(t: float, lift: float, fly: float = FLY_S) -> float:
+	if t < fly:
+		var x := t / fly
 		return 4.0 * lift * x * (1.0 - x)
-	var b := (t - FLY_S) / BOUNCE_S
+	var b := (t - fly) / BOUNCE_S
 	if b < 1.0:
 		return 4.0 * lift * BOUNCE * b * (1.0 - b)
 	return 0.0
@@ -712,6 +776,24 @@ func blocks() -> Array:
 			var q := r.w.pos + r.w.vis_off
 			out.append([Vector2(q.x, q.z), Vector2.ZERO, -1.0, 0.0, Vector2.ZERO])
 	return out
+
+
+## Car-jacked w (just knocked down by the carjack's blow) is dragged out of the car first: drawn
+## from from (its feet in the driver's seat, facing from_yaw) out to where the blow found it over
+## DRAG_S in the sit pose, then it falls.
+func drag_out(w: WK.Walker, from: Vector3, from_yaw: float) -> void:
+	var r: Reaction = _active.get(w.id)
+	if r == null or r.mode != "place" or not r.down:
+		return
+	r.steps.push_front(["place", w.react, r.left])
+	r.drag = [from, w.pos + w.vis_off, from_yaw, w.yaw]
+	r.mode = "drag"
+	r.left = DRAG_S
+	w.react = DRAG_CLIP
+	w.react_t = DRAG_AT
+	w.react_rate = 0.0
+	w.yaw = from_yaw
+	w.vis_off = from - w.pos
 
 
 ## True while w is knocked down (lying or getting up).

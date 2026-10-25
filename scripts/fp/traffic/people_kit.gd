@@ -72,7 +72,8 @@ const STATES: Array[StringName] = [
 	&"wave",
 	&"yes",
 	&"punch_jab",
-	&"punch_cross"
+	&"punch_cross",
+	&"sit"
 ]
 ## Reactions that play once and hold their last frame (the rest loop), the blows among them, and
 ## the quicker crossfade into a blow (s): it lands at once.
