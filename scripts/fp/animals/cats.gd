@@ -77,6 +77,7 @@ const STARTLE := {
 	"run_up": 2.5,
 	"catch": 2.5,
 	"leap": 3.0,
+	"hijack": 3.0,
 }
 const SEEN_HIT := 6.0
 const CRASH_M := 20.0

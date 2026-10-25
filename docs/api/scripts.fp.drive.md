@@ -122,7 +122,7 @@ Getting into the player's car and out of it on foot, for drive_feature.gd (car_d
 
 extends `FpFeature`
 
-Getting into cars and driving them. Near a parked or stopped car, F (Y on a pad) gets in: the hero walks round to the driver's door, opens it, climbs in and shuts it (car_entry.gd, the car_doors flag; at once without it), and the camera chases the car. Someone at the wheel of a car stopped in traffic is dragged out first (the carjack flag): the car waits while the hero walks to its door, opens it and pulls them out. W / S or the triggers drive and brake (S reverses once stopped), A / D or the left stick steer, Space (A) is the handbrake, the mouse or right stick look around, V switches to the driver's view, and F again stops the car and gets out through the driver's door (or at once beside it). The car belongs to the traffic feature (lane traffic stops for it and it stays where it is left). It is a rigid box (car_body.gd): it bounces off walls, slides along them at a glance, spins when hit off-centre, shoves the cars it hits and knocks street props over; car_impact on the bus reports the hard hits and car_door the door opening and shutting.
+Getting into cars and driving them. Near a parked or stopped car, F (Y on a pad) gets in: the hero walks round to the driver's door, opens it, climbs in and shuts it (car_entry.gd, the car_doors flag; at once without it), and the camera chases the car. Someone at the wheel of a car stopped in traffic is dragged out first (the carjack flag): the car waits while the hero walks to its door, opens it and pulls them out. W / S or the triggers drive and brake (S reverses once stopped), A / D or the left stick steer, Space (A) is the handbrake, the mouse or right stick look around, V switches to the driver's view, and F again stops the car and gets out through the driver's door (or at once beside it). The car belongs to the traffic feature (lane traffic stops for it and it stays where it is left). It is a rigid box (car_body.gd): it bounces off walls, slides along them at a glance, spins when hit off-centre, shoves the cars it hits and knocks street props over; car_impact on the bus reports the hard hits and car_door the door opening and shutting. Alongside a moving car with someone at its wheel, F jumps across (the action_hijack flag, hijack.gd): the hero lets go of the wheel, climbs out onto the roof, leaps onto the other car and drags its driver out through the window, its own car rolling on with nobody at the wheel.
 
 ### Constants
 
@@ -131,6 +131,7 @@ Getting into cars and driving them. Near a parked or stopped car, F (Y on a pad)
 - `HUD = preload("res://scripts/fp/drive/drive_hud.gd")`
 - `BODY = preload("res://scripts/fp/drive/car_body.gd")`
 - `ENTRY = preload("res://scripts/fp/drive/car_entry.gd")`
+- `HIJACK = preload("res://scripts/fp/drive/hijack.gd")`
 - `ENTER_REACH = 2.0 * WS.M`: Reach from the hero to a car's body for the get-in prompt.
 - `EXIT_SPEED = 8.5 * WS.M`: Faster than this the hero stays in (about 30 km/h).
 - `EXIT_GAP = 0.7 * WS.M`: How far beside the body the hero steps out.
@@ -158,11 +159,17 @@ Getting into cars and driving them. Near a parked or stopped car, F (Y on a pad)
 - `PHOTO_REACH = 30.0 * WS.M`: The photo shot's car is the nearest one to get into this close to the spawn point, picked PHOTO_FRAMES frames after the tour puts the hero there (traffic fills the street round it).
 - `PHOTO_FRAMES = 3`
 - `PHOTO_DT = 1.0 / 60.0`
+- `HIJACK_GAP = 2.5 * WS.M`: An action hijack takes a car at most HIJACK_GAP off the side of the player's car, its middle within HIJACK_ALONG of the player's car's, heading the same way within HIJACK_TURN at most HIJACK_REL faster or slower, the player's car going forward at least HIJACK_MIN.
+- `HIJACK_ALONG = 2.5 * WS.M`
+- `HIJACK_REL = 4.0 * WS.M`
+- `HIJACK_TURN = deg_to_rad(20.0)`
+- `HIJACK_MIN = 4.0 * WS.M`
 
 ### Properties
 
 - `view: String`: "chase" or "driver".
 - `entry`: The walk to the door and the climb in, or the climb out (car_entry.gd).
+- `hijack`: The leap across to a moving car (action hijack).
 
 ### Functions
 
@@ -179,7 +186,9 @@ Getting into cars and driving them. Near a parked or stopped car, F (Y on a pad)
 - `func exit(force: bool = false) -> bool`: Gets out at once beside the driver's door (force: at any speed, wherever there is room or on the spot); also ends a climb in or out half way (a hero still outside the car stays where it stands). Returns true when the hero is on foot again.
 - `func climb_step(dt: float) -> void`: One step of the climb in or out, or of braking to a stop for the climb out; _process runs it, tests call it with their own dt.
 - `func drive_step(throttle: float, brake: float, steer: float, hand: float, dt: float) -> void`: One driving step with the given controls (throttle, brake, handbrake 0..1, steer -1..1).
-- `func camera_xform() -> Transform3D`: The camera now: behind and above the car (pulled in front of walls, lifted off the ground when it looks up from low down), or at the driver's eyes.
+- `func hijack_target() -> Dictionary`: The car alongside that F would jump across to now (traffic's hijack_target: {"id", "side", "gap", "along"}); {} when none, the flag off, too slow, or not at the wheel.
+- `func jump_across() -> bool`: F alongside a car with someone at its wheel (action hijack): the hero lets go of the wheel (the car rolls on with nobody at it, slowing), climbs out onto the roof, leaps across onto the other car and drags its driver out through the window (_hijack_step runs it). False when there is no car to jump to.
+- `func camera_xform(chase: bool = false) -> Transform3D`: The camera now: behind and above the car (pulled in front of walls, lifted off the ground when it looks up from low down), or at the driver's eyes (not when chase is true).
 - `func photo_shots() -> Array`: The photo shot: the hero half way into the car nearest the spawn point, sat on the sill with the door wide open, seen from the door camera (car_doors).
 - `func photo_prepare() -> void`: Photo tour: the tour puts the hero at the spawn point after this, so the climb is staged once traffic has filled the street round it.
 - `func photo_restore() -> void`
@@ -244,3 +253,37 @@ Arcade handling for the player's car. Throttle and brake set the speed along the
 - `func heading() -> Vector2`
 - `func speed() -> float`: Signed speed along the heading (u/s, negative in reverse).
 - `func step(throttle: float, brake: float, steer_in: float, handbrake: float, surface: String, dt: float) -> Vector2`: One step: throttle, brake and handbrake 0..1, steer -1 (left) .. 1 (right). Returns the xz displacement; yaw and vel move on.
+
+## `scripts/fp/drive/hijack.gd`
+
+extends `RefCounted`
+
+The action hijack's moves (the drive feature's action_hijack flag): the hero, at the wheel of a car moving alongside another with someone at its wheel, climbs out through the window onto the roof on that car's side ("out"), leaps across onto the other car's roof ("leap") and swings down to its driver's window ("jack"), where the driver is dragged out and the hero takes the wheel (drive_feature.gd). The hero rides each car's frame (+Z forward, +X its left and the driver's side, y up from the road; world units) while on it, and the leap blends from one moving car to the other, so both keep their own speed and line throughout.
+
+### Constants
+
+- `WS = preload("res://scripts/fp/world_scale.gd")`
+- `OUT_S = 0.6`: Seconds for each move: out of the window onto the roof, across, and down to the window.
+- `LEAP_S = 0.55`
+- `JACK_S = 0.6`
+- `ARC = 0.6 * WS.M`: The leap rises this high above the straight line between the roofs.
+- `ROOF_IN = 0.3 * WS.M`: Feet on a roof stand this far in from its edge.
+- `HANG_OUT = 0.3 * WS.M`: At the driver's window the hero hangs this far out from the body, feet this far below the roof.
+- `HANG_DOWN = 1.0 * WS.M`
+
+### Properties
+
+- `phase: String`: "out", "leap", "jack", or "" when no hijack runs.
+- `t: float`: Seconds into the phase.
+- `from_id: int`: The car the hero leaves (rolling on with nobody at the wheel) and the one it takes.
+- `side: float`: 1 when the car to take is on the left of the one left, -1 on its right.
+
+### Functions
+
+- `func begin(p_from: int, p_to: int, p_side: float, start: Vector3, seat_z: float) -> void`: Starts a hijack from car p_from (feet at start in its frame) to car p_to on side p_side, whose driver's seat is seat_z along it.
+- `func running() -> bool`
+- `func cancel() -> void`
+- `func step(dt: float) -> String`: Moves on by dt: "pull" once, as the hero reaches the driver's window (the hijack is over), else "" (and "leap" once as the hero jumps).
+- `func riding() -> int`: The car whose frame the hero rides now: the one it leaves until the leap is half way.
+- `func feet(a: Dictionary, b: Dictionary) -> Vector3`: The hero's feet now, the cars' car_info()s given ({"pos", "yaw", "half_w", "height"}): a needs to be there until the leap ends, b from the leap on.
+- `func airborne() -> bool`: True while the hero is in the air (the leap).

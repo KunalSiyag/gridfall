@@ -10,13 +10,17 @@ extends FpFeature
 ## (lane traffic stops for it and it stays where it is left). It is a rigid box (car_body.gd): it
 ## bounces off walls, slides along them at a glance, spins when hit off-centre, shoves the cars it
 ## hits and knocks street props over; car_impact on the bus reports the hard hits and car_door the
-## door opening and shutting.
+## door opening and shutting. Alongside a moving car with someone at its wheel, F jumps across
+## (the action_hijack flag, hijack.gd): the hero lets go of the wheel, climbs out onto the roof,
+## leaps onto the other car and drags its driver out through the window, its own car rolling on
+## with nobody at the wheel.
 
 const WS := preload("res://scripts/fp/world_scale.gd")
 const MODEL := preload("res://scripts/fp/drive/drive_model.gd")
 const HUD := preload("res://scripts/fp/drive/drive_hud.gd")
 const BODY := preload("res://scripts/fp/drive/car_body.gd")
 const ENTRY := preload("res://scripts/fp/drive/car_entry.gd")
+const HIJACK := preload("res://scripts/fp/drive/hijack.gd")
 
 ## Reach from the hero to a car's body for the get-in prompt.
 const ENTER_REACH := 2.0 * WS.M
@@ -55,6 +59,14 @@ const BLOCKER_REACH := 2.0 * WS.M
 const PHOTO_REACH := 30.0 * WS.M
 const PHOTO_FRAMES := 3
 const PHOTO_DT := 1.0 / 60.0
+## An action hijack takes a car at most HIJACK_GAP off the side of the player's car, its middle
+## within HIJACK_ALONG of the player's car's, heading the same way within HIJACK_TURN at most
+## HIJACK_REL faster or slower, the player's car going forward at least HIJACK_MIN.
+const HIJACK_GAP := 2.5 * WS.M
+const HIJACK_ALONG := 2.5 * WS.M
+const HIJACK_REL := 4.0 * WS.M
+const HIJACK_TURN := deg_to_rad(20.0)
+const HIJACK_MIN := 4.0 * WS.M
 
 var active: bool = false
 var car_id: int = -1
@@ -84,6 +96,10 @@ var _stop_t: float = -1.0
 var _photo_input: bool = true
 ## The car being taken from its driver (carjack) until they are dragged out, else -1.
 var _jack_id: int = -1
+## The leap across to a moving car (action hijack).
+var hijack := HIJACK.new()
+## The car alongside to jump to, as the prompt last looked (hijack_target).
+var _across: Dictionary = {}
 
 
 func feature_id() -> String:
@@ -185,6 +201,9 @@ func leave() -> bool:
 ## the spot); also ends a climb in or out half way (a hero still outside the car stays where it
 ## stands). Returns true when the hero is on foot again.
 func exit(force: bool = false) -> bool:
+	if hijack.running():
+		_fall_off()
+		return true
 	var climbing := not entry.kind.is_empty()
 	if not active and not climbing:
 		return false
@@ -423,9 +442,9 @@ func _car_info() -> Dictionary:
 	return {"pos": _pos, "yaw": model.yaw, "half_w": _dims.x, "length": _dims.z, "height": _dims.y}
 
 
-## True while climbing in or out, or braking to a stop for it.
+## True while climbing in or out, braking to a stop for it, or jumping across (action hijack).
 func _climbing() -> bool:
-	return not entry.kind.is_empty() or _stop_t >= 0.0
+	return not entry.kind.is_empty() or _stop_t >= 0.0 or hijack.running()
 
 
 # ------------------------------------------------------------------ driving
@@ -435,6 +454,10 @@ func _process(delta: float) -> void:
 	if ctx == null or ctx.player == null:
 		return
 	var dt := minf(delta, 0.1)
+	if hijack.running():
+		if not ctx.is_modal():
+			_hijack_step(dt)
+		return
 	if _climbing():
 		if not ctx.is_modal():
 			climb_step(dt)
@@ -462,7 +485,7 @@ func _process(delta: float) -> void:
 	else:
 		drive_step(0.0, 1.0, 0.0, 1.0, dt)
 	if hud != null:
-		hud.set_prompt("Get out" if absf(model.speed()) <= EXIT_SPEED and free else "")
+		hud.set_prompt(_drive_prompt(free, delta))
 		hud.set_speed(free, model.speed())
 
 
@@ -562,6 +585,119 @@ func _sit(on: bool) -> void:
 		(rig as RefCounted).call("sit", on)
 
 
+# ------------------------------------------------------------------ action hijack
+
+
+## The car alongside that F would jump across to now (traffic's hijack_target: {"id", "side",
+## "gap", "along"}); {} when none, the flag off, too slow, or not at the wheel.
+func hijack_target() -> Dictionary:
+	var tr := _traffic()
+	if not active or _climbing() or tr == null or not FeatureFlags.enabled("action_hijack"):
+		return {}
+	if model.speed() < HIJACK_MIN:
+		return {}
+	return tr.call("hijack_target", HIJACK_GAP, HIJACK_ALONG, HIJACK_REL, HIJACK_TURN)
+
+
+## F alongside a car with someone at its wheel (action hijack): the hero lets go of the wheel (the
+## car rolls on with nobody at it, slowing), climbs out onto the roof, leaps across onto the other
+## car and drags its driver out through the window (_hijack_step runs it). False when there is no
+## car to jump to.
+func jump_across() -> bool:
+	var t := hijack_target()
+	var tr := _traffic()
+	var to: Dictionary = tr.call("car_info", int(t["id"])) if not t.is_empty() else {}
+	if to.is_empty():
+		return false
+	var door: Dictionary = tr.call("door_info", int(t["id"]))
+	var seat: Vector3 = door.get("seat", Vector3.ZERO)
+	var p := ctx.player
+	var here := Transform3D(Basis(Vector3.UP, model.yaw), _pos)
+	hijack.begin(car_id, int(t["id"]), float(t["side"]), here.affine_inverse() * p.position, seat.z)
+	tr.call("release_car", model.vel)
+	tr.call("set_hero_aboard", true)
+	active = false
+	car_id = -1
+	_across = {}
+	_sit(false)
+	if p.avatar != null:
+		p.avatar.visible = true
+	if hud != null:
+		hud.set_prompt("")
+		hud.set_speed(false, 0.0)
+	return true
+
+
+## One step of the hijack, the hero carried on the cars' frames and the camera chasing it; tests
+## call it with their own dt. Either car gone, or the one to take no longer there to take at the
+## window, and the hero drops to the road.
+func _hijack_step(dt: float) -> void:
+	var tr := _traffic()
+	var a: Dictionary = tr.call("car_info", hijack.from_id) if tr != null else {}
+	var b: Dictionary = tr.call("car_info", hijack.to_id) if tr != null else {}
+	if b.is_empty() or (a.is_empty() and hijack.phase != "jack"):
+		_fall_off()
+		return
+	var was := ctx.player.position
+	var said := hijack.step(dt)
+	if said == "pull":
+		_hijack_in(tr, was)
+		return
+	var feet := hijack.feet(a, b)
+	if said == "leap" and ctx.bus != null:
+		ctx.bus.hero_action.emit("hijack", was)
+	var ride: Dictionary = a if hijack.riding() == hijack.from_id else b
+	model.yaw = float(ride["yaw"])
+	# The body faces along the car it rides, moving with it (no walk or run clip from its speed).
+	var rise := (feet.y - was.y) / dt if hijack.airborne() else 0.0
+	ctx.player.carry(feet, model.yaw + PI, Vector3(0.0, rise, 0.0), not hijack.airborne())
+	_pos = feet
+	_look(dt)
+	ctx.player.set_view_override(camera_xform(true), _fov())
+
+
+## At the window: traffic drags the driver out and hands the car over at its speed, the hero at
+## its wheel.
+func _hijack_in(tr: FpFeature, src: Vector3) -> void:
+	tr.call("set_hero_aboard", false)
+	var info: Dictionary = tr.call("claim_car", hijack.to_id, src, true)
+	if info.is_empty():
+		_fall_off()
+		return
+	var mode := _prev_mode
+	ctx.player.release(true)
+	_adopt(info)
+	_prev_mode = mode
+	model.vel = model.heading() * float(info.get("v", 0.0))
+	_take_wheel()
+
+
+## The hijack ends half way: the hero drops from where it is to the road, on foot.
+func _fall_off() -> void:
+	hijack.cancel()
+	var tr := _traffic()
+	if tr != null:
+		tr.call("set_hero_aboard", false)
+	var p := ctx.player
+	if p != null and is_instance_valid(p) and p.carried:
+		p.release(false)
+	_on_foot(Vector3(NAN, NAN, NAN), EXIT_BLEND)
+
+
+## The driving prompt, the car alongside to jump to looked for a few times a second: "Jump across"
+## to one, "Get out" slow enough to stop, else none.
+func _drive_prompt(free: bool, delta: float) -> String:
+	_t -= delta
+	if _t <= 0.0:
+		_t = PROMPT_TICK
+		_across = hijack_target()
+	if not free:
+		return ""
+	if not _across.is_empty():
+		return "Jump across"
+	return "Get out" if absf(model.speed()) <= EXIT_SPEED else ""
+
+
 # ------------------------------------------------------------------ camera
 
 
@@ -578,7 +714,8 @@ func _input(event: InputEvent) -> void:
 				exit()
 			handled = true
 		elif active:
-			leave()
+			if not jump_across():
+				leave()
 			handled = true
 		else:
 			handled = board()
@@ -618,9 +755,9 @@ func _look(dt: float) -> void:
 
 
 ## The camera now: behind and above the car (pulled in front of walls, lifted off the ground when
-## it looks up from low down), or at the driver's eyes.
-func camera_xform() -> Transform3D:
-	if view == "driver" and _seat != null:
+## it looks up from low down), or at the driver's eyes (not when chase is true).
+func camera_xform(chase: bool = false) -> Transform3D:
+	if view == "driver" and _seat != null and not chase:
 		var car := Transform3D(Basis(Vector3.UP, model.yaw), _pos)
 		var s: Vector3 = _seat
 		var eye := car * Vector3(s.x * EYE_INBOARD, s.y + EYE_ABOVE_HIP, s.z)

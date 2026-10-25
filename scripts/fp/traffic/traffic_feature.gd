@@ -10,6 +10,7 @@ extends FpFeature
 
 const D := preload("res://scripts/sim/sim_defs.gd")
 const WS := preload("res://scripts/fp/world_scale.gd")
+const OBB := preload("res://scripts/fp/obb2d.gd")
 const AP := preload("res://scripts/fp/asset_paths.gd")
 const LG := preload("res://scripts/fp/traffic/lane_graph.gd")
 const SW := preload("res://scripts/fp/traffic/sidewalks.gd")
@@ -64,6 +65,9 @@ var trips: TRIPS
 var fleets: FLEETS
 ## Cars the player's car knocked: their slides, stuns and the way back onto their lanes.
 var shoves: SHOVES
+## True while the hero is up on a moving car (an action hijack): not on foot in the street, so
+## nobody stops or steps aside for them (set_hero_aboard).
+var hero_aboard: bool = false
 ## People hit in the street (reel, fall, get up, run off) and what that means for the city.
 var reactions: REACT
 var incidents: INCIDENTS
@@ -382,7 +386,7 @@ func step(dt: float) -> void:
 	clock += dt
 	junctions.clock = clock
 	var pp := ctx.player_position()
-	var has_player := ctx.player != null and is_instance_valid(ctx.player)
+	var has_player := ctx.player != null and is_instance_valid(ctx.player) and not hero_aboard
 	vehicles.player_pos = pp
 	vehicles.player_on = has_player
 	walkers.player_pos = pp
@@ -1468,12 +1472,14 @@ func enter_target(p: Vector3, r: float, occupied: bool = true) -> Dictionary:
 ## Hands car id to the player: an ambient, decor or resident car is swapped for a player car of
 ## the same model where it stands (its owner's trip carries on without it). With someone at the
 ## wheel (carjack) the driver is dragged out first by the hero standing at src (carjack.gd).
-## Returns the car's {"id", "pos", "yaw", "length", "half_w", "height"}, or {} when it cannot be
-## taken.
-func claim_car(id: int, src: Vector3 = Vector3.INF) -> Dictionary:
+## moving: a car in traffic at any speed (an action hijack), which keeps its speed ("v", u/s).
+## Returns the car's {"id", "pos", "yaw", "length", "half_w", "height", "v"}, or {} when it cannot
+## be taken.
+func claim_car(id: int, src: Vector3 = Vector3.INF, moving: bool = false) -> Dictionary:
 	var c: VH.Car = vehicles.by_id.get(id)
-	if c == null or _driven != null or not _claimable(c):
+	if c == null or _driven != null or not _claimable(c, moving):
 		return {}
+	var v := c.v if moving else 0.0
 	if _jacks(c):
 		carjack.eject(c, src if src.is_finite() else c.pos)
 	if c.role != VH.PLAYER:
@@ -1487,6 +1493,7 @@ func claim_car(id: int, src: Vector3 = Vector3.INF) -> Dictionary:
 		"length": c.length,
 		"half_w": c.half_w,
 		"height": c.height,
+		"v": v,
 	}
 
 
@@ -1517,6 +1524,51 @@ func leave_car() -> void:
 	_driven.a = 0.0
 	_driven.vel = Vector3.ZERO
 	_driven = null
+
+
+## The car beside the driven one that an action hijack could leap onto: one with someone at the
+## wheel (carjack) moving the same way within turn (rad) of its heading, at most rel (u/s) faster or
+## slower, its body at most gap (u) off the driven car's side and its middle within along (u) of
+## the driven car's along it. {"id", "side" (1: on the driven car's left, -1: its right), "gap",
+## "along"}, the nearest; {} when none (or nobody drives).
+func hijack_target(gap: float, along: float, rel: float, turn: float) -> Dictionary:
+	var d := _driven
+	if not _built or d == null or d.dead:
+		return {}
+	var h := OBB.heading(d.yaw)
+	var left := Vector2(h.y, -h.x)
+	var best := {}
+	var score := INF
+	for c: VH.Car in vehicles.cars:
+		if c == d or not _jacks(c) or not _claimable(c, true) or c.stun_t > 0.0:
+			continue
+		var q := c.pos + c.vis_off
+		var r := Vector2(q.x - d.pos.x, q.z - d.pos.z)
+		var off := r.dot(left)
+		var ahead := r.dot(h)
+		var g := absf(off) - d.half_w - c.half_w
+		var cv := c.v * OBB.heading(c.yaw + c.vis_yaw).dot(h)
+		var bad_turn := absf(angle_difference(d.yaw, c.yaw + c.vis_yaw)) > turn
+		if bad_turn or g > gap or g < -0.01 * WS.M or absf(ahead) > along or absf(cv - d.v) > rel:
+			continue
+		if g + absf(ahead) < score:
+			score = g + absf(ahead)
+			best = {"id": c.id, "side": signf(off), "gap": g, "along": ahead}
+	return best
+
+
+## The hero climbs up onto a moving car (on) for an action hijack, or is down off it again.
+func set_hero_aboard(on: bool) -> void:
+	hero_aboard = on
+
+
+## The player lets go of the car they drive while it still moves (an action hijack): it rolls on
+## at velocity vel (u/s, xz) with nobody at the wheel (shoves.gd coast) and stays where it stops.
+func release_car(vel: Vector2) -> void:
+	var c := _driven
+	leave_car()
+	if c != null and not c.dead and vel.length() > 0.0:
+		shoves.coast(c, vel)
 
 
 ## Id of the car the player drives, -1 on foot.
@@ -1584,7 +1636,8 @@ func set_door(amount: float, id: int = -1) -> void:
 		c.door = clampf(amount, 0.0, 1.0)
 
 
-func _claimable(c: VH.Car) -> bool:
+## True when the player may take c (moving: a car in traffic at any speed, for an action hijack).
+func _claimable(c: VH.Car, moving: bool = false) -> bool:
 	if c.dead or c.far or c.driven or c.kind != "car" or c.park_t >= 0.0 or c.model < 0:
 		return false
 	if c.role == VH.PLAYER:
@@ -1592,7 +1645,7 @@ func _claimable(c: VH.Car) -> bool:
 	if c.parked:
 		return c.slot_tile >= 0
 	var who := c.role == "ambient" or (c.role == "resident" and _jacks(c))
-	return who and c.v < CLAIM_SPEED
+	return who and (moving or c.v < CLAIM_SPEED)
 
 
 ## True when taking c means dragging its driver out first (carjack).

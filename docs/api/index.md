@@ -101,6 +101,7 @@ Generated from the `##` doc comments in `scripts/`. Regenerate with `python3 too
 - [drive_feature.gd](scripts.fp.drive.md#scriptsfpdrivedrive_featuregd): Getting into cars and driving them
 - [drive_hud.gd](scripts.fp.drive.md#scriptsfpdrivedrive_hudgd): The drive feature's HUD: the get-in / get-out key chip above the minimap line and a speedometer (km/h and the gear) at the bottom centre while driving, clear of the corner captions
 - [drive_model.gd](scripts.fp.drive.md#scriptsfpdrivedrive_modelgd): Arcade handling for the player's car
+- [hijack.gd](scripts.fp.drive.md#scriptsfpdrivehijackgd): The action hijack's moves (the drive feature's action_hijack flag): the hero, at the wheel of a car moving alongside another with someone at its wheel, climbs out through the window onto the roof on that car's side ("out"), leaps across onto the other car's roof ("leap") and swings down to its driver's window ("jack"), where the driver is dragged out and the hero takes the wheel (drive_feature.gd)
 
 ## [scripts/fp/health/](scripts.fp.health.md)
 
