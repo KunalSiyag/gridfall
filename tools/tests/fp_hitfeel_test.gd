@@ -3,8 +3,9 @@ extends SceneTree
 ## lands stops the world for a moment (Engine.time_scale) and shakes the camera, a harder blow
 ## and a knock-down for longer; the stop runs out in real seconds; a blow on the hero and a crash
 ## shake the camera, a fall or a crash does not stop it; nothing stops in photo mode; someone
-## kicked down is thrown up, lands and bounces (and stays on the ground with the flag off);
-## teardown gives the time scale back.
+## kicked down is thrown up on an arc scaled to the blow's strength, lands and bounces (and stays
+## on the ground with the flag off); a car running over someone already lying there shoves them
+## along and leaves them up sooner; teardown gives the time scale back.
 ## Third person on a grown city; time runs through the features' tick(1/60), traffic's step and
 ## the player's update_view.
 
@@ -12,6 +13,7 @@ const K := preload("res://tools/tests/fp_kit.gd")
 const WS := preload("res://scripts/fp/world_scale.gd")
 const WK := preload("res://scripts/fp/traffic/walkers.gd")
 const HF := preload("res://scripts/fp/hitfeel/hitfeel_feature.gd")
+const RE := preload("res://scripts/fp/traffic/reactions.gd")
 const DT := 1.0 / 60.0
 
 var fails: Array[String] = []
@@ -45,11 +47,13 @@ func _init() -> void:
 	p.teleport(p.position, rad_to_deg(p.yaw))
 	_check_punch()
 	_check_strength()
+	_check_arc_spec()
 	_check_hero_hurt()
 	_check_crash()
 	_check_photo_mode()
 	_check_throw()
 	_check_throw_off()
+	_check_trample()
 	_check_teardown()
 	Engine.time_scale = 1.0
 	K.finish(self, "FP_HITFEEL_TEST", fails)
@@ -146,6 +150,21 @@ func _check_strength() -> void:
 	K.check(fails, float(out[2][0]) <= HF.STOP_MAX, "never longer than STOP_MAX")
 
 
+## A knock-down's launch scales with the blow's strength (reactions.gd): the arc's height and
+## its time in the air both grow from a blow that barely lifts to a finisher that flies.
+func _check_arc_spec() -> void:
+	var lift: Vector2 = RE.LIFT["blow"]
+	var ok := lift.x < lift.y and lift.y >= 0.4 and RE.FLY.x < RE.FLY.y and RE.FLY.y > RE.FLY_S
+	K.check(
+		fails,
+		ok,
+		(
+			"a blow's arc scales with strength (lift %s, fly %s vs %.2f s)"
+			% [str(lift), str(RE.FLY), RE.FLY_S]
+		)
+	)
+
+
 ## A blow on the hero shakes the view and stops it; a fall shakes it without a stop.
 func _check_hero_hurt() -> void:
 	var p := ctx.player
@@ -206,8 +225,12 @@ func _check_throw() -> void:
 	var down := not hits.is_empty() and bool((hits[0][1] as Dictionary).get("down", false))
 	print("FP_HITFEEL_TEST: throw peak=%.2f m, down again at %.2f s" % [peak, landed_at])
 	K.check(fails, down, "fixture: the kick knocks them down")
-	K.check(fails, peak > 0.1 and peak < 0.45, "the blow throws them up (%.2f m)" % peak)
-	K.check(fails, landed_at > 0.0, "and they come back down")
+	K.check(fails, peak > 0.25 and peak < 0.45, "the blow throws them up (%.2f m)" % peak)
+	K.check(
+		fails,
+		landed_at > 0.5 and landed_at < 0.85,
+		"on an arc that carries (%.2f s to come down)" % landed_at
+	)
 	K.check(fails, absf(_air(w)) < 0.005, "and lie on the ground (%.3f m)" % _air(w))
 	_remove(w)
 	_settle()
@@ -226,6 +249,45 @@ func _check_throw_off() -> void:
 	FeatureFlags.set_override("hit_feel", true)
 	K.check(fails, not hits.is_empty(), "fixture: the kick lands with the flag off")
 	K.check(fails, peak < 0.005, "flag off: they fall where they stand (%.3f m)" % peak)
+	_remove(w)
+	_settle()
+
+
+## A car runs over someone already knocked down (hit_walker, cause "car"): still in the air it
+## takes nothing; lying there it is shoved along and up sooner, and the street hears it as any
+## car hit. The car drives the way the hero faces.
+func _check_trample() -> void:
+	var w := _person(1.3)
+	var re: RefCounted = tr.get("reactions")
+	var fwd: Vector3 = ctx.player.body_forward()
+	hits.clear()
+	var down: Dictionary = tr.call("hit_walker", w.id, ctx.player.position, fwd, 1.0, "car")
+	K.check(fails, not down.is_empty(), "fixture: the car knocks them down")
+	hits.clear()
+	var air: Dictionary = tr.call("hit_walker", w.id, ctx.player.position, fwd, 0.9, "car")
+	K.check(fails, air.is_empty() and hits.is_empty(), "still in the air, nothing lands")
+	_step(1.0)
+	var r: Object = (re.get("_active") as Dictionary).get(w.id)
+	K.check(fails, r != null, "fixture: they are lying there")
+	if r == null:
+		_remove(w)
+		_settle()
+		return
+	hits.clear()
+	var before := float(r.get("left"))
+	var p0: Vector3 = w.pos + w.vis_off
+	var run: Dictionary = tr.call("hit_walker", w.id, ctx.player.position, fwd, 0.8, "car")
+	var after := float(r.get("left"))
+	_step(0.5)
+	var moved := ((w.pos + w.vis_off) - p0).length() / WS.M
+	print("FP_HITFEEL_TEST: trample left %.1f -> %.1f s, moved %.2f m" % [before, after, moved])
+	K.check(fails, not run.is_empty(), "the car runs a body lying there over")
+	K.check(fails, bool(run.get("down", false)), "and they are still down")
+	K.check(fails, after < before, "up sooner (%.1f s left, was %.1f)" % [after, before])
+	K.check(fails, moved > 0.1, "shoved along the road (%.2f m)" % moved)
+	K.check(
+		fails, hits.size() == 1 and str(hits[0][0]) == "car", "and the street hears it as a car hit"
+	)
 	_remove(w)
 	_settle()
 

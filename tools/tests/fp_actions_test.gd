@@ -1,12 +1,13 @@
 extends SceneTree
 ## Body actions (integration feature "actions"; docs/fp/ARCHITECTURE.md, Body actions): the hero
-## rig's action layer (strike times, the guard, punches, the dance); the strike button punching
-## whoever stands in front (the body turned to them, a press near the end queuing the next) in a
-## jab-cross-hook combo whose hook knocks them down, R shoving, X kicking further than a fist (the
-## whole body, the foot out at contact), swings at nobody; emotes the
-## people around answer; the guard squaring the body to the camera; what blocks the actions;
-## presses (events, a trigger's edge) and held input; the player's car striking people
-## (car_body.gd); person_hit and hero_action on the bus; teardown.
+## rig's action layer (strike times, the strike pose layer's turn into the blow, the guard,
+## punches, the dance); the strike button punching whoever stands in front (the body turned to
+## them, a press near the end queuing the next) in a jab-cross-hook combo whose hook knocks them
+## down, R shoving (the one hit tipping back with the blow), X kicking further than a fist (the
+## whole body, the foot out at contact), swings at nobody; emotes the people around answer; the
+## guard squaring the body to the camera; what blocks the actions; presses (events, a trigger's
+## edge) and held input; the player's car striking people (car_body.gd); person_hit and
+## hero_action on the bus; teardown.
 ## Third person on a grown city; time runs through the feature's tick(1/60), traffic's step and
 ## the player's update_view.
 
@@ -54,6 +55,7 @@ func _init() -> void:
 	_check_inputs()
 	if rig != null:
 		_check_rig()
+		_check_strike_pose()
 	_check_punch()
 	_check_shove()
 	_check_combo()
@@ -111,6 +113,11 @@ func _hands_up() -> float:
 	return (y - ctx.player.position.y) / WS.M
 
 
+## The rig's strike pose layer.
+func _pose() -> RefCounted:
+	return rig.get("strike_pose")
+
+
 func _causes() -> Array[String]:
 	var out: Array[String] = []
 	for h: Array in hits:
@@ -148,9 +155,11 @@ func _check_inputs() -> void:
 
 func _check_rig() -> void:
 	_step(0.5, false)
-	var jab := float(rig.call("strike_time", "punch_jab"))
-	var cross := float(rig.call("strike_time", "punch_cross"))
-	var times_ok := jab > 0.1 and jab < 0.35 and cross > jab and cross < 0.45
+	var jab := float(_pose().call("measure", "punch_jab"))
+	var cross := float(_pose().call("measure", "punch_cross"))
+	for c: String in ["punch_hook", "push", "throw"]:
+		print("FP_ACTIONS_TEST: strike contact %s %.3f" % [c, float(_pose().call("measure", c))])
+	var times_ok := jab > 0.07 and jab < 0.3 and cross > jab and cross < 0.42
 	K.check(
 		fails,
 		times_ok,
@@ -180,6 +189,30 @@ func _check_rig() -> void:
 		rig.call("update", DT, 1.3, true, 0.0, false, false)
 	K.check(fails, not bool(rig.call("action_active")), "walking off ends the dance")
 	_step(1.0, false)
+
+
+## The strike pose layer: each strike clip drives a hand, the chest coils back through the windup
+## and turns into the blow as it lands, and eases back to nothing once the strike is over.
+func _check_strike_pose() -> void:
+	var pose: RefCounted = rig.get("strike_pose")
+	var hand: float = pose.call("hand", "punch_hook")
+	K.check(fails, absf(hand) > 0.5, "each strike clip drives a hand (%+.0f)" % hand)
+	K.check(fails, float(pose.call("weight")) == 0.0, "the pose layer waits, off")
+	rig.call("play_action", "punch_hook")
+	var contact := float(pose.call("measure", "punch_hook"))
+	var coiled := 0.0
+	var peak := 0.0
+	for _k in range(ceili((contact + 0.05) / DT)):
+		_step(DT, false)
+		var w := float(pose.call("weight"))
+		coiled = minf(coiled, w)
+		peak = maxf(peak, w)
+	K.check(fails, coiled < -0.05, "the windup coils the chest back (%.2f)" % coiled)
+	K.check(fails, peak > 0.8, "and the blow lands at the turn's height (%.2f)" % peak)
+	_step(1.5, false)
+	K.check(fails, float(pose.call("weight")) == 0.0, "the pose eases back to nothing")
+	rig.call("stop_action")
+	_step(0.5, false)
 
 
 ## With the guard down the strike button throws a punch at whoever stands in front, and the body
@@ -240,6 +273,16 @@ func _check_shove() -> void:
 	var kick: Vector2 = ctx.player.get("_kick")
 	K.check(fails, kick.length() > 1e-4, "the view jolts as it lands")
 	K.check(fails, acts == ["shove"], "hero_action hears the shove (%s)" % str(acts))
+	var tipped := 0.0
+	for _k in range(21):
+		_step(DT)
+		tipped = minf(tipped, w.vis_tilt)
+	var upright := w.vis_tilt == 0.0
+	K.check(
+		fails,
+		tipped < -0.01 and upright,
+		"they tip back with the blow (%.2f rad) and come upright" % tipped
+	)
 	_step(0.6)
 	K.check(fails, str(f.get("swing")).is_empty(), "the swing ends")
 	_remove(w)

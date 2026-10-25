@@ -5,29 +5,31 @@ extends FpFeature
 ## to where the camera looks); R shoves and X (middle mouse) kicks, further than a fist. The guard
 ## (right mouse or left trigger held: fists up, the body squared to where the camera looks, the
 ## camera in closer) is the fighting stance. A blow lands when the rig's fist is furthest out
-## (HeroRig.strike_time; a kick at KICK_HIT) on the person nearest in front within reach, through
-## the traffic feature's hit_walker: they reel or go down, the people around react and the city
-## hears of it. With a weapon in hand (the melee feature) the strike button swings it instead,
-## further and harder, and the melee feature hears where it landed. With nobody there a kick or a
-## weapon swing lands on the dog, cat or pigeon in front (the animals feature's strike; a fist goes
-## over them), else the blow lands on the street prop in front (the props feature's strike): a bin,
-## cone, wheelie bin or carton goes over, a fallen prop skids off. Keys 1-5 wave, nod, shake the
-## head, shout and dance, and the people around answer (traffic answer_emote). The bus hears every
-## swing and emote (hero_action). The guard raised just before a punch lands (COUNTER_LEAD, the
-## counters flag) counters it: the punch misses and the hero's hook puts them down (parry). With
-## someone held (the brawl feature) the fists stay up, punches land on them and R throws them, or
-## with something solid just beyond them (the brawl feature's slam_spot, the slams flag) slams
-## them into it: they go down over a prop that gives way, else off the wall to the side.
+## (the rig's strike pose layer, measure; a kick at KICK_HIT) on the person nearest in front within
+## reach, through the traffic feature's hit_walker: they reel or go down, the people around react
+## and the city hears of it. With a weapon in hand (the melee feature) the strike button swings it
+## instead, further and harder, and the melee feature hears where it landed. With nobody there a
+## kick or a weapon swing lands on the dog, cat or pigeon in front (the animals feature's strike;
+## a fist goes over them), else the blow lands on the street prop in front (the props feature's
+## strike): a bin, cone, wheelie bin or carton goes over, a fallen prop skids off. Keys 1-5 wave,
+## nod, shake the head, shout and dance, and the people around answer (traffic answer_emote). The
+## bus hears every swing and emote (hero_action). The guard raised just before a punch lands
+## (COUNTER_LEAD, the counters flag) counters it: the punch misses and the hero's hook puts them
+## down (parry). With someone held (the brawl feature) the fists stay up, punches land on them
+## and R throws them, or with something solid just beyond them (the brawl feature's slam_spot, the
+## slams flag) slams them into it: they go down over a prop that gives way, else off the wall to
+## the side.
 
 const WS := preload("res://scripts/fp/world_scale.gd")
 
 ## Swings: [rig clip, hit_walker cause, strength 0..1, seconds until the next swing may start,
 ## seconds the clip plays, contact time (s) when the rig cannot measure it]. The hook ends the
-## combo hard enough to knock someone down, and so does a kick.
+## combo hard enough to knock someone down, and so does a kick. The next swing may start just past
+## each blow's landing and its first follow-through, so the combo flows without dead time.
 const SWINGS := {
-	"jab": ["punch_jab", "punch", 0.45, 0.4, 0.55, 0.2],
-	"cross": ["punch_cross", "punch", 0.6, 0.5, 0.65, 0.29],
-	"hook": ["punch_hook", "punch", 0.85, 0.65, 0.47, 0.22],
+	"jab": ["punch_jab", "punch", 0.45, 0.34, 0.55, 0.2],
+	"cross": ["punch_cross", "punch", 0.6, 0.42, 0.65, 0.29],
+	"hook": ["punch_hook", "punch", 0.85, 0.55, 0.47, 0.22],
 	"shove": ["push", "shove", 0.35, 0.6, 0.55, 0.15],
 	"kick": ["kick", "punch", 0.75, 0.75, 0.7, 0.24],
 	"swing": ["swing_a", "punch", 0.6, 0.6, 0.55, 0.2],
@@ -231,8 +233,10 @@ func _begin(kind: String, clip: String, who: Dictionary) -> void:
 	if rig != null:
 		rig.call("stop_action")
 		rig.call("play_action", clip, float(s[4]))
-		if kind in COMBO or kind in ["swing", "counter"]:
-			_hit_at = minf(float(rig.call("strike_time", clip)), _len)
+		# The push clip holds its palms out from near its start, so its own contact stands.
+		if kind in COMBO or kind in ["swing", "counter", "throw", "slam"]:
+			var pose: RefCounted = rig.get("strike_pose")
+			_hit_at = minf(float(pose.call("measure", clip)), _len)
 	var feet := ctx.player.position
 	_target = int(who.get("id", -1))
 	# The body turns to whoever the swing goes for, else to where the camera looks.
