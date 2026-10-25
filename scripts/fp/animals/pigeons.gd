@@ -55,6 +55,7 @@ const STARTLE := {
 	"run_up": 3.0,
 	"catch": 3.0,
 	"leap": 4.0,
+	"hijack": 4.0,
 }
 const SEEN_HIT := 8.0
 const BARK_M := 6.0

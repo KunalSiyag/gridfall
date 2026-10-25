@@ -58,7 +58,8 @@ signal person_hit(at: Vector3, cause: String, info: Dictionary)
 ## (someone held), "grapple" (taking hold of someone), an emote ("wave", "yes", "no", "shout",
 ## "dance") or a parkour move ("vault", "hop", "climb", "roll" off a hard landing, "grab" taking
 ## hold of a wall, or free running's "run_up" up a ledge, "catch" of a ledge in the air and "leap"
-## across a gap), as it starts, at their feet. Emitted by the actions, brawl and parkour features.
+## across a gap), or "hijack" (leaping from the car the hero drove onto one to take), as it starts,
+## at their feet. Emitted by the actions, brawl, parkour and drive features.
 signal hero_action(action: String, at: Vector3)
 ## A weapon in the hero's hand landed a blow at a point on what ("person" or "prop"): kind "bat",
 ## "pipe" or "bottle", broke true when it broke (a bottle does on its first). Emitted by the melee

@@ -54,7 +54,7 @@ const LEGEND := [
 	["alert", "Incidents", "How many are active, and the newest"],
 ]
 const KEYS := [
-	["M", "Map"], ["Tab", "City overview"], ["V", "Camera view"], ["Q", "Shoulder"], ["E", "Interact"], ["F", "Get in / out of a car"], ["B", "Build phone"],
+	["M", "Map"], ["Tab", "City overview"], ["V", "Camera view"], ["Q", "Shoulder"], ["E", "Interact"], ["F", "Get in / out of a car, jump across"], ["B", "Build phone"],
 	["Shift", "Run / sprint"], ["Space", "Jump / vault / climb walls"],
 	["Click", "Punch"], ["Right-click", "Guard"],
 	["R", "Shove / throw / slam"], ["X", "Kick"], ["H", "Grab / let go"], ["Z", "Drop weapon"],

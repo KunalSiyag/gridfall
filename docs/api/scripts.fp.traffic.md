@@ -727,7 +727,7 @@ Draws E's agents (docs/fp/slices/E-traffic.md §3 Draw calls). Vehicles: the ful
 
 extends `RefCounted`
 
-Cars the player's car knocks (slice E): a hit car slides off with the momentum it was given and spins, braking on its tyres, and stops against walls and other cars. A lane car brakes hard on its lane (stunned, brake lights on) while its body slides off it as a drawn offset; after a pause, longer the harder it was hit, its driver steers the body back onto the lane and drives on. Parked cars and the cars the player left move for good, riding up onto a curb they are knocked over. While a knocked car stands off its lane or its parking slot it is a block for lane traffic, like the player's car; a parked car left in the way is put back in its slot (towed) once it has stood out of sight for a while.
+Cars the player's car knocks (slice E): a hit car slides off with the momentum it was given and spins, braking on its tyres, and stops against walls and other cars. A lane car brakes hard on its lane (stunned, brake lights on) while its body slides off it as a drawn offset; after a pause, longer the harder it was hit, its driver steers the body back onto the lane and drives on. Parked cars and the cars the player left move for good, riding up onto a curb they are knocked over. While a knocked car stands off its lane or its parking slot it is a block for lane traffic, like the player's car; a parked car left in the way is put back in its slot (towed) once it has stood out of sight for a while. A car the player lets go of while it moves (an action hijack) rolls on (coast), slowing as a car in neutral does, until it stops or hits something.
 
 ### Constants
 
@@ -738,6 +738,8 @@ Cars the player's car knocks (slice E): a hit car slides off with the momentum i
 - `SLIDE_BRAKE = 6.9 * WS.M`: Sliding tyres brake a knocked body at this rate (about 0.7 g) and its spin at SPIN_BRAKE (1/s); a spin below MIN_SPIN (rad/s) stops.
 - `SPIN_BRAKE = 4.0`
 - `MIN_SPIN = 0.02`
+- `ROLL_BRAKE = 0.6 * WS.M`: A coasting car rolls on its tyres instead, slowing by ROLL_BRAKE plus ROLL_DRAG per u/s of speed (the player's car coasting, drive_model.gd).
+- `ROLL_DRAG = 0.12`
 - `HOLD = 2.5`: A knocked lane car waits this long once its body stops, plus HOLD_PER_MPS for every m/s the hit gave it, at most HOLD_MAX (s).
 - `HOLD_PER_MPS = 0.5`
 - `HOLD_MAX = 12.0`
@@ -768,6 +770,7 @@ Cars the player's car knocks (slice E): a hit car slides off with the momentum i
 - `func body_vel(c: VH.Car) -> Vector2`: The velocity of c's body now (u/s, xz): its lane motion plus its slide.
 - `func is_shoved(c: VH.Car) -> bool`: True while c slides or makes its way back to its lane.
 - `func bump(c: VH.Car, j: Vector2, at: Vector2) -> void`: The player's car hit c with impulse j (u/s times a sedan's mass) at xz point `at`: c's body takes the change in velocity and spin. A lane car keeps what it can of the part along its heading as lane speed (it never rolls back along its lane) and slides off with the rest.
+- `func coast(c: VH.Car, vel: Vector2) -> void`: Car c, let go of at velocity vel (u/s, xz) with nobody at the wheel, rolls on along it, slowing as a coasting car does, until it stops or runs into a wall or another car.
 - `func step(dt: float) -> void`: Moves every knocked body on by dt: slides, stops, waits and steers back; tows parked cars left in the way out of sight.
 - `func blocks() -> Array`: Lane blocks for vehicles.gd (_gather_blocks): [xz centre, heading, half length, half width, xz velocity, car id] of every knocked lane car off its lane and every parked car knocked out of its slot (the player's own cars are blocks already).
 
@@ -827,6 +830,7 @@ Traffic and pedestrians on lanes (slice E, docs/fp/slices/E-traffic.md): one roa
 
 - `D = preload("res://scripts/sim/sim_defs.gd")`
 - `WS = preload("res://scripts/fp/world_scale.gd")`
+- `OBB = preload("res://scripts/fp/obb2d.gd")`
 - `AP = preload("res://scripts/fp/asset_paths.gd")`
 - `LG = preload("res://scripts/fp/traffic/lane_graph.gd")`
 - `SW = preload("res://scripts/fp/traffic/sidewalks.gd")`
@@ -862,6 +866,7 @@ Traffic and pedestrians on lanes (slice E, docs/fp/slices/E-traffic.md): one roa
 
 - `people: PPL`: HC's animated people (deliverable 9); ok == false draws the legacy static people instead.
 - `shoves: SHOVES`: Cars the player's car knocked: their slides, stuns and the way back onto their lanes.
+- `hero_aboard: bool`: True while the hero is up on a moving car (an action hijack): not on foot in the street, so nobody stops or steps aside for them (set_hero_aboard).
 - `reactions: REACT`: People hit in the street (reel, fall, get up, run off) and what that means for the city.
 - `carjack: JACK`: Drivers dragged out of the cars the player takes (the carjack flag).
 - `jitter_enabled: bool`: Test hooks: departure jitter on or off; auto_step false keeps _process from advancing time.
@@ -918,9 +923,12 @@ Traffic and pedestrians on lanes (slice E, docs/fp/slices/E-traffic.md): one roa
 - `func pose_walker(id: int, clip: StringName, t: float) -> bool`: Photo and test hook: person id plays reaction clip from t seconds in (held, sim paused or not).
 - `func call_crew(kind: String, at: Vector3, stay: float) -> bool`: Calls a crew ("police" or "ambulance") to world point at, from the road beside the nearest police station or hospital (a road some way off when the city has none), to stay that many seconds once there (fleets.gd). False when no road is near at.
 - `func enter_target(p: Vector3, r: float, occupied: bool = true) -> Dictionary`: The car the player could get into from p: the nearest one they may take whose body is within r of p (with occupied false, none with someone at the wheel), as {"id", "label", "pos", "dist", "jack" (someone at the wheel is pulled out first: carjack)}; {} when none (or while they drive).
-- `func claim_car(id: int, src: Vector3 = Vector3.INF) -> Dictionary`: Hands car id to the player: an ambient, decor or resident car is swapped for a player car of the same model where it stands (its owner's trip carries on without it). With someone at the wheel (carjack) the driver is dragged out first by the hero standing at src (carjack.gd). Returns the car's {"id", "pos", "yaw", "length", "half_w", "height"}, or {} when it cannot be taken.
+- `func claim_car(id: int, src: Vector3 = Vector3.INF, moving: bool = false) -> Dictionary`: Hands car id to the player: an ambient, decor or resident car is swapped for a player car of the same model where it stands (its owner's trip carries on without it). With someone at the wheel (carjack) the driver is dragged out first by the hero standing at src (carjack.gd). moving: a car in traffic at any speed (an action hijack), which keeps its speed ("v", u/s). Returns the car's {"id", "pos", "yaw", "length", "half_w", "height", "v"}, or {} when it cannot be taken.
 - `func drive_car(pos: Vector3, yaw: float, v: float, a: float) -> void`: Poses the driven car (speed v signed, acceleration a) and its model at once, so the car and the seated hero move in the same frame.
 - `func leave_car() -> void`: The player gets out: the car stays where it stands (its door shut) until it is far away and out of sight.
+- `func hijack_target(gap: float, along: float, rel: float, turn: float) -> Dictionary`: The car beside the driven one that an action hijack could leap onto: one with someone at the wheel (carjack) moving the same way within turn (rad) of its heading, at most rel (u/s) faster or slower, its body at most gap (u) off the driven car's side and its middle within along (u) of the driven car's along it. {"id", "side" (1: on the driven car's left, -1: its right), "gap", "along"}, the nearest; {} when none (or nobody drives).
+- `func set_hero_aboard(on: bool) -> void`: The hero climbs up onto a moving car (on) for an action hijack, or is down off it again.
+- `func release_car(vel: Vector2) -> void`: The player lets go of the car they drive while it still moves (an action hijack): it rolls on at velocity vel (u/s, xz) with nobody at the wheel (shoves.gd coast) and stays where it stops.
 - `func driven_id() -> int`: Id of the car the player drives, -1 on foot.
 - `func car_info(id: int) -> Dictionary`: Car id's {"id", "pos", "yaw", "length", "half_w", "height"} as drawn, {} when it is gone.
 - `func jackable(id: int) -> bool`: True while car id can be taken with someone at the wheel to pull out (carjack).

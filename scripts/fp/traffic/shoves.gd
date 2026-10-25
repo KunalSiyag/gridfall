@@ -6,7 +6,8 @@ extends RefCounted
 ## on. Parked cars and the cars the player left move for good, riding up onto a curb they are
 ## knocked over. While a knocked car stands off its lane or its parking slot it is a block for lane
 ## traffic, like the player's car; a parked car left in the way is put back in its slot (towed)
-## once it has stood out of sight for a while.
+## once it has stood out of sight for a while. A car the player lets go of while it moves (an action
+## hijack) rolls on (coast), slowing as a car in neutral does, until it stops or hits something.
 
 const WS := preload("res://scripts/fp/world_scale.gd")
 const OBB := preload("res://scripts/fp/obb2d.gd")
@@ -18,6 +19,10 @@ const VH := preload("res://scripts/fp/traffic/vehicles.gd")
 const SLIDE_BRAKE := 6.9 * WS.M
 const SPIN_BRAKE := 4.0
 const MIN_SPIN := 0.02
+## A coasting car rolls on its tyres instead, slowing by ROLL_BRAKE plus ROLL_DRAG per u/s of speed
+## (the player's car coasting, drive_model.gd).
+const ROLL_BRAKE := 0.6 * WS.M
+const ROLL_DRAG := 0.12
 ## A knocked lane car waits this long once its body stops, plus HOLD_PER_MPS for every m/s the hit
 ## gave it, at most HOLD_MAX (s).
 const HOLD := 2.5
@@ -53,6 +58,7 @@ class Shove:
 	var turn: float = 0.0  # and its drawn yaw offset
 	var hold: float = 0.0  # s a lane car waits once stopped
 	var lane: bool = false
+	var roll: bool = false  # coasting on its tyres (coast), not sliding
 
 
 var vehicles: VH
@@ -126,6 +132,18 @@ func bump(c: VH.Car, j: Vector2, at: Vector2) -> void:
 		c.stun_t = maxf(c.stun_t, s.hold)
 	s.vel += dv
 	s.spin += _cross(at - ctr, j) / OBB.box_inertia(Vector2(c.half_w, c.length * 0.5), m)
+
+
+## Car c, let go of at velocity vel (u/s, xz) with nobody at the wheel, rolls on along it, slowing
+## as a coasting car does, until it stops or runs into a wall or another car.
+func coast(c: VH.Car, vel: Vector2) -> void:
+	if c.dead or c.driven or c.far or c.park_t >= 0.0:
+		return
+	var s := Shove.new()
+	s.car = c
+	s.vel = vel
+	s.roll = true
+	_shoves[c.id] = s
 
 
 ## Moves every knocked body on by dt: slides, stops, waits and steers back; tows parked cars
@@ -216,11 +234,14 @@ func _slide(s: Shove, dt: float) -> void:
 		var q := Vector2(c.pos.x, c.pos.z) + d
 		c.pos = Vector3(q.x, _ground(c, q), q.y)
 		c.yaw = wrapf(c.yaw + dy, -PI, PI)
+		if s.roll:
+			c.wheel_spin += d.dot(OBB.heading(c.yaw))
 		if c.parked:
 			_moved[c.id] = c
 			_still_t[c.id] = 0.0
 			vehicles.parked_version += 1
-	s.vel = s.vel.move_toward(Vector2.ZERO, SLIDE_BRAKE * dt)
+	var brake := ROLL_BRAKE + ROLL_DRAG * s.vel.length() if s.roll else SLIDE_BRAKE
+	s.vel = s.vel.move_toward(Vector2.ZERO, brake * dt)
 	s.spin *= exp(-SPIN_BRAKE * dt)
 	if absf(s.spin) < MIN_SPIN:
 		s.spin = 0.0
