@@ -336,6 +336,10 @@ The on-foot player (slice A): feet at `position`, a kinematic controller against
 - `TURN_LOSS_FROM = deg_to_rad(30.0)`
 - `TURN_LOSS_FULL = deg_to_rad(110.0)`
 - `TURN_KEEP = 0.55`
+- `SPRINT_BUILD = 0.8`: Free running (the "free_running" flag): sprint held at SPRINT_KEEP of RUN or more, heading within SPRINT_TURN of the wish (in first person with the wish ahead, SPRINT_AHEAD of it at least), for SPRINT_BUILD s lifts the top speed to WS.SPRINT. It drops back once sprint is let go, the pace falls off or the body turns away; in the air it holds.
+- `SPRINT_KEEP = 0.9`
+- `SPRINT_TURN = deg_to_rad(25.0)`
+- `SPRINT_AHEAD = 0.7`
 - `COYOTE_TIME = 0.10`
 - `JUMP_BUFFER = 0.12`
 - `HEAVY_LAND_SPEED = 4.0 * WS.M`
@@ -396,6 +400,7 @@ The on-foot player (slice A): feet at `position`, a kinematic controller against
 - `cam_yaw: float`: View angles (radians). Movement input is rotated by cam_yaw; forward() looks along them.
 - `camera_mode: String`: "third" (over the shoulder) or "first" (eye height).
 - `momentum: bool`: The "momentum" flag, read at setup (tests may set it).
+- `free_running: bool`: The "free_running" flag, read at setup (tests may set it).
 - `view_override: bool`: True while another owner (the city overview) places the camera through set_view_override().
 - `aim_yaw: float`: Third person: while not NAN the body turns toward this yaw instead of its travel (the actions feature: the guard faces where the camera looks, a blow faces its target).
 - `jump_hook: Callable`: Asked (no arguments) when a jump is about to leave the ground: true when it took the press over (the parkour feature vaults or climbs instead of the jump), false to jump. Empty for none.
@@ -422,6 +427,8 @@ The on-foot player (slice A): feet at `position`, a kinematic controller against
 - `func snap_to_ground() -> void`: Puts the feet on the walkable ground under them (no change over unwalkable ground).
 - `func speed() -> float`: Horizontal speed in u/s.
 - `func simulate(wish: Vector2, sprint: bool, delta: float, crouch: bool = false, jump: bool = false) -> void`: One deterministic movement step; _process calls it with the held input, tests call it directly. wish: x = strafe right, y = forward, each -1..1, relative to the view (cam_yaw). While ctx.is_modal(), simulate itself zeroes wish and jump (gravity and ground snap still run). crouch and jump are held states (a jump fires on the press, buffered JUMP_BUFFER s). In photo mode it flies the camera instead (jump up, crouch down). Any delta is safe: the step is split so that no collision sub-step moves farther than PLAYER_RADIUS (a 0.008 u hoarding grown by the radius is only 0.038 u thick), and a velocity component whose move was blocked drops to zero.
+- `func sprinting() -> bool`: True once a sprint has built up to the free-running pace (WS.SPRINT).
+- `func leap() -> bool`: Leaves the ground in a running jump (free running's leap across a gap): false off the ground, carried or crouched.
 - `func update_view(delta: float) -> void`: Places the camera for this frame: the first-person eye (bob, step smoothing), the rig, the conversation shot or the photo camera, through any running blend; updates the avatar (lean, fade, shadow-only). _process calls it every frame; tests driving simulate() call it with their own dt.
 - `func kick_view(d_pitch: float, d_roll: float) -> void`: Jolts the view by d_pitch (positive up) and d_roll (radians; positive tips left), dying away over HL_KICK: a blow landing.
 - `func tumble_view(secs: float) -> void`: Turns the first-person view over forward once in secs, the eye dipping toward the ground on the way round (a landing roll). Third person leaves the view alone.

@@ -17,6 +17,8 @@ func _init() -> void:
 	await process_frame
 	var ctx := K.make_ctx(get_root(), {"view": true, "grow": true, "camera_mode": "third"})
 	ctx.player.set_process(false)
+	# Shift tops out at a run here; the sprint free running builds past it is fp_freerun_test's.
+	ctx.player.free_running = false
 	K.check(fails, ctx.player.momentum, "the momentum flag is on by default")
 	var s := K.sidewalk(ctx, 0.7)
 	K.check(fails, not s.is_empty(), "fixture: a clear straight sidewalk")

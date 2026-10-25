@@ -52,6 +52,9 @@ const STARTLE := {
 	"hop": 3.0,
 	"climb": 3.0,
 	"roll": 5.0,
+	"run_up": 3.0,
+	"catch": 3.0,
+	"leap": 4.0,
 }
 const SEEN_HIT := 8.0
 const BARK_M := 6.0

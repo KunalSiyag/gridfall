@@ -70,6 +70,8 @@ func _check_speeds(ctx: FpContext) -> void:
 		return
 	var start: Vector3 = s["pos"]
 	var run_hl := PL.HL_SPEED_UP_RUN if p.momentum else PL.HL_SPEED_UP
+	# Shift tops out at a run here; the sprint free running builds past it is fp_freerun_test's.
+	p.free_running = false
 	for row: Array in [["walk", false, false, WS.WALK, PL.HL_SPEED_UP], ["run", true, false, WS.RUN, run_hl], ["crouch-walk", false, true, WS.CROUCH_WALK, PL.HL_SPEED_UP]]:
 		p.teleport(start, s["yaw"])
 		for k in range(180):
@@ -77,6 +79,7 @@ func _check_speeds(ctx: FpContext) -> void:
 		var d := Vector2(p.position.x - start.x, p.position.z - start.z).length()
 		var want: float = float(row[3]) * 3.0 - SM.stop_distance(float(row[3]), float(row[4]))
 		K.check(fails, absf(d - want) <= want * 0.03, "%s 3 s covers %.3f m (%.1f %% of %.3f m)" % [row[0], d / M, d / want * 100.0, want / M])
+	p.free_running = true
 	for k in range(60):
 		p.simulate(Vector2.ZERO, false, DT, true)
 	var eye := p.eye_position().y - ctx.collision.walk_height(p.position)

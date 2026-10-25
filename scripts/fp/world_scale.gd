@@ -110,6 +110,7 @@ const TIME_SCALES := [1, 2, 4, 8]        # allowed first-person speeds (D4)
 
 
 # --- A player (owned by A)
+const SPRINT := 6.5 * M                  # 6.5 m/s sprint (flag free_running)
 # end A
 
 

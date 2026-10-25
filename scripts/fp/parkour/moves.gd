@@ -27,9 +27,22 @@ const TUCK_R := 0.4 * R
 ## edge (on the middle of a narrower top).
 const HOP_MAX := 0.7 * WS.M
 const CLIMB_MAX := 2.1 * WS.M
+## At a sprint (free running) the body runs a step or two up the face first: a run-up takes
+## ledges up to RUN_UP_MAX.
+const RUN_UP_MAX := 3.0 * WS.M
+## Gap jumps (leap(), free running): a running jump takes off when the ground LEAP_EDGE ahead of
+## the feet falls away more than LEAP_DEEP, for ground across the gap (LEAP_DEEP above the gap's
+## floor at least) at most LEAP_RISE above the feet and LEAP_DROP below them that the jump carries
+## the feet LEAP_SPARE onto, at the least; the gap is scanned every LEAP_STEP.
+const LEAP_EDGE := 0.15 * WS.M
+const LEAP_DEEP := 0.5 * WS.M
+const LEAP_RISE := 0.2 * WS.M
+const LEAP_DROP := 2.0 * WS.M
+const LEAP_SPARE := 0.3 * WS.M
+const LEAP_STEP := 0.1 * WS.M
 const STAND_IN := 0.1 * WS.M
-## Speeds (u/s): a vault or a hop goes between VAULT_SPEED and a run; a climb walks up to the face
-## at APPROACH at least.
+## Speeds (u/s): a vault or a hop goes between VAULT_SPEED and a sprint; a climb walks up to the
+## face at APPROACH at least.
 const VAULT_SPEED := 2.5 * WS.M
 const APPROACH := 1.5 * WS.M
 ## Shortest phases: the rise to the top, the pass over it and the way down.
@@ -73,12 +86,23 @@ const SMOOTH := 3
 ## for an ordinary jump: {"move": "vault", "hop" or "climb", "from" (feet), "dir" (unit, across the
 ## face), "top" (its height), "s" and "y" (the tracks), "length", "anim_at" (when the climb clip
 ## starts; -1 for none) and "anim_len", "grounded" (the body counts as on the ground: the climb),
-## "exit" (the velocity handed back at the end, u/s)}.
-static func find(col: CollisionWorld, pos: Vector3, dir: Vector3, speed: float) -> Dictionary:
+## "exit" (the velocity handed back at the end, u/s)}. up: the highest ledge it takes (CLIMB_MAX;
+## up to RUN_UP_MAX at a sprint, a climb above CLIMB_MAX then "said" "run_up"); reach: how far
+## off the face may be (u; below 0, REACH plus REACH_T seconds at speed).
+static func find(
+	col: CollisionWorld,
+	pos: Vector3,
+	dir: Vector3,
+	speed: float,
+	up: float = CLIMB_MAX,
+	reach: float = -1.0
+) -> Dictionary:
 	var d := Vector2(dir.x, dir.z)
 	if col == null or d.length_squared() < 1e-12:
 		return {}
-	var face := find_face(col, pos, d.normalized(), REACH + REACH_T * speed)
+	if reach < 0.0:
+		reach = REACH + REACH_T * speed
+	var face := find_face(col, pos, d.normalized(), reach)
 	if face.is_empty():
 		return {}
 	var u: Vector2 = face["u"]
@@ -86,7 +110,7 @@ static func find(col: CollisionWorld, pos: Vector3, dir: Vector3, speed: float) 
 	var depth := float(face["far"]) - near
 	var stand := near + minf(R + STAND_IN, depth * 0.5)
 	face["stand"] = stand
-	var top := col.support_height(_at(pos, u, stand, pos.y), R * 0.5, pos.y, CLIMB_MAX)
+	var top := col.support_height(_at(pos, u, stand, pos.y), R * 0.5, pos.y, up)
 	var h := top - pos.y
 	if is_nan(top) or h <= WS.STEP_HEIGHT:
 		return {}
@@ -97,7 +121,10 @@ static func find(col: CollisionWorld, pos: Vector3, dir: Vector3, speed: float) 
 		return plan
 	if h <= HOP_MAX:
 		return _hop(col, pos, u, face, top, speed)
-	return _climb(col, pos, u, face, top, speed)
+	plan = _climb(col, pos, u, face, top, speed)
+	if not plan.is_empty() and h > CLIMB_MAX:
+		plan["said"] = "run_up"
+	return plan
 
 
 ## The roll a landing with the feet at pos becomes, heading along dir (xz) at speed (u/s): find()'s
@@ -130,6 +157,51 @@ static func roll(col: CollisionWorld, pos: Vector3, dir: Vector3, speed: float) 
 	plan["grounded"] = true
 	plan["exit"] = Vector3(u.x, 0.0, u.y) * (v_out * k)
 	return plan
+
+
+## The gap jump a body with the feet at pos running along dir (xz) at speed (u/s) takes at the edge
+## just ahead: {"land": the feet where it comes down, "t": the seconds in the air}, or {} with no
+## drop right ahead, no ground across within the jump's reach, or something in the way.
+static func leap(col: CollisionWorld, pos: Vector3, dir: Vector3, speed: float) -> Dictionary:
+	var d := Vector2(dir.x, dir.z)
+	if col == null or d.length_squared() < 1e-12 or speed <= 0.0:
+		return {}
+	var u := d.normalized()
+	var floor_y := col.support_height(_at(pos, u, LEAP_EDGE, pos.y), 0.0, pos.y, WS.STEP_HEIGHT)
+	if not is_nan(floor_y) and floor_y >= pos.y - LEAP_DEEP:
+		return {}
+	var lowest := pos.y - LEAP_DROP
+	if not is_nan(floor_y):
+		lowest = maxf(lowest, floor_y + LEAP_DEEP)
+	var vy := WS.JUMP_SPEED
+	var far := speed * (vy + sqrt(vy * vy + 2.0 * WS.GRAVITY * LEAP_DROP)) / WS.GRAVITY
+	var s := LEAP_EDGE + LEAP_STEP
+	while s <= far:
+		var h := col.support_height(_at(pos, u, s, pos.y), 0.0, pos.y, LEAP_RISE)
+		if not is_nan(h) and h >= lowest:
+			return _leap_to(col, pos, u, s, h, speed)
+		s += LEAP_STEP
+	return {}
+
+
+## The jump across to ground at height h that starts s along u: {} when it falls short of s by
+## LEAP_SPARE, there is no room to stand where it lands or the body meets something on the way.
+static func _leap_to(
+	col: CollisionWorld, pos: Vector3, u: Vector2, s: float, h: float, speed: float
+) -> Dictionary:
+	var vy := WS.JUMP_SPEED
+	var g := WS.GRAVITY
+	var t := (vy + sqrt(vy * vy - 2.0 * g * (h - pos.y))) / g
+	var land := _at(pos, u, speed * t, h)
+	if speed * t < s + LEAP_SPARE or not fits(col, land):
+		return {}
+	var n := maxi(1, ceili(t / PATH_STEP))
+	for k in range(1, n):
+		var tk := t * float(k) / float(n)
+		var p := _at(pos, u, speed * tk, pos.y + vy * tk - 0.5 * g * tk * tk)
+		if col.body_blocked(p, TUCK_R, TUCK):
+			return {}
+	return {"land": land, "t": t}
 
 
 ## The feet t seconds into plan.
@@ -233,7 +305,7 @@ static func _enter(o: Vector2, d: Vector2, lo: Vector2, hi: Vector2) -> Vector2:
 static func _vault(
 	col: CollisionWorld, pos: Vector3, u: Vector2, face: Dictionary, top: float, speed: float
 ) -> Dictionary:
-	var v := clampf(speed, VAULT_SPEED, WS.RUN)
+	var v := clampf(speed, VAULT_SPEED, WS.SPRINT)
 	var peak := top + CLEAR
 	var far: float = face["far"]
 	var s_rise := maxf(float(face["face"]) - 0.5 * R, 0.0)
@@ -267,7 +339,7 @@ static func _vault(
 static func _hop(
 	col: CollisionWorld, pos: Vector3, u: Vector2, face: Dictionary, top: float, speed: float
 ) -> Dictionary:
-	var v := clampf(speed, VAULT_SPEED, WS.RUN)
+	var v := clampf(speed, VAULT_SPEED, WS.SPRINT)
 	var stand: float = face["stand"]
 	var s_rise := maxf(float(face["face"]) - 0.5 * R, 0.0)
 	var t_rise := maxf(s_rise / v, RISE_MIN)

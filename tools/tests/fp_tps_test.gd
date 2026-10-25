@@ -399,10 +399,11 @@ func _check_avatar(ctx: FpContext) -> void:
 
 
 ## 13a (A2). HC's hero: loaded with its library and scaled to 1.75 m, facing the player's forward,
-## arms down (no T-pose) with the feet on the ground; walking and running keep the planted foot
-## still (the TimeScale matches the stride: within [0.9, 1.1] at WALK) and footsteps fall on
-## each heel strike; crouch, jump / land and talk switch the state machine; the head looks where
-## the camera looks within its limits; hero "f" swaps the body; gestures play; the tree is cheap.
+## arms down (no T-pose) with the feet on the ground; walking, running and sprinting keep the
+## planted foot still (the TimeScale matches the stride: within [0.9, 1.1] at WALK) and footsteps
+## fall on each heel strike; crouch, jump / land and talk switch the state machine; the head looks
+## where the camera looks within its limits; hero "f" swaps the body; gestures play; the tree is
+## cheap.
 func _check_hero(ctx: FpContext, s: Dictionary) -> void:
 	var p := ctx.player
 	var av := p.avatar
@@ -433,9 +434,34 @@ func _check_hero(ctx: FpContext, s: Dictionary) -> void:
 	K.check(fails, float(walk["low_min"]) > -0.02 and float(walk["low_max"]) < 0.04, "13a. walking: the lowest foot stays at the ground (%.1f..%.1f cm)" % [float(walk["low_min"]) * 100.0, float(walk["low_max"]) * 100.0])
 	K.check(fails, bool(walk["alternate"]) and int(walk["steps"]) >= 4 and absf(float(walk["steps"]) - float(walk["expect"])) <= 1.5, "13a. walking: %d footsteps alternate feet (%.1f expected from the stride)" % [int(walk["steps"]), float(walk["expect"])])
 	K.check(fails, int(walk["late"]) == 0, "13a. walking: every footstep is within 1 frame of its heel strike (%d off, worst %d frames)" % [int(walk["late"]), int(walk["worst"])])
+	# The run tops out at RUN with free running off; the sprint it builds is measured on its own.
+	p.free_running = false
 	var run := _gait(p, true, 195, 90)
+	p.free_running = true
 	K.check(fails, float(run["ts"]) >= 0.85 and float(run["ts"]) <= 1.15 and float(run["slide"]) < 0.1, "13a. running: TimeScale %.3f, the planted foot slides %.1f %% (< 10)" % [float(run["ts"]), float(run["slide"]) * 100.0])
 	K.check(fails, float(run["low_min"]) > -0.02 and bool(run["alternate"]) and int(run["late"]) == 0, "13a. running: no foot below the ground (%.1f cm), %d alternating footsteps on the heel strikes (worst %d frames)" % [float(run["low_min"]) * 100.0, int(run["steps"]), int(run["worst"])])
+	# From the far end of the clear street: the sprint has built up by frame 180.
+	p.teleport(s["pos"] - s["run"] * 1.4, s["yaw"])
+	var spr := _gait(p, true, 300, 180)
+	var spr_ts := float(spr["ts"])
+	var spr_slide := float(spr["slide"])
+	K.check(
+		fails,
+		p.sprinting() and spr_ts >= 0.85 and spr_ts <= 1.2 and spr_slide < 0.1,
+		(
+			"13a. sprinting at %.2f m/s: TimeScale %.3f, the planted foot slides %.1f %% (< 10)"
+			% [p.speed() / M, spr_ts, spr_slide * 100.0]
+		)
+	)
+	var spr_low := float(spr["low_min"])
+	K.check(
+		fails,
+		spr_low > -0.02 and bool(spr["alternate"]) and int(spr["late"]) == 0,
+		(
+			"13a. sprinting: no foot under the ground (%.1f cm), %d footsteps alternate (worst %d)"
+			% [spr_low * 100.0, int(spr["steps"]), int(spr["worst"])]
+		)
+	)
 	_run(p, Vector2.ZERO, false, 60)
 	# Crouch.
 	for k in range(40):

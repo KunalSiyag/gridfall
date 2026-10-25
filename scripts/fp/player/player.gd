@@ -56,6 +56,14 @@ const YAW_RATE_RUN_HEAVY := deg_to_rad(360.0)
 const TURN_LOSS_FROM := deg_to_rad(30.0)
 const TURN_LOSS_FULL := deg_to_rad(110.0)
 const TURN_KEEP := 0.55
+## Free running (the "free_running" flag): sprint held at SPRINT_KEEP of RUN or more, heading
+## within SPRINT_TURN of the wish (in first person with the wish ahead, SPRINT_AHEAD of it at
+## least), for SPRINT_BUILD s lifts the top speed to WS.SPRINT. It drops back once sprint is let
+## go, the pace falls off or the body turns away; in the air it holds.
+const SPRINT_BUILD := 0.8
+const SPRINT_KEEP := 0.9
+const SPRINT_TURN := deg_to_rad(25.0)
+const SPRINT_AHEAD := 0.7
 const COYOTE_TIME := 0.10
 const JUMP_BUFFER := 0.12
 const HEAVY_LAND_SPEED := 4.0 * WS.M
@@ -159,6 +167,10 @@ var _air_t: float = 0.0
 var _pivot_t: float = 0.0
 ## The "momentum" flag, read at setup (tests may set it).
 var momentum: bool = true
+## The "free_running" flag, read at setup (tests may set it).
+var free_running: bool = true
+## Seconds the sprint has built up (sprinting() from SPRINT_BUILD).
+var _sprint_t: float = 0.0
 var _wish_dir: Vector2 = Vector2.ZERO
 var _yaw_v: float = 0.0
 var _yaw_rate: float = 0.0
@@ -231,6 +243,7 @@ var _override_fov: float = 50.0
 func setup(p_ctx: FpContext) -> void:
 	ctx = p_ctx
 	momentum = FeatureFlags.enabled("momentum")
+	free_running = FeatureFlags.enabled("free_running")
 	rig = TpsRig.new()
 	camera = Camera3D.new()
 	camera.name = "Camera"
@@ -438,8 +451,8 @@ func simulate(wish: Vector2, sprint: bool, delta: float, crouch: bool = false, j
 		return
 	_set_crouch(crouch)
 	_eye_h = SM.damp(_eye_h, WS.CROUCH_EYE if crouched else WS.EYE, HL_EYE, delta)
-	var top_speed := WS.CROUCH_WALK if crouched else (WS.RUN if sprint else WS.WALK)
-	top_speed = minf(top_speed, speed_cap)
+	_build_sprint(wish, sprint, delta)
+	var top_speed := _top_speed(sprint)
 	_running = sprint and not crouched and wish.length_squared() > 0.01
 	_target_speed = top_speed * wish.length()
 	var flat := Vector2(velocity.x, velocity.z)
@@ -465,6 +478,45 @@ func simulate(wish: Vector2, sprint: bool, delta: float, crouch: bool = false, j
 	_fwd_acc = (flat1 - flat).dot(Vector2(-sin(yaw), -cos(yaw))) / delta
 	_yaw_rate = wrapf(yaw - yaw0, -PI, PI) / delta
 	_update_tile()
+
+
+## Top speed on foot (u/s): a crouch-walk, a walk, a run or a built-up sprint; speed_cap at most.
+func _top_speed(sprint: bool) -> float:
+	var run_top := WS.SPRINT if sprinting() else WS.RUN
+	return minf(WS.CROUCH_WALK if crouched else (run_top if sprint else WS.WALK), speed_cap)
+
+
+## True once a sprint has built up to the free-running pace (WS.SPRINT).
+func sprinting() -> bool:
+	return _sprint_t >= SPRINT_BUILD
+
+
+## Leaves the ground in a running jump (free running's leap across a gap): false off the ground,
+## carried or crouched.
+func leap() -> bool:
+	if not grounded or carried or crouched:
+		return false
+	_jump()
+	return true
+
+
+## Builds the sprint up (free running): on, at pace and on line with the wish it builds; off the
+## ground it holds while sprint stays held; otherwise it starts over.
+func _build_sprint(wish: Vector2, sprint: bool, delta: float) -> void:
+	if not free_running or not sprint or crouched or carried:
+		_sprint_t = 0.0
+		return
+	if not grounded:
+		return
+	var flat := Vector2(velocity.x, velocity.z)
+	var fwd := Vector2(-sin(cam_yaw), -cos(cam_yaw))
+	var goal := Vector2(-fwd.y, fwd.x) * wish.x + fwd * wish.y
+	var ahead := camera_mode == "third" or wish.y >= SPRINT_AHEAD
+	var on_line := goal.length() > 0.9 and absf(flat.angle_to(goal)) <= SPRINT_TURN
+	if ahead and on_line and flat.length() >= WS.RUN * SPRINT_KEEP:
+		_sprint_t += delta
+	else:
+		_sprint_t = 0.0
 
 
 ## A jump about to leave the ground that jump_hook takes over: true (the press is spent) when the
