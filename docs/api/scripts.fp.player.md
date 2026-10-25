@@ -208,9 +208,8 @@ HC's animated hero for the player (slice A stage A2; A-player.md 6.9, TPS_PLAN 2
 - `GUARD_AT = 0.0`
 - `STRIKE_SAMPLES = 48`: strike_time samples this many poses over a clip's opening seconds.
 - `STRIKE_WITHIN = 1.2`
-- `SIT_SPEED = 1.5`: sit_down and stand_up play this much faster than authored (in and out of a car seat).
-- `SIT_CLIPS = ["sit_down", "stand_up"]`
-- `HELD = ["sit_down", "sit", "stand_up", "knockback", "get_up", "climb", "wall", "roll"]`: States the ground does not cut short for locomotion: sitting, the knock-down, the climb, holding on to a wall and the roll.
+- `CLIP_SPEED = {"sit_down": 1.5, "stand_up": 1.5, "car_in": 1.25, "car_out": 1.35}`: Clips played this much faster than authored: sitting down and standing up, getting into a car's driver's seat and out of it.
+- `HELD = [ "sit_down", "sit", "stand_up", "car_in", "drive", "car_out", "knockback", "get_up", "...`: States the ground does not cut short for locomotion: sitting, the car's seat, the knock-down, the climb, holding on to a wall and the roll.
 - `WALL_CLIP = "idle"`: On a wall (hold_wall) the body holds WALL_CLIP under the limbs' IK, faded in and out over XF_WALL (s).
 - `XF_WALL = 0.15`
 - `UPPER_ROOT = "Spine"`: A gesture moves the bones from here up; the legs keep their state.
@@ -253,8 +252,8 @@ HC's animated hero for the player (slice A stage A2; A-player.md 6.9, TPS_PLAN 2
 
 - `static func build(path: String, lib_path: String, k: float, p_gender: String) -> RefCounted`: Instantiates the body at path with the AnimationLibrary at lib_path; k is the body's speed factor (hip_m / speed_ref_hip_m * h_target / rest height). Null when a file is missing or the body has no %GeneralSkeleton.
 - `func update(dt: float, v: float, grounded: bool, vy: float, crouched: bool, talking: bool) -> void`: Per frame: v is the signed forward ground speed (m/s; negative walks backward), vy the vertical speed (m/s), crouched and talking the player's states. Advances the tree by dt and fills contacts with the heel strikes it crossed.
-- `func state() -> String`: The state machine's current state ("loco", "crouch", "jump", "fall", "land", "talk", "sit_down", "sit", "stand_up", "knockback", "get_up", "climb", "wall", "roll").
-- `func sit(on: bool) -> void`: Sits down (on) or stands up; moving stands up by itself.
+- `func state() -> String`: The state machine's current state ("loco", "crouch", "jump", "fall", "land", "talk", "sit_down", "sit", "stand_up", "car_in", "drive", "car_out", "knockback", "get_up", "climb", "wall", "roll").
+- `func sit(on: bool, car: bool = false, at_once: bool = false) -> void`: Sits down (on) or stands up; moving stands up by itself. With car the seat is a car's driver's seat: car_in climbs in through the door beside it (and car_out back out) to the driving pose, hands on the wheel; at_once takes that pose (or stands) without the climb.
 - `func play_gesture(g: String) -> void`: Plays an upper-body gesture over the current state ("interact", "wave", "phone", "door_try").
 - `func gesture_active() -> bool`
 - `func stop_gesture() -> void`: Fades the playing gesture out before its end.
@@ -265,8 +264,7 @@ HC's animated hero for the player (slice A stage A2; A-player.md 6.9, TPS_PLAN 2
 - `func stop_action() -> void`: Fades the playing action and the dance out.
 - `func set_guard(on: bool) -> void`: Raises (on) or drops the guard: fists up on the upper body, eased over HL_GUARD.
 - `func strike_time(clip: String, within: float = STRIKE_WITHIN) -> float`: When clip's fists (or palms) are furthest out in front within its first within seconds: where a punch or the shove lands (s). Measured once per clip on this body's keys and cached.
-- `func travel(clip: String, t: float) -> float`: How far clip has carried its root t seconds after its state began (0..1 of the whole clip's horizontal root travel; sit_down and stand_up play at SIT_SPEED). The tree drops root motion, so whoever moves the body through a clip (into a car seat) follows this curve; a clip without travel runs linearly.
-- `func root_travel(clip: String) -> float`: How far clip carries the body along the ground over its whole length (world units).
+- `func travel(clip: String, t: float) -> float`: How far clip has carried its root t seconds after its state began (0..1 of the whole clip's horizontal root travel; at their CLIP_SPEED). The tree drops root motion, so whoever moves the body through a clip (into a car seat) follows this curve; a clip without travel runs linearly.
 - `func set_look_target(p: Vector3) -> void`: The world point the head turns toward; NAN components let the head return to the clip.
 - `func snap(crouched: bool) -> void`: Back to standing (or crouched) locomotion at once: no cross-fade, no landing, no gesture.
 - `func bone_world(bone: String) -> Vector3`: A bone's world position (the animated pose, before the look-at modifiers).

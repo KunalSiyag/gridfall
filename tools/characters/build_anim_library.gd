@@ -56,6 +56,8 @@ func _initialize() -> void:
 			print("  %s_%-16s len=%6.3f loop=%s tracks=%d speed_mps=%.3f" % [src, canon, anim.length, looped, anim.get_track_count(), anim.get_meta("speed_mps")])
 	_add_procedural(saved["u"], male_scale)
 	for g: String in ["m", "f"]:
+		_add_car(saved, g, male_scale if g == "m" else _motion_scale(SOURCES[g]))
+	for g: String in ["m", "f"]:
 		var lib := AnimationLibrary.new()
 		for src: String in [g, "u"]:
 			for canon: String in saved[src]:
@@ -84,6 +86,34 @@ func _add_procedural(saved_u: Dictionary, scale: float) -> void:
 	saved_u["kick"] = path
 	var n := anim.get_track_count()
 	print("  u_kick             len=%6.3f tracks=%d (procedural)" % [anim.length, n])
+
+
+## The get-in and get-out of a car (procedural_clips.gd) for gender g, from its idle to the drive
+## pose, posed on g's own skeleton.
+func _add_car(saved: Dictionary, g: String, scale: float) -> void:
+	if not (saved[g].has("idle") and saved["u"].has("drive")):
+		fails.append("car_in: %s_idle or u_drive is missing" % g)
+		return
+	var node := _instance(SOURCES[g])
+	var found := node.find_children("*", "Skeleton3D", true, false) if node != null else []
+	if found.is_empty():
+		fails.append("car_in: no skeleton in " + SOURCES[g])
+		return
+	var idle := load(saved[g]["idle"]) as Animation
+	var drive := load(saved["u"]["drive"]) as Animation
+	var get_in := PC.car_in(idle, drive, found[0] as Skeleton3D)
+	for anim: Animation in [get_in, PC.car_out(get_in)]:
+		var canon := "car_in" if anim == get_in else "car_out"
+		anim.resource_name = canon
+		_set_metas(anim, scale, false)
+		var path := "%sclips/%s_%s.res" % [DIR, g, canon]
+		var err := ResourceSaver.save(anim, path, ResourceSaver.FLAG_COMPRESS)
+		if err != OK:
+			fails.append("could not save %s (%d)" % [path, err])
+			continue
+		saved[g][canon] = path
+		var n := anim.get_track_count()
+		print("  %s_%-16s len=%6.3f tracks=%d (procedural)" % [g, canon, anim.length, n])
 
 
 ## Root speed (m/s on a skeleton with `scale` motion scale), that scale, the loop flag and the turn

@@ -46,7 +46,7 @@ The player's car as a rigid box on the ground plane. Each step it moves by the h
 
 extends `RefCounted`
 
-Getting into the player's car and out of it on foot, for drive_feature.gd (car_doors flag). In: the hero walks round the car to the driver's door (jogging while it is far), reaches for the handle (door_try), pulls the door open and swings it wide; with someone at the wheel (jack) it reaches in, drags them out and shoves them clear (push). It steps into the opening, turns its back to the seat and sits down onto the sill (sit_down; its root travel is walked back so the feet stay planted), swings round into the seat and the door shuts. Out: the door opens, the hero swings round onto the sill, stands up (stand_up, walked forward), steps clear of the door and it shuts. From the reach on, a camera beside the door watches and blends to and from the drive camera. The points come from the traffic feature's door_info, in the car's frame (+Z forward, +X the driver's side); the car stands still throughout. The hero's rig is reached by duck typing (the player folder is another slice): travel, root_travel, sit, play_gesture, stop_gesture, play_action, state and bone_world.
+Getting into the player's car and out of it on foot, for drive_feature.gd (car_doors flag). In: the hero walks round the car to the driver's door (jogging while it is far), reaches for the handle (door_try), pulls the door open and swings it wide; with someone at the wheel (jack) it reaches in, drags them out and shoves them clear (push). It steps into the opening beside the seat, faces forward and climbs in (car_in: a hand on the roof, the near leg over the sill, the head ducked under the roof, the body sliding onto the seat along the clip's root travel and the other leg following it in, ending with its hands on the wheel), and the door shuts. Out: the door opens, the hero climbs out (car_out, the same backwards) onto its feet beside the seat, steps clear of the door and it shuts. From the reach on, a camera beside the door watches and blends to and from the drive camera. The points come from the traffic feature's door_info, in the car's frame (+Z forward, +X the driver's side); the car stands still throughout. The hero's rig is reached by duck typing (the player folder is another slice): travel, sit, play_gesture, stop_gesture, play_action, state and bone_world.
 
 ### Constants
 
@@ -79,12 +79,11 @@ Getting into the player's car and out of it on foot, for drive_feature.gd (car_d
 - `TURN_OUT = 0.25`
 - `SHOVE_T = 0.6`
 - `JACK_T = 1.3`
-- `SILL_IN = 0.06 * WS.M`: Sat down, the hips are SILL_IN inside the body side. Sitting takes at most SIT_MAX s, the swing into or out of the seat SWING_T s and the door's shutting CLOSE_T s.
-- `SIT_MAX = 1.3`
-- `SWING_T = 0.7`
+- `STEP_OUT = 0.3 * WS.M`: The climb in starts STEP_OUT out from the body side level with the seat, facing forward (the seat on the hero's right); the climb in or out takes at most CLIMB_MAX s, the view turns to the drive camera CLIMB_CAM s into the climb in, and the door shuts over CLOSE_T s.
+- `CLIMB_MAX = 2.0`
+- `CLIMB_CAM = 0.9`
 - `CLOSE_T = 0.35`
-- `OPEN_T = 0.45`: Out: the door opens over OPEN_T s, standing up takes at most STAND_MAX s, then the hero steps AWAY out and AWAY_BACK toward the rear (for at most AWAY_MAX s).
-- `STAND_MAX = 1.7`
+- `OPEN_T = 0.45`: Out: the door opens over OPEN_T s, then after the climb out the hero steps AWAY out and AWAY_BACK toward the rear (for at most AWAY_MAX s).
 - `AWAY = 0.55 * WS.M`
 - `AWAY_BACK = 0.25 * WS.M`
 - `AWAY_MAX = 1.2`
@@ -101,10 +100,10 @@ Getting into the player's car and out of it on foot, for drive_feature.gd (car_d
 ### Properties
 
 - `kind: String`: "" (idle), "in" or "out".
-- `phase: String`: In: "walk", "align", "open", "jack" (someone at the wheel), "step", "turn", "sit", "swing", "close". Out: "open", "swing", "stand", "away", "close".
+- `phase: String`: In: "walk", "align", "open", "jack" (someone at the wheel), "step", "turn", "climb", "close". Out: "open", "climb", "away", "close".
 - `t: float`: Seconds into the phase.
 - `door: float`: The driver's door: 0 shut .. 1 open.
-- `hold: String`: A phase to wait at (the photo tour holds the climb in at "swing"); "" for none.
+- `hold: String`: A phase to wait at, hold_at s into it (the photo tour holds the climb in half way); "" for none.
 - `jack: bool`: Someone is at the wheel, to be dragged out once the door is open (begin_in's p_jack).
 
 ### Functions
@@ -159,6 +158,7 @@ Getting into cars and driving them. Near a parked or stopped car, F (Y on a pad)
 - `PHOTO_REACH = 30.0 * WS.M`: The photo shot's car is the nearest one to get into this close to the spawn point, picked PHOTO_FRAMES frames after the tour puts the hero there (traffic fills the street round it).
 - `PHOTO_FRAMES = 3`
 - `PHOTO_DT = 1.0 / 60.0`
+- `PHOTO_CLIMB = 0.8`: The photo holds the climb in this many seconds into it (one leg in, ducking under the roof).
 - `HIJACK_GAP = 2.5 * WS.M`: An action hijack takes a car at most HIJACK_GAP off the side of the player's car, its middle within HIJACK_ALONG of the player's car's, heading the same way within HIJACK_TURN at most HIJACK_REL faster or slower, the player's car going forward at least HIJACK_MIN.
 - `HIJACK_ALONG = 2.5 * WS.M`
 - `HIJACK_REL = 4.0 * WS.M`
@@ -189,7 +189,7 @@ Getting into cars and driving them. Near a parked or stopped car, F (Y on a pad)
 - `func hijack_target() -> Dictionary`: The car alongside that F would jump across to now (traffic's hijack_target: {"id", "side", "gap", "along"}); {} when none, the flag off, too slow, or not at the wheel.
 - `func jump_across() -> bool`: F alongside a car with someone at its wheel (action hijack): the hero lets go of the wheel (the car rolls on with nobody at it, slowing), climbs out onto the roof, leaps across onto the other car and drags its driver out through the window (_hijack_step runs it). False when there is no car to jump to.
 - `func camera_xform(chase: bool = false) -> Transform3D`: The camera now: behind and above the car (pulled in front of walls, lifted off the ground when it looks up from low down), or at the driver's eyes (not when chase is true).
-- `func photo_shots() -> Array`: The photo shot: the hero half way into the car nearest the spawn point, sat on the sill with the door wide open, seen from the door camera (car_doors).
+- `func photo_shots() -> Array`: The photo shot: the hero half way into the car nearest the spawn point, one leg in and ducking under the roof with the door wide open, seen from the door camera (car_doors).
 - `func photo_prepare() -> void`: Photo tour: the tour puts the hero at the spawn point after this, so the climb is staged once traffic has filled the street round it.
 - `func photo_restore() -> void`
 

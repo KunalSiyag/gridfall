@@ -13,8 +13,8 @@ const VH := preload("res://scripts/fp/traffic/vehicles.gd")
 const DOORS := preload("res://scripts/fp/traffic/car_doors.gd")
 const DT := 1.0 / 60.0
 const KMH := WS.M / 3.6
-const IN_PHASES := ["walk", "align", "open", "step", "turn", "sit", "swing", "close"]
-const OUT_PHASES := ["open", "swing", "stand", "away", "close"]
+const IN_PHASES := ["walk", "align", "open", "step", "turn", "climb", "close"]
+const OUT_PHASES := ["open", "climb", "away", "close"]
 
 var fails: Array[String] = []
 var ctx: FpContext
@@ -134,7 +134,13 @@ func _check_in() -> void:
 	K.check(
 		fails,
 		r["phases"] == IN_PHASES,
-		"it walks, reaches, opens, steps in, turns, sits, swings in, shuts: %s" % str(r["phases"])
+		"it walks, reaches, opens, steps up, faces forward, climbs in, shuts: %s" % str(r["phases"])
+	)
+	var states: Array = r["states"]
+	K.check(
+		fails,
+		states.has("car_in") and states.back() == "drive",
+		"the hero climbs in (car_in) and takes the wheel (drive): %s" % str(states)
 	)
 	K.check(
 		fails,
@@ -156,7 +162,7 @@ func _check_in() -> void:
 	ctx.bus.drive_changed.disconnect(cb)
 
 
-## Sat at the wheel: hips on the driver's seat, sitting, the drive camera on.
+## Sat at the wheel: hips on the driver's seat, hands on the wheel (drive), the drive camera on.
 func _check_seat(car: VH.Car) -> void:
 	tr.call("sync_visuals", DT)
 	for _k in range(30):
@@ -169,13 +175,13 @@ func _check_seat(car: VH.Car) -> void:
 	var st := str(rig.call("state"))
 	K.check(
 		fails,
-		off.length() < 0.05 and st == "sit" and ctx.player.view_override,
+		off.length() < 0.05 and st == "drive" and ctx.player.view_override,
 		"the hero sits on the driver's seat (%.2f m off, %s)" % [off.length(), st]
 	)
 
 
-## Stopped, F gets out the long way: the door opens, the hero swings out, stands up, steps clear
-## and shuts it, and walks on with its own camera.
+## Stopped, F gets out the long way: the door opens, the hero climbs out onto its feet, steps
+## clear and shuts it, and walks on with its own camera.
 func _check_out() -> void:
 	var car := _car()
 	var p := ctx.player
@@ -185,10 +191,16 @@ func _check_out() -> void:
 	K.check(
 		fails,
 		r["phases"] == OUT_PHASES,
-		"it opens, swings out, stands up, steps away, shuts: %s" % str(r["phases"])
+		"it opens, climbs out, steps away, shuts: %s" % str(r["phases"])
 	)
 	K.check(
 		fails, float(r["wide"]) > 0.99 and car.door == 0.0, "the door opened wide and shut again"
+	)
+	var states: Array = r["states"]
+	K.check(
+		fails,
+		states.front() == "drive" and states.has("car_out") and states.back() == "loco",
+		"the hero climbs out (car_out) onto its feet: %s" % str(states)
 	)
 	K.check(fails, _slams_ok(car), "car_door: open, then the slam (%s)" % str(slams))
 	var side := _side_of(car, p.position)
@@ -386,10 +398,13 @@ func _side_of(c: VH.Car, p: Vector3) -> float:
 	return (p - c.pos).dot(Basis(Vector3.UP, c.yaw).x)
 
 
-## Runs the climb in or out until it ends (or max_s): the phases in order, the widest door, the
-## hero's least distance to the car's body on the walk, and the seconds it took.
+## Runs the climb in or out until it ends (or max_s): the phases and the hero's rig states in
+## order, the widest door, the hero's least distance to the car's body on the walk, and the
+## seconds it took.
 func _climb(car: VH.Car, max_s: float) -> Dictionary:
 	var phases: Array = []
+	var states: Array = []
+	var rig: RefCounted = ctx.player.avatar.get("rig")
 	var wide := 0.0
 	var near := INF
 	var secs := 0.0
@@ -405,10 +420,13 @@ func _climb(car: VH.Car, max_s: float) -> Dictionary:
 		var ph := str(entry.get("phase"))
 		if not ph.is_empty() and (phases.is_empty() or str(phases.back()) != ph):
 			phases.append(ph)
+		var st := str(rig.call("state"))
+		if states.is_empty() or str(states.back()) != st:
+			states.append(st)
 		wide = maxf(wide, car.door)
 		if ph == "walk":
 			near = minf(near, float(tr.call("_body_dist", car, ctx.player.position)))
-	return {"phases": phases, "wide": wide, "near": near, "secs": secs}
+	return {"phases": phases, "states": states, "wide": wide, "near": near, "secs": secs}
 
 
 ## Two car_doors since the last clear: open, then shut, both at the driver's side of car.

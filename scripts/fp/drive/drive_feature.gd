@@ -59,6 +59,8 @@ const BLOCKER_REACH := 2.0 * WS.M
 const PHOTO_REACH := 30.0 * WS.M
 const PHOTO_FRAMES := 3
 const PHOTO_DT := 1.0 / 60.0
+## The photo holds the climb in this many seconds into it (one leg in, ducking under the roof).
+const PHOTO_CLIMB := 0.8
 ## An action hijack takes a car at most HIJACK_GAP off the side of the player's car, its middle
 ## within HIJACK_ALONG of the player's car's, heading the same way within HIJACK_TURN at most
 ## HIJACK_REL faster or slower, the player's car going forward at least HIJACK_MIN.
@@ -582,7 +584,7 @@ func _sit(on: bool) -> void:
 	var av := ctx.player.avatar if ctx.player != null else null
 	var rig: Variant = av.get("rig") if av != null else null
 	if rig != null and (rig as RefCounted).has_method("sit"):
-		(rig as RefCounted).call("sit", on)
+		(rig as RefCounted).call("sit", on, true, true)
 
 
 # ------------------------------------------------------------------ action hijack
@@ -795,8 +797,8 @@ func _fov() -> float:
 # ------------------------------------------------------------------ photo tour
 
 
-## The photo shot: the hero half way into the car nearest the spawn point, sat on the sill with
-## the door wide open, seen from the door camera (car_doors).
+## The photo shot: the hero half way into the car nearest the spawn point, one leg in and ducking
+## under the roof with the door wide open, seen from the door camera (car_doors).
 func photo_shots() -> Array:
 	if _traffic() == null or ctx.mode == null or not FeatureFlags.enabled("car_doors"):
 		return []
@@ -819,7 +821,7 @@ func photo_restore() -> void:
 
 
 ## Claims the car nearest the hero that nobody sits in (no carjack for a photo), walks it in from
-## beside the driver's door and holds the climb at the swing into the seat.
+## beside the driver's door and holds the climb in half way.
 func _photo_stage() -> void:
 	for _k in range(PHOTO_FRAMES):
 		await get_tree().process_frame
@@ -839,11 +841,12 @@ func _photo_stage() -> void:
 	if not _climb_in(info):
 		exit(true)
 		return
-	entry.hold = "swing"
+	entry.hold = "climb"
+	entry.hold_at = PHOTO_CLIMB
 	for _k in range(roundi(20.0 / PHOTO_DT)):
 		climb_step(PHOTO_DT)
 		p.update_view(PHOTO_DT)
-		if entry.phase == "swing" or entry.kind.is_empty():
+		if (entry.phase == "climb" and entry.t >= PHOTO_CLIMB) or entry.kind.is_empty():
 			break
 
 
