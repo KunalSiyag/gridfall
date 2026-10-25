@@ -57,3 +57,26 @@ static func max_street_lights(preset: String) -> int:
 ## First-person camera far plane in world units: 45 / WS.CAMERA_FAR (60) / 75.
 static func camera_far(preset: String) -> float:
 	return float(knobs(preset)["far"])
+
+
+## How far the camera must see while it is over the city (the overview lifts it up to 32 u, and a
+## photo fly can go higher): past every visible ground point at the lowest pitch, with margin. Low
+## keeps the tightest plane that still covers the overview horizon (the low_vram budget).
+const AERIAL_FAR := {"low": 80.0, "medium": 110.0, "high": 110.0}
+
+
+## The far plane while the camera is aerial (render_opt's aerial coverage), never below the
+## street-plane value.
+static func aerial_far(preset: String) -> float:
+	return maxf(camera_far(preset), float(AERIAL_FAR[normalize(preset)]))
+
+
+## Depth-fog end while the camera is aerial, inside 95% of the aerial far plane (the same rule the
+## street profile applies to its own plane: light_profile.fog_end).
+static func aerial_fog_end(preset: String) -> float:
+	return 0.95 * aerial_far(preset)
+
+
+## The street fog end for a preset (light_profile.fog_end's rule, for restoring it on exit).
+static func street_fog_end(preset: String) -> float:
+	return minf(WS.FOG_DEPTH_END, 0.95 * camera_far(preset))

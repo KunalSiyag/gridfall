@@ -12,6 +12,7 @@ const HLOD := preload("res://scripts/fp/render/hlod.gd")
 const OCC := preload("res://scripts/fp/render/occluders.gd")
 const PROXIES := preload("res://scripts/fp/render/proxies.gd")
 const MIDLOD := preload("res://scripts/fp/render/midlod.gd")
+const LP := preload("res://scripts/fp/street/light_profile.gd")
 const MODEL_DIRS := [
 	"res://models/real/zones/", "res://models/real/buildings/", "res://models/real/roads/"
 ]
@@ -26,7 +27,8 @@ var fails: Array[String] = []
 func _init() -> void:
 	await process_frame
 	_check_static()
-	var ctx := K.make_ctx(get_root(), {"view": true, "grow": true, "player": true, "hud": false})
+	var opts := {"view": true, "grow": true, "render": true, "player": true, "hud": false}
+	var ctx := K.make_ctx(get_root(), opts)
 	var sim := ctx.sim
 	var view := ctx.view
 	sim.mayors[0]["treasury"] = 200000
@@ -53,6 +55,7 @@ func _init() -> void:
 	_check_midlod_bake(hlod)
 	_check_bulldoze(f, hlod, occ, view, sim)
 	_check_presets(ctx, f, hlod)
+	_check_aerial(ctx, f, hlod)
 	_report_costs(f, hlod)
 	var st: Dictionary = f.self_test()
 	K.check(fails, bool(st["ok"]), "self_test ok: %s" % st["detail"])
@@ -68,11 +71,7 @@ func _check_static() -> void:
 	K.check(fails, is_equal_approx(Q.camera_far("low"), 45.0) and is_equal_approx(Q.camera_far("medium"), WS.CAMERA_FAR) and is_equal_approx(Q.camera_far("high"), 75.0), "camera_far 45 / 60 / 75")
 	K.check(fails, Q.normalize("ultra") == "medium", "unknown preset falls back to medium")
 	# G1 ends the Low fog inside 95 % of the far plane; the far plane must lie beyond it.
-	var fog_low := minf(WS.FOG_DEPTH_END, 0.95 * Q.camera_far("low"))
-	if ResourceLoader.exists("res://scripts/fp/street/light_profile.gd"):
-		var lp := load("res://scripts/fp/street/light_profile.gd") as GDScript
-		if lp != null and lp.has_method("fog_end"):
-			fog_low = float(lp.call("fog_end", "low"))
+	var fog_low := LP.fog_end("low")
 	K.check(fails, Q.camera_far("low") > fog_low, "Low far plane %.1f beyond the Low fog end %.1f" % [Q.camera_far("low"), fog_low])
 
 
@@ -178,6 +177,8 @@ static func _want_end(c: int, mult: float) -> float:
 	match c:
 		HLOD.Cls.PROP:
 			return WS.VIS_PROP * mult
+		HLOD.Cls.FULL:
+			return 0.0
 		HLOD.Cls.NEAR:
 			return WS.VIS_BUILDING_NEAR * mult
 	return WS.VIS_BUILDING * mult
@@ -442,6 +443,247 @@ func _check_presets(ctx: FpContext, f: Node, hlod: RefCounted) -> void:
 	K.check(fails, bool(f.call("preset_applied", "medium")), "Medium applied again")
 
 
+## Aerial coverage: once the camera is over the city (the overview, a photo fly), roads, open site
+## parts, far trees, the fog end and the far plane widen so the sky view keeps the whole city; on
+## the way down each value is re-derived, so a preset or weather change mid-air never leaves a
+## stale value behind.
+func _check_aerial(ctx: FpContext, f: Node, hlod: RefCounted) -> void:
+	var cam := ctx.player.camera
+	var env: Environment = cam.environment
+	K.check(fails, env != null, "fixture: the camera carries the environment")
+	if env == null:
+		return
+	var pick := _aerial_fixtures(hlod, ctx.view)
+	var want := "fixtures: road %d, twin %d, open site %d, %d full parts"
+	var got: Array = [pick["road"], pick["twin"], pick["site"], pick["full"]]
+	K.check(fails, bool(pick["ok"]), want % got)
+	var site_ends := _site_ends(ctx.view, ctx.sim)
+	# The camera over the hero turns the coverage on within a frame (AERIAL_MIN is 3 u).
+	cam.global_position = ctx.player.position + Vector3.UP * 3.5
+	f.call("_process", 0.0)
+	f.call("flush")
+	var up := bool(f.get("aerial")) and bool(hlod.get("aerial"))
+	K.check(fails, up, "the camera over the city turns the coverage on")
+	var far := Q.aerial_far("medium")
+	var far_msg := "the far plane covers the city (%.0f u)" % cam.far
+	K.check(fails, is_equal_approx(cam.far, far), far_msg)
+	var fog_end := Q.aerial_fog_end("medium")
+	var fog_msg := "the fog ends past it (%.0f u)" % env.fog_depth_end
+	K.check(fails, is_equal_approx(env.fog_depth_end, fog_end), fog_msg)
+	_check_aerial_roads(hlod)
+	_check_aerial_parts(ctx.view, ctx.sim)
+	_check_aerial_midair(ctx, f, hlod)
+	_check_aerial_off(ctx, f, hlod, site_ends)
+	env.fog_depth_begin = WS.FOG_DEPTH_BEGIN
+	ctx.bus.quality_changed.emit("medium")
+	f.call("flush")
+
+
+## One road main, one road twin, one open site and one full-detail part, for the checks below.
+func _aerial_fixtures(hlod: RefCounted, view: CityView) -> Dictionary:
+	var road := -1
+	var twin := -1
+	var site := -1
+	var full := 0
+	for i: int in hlod.tiles.keys():
+		var e: Dictionary = hlod.tiles[i]
+		var h := view.tile_holder(i)
+		if site < 0 and h != null and h.get_node_or_null("Site") != null:
+			site = i
+		var cls: PackedByteArray = e["cls"]
+		var gis: Array = e["gis"]
+		for k in range(gis.size()):
+			if cls[k] == HLOD.Cls.FULL:
+				full += 1
+			if road < 0 and cls[k] == HLOD.Cls.ROAD:
+				road = i
+			if twin < 0 and cls[k] == HLOD.Cls.MID and bool(e["road"]):
+				twin = i
+	var ok := road >= 0 and twin >= 0 and site >= 0 and full > 0
+	return {"road": road, "twin": twin, "site": site, "full": full, "ok": ok}
+
+
+## Every part of every open site, in tile order: the coverage re-ranges exactly these.
+func _site_parts(view: CityView, sim: CitySim) -> Array:
+	var parts: Array = []
+	for i: int in sim.sites.keys():
+		var h := view.tile_holder(i)
+		if h == null or not is_instance_valid(h):
+			continue
+		var site := h.get_node_or_null("Site") as Node3D
+		if site == null:
+			continue
+		parts.append_array(site.find_children("*", "GeometryInstance3D", true, false))
+	return parts
+
+
+## Each site part's own visibility end, keyed by instance id, to compare against on the way down.
+func _site_ends(view: CityView, sim: CitySim) -> Dictionary:
+	var ends := {}
+	for n in _site_parts(view, sim):
+		var gi := n as GeometryInstance3D
+		ends[gi.get_instance_id()] = gi.visibility_range_end
+	return ends
+
+
+## The far tree layers (the ones that draw only at distance): two checks range them.
+func _far_trees(view: CityView) -> Array:
+	var out: Array = []
+	for layer: Array in (view.get("_tree_chunks") as Dictionary).values():
+		for n in layer:
+			var mmi := n as MultiMeshInstance3D
+			if mmi != null and mmi.visibility_range_begin > 0.0:
+				out.append(mmi)
+	return out
+
+
+## While aerial the street grid draws to the horizon: road mains and their twins drop their end,
+## building twins keep the street ladder.
+func _check_aerial_roads(hlod: RefCounted) -> void:
+	var roads := true
+	var twin := false
+	for i: int in hlod.tiles.keys():
+		var e: Dictionary = hlod.tiles[i]
+		var cls: PackedByteArray = e["cls"]
+		var gis: Array = e["gis"]
+		for k in range(gis.size()):
+			var end := (gis[k] as GeometryInstance3D).visibility_range_end
+			if cls[k] == HLOD.Cls.ROAD:
+				roads = roads and end == 0.0
+			elif cls[k] == HLOD.Cls.MID and bool(e["road"]):
+				twin = twin or end == 0.0
+			elif cls[k] == HLOD.Cls.MID:
+				roads = roads and absf(end - WS.VIS_BUILDING) < EPS
+	K.check(fails, roads and twin, "aerial: road mains and twins lose their end, buildings keep it")
+
+
+## The open sites' parts and the far tree layers cover the whole sky view.
+func _check_aerial_parts(view: CityView, sim: CitySim) -> void:
+	var parts := _site_parts(view, sim)
+	var sites := true
+	for n in parts:
+		var gi := n as GeometryInstance3D
+		sites = sites and gi.visibility_range_end == 0.0 and gi.has_meta("ck_aerial_far")
+	var msg := "every part of the open sites (%d) draws out, own end kept" % parts.size()
+	K.check(fails, sites and not parts.is_empty(), msg)
+	var trees := false
+	for n in _far_trees(view):
+		trees = trees or (n as MultiMeshInstance3D).visibility_range_end == 0.0
+	K.check(fails, trees, "the far tree layers draw to the horizon")
+
+
+## Mid-air changes: a preset switch keeps the coverage, and a road built now covers to the horizon.
+func _check_aerial_midair(ctx: FpContext, f: Node, hlod: RefCounted) -> void:
+	LP.apply(ctx.player.camera.environment, ctx.sun, "fp", "high")
+	ctx.player.camera.environment.fog_depth_begin = 9.0
+	ctx.bus.quality_changed.emit("high")
+	f.call("flush")
+	var env: Environment = ctx.player.camera.environment
+	var kept := is_equal_approx(env.fog_depth_end, Q.aerial_fog_end("high"))
+	kept = kept and is_equal_approx(ctx.player.camera.far, Q.aerial_far("high"))
+	var msg := "a preset switch mid-air keeps the coverage (fog %.0f, far %.0f)"
+	K.check(fails, kept, msg % [env.fog_depth_end, ctx.player.camera.far])
+	var built := _pave_a_road(ctx.sim)
+	if ctx.view.has_method("flush_rebuild_queue"):
+		ctx.view.call("flush_rebuild_queue")
+	f.call("flush")
+	K.check(fails, built and _roads_reach_horizon(hlod), "a road built mid-air covers out")
+
+
+## Paves the first buildable tile beside a road, instantly; false if the city left no room.
+func _pave_a_road(sim: CitySim) -> bool:
+	var mode := sim.construction_mode
+	sim.construction_mode = "instant"
+	var built := false
+	for i: int in sim.active.duplicate():
+		if sim.kind[i] != D.ROAD or not _empty_neighbour(sim, i):
+			continue
+		var r: Dictionary = sim.apply_action(0, {"type": "road", "x": D.tx(i) + 1, "y": D.ty(i)})
+		built = bool(r.get("ok", false))
+		if built:
+			break
+	sim.construction_mode = mode
+	return built
+
+
+## Is the tile one east of i inside the map and empty (the one _pave_a_road lays a road on)?
+func _empty_neighbour(sim: CitySim, i: int) -> bool:
+	if not D.in_bounds(D.tx(i) + 1, D.ty(i)):
+		return false
+	return sim.kind[D.idx(D.tx(i) + 1, D.ty(i))] == D.EMPTY
+
+
+## Does some road tile still carry a main or a twin that draws with no end?
+func _roads_reach_horizon(hlod: RefCounted) -> bool:
+	for i: int in hlod.tiles.keys():
+		var e: Dictionary = hlod.tiles[i]
+		if not bool(e["road"]):
+			continue
+		var cls: PackedByteArray = e["cls"]
+		var gis: Array = e["gis"]
+		for k in range(gis.size()):
+			if cls[k] != HLOD.Cls.ROAD and cls[k] != HLOD.Cls.MID:
+				continue
+			if (gis[k] as GeometryInstance3D).visibility_range_end == 0.0:
+				return true
+	return false
+
+
+## Back on the street: the coverage goes off and every value re-derives from the preset.
+func _check_aerial_off(ctx: FpContext, f: Node, hlod: RefCounted, site_ends: Dictionary) -> void:
+	var cam := ctx.player.camera
+	var env: Environment = cam.environment
+	cam.global_position = ctx.player.position + Vector3.UP * 1.0
+	f.call("_process", 0.0)
+	f.call("flush")
+	K.check(fails, not bool(f.get("aerial")), "the camera back at the hero turns the coverage off")
+	var derived := is_equal_approx(cam.far, Q.camera_far("high"))
+	derived = derived and is_equal_approx(env.fog_depth_end, Q.street_fog_end("high"))
+	var msg := "the far plane and fog end re-derive from the preset (far %.0f, fog %.0f)"
+	K.check(fails, derived, msg % [cam.far, env.fog_depth_end])
+	K.check(fails, is_equal_approx(env.fog_depth_begin, 9.0), "the weather's fog begin survives")
+	K.check(fails, _ranges_back(hlod), "the street ranges are back exactly")
+	var back := _sites_back(ctx.view, ctx.sim, site_ends)
+	K.check(fails, back.x > 0 and back.y == 0, "site parts keep their ends (%d checked)" % back.x)
+	var trees := false
+	for n in _far_trees(ctx.view):
+		var mmi := n as MultiMeshInstance3D
+		var want := ctx.view.TREE_FAR_FP * float(ctx.view.vis_mult)
+		trees = trees or absf(mmi.visibility_range_end - want) < EPS
+	K.check(fails, trees, "the far tree layers end at TREE_FAR_FP again")
+
+
+## Every cached instance back at its street end and begin for the High preset.
+func _ranges_back(hlod: RefCounted) -> bool:
+	var ok := true
+	var mult := Q.vis_mult("high")
+	for i: int in hlod.tiles.keys():
+		var e: Dictionary = hlod.tiles[i]
+		var cls: PackedByteArray = e["cls"]
+		var gis: Array = e["gis"]
+		for k in range(gis.size()):
+			var gi := gis[k] as GeometryInstance3D
+			ok = ok and absf(gi.visibility_range_end - _want_end(cls[k], mult)) < EPS
+			ok = ok and absf(gi.visibility_range_begin - _want_begin(cls[k], mult)) < EPS
+	return ok
+
+
+## How many site parts came back and how many did not, as Vector2i(checked, bad).
+func _sites_back(view: CityView, sim: CitySim, site_ends: Dictionary) -> Vector2i:
+	var checked := 0
+	var bad := 0
+	for n in _site_parts(view, sim):
+		var gi := n as GeometryInstance3D
+		var id := gi.get_instance_id()
+		if not site_ends.has(id):
+			continue
+		checked += 1
+		var want: float = site_ends[id]
+		if gi.has_meta("ck_aerial_far") or not is_equal_approx(gi.visibility_range_end, want):
+			bad += 1
+	return Vector2i(checked, bad)
+
+
 ## Report-only (load-dependent): post-pass cost per tile and the slowest chunk rebuild.
 func _report_costs(f: Node, hlod: RefCounted) -> void:
 	var t0 := Time.get_ticks_usec()
@@ -473,8 +715,21 @@ func _check_undo(ctx: FpContext, f: Node, hlod: RefCounted, view: CityView) -> v
 			shown += 1
 	K.check(fails, kept == 0 and not parts.is_empty(), "leaving first person: no g2_vis node keeps a range (%d of %d)" % [kept, parts.size()])
 	K.check(fails, shown == 0 and not f.get_viewport().use_occlusion_culling, "leaving first person: impostors and occluders hidden, occlusion culling off")
+	var sites := _orbit_site_parts(view)
+	var sites_msg := "in orbit every part of the open sites (%d) draws at every zoom"
+	K.check(fails, sites.x > 0 and sites.y == 0, sites_msg % sites.x)
 	view.set_fp_mode(true)
 	K.check(fails, f.get("active") == true and hlod.tiles.size() > 0, "re-entering first person re-runs the post-pass")
+
+
+## Orbit view: every part of an open site draws at every zoom (the kit's ranges are a street-level
+## budget), so nothing of a site keeps a street range once the view is back in orbit.
+func _orbit_site_parts(view: CityView) -> Vector2i:
+	var parts: Array = view.site_parts()
+	var bad := 0
+	for n in parts:
+		bad += int((n as GeometryInstance3D).visibility_range_end != 0.0)
+	return Vector2i(parts.size(), bad)
 
 
 func _check_teardown(ctx: FpContext, f: Node) -> void:

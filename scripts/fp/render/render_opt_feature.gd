@@ -4,6 +4,10 @@ extends FpFeature
 ## on foot it ranges every tile holder's parts (hlod.gd), draws far buildings as merged chunk
 ## impostors and culls with per-chunk occluders (occluders.gd). Tile post-passes queue on tile_built
 ## and run under a per-frame budget (FRAME_BUDGET_USEC), followed by at most one chunk rebuild.
+## Aerial coverage: once the camera is AERIAL_MIN above the hero (the city overview lifts it, and so
+## does a photo fly), roads, open construction sites, far trees, the fog end and the far plane widen
+## so the city stays whole from the sky at every zoom. Every value is re-derived on exit, so a
+## preset or weather change mid-air never leaves a stale value behind.
 
 const WS := preload("res://scripts/fp/world_scale.gd")
 const D := preload("res://scripts/sim/sim_defs.gd")
@@ -18,6 +22,13 @@ const WAIT_BUDGET_USEC := 2000
 ## tick emission builds 10 to 40 tiles, so the queue drains within a few frames; one step always
 ## runs, so nothing starves on a slow frame.
 const FRAME_BUDGET_USEC := 2000
+## The camera is aerial once it is this far above the hero's feet (60 m: over every roof), and
+## stops once it sinks back below AERIAL_OFF (hysteresis, so the toggle never flaps at the line).
+const AERIAL_MIN := 3.0
+const AERIAL_OFF := 2.4
+## While aerial, open sites re-scan for parts this often (update_site adds parts without a
+## tile_built), so a rising frame's new floor shows from the sky too.
+const SITE_RESCAN := 0.5
 ## Project defaults of the global RenderingServer knobs (headless has no getters for them).
 const RS_SETTINGS := {
 	"atlas": "rendering/lights_and_shadows/directional_shadow/size",
@@ -39,6 +50,8 @@ const VIEWPORT_KEYS := ["scaling_3d_mode", "scaling_3d_scale", "msaa_3d", "mesh_
 
 ## The applied preset: "low", "medium" or "high".
 var preset: String = Q.DEFAULT
+## Aerial coverage on: the camera is over the city (the overview, a photo fly).
+var aerial: bool = false
 var hlod: RefCounted
 var occluders: RefCounted
 ## Last arguments of every RenderingServer setter this feature called (headless has no getters).
@@ -68,6 +81,8 @@ var _imp_root: Node3D
 var _occ_root: Node3D
 var _waiting_ready: bool = false
 var _wait_queue: Array = []
+## Seconds since the last open-site re-scan while aerial.
+var _aerial_site_t: float = 0.0
 ## Tiles built since their last post-pass: tile index -> holder, in arrival order.
 var _pass_queue: Dictionary = {}
 
@@ -137,11 +152,14 @@ func apply_preset(p: String) -> void:
 	if cam != null:
 		if _cam_far < 0.0:
 			_cam_far = cam.far
-		cam.far = Q.camera_far(preset)
+		cam.far = _far_now()
 	var mult := Q.vis_mult(preset)
 	if hlod != null and hlod.view != null:
 		hlod.set_ranges(WS.VIS_BUILDING * mult, WS.VIS_BUILDING_NEAR * mult, WS.VIS_PROP * mult)
 		_job = hlod.tiles.keys()
+	# A preset switch re-applies the street profile's fog end; the aerial push goes back on top.
+	if aerial and cam != null and cam.environment != null:
+		cam.environment.fog_depth_end = Q.aerial_fog_end(preset)
 
 
 ## True when the viewport and camera carry preset p's knobs (self-test and tests).
@@ -152,7 +170,68 @@ func preset_applied(p: String) -> bool:
 	var ok := _vp.scaling_3d_mode == int(k["scaling_mode"]) and is_equal_approx(_vp.scaling_3d_scale, float(k["scale"]))
 	ok = ok and _vp.msaa_3d == int(k["msaa"]) and is_equal_approx(_vp.mesh_lod_threshold, float(k["lod"]))
 	var cam := _camera()
-	return ok and (cam == null or is_equal_approx(cam.far, Q.camera_far(p)))
+	return ok and (cam == null or is_equal_approx(cam.far, _far_now()))
+
+
+## The far plane the camera should carry now: the aerial plane while it is over the city, else the
+## preset's street plane.
+func _far_now() -> float:
+	return Q.aerial_far(preset) if aerial else Q.camera_far(preset)
+
+
+## Turns the aerial coverage on or off: while on, the camera is over the city, so road mains and
+## twins (hlod.set_aerial, re-ranged through _job), far trees (CityView.set_aerial), open site
+## parts (ConstructionKit.aerial_ranges), the fog end and the far plane widen to keep the whole
+## city visible at every zoom. On exit each value is re-derived from the preset and the kit, never
+## from an entry snapshot, so a preset or weather change mid-air cannot leave a stale value.
+func set_aerial(on: bool) -> void:
+	if aerial == on:
+		return
+	aerial = on
+	hlod.set_aerial(on)
+	_job = hlod.tiles.keys()
+	if ctx.view != null:
+		ctx.view.set_aerial(on)
+	_range_sites(on)
+	var cam := _camera()
+	if cam != null:
+		cam.far = _far_now()
+		if cam.environment != null:
+			# The fog begin stays untouched (the street profile and weather's override own it);
+			# only the end moves, and it comes back as the street profile's own value on exit.
+			var fog_end := Q.aerial_fog_end(preset) if on else Q.street_fog_end(preset)
+			cam.environment.fog_depth_end = fog_end
+	_aerial_site_t = 0.0
+
+
+## The camera is over the city once it is AERIAL_MIN above the hero's feet (the overview's rig and a
+## photo fly lift it; the drive camera rides at car height and never trips this).
+func _check_aerial() -> void:
+	if ctx.player == null or not is_instance_valid(ctx.player):
+		return
+	var cam := _camera()
+	if cam == null:
+		return
+	var h := cam.global_position.y - ctx.player.position.y
+	if aerial:
+		if h <= AERIAL_OFF:
+			set_aerial(false)
+	elif h > AERIAL_MIN:
+		set_aerial(true)
+
+
+## Ranges every open site's parts for the aerial coverage (construction_kit.gd snapshots and
+## restores each part's own end).
+func _range_sites(on: bool) -> void:
+	if ctx.view == null or ctx.sim == null or ctx.view.kit == null:
+		return
+	for i: int in ctx.sim.sites.keys():
+		var h := ctx.view.tile_holder(i)
+		var site: Node3D = null
+		if h != null and is_instance_valid(h):
+			site = h.get_node_or_null("Site")
+		if site != null:
+			ctx.view.kit.aerial_ranges(site, on)
 
 
 ## Tiles still waiting to be re-ranged after a preset switch.
@@ -265,11 +344,18 @@ func reset_stats() -> void:
 	rebuild_us_max = 0
 
 
-func _process(_delta: float) -> void:
+func _process(delta: float) -> void:
 	if not active:
 		return
 	var t0: int = clock.call()
 	_frame_work(t0 + FRAME_BUDGET_USEC)
+	_check_aerial()
+	if aerial:
+		# update_site raises frames and adds parts without a tile_built: re-range them now and then.
+		_aerial_site_t += delta
+		if _aerial_site_t >= SITE_RESCAN:
+			_aerial_site_t = 0.0
+			_range_sites(true)
 	frame_us = int(clock.call()) - t0
 	frame_us_max = maxi(frame_us_max, frame_us)
 
@@ -311,6 +397,10 @@ func _activate() -> void:
 		occluders.rebuild_chunk(c, hlod)
 	if _vp != null:
 		_vp.use_occlusion_culling = true
+	if aerial and ctx.view != null:
+		# The rebuild replaced the trees and the sites; the coverage goes back on.
+		ctx.view.set_aerial(true)
+		_range_sites(true)
 
 
 ## Undo: no ranges, authored shadows, no impostors or occluders, occlusion culling as before.
@@ -318,6 +408,10 @@ func _deactivate() -> void:
 	if not active:
 		return
 	active = false
+	if aerial:
+		# Restores the fog end, the far plane, the trees and the sites before the teardown undoes
+		# the rest.
+		set_aerial(false)
 	hlod.midlod.wait_all()
 	_wait_queue.clear()
 	_waiting_ready = false
@@ -366,6 +460,11 @@ func _run_passes(deadline: int) -> bool:
 		_pass_queue.erase(i)
 		_dirty[hlod.post_pass(i, holder)] = true
 		pass_us_max = maxi(pass_us_max, int(clock.call()) - t0)
+		if aerial and ctx.view != null and ctx.view.kit != null:
+			# A tile rebuilt mid-air: its site's parts (a new site, a paved road) draw out too.
+			var site := holder.get_node_or_null("Site") as Node3D
+			if site != null:
+				ctx.view.kit.aerial_ranges(site, true)
 	return ran
 
 

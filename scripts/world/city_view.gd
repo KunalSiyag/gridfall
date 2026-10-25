@@ -177,6 +177,9 @@ var section_us_max: Dictionary = {}
 var light_pole_source: Object = null
 ## Visibility multiplier for the props, decals and multimeshes G1 ranges itself (G2's vis_mult).
 var vis_mult: float = 1.0
+## Aerial coverage (render_opt): while the camera is over the city, the far tree layers draw to the
+## horizon instead of ending where the street fog would take over.
+var aerial_trees: bool = false
 ## 0 dry .. 1 soaked; set by the streetscape weather through set_wetness().
 var wetness: float = 0.0
 ## FP rebuild queue: tile index -> seconds it has waited deferred (near and in view).
@@ -297,6 +300,23 @@ func set_fp_mode(on: bool) -> void:
 		if sim != null and _tiles_root != null:
 			world_rebuilt.emit()
 		fp_mode_changed.emit(on)
+
+
+## Aerial coverage (render_opt): while on, every far tree layer draws to the horizon, so woods and
+## street trees stay visible from the sky. Only the street chunks change (the orbit far layers
+## already have no end); chunks rebuilt later read the flag where they are built.
+func set_aerial(on: bool) -> void:
+	if aerial_trees == on:
+		return
+	aerial_trees = on
+	if not fp_mode:
+		return
+	for n: Array in _tree_chunks.values():
+		for layer: Variant in n:
+			var mmi := layer as MultiMeshInstance3D
+			if mmi == null or not is_instance_valid(mmi) or mmi.visibility_range_begin <= 0.0:
+				continue
+			mmi.visibility_range_end = 0.0 if on else TREE_FAR_FP * vis_mult
 
 
 ## Shows or hides the orbit-only layers for fp_mode (S0 §15.1): labels, territory, overlays, icons,
@@ -1112,6 +1132,7 @@ func _refresh_tree_chunk(c: Vector3i) -> void:
 		centre += t.origin
 	centre /= float(every.size())
 	var near_end := TREE_NEAR_FP * vis_mult if fp_mode else TREE_NEAR
+	var far_end := TREE_FAR_FP * vis_mult if fp_mode and not aerial_trees else 0.0
 	var margin := 1.5 if fp_mode else 6.0
 	for ki in range(_tree_kits.size()):
 		var spots: Array = by_kit[ki]
@@ -1120,7 +1141,7 @@ func _refresh_tree_chunk(c: Vector3i) -> void:
 		for p: Dictionary in _tree_kits[ki]:
 			layers.append(_tree_layer(p, spots, centre, 0.0, near_end, margin))
 	for p: Dictionary in _far_tree_parts:
-		layers.append(_tree_layer(p, every, centre, near_end, TREE_FAR_FP * vis_mult if fp_mode else 0.0, margin))
+		layers.append(_tree_layer(p, every, centre, near_end, far_end, margin))
 	_tree_chunks[c] = layers
 
 
@@ -1992,6 +2013,19 @@ func _site_root(i: int) -> Node3D:
 	if holder == null or not is_instance_valid(holder):
 		return null
 	return holder.get_node_or_null("Site") as Node3D
+
+
+## Every drawn part of every open construction site, in tile order: the aerial coverage re-ranges
+## exactly these parts, and the render tests check exactly these.
+func site_parts() -> Array:
+	var out: Array = []
+	if sim == null:
+		return out
+	for i: int in sim.sites.keys():
+		var site := _site_root(i)
+		if site != null:
+			out.append_array(site.find_children("*", "GeometryInstance3D", true, false))
+	return out
 
 
 ## Merged world-space bound of site_boxes(i): contains every blocking part the construction kit
