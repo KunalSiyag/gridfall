@@ -67,8 +67,15 @@ Plans what a jump press in front of an obstacle becomes (the parkour feature): a
 - `TUCK_R = 0.4 * R`
 - `HOP_MAX = 0.7 * WS.M`: Hops go up to HOP_MAX and climbs up to CLIMB_MAX. The body ends STAND_IN beyond touching the edge (on the middle of a narrower top).
 - `CLIMB_MAX = 2.1 * WS.M`
+- `RUN_UP_MAX = 3.0 * WS.M`: At a sprint (free running) the body runs a step or two up the face first: a run-up takes ledges up to RUN_UP_MAX.
+- `LEAP_EDGE = 0.15 * WS.M`: Gap jumps (leap(), free running): a running jump takes off when the ground LEAP_EDGE ahead of the feet falls away more than LEAP_DEEP, for ground across the gap (LEAP_DEEP above the gap's floor at least) at most LEAP_RISE above the feet and LEAP_DROP below them that the jump carries the feet LEAP_SPARE onto, at the least; the gap is scanned every LEAP_STEP.
+- `LEAP_DEEP = 0.5 * WS.M`
+- `LEAP_RISE = 0.2 * WS.M`
+- `LEAP_DROP = 2.0 * WS.M`
+- `LEAP_SPARE = 0.3 * WS.M`
+- `LEAP_STEP = 0.1 * WS.M`
 - `STAND_IN = 0.1 * WS.M`
-- `VAULT_SPEED = 2.5 * WS.M`: Speeds (u/s): a vault or a hop goes between VAULT_SPEED and a run; a climb walks up to the face at APPROACH at least.
+- `VAULT_SPEED = 2.5 * WS.M`: Speeds (u/s): a vault or a hop goes between VAULT_SPEED and a sprint; a climb walks up to the face at APPROACH at least.
 - `APPROACH = 1.5 * WS.M`
 - `RISE_MIN = 0.2`: Shortest phases: the rise to the top, the pass over it and the way down.
 - `OVER_MIN = 0.1`
@@ -94,8 +101,9 @@ Plans what a jump press in front of an obstacle becomes (the parkour feature): a
 
 ### Functions
 
-- `static func find(col: CollisionWorld, pos: Vector3, dir: Vector3, speed: float) -> Dictionary`: The move a jump press with the feet at pos becomes, heading along dir (xz) at speed (u/s), or {} for an ordinary jump: {"move": "vault", "hop" or "climb", "from" (feet), "dir" (unit, across the face), "top" (its height), "s" and "y" (the tracks), "length", "anim_at" (when the climb clip starts; -1 for none) and "anim_len", "grounded" (the body counts as on the ground: the climb), "exit" (the velocity handed back at the end, u/s)}.
+- `static func find(col: CollisionWorld, pos: Vector3, dir: Vector3, speed: float, up: float = CLIMB_MAX, reach: float = -1.0) -> Dictionary`: The move a jump press with the feet at pos becomes, heading along dir (xz) at speed (u/s), or {} for an ordinary jump: {"move": "vault", "hop" or "climb", "from" (feet), "dir" (unit, across the face), "top" (its height), "s" and "y" (the tracks), "length", "anim_at" (when the climb clip starts; -1 for none) and "anim_len", "grounded" (the body counts as on the ground: the climb), "exit" (the velocity handed back at the end, u/s)}. up: the highest ledge it takes (CLIMB_MAX; up to RUN_UP_MAX at a sprint, a climb above CLIMB_MAX then "said" "run_up"); reach: how far off the face may be (u; below 0, REACH plus REACH_T seconds at speed).
 - `static func roll(col: CollisionWorld, pos: Vector3, dir: Vector3, speed: float) -> Dictionary`: The roll a landing with the feet at pos becomes, heading along dir (xz) at speed (u/s): find()'s keys with "move" "roll", "anim_at" 0 and "anim_len" ROLL_T, on the ground all along, or {} without ROLL_MIN_D of room ahead.
+- `static func leap(col: CollisionWorld, pos: Vector3, dir: Vector3, speed: float) -> Dictionary`: The gap jump a body with the feet at pos running along dir (xz) at speed (u/s) takes at the edge just ahead: {"land": the feet where it comes down, "t": the seconds in the air}, or {} with no drop right ahead, no ground across within the jump's reach, or something in the way.
 - `static func point(plan: Dictionary, t: float) -> Vector3`: The feet t seconds into plan.
 - `static func sample(keys: Array, t: float) -> float`: A track's value at time t: keys are [time (rising from 0), value, how it eases into the key].
 - `static func clear_point(col: CollisionWorld, plan: Dictionary, t: float) -> Vector3`: Where a move cut short t seconds in leaves the feet: the latest point of plan up to t where a standing body fits (half over a ledge it does not, so it goes back to the face), the start at worst.
@@ -107,7 +115,7 @@ Plans what a jump press in front of an obstacle becomes (the parkour feature): a
 
 extends `FpFeature`
 
-Parkour (integration slice; docs/fp/ARCHITECTURE.md, Parkour): jump in front of an obstacle and the hero gets over it instead of jumping against it. A low, thin one (a bench, a low wall, a railing) is vaulted, a low ledge hopped onto and one up to 2.1 m climbed, the rig's climb clip playing as the body pulls itself up (moves.gd plans each move). A wall taller than that is taken hold of (flag wall_climb; wall.gd finds it): the hero leaps onto it and climbs it with the move keys, hands and feet on holds (climb.gd), climbs over the top where there is room to stand and steps off at its foot; crouch lets go and jump pushes off it. A hard landing on the move rolls on along the ground over a shoulder (flag landing_roll), the rig's roll clip playing and the first-person view turning over; the health feature counts it softer. The player's jump and land hooks hand the press or the landing over; the move carries the body (FpPlayer.carry) and gives it back at the end, after a vault, a hop or a let-go to land. A knock-down or a loss of control drops the body where it is, and a teleport ends the move. Each move goes out on the bus (hero_action "vault", "hop", "climb", "roll" or "grab").
+Parkour (integration slice; docs/fp/ARCHITECTURE.md, Parkour): jump in front of an obstacle and the hero gets over it instead of jumping against it. A low, thin one (a bench, a low wall, a railing) is vaulted, a low ledge hopped onto and one up to 2.1 m climbed, the rig's climb clip playing as the body pulls itself up (moves.gd plans each move). A wall taller than that is taken hold of (flag wall_climb; wall.gd finds it): the hero leaps onto it and climbs it with the move keys, hands and feet on holds (climb.gd), climbs over the top where there is room to stand and steps off at its foot; crouch lets go and jump pushes off it. A hard landing on the move rolls on along the ground over a shoulder (flag landing_roll), the rig's roll clip playing and the first-person view turning over; the health feature counts it softer. The player's jump and land hooks hand the press or the landing over; the move carries the body (FpPlayer.carry) and gives it back at the end, after a vault, a hop or a let-go to land. A knock-down or a loss of control drops the body where it is, and a teleport ends the move. Free running (flag free_running): at a sprint (the player's sprinting()) a low obstacle head-on just ahead is vaulted or hopped onto with no press, an edge with ground across the gap a running jump reaches is leapt, a jump at a ledge up to 3 m runs up it and climbs over, and coming down from a running jump the hands catch a ledge just ahead and climb onto it. Each move goes out on the bus (hero_action "vault", "hop", "climb", "run_up", "catch", "leap", "roll" or "grab").
 
 ### Constants
 
@@ -123,11 +131,15 @@ Parkour (integration slice; docs/fp/ARCHITECTURE.md, Parkour): jump in front of 
 - `ROLL_MIN = 6.0 * WS.M`: A landing rolls (flag landing_roll) from ROLL_MIN down (u/s; about a 1.8 m drop) up to ROLL_MAX (a 10 m one, past which it cannot be rolled off), moving at ROLL_MOVING or more.
 - `ROLL_MAX = 14.0 * WS.M`
 - `ROLL_MOVING = 1.0 * WS.M`
+- `AUTO_REACH = 0.8 * WS.M`: Free running: at a sprint an obstacle AUTO_REACH ahead is vaulted (or hopped onto) unasked and a gap leapt; coming down at CATCH_SPEED or more, a ledge CATCH_REACH ahead is caught.
+- `CATCH_REACH = 0.5 * WS.M`
+- `CATCH_SPEED = 2.0 * WS.M`
 
 ### Properties
 
 - `move: String`: The move under way ("vault", "hop", "climb", "roll", or "wall" on a wall) or "".
-- `made: Dictionary`: Moves made so far, by kind ("grab": walls taken hold of).
+- `made: Dictionary`: Moves made so far, by kind ("grab": walls taken hold of, "run_up": climbs run up at a sprint, "catch": ledges caught in the air, "leap": gaps jumped at a sprint).
+- `auto_moves: int`: Moves free running started with no press (vaults, hops and leaps at a sprint).
 - `climber: CLIMB`: The body on a wall (climb.gd) while move is "wall", else null.
 
 ### Functions

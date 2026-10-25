@@ -10,8 +10,12 @@ extends FpFeature
 ## the first-person view turning over; the health feature counts it softer. The player's jump and
 ## land hooks hand the press or the landing over; the move carries the body (FpPlayer.carry) and
 ## gives it back at the end, after a vault, a hop or a let-go to land. A knock-down or a loss of
-## control drops the body where it is, and a teleport ends the move. Each move goes out on the bus
-## (hero_action "vault", "hop", "climb", "roll" or "grab").
+## control drops the body where it is, and a teleport ends the move. Free running (flag
+## free_running): at a sprint (the player's sprinting()) a low obstacle head-on just ahead is
+## vaulted or hopped onto with no press, an edge with ground across the gap a running jump
+## reaches is leapt, a jump at a ledge up to 3 m runs up it and climbs over, and coming down from a
+## running jump the hands catch a ledge just ahead and climb onto it. Each move goes out on the bus
+## (hero_action "vault", "hop", "climb", "run_up", "catch", "leap", "roll" or "grab").
 
 const WS := preload("res://scripts/fp/world_scale.gd")
 const MOVES := preload("res://scripts/fp/parkour/moves.gd")
@@ -32,11 +36,21 @@ const PUSH_UP := 2.5 * WS.M
 const ROLL_MIN := 6.0 * WS.M
 const ROLL_MAX := 14.0 * WS.M
 const ROLL_MOVING := 1.0 * WS.M
+## Free running: at a sprint an obstacle AUTO_REACH ahead is vaulted (or hopped onto) unasked and
+## a gap leapt; coming down at CATCH_SPEED or more, a ledge CATCH_REACH ahead is caught.
+const AUTO_REACH := 0.8 * WS.M
+const CATCH_REACH := 0.5 * WS.M
+const CATCH_SPEED := 2.0 * WS.M
 
 ## The move under way ("vault", "hop", "climb", "roll", or "wall" on a wall) or "".
 var move: String = ""
-## Moves made so far, by kind ("grab": walls taken hold of).
-var made: Dictionary = {"vault": 0, "hop": 0, "climb": 0, "roll": 0, "grab": 0}
+## Moves made so far, by kind ("grab": walls taken hold of, "run_up": climbs run up at a sprint,
+## "catch": ledges caught in the air, "leap": gaps jumped at a sprint).
+var made: Dictionary = {
+	"vault": 0, "hop": 0, "climb": 0, "roll": 0, "grab": 0, "run_up": 0, "catch": 0, "leap": 0
+}
+## Moves free running started with no press (vaults, hops and leaps at a sprint).
+var auto_moves: int = 0
 ## The body on a wall (climb.gd) while move is "wall", else null.
 var climber: CLIMB = null
 var _plan: Dictionary = {}
@@ -76,8 +90,17 @@ func teardown() -> void:
 func self_test() -> Dictionary:
 	var p := ctx.player
 	var detail := (
-		"%d vaults, %d hops, %d climbs, %d rolls, %d walls"
-		% [made["vault"], made["hop"], made["climb"], made["roll"], made["grab"]]
+		"%d vaults, %d hops, %d climbs, %d rolls, %d walls, %d run-ups, %d catches, %d leaps"
+		% [
+			made["vault"],
+			made["hop"],
+			made["climb"],
+			made["roll"],
+			made["grab"],
+			made["run_up"],
+			made["catch"],
+			made["leap"],
+		]
 	)
 	var hooked := p == null or (p.jump_hook == try_move and p.land_hook == try_roll)
 	return {"ok": hooked, "detail": detail}
@@ -88,13 +111,12 @@ func self_test() -> Dictionary:
 ## and in control, not talking or knocked down.
 func try_move() -> bool:
 	var p := ctx.player if ctx != null else null
-	if p == null or not move.is_empty() or not FeatureFlags.enabled("parkour"):
-		return false
-	if not p.input_enabled or p.photo_mode or p.in_conversation() or _knocked():
+	if p == null or not move.is_empty() or not _may_move():
 		return false
 	var flat := Vector3(p.velocity.x, 0.0, p.velocity.z)
 	var dir := flat if flat.length() > MOVING else p.body_forward()
-	var plan := MOVES.find(ctx.collision, p.position, dir, flat.length())
+	var up := MOVES.RUN_UP_MAX if _free_running() else MOVES.CLIMB_MAX
+	var plan := MOVES.find(ctx.collision, p.position, dir, flat.length(), up)
 	if not plan.is_empty():
 		_start(plan)
 		return true
@@ -114,9 +136,7 @@ func try_roll(land_v: float) -> bool:
 	var p := ctx.player if ctx != null else null
 	if p == null or not move.is_empty() or land_v < ROLL_MIN or land_v > ROLL_MAX:
 		return false
-	if not FeatureFlags.enabled("parkour") or not FeatureFlags.enabled("landing_roll"):
-		return false
-	if not p.input_enabled or p.photo_mode or p.in_conversation() or _knocked():
+	if not FeatureFlags.enabled("landing_roll") or not _may_move():
 		return false
 	var flat := Vector3(p.velocity.x, 0.0, p.velocity.z)
 	var plan := {}
@@ -139,6 +159,7 @@ func _process(delta: float) -> void:
 ## the end.
 func tick(dt: float) -> void:
 	if move.is_empty():
+		_free_run()
 		return
 	var p := ctx.player
 	if p == null or not p.carried:
@@ -182,20 +203,76 @@ func stop() -> void:
 	_forget()
 
 
-## Starts the move plan (moves.gd) from where the body stands and puts it on the bus.
+## Free running: at a sprint on the ground, an obstacle head-on within AUTO_REACH that a vault or
+## a hop gets over starts it unasked, and an edge right ahead with ground across the gap that a
+## running jump reaches (moves.gd leap()) is leapt; in the air, coming down at CATCH_SPEED or more,
+## a ledge within CATCH_REACH and the hands' reach is caught and climbed (or hopped) onto.
+func _free_run() -> void:
+	var p := ctx.player if ctx != null else null
+	if p == null or p.carried or not FeatureFlags.enabled("free_running") or not _may_move():
+		return
+	var flat := Vector3(p.velocity.x, 0.0, p.velocity.z)
+	if p.grounded:
+		if p.sprinting():
+			_run_on(flat)
+		return
+	if p.velocity.y >= 0.0 or flat.length() < CATCH_SPEED:
+		return
+	var plan := MOVES.find(
+		ctx.collision, p.position, flat, flat.length(), MOVES.CLIMB_MAX, CATCH_REACH
+	)
+	if str(plan.get("move", "")) in ["climb", "hop"]:
+		plan["said"] = "catch"
+		_start(plan)
+
+
+## At a sprint on the ground: vaults or hops onto what is just ahead, else leaps the gap ahead.
+func _run_on(flat: Vector3) -> void:
+	var p := ctx.player
+	var sp := flat.length()
+	var plan := MOVES.find(ctx.collision, p.position, flat, sp, MOVES.CLIMB_MAX, AUTO_REACH)
+	if str(plan.get("move", "")) in ["vault", "hop"]:
+		auto_moves += 1
+		_start(plan)
+		return
+	if MOVES.leap(ctx.collision, p.position, flat, sp).is_empty() or not p.leap():
+		return
+	auto_moves += 1
+	made["leap"] = int(made["leap"]) + 1
+	if ctx.bus != null:
+		ctx.bus.hero_action.emit("leap", p.position)
+
+
+## True when the hero may start a move: parkour on, in control, not posing for a photo, talking or
+## knocked down.
+func _may_move() -> bool:
+	var p := ctx.player
+	if not FeatureFlags.enabled("parkour") or not p.input_enabled or p.photo_mode:
+		return false
+	return not p.in_conversation() and not _knocked()
+
+
+## True at a sprint built up with free running on.
+func _free_running() -> bool:
+	return FeatureFlags.enabled("free_running") and ctx.player.sprinting()
+
+
+## Starts the move plan (moves.gd) from where the body stands and puts it on the bus (as what the
+## plan "said" it is: a climb run up, a ledge caught; else its move).
 func _start(plan: Dictionary) -> void:
 	var p := ctx.player
 	_plan = plan
 	move = str(plan["move"])
 	_t = 0.0
 	_clip_on = false
-	made[move] = int(made.get(move, 0)) + 1
+	var said := str(plan.get("said", move))
+	made[said] = int(made.get(said, 0)) + 1
 	_cancel_actions()
 	var lead := 1.0 / 60.0
 	var vel := (MOVES.point(plan, lead) - MOVES.point(plan, 0.0)) / lead
 	p.carry(p.position, p.yaw, vel, bool(plan["grounded"]))
 	if ctx.bus != null:
-		ctx.bus.hero_action.emit(move, p.position)
+		ctx.bus.hero_action.emit(said, p.position)
 
 
 ## Takes hold of the wall w (wall.grab()): the leap onto it in the rig's wall pose, "grab" on the
