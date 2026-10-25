@@ -19,9 +19,21 @@ uniform float lot_edge = 0.0;
 uniform vec3 grass_tint : source_color = vec3(1.0, 1.0, 1.0);
 uniform float normal_strength = 0.7;
 uniform float wetness = 0.0;
+// Unpaved road tiles (CityView.track_material): the tile's road mask and grade come per instance;
+// the carriageway shape mirrors RoadTopology.is_carriageway. cut_grass discards everything but the
+// track itself (orbit view, where the ground under it is not this shader).
+uniform bool track = false;
+uniform bool cut_grass = false;
+uniform float road_half = 0.3;
+uniform float lane_offset = 0.15;
+uniform vec2 corner_radii = vec2(0.2, 0.8);
+uniform vec2 end_circle = vec2(0.04, 0.38);
+instance uniform float track_mask = 0.0;
+instance uniform float track_grade = 0.0;
 
 varying vec3 wpos;
 varying vec2 luv;
+varying vec2 tile_lp;
 
 float hash12(vec2 p) {
 	vec3 p3 = fract(vec3(p.xyx) * 0.1031);
@@ -44,11 +56,99 @@ float fbm(vec2 p) {
 	return vnoise(p) * 0.55 + vnoise(p * 2.07 + 13.1) * 0.3 + vnoise(p * 4.13 + 7.7) * 0.15;
 }
 
+// Mask bit k (N, E, S, W) to its arm direction in tile space, north at -Z.
+vec2 arm_dir(int k) {
+	if (k == 0) {
+		return vec2(0.0, -1.0);
+	} else if (k == 1) {
+		return vec2(1.0, 0.0);
+	} else if (k == 2) {
+		return vec2(0.0, 1.0);
+	}
+	return vec2(-1.0, 0.0);
+}
+
+int arm_count(int m) {
+	return (m & 1) + ((m >> 1) & 1) + ((m >> 2) & 1) + ((m >> 3) & 1);
+}
+
+// Signed distance (tile units, negative inside) to the carriageway edge of a road tile.
+float road_sdf(vec2 lp, int m) {
+	int n = arm_count(m);
+	if (n == 0 || m == 5) {
+		return abs(lp.x) - road_half;
+	}
+	if (m == 10) {
+		return abs(lp.y) - road_half;
+	}
+	if (n == 2) {
+		vec2 c = vec2(0.0);
+		for (int k = 0; k < 4; k++) {
+			if ((m & (1 << k)) != 0) {
+				c += arm_dir(k) * 0.5;
+			}
+		}
+		float r = length(lp - c);
+		return max(corner_radii.x - r, r - corner_radii.y);
+	}
+	float d = n == 1 ? 1e3 : max(abs(lp.x), abs(lp.y)) - road_half;
+	for (int k = 0; k < 4; k++) {
+		if ((m & (1 << k)) != 0) {
+			vec2 a = arm_dir(k);
+			d = min(d, max(abs(dot(lp, vec2(-a.y, a.x))) - road_half, -dot(lp, a)));
+			if (n == 1) {
+				d = min(d, length(lp + a * end_circle.x) - end_circle.y);
+			}
+		}
+	}
+	return d;
+}
+
+// 1 on a wheel line (0.8 m either side of a lane centre); u is the distance from the road's centre
+// line, w the band half-width.
+float wheel(float u, float w) {
+	float e = min(abs(u - lane_offset - 0.04), abs(u - lane_offset + 0.04));
+	return 1.0 - smoothstep(w * 0.5, w, e);
+}
+
+// Wheel lines over a whole road tile: along each arm, round a corner's arc, and at a dead end a
+// worn patch where traffic turns.
+float wheel_lines(vec2 lp, int m, float w) {
+	int n = arm_count(m);
+	if (n == 0 || m == 5) {
+		return wheel(abs(lp.x), w);
+	}
+	if (m == 10) {
+		return wheel(abs(lp.y), w);
+	}
+	if (n == 2) {
+		vec2 c = vec2(0.0);
+		for (int k = 0; k < 4; k++) {
+			if ((m & (1 << k)) != 0) {
+				c += arm_dir(k) * 0.5;
+			}
+		}
+		return wheel(abs(length(lp - c) - 0.5 * (corner_radii.x + corner_radii.y)), w);
+	}
+	float b = 0.0;
+	for (int k = 0; k < 4; k++) {
+		if ((m & (1 << k)) != 0) {
+			vec2 a = arm_dir(k);
+			if (dot(lp, a) > (n == 1 ? -end_circle.x : -road_half)) {
+				b = max(b, wheel(abs(dot(lp, vec2(-a.y, a.x))), w));
+			}
+			if (n == 1) {
+				b = max(b, 0.8 * (1.0 - smoothstep(0.07, 0.15, length(lp + a * end_circle.x))));
+			}
+		}
+	}
+	return b;
+}
 void vertex() {
 	wpos = (MODEL_MATRIX * vec4(VERTEX, 1.0)).xyz;
 	luv = UV;
+	tile_lp = VERTEX.xz;
 }
-
 void fragment() {
 	vec2 p = wpos.xz * detail_scale;
 	vec2 dx = dFdx(p);
@@ -91,10 +191,56 @@ void fragment() {
 	vec3 alb = mix(g, da * vec3(0.95, 0.9, 0.85), earth);
 	vec3 nrm = mix(gn, dn, earth);
 	float rough = mix(gr, 0.95, earth);
-	// Rain: darker, with a satin sheen on bare earth (grass blades stay fairly matte).
+	float puddle = 0.0;
+	if (track) {
+		int m = int(track_mask + 0.5);
+		int grade = int(track_grade + 0.5);
+		float d = road_sdf(tile_lp, m) + (fbm(p * 0.9 + 1.7) - 0.5) * 0.035;
+		float on = 1.0 - smoothstep(-0.008, 0.008, d);
+		// In orbit the bands would be sub-pixel; widen them.
+		float wk = cut_grass ? 2.0 : 1.0;
+		float ruts = wheel_lines(tile_lp, m, 0.013 * wk);
+		float lanes = wheel_lines(tile_lp, m, 0.07);
+		float breakup = fbm(p * 0.6 + 9.0);
+		vec3 surf;
+		float cover;
+		float srough;
+		if (grade == 1) {
+			// Gravel: grey-beige loose stone, pebble speckle fading out with distance, compacted wheel lines.
+			float lum = dot(da, vec3(0.3, 0.59, 0.11));
+			surf = mix(vec3(lum), da, 0.3) * vec3(1.2, 1.17, 1.1);
+			float fade = 1.0 - smoothstep(0.2, 0.8, length(fwidth(p)) * 70.0);
+			surf *= 1.0 + (vnoise(p * 70.0) - 0.5) * 0.6 * fade + (vnoise(p * 23.0 + 4.0) - 0.5) * 0.25;
+			surf *= 1.0 - 0.14 * ruts;
+			cover = on;
+			srough = 0.92;
+		} else if (grade == 2) {
+			// Dirt track: brown earth rutted by wheels, grass tufts between and beside the wheel lanes.
+			surf = da * vec3(0.92, 0.82, 0.68) * (1.0 - 0.22 * ruts);
+			float tufts = (1.0 - lanes) * smoothstep(0.5, 0.72, breakup);
+			tufts = max(tufts, smoothstep(-0.07, 0.0, d) * smoothstep(0.35, 0.6, breakup));
+			cover = on * (1.0 - tufts);
+			srough = 0.97;
+		} else {
+			// Grass trail: two worn earth lines per lane in trampled grass, broken where the grass wins.
+			alb *= mix(vec3(1.0), vec3(1.06, 1.0, 0.78), on * lanes * 0.6);
+			surf = da * vec3(0.9, 0.84, 0.72);
+			cover = on * wheel_lines(tile_lp, m, 0.05 * wk) * smoothstep(0.25, 0.5, breakup + 0.1);
+			srough = 0.95;
+		}
+		if (cut_grass && cover < 0.5) {
+			discard;
+		}
+		alb = mix(alb, surf, cover);
+		nrm = mix(nrm, dn, cover);
+		rough = mix(rough, srough, cover);
+		earth = max(earth, cover);
+		puddle = grade == 1 ? 0.0 : ruts * cover;
+	}
+	// Rain: darker, with a satin sheen on bare earth (grass blades stay fairly matte); water stands in ruts.
 	alb *= mix(1.0, mix(0.72, 0.55, earth), wetness);
 	rough = mix(rough, mix(0.55, 0.25, earth), wetness);
-	ALBEDO = alb;
+	rough = mix(rough, 0.05, puddle * wetness * 0.85);	ALBEDO = alb;
 	NORMAL_MAP = nrm;
 	NORMAL_MAP_DEPTH = normal_strength;
 	ROUGHNESS = rough;

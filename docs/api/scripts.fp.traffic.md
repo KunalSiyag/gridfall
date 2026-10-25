@@ -34,6 +34,9 @@ Ambient filler (docs/fp/slices/E-traffic.md §6): unnamed commuters (some of the
 - `BIKE_CHANCE = 0.18`: Share of the ambient traffic that is cyclists (the cyclists flag; 0 off), riding at about BIKE_V0 on a bicycle of BIKE_DIMS (as a resident's, trips.gd).
 - `BIKE_V0 = 4.0 * WS.M`
 - `BIKE_DIMS = Vector3(0.6 * WS.M, 1.8 * WS.M, 1.8 * WS.M)`
+- `TRACK_BIKE_BOOST = 3.0`: On an unpaved road (D.ROAD_GRADES) the cyclist chance is TRACK_BIKE_BOOST times higher (at most TRACK_BIKE_MAX), and only TRACK_CARS of the cars that would spawn there do.
+- `TRACK_BIKE_MAX = 0.6`
+- `TRACK_CARS = 0.35`
 
 ### Properties
 
@@ -404,7 +407,7 @@ Right-hand lane graph over the road tiles (docs/fp/slices/E-traffic.md §1). Pur
 - `func pass_factor(l: Lane, s: float) -> float`: How far a straight lane is pulled in toward PASS_OFFSET at s (0 = LANE_OFFSET, 1 = PASS_OFFSET).
 - `func refresh_blocked() -> bool`: Re-reads broken roads and road-blocking events (car_crash, power_line). Returns true on change.
 - `func is_blocked(i: int) -> bool`
-- `func parkable(i: int) -> bool`: True when straight tile i can take curb parking at all (not a bridge, not a junction).
+- `func parkable(i: int) -> bool`: True when straight tile i can take curb parking at all (paved: not a bridge, a junction or a track without curbs).
 - `func run_dir(i: int) -> Vector2`: Run direction (xz) of straight tile i.
 - `func side_of_heading(i: int, h: Vector2) -> int`: Side index (0 right of run_dir, 1 left) of straight tile i that a vehicle heading h drives on.
 - `func slot_pose(i: int, k: int) -> Array`: [pos: Vector2 (world xz), heading: Vector2] of curb slot k of straight tile i. The car faces the traffic on its side (right-hand).

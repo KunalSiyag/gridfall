@@ -46,6 +46,7 @@ Tile-based SimCity-style simulation: zoning + demand-driven growth, power/water/
 - `day_seconds: float`: Real seconds per game day at speed 1. Orbit and tests keep SimDefs.BASE_DAY_SECONDS (12); first person sets WS.FP_DAY_SECONDS (1200). Not saved: the view mode sets it at boot. Change it through set_day_seconds() while a day is running, so the time of day stays put.
 - `people: Residents`: The AI residents (Residents node). When attached, human behaviour (mood, commuting, spending, moving, fixing what breaks) comes from their decisions instead of fixed formulas.
 - `broken_roads: Dictionary`: Road tiles cut by a downed power line: tile -> incident id.
+- `road_grades: bool`: Road orders may ask for a cheaper grade (D.ROAD_GRADES); off: every road is paved (main.gd: the road_grades flag). Not saved.
 - `active`: Tiles the per-tick systems process: claimed land plus a small margin. Unclaimed wilds hold no roads or buildings, so skipping them keeps a 192x192 world as cheap as the founding city.
 - `sites: Dictionary`: Open construction sites: tile -> site. "auto" stages construction whenever residents run the city; "staged" / "instant" force it either way.
 - `crew_jobs: Array[Dictionary]`: The player's crew orders, oldest first: {"id", "owner", "label", "x", "y", "tiles" (its site tiles), "work" (the sites' contractor work), "total" and "done" (crew seconds), "crew" (crew index, -1 while it waits for a free crew)}. Their sites carry "job", the order id.
@@ -62,6 +63,7 @@ Tile-based SimCity-style simulation: zoning + demand-driven growth, power/water/
 - `func owner_name(i: int) -> String`
 - `func annex_cost(mi: int) -> int`
 - `func annexable_plots(mi: int) -> Array`: Plots that are entirely unclaimed and share an edge with land district mi already owns.
+- `func road_density_cap(i: int) -> int`: The highest density a zoned lot at i may grow to for its roads: max_density of the best-graded road within 2 tiles (D.ROAD_GRADES; 3 with a paved one, 1 with none).
 - `func set_speed(s: int) -> void`
 - `func day_progress() -> float`
 - `func tick_seconds() -> float`: Real seconds per growth tick at speed 1.
@@ -205,8 +207,9 @@ The people of GridFall: up to 100 named residents, each standing in for an equal
 - `func respond(r: Dictionary, ev: Dictionary, d: Dictionary, source: String, model: String) -> String`
 - `func remember(r: Dictionary, line: String) -> void`: Adds a line to the resident's memory as "Day N: line" (an exact repeat of the last line is skipped, at most 8 lines kept). For other slices, e.g. a face-to-face conversation that ends.
 - `func nudge_mood(r: Dictionary, delta: float) -> void`: Shifts the resident's mood (0..10) by delta, clamped. Callers bound delta themselves.
-- `func trip_mode(r: Dictionary, tiles: int, state: String) -> String`: How r makes a trip of tiles road tiles for state: the commute in r's plan to work (anything short on foot otherwise), on the bicycle instead of the car when r keeps one and it is not far.
-- `func keeps_bike(r: Dictionary) -> bool`: True when r keeps a bicycle (see BIKE_SHARE); the same answer every day.
+- `func trip_mode(r: Dictionary, tiles: int, state: String, rural: bool = false) -> String`: How r makes a trip of tiles road tiles for state: the commute in r's plan to work (anything short on foot otherwise), on the bicycle instead of the car when r keeps one and it is not far. rural: most of the way is unpaved (is_rural), where twice as many people keep a bicycle.
+- `func is_rural(route: Array) -> bool`: True when at least half of route's road tiles (Vector2i, as route_between gives them) are gravel, dirt or trail.
+- `func keeps_bike(r: Dictionary, rural: bool = false) -> bool`: True when r keeps a bicycle (see BIKE_SHARE; twice the share for a rural trip); the same answer every day for the same kind of trip.
 - `func route_between(a: int, b: int) -> Array`
 - `func card(r: Dictionary) -> Dictionary`
 - `func to_dict() -> Dictionary`
@@ -282,7 +285,13 @@ Static rules, costs, and catalogs for the GridFall city simulation.
 - `CREW_MIN_S = 120.0`: A park takes a crew CREW_MIN_S, the airport CREW_MAX_S, other buildings scale with their contractor time in between. Roads and clearing take CREW_TILE_S per tile. No order is quicker than CREW_JOB_MIN_S or slower than CREW_MAX_S.
 - `CREW_MAX_S = 300.0`
 - `CREW_JOB_MIN_S = 45.0`
-- `CREW_TILE_S = {"road": 10.0, "bridge": 24.0, "clear": 30.0, "haul": 45.0}`
+- `CREW_TILE_S = { "road": 10.0, "gravel": 7.0, "track": 5.0, "trail": 3.0, "bridge": 24.0, "clear": 30....`
+- `GRADE_PAVED = 0`: Road grades: a ROAD tile's level says how it is surfaced. 0 is the paved street every road was before grades, so old saves load paved. The cheaper grades cost less to build and keep up, but they are slower to drive, and a zoned lot whose best road within 2 tiles is of that grade grows no denser than max_density. ticks: contractor build time; plan: the site's stages. Bridges are always paved.
+- `GRADE_GRAVEL = 1`
+- `GRADE_DIRT = 2`
+- `GRADE_TRAIL = 3`
+- `ROAD_GRADES = [ { "key": "paved", "label": "Road", "cost": ROAD_COST, "upkeep": 0.15, "speed": 1.0, "...`
+- `GRADE_ALIASES = { "paved": 0, "asphalt": 0, "road": 0, "gravel": 1, "dirt": 2, "track": 2, "trail": 3, ...`
 - `R_POP = [0, 16, 48, 120]`
 - `C_JOBS = [0, 10, 30, 72]`
 - `I_JOBS = [0, 14, 40, 90]`
@@ -294,7 +303,8 @@ Static rules, costs, and catalogs for the GridFall city simulation.
 - `ZONE_CHAR = {ZONE_R: "r", ZONE_C: "c", ZONE_I: "i"}`
 - `DEV_CHAR = {ZONE_R: "R", ZONE_C: "C", ZONE_I: "I"}`
 - `MAP_CHAR = { EMPTY: ".", ROAD: "=", COAL: "E", SOLAR: "S", PUMP: "W", SEWAGE: "X", POLICE: "K", FI...`
-- `MAP_LEGEND = ". empty land, ^ forest (zoning clears it), ~ water, = road, r/c/i zoned empty lot, R/C...`
+- `GRADE_CHAR = ["=", ":", "-", ";"]`: Map characters of the road grades (ROAD_GRADES order).
+- `MAP_LEGEND = ". empty land, ^ forest (zoning clears it), ~ water, = paved road, : gravel road, - dir...`
 
 ### Functions
 
@@ -309,6 +319,8 @@ Static rules, costs, and catalogs for the GridFall city simulation.
 - `static func is_service(kind: int) -> bool`
 - `static func build_ticks(key: String) -> int`: Contractor-only build time in growth ticks (4 per day) for a service building.
 - `static func crew_seconds(plan: String, ticks: int) -> float`: Real seconds one of the player's crews needs for a site of plan that contractors alone would finish in ticks growth ticks.
+- `static func grade_of(key: String) -> int`: Road grade for an order's "grade" value (see GRADE_ALIASES; empty means paved), or -1.
+- `static func grade_info(g: int) -> Dictionary`: The ROAD_GRADES entry of grade g (paved for anything out of range).
 - `static func build_plan(key: String) -> String`: The site plan for building key: the park and the light builds go through fewer stages.
 - `static func build_crew_seconds(key: String) -> float`: Crew seconds for one building of type key, from the order to the opening.
 - `static func is_power_plant(kind: int) -> bool`

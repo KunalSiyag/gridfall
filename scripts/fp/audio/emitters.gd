@@ -736,9 +736,10 @@ func _walker_step(w: Dictionary) -> void:
 	if _players.size() >= MAX_PLAYERS and _free.is_empty():
 		return
 	var p: Vector3 = w["pos"]
-	var surf := ctx.collision.surface_at(p) if ctx != null and ctx.collision != null else "sidewalk"
-	if not surf in BANK.SURFACES:
-		surf = "sidewalk"
+	var ground := "sidewalk"
+	if ctx != null and ctx.collision != null:
+		ground = ctx.collision.surface_at(p)
+	var surf := BANK.step_surface(ground)
 	var left: bool = w["left"]
 	w["left"] = not left
 	var pool: Array[int] = FS.LEFT_VARIANTS if left else FS.RIGHT_VARIANTS

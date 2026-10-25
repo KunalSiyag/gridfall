@@ -35,6 +35,7 @@ Analytic on-foot collision (slice A; no physics engine, D2): walkable ground hei
 - `PROP_R_MAX = 0.5 * WS.M`
 - `ROUND_SLIDE = 0.45`: Walking head-on into a pole keeps this fraction of the speed, sliding round it.
 - `META_CYL_TOP = 3.0 * WS.M`: Cylinders from a G1 `colliders` meta carry no height: they block up to this.
+- `GRADE_SURFACES = ["asphalt", "gravel", "dirt", "trail"]`: surface_at() on the carriageway of each road grade (D.ROAD_GRADES order).
 
 ### Properties
 
@@ -53,7 +54,7 @@ Analytic on-foot collision (slice A; no physics engine, D2): walkable ground hei
 - `func ground_height(p: Vector3) -> float`: World y of the walkable surface at p.x/p.z; NAN when not walkable (water, bridge parapet).
 - `func walk_height(p: Vector3) -> float`: The height the feet stand at: ground_height() with the interim soft step (SOFT_STEP ramps over SOFT_BAND toward a GROUND_Y neighbour). NAN where ground_height is NAN.
 - `func support_height(p: Vector3, radius: float, feet_y: float, max_rise: float) -> float`: What the feet of a walker at feet_y stand on at p: walk_height(), or the top of a box under the circle that is at most max_rise above the feet (a low wall it stepped or jumped onto). NAN over water.
-- `func surface_at(p: Vector3) -> String`: Surface name for footsteps and audio: "asphalt"|"sidewalk"|"lot"|"grass"|"dirt"|"water"|"bridge".
+- `func surface_at(p: Vector3) -> String`: Surface name for footsteps and audio: "asphalt"|"sidewalk"|"lot"|"grass"|"dirt"|"water"|"bridge", or on the carriageway of an unpaved road "gravel"|"dirt"|"trail" (its verges are "grass").
 - `func is_blocked(p: Vector3, radius: float) -> bool`: True if a circle of `radius` at p (feet) is blocked: unwalkable ground under p, or a box or a prop cylinder of the 3x3 tiles around p whose top is above p.y. Boxes are grown by radius in xz (a square, so it agrees with tests that grow AABBs).
 - `func body_blocked(p: Vector3, radius: float, height: float) -> bool`: is_blocked() for a body `height` tall: boxes and cylinders entirely above p.y + height (an awning, a ceiling) let it pass.
 - `func move_and_slide(from: Vector3, motion: Vector3, radius: float) -> Vector3`: Moves from `from` by `motion` (y ignored), sliding along blockers. S0 rules: try the full move, else x only, else z only, else stay; a player who already overlaps a box may take any of them that enters nothing new and goes no deeper. Returns the new feet position (y unchanged).

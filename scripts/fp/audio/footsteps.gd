@@ -117,7 +117,7 @@ static func stride_length(speed_mps: float) -> float:
 func play(surface: String, gain_db: float = 0.0) -> void:
 	if not enabled:
 		return
-	var surf := surface if surface in BANK.SURFACES else "sidewalk"
+	var surf := BANK.step_surface(surface)
 	var left := _left
 	_left = not _left
 	var pool: Array[int] = LEFT_VARIANTS if left else RIGHT_VARIANTS

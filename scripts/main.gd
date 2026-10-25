@@ -56,6 +56,7 @@ func _ready() -> void:
 	start["low_vram"] = bool(gpu["low"])
 	Analytics.track("session_start", start)
 	sim.set_speed(0)
+	sim.road_grades = FeatureFlags.enabled("road_grades")
 	residents = Residents.new()
 	residents.name = "Residents"
 	residents.enabled = OS.get_environment("GRIDFALL_RESIDENTS") != "0"

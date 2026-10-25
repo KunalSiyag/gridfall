@@ -6,6 +6,7 @@
     "render_opt": {"default": true, "description": "First-person feature: quality preset application, LOD ranges and far-building chunks (slice G2)."},
     "traffic": {"default": true, "description": "First-person feature: lane traffic, buses and walking residents (slice E)."},
     "cyclists": {"default": true, "description": "People on bicycles. A quarter of the residents (more of the adventurous and thrifty) keep a bicycle and ride it instead of driving on trips of up to 16 road tiles, and about one in six of the unnamed vehicles in the street is a cyclist. Off: only residents whose day's plan says bike ride, and the street traffic is all motor vehicles."},
+    "road_grades": {"default": true, "description": "Gravel roads, dirt tracks and grass trails. A road order may ask for a cheaper grade, which costs less to build and keep up but is slower to drive and only carries low-density lots; a better grade over an existing road resurfaces it. On foot they have no curbs or street furniture, and the car grips them less. Off: every road order builds a paved street."},
     "interact": {"default": true, "description": "First-person feature: interaction with residents, buildings, posters and cars (slice A)."},
     "hud_widgets": {"default": true, "description": "First-person feature: minimap, full map, compass and waypoint widgets (slice B)."},
     "chat": {"default": true, "description": "First-person feature: city chat feed, talk dialog and /mayor decrees (slice C)."},

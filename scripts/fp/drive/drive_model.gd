@@ -30,7 +30,9 @@ const SURFACES := {
 	"bridge": [1.0, 1.0],
 	"sidewalk": [0.9, 0.8],
 	"lot": [0.85, 0.7],
+	"gravel": [0.75, 0.75],
 	"dirt": [0.6, 0.5],
+	"trail": [0.6, 0.55],
 	"grass": [0.55, 0.45],
 }
 ## Spin from knocks lost per second (1/s): tyres gripping, and on the handbrake.

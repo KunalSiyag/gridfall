@@ -41,6 +41,8 @@ const PROP_R_MAX := 0.5 * WS.M
 const ROUND_SLIDE := 0.45
 ## Cylinders from a G1 `colliders` meta carry no height: they block up to this.
 const META_CYL_TOP := 3.0 * WS.M
+## surface_at() on the carriageway of each road grade (D.ROAD_GRADES order).
+const GRADE_SURFACES := ["asphalt", "gravel", "dirt", "trail"]
 
 var ctx: FpContext
 ## Tile index -> {"boxes": Array[AABB], "bodies": Array[AABB], "cyls": PackedFloat32Array of
@@ -186,7 +188,8 @@ func support_height(p: Vector3, radius: float, feet_y: float, max_rise: float) -
 	return g
 
 
-## Surface name for footsteps and audio: "asphalt"|"sidewalk"|"lot"|"grass"|"dirt"|"water"|"bridge".
+## Surface name for footsteps and audio: "asphalt"|"sidewalk"|"lot"|"grass"|"dirt"|"water"|"bridge",
+## or on the carriageway of an unpaved road "gravel"|"dirt"|"trail" (its verges are "grass").
 func surface_at(p: Vector3) -> String:
 	var i := tile_at(p)
 	if i < 0:
@@ -197,7 +200,11 @@ func surface_at(p: Vector3) -> String:
 		if RoadTopology.is_bridge(sim, i):
 			return "bridge"
 		var m := RoadTopology.mask(sim, D.tx(i), D.ty(i))
-		return "asphalt" if RoadTopology.is_carriageway(m, Vector2(p.x - D.tx(i), p.z - D.ty(i))) else "sidewalk"
+		var on := RoadTopology.is_carriageway(m, Vector2(p.x - D.tx(i), p.z - D.ty(i)))
+		var g := RoadTopology.grade(sim, i)
+		if g != D.GRADE_PAVED:
+			return str(GRADE_SURFACES[g]) if on else "grass"
+		return "asphalt" if on else "sidewalk"
 	if sim.terrain[i] == D.WATER:
 		return "water"
 	if k == D.EMPTY or k == D.FOREST or k == D.PARK or (D.is_zone(k) and sim.level[i] <= 0):
@@ -860,7 +867,7 @@ func _prop_shapes(i: int, holder: Node3D, props: Array[AABB], cyls: PackedFloat3
 	if is_road:
 		var m := RoadTopology.mask(sim, D.tx(i), D.ty(i))
 		var arms := RoadTopology.arms(m)
-		if arms.size() == 1 and sim.terrain[i] != D.WATER:
+		if arms.size() == 1 and sim.terrain[i] != D.WATER and RoadTopology.paved(sim, i):
 			var arm := Vector2(arms[0])
 			var c := Vector3(D.tx(i), 0.0, D.ty(i)) - Vector3(arm.x, 0.0, arm.y) * WS.END_CIRCLE_OFFSET
 			cyls.append_array([c.x, c.z, TRUNK_R, WS.SIDEWALK_TOP + 6.0 * WS.M])

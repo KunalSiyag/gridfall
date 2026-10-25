@@ -64,9 +64,15 @@ static func road_path(a: Vector2i, b: Vector2i) -> Array[Vector2i]:
 
 ## What placing tool at target would do. a is the first corner of a two-point tool (D.NO_TILE
 ## before it is set). Returns {"ok", "mi", "tiles" (Array[Vector2i] to draw), "cost", "reason",
-## "action" (the apply_action dict)}; reason says what is wrong when ok is false.
+## "action" (the apply_action dict)}; reason says what is wrong when ok is false. grade is the
+## road tool's surface (D.ROAD_GRADES index).
 static func preview(
-	sim: CitySim, tool: String, a: Vector2i, target: Vector2i, building: String
+	sim: CitySim,
+	tool: String,
+	a: Vector2i,
+	target: Vector2i,
+	building: String,
+	grade: int = D.GRADE_PAVED
 ) -> Dictionary:
 	var from := a if a != D.NO_TILE and TWO_POINT.has(tool) else target
 	var mi := owner_of(sim, from.x, from.y)
@@ -79,7 +85,7 @@ static func preview(
 		return out
 	match tool:
 		"road":
-			_road(sim, mi, from, target, out)
+			_road(sim, mi, from, target, grade if sim.road_grades else D.GRADE_PAVED, out)
 		"zone_r", "zone_c", "zone_i":
 			_zone(sim, mi, from, target, str(ZONES[tool]), out)
 		"build":
@@ -95,7 +101,10 @@ static func preview(
 	return out
 
 
-static func _road(sim: CitySim, mi: int, a: Vector2i, b: Vector2i, out: Dictionary) -> void:
+static func _road(
+	sim: CitySim, mi: int, a: Vector2i, b: Vector2i, grade: int, out: Dictionary
+) -> void:
+	var info := D.grade_info(grade)
 	var tiles: Array[Vector2i] = []
 	var cost := 0
 	for p in road_path(a, b):
@@ -104,20 +113,29 @@ static func _road(sim: CitySim, mi: int, a: Vector2i, b: Vector2i, out: Dictiona
 			return
 		var i := D.idx(p.x, p.y)
 		var k := sim.kind[i]
-		if k == D.ROAD or (sim.sites.has(i) and int(sim.sites[i]["target_kind"]) == D.ROAD):
+		# A road of this grade or better stays; a rougher one is resurfaced.
+		var resurface := k == D.ROAD and sim.level[i] > grade
+		if (
+			(k == D.ROAD and not resurface)
+			or (sim.sites.has(i) and int(sim.sites[i]["target_kind"]) == D.ROAD)
+		):
 			continue
 		if sim.district[i] != mi:
 			out["reason"] = "The road crosses into another district"
 			out["tiles"] = tiles
 			return
 		if not (
-			k == D.EMPTY or k == D.FOREST or k == D.RUBBLE or (D.is_zone(k) and sim.level[i] == 0)
+			resurface
+			or k == D.EMPTY
+			or k == D.FOREST
+			or k == D.RUBBLE
+			or (D.is_zone(k) and sim.level[i] == 0)
 		):
 			out["reason"] = "Blocked by %s" % str(D.KIND_NAMES[k]).replace("_", " ")
 			out["tiles"] = tiles
 			return
 		tiles.append(p)
-		cost += D.ROAD_COST * (5 if sim.terrain[i] == D.WATER else 1)
+		cost += D.ROAD_COST * 5 if sim.terrain[i] == D.WATER else int(info["cost"])
 	out["tiles"] = tiles
 	if tiles.is_empty():
 		out["reason"] = "There is a road here already"
@@ -125,6 +143,8 @@ static func _road(sim: CitySim, mi: int, a: Vector2i, b: Vector2i, out: Dictiona
 	out["ok"] = true
 	out["cost"] = cost
 	out["action"] = {"type": "road", "x": a.x, "y": a.y, "x2": b.x, "y2": b.y}
+	if grade != D.GRADE_PAVED:
+		out["action"]["grade"] = str(info["key"])
 
 
 static func _zone(
@@ -212,7 +232,7 @@ static func _bulldoze(sim: CitySim, _mi: int, t: Vector2i, out: Dictionary) -> v
 
 ## Crew seconds the previewed order p would take one of the player's crews
 ## (CitySim.apply_player_order), or -1 when there is no estimate: zoning and bulldozing (what is
-## on the tile decides), a refused order, or instant construction.
+## on the tile decides), a refused order, or instant construction. A road's grade comes from p.
 static func crew_seconds(sim: CitySim, tool: String, building: String, p: Dictionary) -> float:
 	if not sim.staged() or not bool(p.get("ok", false)):
 		return -1.0
@@ -220,8 +240,10 @@ static func crew_seconds(sim: CitySim, tool: String, building: String, p: Dictio
 		return D.build_crew_seconds(building)
 	if tool != "road":
 		return -1.0
+	var a: Dictionary = p.get("action", {})
+	var plan := str(D.grade_info(D.grade_of(str(a.get("grade", ""))))["plan"])
 	var secs := 0.0
 	for t: Vector2i in p["tiles"]:
 		var wet := sim.terrain[D.idx(t.x, t.y)] == D.WATER
-		secs += float(D.CREW_TILE_S["bridge" if wet else "road"])
+		secs += float(D.CREW_TILE_S["bridge" if wet else plan])
 	return clampf(secs, D.CREW_JOB_MIN_S, D.CREW_MAX_S)

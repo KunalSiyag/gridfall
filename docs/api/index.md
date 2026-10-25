@@ -21,6 +21,7 @@ Generated from the `##` doc comments in `scripts/`. Regenerate with `python3 too
 - [gmi_image_client.gd](scripts.ai.md#scriptsaigmi_image_clientgd) (`GmiImageClient`): Async poster image client for GMI's hy-image-v3.5-preview (slice D)
 - [mayor_turns.gd](scripts.ai.md#scriptsaimayor_turnsgd): Staggered mayor turns (CityBrain.stagger_mayors, on in street mode)
 - [resident_minds.gd](scripts.ai.md#scriptsairesident_mindsgd) (`ResidentMinds`): Gives every resident a GMI brain
+- [road_plans.gd](scripts.ai.md#scriptsairoad_plansgd): The heuristic mayor's road orders (CityBrain._heuristic_mayor): new roads to open land, at as cheap a grade as the funds call for, and paving rough roads that lots have grown along
 
 ## [scripts/fp/](scripts.fp.md)
 

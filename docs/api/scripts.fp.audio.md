@@ -52,6 +52,7 @@ Slice I's sound assets (sounds/fp/, made by tools/audio/synth_fp_sfx.py): names,
 - `DIR = "res://sounds/fp/"`
 - `LEGACY_AMBIENCE = "res://sounds/ambience.ogg"`: Wind, distant rumble and garden birds: reused as the residential bed (its birdsong rules it out downtown). Imported with loop=false, which is not slice I's to change, so it plays as a looping duplicate.
 - `SURFACES = ["asphalt", "sidewalk", "lot", "grass", "dirt", "bridge"]`
+- `STEP_ALIASES = {"gravel": "dirt", "trail": "grass"}`: Surfaces without their own steps: unpaved road grades borrow the nearest recorded one.
 - `STEP_VARIANTS = 6`
 - `SPLASH_VARIANTS = 4`: The wet layer played over a step on soaked paving: footstep_splash_<n>.
 - `LOOPS = [ "engine_idle", "engine_run", "siren_two_tone", "construction_loop", "fire_crackle", "...`: Every looping asset (their .import files set loop=true).
@@ -112,6 +113,7 @@ Slice I's sound assets (sounds/fp/, made by tools/audio/synth_fp_sfx.py): names,
 - `static func all_names() -> Array[String]`: Every asset name (loops, one-shots, footsteps).
 - `static func preload_all() -> void`: Loads every asset now (FP setup), so nothing touches the disk mid-game.
 - `static func step_name(surface: String, n: int) -> String`: footstep_<surface>_<n> (n in 1..STEP_VARIANTS).
+- `static func step_surface(surface: String) -> String`: The SURFACES entry whose steps play on surface (CollisionWorld.surface_at names): itself, its STEP_ALIASES stand-in, or sidewalk for anything else.
 - `static func legacy_ambience_loop() -> AudioStream`: A looping duplicate of LEGACY_AMBIENCE (the imported resource keeps loop=false), or null.
 - `static func bed_stream(bed: String) -> AudioStream`: The stream a bed plays.
 

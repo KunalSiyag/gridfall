@@ -125,6 +125,7 @@ Puts GMI model inference on every layer of the city. Each in-game day it batches
 - `D = preload("res://scripts/sim/sim_defs.gd")`
 - `MayorTurns = preload("res://scripts/ai/mayor_turns.gd")`
 - `BrainText = preload("res://scripts/ai/brain_text.gd")`
+- `RoadPlans = preload("res://scripts/ai/road_plans.gd")`
 - `MAX_WAIT_MS = 75000`
 
 ### Properties
@@ -320,3 +321,21 @@ Gives every resident a GMI brain. Once a day residents are planned in batches of
 - `func finish_spread() -> void`: Runs every waiting spread item now (a save, skip or mode switch needs the whole day planned).
 - `func to_dict() -> Dictionary`
 - `func from_dict(d: Dictionary) -> void`
+
+## `scripts/ai/road_plans.gd`
+
+extends `RefCounted`
+
+The heuristic mayor's road orders (CityBrain._heuristic_mayor): new roads to open land, at as cheap a grade as the funds call for, and paving rough roads that lots have grown along. Static, reads the sim only. No nodes.
+
+### Constants
+
+- `D = preload("res://scripts/sim/sim_defs.gd")`
+- `PAVE_FUNDS = 9000`: A heuristic mayor with more than this to spend paves a rough road that lots have grown along.
+
+### Functions
+
+- `static func road_step(sim: CitySim, mi: int, open_lots: int, funds: int, actions: Array, notes: Array) -> void`: The day's road order for mayor mi, if any, appended to actions with a note: new road to open land when fewer than 6 lots are left, else paving a rough road beside built lots.
+- `static func thrifty_grade(funds: int) -> String`: The road grade a heuristic mayor with funds to spare builds new roads at.
+- `static func plan_paving(sim: CitySim, mi: int) -> Dictionary`: A paving order along an unpaved road tile with a built-up lot beside it: its straight run of unpaved tiles in the district, up to 12 long. Empty when there is none.
+- `static func plan_road(sim: CitySim, mi: int) -> Dictionary`: A paved road order of up to 12 tiles across empty land in mi's district that starts or ends next to an existing road. Empty when there is none.
