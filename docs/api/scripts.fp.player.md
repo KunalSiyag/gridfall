@@ -165,7 +165,7 @@ HC's animated hero for the player (slice A stage A2; A-player.md 6.9, TPS_PLAN 2
 - `LIMBS = preload("res://scripts/fp/player/hero_limbs.gd")`
 - `LOCO = ["walk", "walk_fast", "run", "run_fast"]`: Locomotion loops in blend order; HC starts each on the left-heel strike.
 - `GESTURES = ["interact", "wave", "phone", "door_try"]`: Upper-body one-shots (6.9 OneShot).
-- `ACTIONS = [ "punch_jab", "punch_cross", "punch_hook", "swing_a", "swing_b", "push", "yes", "no", ...`: Body actions over the gestures (the actions feature): punches, the shove, emotes and the flinch of a blow taken (the health feature) on the upper body with quick fades; the kick and the dance on the whole body.
+- `ACTIONS = [ "punch_jab", "punch_cross", "punch_hook", "swing_a", "swing_b", "push", "yes", "no", ...`: Body actions over the gestures (the actions feature): punches, the shove, the throw, emotes and the flinch of a blow taken (the health feature) on the upper body with quick fades; the kick and the dance on the whole body.
 - `CLIPS = [ "idle", "walk", "walk_fast", "run", "run_fast", "crouch_idle", "crouch_walk", "jump_s...`: Every clip the tree plays.
 - `TS_MIN = 0.5`: Foot-slide correction: TimeScale = clamp(v / v_anim, TS_MIN, TS_MAX).
 - `TS_MAX = 1.5`

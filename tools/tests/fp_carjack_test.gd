@@ -1,12 +1,13 @@
 extends SceneTree
 ## Carjacks (traffic's carjack.gd, the drive feature's carjack flag): by a car stopped in traffic
 ## with someone at the wheel the prompt is "Pull the driver out"; F holds the car while the hero
-## walks to the driver's door and opens it, drags the driver out (person_hit "carjack": knocked
-## down beside the door, then up, shouting and running off round the car to the sidewalk; the
-## police called) and climbs in to drive. A resident's trip goes on on foot and they remember it;
-## F on the way turns back and lets the car go with its driver; with the flag off a resident's car
-## cannot be taken and an ambient one is taken with nobody pulled out. Time runs through
-## climb_step(1/60), the player's update_view and the traffic feature's step.
+## walks to the driver's door and opens it, drags the driver out (person_hit "carjack": pulled
+## from the seat over the sill and knocked down beside the door, then up, shouting and running off
+## round the car to the sidewalk; the police called) and climbs in to drive. A resident's trip
+## goes on on foot and they remember it; F on the way turns back and lets the car go with its
+## driver; with the flag off a resident's car cannot be taken and an ambient one is taken with
+## nobody pulled out. Time runs through climb_step(1/60), the player's update_view and the traffic
+## feature's step.
 
 const K := preload("res://tools/tests/fp_kit.gd")
 const WS := preload("res://scripts/fp/world_scale.gd")
@@ -16,6 +17,7 @@ const WK := preload("res://scripts/fp/traffic/walkers.gd")
 const DOORS := preload("res://scripts/fp/traffic/car_doors.gd")
 const JACK := preload("res://scripts/fp/traffic/carjack.gd")
 const TRIPS := preload("res://scripts/fp/traffic/trips.gd")
+const RE := preload("res://scripts/fp/traffic/reactions.gd")
 const DT := 1.0 / 60.0
 const JACK_PHASES := ["walk", "align", "open", "jack", "step", "turn", "climb", "close"]
 ## What the one dragged out does: falls, gets up, shouts, runs.
@@ -40,10 +42,14 @@ var lane: LG.Lane = null
 var lane_tile: int = -1
 ## A car model whose driver's door opens.
 var door_model: int = -1
-## [at, cause, info] of every person_hit; the walker last hit and its reaction clips in order.
+## [at, cause, info] of every person_hit; the walker last hit, its reaction clips in order and
+## where its drawn feet were on the first step after the hit.
 var hits: Array = []
 var victim: WK.Walker = null
 var clips: Array = []
+var first_at: Vector3 = Vector3.INF
+## How many of those pulled out were drawn at the wheel first.
+var drags: int = 0
 
 
 func _init() -> void:
@@ -54,6 +60,7 @@ func _init() -> void:
 		if door_model >= 0 and _pick_lane():
 			_check_ambient()
 			_check_resident()
+			K.check(fails, drags > 0, "someone drawn at the wheel is pulled out (%d)" % drags)
 			_check_turn_back()
 			_check_flag_off()
 	K.finish(self, "FP_CARJACK_TEST", fails)
@@ -132,6 +139,7 @@ func _check_ambient() -> void:
 	K.check(fails, str(info.get("crew", "")) == "police", "and the police are called")
 	if down:
 		_check_landing(c, hits[0][0])
+	_check_drag(c, "the driver")
 	if seated != null:
 		var same := victim != null and victim.av == seated.av and victim.h_m == seated.h_m
 		K.check(fails, same, "the one dragged out is the driver who sat there")
@@ -157,6 +165,21 @@ func _check_landing(c: VH.Car, at: Vector3) -> void:
 	)
 
 
+## A driver drawn at the wheel of car c is pulled from the seat first: the drag clip, its feet
+## inside the car on the first step after the hit. Nothing to check when none was drawn.
+func _check_drag(c: VH.Car, who: String) -> void:
+	if clips.is_empty() or clips[0] != RE.DRAG_CLIP:
+		print("  note: %s was not drawn at the wheel (clips %s)" % [who, str(clips)])
+		return
+	drags += 1
+	var q := Transform3D(Basis(Vector3.UP, c.yaw), c.pos).affine_inverse() * first_at
+	K.check(
+		fails,
+		absf(q.x) < c.half_w,
+		"%s is pulled from the seat over the sill first (%.2f m out)" % [who, q.x / WS.M]
+	)
+
+
 ## The one dragged out of car c (left standing where it was) lies a moment, gets up, shouts and
 ## runs off to the sidewalk, round the car rather than through it.
 func _check_flight(c: VH.Car, who: String) -> void:
@@ -175,7 +198,8 @@ func _check_flight(c: VH.Car, who: String) -> void:
 			through += 1
 	var gone := victim.pos.distance_to(from) / WS.M
 
-	var fled := clips.slice(0, PULLED.size()) == PULLED and victim.edge != null and gone >= 2.5
+	var seen := clips.filter(func(n: StringName) -> bool: return n != RE.DRAG_CLIP)
+	var fled := seen.slice(0, PULLED.size()) == PULLED and victim.edge != null and gone >= 2.5
 	K.check(
 		fails,
 		fled,
@@ -217,6 +241,7 @@ func _check_resident() -> void:
 		on_foot and not trips.cars.has(rid) and bool(drive.get("active")),
 		"their trip goes on on foot, the car theirs no more, the hero at its wheel"
 	)
+	_check_drag(c, "the resident")
 	_check_flight(c, "the resident")
 
 
@@ -389,6 +414,7 @@ func _on_hit(at: Vector3, cause: String, info: Dictionary) -> void:
 	hits.append([at, cause, info])
 	victim = tr.call("_walker_by_id", int(info.get("walker", -1)))
 	clips.clear()
+	first_at = Vector3.INF
 
 
 ## One traffic step of dt, noting each new reaction clip of the one last hit.
@@ -396,5 +422,7 @@ func _tick(dt: float) -> void:
 	tr.call("step", dt)
 	if victim == null or victim.react == &"":
 		return
+	if not first_at.is_finite():
+		first_at = victim.pos + victim.vis_off
 	if clips.is_empty() or clips.back() != victim.react:
 		clips.append(victim.react)

@@ -24,12 +24,12 @@ const LIMBS := preload("res://scripts/fp/player/hero_limbs.gd")
 const LOCO := ["walk", "walk_fast", "run", "run_fast"]
 ## Upper-body one-shots (6.9 OneShot).
 const GESTURES := ["interact", "wave", "phone", "door_try"]
-## Body actions over the gestures (the actions feature): punches, the shove, emotes and the
-## flinch of a blow taken (the health feature) on the upper body with quick fades; the kick and
-## the dance on the whole body.
+## Body actions over the gestures (the actions feature): punches, the shove, the throw, emotes
+## and the flinch of a blow taken (the health feature) on the upper body with quick fades; the
+## kick and the dance on the whole body.
 const ACTIONS := [
 	"punch_jab", "punch_cross", "punch_hook", "swing_a", "swing_b", "push", "yes", "no", "shout",
-	"hit_head", "hit_chest",
+	"hit_head", "hit_chest", "throw",
 ]
 ## Every clip the tree plays.
 const CLIPS := [
@@ -37,7 +37,7 @@ const CLIPS := [
 	"fall", "land", "talk", "sit_down", "sit", "stand_up", "interact", "wave", "phone", "door_try",
 	"punch_jab", "punch_cross", "punch_hook", "swing_a", "swing_b", "push", "yes", "no", "shout",
 	"dance", "hit_head", "hit_chest", "knockback", "get_up", "climb_1m", "roll", "kick", "car_in",
-	"car_out", "drive",
+	"car_out", "drive", "throw",
 ]
 ## Foot-slide correction: TimeScale = clamp(v / v_anim, TS_MIN, TS_MAX).
 const TS_MIN := 0.5

@@ -70,22 +70,31 @@ func _initialize() -> void:
 	_finish(fails)
 
 
-## The hand-keyed clips (procedural_clips.gd) as UAL clips: the kick, from punch_jab's stance.
+## The hand-keyed clips (procedural_clips.gd) as UAL clips: the kick and the throw, from
+## punch_jab's stance (the throw posed on the male skeleton).
 func _add_procedural(saved_u: Dictionary, scale: float) -> void:
 	if not saved_u.has("punch_jab"):
 		fails.append("kick: punch_jab is missing")
 		return
-	var anim := PC.kick(load(saved_u["punch_jab"]) as Animation)
-	anim.resource_name = "kick"
-	_set_metas(anim, scale, false)
-	var path := DIR + "clips/u_kick.res"
-	var err := ResourceSaver.save(anim, path, ResourceSaver.FLAG_COMPRESS)
-	if err != OK:
-		fails.append("could not save %s (%d)" % [path, err])
+	var base := load(saved_u["punch_jab"]) as Animation
+	var node := _instance(SOURCES["m"])
+	var found := node.find_children("*", "Skeleton3D", true, false) if node != null else []
+	if found.is_empty():
+		fails.append("throw: no skeleton in " + SOURCES["m"])
 		return
-	saved_u["kick"] = path
-	var n := anim.get_track_count()
-	print("  u_kick             len=%6.3f tracks=%d (procedural)" % [anim.length, n])
+	var clips := {"kick": PC.kick(base), "throw": PC.throw(base, found[0] as Skeleton3D)}
+	for canon: String in clips:
+		var anim: Animation = clips[canon]
+		anim.resource_name = canon
+		_set_metas(anim, scale, false)
+		var path := "%sclips/u_%s.res" % [DIR, canon]
+		var err := ResourceSaver.save(anim, path, ResourceSaver.FLAG_COMPRESS)
+		if err != OK:
+			fails.append("could not save %s (%d)" % [path, err])
+			continue
+		saved_u[canon] = path
+		var n := anim.get_track_count()
+		print("  u_%-16s len=%6.3f tracks=%d (procedural)" % [canon, anim.length, n])
 
 
 ## The get-in and get-out of a car (procedural_clips.gd) for gender g, from its idle to the drive

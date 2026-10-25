@@ -638,7 +638,7 @@ func _surfaces(w: WK.Walker) -> int:
 ## Places, shades and animates w's body for tier; returns the microseconds spent advancing.
 func _drive(b: Body, w: WK.Walker, tier: int, d: float) -> int:
 	var s := scale_of(w)
-	b.root.transform = Transform3D(Basis(Vector3.UP, w.yaw) * s, _feet(w))
+	b.root.transform = WK.body_xf(w, s, _feet(w))
 	_set_shadow(b, tier == 0 or (tier == 1 and d < T1_NEAR))
 	if b.box != null:
 		b.box.visible = w.extra == 1 and w.anim_clip in [&"walk_carry", &"carry_idle"]
@@ -944,7 +944,7 @@ func _t3(w: WK.Walker, d: float) -> void:
 	if op <= 0.0:
 		return
 	var s := scale_of(w)
-	a.t3.append(Transform3D(Basis(Vector3.UP, w.yaw) * s, _feet(w)) * a.lod_xf)
+	a.t3.append(WK.body_xf(w, s, _feet(w)) * a.lod_xf)
 	a.t3c.append(Color(0, 0, 0, op))
 
 
