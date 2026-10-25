@@ -5,7 +5,8 @@ extends FpFeature
 ## for a harder blow and one that knocks them down) and shakes the camera (the player's shake).
 ## Someone the player's car knocks down, a blow on the hero (hero_hurt) and a crash in the car
 ## (car_impact) shake it too, the hardest of them with a shorter stop; a kick or a swing landing on
-## an animal (animal_hit) stops and shakes less than one on a person. The thrown body of a
+## an animal (animal_hit) stops and shakes less than one on a person, and someone slammed into a
+## wall or a prop (hero_slammed) stops and shakes it most. The thrown body of a
 ## knock-down is traffic's (reactions.gd, under the same flag). Nothing stops in photo mode, while
 ## the game is paused or at sim speeds above 1.
 
@@ -31,6 +32,9 @@ const HURT_STOP := {"punch": 0.05, "bite": 0.04, "car": 0.08}
 ## A crash: trauma by the closing speed (m/s) from CRASH_V.x up to full at CRASH_V.y.
 const CRASH_V := Vector2(2.0, 18.0)
 const CRASH_SHAKE := Vector2(0.15, 0.85)
+## Someone the hero holds slammed into something (hero_slammed): the stop and the trauma.
+const SLAM_STOP := 0.13
+const SLAM_SHAKE := 0.35
 ## The longest stop asked for at once (s).
 const STOP_MAX := 0.15
 
@@ -56,6 +60,7 @@ func setup(p_ctx: FpContext) -> void:
 		link_signal(ctx.bus.hero_hurt, _on_hero_hurt)
 		link_signal(ctx.bus.car_impact, _on_car_impact)
 		link_signal(ctx.bus.animal_hit, _on_animal_hit)
+		link_signal(ctx.bus.hero_slammed, _on_hero_slammed)
 
 
 func teardown() -> void:
@@ -128,6 +133,11 @@ func _on_person_hit(_at: Vector3, cause: String, info: Dictionary) -> void:
 			if down:
 				hit_stop(CAR_STOP)
 			shake(lerpf(CAR_SHAKE.x, CAR_SHAKE.y, s))
+
+
+func _on_hero_slammed(_at: Vector3, _what: String, _over: bool) -> void:
+	hit_stop(SLAM_STOP)
+	shake(SLAM_SHAKE)
 
 
 func _on_animal_hit(_at: Vector3, _kind: String, strength: float) -> void:

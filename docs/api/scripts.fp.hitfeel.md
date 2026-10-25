@@ -8,7 +8,7 @@
 
 extends `FpFeature`
 
-Hit feel (integration feature "hit_feel"; docs/fp/ARCHITECTURE.md, Hit feel): what a blow feels like. A blow of the hero's that lands (person_hit "punch" or "shove") freezes the world for a few hundredths of a second (hit-stop: Engine.time_scale dips to STOP_SCALE for real seconds, longer for a harder blow and one that knocks them down) and shakes the camera (the player's shake). Someone the player's car knocks down, a blow on the hero (hero_hurt) and a crash in the car (car_impact) shake it too, the hardest of them with a shorter stop; a kick or a swing landing on an animal (animal_hit) stops and shakes less than one on a person. The thrown body of a knock-down is traffic's (reactions.gd, under the same flag). Nothing stops in photo mode, while the game is paused or at sim speeds above 1.
+Hit feel (integration feature "hit_feel"; docs/fp/ARCHITECTURE.md, Hit feel): what a blow feels like. A blow of the hero's that lands (person_hit "punch" or "shove") freezes the world for a few hundredths of a second (hit-stop: Engine.time_scale dips to STOP_SCALE for real seconds, longer for a harder blow and one that knocks them down) and shakes the camera (the player's shake). Someone the player's car knocks down, a blow on the hero (hero_hurt) and a crash in the car (car_impact) shake it too, the hardest of them with a shorter stop; a kick or a swing landing on an animal (animal_hit) stops and shakes less than one on a person, and someone slammed into a wall or a prop (hero_slammed) stops and shakes it most. The thrown body of a knock-down is traffic's (reactions.gd, under the same flag). Nothing stops in photo mode, while the game is paused or at sim speeds above 1.
 
 ### Constants
 
@@ -26,6 +26,8 @@ Hit feel (integration feature "hit_feel"; docs/fp/ARCHITECTURE.md, Hit feel): wh
 - `HURT_STOP = {"punch": 0.05, "bite": 0.04, "car": 0.08}`
 - `CRASH_V = Vector2(2.0, 18.0)`: A crash: trauma by the closing speed (m/s) from CRASH_V.x up to full at CRASH_V.y.
 - `CRASH_SHAKE = Vector2(0.15, 0.85)`
+- `SLAM_STOP = 0.13`: Someone the hero holds slammed into something (hero_slammed): the stop and the trauma.
+- `SLAM_SHAKE = 0.35`
 - `STOP_MAX = 0.15`: The longest stop asked for at once (s).
 
 ### Properties

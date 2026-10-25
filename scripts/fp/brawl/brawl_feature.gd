@@ -8,7 +8,10 @@ extends FpFeature
 ## break free (traffic's reactions.gd holds them). The hold ends when the hero can no longer act
 ## (driving, knocked down, a modal open). Someone fighting the hero who starts a punch flashes the
 ## counter cue under the crosshair (hero_threatened) until it lands: the guard raised in time
-## counters it (the actions feature's parry, the counters flag).
+## counters it (the actions feature's parry, the counters flag). Environmental attacks (the slams
+## flag): R with something solid just beyond the person held slams them into it instead of
+## throwing them (slam_spot, slam; the actions feature's "slam"): a light street prop goes over
+## with them, a wall, a post, a parked car or a prop that holds stops them dead (hero_slammed).
 
 const WS := preload("res://scripts/fp/world_scale.gd")
 const S := preload("res://scripts/fp/ui/hud_style.gd")
@@ -25,10 +28,27 @@ const DRAG_SPEED := 1.1 * WS.M
 const REACH_S := 0.3
 ## The counter cue stays this long past the punch's landing (s).
 const CUE_TAIL := 0.15
+## A slam: something solid at most SLAM_REACH beyond the body of the person held (taken as
+## SLAM_BODY_R round their feet, SLAM_HEIGHT tall), looked for in steps of SLAM_STEP; a knockable
+## prop at most SLAM_TIE further than a wall is the one they hit. They hit it at SLAM_SPEED, with
+## PERSON_MASS (a sedan is 1), handing a prop (1 + SLAM_GIVE) times its share of that; the bus
+## hears of it at SLAM_CHEST up. They fall to a side with SLAM_SIDE clear.
+const SLAM_REACH := 0.8 * WS.M
+const SLAM_BODY_R := 0.25 * WS.M
+const SLAM_HEIGHT := 1.7 * WS.M
+const SLAM_STEP := 0.05 * WS.M
+const SLAM_TIE := 0.1 * WS.M
+const SLAM_SPEED := 3.0 * WS.M
+const PERSON_MASS := 0.05
+const SLAM_GIVE := 0.2
+const SLAM_CHEST := 1.2 * WS.M
+const SLAM_SIDE := 1.0 * WS.M
 
 ## The walkers_near id of the person held, -1 for none; holds taken so far.
 var held_id: int = -1
 var grabs: int = 0
+## Slams so far.
+var slams: int = 0
 ## The counter cue, and how long it stays.
 var cue: Label
 var cue_t: float = 0.0
@@ -148,6 +168,107 @@ func _end() -> void:
 	held_id = -1
 	if ctx != null and ctx.player != null:
 		ctx.player.speed_cap = INF
+
+
+## What the person held would hit thrown along the level dir (the slams flag): the nearest thing
+## solid within SLAM_REACH of their body, a knockable street prop standing there ({"what": its
+## kind, "tile", "slot", "mass"}) or anything else that blocks a body, a wall, a post or a parked
+## car ({"what": "wall"}). "at" is the contact at the height of their feet, "gap" how far off it
+## is and "side" the level unit direction they fall to off it. {} for open street (a drop or
+## water too), nobody held or the flag off.
+func slam_spot(dir: Vector3) -> Dictionary:
+	if held_id < 0 or ctx.collision == null or not FeatureFlags.enabled("slams"):
+		return {}
+	var q := _held_feet()
+	var d := Vector3(dir.x, 0.0, dir.z).normalized()
+	if is_nan(q.x) or d.is_zero_approx():
+		return {}
+	var wall := _wall_gap(q, d)
+	var spot := _prop_ahead(q, d)
+	if spot.is_empty() or float(spot["gap"]) > minf(wall, SLAM_REACH) + SLAM_TIE:
+		if wall > SLAM_REACH:
+			return {}
+		spot = {"what": "wall", "gap": wall}
+	spot["at"] = q + d * (float(spot["gap"]) + SLAM_BODY_R)
+	spot["side"] = _fall_side(q, d)
+	return spot
+
+
+## The person held hits spot (slam_spot's) thrown along the level unit dir: a prop there that
+## gives way to the body goes over (the props feature's knock), and the bus hears of it
+## (hero_slammed). True when a prop went over.
+func slam(spot: Dictionary, dir: Vector3) -> bool:
+	if spot.is_empty():
+		return false
+	var at: Vector3 = spot["at"]
+	var props := ctx.feature("props")
+	var over := false
+	if spot.has("tile") and props != null:
+		var share := PERSON_MASS * (1.0 + SLAM_GIVE) / (PERSON_MASS + float(spot["mass"]))
+		var fly := dir * SLAM_SPEED * share
+		over = bool(props.call("knock", int(spot["tile"]), int(spot["slot"]), at, fly))
+	slams += 1
+	if ctx.bus != null:
+		ctx.bus.hero_slammed.emit(at + Vector3.UP * SLAM_CHEST, str(spot["what"]), over)
+	return over
+
+
+## The drawn feet of the person held, NAN when they are not about.
+func _held_feet() -> Vector3:
+	var tr := ctx.feature("traffic")
+	if tr != null:
+		for w: Dictionary in tr.call("walkers_near", ctx.player.position, GRAB_REACH * 2.0):
+			if int(w["id"]) == held_id:
+				return w["pos"]
+	return Vector3(NAN, NAN, NAN)
+
+
+## How far (u) a body at q goes along d before it meets something that blocks it; INF past
+## SLAM_REACH, or where the ground ends first.
+func _wall_gap(q: Vector3, d: Vector3) -> float:
+	var col := ctx.collision
+	for k in range(1, ceili(SLAM_REACH / SLAM_STEP) + 1):
+		var p := q + d * (SLAM_STEP * k)
+		if is_nan(col.ground_height(p)):
+			return INF
+		if col.body_blocked(p, SLAM_BODY_R, SLAM_HEIGHT):
+			return SLAM_STEP * k
+	return INF
+
+
+## The nearest knockable prop standing in the way of a body at q going along d, within
+## SLAM_REACH (+ SLAM_TIE) of it: {"what", "tile", "slot", "mass", "gap"}, {} for none.
+func _prop_ahead(q: Vector3, d: Vector3) -> Dictionary:
+	var props := ctx.feature("props")
+	if props == null:
+		return {}
+	var c := Vector2(q.x, q.z)
+	var a := Vector2(d.x, d.z)
+	var best := {}
+	for k: Dictionary in props.call("knockables_near", q, SLAM_BODY_R + SLAM_REACH + SLAM_TIE):
+		var to: Vector2 = (k["c"] as Vector2) - c
+		var r := float(k["r"])
+		var along := to.dot(a)
+		var gap := maxf(along - r - SLAM_BODY_R, 0.0)
+		if k.has("down") or along <= 0.0 or absf(to.cross(a)) > r + SLAM_BODY_R:
+			continue
+		if gap <= SLAM_REACH + SLAM_TIE and (best.is_empty() or gap < float(best["gap"])):
+			best = {"what": k["kind"], "tile": k["tile"], "slot": k["slot"], "mass": k["mass"]}
+			best["gap"] = gap
+	return best
+
+
+## The level side (unit, across d) a body at q falls to off what it hit: the right unless that
+## is blocked within SLAM_SIDE and the left is not.
+func _fall_side(q: Vector3, d: Vector3) -> Vector3:
+	var right := Vector3(-d.z, 0.0, d.x)
+	var col := ctx.collision
+	for s: Vector3 in [right, -right]:
+		var p := q + s * SLAM_SIDE
+		var ground := not is_nan(col.ground_height(p))
+		if ground and not col.body_blocked(p, SLAM_BODY_R, SLAM_HEIGHT):
+			return s
+	return right
 
 
 ## True when the hero may grab (or, holding, go on holding): in control, and the actions feature

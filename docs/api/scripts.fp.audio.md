@@ -85,6 +85,8 @@ Slice I's sound assets (sounds/fp/, made by tools/audio/synth_fp_sfx.py): names,
 - `BODY_FALL_DB = 2.0`
 - `WHOOSH_DB = -8.0`
 - `SHOVE_DB = -6.0`
+- `SLAM_DB = 5.0`: Someone the hero holds slammed into something (hero_slammed): a punch_hit SLAM_DB over a full blow's, at SLAM_PITCH (a body meeting a wall).
+- `SLAM_PITCH = 0.62`
 - `ROLL_THUD_S = 0.15`: The hero's landing roll (hero_action "roll"): the shoulder meets the ground ROLL_THUD_S after the feet, a body_fall ROLL_DB under a knock-down's.
 - `ROLL_DB = -8.0`
 - `BARK_VARIANTS = 3`: Dogs (animal_called): a bark is one of BARK_VARIANTS (dog_bark_<n>), a growl, a whine and a struck dog's yelp play dog_growl, dog_whine and dog_yelp, each DOG_DB on the bark. The samples are of a dog DOG_PITCH_M high at the shoulder; a dog h m high plays at sqrt(DOG_PITCH_M / h), so a small dog yaps higher. A dog's bite on the hero (hero_hurt "bite") snaps its jaws (dog_snap) SNAP_Y m up, at the knee.
