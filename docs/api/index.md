@@ -204,7 +204,7 @@ Generated from the `##` doc comments in `scripts/`. Regenerate with `python3 too
 
 ## [scripts/fp/traffic/](scripts.fp.traffic.md)
 
-- [ambient.gd](scripts.fp.traffic.md#scriptsfptrafficambientgd): Ambient filler (docs/fp/slices/E-traffic.md §6): unnamed commuters and pedestrians around the player, denser where sim.traffic and residents' trip_load are high (caps 40 cars, 60 people)
+- [ambient.gd](scripts.fp.traffic.md#scriptsfptrafficambientgd): Ambient filler (docs/fp/slices/E-traffic.md §6): unnamed commuters (some of them cyclists) and pedestrians around the player, denser where sim.traffic and residents' trip_load are high (caps 40 vehicles, 60 people)
 - [car_doors.gd](scripts.fp.traffic.md#scriptsfptrafficcar_doorsgd): The driver's door of a full car model (vehicles_v2) as a part of its own that swings open on a hinge at its front edge
 - [carjack.gd](scripts.fp.traffic.md#scriptsfptrafficcarjackgd): Taking a car with someone at the wheel (the carjack flag; docs/fp/ARCHITECTURE.md, Driving): a car stopped or crawling in traffic is the player's to take, an ambient driver's or a resident's, and its driver is dragged out first
 - [contact_shadows.gd](scripts.fp.traffic.md#scriptsfptrafficcontact_shadowsgd): Contact shadows: a soft dark patch on the ground under every drawn vehicle and person, all in one MultiMesh draw

@@ -30,6 +30,9 @@ const PERSON_LOOPING := ["idle", "walk", "run", "talk"]
 ## Separate wheel nodes on vehicles_v2 road vehicles (origin at the hub, spin about local X).
 const WHEEL_NODES := ["Wheel_FL", "Wheel_FR", "Wheel_RL", "Wheel_RR"]
 const BIKE_WHEEL_NODES := ["Wheel_F", "Wheel_R"]
+## The bicycle's cranks and pedals (origin at the bottom bracket, spin about local X; the left
+## pedal, on +X, straight up at rest).
+const CRANK_NODE := "Crank"
 ## Far LOD next to each vehicles_v2 model (<name>_lod1.glb): one mesh, wheels merged, at most 1,500
 ## triangles, a few flat untextured materials (colour in the albedo); the lamp lenses are the
 ## emissive Light_Head / Light_Tail.

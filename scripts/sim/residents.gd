@@ -25,6 +25,12 @@ const WAGE_SCALE := 0.0175
 const SALES_SCALE := 0.06
 const TRIP_SCALE := 0.35
 const MODE_WEIGHT := {"car": 1.0, "bus": 0.25, "bike": 0.05, "walk": 0.0, "stay_home": 0.0}
+## Residents who keep a bicycle (BIKE_SHARE of them, twice that for each of BIKE_TRAITS they have;
+## fixed per resident by the city seed) ride it instead of driving on trips of up to BIKE_TILES
+## road tiles. bike_share 0 turns it off (main.gd: the cyclists flag).
+const BIKE_SHARE := 0.25
+const BIKE_TRAITS := ["adventurous", "thrifty", "frugal", "restless", "laid-back"]
+const BIKE_TILES := 16
 const LIVING_COST := 30
 const N4 := [Vector2i(0, -1), Vector2i(1, 0), Vector2i(0, 1), Vector2i(-1, 0)]
 ## Residents handled per work unit of a sliced tick, and the route-search cache size (one
@@ -92,6 +98,8 @@ var sentiment: Dictionary = {"recommend": 6.0, "leaving": 0.0, "spend_local": 0.
 ## People each resident stands for right now.
 var share: float = 0.0
 var _money: Array = []
+## Share of residents who keep a bicycle (BIKE_SHARE; 0: nobody rides to work).
+var bike_share: float = BIKE_SHARE
 var _seq: int = 0
 var _rng := RandomNumberGenerator.new()
 var _road_sig: int = -1
@@ -1389,8 +1397,7 @@ func _go(r: Dictionary, to: int, state: String) -> bool:
 	r["route"] = route
 	r["at"] = to
 	r["state"] = state
-	var p: Dictionary = r.get("plan", {})
-	r["mode"] = str(p.get("commute", "car")) if state == "work" else ("walk" if route.size() <= 6 else str(p.get("commute", "car")))
+	r["mode"] = trip_mode(r, route.size(), state)
 	if from != to:
 		trip_started.emit(str(r["id"]), from, to, _trip_mode(str(r["mode"])))
 	resident_moved.emit(r)
@@ -1400,6 +1407,30 @@ func _go(r: Dictionary, to: int, state: String) -> bool:
 ## The trip_started mode for a commute value: car, bus, bike or walk (anything else walks).
 func _trip_mode(m: String) -> String:
 	return m if m in ["car", "bus", "bike", "walk"] else "walk"
+
+
+## How r makes a trip of tiles road tiles for state: the commute in r's plan to work (anything
+## short on foot otherwise), on the bicycle instead of the car when r keeps one and it is not far.
+func trip_mode(r: Dictionary, tiles: int, state: String) -> String:
+	var p: Dictionary = r.get("plan", {})
+	var m := str(p.get("commute", "car"))
+	if state != "work" and tiles <= 6:
+		return "walk"
+	if m == "car" and tiles <= BIKE_TILES and keeps_bike(r):
+		return "bike"
+	return m
+
+
+## True when r keeps a bicycle (see BIKE_SHARE); the same answer every day.
+func keeps_bike(r: Dictionary) -> bool:
+	if bike_share <= 0.0:
+		return false
+	var share := bike_share
+	for t: Variant in r.get("traits", []):
+		if str(t) in BIKE_TRAITS:
+			share *= 2.0
+	var city := sim.city_seed if sim != null else 0
+	return float(absi(hash("%s:%d" % [str(r.get("id", "")), city])) % 1000) < share * 1000.0
 
 
 func route_between(a: int, b: int) -> Array:

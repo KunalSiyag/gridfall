@@ -4,7 +4,9 @@ extends RefCounted
 ## point (tools/blender/realcity/vehicles2.py); the merged far LODs have opaque glass. A driver is
 ## the car's resident (people.dress picks the same avatar and stature the resident walks with) or
 ## an ambient body from the city seed, posed once in the sit loop with its mixers off, so a
-## seated body costs its draws and nothing per frame beyond its transform.
+## seated body costs its draws and nothing per frame beyond its transform. A bicycle's rider
+## pedals instead (the ride loop, casting a shadow), on every bicycle drawn in full (a bicycle's
+## far LOD carries a rough rider of its own).
 
 const WS := preload("res://scripts/fp/world_scale.gd")
 const VH := preload("res://scripts/fp/traffic/vehicles.gd")
@@ -13,27 +15,44 @@ const PPL := preload("res://scripts/fp/traffic/people.gd")
 const KIT := preload("res://scripts/fp/traffic/people_kit.gd")
 const CAP := 12
 const RANGE := 30.0 * WS.M
+## Riders: their own cap, out to where render.gd stops drawing the full bicycle (NEAR).
+const BIKE_CAP := 10
+const BIKE_RANGE := 40.0 * WS.M
 const SEAT_NODE := "Seat_Driver"
 ## The sit loop is held at this time (s): hands on the lap, head level.
 const SIT: StringName = &"sit"
 const SIT_AT := 1.0
+## One turn of a bicycle's cranks; held each frame at the turn render.gd gave the cranks
+## (crank_th on the node), so the feet stay on the pedals.
+const RIDE: StringName = &"ride"
+## The pedals from the cranks' axle and the wrists from the saddle (m, +Z forward; vehicles2.py
+## bicycle(), as in procedural_clips.gd's ride clip).
+const PEDAL_X := 0.11
+const CRANK_R := 0.17
+const WRIST := Vector3(0.26, 0.06, 0.54)
+const LIMBS := ["UpperLeg", "LowerLeg", "Foot", "Toes", "UpperArm", "LowerArm", "Hand"]
 ## Walker ids seed ambient dressing; drivers use their own range so they do not copy a walker.
 const PROXY_ID := 1 << 24
 
 var people: PPL
-## car id -> [the Walker proxy holding the body, its Hips in CharacterRoot space]
+## car id -> [the Walker proxy holding the body, its Hips in CharacterRoot space, riding(, the
+## saddle point, the limb bones)]
 var _by_car: Dictionary = {}
 var seated: int = 0
+## How many of the seated are riding bicycles.
+var riding: int = 0
 
 
 func setup(p_people: PPL) -> void:
 	people = p_people
 	_by_car.clear()
 	seated = 0
+	riding = 0
 
 
-## Seats a driver in each of the CAP nearest moving vehicles within RANGE that show their full
-## model, and releases the rest. Call between people.begin and people.finish.
+## Seats a driver in each of the CAP nearest moving vehicles within RANGE (a rider on each of the
+## BIKE_CAP nearest bicycles within BIKE_RANGE) that show their full model, and releases the
+## rest. Call between people.begin and people.finish, after render.draw_car.
 func sync(cars: Array, cam: Vector3, residents: Variant) -> void:
 	var cands: Array = []
 	for c: VH.Car in cars:
@@ -42,27 +61,37 @@ func sync(cars: Array, cam: Vector3, residents: Variant) -> void:
 		if c.node == null or not c.node.visible:
 			continue
 		var d := cam.distance_to(c.pos)
-		if d > RANGE:
+		if d > (BIKE_RANGE if c.kind == "bike" else RANGE):
 			continue
 		var seat: Variant = seat_point(c.node)
 		if seat != null:
 			cands.append([d, c, seat])
 	cands.sort_custom(func(a: Array, b: Array) -> bool: return float(a[0]) < float(b[0]))
 	var keep := {}
-	for k in range(mini(CAP, cands.size())):
-		var c: VH.Car = cands[k][1]
+	var left := {false: CAP, true: BIKE_CAP}
+	for cand: Array in cands:
+		var c: VH.Car = cand[1]
+		var bike := c.kind == "bike"
+		if int(left[bike]) <= 0:
+			continue
+		left[bike] = int(left[bike]) - 1
 		var e: Array = _by_car.get(c.id, [])
 		if e.is_empty():
 			e = _seat_driver(c, residents)
 			if e.is_empty():
 				continue
 			_by_car[c.id] = e
-		_place(e, c, cands[k][2])
+		_place(e, c, cand[2])
+		if e[2]:
+			_pedal(e, c, float(c.node.get_meta("crank_th", 0.0)))
 		keep[c.id] = true
+	riding = 0
 	for id: int in _by_car.keys():
 		if not keep.has(id):
 			people.release((_by_car[id] as Array)[0])
 			_by_car.erase(id)
+		elif (_by_car[id] as Array)[2]:
+			riding += 1
 	seated = _by_car.size()
 
 
@@ -73,6 +102,7 @@ func clear() -> void:
 			people.release(e[0])
 	_by_car.clear()
 	seated = 0
+	riding = 0
 
 
 ## The seated body in car id (null when it has no driver drawn).
@@ -87,6 +117,12 @@ func driver_of(id: int) -> WK.Walker:
 	return e[0] if not e.is_empty() else null
 
 
+## True when the body drawn in car id is pedalling a bicycle.
+func is_riding(id: int) -> bool:
+	var e: Array = _by_car.get(id, [])
+	return not e.is_empty() and bool(e[2])
+
+
 func _seat_driver(c: VH.Car, residents: Variant) -> Array:
 	var w := WK.Walker.new()
 	w.id = PROXY_ID + c.id
@@ -94,23 +130,32 @@ func _seat_driver(c: VH.Car, residents: Variant) -> Array:
 	people.dress(w, residents)
 	if w.av < 0 or not people.seat(w):
 		return []
-	return [w, _pose_seated(w.body)]
+	var ride: bool = c.kind == "bike" and w.body.ap.has_animation(RIDE)
+	var e := [w, _pose_seated(w.body, ride), ride]
+	if ride:
+		e.append_array([seat_point(c.node), _limbs(w.body.skel)])
+	return e
 
 
-## Holds b still in the sit pose (mixers off, no shadow: the car casts one); returns its Hips in
-## CharacterRoot space.
-static func _pose_seated(b: PPL.Body) -> Vector3:
+## Holds b still in the sit pose (mixers off, no shadow: the car casts one), or at the start of
+## the ride loop with its shadow on; returns its Hips in CharacterRoot space.
+static func _pose_seated(b: PPL.Body, ride: bool = false) -> Vector3:
 	b.tree.active = false
 	b.ap.active = true
 	b.ap.stop()
 	b.ap.speed_scale = 1.0
-	b.ap.play(SIT)
-	b.ap.seek(SIT_AT, true)
+	b.ap.play(RIDE if ride else SIT)
+	b.ap.seek(0.0 if ride else SIT_AT, true)
 	b.ap.advance(0.0)
 	b.ap.active = false
-	b.shadow = 0
+	b.shadow = 1 if ride else 0
+	var cast := (
+		GeometryInstance3D.SHADOW_CASTING_SETTING_ON
+		if ride
+		else GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	)
 	for gi: GeometryInstance3D in b.meshes:
-		gi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		gi.cast_shadow = cast
 	if b.box != null:
 		b.box.visible = false
 	var hips := b.skel.find_bone("Hips")
@@ -118,6 +163,90 @@ static func _pose_seated(b: PPL.Body) -> Vector3:
 		return Vector3.ZERO
 	var skel_xf := b.root.global_transform.affine_inverse() * b.skel.global_transform
 	return skel_xf * KIT.pose(b.skel, hips).origin
+
+
+## Poses rider e th radians into the turn of c's cranks (0: left pedal at the top): the ride clip
+## at that point, then each leg bent so its toes are on its pedal and each arm so its wrist is on
+## its grip, as the bodies differ from the one the clip was posed on.
+func _pedal(e: Array, c: VH.Car, th: float) -> void:
+	var b: PPL.Body = (e[0] as WK.Walker).body
+	b.ap.active = true
+	b.ap.seek(fposmod(th / TAU, 1.0) * b.ap.get_animation(RIDE).length, true)
+	b.ap.active = false
+	var crank := c.node.get_meta("crank") as Node3D if c.node.has_meta("crank") else null
+	if crank == null or e.size() < 4:
+		return
+	var sk := b.skel
+	var to_sk := sk.global_transform.affine_inverse()
+	var basis := c.node.global_transform.basis.orthonormalized()
+	var axle := crank.global_position
+	var seat := c.node.global_transform * (e[3] as Vector3)
+	var bones: PackedInt32Array = e[4]
+	for k in range(2):
+		var sx := 1.0 - 2.0 * k
+		var ang := th + PI * k
+		var pedal := Vector3(sx * PEDAL_X, CRANK_R * cos(ang), CRANK_R * sin(ang))
+		var leg := bones.slice(k * 7, k * 7 + 4)
+		_reach(sk, leg, to_sk * (axle + basis * pedal * WS.M))
+		var wrist := Vector3(sx * WRIST.x, WRIST.y, WRIST.z)
+		_reach(sk, bones.slice(k * 7 + 4, k * 7 + 7), to_sk * (seat + basis * wrist * WS.M))
+
+
+## The rider's limb bones: per side (left, right) upper leg, lower leg, foot, toes, upper arm,
+## lower arm, hand; empty when one is missing.
+static func _limbs(sk: Skeleton3D) -> PackedInt32Array:
+	var out := PackedInt32Array()
+	for side: String in ["Left", "Right"]:
+		for part: String in LIMBS:
+			var i := sk.find_bone(side + part)
+			if i < 0:
+				return PackedInt32Array()
+			out.append(i)
+	return out
+
+
+## Bends the chain [upper, lower, end(, tip)] (skeleton space) so the tip (else the end) reaches
+## goal, the middle joint bending the way it already does and the end keeping its turn; a limb
+## too short for it (a short rider's leg at the bottom of the stroke) straightens and points the
+## tip at goal.
+static func _reach(sk: Skeleton3D, chain: PackedInt32Array, goal: Vector3) -> void:
+	var a := sk.get_bone_global_pose(chain[0]).origin
+	var b := sk.get_bone_global_pose(chain[1]).origin
+	var end := sk.get_bone_global_pose(chain[2])
+	var c := end.origin
+	var target := goal
+	if chain.size() > 3:
+		target += c - sk.get_bone_global_pose(chain[3]).origin
+	var keep := end.basis.get_rotation_quaternion()
+	var l1 := a.distance_to(b)
+	var l2 := b.distance_to(c)
+	var to := target - a
+	var d := clampf(to.length(), absf(l1 - l2) + 1e-4, l1 + l2 - 1e-4)
+	var dir := to.normalized()
+	var pole := b - a
+	var side := (pole - dir * dir.dot(pole)).normalized()
+	var ang := acos(clampf((l1 * l1 + d * d - l2 * l2) / (2.0 * l1 * d), -1.0, 1.0))
+	var mid := a + (dir * cos(ang) + side * sin(ang)) * l1
+	_turn(sk, chain[0], Quaternion((b - a).normalized(), (mid - a).normalized()))
+	b = sk.get_bone_global_pose(chain[1]).origin
+	c = sk.get_bone_global_pose(chain[2]).origin
+	_turn(sk, chain[1], Quaternion((c - b).normalized(), (a + dir * d - b).normalized()))
+	var parent := (
+		sk.get_bone_global_pose(sk.get_bone_parent(chain[2])).basis.get_rotation_quaternion()
+	)
+	sk.set_bone_pose_rotation(chain[2], (parent.inverse() * keep).normalized())
+	if chain.size() > 3 and to.length() > l1 + l2:
+		c = sk.get_bone_global_pose(chain[2]).origin
+		var tip := sk.get_bone_global_pose(chain[3]).origin
+		_turn(sk, chain[2], Quaternion((tip - c).normalized(), (goal - c).normalized()))
+
+
+## Turns bone i by q in skeleton space about its own head.
+static func _turn(sk: Skeleton3D, i: int, q: Quaternion) -> void:
+	var p := sk.get_bone_parent(i)
+	var gp := sk.get_bone_global_pose(p).basis.get_rotation_quaternion() if p >= 0 else Quaternion()
+	var g := gp * sk.get_bone_pose_rotation(i)
+	sk.set_bone_pose_rotation(i, (gp.inverse() * q * g).normalized())
 
 
 ## The seat marker's position in the full model's space, cached on the node (null without one).

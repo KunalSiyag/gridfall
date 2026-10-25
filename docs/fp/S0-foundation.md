@@ -265,6 +265,9 @@ const PERSON_LOOPING := ["idle", "walk", "run", "talk"]
 ## Separate wheel nodes on vehicles_v2 road vehicles (origin at the hub, spin about local X).
 const WHEEL_NODES := ["Wheel_FL", "Wheel_FR", "Wheel_RL", "Wheel_RR"]
 const BIKE_WHEEL_NODES := ["Wheel_F", "Wheel_R"]
+## The bicycle's cranks and pedals (origin at the bottom bracket, spin about local X; the left
+## pedal, on +X, straight up at rest).
+const CRANK_NODE := "Crank"
 ## Node-name contracts inside H's GLBs (all optional; consumers fall back when absent).
 ## Poster_<n>: MeshInstance3D, one surface, material "Poster", UV 0..1, normal +Z in node space.
 const POSTER_NODE_PREFIX := "Poster_"

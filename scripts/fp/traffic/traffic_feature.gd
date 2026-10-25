@@ -239,6 +239,8 @@ func on_world_rebuilt() -> void:
 	ambient.person_model = func(seed: int) -> int: return _person_models[absi(seed) % _person_models.size()] if not _person_models.is_empty() else -1
 	ambient.dims_of = dims
 	ambient.visible = on_screen
+	ambient.bike_model = bike_model
+	ambient.bike_chance = AMB.BIKE_CHANCE if FeatureFlags.enabled("cyclists") else 0.0
 	trips.setup(self, sim, ctx.residents, lanes, peds, vehicles, walkers)
 	trips.reset()
 	fleets.setup(self, sim, lanes, vehicles)

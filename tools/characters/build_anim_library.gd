@@ -98,7 +98,7 @@ func _add_procedural(saved_u: Dictionary, scale: float) -> void:
 
 
 ## The get-in and get-out of a car (procedural_clips.gd) for gender g, from its idle to the drive
-## pose, posed on g's own skeleton.
+## pose, and the pedalling on a bicycle (ride, looped), posed on g's own skeleton.
 func _add_car(saved: Dictionary, g: String, scale: float) -> void:
 	if not (saved[g].has("idle") and saved["u"].has("drive")):
 		fails.append("car_in: %s_idle or u_drive is missing" % g)
@@ -110,11 +110,13 @@ func _add_car(saved: Dictionary, g: String, scale: float) -> void:
 		return
 	var idle := load(saved[g]["idle"]) as Animation
 	var drive := load(saved["u"]["drive"]) as Animation
-	var get_in := PC.car_in(idle, drive, found[0] as Skeleton3D)
-	for anim: Animation in [get_in, PC.car_out(get_in)]:
-		var canon := "car_in" if anim == get_in else "car_out"
+	var sk := found[0] as Skeleton3D
+	var get_in := PC.car_in(idle, drive, sk)
+	var clips := {"car_in": get_in, "car_out": PC.car_out(get_in), "ride": PC.ride(idle, drive, sk)}
+	for canon: String in clips:
+		var anim: Animation = clips[canon]
 		anim.resource_name = canon
-		_set_metas(anim, scale, false)
+		_set_metas(anim, scale, canon == "ride")
 		var path := "%sclips/%s_%s.res" % [DIR, g, canon]
 		var err := ResourceSaver.save(anim, path, ResourceSaver.FLAG_COMPRESS)
 		if err != OK:

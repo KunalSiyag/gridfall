@@ -157,6 +157,9 @@ The people of GridFall: up to 100 named residents, each standing in for an equal
 - `SALES_SCALE = 0.06`
 - `TRIP_SCALE = 0.35`
 - `MODE_WEIGHT = {"car": 1.0, "bus": 0.25, "bike": 0.05, "walk": 0.0, "stay_home": 0.0}`
+- `BIKE_SHARE = 0.25`: Residents who keep a bicycle (BIKE_SHARE of them, twice that for each of BIKE_TRAITS they have; fixed per resident by the city seed) ride it instead of driving on trips of up to BIKE_TILES road tiles. bike_share 0 turns it off (main.gd: the cyclists flag).
+- `BIKE_TRAITS = ["adventurous", "thrifty", "frugal", "restless", "laid-back"]`
+- `BIKE_TILES = 16`
 - `LIVING_COST = 30`
 - `N4 = [Vector2i(0, -1), Vector2i(1, 0), Vector2i(0, 1), Vector2i(-1, 0)]`
 - `RES_PER_UNIT = 4`: Residents handled per work unit of a sliced tick, and the route-search cache size (one 192x192 parent map per origin road tile).
@@ -176,6 +179,7 @@ The people of GridFall: up to 100 named residents, each standing in for an equal
 ### Properties
 
 - `share: float`: People each resident stands for right now.
+- `bike_share: float`: Share of residents who keep a bicycle (BIKE_SHARE; 0: nobody rides to work).
 
 ### Functions
 
@@ -201,6 +205,8 @@ The people of GridFall: up to 100 named residents, each standing in for an equal
 - `func respond(r: Dictionary, ev: Dictionary, d: Dictionary, source: String, model: String) -> String`
 - `func remember(r: Dictionary, line: String) -> void`: Adds a line to the resident's memory as "Day N: line" (an exact repeat of the last line is skipped, at most 8 lines kept). For other slices, e.g. a face-to-face conversation that ends.
 - `func nudge_mood(r: Dictionary, delta: float) -> void`: Shifts the resident's mood (0..10) by delta, clamped. Callers bound delta themselves.
+- `func trip_mode(r: Dictionary, tiles: int, state: String) -> String`: How r makes a trip of tiles road tiles for state: the commute in r's plan to work (anything short on foot otherwise), on the bicycle instead of the car when r keeps one and it is not far.
+- `func keeps_bike(r: Dictionary) -> bool`: True when r keeps a bicycle (see BIKE_SHARE); the same answer every day.
 - `func route_between(a: int, b: int) -> Array`
 - `func card(r: Dictionary) -> Dictionary`
 - `func to_dict() -> Dictionary`

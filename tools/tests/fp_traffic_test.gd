@@ -12,6 +12,7 @@ const D := preload("res://scripts/sim/sim_defs.gd")
 const WS := preload("res://scripts/fp/world_scale.gd")
 const AP := preload("res://scripts/fp/asset_paths.gd")
 const LG := preload("res://scripts/fp/traffic/lane_graph.gd")
+const DRIVE_PLAN := {"commute": "car", "go_to_work": true, "spend": 0, "spend_where": "none", "evening": "home"}
 const VH := preload("res://scripts/fp/traffic/vehicles.gd")
 const WK := preload("res://scripts/fp/traffic/walkers.gd")
 const SW := preload("res://scripts/fp/traffic/sidewalks.gd")
@@ -133,20 +134,28 @@ func _fixtures() -> bool:
 			tee_tile = i
 		if p == "cross" and cross_tile < 0:
 			cross_tile = i
-	for r: Dictionary in ctx.residents.people:
-		if (r["skills"] as Array).has("construction"):
-			continue
-		if str(r["state"]) == "home" and int(r["at"]) == int(r["home"]) and int(r["work"]) >= 0 and ctx.directory.frontage(int(r["home"])) >= 0 and ctx.directory.frontage(int(r["work"])) >= 0 and int(r["helping"]) < 0:
-			# A real drive: home and work on different streets, 4+ road tiles apart.
-			if ctx.residents.route_between(int(r["home"]), int(r["work"])).size() >= 6:
-				fixture_rid = str(r["id"])
-				break
+	fixture_rid = _pick_driver()
 	K.check(fails, corner_tile >= 0, "fixture: a corner road tile (mask 3, 6, 9 or 12)")
 	K.check(fails, tee_tile >= 0, "fixture: a tee")
 	K.check(fails, cross_tile >= 0, "fixture: a cross")
 	K.check(fails, bus >= 1, "fixture: a bus stop (%d)" % bus)
 	K.check(fails, not fixture_rid.is_empty(), "fixture: a resident at home with work >= 0")
 	return fails.is_empty()
+
+
+## A resident who can drive to work from where they are (at home unless anywhere): there and work
+## on different streets, 4+ road tiles apart.
+func _pick_driver(anywhere := false) -> String:
+	for r: Dictionary in ctx.residents.people:
+		# Cyclists ride, so they never put a driver in a car.
+		if (r["skills"] as Array).has("construction") or ctx.residents.keeps_bike(r):
+			continue
+		var at := int(r["at"])
+		var home: bool = str(r["state"]) == "home" and at == int(r["home"])
+		if (home or (anywhere and str(r["state"]) != "work")) and int(r["work"]) >= 0 and ctx.directory.frontage(at) >= 0 and ctx.directory.frontage(int(r["work"])) >= 0 and int(r["helping"]) < 0:
+			if ctx.residents.route_between(at, int(r["work"])).size() >= 6:
+				return str(r["id"])
+	return ""
 
 
 # ------------------------------------------------------------------ hooks
@@ -1296,7 +1305,7 @@ func _check_resident_driver() -> void:
 	_quiet()
 	var people := ctx.residents
 	var r := people.find(fixture_rid)
-	r["plan"] = {"commute": "car", "go_to_work": true, "spend": 0, "spend_where": "none", "evening": "home"}
+	r["plan"] = DRIVE_PLAN.duplicate()
 	var work := int(r["work"])
 	sim.tick_in_day = 0
 	sim.step_tick()
@@ -1307,6 +1316,12 @@ func _check_resident_driver() -> void:
 		print("  note: %s did not drive this morning (%s); sending them to work directly" % [fixture_rid, str((r["memory"] as Array).back() if not (r["memory"] as Array).is_empty() else "")])
 		if tr != null:
 			trips.complete_now(tr)
+		# The same tick can also block a road beside their home (a crash): take another driver.
+		if people.route_between(int(r["at"]), work).is_empty():
+			fixture_rid = _pick_driver(true)
+			r = people.find(fixture_rid)
+			r["plan"] = DRIVE_PLAN.duplicate()
+			work = int(r["work"])
 		people.call("_go", r, work, "work")
 		tr = trips.trips.get(fixture_rid, null)
 	K.check(fails, tr != null and tr.mode == "car", "resident driver: trip_started makes a car trip (%s; %s state %s at %d work %d route %d trips %s)" % [tr.mode if tr != null else "none", fixture_rid, str(r["state"]), int(r["at"]), work, (r.get("route", []) as Array).size(), str(trips.trips.keys())])

@@ -190,7 +190,7 @@ Edge cases:
 - Density per road tile comes from `sim.traffic[i]` and `residents.trip_load[i]`, with caps of 40 cars and 60 pedestrians.
 - Spawn and despawn only outside a 6 u radius **and** behind the player (dot product < 0), or at map edges. Never pop agents in view.
 - **First fill is synchronous.** `on_world_rebuilt()` and `from_dict()` fill ambient traffic at once (anywhere outside the view frustum on that first fill), with a floor of 2 cars and 2 pedestrians when roads exist, so the FP smoke's `self_test` right after a load finds agents (S0 §17.4 steps 11–12; in-flight agents are dropped on load).
-- Ambient agents are labelled "a commuter" or "a pedestrian". Never claim a name for them.
+- Ambient agents are labelled "a commuter", "a cyclist" or "a pedestrian". Never claim a name for them.
 
 ### 7. ResidentAvatars in FP
 

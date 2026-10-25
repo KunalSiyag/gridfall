@@ -9,6 +9,8 @@ Node contracts (scripts/fp/asset_paths.gd):
   Wheel_FL, Wheel_FR, Wheel_RL, Wheel_RR   own objects, origin at the hub, spin about local X
                                            (the bicycle: Wheel_F, Wheel_R)
   Seat_Driver                              empty at the driver's hip point, facing +Z
+  Crank                                    the bicycle's cranks and pedals, origin at the bottom
+                                           bracket, spin about local X (left pedal up at rest)
   Siren_0, Siren_1 (+ Siren_2, Siren_3)    light-bar lenses on the police car, ambulance and fire truck
 Materials (at most 8 per file): Paint_<colour> (clear coat), Glass_Car (tinted, alpha 0.55, two-sided),
 Light_Head, Light_Tail, Light_Brake, Light_Indicator_L, Light_Indicator_R and Car_Atlas (atlas.py:
@@ -1476,14 +1478,40 @@ def bicycle(c, look, frame="Paint_blue"):
     t((-0.29, -0.28, 1.04), (0.29, -0.28, 1.04), 0.011, "@Metal_Galv")
     for sd in (-1, 1):
         t((sd * 0.22, -0.28, 1.04), (sd * 0.3, -0.27, 1.04), 0.015, "@leather_black")
-    # crank, chainring, pedals
-    if not lod:
-        mb.cyl((0.06 * S, bb[1] * S, bb[2] * S), 0.1 * S, 0.006 * S, "@chain", n=16, axis=RY90, smooth=False)
-        for sd, a in ((1, 0.6), (-1, 0.6 + math.pi)):
+    # crank, chainring and pedals: their own object (Crank, origin at the bottom bracket, spins about
+    # X; the left pedal (+X) up at rest) on the full model, merged and static on the LOD
+    def crank(m):
+        m.cyl((0.06 * S, bb[1] * S, bb[2] * S), 0.1 * S, 0.006 * S, "@chain", n=16, axis=RY90, smooth=False)
+        for sd, a in ((1, math.pi / 2), (-1, -math.pi / 2)):
             px = bb[1] + math.cos(a) * 0.17
             pz = bb[2] + math.sin(a) * 0.17
-            t((sd * 0.07, bb[1], bb[2]), (sd * 0.07, px, pz), 0.01, "@Metal_Galv")
-            bc(mb, (sd * 0.11, px, pz), (0.09, 0.06, 0.02), "@plastic_black")
+            tube(m, (sd * 0.07 * S, bb[1] * S, bb[2] * S), (sd * 0.07 * S, px * S, pz * S), 0.01 * S,
+                 "@Metal_Galv", n=n)
+            bc(m, (sd * 0.11, px, pz), (0.09, 0.06, 0.02), "@plastic_black")
+    if not lod:
+        if look.full:
+            cmb = MB()
+            cmb.push(Matrix.Translation(Vector((0.0, -bb[1] * S, -bb[2] * S))))
+            crank(cmb)
+            cmb.pop()
+            atlas.resolve(cmb)
+            cob = cmb.build("Crank")
+            cob.location = (0.0, bb[1] * S, bb[2] * S)
+        else:
+            crank(mb)
+    if lod:
+        # Far LOD only: a rough rider, mid-stroke, so a bicycle beyond the range of the seated
+        # bodies (traffic/occupants.gd) is still ridden. Hips on the saddle, forward is -Y.
+        hip, sh = (0.0, 0.3, 0.98), (0.0, 0.04, 1.47)
+        t(hip, sh, 0.15)
+        bc(mb, (0.0, -0.02, 1.66), (0.18, 0.21, 0.22), "@leather_black")
+        for sd in (-1, 1):
+            t((sd * 0.17, sh[1], sh[2] - 0.04), (sd * 0.26, -0.28, 1.04), 0.04)
+        for sd, knee, foot in ((1, (0.1, -0.1, 0.78), (0.11, 0.02, 0.42)),
+                               (-1, (-0.1, 0.0, 0.6), (-0.11, 0.1, 0.14))):
+            t((sd * 0.1, hip[1], hip[2]), knee, 0.065, "@int_dark")
+            t(knee, foot, 0.05, "@int_dark")
+    if not lod:
         t((0.06, bb[1], bb[2] + 0.1), (0.05, yr, zw + 0.04), 0.004, "@chain")
         t((0.06, bb[1], bb[2] - 0.1), (0.05, yr, zw - 0.04), 0.004, "@chain")
         # fenders

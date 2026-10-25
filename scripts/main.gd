@@ -59,6 +59,7 @@ func _ready() -> void:
 	residents = Residents.new()
 	residents.name = "Residents"
 	residents.enabled = OS.get_environment("GRIDFALL_RESIDENTS") != "0"
+	residents.bike_share = Residents.BIKE_SHARE if FeatureFlags.enabled("cyclists") else 0.0
 	add_child(residents)
 	minds = ResidentMinds.new()
 	minds.name = "ResidentMinds"
