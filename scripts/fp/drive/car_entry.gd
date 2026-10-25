@@ -2,15 +2,16 @@ extends RefCounted
 ## Getting into the player's car and out of it on foot, for drive_feature.gd (car_doors flag).
 ## In: the hero walks round the car to the driver's door (jogging while it is far), reaches for
 ## the handle (door_try), pulls the door open and swings it wide; with someone at the wheel (jack)
-## it reaches in, drags them out and shoves them clear (push). It steps into the opening, turns
-## its back to the seat and sits down onto the sill (sit_down; its root travel is walked back so
-## the feet stay planted), swings round into the seat and the door shuts. Out: the door opens,
-## the hero swings round onto the sill, stands up (stand_up, walked forward), steps clear of the
-## door and it shuts. From the reach on, a camera beside the door watches and blends to and from
-## the drive camera. The points come from the traffic feature's door_info, in the car's frame
-## (+Z forward, +X the driver's side); the car stands still throughout. The hero's rig is reached
-## by duck typing (the player folder is another slice): travel, root_travel, sit, play_gesture,
-## stop_gesture, play_action, state and bone_world.
+## it reaches in, drags them out and shoves them clear (push). It steps into the opening beside
+## the seat, faces forward and climbs in (car_in: a hand on the roof, the near leg over the sill,
+## the head ducked under the roof, the body sliding onto the seat along the clip's root travel and
+## the other leg following it in, ending with its hands on the wheel), and the door shuts. Out:
+## the door opens, the hero climbs out (car_out, the same backwards) onto its feet beside the
+## seat, steps clear of the door and it shuts. From the reach on, a camera beside the door
+## watches and blends to and from the drive camera. The points come from the traffic feature's
+## door_info, in the car's frame (+Z forward, +X the driver's side); the car stands still
+## throughout. The hero's rig is reached by duck typing (the player folder is another slice):
+## travel, sit, play_gesture, stop_gesture, play_action, state and bone_world.
 
 const WS := preload("res://scripts/fp/world_scale.gd")
 
@@ -59,16 +60,16 @@ const GRAB_AT := 0.55
 const TURN_OUT := 0.25
 const SHOVE_T := 0.6
 const JACK_T := 1.3
-## Sat down, the hips are SILL_IN inside the body side. Sitting takes at most SIT_MAX s, the swing
-## into or out of the seat SWING_T s and the door's shutting CLOSE_T s.
-const SILL_IN := 0.06 * WS.M
-const SIT_MAX := 1.3
-const SWING_T := 0.7
+## The climb in starts STEP_OUT out from the body side level with the seat, facing forward (the
+## seat on the hero's right); the climb in or out takes at most CLIMB_MAX s, the view turns to the
+## drive camera CLIMB_CAM s into the climb in, and the door shuts over CLOSE_T s.
+const STEP_OUT := 0.3 * WS.M
+const CLIMB_MAX := 2.0
+const CLIMB_CAM := 0.9
 const CLOSE_T := 0.35
-## Out: the door opens over OPEN_T s, standing up takes at most STAND_MAX s, then the hero steps
-## AWAY out and AWAY_BACK toward the rear (for at most AWAY_MAX s).
+## Out: the door opens over OPEN_T s, then after the climb out the hero steps AWAY out and
+## AWAY_BACK toward the rear (for at most AWAY_MAX s).
 const OPEN_T := 0.45
-const STAND_MAX := 1.7
 const AWAY := 0.55 * WS.M
 const AWAY_BACK := 0.25 * WS.M
 const AWAY_MAX := 1.2
@@ -90,15 +91,17 @@ const BRAKE_MAX := 2.5
 
 ## "" (idle), "in" or "out".
 var kind: String = ""
-## In: "walk", "align", "open", "jack" (someone at the wheel), "step", "turn", "sit", "swing",
-## "close". Out: "open", "swing", "stand", "away", "close".
+## In: "walk", "align", "open", "jack" (someone at the wheel), "step", "turn", "climb", "close".
+## Out: "open", "climb", "away", "close".
 var phase: String = ""
 ## Seconds into the phase.
 var t: float = 0.0
 ## The driver's door: 0 shut .. 1 open.
 var door: float = 0.0
-## A phase to wait at (the photo tour holds the climb in at "swing"); "" for none.
+## A phase to wait at, hold_at s into it (the photo tour holds the climb in half way); "" for
+## none.
 var hold: String = ""
+var hold_at: float = 0.0
 ## Someone is at the wheel, to be dragged out once the door is open (begin_in's p_jack).
 var jack: bool = false
 var _ctx: FpContext
@@ -109,7 +112,8 @@ var _boxes: Array = []
 var _side: float = 0.0
 var _half_len: float = 0.0
 var _height: float = 0.0
-## The stand spot for the reach and the spot the feet sit down from (or stand up to), car frame.
+## The stand spot for the reach and the spot the climb in starts from (and the climb out ends
+## at), car frame.
 var _stand := Vector3.ZERO
 var _sill := Vector3.ZERO
 var _route := PackedVector3Array()
@@ -121,7 +125,6 @@ var _from := Vector3.ZERO
 var _from_yaw: float = 0.0
 var _to := Vector3.ZERO
 var _to_yaw: float = 0.0
-var _hips := Vector3.ZERO
 var _len: float = 0.0
 var _dt: float = 0.0
 var _fresh: bool = false
@@ -145,7 +148,7 @@ func begin_in(
 	ctx: FpContext, car: Dictionary, pts: Dictionary, boxes: Array = [], p_jack: bool = false
 ) -> bool:
 	_boxes = boxes
-	if not _setup(ctx, car, pts, "sit_down") or _blocked(_car * _stand):
+	if not _setup(ctx, car, pts) or _blocked(_car * _stand):
 		return false
 	_route = _plan(_flat(_car.affine_inverse() * ctx.player.position))
 	if _route.is_empty():
@@ -166,7 +169,7 @@ func begin_in(
 ## door or for the hero beside it.
 func begin_out(ctx: FpContext, car: Dictionary, pts: Dictionary, boxes: Array = []) -> bool:
 	_boxes = boxes
-	if not _setup(ctx, car, pts, "stand_up") or _blocked(_away()):
+	if not _setup(ctx, car, pts) or _blocked(_away()):
 		return false
 	_cam_w = 1.0
 	_cam_goal = 0.0
@@ -183,7 +186,7 @@ func begin_out(ctx: FpContext, car: Dictionary, pts: Dictionary, boxes: Array = 
 ## walk could not reach the door; the hero is still on foot). With jack it returns "pull" once on
 ## the way in, as the driver is dragged out.
 func step(dt: float) -> String:
-	if kind.is_empty() or dt <= 0.0 or (not hold.is_empty() and phase == hold):
+	if kind.is_empty() or dt <= 0.0 or (not hold.is_empty() and phase == hold and t >= hold_at):
 		return ""
 	_dt = dt
 	t += dt
@@ -223,8 +226,8 @@ func framing() -> bool:
 ## inside the car (in: from the turn into the opening on; out: until it stands).
 func aboard() -> bool:
 	if kind == "in":
-		return phase in ["turn", "sit", "swing", "close"]
-	return kind == "out" and phase in ["open", "swing", "stand"]
+		return phase in ["turn", "climb", "close"]
+	return kind == "out" and phase in ["open", "climb"]
 
 
 ## The camera now: the door camera, blended toward drive (the drive camera).
@@ -240,10 +243,9 @@ func route() -> PackedVector3Array:
 # ------------------------------------------------------------------ the plan
 
 
-## Works out the spots and headings in the car's frame; clip sits down or stands up (its root
-## travel sets how far out from the sill the feet are). False when the hero has no rig that sits,
+## Works out the spots and headings in the car's frame. False when the hero has no rig that sits,
 ## or the door or the spot beside it is blocked.
-func _setup(ctx: FpContext, car: Dictionary, pts: Dictionary, clip: String) -> bool:
+func _setup(ctx: FpContext, car: Dictionary, pts: Dictionary) -> bool:
 	var rig := _rig_of(ctx)
 	if rig == null or pts.is_empty():
 		return false
@@ -256,8 +258,7 @@ func _setup(ctx: FpContext, car: Dictionary, pts: Dictionary, clip: String) -> b
 	var handle: Vector3 = pts["handle"]
 	_side = maxf(float(car["half_w"]), handle.x)
 	_stand = _stand_spot(handle, pts["hinge"])
-	var out := float(rig.call("root_travel", clip))
-	_sill = Vector3(_side - SILL_IN + out, 0.0, (pts["seat"] as Vector3).z)
+	_sill = Vector3(_side + STEP_OUT, 0.0, (pts["seat"] as Vector3).z)
 	_yaw_seat = wrapf(yaw + PI, -PI, PI)
 	_yaw_out = _yaw_of(_car.basis.x)
 	var grip := atan2(REACH_SIDE, REACH_FWD)
@@ -396,10 +397,8 @@ func _step_in() -> String:
 			_open_in()
 		"jack":
 			return _jack()
-		"sit":
-			_sit_down()
-		"swing":
-			_swing_in()
+		"climb":
+			_climb_in()
 		"close":
 			_place_hips(_seat_world(), _yaw_seat)
 			return _shut("seated")
@@ -445,14 +444,14 @@ func _walk() -> String:
 	return ""
 
 
-## The last few centimetres onto the walk's goal and the turn: to the handle after the walk, the
-## back to the seat after the step.
+## The last few centimetres onto the walk's goal and the turn: to the handle after the walk,
+## facing forward beside the seat after the step.
 func _line_up() -> void:
 	var p := _ctx.player
 	_from = p.position
 	_from_yaw = p.yaw
 	_to = _route[_route.size() - 1]
-	_to_yaw = _yaw_reach if phase == "walk" else _yaw_out
+	_to_yaw = _yaw_reach if phase == "walk" else _yaw_seat
 	var turn := absf(wrapf(_to_yaw - p.yaw, -PI, PI)) / TURN_RATE
 	_len = maxf(ALIGN_MIN, maxf(turn, _flat(_to - _from).length() / ALIGN_SPEED))
 	p.simulate(Vector2.ZERO, false, _dt)
@@ -463,7 +462,7 @@ func _align() -> void:
 	var k := smoothstep(0.0, 1.0, t / _len)
 	_ride(_ground(_from.lerp(_to, k)), lerp_angle(_from_yaw, _to_yaw, k))
 	if t >= _len:
-		_go("open" if phase == "align" else "sit")
+		_go("open" if phase == "align" else "climb")
 
 
 ## door_try: the hand meets the handle, the pull opens the door a little, then it swings wide and
@@ -504,34 +503,26 @@ func _jack() -> String:
 	return ""
 
 
-## On into the door's opening, to the spot the feet sit down from.
+## On into the door's opening, to the spot the climb in starts from.
 func _to_sill() -> void:
 	_route = PackedVector3Array([_ground(_car * _sill)])
 	_start_walk()
 	_go("step")
 
 
-## sit_down onto the sill: the clip's root travel walks the feet back toward the car.
-func _sit_down() -> void:
+## car_in: over the sill and onto the seat along the clip's root travel; the door shuts once the
+## hands are on the wheel.
+func _climb_in() -> void:
 	var rig := _rig()
 	if _fresh:
-		rig.call("sit", true)
+		rig.call("sit", true, true)
 		_from = _ctx.player.position
 		_len = t
-	var k := float(rig.call("travel", "sit_down", t - _len))
-	var back := float(rig.call("root_travel", "sit_down"))
-	_ride(_ground(_from - _car.basis.x * back * k), _yaw_out)
-	if (k >= 0.995 and t - _len > 0.3) or t >= SIT_MAX:
-		_hips = rig.call("bone_world", "Hips")
+	if t - _len >= CLIMB_CAM:
 		_cam_goal = 1.0
-		_go("swing")
-
-
-## From the sill round into the seat, facing forward.
-func _swing_in() -> void:
-	var k := smoothstep(0.0, 1.0, t / SWING_T)
-	_place_hips(_hips.lerp(_seat_world(), k), lerp_angle(_yaw_out, _yaw_seat, k))
-	if t >= SWING_T:
+	var k := float(rig.call("travel", "car_in", t - _len))
+	_toward_seat(_from, k)
+	if (k >= 0.995 and str(rig.call("state")) == "drive") or t - _len >= CLIMB_MAX:
 		_ramp(0.0, CLOSE_T, "in")
 		_go("close")
 
@@ -543,10 +534,8 @@ func _step_out() -> String:
 	match phase:
 		"open":
 			_open_out()
-		"swing":
-			_swing_out()
-		"stand":
-			_stand_up()
+		"climb":
+			_climb_out()
 		"away":
 			_walk_away()
 		"close":
@@ -555,39 +544,24 @@ func _step_out() -> String:
 	return ""
 
 
-## Seated while the door opens; then the swing out onto the sill, the feet on the ground below it.
+## Seated while the door opens, then the climb out.
 func _open_out() -> void:
 	_place_hips(_seat_world(), _yaw_seat)
-	if t < OPEN_T:
-		return
-	var p := _ctx.player
-	var rig := _rig()
-	var hw: Vector3 = rig.call("bone_world", "Hips") if rig != null else p.position
-	_hips = _seat_world()
-	_to = _car * Vector3(_side - SILL_IN, 0.0, _sill.z)
-	_to.y = _ground(_car * _sill).y + (hw.y - p.position.y)
-	_go("swing")
+	if t >= OPEN_T:
+		_to = _ground(_car * _sill)
+		_go("climb")
 
 
-func _swing_out() -> void:
-	var k := smoothstep(0.0, 1.0, t / SWING_T)
-	_place_hips(_hips.lerp(_to, k), lerp_angle(_yaw_seat, _yaw_out, k))
-	if t >= SWING_T:
-		_from = _ctx.player.position
-		_go("stand")
-
-
-## stand_up off the sill: the clip's root travel walks the feet out from the car.
-func _stand_up() -> void:
+## car_out: off the seat and out over the sill onto the feet beside it.
+func _climb_out() -> void:
 	var rig := _rig()
 	if _fresh:
 		rig.call("sit", false)
 		_len = t
-	var k := float(rig.call("travel", "stand_up", t - _len))
-	var fwd := float(rig.call("root_travel", "stand_up"))
-	_ride(_ground(_from + _car.basis.x * fwd * k), _yaw_out)
+	var k := float(rig.call("travel", "car_out", t - _len))
+	_toward_seat(_to, 1.0 - k)
 	var standing := t - _len > 0.5 and str(rig.call("state")) == "loco"
-	if standing or t >= STAND_MAX:
+	if standing or t - _len >= CLIMB_MAX:
 		_go("away")
 
 
@@ -660,6 +634,17 @@ func _place_hips(at: Vector3, yaw: float) -> void:
 	if is_nan(hw.x):
 		return
 	p.ride(at - Basis(Vector3.UP, yaw) * p.to_local(hw), yaw, yaw)
+
+
+## The body facing forward k of the way from standing at ground (0) to its hips on the seat (1).
+func _toward_seat(ground: Vector3, k: float) -> void:
+	var p := _ctx.player
+	var rig := _rig()
+	var hw: Vector3 = rig.call("bone_world", "Hips") if rig != null else Vector3(NAN, NAN, NAN)
+	var seated := ground
+	if not is_nan(hw.x):
+		seated = _seat_world() - Basis(Vector3.UP, _yaw_seat) * p.to_local(hw)
+	_ride(ground.lerp(seated, k), _yaw_seat)
 
 
 func _ride(pos: Vector3, yaw: float) -> void:

@@ -36,7 +36,8 @@ const CLIPS := [
 	"idle", "walk", "walk_fast", "run", "run_fast", "crouch_idle", "crouch_walk", "jump_start",
 	"fall", "land", "talk", "sit_down", "sit", "stand_up", "interact", "wave", "phone", "door_try",
 	"punch_jab", "punch_cross", "punch_hook", "swing_a", "swing_b", "push", "yes", "no", "shout",
-	"dance", "hit_head", "hit_chest", "knockback", "get_up", "climb_1m", "roll", "kick",
+	"dance", "hit_head", "hit_chest", "knockback", "get_up", "climb_1m", "roll", "kick", "car_in",
+	"car_out", "drive",
 ]
 ## Foot-slide correction: TimeScale = clamp(v / v_anim, TS_MIN, TS_MAX).
 const TS_MIN := 0.5
@@ -105,12 +106,15 @@ const GUARD_AT := 0.0
 ## strike_time samples this many poses over a clip's opening seconds.
 const STRIKE_SAMPLES := 48
 const STRIKE_WITHIN := 1.2
-## sit_down and stand_up play this much faster than authored (in and out of a car seat).
-const SIT_SPEED := 1.5
-const SIT_CLIPS := ["sit_down", "stand_up"]
-## States the ground does not cut short for locomotion: sitting, the knock-down, the climb,
-## holding on to a wall and the roll.
-const HELD := ["sit_down", "sit", "stand_up", "knockback", "get_up", "climb", "wall", "roll"]
+## Clips played this much faster than authored: sitting down and standing up, getting into a
+## car's driver's seat and out of it.
+const CLIP_SPEED := {"sit_down": 1.5, "stand_up": 1.5, "car_in": 1.25, "car_out": 1.35}
+## States the ground does not cut short for locomotion: sitting, the car's seat, the knock-down,
+## the climb, holding on to a wall and the roll.
+const HELD := [
+	"sit_down", "sit", "stand_up", "car_in", "drive", "car_out", "knockback", "get_up", "climb",
+	"wall", "roll",
+]
 ## On a wall (hold_wall) the body holds WALL_CLIP under the limbs' IK, faded in and out over
 ## XF_WALL (s).
 const WALL_CLIP := "idle"
@@ -176,6 +180,8 @@ var _lib: AnimationLibrary
 var _air_t: float = 0.0
 var _land_t: float = 0.0
 var _sit: bool = false
+## Sitting in a car's driver's seat (car_in, drive, car_out) rather than on a bench.
+var _in_car: bool = false
 var _prev_state: String = ""
 var _prev_phase: float = -1.0
 var _last_vy: float = 0.0
@@ -315,17 +321,27 @@ func _rolling(dt: float, a: float, grounded: bool, crouched: bool, talking: bool
 
 
 ## The state machine's current state ("loco", "crouch", "jump", "fall", "land", "talk",
-## "sit_down", "sit", "stand_up", "knockback", "get_up", "climb", "wall", "roll").
+## "sit_down", "sit", "stand_up", "car_in", "drive", "car_out", "knockback", "get_up", "climb",
+## "wall", "roll").
 func state() -> String:
 	return str(playback.get_current_node()) if playback != null else ""
 
 
-## Sits down (on) or stands up; moving stands up by itself.
-func sit(on: bool) -> void:
+## Sits down (on) or stands up; moving stands up by itself. With car the seat is a car's driver's
+## seat: car_in climbs in through the door beside it (and car_out back out) to the driving pose,
+## hands on the wheel; at_once takes that pose (or stands) without the climb.
+func sit(on: bool, car: bool = false, at_once: bool = false) -> void:
 	if on == _sit:
 		return
 	_sit = on
-	_go("sit_down" if on else "stand_up")
+	if on:
+		_in_car = car
+	if at_once and _in_car:
+		playback.start("drive" if on else "loco")
+	elif _in_car:
+		_go("car_in" if on else "car_out")
+	else:
+		_go("sit_down" if on else "stand_up")
 
 
 ## Plays an upper-body gesture over the current state ("interact", "wave", "phone", "door_try").
@@ -495,14 +511,14 @@ func _update_actions(dt: float, a: float) -> void:
 
 
 ## How far clip has carried its root t seconds after its state began (0..1 of the whole clip's
-## horizontal root travel; sit_down and stand_up play at SIT_SPEED). The tree drops root motion,
+## horizontal root travel; at their CLIP_SPEED). The tree drops root motion,
 ## so whoever moves the body through a clip (into a car seat) follows this curve; a clip without
 ## travel runs linearly.
 func travel(clip: String, t: float) -> float:
 	var a := _clip(clip)
 	var ti := _root_track(a)
 	var length := a.length if a != null else 1.0
-	var tc := t * (SIT_SPEED if clip in SIT_CLIPS else 1.0)
+	var tc := t * float(CLIP_SPEED.get(clip, 1.0))
 	if ti < 0:
 		return clampf(tc / length, 0.0, 1.0)
 	var p0 := a.position_track_interpolate(ti, 0.0)
@@ -512,17 +528,6 @@ func travel(clip: String, t: float) -> float:
 		return clampf(tc / length, 0.0, 1.0)
 	var p := a.position_track_interpolate(ti, clampf(tc, 0.0, length)) - p0
 	return clampf(Vector3(p.x, 0.0, p.z).dot(d) / d.length_squared(), 0.0, 1.0)
-
-
-## How far clip carries the body along the ground over its whole length (world units).
-func root_travel(clip: String) -> float:
-	var a := _clip(clip)
-	var ti := _root_track(a)
-	if ti < 0:
-		return 0.0
-	var d := a.position_track_interpolate(ti, a.length) - a.position_track_interpolate(ti, 0.0)
-	var sc := skeleton.global_transform.basis.get_scale().x if skeleton.is_inside_tree() else 1.0
-	return Vector2(d.x, d.z).length() * skeleton.motion_scale * sc
 
 
 func _clip(clip: String) -> Animation:
@@ -543,6 +548,7 @@ func set_look_target(p: Vector3) -> void:
 ## Back to standing (or crouched) locomotion at once: no cross-fade, no landing, no gesture.
 func snap(crouched: bool) -> void:
 	_sit = false
+	_in_car = false
 	_air_t = 0.0
 	_last_vy = 0.0
 	look.reset()
@@ -691,8 +697,9 @@ func _state_machine() -> AnimationNodeStateMachine:
 	sm.add_node("land", land)
 	sm.add_node("talk", _anim("talk"))
 	sm.add_node("sit", _anim("sit"))
-	for s: String in SIT_CLIPS + ["knockback", "get_up"]:
-		sm.add_node(s, _once(s, SIT_SPEED if s in SIT_CLIPS else 1.0))
+	sm.add_node("drive", _anim("drive"))
+	for s: String in ["sit_down", "stand_up", "car_in", "car_out", "knockback", "get_up"]:
+		sm.add_node(s, _once(s, float(CLIP_SPEED.get(s, 1.0))))
 	_climb = _once("climb_1m", 1.0)
 	sm.add_node("climb", _climb)
 	sm.add_node("wall", _anim(WALL_CLIP))
@@ -730,6 +737,13 @@ func _state_machine() -> AnimationNodeStateMachine:
 	_tr(sm, "sit", "stand_up", XF_SIT)
 	_tr(sm, "stand_up", "loco", XF_SIT, true)
 	_tr(sm, "stand_up", "sit_down", XF_SIT)
+	for from: String in ["loco", "crouch", "talk"]:
+		_tr(sm, from, "car_in", XF_SIT)
+	_tr(sm, "car_in", "drive", XF_SIT, true)
+	_tr(sm, "car_in", "car_out", XF_SIT)
+	_tr(sm, "drive", "car_out", XF_SIT)
+	_tr(sm, "car_out", "loco", XF_SIT, true)
+	_tr(sm, "car_out", "car_in", XF_SIT)
 	var into_knockback := [
 		"loco", "crouch", "land", "talk", "jump", "fall", "get_up", "climb", "wall", "roll"
 	]

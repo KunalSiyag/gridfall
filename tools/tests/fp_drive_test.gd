@@ -297,7 +297,7 @@ func _check_seated() -> void:
 		av.visible and off.length() < 0.05,
 		"the hero's hips are on the driver's seat (%.2f m off)" % off.length()
 	)
-	K.check(fails, st == "sit" or st == "sit_down", "the hero sits (%s)" % st)
+	K.check(fails, st == "drive", "the hero sits with its hands on the wheel (%s)" % st)
 
 
 func _check_drive() -> void:
@@ -436,7 +436,7 @@ func _check_exit() -> void:
 func avatar_free() -> bool:
 	var rig: Variant = ctx.player.avatar.get("rig")
 	var st := str((rig as RefCounted).call("state")) if rig != null else ""
-	return ctx.player.avatar.visible and not st.begins_with("sit")
+	return ctx.player.avatar.visible and st not in ["sit", "drive", "car_out"]
 
 
 ## Drives into a wall across the road: the body never enters it and the car stops.

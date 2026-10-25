@@ -17,7 +17,7 @@ const DOORS := preload("res://scripts/fp/traffic/car_doors.gd")
 const JACK := preload("res://scripts/fp/traffic/carjack.gd")
 const TRIPS := preload("res://scripts/fp/traffic/trips.gd")
 const DT := 1.0 / 60.0
-const JACK_PHASES := ["walk", "align", "open", "jack", "step", "turn", "sit", "swing", "close"]
+const JACK_PHASES := ["walk", "align", "open", "jack", "step", "turn", "climb", "close"]
 ## What the one dragged out does: falls, gets up, shouts, runs.
 const PULLED := [&"knockback", &"get_up", &"shout", &"run"]
 ## [kind, role, parked] of a vehicle and whether someone sits at its wheel.
@@ -117,7 +117,7 @@ func _check_ambient() -> void:
 		fails,
 		r["phases"] == JACK_PHASES,
 		(
-			"it walks, reaches, opens, drags the driver out, steps in, sits, shuts: %s"
+			"it walks, reaches, opens, drags the driver out, steps up, climbs in, shuts: %s"
 			% str(r["phases"])
 		)
 	)
