@@ -43,6 +43,10 @@ var yaw: float = 0.0
 var vel := Vector2.ZERO
 var steer: float = 0.0
 var length: float = 0.24
+## This body's handling profile: a slower, heavier machine (a backhoe) tops out below TOP and
+## gets up to speed at a share of a car's rate (a car: {top: TOP, gain: 1}).
+var top := TOP
+var gain := 1.0
 ## Signed acceleration along the heading over the last step (brake lights).
 var accel: float = 0.0
 ## Yaw rate from knocks (rad/s, positive turns the heading toward +X at yaw 0), on top of the
@@ -50,13 +54,16 @@ var accel: float = 0.0
 var spin: float = 0.0
 
 
-func reset(p_yaw: float, p_length: float) -> void:
+## p_profile: {"top": u/s, "gain": share of ACCEL} of the body being driven ({}: a car's).
+func reset(p_yaw: float, p_length: float, p_profile: Dictionary = {}) -> void:
 	yaw = p_yaw
 	length = p_length
 	vel = Vector2.ZERO
 	steer = 0.0
 	accel = 0.0
 	spin = 0.0
+	top = float(p_profile.get("top", TOP))
+	gain = float(p_profile.get("gain", 1.0))
 
 
 func heading() -> Vector2:
@@ -95,7 +102,7 @@ func step(
 	vf = vel.dot(h)
 	var vs := vel.dot(side)
 	var before := vf
-	vf = _drive(vf, throttle, brake, handbrake, TOP * float(surf[1]), dt)
+	vf = _drive(vf, throttle, brake, handbrake, top * float(surf[1]), ACCEL * gain, dt)
 	accel = (vf - before) / dt
 	var grip := lerpf(GRIP * float(surf[0]), GRIP_HANDBRAKE, hb)
 	vs *= exp(-grip * dt)
@@ -104,20 +111,21 @@ func step(
 
 
 ## Speed along the heading after throttle, brake (reverse once stopped), handbrake and coasting.
+## acc: the body's acceleration (u/s^2, a car's ACCEL scaled by its profile gain).
 static func _drive(
-	vf: float, throttle: float, brake: float, handbrake: float, top: float, dt: float
+	vf: float, throttle: float, brake: float, handbrake: float, top: float, acc: float, dt: float
 ) -> float:
 	var stopped := 0.5 * WS.M
 	if throttle > 0.0:
 		if vf < -stopped:
 			vf = minf(vf + BRAKE * throttle * dt, 0.0)
 		else:
-			vf += ACCEL * throttle * maxf(0.0, 1.0 - vf / top) * dt
+			vf += acc * throttle * maxf(0.0, 1.0 - vf / top) * dt
 	if brake > 0.0:
 		if vf > stopped:
 			vf = maxf(vf - BRAKE * brake * dt, 0.0)
 		else:
-			vf -= ACCEL * 0.7 * brake * maxf(0.0, 1.0 + vf / REVERSE_TOP) * dt
+			vf -= acc * 0.7 * brake * maxf(0.0, 1.0 + vf / REVERSE_TOP) * dt
 	if throttle <= 0.0 and brake <= 0.0:
 		vf = move_toward(vf, 0.0, (ROLL + DRAG * absf(vf)) * dt)
 	if handbrake > 0.0:

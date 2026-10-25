@@ -162,7 +162,9 @@ func _check_in() -> void:
 	ctx.bus.drive_changed.disconnect(cb)
 
 
-## Sat at the wheel: hips on the driver's seat, hands on the wheel (drive), the drive camera on.
+## Sat at the wheel: hips on the driver's seat sunk into the cushion, hands on the wheel (drive),
+## the drive camera on. The hips sit below the seat marker by design (seat_pose.gd's sink, up to
+## 0.17 m into the cushion) so the head clears the roof line, so the seat here is sunk by it.
 func _check_seat(car: VH.Car) -> void:
 	tr.call("sync_visuals", DT)
 	for _k in range(30):
@@ -170,13 +172,18 @@ func _check_seat(car: VH.Car) -> void:
 		ctx.player.update_view(DT)
 	var rig: RefCounted = ctx.player.avatar.get("rig")
 	var seat: Vector3 = (tr.call("door_info", -1) as Dictionary)["seat"]
-	var want := Transform3D(Basis(Vector3.UP, car.yaw), car.pos) * seat
+	var pose: Object = drive.get("pose") as Object
+	var sink: float = float(pose.get("sink")) if pose != null else 0.0
+	var want := Transform3D(Basis(Vector3.UP, car.yaw), car.pos) * (seat - Vector3(0.0, sink, 0.0))
 	var off := ((rig.call("bone_world", "Hips") as Vector3) - want) / WS.M
 	var st := str(rig.call("state"))
 	K.check(
 		fails,
 		off.length() < 0.05 and st == "drive" and ctx.player.view_override,
-		"the hero sits on the driver's seat (%.2f m off, %s)" % [off.length(), st]
+		(
+			"the hero sits on the driver's seat, sunk into the cushion (%.2f m off, %s)"
+			% [off.length(), st]
+		)
 	)
 
 

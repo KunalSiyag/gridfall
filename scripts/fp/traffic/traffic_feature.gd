@@ -44,6 +44,10 @@ const LINE_RETRY := 10.0
 ## The player can take a parked car, their own, or a car in traffic (an ambient one, or with
 ## carjack a resident's) crawling below this speed.
 const CLAIM_SPEED := 0.5 * WS.M
+## The backhoe loader (the jcb flag): a work machine, not a highway one — it tops out around
+## 22 km/h and gathers speed at half a car's rate (drive_model.gd, drive_profile).
+const JCB_TOP := 6.1 * WS.M
+const JCB_GAIN := 0.5
 ## A crew called with no station in town sets off from a road at most this many tiles away.
 const STATION_FAR := 10
 ## A car running the hero down (hit_by_cars) hits at full strength from HIT_FULL (u/s) and throws
@@ -219,6 +223,7 @@ func on_world_rebuilt() -> void:
 	vehicles.on_arrive = _on_vehicle_arrived
 	vehicles.on_removed = _on_vehicle_removed
 	vehicles.on_hit_player = _on_car_hit_hero
+	vehicles.on_hero_push = _on_hero_push
 	shoves.setup(vehicles, ctx.collision)
 	shoves.visible = on_screen
 	vehicles.extra_blocks = func() -> Array: return shoves.blocks() + reactions.blocks()
@@ -241,6 +246,7 @@ func on_world_rebuilt() -> void:
 	ambient.visible = on_screen
 	ambient.bike_model = bike_model
 	ambient.bike_chance = AMB.BIKE_CHANCE if FeatureFlags.enabled("cyclists") else 0.0
+	ambient.jcb_model = jcb_model
 	trips.setup(self, sim, ctx.residents, lanes, peds, vehicles, walkers)
 	trips.reset()
 	fleets.setup(self, sim, lanes, vehicles)
@@ -714,6 +720,23 @@ func person_model_for(rid: String) -> int:
 func dims(m: int) -> Vector3:
 	var mo := render.model(m)
 	return mo.size if mo != null else Vector3(0.105, 0.075, 0.24)
+
+
+## The backhoe loader (the jcb flag): H's yellow machine, a construction body parked at the curb
+## that drives like a car, slower and heavier. -1 when the flag is off or the model is missing.
+func jcb_model() -> int:
+	if not FeatureFlags.enabled("jcb"):
+		return -1
+	return render.model_for(AP.VEHICLES_V2_DIR + "backhoe_yellow.glb", WS.VEHICLE_V2_SCALE)
+
+
+## The handling profile of car id (drive_model.gd reset): the backhoe tops out at JCB_TOP and
+## gathers speed at JCB_GAIN of a car's rate; a car is {}.
+func drive_profile(id: int) -> Dictionary:
+	var c: VH.Car = vehicles.by_id.get(id) if _built else null
+	if c == null or c.model != jcb_model():
+		return {}
+	return {"top": JCB_TOP, "gain": JCB_GAIN}
 
 
 ## A cyclist: H's bicycle when present, else a procedural bicycle and rider (one mesh).
@@ -1369,6 +1392,19 @@ func _on_car_hit_hero(c: VH.Car) -> void:
 	ctx.bus.hero_hit.emit(at, "car", strength, head * c.v)
 
 
+## A car's body reaches the hero on foot without running them down (vehicles.gd, on_hero_push):
+## they are eased out along push (xz, u) so no car passes through them. Walls still stop them
+## (CollisionWorld.move_body slides along them).
+func _on_hero_push(push: Vector2) -> void:
+	var p := ctx.player
+	if p == null or not is_instance_valid(p) or p.carried or ctx.collision == null:
+		return
+	var mv := Vector3(push.x, 0.0, push.y)
+	p.position = ctx.collision.move_body(
+		p.position, mv, WS.PLAYER_RADIUS, WS.PLAYER_HEIGHT, WS.STEP_HEIGHT
+	)
+
+
 ## The hero's emote ("wave", "yes", "no", "shout", "dance") at p facing fwd: the people who
 ## answer it (reactions.gd answer_emote). Returns how many do.
 func answer_emote(p: Vector3, fwd: Vector3, emote: String) -> int:
@@ -1662,6 +1698,7 @@ func _take_over(o: VH.Car) -> VH.Car:
 	c.yaw = o.yaw + o.vis_yaw
 	c.label = "Your car"
 	c.state = "yours"
+	c.mass = o.mass
 	# Its drawn model carries over, so the car does not vanish for a frame.
 	c.node = o.node
 	c.lod = o.lod

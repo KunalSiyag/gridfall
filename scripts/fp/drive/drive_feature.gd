@@ -21,6 +21,7 @@ const HUD := preload("res://scripts/fp/drive/drive_hud.gd")
 const BODY := preload("res://scripts/fp/drive/car_body.gd")
 const ENTRY := preload("res://scripts/fp/drive/car_entry.gd")
 const HIJACK := preload("res://scripts/fp/drive/hijack.gd")
+const SEAT := preload("res://scripts/fp/drive/seat_pose.gd")
 
 ## Reach from the hero to a car's body for the get-in prompt.
 const ENTER_REACH := 2.0 * WS.M
@@ -79,6 +80,8 @@ var view: String = "chase"
 var hud: HUD
 ## Car half width, height and length (u).
 var _dims := Vector3(0.045, 0.075, 0.24)
+## Its handling profile (drive_model.gd reset): a slower, heavier body, else a car's.
+var _profile := {}
 var _pos := Vector3.ZERO
 var _seat: Variant = null
 var _hero_off := Vector3.ZERO
@@ -102,6 +105,8 @@ var _jack_id: int = -1
 var hijack := HIJACK.new()
 ## The car alongside to jump to, as the prompt last looked (hijack_target).
 var _across: Dictionary = {}
+## The hero's seated pose against the cabin (seat_pose.gd).
+var pose := SEAT.new()
 
 
 func feature_id() -> String:
@@ -235,6 +240,10 @@ func climb_step(dt: float) -> void:
 	if _stop_t >= 0.0:
 		_stop_for_exit(dt)
 		return
+	# Once the climb out is under way (past the door opening, while the hero still sits) the limbs
+	# let go of the pedals and the wheel and go with the clip.
+	if entry.kind == "out" and entry.phase != "open":
+		_limbs_off()
 	var done := entry.step(dt)
 	# A walk to someone else's car that cannot reach its door takes it at once.
 	var pull := done == "pull" or (done == "fail" and _jack_id >= 0)
@@ -269,9 +278,14 @@ func _adopt(info: Dictionary) -> void:
 	car_id = int(info["id"])
 	_pos = info["pos"]
 	_dims = Vector3(float(info["half_w"]), float(info["height"]), float(info["length"]))
-	model.reset(float(info["yaw"]), _dims.z)
+	_profile = {}
+	var traffic := _traffic()
+	if traffic != null and traffic.has_method("drive_profile"):
+		_profile = traffic.call("drive_profile", car_id)
+	model.reset(float(info["yaw"]), _dims.z, _profile)
 	body.setup(_dims.x, _dims.z, _dims.y)
 	_seat = null
+	pose.reset()
 	_hero_off = Vector3.ZERO
 	_cam_yaw = model.yaw
 	_orbit = 0.0
@@ -329,7 +343,7 @@ func _pull_out() -> bool:
 	_jack_id = -1
 	car_id = int(info["id"])
 	_pos = info["pos"]
-	model.reset(float(info["yaw"]), _dims.z)
+	model.reset(float(info["yaw"]), _dims.z, _profile)
 	_block_others()
 	return true
 
@@ -372,12 +386,13 @@ func _stop_for_exit(dt: float) -> void:
 	if absf(model.speed()) > ENTRY.STOP_V and _stop_t < ENTRY.BRAKE_MAX:
 		return
 	_stop_t = -1.0
-	model.reset(model.yaw, _dims.z)
+	model.reset(model.yaw, _dims.z, _profile)
 	var tr := _traffic()
 	tr.call("drive_car", _pos, model.yaw, 0.0, 0.0)
 	if hud != null:
 		hud.set_speed(false, 0.0)
 	var boxes: Array = tr.call("blockers_near", _pos, _dims.z + ENTRY.ROUTE_REACH)
+	entry.seat_drop = pose.sink
 	if not entry.begin_out(ctx, _car_info(), tr.call("door_info", -1), boxes):
 		exit()
 
@@ -405,6 +420,8 @@ func _on_foot(spot: Vector3, blend: float) -> void:
 	active = false
 	car_id = -1
 	_stop_t = -1.0
+	_limbs_off()
+	pose.reset()
 	if hud != null:
 		hud.set_prompt("")
 		hud.set_speed(false, 0.0)
@@ -525,7 +542,7 @@ func drive_step(throttle: float, brake: float, steer: float, hand: float, dt: fl
 		to.y = g if g > _pos.y else move_toward(_pos.y, g, SETTLE * dt)
 	_pos = to
 	_traffic().call("drive_car", _pos, model.yaw, model.speed(), model.accel)
-	_ride()
+	_ride(dt)
 	_impact_t -= dt
 	_report()
 
@@ -551,16 +568,18 @@ func _report() -> void:
 ## The hero rides along, body turned to the car's heading, placed so that the seated hips are on
 ## the driver's seat (the avatar's own transform belongs to its lean and step springs, so the
 ## player's feet move instead: _hero_off from the car's centre, in the player's frame).
-func _ride() -> void:
+func _ride(dt: float = 0.0) -> void:
 	var p := ctx.player
-	_place_hero()
+	_place_hero(dt)
 	var yaw := model.yaw + PI
 	p.ride(_pos + Basis(Vector3.UP, yaw) * _hero_off, yaw, _cam_yaw + _orbit + PI)
 
 
 ## Measures the sit pose against the seat (the hero is hidden until the car's full model is drawn,
-## and for the stand-in figure, which cannot sit).
-func _place_hero() -> void:
+## and for the stand-in figure, which cannot sit). The hips go on the seat marker sunk by the
+## pose's sink (seat_pose.gd, so the head clears the roof) and the feet and hands reach the car's
+## own pedal and wheel markers.
+func _place_hero(dt: float = 0.0) -> void:
 	var av := ctx.player.avatar
 	if av == null:
 		return
@@ -574,10 +593,17 @@ func _place_hero() -> void:
 		return
 	var s: Vector3 = _seat
 	# The player's body faces -Z, the car +Z: the seat in the player's frame is turned half a turn.
-	var want := Vector3(-s.x, s.y, -s.z)
+	var want := Vector3(-s.x, s.y - pose.sink, -s.z)
 	var hw: Vector3 = (rig as RefCounted).call("bone_world", "Hips")
 	if not is_nan(hw.x):
 		_hero_off = want - ctx.player.to_local(hw)
+	pose.step(rig as RefCounted, _traffic(), car_id, _pos, model.yaw, s, dt)
+
+
+## Lets the hero's limbs go back to their clips from the last seat pose (seat_pose.gd).
+func _limbs_off() -> void:
+	var av := ctx.player.avatar if ctx != null and ctx.player != null else null
+	pose.off(av.get("rig") if av != null else null)
 
 
 func _sit(on: bool) -> void:
@@ -622,6 +648,7 @@ func jump_across() -> bool:
 	car_id = -1
 	_across = {}
 	_sit(false)
+	_limbs_off()
 	if p.avatar != null:
 		p.avatar.visible = true
 	if hud != null:
@@ -677,6 +704,7 @@ func _hijack_in(tr: FpFeature, src: Vector3) -> void:
 ## The hijack ends half way: the hero drops from where it is to the road, on foot.
 func _fall_off() -> void:
 	hijack.cancel()
+	_limbs_off()
 	var tr := _traffic()
 	if tr != null:
 		tr.call("set_hero_aboard", false)
@@ -762,7 +790,7 @@ func camera_xform(chase: bool = false) -> Transform3D:
 	if view == "driver" and _seat != null and not chase:
 		var car := Transform3D(Basis(Vector3.UP, model.yaw), _pos)
 		var s: Vector3 = _seat
-		var eye := car * Vector3(s.x * EYE_INBOARD, s.y + EYE_ABOVE_HIP, s.z)
+		var eye := car * Vector3(s.x * EYE_INBOARD, s.y + EYE_ABOVE_HIP - pose.sink, s.z)
 		var a := model.yaw + _orbit
 		var look := Vector3(sin(a), -0.06 - _orbit_pitch, cos(a))
 		return Transform3D(Basis.looking_at(look, Vector3.UP), eye)

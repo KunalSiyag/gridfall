@@ -88,6 +88,8 @@ func clear() -> void:
 
 ## Mass of c relative to a sedan.
 static func mass_of(c: VH.Car) -> float:
+	if c.mass > 0.0:
+		return c.mass
 	var m := float(MASS.get(c.kind, 1.0))
 	return m * c.length / SEDAN_LENGTH if c.kind == "car" else m
 

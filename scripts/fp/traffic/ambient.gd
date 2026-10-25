@@ -65,6 +65,10 @@ var visible: Callable
 ## bike_model() -> int (traffic_feature.bike_model), and the share of cyclists.
 var bike_model: Callable
 var bike_chance: float = 0.0
+## jcb_model() -> int (traffic_feature.jcb_model): the backhoe loader parked at a rare share of
+## curb slots (a parked work machine the player can drive, not one in traffic).
+var jcb_model: Callable
+const JCB_IN := 37
 var _rng := RandomNumberGenerator.new()
 var _road_tiles: PackedInt32Array = PackedInt32Array()
 var _near_cache: Dictionary = {}
@@ -326,11 +330,16 @@ func fill_parking() -> int:
 			var h := absi(hash(Vector3i(i, k, sim.city_seed)))
 			if float(h % 1000) / 1000.0 >= chance:
 				continue
-			var m := int(car_model.call(h / 1000))
+			var jcb := int(jcb_model.call()) if jcb_model.is_valid() else -1
+			var m := int(jcb if jcb >= 0 and h % JCB_IN == 0 else car_model.call(h / 1000))
 			var dims: Vector3 = dims_of.call(m)
 			var c := vh.make("car", "decor", dims)
 			c.model = m
-			c.label = "a parked car"
+			if m == jcb:
+				c.label = "a backhoe"
+				c.mass = 5.5
+			else:
+				c.label = "a parked car"
 			vh.park_at(c, i, k)
 			n += 1
 	lg.bulk = false

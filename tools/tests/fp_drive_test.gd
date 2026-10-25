@@ -1,22 +1,32 @@
 extends SceneTree
 ## Driving (integration feature "drive"): the handling model, getting into a stopped car, driving
 ## it along a straight road, lane traffic stopping behind it, crashing into a wall (car_impact on
-## the bus), sliding along a wall it meets at a glance, knocking a lane car off its lane (which
-## finds its way back), getting out beside the door, the car left standing as an obstacle, the
-## seated hero, keys and pad bindings, and teardown. Getting in and out is the instant way (the
-## car_doors flag off; fp_car_doors_test covers the walk to the door) and nobody is pulled out of
-## a car taken from traffic (carjack off; fp_carjack_test). Time runs through drive_step(1/60) and
-## the traffic feature's step(1/30).
+## the bus), sliding along a wall it meets at a glance, a wall a hand's width thick it cannot
+## step past, knocking a lane car off its lane (which finds its way back), getting out beside the
+## door, the car left standing as an obstacle, the hero on foot against cars in motion (never
+## inside one's body: eased out, carried along, run down exactly once while hittable, stopped
+## short of when not), the seated hero (hips on the seat sunk into the cushion, hands on the rim,
+## feet on the pedals, head under the roof, in every drivable body), keys and pad bindings, and
+## teardown. Getting in and out is the instant way (the car_doors flag off; fp_car_doors_test
+## covers the walk to the door) and nobody is pulled out of a car taken from traffic (carjack
+## off; fp_carjack_test). Time runs through drive_step(1/60) and the traffic feature's
+## step(1/30).
 
 const K := preload("res://tools/tests/fp_kit.gd")
 const D := preload("res://scripts/sim/sim_defs.gd")
 const WS := preload("res://scripts/fp/world_scale.gd")
+const AP := preload("res://scripts/fp/asset_paths.gd")
 const OBB := preload("res://scripts/fp/obb2d.gd")
 const LG := preload("res://scripts/fp/traffic/lane_graph.gd")
 const VH := preload("res://scripts/fp/traffic/vehicles.gd")
+const WK := preload("res://scripts/fp/traffic/walkers.gd")
 const MODEL := preload("res://scripts/fp/drive/drive_model.gd")
+const SHOVES := preload("res://scripts/fp/traffic/shoves.gd")
 const DT := 1.0 / 60.0
 const KMH := WS.M / 3.6
+## The top of the head rides this multiple of the hips-to-head-bone distance above the hips
+## (skull and hair over the head bone), as in seat_pose.gd.
+const SKULL_HAIR := 1.40
 
 var fails: Array[String] = []
 var ctx: FpContext
@@ -64,13 +74,18 @@ func _init() -> void:
 	_check_enter(it)
 	_check_seated()
 	_check_drive()
+	_check_car_trample()
 	_check_camera()
 	_check_yield()
 	_check_exit()
 	_check_crash()
 	_check_glance()
+	_check_thin_wall()
 	_check_shove()
 	_check_keys()
+	_check_hero_vs_cars()
+	_check_pose_kinds()
+	_check_jcb()
 	_check_teardown()
 	K.finish(self, "FP_DRIVE_TEST", fails)
 
@@ -288,14 +303,22 @@ func _check_seated() -> void:
 		return
 	_drive(0.0, 0.0, 0.0, DT)
 	var car := _car()
-	var want := Transform3D(Basis(Vector3.UP, car.yaw), car.pos) * (seat as Vector3)
+	var pose: Object = drive.get("pose") as Object
+	var sink: float = float(pose.get("sink")) if pose != null else 0.0
+	var want := (
+		Transform3D(Basis(Vector3.UP, car.yaw), car.pos)
+		* ((seat as Vector3) - Vector3(0.0, sink, 0.0))
+	)
 	var hips: Vector3 = (rig as RefCounted).call("bone_world", "Hips")
 	var st := str((rig as RefCounted).call("state"))
 	var off := (hips - want) / WS.M
 	K.check(
 		fails,
 		av.visible and off.length() < 0.05,
-		"the hero's hips are on the driver's seat (%.2f m off)" % off.length()
+		(
+			"the hero's hips are on the driver's seat, sunk into the cushion (%.2f m off)"
+			% off.length()
+		)
 	)
 	K.check(fails, st == "drive", "the hero sits with its hands on the wheel (%s)" % st)
 
@@ -330,6 +353,53 @@ func _check_drive() -> void:
 		fails, ctx.player.position.distance_to(car.pos) < car.length * 0.5, "the hero rides along"
 	)
 	_drive(0.0, 1.0, 0.0, 2.0)
+
+
+## A body knocked down in the road, run over by the car the hero drives: traffic's hit_walker hears
+## it as one car hit for the whole pass, never one a frame (car_body hands downed bodies over the
+## same as anyone on their feet; traffic's reactions trample them where they lie).
+func _check_car_trample() -> void:
+	var wk: WK = tr.get("walkers")
+	K.quiet_walkers(tr)
+	var hits: Array = []
+	var cb := func(_at: Vector3, cause: String, info: Dictionary) -> void:
+		hits.append([cause, bool(info.get("down", false))])
+	ctx.bus.person_hit.connect(cb)
+	var car := _car()
+	var fwd := Vector3(heading.x, 0.0, heading.y)
+	var w := wk.make("ambient")
+	w.extra = 0
+	wk.stand(w, car.pos + fwd * 3.0 * WS.M, atan2(-fwd.x, -fwd.z))
+	# Down in the road before the car, the fall and its slide over, lying there for seconds.
+	tr.call("hit_walker", w.id, car.pos + fwd * 2.0 * WS.M, fwd, 0.8, "car")
+	for _k in range(roundi(0.6 / DT)):
+		tr.call("step", DT)
+	var down := bool((tr.get("reactions") as Object).call("is_down", w))
+	K.check(fails, down, "car trample: fixture, they lie in the road")
+	var gap := ((w.pos + w.vis_off) - _car().pos).dot(fwd) / WS.M
+	print("FP_DRIVE_TEST: trample body %.1f m down the road" % gap)
+	hits.clear()
+	var most := 0
+	for _k in range(roundi(3.0 / DT)):
+		var n := hits.size()
+		drive.call("drive_step", 1.0, 0.0, 0.0, 0.0, DT)
+		tr.call("step", DT)
+		ctx.player.update_view(DT)
+		most = maxi(most, hits.size() - n)
+	K.check(
+		fails,
+		hits.size() == 1 and str(hits[0][0]) == "car",
+		"car trample: the body run over hears one car hit (%d)" % hits.size()
+	)
+	K.check(
+		fails,
+		not hits.is_empty() and bool(hits[0][1]),
+		"car trample: and it is the trample, them still down"
+	)
+	K.check(fails, most <= 1, "car trample: never one a frame (most %d)" % most)
+	ctx.bus.person_hit.disconnect(cb)
+	K.quiet_walkers(tr)
+	_drive(0.0, 1.0, 0.0, 1.5)
 
 
 ## The chase camera rides above the car; looking up from low down (the mouse pushed all the way)
@@ -527,6 +597,56 @@ func _check_glance() -> void:
 	_drive(0.0, 1.0, 0.0, 2.0)
 
 
+## Runs at a wall a hand's width thick across the road, from a standing start at full throttle:
+## the car's substeps (car_body.gd SUBSTEP, at most half the body's width a move) can never step
+## the body past so thin a wall whole, so the front never crosses its far face and the car stops
+## against it, car_impact on the bus.
+func _check_thin_wall() -> void:
+	_clear_others()
+	var car := _car()
+	var model: MODEL = drive.get("model")
+	var dims: Vector3 = drive.get("_dims")
+	var a := Vector2(D.tx(road[0]), D.ty(road[0]))
+	var start := Vector3(a.x, ctx.collision.walk_height(Vector3(a.x, 0.0, a.y)), a.y)
+	drive.set("_pos", start)
+	model.reset(atan2(heading.x, heading.y), dims.z)
+	model.vel = Vector2.ZERO
+	var h3 := Vector3(heading.x, 0.0, heading.y)
+	var wall_c := start + h3 * (25.0 * WS.M)
+	var thin := 0.005  # a 20 cm rail
+	var ext := (
+		Vector3(absf(heading.y), 0.0, absf(heading.x)) * WS.ROAD_HALF * 1.6
+		+ Vector3(absf(heading.x), 0.0, absf(heading.y)) * thin
+	)
+	ctx.collision.add_test_box(
+		AABB(
+			Vector3(wall_c.x - ext.x, 0.0, wall_c.z - ext.z), Vector3(ext.x * 2.0, 0.2, ext.z * 2.0)
+		)
+	)
+	impacts.clear()
+	var far := (wall_c - start).dot(h3) + thin
+	var deep := -INF
+	for _k in range(roundi(6.0 / DT)):
+		drive.call("drive_step", 1.0, 0.0, 0.0, 0.0, DT)
+		var c := _car()
+		deep = maxf(deep, (c.pos - start).dot(h3) + c.length * 0.5 - far)
+	var v := float(model.speed())
+	K.check(
+		fails,
+		deep < 0.05 * WS.M,
+		"the car never crosses a 20 cm wall (front %.2f m past its far face)" % (deep / WS.M)
+	)
+	K.check(fails, absf(v) < 5.0 * KMH, "and stops against it (%.0f km/h)" % (v / KMH))
+	var hit: Array = impacts[0] if not impacts.is_empty() else [Vector3.ZERO, INF, ""]
+	K.check(
+		fails,
+		str(hit[2]) == "wall",
+		"car_impact reports the thin wall (%s at %.0f km/h)" % [str(hit[2]), float(hit[1]) / KMH]
+	)
+	ctx.collision.clear_test_boxes()
+	_drive(0.0, 1.0, 0.0, 1.0)
+
+
 ## Runs into the side of a lane car crawling along at 25 km/h: it slides off its lane, braking,
 ## the player's car loses speed, car_impact reports a car and the bodies never overlap. Once the
 ## player backs off and it has waited, its driver steers it back onto the lane and drives on.
@@ -640,6 +760,506 @@ func _check_keys() -> void:
 	K.check(fails, bool(drive.get("active")), "keys wait while a menu is open")
 	ctx.pop_modal(&"test")
 	drive.call("_input", _action("view_toggle"))
+
+
+# ------------------------------------------------------- the hero against cars
+
+
+## The hero on foot against cars (vehicles.gd _hero_contact), one scene after another: a stopped
+## car's flank they are stood into eases them out; a car knocked off its lane (shoves.gd never
+## sees the hero) slides into them at walking pace and carries them clear of its body instead of
+## through it; their own car knocked while they stand beside it does the same; and hit_by_cars
+## keeps its meaning: a car too close to stop runs them down exactly once (hero_hit) while they
+## are hittable, and stops short of them without touching when they are not (no health feature
+## in this test, so traffic never makes them hittable). Every check steps traffic itself: the
+## player never moves alone.
+func _check_hero_vs_cars() -> void:
+	var pc := _car()
+	K.check(fails, drive.call("exit") == true, "hero-vs-cars: the hero gets out")
+	_clear_others()
+	var vh := _vh()
+	var sh: Object = tr.get("shoves")
+	var hits: Array = []
+	var cb := func(_at: Vector3, kind: String, _s: float, _push: Vector3) -> void: hits.append(kind)
+	ctx.bus.hero_hit.connect(cb)
+	var m: int = tr.call("car_model_for", "hero-vs-cars")
+	var ai := _stopped_car(m)
+	var q := Vector2(ai.pos.x, ai.pos.z)
+	var u := OBB.side_axis(ai.yaw)
+	if (Vector2(roundf(q.x), roundf(q.y)) - q).dot(u) < 0.0:
+		u = -u
+	_hero_stopped_flank(ai, u)
+	_hero_knocked_flank(sh, ai, u, q, hits)
+	_hero_own_car(sh, pc, hits)
+	vh.remove(ai)
+	var fi := _hero_run_down(vh, m, hits)
+	vh.remove(fi)
+	var sf := _hero_stops_short(m, hits)
+	ctx.bus.hero_hit.disconnect(cb)
+	for c in [ai, fi, sf, pc]:
+		if c != null and _vh().by_id.has(c.id):
+			_vh().remove(c)
+	_clear_others()
+
+
+## A stopped ambient car at the usual spot on the first lane.
+func _stopped_car(m: int) -> VH.Car:
+	var vh := _vh()
+	var c := vh.make("car", "ambient", tr.call("dims", m))
+	c.model = m
+	vh.place(c, lanes[0], 0.5)
+	c.path = lanes.slice(1)
+	c.v = 0.0
+	c.v0 = 0.0
+	return c
+
+
+## Stood 5 cm into a stopped car's flank: one step of traffic eases the hero out.
+func _hero_stopped_flank(ai: VH.Car, u: Vector2) -> void:
+	_beside(ai, u, 0.05)
+	K.check(
+		fails,
+		_hero_depth(ai) > 0.02 * WS.M,
+		(
+			"stood into a stopped car: the hero starts inside its flank (%.2f m)"
+			% (_hero_depth(ai) / WS.M)
+		)
+	)
+	tr.call("step", DT * 2.0)
+	K.check(
+		fails,
+		_hero_depth(ai) <= 0.01 * WS.M,
+		"a stopped car eases the hero out of its flank (%.3f m left)" % (_hero_depth(ai) / WS.M)
+	)
+
+
+## A lane car knocked toward the hero slides its flank into them: carried clear of the body,
+## never deeper inside it than one step's slide, nobody run down, and clear once it steers back.
+func _hero_knocked_flank(sh: Object, ai: VH.Car, u: Vector2, q: Vector2, hits: Array) -> void:
+	hits.clear()
+	_beside(ai, u, 0.0)
+	var side0 := (Vector2(ctx.player.position.x, ctx.player.position.z) - q).dot(u)
+	var deep := 0.0
+	sh.call("bump", ai, u * (1.5 * WS.M), q)
+	for _k in range(roundi(1.5 / (DT * 2.0))):
+		tr.call("step", DT * 2.0)
+		deep = maxf(deep, _hero_depth(ai))
+	K.check(
+		fails,
+		deep > 0.0 and deep <= 0.075 * WS.M,
+		(
+			"a car knocked into the hero carries them clear, never deeper than a step (%.2f m)"
+			% (deep / WS.M)
+		)
+	)
+	var side := (Vector2(ctx.player.position.x, ctx.player.position.z) - q).dot(u)
+	K.check(
+		fails,
+		side - side0 > 0.1 * WS.M and hits.is_empty(),
+		"pushed along %.2f m by the flank, nobody run down" % ((side - side0) / WS.M)
+	)
+	var back := false
+	for _k in range(roundi(6.0 / (DT * 2.0))):
+		tr.call("step", DT * 2.0)
+		if _hero_depth(ai) > 0.02 * WS.M:
+			continue
+		if not bool(sh.call("is_shoved", ai)):
+			back = true
+			break
+	K.check(
+		fails,
+		back and _hero_depth(ai) <= 0.01 * WS.M,
+		"once it steers back the hero stands clear of it (%.3f m in)" % (_hero_depth(ai) / WS.M)
+	)
+
+
+## Their own car, knocked while they stand beside it, slides the same way and never passes
+## through them.
+func _hero_own_car(sh: Object, pc: VH.Car, hits: Array) -> void:
+	if pc == null or not _vh().by_id.has(pc.id):
+		return
+	hits.clear()
+	var qp := Vector2(pc.pos.x, pc.pos.z)
+	var up := OBB.side_axis(pc.yaw)
+	if (Vector2(roundf(qp.x), roundf(qp.y)) - qp).dot(up) < 0.0:
+		up = -up
+	_beside(pc, up, 0.0)
+	var side0 := (Vector2(ctx.player.position.x, ctx.player.position.z) - qp).dot(up)
+	var deep := 0.0
+	sh.call("bump", pc, up * (1.0 * WS.M), qp)
+	for _k in range(roundi(1.5 / (DT * 2.0))):
+		tr.call("step", DT * 2.0)
+		deep = maxf(deep, _hero_depth(pc))
+	var side := (Vector2(ctx.player.position.x, ctx.player.position.z) - qp).dot(up)
+	K.check(
+		fails,
+		deep > 0.0 and deep <= 0.075 * WS.M and side - side0 > 0.05 * WS.M and hits.is_empty(),
+		(
+			"their own car knocked into them: carried clear (%.2f m), never inside (%.2f m)"
+			% [(side - side0) / WS.M, deep / WS.M]
+		)
+	)
+
+
+## A car too close to stop at HIT_MIN and more, the hero hittable (vehicles.step itself: traffic
+## would not make them hittable without the health feature): it runs them down once, hero_hit,
+## and never goes into their body. The car it made, for the caller to take away.
+func _hero_run_down(vh: VH, m: int, hits: Array) -> VH.Car:
+	hits.clear()
+	var fi := _closing_car(m)
+	var stood := ctx.player.position
+	vh.player_pos = stood
+	vh.player_hittable = true
+	var deep := 0.0
+	for _k in range(roundi(1.5 / (DT * 2.0))):
+		vh.step(DT * 2.0)
+		vh.player_pos = ctx.player.position
+		vh.player_hittable = true
+		deep = maxf(deep, _hero_depth(fi))
+		if not hits.is_empty():
+			break
+	K.check(
+		fails,
+		hits.size() == 1 and str(hits[0]) == "car",
+		"a car too close to stop runs the hittable hero down, once (%s)" % str(hits)
+	)
+	K.check(
+		fails,
+		deep <= 0.075 * WS.M and (ctx.player.position - stood).length() <= 0.01 * WS.M,
+		"it comes up to their body, not into it (%.2f m), the hero left standing" % (deep / WS.M)
+	)
+	return fi
+
+
+## The same car at the same closing speed, the hero not hittable (traffic's rule without the
+## health feature): it stops short of them, never touching. The car it made.
+func _hero_stops_short(m: int, hits: Array) -> VH.Car:
+	hits.clear()
+	var sf := _closing_car(m)
+	var deep := 0.0
+	for _k in range(roundi(1.5 / (DT * 2.0))):
+		tr.call("step", DT * 2.0)
+		deep = maxf(deep, _hero_depth(sf))
+	K.check(
+		fails,
+		hits.is_empty() and deep <= 0.0 and sf.v < 1.0 * WS.M,
+		(
+			"not hittable, the car stops short without touching (%.3f m in, %.1f m/s left)"
+			% [deep / WS.M, sf.v / WS.M]
+		)
+	)
+	return sf
+
+
+## An ambient car of model m at the usual spot, closing on the lane at 8 m/s with the hero stood
+## 1.2 m beyond its nose.
+func _closing_car(m: int) -> VH.Car:
+	var vh := _vh()
+	var c := _stopped_car(m)
+	c.v = 8.0 * WS.M
+	c.v0 = 8.0 * WS.M
+	var head := OBB.heading(c.yaw)
+	var ahead := Vector2(c.pos.x, c.pos.z) + head * (c.length * 0.5 + WS.PLAYER_RADIUS + 1.2 * WS.M)
+	ctx.player.teleport(
+		Vector3(ahead.x, ctx.collision.walk_height(Vector3(ahead.x, 0.0, ahead.y)), ahead.y), 0.0
+	)
+	return c
+
+
+## The hero stood `into` metres inside car c's flank, on the side of it u points at.
+func _beside(c: VH.Car, u: Vector2, into: float) -> void:
+	var q := Vector2(c.pos.x + c.vis_off.x, c.pos.z + c.vis_off.z)
+	var p := q + u * (c.half_w + WS.PLAYER_RADIUS - into * WS.M)
+	ctx.player.teleport(Vector3(p.x, ctx.collision.walk_height(Vector3(p.x, 0.0, p.y)), p.y), 0.0)
+
+
+## Depth of the hero's circle in car c's drawn body (0 when clear of it).
+func _hero_depth(c: VH.Car) -> float:
+	var p := ctx.player.position
+	var q := c.pos + c.vis_off
+	var y := c.yaw + c.vis_yaw
+	var k := OBB.box_circle(
+		Vector2(q.x, q.z),
+		OBB.side_axis(y),
+		OBB.heading(y),
+		Vector2(c.half_w, c.length * 0.5),
+		Vector2(p.x, p.z),
+		WS.PLAYER_RADIUS
+	)
+	return float(k[1]) if not k.is_empty() else 0.0
+
+
+# ------------------------------------------------------------------ seated pose per body
+
+
+## One drivable body after another (sedan, hatchback, SUV, coupé, taxi, van, pickup, backhoe —
+## the shapes traffic's cars come in): the hero gets in, settles, and the pose is measured against
+## the body's own driver markers (seat_pose.gd, asset_paths.gd).
+func _check_pose_kinds() -> void:
+	var render: Variant = tr.get("render")
+	for body: String in [
+		"sedan_blue",
+		"hatchback_red",
+		"suv_grey",
+		"coupe_navy",
+		"taxi",
+		"van_white",
+		"pickup_red",
+		"backhoe_yellow"
+	]:
+		_pose_in_body(render, body)
+
+
+## One body: out of the last car, a fresh car of that body beside the hero, in, settled, measured
+## (then the car is taken away again, the hero left on foot).
+func _pose_in_body(render: Variant, body: String) -> void:
+	_clear_others()
+	_out_and_away(body)
+	var m: int = render.call("model_for", AP.VEHICLES_V2_DIR + body + ".glb", WS.VEHICLE_V2_SCALE)
+	K.check(fails, m >= 0, "%s: in the model library" % body)
+	if m < 0:
+		return
+	var c := _vh().make("car", "ambient", tr.call("dims", m))
+	c.model = m
+	_vh().place(c, lanes[0], 0.35)
+	c.v = 0.0
+	ctx.player.teleport(
+		c.pos + Basis(Vector3.UP, c.yaw) * Vector3(c.half_w + 0.6 * WS.M, 0.0, 0.0), 0.0
+	)
+	K.check(fails, drive.call("enter") == true, "%s: the hero gets in" % body)
+	if not bool(drive.get("active")):
+		_vh().remove(c)
+		return
+	K.check(fails, _car().model == m, "%s: the hero drives that body (model %d)" % [body, m])
+	tr.call("sync_visuals", DT)
+	_drive(0.0, 0.0, 0.0, 1.6)
+	tr.call("sync_visuals", DT)
+	_pose_check(body)
+	_out_and_away(body)
+
+
+## Out of the car, which is then taken away: a car left behind stays "your car" and would be the
+## nearest one to get into again.
+func _out_and_away(body: String) -> void:
+	if not bool(drive.get("active")):
+		return
+	var pc := _car()
+	K.check(fails, drive.call("exit") == true, "%s: the hero gets out" % body)
+	if pc != null and _vh().by_id.has(pc.id):
+		_vh().remove(pc)
+
+
+## The settled pose measured against the body's own markers: the hips on the seat sunk into the
+## cushion, the top of the head (skull and hair, SKULL_HAIR as in seat_pose.gd) under the roof
+## line, and the limb IK's goals held on the pedal and wheel markers (the modifiers themselves
+## only run when a frame is drawn, which headless never does, so the limbs landing on them is
+## for the windowed screenshots to show).
+func _pose_check(body: String) -> void:
+	var car := _car()
+	var node: Node3D = car.node
+	var seat: Variant = tr.call("seat_offset")
+	var rig: Variant = ctx.player.avatar.get("rig")
+	if node == null or seat == null or rig == null:
+		K.check(fails, node != null, "%s: the body is drawn, to measure the pose against it" % body)
+		return
+	var pose: Object = drive.get("pose") as Object
+	var sink: float = float(pose.get("sink")) if pose != null else 0.0
+	var tf := Transform3D(Basis(Vector3.UP, car.yaw), car.pos)
+	var hips: Vector3 = (rig as RefCounted).call("bone_world", "Hips")
+	var hip_off := (hips - tf * ((seat as Vector3) - Vector3(0.0, sink, 0.0))).length() / WS.M
+	K.check(
+		fails,
+		hip_off < 0.05,
+		"%s: hips on the sunk seat (%.2f m off, sunk %.2f m)" % [body, hip_off, sink / WS.M]
+	)
+	var seat_n := node.find_child("Seat_Driver", true, false) as Node3D
+	if seat_n == null:
+		K.check(fails, false, "%s: the body carries Seat_Driver" % body)
+		return
+	var node_basis := node.global_transform.basis.inverse()
+	var base := seat_n.global_position
+	var limbs := {
+		"LeftHand": "Wheel_L", "RightHand": "Wheel_R", "LeftFoot": "Pedal_L", "RightFoot": "Pedal_R"
+	}
+	var limbs_rig: Variant = (rig as RefCounted).get("limbs")
+	var goals: Array = (limbs_rig as Object).get("targets")
+	var weights: Array = (limbs_rig as Object).get("weights")
+	var i := 0
+	for bone: String in limbs:
+		var mk := node.find_child(limbs[bone], true, false) as Node3D
+		if mk != null:
+			var target := tf * ((seat as Vector3) + node_basis * (mk.global_position - base))
+			var held: Vector3 = (goals[i] as Node3D).global_position
+			var off := (held - target).length() / WS.M
+			K.check(
+				fails,
+				off < 0.02 and float(weights[i]) > 0.9,
+				(
+					"%s: %s held on %s (%.2f m off, weight %.2f)"
+					% [body, bone, limbs[bone], off, weights[i]]
+				)
+			)
+		else:
+			K.check(fails, false, "%s: the body carries %s" % [body, limbs[bone]])
+		i += 1
+	var roof := node.find_child("Cab_Roof", true, false) as Node3D
+	if roof == null:
+		K.check(fails, false, "%s: the body carries Cab_Roof" % body)
+		return
+	var head: Vector3 = (rig as RefCounted).call("bone_world", "Head")
+	var top := hips.y + (head.y - hips.y) * SKULL_HAIR
+	var over := (
+		(top - (tf * ((seat as Vector3) + node_basis * (roof.global_position - base))).y) / WS.M
+	)
+	K.check(
+		fails,
+		over < 0.02,
+		"%s: the head clears the roof line (%.2f m over, sunk %.2f m)" % [body, over, sink / WS.M]
+	)
+
+
+## The backhoe loader (the jcb flag): a work machine, not a highway one. Its model is the size the
+## game draws it at; traffic gives a car of that model a slower, heavier drive profile (topping out
+## around 22 km/h at half a car's rate of accel) and its own mass; the parking fill parks backhoes
+## at a rare share of curb slots (jcb_in forced to 1 here, so every filled slot takes one) where
+## the hero can get in and drive one away; and with the flag off none park and no car of that
+## model gets the profile. The seated pose against its cab markers is _check_pose_kinds' business.
+func _check_jcb() -> void:
+	var vh := _vh()
+	var m: int = tr.call("jcb_model")
+	K.check(fails, m >= 0, "jcb: the backhoe is in the model library")
+	if m < 0:
+		return
+	var render: Variant = tr.get("render")
+	var mo: Variant = (render as Object).call("model", m)
+	var size: Vector3 = mo.size if mo != null else Vector3.ZERO
+	K.check(
+		fails,
+		absf(size.z / WS.M - 5.6) < 0.2 and absf(size.x / WS.M - 2.3) < 0.2,
+		"jcb: a backhoe's size, about 5.6 x 2.3 m (%.1f x %.1f)" % [size.z / WS.M, size.x / WS.M]
+	)
+
+	# The profile: slow and heavy, on the drive model itself.
+	var prof: Dictionary = tr.call("drive_profile", _of_model(m).id)
+	var dm := MODEL.new()
+	dm.reset(0.0, 0.28, prof)
+	_run(dm, 1.0, 0.0, 0.0, 0.0, "asphalt", 10.0)
+	var car := MODEL.new()
+	car.reset(0.0, 0.28, {})
+	_run(car, 1.0, 0.0, 0.0, 0.0, "asphalt", 10.0)
+	K.check(
+		fails,
+		dm.speed() > 15.0 * KMH and dm.speed() < 25.0 * KMH,
+		"jcb: it tops out around 22 km/h (%.0f km/h)" % (dm.speed() / KMH)
+	)
+	K.check(
+		fails,
+		dm.speed() < car.speed() * 0.35,
+		"jcb: well short of a car's 108 km/h (%.0f km/h)" % (dm.speed() / KMH)
+	)
+	var dm2 := MODEL.new()
+	dm2.reset(0.0, 0.28, prof)
+	_run(dm2, 1.0, 0.0, 0.0, 0.0, "asphalt", 2.0)
+	var car2 := MODEL.new()
+	car2.reset(0.0, 0.28, {})
+	_run(car2, 1.0, 0.0, 0.0, 0.0, "asphalt", 2.0)
+	K.check(
+		fails,
+		dm2.speed() < car2.speed() * 0.6,
+		(
+			"jcb: and gathers speed at half a car's rate (%.0f of %.0f km/h)"
+			% [dm2.speed() / KMH, car2.speed() / KMH]
+		)
+	)
+	K.check(
+		fails,
+		tr.call("drive_profile", _of_model(-1).id).is_empty(),
+		"jcb: a car keeps a car's profile"
+	)
+	var massc := _of_model(m)
+	massc.mass = 5.5
+	K.check(
+		fails, absf(SHOVES.mass_of(massc) - 5.5) < 1e-6, "jcb: its mass is five and a half sedans"
+	)
+
+	# The parking fill: backhoes at the curb (every filled slot, with the share forced), where
+	# the hero can get one and drive it away with the slow profile.
+	var amb: Object = tr.get("ambient")
+	amb.set("jcb_in", 1)
+	amb.set("jcb_model", func() -> int: return m)
+	_clear_others()
+	amb.call("fill_parking")
+	var parked := 0
+	var backhoe: VH.Car = null
+	for c: VH.Car in vh.cars:
+		if c.parked:
+			parked += 1
+		if c.label == "a backhoe" and c.slot_tile >= 0:
+			backhoe = c
+	K.check(
+		fails,
+		parked > 0 and backhoe != null and absf(backhoe.mass - 5.5) < 1e-6,
+		"jcb: backhoes park at the curb, carrying their mass (%d parked)" % parked
+	)
+	if backhoe != null:
+		var side := OBB.side_axis(backhoe.yaw)
+		_beside(backhoe, side, -0.6)
+		var t: Dictionary = drive.call("enter_target")
+		K.check(
+			fails,
+			int(t.get("id", -1)) == backhoe.id and str(t.get("label", "")) == "the car",
+			"jcb: a parked backhoe is the get-in target: %s" % str(t)
+		)
+		K.check(fails, drive.call("enter") == true, "jcb: the hero gets in")
+		_clear_others()
+		K.check(
+			fails,
+			absf(float((drive.get("model") as MODEL).top) / WS.M - 6.1) < 0.05,
+			(
+				"jcb: and drives it with the slow profile (%.1f m/s top)"
+				% (float((drive.get("model") as MODEL).top) / WS.M)
+			)
+		)
+		_drive(1.0, 0.0, 0.0, 1.5)
+		var v := float((drive.get("model") as MODEL).speed())
+		K.check(
+			fails,
+			v > 8.0 * KMH and v < 20.0 * KMH,
+			"jcb: it lumbers up to speed (%.0f km/h)" % (v / KMH)
+		)
+		_drive(0.0, 1.0, 0.0, 2.0)
+		K.check(fails, drive.call("exit") == true, "jcb: and the hero gets back out")
+
+	# The flag off: no backhoe parks, none gets the profile.
+	FeatureFlags.set_override("jcb", false)
+	amb.set("jcb_model", Callable(tr, "jcb_model"))
+	_clear_others()
+	amb.call("fill_parking")
+	var none := 0
+	for c: VH.Car in vh.cars:
+		if c.label == "a backhoe":
+			none += 1
+	K.check(
+		fails,
+		(
+			none == 0
+			and int(tr.call("jcb_model")) == -1
+			and tr.call("drive_profile", _of_model(m).id).is_empty()
+		),
+		"jcb: the flag off parks no backhoe and gives no profile"
+	)
+	FeatureFlags.set_override("jcb", true)
+	amb.set("jcb_in", 37)
+	amb.set("jcb_model", Callable(tr, "jcb_model"))
+	_clear_others()
+
+
+## A stopped ambient car of model m at the usual spot, for asking traffic about it.
+func _of_model(m: int) -> VH.Car:
+	var vh := _vh()
+	var c := _stopped_car(m)
+	c.model = m
+	return c
 
 
 func _check_teardown() -> void:

@@ -9,6 +9,10 @@ Node contracts (scripts/fp/asset_paths.gd):
   Wheel_FL, Wheel_FR, Wheel_RL, Wheel_RR   own objects, origin at the hub, spin about local X
                                            (the bicycle: Wheel_F, Wheel_R)
   Seat_Driver                              empty at the driver's hip point, facing +Z
+  Pedal_L, Pedal_R                         ankle targets on the footwell floor, driver's left on +X
+  Wheel_L, Wheel_R                         grips on the steering rim at ten and two
+  Cab_Roof                                 the headliner above the seat (drive_feature.gd sinks the
+                                           hips until the hero's head clears it)
   Crank                                    the bicycle's cranks and pedals, origin at the bottom
                                            bracket, spin about local X (left pedal up at rest)
   Siren_0, Siren_1 (+ Siren_2, Siren_3)    light-bar lenses on the police car, ambulance and fire truck
@@ -688,6 +692,32 @@ def seat(mb, x, y, z, w=0.5, mat="@int_dark", tilt=-15, back_h=0.62, head=True, 
     mb.pop()
 
 
+## The foot (ankle) bone rests this far above the sole when the foot stands flat (UAL drive pose).
+ANKLE = 0.10
+
+
+def driver_points(look, seat_at, floor, wheel, ceiling, fwd=0.45, spread=0.13):
+    """Driver contact markers next to Seat_Driver (full models only, Blender metres): Pedal_L /
+    Pedal_R (ankle targets on the footwell floor), Wheel_L / Wheel_R (grips on the steering rim at
+    ten and two, tilted with it) and Cab_Roof (the headliner above the seat). drive_feature.gd
+    seats the hero's feet and hands on them with IK and sinks the hips just enough that the head
+    clears Cab_Roof, so the pose fits every cabin."""
+    if not look.full:
+        return
+    x, y, z = seat_at
+    for side, px in (("L", x + spread), ("R", x - spread)):
+        e = make_empty("Pedal_" + side, (px * S, (y - fwd) * S, (floor + ANKLE) * S))
+        e.empty_display_size = 0.01
+    wx, wy, wz, R, tilt = wheel
+    t = math.radians(tilt)
+    for side, sx in (("L", 1.0), ("R", -1.0)):
+        g = (wx + sx * 0.7071 * R, wy - 0.7071 * R * math.cos(t), wz - 0.7071 * R * math.sin(t))
+        e = make_empty("Wheel_" + side, (g[0] * S, g[1] * S, g[2] * S))
+        e.empty_display_size = 0.01
+    e = make_empty("Cab_Roof", (x * S, y * S, ceiling * S))
+    e.empty_display_size = 0.01
+
+
 # ----------------------------------------------------------------------------- cars
 
 class FlatSurf:
@@ -1057,6 +1087,11 @@ def cabin(c, look, sh, shape, arches, interior):
     if shape == "van":
         xb = sh.hw(y1) * 0.975 - 0.05
         bx(mb, -xb, y1 - 0.03, floor, xb, y1, sh.at(y1)[3], "@int_grey")
+    at_seat = sh.at(hip_y)
+    ceil = at_seat[3] + at_seat[6]
+    ceil += (0.035 if ceil - at_seat[2] > 0.25 else 0.012) * 0.6 - 0.045
+    driver_points(look, (xd, hip_y, hip_z), floor, (xd, hip_y - 0.55, hip_z + 0.36, 0.19, -64.0), ceil,
+                  fwd=0.5 if van_like else 0.45)
     return (xd, hip_y, hip_z)
 
 
@@ -1138,6 +1173,7 @@ def cab_over(c, look, y0, W, Lc, wheel_y, wheel_r, roof=2.6, belt=1.32, z0=0.5, 
         for sd in (1, -1):
             seat(mb, sd * xd, hip_y, hip_z, w=0.55, mat="@int_dark", tilt=-10, back_h=0.7)
         hip = (xd, hip_y, hip_z)
+        driver_points(look, hip, floor, (xd, hip_y - 0.55, hip_z + 0.38, 0.23, -35.0), roof - 0.05, fwd=0.55)
     return hip
 
 
@@ -1420,6 +1456,7 @@ def bus(c, look):
         steering_wheel(mb, xd, hip_y - 0.5, hip_z + 0.35, R=0.24, tilt=-30)
         seat(mb, xd, hip_y, hip_z, w=0.55, mat="@int_dark", tilt=-10, back_h=0.7)
         hip = (xd, hip_y, hip_z)
+        driver_points(look, hip, floor, (xd, hip_y - 0.5, hip_z + 0.35, 0.24, -30.0), ceil, fwd=0.5)
         # passenger seats (pairs on both sides, a gap at the doors), poles
         for k in range(10):
             yy = y0 + 2.6 + k * 0.85
@@ -1567,6 +1604,96 @@ def bicycle(c, look, frame="Paint_blue"):
     return (0.0, 0.33, 1.0)
 
 
+# ----------------------------------------------------------------------------- backhoe loader
+
+def backhoe(c, look):
+    """JCB-style backhoe loader, 5.6 x 2.3 m: small front wheels, big dual rears, a loader arm
+    and bucket over the nose, a folded backhoe arm and stabilisers over the tail, an offset cab
+    (floor 0.9 m, right-hand seat) and an amber beacon. Parked workhorse, not a highway machine."""
+    mb = c.mb
+    from indkit import tube
+    lod = look.lod
+    full = look.full
+    fp = look("paint")
+    L, W = 5.6, 2.3
+    fy, ry, rf, rr = -1.85, 1.25, 0.35, 0.55
+    n = 6 if lod else 10
+    t = lambda a, b, r, m=fp: tube(mb, [v * S for v in a], [v * S for v in b], r * S, m, n=n)  # noqa: E731
+
+    # chassis frame, engine hood (left of the cab) and the cab floor on top of it
+    bx(mb, -0.8, -1.45, 0.38, 0.8, 1.75, 0.9, "@Metal_Dark")
+    bx(mb, -1.02, -1.45, 0.9, 0.0, -0.35, 1.5, fp)
+    bx(mb, -0.98, -1.5, 1.02, -0.04, -1.4, 1.12, "@grille")
+    for sd in (-1, 1):  # headlights either side of the grille
+        bx(mb, min(sd * 0.7, sd * 0.92), -1.5, 1.02, max(sd * 0.7, sd * 0.92), -1.42, 1.2, look("head"))
+    t((-0.75, -0.6, 1.5), (-0.75, -0.6, 1.82), 0.03, "@Metal_Galv")  # exhaust stack
+
+    # loader arm and bucket over the nose
+    for sd in (-1, 1):
+        t((sd * 0.82, -1.3, 1.0), (sd * 0.82, -2.2, 1.42), 0.07)
+        t((sd * 0.82, -1.15, 0.98), (sd * 0.82, -1.3, 1.0), 0.07)
+    t((-0.82, -2.2, 1.42), (0.82, -2.2, 1.42), 0.05, "@Metal_Dark")
+    bx(mb, -1.08, -2.62, 0.32, 1.08, -2.18, 1.02, "@Metal_Dark")  # bucket back
+    bx(mb, -1.08, -2.78, 0.14, 1.08, -2.18, 0.34, "@Metal_Dark")  # bucket floor, lip forward
+    for k in range(3):  # teeth on the lip
+        bx(mb, -0.7 + k * 0.7, -2.84, 0.14, -0.5 + k * 0.7, -2.78, 0.26, "@Metal_Galv")
+    for sd in (-1, 1):
+        bx(mb, min(sd * 1.1, sd * 1.02), -2.78, 0.14, max(sd * 1.1, sd * 1.02), -2.18, 1.02, "@Metal_Dark")
+
+    # backhoe arm folded over the tail: kingpost (left), boom up, dipper curled under, small bucket
+    bx(mb, -0.6, 1.8, 0.55, -0.12, 2.0, 1.5, "@Metal_Dark")
+    t((-0.36, 1.9, 1.45), (-0.05, 2.4, 2.2), 0.09)
+    t((-0.05, 2.4, 2.2), (0.18, 2.62, 1.2), 0.07)
+    bx(mb, -0.05, 2.5, 0.55, 0.31, 2.78, 1.05, "@Metal_Dark")
+    for sd in (-1, 1):  # stabiliser legs, pads down
+        t((sd * 0.7, 2.1, 0.55), (sd * 1.0, 2.4, 0.24), 0.045, "@Metal_Dark")
+        bx(mb, sd * 1.0 - 0.09, 2.3, 0.08, sd * 1.0 + 0.09, 2.5, 0.2, "@Metal_Dark")
+
+    # cab on the right: floor 0.9 m, ROPS posts, roof, glass, and the beacon on top
+    bx(mb, 0.0, -0.35, 0.86, 1.12, 0.9, 0.9, "@Metal_Dark")
+    for px in (0.04, 1.06):
+        for py in (-0.3, 0.85):
+            bx(mb, px - 0.04, py - 0.04, 0.9, px + 0.04, py + 0.04, 2.7, fp)
+    bx(mb, 0.0, -0.35, 2.7, 1.12, 0.9, 2.78, fp)
+    gl = look("glass")
+    for pts, out in (
+        ([(0.04, -0.3, 0.98), (1.06, -0.3, 0.98), (1.06, -0.3, 2.6), (0.04, -0.3, 2.6)], (0, -1, 0)),
+        ([(0.04, 0.85, 0.98), (1.06, 0.85, 0.98), (1.06, 0.85, 2.6), (0.04, 0.85, 2.6)], (0, 1, 0)),
+        ([(0.04, -0.3, 0.98), (0.04, 0.85, 0.98), (0.04, 0.85, 2.6), (0.04, -0.3, 2.6)], (-1, 0, 0)),
+        ([(1.06, -0.3, 0.98), (1.06, 0.85, 0.98), (1.06, 0.85, 2.6), (1.06, -0.3, 2.6)], (1, 0, 0)),
+    ):
+        quad(mb, pts, gl, out=out)
+    bx(mb, 1.0, 0.2, 0.98, 1.12, 0.36, 2.35, fp)  # door skin on the driver's side
+    for sd in (-1, 1):  # work lights on the cab's front posts
+        bx(mb, min(sd * 0.5 + 0.56, sd * 0.5 + 0.7), -0.32, 2.42, max(sd * 0.5 + 0.56, sd * 0.5 + 0.7),
+           -0.28, 2.54, look("head"))
+    bx(mb, 0.42, 0.16, 2.78, 0.7, 0.44, 2.92, look("ind_l"))  # the amber beacon on the roof
+    bx(mb, 1.06, -0.42, 0.52, 1.18, -0.26, 0.6, "@Metal_Dark")  # a step up to the door
+    plate(mb, look, -0.5, -1.5, 1.3, w=0.4, h=0.1, face=-1)
+    for sd in (-1, 1):
+        truck_rear(mb, look, sd * 0.78, 1.75, 0.72, sd)
+
+    # cab interior (full models): floor, headliner, seat, wheel, driver contact markers
+    hip = None
+    if full:
+        xd, hip_y, hip_z, floor, ceil = 0.55, 0.3, 1.4, 0.9, 2.6
+        quad(mb, [(0.0, -0.35, floor), (1.12, -0.35, floor), (1.12, 0.9, floor), (0.0, 0.9, floor)],
+             "@int_dark", out=(0, 0, 1))
+        quad(mb, [(0.0, -0.35, ceil), (1.12, -0.35, ceil), (1.12, 0.9, ceil), (0.0, 0.9, ceil)],
+             "@int_light", out=(0, 0, -1))
+        bx(mb, 0.0, -0.35, 1.12, 1.12, -0.2, 1.9, "@int_grey")  # dash bulkhead
+        seat(mb, xd, hip_y, hip_z, w=0.5, mat="@int_dark", tilt=-12, back_h=0.62)
+        steering_wheel(mb, xd, hip_y - 0.55, hip_z + 0.38, R=0.2, tilt=-35)
+        hip = (xd, hip_y, hip_z)
+        driver_points(look, hip, floor, (xd, hip_y - 0.55, hip_z + 0.38, 0.2, -35.0), ceil, fwd=0.45)
+
+    wh = Wheels(c, look)
+    wh.axle(fy, rf, 0.26, W, True, style="steel", spokes=6)
+    wh.axle(ry, rr, 0.4, W, False, style="steel", spokes=6, dual=True)
+    wh.emit(mb)
+    return hip
+
+
 # ----------------------------------------------------------------------------- entry points
 
 def _finish(c, name, look, hip):
@@ -1599,7 +1726,7 @@ def build_vehicle(c, kind="car", paint="Paint_blue", lod=False, name=None, **kw)
     c.cage = MB()
     c.body_obs = []
     fn = {"car": car, "truck": truck, "garbage_truck": garbage_truck, "firetruck": firetruck,
-          "ambulance": ambulance, "bus": bus, "bicycle": bicycle}[kind]
+          "ambulance": ambulance, "bus": bus, "bicycle": bicycle, "backhoe": backhoe}[kind]
     hip = fn(c, look, **kw)
     _finish(c, name or kind, look, hip)
 
@@ -1652,9 +1779,11 @@ CARS = {
     "garbage_truck": _v("Paint_garbage", kind="garbage_truck"),
     "firetruck": _v("Paint_fire", kind="firetruck"),
     "ambulance": _v("Paint_white", kind="ambulance"),
+    "backhoe_yellow": _v("Paint_backhoe", kind="backhoe"),
     "bicycle": _v("Paint_teal", kind="bicycle"),
 }
 core.MATS.setdefault("Paint_teal", ("flat", (0.02, 0.22, 0.24), 0.3, 0.2, {"coat": 1.0}))
+core.MATS.setdefault("Paint_backhoe", ("flat", (0.96, 0.72, 0.02), 0.32, 0.15, {"coat": 1.0}))
 
 
 def _entry(name, lod):
