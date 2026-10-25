@@ -37,7 +37,7 @@ const HERO_HIT_FULL := {"punch": 12.0, "car": 60.0, "bite": 7.5}
 ## The pitch of each swing's whoosh (hero_action).
 const SWING_PITCH := {
 	"jab": 1.1, "cross": 0.95, "hook": 0.85, "kick": 0.75, "shove": 0.8, "swing": 0.7,
-	"counter": 0.85, "throw": 0.75,
+	"counter": 0.85, "throw": 0.75, "slam": 0.7,
 }
 ## The sound of a weapon's blow (weapon_hit) by its kind, and how much quieter on a street prop.
 const WEAPON_SOUNDS := {"bat": "bat_hit", "pipe": "pipe_hit", "bottle": "bottle_smash"}
@@ -117,6 +117,7 @@ func setup(p_ctx: FpContext) -> void:
 		_link(bus.car_door, _on_car_door)
 		_link(bus.person_hit, _on_person_hit)
 		_link(bus.hero_action, _on_hero_action)
+		_link(bus.hero_slammed, _on_hero_slammed)
 		_link(bus.weapon_hit, _on_weapon_hit)
 		_link(bus.hero_hurt, _on_hero_hurt)
 		_link(bus.animal_called, _on_animal_called)
@@ -396,6 +397,13 @@ func _on_person_hit(at: Vector3, cause: String, info: Dictionary) -> void:
 	emitters.shot("hit", at + Vector3(0.0, 1.3 * WS.M, 0.0), "punch_hit", trim, pitch)
 	if bool(info.get("down", false)):
 		_queue_fall(BANK.BODY_FALL_S, at, BANK.BODY_FALL_DB)
+
+
+## Someone the hero holds slammed into something (hero_slammed): a heavy thump at the contact;
+## a prop that goes over sounds for itself (prop_knocked).
+func _on_hero_slammed(at: Vector3, _what: String, _over: bool) -> void:
+	var pitch := BANK.SLAM_PITCH * _rng.randf_range(0.94, 1.06)
+	emitters.shot("hit", at, "punch_hit", BANK.SLAM_DB, pitch)
 
 
 ## The hero hurt (hero_hurt) by a punch, a car or a dog: the thump at their chest by the health it

@@ -15,7 +15,9 @@ extends FpFeature
 ## head, shout and dance, and the people around answer (traffic answer_emote). The bus hears every
 ## swing and emote (hero_action). The guard raised just before a punch lands (COUNTER_LEAD, the
 ## counters flag) counters it: the punch misses and the hero's hook puts them down (parry). With
-## someone held (the brawl feature) the fists stay up, punches land on them and R throws them.
+## someone held (the brawl feature) the fists stay up, punches land on them and R throws them, or
+## with something solid just beyond them (the brawl feature's slam_spot, the slams flag) slams
+## them into it: they go down over a prop that gives way, else off the wall to the side.
 
 const WS := preload("res://scripts/fp/world_scale.gd")
 
@@ -31,11 +33,17 @@ const SWINGS := {
 	"swing": ["swing_a", "punch", 0.6, 0.6, 0.55, 0.2],
 	"counter": ["punch_hook", "punch", 0.8, 0.6, 0.47, 0.22],
 	"throw": ["push", "punch", 0.8, 0.7, 0.6, 0.18],
+	"slam": ["push", "punch", 1.0, 0.8, 0.6, 0.18],
 }
 ## A counter: the guard raised at most COUNTER_LEAD seconds before a punch reaches the hero. A
-## throw flings whoever it knocks down THROW_FLING metres.
+## throw flings whoever it knocks down THROW_FLING metres. A slam puts them down SLAM_OVER metres
+## on over a prop that goes over, else SLAM_BOUNCE metres off the wall, to the side and
+## SLAM_BACK of that back toward the hero.
 const COUNTER_LEAD := 0.4
 const THROW_FLING := 3.0
+const SLAM_OVER := 1.0
+const SLAM_BOUNCE := 0.4
+const SLAM_BACK := 0.5
 ## The punches of the combo in order; with a weapon in hand (the melee feature's held()) the
 ## strike button swings it instead, forehand and backhand in turn (WEAPON_CLIPS), as hard as the
 ## weapon hits and further by its reach.
@@ -94,7 +102,7 @@ const PHOTO_SIDE := 0.55 * WS.M
 ## The guard is up.
 var guarding: bool = false
 ## The swing under way ("jab", "cross", "hook", "shove", "kick", "swing" with a weapon, "counter",
-## "throw") or "".
+## "throw", "slam") or "".
 var swing: String = ""
 ## hit_walker's info for the last blow that landed; swings, blows landed on people and blows
 ## landed on street props so far; how many people answered the last emote.
@@ -184,8 +192,8 @@ func can_act() -> bool:
 
 ## Starts a swing: what "punch" throws the next punch of the combo (a jab, a cross, then a hook,
 ## each within COMBO_S of the last), "shove" a shove and "kick" a kick (on foot and upright). With
-## someone held every swing goes for them and a shove throws them. A press near the end of a swing
-## queues the next. False when none starts now.
+## someone held every swing goes for them and a shove throws them, or slams them into what is just
+## beyond them. A press near the end of a swing queues the next. False when none starts now.
 func strike(what: String = "punch") -> bool:
 	if not can_act() or what not in ["punch", "shove", "kick"]:
 		return false
@@ -197,7 +205,7 @@ func strike(what: String = "punch") -> bool:
 		return false
 	var held := _held_id()
 	if what == "shove" and held >= 0:
-		what = "throw"
+		what = "throw" if _slam_spot().is_empty() else "slam"
 	_weapon = _held_weapon() if what == "punch" else {}
 	var kind := _next_kind(what)
 	var clip := str(SWINGS[kind][0])
@@ -254,6 +262,13 @@ func parry(id: int, fist: Vector3) -> bool:
 	counters += 1
 	_begin("counter", "punch_hook", who)
 	return true
+
+
+## What the person held would hit thrown where the camera looks (the brawl feature's slam_spot),
+## {} for nothing.
+func _slam_spot() -> Dictionary:
+	var b := ctx.feature("brawl")
+	return b.call("slam_spot", _aim_dir()) as Dictionary if b != null else {}
 
 
 ## The id (walkers_near's) of the person the brawl feature holds, -1 for none.
@@ -442,13 +457,10 @@ func _land() -> void:
 	var feet := ctx.player.position
 	var d: Vector3 = (who["pos"] as Vector3) - feet
 	d.y = 0.0
-	var fling := 0.0
-	if swing == "throw":
-		d = _aim_dir()
-		fling = THROW_FLING
+	var push := _push(d)
 	var cause := str(SWINGS[swing][1])
 	var info: Dictionary = tr.call(
-		"hit_walker", _target, feet, d.normalized(), _strength(), cause, fling
+		"hit_walker", _target, feet, push[0], _strength(), cause, float(push[1])
 	)
 	if info.is_empty():
 		return
@@ -456,6 +468,22 @@ func _land() -> void:
 	hits += 1
 	_kick_view()
 	_weapon_landed("person", who["pos"] as Vector3)
+
+
+## The blow's [push (level unit), fling (m)]: along d (from the hero to them) for most swings; a
+## throw's along the camera, THROW_FLING; a slam's off what they hit (the brawl feature's slam),
+## SLAM_OVER on over a prop that goes over, else SLAM_BOUNCE off the wall to the side. A slam
+## with nothing left to hit is a throw.
+func _push(d: Vector3) -> Array:
+	if swing not in ["throw", "slam"]:
+		return [d.normalized(), 0.0]
+	var aim := _aim_dir()
+	var spot := _slam_spot() if swing == "slam" else {}
+	if spot.is_empty():
+		return [aim, THROW_FLING]
+	if bool(ctx.feature("brawl").call("slam", spot, aim)):
+		return [aim, SLAM_OVER]
+	return [((spot["side"] as Vector3) - aim * SLAM_BACK).normalized(), SLAM_BOUNCE]
 
 
 ## A kick or a weapon swing at nobody: the dog, cat or pigeon in front within reach takes the blow
@@ -514,7 +542,7 @@ func _kick_view() -> void:
 		{"jab": 1.0, "cross": -1.0, "hook": 1.0, "swing": 1.0, "counter": 1.0}.get(swing, 0.0)
 		as float
 	)
-	var k := HEAVY_KICK if swing in ["hook", "kick", "swing", "counter", "throw"] else 1.0
+	var k := HEAVY_KICK if swing in ["hook", "kick", "swing", "counter", "throw", "slam"] else 1.0
 	ctx.player.kick_view(KICK.x * k, KICK.y * side * k)
 
 
