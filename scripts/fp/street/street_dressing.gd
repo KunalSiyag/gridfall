@@ -107,6 +107,7 @@ func _init(p_view: CityView) -> void:
 
 # ------------------------------------------------------------------ batching
 
+
 ## Drops the batched items of tile i (its holder is being rebuilt or cleared).
 func forget(i: int) -> void:
 	_hidden.erase(i)
@@ -214,10 +215,16 @@ func _build_chunk(c: Vector2i) -> void:
 			if part.get("mat") != null:
 				mmi.material_override = part["mat"]
 			var far := kind in FAR_KINDS
-			mmi.visibility_range_end = (WS.FOG_DEPTH_BEGIN if far else WS.VIS_PROP) * view.vis_mult + CHUNK * 0.7
+			mmi.visibility_range_end = (
+				(WS.FOG_DEPTH_BEGIN if far else WS.VIS_PROP) * view.vis_mult + CHUNK * 0.7
+			)
 			mmi.visibility_range_end_margin = 1.0
 			mmi.visibility_range_fade_mode = GeometryInstance3D.VISIBILITY_RANGE_FADE_SELF
-			mmi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_ON if kind in SHADOW_KINDS else GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+			mmi.cast_shadow = (
+				GeometryInstance3D.SHADOW_CASTING_SETTING_ON
+				if kind in SHADOW_KINDS
+				else GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+			)
 			mmi.set_meta("street_kind", kind)
 			root.add_child(mmi)
 			made.append(mmi)
@@ -227,7 +234,9 @@ func _build_chunk(c: Vector2i) -> void:
 
 ## Adds one batched item of `kind` on tile i at holder-local `pos`, facing `face` (unit xz direction
 ## its front +Z turns to), and appends its collider to `cols`.
-func _put(i: int, kind: String, pos: Vector3, face: Vector2, cols: Array, scale: float = 1.0) -> void:
+func _put(
+	i: int, kind: String, pos: Vector3, face: Vector2, cols: Array, scale: float = 1.0
+) -> void:
 	var kit: Dictionary = _kit(kind)
 	if (kit["parts"] as Array).is_empty():
 		return
@@ -244,10 +253,31 @@ func _put(i: int, kind: String, pos: Vector3, face: Vector2, cols: Array, scale:
 	var bb: AABB = kit["aabb"]
 	var slot := (_placed[i] as Array).size() - 1
 	if r > 0.0:
-		cols.append({"shape": "cyl", "pos": pos, "r": r * scale, "h": bb.end.y * scale, "yaw": yaw, "kind": kind, "slot": slot})
+		cols.append(
+			{
+				"shape": "cyl",
+				"pos": pos,
+				"r": r * scale,
+				"h": bb.end.y * scale,
+				"yaw": yaw,
+				"kind": kind,
+				"slot": slot
+			}
+		)
 	else:
-		var c := Basis(Vector3.UP, yaw) * (Vector3(bb.get_center().x, 0.0, bb.get_center().z) * scale)
-		cols.append({"shape": "box", "pos": pos + c, "size": bb.size * scale, "yaw": yaw, "kind": kind, "slot": slot})
+		var c := (
+			Basis(Vector3.UP, yaw) * (Vector3(bb.get_center().x, 0.0, bb.get_center().z) * scale)
+		)
+		cols.append(
+			{
+				"shape": "box",
+				"pos": pos + c,
+				"size": bb.size * scale,
+				"yaw": yaw,
+				"kind": kind,
+				"slot": slot
+			}
+		)
 
 
 func _kit(kind: String) -> Dictionary:
@@ -282,6 +312,7 @@ func _kit(kind: String) -> Dictionary:
 
 # ------------------------------------------------------------------ roads
 
+
 ## Furniture, signs, ramps and decals for road tile i (holder-local). kind_name is CityView's piece
 ## name (straight, lights, corner, tee, cross, end, bridge); model is the road GLB instance.
 func dress_road(i: int, holder: Node3D, mask: int, kind_name: String, model: Node3D) -> void:
@@ -296,9 +327,41 @@ func dress_road(i: int, holder: Node3D, mask: int, kind_name: String, model: Nod
 			_dress_corner(i, mask, rng, cols)
 		"tee", "cross":
 			_dress_junction(i, holder, mask, kind_name, rng, cols)
+		"end":
+			_dress_end(i, mask, cols)
 	if kind_name != "bridge":
 		_add_decals(i, holder, mask, kind_name, rng)
 	holder.set_meta("colliders", cols)
+
+
+## A cul-de-sac: the closed end's island tree. The road model merges the tree into its body, so
+## its trunk needs its own collider (CollisionWorld's trunk fallback is skipped once the holder
+## carries a colliders meta, which every fp road holder does). The same trunk the fallback used:
+## r 0.25 m, 6 m of trunk, on the island circle's centre (END_CIRCLE_OFFSET toward the closed
+## end); over water there is no island.
+func _dress_end(i: int, mask: int, cols: Array) -> void:
+	if view.sim.terrain[i] == D.WATER:
+		return
+	var arms := RoadTopology.arms(mask)
+	if arms.size() != 1:
+		return
+	var arm: Vector2 = arms[0]
+	(
+		cols
+		. append(
+			{
+				"shape": "cyl",
+				"pos":
+				Vector3(
+					-arm.x * WS.END_CIRCLE_OFFSET, WS.SIDEWALK_TOP, -arm.y * WS.END_CIRCLE_OFFSET
+				),
+				"r": 0.25 * WS.M,
+				"h": 6.0 * WS.M,
+				"yaw": 0.0,
+				"kind": "tree",
+			}
+		)
+	)
 
 
 ## Swaps the road model's Asphalt surfaces for CityView's street-level asphalt and tells it where the
@@ -315,7 +378,21 @@ func _asphalt(model: Node3D, mask: int, kind_name: String) -> void:
 			var c := Vector2.ZERO
 			for a: Vector2i in RoadTopology.arms(mask):
 				c += Vector2(a) * 0.5
-			axis = 3 + ([Vector2(0.5, 0.5), Vector2(-0.5, 0.5), Vector2(-0.5, -0.5), Vector2(0.5, -0.5)] as Array).find(c)
+			axis = (
+				3
+				+ (
+					(
+						[
+							Vector2(0.5, 0.5),
+							Vector2(-0.5, 0.5),
+							Vector2(-0.5, -0.5),
+							Vector2(0.5, -0.5)
+						]
+						as Array
+					)
+					. find(c)
+				)
+			)
 	for n in model.find_children("*", "MeshInstance3D", true, false):
 		var mi := n as MeshInstance3D
 		if mi.mesh == null:
@@ -336,7 +413,9 @@ func _asphalt(model: Node3D, mask: int, kind_name: String) -> void:
 			mi.set_instance_shader_parameter(&"lane_axis", float(axis))
 
 
-func _dress_straight(i: int, holder: Node3D, mask: int, lit: bool, rng: RandomNumberGenerator, cols: Array) -> void:
+func _dress_straight(
+	i: int, holder: Node3D, mask: int, lit: bool, rng: RandomNumberGenerator, cols: Array
+) -> void:
 	# Piece frame: the run is along z, across is x; EW runs turn it by +90 degrees.
 	var ew := (mask & RoadTopology.NS) == 0 and mask != 0
 	var rot := Basis(Vector3.UP, PI * 0.5) if ew else Basis()
@@ -348,7 +427,16 @@ func _dress_straight(i: int, holder: Node3D, mask: int, lit: bool, rng: RandomNu
 		stop_side = 1 if (rot.inverse() * Vector3(dv.x, 0, dv.y)).x > 0.0 else -1
 	if lit:
 		for lp: Vector2 in LAMP_POLES:
-			cols.append({"shape": "cyl", "pos": rot * Vector3(lp.x, WS.SIDEWALK_TOP, lp.y), "r": 0.009, "h": WS.LAMP_HEIGHT, "yaw": 0.0, "kind": "lamp"})
+			cols.append(
+				{
+					"shape": "cyl",
+					"pos": rot * Vector3(lp.x, WS.SIDEWALK_TOP, lp.y),
+					"r": 0.009,
+					"h": WS.LAMP_HEIGHT,
+					"yaw": 0.0,
+					"kind": "lamp"
+				}
+			)
 	# Unlit straights get one lamp at the curb, sides alternating along the street and placed like the
 	# baked pairs of the lit straights, so lamps stand every 20-40 m on each side.
 	var lamp_side := 0
@@ -361,7 +449,7 @@ func _dress_straight(i: int, holder: Node3D, mask: int, lit: bool, rng: RandomNu
 	for side: int in [1, -1]:
 		var out := rot * Vector3(side, 0, 0)
 		var ctx := _lot_context(x + roundi(out.x), y + roundi(out.z))
-		var face := Vector2(-out.x, -out.z)   # toward the road
+		var face := Vector2(-out.x, -out.z)  # toward the road
 		var blocked: Array[float] = []
 		var lamps_here: Array[float] = []
 		if lit:
@@ -390,7 +478,15 @@ func _dress_straight(i: int, holder: Node3D, mask: int, lit: bool, rng: RandomNu
 			if is_nan(along):
 				continue
 			blocked.append(along)
-			_put_curb(i, kind, rot * Vector3(side * CURB, WS.SIDEWALK_TOP, along), face, rot * Vector3(0, 0, 1), cols, rng)
+			_put_curb(
+				i,
+				kind,
+				rot * Vector3(side * CURB, WS.SIDEWALK_TOP, along),
+				face,
+				rot * Vector3(0, 0, 1),
+				cols,
+				rng
+			)
 		_clutter(i, ctx, side, rot, face, slots, blocked, stop_side == side, cols)
 		if stop_side == side:
 			continue
@@ -403,11 +499,26 @@ func _dress_straight(i: int, holder: Node3D, mask: int, lit: bool, rng: RandomNu
 
 
 ## A curb-band item: street trees stand in a grate, bollards come in pairs along the curb.
-func _put_curb(i: int, kind: String, pos: Vector3, face: Vector2, along_dir: Vector3, cols: Array, rng: RandomNumberGenerator) -> void:
+func _put_curb(
+	i: int,
+	kind: String,
+	pos: Vector3,
+	face: Vector2,
+	along_dir: Vector3,
+	cols: Array,
+	rng: RandomNumberGenerator
+) -> void:
 	match kind:
 		"tree":
 			_put(i, "pit", pos, face, cols)
-			_put(i, "tree", pos, Vector2.from_angle(rng.randf() * TAU), cols, rng.randf_range(0.85, 1.2))
+			_put(
+				i,
+				"tree",
+				pos,
+				Vector2.from_angle(rng.randf() * TAU),
+				cols,
+				rng.randf_range(0.85, 1.2)
+			)
 		"bollard":
 			for s: float in [-1.0, 1.0]:
 				_put(i, "bollard", pos + along_dir * (0.03 * s), face, cols)
@@ -420,8 +531,15 @@ func _put_curb(i: int, kind: String, pos: Vector3, face: Vector2, along_dir: Vec
 ## wheelie bin at the curb of some homes, and a carton or two by some shop doors (none on the side
 ## of a bus stop).
 func _clutter(
-	i: int, lot: String, side: int, rot: Basis, face: Vector2, slots: Array, blocked: Array,
-	stop: bool, cols: Array
+	i: int,
+	lot: String,
+	side: int,
+	rot: Basis,
+	face: Vector2,
+	slots: Array,
+	blocked: Array,
+	stop: bool,
+	cols: Array
 ) -> void:
 	if not FeatureFlags.enabled("street_clutter"):
 		return
@@ -527,7 +645,9 @@ func _lot_context(x: int, y: int) -> String:
 
 ## The first slot at least `gap` from every blocked along-position and `avoid_gap` from every one in
 ## `avoid`, or NAN.
-func _free_slot(slots: Array, blocked: Array, gap: float, avoid: Array = [], avoid_gap: float = 0.0) -> float:
+func _free_slot(
+	slots: Array, blocked: Array, gap: float, avoid: Array = [], avoid_gap: float = 0.0
+) -> float:
 	for s: float in slots:
 		var ok := true
 		for b: float in blocked:
@@ -558,7 +678,9 @@ func _dress_corner(i: int, mask: int, rng: RandomNumberGenerator, cols: Array) -
 		_put(i, "bin", Vector3(p.x, WS.SIDEWALK_TOP, p.y), -out, cols)
 
 
-func _dress_junction(i: int, holder: Node3D, mask: int, kind_name: String, rng: RandomNumberGenerator, cols: Array) -> void:
+func _dress_junction(
+	i: int, holder: Node3D, mask: int, kind_name: String, rng: RandomNumberGenerator, cols: Array
+) -> void:
 	var arms := RoadTopology.arms(mask)
 	# Kerb ramps and tactile pads where the zebras meet the curbs.
 	var mid := (WS.ZEBRA_NEAR + WS.ZEBRA_FAR) * 0.5
@@ -581,7 +703,9 @@ func _dress_junction(i: int, holder: Node3D, mask: int, kind_name: String, rng: 
 		_corner_bin(i, Vector2(stem) * 0.47 - side * 0.47, cols, rng)
 	else:
 		_cross_sign(i, holder, names, cols)
-		_corner_bin(i, Vector2(-0.47, 0.47) if rng.randf() < 0.5 else Vector2(0.47, 0.47), cols, rng)
+		_corner_bin(
+			i, Vector2(-0.47, 0.47) if rng.randf() < 0.5 else Vector2(0.47, 0.47), cols, rng
+		)
 
 
 ## Cross tiles: E's traffic feature owns all four corners (docs/fp/requests/E-G1-corners.md), so with
@@ -599,7 +723,13 @@ func _cross_sign(i: int, holder: Node3D, names: PackedStringArray, cols: Array) 
 		pole = view.light_pole_source.call("light_pole", i, 0) as Node3D
 	if pole != null and pole.is_inside_tree() and holder.is_inside_tree():
 		var mark := pole.find_child("SignText_B", true, false) as Node3D
-		at = holder.to_local(mark.global_position if mark != null else pole.global_position + Vector3(0, E_BLADE_Y, 0))
+		at = holder.to_local(
+			(
+				mark.global_position
+				if mark != null
+				else pole.global_position + Vector3(0, E_BLADE_Y, 0)
+			)
+		)
 	var blades := _blades(names)
 	blades.position = at
 	blades.set_meta("prop", true)
@@ -641,7 +771,9 @@ func _corner_bin(i: int, p: Vector2, cols: Array, rng: RandomNumberGenerator) ->
 
 
 ## A street-name sign: a galvanised pole with one blade per street, the E-W name along x.
-func _street_sign(holder: Node3D, pos: Vector3, names: PackedStringArray, cols: Array, with_pole: bool) -> Node3D:
+func _street_sign(
+	holder: Node3D, pos: Vector3, names: PackedStringArray, cols: Array, with_pole: bool
+) -> Node3D:
 	var sign := Node3D.new()
 	sign.name = "StreetSign"
 	sign.position = pos
@@ -669,7 +801,9 @@ func _street_sign(holder: Node3D, pos: Vector3, names: PackedStringArray, cols: 
 		cap.position.y = cm.height
 		cap.material_override = pole.material_override
 		sign.add_child(cap)
-		cols.append({"shape": "cyl", "pos": pos, "r": 0.004, "h": cm.height, "yaw": 0.0, "kind": "sign"})
+		cols.append(
+			{"shape": "cyl", "pos": pos, "r": 0.004, "h": cm.height, "yaw": 0.0, "kind": "sign"}
+		)
 	var blades := _blades(names)
 	blades.position.y = 2.75 * WS.M
 	sign.add_child(blades)
@@ -701,7 +835,10 @@ func _blade(text: String) -> Node3D:
 	var font: Font = ThemeDB.fallback_font
 	var fs := 28
 	var px := 0.00035
-	var w := maxf(0.9 * WS.M, font.get_string_size(text, HORIZONTAL_ALIGNMENT_LEFT, -1, fs).x * px + 0.24 * WS.M)
+	var w := maxf(
+		0.9 * WS.M,
+		font.get_string_size(text, HORIZONTAL_ALIGNMENT_LEFT, -1, fs).x * px + 0.24 * WS.M
+	)
 	var plate := MeshInstance3D.new()
 	var bm := BoxMesh.new()
 	bm.size = Vector3(w, 0.24 * WS.M, 0.02 * WS.M)
@@ -725,6 +862,7 @@ func _blade(text: String) -> Node3D:
 
 
 # ------------------------------------------------------------------ lamps
+
 
 ## lamp_street.glb for batching: its body's three materials merged into one vertex-coloured surface
 ## (one draw per chunk instead of three) and the bulb on CityView's night-driven lamp glass.
@@ -752,7 +890,9 @@ func _lamp_parts(parts: Array) -> Array:
 			var arr := mesh.surface_get_arrays(s)
 			var v: PackedVector3Array = arr[Mesh.ARRAY_VERTEX]
 			var nrm: PackedVector3Array = arr[Mesh.ARRAY_NORMAL]
-			var idx: PackedInt32Array = arr[Mesh.ARRAY_INDEX] if arr[Mesh.ARRAY_INDEX] != null else PackedInt32Array()
+			var idx: PackedInt32Array = (
+				arr[Mesh.ARRAY_INDEX] if arr[Mesh.ARRAY_INDEX] != null else PackedInt32Array()
+			)
 			var order: PackedInt32Array = idx
 			if order.is_empty():
 				order.resize(v.size())
@@ -791,7 +931,11 @@ func _near_faded(parts: Array) -> Array:
 					if sm is BaseMaterial3D:
 						copy.surface_set_material(k, _faded(sm as BaseMaterial3D))
 				q["mesh"] = copy
-			elif mesh != null and mesh.get_surface_count() == 1 and mesh.surface_get_material(0) is BaseMaterial3D:
+			elif (
+				mesh != null
+				and mesh.get_surface_count() == 1
+				and mesh.surface_get_material(0) is BaseMaterial3D
+			):
 				q["mat"] = _faded(mesh.surface_get_material(0) as BaseMaterial3D)
 		out.append(q)
 	return out
@@ -858,7 +1002,10 @@ func set_night(glow: float) -> void:
 
 # ------------------------------------------------------------------ decals
 
-func _add_decals(i: int, holder: Node3D, mask: int, kind_name: String, rng: RandomNumberGenerator) -> void:
+
+func _add_decals(
+	i: int, holder: Node3D, mask: int, kind_name: String, rng: RandomNumberGenerator
+) -> void:
 	if _decal_texture("crack_0") == null:
 		return
 	var straight := kind_name == "straight" or kind_name == "lights" or kind_name == "bridge"
@@ -883,28 +1030,81 @@ func _add_decals(i: int, holder: Node3D, mask: int, kind_name: String, rng: Rand
 			p = Vector3(rng.randf_range(-0.22, 0.22), 0, rng.randf_range(-0.22, 0.22))
 		match what:
 			0, 1:
-				_decal(holder, "crack_%d" % (rng.randi() % 2), p, WS.ASPHALT_TOP, Vector2(rng.randf_range(3.0, 5.5), rng.randf_range(3.0, 5.5)) * WS.M, yaw, Color(1, 1, 1, 0.9))
+				_decal(
+					holder,
+					"crack_%d" % (rng.randi() % 2),
+					p,
+					WS.ASPHALT_TOP,
+					Vector2(rng.randf_range(3.0, 5.5), rng.randf_range(3.0, 5.5)) * WS.M,
+					yaw,
+					Color(1, 1, 1, 0.9)
+				)
 			2:
-				_decal(holder, "patch_0", p, WS.ASPHALT_TOP, Vector2(rng.randf_range(1.6, 3.2), rng.randf_range(1.2, 2.4)) * WS.M, rot.get_euler().y + (PI * 0.5 if rng.randf() < 0.5 else 0.0), Color(1, 1, 1, 0.95))
+				_decal(
+					holder,
+					"patch_0",
+					p,
+					WS.ASPHALT_TOP,
+					Vector2(rng.randf_range(1.6, 3.2), rng.randf_range(1.2, 2.4)) * WS.M,
+					rot.get_euler().y + (PI * 0.5 if rng.randf() < 0.5 else 0.0),
+					Color(1, 1, 1, 0.95)
+				)
 			3:
 				var pl := rot.inverse() * p
 				var lane := rot * Vector3(signf(pl.x) * WS.LANE_OFFSET, 0, pl.z) if straight else p
-				_decal(holder, "oil_%d" % (rng.randi() % 2), lane, WS.ASPHALT_TOP, Vector2.ONE * rng.randf_range(0.9, 1.8) * WS.M, yaw, Color(1, 1, 1, 0.8))
+				_decal(
+					holder,
+					"oil_%d" % (rng.randi() % 2),
+					lane,
+					WS.ASPHALT_TOP,
+					Vector2.ONE * rng.randf_range(0.9, 1.8) * WS.M,
+					yaw,
+					Color(1, 1, 1, 0.8)
+				)
 			4:
 				if straight:
 					var s := 1.0 if rng.randf() < 0.5 else -1.0
-					var q := rot * Vector3(s * (WS.ROAD_HALF - 0.012), 0, rng.randf_range(-0.4, 0.4))
-					_decal(holder, "drain_0", q, WS.ASPHALT_TOP, Vector2(0.45, 0.9) * WS.M, rot.get_euler().y, Color.WHITE)
+					var q := (
+						rot * Vector3(s * (WS.ROAD_HALF - 0.012), 0, rng.randf_range(-0.4, 0.4))
+					)
+					_decal(
+						holder,
+						"drain_0",
+						q,
+						WS.ASPHALT_TOP,
+						Vector2(0.45, 0.9) * WS.M,
+						rot.get_euler().y,
+						Color.WHITE
+					)
 			_:
 				if straight:
 					var s2 := 1.0 if rng.randf() < 0.5 else -1.0
-					var q2 := rot * Vector3(s2 * rng.randf_range(0.36, 0.47), 0, rng.randf_range(-0.42, 0.42))
-					_decal(holder, "stain_0", q2, WS.SIDEWALK_TOP, Vector2.ONE * rng.randf_range(1.5, 2.6) * WS.M, yaw, Color(1, 1, 1, 0.75))
+					var q2 := (
+						rot
+						* Vector3(s2 * rng.randf_range(0.36, 0.47), 0, rng.randf_range(-0.42, 0.42))
+					)
+					_decal(
+						holder,
+						"stain_0",
+						q2,
+						WS.SIDEWALK_TOP,
+						Vector2.ONE * rng.randf_range(1.5, 2.6) * WS.M,
+						yaw,
+						Color(1, 1, 1, 0.75)
+					)
 	# One puddle where water collects by the curb; it only shows while the street is wet.
 	if straight and rng.randf() < 0.6 and _decal_texture("puddle_0") != null:
 		var s3 := 1.0 if rng.randf() < 0.5 else -1.0
 		var q3 := rot * Vector3(s3 * rng.randf_range(0.2, 0.26), 0, rng.randf_range(-0.38, 0.38))
-		var pd := _decal(holder, "puddle_0", q3, WS.ASPHALT_TOP, Vector2(rng.randf_range(2.0, 3.6), rng.randf_range(1.4, 2.4)) * WS.M, rng.randf() * TAU, Color(1, 1, 1, wetness))
+		var pd := _decal(
+			holder,
+			"puddle_0",
+			q3,
+			WS.ASPHALT_TOP,
+			Vector2(rng.randf_range(2.0, 3.6), rng.randf_range(1.4, 2.4)) * WS.M,
+			rng.randf() * TAU,
+			Color(1, 1, 1, wetness)
+		)
 		pd.texture_orm = _decal_texture("puddle_orm")
 		pd.texture_normal = null
 		pd.visible = wetness > 0.02
@@ -912,7 +1112,9 @@ func _add_decals(i: int, holder: Node3D, mask: int, kind_name: String, rng: Rand
 		_puddles.append(pd)
 
 
-func _decal(holder: Node3D, tex: String, p: Vector3, top: float, size: Vector2, yaw: float, mod: Color) -> Decal:
+func _decal(
+	holder: Node3D, tex: String, p: Vector3, top: float, size: Vector2, yaw: float, mod: Color
+) -> Decal:
 	var dc := Decal.new()
 	dc.size = Vector3(size.x, 0.006, size.y)
 	dc.position = Vector3(p.x, top, p.z)
@@ -950,6 +1152,7 @@ func set_wetness(w: float) -> void:
 
 
 # ------------------------------------------------------------------ lots
+
 
 ## A vacant zoned lot on foot: rough ground, a lease board at the frontage and, on some commercial
 ## and industrial lots, a billboard at the back facing the street. No zoning glow.
@@ -1097,10 +1300,26 @@ func _lease_board(holder: Node3D, p: Vector2, dv: Vector2, cols: Array) -> Node3
 	board.rotation.y = atan2(dv.x, dv.y)
 	board.set_meta("prop", true)
 	var hgt2 := 0.9 * WS.M
-	board.set_meta("poster_slot", {"kind": "lease", "size": Vector2(1.4 * WS.M, hgt2 * 0.7), "xform": Transform3D(Basis(), Vector3(0, 2.2 * WS.M - hgt2 * 0.62 - 0.05 * WS.M, 0.018 * WS.M))})
+	board.set_meta(
+		"poster_slot",
+		{
+			"kind": "lease",
+			"size": Vector2(1.4 * WS.M, hgt2 * 0.7),
+			"xform":
+			Transform3D(Basis(), Vector3(0, 2.2 * WS.M - hgt2 * 0.62 - 0.05 * WS.M, 0.018 * WS.M))
+		}
+	)
 	holder.add_child(board)
 	_range(board, WS.VIS_PROP)
-	cols.append({"shape": "box", "pos": board.position, "size": Vector3(1.4 * WS.M, 2.2 * WS.M, 0.1 * WS.M), "yaw": board.rotation.y, "kind": "lease"})
+	cols.append(
+		{
+			"shape": "box",
+			"pos": board.position,
+			"size": Vector3(1.4 * WS.M, 2.2 * WS.M, 0.1 * WS.M),
+			"yaw": board.rotation.y,
+			"kind": "lease"
+		}
+	)
 	return board
 
 
@@ -1117,7 +1336,11 @@ func _range(n: Node, end: float) -> void:
 ## A billboard (H's poster billboard when present) at holder-local pos, facing dv.
 func _billboard(holder: Node3D, pos: Vector3, dv: Vector2, cols: Array) -> Node3D:
 	var path := AP.first_existing([AP.BILLBOARD_POSTER])
-	var b: Node3D = AP.load_scene(path).instantiate() as Node3D if not path.is_empty() else view._inst(CityView.R + "props/billboard.glb")
+	var b: Node3D = (
+		AP.load_scene(path).instantiate() as Node3D
+		if not path.is_empty()
+		else view._inst(CityView.R + "props/billboard.glb")
+	)
 	if b == null:
 		return null
 	b.name = "Billboard"
@@ -1129,13 +1352,26 @@ func _billboard(holder: Node3D, pos: Vector3, dv: Vector2, cols: Array) -> Node3
 	view._register_animated(b)
 	for s: float in [-1.0, 1.0]:
 		var leg := Basis(Vector3.UP, b.rotation.y) * Vector3(s * 0.09, 0, 0)
-		cols.append({"shape": "cyl", "pos": pos + leg, "r": 0.008, "h": 0.2, "yaw": 0.0, "kind": "billboard"})
+		cols.append(
+			{
+				"shape": "cyl",
+				"pos": pos + leg,
+				"r": 0.008,
+				"h": 0.2,
+				"yaw": 0.0,
+				"kind": "billboard"
+			}
+		)
 	return b
 
 
 ## The poster rectangle of the legacy billboard model (its Sign_Blue panel).
 static func billboard_slot() -> Dictionary:
-	return {"kind": "billboard", "size": Vector2(0.34, 0.15), "xform": Transform3D(Basis(), Vector3(0, 0.275, 0.006))}
+	return {
+		"kind": "billboard",
+		"size": Vector2(0.34, 0.15),
+		"xform": Transform3D(Basis(), Vector3(0, 0.275, 0.006))
+	}
 
 
 ## The FP bus shelter on side dv of a straight road: H's shelter (1.5 m deep) at FRONT, else the real
@@ -1157,18 +1393,43 @@ func shelter(holder: Node3D, dv: Vector2i) -> Node3D:
 	stop.rotation.y = atan2(-float(dv.x), -float(dv.y))
 	stop.set_meta("prop", true)
 	# The real shelter's lit ad panel is its west end (x -0.123), facing -x.
-	stop.set_meta("poster_slot", {"kind": "bus_shelter", "size": Vector2(0.063, 0.106), "xform": Transform3D(Basis(Vector3.UP, -PI * 0.5), Vector3(-0.1245, 0.065, 0.0))})
+	stop.set_meta(
+		"poster_slot",
+		{
+			"kind": "bus_shelter",
+			"size": Vector2(0.063, 0.106),
+			"xform": Transform3D(Basis(Vector3.UP, -PI * 0.5), Vector3(-0.1245, 0.065, 0.0))
+		}
+	)
 	holder.add_child(stop)
 	var cols: Array = holder.get_meta("colliders", [])
 	var yb := Basis(Vector3.UP, stop.rotation.y)
-	cols.append({"shape": "box", "pos": stop.position + yb * Vector3(0.0, 0, -0.035), "size": Vector3(0.26, 0.13, 0.012), "yaw": stop.rotation.y, "kind": "shelter"})
+	cols.append(
+		{
+			"shape": "box",
+			"pos": stop.position + yb * Vector3(0.0, 0, -0.035),
+			"size": Vector3(0.26, 0.13, 0.012),
+			"yaw": stop.rotation.y,
+			"kind": "shelter"
+		}
+	)
 	for s: float in [-1.0, 1.0]:
-		cols.append({"shape": "cyl", "pos": stop.position + yb * Vector3(s * 0.125, 0, 0.045), "r": 0.004, "h": 0.13, "yaw": 0.0, "kind": "shelter"})
+		cols.append(
+			{
+				"shape": "cyl",
+				"pos": stop.position + yb * Vector3(s * 0.125, 0, 0.045),
+				"r": 0.004,
+				"h": 0.13,
+				"yaw": 0.0,
+				"kind": "shelter"
+			}
+		)
 	holder.set_meta("colliders", cols)
 	return stop
 
 
 # ------------------------------------------------------------------ materials
+
 
 ## A building model on foot: see-through glass becomes opaque, sky-reflecting curtain wall (keeping
 ## its tint), and the model's own hedges, shrubs and trees get the hashed-alpha foliage shader.
@@ -1185,7 +1446,12 @@ func dress_model(model: Node3D) -> void:
 			if nm.begins_with("Glass") and not nm.begins_with("Glass_Car"):
 				mi.set_surface_override_material(s, _glass_mat(nm, m as BaseMaterial3D))
 			elif nm.begins_with("Leaves") and m is BaseMaterial3D:
-				mi.set_surface_override_material(s, _foliage_mat(m as BaseMaterial3D, 0.55, 0.0, Vector3.ZERO, card_uv_offset(mi.mesh, s)))
+				mi.set_surface_override_material(
+					s,
+					_foliage_mat(
+						m as BaseMaterial3D, 0.55, 0.0, Vector3.ZERO, card_uv_offset(mi.mesh, s)
+					)
+				)
 			elif nm == "Hedge_Core":
 				mi.set_surface_override_material(s, _hedge_mat())
 			elif nm == "Grass" and view.lawn_material() != null:
@@ -1204,7 +1470,9 @@ func _glass_mat(nm: String, src: BaseMaterial3D) -> StandardMaterial3D:
 		m.resource_name = nm + "_FP"
 		# Keep a trace of the authored hue (green or blue curtain walls), darkened like tinted glass.
 		var hue := src.albedo_color if src != null else Color(0.2, 0.25, 0.3)
-		var base := Color(0.1, 0.12, 0.13) if nm.begins_with("Glass_Shop") else Color(0.045, 0.065, 0.08)
+		var base := (
+			Color(0.1, 0.12, 0.13) if nm.begins_with("Glass_Shop") else Color(0.045, 0.065, 0.08)
+		)
 		m.albedo_color = base.lerp(Color(hue.r, hue.g, hue.b) * 0.35, 0.5)
 		m.metallic = 0.15
 		m.metallic_specular = 0.75
@@ -1221,12 +1489,22 @@ func fp_tree_parts(parts: Array) -> Array:
 	for p: Dictionary in parts:
 		var mesh := p["mesh"] as Mesh
 		var mat := mesh.surface_get_material(0) if mesh.get_surface_count() > 0 else null
-		if mat == null or not mat.resource_name.begins_with("Leaves") or not (mat is BaseMaterial3D):
+		if (
+			mat == null
+			or not mat.resource_name.begins_with("Leaves")
+			or not (mat is BaseMaterial3D)
+		):
 			out.append(p)
 			continue
 		var bb := mesh.get_aabb()
 		var q := p.duplicate()
-		q["mat"] = _foliage_mat(mat as BaseMaterial3D, 0.15, 0.8, bb.get_center() - Vector3(0, bb.size.y * 0.15, 0), card_uv_offset(mesh, 0))
+		q["mat"] = _foliage_mat(
+			mat as BaseMaterial3D,
+			0.15,
+			0.8,
+			bb.get_center() - Vector3(0, bb.size.y * 0.15, 0),
+			card_uv_offset(mesh, 0)
+		)
 		out.append(q)
 	return out
 
@@ -1242,7 +1520,9 @@ func card_uv_offset(mesh: Mesh, s: int) -> Vector2:
 	if s < mesh.get_surface_count():
 		var arr := mesh.surface_get_arrays(s)
 		var uv: PackedVector2Array = arr[Mesh.ARRAY_TEX_UV]
-		var idx: PackedInt32Array = arr[Mesh.ARRAY_INDEX] if arr[Mesh.ARRAY_INDEX] != null else PackedInt32Array()
+		var idx: PackedInt32Array = (
+			arr[Mesh.ARRAY_INDEX] if arr[Mesh.ARRAY_INDEX] != null else PackedInt32Array()
+		)
 		var tri: Array[int] = [0, 1, 2]
 		if idx.size() >= 3:
 			tri = [idx[0], idx[1], idx[2]]
@@ -1256,8 +1536,23 @@ func card_uv_offset(mesh: Mesh, s: int) -> Vector2:
 
 ## The foliage shader for leaf material src: up_bias pulls normals toward the sky, bend bends them out
 ## from centre (mesh space).
-func _foliage_mat(src: BaseMaterial3D, up_bias: float, bend: float = 0.0, centre: Vector3 = Vector3.ZERO, uv_offset: Vector2 = Vector2.ZERO) -> Material:
-	var key := "foliage_%d_%.2f_%.2f_%s_%s" % [src.get_instance_id(), up_bias, bend, str(centre.snapped(Vector3.ONE * 0.001)), str(uv_offset.snapped(Vector2.ONE * 0.0001))]
+func _foliage_mat(
+	src: BaseMaterial3D,
+	up_bias: float,
+	bend: float = 0.0,
+	centre: Vector3 = Vector3.ZERO,
+	uv_offset: Vector2 = Vector2.ZERO
+) -> Material:
+	var key := (
+		"foliage_%d_%.2f_%.2f_%s_%s"
+		% [
+			src.get_instance_id(),
+			up_bias,
+			bend,
+			str(centre.snapped(Vector3.ONE * 0.001)),
+			str(uv_offset.snapped(Vector2.ONE * 0.0001))
+		]
+	)
 	if _mats.has(key):
 		return _mats[key]
 	var m: Material = null
@@ -1335,6 +1630,7 @@ func _std(key: String, c: Color, metal: float, rough: float) -> StandardMaterial
 
 # ------------------------------------------------------------------ procedural kits
 
+
 func _procedural_kit(kind: String) -> Array:
 	match kind:
 		"apron":
@@ -1347,8 +1643,16 @@ func _procedural_kit(kind: String) -> Array:
 			var soil := PlaneMesh.new()
 			soil.size = Vector2(1.26, 1.26) * WS.M
 			return [
-				{"mesh": plate, "xform": Transform3D(Basis(), Vector3(0, 0.02 * WS.M, 0)), "mat": _grate_mat()},
-				{"mesh": soil, "xform": Transform3D(Basis(), Vector3(0, 0.008 * WS.M, 0)), "mat": _soil_mat()},
+				{
+					"mesh": plate,
+					"xform": Transform3D(Basis(), Vector3(0, 0.02 * WS.M, 0)),
+					"mat": _grate_mat()
+				},
+				{
+					"mesh": soil,
+					"xform": Transform3D(Basis(), Vector3(0, 0.008 * WS.M, 0)),
+					"mat": _soil_mat()
+				},
 			]
 		"rack":
 			# Three steel hoops, 0.85 m tall, 0.7 m wide, side by side along x.
@@ -1373,8 +1677,16 @@ func _procedural_kit(kind: String) -> Array:
 			var head := BoxMesh.new()
 			head.size = Vector3(0.22, 0.34, 0.16) * WS.M
 			return [
-				{"mesh": post, "xform": Transform3D(Basis(), Vector3(0, 0.55 * WS.M, 0)), "mat": _std("meter_post", Color(0.2, 0.22, 0.24), 0.5, 0.5)},
-				{"mesh": head, "xform": Transform3D(Basis(), Vector3(0, 1.27 * WS.M, 0)), "mat": _std("meter_head", Color(0.62, 0.64, 0.66), 0.6, 0.4)},
+				{
+					"mesh": post,
+					"xform": Transform3D(Basis(), Vector3(0, 0.55 * WS.M, 0)),
+					"mat": _std("meter_post", Color(0.2, 0.22, 0.24), 0.5, 0.5)
+				},
+				{
+					"mesh": head,
+					"xform": Transform3D(Basis(), Vector3(0, 1.27 * WS.M, 0)),
+					"mat": _std("meter_head", Color(0.62, 0.64, 0.66), 0.6, 0.4)
+				},
 			]
 		"ramp":
 			# Local: +z away from the road (sidewalk), x along the curb. A wedge in the gutter from the
@@ -1387,14 +1699,32 @@ func _procedural_kit(kind: String) -> Array:
 			var g2 := Vector3(hw, WS.SIDEWALK_TOP, 0.0)
 			var g3 := Vector3(-hw, WS.SIDEWALK_TOP, 0.0)
 			_quad(st2, g0, g1, g2, g3, Vector3(0, 0.98, -0.2).normalized())
-			_quad(st2, Vector3(-hw, WS.ASPHALT_TOP, 0.0), Vector3(-hw, WS.ASPHALT_TOP, -0.03), g0, g3, Vector3(-1, 0, 0))
-			_quad(st2, Vector3(hw, WS.ASPHALT_TOP, -0.03), Vector3(hw, WS.ASPHALT_TOP, 0.0), g2, g1, Vector3(1, 0, 0))
+			_quad(
+				st2,
+				Vector3(-hw, WS.ASPHALT_TOP, 0.0),
+				Vector3(-hw, WS.ASPHALT_TOP, -0.03),
+				g0,
+				g3,
+				Vector3(-1, 0, 0)
+			)
+			_quad(
+				st2,
+				Vector3(hw, WS.ASPHALT_TOP, -0.03),
+				Vector3(hw, WS.ASPHALT_TOP, 0.0),
+				g2,
+				g1,
+				Vector3(1, 0, 0)
+			)
 			var wedge := st2.commit()
 			var pad := BoxMesh.new()
 			pad.size = Vector3(hw * 2.0, 0.0004, 0.03)
 			return [
 				{"mesh": wedge, "xform": Transform3D(), "mat": _ramp_mat()},
-				{"mesh": pad, "xform": Transform3D(Basis(), Vector3(0, WS.SIDEWALK_TOP + 0.0002, 0.016)), "mat": _tactile_mat()},
+				{
+					"mesh": pad,
+					"xform": Transform3D(Basis(), Vector3(0, WS.SIDEWALK_TOP + 0.0002, 0.016)),
+					"mat": _tactile_mat()
+				},
 			]
 	return []
 
@@ -1433,7 +1763,16 @@ func _grate_mat() -> StandardMaterial3D:
 ## Kerb-ramp concrete: the paving texture in world metres, a little greyer; wet with the street.
 func _ramp_mat() -> StandardMaterial3D:
 	if not _mats.has("ramp_tex"):
-		var m := view._pbr("sidewalk", Color(0.47, 0.46, 0.44), 1.0 / (2.0 * WS.M), Color(0.8, 0.8, 0.79)).duplicate() as StandardMaterial3D
+		var m := (
+			(
+				view
+				. _pbr(
+					"sidewalk", Color(0.47, 0.46, 0.44), 1.0 / (2.0 * WS.M), Color(0.8, 0.8, 0.79)
+				)
+				. duplicate()
+			)
+			as StandardMaterial3D
+		)
 		m.resource_name = "Ramp_FP"
 		m.roughness = 0.85
 		_wets(m)
@@ -1444,7 +1783,9 @@ func _ramp_mat() -> StandardMaterial3D:
 ## Buff blister paving (textures/real/decals/tactile.png, 0.4 m per repeat, world-mapped).
 func _tactile_mat() -> StandardMaterial3D:
 	if not _mats.has("tactile_tex"):
-		var m := _std("tactile", Color(0.78, 0.62, 0.32), 0.0, 0.7).duplicate() as StandardMaterial3D
+		var m := (
+			_std("tactile", Color(0.78, 0.62, 0.32), 0.0, 0.7).duplicate() as StandardMaterial3D
+		)
 		m.resource_name = "Tactile_FP"
 		var tex := _decal_texture("tactile")
 		if tex != null:
@@ -1468,7 +1809,9 @@ func _wets(m: BaseMaterial3D) -> void:
 ## Cast iron for the road models' covers on foot: dark, mottled by the fbm noise in world space.
 func _iron_mat() -> StandardMaterial3D:
 	if not _mats.has("iron"):
-		var m := _std("iron_base", Color(0.2, 0.19, 0.18), 0.2, 0.75).duplicate() as StandardMaterial3D
+		var m := (
+			_std("iron_base", Color(0.2, 0.19, 0.18), 0.2, 0.75).duplicate() as StandardMaterial3D
+		)
 		m.resource_name = "Iron_FP"
 		var tex := _decal_texture("noise_fbm")
 		if tex != null:
@@ -1485,22 +1828,38 @@ func _iron_mat() -> StandardMaterial3D:
 ## Bare soil in tree pits: the ground's earth texture, darker and damp.
 func _soil_mat() -> Material:
 	if not _mats.has("soil_tex"):
-		_mats["soil_tex"] = view._pbr("dirt", Color(0.2, 0.15, 0.11), 1.0 / (2.0 * WS.M), Color(0.42, 0.36, 0.31))
+		_mats["soil_tex"] = view._pbr(
+			"dirt", Color(0.2, 0.15, 0.11), 1.0 / (2.0 * WS.M), Color(0.42, 0.36, 0.31)
+		)
 	return _mats["soil_tex"]
 
 
 func _box(st: SurfaceTool, c: Vector3, s: Vector3) -> void:
 	var h := s * 0.5
 	var k := [
-		c + Vector3(-h.x, -h.y, -h.z), c + Vector3(h.x, -h.y, -h.z), c + Vector3(h.x, h.y, -h.z), c + Vector3(-h.x, h.y, -h.z),
-		c + Vector3(-h.x, -h.y, h.z), c + Vector3(h.x, -h.y, h.z), c + Vector3(h.x, h.y, h.z), c + Vector3(-h.x, h.y, h.z),
+		c + Vector3(-h.x, -h.y, -h.z),
+		c + Vector3(h.x, -h.y, -h.z),
+		c + Vector3(h.x, h.y, -h.z),
+		c + Vector3(-h.x, h.y, -h.z),
+		c + Vector3(-h.x, -h.y, h.z),
+		c + Vector3(h.x, -h.y, h.z),
+		c + Vector3(h.x, h.y, h.z),
+		c + Vector3(-h.x, h.y, h.z),
 	]
-	var faces := [[0, 3, 2, 1, Vector3.BACK * -1.0], [4, 5, 6, 7, Vector3.BACK], [0, 4, 7, 3, Vector3.LEFT], [1, 2, 6, 5, Vector3.RIGHT], [3, 7, 6, 2, Vector3.UP], [0, 1, 5, 4, Vector3.DOWN]]
+	var faces := [
+		[0, 3, 2, 1, Vector3.BACK * -1.0],
+		[4, 5, 6, 7, Vector3.BACK],
+		[0, 4, 7, 3, Vector3.LEFT],
+		[1, 2, 6, 5, Vector3.RIGHT],
+		[3, 7, 6, 2, Vector3.UP],
+		[0, 1, 5, 4, Vector3.DOWN]
+	]
 	for f: Array in faces:
 		_quad(st, k[f[0]], k[f[1]], k[f[2]], k[f[3]], f[4])
 
 
 # ------------------------------------------------------------------ helpers
+
 
 func _rng(i: int, salt: int) -> RandomNumberGenerator:
 	var r := RandomNumberGenerator.new()

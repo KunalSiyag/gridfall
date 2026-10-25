@@ -127,19 +127,28 @@ const REVERSE_GAP := 2.5
 const TRAFFIC_POLL := 0.1
 const BLOCKER_REACH := 2.0 * WS.M
 const AGENT_REACH := 8.0 * WS.M
+## People on foot (E's walkers_near) become the soft circles CollisionWorld pushes the hero out
+## of: everyone within this reach of the feet is listed, once a frame (a sprint covers 0.65 m in
+## one TRAFFIC_POLL, more than a person is wide, so the circles cannot be that stale).
+const PEOPLE_REACH := 2.5 * WS.M
 ## Approximate agent boxes for the camera (half length, half width, height), metres * M.
-const AGENT_SIZES := {"car": Vector3(2.3, 1.0, 1.6), "emergency": Vector3(2.8, 1.1, 2.4), "bus": Vector3(6.0, 1.3, 3.2), "truck": Vector3(4.5, 1.3, 3.4)}
+const AGENT_SIZES := {
+	"car": Vector3(2.3, 1.0, 1.6),
+	"emergency": Vector3(2.8, 1.1, 2.4),
+	"bus": Vector3(6.0, 1.3, 3.2),
+	"truck": Vector3(4.5, 1.3, 3.4)
+}
 
 var ctx: FpContext
 var camera: Camera3D
-var yaw: float = 0.0        # radians; body yaw = rotation.y. Body forward = (-sin(yaw), 0, -cos(yaw)).
-var pitch: float = 0.0      # radians; the view pitch (= cam_pitch), kept for S0 callers
-var velocity: Vector3 = Vector3.ZERO   # u/s; y is the vertical speed
-var input_enabled: bool = true   # false for tests and scripted tours
+var yaw: float = 0.0  # radians; body yaw = rotation.y. Body forward = (-sin(yaw), 0, -cos(yaw)).
+var pitch: float = 0.0  # radians; the view pitch (= cam_pitch), kept for S0 callers
+var velocity: Vector3 = Vector3.ZERO  # u/s; y is the vertical speed
+var input_enabled: bool = true  # false for tests and scripted tours
 ## Scripted movement while input_enabled is false (photo tour shots of the hero in motion):
 ## {"wish": Vector2, "sprint": bool}; empty for none.
 var autopilot: Dictionary = {}
-var photo_mode: bool = false     # free-fly photo mode; FpMode ignores hud_toggle and C ignores chat_open while true
+var photo_mode: bool = false  # free-fly photo mode; FpMode ignores hud_toggle and C ignores chat_open while true
 ## View angles (radians). Movement input is rotated by cam_yaw; forward() looks along them.
 var cam_yaw: float = 0.0
 var cam_pitch: float = 0.0
@@ -427,7 +436,9 @@ func speed() -> float:
 ## Any delta is safe: the step is split so that no collision sub-step moves farther than
 ## PLAYER_RADIUS (a 0.008 u hoarding grown by the radius is only 0.038 u thick), and a velocity
 ## component whose move was blocked drops to zero.
-func simulate(wish: Vector2, sprint: bool, delta: float, crouch: bool = false, jump: bool = false) -> void:
+func simulate(
+	wish: Vector2, sprint: bool, delta: float, crouch: bool = false, jump: bool = false
+) -> void:
 	if ctx == null or ctx.collision == null or not (delta > 0.0) or not is_finite(delta):
 		return
 	if ctx.is_modal():
@@ -450,6 +461,8 @@ func simulate(wish: Vector2, sprint: bool, delta: float, crouch: bool = false, j
 	if _jump_taken():
 		return
 	_set_crouch(crouch)
+	_resolve_stuck()
+	_refresh_people()
 	_eye_h = SM.damp(_eye_h, WS.CROUCH_EYE if crouched else WS.EYE, HL_EYE, delta)
 	_build_sprint(wish, sprint, delta)
 	var top_speed := _top_speed(sprint)
@@ -459,7 +472,9 @@ func simulate(wish: Vector2, sprint: bool, delta: float, crouch: bool = false, j
 	var goal := _wish_goal(wish, top_speed)
 	_start_pivot(flat, goal)
 	# The spring can overshoot its goal a little while turning; 1.25 keeps each step under the radius.
-	var top := maxf(maxf(flat.length(), _target_speed) * 1.25, absf(velocity.y) + WS.GRAVITY * delta)
+	var top := maxf(
+		maxf(flat.length(), _target_speed) * 1.25, absf(velocity.y) + WS.GRAVITY * delta
+	)
 	var n := clampi(ceili(top * delta / WS.PLAYER_RADIUS), 1, MAX_SUBSTEPS)
 	var h := delta / float(n)
 	var yaw0 := yaw
@@ -532,13 +547,25 @@ func _jump_taken() -> bool:
 
 ## Turning hard against the travel at speed on the ground pivots: the body stops, then turns.
 func _start_pivot(flat: Vector2, goal: Vector2) -> void:
-	if grounded and _pivot_t <= 0.0 and flat.length() > PIVOT_MIN_SPEED and goal.length_squared() > 1e-12 and absf(flat.angle_to(goal)) > PIVOT_ANGLE:
+	if (
+		grounded
+		and _pivot_t <= 0.0
+		and flat.length() > PIVOT_MIN_SPEED
+		and goal.length_squared() > 1e-12
+		and absf(flat.angle_to(goal)) > PIVOT_ANGLE
+	):
 		_pivot_t = PIVOT_TIME
 
 
 ## The goal velocity (xz, u/s) for a view-relative wish.
 func _wish_goal(wish: Vector2, top_speed: float) -> Vector2:
-	var goal := (Vector2(cos(cam_yaw), -sin(cam_yaw)) * wish.x + Vector2(-sin(cam_yaw), -cos(cam_yaw)) * wish.y) * top_speed
+	var goal := (
+		(
+			Vector2(cos(cam_yaw), -sin(cam_yaw)) * wish.x
+			+ Vector2(-sin(cam_yaw), -cos(cam_yaw)) * wish.y
+		)
+		* top_speed
+	)
 	_wish_dir = goal.normalized() if goal.length_squared() > 1e-12 else Vector2.ZERO
 	return goal
 
@@ -556,8 +583,12 @@ func update_view(delta: float) -> void:
 	_kick *= pow(0.5, dt / HL_KICK)
 	_update_shake(dt)
 	_tumble_t += dt
-	_bob_amp = SM.damp(_bob_amp, sqrt(clampf(sp / WS.RUN, 0.0, 1.0)) if grounded else 0.0, HL_BOB, dt)
-	var fp_goal := _fov_setting + (FP_SPRINT_FOV if _head_bob and _running and sp > 0.8 * WS.RUN else 0.0)
+	_bob_amp = SM.damp(
+		_bob_amp, sqrt(clampf(sp / WS.RUN, 0.0, 1.0)) if grounded else 0.0, HL_BOB, dt
+	)
+	var fp_goal := (
+		_fov_setting + (FP_SPRINT_FOV if _head_bob and _running and sp > 0.8 * WS.RUN else 0.0)
+	)
 	_fp_fov = SM.damp(_fp_fov, fp_goal, HL_FOV, dt)
 	_update_facing(dt, sp)
 	_update_conversation(dt)
@@ -609,13 +640,33 @@ func update_view(delta: float) -> void:
 			camera.transform = xf
 	camera.fov = fv
 	if avatar != null:
-		var head := eye_position() if not photo_mode else (_photo_saved.get("pos", position) as Vector3) + Vector3.UP * _eye_h
-		var alpha := clampf(inverse_lerp(TpsRig.FADE_NEAR, TpsRig.FADE_FAR, xf.origin.distance_to(head)), 0.0, 1.0)
+		var head := (
+			eye_position()
+			if not photo_mode
+			else (_photo_saved.get("pos", position) as Vector3) + Vector3.UP * _eye_h
+		)
+		var alpha := clampf(
+			inverse_lerp(TpsRig.FADE_NEAR, TpsRig.FADE_FAR, xf.origin.distance_to(head)), 0.0, 1.0
+		)
 		avatar.set_view_state(pure_fp, alpha)
 		if not photo_mode:
 			avatar.set_look_target(_look_target(xf))
-			var back := Vector2(velocity.x, velocity.z).dot(Vector2(-sin(yaw), -cos(yaw))) < -0.3 * sp
-			avatar.update_motion(dt, sp, _yaw_rate, _fwd_acc, _step_snap, clampf((WS.EYE - _eye_h) / (WS.EYE - WS.CROUCH_EYE), 0.0, 1.0), _gait_phase, grounded, velocity.y, _conv_on, back)
+			var back := (
+				Vector2(velocity.x, velocity.z).dot(Vector2(-sin(yaw), -cos(yaw))) < -0.3 * sp
+			)
+			avatar.update_motion(
+				dt,
+				sp,
+				_yaw_rate,
+				_fwd_acc,
+				_step_snap,
+				clampf((WS.EYE - _eye_h) / (WS.EYE - WS.CROUCH_EYE), 0.0, 1.0),
+				_gait_phase,
+				grounded,
+				velocity.y,
+				_conv_on,
+				back
+			)
 			if avatar.is_animated():
 				_hero_steps()
 		_step_snap = 0.0
@@ -769,7 +820,14 @@ func set_photo_mode(on: bool) -> void:
 		return
 	if on:
 		var xf := _camera_world()
-		_photo_saved = {"pos": position, "yaw": yaw, "cam_yaw": cam_yaw, "cam_pitch": cam_pitch, "hud": ctx.hud.is_hud_visible() if ctx != null and ctx.hud != null else true, "avatar": _node_world(avatar) if avatar != null else Transform3D()}
+		_photo_saved = {
+			"pos": position,
+			"yaw": yaw,
+			"cam_yaw": cam_yaw,
+			"cam_pitch": cam_pitch,
+			"hud": ctx.hud.is_hud_visible() if ctx != null and ctx.hud != null else true,
+			"avatar": _node_world(avatar) if avatar != null else Transform3D()
+		}
 		var yp := SM.yaw_pitch_of(xf.basis)
 		photo_mode = true
 		cam_yaw = yp.x
@@ -806,7 +864,16 @@ func to_dict() -> Dictionary:
 		by = float(_photo_saved.get("yaw", yaw))
 		cy = float(_photo_saved.get("cam_yaw", cam_yaw))
 		cp = float(_photo_saved.get("cam_pitch", cam_pitch))
-	return {"pos": [pos.x, pos.y, pos.z], "yaw": rad_to_deg(by), "pitch": rad_to_deg(cp), "crouched": crouched, "photo": false, "cam_yaw": rad_to_deg(cy), "cam_pitch": rad_to_deg(cp), "camera_mode": camera_mode}
+	return {
+		"pos": [pos.x, pos.y, pos.z],
+		"yaw": rad_to_deg(by),
+		"pitch": rad_to_deg(cp),
+		"crouched": crouched,
+		"photo": false,
+		"cam_yaw": rad_to_deg(cy),
+		"cam_pitch": rad_to_deg(cp),
+		"camera_mode": camera_mode
+	}
 
 
 ## Restores to_dict(); {} (or no "pos") spawns at ctx.mode.spawn_point(). Saves without the
@@ -824,13 +891,24 @@ func from_dict(d: Dictionary) -> void:
 	if typeof(pos) == TYPE_ARRAY and (pos as Array).size() >= 3:
 		var a: Array = pos
 		crouched = bool(d.get("crouched", false))
-		teleport(Vector3(float(a[0]), float(a[1]), float(a[2])), float(d.get("yaw", 0.0)), float(d.get("pitch", 0.0)), false)
-		var g := ctx.collision.walk_height(position) if ctx != null and ctx.collision != null else NAN
+		teleport(
+			Vector3(float(a[0]), float(a[1]), float(a[2])),
+			float(d.get("yaw", 0.0)),
+			float(d.get("pitch", 0.0)),
+			false
+		)
+		var g := (
+			ctx.collision.walk_height(position) if ctx != null and ctx.collision != null else NAN
+		)
 		if not is_nan(g) and absf(g - position.y) > GROUND_SNAP:
 			position.y = g
 		if d.has("cam_yaw"):
 			cam_yaw = wrapf(deg_to_rad(float(d["cam_yaw"])), -PI, PI)
-			cam_pitch = clampf(deg_to_rad(float(d.get("cam_pitch", d.get("pitch", 0.0)))), _pitch_min(), _pitch_max())
+			cam_pitch = clampf(
+				deg_to_rad(float(d.get("cam_pitch", d.get("pitch", 0.0)))),
+				_pitch_min(),
+				_pitch_max()
+			)
 			pitch = cam_pitch
 			if camera_mode == "first":
 				yaw = cam_yaw
@@ -839,7 +917,11 @@ func from_dict(d: Dictionary) -> void:
 		_snap_view()
 		return
 	crouched = false
-	var sp: Dictionary = ctx.mode.spawn_point() if ctx != null and ctx.mode != null else {"pos": Vector3.ZERO, "yaw": 0.0}
+	var sp: Dictionary = (
+		ctx.mode.spawn_point()
+		if ctx != null and ctx.mode != null
+		else {"pos": Vector3.ZERO, "yaw": 0.0}
+	)
 	teleport(sp["pos"], float(sp["yaw"]), 0.0, true)
 
 
@@ -850,7 +932,11 @@ func face_point(p: Vector3) -> void:
 	if Vector2(d.x, d.z).length_squared() < 1e-12:
 		return
 	var g := atan2(-d.x, -d.z)
-	if absf(wrapf(g - yaw, -PI, PI)) > FACE_MIN_ERROR and speed() < TURN_MIN_SPEED and camera_mode == "third":
+	if (
+		absf(wrapf(g - yaw, -PI, PI)) > FACE_MIN_ERROR
+		and speed() < TURN_MIN_SPEED
+		and camera_mode == "third"
+	):
 		_face_goal = g
 		_face_hl = 0.0
 
@@ -878,7 +964,13 @@ func _process(delta: float) -> void:
 		if not ctx.is_modal():
 			_stick_look(dt)
 		var wish := Input.get_vector("move_left", "move_right", "move_back", "move_forward")
-		simulate(wish, Input.is_action_pressed("sprint"), dt, Input.is_action_pressed("crouch"), Input.is_action_pressed("jump"))
+		simulate(
+			wish,
+			Input.is_action_pressed("sprint"),
+			dt,
+			Input.is_action_pressed("crouch"),
+			Input.is_action_pressed("jump")
+		)
 	elif not autopilot.is_empty():
 		simulate(autopilot.get("wish", Vector2.ZERO), bool(autopilot.get("sprint", false)), dt)
 	update_view(dt)
@@ -939,7 +1031,13 @@ func _step(goal: Vector2, h: float) -> void:
 	# Built exactly as move_body builds its full move, so an unblocked move compares equal (a
 	# sub-ulp displacement that rounds away is not a wall).
 	var full := Vector3(position.x + disp.x, position.y, position.z + disp.y)
-	var p := col.move_body(position, Vector3(disp.x, 0.0, disp.y), WS.PLAYER_RADIUS, height, WS.STEP_HEIGHT if grounded else 0.0)
+	var p := col.move_body(
+		position,
+		Vector3(disp.x, 0.0, disp.y),
+		WS.PLAYER_RADIUS,
+		height,
+		WS.STEP_HEIGHT if grounded else 0.0
+	)
 	var rad := WS.PLAYER_RADIUS
 	var blocked := p != full
 	var cx := clampf(p.x, D.X0 - 0.5 + rad, D.X0 + D.W - 0.5 - rad)
@@ -948,6 +1046,14 @@ func _step(goal: Vector2, h: float) -> void:
 		blocked = true
 		p.x = cx
 		p.z = cz
+	# People nearby are soft-solid: ease out of their circles and stop pressing into them. The
+	# tangential speed keeps, so the hero slides round a crowd instead of sticking to it, and the
+	# walkers give way in turn (walkers.gd).
+	if not col.people_circles.is_empty():
+		var slid := _people_slide(col, p, rad, height, nv, na)
+		p = slid[0]
+		nv = slid[1]
+		na = slid[2]
 	var moved := Vector2(p.x - position.x, p.z - position.z)
 	if blocked:
 		if moved.length_squared() < 1e-16:
@@ -978,7 +1084,9 @@ func _step(goal: Vector2, h: float) -> void:
 ## Ground following, steps, jumps (coyote time and buffer), gravity and landing for one sub-step.
 func _vertical(h: float, height: float) -> void:
 	var col := ctx.collision
-	var sup := col.support_height(position, WS.PLAYER_RADIUS, position.y, WS.STEP_HEIGHT if grounded else 0.0)
+	var sup := col.support_height(
+		position, WS.PLAYER_RADIUS, position.y, WS.STEP_HEIGHT if grounded else 0.0
+	)
 	if is_nan(sup):
 		sup = position.y
 	if grounded:
@@ -1156,6 +1264,66 @@ func _body_yaw_step(h: float) -> void:
 	rotation.y = yaw
 
 
+## A body left inside a blocker (a teleport or a load put it half inside a building or a car box)
+## steps straight out to the nearest free side (CollisionWorld.resolve_out); the walk-out rule of
+## move_body only helps once it moves.
+func _resolve_stuck() -> void:
+	var height := WS.CROUCH_HEIGHT if crouched else WS.PLAYER_HEIGHT
+	var q := ctx.collision.resolve_out(position, WS.PLAYER_RADIUS, height)
+	if q != position:
+		position.x = q.x
+		position.z = q.z
+
+
+## The soft-people half of a sub-step: p eased out of the people circles (CollisionWorld's
+## soft_people_move) and the into-person part of the velocity and the spring's acceleration
+## taken off, so the hero stops pressing on people while the tangential speed keeps (they slide
+## round a crowd instead of sticking to it). Returns [p, nv, na].
+func _people_slide(
+	col: CollisionWorld, p: Vector3, rad: float, height: float, nv: Vector2, na: Vector2
+) -> Array:
+	var q := col.soft_people_move(p, rad, height)
+	if q == p:
+		return [p, nv, na]
+	var push := Vector2(q.x - p.x, q.z - p.z)
+	var u := push / push.length()
+	var into := nv.dot(u)
+	if into < 0.0:
+		nv -= u * into
+	var acc := na.dot(u)
+	if acc < 0.0:
+		na -= u * acc
+	return [Vector3(q.x, p.y, q.z), nv, na]
+
+
+## Everyone on foot nearby (E's walkers_near) becomes CollisionWorld's soft circles, once a
+## simulate call: the hero cannot pass through people, but they are not walls. Nobody without the
+## traffic feature, and nobody while the hero is aboard a car (their body is the car's; E's
+## blockers and contacts own that).
+func _refresh_people() -> void:
+	var col := ctx.collision
+	var traffic := ctx.feature("traffic")
+	if (
+		traffic == null
+		or not traffic.has_method("walkers_near")
+		or bool(traffic.get("hero_aboard"))
+	):
+		if not col.people_circles.is_empty():
+			col.people_circles = PackedFloat32Array()
+		return
+	var out := PackedFloat32Array()
+	for d: Variant in traffic.call("walkers_near", position, PEOPLE_REACH):
+		if typeof(d) != TYPE_DICTIONARY:
+			continue
+		var e: Dictionary = d
+		var q: Vector3 = e.get("pos", position)
+		out.append(q.x)
+		out.append(q.y)
+		out.append(q.z)
+		out.append(col.PERSON_R)
+	col.people_circles = out
+
+
 ## A few times a second: E's stopped cars become dynamic collision boxes, and its agents near the
 ## camera become the rig's pull-in boxes. No traffic feature, nothing to do.
 func _poll_traffic(dt: float) -> void:
@@ -1183,17 +1351,29 @@ func _poll_traffic(dt: float) -> void:
 				continue
 			var ext: Vector3 = (size as Vector3) * WS.M
 			var v: Vector3 = d.get("vel", Vector3.ZERO)
-			var h := atan2(v.x, v.z) if Vector2(v.x, v.z).length_squared() > 1e-10 else float(d.get("heading", 0.0))
+			var h := (
+				atan2(v.x, v.z)
+				if Vector2(v.x, v.z).length_squared() > 1e-10
+				else float(d.get("heading", 0.0))
+			)
 			var hx := absf(sin(h)) * ext.x + absf(cos(h)) * ext.y
 			var hz := absf(cos(h)) * ext.x + absf(sin(h)) * ext.y
 			var pos: Vector3 = d.get("pos", Vector3.ZERO)
-			boxes.append(AABB(Vector3(pos.x - hx, pos.y, pos.z - hz), Vector3(hx * 2.0, ext.z, hz * 2.0)))
+			boxes.append(
+				AABB(Vector3(pos.x - hx, pos.y, pos.z - hz), Vector3(hx * 2.0, ext.z, hz * 2.0))
+			)
 		rig.agent_boxes = boxes
 
 
 ## Scripted facing (interact) and the conversation turn toward the resident.
 func _update_facing(dt: float, sp: float) -> void:
-	if is_nan(_face_goal) or sp >= TURN_MIN_SPEED or camera_mode == "first" or photo_mode or dt <= 0.0:
+	if (
+		is_nan(_face_goal)
+		or sp >= TURN_MIN_SPEED
+		or camera_mode == "first"
+		or photo_mode
+		or dt <= 0.0
+	):
 		return
 	var y0 := yaw
 	var err := wrapf(_face_goal - yaw, -PI, PI)
@@ -1221,7 +1401,10 @@ func _set_crouch(want: bool) -> void:
 		return
 	# Stand up only with headroom: nothing between the crouched and the standing height.
 	var col := ctx.collision
-	if col.body_blocked(position, WS.PLAYER_RADIUS * 0.99, WS.PLAYER_HEIGHT) and not col.body_blocked(position, WS.PLAYER_RADIUS * 0.99, WS.CROUCH_HEIGHT):
+	if (
+		col.body_blocked(position, WS.PLAYER_RADIUS * 0.99, WS.PLAYER_HEIGHT)
+		and not col.body_blocked(position, WS.PLAYER_RADIUS * 0.99, WS.CROUCH_HEIGHT)
+	):
 		return
 	crouched = false
 
@@ -1249,7 +1432,9 @@ func _leave_photo(snap_back: bool) -> void:
 		position = _photo_saved.get("pos", position)
 		yaw = float(_photo_saved.get("yaw", yaw))
 		cam_yaw = float(_photo_saved.get("cam_yaw", cam_yaw))
-		cam_pitch = clampf(float(_photo_saved.get("cam_pitch", cam_pitch)), _pitch_min(), _pitch_max())
+		cam_pitch = clampf(
+			float(_photo_saved.get("cam_pitch", cam_pitch)), _pitch_min(), _pitch_max()
+		)
 		pitch = cam_pitch
 	if avatar != null:
 		avatar.top_level = false
@@ -1401,6 +1586,7 @@ func _update_tile() -> void:
 
 # --- Conversation (C emits conversation_changed; A frames it)
 
+
 func _on_conversation_changed(id: String, active: bool) -> void:
 	if active:
 		var n := _npc_head(id)
@@ -1467,15 +1653,23 @@ func _npc_head(id: String) -> Vector3:
 	var traffic := ctx.feature("traffic")
 	if traffic != null and traffic.has_method("anchor_of"):
 		var a: Variant = traffic.call("anchor_of", id)
-		if typeof(a) == TYPE_VECTOR3 and not is_nan((a as Vector3).x) and (a as Vector3) != Vector3.ZERO:
+		if (
+			typeof(a) == TYPE_VECTOR3
+			and not is_nan((a as Vector3).x)
+			and (a as Vector3) != Vector3.ZERO
+		):
 			return a
 	if ctx.view != null and ctx.view.avatars != null:
 		var avs: Variant = ctx.view.avatars.get("_avatars")
 		if typeof(avs) == TYPE_DICTIONARY and (avs as Dictionary).has(id):
 			var root: Node3D = (avs as Dictionary)[id]["root"]
 			if is_instance_valid(root) and root.visible:
-				var g := ctx.collision.ground_height(root.position) if ctx.collision != null else 0.0
-				return Vector3(root.position.x, (g if not is_nan(g) else 0.0) + WS.EYE, root.position.z)
+				var g := (
+					ctx.collision.ground_height(root.position) if ctx.collision != null else 0.0
+				)
+				return Vector3(
+					root.position.x, (g if not is_nan(g) else 0.0) + WS.EYE, root.position.z
+				)
 	return none
 
 
@@ -1496,7 +1690,10 @@ func _choose_shot() -> void:
 		_conv_side = -_conv_side
 		return
 	_conv_back = CONV_BACK_SHORT
-	if _shot_free(p, u, -s0 * _conv_side, CONV_BACK_SHORT) > _shot_free(p, u, s0 * _conv_side, CONV_BACK_SHORT) + 0.05:
+	if (
+		_shot_free(p, u, -s0 * _conv_side, CONV_BACK_SHORT)
+		> _shot_free(p, u, s0 * _conv_side, CONV_BACK_SHORT) + 0.05
+	):
 		_conv_side = -_conv_side
 
 
@@ -1543,7 +1740,11 @@ func _update_conversation(dt: float) -> void:
 	var traffic := ctx.feature("traffic")
 	if traffic != null and traffic.has_method("anchor_of"):
 		var a: Variant = traffic.call("anchor_of", _conv_id)
-		if typeof(a) == TYPE_VECTOR3 and not is_nan((a as Vector3).x) and (a as Vector3) != Vector3.ZERO:
+		if (
+			typeof(a) == TYPE_VECTOR3
+			and not is_nan((a as Vector3).x)
+			and (a as Vector3) != Vector3.ZERO
+		):
 			_conv_npc = a
 	_conv_t += dt
 	if camera_mode == "first" and not photo_mode:

@@ -16,6 +16,12 @@ const VH := preload("res://scripts/fp/traffic/vehicles.gd")
 const BAND := (WS.PED_BAND[1] - WS.PED_BAND[0]) * 0.5 - 0.002
 const SEP := 0.6 * WS.M
 const KEEP_RIGHT := 0.012
+## Half a shoulder: a walker and the hero (WS.PLAYER_RADIUS) keep this far apart. The hero is
+## held off by their own soft push (CollisionWorld.PERSON_R, the same width); this is the walker's
+## half of the mutual push.
+const PERSON_R := 0.22 * WS.M
+## When the hero's circle presses on them, a walker gives way this far past the walking band.
+const GIVE_WAY := BAND + 0.028
 const CELL := 0.06
 ## Simulation LOD: walkers within LOD_FULL of the player step every step, out to LOD_NEAR (the
 ## drawing range) every LOD_MID_DT, beyond that every LOD_DT without crowd logic. Draws carry them
@@ -47,23 +53,24 @@ const IDLES: Array[StringName] = [&"idle", &"idle", &"idle_look", &"idle_wait"]
 
 
 ## One person on foot.
-class Walker extends RefCounted:
+class Walker:
+	extends RefCounted
 	var id: int = 0
-	var role: String = "ambient"     # ambient | resident
+	var role: String = "ambient"  # ambient | resident
 	var resident_id: String = ""
 	var model: int = -1
 	var speed: float = WS.PED_WALK
 	var edge: SW.PedEdge = null
-	var t: float = 0.0               # distance walked along the edge (in walking direction)
-	var t_end: float = -1.0          # stop here on this edge (-1: its end)
-	var far: bool = false            # beyond the traffic radius: no crowd or crossing logic
-	var dir: int = 1                 # +1 a -> b, -1 b -> a
+	var t: float = 0.0  # distance walked along the edge (in walking direction)
+	var t_end: float = -1.0  # stop here on this edge (-1: its end)
+	var far: bool = false  # beyond the traffic radius: no crowd or crossing logic
+	var dir: int = 1  # +1 a -> b, -1 b -> a
 	var lat: float = 0.0
 	var lat_jit: float = 0.0
-	var plan: Array = []             # steps: {"edge": id, "dir": d} or {"pt": Vector3}
-	var pt_target := Vector3.ZERO    # current free-leg target
+	var plan: Array = []  # steps: {"edge": id, "dir": d} or {"pt": Vector3}
+	var pt_target := Vector3.ZERO  # current free-leg target
 	var on_leg: bool = false
-	var state: String = "walk"       # walk | wait | stand | hidden | react (reactions.gd has it)
+	var state: String = "walk"  # walk | wait | stand | hidden | react (reactions.gd has it)
 	var wait_t: float = 0.0
 	var stand_yaw: float = 0.0
 	var crossing: SW.PedEdge = null  # zebra it is registered on
@@ -72,9 +79,9 @@ class Walker extends RefCounted:
 	var vel := Vector3.ZERO
 	var v: float = 0.0
 	var phase: float = 0.0
-	var hold: bool = false           # conversation: stop and face the player
+	var hold: bool = false  # conversation: stop and face the player
 	var face_player: bool = false
-	var done: bool = false           # plan finished (owner reacts)
+	var done: bool = false  # plan finished (owner reacts)
 	var dead: bool = false
 	var node: Node3D = null
 	var lod: int = -1
@@ -82,36 +89,36 @@ class Walker extends RefCounted:
 	var last_node: int = -1
 	var stalled_s: float = 0.0
 	var acc_dt: float = 0.0
-	var info: Dictionary = {}        # its agents_near entry (refreshed in place)
+	var info: Dictionary = {}  # its agents_near entry (refreshed in place)
 	var info_serial: int = -1
 	var lod_far: bool = false
 	var lod_dt: float = 0.0
-	var gait: float = 0.0            # drawn stride amount 0..1 (eases toward the walking speed)
-	var fade: float = 1.0            # drawn opacity 0..1 (people spawned in view fade in)
-	var wait_slot: int = -1          # place in the little crowd waiting at a zebra
-	var go_delay: float = -1.0       # seconds before stepping off the curb once allowed
-	var chatty: bool = false         # stops to chat when meeting another chatty walker
+	var gait: float = 0.0  # drawn stride amount 0..1 (eases toward the walking speed)
+	var fade: float = 1.0  # drawn opacity 0..1 (people spawned in view fade in)
+	var wait_slot: int = -1  # place in the little crowd waiting at a zebra
+	var go_delay: float = -1.0  # seconds before stepping off the curb once allowed
+	var chatty: bool = false  # stops to chat when meeting another chatty walker
 	var chat_t: float = 0.0
 	var chat_cool: float = 0.0
 	var chat_lat: float = 0.0
 	var chat_with: Walker = null
-	var vis_off := Vector3.ZERO      # drawn offset from pos (eases; spreads a waiting crowd)
-	var vis_v: float = 0.0           # drawn speed (u/s): walking, or stepping into a crowd place
+	var vis_off := Vector3.ZERO  # drawn offset from pos (eases; spreads a waiting crowd)
+	var vis_v: float = 0.0  # drawn speed (u/s): walking, or stepping into a crowd place
 	# HC bodies (people.gd): avatar, stature, what the hands are busy with, and the clip playing.
-	var av: int = -1                 # avatar index, -1 until first drawn
-	var h_m: float = 1.75            # stature in metres
-	var extra: int = 0               # 0 hands free, 1 carrying a box, 2 on the phone
+	var av: int = -1  # avatar index, -1 until first drawn
+	var h_m: float = 1.75  # stature in metres
+	var extra: int = 0  # 0 hands free, 1 carrying a box, 2 on the phone
 	var idle_clip: StringName = &"idle"
 	var talk_clip: StringName = &"talk"
 	var anim_clip: StringName = &""
-	var anim_t: float = 0.0          # seconds into anim_clip
+	var anim_t: float = 0.0  # seconds into anim_clip
 	var anim_rate: float = 1.0
-	var body: Object = null          # people.gd Body while it draws this walker
-	var tier: int = -1               # people.gd LOD tier, -1 not drawn
-	var react: StringName = &""      # clip a reaction plays instead of its own (reactions.gd)
-	var react_t: float = 0.0         # seconds into react
-	var react_rate: float = 1.0      # pace react plays at (0 holds its pose)
-	var vis_tilt: float = 0.0        # drawn tip about the hips (rad, + forward): thrown or dragged
+	var body: Object = null  # people.gd Body while it draws this walker
+	var tier: int = -1  # people.gd LOD tier, -1 not drawn
+	var react: StringName = &""  # clip a reaction plays instead of its own (reactions.gd)
+	var react_t: float = 0.0  # seconds into react
+	var react_rate: float = 1.0  # pace react plays at (0 holds its pose)
+	var vis_tilt: float = 0.0  # drawn tip about the hips (rad, + forward): thrown or dragged
 
 
 var sw: SW
@@ -246,6 +253,7 @@ func _add_post(p: Vector2) -> void:
 
 # ------------------------------------------------------------------ stepping
 
+
 func step(dt: float) -> void:
 	var near2 := LOD_NEAR * LOD_NEAR
 	var full2 := LOD_FULL * LOD_FULL
@@ -344,6 +352,7 @@ func _walk_edge(w: Walker, dt: float) -> void:
 	var fwd := _fwd(w)
 	var v := w.speed
 	var lat_t := w.lat_jit
+	var lat_max := BAND + 0.012
 	var end := e.length if w.t_end < 0.0 else minf(w.t_end, e.length)
 	if w.far or w.lod_far:
 		w.v = v
@@ -371,7 +380,11 @@ func _walk_edge(w: Walker, dt: float) -> void:
 				if dist < SEP * 0.8 and absf(ahead) < SEP * 0.5 and o.state == "walk":
 					# Side by side and too close: drift apart.
 					var side_o := -dp.x * fwd.y + dp.z * fwd.x
-					lat_t = clampf(w.lat - signf(side_o if side_o != 0.0 else float(w.id - o.id)) * SEP, -BAND, BAND)
+					lat_t = clampf(
+						w.lat - signf(side_o if side_o != 0.0 else float(w.id - o.id)) * SEP,
+						-BAND,
+						BAND
+					)
 				if ahead <= 0.0:
 					continue
 				var ofwd := Vector2(sin(o.yaw), cos(o.yaw))
@@ -383,12 +396,21 @@ func _walk_edge(w: Walker, dt: float) -> void:
 						if dist < SEP * 0.9 and absf(side - w.lat) < SEP * 0.6:
 							v *= 0.4
 					continue
-				if ofwd.dot(fwd) < -0.3 and dist < CHAT_MEET and _may_chat(w, e) and _may_chat(o, o.edge):
+				if (
+					ofwd.dot(fwd) < -0.3
+					and dist < CHAT_MEET
+					and _may_chat(w, e)
+					and _may_chat(o, o.edge)
+				):
 					_start_chat(w, o)
 					return
 				if ofwd.dot(fwd) > 0.3:
 					if dist < SEP * 1.6 and o.v < v:
-						v = maxf(o.v, 0.0) if dist < SEP else lerpf(o.v, v, (dist - SEP) / (SEP * 0.6))
+						v = (
+							maxf(o.v, 0.0)
+							if dist < SEP
+							else lerpf(o.v, v, (dist - SEP) / (SEP * 0.6))
+						)
 				else:
 					lat_t = KEEP_RIGHT
 					if dist < SEP:
@@ -398,7 +420,14 @@ func _walk_edge(w: Walker, dt: float) -> void:
 		var dp := player_pos - w.pos
 		var ahead := dp.x * fwd.x + dp.z * fwd.y
 		var side := -dp.x * fwd.y + dp.z * fwd.x
-		if ahead > -0.4 * WS.M and ahead < 2.2 * WS.M and absf(side) < 1.2 * WS.M:
+		if Vector2(dp.x, dp.z).length() < WS.PLAYER_RADIUS + PERSON_R:
+			# Soft-solid: the hero's circle presses on us, so give way at once, a little further
+			# out than the usual dodge, and never press back while they are ahead of us.
+			lat_max = GIVE_WAY
+			lat_t = -GIVE_WAY if side > 0.0 else GIVE_WAY
+			if ahead > 0.0:
+				v = 0.0
+		elif ahead > -0.4 * WS.M and ahead < 2.2 * WS.M and absf(side) < 1.2 * WS.M:
 			# Step around the player, leaving the band a little if that is what it takes.
 			lat_t = -(BAND + 0.012) if side > 0.0 else (BAND + 0.012)
 			if ahead > 0.0 and ahead < 0.7 * WS.M and absf(side - w.lat) < 0.5 * WS.M:
@@ -414,7 +443,7 @@ func _walk_edge(w: Walker, dt: float) -> void:
 					if dp.length() < 1.2 * WS.M:
 						var side := -dp.x * fwd.y + dp.y * fwd.x
 						lat_t = -BAND * 0.8 if side > 0.0 else BAND * 0.8
-	w.lat = move_toward(w.lat, clampf(lat_t, -BAND - 0.012, BAND + 0.012), dt * 0.6 * WS.M)
+	w.lat = move_toward(w.lat, clampf(lat_t, -lat_max, lat_max), dt * 0.6 * WS.M)
 	w.v = v
 	w.t += v * dt
 	if v < 0.05 * WS.M:
@@ -528,7 +557,14 @@ func _next(w: Walker) -> void:
 
 ## True when w could stop to chat here: an ambient walker in the mood, on a plain sidewalk.
 func _may_chat(w: Walker, e: SW.PedEdge) -> bool:
-	if w.role != "ambient" or not w.chatty or w.chat_cool > 0.0 or w.state != "walk" or w.on_leg or w.hold:
+	if (
+		w.role != "ambient"
+		or not w.chatty
+		or w.chat_cool > 0.0
+		or w.state != "walk"
+		or w.on_leg
+		or w.hold
+	):
 		return false
 	if e == null or e.zebra or not w.plan.is_empty():
 		return false
@@ -582,7 +618,12 @@ func _begin_wait(w: Walker) -> void:
 	w.wait_t = 0.0
 	var taken := {}
 	for o: Walker in walkers:
-		if o != w and o.state == "wait" and not o.dead and o.pos.distance_squared_to(w.pos) < 0.0004:
+		if (
+			o != w
+			and o.state == "wait"
+			and not o.dead
+			and o.pos.distance_squared_to(w.pos) < 0.0004
+		):
 			taken[o.wait_slot] = true
 	var k := 0
 	while taken.has(k):

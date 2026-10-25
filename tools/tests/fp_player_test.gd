@@ -3,7 +3,8 @@ extends SceneTree
 ## the crouched eye, curbs and ledges, the jump, a landing taken over (land_hook) and the
 ## first-person roll, walls and sliding, building bodies, the soft step,
 ## water, props, interaction (targets, priorities, normalising, E, modals), photo mode, the save
-## and construction sites. First person (the kit default) on a grown city; movement asserts
+## and construction sites, the soft-solid people, a sprint at a thin wall and the walk-out of a
+## body left inside a building. First person (the kit default) on a grown city; movement asserts
 ## against collision.boxes(), never building_aabb.
 
 const K := preload("res://tools/tests/fp_kit.gd")
@@ -11,6 +12,7 @@ const D := preload("res://scripts/sim/sim_defs.gd")
 const WS := preload("res://scripts/fp/world_scale.gd")
 const SM := preload("res://scripts/fp/player/spring_math.gd")
 const PL := preload("res://scripts/fp/player/player.gd")
+const WK := preload("res://scripts/fp/traffic/walkers.gd")
 const DT := 1.0 / 60.0
 const M := WS.M
 const R := WS.PLAYER_RADIUS
@@ -20,7 +22,8 @@ var fails: Array[String] = []
 
 
 ## A feature whose pick() answers every ray with a fixed target (at a fixed distance along it).
-class StubPick extends FpFeature:
+class StubPick:
+	extends FpFeature
 	var result: Dictionary = {}
 	var at_dist: float = 0.0
 
@@ -56,6 +59,9 @@ func _init() -> void:
 	await _check_photo(ctx)
 	_check_save(ctx)
 	_check_sites(ctx)
+	_check_people(ctx)
+	_check_thin_wall(ctx)
+	_check_stuck(ctx)
 	K.finish(self, "FP_PLAYER_TEST", fails)
 
 
@@ -72,34 +78,63 @@ func _check_speeds(ctx: FpContext) -> void:
 	var run_hl := PL.HL_SPEED_UP_RUN if p.momentum else PL.HL_SPEED_UP
 	# Shift tops out at a run here; the sprint free running builds past it is fp_freerun_test's.
 	p.free_running = false
-	for row: Array in [["walk", false, false, WS.WALK, PL.HL_SPEED_UP], ["run", true, false, WS.RUN, run_hl], ["crouch-walk", false, true, WS.CROUCH_WALK, PL.HL_SPEED_UP]]:
+	for row: Array in [
+		["walk", false, false, WS.WALK, PL.HL_SPEED_UP],
+		["run", true, false, WS.RUN, run_hl],
+		["crouch-walk", false, true, WS.CROUCH_WALK, PL.HL_SPEED_UP]
+	]:
 		p.teleport(start, s["yaw"])
 		for k in range(180):
 			p.simulate(Vector2(0, 1), row[1], DT, row[2])
 		var d := Vector2(p.position.x - start.x, p.position.z - start.z).length()
 		var want: float = float(row[3]) * 3.0 - SM.stop_distance(float(row[3]), float(row[4]))
-		K.check(fails, absf(d - want) <= want * 0.03, "%s 3 s covers %.3f m (%.1f %% of %.3f m)" % [row[0], d / M, d / want * 100.0, want / M])
+		K.check(
+			fails,
+			absf(d - want) <= want * 0.03,
+			"%s 3 s covers %.3f m (%.1f %% of %.3f m)" % [row[0], d / M, d / want * 100.0, want / M]
+		)
 	p.free_running = true
 	for k in range(60):
 		p.simulate(Vector2.ZERO, false, DT, true)
 	var eye := p.eye_position().y - ctx.collision.walk_height(p.position)
-	K.check(fails, p.crouched and absf(eye - WS.CROUCH_EYE) <= 1e-4 and absf(p.position.y - ctx.collision.walk_height(p.position)) < 1e-6, "the crouched eye is %.4f m above the ground (CROUCH_EYE %.2f)" % [eye / M, WS.CROUCH_EYE / M])
+	K.check(
+		fails,
+		(
+			p.crouched
+			and absf(eye - WS.CROUCH_EYE) <= 1e-4
+			and absf(p.position.y - ctx.collision.walk_height(p.position)) < 1e-6
+		),
+		(
+			"the crouched eye is %.4f m above the ground (CROUCH_EYE %.2f)"
+			% [eye / M, WS.CROUCH_EYE / M]
+		)
+	)
 	for k in range(60):
 		p.simulate(Vector2.ZERO, false, DT, false)
-	K.check(fails, not p.crouched and absf(p.eye_position().y - p.position.y - WS.EYE) <= 1e-4, "releasing crouch stands up to EYE")
+	K.check(
+		fails,
+		not p.crouched and absf(p.eye_position().y - p.position.y - WS.EYE) <= 1e-4,
+		"releasing crouch stands up to EYE"
+	)
 	# No standing up under a ceiling: a box 1.4 m above the feet.
 	p.teleport(start, s["yaw"])
 	for k in range(30):
 		p.simulate(Vector2.ZERO, false, DT, true)
 	var gy := p.position.y
-	ctx.collision.add_test_box(AABB(Vector3(start.x - 0.02, gy + 1.4 * M, start.z - 0.02), Vector3(0.04, 0.02, 0.04)))
+	ctx.collision.add_test_box(
+		AABB(Vector3(start.x - 0.02, gy + 1.4 * M, start.z - 0.02), Vector3(0.04, 0.02, 0.04))
+	)
 	for k in range(30):
 		p.simulate(Vector2.ZERO, false, DT, false)
 	var stuck := p.crouched
 	ctx.collision.clear_test_boxes()
 	for k in range(30):
 		p.simulate(Vector2.ZERO, false, DT, false)
-	K.check(fails, stuck and not p.crouched, "you cannot stand up under a ceiling box; you can once it is gone")
+	K.check(
+		fails,
+		stuck and not p.crouched,
+		"you cannot stand up under a ceiling box; you can once it is gone"
+	)
 
 
 ## From the carriageway onto the sidewalk: the 12 cm curb is a step; a 40 cm ledge is not.
@@ -115,22 +150,37 @@ func _check_curb(ctx: FpContext) -> void:
 	var c := Vector3(D.tx(i), 0, D.ty(i))
 	var start := c + side * 0.2
 	p.teleport(start, rad_to_deg(atan2(-side.x, -side.z)))
-	K.check(fails, absf(p.position.y - WS.ASPHALT_TOP) < 1e-6, "fixture: the carriageway at ASPHALT_TOP")
+	K.check(
+		fails, absf(p.position.y - WS.ASPHALT_TOP) < 1e-6, "fixture: the carriageway at ASPHALT_TOP"
+	)
 	for k in range(120):
 		p.simulate(Vector2(0, 1), false, DT)
 	var out := (p.position - c).dot(side)
-	K.check(fails, out > WS.SIDEWALK_INNER + R and absf(p.position.y - WS.SIDEWALK_TOP) <= 1e-4, "walking onto the sidewalk climbs the curb (feet %.4f, %.3f from the centre)" % [p.position.y, out])
+	K.check(
+		fails,
+		out > WS.SIDEWALK_INNER + R and absf(p.position.y - WS.SIDEWALK_TOP) <= 1e-4,
+		(
+			"walking onto the sidewalk climbs the curb (feet %.4f, %.3f from the centre)"
+			% [p.position.y, out]
+		)
+	)
 	# A 0.02 u (40 cm) ledge across the path.
 	var across := Vector3(side.z, 0, -side.x).abs()
 	var ledge_c := c + side * 0.27
 	var size := across * 1.0 + side.abs() * 0.02 + Vector3(0, 0.02, 0)
-	col.add_test_box(AABB(Vector3(ledge_c.x - size.x * 0.5, WS.ASPHALT_TOP, ledge_c.z - size.z * 0.5), size))
+	col.add_test_box(
+		AABB(Vector3(ledge_c.x - size.x * 0.5, WS.ASPHALT_TOP, ledge_c.z - size.z * 0.5), size)
+	)
 	p.teleport(start, rad_to_deg(atan2(-side.x, -side.z)))
 	for k in range(120):
 		p.simulate(Vector2(0, 1), false, DT)
 	var stop := (p.position - c).dot(side)
 	col.clear_test_boxes()
-	K.check(fails, stop <= 0.26 - R + 1e-4, "a 0.02 u ledge blocks the walk (stopped %.4f from the centre, face at 0.26)" % stop)
+	K.check(
+		fails,
+		stop <= 0.26 - R + 1e-4,
+		"a 0.02 u ledge blocks the walk (stopped %.4f from the centre, face at 0.26)" % stop
+	)
 
 
 ## Jump: apex 0.5-0.7 m above the take-off ground, back on the ground within 1 s.
@@ -145,10 +195,8 @@ func _check_jump(ctx: FpContext) -> void:
 	var landed := -1.0
 	var steps := [0]
 	var land_speeds: Array[float] = []
-	var on_step := func(_surface: String, _pos: Vector3) -> void:
-		steps[0] += 1
-	var on_land := func(speed: float, _rolled: bool) -> void:
-		land_speeds.append(speed)
+	var on_step := func(_surface: String, _pos: Vector3) -> void: steps[0] += 1
+	var on_land := func(speed: float, _rolled: bool) -> void: land_speeds.append(speed)
 	p.stepped.connect(on_step)
 	p.landed.connect(on_land)
 	p.simulate(Vector2.ZERO, false, DT, false, true)
@@ -161,7 +209,11 @@ func _check_jump(ctx: FpContext) -> void:
 	p.stepped.disconnect(on_step)
 	p.landed.disconnect(on_land)
 	var apex := top - g0
-	K.check(fails, left and apex >= 0.5 * M and apex <= 0.7 * M and landed > 0.0 and landed <= 1.0, "jump: apex %.3f m, landed after %.2f s" % [apex / M, landed])
+	K.check(
+		fails,
+		left and apex >= 0.5 * M and apex <= 0.7 * M and landed > 0.0 and landed <= 1.0,
+		"jump: apex %.3f m, landed after %.2f s" % [apex / M, landed]
+	)
 	var land_ok := land_speeds.size() == 1 and absf(land_speeds[0] - WS.JUMP_SPEED / M) < 0.3
 	var land_msg := "a landing in place is one footstep (%d) and one landed at %s m/s"
 	K.check(fails, int(steps[0]) == 1 and land_ok, land_msg % [int(steps[0]), str(land_speeds)])
@@ -188,8 +240,7 @@ func _check_land_hook(ctx: FpContext) -> void:
 	var asked: Array[float] = []
 	var said: Array[bool] = []
 	var put: Array[Vector3] = []
-	var on_land := func(_speed: float, rolled: bool) -> void:
-		said.append(rolled)
+	var on_land := func(_speed: float, rolled: bool) -> void: said.append(rolled)
 	p.landed.connect(on_land)
 	p.land_hook = func(v: float) -> bool:
 		asked.append(v)
@@ -296,7 +347,14 @@ func _check_walls(ctx: FpContext) -> void:
 				if not hit.is_empty():
 					bad.append("tile %d: %s" % [i, hit])
 					break
-	K.check(fails, picked.size() >= 6 and tried >= 6 and bad.is_empty(), "walking into %d buildings near City Hall from %d sides never enters a box %s" % [picked.size(), tried, str(bad.slice(0, 3))])
+	K.check(
+		fails,
+		picked.size() >= 6 and tried >= 6 and bad.is_empty(),
+		(
+			"walking into %d buildings near City Hall from %d sides never enters a box %s"
+			% [picked.size(), tried, str(bad.slice(0, 3))]
+		)
+	)
 
 
 ## Walking diagonally into a long wall keeps at least half the speed along it.
@@ -331,7 +389,14 @@ func _check_slide(ctx: FpContext) -> void:
 				p.simulate(Vector2(0.7071, 0.7071), false, DT)
 			var along := (p.position.x - x0) / 1.0
 			var tangential := WS.WALK * 0.7071
-			K.check(fails, along >= 0.5 * tangential and p.position.z <= b.position.z - R * 0.99, "a diagonal walk into a wall slides along it at %.0f %% of the tangential speed" % (along / tangential * 100.0))
+			K.check(
+				fails,
+				along >= 0.5 * tangential and p.position.z <= b.position.z - R * 0.99,
+				(
+					"a diagonal walk into a wall slides along it at %.0f %% of the tangential speed"
+					% (along / tangential * 100.0)
+				)
+			)
 			return
 	K.check(fails, false, "fixture: a building wall with a clear walk along it")
 
@@ -371,7 +436,14 @@ func _check_bodies(ctx: FpContext) -> void:
 		var hit := col.raycast(eye, dir, WS.INTERACT_RANGE, false)
 		if not bool(hit["hit"]) or str(hit["kind"]) != "building" or int(hit["tile"]) != i:
 			unreach.append(str(i))
-	K.check(fails, n > 5 and bad.is_empty(), "%d buildings: at most 4 bodies each, all inside building_aabb %s" % [n, str(bad.slice(0, 3))])
+	K.check(
+		fails,
+		n > 5 and bad.is_empty(),
+		(
+			"%d buildings: at most 4 bodies each, all inside building_aabb %s"
+			% [n, str(bad.slice(0, 3))]
+		)
+	)
 	# Colliders rebuild per tile on demand, within 0.2 ms a tile.
 	col.rebuild_all()
 	var built := 0
@@ -385,9 +457,24 @@ func _check_bodies(ctx: FpContext) -> void:
 		worst = maxi(worst, Time.get_ticks_usec() - t0)
 		built += 1
 	var avg := float(Time.get_ticks_usec() - t_all) / float(maxi(built, 1))
-	K.check(fails, built > 20 and avg < 200.0, "colliders build in %.0f us a tile on average (%d tiles, worst %d us)" % [avg, built, worst])
-	K.check(fails, smaller * 2 > n, "bodies leave the yards open: %d of %d lots block under 90 %% of their bounds" % [smaller, n])
-	K.check(fails, unreach.is_empty(), "every building answers a ray from its frontage sidewalk %s" % str(unreach.slice(0, 5)))
+	K.check(
+		fails,
+		built > 20 and avg < 200.0,
+		"colliders build in %.0f us a tile on average (%d tiles, worst %d us)" % [avg, built, worst]
+	)
+	K.check(
+		fails,
+		smaller * 2 > n,
+		(
+			"bodies leave the yards open: %d of %d lots block under 90 %% of their bounds"
+			% [smaller, n]
+		)
+	)
+	K.check(
+		fails,
+		unreach.is_empty(),
+		"every building answers a ray from its frontage sidewalk %s" % str(unreach.slice(0, 5))
+	)
 
 
 ## A park: its trees never block, most of it is open and it can be walked across.
@@ -397,7 +484,13 @@ func _check_park(ctx: FpContext) -> void:
 	var col := ctx.collision
 	var lot := -1
 	for i in sim.active:
-		if sim.kind[i] == D.EMPTY and sim.terrain[i] != D.WATER and not sim.sites.has(i) and ctx.directory.frontage(i) >= 0 and col.boxes(i).is_empty():
+		if (
+			sim.kind[i] == D.EMPTY
+			and sim.terrain[i] != D.WATER
+			and not sim.sites.has(i)
+			and ctx.directory.frontage(i) >= 0
+			and col.boxes(i).is_empty()
+		):
 			var free := true
 			for dz in range(-1, 2):
 				for dx in range(-1, 2):
@@ -421,7 +514,11 @@ func _check_park(ctx: FpContext) -> void:
 			total += 1
 			if not col.is_blocked(q, R):
 				open += 1
-	K.check(fails, open >= total * 0.8, "the park is %.0f %% open (trees do not block)" % (open * 100.0 / total))
+	K.check(
+		fails,
+		open >= total * 0.8,
+		"the park is %.0f %% open (trees do not block)" % (open * 100.0 / total)
+	)
 	# Across the park through (or, past a fountain, just beside) its centre.
 	var best_off := NAN
 	for off: float in [0.0, 0.03, -0.03, 0.06, -0.06, 0.1, -0.1, 0.14, -0.14]:
@@ -440,7 +537,14 @@ func _check_park(ctx: FpContext) -> void:
 	p.teleport(start, -90.0)
 	for k in range(int(0.9 / WS.WALK / DT) + 60):
 		p.simulate(Vector2(0, 1), false, DT)
-	K.check(fails, p.position.x > c.x + 0.4, "walked across the park (to %.3f past its centre, line %.2f off)" % [p.position.x - c.x, best_off])
+	K.check(
+		fails,
+		p.position.x > c.x + 0.4,
+		(
+			"walked across the park (to %.3f past its centre, line %.2f off)"
+			% [p.position.x - c.x, best_off]
+		)
+	)
 
 
 ## Interim soft step: from grass, onto a lot and a sidewalk, and back.
@@ -451,7 +555,12 @@ func _check_soft_step(ctx: FpContext) -> void:
 	var done := 0
 	var bad: Array[String] = []
 	for i in sim.active:
-		if sim.kind[i] != D.EMPTY or sim.terrain[i] == D.WATER or not col.boxes(i).is_empty() or not col.cylinders(i).is_empty():
+		if (
+			sim.kind[i] != D.EMPTY
+			or sim.terrain[i] == D.WATER
+			or not col.boxes(i).is_empty()
+			or not col.cylinders(i).is_empty()
+		):
 			continue
 		for dv: Vector2i in [Vector2i(1, 0), Vector2i(-1, 0), Vector2i(0, 1), Vector2i(0, -1)]:
 			var x := D.tx(i) + dv.x
@@ -477,19 +586,39 @@ func _check_soft_step(ctx: FpContext) -> void:
 				p.simulate(Vector2(0, 1), true, DT)
 				if (p.position - c).dot(dir) >= 0.75:
 					break
-			var up := (p.position - c).dot(dir) >= 0.7 and col.tile_at(p.position) == j and absf(p.position.y - col.walk_height(p.position)) < 1e-4
+			var up := (
+				(p.position - c).dot(dir) >= 0.7
+				and col.tile_at(p.position) == j
+				and absf(p.position.y - col.walk_height(p.position)) < 1e-4
+			)
 			for k in range(240):
 				p.simulate(Vector2(0, -1), true, DT)
 				if (p.position - c).dot(dir) <= 0.2:
 					break
 			var back := (p.position - c).dot(dir) <= 0.25 and col.tile_at(p.position) == i
 			if not (up and back):
-				bad.append("grass %d -> %s %d (up %s back %s at %s)" % [i, "road" if sim.kind[j] == D.ROAD else "lot", j, up, back, str(p.position)])
+				bad.append(
+					(
+						"grass %d -> %s %d (up %s back %s at %s)"
+						% [
+							i,
+							"road" if sim.kind[j] == D.ROAD else "lot",
+							j,
+							up,
+							back,
+							str(p.position)
+						]
+					)
+				)
 			done += 1
 			break
 		if done >= 4:
 			break
-	K.check(fails, done >= 2 and bad.is_empty(), "grass to a higher tile and back over the soft step (%d edges) %s" % [done, str(bad)])
+	K.check(
+		fails,
+		done >= 2 and bad.is_empty(),
+		"grass to a higher tile and back over the soft step (%d edges) %s" % [done, str(bad)]
+	)
 
 
 ## Walking toward the river stops at the edge: never over a water tile.
@@ -515,9 +644,24 @@ func _check_water(ctx: FpContext) -> void:
 			for k in range(300):
 				p.simulate(Vector2(0, 1), true, DT)
 				var t := col.tile_at(p.position)
-				wet = wet or t < 0 or sim.terrain[t] == D.WATER and sim.kind[t] != D.ROAD or is_nan(col.ground_height(p.position))
+				wet = (
+					wet
+					or t < 0
+					or sim.terrain[t] == D.WATER and sim.kind[t] != D.ROAD
+					or is_nan(col.ground_height(p.position))
+				)
 			var edge := (p.position - start).dot(to)
-			K.check(fails, not wet and edge > 0.45, "walking toward the river stops at the edge (%.3f from the bank tile centre), never over water" % edge)
+			(
+				K
+				. check(
+					fails,
+					not wet and edge > 0.45,
+					(
+						"walking toward the river stops at the edge (%.3f from the bank tile centre), never over water"
+						% edge
+					)
+				)
+			)
 			return
 	K.check(fails, false, "fixture: a river bank")
 
@@ -537,11 +681,17 @@ func _check_props(ctx: FpContext) -> void:
 		if h == null:
 			continue
 		for ch: Node in h.get_children():
-			if ch is Node3D and (ch as Node3D).scene_file_path.ends_with("road_straight_lights.glb"):
+			if (
+				ch is Node3D
+				and (ch as Node3D).scene_file_path.ends_with("road_straight_lights.glb")
+			):
 				var bulb := (ch as Node3D).get_node_or_null("Bulb_0") as Node3D
 				if bulb != null:
 					var bp := bulb.position
-					lamp = h.transform * ((ch as Node3D).transform * Vector3(bp.x + signf(bp.x) * 0.08, 0, bp.z))
+					lamp = (
+						h.transform
+						* ((ch as Node3D).transform * Vector3(bp.x + signf(bp.x) * 0.08, 0, bp.z))
+					)
 					lamp_tile = i
 		if lamp_tile >= 0:
 			break
@@ -557,8 +707,14 @@ func _check_props(ctx: FpContext) -> void:
 			p.teleport(from, rad_to_deg(atan2(-to.x, -to.z)))
 			for k in range(120):
 				p.simulate(Vector2(0, 1), false, DT)
-				closest = minf(closest, Vector2(p.position.x - lamp.x, p.position.z - lamp.z).length())
-		K.check(fails, closest < INF and closest >= R + 0.008 - 1e-5, "the Bulb_0 lamp pole blocks (closest %.4f, pole + radius %.4f)" % [closest, R + 0.008])
+				closest = minf(
+					closest, Vector2(p.position.x - lamp.x, p.position.z - lamp.z).length()
+				)
+		K.check(
+			fails,
+			closest < INF and closest >= R + 0.008 - 1e-5,
+			"the Bulb_0 lamp pole blocks (closest %.4f, pole + radius %.4f)" % [closest, R + 0.008]
+		)
 	# A bus shelter.
 	var stop := -1
 	for i: int in ctx.view.bus_stops.keys():
@@ -569,7 +725,13 @@ func _check_props(ctx: FpContext) -> void:
 		var shelter := AABB()
 		var h := ctx.view.tile_holder(stop)
 		for ch: Node in h.get_children():
-			if ch is Node3D and ((ch as Node3D).scene_file_path.contains("bus_stop") or (ch as Node3D).scene_file_path.is_empty() and not (ch is MeshInstance3D)):
+			if (
+				ch is Node3D
+				and (
+					(ch as Node3D).scene_file_path.contains("bus_stop")
+					or (ch as Node3D).scene_file_path.is_empty() and not (ch is MeshInstance3D)
+				)
+			):
 				var off := Vector2((ch as Node3D).position.x, (ch as Node3D).position.z)
 				if off.length() > 0.3:
 					shelter = AABB(h.transform * (ch as Node3D).position, Vector3.ZERO)
@@ -586,19 +748,49 @@ func _check_props(ctx: FpContext) -> void:
 				for k in range(120):
 					p.simulate(Vector2(0, 1), false, DT)
 					inside = inside or b.grow(R * 0.99).has_point(p.position)
-		K.check(fails, found and not inside, "the bus shelter is a box and walking into it stops outside")
+		K.check(
+			fails,
+			found and not inside,
+			"the bus shelter is a box and walking into it stops outside"
+		)
 	# A holder `colliders` meta (G1) replaces every other prop source on that holder.
 	var holder := ctx.view.tile_holder(lamp_tile) if lamp_tile >= 0 else null
 	if holder != null:
-		holder.set_meta("colliders", [{"shape": "box", "pos": Vector3(0.1, 0, 0.1), "size": Vector3(0.05, 0.05, 0.05), "yaw": 0.0}, {"shape": "cyl", "pos": Vector3(-0.1, 0, -0.1), "r": 0.01}])
+		holder.set_meta(
+			"colliders",
+			[
+				{
+					"shape": "box",
+					"pos": Vector3(0.1, 0, 0.1),
+					"size": Vector3(0.05, 0.05, 0.05),
+					"yaw": 0.0
+				},
+				{"shape": "cyl", "pos": Vector3(-0.1, 0, -0.1), "r": 0.01}
+			]
+		)
 		col.on_tile_built(lamp_tile, holder)
 		var bx := col.boxes(lamp_tile)
 		var cy := col.cylinders(lamp_tile)
 		var want := holder.transform * Vector3(0.1, 0, 0.1)
-		var ok := bx.size() == 1 and bx[0].get_center().is_equal_approx(want + Vector3(0, 0.025, 0)) and cy.size() == 4 and is_equal_approx(cy[2], 0.01)
+		var ok := (
+			bx.size() == 1
+			and bx[0].get_center().is_equal_approx(want + Vector3(0, 0.025, 0))
+			and cy.size() == 4
+			and is_equal_approx(cy[2], 0.01)
+		)
 		holder.remove_meta("colliders")
 		col.on_tile_built(lamp_tile, holder)
-		K.check(fails, ok, "a holder colliders meta is the only prop source for that holder (%d boxes, %d cylinders)" % [bx.size(), cy.size() / 4])
+		(
+			K
+			. check(
+				fails,
+				ok,
+				(
+					"a holder colliders meta is the only prop source for that holder (%d boxes, %d cylinders)"
+					% [bx.size(), cy.size() / 4]
+				)
+			)
+		)
 
 
 ## Interaction: targets, priorities, normalising, E, modals.
@@ -612,18 +804,34 @@ func _check_interact(ctx: FpContext) -> void:
 	ctx.bus.interact_requested.connect(func(t: Dictionary) -> void: requested.append(t))
 	ctx.bus.talk_requested.connect(func(id: String) -> void: talks.append(id))
 	var b := _frontage(ctx, WS.SIDEWALK_CENTER)
-	K.check(fails, not b.is_empty() and feat != null, "fixture: a building and the interact feature")
+	K.check(
+		fails, not b.is_empty() and feat != null, "fixture: a building and the interact feature"
+	)
 	if b.is_empty() or feat == null:
 		return
 	p.teleport(b["pos"], b["yaw"])
 	targets.clear()
 	feat.call("evaluate")
 	feat.call("evaluate")
-	K.check(fails, targets.size() == 1 and str(targets[0].get("kind", "")) == "building" and int(targets[0].get("tile", -1)) == int(b["tile"]) and not str(targets[0].get("label", "")).is_empty(), "facing a building gives exactly one building target (%s)" % str(targets.map(func(t: Dictionary) -> String: return str(t.get("label", "")))))
+	K.check(
+		fails,
+		(
+			targets.size() == 1
+			and str(targets[0].get("kind", "")) == "building"
+			and int(targets[0].get("tile", -1)) == int(b["tile"])
+			and not str(targets[0].get("label", "")).is_empty()
+		),
+		(
+			"facing a building gives exactly one building target (%s)"
+			% str(targets.map(func(t: Dictionary) -> String: return str(t.get("label", ""))))
+		)
+	)
 	p.carry(p.position, p.yaw, Vector3.ZERO, true)
 	var held: Dictionary = feat.call("evaluate")
 	p.release(true)
-	K.check(fails, held.is_empty(), "nothing to interact with while a parkour move carries the body")
+	K.check(
+		fails, held.is_empty(), "nothing to interact with while a parkour move carries the body"
+	)
 	# A resident 2 m away beats a building 5 m away.
 	# Back off along the ray until the building's bounds are 5 m ahead of the eye.
 	var bdir := Vector3(-sin(deg_to_rad(float(b["yaw"]))), 0, -cos(deg_to_rad(float(b["yaw"]))))
@@ -640,20 +848,44 @@ func _check_interact(ctx: FpContext) -> void:
 	p.teleport(far["pos"], far["yaw"])
 	feat.call("evaluate")
 	var bdist := float((feat.get("target") as Dictionary).get("dist", 0.0))
-	stub.result = {"kind": "resident", "id": rid, "tile": -1, "label": "Talk to Someone", "data": {}}
+	stub.result = {
+		"kind": "resident", "id": rid, "tile": -1, "label": "Talk to Someone", "data": {}
+	}
 	stub.at_dist = 2.0 * M
 	var t: Dictionary = feat.call("evaluate")
-	K.check(fails, bdist > 4.0 * M and str(t.get("kind", "")) == "resident" and str(t.get("id", "")) == rid, "a resident 2 m away wins over the building %.1f m away" % (bdist / M))
-	stub.result = {"kind": "pedestrian", "id": "ped_7", "tile": -1, "label": "a pedestrian", "data": {"driver_id": rid}}
+	K.check(
+		fails,
+		bdist > 4.0 * M and str(t.get("kind", "")) == "resident" and str(t.get("id", "")) == rid,
+		"a resident 2 m away wins over the building %.1f m away" % (bdist / M)
+	)
+	stub.result = {
+		"kind": "pedestrian",
+		"id": "ped_7",
+		"tile": -1,
+		"label": "a pedestrian",
+		"data": {"driver_id": rid}
+	}
 	t = feat.call("evaluate")
 	var name := str(ctx.residents.find(rid).get("name", ""))
-	K.check(fails, str(t.get("kind", "")) == "resident" and str(t.get("id", "")) == rid and str(t.get("label", "")).contains(name), "a pedestrian with a driver_id becomes that resident (%s)" % str(t.get("label", "")))
+	K.check(
+		fails,
+		(
+			str(t.get("kind", "")) == "resident"
+			and str(t.get("id", "")) == rid
+			and str(t.get("label", "")).contains(name)
+		),
+		"a pedestrian with a driver_id becomes that resident (%s)" % str(t.get("label", ""))
+	)
 	# E: interact_requested, and talk_requested for residents.
 	requested.clear()
 	talks.clear()
 	_press("interact")
 	await process_frame
-	K.check(fails, requested.size() == 1 and talks == [rid], "E emits interact_requested and talk_requested (%d, %s)" % [requested.size(), str(talks)])
+	K.check(
+		fails,
+		requested.size() == 1 and talks == [rid],
+		"E emits interact_requested and talk_requested (%d, %s)" % [requested.size(), str(talks)]
+	)
 	# Modal: the prompt clears, E does nothing, the frame that pops the modal ignores E.
 	targets.clear()
 	ctx.push_modal(&"test")
@@ -664,7 +896,11 @@ func _check_interact(ctx: FpContext) -> void:
 	var p0 := p.position
 	for k in range(30):
 		p.simulate(Vector2(0, 1), true, DT)
-	K.check(fails, cleared and requested.is_empty() and p.position.distance_to(p0) < 1e-9, "a modal clears the prompt, freezes the walker and blocks E")
+	K.check(
+		fails,
+		cleared and requested.is_empty() and p.position.distance_to(p0) < 1e-9,
+		"a modal clears the prompt, freezes the walker and blocks E"
+	)
 	ctx.pop_modal(&"test")
 	_press("interact")
 	await process_frame
@@ -689,7 +925,11 @@ func _check_photo(ctx: FpContext) -> void:
 	var on_req := func(t: Dictionary) -> void: requested.append(t)
 	ctx.bus.interact_requested.connect(on_req)
 	p.set_photo_mode(true)
-	K.check(fails, p.photo_mode and not ctx.hud.is_hud_visible() and not ctx.is_modal(), "photo mode hides the HUD without a modal")
+	K.check(
+		fails,
+		p.photo_mode and not ctx.hud.is_hud_visible() and not ctx.is_modal(),
+		"photo mode hides the HUD without a modal"
+	)
 	var y0 := p.view_position().y
 	for k in range(30):
 		p.simulate(Vector2.ZERO, false, DT, true, false)
@@ -699,7 +939,11 @@ func _check_photo(ctx: FpContext) -> void:
 		p.simulate(Vector2.ZERO, false, DT, false, true)
 		p.update_view(DT)
 	var y2 := p.view_position().y
-	K.check(fails, y1 < y0 - 0.1 * M and y2 > y1 + 0.5 * M, "crouch flies down (%.2f m) and jump up (%.2f m)" % [(y1 - y0) / M, (y2 - y1) / M])
+	K.check(
+		fails,
+		y1 < y0 - 0.1 * M and y2 > y1 + 0.5 * M,
+		"crouch flies down (%.2f m) and jump up (%.2f m)" % [(y1 - y0) / M, (y2 - y1) / M]
+	)
 	for _k in range(180):
 		p.simulate(Vector2.ZERO, false, DT, true, false)
 		p.update_view(DT)
@@ -711,9 +955,21 @@ func _check_photo(ctx: FpContext) -> void:
 		feat.call("evaluate")
 	_press("interact")
 	await process_frame
-	K.check(fails, requested.is_empty() and (feat == null or (feat.get("target") as Dictionary).is_empty()), "E does nothing in photo mode")
+	K.check(
+		fails,
+		requested.is_empty() and (feat == null or (feat.get("target") as Dictionary).is_empty()),
+		"E does nothing in photo mode"
+	)
 	p.set_photo_mode(false)
-	K.check(fails, not p.photo_mode and p.position.distance_to(feet) < 1e-6 and ctx.hud.is_hud_visible() == hud_was, "leaving photo mode restores the feet and the HUD")
+	K.check(
+		fails,
+		(
+			not p.photo_mode
+			and p.position.distance_to(feet) < 1e-6
+			and ctx.hud.is_hud_visible() == hud_was
+		),
+		"leaving photo mode restores the feet and the HUD"
+	)
 	ctx.bus.interact_requested.disconnect(on_req)
 
 
@@ -733,9 +989,28 @@ func _check_save(ctx: FpContext) -> void:
 	for k in range(30):
 		p.simulate(Vector2.ZERO, false, DT, false)
 	p.from_dict(d)
-	K.check(fails, p.position.distance_to(pos) < 1e-4 and p.crouched and absf(wrapf(p.cam_yaw - cy, -PI, PI)) < 1e-4 and absf(p.cam_pitch - cp) < 1e-4 and not bool(d.get("photo", true)) and str(d.get("camera_mode", "")) == "first", "to_dict/from_dict round-trips the pose, the view and crouch")
+	K.check(
+		fails,
+		(
+			p.position.distance_to(pos) < 1e-4
+			and p.crouched
+			and absf(wrapf(p.cam_yaw - cy, -PI, PI)) < 1e-4
+			and absf(p.cam_pitch - cp) < 1e-4
+			and not bool(d.get("photo", true))
+			and str(d.get("camera_mode", "")) == "first"
+		),
+		"to_dict/from_dict round-trips the pose, the view and crouch"
+	)
 	p.from_dict({"pos": [pos.x, pos.y, pos.z], "yaw": 30.0, "pitch": 5.0})
-	K.check(fails, absf(rad_to_deg(p.cam_yaw) - 30.0) < 1e-3 and absf(rad_to_deg(p.cam_pitch) - 5.0) < 1e-3 and p.camera_mode == "first", "an S0 save loads with the view from the body")
+	K.check(
+		fails,
+		(
+			absf(rad_to_deg(p.cam_yaw) - 30.0) < 1e-3
+			and absf(rad_to_deg(p.cam_pitch) - 5.0) < 1e-3
+			and p.camera_mode == "first"
+		),
+		"an S0 save loads with the view from the body"
+	)
 	for k in range(30):
 		p.simulate(Vector2.ZERO, false, DT, false)
 
@@ -752,7 +1027,9 @@ func _check_sites(ctx: FpContext) -> void:
 	var builds := ["police", "school", "fire_station"]
 	for k in range(mini(lots.size(), builds.size())):
 		sim.mayors[0]["treasury"] = int(sim.mayors[0]["treasury"]) + 50000
-		sim.apply_action(0, {"type": "build", "building": builds[k], "x": int(lots[k][0]), "y": int(lots[k][1])})
+		sim.apply_action(
+			0, {"type": "build", "building": builds[k], "x": int(lots[k][0]), "y": int(lots[k][1])}
+		)
 	sim.step_tick()
 	sim.construction_mode = mode
 	var face := 0.474
@@ -765,7 +1042,11 @@ func _check_sites(ctx: FpContext) -> void:
 	var parts_ok := true
 	var parts := 0
 	for i: int in sim.sites.keys():
-		if str((sim.sites[i] as Dictionary)["type"]) != "build" or sim.terrain[i] == D.WATER or ctx.view.site_boxes(i).is_empty():
+		if (
+			str((sim.sites[i] as Dictionary)["type"]) != "build"
+			or sim.terrain[i] == D.WATER
+			or ctx.view.site_boxes(i).is_empty()
+		):
 			continue
 		var c := Vector3(D.tx(i), 0, D.ty(i))
 		var open := ctx.view.site_gate(i)
@@ -789,7 +1070,12 @@ func _check_sites(ctx: FpContext) -> void:
 			walks += 1
 			if inside or out < face + R * 0.99 or out > face + R + 0.02:
 				stops_ok = false
-				print("  site %d side %d stopped %.4f from the centre (inside %s)" % [i, k, out, inside])
+				print(
+					(
+						"  site %d side %d stopped %.4f from the centre (inside %s)"
+						% [i, k, out, inside]
+					)
+				)
 			for st: Array in [[0.7, false], [2.72, false], [2.72, true]]:
 				if st[1]:
 					p.teleport(start, rad_to_deg(atan2(dir.x, dir.z)))
@@ -797,18 +1083,248 @@ func _check_sites(ctx: FpContext) -> void:
 				var o := (p.position - c).dot(dir)
 				if not _inside_any(ctx, p.position, R * 0.99).is_empty() or o < face + R * 0.99:
 					long_ok = false
-					print("  site %d side %d: a %.2f s step ended %.4f from the centre" % [i, k, st[0], o])
-		var site := ctx.view.tile_holder(i).get_node_or_null("Site") as Node3D if ctx.view.tile_holder(i) != null else null
+					print(
+						(
+							"  site %d side %d: a %.2f s step ended %.4f from the centre"
+							% [i, k, st[0], o]
+						)
+					)
+		var site := (
+			ctx.view.tile_holder(i).get_node_or_null("Site") as Node3D
+			if ctx.view.tile_holder(i) != null
+			else null
+		)
 		if site != null:
 			for a: AABB in _walker_parts(site):
 				parts += 1
 				if not _covered(a, ctx, i):
 					parts_ok = false
-					print("  site %d: part x[%.3f,%.3f] z[%.3f,%.3f] y[%.3f,%.3f] in no collision box" % [i, a.position.x, a.end.x, a.position.z, a.end.z, a.position.y, a.end.y])
-	K.check(fails, walks > 0 and stops_ok, "walking at a hoarding stops at its face (%d walks)" % walks)
+					print(
+						(
+							"  site %d: part x[%.3f,%.3f] z[%.3f,%.3f] y[%.3f,%.3f] in no collision box"
+							% [
+								i,
+								a.position.x,
+								a.end.x,
+								a.position.z,
+								a.end.z,
+								a.position.y,
+								a.end.y
+							]
+						)
+					)
+	K.check(
+		fails, walks > 0 and stops_ok, "walking at a hoarding stops at its face (%d walks)" % walks
+	)
 	K.check(fails, walks > 0 and long_ok, "0.7 and 2.72 s steps against a hoarding never tunnel")
-	K.check(fails, gates > 0 and gate_ok, "walking in through the gate never enters a site part (%d gates)" % gates)
-	K.check(fails, parts > 0 and parts_ok, "every drawn site part a walker can hit lies in a collision box (%d parts)" % parts)
+	K.check(
+		fails,
+		gates > 0 and gate_ok,
+		"walking in through the gate never enters a site part (%d gates)" % gates
+	)
+	K.check(
+		fails,
+		parts > 0 and parts_ok,
+		"every drawn site part a walker can hit lies in a collision box (%d parts)" % parts
+	)
+
+
+## People are soft-solid (CollisionWorld people_circles from walkers_near, eased out a sub-step
+## but never through a hard blocker or off walkable ground): walking straight at someone standing
+## on the sidewalk stops the hero at the combined reach without passing through, and an angled
+## approach slides them round so the hero carries on along the way. The walkers give way in turn
+## (walkers.gd; their half of it is fp_traffic_test's).
+func _check_people(ctx: FpContext) -> void:
+	var p := ctx.player
+	var traffic := K.make_feature(ctx, "traffic")
+	if traffic == null:
+		K.check(fails, false, "fixture: the traffic feature")
+		return
+	traffic.set("auto_step", false)
+	traffic.set("ambient_enabled", false)
+	K.quiet_walkers(traffic)
+	var wk: WK = traffic.get("walkers")
+	# Loud guard: a check that aborts on a missing module still prints PASS (a harness
+	# hazard); a wrong member name must fail as a fixture, never silently.
+	if wk == null:
+		K.check(fails, false, "fixture: the traffic feature's walkers module (traffic.walkers)")
+		return
+	var s := K.sidewalk(ctx, 1.2)
+	K.check(fails, not s.is_empty(), "fixture: a clear straight sidewalk")
+	if s.is_empty():
+		return
+	var reach := R + CollisionWorld.PERSON_R
+	# Straight at someone standing 1.5 m ahead: stopped at the combined reach, never through.
+	p.teleport(s["pos"], s["yaw"])
+	var w: WK.Walker = K.person_ahead(ctx, traffic, 1.5)
+	var at: Vector3 = w.pos
+	var fwd := p.body_forward()
+	var min_d := INF
+	var passed := false
+	for _k in range(240):
+		p.simulate(Vector2(0, 1), false, DT)
+		min_d = minf(min_d, Vector2(p.position.x - at.x, p.position.z - at.z).length())
+		passed = passed or (p.position - at).dot(fwd) > 0.06 * M
+	wk.remove(w)
+	(
+		K
+		. check(
+			fails,
+			min_d < reach + 0.5 * M and min_d >= reach - 0.1 * M and not passed,
+			(
+				"walking straight at a person stops at %.2f m, their combined reach %.2f m, never through"
+				% [min_d / M, reach / M]
+			)
+		)
+	)
+	# At an angle: the hero slips round them and carries on along the way.
+	p.teleport(s["pos"], s["yaw"])
+	var cy := deg_to_rad(float(s["yaw"]))
+	var wish := Vector2(0.4, 0.9165)
+	var dir := (
+		Vector3(cos(cy) * wish.x - sin(cy) * wish.y, 0.0, -sin(cy) * wish.x - cos(cy) * wish.y)
+		. normalized()
+	)
+	var w2: WK.Walker = wk.make("ambient")
+	wk.stand(w2, p.position + dir * 1.4 * M, atan2(-dir.x, -dir.z))
+	var at2: Vector3 = w2.pos
+	var min_d2 := INF
+	for _k in range(240):
+		p.simulate(wish, false, DT)
+		min_d2 = minf(min_d2, Vector2(p.position.x - at2.x, p.position.z - at2.z).length())
+	wk.remove(w2)
+	var along := (p.position - (s["pos"] as Vector3)).dot(dir)
+	K.check(
+		fails,
+		min_d2 < reach + 0.5 * M and min_d2 >= reach - 0.1 * M and along > 0.9 * M,
+		(
+			"an angled approach slides the hero round (closest %.2f m, %.2f m along the way)"
+			% [min_d2 / M, along / M]
+		)
+	)
+
+
+## A sprint at a wall as thin as a site hoarding (0.008 u, 16 cm) never tunnels, whatever the
+## frame length: sub-steps keep every move within PLAYER_RADIUS of the last position.
+func _check_thin_wall(ctx: FpContext) -> void:
+	var p := ctx.player
+	var col := ctx.collision
+	var s := K.sidewalk(ctx, 0.8)
+	K.check(fails, not s.is_empty(), "fixture: a clear straight sidewalk")
+	if s.is_empty():
+		return
+	var start: Vector3 = s["pos"]
+	var run: Vector3 = s["run"]
+	var across := Vector3(run.z, 0.0, -run.x)
+	# The wall: 16 cm thick, 2 m tall, across the path 14 m ahead.
+	var face := 14.0 * M - 0.004
+	var size := across.abs() * 1.0 + run.abs() * 0.008 + Vector3(0.0, 2.0 * M, 0.0)
+	var c := start + run * (14.0 * M)
+	col.add_test_box(AABB(Vector3(c.x - size.x * 0.5, start.y, c.z - size.z * 0.5), size))
+	p.teleport(start, s["yaw"])
+	p.free_running = true
+	# Build the sprint over 100 frames, then hammer the wall with 0.1 s frames (0.65 m each).
+	for _k in range(100):
+		p.simulate(Vector2(0, 1), true, DT)
+	var worst := -INF
+	for _k in range(20):
+		p.simulate(Vector2(0, 1), true, PL.MAX_FRAME_DELTA)
+		worst = maxf(worst, (p.position - start).dot(run))
+	col.clear_test_boxes()
+	K.check(
+		fails,
+		worst <= face - R + 0.002,
+		(
+			"a sprint at a 16 cm wall stops at its face (worst %.3f m along, the face at %.3f m)"
+			% [worst / M, (face - R) / M]
+		)
+	)
+
+
+## A body left half inside a building (a teleport or a load) steps straight out: one physics call
+## resolves the overlap to the face it entered by (CollisionWorld.resolve_out).
+func _check_stuck(ctx: FpContext) -> void:
+	var p := ctx.player
+	var col := ctx.collision
+	var done := 0
+	for i in ctx.sim.active:
+		if done >= 3:
+			break
+		if not D.is_zone(ctx.sim.kind[i]) or ctx.sim.level[i] <= 0 or ctx.sim.sites.has(i):
+			continue
+		for b: AABB in col.body_boxes(i):
+			if done >= 3:
+				break
+			if b.position.y > WS.LOT_TOP + 1e-3:
+				continue
+			for out: Vector3 in [
+				Vector3(-1, 0, 0), Vector3(1, 0, 0), Vector3(0, 0, -1), Vector3(0, 0, 1)
+			]:
+				if done >= 3:
+					break
+				var face_p := _face_point(b, out)
+				var inside := face_p - out * (0.5 * R)
+				if not _face_clear(ctx, i, b, face_p, out, inside):
+					continue
+				p.teleport(inside, 0.0)
+				p.simulate(Vector2.ZERO, false, DT)
+				var along := (p.position - face_p).dot(out)
+				var free_ := not col.body_blocked(p.position, R * 0.99, WS.PLAYER_HEIGHT)
+				(
+					K
+					. check(
+						fails,
+						free_ and along >= R * 0.9 and along <= R + 0.006,
+						(
+							"half-inside a building face at lot (%d,%d) resolves out to %.3f m in one step"
+							% [D.tx(i), D.ty(i), along / M]
+						)
+					)
+				)
+				done += 1
+	K.check(fails, done > 0, "fixture: a building body with a clear face")
+
+
+## The centre of body box b's face along the outward normal out.
+func _face_point(b: AABB, out: Vector3) -> Vector3:
+	var face_p := b.get_center()
+	if out.x < 0.0:
+		face_p.x = b.position.x
+	elif out.x > 0.0:
+		face_p.x = b.end.x
+	if out.z < 0.0:
+		face_p.z = b.position.z
+	elif out.z > 0.0:
+		face_p.z = b.end.z
+	return face_p
+
+
+## True when the face at face_p (its half-inside point `inside`) has room to stand just outside
+## it, a clear metre beyond, and no other collider sharing the half-inside point.
+func _face_clear(
+	ctx: FpContext, i: int, b: AABB, face_p: Vector3, out: Vector3, inside: Vector3
+) -> bool:
+	var col := ctx.collision
+	for dz in range(-1, 2):
+		for dx in range(-1, 2):
+			var tx := D.tx(i) + dx
+			var ty := D.ty(i) + dz
+			if not D.in_bounds(tx, ty):
+				continue
+			for b2: AABB in col.boxes(D.idx(tx, ty)):
+				if b2 != b and b2.grow(R).has_point(inside):
+					return false
+	var g1 := col.walk_height(face_p + out * (R + 0.05))
+	var g2 := col.walk_height(face_p + out * (R + 1.0 * M))
+	var near_out := Vector3(face_p.x + out.x * (R + 0.05), g1, face_p.z + out.z * (R + 0.05))
+	var far_out := Vector3(face_p.x + out.x * (R + 1.0 * M), g2, face_p.z + out.z * (R + 1.0 * M))
+	return (
+		not is_nan(g1)
+		and not is_nan(g2)
+		and not col.is_blocked(near_out, R)
+		and not col.is_blocked(far_out, R)
+		and not col.body_blocked(near_out, R * 0.99, WS.PLAYER_HEIGHT)
+	)
 
 
 ## "box description" of the first collision box (grown by r) or cylinder containing p, else "".
@@ -826,7 +1342,10 @@ func _inside_any(ctx: FpContext, p: Vector3, r: float) -> String:
 					return "box %s" % str(b)
 			var cy := col.cylinders(j)
 			for k in range(0, cy.size(), 4):
-				if p.y < cy[k + 3] and Vector2(p.x - cy[k], p.z - cy[k + 1]).length() < cy[k + 2] + r:
+				if (
+					p.y < cy[k + 3]
+					and Vector2(p.x - cy[k], p.z - cy[k + 1]).length() < cy[k + 2] + r
+				):
 					return "cylinder (%.3f, %.3f)" % [cy[k], cy[k + 1]]
 	return ""
 
@@ -869,7 +1388,12 @@ func _covered(a: AABB, ctx: FpContext, i: int) -> bool:
 			if not D.in_bounds(x, y):
 				continue
 			for b: AABB in ctx.collision.boxes(D.idx(x, y)):
-				if a.position.x >= b.position.x - 1e-4 and a.end.x <= b.end.x + 1e-4 and a.position.z >= b.position.z - 1e-4 and a.end.z <= b.end.z + 1e-4:
+				if (
+					a.position.x >= b.position.x - 1e-4
+					and a.end.x <= b.end.x + 1e-4
+					and a.position.z >= b.position.z - 1e-4
+					and a.end.z <= b.end.z + 1e-4
+				):
 					return true
 	return false
 
@@ -899,7 +1423,12 @@ func _straight_road(ctx: FpContext) -> int:
 func _frontage(ctx: FpContext, off: float) -> Dictionary:
 	var sim := ctx.sim
 	for i in sim.active:
-		if not D.is_zone(sim.kind[i]) or sim.level[i] <= 0 or sim.sites.has(i) or ctx.view.building_aabb(i).size.x <= 0.0:
+		if (
+			not D.is_zone(sim.kind[i])
+			or sim.level[i] <= 0
+			or sim.sites.has(i)
+			or ctx.view.building_aabb(i).size.x <= 0.0
+		):
 			continue
 		var f := ctx.directory.frontage(i)
 		if f < 0:

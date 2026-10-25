@@ -12,7 +12,9 @@ const D := preload("res://scripts/sim/sim_defs.gd")
 const WS := preload("res://scripts/fp/world_scale.gd")
 const AP := preload("res://scripts/fp/asset_paths.gd")
 const LG := preload("res://scripts/fp/traffic/lane_graph.gd")
-const DRIVE_PLAN := {"commute": "car", "go_to_work": true, "spend": 0, "spend_where": "none", "evening": "home"}
+const DRIVE_PLAN := {
+	"commute": "car", "go_to_work": true, "spend": 0, "spend_where": "none", "evening": "home"
+}
 const VH := preload("res://scripts/fp/traffic/vehicles.gd")
 const WK := preload("res://scripts/fp/traffic/walkers.gd")
 const SW := preload("res://scripts/fp/traffic/sidewalks.gd")
@@ -47,7 +49,11 @@ func _init() -> void:
 	f.set("auto_step", false)
 	if f.get("people") != null:
 		(f.get("people") as PPL).blocking = true
-	K.check(fails, f.self_test().get("ok", false), "self_test right after the first fill: %s" % f.self_test().get("detail", ""))
+	K.check(
+		fails,
+		f.self_test().get("ok", false),
+		"self_test right after the first fill: %s" % f.self_test().get("detail", "")
+	)
 	_check_attach()
 	_check_lane_graph()
 	_check_api_compat()
@@ -66,6 +72,7 @@ func _init() -> void:
 	_check_indicators()
 	_check_tee()
 	_check_player_yield()
+	_check_person_give_way()
 	sim.set_day_seconds(WS.FP_DAY_SECONDS)
 	f.set("jitter_enabled", false)
 	_check_resident_driver()
@@ -81,6 +88,7 @@ func _init() -> void:
 
 
 # ------------------------------------------------------------------ helpers
+
 
 func _step(seconds: float) -> void:
 	for _k in range(int(round(seconds / DT))):
@@ -152,13 +160,20 @@ func _pick_driver(anywhere := false) -> String:
 			continue
 		var at := int(r["at"])
 		var home: bool = str(r["state"]) == "home" and at == int(r["home"])
-		if (home or (anywhere and str(r["state"]) != "work")) and int(r["work"]) >= 0 and ctx.directory.frontage(at) >= 0 and ctx.directory.frontage(int(r["work"])) >= 0 and int(r["helping"]) < 0:
+		if (
+			(home or (anywhere and str(r["state"]) != "work"))
+			and int(r["work"]) >= 0
+			and ctx.directory.frontage(at) >= 0
+			and ctx.directory.frontage(int(r["work"])) >= 0
+			and int(r["helping"]) < 0
+		):
 			if ctx.residents.route_between(at, int(r["work"])).size() >= 6:
 				return str(r["id"])
 	return ""
 
 
 # ------------------------------------------------------------------ hooks
+
 
 ## Every walker's feet and every car's wheels sit on the surface under them (sidewalk, zebra,
 ## carriageway or lot) while ambient traffic runs: nobody floats over the road or sinks into a kerb.
@@ -405,8 +420,13 @@ static func _ground_sample(s: Array, p: Vector3, g: float, what: String) -> void
 		s[2] = gap
 		s[3] = what
 
+
 func _check_attach() -> void:
-	K.check(fails, ctx.view.life.external == f and ctx.view.avatars.external == f, "on_world_rebuilt sets CityLife.external and ResidentAvatars.external")
+	K.check(
+		fails,
+		ctx.view.life.external == f and ctx.view.avatars.external == f,
+		"on_world_rebuilt sets CityLife.external and ResidentAvatars.external"
+	)
 	var hidden := true
 	for a: Dictionary in ctx.view.avatars.get("_avatars").values():
 		if (a["root"] as Node3D).visible:
@@ -415,6 +435,7 @@ func _check_attach() -> void:
 
 
 # ------------------------------------------------------------------ lane graph
+
 
 func _check_lane_graph() -> void:
 	var lg := _lg()
@@ -438,7 +459,14 @@ func _check_lane_graph() -> void:
 					out = true
 			if lg.entry(i, e).is_empty() or not out:
 				bad_arm += 1
-	K.check(fails, tiles > 0 and bad_arm == 0, "every road tile (%d) has a lane in and out of each open arm (%d missing)" % [tiles, bad_arm])
+	K.check(
+		fails,
+		tiles > 0 and bad_arm == 0,
+		(
+			"every road tile (%d) has a lane in and out of each open arm (%d missing)"
+			% [tiles, bad_arm]
+		)
+	)
 	var mism := 0
 	var pairs := 0
 	for x: Variant in lg.lanes:
@@ -452,18 +480,31 @@ func _check_lane_graph() -> void:
 		var nb := lg.across(l.tile, l.to_e)
 		if nb >= 0 and sim.kind[nb] == D.ROAD and lg.next_lanes(l).is_empty():
 			mism += 1
-	K.check(fails, pairs > 0 and mism == 0, "lane endpoints on shared tile edges coincide (%d joins, %d off)" % [pairs, mism])
+	K.check(
+		fails,
+		pairs > 0 and mism == 0,
+		"lane endpoints on shared tile edges coincide (%d joins, %d off)" % [pairs, mism]
+	)
 	_check_offsets(lg)
 	# Corner arcs about the shared tile corner.
 	var t: LG.TileInfo = lg.info(corner_tile)
 	var worst := 0.0
 	var arms: Array[Vector2i] = RoadTopology.arms(t.mask)
-	var cc := Vector2(D.tx(corner_tile), D.ty(corner_tile)) + (Vector2(arms[0]) + Vector2(arms[1])) * 0.5
+	var cc := (
+		Vector2(D.tx(corner_tile), D.ty(corner_tile)) + (Vector2(arms[0]) + Vector2(arms[1])) * 0.5
+	)
 	for l: LG.Lane in t.lanes:
 		for p: Vector2 in l.pts:
 			var r := p.distance_to(cc)
 			worst = maxf(worst, minf(absf(r - WS.CORNER_LANE_R_IN), absf(r - WS.CORNER_LANE_R_OUT)))
-	K.check(fails, t.lanes.size() == 2 and worst <= 0.005, "corner lanes at (%d,%d) stay within 0.005 of radius 0.35 or 0.65 (worst %.4f)" % [D.tx(corner_tile), D.ty(corner_tile), worst])
+	K.check(
+		fails,
+		t.lanes.size() == 2 and worst <= 0.005,
+		(
+			"corner lanes at (%d,%d) stay within 0.005 of radius 0.35 or 0.65 (worst %.4f)"
+			% [D.tx(corner_tile), D.ty(corner_tile), worst]
+		)
+	)
 	var off := 0
 	var samples := 0
 	var uturns := 0
@@ -479,7 +520,17 @@ func _check_lane_graph() -> void:
 			samples += 1
 			if not RoadTopology.is_carriageway(m, p - c):
 				off += 1
-	K.check(fails, uturns > 0 and off == 0, "every lane polyline stays on the carriageway, U-turns included (%d samples, %d off, %d U-turns)" % [samples, off, uturns])
+	(
+		K
+		. check(
+			fails,
+			uturns > 0 and off == 0,
+			(
+				"every lane polyline stays on the carriageway, U-turns included (%d samples, %d off, %d U-turns)"
+				% [samples, off, uturns]
+			)
+		)
+	)
 	_check_rebuild(lg)
 
 
@@ -488,7 +539,11 @@ func _check_offsets(lg: LG) -> void:
 	var tile := -1
 	for i: int in lg.tiles.keys():
 		var t: LG.TileInfo = lg.tiles[i]
-		if t.mask == RoadTopology.NS and lg.parkable(i) and (lg.slot_valid(i, 0) or lg.slot_valid(i, 1)):
+		if (
+			t.mask == RoadTopology.NS
+			and lg.parkable(i)
+			and (lg.slot_valid(i, 0) or lg.slot_valid(i, 1))
+		):
 			tile = i
 			break
 	K.check(fails, tile >= 0, "fixture: a parkable N-S straight")
@@ -503,14 +558,26 @@ func _check_offsets(lg: LG) -> void:
 			lg.set_slot(tile, k, "")
 	var l := lg.lane_between(tile, 2, 0)
 	var mid := lg.pos_at(l, l.length * 0.5)
-	K.check(fails, l != null and absf(mid.x - (float(D.tx(tile)) + WS.LANE_OFFSET)) < 1e-4, "mask-5 lane heading -Z at x + LANE_OFFSET (%.4f)" % (mid.x - float(D.tx(tile))))
+	K.check(
+		fails,
+		l != null and absf(mid.x - (float(D.tx(tile)) + WS.LANE_OFFSET)) < 1e-4,
+		"mask-5 lane heading -Z at x + LANE_OFFSET (%.4f)" % (mid.x - float(D.tx(tile)))
+	)
 	var k0 := 0 if lg.slot_valid(tile, 0) else 1
 	lg.set_slot(tile, k0, "test")
 	mid = lg.pos_at(l, l.length * 0.5)
-	K.check(fails, absf(mid.x - (float(D.tx(tile)) + WS.PASS_OFFSET)) < 1e-4, "with a car parked on that run it moves to PASS_OFFSET (%.4f)" % (mid.x - float(D.tx(tile))))
+	K.check(
+		fails,
+		absf(mid.x - (float(D.tx(tile)) + WS.PASS_OFFSET)) < 1e-4,
+		"with a car parked on that run it moves to PASS_OFFSET (%.4f)" % (mid.x - float(D.tx(tile)))
+	)
 	lg.set_slot(tile, k0, "")
 	mid = lg.pos_at(l, l.length * 0.5)
-	K.check(fails, absf(mid.x - (float(D.tx(tile)) + WS.LANE_OFFSET)) < 1e-4, "and back to LANE_OFFSET when the slot frees")
+	K.check(
+		fails,
+		absf(mid.x - (float(D.tx(tile)) + WS.LANE_OFFSET)) < 1e-4,
+		"and back to LANE_OFFSET when the slot frees"
+	)
 	f.call("_after_lane_change")
 
 
@@ -538,10 +605,18 @@ func _check_rebuild(lg: LG) -> void:
 	if was:
 		sim.tiles_changed.disconnect(handler)
 	sim.tiles_changed.emit(PackedInt32Array([end_tile]))
-	K.check(fails, lg.tiles.has(end_tile) and lg.builds == builds0, "sim.tiles_changed alone does not touch the lane graph")
+	K.check(
+		fails,
+		lg.tiles.has(end_tile) and lg.builds == builds0,
+		"sim.tiles_changed alone does not touch the lane graph"
+	)
 	view.tile_cleared.emit(end_tile)
 	var nt: LG.TileInfo = lg.info(nb)
-	K.check(fails, not lg.tiles.has(end_tile) and nt != null and not (nt.mask & (1 << LG.OPP[arm])), "view.tile_cleared rebuilds the tile and its neighbours")
+	K.check(
+		fails,
+		not lg.tiles.has(end_tile) and nt != null and not (nt.mask & (1 << LG.OPP[arm])),
+		"view.tile_cleared rebuilds the tile and its neighbours"
+	)
 	sim.kind[end_tile] = D.ROAD
 	view.tile_built.emit(end_tile, view.tile_holder(end_tile))
 	if was:
@@ -551,39 +626,72 @@ func _check_rebuild(lg: LG) -> void:
 
 # ------------------------------------------------------------------ API compatibility
 
+
 func _check_api_compat() -> void:
 	var vc: Dictionary = ctx.view.life.vehicle_counts()
 	var keys := vc.keys()
 	keys.sort()
-	K.check(fails, keys == ["aircraft", "boats", "buses", "crews", "trucks"], "vehicle_counts() keeps exactly the 5 legacy keys (%s)" % str(keys))
+	K.check(
+		fails,
+		keys == ["aircraft", "boats", "buses", "crews", "trucks"],
+		"vehicle_counts() keeps exactly the 5 legacy keys (%s)" % str(keys)
+	)
 	var ac: Dictionary = ctx.view.avatars.visible_count()
 	var ak := ac.keys()
 	ak.sort()
-	K.check(fails, ak == ["driving", "standing", "total", "walking"], "visible_count() keeps its 4 keys (%s)" % str(ak))
-	K.check(fails, typeof(ctx.view.avatars.pick(Vector2(400, 300))) == TYPE_STRING, "avatars.pick(Vector2) returns a String")
-	K.check(fails, typeof(ctx.view.avatars.position_of(fixture_rid)) == TYPE_VECTOR3, "avatars.position_of(id) returns a Vector3")
+	K.check(
+		fails,
+		ak == ["driving", "standing", "total", "walking"],
+		"visible_count() keeps its 4 keys (%s)" % str(ak)
+	)
+	K.check(
+		fails,
+		typeof(ctx.view.avatars.pick(Vector2(400, 300))) == TYPE_STRING,
+		"avatars.pick(Vector2) returns a String"
+	)
+	K.check(
+		fails,
+		typeof(ctx.view.avatars.position_of(fixture_rid)) == TYPE_VECTOR3,
+		"avatars.position_of(id) returns a Vector3"
+	)
 	# Orbit: a CityView without FpMode keeps the legacy avatars exactly.
 	var v2 := K.make_view(get_root(), sim)
 	var av: ResidentAvatars = v2.avatars
 	var r := ctx.residents.find(fixture_rid)
 	var saved_route: Variant = r.get("route", [])
 	var home := int(r["home"])
-	r["route"] = [Vector2i(D.tx(home), D.ty(home)), Vector2i(D.tx(home) + 1, D.ty(home)), Vector2i(D.tx(home) + 2, D.ty(home))]
+	r["route"] = [
+		Vector2i(D.tx(home), D.ty(home)),
+		Vector2i(D.tx(home) + 1, D.ty(home)),
+		Vector2i(D.tx(home) + 2, D.ty(home))
+	]
 	av.call("_on_moved", r)
 	var a: Dictionary = av.get("_avatars")[fixture_rid]
 	var tick_len := sim.tick_seconds() / float(maxi(sim.speed, 1))
 	var want := 2.0 / clampf(tick_len * 0.85, 0.6, 2.8)
-	K.check(fails, is_equal_approx(float(a["speed"]), want), "orbit _on_moved still sets speed from sim.tick_seconds() (%.3f vs %.3f)" % [float(a["speed"]), want])
+	K.check(
+		fails,
+		is_equal_approx(float(a["speed"]), want),
+		(
+			"orbit _on_moved still sets speed from sim.tick_seconds() (%.3f vs %.3f)"
+			% [float(a["speed"]), want]
+		)
+	)
 	av.call("_advance", a, r, 0.05)
 	var y := (a["root"] as Node3D).position.y
 	var sc := (a["person"] as Node3D).scale.x
-	K.check(fails, y >= 0.05 and y <= 0.06 and is_equal_approx(sc, 1.5), "orbit avatars keep y = 0.05 and scale 1.5 (y %.4f, scale %.2f)" % [y, sc])
+	K.check(
+		fails,
+		y >= 0.05 and y <= 0.06 and is_equal_approx(sc, 1.5),
+		"orbit avatars keep y = 0.05 and scale 1.5 (y %.4f, scale %.2f)" % [y, sc]
+	)
 	K.check(fails, av.external == null, "orbit avatars have no external")
 	r["route"] = saved_route
 	v2.free()
 
 
 # ------------------------------------------------------------------ agents_near, people, crowds, spawns
+
 
 ## agents_near entries carry every key, headings follow S0 §11 (forward = (-sin h, 0, -cos h)),
 ## and agents_packed lists the same agents.
@@ -607,10 +715,28 @@ func _check_agents_api() -> void:
 			var h := float(a["heading"])
 			if Vector3(-sin(h), 0, -cos(h)).dot(v.normalized()) < 0.97:
 				bad_head += 1
-	K.check(fails, not list.is_empty() and bad_keys == 0, "agents_near: %d agents, every entry has the 8 keys (%d missing)" % [list.size(), bad_keys])
-	K.check(fails, moving > 0 and bad_head == 0, "agents_near: heading is S0's convention for all %d moving agents (%d off)" % [moving, bad_head])
+	K.check(
+		fails,
+		not list.is_empty() and bad_keys == 0,
+		"agents_near: %d agents, every entry has the 8 keys (%d missing)" % [list.size(), bad_keys]
+	)
+	K.check(
+		fails,
+		moving > 0 and bad_head == 0,
+		(
+			"agents_near: heading is S0's convention for all %d moving agents (%d off)"
+			% [moving, bad_head]
+		)
+	)
 	var packed: Dictionary = f.agents_packed(p, 40.0)
-	K.check(fails, (packed["pos"] as PackedVector3Array).size() == list.size() and (packed["kind"] as PackedStringArray).size() == list.size(), "agents_packed lists the same %d agents" % list.size())
+	K.check(
+		fails,
+		(
+			(packed["pos"] as PackedVector3Array).size() == list.size()
+			and (packed["kind"] as PackedStringArray).size() == list.size()
+		),
+		"agents_packed lists the same %d agents" % list.size()
+	)
 
 
 ## People draw as the merged body through the people shader (never a full GLB), with stride data.
@@ -642,12 +768,28 @@ func _check_people_draw() -> void:
 		var drawn := 0
 		var cam1: Vector3 = f.call("_camera_pos")
 		for w: WK.Walker in wk.walkers:
-			if w.dead or w.far or w.state == "hidden" or w.pos.distance_to(cam1) > WS.VIS_PERSON * 0.98 or not pp.on_screen(w.pos + w.vis_off):
+			if (
+				w.dead
+				or w.far
+				or w.state == "hidden"
+				or w.pos.distance_to(cam1) > WS.VIS_PERSON * 0.98
+				or not pp.on_screen(w.pos + w.vis_off)
+			):
 				continue
 			in_view += 1
 			if w.tier >= 0 and w.tier <= 3:
 				drawn += 1
-		K.check(fails, legacy == 0 and in_view > 0 and drawn == in_view, "people: HC bodies draw all %d people in view and range (%d), no legacy people models (%d)" % [in_view, drawn, legacy])
+		(
+			K
+			. check(
+				fails,
+				legacy == 0 and in_view > 0 and drawn == in_view,
+				(
+					"people: HC bodies draw all %d people in view and range (%d), no legacy people models (%d)"
+					% [in_view, drawn, legacy]
+				)
+			)
+		)
 		return
 	var nodes := 0
 	var striding := 0
@@ -655,17 +797,38 @@ func _check_people_draw() -> void:
 	for w: WK.Walker in wk.walkers:
 		if w.node != null:
 			nodes += 1
-		if w.v > 0.5 * WS.M and w.gait > 0.5 and w.lod > 0 and cam.distance_to(w.pos) < WS.VIS_PERSON:
+		if (
+			w.v > 0.5 * WS.M
+			and w.gait > 0.5
+			and w.lod > 0
+			and cam.distance_to(w.pos) < WS.VIS_PERSON
+		):
 			striding += 1
 	var people_mm := 0
 	for m: Variant in rd.models:
 		if m.person:
 			for k in range(2):
 				var mmi: MultiMeshInstance3D = m.mms[k]
-				if mmi != null and mmi.visible and mmi.multimesh.use_custom_data and mmi.material_override is ShaderMaterial:
+				if (
+					mmi != null
+					and mmi.visible
+					and mmi.multimesh.use_custom_data
+					and mmi.material_override is ShaderMaterial
+				):
 					people_mm += 1
-	K.check(fails, nodes == 0 and rd.full_people == 0, "people: no full GLB nodes for people (%d)" % nodes)
-	K.check(fails, people_mm > 0 and striding > 0, "people: drawn by %d shader MultiMeshes with stride data, %d walking in stride" % [people_mm, striding])
+	K.check(
+		fails,
+		nodes == 0 and rd.full_people == 0,
+		"people: no full GLB nodes for people (%d)" % nodes
+	)
+	K.check(
+		fails,
+		people_mm > 0 and striding > 0,
+		(
+			"people: drawn by %d shader MultiMeshes with stride data, %d walking in stride"
+			% [people_mm, striding]
+		)
+	)
 
 
 ## People waiting at a zebra take distinct places along the curb, clear of the light poles.
@@ -702,7 +865,14 @@ func _check_wait_crowd() -> void:
 			var a: WK.Walker = crowd[i]
 			var b: WK.Walker = crowd[j]
 			min_d = minf(min_d, (a.pos + a.vis_off).distance_to(b.pos + b.vis_off))
-	K.check(fails, slots.size() == crowd.size() and min_d >= 0.45 * WS.M, "wait crowd: %d people at one zebra stand apart (closest %.2f m)" % [crowd.size(), min_d / WS.M])
+	K.check(
+		fails,
+		slots.size() == crowd.size() and min_d >= 0.45 * WS.M,
+		(
+			"wait crowd: %d people at one zebra stand apart (closest %.2f m)"
+			% [crowd.size(), min_d / WS.M]
+		)
+	)
 	var zt: LG.TileInfo = _lg().info(z.tile)
 	if zt != null and zt.lights:
 		# Light poles stand at (+-0.42, +-0.42) with a 0.24 m footing; a body is about 0.25 m deep.
@@ -712,7 +882,14 @@ func _check_wait_crowd() -> void:
 			for cn: Vector2 in [Vector2(1, -1), Vector2(1, 1), Vector2(-1, 1), Vector2(-1, -1)]:
 				var pp := Vector2(D.tx(z.tile), D.ty(z.tile)) + cn * 0.42
 				pole_d = minf(pole_d, Vector2(q.x, q.z).distance_to(pp))
-		K.check(fails, pole_d >= 0.5 * WS.M, "wait crowd: everyone stands clear of the light poles (closest %.2f m)" % [pole_d / WS.M])
+		K.check(
+			fails,
+			pole_d >= 0.5 * WS.M,
+			(
+				"wait crowd: everyone stands clear of the light poles (closest %.2f m)"
+				% [pole_d / WS.M]
+			)
+		)
 	for w: WK.Walker in crowd:
 		wk.remove(w)
 
@@ -742,7 +919,10 @@ func _check_ambient_spawns() -> void:
 				continue
 			seen_c[c.id] = true
 			cars_new += 1
-			if f.on_screen(c.pos) or Vector2(c.pos.x - p.x, c.pos.z - p.z).length() < amb.MIN_SPAWN - 0.5:
+			if (
+				f.on_screen(c.pos)
+				or Vector2(c.pos.x - p.x, c.pos.z - p.z).length() < amb.MIN_SPAWN - 0.5
+			):
 				cars_bad += 1
 		for w: WK.Walker in wk.walkers:
 			if seen_w.has(w.id):
@@ -759,11 +939,26 @@ func _check_ambient_spawns() -> void:
 				peds_bad += 1
 		for _j in range(3):
 			f.step(DT)
-	K.check(fails, cars_new > 0 and cars_bad == 0, "ambient: %d new cars, none appears in view or within MIN_SPAWN (%d bad)" % [cars_new, cars_bad])
-	K.check(fails, peds_new > 0 and peds_bad == 0, "ambient: %d new people appear out of view or fading in from 60 m (%d fading, %d bad)" % [peds_new, faded, peds_bad])
+	K.check(
+		fails,
+		cars_new > 0 and cars_bad == 0,
+		(
+			"ambient: %d new cars, none appears in view or within MIN_SPAWN (%d bad)"
+			% [cars_new, cars_bad]
+		)
+	)
+	K.check(
+		fails,
+		peds_new > 0 and peds_bad == 0,
+		(
+			"ambient: %d new people appear out of view or fading in from 60 m (%d fading, %d bad)"
+			% [peds_new, faded, peds_bad]
+		)
+	)
 
 
 # ------------------------------------------------------------------ car following
+
 
 ## The longest run of N-S or E-W straights: [tiles in order, heading edge].
 func _straight_run() -> Array:
@@ -778,13 +973,23 @@ func _straight_run() -> Array:
 			if not (t.mask & (1 << e)):
 				continue
 			var back := lg.across(i, LG.OPP[e])
-			if back >= 0 and lg.info(back) != null and (lg.info(back) as LG.TileInfo).piece == "straight" and (lg.info(back) as LG.TileInfo).mask == t.mask:
+			if (
+				back >= 0
+				and lg.info(back) != null
+				and (lg.info(back) as LG.TileInfo).piece == "straight"
+				and (lg.info(back) as LG.TileInfo).mask == t.mask
+			):
 				continue
 			var run: Array[int] = [i]
 			var cur := i
 			while true:
 				var nx := lg.across(cur, e)
-				if nx < 0 or lg.info(nx) == null or (lg.info(nx) as LG.TileInfo).piece != "straight" or (lg.info(nx) as LG.TileInfo).mask != t.mask:
+				if (
+					nx < 0
+					or lg.info(nx) == null
+					or (lg.info(nx) as LG.TileInfo).piece != "straight"
+					or (lg.info(nx) as LG.TileInfo).mask != t.mask
+				):
 					break
 				run.append(nx)
 				cur = nx
@@ -814,13 +1019,26 @@ func _check_following() -> void:
 		var gap := (leader.pos - follower.pos).dot(dir) - (leader.length + follower.length) * 0.5
 		min_gap = minf(min_gap, gap)
 	var final_gap := (leader.pos - follower.pos).dot(dir) - (leader.length + follower.length) * 0.5
-	K.check(fails, min_gap > 0.0, "following: no overlap over 30 s (min gap %.2f m)" % (min_gap / WS.M))
-	K.check(fails, final_gap >= IDM.S0 * 0.9 and follower.v < 0.05 * WS.M and leader.v < 0.01, "following: the follower stops >= s0 * 0.9 behind the stopped leader (%.2f m, v %.2f m/s)" % [final_gap / WS.M, follower.v / WS.M])
+	K.check(
+		fails, min_gap > 0.0, "following: no overlap over 30 s (min gap %.2f m)" % (min_gap / WS.M)
+	)
+	(
+		K
+		. check(
+			fails,
+			final_gap >= IDM.S0 * 0.9 and follower.v < 0.05 * WS.M and leader.v < 0.01,
+			(
+				"following: the follower stops >= s0 * 0.9 behind the stopped leader (%.2f m, v %.2f m/s)"
+				% [final_gap / WS.M, follower.v / WS.M]
+			)
+		)
+	)
 	_vh().remove(leader)
 	_vh().remove(follower)
 
 
 # ------------------------------------------------------------------ parking clearance
+
 
 func _check_parking_clearance() -> void:
 	_quiet()
@@ -848,12 +1066,27 @@ func _check_parking_clearance() -> void:
 				if a.intersects(vh.aabb(p).grow(-0.0005)):
 					overlaps += 1
 					if worst.is_empty():
-						worst = "car %d (%s) at %s vs parked %d at %s" % [c.id, c.role, str(c.pos), p.id, str(p.pos)]
-	K.check(fails, passes > 0, "parking clearance: moving cars pass parked ones (%d close passes)" % passes)
-	K.check(fails, overlaps == 0, "parking clearance: no moving AABB overlaps a parked AABB in 60 s (%d) %s" % [overlaps, worst])
+						worst = (
+							"car %d (%s) at %s vs parked %d at %s"
+							% [c.id, c.role, str(c.pos), p.id, str(p.pos)]
+						)
+	K.check(
+		fails,
+		passes > 0,
+		"parking clearance: moving cars pass parked ones (%d close passes)" % passes
+	)
+	K.check(
+		fails,
+		overlaps == 0,
+		(
+			"parking clearance: no moving AABB overlaps a parked AABB in 60 s (%d) %s"
+			% [overlaps, worst]
+		)
+	)
 
 
 # ------------------------------------------------------------------ shoves
+
 
 ## The player's car knocks a parked car toward the road (bump_car): it slides off its slot for
 ## good, braking on its tyres, and blocks lane traffic until, having stood out of sight for
@@ -901,6 +1134,7 @@ func _check_parked_shove() -> void:
 
 
 # ------------------------------------------------------------------ lights
+
 
 ## The asset poles' pedestrian heads (Walk_*, DontWalk_*) are bound to the zebra they look
 ## across and follow its walk phase: at c0 E-W has just turned green, so the zebras across the
@@ -974,7 +1208,21 @@ func _check_lights() -> void:
 		if car.v < 0.01 * WS.M and front < 0.6 and stopped_at < 0.0:
 			stopped_at = front
 			stop_red = jn.light(x, 2) == JN.RED
-	K.check(fails, stopped_at >= LG.STOP_FRONT - 0.0005 and stopped_at <= LG.STOP_FRONT + 0.03 and stop_red, "light: a car arriving on red stops with its front %.3f from the centre (window %.3f..%.3f)" % [stopped_at, LG.STOP_FRONT, LG.STOP_FRONT + 0.03])
+	(
+		K
+		. check(
+			fails,
+			(
+				stopped_at >= LG.STOP_FRONT - 0.0005
+				and stopped_at <= LG.STOP_FRONT + 0.03
+				and stop_red
+			),
+			(
+				"light: a car arriving on red stops with its front %.3f from the centre (window %.3f..%.3f)"
+				% [stopped_at, LG.STOP_FRONT, LG.STOP_FRONT + 0.03]
+			)
+		)
+	)
 	var entered_on := -1
 	for _k in range(int(25.0 / DT)):
 		var was_on_a := car.lane == a
@@ -982,7 +1230,11 @@ func _check_lights() -> void:
 		if was_on_a and car.lane == mv:
 			entered_on = jn.light(x, 2)
 			break
-	K.check(fails, entered_on == JN.GREEN or entered_on == JN.AMBER, "light: it proceeds on green (entered the box on %d)" % entered_on)
+	K.check(
+		fails,
+		entered_on == JN.GREEN or entered_on == JN.AMBER,
+		"light: it proceeds on green (entered the box on %d)" % entered_on
+	)
 	_vh().remove(car)
 	# Lamps: per-instance overrides from shared on/off materials; the shared ones never change.
 	var pr: Dictionary = jn.props.get(x, {})
@@ -992,14 +1244,49 @@ func _check_lights() -> void:
 	var col := on_red.albedo_color
 	jn.clock = c0
 	jn.update_lamps(Vector3(D.tx(x), 0, D.ty(x)), 1.0)
-	var ns_red: GeometryInstance3D = (groups[0] as Array)[0] if groups.size() == 6 and not (groups[0] as Array).is_empty() else null
-	var ns_green: GeometryInstance3D = (groups[2] as Array)[0] if groups.size() == 6 and not (groups[2] as Array).is_empty() else null
-	K.check(fails, ns_red != null and ns_red.material_override == on_red and ns_green.material_override == jn.get("_off_mats")[2], "lamps: N-S red lit, green dark (material_override)")
+	var ns_red: GeometryInstance3D = (
+		(groups[0] as Array)[0]
+		if groups.size() == 6 and not (groups[0] as Array).is_empty()
+		else null
+	)
+	var ns_green: GeometryInstance3D = (
+		(groups[2] as Array)[0]
+		if groups.size() == 6 and not (groups[2] as Array).is_empty()
+		else null
+	)
+	K.check(
+		fails,
+		(
+			ns_red != null
+			and ns_red.material_override == on_red
+			and ns_green.material_override == jn.get("_off_mats")[2]
+		),
+		"lamps: N-S red lit, green dark (material_override)"
+	)
 	jn.clock = fposmod(-jn.offset(x) + 1.0, JN.CYCLE)
 	jn.update_lamps(Vector3(D.tx(x), 0, D.ty(x)), 1.0)
-	K.check(fails, ns_red != null and ns_red.material_override == jn.get("_off_mats")[0] and ns_green.material_override == jn.get("_on_mats")[2], "lamps: N-S green lit after the change")
-	K.check(fails, is_equal_approx(on_red.emission_energy_multiplier, energy) and on_red.albedo_color == col, "lamps: the shared materials are never edited")
-	K.check(fails, f.light_pole(x, 0) != null and f.light_pole(x, 0).find_child("SignText_A", true, false) != null, "light_pole(i, 0) is the NE pole with SignText_A / SignText_B mounts")
+	K.check(
+		fails,
+		(
+			ns_red != null
+			and ns_red.material_override == jn.get("_off_mats")[0]
+			and ns_green.material_override == jn.get("_on_mats")[2]
+		),
+		"lamps: N-S green lit after the change"
+	)
+	K.check(
+		fails,
+		is_equal_approx(on_red.emission_energy_multiplier, energy) and on_red.albedo_color == col,
+		"lamps: the shared materials are never edited"
+	)
+	K.check(
+		fails,
+		(
+			f.light_pole(x, 0) != null
+			and f.light_pole(x, 0).find_child("SignText_A", true, false) != null
+		),
+		"light_pole(i, 0) is the NE pole with SignText_A / SignText_B mounts"
+	)
 	_check_walk_heads(jn, x, c0)
 	# The poles and pedestrian signals stand beside the zebras, never in the walking line: every
 	# zebra point keeps 0.3 m clear even at the widest lateral offset a crosser takes (half the band).
@@ -1014,7 +1301,17 @@ func _check_lights() -> void:
 		for q: Vector2 in z.pts:
 			zd = minf(zd, _furniture_dist(q - Vector2(D.tx(x), D.ty(x))))
 	var reach := (WK.BAND + 0.012) * 0.5
-	K.check(fails, zn == 4 and zd - reach >= 0.3 * WS.M, "furniture: light poles and pedestrian signals stand clear of the 4 zebras (closest %.2f m from a crosser)" % [(zd - reach) / WS.M])
+	(
+		K
+		. check(
+			fails,
+			zn == 4 and zd - reach >= 0.3 * WS.M,
+			(
+				"furniture: light poles and pedestrian signals stand clear of the 4 zebras (closest %.2f m from a crosser)"
+				% [(zd - reach) / WS.M]
+			)
+		)
+	)
 	f.set("clock", 0.0)
 	jn.clock = 0.0
 
@@ -1048,22 +1345,51 @@ func _check_night_lamps() -> void:
 		var hm: MeshInstance3D = head[0]
 		var tm: MeshInstance3D = tail[0]
 		head_mat = hm.mesh.surface_get_material(int(head[1]))
-		lit = hm.get_surface_override_material(int(head[1])) == rd.get("_head_mat") and tm.get_surface_override_material(int(tail[1])) != null and head_mat != rd.get("_head_mat")
-	K.check(fails, car.lod == 0 and lit, "night: a near car lights its head and tail lamps through per-instance overrides (lod %d)" % car.lod)
+		lit = (
+			hm.get_surface_override_material(int(head[1])) == rd.get("_head_mat")
+			and tm.get_surface_override_material(int(tail[1])) != null
+			and head_mat != rd.get("_head_mat")
+		)
+	(
+		K
+		. check(
+			fails,
+			car.lod == 0 and lit,
+			(
+				"night: a near car lights its head and tail lamps through per-instance overrides (lod %d)"
+				% car.lod
+			)
+		)
+	)
 	var beams: Array = rd.get("_beams")
 	var beam_ok := false
 	var fwd: Vector3 = (_vh().draw_xform(car) as Transform3D).basis.z.normalized()
 	for b: SpotLight3D in beams:
-		if b.visible and b.position.distance_to(car.pos + car.vis_off + fwd * (car.length * 0.5)) < 0.06 and (-b.transform.basis.z).dot(fwd) > 0.95:
+		if (
+			b.visible
+			and b.position.distance_to(car.pos + car.vis_off + fwd * (car.length * 0.5)) < 0.06
+			and (-b.transform.basis.z).dot(fwd) > 0.95
+		):
 			beam_ok = true
-	K.check(fails, int(rd.get("beams_on")) >= 1 and beam_ok, "night: its headlight beam starts at its front and points down the road (%d beams)" % int(rd.get("beams_on")))
+	K.check(
+		fails,
+		int(rd.get("beams_on")) >= 1 and beam_ok,
+		(
+			"night: its headlight beam starts at its front and points down the road (%d beams)"
+			% int(rd.get("beams_on"))
+		)
+	)
 	rd.set_glow(0.0)
 	f.sync_visuals(DT)
 	var day_ok := node != null and car.node == node
 	if day_ok and node.has_meta("head"):
 		var head: Array = node.get_meta("head")
 		day_ok = (head[0] as MeshInstance3D).get_surface_override_material(int(head[1])) == null
-	K.check(fails, day_ok and int(rd.get("beams_on")) == 0, "night: by day the imported lamps are back and no beam is on")
+	K.check(
+		fails,
+		day_ok and int(rd.get("beams_on")) == 0,
+		"night: by day the imported lamps are back and no beam is on"
+	)
 	_check_wet_paint(node)
 	_vh().remove(car)
 	ctx.player.teleport(saved, 0.0)
@@ -1074,7 +1400,7 @@ func _check_night_lamps() -> void:
 func _check_wet_paint(node: Node3D) -> void:
 	var rd = f.get("render")
 	var paint: StandardMaterial3D = null
-	for mi in (node.find_children("*", "MeshInstance3D", true, false) if node != null else []):
+	for mi in node.find_children("*", "MeshInstance3D", true, false) if node != null else []:
 		var mesh := (mi as MeshInstance3D).mesh
 		for s in range(mesh.get_surface_count() if mesh != null else 0):
 			var m := mesh.surface_get_material(s)
@@ -1118,7 +1444,7 @@ func _check_indicators() -> void:
 			break
 	var left: LG.Lane = null
 	var ahead: LG.Lane = null
-	for mv: LG.Lane in (t.moves[2] if t != null else []):
+	for mv: LG.Lane in t.moves[2] if t != null else []:
 		if mv.turn == IND.LEFT:
 			left = mv
 		elif mv.turn == 0:
@@ -1202,6 +1528,7 @@ func _indicator_side(car: VH.Car, mat_name: String) -> float:
 
 # ------------------------------------------------------------------ tee yield
 
+
 func _check_tee() -> void:
 	_quiet()
 	var lg := _lg()
@@ -1216,7 +1543,11 @@ func _check_tee() -> void:
 			if e == t.stem or t.approach[e] == null:
 				continue
 			var pv := lg.prev_lanes(t.approach[e])
-			if not pv.is_empty() and (pv[0] as LG.Lane).kind == LG.STRAIGHT and not stem_prev.is_empty():
+			if (
+				not pv.is_empty()
+				and (pv[0] as LG.Lane).kind == LG.STRAIGHT
+				and not stem_prev.is_empty()
+			):
 				tile = i
 				through = e
 				break
@@ -1230,14 +1561,21 @@ func _check_tee() -> void:
 	var smv: LG.Lane = t.moves[t.stem][0]
 	var sp: LG.Lane = lg.prev_lanes(sa)[0]
 	var s_after: Array = lg.next_lanes(smv)
-	var stem_car := _car(sp, sp.length - 0.05, [sa, smv] + s_after.slice(0, 1), WS.CAR_RESIDENTIAL * 0.5)
+	var stem_car := _car(
+		sp, sp.length - 0.05, [sa, smv] + s_after.slice(0, 1), WS.CAR_RESIDENTIAL * 0.5
+	)
 	var ta: LG.Lane = t.approach[through]
 	var tmv := lg.lane_between(tile, through, LG.OPP[through])
 	var tp: LG.Lane = lg.prev_lanes(ta)[0]
 	var t_after: Array = lg.next_lanes(tmv)
 	# Through car ~1.5 s from its stop point at speed.
 	var v := tp.limit * 0.9
-	var through_car := _car(tp, clampf(tp.length + ta.stop_s - v * 1.5, 0.3, tp.length - 0.01), [ta, tmv] + t_after.slice(0, 1), v)
+	var through_car := _car(
+		tp,
+		clampf(tp.length + ta.stop_s - v * 1.5, 0.3, tp.length - 0.01),
+		[ta, tmv] + t_after.slice(0, 1),
+		v
+	)
 	var stem_in_at := -1.0
 	var through_in_at := -1.0
 	var time := 0.0
@@ -1248,7 +1586,17 @@ func _check_tee() -> void:
 			stem_in_at = time
 		if through_in_at < 0.0 and through_car.lane == tmv:
 			through_in_at = time
-	K.check(fails, through_in_at >= 0.0 and stem_in_at > through_in_at, "tee: the stem car waits for the through car within 2 s (stem in at %.1f s, through in at %.1f s)" % [stem_in_at, through_in_at])
+	(
+		K
+		. check(
+			fails,
+			through_in_at >= 0.0 and stem_in_at > through_in_at,
+			(
+				"tee: the stem car waits for the through car within 2 s (stem in at %.1f s, through in at %.1f s)"
+				% [stem_in_at, through_in_at]
+			)
+		)
+	)
 	_vh().remove(stem_car)
 	_vh().remove(through_car)
 	var jn: JN = f.get("junctions")
@@ -1263,6 +1611,7 @@ func _check_tee() -> void:
 
 
 # ------------------------------------------------------------------ player yield
+
 
 func _check_player_yield() -> void:
 	_quiet()
@@ -1286,10 +1635,159 @@ func _check_player_yield() -> void:
 				continue
 			min_d = minf(min_d, _aabb_dist(_vh().aabb(c), pp))
 	var d_end := _aabb_dist(_vh().aabb(car), pp)
-	K.check(fails, car.v < 0.05 * WS.M and d_end >= WS.PLAYER_RADIUS + 1.5 * WS.M, "player yield: the car stops %.2f m from the player (>= %.2f)" % [d_end / WS.M, (WS.PLAYER_RADIUS + 1.5 * WS.M) / WS.M])
-	K.check(fails, min_d >= WS.PLAYER_RADIUS, "player yield: no car AABB comes within PLAYER_RADIUS (closest %.2f m)" % (min_d / WS.M))
+	K.check(
+		fails,
+		car.v < 0.05 * WS.M and d_end >= WS.PLAYER_RADIUS + 1.5 * WS.M,
+		(
+			"player yield: the car stops %.2f m from the player (>= %.2f)"
+			% [d_end / WS.M, (WS.PLAYER_RADIUS + 1.5 * WS.M) / WS.M]
+		)
+	)
+	K.check(
+		fails,
+		min_d >= WS.PLAYER_RADIUS,
+		"player yield: no car AABB comes within PLAYER_RADIUS (closest %.2f m)" % (min_d / WS.M)
+	)
 	_vh().remove(car)
 	ctx.player.teleport(saved, 0.0)
+
+
+# ------------------------------------------------------------------ soft-solid people
+
+
+## The hero never passes through people (the player's soft circles and the walker's give-way are
+## each other's halves of one hold): a walker met head-on on the sidewalk stops or steps past the
+## band while overlapped, the separation never breaks, and they both walk on after. Shoves, holds
+## and knockdowns are reactions.gd's (the impact agent's).
+func _check_person_give_way() -> void:
+	_quiet()
+	var s := K.sidewalk(ctx, 1.1)
+	K.check(fails, not s.is_empty(), "fixture: a clear straight sidewalk")
+	if s.is_empty():
+		return
+	var wk: WK = f.get("walkers")
+	var sw: SW = f.get("peds")
+	# Loud guards: a check that aborts on a missing module still prints PASS (a harness
+	# hazard); a wrong member name must fail as a fixture, never silently.
+	if wk == null or sw == null:
+		K.check(
+			fails, false, "fixture: the walkers module and the sidewalk graph (f.walkers, f.peds)"
+		)
+		return
+	var run: Vector3 = s["run"]
+	var found := _give_way_edge(sw, s)
+	var edge: SW.PedEdge = found[0]
+	var u_hero: float = found[1]
+	K.check(fails, edge != null, "fixture: a sidewalk edge through the hero's position")
+	if edge == null:
+		return
+	# A walker 0.35 m ahead, inside the combined reach, walking straight at the hero: the hero
+	# walked into them a frame ago, and the pair must untangle without ever passing through.
+	var sign := signf(sw.dir_at(edge, u_hero).dot(Vector2(run.x, run.z)))
+	var u_at := u_hero + sign * 0.0175
+	var room := edge.length - 0.02 - u_at if sign > 0.0 else u_at - 0.02
+	var behind := u_hero if sign > 0.0 else edge.length - u_hero
+	if room < 0.0 or behind < 0.075:
+		K.check(fails, false, "fixture: room on the edge ahead")
+		return
+	var w: WK.Walker = wk.make("ambient")
+	var dir := -1 if sign > 0.0 else 1
+	wk.place(w, edge, edge.length - u_at if dir < 0 else u_at, dir)
+	var saved := ctx.player.position
+	ctx.player.teleport(sw.pos_at(edge, u_hero), s["yaw"])
+	var reach := WS.PLAYER_RADIUS + WK.PERSON_R
+	var seen := _give_way_watch(w, reach)
+	var separated: bool = seen[0]
+	var worst_after: float = seen[1]
+	var gave_way: bool = seen[2]
+	var recovered: bool = seen[3]
+	wk.remove(w)
+	ctx.player.teleport(saved, 0.0)
+	K.check(
+		fails,
+		separated,
+		"fixture: the overlapped pair untangled (worst after %.2f m)" % (worst_after / WS.M)
+	)
+	(
+		K
+		. check(
+			fails,
+			worst_after >= reach - 0.008,
+			(
+				"soft-solid: after the untangle the hero never enters the walker again (closest %.2f m, their combined reach %.2f m)"
+				% [worst_after / WS.M, reach / WS.M]
+			)
+		)
+	)
+	K.check(
+		fails, gave_way, "soft-solid: an overlapped walker gives way (stops or steps past the band)"
+	)
+	K.check(
+		fails,
+		recovered,
+		"soft-solid: they both walk on after the pass (the sidewalk keeps flowing)"
+	)
+
+
+## Walks the overlapped pair for 12 s and reports what they did: [separated, the closest they came
+## once apart (world units), the walker gave way, both walk on again]. The hero holds forward the
+## whole time, so the pair must untangle by the walker yielding, never by passing through.
+func _give_way_watch(w: WK.Walker, reach: float) -> Array:
+	var overlap := true
+	var separated := false
+	var gave_way := false
+	var recovered := false
+	var worst_after := INF
+	for _k in range(int(12.0 / DT)):
+		f.step(DT)
+		ctx.player.simulate(Vector2(0, 1), false, 1.0 / 60.0)
+		ctx.player.simulate(Vector2(0, 1), false, 1.0 / 60.0)
+		var wp: Vector3 = w.pos + w.vis_off
+		var d := Vector2(wp.x - ctx.player.position.x, wp.z - ctx.player.position.z).length()
+		if d < reach:
+			overlap = true
+			gave_way = gave_way or w.v < 0.05 * WS.M or absf(w.lat) > WK.BAND + 0.0125
+		elif overlap:
+			overlap = false
+			separated = true
+		if separated:
+			worst_after = minf(worst_after, d)
+		if separated and not overlap and d > reach + 0.25 * WS.M and w.v > 0.5 * w.speed:
+			recovered = true
+			break
+	return [separated, worst_after, gave_way, recovered]
+
+
+## The sidewalk edge through the hero's start (K.sidewalk's s), running along the way they face:
+## [edge, the u along it of the point nearest the start], or [null, 0.0] when the city has none.
+## The start's own point must stand clear on the edge (the hero meets the walker standing on it,
+## so the meeting is head-on whatever line the band runs on).
+func _give_way_edge(sw: SW, s: Dictionary) -> Array:
+	var run: Vector3 = s["run"]
+	for e: SW.PedEdge in sw.edges:
+		if e == null or e.zebra or e.length < 0.45:
+			continue
+		if absf(sw.dir_at(e, e.length * 0.5).dot(Vector2(run.x, run.z))) < 0.9:
+			continue
+		var best := INF
+		var u := 0.0
+		for k in range(int(e.length / 0.01) + 1):
+			var q := sw.pos_at(e, 0.01 * k)
+			var d := (
+				Vector2(q.x - (s["pos"] as Vector3).x, q.z - (s["pos"] as Vector3).z)
+				. length_squared()
+			)
+			if d < best:
+				best = d
+				u = 0.01 * k
+		if best >= (1.2 * WS.M) * (1.2 * WS.M):
+			continue
+		var at := sw.pos_at(e, u)
+		at.y = ctx.collision.walk_height(at)
+		if is_nan(at.y) or ctx.collision.is_blocked(at, WS.PLAYER_RADIUS):
+			continue
+		return [e, u]
+	return [null, 0.0]
 
 
 func _aabb_dist(b: AABB, p: Vector3) -> float:
@@ -1298,6 +1796,7 @@ func _aabb_dist(b: AABB, p: Vector3) -> float:
 
 
 # ------------------------------------------------------------------ resident driver
+
 
 func _check_resident_driver() -> void:
 	# The drive is timed on quiet streets: how long a queue at a busy tee lasts depends on the
@@ -1313,7 +1812,21 @@ func _check_resident_driver() -> void:
 	var tr: TRIPS.Trip = trips.trips.get(fixture_rid, null)
 	if tr == null or tr.mode != "car":
 		# The growth tick before the morning can close their workplace (power): send them anyway.
-		print("  note: %s did not drive this morning (%s); sending them to work directly" % [fixture_rid, str((r["memory"] as Array).back() if not (r["memory"] as Array).is_empty() else "")])
+		print(
+			(
+				"  note: %s did not drive this morning (%s); sending them to work directly"
+				% [
+					fixture_rid,
+					str(
+						(
+							(r["memory"] as Array).back()
+							if not (r["memory"] as Array).is_empty()
+							else ""
+						)
+					)
+				]
+			)
+		)
 		if tr != null:
 			trips.complete_now(tr)
 		# The same tick can also block a road beside their home (a crash): take another driver.
@@ -1324,7 +1837,25 @@ func _check_resident_driver() -> void:
 			work = int(r["work"])
 		people.call("_go", r, work, "work")
 		tr = trips.trips.get(fixture_rid, null)
-	K.check(fails, tr != null and tr.mode == "car", "resident driver: trip_started makes a car trip (%s; %s state %s at %d work %d route %d trips %s)" % [tr.mode if tr != null else "none", fixture_rid, str(r["state"]), int(r["at"]), work, (r.get("route", []) as Array).size(), str(trips.trips.keys())])
+	(
+		K
+		. check(
+			fails,
+			tr != null and tr.mode == "car",
+			(
+				"resident driver: trip_started makes a car trip (%s; %s state %s at %d work %d route %d trips %s)"
+				% [
+					tr.mode if tr != null else "none",
+					fixture_rid,
+					str(r["state"]),
+					int(r["at"]),
+					work,
+					(r.get("route", []) as Array).size(),
+					str(trips.trips.keys())
+				]
+			)
+		)
+	)
 	if tr == null:
 		return
 	var n := 0
@@ -1335,7 +1866,14 @@ func _check_resident_driver() -> void:
 	for w: WK.Walker in (f.get("walkers") as WK).walkers:
 		if w.resident_id == fixture_rid:
 			walkers += 1
-	K.check(fails, n == 1 and walkers <= 1, "resident driver: exactly one vehicle with driver_id %s at once (%d, walkers %d)" % [fixture_rid, n, walkers])
+	K.check(
+		fails,
+		n == 1 and walkers <= 1,
+		(
+			"resident driver: exactly one vehicle with driver_id %s at once (%d, walkers %d)"
+			% [fixture_rid, n, walkers]
+		)
+	)
 	var car: VH.Car = tr.car
 	if car == null:
 		K.check(fails, false, "resident driver: the trip has a car")
@@ -1361,9 +1899,19 @@ func _check_resident_driver() -> void:
 			drove = true
 			pos_err = maxf(pos_err, av.position_of(fixture_rid).distance_to(car.pos + car.vis_off))
 			if not picked_car:
-				var o := car.pos + car.vis_off + Vector3(0, 0.03, 0) + Vector3(sin(car.yaw + 1.2), 0, cos(car.yaw + 1.2)) * 0.12
-				var hit: Dictionary = f.pick(o, (car.pos + car.vis_off + Vector3(0, 0.03, 0)) - o, WS.INTERACT_RANGE * 4.0)
-				picked_car = hit.get("kind", "") == "vehicle" and str(hit.get("data", {}).get("driver_id", "")) == fixture_rid
+				var o := (
+					car.pos
+					+ car.vis_off
+					+ Vector3(0, 0.03, 0)
+					+ Vector3(sin(car.yaw + 1.2), 0, cos(car.yaw + 1.2)) * 0.12
+				)
+				var hit: Dictionary = f.pick(
+					o, (car.pos + car.vis_off + Vector3(0, 0.03, 0)) - o, WS.INTERACT_RANGE * 4.0
+				)
+				picked_car = (
+					hit.get("kind", "") == "vehicle"
+					and str(hit.get("data", {}).get("driver_id", "")) == fixture_rid
+				)
 		if legacy.has(fixture_rid) and (legacy[fixture_rid]["root"] as Node3D).visible:
 			root_shown = true
 		if parked_at < 0.0 and car.parked and drove:
@@ -1377,18 +1925,72 @@ func _check_resident_driver() -> void:
 			for e: Dictionary in f.visible_near(ctx.player_position(), 40.0):
 				var rid := str(e["id"])
 				var rr := people.find(rid)
-				if not trips.trips.has(rid) and (rr.is_empty() or TRIPS.inside_state(str(rr.get("state", "")))):
+				if (
+					not trips.trips.has(rid)
+					and (rr.is_empty() or TRIPS.inside_state(str(rr.get("state", ""))))
+				):
 					inside_seen = rid
 		if parked_at >= 0.0 and not trips.trips.has(fixture_rid):
 			break
 	var fr := ctx.directory.frontage(work)
-	var near_front := car.parked and car.slot_tile >= 0 and absi(D.tx(car.slot_tile) - D.tx(fr)) + absi(D.ty(car.slot_tile) - D.ty(fr)) <= 2
-	K.check(fails, drove and parked_at >= 0.0 and parked_at <= limit and near_front, "resident driver: parks at the destination frontage in %.1f s (limit %.1f s; phase %s, car parked %s slot %d lane %s v %.2f far %s, t %.0f)" % [parked_at, limit, tr.phase, str(car.parked), car.slot_tile, str(Vector2i(D.tx(car.lane.tile), D.ty(car.lane.tile))) if car.lane != null else "-", car.v / WS.M, str(car.far), time] + " held: " + _vh().why_held(car))
-	K.check(fails, drove and pos_err <= 0.05, "resident driver: avatars.position_of follows the car while en route (max error %.4f)" % pos_err)
-	K.check(fails, not root_shown, "resident driver: the legacy avatar root stays hidden (no double draw)")
-	K.check(fails, picked_car, "resident driver: pick() into the car gives kind vehicle with driver_id")
-	K.check(fails, picked_res, "resident driver: pick() into the resident on foot gives kind resident")
-	K.check(fails, inside_seen.is_empty(), "visible_near never lists a resident who is indoors (%s)" % inside_seen)
+	var near_front := (
+		car.parked
+		and car.slot_tile >= 0
+		and absi(D.tx(car.slot_tile) - D.tx(fr)) + absi(D.ty(car.slot_tile) - D.ty(fr)) <= 2
+	)
+	(
+		K
+		. check(
+			fails,
+			drove and parked_at >= 0.0 and parked_at <= limit and near_front,
+			(
+				(
+					"resident driver: parks at the destination frontage in %.1f s (limit %.1f s; phase %s, car parked %s slot %d lane %s v %.2f far %s, t %.0f)"
+					% [
+						parked_at,
+						limit,
+						tr.phase,
+						str(car.parked),
+						car.slot_tile,
+						(
+							str(Vector2i(D.tx(car.lane.tile), D.ty(car.lane.tile)))
+							if car.lane != null
+							else "-"
+						),
+						car.v / WS.M,
+						str(car.far),
+						time
+					]
+				)
+				+ " held: "
+				+ _vh().why_held(car)
+			)
+		)
+	)
+	K.check(
+		fails,
+		drove and pos_err <= 0.05,
+		(
+			"resident driver: avatars.position_of follows the car while en route (max error %.4f)"
+			% pos_err
+		)
+	)
+	K.check(
+		fails,
+		not root_shown,
+		"resident driver: the legacy avatar root stays hidden (no double draw)"
+	)
+	K.check(
+		fails, picked_car, "resident driver: pick() into the car gives kind vehicle with driver_id"
+	)
+	K.check(
+		fails, picked_res, "resident driver: pick() into the resident on foot gives kind resident"
+	)
+	K.check(
+		fails,
+		inside_seen.is_empty(),
+		"visible_near never lists a resident who is indoors (%s)" % inside_seen
+	)
 	# An ambient walker picks as a pedestrian.
 	f.set("ambient_enabled", true)
 	f.call("_maintain", true)
@@ -1408,6 +2010,7 @@ func _check_resident_driver() -> void:
 
 # ------------------------------------------------------------------ walker
 
+
 func _check_walker() -> void:
 	var people := ctx.residents
 	var trips: TRIPS = f.get("trips")
@@ -1423,7 +2026,12 @@ func _check_walker() -> void:
 		if str(x["id"]) == fixture_rid or ctx.directory.frontage(at) < 0:
 			continue
 		for y in sim.active:
-			if D.is_zone(sim.kind[y]) and sim.level[y] > 0 and ctx.directory.frontage(y) >= 0 and people.route_between(at, y).size() >= 7:
+			if (
+				D.is_zone(sim.kind[y])
+				and sim.level[y] > 0
+				and ctx.directory.frontage(y) >= 0
+				and people.route_between(at, y).size() >= 7
+			):
 				target = y
 				break
 		if target >= 0:
@@ -1476,9 +2084,22 @@ func _check_walker() -> void:
 				first_bad = "lateral %.4f at %s on (%d,%d) mask %d" % [lat, str(lp), x, z, m]
 		if absf(w.pos.y - WS.SIDEWALK_TOP) > 0.002:
 			bad_feet += 1
-	K.check(fails, not trips.trips.has(rid) and on_road > 100, "walker: the trip arrives (%.0f s, %d road samples, %d on zebras)" % [time, on_road, zebra])
-	K.check(fails, bad_surface == 0 and bad_band == 0, "walker: every sidewalk sample is off the carriageway and inside PED_BAND (%d, %d) %s" % [bad_surface, bad_band, first_bad])
-	K.check(fails, bad_feet == 0, "walker: feet at SIDEWALK_TOP on sidewalk samples (%d off)" % bad_feet)
+	K.check(
+		fails,
+		not trips.trips.has(rid) and on_road > 100,
+		"walker: the trip arrives (%.0f s, %d road samples, %d on zebras)" % [time, on_road, zebra]
+	)
+	K.check(
+		fails,
+		bad_surface == 0 and bad_band == 0,
+		(
+			"walker: every sidewalk sample is off the carriageway and inside PED_BAND (%d, %d) %s"
+			% [bad_surface, bad_band, first_bad]
+		)
+	)
+	K.check(
+		fails, bad_feet == 0, "walker: feet at SIDEWALK_TOP on sidewalk samples (%d off)" % bad_feet
+	)
 	# stay_home commuters sent far arrive as walk trips.
 	var r3: Dictionary = {}
 	var far_lot := -1
@@ -1486,7 +2107,12 @@ func _check_walker() -> void:
 		if str(x["id"]) == rid or str(x["id"]) == fixture_rid:
 			continue
 		for i in sim.active:
-			if D.is_zone(sim.kind[i]) and sim.level[i] > 0 and ctx.directory.frontage(i) >= 0 and people.route_between(int(x["at"]), i).size() > 6:
+			if (
+				D.is_zone(sim.kind[i])
+				and sim.level[i] > 0
+				and ctx.directory.frontage(i) >= 0
+				and people.route_between(int(x["at"]), i).size() > 6
+			):
 				far_lot = i
 				break
 		if far_lot >= 0:
@@ -1496,7 +2122,11 @@ func _check_walker() -> void:
 		r3["plan"] = {"commute": "stay_home"}
 		people.call("_go", r3, far_lot, "at the park")
 		var t3: TRIPS.Trip = trips.trips.get(str(r3["id"]), null)
-		K.check(fails, t3 != null and t3.mode == "walk", "walker: a stay_home commuter sent more than 6 tiles away arrives as a walk trip")
+		K.check(
+			fails,
+			t3 != null and t3.mode == "walk",
+			"walker: a stay_home commuter sent more than 6 tiles away arrives as a walk trip"
+		)
 		if t3 != null:
 			trips.complete_now(t3)
 	else:
@@ -1540,6 +2170,7 @@ func _lateral(m: int, lp: Vector2) -> float:
 
 # ------------------------------------------------------------------ conversation
 
+
 func _check_conversation() -> void:
 	var trips: TRIPS = f.get("trips")
 	var people := ctx.residents
@@ -1549,7 +2180,12 @@ func _check_conversation() -> void:
 		if int(x["at"]) == h and ctx.directory.frontage(h) >= 0:
 			var w2 := -1
 			for y in sim.active:
-				if D.is_zone(sim.kind[y]) and sim.level[y] > 0 and ctx.directory.frontage(y) >= 0 and absi(D.tx(y) - D.tx(h)) + absi(D.ty(y) - D.ty(h)) >= 5:
+				if (
+					D.is_zone(sim.kind[y])
+					and sim.level[y] > 0
+					and ctx.directory.frontage(y) >= 0
+					and absi(D.tx(y) - D.tx(h)) + absi(D.ty(y) - D.ty(h)) >= 5
+				):
 					w2 = y
 					break
 			if w2 >= 0:
@@ -1573,7 +2209,14 @@ func _check_conversation() -> void:
 	_step(2.0)
 	var to_player := ctx.player.position - w.pos
 	var face := absf(wrapf(atan2(to_player.x, to_player.z) - w.yaw, -PI, PI))
-	K.check(fails, w.v < 0.01 * WS.M and face < deg_to_rad(15.0), "conversation: the resident stops within 2 s and turns to the player (%.0f deg off)" % rad_to_deg(face))
+	K.check(
+		fails,
+		w.v < 0.01 * WS.M and face < deg_to_rad(15.0),
+		(
+			"conversation: the resident stops within 2 s and turns to the player (%.0f deg off)"
+			% rad_to_deg(face)
+		)
+	)
 	var head: Vector3 = f.anchor_of(rid)
 	var pp: PPL = f.get("people")
 	if pp != null and pp.ok:
@@ -1588,11 +2231,38 @@ func _check_conversation() -> void:
 		if b != null:
 			bone = (b.skel.global_transform * b.skel.get_bone_global_pose(b.head)).origin
 		var hy := (head.y - w.pos.y) / WS.M
-		K.check(fails, b != null and w.tier == 0 and head.distance_to(bone) <= 0.1 * WS.M and hy > 1.35 and hy < 1.75, "conversation: anchor_of is the drawn body's Head bone (%.3f m off, %.2f m up, tier %d)" % [head.distance_to(bone) / WS.M, hy, w.tier])
+		(
+			K
+			. check(
+				fails,
+				(
+					b != null
+					and w.tier == 0
+					and head.distance_to(bone) <= 0.1 * WS.M
+					and hy > 1.35
+					and hy < 1.75
+				),
+				(
+					"conversation: anchor_of is the drawn body's Head bone (%.3f m off, %.2f m up, tier %d)"
+					% [head.distance_to(bone) / WS.M, hy, w.tier]
+				)
+			)
+		)
 		var looking: bool = b != null and b.look != null and b.look.active
-		K.check(fails, looking, "conversation: the partner's head turns to the player (LookAtModifier3D)")
+		K.check(
+			fails,
+			looking,
+			"conversation: the partner's head turns to the player (LookAtModifier3D)"
+		)
 	else:
-		K.check(fails, head.distance_to(w.pos + Vector3(0, TRIPS.HEAD, 0)) <= 0.1 * WS.M and absf(head.y - w.pos.y - 1.62 * WS.M) < 0.12 * WS.M, "conversation: anchor_of stays at the head while they stand")
+		K.check(
+			fails,
+			(
+				head.distance_to(w.pos + Vector3(0, TRIPS.HEAD, 0)) <= 0.1 * WS.M
+				and absf(head.y - w.pos.y - 1.62 * WS.M) < 0.12 * WS.M
+			),
+			"conversation: anchor_of stays at the head while they stand"
+		)
 	_check_street_bubble(r)
 	ctx.bus.conversation_changed.emit(rid, false)
 	_step(2.0)
@@ -1619,8 +2289,20 @@ func _check_street_bubble(r: Dictionary) -> void:
 		av.call("_process", DT)
 	var b: Label3D = (av.get("_street") as Dictionary).get(str(r["id"]), null)
 	var at := b.position if b != null else Vector3(INF, INF, INF)
-	K.check(fails, b != null and b.visible and not b.no_depth_test and is_equal_approx(b.pixel_size, 0.0006) and at.distance_to(f.anchor_of(str(r["id"])) + Vector3(0, 0.12, 0)) < 1e-3,
-		"street bubble: a new line shows over the head, depth-tested at pixel_size 0.0006 (%s)" % (b.text if b != null else "none"))
+	K.check(
+		fails,
+		(
+			b != null
+			and b.visible
+			and not b.no_depth_test
+			and is_equal_approx(b.pixel_size, 0.0006)
+			and at.distance_to(f.anchor_of(str(r["id"])) + Vector3(0, 0.12, 0)) < 1e-3
+		),
+		(
+			"street bubble: a new line shows over the head, depth-tested at pixel_size 0.0006 (%s)"
+			% (b.text if b != null else "none")
+		)
+	)
 	av.fp_hidden = true
 	av.call("_process", DT)
 	K.check(fails, b != null and not b.visible, "street bubble: hidden while avatars.fp_hidden")
@@ -1632,10 +2314,16 @@ func _check_street_bubble(r: Dictionary) -> void:
 
 # ------------------------------------------------------------------ people (stage E2)
 
+
 func _check_people_e2() -> void:
 	var pp: PPL = f.get("people")
 	if pp == null or not pp.ok:
-		print("  note: stage E2 people checks skipped (%s; legacy static people)" % (pp.why if pp != null else "no people module"))
+		print(
+			(
+				"  note: stage E2 people checks skipped (%s; legacy static people)"
+				% (pp.why if pp != null else "no people module")
+			)
+		)
 		return
 	var speed := sim.speed
 	sim.speed = 1
@@ -1649,7 +2337,11 @@ func _check_people_e2() -> void:
 ## Bodies by job, gender and crc32(id): stable across fresh loads and save/load, never a hero,
 ## nurses from the medical pool; statures 1.61-1.80 m.
 func _check_people_assignment(pp: PPL) -> void:
-	K.check(fails, pp.crc32("hello") == 907060870 and pp.crc32("") == 0, "people: crc32 is zlib's CRC-32")
+	K.check(
+		fails,
+		pp.crc32("hello") == 907060870 and pp.crc32("") == 0,
+		"people: crc32 is zlib's CRC-32"
+	)
 	var heroes: Array = (pp.roster.get("heroes", {}) as Dictionary).values()
 	var bodies: Dictionary = pp.roster.get("bodies", {})
 	var fresh := PPL.new()
@@ -1666,7 +2358,17 @@ func _check_people_assignment(pp: PPL) -> void:
 			same += 1
 		if a.is_empty() or a in heroes or not bodies.has(a):
 			bad += 1
-	K.check(fails, n > 0 and same == n and bad == 0, "people: all %d residents get the same body in a fresh load, never a hero (%d differ, %d bad)" % [n, n - same, bad])
+	(
+		K
+		. check(
+			fails,
+			n > 0 and same == n and bad == 0,
+			(
+				"people: all %d residents get the same body in a fresh load, never a hero (%d differ, %d bad)"
+				% [n, n - same, bad]
+			)
+		)
+	)
 	# A resident's walker after a save and load (a new walker, new run of ids) looks the same.
 	var wk: WK = f.get("walkers")
 	var rid := fixture_rid
@@ -1679,7 +2381,14 @@ func _check_people_assignment(pp: PPL) -> void:
 	var w2 := wk.make("resident")
 	w2.resident_id = rid
 	pp2.dress(w2, ctx.residents)
-	K.check(fails, w1.av >= 0 and w1.av == w2.av and is_equal_approx(w1.h_m, w2.h_m), "people: resident %s keeps body %s and stature %.3f m after to_dict -> from_dict" % [rid, pp.avatar_name(w1), w1.h_m])
+	K.check(
+		fails,
+		w1.av >= 0 and w1.av == w2.av and is_equal_approx(w1.h_m, w2.h_m),
+		(
+			"people: resident %s keeps body %s and stature %.3f m after to_dict -> from_dict"
+			% [rid, pp.avatar_name(w1), w1.h_m]
+		)
+	)
 	wk.remove(w1)
 	wk.remove(w2)
 	# Nurses: the medical pool for their gender, else that gender's casual pool.
@@ -1701,7 +2410,14 @@ func _check_people_assignment(pp: PPL) -> void:
 		nurse_n += 1
 		if ai < 0 or not (pp.avatars[ai] as PPL.Avatar).name in want:
 			nurse_bad += 1
-	K.check(fails, nurse_bad == 0, "people: %d nurses all get a medical (or casual) body of their gender (%d off)" % [nurse_n, nurse_bad])
+	K.check(
+		fails,
+		nurse_bad == 0,
+		(
+			"people: %d nurses all get a medical (or casual) body of their gender (%d off)"
+			% [nurse_n, nurse_bad]
+		)
+	)
 	# Ambient walkers: never a hero; roughly 60 % casual, 25 % business, 15 % uniforms.
 	var groups := {}
 	var amb_hero := 0
@@ -1717,7 +2433,14 @@ func _check_people_assignment(pp: PPL) -> void:
 	var c := float(groups.get("casual", 0)) / 400.0
 	var b := float(groups.get("business", 0)) / 400.0
 	var u := float(groups.get("uniform", 0)) / 400.0
-	K.check(fails, amb_hero == 0 and absf(c - 0.6) < 0.08 and absf(b - 0.25) < 0.07 and absf(u - 0.15) < 0.06, "people: ambient mix %.0f/%.0f/%.0f %% casual/business/uniform, no hero" % [c * 100.0, b * 100.0, u * 100.0])
+	K.check(
+		fails,
+		amb_hero == 0 and absf(c - 0.6) < 0.08 and absf(b - 0.25) < 0.07 and absf(u - 0.15) < 0.06,
+		(
+			"people: ambient mix %.0f/%.0f/%.0f %% casual/business/uniform, no hero"
+			% [c * 100.0, b * 100.0, u * 100.0]
+		)
+	)
 	# Statures: every avatar at both ends of the jitter stands 1.61-1.80 m (0.0805-0.090 u).
 	var h_bad := 0
 	for a: PPL.Avatar in pp.avatars:
@@ -1782,9 +2505,29 @@ func _check_people_tiers(pp: PPL) -> void:
 			if b.ap.active or b.tree.active:
 				off_active += 1
 			continue
-		if w.tier == 0 and not (b.tree.active and not b.ap.active and b.tree.callback_mode_process == AnimationMixer.ANIMATION_CALLBACK_MODE_PROCESS_MANUAL):
+		if (
+			w.tier == 0
+			and not (
+				b.tree.active
+				and not b.ap.active
+				and (
+					b.tree.callback_mode_process
+					== AnimationMixer.ANIMATION_CALLBACK_MODE_PROCESS_MANUAL
+				)
+			)
+		):
 			t0_bad += 1
-		if (w.tier == 1 or w.tier == 2) and not (b.ap.active and not b.tree.active and b.ap.callback_mode_process == AnimationMixer.ANIMATION_CALLBACK_MODE_PROCESS_MANUAL):
+		if (
+			(w.tier == 1 or w.tier == 2)
+			and not (
+				b.ap.active
+				and not b.tree.active
+				and (
+					b.ap.callback_mode_process
+					== AnimationMixer.ANIMATION_CALLBACK_MODE_PROCESS_MANUAL
+				)
+			)
+		):
 			t12_bad += 1
 		for gi: GeometryInstance3D in b.meshes:
 			if gi is MeshInstance3D:
@@ -1798,17 +2541,68 @@ func _check_people_tiers(pp: PPL) -> void:
 		if b.box != null and b.box.visible:
 			surf += 1
 	print("  people tiers: %s" % str(st))
-	K.check(fails, int(st["t0"]) == PPL.T0_CAP and int(st["t1"]) + int(st["t2"]) <= PPL.SKIN_CAP and int(st["t1"]) > 0 and int(st["t2"]) > 0 and int(st["t3"]) > 0,
-		"people tiers: T0 %d (cap 8), T1 %d + T2 %d (cap 40), T3 %d" % [st["t0"], st["t1"], st["t2"], st["t3"]])
-	K.check(fails, t0_bad == 0 and t12_bad == 0, "people tiers: T0 bodies run the AnimationTree, T1/T2 a hand-advanced AnimationPlayer (%d, %d off)" % [t0_bad, t12_bad])
-	K.check(fails, t3_bodies == 0 and t3_drawn == int(st["t3"]), "people tiers: the %d T3 people are lod1 MultiMesh instances (%d drawn, %d with a body)" % [st["t3"], t3_drawn, t3_bodies])
-	K.check(fails, off_n > 0 and off_active == 0, "people tiers: %d off-screen bodies keep their pose with inactive mixers (%d active)" % [off_n, off_active])
-	K.check(fails, int(st["char_draws"]) <= PPL.DRAW_CAP and int(st["char_draws"]) >= surf, "people tiers: %d character draws (<= 150; %d skinned surfaces)" % [st["char_draws"], surf])
-	K.check(fails, h_bad == 0, "people tiers: drawn bodies' mesh heights %.4f-%.4f u (0.080-0.095 with hair and hats)" % [h_lo, h_hi])
+	K.check(
+		fails,
+		(
+			int(st["t0"]) == PPL.T0_CAP
+			and int(st["t1"]) + int(st["t2"]) <= PPL.SKIN_CAP
+			and int(st["t1"]) > 0
+			and int(st["t2"]) > 0
+			and int(st["t3"]) > 0
+		),
+		(
+			"people tiers: T0 %d (cap 8), T1 %d + T2 %d (cap 40), T3 %d"
+			% [st["t0"], st["t1"], st["t2"], st["t3"]]
+		)
+	)
+	(
+		K
+		. check(
+			fails,
+			t0_bad == 0 and t12_bad == 0,
+			(
+				"people tiers: T0 bodies run the AnimationTree, T1/T2 a hand-advanced AnimationPlayer (%d, %d off)"
+				% [t0_bad, t12_bad]
+			)
+		)
+	)
+	K.check(
+		fails,
+		t3_bodies == 0 and t3_drawn == int(st["t3"]),
+		(
+			"people tiers: the %d T3 people are lod1 MultiMesh instances (%d drawn, %d with a body)"
+			% [st["t3"], t3_drawn, t3_bodies]
+		)
+	)
+	K.check(
+		fails,
+		off_n > 0 and off_active == 0,
+		(
+			"people tiers: %d off-screen bodies keep their pose with inactive mixers (%d active)"
+			% [off_n, off_active]
+		)
+	)
+	K.check(
+		fails,
+		int(st["char_draws"]) <= PPL.DRAW_CAP and int(st["char_draws"]) >= surf,
+		"people tiers: %d character draws (<= 150; %d skinned surfaces)" % [st["char_draws"], surf]
+	)
+	K.check(
+		fails,
+		h_bad == 0,
+		(
+			"people tiers: drawn bodies' mesh heights %.4f-%.4f u (0.080-0.095 with hair and hats)"
+			% [h_lo, h_hi]
+		)
+	)
 	for w: WK.Walker in crowd:
 		wk.remove(w)
 	f.sync_visuals(DT)
-	K.check(fails, pp.get("_active").is_empty(), "people: removed walkers return their bodies to the pools")
+	K.check(
+		fails,
+		pp.get("_active").is_empty(),
+		"people: removed walkers return their bodies to the pools"
+	)
 
 
 ## One walker at 1.30 m/s in view: playback rate matched to the ground speed (HC's exact authored
@@ -1879,23 +2673,58 @@ func _check_people_gait(pp: PPL) -> void:
 			last_foot = low_i
 			last_p = fp
 			if w.vel.length() > 0.1 * WS.M:
-				face_min = minf(face_min, b.root.transform.basis.z.normalized().dot(Vector3(w.vel.x, 0, w.vel.z).normalized()))
-			var rate: float = b.tree.get(&"parameters/rate/scale") if b.mode == 0 else b.ap.speed_scale
+				face_min = minf(
+					face_min,
+					b.root.transform.basis.z.normalized().dot(
+						Vector3(w.vel.x, 0, w.vel.z).normalized()
+					)
+				)
+			var rate: float = (
+				b.tree.get(&"parameters/rate/scale") if b.mode == 0 else b.ap.speed_scale
+			)
 			var a: PPL.Avatar = pp.avatars[w.av]
 			var clip := w.anim_clip
 			var lib := load(AP.CHAR_LIB_M if a.gender == "m" else AP.CHAR_LIB_F) as AnimationLibrary
 			var src := lib.get_animation(&"walk")
-			var authored := float(src.get_meta("speed_mps")) * a.hip_m / float(src.get_meta("speed_ref_hip_m")) * w.h_m / a.rest_h
+			var authored := (
+				float(src.get_meta("speed_mps"))
+				* a.hip_m
+				/ float(src.get_meta("speed_ref_hip_m"))
+				* w.h_m
+				/ a.rest_h
+			)
 			var want := (w.vis_v / WS.M) / authored
 			var plan := (w.vis_v / WS.M) / (float(src.get_meta("speed_mps")) * w.h_m / 1.75)
 			rate_err = absf(rate - want) / want
-			rate_info = "%s %s at %.2f m/s: rate %.3f, exact %.3f, plan formula %.3f (%+.1f %%)" % [a.name, clip, w.vis_v / WS.M, rate, want, plan, (plan / want - 1.0) * 100.0]
+			rate_info = (
+				"%s %s at %.2f m/s: rate %.3f, exact %.3f, plan formula %.3f (%+.1f %%)"
+				% [a.name, clip, w.vis_v / WS.M, rate, want, plan, (plan / want - 1.0) * 100.0]
+			)
 		var slip_v := (slip / maxf(slip_t, 1e-4)) / WS.M
-		results[extra] = [rate_err, foot_lo / WS.M, foot_hi / WS.M, slip_v, face_min, rate_info, tiers.keys()]
-		print("  gait extra=%d: %s; feet %.3f..%.3f m; planted foot slides %.3f m/s; facing %.3f; tiers %s" % [extra, rate_info, foot_lo / WS.M, foot_hi / WS.M, slip_v, face_min, str(tiers.keys())])
+		results[extra] = [
+			rate_err, foot_lo / WS.M, foot_hi / WS.M, slip_v, face_min, rate_info, tiers.keys()
+		]
+		print(
+			(
+				"  gait extra=%d: %s; feet %.3f..%.3f m; planted foot slides %.3f m/s; facing %.3f; tiers %s"
+				% [
+					extra,
+					rate_info,
+					foot_lo / WS.M,
+					foot_hi / WS.M,
+					slip_v,
+					face_min,
+					str(tiers.keys())
+				]
+			)
+		)
 		wk.remove(w)
 	var r0: Array = results[0]
-	K.check(fails, float(r0[0]) <= 0.02, "gait: playback rate within 2 %% of v / authored speed (%s)" % r0[5])
+	K.check(
+		fails,
+		float(r0[0]) <= 0.02,
+		"gait: playback rate within 2 %% of v / authored speed (%s)" % r0[5]
+	)
 	var feet_bad := 0
 	var slide_bad := 0
 	var face_bad := 0
@@ -1908,12 +2737,17 @@ func _check_people_gait(pp: PPL) -> void:
 		if float(r[4]) < 0.95:
 			face_bad += 1
 	K.check(fails, feet_bad == 0, "gait: a foot is on the ground all the way (walk, carry, phone)")
-	K.check(fails, slide_bad == 0, "gait: the planted foot does not slide (< 0.25 m/s; walking 1.30 m/s)")
+	K.check(
+		fails,
+		slide_bad == 0,
+		"gait: the planted foot does not slide (< 0.25 m/s; walking 1.30 m/s)"
+	)
 	K.check(fails, face_bad == 0, "gait: bodies face the way they walk")
 	pl.teleport(saved, 0.0)
 
 
 # ------------------------------------------------------------------ save
+
 
 func _check_save() -> void:
 	var trips: TRIPS = f.get("trips")
@@ -1921,7 +2755,11 @@ func _check_save() -> void:
 		trips.complete_now(tr)
 	var d: Dictionary = f.to_dict()
 	var parked: Dictionary = d.get("parked", {})
-	K.check(fails, parked.has(fixture_rid), "save: the resident's parked car is in to_dict (%d parked)" % parked.size())
+	K.check(
+		fails,
+		parked.has(fixture_rid),
+		"save: the resident's parked car is in to_dict (%d parked)" % parked.size()
+	)
 	var parsed: Variant = JSON.parse_string(JSON.stringify(d))
 	K.check(fails, typeof(parsed) == TYPE_DICTIONARY, "save: to_dict survives JSON")
 	if typeof(parsed) != TYPE_DICTIONARY or not parked.has(fixture_rid):
@@ -1931,7 +2769,11 @@ func _check_save() -> void:
 	f.on_world_rebuilt()
 	f.from_dict(parsed)
 	var c: VH.Car = trips.cars.get(fixture_rid, null)
-	K.check(fails, c != null and c.parked and c.slot_tile == int(want[0]) and c.slot_k == int(want[1]), "save: the parked car is back in its slot after from_dict")
+	K.check(
+		fails,
+		c != null and c.parked and c.slot_tile == int(want[0]) and c.slot_k == int(want[1]),
+		"save: the parked car is back in its slot after from_dict"
+	)
 	var cars := 0
 	var peds := 0
 	for x: VH.Car in _vh().cars:
@@ -1940,7 +2782,11 @@ func _check_save() -> void:
 	for w: WK.Walker in (f.get("walkers") as WK).walkers:
 		if not w.dead:
 			peds += 1
-	K.check(fails, cars >= 2 and peds >= 2, "save: right after from_dict there are cars (%d) and pedestrians (%d)" % [cars, peds])
+	K.check(
+		fails,
+		cars >= 2 and peds >= 2,
+		"save: right after from_dict there are cars (%d) and pedestrians (%d)" % [cars, peds]
+	)
 
 
 ## Outside tests body scenes load in the background: a scene arrives within a few seconds and a
@@ -1960,7 +2806,11 @@ func _check_people_async() -> void:
 			OS.delay_msec(20)
 			waited += 20
 	var missing: Variant = bg.call("_scene", "res://models/characters/bodies/Nobody_00.glb")
-	K.check(fails, ps != null and missing == null and (bg.get("_pending") as Dictionary).is_empty(), "people: background scene loads arrive (%d ms) and a missing body is null" % waited)
+	K.check(
+		fails,
+		ps != null and missing == null and (bg.get("_pending") as Dictionary).is_empty(),
+		"people: background scene loads arrive (%d ms) and a missing body is null" % waited
+	)
 	var other := (bg.avatars[0] as PPL.Avatar).path.get_basename() + "_lod1.glb"
 	bg.call("_scene", other)
 	bg.finish_loads()
@@ -1983,17 +2833,35 @@ func _check_people_fallback() -> void:
 	for n: Node in (f.get("_agents_root") as Node).get_children():
 		if n.name.begins_with("CharacterRoot") and not n.is_queued_for_deletion():
 			live += 1
-	K.check(fails, live == 0 and not (f.get("walkers") as WK).hc, "people fallback: a rebuild without HC frees every body (%d left) and walkers leave HC speeds" % live)
+	(
+		K
+		. check(
+			fails,
+			live == 0 and not (f.get("walkers") as WK).hc,
+			(
+				"people fallback: a rebuild without HC frees every body (%d left) and walkers leave HC speeds"
+				% live
+			)
+		)
+	)
 	f.set("ambient_enabled", true)
 	f.call("_refill", true)
 	_check_people_draw()
 	var st: Dictionary = f.anim_stats()
-	K.check(fails, int(st["t0"]) + int(st["t1"]) + int(st["t2"]) + int(st["t3"]) == 0 and int(st["char_draws"]) > 0, "people fallback: anim_stats reports only the legacy people draws (%s)" % str(st))
+	K.check(
+		fails,
+		(
+			int(st["t0"]) + int(st["t1"]) + int(st["t2"]) + int(st["t3"]) == 0
+			and int(st["char_draws"]) > 0
+		),
+		"people fallback: anim_stats reports only the legacy people draws (%s)" % str(st)
+	)
 	f.set("people", pp)
 	f.on_world_rebuilt()
 
 
 # ------------------------------------------------------------------ buses
+
 
 ## Two stops on straights 4+ tiles apart make a line; a bus runs it, pulls in to the curb at a
 ## shelter for its dwell and leaves again.
@@ -2004,7 +2872,12 @@ func _check_buses() -> void:
 	var fleets = f.get("fleets")
 	var cands: Array[int] = []
 	for i: int in lg.tiles.keys():
-		if lg.parkable(i) and not view.bus_stops.has(i) and lg.slot_valid(i, 0) and lg.slot_valid(i, 2):
+		if (
+			lg.parkable(i)
+			and not view.bus_stops.has(i)
+			and lg.slot_valid(i, 0)
+			and lg.slot_valid(i, 2)
+		):
 			cands.append(i)
 	cands.sort()
 	# The farthest pair on one connected road network.
@@ -2026,7 +2899,11 @@ func _check_buses() -> void:
 				best = d
 				a = i
 				b = j
-	K.check(fails, a >= 0 and best >= 4, "fixture: two straights 4+ tiles apart for bus stops (%d)" % best)
+	K.check(
+		fails,
+		a >= 0 and best >= 4,
+		"fixture: two straights 4+ tiles apart for bus stops (%d)" % best
+	)
 	if a < 0 or best < 4:
 		return
 	var added: Array[int] = []
@@ -2035,7 +2912,11 @@ func _check_buses() -> void:
 			view.bus_stops[i] = true
 			added.append(i)
 	f.call("_maintain", false)
-	K.check(fails, fleets.lines.size() >= 1, "buses: new stops make %d seeded line(s)" % fleets.lines.size())
+	K.check(
+		fails,
+		fleets.lines.size() >= 1,
+		"buses: new stops make %d seeded line(s)" % fleets.lines.size()
+	)
 	if fleets.lines.is_empty():
 		for i: int in added:
 			view.bus_stops.erase(i)
@@ -2045,7 +2926,7 @@ func _check_buses() -> void:
 	for c: VH.Car in _vh().cars:
 		if c.role == "bus" and not c.dead:
 			bus = c
-	K.check(fails, bus != null, "buses: spawn_fleet(\"bus\") puts a bus on a line")
+	K.check(fails, bus != null, 'buses: spawn_fleet("bus") puts a bus on a line')
 	if bus == null:
 		return
 	var stop_lanes: Array = []
@@ -2068,7 +2949,14 @@ func _check_buses() -> void:
 			dwell = 0.0
 		if left_after and best_dwell > 0.0:
 			break
-	K.check(fails, best_dwell >= fleets.DWELL * 0.9 and left_after and curb >= fleets.CURB_LAT * 0.9, "buses: the bus stands %.1f s at a shelter, pulled %.1f m to the curb, then leaves" % [best_dwell, curb / WS.M])
+	K.check(
+		fails,
+		best_dwell >= fleets.DWELL * 0.9 and left_after and curb >= fleets.CURB_LAT * 0.9,
+		(
+			"buses: the bus stands %.1f s at a shelter, pulled %.1f m to the curb, then leaves"
+			% [best_dwell, curb / WS.M]
+		)
+	)
 	if not bus.dead:
 		_vh().remove(bus)
 	for i: int in added:
@@ -2077,6 +2965,7 @@ func _check_buses() -> void:
 
 
 # ------------------------------------------------------------------ fleets
+
 
 func _check_fleets() -> void:
 	var view := ctx.view
@@ -2089,15 +2978,32 @@ func _check_fleets() -> void:
 				break
 	K.check(fails, not ev.is_empty(), "fixture: a fire for the crews")
 	var crews0: int = fleets.count("crew")
-	K.check(fails, crews0 > 0, "fleets: CityLife sends crews through E (%d) %s" % [crews0, fleets.last_dispatch_fail])
+	K.check(
+		fails,
+		crews0 > 0,
+		"fleets: CityLife sends crews through E (%d) %s" % [crews0, fleets.last_dispatch_fail]
+	)
 	var counts: Dictionary = view.life.vehicle_counts()
-	K.check(fails, int(counts.get("crews", 0)) == crews0, "fleets: vehicle_counts() reports E's crews")
+	K.check(
+		fails, int(counts.get("crews", 0)) == crews0, "fleets: vehicle_counts() reports E's crews"
+	)
 	# A second view.setup() makes new CityLife and ResidentAvatars instances.
 	var old_life := view.life
 	view.setup(sim, view.camera)
 	f.on_world_rebuilt()
-	K.check(fails, view.life != old_life and view.life.external == f and view.avatars.external == f, "fleets: world_rebuilt re-attaches the hooks to the new instances")
-	K.check(fails, fleets.count("crew") > 0, "fleets: an event present before the rebuild gets a crew through E (%d live events) %s" % [sim.events.size(), fleets.last_dispatch_fail])
+	K.check(
+		fails,
+		view.life != old_life and view.life.external == f and view.avatars.external == f,
+		"fleets: world_rebuilt re-attaches the hooks to the new instances"
+	)
+	K.check(
+		fails,
+		fleets.count("crew") > 0,
+		(
+			"fleets: an event present before the rebuild gets a crew through E (%d live events) %s"
+			% [sim.events.size(), fleets.last_dispatch_fail]
+		)
+	)
 	# Crew routes take at most ASTAR_PER_FRAME A* builds per frame; the rest wait their turn.
 	for c: VH.Car in _vh().cars.duplicate():
 		if c.role == "crew":
@@ -2111,6 +3017,25 @@ func _check_fleets() -> void:
 	var first: int = fleets.count("crew")
 	var waiting: int = fleets.pending.size()
 	f.step(DT)
-	K.check(fails, first <= fleets.ASTAR_PER_FRAME and waiting == 6 - first and fleets.pending.is_empty() and fleets.count("crew") == 6, "fleets: 6 crew routes in one frame build %d now, %d wait, all 6 after the next frame (%d)" % [first, waiting, fleets.count("crew")])
+	(
+		K
+		. check(
+			fails,
+			(
+				first <= fleets.ASTAR_PER_FRAME
+				and waiting == 6 - first
+				and fleets.pending.is_empty()
+				and fleets.count("crew") == 6
+			),
+			(
+				"fleets: 6 crew routes in one frame build %d now, %d wait, all 6 after the next frame (%d)"
+				% [first, waiting, fleets.count("crew")]
+			)
+		)
+	)
 	f.teardown()
-	K.check(fails, view.life.external == null and view.avatars.external == null, "fleets: teardown() clears both hooks")
+	K.check(
+		fails,
+		view.life.external == null and view.avatars.external == null,
+		"fleets: teardown() clears both hooks"
+	)
