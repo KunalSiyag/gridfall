@@ -101,7 +101,7 @@ const ACT_OUT := 0.2
 const DANCE_IN := 0.3
 const DANCE_OUT := 0.4
 const HL_GUARD := 0.06
-## The guard (fists up) is GUARD_CLIP held at GUARD_AT seconds on the upper body.
+## The old clip branch is kept at zero; the strike pose layer builds the guard with IK instead.
 const GUARD_CLIP := "punch_jab"
 const GUARD_AT := 0.0
 ## Clips played this much faster than authored: sitting down and standing up, getting into a
@@ -251,7 +251,7 @@ func _setup(b: Node3D, sk: Skeleton3D, lib: AnimationLibrary, k: float, p_gender
 	playback = tree.get(P_SM)
 	look = LOOK.new(skeleton, body)
 	limbs = LIMBS.new(skeleton, body)
-	strike_pose = POSE.new(sk, _fk, lib, body, tree)
+	strike_pose = POSE.new(sk, _fk, lib, body, tree, limbs)
 	_reset_params()
 
 
@@ -464,6 +464,7 @@ func stop_action() -> void:
 ## Raises (on) or drops the guard: fists up on the upper body, eased over HL_GUARD.
 func set_guard(on: bool) -> void:
 	_guard_goal = 1.0 if on else 0.0
+	strike_pose.set_guard(on)
 
 
 ## Times the playing action and the dance out, ends the dance once the body moves or leaves its
@@ -486,7 +487,7 @@ func _update_actions(dt: float, a: float) -> void:
 		_dance_left = INF
 		tree.set(P_DANCE, AnimationNodeOneShot.ONE_SHOT_REQUEST_FADE_OUT)
 	guard = _guard_goal if dt <= 0.0 else SM.damp(guard, _guard_goal, HL_GUARD, dt)
-	tree.set(P_GUARD, guard)
+	tree.set(P_GUARD, 0.0)
 
 
 ## How far clip has carried its root t seconds after its state began (0..1 of the whole clip's

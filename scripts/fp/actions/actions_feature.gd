@@ -5,8 +5,8 @@ extends FpFeature
 ## to where the camera looks); R shoves and X (middle mouse) kicks, further than a fist. The guard
 ## (right mouse or left trigger held: fists up, the body squared to where the camera looks, the
 ## camera in closer) is the fighting stance. A blow lands when the rig's fist is furthest out
-## (the rig's strike pose layer, measure; a kick at KICK_HIT) on the person nearest in front within
-## reach, through the traffic feature's hit_walker: they reel or go down, the people around react
+## (the rig's strike pose layer, measure; a kick at KICK_HIT) on the person nearest the aim ray
+## within reach. The traffic feature's hit_walker makes them reel or go down; people nearby react
 ## and the city hears of it. With a weapon in hand (the melee feature) the strike button swings it
 ## instead, further and harder, and the melee feature hears where it landed. With nobody there a
 ## kick or a weapon swing lands on the dog, cat or pigeon in front (the animals feature's strike;
@@ -78,6 +78,9 @@ const REACH := 1.2 * WS.M
 ## A kick reaches further.
 const KICK_REACH := 1.5 * WS.M
 const CONE := 0.4
+## A person must come within this distance of the aim ray at chest height to take a blow.
+const AIM_RADIUS := 0.65 * WS.M
+const AIM_HEIGHT := 1.35 * WS.M
 const HOLD_REACH := 1.3
 ## Running adds up to this much strength (at WS.RUN).
 const RUN_BONUS := 0.3
@@ -283,10 +286,10 @@ func _held_id() -> int:
 
 ## Person id's walkers_near entry within r of the hero, {} when they are not there.
 func _walker(id: int, r: float) -> Dictionary:
-	var tr := ctx.feature("traffic")
-	if tr == null or id < 0:
+	var traffic := ctx.feature("traffic")
+	if traffic == null or id < 0:
 		return {}
-	for w: Dictionary in tr.call("walkers_near", ctx.player.position, r):
+	for w: Dictionary in traffic.call("walkers_near", ctx.player.position, r):
 		if int(w["id"]) == id:
 			return w
 	return {}
@@ -339,8 +342,8 @@ func emote(e: String) -> bool:
 		return false
 	_emote_gap = EMOTE_GAP
 	var feet := ctx.player.position
-	var tr := ctx.feature("traffic")
-	answered = int(tr.call("answer_emote", feet, _aim_dir(), e)) if tr != null else 0
+	var traffic := ctx.feature("traffic")
+	answered = int(traffic.call("answer_emote", feet, _aim_dir(), e)) if traffic != null else 0
 	if ctx.bus != null:
 		ctx.bus.hero_action.emit(e, feet)
 	return true
@@ -454,16 +457,16 @@ func _land() -> void:
 		if not _strike_animal():
 			_strike_prop()
 		return
-	var tr := ctx.feature("traffic")
+	var traffic := ctx.feature("traffic")
 	var who := _walker(_target, _reach() * HOLD_REACH)
-	if tr == null or who.is_empty() or bool(who["down"]):
+	if traffic == null or who.is_empty() or bool(who["down"]):
 		return
 	var feet := ctx.player.position
 	var d: Vector3 = (who["pos"] as Vector3) - feet
 	d.y = 0.0
 	var push := _push(d)
 	var cause := str(SWINGS[swing][1])
-	var info: Dictionary = tr.call(
+	var info: Dictionary = traffic.call(
 		"hit_walker", _target, feet, push[0], _strength(), cause, float(push[1])
 	)
 	if info.is_empty():
@@ -583,22 +586,39 @@ func _hand_back() -> void:
 		p.rig.arm_scale = 1.0
 
 
-## The person on their feet nearest the hero within reach inside the cone around dir (walkers_near's
-## entry), {} for none.
+## The person on their feet nearest the view ray within reach (walkers_near's entry), {} for none.
 func _find_target(dir: Vector3) -> Dictionary:
-	var tr := ctx.feature("traffic")
-	if tr == null:
+	var traffic := ctx.feature("traffic")
+	if traffic == null:
 		return {}
 	var feet := ctx.player.position
+	# Cast from the hero's chest, not the camera: over the shoulder the camera sits off to one side,
+	# and its own line would favour whoever stands on that side.
+	var origin := feet + Vector3.UP * AIM_HEIGHT
+	var aim: Vector3 = ctx.player.forward().normalized()
+	if aim.is_zero_approx():
+		aim = dir.normalized()
 	var best := {}
-	var bd := INF
-	for w: Dictionary in tr.call("walkers_near", feet, _reach()):
-		var d: Vector3 = (w["pos"] as Vector3) - feet
-		d.y = 0.0
-		var dist := d.length()
-		var ahead := dist < 1e-5 or d.dot(dir) / dist >= CONE
-		if ahead and not bool(w["down"]) and dist < bd:
-			bd = dist
+	var best_miss := AIM_RADIUS
+	var best_along := INF
+	var reach := _reach()
+	var flat_dir := Vector3(dir.x, 0.0, dir.z).normalized()
+	for w: Dictionary in traffic.call("walkers_near", feet, reach):
+		if bool(w["down"]):
+			continue
+		var walker_pos: Vector3 = w["pos"]
+		var from_hero := walker_pos - feet
+		from_hero.y = 0.0
+		if from_hero.length() > reach + 1e-5 or from_hero.dot(flat_dir) <= 0.0:
+			continue
+		var to := walker_pos + Vector3.UP * AIM_HEIGHT - origin
+		var along := to.dot(aim)
+		if along <= 0.0:
+			continue
+		var miss := (to - aim * along).length()
+		if miss < best_miss - 1e-5 or (absf(miss - best_miss) <= 1e-5 and along < best_along):
+			best_miss = miss
+			best_along = along
 			best = w
 	return best
 
@@ -660,13 +680,13 @@ func photo_restore() -> void:
 func _photo_stage() -> void:
 	for _k in range(PHOTO_FRAMES):
 		await get_tree().process_frame
-	var tr := ctx.feature("traffic")
-	if tr == null:
+	var traffic := ctx.feature("traffic")
+	if traffic == null:
 		return
 	var p := ctx.player
 	var best := {}
 	var bd := INF
-	for w: Dictionary in tr.call("walkers_near", p.position, PHOTO_R):
+	for w: Dictionary in traffic.call("walkers_near", p.position, PHOTO_R):
 		var dist := (w["pos"] as Vector3).distance_to(p.position)
 		if not bool(w["down"]) and dist < bd:
 			bd = dist
@@ -680,4 +700,4 @@ func _photo_stage() -> void:
 	var right := Vector3(cos(wy), 0.0, -sin(wy))
 	var at := (best["pos"] as Vector3) + facing * PHOTO_GAP - right * PHOTO_SIDE
 	p.teleport(at, rad_to_deg(wy), -6.0)
-	tr.call("pose_walker", int(best["id"]), &"hit_head", 0.2)
+	traffic.call("pose_walker", int(best["id"]), &"hit_head", 0.2)

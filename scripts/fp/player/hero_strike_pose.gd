@@ -4,9 +4,10 @@ extends RefCounted
 ## tree plays them SPEED times as fast as authored) the spine and chest coil back through the
 ## windup, then turn and lean into the blow, peaking as the fist (or the foot) arrives and easing
 ## back over the recovery. A SkeletonModifier3D applies it after the tree and the other
-## modifiers; it runs only while a strike clip plays, so it never touches the body seated, in the
-## car, on a wall or climbing. The rig owns the clock (tick) and the tree the clock gates on; the
-## measurement (measure) is the same one the actions feature lands its blows at.
+## modifiers. It also supplies a planted fighting guard and guides both hands forward as a shove
+## lands; the rig owns the clock (tick) and the tree the clock gates on.
+
+const SM := preload("res://scripts/fp/player/spring_math.gd")
 
 ## Strike clips play this much faster than authored: the windup snaps and the fist is out sooner.
 const SPEED := {
@@ -28,7 +29,7 @@ const POSE := {
 	"punch_hook": [20.0, 6.0, -1.0],
 	"swing_a": [12.0, 10.0, -1.0],
 	"swing_b": [12.0, 10.0, -1.0],
-	"push": [0.0, 12.0, 0.15],
+	"push": [0.0, 15.0, 0.15],
 	"throw": [0.0, 10.0, -1.0],
 	"kick": [0.0, 5.0, 0.24],
 }
@@ -41,6 +42,49 @@ const COIL := 0.35
 const COIL_SNAP := 0.12
 const COIL_AT := 0.55
 const RECOVER := 0.3
+## The shove's hand IK takes the arms over PUSH_IN from the start (the clip's own windup never
+## shows), pulls the hands to the chest, drives both palms out from PUSH_OUT of the way to the
+## contact, holds through impact, then lets go.
+const PUSH_IN := 0.05
+const PUSH_OUT := 0.35
+const PUSH_HOLD := 0.08
+const PUSH_RELEASE := 0.16
+## The fighting guard eases its weight by half over this many seconds.
+const GUARD_HALFLIFE := 0.07
+const GUARD_MOVE_MAX := 0.12
+## Distances in the procedural guard and push poses (skeleton metres).
+## The guard's fists sit at the chin and cheeks with the elbows tucked in under them.
+const GUARD_HAND_HEIGHT := 1.42
+const GUARD_HAND_FORWARD := 0.24
+const GUARD_HAND_SPREAD := 0.1
+const GUARD_ELBOW_HEIGHT := 0.98
+const GUARD_ELBOW_FORWARD := 0.12
+const GUARD_ELBOW_SPREAD := 0.2
+## The shove: hands drawn to the chest, then both palms out at chest height, elbows down.
+const PULL_HAND_FORWARD := 0.2
+const PULL_HAND_HEIGHT := 1.16
+## The lean into the shove turns after the hand IK and carries the palms down; the height
+## allows for it.
+const PUSH_HAND_HEIGHT := 1.4
+const PUSH_HAND_FORWARD := 0.58
+const PUSH_HAND_SPREAD := 0.16
+const PUSH_ELBOW_HEIGHT := 0.98
+const PUSH_ELBOW_FORWARD := 0.2
+const PUSH_ELBOW_SPREAD := 0.36
+## Holding someone: both hands on their upper arms, GRIP_HEIGHT up and GRIP_BACK short of their
+## feet, GRIP_SPREAD to each side.
+const GRIP_HEIGHT := 1.28
+const GRIP_BACK := 0.12
+const GRIP_SPREAD := 0.19
+const GRIP_ELBOW_HEIGHT := 1.0
+const GRIP_ELBOW_SPREAD := 0.34
+## A fist: the bend (rad) at each finger's three joints, all four fingers, about the knuckle line.
+const FINGERS := ["Index", "Middle", "Ring", "Little"]
+const KNUCKLES := ["Proximal", "Intermediate", "Distal"]
+const FIST_BEND := [1.35, 1.5, 1.0]
+const GUARD_FOOT_SPREAD := 0.15
+const GUARD_FOOT_LEAD := 0.07
+const P_MOVE := "parameters/sm/loco/move/blend_amount"
 ## The bones the turn spreads over.
 const BONES := [["Spine", SPINE_SHARE], ["UpperChest", 1.0 - SPINE_SHARE]]
 ## The measurement: this many poses sampled over a clip's opening WITHIN seconds; a fist counts
@@ -69,21 +113,45 @@ var _times: Dictionary = {}
 var _hands: Dictionary = {}
 var _sk: Skeleton3D
 var _fk: RefCounted
+var _limbs: RefCounted
 var _lib: AnimationLibrary
 var _tree: AnimationTree
+var _body: Node3D
 var _fwd := Vector3.ZERO
+var _guard_goal: float = 0.0
+var _guard: float = 0.0
+var _hold := false
+var _hold_at := Vector3.ZERO
+## [bone, axis in the bone's own frame, bend] for each finger joint a fist closes.
+var _curl: Array = []
+var _hands_claimed: bool = false
+var _feet_claimed: bool = false
+## The last target and pole each limb was sent (hands 0-1, feet 2-3): a release re-sends them at
+## weight 0, so the limb layer eases the hold out from where it lies rather than yanking the
+## limb somewhere new.
+var _last_t: Array[Vector3] = [Vector3.ZERO, Vector3.ZERO, Vector3.ZERO, Vector3.ZERO]
+var _last_p: Array[Vector3] = [Vector3.ZERO, Vector3.ZERO, Vector3.ZERO, Vector3.ZERO]
 
 
 ## Measures over the skeleton sk's own clip keys (fk: hero_fk.gd over the same skeleton, lib the
 ## hero's animation library, root the body's scene root the forward is taken from, tree the rig's).
 func _init(
-	p_sk: Skeleton3D, p_fk: RefCounted, p_lib: AnimationLibrary, root: Node3D, p_tree: AnimationTree
+	p_sk: Skeleton3D,
+	p_fk: RefCounted,
+	p_lib: AnimationLibrary,
+	root: Node3D,
+	p_tree: AnimationTree,
+	p_limbs: RefCounted
 ) -> void:
 	_sk = p_sk
 	_fk = p_fk
+	_limbs = p_limbs
 	_lib = p_lib
 	_tree = p_tree
+	_body = root
 	_fwd = p_fk.call("forward_of", root)
+	for s: String in ["Left", "Right"]:
+		_curl.append_array(fist_joints(p_sk, s))
 	_mod = Mod.new(self)
 	_mod.name = "StrikePose"
 	p_sk.add_child(_mod)
@@ -155,27 +223,59 @@ func start(a: String) -> void:
 		_mod.active = true
 
 
+## Requests the procedural fighting guard; a playing action takes precedence over its pose.
+func set_guard(on: bool) -> void:
+	_guard_goal = 1.0 if on else 0.0
+	if _mod != null:
+		_mod.active = on or not clip.is_empty() or _guard > 0.001
+
+
+## Holding someone (on) whose feet stand at at (world): while the guard is up the hands grip
+## them there instead of rising to the chin.
+func set_hold(on: bool, at: Vector3 = Vector3.ZERO) -> void:
+	_hold = on
+	_hold_at = at
+
+
+## The eased guard weight, for the rig's tests.
+func guard_weight() -> float:
+	return _guard
+
+
+## The forward-hand weight at the shove's contact, for the rig's tests.
+func push_weight() -> float:
+	return push_envelope(_t, _c) if clip == "push" else 0.0
+
+
 ## Ends the layer (the strike over, faded out or stopped).
 func end() -> void:
 	clip = ""
 	if _mod != null:
-		_mod.active = false
+		_mod.active = _guard > 0.001 or _guard_goal > 0.0
 
 
 ## Runs the layer's clock on by dt, ending it once its strike is no longer the one playing (a
 ## start waits a frame or two for the tree to take its request; stop_action ends it at once).
 func tick(dt: float) -> void:
-	if clip.is_empty():
-		return
-	_t += dt
-	if _wait > 0:
-		_wait -= 1
-		return
-	var on := (
-		bool(_tree.get(P_KICK)) if clip == "kick" else _asked == clip and bool(_tree.get(P_ACT))
-	)
-	if not on:
-		end()
+	if not clip.is_empty():
+		_t += dt
+		if _wait > 0:
+			_wait -= 1
+		else:
+			var on := (
+				bool(_tree.get(P_KICK))
+				if clip == "kick"
+				else _asked == clip and bool(_tree.get(P_ACT))
+			)
+			if not on:
+				end()
+	var goal := _guard_goal if clip.is_empty() else 0.0
+	_guard = goal if dt <= 0.0 else SM.damp(_guard, goal, GUARD_HALFLIFE, dt)
+	if _guard < 0.001 and goal <= 0.0:
+		_guard = 0.0
+	if _mod != null:
+		_mod.active = not clip.is_empty() or _guard > 0.0 or goal > 0.0
+	_update_hand_goals()
 
 
 ## Clip's AnimationNode played at its SPEED (a clip SPEED does not name unchanged), through a
@@ -200,7 +300,12 @@ func weight() -> float:
 ## Applies the layer to sk (the modifier's callback): the spine and chest turned and leaned into
 ## the blow by the envelope, on top of the tree's own pose.
 func apply(sk: Skeleton3D) -> void:
-	if sk == null or clip.is_empty():
+	if sk == null:
+		return
+	if _guard > 0.0:
+		_apply_guard(sk, _guard)
+		_close_fists(sk, _guard)
+	if clip.is_empty():
 		return
 	var w := envelope(_t, _c)
 	if absf(w) < 1e-3:
@@ -219,6 +324,202 @@ func apply(sk: Skeleton3D) -> void:
 		sk.set_bone_pose(b, pose)
 
 
+## Guides both palms through the shove (drawn to the chest, then out through impact); otherwise
+## the fists rise to the chin (or, with someone held, grip them) and the feet set into a
+## staggered stance while the hero is still.
+func _update_hand_goals() -> void:
+	if _limbs == null or _body == null:
+		return
+	var push := push_weight()
+	var guard := _guard if clip.is_empty() and _guard_goal > 0.0 else 0.0
+	# A hold grips at once, straight on from the reach that took hold, never sagging between.
+	if _hold and guard > 0.0:
+		guard = 1.0
+	if push <= 0.0 and guard <= 0.0 and not _hands_claimed and not _feet_claimed:
+		return
+	var xf := _body.global_transform
+	if push > guard and push > 0.0:
+		_push_goals(xf, push)
+	elif guard > 0.0:
+		_guard_goals(xf, guard)
+	else:
+		_release_hands()
+		_release_feet()
+
+
+## The shove's hand goals at weight push on the body at xf.
+func _push_goals(xf: Transform3D, push: float) -> void:
+	var fwd := xf.basis.z.normalized()
+	# The body faces +Z, so its own right is -X.
+	var right := -xf.basis.x.normalized()
+	var scale := maxf(xf.basis.x.length(), 1e-4)
+	var out := smoothstep(_c * PUSH_OUT, _c, _t)
+	var reach := lerpf(PULL_HAND_FORWARD, PUSH_HAND_FORWARD, out)
+	var high := lerpf(PULL_HAND_HEIGHT, PUSH_HAND_HEIGHT, out)
+	for i in 2:
+		var s := -1.0 if i == 0 else 1.0
+		var target := _at(xf.origin, fwd, right, scale, reach, high, s * PUSH_HAND_SPREAD)
+		var pole := _at(
+			xf.origin,
+			fwd,
+			right,
+			scale,
+			PUSH_ELBOW_FORWARD,
+			PUSH_ELBOW_HEIGHT,
+			s * PUSH_ELBOW_SPREAD
+		)
+		_set_goal(i, target, pole, push)
+	_take_arms(push)
+	_release_feet()
+
+
+## The guard's (or, with someone held, the grip's) hand goals and the stance at weight guard on
+## the body at xf.
+func _guard_goals(xf: Transform3D, guard: float) -> void:
+	var fwd := xf.basis.z.normalized()
+	var right := -xf.basis.x.normalized()
+	var scale := maxf(xf.basis.x.length(), 1e-4)
+	var origin := xf.origin
+	for i in 2:
+		var s := -1.0 if i == 0 else 1.0
+		var target: Vector3
+		var pole: Vector3
+		if _hold:
+			target = (
+				_hold_at
+				- fwd * GRIP_BACK * scale
+				+ Vector3.UP * GRIP_HEIGHT * scale
+				+ right * s * GRIP_SPREAD * scale
+			)
+			pole = _at(origin, fwd, right, scale, 0.0, GRIP_ELBOW_HEIGHT, s * GRIP_ELBOW_SPREAD)
+		else:
+			target = _at(
+				origin,
+				fwd,
+				right,
+				scale,
+				GUARD_HAND_FORWARD,
+				GUARD_HAND_HEIGHT,
+				s * GUARD_HAND_SPREAD
+			)
+			pole = _at(
+				origin,
+				fwd,
+				right,
+				scale,
+				GUARD_ELBOW_FORWARD,
+				GUARD_ELBOW_HEIGHT,
+				s * GUARD_ELBOW_SPREAD
+			)
+		_set_goal(i, target, pole, guard)
+	_hands_claimed = true
+	if _hold:
+		_take_arms(guard)
+	if float(_tree.get(P_MOVE)) < GUARD_MOVE_MAX:
+		_set_stance_feet(origin, fwd, right, scale, guard)
+		_feet_claimed = true
+	else:
+		_release_feet()
+
+
+## A point forward, up and to the side (skeleton metres) of the body at origin.
+static func _at(
+	origin: Vector3, fwd: Vector3, right: Vector3, scale: float, f: float, up: float, side: float
+) -> Vector3:
+	return origin + (fwd * f + Vector3.UP * up + right * side) * scale
+
+
+## The shove owns the arms at once: the hands' IK influence is lifted to w rather than easing in
+## behind the clip, whose own keys swing the arms up overhead first.
+func _take_arms(w: float) -> void:
+	_hands_claimed = true
+	var weights: PackedFloat32Array = _limbs.get("weights")
+	for i in 2:
+		weights[i] = maxf(weights[i], w)
+	_limbs.set("weights", weights)
+
+
+func _set_goal(i: int, target: Vector3, pole: Vector3, weight: float) -> void:
+	_last_t[i] = target
+	_last_p[i] = pole
+	_limbs.call("set_goal", i, target, pole, weight)
+
+
+func _set_stance_feet(
+	origin: Vector3, fwd: Vector3, right: Vector3, scale: float, weight: float
+) -> void:
+	var left := origin + fwd * GUARD_FOOT_LEAD * scale - right * GUARD_FOOT_SPREAD * scale
+	var right_foot := origin - fwd * GUARD_FOOT_LEAD * scale + right * GUARD_FOOT_SPREAD * scale
+	var pole_l := left + fwd * 0.18 * scale + Vector3.UP * 0.45 * scale
+	var pole_r := right_foot + fwd * 0.18 * scale + Vector3.UP * 0.45 * scale
+	_set_goal(2, left, pole_l, weight)
+	_set_goal(3, right_foot, pole_r, weight)
+
+
+## Gives the claimed hands back at weight 0, their targets left where the guard or the shove
+## held them, so the hold eases out instead of snapping somewhere new.
+func _release_hands() -> void:
+	if not _hands_claimed:
+		return
+	for i in 2:
+		_set_goal(i, _last_t[i], _last_p[i], 0.0)
+	_hands_claimed = false
+
+
+## The feet of the stance, given back the same way.
+func _release_feet() -> void:
+	if not _feet_claimed:
+		return
+	_set_goal(2, _last_t[2], _last_p[2], 0.0)
+	_set_goal(3, _last_t[3], _last_p[3], 0.0)
+	_feet_claimed = false
+
+
+## The joints sk's side ("Left" or "Right") hand closes into a fist: [bone, axis, bend] each, the
+## axis the knuckle line in the bone's own frame turned so the fingers fold toward the palm (the
+## side the thumb's base sits on). Empty when the hand has no finger bones.
+static func fist_joints(sk: Skeleton3D, side: String) -> Array:
+	var names := [
+		"IndexProximal", "LittleProximal", "MiddleProximal", "MiddleDistal", "ThumbProximal"
+	]
+	var at := {}
+	for n: String in names:
+		var b := sk.find_bone(side + n)
+		if b < 0:
+			return []
+		at[n] = sk.get_bone_global_rest(b).origin
+	var along: Vector3 = (at["MiddleDistal"] - at["MiddleProximal"]).normalized()
+	var across: Vector3 = (at["IndexProximal"] - at["LittleProximal"]).normalized()
+	var palm := across.cross(along)
+	var axis := across if (at["ThumbProximal"] - at["MiddleProximal"]).dot(palm) >= 0.0 else -across
+	var out := []
+	for finger: String in FINGERS:
+		for k in KNUCKLES.size():
+			var b := sk.find_bone(side + finger + str(KNUCKLES[k]))
+			if b < 0:
+				continue
+			var local := (sk.get_bone_global_rest(b).basis.inverse() * axis).normalized()
+			out.append([b, local, float(FIST_BEND[k])])
+	return out
+
+
+func _close_fists(sk: Skeleton3D, weight: float) -> void:
+	for j: Array in _curl:
+		var b := int(j[0])
+		var pose := sk.get_bone_pose(b)
+		pose.basis = pose.basis * Basis(j[1] as Vector3, float(j[2]) * weight)
+		sk.set_bone_pose(b, pose)
+
+
+func _apply_guard(sk: Skeleton3D, weight: float) -> void:
+	# A small forward brace through the pelvis makes the raised hands read as a stance.
+	var hips := sk.find_bone("Hips")
+	if hips >= 0:
+		var pose := sk.get_bone_pose(hips)
+		pose.basis = Basis(Quaternion(Vector3.RIGHT, deg_to_rad(3.0) * weight)) * pose.basis
+		sk.set_bone_pose(hips, pose)
+
+
 ## The envelope t seconds into a strike whose blow lands at c: a coil back through the windup
 ## (none once the windup is too short to read), the full turn into the blow at the contact, eased
 ## back to nothing RECOVER after it.
@@ -232,6 +533,13 @@ static func envelope(t: float, c: float) -> float:
 	if k <= COIL_AT:
 		return coil * sin(PI * k / (2.0 * COIL_AT))
 	return lerpf(coil, 1.0, smoothstep(COIL_AT, 1.0, k))
+
+
+## Shove hand IK: in over PUSH_IN from the start, held through the contact, then released.
+static func push_envelope(t: float, c: float) -> float:
+	if t <= c + PUSH_HOLD:
+		return smoothstep(0.0, PUSH_IN, t)
+	return 1.0 - smoothstep(c + PUSH_HOLD, c + PUSH_HOLD + PUSH_RELEASE, t)
 
 
 ## The layer's modifier: runs after the tree and the other modifiers (it is added last) and hands
