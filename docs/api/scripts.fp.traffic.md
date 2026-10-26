@@ -514,6 +514,7 @@ Animated people from HC's roster (docs/fp/slices/E-traffic.md deliverable 9, TPS
 - `AP = preload("res://scripts/fp/asset_paths.gd")`
 - `WK = preload("res://scripts/fp/traffic/walkers.gd")`
 - `KIT = preload("res://scripts/fp/traffic/people_kit.gd")`
+- `WebSupport = preload("res://scripts/ops/web_support.gd")`
 - `T0_R = 12.0 * WS.M`
 - `T0_CAP = 8`
 - `T1_R = 30.0 * WS.M`

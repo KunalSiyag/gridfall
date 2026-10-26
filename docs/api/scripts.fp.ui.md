@@ -231,6 +231,27 @@ The lean on-foot HUD (slice B): named slots the HUD, chat and other slices fill,
 - `func clear_waypoint() -> void`: Clears the waypoint.
 - `func close_transient() -> void`: Closes the place card and the full map and pops their modals (world_ready, load, New City).
 
+## `scripts/fp/ui/gmi_key_panel.gd`
+
+class_name `GmiKeyPanel` · extends `VBoxContainer`
+
+The "GMI Cloud" page of the pause menu settings (slice B): the opt-in "bring your own key" field. Without a key the mayors run on the recorded replay cache and the offline planners; pasting one routes every mayor, resident and agent call live, from the player's own browser straight to api.gmi-serving.com (CORS allows it), still only through GmiClient. The key itself is never logged (Redact owns it) and never written to a Godot file; "Remember on this device" (shown in the web build only) saves it in the player's own localStorage, and unchecking it erases that copy again. Esc leaves the field, not the settings page.
+
+### Constants
+
+- `S = preload("res://scripts/fp/ui/hud_style.gd")`
+- `WebSupport = preload("res://scripts/ops/web_support.gd")`
+- `ROW_H = 44.0`
+- `FIELD_MAX = 128`
+- `OWNER = "gmi_key"`: Owner tag for the whole settings page. Slice B's no-branding rule scans texts it owns (S.OWNER_META == S.OWNER); this page is the pause menu's one place that names the service it configures, like C's chat panel it is left out of that scan (the widgets are re-tagged in setup()).
+
+### Functions
+
+- `func setup(p_ctx: FpContext) -> void`
+- `func refresh() -> void`: Re-reads the client state (status line and the Remember switch). No key text is ever shown.
+- `func apply_key() -> void`: Puts the field's key into the client (empty clears it) and, on the web, honours the Remember switch: checked saves it on this device, unchecked erases the saved copy.
+- `func forget_key() -> void`: Drops the key from this session and the remembered copy from this device.
+
 ## `scripts/fp/ui/gps_route.gd`
 
 extends `RefCounted`
@@ -682,6 +703,7 @@ Pause menu (slice B), shown on pause_changed(true) over a frosted blur of the pa
 - `BASE_SENS = 0.0022`
 - `NEW_CITY = "New city"`
 - `NEW_CITY_CONFIRM = "Press again to start over"`
+- `GMI_TAB = "GMI Cloud"`: The player's own GMI key page (gmi_key_panel.gd); shown only with the player_gmi_key flag.
 - `TABS = { "Camera": [ ["camera_mode", "View", "choice", [["Third person", "third"], ["First per...`: Settings rows per tab: [key, label, kind, args]. kind "slider": [min, max, step, unit]; "choice": [[label, value], ...].
 - `LEGEND = [ ["person", "Population", "People living in the city"], ["face", "Mood", "How resident...`
 - `KEYS = [ ["M", "Map"], ["Tab", "City overview"], ["V", "Camera view"], ["Q", "Shoulder"], ["E"...`

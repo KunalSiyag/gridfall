@@ -21,6 +21,7 @@ const D := preload("res://scripts/sim/sim_defs.gd")
 const WS := preload("res://scripts/fp/world_scale.gd")
 const AP := preload("res://scripts/fp/asset_paths.gd")
 const STREET := preload("res://scripts/fp/street/street_dressing.gd")
+const WebSupport := preload("res://scripts/ops/web_support.gd")
 const M := "res://models/"
 const B := "res://models/blender/"
 
@@ -1503,7 +1504,8 @@ func _warm_one(path: String) -> bool:
 	if _scenes.has(path):
 		return true
 	if not _warming.has(path):
-		if DisplayServer.get_name() == "headless" or ResourceLoader.load_threaded_request(path, "PackedScene") != OK:
+		if DisplayServer.get_name() == "headless" or not WebSupport.threads_supported() \
+				or ResourceLoader.load_threaded_request(path, "PackedScene") != OK:
 			_scene(path)
 			return true
 		_warming[path] = true

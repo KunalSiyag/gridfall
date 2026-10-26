@@ -1,12 +1,13 @@
 #!/usr/bin/env bash
 # Export GridFall release builds with the presets in export_presets.cfg.
 #
-# usage: tools/export.sh <linux|windows|all> [--debug]
+# usage: tools/export.sh <linux|windows|web|all> [--debug]
 # env:   GODOT (default: godot)   EXPORT_DIR (default: build)   GATE_TMP (lock dir, default /tmp/claude-1000)
 #
-# Writes build/linux/gridfall.x86_64 (+ .pck) and build/windows/gridfall.exe (+ .pck). Needs the
-# Godot export templates matching .godot-version in ~/.local/share/godot/export_templates/<ver>/.
-# The export imports the project first when needed; it holds the heavy-run lock like the gate.
+# Writes build/linux/gridfall.x86_64 (+ .pck) and build/windows/gridfall.exe (+ .pck); web builds
+# build/web/index.html (+ .js, .wasm, .pck) for deploy/web/. Needs the Godot export templates
+# matching .godot-version in ~/.local/share/godot/export_templates/<ver>/. The export imports the
+# project first when needed; it holds the heavy-run lock like the gate.
 set -u -o pipefail
 
 usage() {
@@ -18,7 +19,7 @@ TARGET="${1:-}"
 MODE="--export-release"
 [ "${2:-}" = "--debug" ] && MODE="--export-debug"
 case "$TARGET" in
-	linux|windows|all) ;;
+	linux|windows|web|all) ;;
 	*) usage ;;
 esac
 
@@ -46,6 +47,7 @@ need_tpl() {
 	case "$1" in
 		linux) echo "linux_release.x86_64" ;;
 		windows) echo "windows_release_x86_64.exe" ;;
+		web) echo "web_nothreads_release.zip" ;;  # the Web preset exports the no-threads variant
 	esac
 }
 missing=0
@@ -61,11 +63,12 @@ for t in "${targets[@]}"; do
 done
 if [ "$missing" -eq 1 ]; then
 	cat >&2 <<EOF_HELP
-export: install the $VER export templates (a 1.3 GB download; the x86_64 desktop ones unpack to ~360 MB):
+export: install the $VER export templates (a 1.3 GB download; the x86_64 desktop and web ones unpack to ~500 MB):
   curl -fLO https://github.com/godotengine/godot/releases/download/$DL_VER/Godot_v${DL_VER}_export_templates.tpz
   mkdir -p "$TPL_DIR"
   unzip -j -o Godot_v${DL_VER}_export_templates.tpz templates/version.txt \\
-    'templates/linux_*.x86_64' 'templates/windows_*_x86_64.exe' 'templates/windows_*_x86_64_console.exe' -d "$TPL_DIR"
+    'templates/linux_*.x86_64' 'templates/windows_*_x86_64.exe' 'templates/windows_*_x86_64_console.exe' \\
+    'templates/web_*.zip' -d "$TPL_DIR"
 or in the editor: Editor > Manage Export Templates > Download and Install.
 EOF_HELP
 	exit 3
@@ -75,12 +78,14 @@ preset_of() {
 	case "$1" in
 		linux) echo "Linux" ;;
 		windows) echo "Windows Desktop" ;;
+		web) echo "Web" ;;
 	esac
 }
 out_of() {
 	case "$1" in
 		linux) echo "$EXPORT_DIR/linux/gridfall.x86_64" ;;
 		windows) echo "$EXPORT_DIR/windows/gridfall.exe" ;;
+		web) echo "$EXPORT_DIR/web/index.html" ;;
 	esac
 }
 rc=0

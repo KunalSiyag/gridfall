@@ -5,6 +5,8 @@ extends RefCounted
 ## task. Jobs touch only their own input dictionary; the main thread collects finished inputs
 ## with take_done().
 
+const WebSupport := preload("res://scripts/ops/web_support.gd")
+
 var _thread: Thread
 var _mutex := Mutex.new()
 var _sem := Semaphore.new()
@@ -32,17 +34,23 @@ static func finish_image(input: Dictionary) -> void:
 	input["ok"] = true
 
 
-## Starts the thread on first use.
+## Starts the thread on first use (a no-threads web build never starts one and push() runs at once).
 func _ensure() -> void:
-	if _thread == null:
+	if _thread == null and WebSupport.threads_supported():
 		_stop = false
 		_thread = Thread.new()
 		_thread.start(_loop)
 
 
-## Queues fn.call(input) on the thread.
+## Queues fn.call(input) on the thread, or runs it on the caller's thread when there is none.
 func push(fn: Callable, input: Dictionary) -> void:
 	_ensure()
+	if _thread == null:
+		fn.call(input)
+		_mutex.lock()
+		_done.append(input)
+		_mutex.unlock()
+		return
 	_mutex.lock()
 	_jobs.append([fn, input])
 	_mutex.unlock()

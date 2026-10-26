@@ -21,6 +21,7 @@ const WS := preload("res://scripts/fp/world_scale.gd")
 const AP := preload("res://scripts/fp/asset_paths.gd")
 const WK := preload("res://scripts/fp/traffic/walkers.gd")
 const KIT := preload("res://scripts/fp/traffic/people_kit.gd")
+const WebSupport := preload("res://scripts/ops/web_support.gd")
 const T0_R := 12.0 * WS.M
 const T0_CAP := 8
 const T1_R := 30.0 * WS.M
@@ -844,7 +845,8 @@ func _scene(path: String) -> PackedScene:
 		if not ResourceLoader.exists(path):
 			_scenes[path] = null
 			return null
-		if blocking:
+		# Blocking (tests) and the no-threads web build load on the caller's thread.
+		if blocking or not WebSupport.threads_supported():
 			_scenes[path] = AP.load_scene(path)
 			return _scenes[path]
 		if ResourceLoader.load_threaded_request(path, "PackedScene", true) != OK:
