@@ -2,13 +2,13 @@
 
 The web build is how people try GridFall without installing anything. `tools/export.sh web` runs
 `tools/web_export.py`, which builds an isolated staging copy of the project (never the source
-tree), caps the prop/character/poster textures at 256 px, converts every WAV to Ogg, exports the
+tree), caps the prop and character textures at 256 px, converts every WAV to Ogg, exports the
 no-threads Godot 4 web build, aliases duplicate PCK payloads to one copy and publishes the result
-under a content-addressed `releases/<hash>/` directory. The `.pck` that ships is ~186 MB instead of
-~654 MB, and the whole site is ~217 MB. `deploy/web/` serves it from Caddy, a static file server
-only — players' browsers call `api.gmi-serving.com` themselves with each player's own GMI key
-(CORS allows it), and without a key the game runs offline (replay cache, then heuristics). There is
-no server-side key by design.
+under a content-addressed `releases/<hash>/` directory. The `.pck` that ships is ~194 MB instead of
+~654 MB, and the whole site is ~224 MB. A first visit moves ~132 MB (Brotli). `deploy/web/` serves
+it from Caddy, a static file server only — players' browsers call `api.gmi-serving.com` themselves
+with each player's own GMI key (CORS allows it), and without a key the game runs offline (replay
+cache, then heuristics). There is no server-side key by design.
 
 ## Build and ship a new image
 
@@ -19,9 +19,10 @@ no server-side key by design.
    touched.
 2. `docker build -t <registry>/gridfall-web:<tag> -f deploy/web/Dockerfile .` from the repo root
    (the root `.dockerignore` keeps the context to `build/web/` and `deploy/web/`). The image
-   pre-compresses the `.pck` and `.wasm` with Brotli q11 and gzip at build time, so the box's
-   2 vCPUs never compress anything per visitor; Caddy serves those sidecars with
-   `file_server { precompressed br gzip }`. Image content is ~700 MB.
+   pre-compresses the `.pck` and `.wasm` with Brotli q11 (`-w 24`) and gzip at build time, so the
+   box's 2 vCPUs never compress anything per visitor; Caddy serves those sidecars with
+   `file_server { precompressed br gzip }`. The build takes ~17 minutes alone on a quiet machine;
+   the image is ~1.1 GB unpacked.
 3. GMI AgentBox pulls the image from an OCI registry: the register form takes an **Image URL**
    only (Docker Hub, GHCR, ECR; there is no image-upload control in the console as of 2026-10).
    Scan the build before a public push — `docker history` and the image env must be clean, no
@@ -106,6 +107,32 @@ no server-side key by design.
   it recovers on its own.
 - **Instance will not start:** confirm the port mapping (443 -> 8080) and `/healthz`, and that the
   image entrypoint is the stock Caddy one (`deploy/web/Dockerfile` has no custom entrypoint).
-- **Textures look soft on the web build:** expected — props, characters, posters and legacy
-  vehicles import at 256 px on the web only (desktop keeps the source resolution). Raise the cap
-  in `tools/web_export.py` (`CAP_TREES`) if a specific asset needs more.
+- **Textures look soft on the web build:** expected — props, characters and legacy vehicles import
+  at 256 px on the web only (desktop keeps the source resolution). Posters, hoardings and billboard
+  art are exempt and keep their source resolution because players read them up close. Raise the cap
+  in `tools/web_export.py` (`CAP_LIMIT`) or add a tree to `UNCAPPED_TREES`/`UNCAPPED_NAMES`.
+
+## Known limitations (web / gl_compatibility)
+
+Both are logged on every boot of the current build and both are fixed by the round-3 render work
+(quality/viewport presets); this section goes away with that release.
+
+- **`WARNING: FSR2 3D scaling is only available when using the Forward+ renderer.`** Every quality
+  preset asks for FSR2 3D scaling, which the web build cannot use (WebGL2 is Compatibility only).
+  It is a warning, not a failure: the build falls back and first person runs. Under desktop
+  gl_compatibility the same request is a crash risk, which is why round 3 switches Compatibility to
+  bilinear scaling plus MSAA.
+- **`Too many instances using shader instance variables, max 4096`.** Compatibility caps instance
+  uniforms at 4096. The city lives in each player's own browser save, so it is the player's city
+  growing past that limit that can fail to load (around day 2, roughly 176 roads and 35 sites),
+  whatever the instance's uptime — the container is a static file server and holds no city at all.
+  A fresh day-1 city boots and plays. Round 3 moves the road shader's per-mesh attributes out of
+  instance variables.
+
+## Registry-URL follow-up
+
+The GMI register form takes an **Image URL** only, and the instance is pinned to the digest it was
+created with. A new push to `:main` does not move a running instance: update the template's image
+reference (or recreate the instance) to deploy a new build. Tag every push with the merge commit
+(`:main` and `:<sha>`) so a running instance can be traced back to its code, and record the digest
+the instance actually pulled.

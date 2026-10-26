@@ -7,8 +7,9 @@ COPY build/web/ /site/
 # Any sidecars from a previous run are stale; rebuild them from the export being shipped.
 RUN find /site \( -name '*.gz' -o -name '*.br' \) -delete
 # The .pck and .wasm are the two big payloads; the loader and manifest ride along for free.
+# -w 24 (the maximum window) is worth ~5 MB on the .pck over the default 4 MB window.
 RUN find /site -type f \( -name '*.wasm' -o -name '*.pck' -o -name '*.js' -o -name '*.html' \
-		-o -name '*.json' \) -exec sh -c 'brotli -q 11 -k "$1" && gzip -9 -k "$1"' _ {} \;
+		-o -name '*.json' \) -exec sh -c 'brotli -q 11 -w 24 -k "$1" && gzip -9 -k "$1"' _ {} \;
 
 FROM caddy:2-alpine
 
