@@ -36,6 +36,7 @@ Dynamic ACE-Step 1.5 soundtrack crossfader & crisis SFX director. Crossfades bet
 - `func is_fp() -> bool`
 - `func get_active_stem_label() -> String`
 - `func play_sfx(path: String, volume_db: float = -6.0) -> void`
+- `static func web_audio_path(path: String, web: bool) -> String`: Web exports convert WAV assets in an isolated staging project, never on desktop.
 
 ## `scripts/cinematic.gd`
 

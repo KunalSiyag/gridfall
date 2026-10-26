@@ -67,6 +67,12 @@ func _em(f: FpFeature) -> EM:
 
 
 func _check_assets() -> void:
+	var director_script := load(DIRECTOR)
+	var wav := "res://sounds/test.wav"
+	var ogg := "res://sounds/test.ogg"
+	K.check(fails, director_script.web_audio_path(wav, true) == ogg, "web: WAV uses staged Ogg")
+	K.check(fails, director_script.web_audio_path(wav, false) == wav, "desktop: WAV unchanged")
+	K.check(fails, director_script.web_audio_path(ogg, true) == ogg, "web: Ogg unchanged")
 	var total := 0
 	var names := BANK.all_names()
 	var bad: Array[String] = []

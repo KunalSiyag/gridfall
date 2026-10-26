@@ -93,7 +93,15 @@ for t in "${targets[@]}"; do
 	out="$(out_of "$t")"
 	mkdir -p "$(dirname "$out")"
 	echo "export: $t -> $out" >&2
-	if ! flock -w 3600 "$LOCK" env -u GMI_API_KEY "$GODOT" --headless --path . "$MODE" "$(preset_of "$t")" "$out"; then
+	if [ "$t" = "web" ]; then
+		flock -w 3600 "$LOCK" env -u GMI_API_KEY python3 tools/web_export.py \
+			--root "$PWD" --output "$(dirname "$out")" --godot "$GODOT" --mode="$MODE"
+		export_rc=$?
+	else
+		flock -w 3600 "$LOCK" env -u GMI_API_KEY "$GODOT" --headless --path . "$MODE" "$(preset_of "$t")" "$out"
+		export_rc=$?
+	fi
+	if [ "$export_rc" -ne 0 ]; then
 		echo "export: $t FAILED" >&2
 		rc=1
 		continue
