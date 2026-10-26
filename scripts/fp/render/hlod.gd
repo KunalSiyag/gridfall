@@ -216,9 +216,18 @@ func drop(i: int) -> Vector2i:
 
 
 ## Switches the aerial road coverage; cached parts are re-ranged by render_opt's job queue, and
-## post_pass applies the new value to every tile it passes from here on.
+## post_pass applies the new value to every tile it passes from here on. The impostor chunks cast
+## shadows only while aerial (from the street the sun's reach ends well inside VIS_BUILDING).
 func set_aerial(on: bool) -> void:
 	aerial = on
+	for mi: MeshInstance3D in chunk_nodes.values():
+		if is_instance_valid(mi):
+			mi.cast_shadow = _chunk_shadow()
+
+
+func _chunk_shadow() -> GeometryInstance3D.ShadowCastingSetting:
+	const ON := GeometryInstance3D.SHADOW_CASTING_SETTING_ON
+	return ON if aerial else GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 
 
 ## Visibility ranges of one cached entry at the current distances. While aerial, road mains and
@@ -313,7 +322,7 @@ func rebuild_chunk(c: Vector2i) -> void:
 	if mi == null:
 		mi = MeshInstance3D.new()
 		mi.name = "Impostor_%d_%d" % [c.x, c.y]
-		mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		mi.cast_shadow = _chunk_shadow()
 		mi.material_override = material
 		root.add_child(mi)
 		chunk_nodes[c] = mi

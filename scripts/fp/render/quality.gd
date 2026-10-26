@@ -61,7 +61,9 @@ static func camera_far(preset: String) -> float:
 
 ## How far the camera must see while it is over the city (the overview lifts it up to 32 u, and a
 ## photo fly can go higher): past every visible ground point at the lowest pitch, with margin. Low
-## keeps the tightest plane that still covers the overview horizon (the low_vram budget).
+## keeps the tightest plane that still covers the overview horizon (the low_vram budget): at the
+## default pitch nothing lies past 80 at any city size, and only pitches under ~45 degrees over
+## cities wider than ~90 tiles lose a far slice, where 110 would cost Low +1 to +9 ms of GPU.
 const AERIAL_FAR := {"low": 80.0, "medium": 110.0, "high": 110.0}
 
 
@@ -75,6 +77,17 @@ static func aerial_far(preset: String) -> float:
 ## street profile applies to its own plane: light_profile.fog_end).
 static func aerial_fog_end(preset: String) -> float:
 	return 0.95 * aerial_far(preset)
+
+
+## Sun shadows while the camera is aerial reach as far as the aerial plane, so the city keeps its
+## shadows from the sky (the impostor chunks cast them then: one low-poly draw per chunk and
+## cascade). The cascade splits move out with them: the camera hangs over the roofs, so the nearest
+## ground is far from the lens (split 1 is all a 2-split preset uses).
+const AERIAL_SHADOW_SPLITS := [0.4, 0.6, 0.8]
+
+
+static func aerial_shadow(preset: String) -> float:
+	return aerial_far(preset)
 
 
 ## The street fog end for a preset (light_profile.fog_end's rule, for restoring it on exit).

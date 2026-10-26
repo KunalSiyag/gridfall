@@ -53,6 +53,7 @@ func _init() -> void:
 	_check_impostors(hlod, view, mult)
 	_check_frame_budget(f, hlod, view)
 	_check_midlod_bake(hlod)
+	_check_far_coverage(view)
 	_check_bulldoze(f, hlod, occ, view, sim)
 	_check_presets(ctx, f, hlod)
 	_check_aerial(ctx, f, hlod)
@@ -443,6 +444,32 @@ func _check_presets(ctx: FpContext, f: Node, hlod: RefCounted) -> void:
 	K.check(fails, bool(f.call("preset_applied", "medium")), "Medium applied again")
 
 
+## Far coverage audit: every structure kind a tile can hold has a far representation, either an
+## impostor from a baked proxy (IMPOSTOR_SERVICES, the model in proxies.json) or full detail at
+## every distance (FULL_KINDS), and every zone model is baked; so a new kind or model cannot pop
+## to nothing past VIS_BUILDING. Re-run proxy_bake.gd after adding a model.
+func _check_far_coverage(view: CityView) -> void:
+	var models: Dictionary = PROXIES.bake().get("models", {})
+	var bad: Array[String] = []
+	var n := 0
+	for k: int in D.KIND_NAMES.keys():
+		if k in [D.EMPTY, D.ROAD, D.FOREST, D.SITE] or D.is_zone(k) or k in HLOD.FULL_KINDS:
+			continue
+		n += 1
+		var path := str(view.call("_model_path", k, 1, 0))
+		if k not in HLOD.IMPOSTOR_SERVICES:
+			bad.append("%s neither an impostor nor full detail" % D.KIND_NAMES[k])
+		elif not models.has(path):
+			bad.append("%s model %s not baked" % [D.KIND_NAMES[k], path])
+	for k: int in [D.ZONE_R, D.ZONE_C, D.ZONE_I]:
+		for l in range(1, (view.ZONE_MODELS[k] as Array).size()):
+			for p: Variant in view.call("_zone_options", k, l):
+				n += 1
+				if not models.has(str(p)):
+					bad.append("%s level %d model %s not baked" % [D.KIND_NAMES[k], l, p])
+	var msg := "every service kind and zone model (%d) has a far shape: %s"
+	K.check(fails, bad.is_empty(), msg % [n, bad])
+
 ## Aerial coverage: once the camera is over the city (the overview, a photo fly), roads, open site
 ## parts, far trees, the fog end and the far plane widen so the sky view keeps the whole city; on
 ## the way down each value is re-derived, so a preset or weather change mid-air never leaves a
@@ -470,14 +497,39 @@ func _check_aerial(ctx: FpContext, f: Node, hlod: RefCounted) -> void:
 	var fog_end := Q.aerial_fog_end("medium")
 	var fog_msg := "the fog ends past it (%.0f u)" % env.fog_depth_end
 	K.check(fails, is_equal_approx(env.fog_depth_end, fog_end), fog_msg)
+	_check_aerial_shadows(ctx, hlod, "medium")
 	_check_aerial_roads(hlod)
 	_check_aerial_parts(ctx.view, ctx.sim)
 	_check_aerial_midair(ctx, f, hlod)
+	_check_aerial_new_sites(ctx, f, site_ends)
 	_check_aerial_off(ctx, f, hlod, site_ends)
 	env.fog_depth_begin = WS.FOG_DEPTH_BEGIN
 	ctx.bus.quality_changed.emit("medium")
 	f.call("flush")
 
+
+## While aerial the sun's shadows reach the aerial plane and the impostor chunks cast them.
+func _check_aerial_shadows(ctx: FpContext, hlod: RefCounted, preset: String) -> void:
+	var sun := ctx.sun
+	var reach := is_equal_approx(sun.directional_shadow_max_distance, Q.aerial_shadow(preset))
+	for k in range(3):
+		reach = reach and is_equal_approx(_split(sun, k), float(Q.AERIAL_SHADOW_SPLITS[k]))
+	var msg := "aerial %s: shadows reach %.0f u (split %.2f)"
+	K.check(fails, reach, msg % [preset, sun.directional_shadow_max_distance, _split(sun, 0)])
+	var on := GeometryInstance3D.SHADOW_CASTING_SETTING_ON
+	K.check(fails, _chunks_cast(hlod, on), "aerial: the impostor chunks cast shadows")
+
+
+## Cascade split k + 1 of the sun (0, 1, 2).
+static func _split(sun: DirectionalLight3D, k: int) -> float:
+	return float(sun.get("directional_shadow_split_%d" % (k + 1)))
+
+
+## Do all impostor chunks (at least one) carry this shadow setting?
+func _chunks_cast(hlod: RefCounted, want: int) -> bool:
+	var chunks: Array = (hlod.get("chunk_nodes") as Dictionary).values()
+	var same := func(mi: MeshInstance3D) -> bool: return mi.cast_shadow == want
+	return not chunks.is_empty() and chunks.all(same)
 
 ## One road main, one road twin, one open site and one full-detail part, for the checks below.
 func _aerial_fixtures(hlod: RefCounted, view: CityView) -> Dictionary:
@@ -583,6 +635,7 @@ func _check_aerial_midair(ctx: FpContext, f: Node, hlod: RefCounted) -> void:
 	kept = kept and is_equal_approx(ctx.player.camera.far, Q.aerial_far("high"))
 	var msg := "a preset switch mid-air keeps the coverage (fog %.0f, far %.0f)"
 	K.check(fails, kept, msg % [env.fog_depth_end, ctx.player.camera.far])
+	_check_aerial_shadows(ctx, hlod, "high")
 	var built := _pave_a_road(ctx.sim)
 	if ctx.view.has_method("flush_rebuild_queue"):
 		ctx.view.call("flush_rebuild_queue")
@@ -590,10 +643,58 @@ func _check_aerial_midair(ctx: FpContext, f: Node, hlod: RefCounted) -> void:
 	K.check(fails, built and _roads_reach_horizon(hlod), "a road built mid-air covers out")
 
 
-## Paves the first buildable tile beside a road, instantly; false if the city left no room.
-func _pave_a_road(sim: CitySim) -> bool:
+## Sites mid-air: a site opened now draws out once its tile is built, and a part a site gains
+## without a tile rebuild (update_site's path) is caught by the next SITE_RESCAN. Both get their
+## own end back on the way down (their ends join site_ends).
+func _check_aerial_new_sites(ctx: FpContext, f: Node, site_ends: Dictionary) -> void:
+	var before := ctx.sim.sites.keys()
+	var built := _pave_a_road(ctx.sim, "staged")
+	if ctx.view.has_method("flush_rebuild_queue"):
+		ctx.view.call("flush_rebuild_queue")
+	var fresh: Array = []
+	for i: int in ctx.sim.sites.keys():
+		var h := ctx.view.tile_holder(i)
+		if i not in before and h != null and h.get_node_or_null("Site") != null:
+			var site_node := h.get_node("Site") as Node3D
+			fresh.append_array(site_node.find_children("*", "GeometryInstance3D", true, false))
+	for n in fresh:
+		site_ends[n.get_instance_id()] = (n as GeometryInstance3D).visibility_range_end
+	f.call("flush")
+	var out := not fresh.is_empty()
+	for n in fresh:
+		out = out and (n as GeometryInstance3D).visibility_range_end == 0.0
+	K.check(fails, built and out, "a site opened mid-air draws out (%d parts)" % fresh.size())
+	var site := _first_site(ctx.view, ctx.sim)
+	K.check(fails, site != null, "fixture: an open site to grow a part on")
+	if site == null:
+		return
+	var part := MeshInstance3D.new()
+	part.mesh = BoxMesh.new()
+	part.visibility_range_end = ctx.view.kit.FAR
+	site.add_child(part)
+	site_ends[part.get_instance_id()] = part.visibility_range_end
+	var rescan: float = f.get("SITE_RESCAN")
+	f.call("_process", rescan * 0.5)
+	var early := part.visibility_range_end
+	f.call("_process", rescan * 0.5)
+	var msg := "a part grown mid-air draws out by the next re-scan (end %.1f, then %.1f)"
+	var caught := early > 0.0 and part.visibility_range_end == 0.0
+	K.check(fails, caught, msg % [early, part.visibility_range_end])
+
+
+## The Site node of the first open site whose tile is built, or null.
+func _first_site(view: CityView, sim: CitySim) -> Node3D:
+	for i: int in sim.sites.keys():
+		var h := view.tile_holder(i)
+		if h != null and is_instance_valid(h) and h.get_node_or_null("Site") != null:
+			return h.get_node("Site") as Node3D
+	return null
+
+## Paves the first buildable tile beside a road (instantly, or as a site with mode "staged");
+## false if the city left no room.
+func _pave_a_road(sim: CitySim, how: String = "instant") -> bool:
 	var mode := sim.construction_mode
-	sim.construction_mode = "instant"
+	sim.construction_mode = how
 	var built := false
 	for i: int in sim.active.duplicate():
 		if sim.kind[i] != D.ROAD or not _empty_neighbour(sim, i):
@@ -642,6 +743,15 @@ func _check_aerial_off(ctx: FpContext, f: Node, hlod: RefCounted, site_ends: Dic
 	var msg := "the far plane and fog end re-derive from the preset (far %.0f, fog %.0f)"
 	K.check(fails, derived, msg % [cam.far, env.fog_depth_end])
 	K.check(fails, is_equal_approx(env.fog_depth_begin, 9.0), "the weather's fog begin survives")
+	var street: Dictionary = LP.PRESETS["high"]
+	var sun := ctx.sun
+	var shadow := is_equal_approx(sun.directional_shadow_max_distance, float(street["shadow"]))
+	for k in range(3):
+		shadow = shadow and is_equal_approx(_split(sun, k), float((street["splits"] as Array)[k]))
+	var sh_msg := "the street profile's shadows come back (reach %.0f, split %.2f)"
+	K.check(fails, shadow, sh_msg % [sun.directional_shadow_max_distance, _split(sun, 0)])
+	var off := GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	K.check(fails, _chunks_cast(hlod, off), "the impostor chunks stop casting")
 	K.check(fails, _ranges_back(hlod), "the street ranges are back exactly")
 	var back := _sites_back(ctx.view, ctx.sim, site_ends)
 	K.check(fails, back.x > 0 and back.y == 0, "site parts keep their ends (%d checked)" % back.x)

@@ -98,6 +98,7 @@ func _ready() -> void:
 	hud.overlay_requested.connect(func(mode: String) -> void: view.set_overlay(mode))
 	hud.focus_district_requested.connect(_focus_district)
 	hud.focus_tile_requested.connect(func(x: int, y: int) -> void: focus(Vector3(x, 0, y), 30.0, "tile"))
+	hud.auto_focus_requested.connect(func(x: int, y: int) -> void: focus(Vector3(x, 0, y), 30.0, "auto:tile"))
 	hud.save_requested.connect(save_game)
 	hud.load_requested.connect(load_game)
 	hud.new_city_requested.connect(new_game)
@@ -386,12 +387,12 @@ static func wants_fp() -> bool:
 
 ## Draws attention to a world point. Orbit: moves the camera rig (old behaviour).
 ## First person: never teleports; emits GameBus.ping(p, reason) for the HUD and minimap.
-## reason: "event:<type>" | "resident:<id>" | "tile" | "district:<mi>" | "" .
+## reason: "event:<type>" | "resident:<id>" | "tile" | "auto:tile" | "district:<mi>" | "" .
 func focus(p: Vector3, dist: float, reason: String = "") -> void:
 	if fp != null:
 		fp.bus.ping.emit(p, reason)
 		return
-	camera_rig.focus_world_point(p, dist)
+	camera_rig.focus_world_point(p, dist, GridFallCamera.keeps_zoom(reason))
 
 
 ## Player-facing notice: CityHud toast in orbit, GameBus.toast in first person.

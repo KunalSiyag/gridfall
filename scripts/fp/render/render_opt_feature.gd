@@ -46,6 +46,11 @@ const RS_DEFAULTS := {
 	"ssao_blur": 2, "ssao_from": 50.0, "ssao_to": 300.0, "ssil": 2, "ssil_half": true,
 	"ssil_target": 0.5, "ssil_blur": 4, "ssil_from": 50.0, "ssil_to": 300.0,
 }
+## The sun keys the aerial coverage widens (the reach, then the three cascade splits).
+const SHADOW_KEYS := [
+	"directional_shadow_max_distance", "directional_shadow_split_1", "directional_shadow_split_2",
+	"directional_shadow_split_3",
+]
 const VIEWPORT_KEYS := ["scaling_3d_mode", "scaling_3d_scale", "msaa_3d", "mesh_lod_threshold", "use_occlusion_culling"]
 
 ## The applied preset: "low", "medium" or "high".
@@ -81,6 +86,10 @@ var _imp_root: Node3D
 var _occ_root: Node3D
 var _waiting_ready: bool = false
 var _wait_queue: Array = []
+## The street profile's sun shadow reach and three splits, as it last set them; empty when none is
+## held. _shadow_set is the aerial reach this feature last wrote.
+var _street_shadow: Array = []
+var _shadow_set: float = -1.0
 ## Seconds since the last open-site re-scan while aerial.
 var _aerial_site_t: float = 0.0
 ## Tiles built since their last post-pass: tile index -> holder, in arrival order.
@@ -157,9 +166,12 @@ func apply_preset(p: String) -> void:
 	if hlod != null and hlod.view != null:
 		hlod.set_ranges(WS.VIS_BUILDING * mult, WS.VIS_BUILDING_NEAR * mult, WS.VIS_PROP * mult)
 		_job = hlod.tiles.keys()
-	# A preset switch re-applies the street profile's fog end; the aerial push goes back on top.
+	# A preset switch re-applies the street profile's fog end and shadows; the aerial push goes back
+	# on top.
 	if aerial and cam != null and cam.environment != null:
 		cam.environment.fog_depth_end = Q.aerial_fog_end(preset)
+	if aerial:
+		_aerial_shadows(true)
 
 
 ## True when the viewport and camera carry preset p's knobs (self-test and tests).
@@ -201,7 +213,32 @@ func set_aerial(on: bool) -> void:
 			# only the end moves, and it comes back as the street profile's own value on exit.
 			var fog_end := Q.aerial_fog_end(preset) if on else Q.street_fog_end(preset)
 			cam.environment.fog_depth_end = fog_end
+	_aerial_shadows(on)
 	_aerial_site_t = 0.0
+
+
+## The sun's shadow reach while aerial. The street profile (G1) owns the street values, so they
+## are read off the sun as it last set them: on entry, and after a preset switch (G1 registers
+## first, so its quality handler has re-applied them before apply_preset runs). Exit writes back
+## that latest street value, never one from before a preset switch.
+func _aerial_shadows(on: bool) -> void:
+	var sun := ctx.sun
+	if sun == null or not is_instance_valid(sun):
+		return
+	var keys := SHADOW_KEYS
+	if on:
+		var reach := sun.directional_shadow_max_distance
+		if _street_shadow.is_empty() or not is_equal_approx(reach, _shadow_set):
+			_street_shadow = keys.map(func(k: String) -> float: return float(sun.get(k)))
+		_shadow_set = Q.aerial_shadow(preset)
+		var vals: Array = [_shadow_set] + Q.AERIAL_SHADOW_SPLITS
+		for k in range(keys.size()):
+			sun.set(keys[k], vals[k])
+	elif not _street_shadow.is_empty():
+		for k in range(keys.size()):
+			sun.set(keys[k], _street_shadow[k])
+		_street_shadow = []
+		_shadow_set = -1.0
 
 
 ## The camera is over the city once it is AERIAL_MIN above the hero's feet (the overview's rig and a

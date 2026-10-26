@@ -63,6 +63,7 @@ func _init() -> void:
 	_check_toast(ctx, f)
 	await _check_sky_view(ctx, f, ro)
 	_check_teardown(ctx, f)
+	_check_orbit_focus()
 	K.finish(self, "FP_OVERVIEW_TEST", fails)
 
 
@@ -493,3 +494,36 @@ func _action(a: String) -> InputEventAction:
 	e.action = a
 	e.pressed = true
 	return e
+
+## The planner camera's focus: a user's request zooms to it as before; attention nobody asked for
+## (a sim event, the chaos director's disaster) only pans, so the zoom the user picked survives.
+func _check_orbit_focus() -> void:
+	var rig_script := load("res://scripts/world/camera_controller.gd") as GDScript
+	var rig := rig_script.new() as GridFallCamera
+	var cam := Camera3D.new()
+	cam.name = "Camera"
+	rig.add_child(cam)
+	get_root().add_child(rig)
+	rig.set_process(false)
+	var m := (load("res://scripts/main.gd") as GDScript).new() as Node3D
+	m.set("camera_rig", rig)
+	var cases := [
+		["tile", 30.0, 30.0], ["auto:tile", 30.0, 150.0], ["event:fire", 34.0, 150.0],
+		["district:1", 36.0, 36.0],
+	]
+	for k in range(cases.size()):
+		var c: Array = cases[k]
+		rig.zoom = 150.0
+		var at := Vector3(10.0 + 2.0 * k, 0.0, 12.0)
+		m.call("focus", at, float(c[1]), str(c[0]))
+		var panned := rig.target_position.is_equal_approx(at)
+		var msg := "orbit focus %s at zoom 150: pans there, zoom %.0f (want %.0f)"
+		var ok := panned and is_equal_approx(rig.zoom, float(c[2]))
+		K.check(fails, ok, msg % [c[0], rig.zoom, c[2]])
+	var hud_signals := (load("res://scripts/ui/city_hud.gd") as Script).get_script_signal_list()
+	var auto := hud_signals.any(
+		func(s: Dictionary) -> bool: return s["name"] == "auto_focus_requested"
+	)
+	K.check(fails, auto, "CityHud has a separate auto-focus signal for the chaos director")
+	m.free()
+	rig.queue_free()

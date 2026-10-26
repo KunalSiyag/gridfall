@@ -11,6 +11,9 @@ signal load_requested()
 signal new_city_requested()
 signal focus_district_requested(mi: int)
 signal focus_tile_requested(x: int, y: int)
+## The chaos director's disaster tile, which no click asked for: the orbit camera pans to it and
+## keeps its zoom.
+signal auto_focus_requested(x: int, y: int)
 signal mute_requested()
 signal resident_selected(id: String)
 
@@ -711,7 +714,7 @@ func _on_chaos(dec: Dictionary) -> void:
 	if bool(dec.get("trigger", false)):
 		var n := str(dec.get("narration", ""))
 		banner("CHAOS DIRECTOR: " + (n if not n.is_empty() else str(dec.get("type", "")).to_upper()), Color(1.0, 0.45, 0.3))
-		focus_tile_requested.emit(int(dec.get("x", 16)), int(dec.get("y", 16)))
+		auto_focus_requested.emit(int(dec.get("x", 16)), int(dec.get("y", 16)))
 
 
 func _on_event_started(ev: Dictionary) -> void:
