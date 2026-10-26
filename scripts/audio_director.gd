@@ -51,19 +51,8 @@ func _ready() -> void:
 	_sfx_player.name = "SfxPlayer"
 	add_child(_sfx_player)
 
-	if ResourceLoader.exists(NOMINAL_TRACK_PATH):
-		var s_nom := load(NOMINAL_TRACK_PATH) as AudioStreamWAV
-		if s_nom != null:
-			s_nom.loop_mode = AudioStreamWAV.LOOP_FORWARD
-			s_nom.loop_end = int(s_nom.get_length() * s_nom.mix_rate)
-			_nominal_player.stream = s_nom
-
-	if ResourceLoader.exists(CRISIS_TRACK_PATH):
-		var s_cri := load(CRISIS_TRACK_PATH) as AudioStreamWAV
-		if s_cri != null:
-			s_cri.loop_mode = AudioStreamWAV.LOOP_FORWARD
-			s_cri.loop_end = int(s_cri.get_length() * s_cri.mix_rate)
-			_crisis_player.stream = s_cri
+	_nominal_player.stream = _looping_track(NOMINAL_TRACK_PATH)
+	_crisis_player.stream = _looping_track(CRISIS_TRACK_PATH)
 
 	_apply_volumes()
 	if _nominal_player.stream != null:
@@ -168,9 +157,26 @@ func _exit_tree() -> void:
 
 
 func _stream(path: String) -> AudioStream:
+	path = web_audio_path(path, OS.has_feature("web"))
 	if not _streams.has(path):
 		_streams[path] = load(path) as AudioStream if ResourceLoader.exists(path) else null
 	return _streams[path]
+
+
+## Web exports convert WAV assets in an isolated staging project, never on desktop.
+static func web_audio_path(path: String, web: bool) -> String:
+	return path.trim_suffix(".wav") + ".ogg" if web and path.ends_with(".wav") else path
+
+
+func _looping_track(path: String) -> AudioStream:
+	var stream := _stream(path)
+	if stream is AudioStreamWAV:
+		var wav := stream as AudioStreamWAV
+		wav.loop_mode = AudioStreamWAV.LOOP_FORWARD
+		wav.loop_end = int(wav.get_length() * wav.mix_rate)
+	elif stream is AudioStreamOggVorbis:
+		(stream as AudioStreamOggVorbis).loop = true
+	return stream
 
 
 func _apply_volumes() -> void:

@@ -145,7 +145,7 @@ static func stream(name: String) -> AudioStream:
 
 
 static func path_of(name: String) -> String:
-	return DIR + name + (".wav" if is_wav(name) else ".ogg")
+	return DIR + name + (".wav" if is_wav(name) and not OS.has_feature("web") else ".ogg")
 
 
 static func is_wav(name: String) -> bool:

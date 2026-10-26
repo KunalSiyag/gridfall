@@ -2,5 +2,5 @@
 # keeping the context tiny also keeps .godot/, sources and saves out of any image.
 *
 !build/web/
-!deploy/web/nginx.conf
+!deploy/web/Caddyfile
 !deploy/web/Dockerfile
