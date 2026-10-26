@@ -27,10 +27,11 @@ Dogs, pigeons and cats in the street (integration feature "animals"). Some peopl
 - `MAX_DOGS = 10`
 - `SCAN_S = 0.5`
 - `HOMES_S = 10.0`
-- `WALK_SHARE = 0.08`: Share of the people out on foot who walk a dog, and what the night (sky.night above NIGHT) and the rain leave of it. While the city is young (fewer built homes and shops than YOUNG_LOTS, measured with the dog households) nearly twice as many of them do, so a young city still shows dogs about.
+- `WALK_SHARE = 0.12`: Share of the people out on foot who walk a dog, and what the night (sky.night above NIGHT) and the rain leave of it. While the city is young (fewer built homes and shops than YOUNG_LOTS, measured with the dog households) half as many again do, so a young city still shows dogs about.
 - `WALK_SHARE_EARLY = 0.18`
 - `YOUNG_LOTS = 8`
 - `NIGHT = 0.5`
+- `PIGEON_NIGHT = 0.85`: Pigeons keep longer hours: out while sky.night is at most PIGEON_NIGHT, from about 5:55 to 18:05, so a city's first morning (it starts at dawn) shows them too.
 - `NIGHT_K = 0.4`
 - `RAIN_K = 0.25`
 - `DOG_HOUSEHOLD = "lives with a dog"`
@@ -226,8 +227,8 @@ The cats (part of the animals feature): where cats keep, coming out within NEAR 
 - `NEAR = 2.4`: Cats come out within NEAR of the player (u) and go beyond FAR, at most MAX_CATS at once.
 - `FAR = 3.0`
 - `MAX_CATS = 6`
-- `HOUSE_SHARE = 0.3`: Shares of the houses with a front yard (and no dog) that keep a cat, of the shops with a shop cat and, by night, of the works yards and the parks with a stray.
-- `SHOP_SHARE = 0.3`
+- `HOUSE_SHARE = 0.4`: Shares of the houses with a front yard (and no dog) that keep a cat, of the shops with a shop cat and, by night, of the works yards and the parks with a stray.
+- `SHOP_SHARE = 0.4`
 - `STRAY_SHARE = {D.ZONE_I: 0.4, D.PARK: 0.35}`
 - `YOUNG_LOTS = 8`: A young city (fewer built homes and shops than YOUNG_LOTS) has no yards, shop doors, works yards or parks for a cat yet: until then one ambient stray (AMBIENT_KEY) keeps to the nearest free sidewalk point to the player, day or night, never in the rain.
 - `AMBIENT_KEY = "a:cat"`
@@ -274,7 +275,7 @@ The cats (part of the animals feature): where cats keep, coming out within NEAR 
 - `func world(pack: PACK, flock: FLOCK) -> void`: The world for this step from the dogs' pack and the pigeons: the hero on foot, the cars (the player's too while they drive), the people on foot and the dogs around, and the birds on the ground; the cats go into the pigeons' frights as [feet, velocity, FLOCK.CAT_NEAR].
 - `func step(dt: float) -> void`: dt game seconds of the cats (in MAX_STEP steps); 0 freezes them. The flag off takes them away.
 - `func startle(at: Vector3, r_m: float) -> void`: A fright at at (a blow, a shout, a crash) startles the cats within r_m metres of it.
-- `func on_crash(at: Vector3, _speed: float, _what: String) -> void`
+- `func on_crash(at: Vector3, _speed: float, _cause: String) -> void`
 - `func on_knock(at: Vector3, _kind: String, _speed: float) -> void`
 - `func pick(origin: Vector3, dir: Vector3, max_dist: float) -> Dictionary`: The cat to pet along the ray: {"kind": "cat", "id", "tile", "pos" (its back), "dist", "label", "data": {"coat", "temper"}}, or {}.
 - `func pet(t: Dictionary) -> void`: E on a cat (pick's target t): it purrs, walks off or hisses (cat_life.gd pet()), with a toast.

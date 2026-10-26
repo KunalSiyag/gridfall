@@ -31,6 +31,7 @@ Analytic on-foot collision (slice A; no physics engine, D2): walkable ground hei
 - `SOFT_PROPS = ["tree_bush", "tree_fern"]`
 - `LAMP_R = 0.15 * WS.M`
 - `TRUNK_R = 0.25 * WS.M`
+- `CAM_CYL_MIN = 0.2 * WS.M`: Camera arms treat cylinders this thick or more (trunks, not lamp poles) as solid.
 - `PROP_R_MIN = 0.1 * WS.M`
 - `PROP_R_MAX = 0.5 * WS.M`
 - `ROUND_SLIDE = 0.45`: Walking head-on into a pole keeps this fraction of the speed, sliding round it.
@@ -55,7 +56,8 @@ Analytic on-foot collision (slice A; no physics engine, D2): walkable ground hei
 - `func on_tile_built(i: int, _holder: Node3D) -> void`: Invalidates tile i's colliders.
 - `func on_tile_cleared(i: int) -> void`: Invalidates tile i's colliders.
 - `func add_test_box(b: AABB) -> void`: Test hook: a world box that blocks like any other (a ledge, a ceiling), listed in boxes() of every tile it overlaps.
-- `func clear_test_boxes() -> void`: Removes every add_test_box() box.
+- `func add_test_cylinder(x: float, z: float, r: float, top: float) -> void`: Test hook: a world cylinder (a trunk) at x, z of radius r up to top, listed in cylinders() of every tile it overlaps.
+- `func clear_test_boxes() -> void`: Removes every add_test_box() box and add_test_cylinder() cylinder.
 - `func tile_at(p: Vector3) -> int`: Tile index at a world point (round x/z, D.idx) or -1 outside the world.
 - `func ground_height(p: Vector3) -> float`: World y of the walkable surface at p.x/p.z; NAN when not walkable (water, bridge parapet).
 - `func walk_height(p: Vector3) -> float`: The height the feet stand at: ground_height() with the interim soft step (SOFT_STEP ramps over SOFT_BAND toward a GROUND_Y neighbour). NAN where ground_height is NAN.
@@ -70,8 +72,9 @@ Analytic on-foot collision (slice A; no physics engine, D2): walkable ground hei
 - `func nearest_free(p: Vector3, radius: float, max_dist: float) -> Vector3`: The closest point to p (xz, y on the ground) where a circle of `radius` is not blocked, searched on rings 1 m apart out to max_dist; Vector3(NAN, NAN, NAN) when there is none.
 - `func raycast(origin: Vector3, dir: Vector3, max_dist: float, include_props: bool = true) -> Dictionary`: Ray against each tile's pickable bounds (tile DDA, <= max_dist) and the ground: a building's full view.building_aabb(i) (kind "building", so a set-back house is still picked from the sidewalk), a site's parts (kind "building", the site tile), street props (kind "prop", when include_props) and the ground (kind "ground"). {"hit": bool, "pos": Vector3, "normal": Vector3, "tile": int, "kind": String, "dist": float}
 - `func line_of_sight(a: Vector3, b: Vector3) -> bool`: True when the segment a -> b clears every movement box (bodies, walls, site parts, prop boxes) of the tiles it crosses; thin cylinders (poles, trunks) never hide anyone.
-- `func sweep_sphere(origin: Vector3, dir: Vector3, max_dist: float, radius: float) -> float`: Free distance along unit dir from origin (<= max_dist) for a sphere of `radius`: a ray against the movement boxes near origin grown by radius (a Minkowski sum), skipping boxes that already contain origin. The third-person camera arm (A 6.6); thin cylinders are ignored.
-- `func boxes_near(p: Vector3, reach: float) -> Array[AABB]`: Movement boxes of the tiles around p within `reach` of it (the camera rig gathers them once per frame and sweeps the list several times).
+- `func sweep_sphere(origin: Vector3, dir: Vector3, max_dist: float, radius: float) -> float`: Free distance along unit dir from origin (<= max_dist) for a sphere of `radius`: a ray against the camera boxes near origin (camera_boxes_near) grown by radius (a Minkowski sum), skipping boxes that already contain origin. The camera arms (A 6.6, the drive and door cameras).
+- `func camera_boxes_near(p: Vector3, reach: float) -> Array[AABB]`: boxes_near() plus every cylinder of CAM_CYL_MIN or more (tree trunks) as its square column: a camera must not end up inside a trunk, while lamp poles are thin enough to flash past. Parkour keeps boxes_near(), so trees are never vaulted.
+- `func boxes_near(p: Vector3, reach: float, cyl_min: float = INF) -> Array[AABB]`: Movement boxes of the tiles around p within `reach` of it (the camera rig gathers them once per frame and sweeps the list several times), with the cylinders of radius cyl_min or more as square columns (none by default).
 - `static func sweep_boxes(origin: Vector3, dir: Vector3, max_dist: float, radius: float, list: Array[AABB]) -> float`: sweep_sphere() over a given box list.
 - `static func ray_box_t(origin: Vector3, dir: Vector3, b: AABB) -> float`: Entry distance of a ray (unit dir) into box b, or -1 on a miss (or when origin is inside).
 - `func boxes(i: int) -> Array[AABB]`: Blocking boxes of tile i for movement, world space, cached until the tile is rebuilt (the cached array itself is returned: read it, never modify it): the building's bodies and walls (body_shapes.gd), every view.site_boxes(i) part (which can reach into neighbouring tiles), prop boxes (bus shelters, benches) and add_test_box() boxes overlapping the tile.

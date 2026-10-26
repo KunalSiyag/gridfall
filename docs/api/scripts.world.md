@@ -23,7 +23,8 @@ Isometric camera rig for GridFall: WASD pan, mouse wheel zoom, drag pan, middle/
 
 ### Functions
 
-- `func focus_world_point(world_pos: Vector3, target_zoom: float = 24.0) -> void`
+- `func focus_world_point(world_pos: Vector3, target_zoom: float = 24.0, keep_zoom: bool = false) -> void`: Pans to world_pos and zooms to target_zoom; with keep_zoom it only pans, so attention the user did not ask for never undoes the zoom they picked.
+- `static func keeps_zoom(reason: String) -> bool`: Focus reasons the user did not ask for (a sim event, the chaos director's disaster): the camera pans there at the user's own zoom.
 - `func reset_view() -> void`
 
 ## `scripts/world/city_life.gd`

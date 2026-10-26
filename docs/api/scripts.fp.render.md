@@ -48,7 +48,7 @@ Visibility ranges and building LODs (slice G2). post_pass() classifies every dra
 - `func warm(holder: Node3D) -> bool`: Does one piece of the cold work post_pass(i, holder) would otherwise do inline: the model's proxy, or one source mesh's mid-LOD gather. A gather's surface_get_arrays reads back from the GPU and waits for the frames in flight (10 to 140 ms for a building's first instance); one gather per step keeps that to one stall, splitting it by surface costs a stall per surface. True if it did something; false once post_pass will find everything cached or under way.
 - `static func tile_of(holder: Node3D) -> int`: The tile a holder stands on (holders sit at their tile's centre).
 - `func drop(i: int) -> Vector2i`: Forgets tile i (its holder was replaced or cleared); returns its chunk.
-- `func set_aerial(on: bool) -> void`: Switches the aerial road coverage; cached parts are re-ranged by render_opt's job queue, and post_pass applies the new value to every tile it passes from here on.
+- `func set_aerial(on: bool) -> void`: Switches the aerial road coverage; cached parts are re-ranged by render_opt's job queue, and post_pass applies the new value to every tile it passes from here on. The impostor chunks cast shadows only while aerial (from the street the sun's reach ends well inside VIS_BUILDING).
 - `func apply_ranges(e: Dictionary) -> void`: Visibility ranges of one cached entry at the current distances. While aerial, road mains and twins lose their end (the street grid reaches the horizon); everything else keeps its ladder.
 - `static func restore(e: Dictionary) -> void`: Restores what post_pass changed on one entry: no range, shadows as authored, no g2 metas.
 - `func rebuild_chunk(c: Vector2i) -> void`: Rebuilds the merged impostor mesh of chunk c from the cached entries.
@@ -173,7 +173,8 @@ First-person quality presets (slice G2): the knobs each preset sets, and the sta
 - `NAMES = ["low", "medium", "high"]`
 - `DEFAULT = "medium"`
 - `PRESETS = { "low": { "scaling_mode": Viewport.SCALING_3D_MODE_FSR2, "scale": 0.59, "msaa": Viewpo...`: Per preset: 3D scaling (FSR2 also brings its own temporal AA, so MSAA stays off), directional shadow atlas and filter, SSAO and SSIL quality and half size, the VIS_* multiplier, the first-person camera far plane, the mesh LOD threshold (pixels of error) and G1's street lights.
-- `AERIAL_FAR = {"low": 80.0, "medium": 110.0, "high": 110.0}`: How far the camera must see while it is over the city (the overview lifts it up to 32 u, and a photo fly can go higher): past every visible ground point at the lowest pitch, with margin. Low keeps the tightest plane that still covers the overview horizon (the low_vram budget).
+- `AERIAL_FAR = {"low": 80.0, "medium": 110.0, "high": 110.0}`: How far the camera must see while it is over the city (the overview lifts it up to 32 u, and a photo fly can go higher): past every visible ground point at the lowest pitch, with margin. Low keeps the tightest plane that still covers the overview horizon (the low_vram budget): at the default pitch nothing lies past 80 at any city size, and only pitches under ~45 degrees over cities wider than ~90 tiles lose a far slice, where 110 would cost Low +1 to +9 ms of GPU.
+- `AERIAL_SHADOW_SPLITS = [0.4, 0.6, 0.8]`: Sun shadows while the camera is aerial reach as far as the aerial plane, so the city keeps its shadows from the sky (the impostor chunks cast them then: one low-poly draw per chunk and cascade). The cascade splits move out with them: the camera hangs over the roofs, so the nearest ground is far from the lens (split 1 is all a 2-split preset uses).
 
 ### Functions
 
@@ -184,6 +185,7 @@ First-person quality presets (slice G2): the knobs each preset sets, and the sta
 - `static func camera_far(preset: String) -> float`: First-person camera far plane in world units: 45 / WS.CAMERA_FAR (60) / 75.
 - `static func aerial_far(preset: String) -> float`: The far plane while the camera is aerial (render_opt's aerial coverage), never below the street-plane value.
 - `static func aerial_fog_end(preset: String) -> float`: Depth-fog end while the camera is aerial, inside 95% of the aerial far plane (the same rule the street profile applies to its own plane: light_profile.fog_end).
+- `static func aerial_shadow(preset: String) -> float`
 - `static func street_fog_end(preset: String) -> float`: The street fog end for a preset (light_profile.fog_end's rule, for restoring it on exit).
 
 ## `scripts/fp/render/render_opt_feature.gd`
@@ -207,6 +209,7 @@ Render performance (slice G2): applies the quality preset (FSR2 scaling, shadow 
 - `SITE_RESCAN = 0.5`: While aerial, open sites re-scan for parts this often (update_site adds parts without a tile_built), so a rising frame's new floor shows from the sky too.
 - `RS_SETTINGS = { "atlas": "rendering/lights_and_shadows/directional_shadow/size", "atlas_16": "renderi...`: Project defaults of the global RenderingServer knobs (headless has no getters for them).
 - `RS_DEFAULTS = { "atlas": 4096, "atlas_16": true, "soft": 2, "ssao": 2, "ssao_half": true, "ssao_targe...`
+- `SHADOW_KEYS = [ "directional_shadow_max_distance", "directional_shadow_split_1", "directional_shadow_...`: The sun keys the aerial coverage widens (the reach, then the three cascade splits).
 - `VIEWPORT_KEYS = ["scaling_3d_mode", "scaling_3d_scale", "msaa_3d", "mesh_lod_threshold", "use_occlusion...`
 
 ### Properties

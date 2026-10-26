@@ -38,6 +38,7 @@ Ambient filler (docs/fp/slices/E-traffic.md §6): unnamed commuters (some of the
 - `TRACK_BIKE_MAX = 0.6`
 - `TRACK_CARS = 0.35`
 - `JCB_IN = 37`
+- `SITE_MACHINES_MAX = 6`: At most this many backhoes park beside construction sites at once, however many sites are open.
 
 ### Properties
 
@@ -53,6 +54,8 @@ Ambient filler (docs/fp/slices/E-traffic.md §6): unnamed commuters (some of the
 - `func targets(p: Vector3) -> Vector2i`: [target cars, target pedestrians] near p from road density, congestion and trip load.
 - `func maintain(p: Vector3, fwd: Vector3, sync: bool) -> void`: Removes ambient agents beyond the radius (out of sight) and tops up toward the targets. sync: fill completely now (first fill or after a teleport), anywhere out of the camera's view.
 - `func fill_parking() -> int`: Fills curb slots with parked cars, deterministically per slot (bulk: one lane rebuild after). Returns how many were parked.
+- `func park_site_machine(site: Dictionary) -> VH.Car`: Parks a backhoe at the kerb of a road tile beside the construction site (a work machine on the job), the slot nearest the site's own kerb, if one is free. Returns the car, or null when the flag is off, the site already has one, no slot is free or no road runs beside the site.
+- `func clear_site_machine(site: Dictionary) -> void`: The machine parked beside the site leaves with the crew (nothing when it had none).
 
 ## `scripts/fp/traffic/car_doors.gd`
 
@@ -472,6 +475,9 @@ Drivers seated in the moving vehicles nearest the camera. Only while a vehicle d
 - `BIKE_CAP = 10`: Riders: their own cap, out to where render.gd stops drawing the full bicycle (NEAR).
 - `BIKE_RANGE = 40.0 * WS.M`
 - `SEAT_NODE = "Seat_Driver"`
+- `DRIVER_MARKERS = ["Pedal_L", "Pedal_R", "Wheel_L", "Wheel_R", "Cab_Roof"]`: The driver's contact markers in the full model (vehicles2.py): the feet on the footwell floor and the hands on the rim, as for the player (drive/seat_pose.gd). A model without them keeps the plain sit pose.
+- `SKULL_HAIR = 1.40`: The top of the head rides this multiple of the hips-to-head-bone distance above the hips (the skull and hair over the head bone), as in seat_pose.gd.
+- `MAX_SINK = 0.17 * WS.M`: The hips sink at most this far into the seat cushion (u), as in seat_pose.gd.
 - `SIT = &"sit"`: The sit loop is held at this time (s): hands on the lap, head level.
 - `SIT_AT = 1.0`
 - `RIDE = &"ride"`: One turn of a bicycle's cranks; held each frame at the turn render.gd gave the cranks (crank_th on the node), so the feet stay on the pedals.
@@ -494,6 +500,7 @@ Drivers seated in the moving vehicles nearest the camera. Only while a vehicle d
 - `func driver_of(id: int) -> WK.Walker`: The driver drawn in car id (the stand-in walker carrying its avatar and stature), or null.
 - `func is_riding(id: int) -> bool`: True when the body drawn in car id is pedalling a bicycle.
 - `func seat_point(node: Node3D) -> Variant`: The seat marker's position in the full model's space, cached on the node (null without one).
+- `static func driver_points(node: Node3D) -> Dictionary`: The driver's contact markers in the full model's own space (Pedal_L/R on the footwell floor, Wheel_L/R on the rim, Cab_Roof above the seat), cached on the node; {} without them (the model keeps the plain sit pose). Absolute, not relative to the seat, so the car's transform takes them to the world.
 
 ## `scripts/fp/traffic/people.gd`
 
@@ -902,6 +909,7 @@ Traffic and pedestrians on lanes (slice E, docs/fp/slices/E-traffic.md): one roa
 - `CLAIM_SPEED = 0.5 * WS.M`: The player can take a parked car, their own, or a car in traffic (an ambient one, or with carjack a resident's) crawling below this speed.
 - `JCB_TOP = 6.1 * WS.M`: The backhoe loader (the jcb flag): a work machine, not a highway one — it tops out around 22 km/h and gathers speed at half a car's rate (drive_model.gd, drive_profile).
 - `JCB_GAIN = 0.5`
+- `SITE_MACHINES_PER_STEP = 2`: New construction sites whose backhoe is parked this many a step at most.
 - `STATION_FAR = 10`: A crew called with no station in town sets off from a road at most this many tiles away.
 - `HIT_FULL = 14.0 * WS.M`: A car running the hero down (hit_by_cars) hits at full strength from HIT_FULL (u/s) and throws them on along its heading at its own speed.
 

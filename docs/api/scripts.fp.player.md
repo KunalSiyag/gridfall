@@ -205,7 +205,7 @@ HC's animated hero for the player (slice A stage A2; A-player.md 6.9, TPS_PLAN 2
 - `DANCE_IN = 0.3`
 - `DANCE_OUT = 0.4`
 - `HL_GUARD = 0.06`
-- `GUARD_CLIP = "punch_jab"`: The guard (fists up) is GUARD_CLIP held at GUARD_AT seconds on the upper body.
+- `GUARD_CLIP = "punch_jab"`: The old clip branch is kept at zero; the strike pose layer builds the guard with IK instead.
 - `GUARD_AT = 0.0`
 - `CLIP_SPEED = {"sit_down": 1.5, "stand_up": 1.5, "car_in": 1.25, "car_out": 1.35}`: Clips played this much faster than authored: sitting down and standing up, getting into a car's driver's seat and out of it.
 - `HELD = [ "sit_down", "sit", "stand_up", "car_in", "drive", "car_out", "knockback", "get_up", "...`: States the ground does not cut short for locomotion: sitting, the car's seat, the knock-down, the climb, holding on to a wall and the roll.
@@ -274,10 +274,11 @@ HC's animated hero for the player (slice A stage A2; A-player.md 6.9, TPS_PLAN 2
 
 extends `RefCounted`
 
-The hero's strike pose layer (hero_rig.gd, like hero_look.gd and hero_limbs.gd): what makes a strike read as the whole body's work. On top of each strike clip's own upper-body keys (the tree plays them SPEED times as fast as authored) the spine and chest coil back through the windup, then turn and lean into the blow, peaking as the fist (or the foot) arrives and easing back over the recovery. A SkeletonModifier3D applies it after the tree and the other modifiers; it runs only while a strike clip plays, so it never touches the body seated, in the car, on a wall or climbing. The rig owns the clock (tick) and the tree the clock gates on; the measurement (measure) is the same one the actions feature lands its blows at.
+The hero's strike pose layer (hero_rig.gd, like hero_look.gd and hero_limbs.gd): what makes a strike read as the whole body's work. On top of each strike clip's own upper-body keys (the tree plays them SPEED times as fast as authored) the spine and chest coil back through the windup, then turn and lean into the blow, peaking as the fist (or the foot) arrives and easing back over the recovery. A SkeletonModifier3D applies it after the tree and the other modifiers. It also supplies a planted fighting guard and guides both hands forward as a shove lands; the rig owns the clock (tick) and the tree the clock gates on.
 
 ### Constants
 
+- `SM = preload("res://scripts/fp/player/spring_math.gd")`
 - `SPEED = { "punch_jab": 1.25, "punch_cross": 1.2, "punch_hook": 1.2, "swing_a": 1.15, "swing_b":...`: Strike clips play this much faster than authored: the windup snaps and the fist is out sooner.
 - `POSE = { "punch_jab": [6.0, 5.0, -1.0], "punch_cross": [14.0, 7.0, -1.0], "punch_hook": [20.0,...`: Per clip: [chest yaw (deg, toward the punching side), lean (deg, forward), when the blow lands (s; -1 for the measurement's own contact)]. The push clip holds its palms out from near its start, so its contact stands as authored.
 - `SPINE_SHARE = 0.45`: The envelope: the spine bone's share of the turn (the chest takes the rest), the windup's coil back as a share of the strike turn (none for a contact too soon to read), how far into the windup the coil is at its deepest (of the contact), and the ease back to nothing once the blow has landed (s).
@@ -285,6 +286,37 @@ The hero's strike pose layer (hero_rig.gd, like hero_look.gd and hero_limbs.gd):
 - `COIL_SNAP = 0.12`
 - `COIL_AT = 0.55`
 - `RECOVER = 0.3`
+- `PUSH_IN = 0.05`: The shove's hand IK takes the arms over PUSH_IN from the start (the clip's own windup never shows), pulls the hands to the chest, drives both palms out from PUSH_OUT of the way to the contact, holds through impact, then lets go.
+- `PUSH_OUT = 0.35`
+- `PUSH_HOLD = 0.08`
+- `PUSH_RELEASE = 0.16`
+- `GUARD_HALFLIFE = 0.07`: The fighting guard eases its weight by half over this many seconds.
+- `GUARD_MOVE_MAX = 0.12`
+- `GUARD_HAND_HEIGHT = 1.42`: Distances in the procedural guard and push poses (skeleton metres). The guard's fists sit at the chin and cheeks with the elbows tucked in under them.
+- `GUARD_HAND_FORWARD = 0.24`
+- `GUARD_HAND_SPREAD = 0.1`
+- `GUARD_ELBOW_HEIGHT = 0.98`
+- `GUARD_ELBOW_FORWARD = 0.12`
+- `GUARD_ELBOW_SPREAD = 0.2`
+- `PULL_HAND_FORWARD = 0.2`: The shove: hands drawn to the chest, then both palms out at chest height, elbows down.
+- `PULL_HAND_HEIGHT = 1.16`
+- `PUSH_HAND_HEIGHT = 1.4`: The lean into the shove turns after the hand IK and carries the palms down; the height allows for it.
+- `PUSH_HAND_FORWARD = 0.58`
+- `PUSH_HAND_SPREAD = 0.16`
+- `PUSH_ELBOW_HEIGHT = 0.98`
+- `PUSH_ELBOW_FORWARD = 0.2`
+- `PUSH_ELBOW_SPREAD = 0.36`
+- `GRIP_HEIGHT = 1.28`: Holding someone: both hands on their upper arms, GRIP_HEIGHT up and GRIP_BACK short of their feet, GRIP_SPREAD to each side.
+- `GRIP_BACK = 0.12`
+- `GRIP_SPREAD = 0.19`
+- `GRIP_ELBOW_HEIGHT = 1.0`
+- `GRIP_ELBOW_SPREAD = 0.34`
+- `FINGERS = ["Index", "Middle", "Ring", "Little"]`: A fist: the bend (rad) at each finger's three joints, all four fingers, about the knuckle line.
+- `KNUCKLES = ["Proximal", "Intermediate", "Distal"]`
+- `FIST_BEND = [1.35, 1.5, 1.0]`
+- `GUARD_FOOT_SPREAD = 0.15`
+- `GUARD_FOOT_LEAD = 0.07`
+- `P_MOVE = "parameters/sm/loco/move/blend_amount"`
 - `BONES = [["Spine", SPINE_SHARE], ["UpperChest", 1.0 - SPINE_SHARE]]`: The bones the turn spreads over.
 - `SAMPLES = 48`: The measurement: this many poses sampled over a clip's opening WITHIN seconds; a fist counts as out once it comes within ARRIVE (skeleton metres) of its furthest reach, so a blow lands as the fist arrives, not wherever a held extension creeps to.
 - `WITHIN = 1.2`
@@ -306,12 +338,18 @@ The hero's strike pose layer (hero_rig.gd, like hero_look.gd and hero_limbs.gd):
 - `func hand(clip: String) -> float`: Which hand clip strikes with (1 the left, -1 the right), measured once with its contact.
 - `func note(a: String) -> void`: Notes the action clip the rig's tree was asked for: a strike clip starts the layer on it, anything else ends it (the tree resets its transition request, so the layer keeps the record).
 - `func start(a: String) -> void`: Starts the layer on strike clip a.
+- `func set_guard(on: bool) -> void`: Requests the procedural fighting guard; a playing action takes precedence over its pose.
+- `func set_hold(on: bool, at: Vector3 = Vector3.ZERO) -> void`: Holding someone (on) whose feet stand at at (world): while the guard is up the hands grip them there instead of rising to the chin.
+- `func guard_weight() -> float`: The eased guard weight, for the rig's tests.
+- `func push_weight() -> float`: The forward-hand weight at the shove's contact, for the rig's tests.
 - `func end() -> void`: Ends the layer (the strike over, faded out or stopped).
 - `func tick(dt: float) -> void`: Runs the layer's clock on by dt, ending it once its strike is no longer the one playing (a start waits a frame or two for the tree to take its request; stop_action ends it at once).
 - `static func paced(a: AnimationNodeAnimation, clip: String) -> AnimationNode`: Clip's AnimationNode played at its SPEED (a clip SPEED does not name unchanged), through a time scale, so the tree and measure() agree on when its blow lands.
 - `func weight() -> float`: The layer's envelope now (0 with no strike under way), for tests.
 - `func apply(sk: Skeleton3D) -> void`: Applies the layer to sk (the modifier's callback): the spine and chest turned and leaned into the blow by the envelope, on top of the tree's own pose.
+- `static func fist_joints(sk: Skeleton3D, side: String) -> Array`: The joints sk's side ("Left" or "Right") hand closes into a fist: [bone, axis, bend] each, the axis the knuckle line in the bone's own frame turned so the fingers fold toward the palm (the side the thumb's base sits on). Empty when the hand has no finger bones.
 - `static func envelope(t: float, c: float) -> float`: The envelope t seconds into a strike whose blow lands at c: a coil back through the windup (none once the windup is too short to read), the full turn into the blow at the contact, eased back to nothing RECOVER after it.
+- `static func push_envelope(t: float, c: float) -> float`: Shove hand IK: in over PUSH_IN from the start, held through the contact, then released.
 
 ## `scripts/fp/player/placeholder_puppet.gd`
 
@@ -648,7 +686,7 @@ Over-the-shoulder follow camera (D13; docs/fp/slices/A-player.md 6.5-6.6): an an
 - `ASSIST_PITCH = deg_to_rad(6.0)`
 - `ASSIST_HL = 0.6`
 - `ASSIST_WAIT = 0.5`
-- `FEELERS = [[16.0, 0.0, 0.75, 3], [-16.0, 0.0, 0.75, 3], [32.0, 0.0, 0.5, 5], [-32.0, 0.0, 0.5, 5]...`: Predictive feelers (after Lyra): [yaw offset deg, pitch offset deg, weight, retrace interval frames].
+- `FEELERS = [ [16.0, 0.0, 0.75, 3], [-16.0, 0.0, 0.75, 3], [32.0, 0.0, 0.5, 5], [-32.0, 0.0, 0.5, 5...`: Predictive feelers (after Lyra): [yaw offset deg, pitch offset deg, weight, retrace interval frames].
 
 ### Properties
 

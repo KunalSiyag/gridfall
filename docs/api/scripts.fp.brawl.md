@@ -17,7 +17,11 @@ Close combat (integration feature "brawl"; docs/fp/ARCHITECTURE.md, Brawl): grap
 - `INPUTS = ["act_grab"]`
 - `GRAB_REACH = 1.1 * WS.M`: Who can be grabbed: on their feet within GRAB_REACH (feet to feet) inside the cone ahead of the camera (the cosine).
 - `GRAB_CONE = 0.5`
-- `HOLD_GAP = 0.6 * WS.M`: Where the held person's feet go: HOLD_GAP ahead of the hero's.
+- `HOLD_GAP = 0.68 * WS.M`: Where the held person's feet go: HOLD_GAP ahead of the hero's, far enough that the two bodies clear each other with the hero's hands on their arms.
+- `HOLD_SWAY_SIDE = 0.12 * WS.M`: The held person shifts and turns slightly as they struggle (m, radians, and Hz).
+- `HOLD_SWAY_FORWARD = 0.04 * WS.M`
+- `HOLD_SWAY_YAW = deg_to_rad(6.0)`
+- `HOLD_SWAY_HZ = 1.25`
 - `DRAG_SPEED = 1.1 * WS.M`: The hero's top speed dragging someone (u/s).
 - `REACH_S = 0.3`: The reach for them as the hold starts (the rig's push clip, seconds).
 - `CUE_TAIL = 0.15`: The counter cue stays this long past the punch's landing (s).
