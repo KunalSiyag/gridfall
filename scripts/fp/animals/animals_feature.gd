@@ -38,12 +38,14 @@ const SCAN_S := 0.5
 const HOMES_S := 10.0
 ## Share of the people out on foot who walk a dog, and what the night (sky.night above NIGHT)
 ## and the rain leave of it. While the city is young (fewer built homes and shops than YOUNG_LOTS,
-## measured with the dog households) nearly twice as many of them do, so a young city still shows
-## dogs about.
-const WALK_SHARE := 0.08
+## measured with the dog households) half as many again do, so a young city still shows dogs about.
+const WALK_SHARE := 0.12
 const WALK_SHARE_EARLY := 0.18
 const YOUNG_LOTS := 8
 const NIGHT := 0.5
+## Pigeons keep longer hours: out while sky.night is at most PIGEON_NIGHT, from about 5:55 to
+## 18:05, so a city's first morning (it starts at dawn) shows them too.
+const PIGEON_NIGHT := 0.85
 const NIGHT_K := 0.4
 const RAIN_K := 0.25
 const DOG_HOUSEHOLD := "lives with a dog"
@@ -467,12 +469,12 @@ func _on_tile_built(i: int, _holder: Node3D) -> void:
 	cats.tile_built(i)
 
 
-func _on_call(d: PACK.Dog, call: String) -> void:
-	calls[call] = int(calls.get(call, 0)) + 1
-	if call == "bark":
+func _on_call(d: PACK.Dog, sound: String) -> void:
+	calls[sound] = int(calls.get(sound, 0)) + 1
+	if sound == "bark":
 		pigeons.startle(d.pos, PIGEONS.BARK_M)
 	if ctx.bus != null:
-		ctx.bus.animal_called.emit(pack.head_of(d), call, pack.shoulder_m(d))
+		ctx.bus.animal_called.emit(pack.head_of(d), sound, pack.shoulder_m(d))
 
 
 func _on_bite(d: PACK.Dog) -> void:
@@ -499,17 +501,17 @@ func _feed(dt: float, speed: float) -> void:
 	pack.time_scale = speed
 	pack.cars.clear()
 	pack.passers.clear()
-	var tr := ctx.feature("traffic")
+	var traffic_f := ctx.feature("traffic")
 	var none := pack.dogs.is_empty() and pigeons.flock.flocks.is_empty()
-	if tr == null or (none and cats.life.cats.is_empty()):
+	if traffic_f == null or (none and cats.life.cats.is_empty()):
 		return
-	_read_traffic(tr)
-	_owners_now(tr, dt)
+	_read_traffic(traffic_f)
+	_owners_now(traffic_f, dt)
 
 
 ## Moving vehicles (for the dodge) and the people going by around the player.
-func _read_traffic(tr: FpFeature) -> void:
-	var pk: Dictionary = tr.call("agents_packed", ctx.player_position(), FAR + 1.0)
+func _read_traffic(traffic_f: FpFeature) -> void:
+	var pk: Dictionary = traffic_f.call("agents_packed", ctx.player_position(), FAR + 1.0)
 	var pos: PackedVector3Array = pk["pos"]
 	var vel: PackedVector3Array = pk["vel"]
 	var kind: PackedStringArray = pk["kind"]
@@ -523,14 +525,14 @@ func _read_traffic(tr: FpFeature) -> void:
 
 
 ## Where every owner is now; a dog whose owner has been off the street LOST_S goes after them.
-func _owners_now(tr: FpFeature, dt: float) -> void:
+func _owners_now(traffic_f: FpFeature, dt: float) -> void:
 	var ids: Array = []
 	for d: PACK.Dog in pack.dogs:
 		if d.walker >= 0:
 			ids.append(d.walker)
 	if ids.is_empty():
 		return
-	var by: Dictionary = tr.call("walkers_by_id", ids)
+	var by: Dictionary = traffic_f.call("walkers_by_id", ids)
 	for d: PACK.Dog in pack.dogs.duplicate():
 		if d.walker < 0:
 			continue
@@ -576,15 +578,15 @@ func _scan() -> void:
 	for d: PACK.Dog in pack.dogs.duplicate():
 		if _flat(d.pos, me) > FAR and not d.key.begins_with("photo:"):
 			_drop(d)
-	pigeons.scan(me, _night() <= NIGHT)
+	pigeons.scan(me, _night() <= PIGEON_NIGHT)
 	_homes_t -= SCAN_S
 	if _homes_t <= 0.0:
 		_homes_t = HOMES_S
 		_read_homes()
 	cats.scan(me, _night() > NIGHT, _raining(), _dog_lots)
-	var tr := ctx.feature("traffic")
-	if tr != null:
-		_walkers(tr, me)
+	var traffic_f := ctx.feature("traffic")
+	if traffic_f != null:
+		_walkers(traffic_f, me)
 	if _night() <= NIGHT and not _raining():
 		_yard_dogs(me)
 
@@ -612,9 +614,9 @@ func _built_lots() -> int:
 
 
 ## People on foot near the player who walk a dog get it at their side.
-func _walkers(tr: FpFeature, me: Vector3) -> void:
+func _walkers(traffic_f: FpFeature, me: Vector3) -> void:
 	var seen := {}
-	for e: Dictionary in tr.call("walkers_near", me, NEAR):
+	for e: Dictionary in traffic_f.call("walkers_near", me, NEAR):
 		var wid := int(e["id"])
 		seen[wid] = true
 		if _dog_of_walker(wid) != null or bool(e["down"]):

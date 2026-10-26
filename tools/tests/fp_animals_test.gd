@@ -9,7 +9,7 @@ extends SceneTree
 ## whining; pause freezes it; walking off beyond FAR takes the dogs away and coming back brings
 ## the same dog; the photo shot (a Shiba Inu and a husky in a front yard); a dog household keeps
 ## its dog in the front yard, the resident coming out takes it along and it goes back when they
-## go in; a young city (only the founding roads and City Hall) has nearly twice as many of the
+## go in; a young city (only the founding roads and City Hall) has half as many again of the
 ## people passing through walking a dog, and grown the share settles back; self_test and teardown.
 ## Third person on a grown city; time runs through the feature's tick(1/60), traffic's step and
 ## the player's update_view.
@@ -479,10 +479,10 @@ func _check_yard() -> void:
 	)
 
 
-## A young city (no growth: only the founding roads and City Hall): nearly twice as many of the
+## A young city (no growth: only the founding roads and City Hall): half as many again of the
 ## people passing through walk a dog (WALK_SHARE_EARLY), so with walkers about near the player a
 ## dog is out within the first minute; once the city has grown the share settles back
-## (WALK_SHARE).
+## (WALK_SHARE), and people passing still walk a dog now and then.
 func _check_young_city() -> void:
 	var fresh := FRESH.make(get_root())
 	if not bool(fresh["ok"]):
@@ -522,6 +522,23 @@ func _check_young_city() -> void:
 		fails,
 		is_equal_approx(grown, AF.WALK_SHARE),
 		"young: grown, the share settles back (%.2f)" % grown
+	)
+	var ids := {}
+	for k in range(30):
+		var w := wks.make("ambient")
+		w.extra = 0
+		ids[w.id] = true
+		var at := me + Vector3((k - 15) * 0.08, 0.0, 0.1)
+		var y := fctx.collision.walk_height(at)
+		wks.stand(w, Vector3(at.x, y if not is_nan(y) else at.y, at.z), 0.0)
+	FRESH.step(ftr, ff, AF.SCAN_S + 0.1)
+	var grown_dogs := 0
+	for d: PACK.Dog in fpack.dogs:
+		grown_dogs += 1 if ids.has(d.walker) else 0
+	K.check(
+		fails,
+		grown_dogs >= 2,
+		"young: grown, people passing still walk dogs (%d of 30)" % grown_dogs
 	)
 
 

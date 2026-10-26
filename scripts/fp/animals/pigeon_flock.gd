@@ -354,11 +354,11 @@ func _threat(f: Flock) -> Vector3:
 		if d < (float(dg[2]) if dg.size() > 2 else DOG_NEAR) or (running and d < DOG_FAR):
 			return at
 	for c: Array in cars:
-		var hit := 0
+		var hits := 0
 		for b: Bird in f.birds:
 			if not b.air and _in_path(b, c):
-				hit += 1
-		if hit >= CROWD:
+				hits += 1
+		if hits >= CROWD:
 			return c[0]
 	return NO_POINT
 
@@ -895,9 +895,9 @@ func _morph() -> Color:
 	return Color(tint.r * j, tint.g * j, tint.b * j)
 
 
-func _call(at: Vector3, call: String) -> void:
+func _call(at: Vector3, sound: String) -> void:
 	if on_call.is_valid():
-		on_call.call(at, call)
+		on_call.call(at, sound)
 
 
 static func _flat(a: Vector3, b: Vector3) -> float:

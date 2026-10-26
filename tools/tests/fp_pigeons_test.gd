@@ -9,7 +9,8 @@ extends SceneTree
 ## toast) and the birds gather round them and eat them up; pause freezes them; beyond FAR they go
 ## and come back; the flag off takes them away; the photo shot; a fresh city (only the founding
 ## roads and City Hall) still shows pigeons by the spawn, and where no spot of any kind is near the
-## ambient flock keeps to a sidewalk by the player, none by night; self_test and teardown. Third
+## ambient flock keeps to a sidewalk by the player, none by night, out at dawn; self_test and
+## teardown. Third
 ## person on a grown city; time runs through the feature's tick(1/60) and traffic's step.
 
 const K := preload("res://tools/tests/fp_kit.gd")
@@ -547,7 +548,8 @@ func _check_photo() -> void:
 ## A fresh city (no growth: only the founding roads and City Hall): by day pigeons still come out
 ## near the player at once (the hall's flock, the street flocks, or the ambient one), their birds on
 ## walkable ground; where no spot of any kind is near, the ambient flock (BASELINE_KEY) keeps to a
-## sidewalk point by the player; by night nothing comes out.
+## sidewalk point by the player; by night nothing comes out, and at dawn (a new city's first
+## hour) they are out again.
 func _check_fresh_city() -> void:
 	var fresh := FRESH.make(get_root())
 	if not bool(fresh["ok"]):
@@ -600,6 +602,17 @@ func _check_fresh_city() -> void:
 	fctx.player.teleport(at + Vector3(PG.FAR + 1.0, 0.0, 0.0), 0.0)
 	FRESH.step(ftr, ff, AF.SCAN_S + 0.1)
 	K.check(fails, ffl.flocks.is_empty(), "fresh: by night nothing comes out")
+	# The sky's night at 6:15, the hour a new city starts (sky_director.gd _apply()); back on the
+	# quiet street, the first light brings the ambient flock out again.
+	var dawn := 1.0 - smoothstep(-0.12, 0.3, sin(PI * 0.25 / 12.0))
+	fctx.sky.night = dawn
+	fctx.player.teleport(at, 0.0)
+	FRESH.step(ftr, ff, AF.SCAN_S + 0.1)
+	K.check(
+		fails,
+		dawn > AF.NIGHT and not ffl.flocks.is_empty(),
+		"fresh: at dawn (night %.2f) the pigeons are out already" % dawn
+	)
 
 
 ## The flock of key in the flocks of the flock list fl (the shared helper for another context).

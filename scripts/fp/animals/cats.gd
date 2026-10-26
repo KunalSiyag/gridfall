@@ -23,8 +23,8 @@ const FAR := 3.0
 const MAX_CATS := 6
 ## Shares of the houses with a front yard (and no dog) that keep a cat, of the shops with a shop
 ## cat and, by night, of the works yards and the parks with a stray.
-const HOUSE_SHARE := 0.3
-const SHOP_SHARE := 0.3
+const HOUSE_SHARE := 0.4
+const SHOP_SHARE := 0.4
 const STRAY_SHARE := {D.ZONE_I: 0.4, D.PARK: 0.35}
 ## A young city (fewer built homes and shops than YOUNG_LOTS) has no yards, shop doors, works yards
 ## or parks for a cat yet: until then one ambient stray (AMBIENT_KEY) keeps to the nearest free
@@ -257,7 +257,7 @@ func startle(at: Vector3, r_m: float) -> void:
 			life.startle(c, at)
 
 
-func on_crash(at: Vector3, _speed: float, _what: String) -> void:
+func on_crash(at: Vector3, _speed: float, _cause: String) -> void:
 	startle(at, CRASH_M)
 
 
@@ -463,11 +463,11 @@ func _what(c: LIFE.Cat) -> String:
 	return "a %s cat" % c.coat
 
 
-func _on_call(c: LIFE.Cat, call: String) -> void:
-	calls[call] = int(calls.get(call, 0)) + 1
+func _on_call(c: LIFE.Cat, sound: String) -> void:
+	calls[sound] = int(calls.get(sound, 0)) + 1
 	if ctx.bus != null:
-		ctx.bus.animal_called.emit(life.head_of(c), call, life.shoulder_m(c))
-	if call != "hiss" or _pack == null:
+		ctx.bus.animal_called.emit(life.head_of(c), sound, life.shoulder_m(c))
+	if sound != "hiss" or _pack == null:
 		return
 	for d: PACK.Dog in _pack.dogs:
 		if _flat(d.pos, c.pos) < BARK_BACK * WS.M:

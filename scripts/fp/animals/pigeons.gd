@@ -403,10 +403,10 @@ func _bird_near(f: FLOCK.Flock, g: Vector3) -> bool:
 	return false
 
 
-func _on_call(at: Vector3, call: String) -> void:
-	calls[call] = int(calls.get(call, 0)) + 1
+func _on_call(at: Vector3, sound: String) -> void:
+	calls[sound] = int(calls.get(sound, 0)) + 1
 	if ctx.bus != null:
-		ctx.bus.animal_called.emit(at, call, SIZE_M)
+		ctx.bus.animal_called.emit(at, sound, SIZE_M)
 
 
 # ------------------------------------------------------------------ draw
@@ -441,9 +441,9 @@ func _draw_crumbs(f: FLOCK.Flock) -> void:
 	var mm := (f.crumbs_node as MultiMeshInstance3D).multimesh
 	mm.instance_count = f.crumb_spots.size()
 	for k in range(f.crumb_spots.size()):
-		var basis := Basis(Vector3.UP, k * 2.39996).scaled(Vector3.ONE * WS.M)
+		var turn := Basis(Vector3.UP, k * 2.39996).scaled(Vector3.ONE * WS.M)
 		var at := f.crumb_spots[k] + Vector3(0.0, 0.5 * CRUMB.y * WS.M, 0.0)
-		mm.set_instance_transform(k, Transform3D(basis, at))
+		mm.set_instance_transform(k, Transform3D(turn, at))
 
 
 static func _crumb() -> BoxMesh:
