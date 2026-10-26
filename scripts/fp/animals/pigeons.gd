@@ -1,15 +1,18 @@
 extends Node3D
 ## The pigeons (part of the animals feature): where flocks keep (the sidewalk in front of some
-## shops and of the civic buildings people gather at, and the parks), coming out by day near the
-## player and going beyond FAR; the world fed to their behaviour (pigeon_flock.gd) before every
-## step; one MultiMesh of pigeon_body.gd's bird per flock, and the crumbs the hero throws them
-## (E on a flock close by). Their coos and wingbeats go out on the bus (animal_called).
+## shops and of the civic buildings people gather at, the parks, and a share of the plain street
+## corners), coming out by day near the player and going beyond FAR; and where none of those is
+## about, one ambient flock near the player (a young city shows pigeons from its first day). The
+## world fed to their behaviour (pigeon_flock.gd) before every step; one MultiMesh of
+## pigeon_body.gd's bird per flock, and the crumbs the hero throws them (E on a flock close by).
+## Their coos and wingbeats go out on the bus (animal_called).
 
 const D := preload("res://scripts/sim/sim_defs.gd")
 const WS := preload("res://scripts/fp/world_scale.gd")
 const FLOCK := preload("res://scripts/fp/animals/pigeon_flock.gd")
 const BODY := preload("res://scripts/fp/animals/pigeon_body.gd")
 const PACK := preload("res://scripts/fp/animals/dog_pack.gd")
+const STREETS := preload("res://scripts/fp/animals/street_spots.gd")
 
 const MAX_STEP := 1.0 / 30.0
 ## Flocks come out within NEAR of the player (u) and go beyond FAR, at most MAX_FLOCKS at once.
@@ -22,6 +25,14 @@ const FRONTS := {
 	D.ZONE_C: 0.3, D.HALL: 1.0, D.TRAIN: 1.0, D.STADIUM: 0.7, D.UNIVERSITY: 0.7, D.SCHOOL: 0.3
 }
 const PARK_SHARE := 0.8
+## Plain street flocks (no shop or civic lot in front needed): this share of the straight road
+## tiles keeps a few pigeons on its own sidewalk. When no flock of any kind is near the player, the
+## scan also puts out one ambient flock (BASELINE_KEY) on the nearest free sidewalk point, so a
+## young city still shows pigeons; the spot's birds come from its tile's roll like any other's.
+const ROAD_SHARE := 0.15
+const ROAD_N := Vector2i(3, 6)
+const ROAD_R := 0.2
+const BASELINE_KEY := "b:pigeons"
 ## A sidewalk flock forages STREET_R (u) either way along the street, a park's within PARK_R of its
 ## spot; how many birds (min, max).
 const STREET_R := 0.25
@@ -123,7 +134,8 @@ func clear() -> void:
 
 
 ## Every scan: the flocks too far off go; by day (and with the flag on) the spots near me get
-## theirs, the nearest first.
+## theirs, the nearest first; and with no flock near me after that, one ambient flock comes out
+## anyway (_baseline).
 func scan(me: Vector3, by_day: bool) -> void:
 	for f: FLOCK.Flock in flock.flocks.duplicate():
 		if _flat(f.home, me) > FAR and not f.key.begins_with("photo:"):
@@ -147,6 +159,7 @@ func scan(me: Vector3, by_day: bool) -> void:
 		if flock.flocks.size() >= MAX_FLOCKS:
 			return
 		_make("s:%d" % int(e[1]), e[2])
+	_baseline(me)
 
 
 ## The world for this step from the dogs' pack: the hero on foot, the traffic's cars (and the
@@ -390,10 +403,10 @@ func _bird_near(f: FLOCK.Flock, g: Vector3) -> bool:
 	return false
 
 
-func _on_call(at: Vector3, call: String) -> void:
-	calls[call] = int(calls.get(call, 0)) + 1
+func _on_call(at: Vector3, sound: String) -> void:
+	calls[sound] = int(calls.get(sound, 0)) + 1
 	if ctx.bus != null:
-		ctx.bus.animal_called.emit(at, call, SIZE_M)
+		ctx.bus.animal_called.emit(at, sound, SIZE_M)
 
 
 # ------------------------------------------------------------------ draw
@@ -428,9 +441,9 @@ func _draw_crumbs(f: FLOCK.Flock) -> void:
 	var mm := (f.crumbs_node as MultiMeshInstance3D).multimesh
 	mm.instance_count = f.crumb_spots.size()
 	for k in range(f.crumb_spots.size()):
-		var basis := Basis(Vector3.UP, k * 2.39996).scaled(Vector3.ONE * WS.M)
+		var turn := Basis(Vector3.UP, k * 2.39996).scaled(Vector3.ONE * WS.M)
 		var at := f.crumb_spots[k] + Vector3(0.0, 0.5 * CRUMB.y * WS.M, 0.0)
-		mm.set_instance_transform(k, Transform3D(basis, at))
+		mm.set_instance_transform(k, Transform3D(turn, at))
 
 
 static func _crumb() -> BoxMesh:
@@ -460,6 +473,8 @@ func _spot_of(i: int) -> Dictionary:
 		elif FRONTS.has(k) and _roll("front:%d" % i) < float(FRONTS[k]):
 			if k != D.ZONE_C or ctx.sim.level[i] > 0:
 				out = _front_spot(i)
+		elif k == D.ROAD and _roll("street:%d" % i) < ROAD_SHARE:
+			out = _road_spot(i)
 	_spots[i] = out
 	return out
 
@@ -491,6 +506,40 @@ func _park_spot(i: int) -> Dictionary:
 			p.y = ctx.collision.walk_height(p)
 			return _spot_dict(i, p, PARK_R, Vector3.ZERO, Vector3.ZERO, PARK_N)
 	return {}
+
+
+## The sidewalk of a straight road tile itself (no lot in front of it): a small flock on either
+## side of the street, the first free point winning.
+func _road_spot(i: int) -> Dictionary:
+	var m := RoadTopology.mask(ctx.sim, D.tx(i), D.ty(i))
+	if m != RoadTopology.NS and m != RoadTopology.EW:
+		return {}
+	var run := RoadTopology.run_dir(m)
+	var right := Vector3(-run.z, 0.0, run.x)
+	for s: float in [1.0, -1.0]:
+		for along: float in STREET_TRIES:
+			var p := _tile_pos(i) + right * (s * WS.SIDEWALK_CENTER) + run * along
+			if not _room(p):
+				continue
+			p.y = ctx.collision.walk_height(p)
+			return _spot_dict(i, p, ROAD_R, run, right * s, ROAD_N)
+	return {}
+
+
+## The guaranteed flock: with no other flock about (none within NEAR, the cap not reached), one
+## ambient flock (BASELINE_KEY) keeps to the free sidewalk point of the nearest straight road tile
+## to me (street_spots.gd), so a young city without shops, civic buildings or parks still shows
+## pigeons. Nothing when the player is off the streets (no free point near them).
+func _baseline(me: Vector3) -> void:
+	if _flock(BASELINE_KEY) != null or flock.flocks.size() >= MAX_FLOCKS:
+		return
+	for f: FLOCK.Flock in flock.flocks:
+		if not f.key.begins_with("photo:") and _flat(f.home, me) <= NEAR:
+			return
+	var best := STREETS.nearest_road(ctx.sim, me, NEAR, _road_spot)
+	if best.is_empty():
+		return
+	_make(BASELINE_KEY, best)
 
 
 func _spot_dict(

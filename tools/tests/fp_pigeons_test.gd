@@ -7,10 +7,15 @@ extends SceneTree
 ## clatter, it climbs, wheels and glides back down to its spot once the hero has gone, and a
 ## shout, a dog close by and a car driving into it send it up too; E throws crumbs (the pick, a
 ## toast) and the birds gather round them and eat them up; pause freezes them; beyond FAR they go
-## and come back; the flag off takes them away; the photo shot; self_test and teardown. Third
+## and come back; the flag off takes them away; the photo shot; a fresh city (only the founding
+## roads and City Hall) still shows pigeons by the spawn, and where no spot of any kind is near the
+## ambient flock keeps to a sidewalk by the player, none by night, out at dawn; self_test and
+## teardown. Third
 ## person on a grown city; time runs through the feature's tick(1/60) and traffic's step.
 
 const K := preload("res://tools/tests/fp_kit.gd")
+const FRESH := preload("res://tools/tests/fp_fresh_city.gd")
+const D := preload("res://scripts/sim/sim_defs.gd")
 const WS := preload("res://scripts/fp/world_scale.gd")
 const WK := preload("res://scripts/fp/traffic/walkers.gd")
 const AF := preload("res://scripts/fp/animals/animals_feature.gd")
@@ -75,6 +80,7 @@ func _init() -> void:
 		_check_far()
 		_check_flag()
 		_check_photo()
+	_check_fresh_city()
 	_check_teardown()
 	K.finish(self, "FP_PIGEONS_TEST", fails)
 
@@ -537,6 +543,109 @@ func _check_photo() -> void:
 	f.call(str(shot["restore"]))
 	ctx.sim.speed = 1
 	K.check(fails, _flock(PG.PHOTO_KEY) == null, "photo: restore takes them away")
+
+
+## A fresh city (no growth: only the founding roads and City Hall): by day pigeons still come out
+## near the player at once (the hall's flock, the street flocks, or the ambient one), their birds on
+## walkable ground; where no spot of any kind is near, the ambient flock (BASELINE_KEY) keeps to a
+## sidewalk point by the player; by night nothing comes out, and at dawn (a new city's first
+## hour) they are out again.
+func _check_fresh_city() -> void:
+	var fresh := FRESH.make(get_root())
+	if not bool(fresh["ok"]):
+		K.check(fails, false, "fresh: fixture: traffic and animals registered")
+		return
+	var fpg: PG = fresh["pigeons"]
+	var ffl: FLOCK = fresh["flock"]
+	var fctx: FpContext = fresh["ctx"]
+	var ftr: FpFeature = fresh["traffic"]
+	var ff: FpFeature = fresh["animals"]
+	FRESH.step(ftr, ff, AF.SCAN_S + 0.1)
+	var birds := 0
+	var ground := true
+	for fk: FLOCK.Flock in ffl.flocks:
+		birds += fk.birds.size()
+		for b: FLOCK.Bird in fk.birds:
+			ground = ground and not is_nan(fctx.collision.walk_height(b.pos))
+			ground = ground and fctx.collision.surface_at(b.pos) != "asphalt"
+	K.check(
+		fails,
+		not ffl.flocks.is_empty() and birds >= PG.ROAD_N.x and ground,
+		(
+			"fresh: pigeons come out by the spawn at once (%d birds in %d flocks)"
+			% [birds, ffl.flocks.size()]
+		)
+	)
+	var quiet := _quiet_tile(fctx, fpg)
+	K.check(fails, quiet >= 0, "fresh: fixture: a street with no flock spot near")
+	if quiet < 0:
+		return
+	var at := Vector3(D.tx(quiet), 0.0, D.ty(quiet))
+	var g := fctx.collision.walk_height(at)
+	at.y = g if not is_nan(g) else 0.0
+	fctx.player.teleport(at, 0.0)
+	FRESH.step(ftr, ff, AF.SCAN_S + 0.1)
+	var fk := _flock_of(ffl, PG.BASELINE_KEY)
+	var near := fk != null and _flat(fk.home, fctx.player.position) <= PG.NEAR
+	var on_ground := true
+	if fk != null:
+		for b: FLOCK.Bird in fk.birds:
+			on_ground = on_ground and not is_nan(fctx.collision.walk_height(b.pos))
+			on_ground = on_ground and fctx.collision.surface_at(b.pos) != "asphalt"
+	var n := fk.birds.size() if fk != null else 0
+	K.check(
+		fails,
+		near and n >= PG.ROAD_N.x and on_ground,
+		"fresh: no spot near, the ambient flock keeps to a sidewalk by the player (%d)" % n
+	)
+	fctx.sky.night = 1.0
+	fctx.player.teleport(at + Vector3(PG.FAR + 1.0, 0.0, 0.0), 0.0)
+	FRESH.step(ftr, ff, AF.SCAN_S + 0.1)
+	K.check(fails, ffl.flocks.is_empty(), "fresh: by night nothing comes out")
+	# The sky's night at 6:15, the hour a new city starts (sky_director.gd _apply()); back on the
+	# quiet street, the first light brings the ambient flock out again.
+	var dawn := 1.0 - smoothstep(-0.12, 0.3, sin(PI * 0.25 / 12.0))
+	fctx.sky.night = dawn
+	fctx.player.teleport(at, 0.0)
+	FRESH.step(ftr, ff, AF.SCAN_S + 0.1)
+	K.check(
+		fails,
+		dawn > AF.NIGHT and not ffl.flocks.is_empty(),
+		"fresh: at dawn (night %.2f) the pigeons are out already" % dawn
+	)
+
+
+## The flock of key in the flocks of the flock list fl (the shared helper for another context).
+func _flock_of(fl: FLOCK, k: String) -> FLOCK.Flock:
+	for fk: FLOCK.Flock in fl.flocks:
+		if fk.key == k:
+			return fk
+	return null
+
+
+## A straight road tile with no flock spot of any kind within FAR of it (so a scan there brings out
+## nothing but the ambient flock), or -1 when the city has none.
+func _quiet_tile(fctx: FpContext, fpg: PG) -> int:
+	var r := ceili(PG.FAR)
+	for i: int in fctx.sim.active:
+		if fctx.sim.kind[i] != D.ROAD:
+			continue
+		var m := RoadTopology.mask(fctx.sim, D.tx(i), D.ty(i))
+		if m != RoadTopology.NS and m != RoadTopology.EW:
+			continue
+		var clear := true
+		for y in range(D.ty(i) - r, D.ty(i) + r + 1):
+			for x in range(D.tx(i) - r, D.tx(i) + r + 1):
+				if not D.in_bounds(x, y):
+					continue
+				if not (fpg.call("_spot_of", D.idx(x, y)) as Dictionary).is_empty():
+					clear = false
+					break
+			if not clear:
+				break
+		if clear:
+			return i
+	return -1
 
 
 func _check_teardown() -> void:

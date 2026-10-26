@@ -9,6 +9,7 @@ extends RefCounted
 
 const D := preload("res://scripts/sim/sim_defs.gd")
 const WS := preload("res://scripts/fp/world_scale.gd")
+const OBB := preload("res://scripts/fp/obb2d.gd")
 const LG := preload("res://scripts/fp/traffic/lane_graph.gd")
 const IDM := preload("res://scripts/fp/traffic/idm.gd")
 const JN := preload("res://scripts/fp/traffic/junctions.gd")
@@ -51,6 +52,12 @@ const STUN_BRAKE := 6.0 * WS.M
 const HIT_MIN := 3.0 * WS.M
 const HIT_STUN := 5.0
 const HIT_COOL := 2.5
+## The hero on foot is eased out of a car's body by at least this much a step (u), so a car they
+## walk into pushes them clear. A car that reaches them on the move pushes by its own travel that
+## step as well (HERO_PUSH_RATIO times it), so its body carries them along instead of passing
+## through them.
+const HERO_PUSH := 0.5 * WS.PLAYER_RADIUS
+const HERO_PUSH_RATIO := 1.5
 
 
 ## One vehicle.
@@ -62,6 +69,7 @@ class Car extends RefCounted:
 	var length: float = 0.24
 	var half_w: float = SEDAN_HW
 	var height: float = 0.075
+	var mass: float = 0.0           # > 0: the model fixes it (a backhoe), else the kind
 	var lane: LG.Lane = null
 	var s: float = 0.0              # front, along lane
 	var v: float = 0.0
@@ -135,6 +143,10 @@ var on_removed: Callable
 ## their body brakes as hard as it can and hits them, on_hit_player(car).
 var player_hittable: bool = false
 var on_hit_player: Callable
+## Called with the xz push (u) when the hero on foot overlaps a car's body that is not running
+## them down: the player eases them out along it, so no car passes through them (traffic wires
+## it; unset, the hero is left where they stand).
+var on_hero_push: Callable
 ## _blocks index of the hero on foot, -1 when they are not in it.
 var _hero_block: int = -1
 ## The car that last hit the hero, and seconds before another may.
@@ -143,6 +155,9 @@ var _hit_cool: float = 0.0
 ## The hero's ground velocity (u/s) from step to step, and where they were at the last.
 var _hero_v := Vector2.ZERO
 var _hero_was := Vector2(INF, INF)
+## Drawn body centre of every car near the hero last step (id -> Vector2), for the closing speed
+## the hero-contact test reads.
+var _body_was: Dictionary = {}
 
 
 func setup(p_lg: LG, p_jn: JN, p_sw: SW, seed: int) -> void:
@@ -470,6 +485,61 @@ func step(dt: float) -> void:
 			c.vis_yaw *= decay
 			if absf(c.vis_yaw) < 1e-4:
 				c.vis_yaw = 0.0
+	_hero_contact(dt)
+
+
+## The hero on foot against the body of every car near them, once the cars have moved: a car whose
+## body reaches them is never left overlapping it. A car closing on them at HIT_MIN or more (a
+## knocked or coasting car included, which the path-gap rule never resolves) runs them down
+## exactly as _block_room does; any other overlap eases the hero out along the contact normal
+## (on_hero_push), so a car they walk into, or one that reaches them slowly, pushes them clear
+## instead of passing through. A car the hero drives is the hero's own body and is left out;
+## nothing at all while they are not on foot in the street (driving, aboard a car or absent).
+func _hero_contact(dt: float) -> void:
+	var was := _body_was
+	_body_was = {}
+	if _hero_block < 0 or player_pos.x >= INF:
+		return
+	var hero := Vector2(player_pos.x, player_pos.z)
+	var push := Vector2.ZERO
+	for c: Car in cars:
+		if c.dead or c.far or c.driven:
+			continue
+		var q := Vector2(c.pos.x + c.vis_off.x, c.pos.z + c.vis_off.z)
+		if q.distance_to(hero) > WS.PLAYER_RADIUS + c.length * 0.5:
+			continue
+		_body_was[c.id] = q
+		# How the body moved this step (a lane car's lane velocity, a knocked or coasting one's
+		# slide): the closing speed and the push both read that, not the lane speed alone.
+		var mv := Vector2(c.vel.x, c.vel.z)
+		if was.has(c.id) and dt > 0.0:
+			mv = (q - (was[c.id] as Vector2)) / dt
+		var yaw := c.yaw + c.vis_yaw
+		var hit := OBB.box_circle(
+			q,
+			OBB.side_axis(yaw),
+			OBB.heading(yaw),
+			Vector2(c.half_w, c.length * 0.5),
+			hero,
+			WS.PLAYER_RADIUS
+		)
+		if hit.is_empty():
+			continue
+		var out := -(hit[0] as Vector2)
+		var closing := mv.dot(out)
+		if c.id == _hit_id:
+			continue
+		if player_hittable and _hit_cool <= 0.0 and closing >= HIT_MIN:
+			_hit_id = c.id
+			_hit_cool = HIT_COOL
+			c.stun_t = maxf(c.stun_t, HIT_STUN)
+			if on_hit_player.is_valid():
+				on_hit_player.call(c)
+			continue
+		var cap := maxf(HERO_PUSH, mv.length() * dt * HERO_PUSH_RATIO)
+		push += out * minf(float(hit[1]), cap)
+	if push != Vector2.ZERO and on_hero_push.is_valid():
+		on_hero_push.call(push)
 
 
 func _drive(c: Car, dt: float) -> void:

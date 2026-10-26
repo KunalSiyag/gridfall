@@ -5,6 +5,10 @@ extends RefCounted
 ## textured model up to VIS_BUILDING_NEAR, a merged one-draw twin of each building mesh (midlod.gd)
 ## up to VIS_BUILDING, then stepped mass proxies (proxies.gd) merged into one mesh per 8x8-tile
 ## chunk. Each switch happens at one exact distance from the same point, so levels never overlap.
+## Sparse kinds (parks, wind farms, solar, rubble) have no useful far shape and never number many:
+## theirs stay full-detail at every distance (Cls.FULL). While the camera is aerial (the city
+## overview, a high photo fly), road mains and twins lose their end so the street grid reaches the
+## horizon; set_aerial() switches that, render_opt re-ranges the cache.
 
 const WS := preload("res://scripts/fp/world_scale.gd")
 const D := preload("res://scripts/sim/sim_defs.gd")
@@ -13,14 +17,18 @@ const MIDLOD := preload("res://scripts/fp/render/midlod.gd")
 const SHADER := preload("res://scripts/fp/render/impostor.gdshader")
 const CHUNK := 8
 ## BUILDING / ROAD: holder parts ending at VIS_BUILDING; NEAR: a building or road mesh ending at
-## VIS_BUILDING_NEAR; MID: its merged twin, from VIS_BUILDING_NEAR to VIS_BUILDING.
-enum Cls { BUILDING, PROP, ROAD, NEAR, MID }
+## VIS_BUILDING_NEAR; MID: its merged twin, from VIS_BUILDING_NEAR to VIS_BUILDING; FULL: a sparse
+## kind's part, always drawn (no far representation exists and there are never many).
+enum Cls { BUILDING, PROP, ROAD, NEAR, MID, FULL }
+## Sparse kinds whose models would proxy badly (a park is not a box) and whose tiles never number
+## many: drawn in full at every distance instead of popping to nothing at VIS_BUILDING.
+const FULL_KINDS := [D.PARK, D.WIND, D.SOLAR, D.LANDFILL, D.RUBBLE]
 ## Meshes smaller than this (longest side, world units) never cast shadows (1 m).
 const SMALL := 0.05
 const PROP_SCENES := ["res://models/real/props/", "res://models/props/"]
 const ROAD_SCENES := "res://models/real/roads/"
-## Service kinds drawn as far impostors (open or sparse ones, like parks and wind farms, are not).
-const IMPOSTOR_SERVICES := [D.HALL, D.HOSPITAL, D.SCHOOL, D.POLICE, D.FIRE, D.UNIVERSITY, D.TRAIN, D.COAL, D.PUMP, D.SEWAGE, D.STADIUM]
+## Service kinds drawn as far impostors (the closed ones; sparse ones are Cls.FULL instead).
+const IMPOSTOR_SERVICES := [D.HALL, D.HOSPITAL, D.SCHOOL, D.POLICE, D.FIRE, D.UNIVERSITY, D.TRAIN, D.COAL, D.PUMP, D.SEWAGE, D.STADIUM, D.AIRPORT]
 ## Closed services that occlude (G2 contract: solid kinds).
 const SOLID_SERVICES := [D.HALL, D.HOSPITAL, D.SCHOOL, D.POLICE, D.FIRE, D.UNIVERSITY, D.TRAIN]
 
@@ -34,6 +42,9 @@ var material: ShaderMaterial
 var vis_building: float = WS.VIS_BUILDING
 var vis_near: float = WS.VIS_BUILDING_NEAR
 var vis_prop: float = WS.VIS_PROP
+## Aerial coverage on: the camera is over the city (render_opt decides), so road mains and twins
+## draw to the horizon. Cached parts are re-ranged by render_opt through apply_ranges().
+var aerial: bool = false
 ## tile index -> entry {"holder", "gis": Array of GeometryInstance3D, "cls": PackedByteArray,
 ## "chunk": Vector2i, "path", "xf": Transform3D (model to world), "center": Vector3 (the engine's
 ## range point of the main mesh), "impostor": bool, "solid": bool}
@@ -81,6 +92,29 @@ func post_pass(i: int, holder: Node3D) -> Vector2i:
 	walks += 1
 	var site := holder.get_node_or_null("Site")
 	var road := sim.kind[i] == D.ROAD
+	var model := _model_of(holder)
+	var spin := model != null and not model.find_children("Rotor*", "", true, false).is_empty()
+	var full := not road and (sim.kind[i] in FULL_KINDS or spin)
+	var got := _gather(holder, site, full, road)
+	var e := {"holder": holder, "gis": got["gis"], "cls": got["cls"], "road": road}
+	e["chunk"] = chunk_of(i)
+	e["path"] = ""
+	e["impostor"] = false
+	e["solid"] = false
+	_add_twins(i, e, model, spin or full)
+	apply_ranges(e)
+	_proxy_info(i, holder, e)
+	tiles[i] = e
+	var ch := e["chunk"] as Vector2i
+	if not chunk_tiles.has(ch):
+		chunk_tiles[ch] = {}
+	(chunk_tiles[ch] as Dictionary)[i] = true
+	return ch
+
+
+## One tile's own parts: instances that survive for this pass, their class, and the shadow flag each
+## small or prop part hands over. Twins and the Site's own pieces are not this holder's to range.
+func _gather(holder: Node3D, site: Node3D, full: bool, road: bool) -> Dictionary:
 	var gis: Array = []
 	var cls := PackedByteArray()
 	for n in holder.find_children("*", "GeometryInstance3D", true, false):
@@ -90,26 +124,38 @@ func post_pass(i: int, holder: Node3D) -> Vector2i:
 			continue
 		if site != null and (gi == site or site.is_ancestor_of(gi)):
 			continue
-		if not gi.has_meta("g2_vis") and (gi.visibility_range_end != 0.0 or gi.visibility_range_begin != 0.0):
+		if not gi.has_meta("g2_vis") and _ranged(gi):
 			continue
-		var c := Cls.PROP if _is_prop(gi, holder) else (Cls.ROAD if road else Cls.BUILDING)
+		var c := _class_of(gi, holder, full, road)
 		gis.append(gi)
 		cls.append(c)
 		gi.set_meta("g2_vis", true)
-		if c == Cls.PROP or _longest(gi) < SMALL:
-			if gi.cast_shadow != GeometryInstance3D.SHADOW_CASTING_SETTING_OFF and not gi.has_meta("g2_shadow"):
-				gi.set_meta("g2_shadow", gi.cast_shadow)
-			gi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-	var e := {"holder": holder, "gis": gis, "cls": cls, "chunk": chunk_of(i), "path": "", "impostor": false, "solid": false}
-	_add_twins(i, holder, e)
-	apply_ranges(e)
-	_proxy_info(i, holder, e)
-	tiles[i] = e
-	var ch := e["chunk"] as Vector2i
-	if not chunk_tiles.has(ch):
-		chunk_tiles[ch] = {}
-	(chunk_tiles[ch] as Dictionary)[i] = true
-	return ch
+		_shadow_off(gi, c)
+	return {"gis": gis, "cls": cls}
+
+
+## Whether a node already carries a visibility range of its own (a site part, a tree layer).
+static func _ranged(gi: GeometryInstance3D) -> bool:
+	return gi.visibility_range_end != 0.0 or gi.visibility_range_begin != 0.0
+
+
+## One instance's level: props never range, a sparse kind draws in full, a road main or building
+## body takes the street ladder.
+static func _class_of(gi: GeometryInstance3D, holder: Node3D, full: bool, road: bool) -> int:
+	if _is_prop(gi, holder):
+		return Cls.PROP
+	if full:
+		return Cls.FULL
+	return Cls.ROAD if road else Cls.BUILDING
+
+
+## Props and small pieces leave the shadow atlas once they carry their class; larger bodies stay.
+static func _shadow_off(gi: GeometryInstance3D, c: int) -> void:
+	if c != Cls.PROP and _longest(gi) >= SMALL:
+		return
+	if gi.cast_shadow != GeometryInstance3D.SHADOW_CASTING_SETTING_OFF and not gi.has_meta("g2_shadow"):
+		gi.set_meta("g2_shadow", gi.cast_shadow)
+	gi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 
 
 ## Does one piece of the cold work post_pass(i, holder) would otherwise do inline: the model's
@@ -123,12 +169,14 @@ func warm(holder: Node3D) -> bool:
 	var model := _model_of(holder)
 	if model == null:
 		return false
+	var spin := not model.find_children("Rotor*", "", true, false).is_empty()
+	# Sparse kinds draw in full at every distance, and a spinning rotor has no usable still: no warm.
+	if spin or sim.kind[tile_of(holder)] in FULL_KINDS:
+		return false
 	var path := model.scene_file_path
 	if holder.has_meta("building_path") and not proxies.cached(path):
 		proxies.proxy(path, model)
 		return true
-	if not model.find_children("Rotor*", "", true, false).is_empty():
-		return false
 	for n in model.find_children("*", "MeshInstance3D", true, false):
 		var mi := n as MeshInstance3D
 		if mi.has_meta("g2_mid") or mi.material_override != null or PROXIES._skipped(str(mi.name)):
@@ -151,6 +199,11 @@ static func _model_of(holder: Node3D) -> Node3D:
 	return null
 
 
+## The tile a holder stands on (holders sit at their tile's centre).
+static func tile_of(holder: Node3D) -> int:
+	return D.idx(roundi(holder.position.x), roundi(holder.position.z))
+
+
 ## Forgets tile i (its holder was replaced or cleared); returns its chunk.
 func drop(i: int) -> Vector2i:
 	var c := chunk_of(i)
@@ -162,10 +215,27 @@ func drop(i: int) -> Vector2i:
 	return c
 
 
-## Visibility ranges of one cached entry at the current distances.
+## Switches the aerial road coverage; cached parts are re-ranged by render_opt's job queue, and
+## post_pass applies the new value to every tile it passes from here on. The impostor chunks cast
+## shadows only while aerial (from the street the sun's reach ends well inside VIS_BUILDING).
+func set_aerial(on: bool) -> void:
+	aerial = on
+	for mi: MeshInstance3D in chunk_nodes.values():
+		if is_instance_valid(mi):
+			mi.cast_shadow = _chunk_shadow()
+
+
+func _chunk_shadow() -> GeometryInstance3D.ShadowCastingSetting:
+	const ON := GeometryInstance3D.SHADOW_CASTING_SETTING_ON
+	return ON if aerial else GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+
+
+## Visibility ranges of one cached entry at the current distances. While aerial, road mains and
+## twins lose their end (the street grid reaches the horizon); everything else keeps its ladder.
 func apply_ranges(e: Dictionary) -> void:
 	var gis: Array = e["gis"]
 	var cls: PackedByteArray = e["cls"]
+	var road := bool(e.get("road", false))
 	for k in range(gis.size()):
 		if not is_instance_valid(gis[k]):
 			continue
@@ -173,13 +243,15 @@ func apply_ranges(e: Dictionary) -> void:
 		match cls[k]:
 			Cls.PROP:
 				gi.visibility_range_end = vis_prop
+			Cls.FULL:
+				gi.visibility_range_end = 0.0
 			Cls.NEAR:
 				gi.visibility_range_end = vis_near
 			Cls.MID:
 				gi.visibility_range_begin = vis_near
-				gi.visibility_range_end = vis_building
+				gi.visibility_range_end = 0.0 if aerial and road else vis_building
 			_:
-				gi.visibility_range_end = vis_building
+				gi.visibility_range_end = 0.0 if aerial and road else vis_building
 		# No hysteresis margins: each level switches at exactly one distance from the same point.
 		gi.visibility_range_begin_margin = 0.0
 		gi.visibility_range_end_margin = 0.0
@@ -250,7 +322,7 @@ func rebuild_chunk(c: Vector2i) -> void:
 	if mi == null:
 		mi = MeshInstance3D.new()
 		mi.name = "Impostor_%d_%d" % [c.x, c.y]
-		mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		mi.cast_shadow = _chunk_shadow()
 		mi.material_override = material
 		root.add_child(mi)
 		chunk_nodes[c] = mi
@@ -291,11 +363,10 @@ func clear() -> void:
 
 ## Gives every mesh of tile i's building model or road piece a merged mid-LOD twin (a child at
 ## identity, so both share one bounding box and switch at the same point). Models with spinning
-## parts keep theirs.
-func _add_twins(i: int, holder: Node3D, e: Dictionary) -> void:
-	var model := _model_of(holder)
+## parts and sparse kinds keep theirs.
+func _add_twins(i: int, e: Dictionary, model: Node3D, skip: bool) -> void:
 	var path := model.scene_file_path if model != null else ""
-	if model == null or not model.find_children("Rotor*", "", true, false).is_empty():
+	if model == null or skip:
 		return
 	var gis: Array = e["gis"]
 	var cls: PackedByteArray = e["cls"]

@@ -29,7 +29,9 @@ float hash13(vec3 p3) {
 
 void vertex() {
 	vec3 c = vec3(UV2.x, UV.y, UV2.y);
-	vec3 d = c - CAMERA_POSITION_WORLD;
+	// The main camera even in the shadow pass, so a proxy casts exactly where it draws (never under
+	// a real building that casts its own).
+	vec3 d = c - MAIN_CAM_INV_VIEW_MATRIX[3].xyz;
 	if (dot(d, d) < range_sq) {
 		VERTEX = vec3(0.0);
 	}

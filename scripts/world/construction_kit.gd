@@ -8,7 +8,8 @@ const D := preload("res://scripts/sim/sim_defs.gd")
 const WS := preload("res://scripts/fp/world_scale.gd")
 ## Machines are modelled in metres: true scale is one tile per 20 m.
 const MS := WS.MACHINE_SCALE
-## Small parts stop drawing beyond this camera distance; the crane's big parts carry further.
+## Small parts stop drawing beyond this camera distance on foot; the crane's big parts carry
+## further. In orbit every part draws at every zoom (the kit's ranges are a street-level budget).
 const FAR := WS.VIS_SITE_PART
 const CRANE_FAR := 30.0
 const FLOOR_H := 0.11
@@ -55,6 +56,27 @@ var _dust: Texture2D
 
 func _init(p_view: Node) -> void:
 	view = p_view
+
+
+## True while the street-level presentation owns the view (site parts range themselves as a
+## street budget; in orbit everything draws, like the rest of the city).
+func _fp() -> bool:
+	return bool(view.get("fp_mode"))
+
+
+## The aerial coverage (render_opt): while the camera is over the city, every part of an open site
+## draws to the horizon, so cranes, machines and hoardings stay visible from the sky. Each part's
+## own end is kept in its "ck_aerial_far" meta and put back when the camera returns to the street.
+func aerial_ranges(site: Node3D, on: bool) -> void:
+	for n in site.find_children("*", "GeometryInstance3D", true, false):
+		var gi := n as GeometryInstance3D
+		if on:
+			if not gi.has_meta("ck_aerial_far"):
+				gi.set_meta("ck_aerial_far", gi.visibility_range_end)
+			gi.visibility_range_end = 0.0
+		elif gi.has_meta("ck_aerial_far"):
+			gi.visibility_range_end = float(gi.get_meta("ck_aerial_far"))
+			gi.remove_meta("ck_aerial_far")
 
 
 # ---------------------------------------------------------------- materials and primitives
@@ -195,7 +217,7 @@ func box(p: Node3D, size: Vector3, pos: Vector3, m: Variant, rot := Vector3.ZERO
 	mi.position = pos
 	mi.rotation = rot
 	mi.material_override = _material(m)
-	mi.visibility_range_end = FAR
+	mi.visibility_range_end = FAR if _fp() else 0.0
 	if not shadow:
 		mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	p.add_child(mi)
@@ -219,7 +241,7 @@ func cyl(p: Node3D, r: float, h: float, pos: Vector3, m: Variant, rot := Vector3
 	mi.position = pos
 	mi.rotation = rot
 	mi.material_override = _material(m)
-	mi.visibility_range_end = FAR
+	mi.visibility_range_end = FAR if _fp() else 0.0
 	p.add_child(mi)
 	return mi
 
@@ -238,7 +260,7 @@ func mound(p: Node3D, r: float, h: float, pos: Vector3, m: Variant) -> MeshInsta
 	mi.position = pos
 	mi.scale = Vector3(1.0, h / r, 1.0)
 	mi.material_override = _material(m)
-	mi.visibility_range_end = FAR
+	mi.visibility_range_end = FAR if _fp() else 0.0
 	p.add_child(mi)
 	return mi
 
@@ -557,7 +579,7 @@ func tower_crane(parent: Node3D, pos: Vector3, h_m: float, yaw: float, phase := 
 	_anim(slew, "yaw", 0.0, 0.9, 0.12, phase)
 	_anim(trolley, "slide", 11.0, 6.0, 0.3, phase)
 	for part in root.find_children("*", "GeometryInstance3D", true, false):
-		(part as GeometryInstance3D).visibility_range_end = CRANE_FAR
+		(part as GeometryInstance3D).visibility_range_end = CRANE_FAR if _fp() else 0.0
 	return root
 
 

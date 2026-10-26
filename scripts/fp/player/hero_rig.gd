@@ -19,6 +19,7 @@ const FK := preload("res://scripts/fp/player/hero_fk.gd")
 const HEEL := preload("res://scripts/fp/player/heel_strike.gd")
 const LOOK := preload("res://scripts/fp/player/hero_look.gd")
 const LIMBS := preload("res://scripts/fp/player/hero_limbs.gd")
+const POSE := preload("res://scripts/fp/player/hero_strike_pose.gd")
 
 ## Locomotion loops in blend order; HC starts each on the left-heel strike.
 const LOCO := ["walk", "walk_fast", "run", "run_fast"]
@@ -100,12 +101,9 @@ const ACT_OUT := 0.2
 const DANCE_IN := 0.3
 const DANCE_OUT := 0.4
 const HL_GUARD := 0.06
-## The guard (fists up) is GUARD_CLIP held at GUARD_AT seconds on the upper body.
+## The old clip branch is kept at zero; the strike pose layer builds the guard with IK instead.
 const GUARD_CLIP := "punch_jab"
 const GUARD_AT := 0.0
-## strike_time samples this many poses over a clip's opening seconds.
-const STRIKE_SAMPLES := 48
-const STRIKE_WITHIN := 1.2
 ## Clips played this much faster than authored: sitting down and standing up, getting into a
 ## car's driver's seat and out of it.
 const CLIP_SPEED := {"sit_down": 1.5, "stand_up": 1.5, "car_in": 1.25, "car_out": 1.35}
@@ -152,6 +150,8 @@ var playback: AnimationNodeStateMachinePlayback
 ## The head look, and the hands and feet on holds.
 var look: LOOK
 var limbs: LIMBS
+## The strike pose layer (the strike clips' turn into the blow, and their measurement).
+var strike_pose: POSE = null
 var meshes: Array[GeometryInstance3D] = []
 ## "m" or "f".
 var gender: String = "m"
@@ -195,7 +195,6 @@ var _down_left: float = INF
 var _roll_left: float = INF
 ## The climb state's clip (its timeline stretches to each climb's length).
 var _climb: AnimationNodeAnimation
-var _strike: Dictionary = {}
 
 
 ## Instantiates the body at path with the AnimationLibrary at lib_path; k is the body's speed
@@ -252,6 +251,7 @@ func _setup(b: Node3D, sk: Skeleton3D, lib: AnimationLibrary, k: float, p_gender
 	playback = tree.get(P_SM)
 	look = LOOK.new(skeleton, body)
 	limbs = LIMBS.new(skeleton, body)
+	strike_pose = POSE.new(sk, _fk, lib, body, tree, limbs)
 	_reset_params()
 
 
@@ -381,6 +381,7 @@ func play_action(a: String, secs: float = 0.0) -> bool:
 	if a == "dance":
 		if state() != "loco" or move * float(speeds["walk"]) > TALK_STILL:
 			return false
+		strike_pose.note(a)
 		tree.set(P_DANCE, AnimationNodeOneShot.ONE_SHOT_REQUEST_FIRE)
 		_dance_left = left
 		return true
@@ -389,6 +390,7 @@ func play_action(a: String, secs: float = 0.0) -> bool:
 	tree.set(P_ACTION, a)
 	tree.set(P_ACT, AnimationNodeOneShot.ONE_SHOT_REQUEST_FIRE)
 	_act_left = left
+	strike_pose.note(a)
 	return true
 
 
@@ -397,6 +399,7 @@ func _kick() -> bool:
 		return false
 	stop_action()
 	tree.set(P_KICK, AnimationNodeOneShot.ONE_SHOT_REQUEST_FIRE)
+	strike_pose.note("kick")
 	return true
 
 
@@ -455,47 +458,24 @@ func stop_action() -> void:
 	tree.set(P_KICK, AnimationNodeOneShot.ONE_SHOT_REQUEST_FADE_OUT)
 	_act_left = INF
 	_dance_left = INF
+	strike_pose.end()
 
 
 ## Raises (on) or drops the guard: fists up on the upper body, eased over HL_GUARD.
 func set_guard(on: bool) -> void:
 	_guard_goal = 1.0 if on else 0.0
-
-
-## When clip's fists (or palms) are furthest out in front within its first within seconds: where
-## a punch or the shove lands (s). Measured once per clip on this body's keys and cached.
-func strike_time(clip: String, within: float = STRIKE_WITHIN) -> float:
-	var key := "%s|%.3f" % [clip, within]
-	if _strike.has(key):
-		return _strike[key]
-	var a := _clip(clip)
-	if a == null:
-		return 0.0
-	var fwd := _fk.forward_of(body)
-	var hands := []
-	for h: String in ["LeftHand", "RightHand"]:
-		hands.append(_fk.chain_to(skeleton.find_bone(h)))
-	var span := minf(a.length, within)
-	var best := -INF
-	var at := 0.0
-	for k in range(STRIKE_SAMPLES + 1):
-		var t := span * float(k) / float(STRIKE_SAMPLES)
-		for c: Array in hands:
-			var reach := _fk.end_pos(a, a, 0.0, c, t / a.length).dot(fwd)
-			if reach > best + 1e-5:
-				best = reach
-				at = t
-	_strike[key] = at
-	return at
+	strike_pose.set_guard(on)
 
 
 ## Times the playing action and the dance out, ends the dance once the body moves or leaves its
-## standing locomotion, and eases the guard.
+## standing locomotion, runs the strike pose layer's clock (ending it with its strike), and eases
+## the guard.
 func _update_actions(dt: float, a: float) -> void:
 	_act_left -= dt
 	if _act_left <= 0.0:
 		_act_left = INF
 		tree.set(P_ACT, AnimationNodeOneShot.ONE_SHOT_REQUEST_FADE_OUT)
+	strike_pose.tick(dt)
 	_down_left -= dt
 	if _down_left <= 0.0:
 		_down_left = INF
@@ -507,7 +487,7 @@ func _update_actions(dt: float, a: float) -> void:
 		_dance_left = INF
 		tree.set(P_DANCE, AnimationNodeOneShot.ONE_SHOT_REQUEST_FADE_OUT)
 	guard = _guard_goal if dt <= 0.0 else SM.damp(guard, _guard_goal, HL_GUARD, dt)
-	tree.set(P_GUARD, guard)
+	tree.set(P_GUARD, 0.0)
 
 
 ## How far clip has carried its root t seconds after its state began (0..1 of the whole clip's
@@ -565,6 +545,7 @@ func snap(crouched: bool) -> void:
 	_dance_left = INF
 	_down_left = INF
 	_roll_left = INF
+	strike_pose.end()
 	playback.start("crouch" if crouched else "loco", true)
 	tree.advance(0.0)
 	_prev_state = state()
@@ -589,7 +570,9 @@ func feet_low(ground_y: float) -> float:
 	for k in range(_feet.size()):
 		var i: int = _feet[k]
 		var y := (skeleton.global_transform * skeleton.get_bone_global_pose(i).origin).y
-		low = minf(low, y - ground_y - (float(_feet_rest[k]) if k < _feet_rest.size() else 0.0) * sc)
+		low = minf(
+			low, y - ground_y - (float(_feet_rest[k]) if k < _feet_rest.size() else 0.0) * sc
+		)
 	return low
 
 
@@ -601,7 +584,9 @@ func _update_ground(dt: float) -> void:
 		# Per foot (ankle k, toe k + 2) the lower of heel and toe above standing.
 		var foot := [INF, INF]
 		for k in range(_feet.size()):
-			foot[k % 2] = minf(foot[k % 2], skeleton.get_bone_global_pose(_feet[k]).origin.y - float(_feet_rest[k]))
+			foot[k % 2] = minf(
+				foot[k % 2], skeleton.get_bone_global_pose(_feet[k]).origin.y - float(_feet_rest[k])
+			)
 		var lo := minf(foot[0], foot[1])
 		goal = clampf(minf(maxf(foot[0], foot[1]), lo + GROUND_SINK), -GROUND_UP, GROUND_DOWN)
 	ground_fix = goal if dt <= 0.0 else SM.damp(ground_fix, goal, HL_GROUND, dt)
@@ -609,6 +594,7 @@ func _update_ground(dt: float) -> void:
 
 
 # --- Tree
+
 
 ## sm -> shot (gestures, upper body) -> dance (whole body) -> guard (GUARD_CLIP held, upper
 ## body) -> act (ACTIONS, upper body) -> output.
@@ -640,7 +626,7 @@ func _root_tree() -> AnimationNodeBlendTree:
 	bt.connect_node("act", 1, "action")
 	# The kick moves the legs too: a whole-body one-shot over everything else.
 	bt.add_node("kick", _one_shot(ACT_IN, ACT_OUT, false))
-	bt.add_node("a_kick", _anim("kick"))
+	bt.add_node("a_kick", POSE.paced(_anim("kick"), "kick"))
 	bt.connect_node("kick", 0, "act")
 	bt.connect_node("kick", 1, "a_kick")
 	bt.connect_node("output", 0, "kick")
@@ -648,7 +634,7 @@ func _root_tree() -> AnimationNodeBlendTree:
 
 
 ## A Transition n in bt over clips (no cross-fade; each input restarts its clip), the clips as
-## Animation nodes named prefix + clip.
+## Animation nodes named prefix + clip, strike clips at the pose layer's pace.
 static func _switch(bt: AnimationNodeBlendTree, n: String, clips: Array, prefix: String) -> void:
 	var tr := AnimationNodeTransition.new()
 	tr.input_count = clips.size()
@@ -659,7 +645,7 @@ static func _switch(bt: AnimationNodeBlendTree, n: String, clips: Array, prefix:
 	bt.add_node(n, tr)
 	for i in clips.size():
 		var c := prefix + str(clips[i])
-		bt.add_node(c, _anim(clips[i]))
+		bt.add_node(c, POSE.paced(_anim(clips[i]), clips[i]))
 		bt.connect_node(n, i, c)
 
 
@@ -818,12 +804,18 @@ func _once(clip: String, speed: float) -> AnimationNodeAnimation:
 	return a
 
 
-static func _tr(sm: AnimationNodeStateMachine, from: String, to: String, xfade: float, at_end: bool = false) -> void:
+static func _tr(
+	sm: AnimationNodeStateMachine, from: String, to: String, xfade: float, at_end: bool = false
+) -> void:
 	var t := AnimationNodeStateMachineTransition.new()
 	t.xfade_time = xfade
 	if at_end:
 		t.switch_mode = AnimationNodeStateMachineTransition.SWITCH_MODE_AT_END
-	t.advance_mode = AnimationNodeStateMachineTransition.ADVANCE_MODE_AUTO if (at_end or from == "Start") else AnimationNodeStateMachineTransition.ADVANCE_MODE_ENABLED
+	t.advance_mode = (
+		AnimationNodeStateMachineTransition.ADVANCE_MODE_AUTO
+		if (at_end or from == "Start")
+		else AnimationNodeStateMachineTransition.ADVANCE_MODE_ENABLED
+	)
 	sm.add_transition(from, to, t)
 
 
@@ -927,7 +919,11 @@ func _update_contacts() -> void:
 		var len := float(tree.get(base + "current_length"))
 		if len > 1e-4:
 			ph = fposmod(float(tree.get(base + "current_position")) / len, 1.0)
-	var walking := move >= STEP_MIN_MOVE if st == "loco" else float(tree.get(P_CBS)) >= STEP_MIN_MOVE * float(speeds["crouch_walk"])
+	var walking := (
+		move >= STEP_MIN_MOVE
+		if st == "loco"
+		else float(tree.get(P_CBS)) >= STEP_MIN_MOVE * float(speeds["crouch_walk"])
+	)
 	if ph >= 0.0 and _prev_phase >= 0.0 and st == _prev_state and walking:
 		var d := wrapf(ph - _prev_phase, -0.5, 0.5)
 		var cp := _contact_phases(st)
@@ -953,11 +949,14 @@ func _contact_phases(st: String = "loco") -> Vector2:
 		var s0: float = speeds[LOCO[i]]
 		var s1: float = speeds[LOCO[i + 1]]
 		if a <= s1 or i == LOCO.size() - 2:
-			return _contacts_of(LOCO[i], LOCO[i + 1], clampf((a - s0) / maxf(s1 - s0, 1e-4), 0.0, 1.0))
+			return _contacts_of(
+				LOCO[i], LOCO[i + 1], clampf((a - s0) / maxf(s1 - s0, 1e-4), 0.0, 1.0)
+			)
 	return Vector2(0.0, 0.5)
 
 
 # --- Feet analysis (forward kinematics over the clips' own keys, once per body and blend)
+
 
 ## The heel contact phases (left, right) of clip c0 blended toward c1 by w (quantised to
 ## 1 / BLEND_STEPS; both clips on one shared cycle, as the cyclic blend space plays them). Each is

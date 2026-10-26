@@ -65,6 +65,15 @@ var visible: Callable
 ## bike_model() -> int (traffic_feature.bike_model), and the share of cyclists.
 var bike_model: Callable
 var bike_chance: float = 0.0
+## jcb_model() -> int (traffic_feature.jcb_model): the backhoe loader parked at a rare share of
+## curb slots (a parked work machine the player can drive, not one in traffic).
+var jcb_model: Callable
+const JCB_IN := 37
+## At most this many backhoes park beside construction sites at once, however many sites are open.
+const SITE_MACHINES_MAX := 6
+## Site id -> the backhoe parked beside that site (a work machine on the job), cleared when the
+## site is finished.
+var _site_machines: Dictionary = {}
 var _rng := RandomNumberGenerator.new()
 var _road_tiles: PackedInt32Array = PackedInt32Array()
 var _near_cache: Dictionary = {}
@@ -77,6 +86,7 @@ func setup(p_sim: CitySim, p_people: Residents, p_lg: LG, p_sw: SW, p_vh: VH, p_
 	sw = p_sw
 	vh = p_vh
 	wk = p_wk
+	_site_machines.clear()
 	_rng.seed = sim.city_seed * 1777 + 5
 
 
@@ -241,12 +251,24 @@ func _spawn_car(p: Vector3, fwd: Vector3, sync: bool) -> bool:
 	var dp := at.distance_to(Vector2(p.x, p.z))
 	if dp < PERSONAL + dims.z or (sync and dp < SYNC_CAR_CLEAR):
 		return false
-	if not sync:
-		for q: Vector2 in [lg.pos_at(l, s), lg.pos_at(l, s - dims.z)]:
-			if visible.call(Vector3(q.x, 0.03, q.y)):
-				return false
-	_place_new(l, s, m, dims, bike, sync)
+	if not sync and _in_view(l, s, dims.z):
+		return false
+	var c := _place_new(l, s, m, dims, bike, sync)
+	if not sync and visible.call(c.pos):
+		vh.remove(c)
+		return false
 	return true
+
+
+## True when a car of length len about to be placed at s on l would show: the two ends just above
+## the road and, after placing, its drawn position (the lateral offset update_pose gives a bike, or
+## the range and frustum boundary where a couple of centimetres of height decide it, can put the
+## car in view even when both ends are not).
+func _in_view(l: LG.Lane, s: float, len: float) -> bool:
+	for q: Vector2 in [lg.pos_at(l, s), lg.pos_at(l, s - len)]:
+		if visible.call(Vector3(q.x, 0.03, q.y)):
+			return true
+	return false
 
 
 ## 1 to spawn a cyclist on tile t, 0 for a car, -1 for nothing. Tracks and trails carry more
@@ -267,7 +289,7 @@ func _model(bike: bool) -> int:
 
 
 ## A new ambient car (or cyclist, at their own speed) of model m on l at s.
-func _place_new(l: LG.Lane, s: float, m: int, dims: Vector3, bike: bool, sync: bool) -> void:
+func _place_new(l: LG.Lane, s: float, m: int, dims: Vector3, bike: bool, sync: bool) -> VH.Car:
 	var c := vh.make("bike" if bike else "car", "ambient", dims)
 	c.model = m
 	c.label = "a cyclist" if bike else "a commuter"
@@ -277,6 +299,7 @@ func _place_new(l: LG.Lane, s: float, m: int, dims: Vector3, bike: bool, sync: b
 	c.v = l.limit * c.speed_f * (_rng.randf_range(0.6, 1.0) if sync else 0.9)
 	if bike:
 		c.v = minf(c.v, c.v0)
+	return c
 
 
 func _spawn_ped(p: Vector3, fwd: Vector3, sync: bool) -> bool:
@@ -326,15 +349,58 @@ func fill_parking() -> int:
 			var h := absi(hash(Vector3i(i, k, sim.city_seed)))
 			if float(h % 1000) / 1000.0 >= chance:
 				continue
-			var m := int(car_model.call(h / 1000))
+			var jcb := int(jcb_model.call()) if jcb_model.is_valid() else -1
+			var m := int(jcb if jcb >= 0 and h % JCB_IN == 0 else car_model.call(h / 1000))
 			var dims: Vector3 = dims_of.call(m)
 			var c := vh.make("car", "decor", dims)
 			c.model = m
-			c.label = "a parked car"
+			if m == jcb:
+				c.label = "a backhoe"
+				c.mass = 5.5
+			else:
+				c.label = "a parked car"
 			vh.park_at(c, i, k)
 			n += 1
 	lg.bulk = false
 	return n
+
+
+## Parks a backhoe at the kerb of a road tile beside the construction site (a work machine on the
+## job), the slot nearest the site's own kerb, if one is free. Returns the car, or null when the
+## flag is off, the site already has one, no slot is free or no road runs beside the site.
+func park_site_machine(site: Dictionary) -> VH.Car:
+	var jcb := int(jcb_model.call()) if jcb_model.is_valid() else -1
+	if jcb < 0 or _site_machines.size() >= SITE_MACHINES_MAX:
+		return null
+	var sid := int(site.get("id", -1))
+	var i := int(site.get("i", -1))
+	if sid < 0 or i < 0 or _site_machines.has(sid):
+		return null
+	for n: int in lg.neighbours(i):
+		if not lg.parkable(n):
+			continue
+		for k in range(LG.SLOTS):
+			if not lg.slot_valid(n, k) or not lg.slot_free(n, k):
+				continue
+			var c := vh.make("car", "decor", dims_of.call(jcb))
+			c.model = jcb
+			c.label = "a backhoe"
+			c.mass = 5.5
+			vh.park_at(c, n, k)
+			_site_machines[sid] = c.id
+			return c
+	return null
+
+
+## The machine parked beside the site leaves with the crew (nothing when it had none).
+func clear_site_machine(site: Dictionary) -> void:
+	var sid := int(site.get("id", -1))
+	if not _site_machines.has(sid):
+		return
+	var c: VH.Car = vh.by_id.get(int(_site_machines[sid]))
+	_site_machines.erase(sid)
+	if c != null:
+		vh.remove(c)
 
 
 func _park_chance(i: int, k: int) -> float:

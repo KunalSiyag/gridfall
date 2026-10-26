@@ -30,6 +30,12 @@ const PERSON_LOOPING := ["idle", "walk", "run", "talk"]
 ## Separate wheel nodes on vehicles_v2 road vehicles (origin at the hub, spin about local X).
 const WHEEL_NODES := ["Wheel_FL", "Wheel_FR", "Wheel_RL", "Wheel_RR"]
 const BIKE_WHEEL_NODES := ["Wheel_F", "Wheel_R"]
+## Driver contact markers in vehicles_v2 road vehicles with a driver's seat (empties, like
+## Seat_Driver): Pedal_L / Pedal_R at the ankle targets on the footwell floor (the driver's side
+## is +X), Wheel_L / Wheel_R on the steering rim, Cab_Roof on the headliner above the seat. The
+## drive feature seats the hero's feet and hands on them and sinks the hips until the head clears
+## Cab_Roof, so the seated pose fits every cabin.
+const DRIVER_MARKERS := ["Pedal_L", "Pedal_R", "Wheel_L", "Wheel_R", "Cab_Roof"]
 ## The bicycle's cranks and pedals (origin at the bottom bracket, spin about local X; the left
 ## pedal, on +X, straight up at rest).
 const CRANK_NODE := "Crank"

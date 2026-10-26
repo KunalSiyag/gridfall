@@ -806,9 +806,9 @@ func _whine(d: Dog) -> void:
 		_call(d, "whine")
 
 
-func _call(d: Dog, call: String) -> void:
+func _call(d: Dog, sound: String) -> void:
 	if on_call.is_valid():
-		on_call.call(d, call)
+		on_call.call(d, sound)
 
 
 func _radius(d: Dog) -> float:

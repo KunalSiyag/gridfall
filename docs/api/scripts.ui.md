@@ -19,6 +19,7 @@ SimCity-style HUD for GridFall: city vitals and RCI demand, time controls, playe
 - `new_city_requested()`
 - `focus_district_requested(mi: int)`
 - `focus_tile_requested(x: int, y: int)`
+- `auto_focus_requested(x: int, y: int)`: The chaos director's disaster tile, which no click asked for: the orbit camera pans to it and keeps its zoom.
 - `mute_requested()`
 - `resident_selected(id: String)`
 

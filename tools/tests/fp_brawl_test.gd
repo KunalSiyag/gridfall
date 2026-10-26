@@ -17,6 +17,9 @@ const BRAWL := preload("res://scripts/fp/brawl/brawl_feature.gd")
 const ACTIONS := preload("res://scripts/fp/actions/actions_feature.gd")
 const DT := 1.0 / 60.0
 
+## The hold's gap (feet to feet, metres).
+const HOLD_M := BRAWL.HOLD_GAP / WS.M
+
 var fails: Array[String] = []
 var ctx: FpContext
 var tr: FpFeature
@@ -52,7 +55,7 @@ func _init() -> void:
 	ctx.bus.hero_threatened.connect(func(_at: Vector3, _s: float) -> void: threats += 1)
 	ctx.player.input_enabled = true
 	_check_setup()
-	_check_grab()
+	await _check_grab()
 	_check_punch_held()
 	_check_throw()
 	_check_let_go()
@@ -168,7 +171,27 @@ func _check_grab() -> void:
 	_step(0.5)
 	var gap := _flat(_feet(w), p.position) / WS.M
 	var still := w.react == RE.HOLD_CLIP and w.react_rate == 0.0
-	K.check(fails, absf(gap - 0.6) < 0.08 and still, "in the hands, 0.6 m ahead (%.2f)" % gap)
+	K.check(
+		fails,
+		absf(gap - HOLD_M) < 0.08 and still,
+		"in the hands, %.2f m ahead (%.2f)" % [HOLD_M, gap]
+	)
+	K.check(fails, gap > 0.6, "the two bodies clear each other (feet %.2f m apart)" % gap)
+	await _check_grip(w)
+	var forward := p.body_forward()
+	var side := Vector3(forward.z, 0.0, -forward.x).normalized()
+	var sway_min := INF
+	var sway_max := -INF
+	for _k in range(60):
+		_step(DT)
+		var lateral := (_feet(w) - p.position).dot(side)
+		sway_min = minf(sway_min, lateral)
+		sway_max = maxf(sway_max, lateral)
+	K.check(
+		fails,
+		sway_max - sway_min > 0.2 * WS.M,
+		"the held person sways visibly within a second (%.3f m)" % ((sway_max - sway_min) / WS.M)
+	)
 	var start := p.position
 	var top := 0.0
 	for _k in range(90):
@@ -181,13 +204,38 @@ func _check_grab() -> void:
 		top <= BRAWL.DRAG_SPEED + 1e-3 and moved > 0.8,
 		"a sprint drags them at %.2f m/s at most (%.2f m)" % [top / WS.M, moved]
 	)
-	K.check(fails, absf(gap - 0.6) < 0.15, "and they come along (%.2f m ahead)" % gap)
+	K.check(fails, absf(gap - HOLD_M) < 0.15, "and they come along (%.2f m ahead)" % gap)
 	f.call("release")
 	K.check(fails, not bool(react.call("held", w)) and p.speed_cap == INF, "let go: free again")
 	f.call("_unhandled_input", K.action_event("act_grab"))
 	K.check(fails, bool(react.call("held", w)), "H grabs")
 	f.call("_unhandled_input", K.action_event("act_grab"))
 	K.check(fails, not bool(react.call("held", w)), "H again lets go")
+
+
+## Both of the hero's hands on the person held (each within reach of their arm on its own side)
+## while their bodies stay apart.
+func _check_grip(w: WK.Walker) -> void:
+	var p := ctx.player
+	var rig: Variant = p.avatar.get("rig") if p.avatar != null else null
+	if not rig is RefCounted:
+		return
+	_step(DT)
+	await process_frame
+	var ends: Array = (rig as RefCounted).get("limbs").get("ends")
+	var fwd := p.body_forward()
+	var right := Vector3(-fwd.z, 0.0, fwd.x)
+	var ok := true
+	var msg := ""
+	for i in 2:
+		var s := -1.0 if i == 0 else 1.0
+		var arm := _feet(w) - fwd * 0.08 * WS.M + Vector3.UP * 1.3 * WS.M + right * s * 0.19 * WS.M
+		var hand: Vector3 = ends[i]
+		var off := (hand - arm).length() / WS.M
+		var on_side := (hand - p.position).dot(right) * s > (_feet(w) - p.position).dot(right) * s
+		ok = ok and off < 0.2 and on_side
+		msg += " %s hand %.2f m from their arm;" % ["left" if i == 0 else "right", off]
+	K.check(fails, ok, "both hands hold them by the arms (%s)" % msg)
 
 
 func _check_punch_held() -> void:
@@ -204,7 +252,7 @@ func _check_punch_held() -> void:
 	K.check(fails, bool(react.call("held", w)), "so does a cross")
 	_step(0.3)
 	var gap := _flat(_feet(w), ctx.player.position) / WS.M
-	K.check(fails, absf(gap - 0.6) < 0.1, "back in the hands after the reel (%.2f m)" % gap)
+	K.check(fails, absf(gap - HOLD_M) < 0.1, "back in the hands after the reel (%.2f m)" % gap)
 	act.call("strike")
 	_step(0.8)
 	var down := bool(react.call("is_down", w)) and not bool(react.call("held", w))
@@ -224,10 +272,29 @@ func _check_throw() -> void:
 	K.check(fails, str(act.get("swing")) == "throw", "a throw (%s)" % act.get("swing"))
 	var peak := 0.0
 	var tip := 0.0
-	for _k in range(30):
-		_step(0.05)
+	var let_go := -1
+	var sep0 := 0.0
+	var sep10 := 0.0
+	var tip10 := 0.0
+	for k in range(90):
+		_step(DT)
 		peak = maxf(peak, _air(w))
 		tip = minf(tip, w.vis_tilt)
+		var sep := _flat(_feet(w), p.position) / WS.M
+		if let_go < 0 and int(f.get("held_id")) == -1:
+			let_go = k
+			sep0 = sep
+		if let_go >= 0 and k == let_go + 10:
+			sep10 = sep
+			tip10 = w.vis_tilt
+	K.check(
+		fails,
+		let_go >= 0 and sep10 - sep0 > 0.3 and tip10 < -0.2,
+		(
+			"10 frames after the throw lets go they are %.2f m further off and tipping (%.2f rad)"
+			% [sep10 - sep0, tip10]
+		)
+	)
 	var flung := (_feet(w) - before).dot(aim) / WS.M
 	var down := bool(react.call("is_down", w)) and int(f.get("held_id")) == -1
 	K.check(fails, down, "they go down out of the hands")

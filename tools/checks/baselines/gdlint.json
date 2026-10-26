@@ -296,7 +296,8 @@
   "max-line-length: Max allowed line length (100) exceeded": 6
  },
  "scripts/fp/world/collision_world.gd": {
-  "max-line-length: Max allowed line length (100) exceeded": 41,
+  "max-file-lines: Max allowed file lines num (1000) exceeded": 1,
+  "max-line-length: Max allowed line length (100) exceeded": 3,
   "max-public-methods: \"Class global scope\" has more than 20 public methods (functions)": 1,
   "max-returns: Function \"ground_height\" has more than 6 return statements": 1,
   "max-returns: Function \"surface_at\" has more than 6 return statements": 1
@@ -433,6 +434,9 @@
  "tools/tests/fp_directory_test.gd": {
   "max-line-length: Max allowed line length (100) exceeded": 15
  },
+ "tools/tests/fp_drive_test.gd": {
+  "max-file-lines: Max allowed file lines num (1000) exceeded": 1
+ },
  "tools/tests/fp_hud_test.gd": {
   "max-line-length: Max allowed line length (100) exceeded": 92,
   "unused-argument: unused function argument 'ctx'": 1
@@ -451,7 +455,8 @@
   "max-line-length: Max allowed line length (100) exceeded": 3
  },
  "tools/tests/fp_player_test.gd": {
-  "max-line-length: Max allowed line length (100) exceeded": 62
+  "max-file-lines: Max allowed file lines num (1000) exceeded": 1,
+  "max-line-length: Max allowed line length (100) exceeded": 5
  },
  "tools/tests/fp_posters_test.gd": {
   "max-line-length: Max allowed line length (100) exceeded": 103,

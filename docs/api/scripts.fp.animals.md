@@ -8,7 +8,7 @@
 
 extends `FpFeature`
 
-Dogs, pigeons and cats in the street (integration feature "animals"). Some people out on foot walk a dog on a lead: residents whose household lives with a dog (unless they are off to work) and a share of everyone else, fewer at night and in the rain. A dog household's dog keeps to the front yard of its house while nobody walks it, and a resident coming out takes it along. The dogs (dog_pack.gd) heel, stop to sniff, roam round an owner who stands still, come over to a crouching hero, bark at the hero and at people going by, flinch at blows and shouts, defend an owner the hero hits (biting: hero_hit "bite") and leap clear of cars. A kick or a weapon swing of the hero's lands on a dog, a cat or a pigeon in front (strike(): animal_hit). E pets a dog close by. The bodies are Shiba Inus and huskies (dog_bodies.gd) with leads from the owner's hand to the collar (dog_leads.gd). Flocks of pigeons (pigeons.gd) forage on the sidewalks in front of shops and civic buildings and in the parks by day, go up together at a fright and land again once it is calm; E throws them crumbs. Cats (cats.gd) keep to some front yards and shop doors, and by night strays to the works yards and the parks: they rest, stroll, greet a crouching hero, hiss at dogs, stalk the pigeons and run from frights; E pets one. Barks, growls, whines, coos, wingbeats, meows, purrs, hisses and chatter go out on the bus (animal_called) for the audio feature. Motion runs on delta * sim.speed, so pause freezes it.
+Dogs, pigeons and cats in the street (integration feature "animals"). Some people out on foot walk a dog on a lead: residents whose household lives with a dog (unless they are off to work) and a share of everyone else, fewer at night and in the rain, more of them while the city is young. A dog household's dog keeps to the front yard of its house while nobody walks it, and a resident coming out takes it along. The dogs (dog_pack.gd) heel, stop to sniff, roam round an owner who stands still, come over to a crouching hero, bark at the hero and at people going by, flinch at blows and shouts, defend an owner the hero hits (biting: hero_hit "bite") and leap clear of cars. A kick or a weapon swing of the hero's lands on a dog, a cat or a pigeon in front (strike(): animal_hit). E pets a dog close by. The bodies are Shiba Inus and huskies (dog_bodies.gd) with leads from the owner's hand to the collar (dog_leads.gd). Flocks of pigeons (pigeons.gd) forage on the sidewalks in front of shops and civic buildings and in the parks by day, go up together at a fright and land again once it is calm; E throws them crumbs. Cats (cats.gd) keep to some front yards and shop doors, and by night strays to the works yards and the parks: they rest, stroll, greet a crouching hero, hiss at dogs, stalk the pigeons and run from frights; E pets one. Barks, growls, whines, coos, wingbeats, meows, purrs, hisses and chatter go out on the bus (animal_called) for the audio feature. Motion runs on delta * sim.speed, so pause freezes it.
 
 ### Constants
 
@@ -27,8 +27,11 @@ Dogs, pigeons and cats in the street (integration feature "animals"). Some peopl
 - `MAX_DOGS = 10`
 - `SCAN_S = 0.5`
 - `HOMES_S = 10.0`
-- `WALK_SHARE = 0.08`: Share of the people out on foot who walk a dog, and what the night (sky.night above NIGHT) and the rain leave of it.
+- `WALK_SHARE = 0.12`: Share of the people out on foot who walk a dog, and what the night (sky.night above NIGHT) and the rain leave of it. While the city is young (fewer built homes and shops than YOUNG_LOTS, measured with the dog households) half as many again do, so a young city still shows dogs about.
+- `WALK_SHARE_EARLY = 0.18`
+- `YOUNG_LOTS = 8`
 - `NIGHT = 0.5`
+- `PIGEON_NIGHT = 0.85`: Pigeons keep longer hours: out while sky.night is at most PIGEON_NIGHT, from about 5:55 to 18:05, so a city's first morning (it starts at dawn) shows them too.
 - `NIGHT_K = 0.4`
 - `RAIN_K = 0.25`
 - `DOG_HOUSEHOLD = "lives with a dog"`
@@ -209,7 +212,7 @@ A cat's life on top of its clip (CatBodies puts one on every cat skeleton): the 
 
 extends `Node3D`
 
-The cats (part of the animals feature): where cats keep, coming out within NEAR of the player and going beyond FAR; the world fed to their behaviour (cat_life.gd) before every step; their bodies (cat_bodies.gd) in their coats; and E to pet one close by. A share of the houses with a front yard (and no dog) keep a cat there, a share of the shops a shop cat by the door, and by night strays come out by the works yards and in the parks; in the rain they all stay in. Their meows, purrs, hisses and chatter go out on the bus (animal_called), and a dog a cat hisses at barks back.
+The cats (part of the animals feature): where cats keep, coming out within NEAR of the player and going beyond FAR; the world fed to their behaviour (cat_life.gd) before every step; their bodies (cat_bodies.gd) in their coats; and E to pet one close by. A share of the houses with a front yard (and no dog) keep a cat there, a share of the shops a shop cat by the door, and by night strays come out by the works yards and in the parks; in the rain they all stay in. A young city without any of those keeps one ambient stray about near the player instead, day or night. Their meows, purrs, hisses and chatter go out on the bus (animal_called), and a dog a cat hisses at barks back.
 
 ### Constants
 
@@ -219,13 +222,16 @@ The cats (part of the animals feature): where cats keep, coming out within NEAR 
 - `BODIES = preload("res://scripts/fp/animals/cat_bodies.gd")`
 - `PACK = preload("res://scripts/fp/animals/dog_pack.gd")`
 - `FLOCK = preload("res://scripts/fp/animals/pigeon_flock.gd")`
+- `STREETS = preload("res://scripts/fp/animals/street_spots.gd")`
 - `MAX_STEP = 1.0 / 30.0`
 - `NEAR = 2.4`: Cats come out within NEAR of the player (u) and go beyond FAR, at most MAX_CATS at once.
 - `FAR = 3.0`
 - `MAX_CATS = 6`
-- `HOUSE_SHARE = 0.3`: Shares of the houses with a front yard (and no dog) that keep a cat, of the shops with a shop cat and, by night, of the works yards and the parks with a stray.
-- `SHOP_SHARE = 0.3`
+- `HOUSE_SHARE = 0.4`: Shares of the houses with a front yard (and no dog) that keep a cat, of the shops with a shop cat and, by night, of the works yards and the parks with a stray.
+- `SHOP_SHARE = 0.4`
 - `STRAY_SHARE = {D.ZONE_I: 0.4, D.PARK: 0.35}`
+- `YOUNG_LOTS = 8`: A young city (fewer built homes and shops than YOUNG_LOTS) has no yards, shop doors, works yards or parks for a cat yet: until then one ambient stray (AMBIENT_KEY) keeps to the nearest free sidewalk point to the player, day or night, never in the rain.
+- `AMBIENT_KEY = "a:cat"`
 - `SIDE_ACROSS = 0.455`: A shop cat or a works yard's stray keeps to the sidewalk against the lot, SIDE_ACROSS tiles from the road's middle, its spot tried SIDE_ALONG along the street, strolling within SIDE_BOX (tiles along and across, either way) of it; a park's stray round a spot PARK_TRIES off the park's middle, within PARK_BOX. A spot needs ROOM (m) clear of props.
 - `SIDE_ALONG = [0.2, -0.2, 0.3, -0.3, 0.1, -0.1]`
 - `SIDE_BOX = Vector2(0.15, 0.035)`
@@ -265,11 +271,11 @@ The cats (part of the animals feature): where cats keep, coming out within NEAR 
 - `func tile_built(_i: int) -> void`
 - `func clear() -> void`
 - `func free_bodies() -> void`: Teardown: no cats, the loads finished and the spare bodies freed.
-- `func scan(me: Vector3, night: bool, rain: bool, dog_lots: Dictionary) -> void`: Every scan: the cats too far off go (and the strays by day, and all of them in the rain); with the flag on the spots near me get theirs, the nearest first. dog_lots: the lots whose household keeps a dog.
+- `func scan(me: Vector3, night: bool, rain: bool, dog_lots: Dictionary) -> void`: Every scan: the cats too far off go (and the strays by day, and all of them in the rain); with the flag on the spots near me get theirs, the nearest first; and in a young city with no spot about, one ambient stray comes out near me (_ambient). dog_lots: the lots whose household keeps a dog.
 - `func world(pack: PACK, flock: FLOCK) -> void`: The world for this step from the dogs' pack and the pigeons: the hero on foot, the cars (the player's too while they drive), the people on foot and the dogs around, and the birds on the ground; the cats go into the pigeons' frights as [feet, velocity, FLOCK.CAT_NEAR].
 - `func step(dt: float) -> void`: dt game seconds of the cats (in MAX_STEP steps); 0 freezes them. The flag off takes them away.
 - `func startle(at: Vector3, r_m: float) -> void`: A fright at at (a blow, a shout, a crash) startles the cats within r_m metres of it.
-- `func on_crash(at: Vector3, _speed: float, _what: String) -> void`
+- `func on_crash(at: Vector3, _speed: float, _cause: String) -> void`
 - `func on_knock(at: Vector3, _kind: String, _speed: float) -> void`
 - `func pick(origin: Vector3, dir: Vector3, max_dist: float) -> Dictionary`: The cat to pet along the ray: {"kind": "cat", "id", "tile", "pos" (its back), "dist", "label", "data": {"coat", "temper"}}, or {}.
 - `func pet(t: Dictionary) -> void`: E on a cat (pick's target t): it purrs, walks off or hisses (cat_life.gd pet()), with a toast.
@@ -608,7 +614,7 @@ The pigeons' behaviour; the pigeons node (pigeons.gd) decides where flocks live 
 
 extends `Node3D`
 
-The pigeons (part of the animals feature): where flocks keep (the sidewalk in front of some shops and of the civic buildings people gather at, and the parks), coming out by day near the player and going beyond FAR; the world fed to their behaviour (pigeon_flock.gd) before every step; one MultiMesh of pigeon_body.gd's bird per flock, and the crumbs the hero throws them (E on a flock close by). Their coos and wingbeats go out on the bus (animal_called).
+The pigeons (part of the animals feature): where flocks keep (the sidewalk in front of some shops and of the civic buildings people gather at, the parks, and a share of the plain street corners), coming out by day near the player and going beyond FAR; and where none of those is about, one ambient flock near the player (a young city shows pigeons from its first day). The world fed to their behaviour (pigeon_flock.gd) before every step; one MultiMesh of pigeon_body.gd's bird per flock, and the crumbs the hero throws them (E on a flock close by). Their coos and wingbeats go out on the bus (animal_called).
 
 ### Constants
 
@@ -617,12 +623,17 @@ The pigeons (part of the animals feature): where flocks keep (the sidewalk in fr
 - `FLOCK = preload("res://scripts/fp/animals/pigeon_flock.gd")`
 - `BODY = preload("res://scripts/fp/animals/pigeon_body.gd")`
 - `PACK = preload("res://scripts/fp/animals/dog_pack.gd")`
+- `STREETS = preload("res://scripts/fp/animals/street_spots.gd")`
 - `MAX_STEP = 1.0 / 30.0`
 - `NEAR = 2.2`: Flocks come out within NEAR of the player (u) and go beyond FAR, at most MAX_FLOCKS at once.
 - `FAR = 2.8`
 - `MAX_FLOCKS = 4`
 - `FRONTS = { D.ZONE_C: 0.3, D.HALL: 1.0, D.TRAIN: 1.0, D.STADIUM: 0.7, D.UNIVERSITY: 0.7, D.SCHOOL...`: A flock keeps to the sidewalk in front of these kinds of lot (this share of them; a shop must be built) and to this share of the parks.
 - `PARK_SHARE = 0.8`
+- `ROAD_SHARE = 0.15`: Plain street flocks (no shop or civic lot in front needed): this share of the straight road tiles keeps a few pigeons on its own sidewalk. When no flock of any kind is near the player, the scan also puts out one ambient flock (BASELINE_KEY) on the nearest free sidewalk point, so a young city still shows pigeons; the spot's birds come from its tile's roll like any other's.
+- `ROAD_N = Vector2i(3, 6)`
+- `ROAD_R = 0.2`
+- `BASELINE_KEY = "b:pigeons"`
 - `STREET_R = 0.25`: A sidewalk flock forages STREET_R (u) either way along the street, a park's within PARK_R of its spot; how many birds (min, max).
 - `PARK_R = 0.3`
 - `STREET_N = Vector2i(5, 10)`
@@ -658,7 +669,7 @@ The pigeons (part of the animals feature): where flocks keep (the sidewalk in fr
 - `func rebuilt() -> void`: Boot, load or New City: no flocks until the next scan.
 - `func tile_built(_i: int) -> void`
 - `func clear() -> void`
-- `func scan(me: Vector3, by_day: bool) -> void`: Every scan: the flocks too far off go; by day (and with the flag on) the spots near me get theirs, the nearest first.
+- `func scan(me: Vector3, by_day: bool) -> void`: Every scan: the flocks too far off go; by day (and with the flag on) the spots near me get theirs, the nearest first; and with no flock near me after that, one ambient flock comes out anyway (_baseline).
 - `func world(pack: PACK, driving: bool, delta: float) -> void`: The world for this step from the dogs' pack: the hero on foot, the traffic's cars (and the player's while they drive) and the people on foot around, and the dogs. delta is real seconds.
 - `func step(dt: float) -> void`: dt game seconds of the flocks (in MAX_STEP steps), then their draw. The flag off takes them away.
 - `func startle(at: Vector3, r_m: float) -> void`: A fright at at (a blow, a shout, a bark, a crash) sends up the flocks with a bird on the ground within r_m metres of it.
@@ -671,3 +682,17 @@ The pigeons (part of the animals feature): where flocks keep (the sidewalk in fr
 - `func photo_shot(me: Vector3) -> Dictionary`: The photo shot ("pigeons"): the flock spot nearest me with room to stand STAND_M from it, seen from there; photo_prepare() brings its birds in to feed on crumbs. {} without one (or with the flag off).
 - `func photo_prepare() -> void`: The photo's flock (pinned, so the scan keeps it while the camera moves there) feeding round crumbs at its home, the birds already about them.
 - `func photo_restore() -> void`
+
+## `scripts/fp/animals/street_spots.gd`
+
+extends `RefCounted`
+
+Street-spot search shared by the animals feature's guaranteed spawns (pigeons.gd's ambient flock, cats.gd's ambient stray): the spot of the nearest straight road tile to someone, through each caller's own per-tile builder.
+
+### Constants
+
+- `D = preload("res://scripts/sim/sim_defs.gd")`
+
+### Functions
+
+- `static func nearest_road(sim: CitySim, me: Vector3, r: float, build: Callable) -> Dictionary`: The spot build(i) built for the nearest road tile within r of me (flat), the nearest tile winning, {} when none is near or none of them has one. build(i) -> the tile's spot Dictionary (pigeons.gd _road_spot, cats.gd _road_side).

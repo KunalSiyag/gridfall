@@ -253,8 +253,9 @@ func _knock_props(model: MODEL, u: Vector2, v: Vector2) -> bool:
 	return false
 
 
-## Strikes the people on their feet the body runs into (traffic's hit_walker, cause "car"), pushed
-## away from the car, and takes the little impulse each gives back.
+## Strikes the people the body runs into (traffic's hit_walker, cause "car"): those on their feet
+## are knocked down, those already down are trampled where they lie. Each is pushed away from the
+## car and gives back the little impulse it takes.
 func _strike_people(model: MODEL) -> void:
 	if _people.is_empty():
 		return
@@ -262,7 +263,7 @@ func _strike_people(model: MODEL) -> void:
 	var v := OBB.heading(model.yaw)
 	for w: Dictionary in _people:
 		var id := int(w["id"])
-		if bool(w["down"]) or _struck.has(id):
+		if _struck.has(id):
 			continue
 		var q: Vector3 = w["pos"]
 		var hit := OBB.box_circle(_c, u, v, half, Vector2(q.x, q.z), PERSON_R)

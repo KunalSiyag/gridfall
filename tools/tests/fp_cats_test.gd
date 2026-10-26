@@ -6,12 +6,17 @@ extends SceneTree
 ## one hisses and runs and runs from the hero walking up; a shout makes it jump and run with its
 ## tail low; a dog close by makes it hiss and then run; a car coming makes it bolt; a hunter
 ## chatters at a pigeon, stalks it, crouches and pounces, then grooms; a cat stalking a flock does
-## not send it up but its pounce does; pause freezes it; strays come out only at night; beyond FAR
-## they go and come back; the flag off takes them away; the photo shot; self_test and teardown.
+## not send it up but its pounce does; pause freezes it; strays come out only at night; a grown
+## city keeps a fair share of cats; beyond FAR
+## they go and come back; the flag off takes them away; the photo shot; a fresh city (only the
+## founding roads and City Hall) keeps one ambient stray near the player, day and night, in from
+## the rain, and none once the city has grown; self_test and teardown.
 ## Third person on a grown city; the behaviour is stepped directly (cat_life.gd step) where the
 ## test sets the world, else through traffic's step and the feature's tick(1/60).
 
 const K := preload("res://tools/tests/fp_kit.gd")
+const FRESH := preload("res://tools/tests/fp_fresh_city.gd")
+const D := preload("res://scripts/sim/sim_defs.gd")
 const WS := preload("res://scripts/fp/world_scale.gd")
 const WK := preload("res://scripts/fp/traffic/walkers.gd")
 const AF := preload("res://scripts/fp/animals/animals_feature.gd")
@@ -72,9 +77,11 @@ func _init() -> void:
 		along = Vector3(cos(yaw), 0.0, -sin(yaw))
 		_run(_check_spawn())
 		_check_strays()
+		_check_density()
 		_check_far()
 		_check_flag()
 	_check_photo()
+	_check_fresh_city()
 	_check_teardown()
 	K.finish(self, "FP_CATS_TEST", fails)
 
@@ -489,6 +496,45 @@ func _check_strays() -> void:
 	)
 
 
+## A grown city keeps a fair share of cats: of its built homes (no dog) and shops that could keep
+## one (a house with a front yard free of props, a shop with a free bit of sidewalk by its door),
+## about HOUSE_SHARE and SHOP_SHARE have a cat spot, and the city keeps a few of them all told.
+func _check_density() -> void:
+	var lots := 0
+	var with_cat := 0
+	var open_lots := 0
+	var open_cat := 0
+	for i: int in ctx.sim.active:
+		var k := ctx.sim.kind[i]
+		if (k != D.ZONE_R and k != D.ZONE_C) or ctx.sim.level[i] <= 0:
+			continue
+		lots += 1
+		var s: Dictionary = cats.call("_spot_of", i, f.get("_dog_lots"))
+		with_cat += 1 if not s.is_empty() else 0
+		# Only some of the fixture's lots can keep a cat at all (a house needs a front yard free of
+		# props, a shop a free bit of sidewalk by its door), so the shares are measured among those.
+		var open := false
+		if k == D.ZONE_R:
+			open = not (cats.call("_house", i) as Dictionary).is_empty()
+		else:
+			open = not (cats.call("_side", i, "shop") as Dictionary).is_empty()
+		if open:
+			open_lots += 1
+			open_cat += 1 if not s.is_empty() else 0
+	var share := float(open_cat) / float(maxi(open_lots, 1))
+	K.check(
+		fails,
+		open_lots >= 8 and share > 0.2 and share < 0.7 and with_cat >= 3,
+		(
+			(
+				"density: %d of the %d built homes and shops where a cat could keep have one (%.2f)"
+				+ "; %d of %d lots all told"
+			)
+			% [open_cat, open_lots, share, with_cat, lots]
+		)
+	)
+
+
 ## The hero going beyond FAR takes the cat away; coming back brings it.
 func _check_far() -> void:
 	_hero_at(spot["anchor"], 8.0)
@@ -561,6 +607,79 @@ func _check_photo() -> void:
 	f.call(str(shot["restore"]))
 	ctx.sim.speed = 1
 	K.check(fails, _cat("photo:0") == null, "photo: restore takes them away")
+
+
+## A fresh city (no growth: only the founding roads and City Hall) is young: with no house, shop,
+## works yard or park for a cat anywhere, one ambient stray keeps to a sidewalk near the player by
+## day and by night, the rain takes it in and it comes back after; once the city has grown past
+## YOUNG_LOTS built lots no ambient stray comes out.
+func _check_fresh_city() -> void:
+	var fresh := FRESH.make(get_root())
+	if not bool(fresh["ok"]):
+		K.check(fails, false, "fresh: fixture: traffic and animals registered")
+		return
+	var fcats: CATS = fresh["cats"]
+	fcats.bodies.blocking = true
+	var flife: LIFE = fresh["life"]
+	var fctx: FpContext = fresh["ctx"]
+	var ftr: FpFeature = fresh["traffic"]
+	var ff: FpFeature = fresh["animals"]
+	FRESH.step(ftr, ff, AF.SCAN_S + 0.1)
+	var c := _cat_of(flife, CATS.AMBIENT_KEY)
+	var out := (
+		c != null
+		and c.home == "ambient"
+		and str(c.temper) in ["aloof", "skittish", "friendly"]
+		and _flat(c.pos, fctx.player.position) <= CATS.NEAR
+		and fctx.collision.surface_at(c.pos) != "asphalt"
+	)
+	K.check(
+		fails,
+		out and bool(fcats.call("_young")),
+		(
+			"fresh: a young city keeps an ambient stray near the player by day (%s)"
+			% (c.temper if c != null else "-")
+		)
+	)
+	fctx.sky.night = 1.0
+	FRESH.step(ftr, ff, AF.SCAN_S + 0.1)
+	K.check(
+		fails,
+		_cat_of(flife, CATS.AMBIENT_KEY) != null and flife.cats.size() == 1,
+		"fresh: by night the same stray is still about"
+	)
+	fctx.sky.night = 0.0
+	fcats.call("scan", fctx.player_position(), false, true, {})
+	K.check(fails, _cat_of(flife, CATS.AMBIENT_KEY) == null, "fresh: the rain takes the stray in")
+	FRESH.step(ftr, ff, AF.SCAN_S + 0.1)
+	K.check(
+		fails, _cat_of(flife, CATS.AMBIENT_KEY) != null, "fresh: after the rain it comes out again"
+	)
+	K.grow(fctx.sim, fctx.residents)
+	var tries := 0
+	while bool(fcats.call("_young")) and tries < 6:
+		K.ticks(fctx.sim, 40)
+		tries += 1
+	K.check(
+		fails,
+		not bool(fcats.call("_young")),
+		"fresh: grown past YOUNG_LOTS built lots the city is not young anymore"
+	)
+	fctx.player.teleport(fctx.player_position() + Vector3(CATS.FAR + 1.0, 0.0, 0.0), 0.0)
+	fcats.call("scan", fctx.player_position(), false, false, {})
+	K.check(
+		fails,
+		_cat_of(flife, CATS.AMBIENT_KEY) == null,
+		"fresh: grown, no ambient stray comes out where no spot is"
+	)
+
+
+## The cat of key in the cats of another context's life.
+func _cat_of(cats_life: LIFE, k: String) -> LIFE.Cat:
+	for c: LIFE.Cat in cats_life.cats:
+		if c.key == k:
+			return c
+	return null
 
 
 func _check_teardown() -> void:

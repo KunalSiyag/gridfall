@@ -24,23 +24,52 @@ const LAMP_POLE_R := 0.008
 const LAMP_OUT := 0.08
 const LAMP_POST_R := 0.0035
 const LAMP_POSTS := [Vector2(-0.4, -0.2), Vector2(0.4, 0.2)]
-const BUS_STOP_PATHS := ["res://models/props/bus_stop.glb", "res://models/real/props/bus_stop.glb", AP.BUS_SHELTER]
+const BUS_STOP_PATHS := [
+	"res://models/props/bus_stop.glb", "res://models/real/props/bus_stop.glb", AP.BUS_SHELTER
+]
 ## CityView's procedural shelter (no model file) stands 0.43 from the road centre.
 const PROC_STOP_OFFSET := 0.43
 const PROC_STOP_SIZE := Vector3(0.34, 0.21, 0.20)
 const PROP_DIRS := ["res://models/real/props/", "res://models/props/"]
 ## Street props by file name: trunks and lamp poles are thin cylinders, these are boxes, foliage
 ## does not block, anything else is a cylinder of its footprint within PROP_R_MIN..PROP_R_MAX.
-const BOX_PROPS := ["bench", "picnic", "planter_box", "planter_long", "barrier", "utility_box", "aircon", "fountain", "hedge", "mailbox"]
+const BOX_PROPS := [
+	"bench",
+	"picnic",
+	"planter_box",
+	"planter_long",
+	"barrier",
+	"utility_box",
+	"aircon",
+	"fountain",
+	"hedge",
+	"mailbox"
+]
 const SOFT_PROPS := ["tree_bush", "tree_fern"]
 const LAMP_R := 0.15 * WS.M
 const TRUNK_R := 0.25 * WS.M
+## Camera arms treat cylinders this thick or more (trunks, not lamp poles) as solid.
+const CAM_CYL_MIN := 0.2 * WS.M
 const PROP_R_MIN := 0.1 * WS.M
 const PROP_R_MAX := 0.5 * WS.M
 ## Walking head-on into a pole keeps this fraction of the speed, sliding round it.
 const ROUND_SLIDE := 0.45
 ## Cylinders from a G1 `colliders` meta carry no height: they block up to this.
 const META_CYL_TOP := 3.0 * WS.M
+## A person on foot is a soft circle this wide (half a shoulder): the hero cannot walk through
+## them, but they are not a wall either (soft_people_move; walkers.gd gives way in turn).
+const PERSON_R := 0.22 * WS.M
+## How much of a person overlap the hero eases out per collision sub-step: gentle, so a sidewalk
+## still flows; the into-person speed is damped player-side, so the overlap never persists.
+const SOFT_RATE := 0.35
+## A person's circle only presses the hero when their feet are within this height (a walker under
+## a ledge the hero stands on is not in the way).
+const SOFT_Y := 1.2 * WS.M
+## resolve_out() moves at most this far per pass and makes at most this many passes, deepest face
+## first: a teleport left inside a building steps straight out, a spawn deep inside never flings
+## through walls.
+const RESOLVE_STEP := 2.0 * WS.M
+const RESOLVE_PASSES := 6
 ## surface_at() on the carriageway of each road grade (D.ROAD_GRADES order).
 const GRADE_SURFACES := ["asphalt", "gravel", "dirt", "trail"]
 
@@ -55,9 +84,14 @@ var _runtime_shapes: Dictionary = {}
 ## Prop model path -> local AABB of its meshes.
 var _prop_bounds: Dictionary = {}
 var _test_boxes: Array[AABB] = []
+var _test_cyls := PackedFloat32Array()
 ## Boxes that move with the traffic (stopped cars from E's blockers_near), refreshed by the
 ## player a few times a second; they block like walls while listed.
 var dynamic_boxes: Array[AABB] = []
+## People on foot near the hero, as soft circles the player refreshes every frame from traffic's
+## walkers_near: (x, y, z, r) quadruples in world units. They are not walls (soft_people_move),
+## but the hero cannot pass through them either.
+var people_circles := PackedFloat32Array()
 var _esc_from: Vector3 = Vector3(NAN, NAN, NAN)
 var _esc_point: Vector3 = Vector3(NAN, NAN, NAN)
 var _esc_r: float = 0.0
@@ -100,9 +134,17 @@ func add_test_box(b: AABB) -> void:
 	rebuild_all()
 
 
-## Removes every add_test_box() box.
+## Test hook: a world cylinder (a trunk) at x, z of radius r up to top, listed in cylinders() of
+## every tile it overlaps.
+func add_test_cylinder(x: float, z: float, r: float, top: float) -> void:
+	_test_cyls.append_array([x, z, r, top])
+	rebuild_all()
+
+
+## Removes every add_test_box() box and add_test_cylinder() cylinder.
 func clear_test_boxes() -> void:
 	_test_boxes.clear()
+	_test_cyls.clear()
 	rebuild_all()
 
 
@@ -169,23 +211,43 @@ func support_height(p: Vector3, radius: float, feet_y: float, max_rise: float) -
 	var g := walk_height(p)
 	if is_nan(g):
 		return g
+	var limit := feet_y + max_rise + 1e-6
+	for e: Dictionary in _bound_entries(p, radius):
+		for b: AABB in e["boxes"]:
+			if b.end.y <= g or b.end.y > limit:
+				continue
+			if (
+				p.x > b.position.x - radius
+				and p.x < b.end.x + radius
+				and p.z > b.position.z - radius
+				and p.z < b.end.z + radius
+			):
+				g = b.end.y
+	return g
+
+
+## The tile entries of the 3x3 tiles around p whose bound overlaps a circle of `radius` at p
+## (a quick reject before scanning their boxes and cylinders).
+func _bound_entries(p: Vector3, radius: float) -> Array:
+	var out: Array = []
 	var cx := roundi(p.x)
 	var cz := roundi(p.z)
-	var limit := feet_y + max_rise + 1e-6
 	for dz in range(-1, 2):
 		for dx in range(-1, 2):
 			if not D.in_bounds(cx + dx, cz + dz):
 				continue
 			var e := _entry(D.idx(cx + dx, cz + dz))
 			var bd: AABB = e["bound"]
-			if bd.size.x <= 0.0 or p.x <= bd.position.x - radius or p.x >= bd.end.x + radius or p.z <= bd.position.z - radius or p.z >= bd.end.z + radius:
+			if (
+				bd.size.x <= 0.0
+				or p.x <= bd.position.x - radius
+				or p.x >= bd.end.x + radius
+				or p.z <= bd.position.z - radius
+				or p.z >= bd.end.z + radius
+			):
 				continue
-			for b: AABB in e["boxes"]:
-				if b.end.y <= g or b.end.y > limit:
-					continue
-				if p.x > b.position.x - radius and p.x < b.end.x + radius and p.z > b.position.z - radius and p.z < b.end.z + radius:
-					g = b.end.y
-	return g
+			out.append(e)
+	return out
 
 
 ## Surface name for footsteps and audio: "asphalt"|"sidewalk"|"lot"|"grass"|"dirt"|"water"|"bridge",
@@ -242,7 +304,9 @@ func move_and_slide(from: Vector3, motion: Vector3, radius: float) -> Vector3:
 ## max_rise onto higher walkable ground (STEP_HEIGHT on foot, 0 in the air). A blocked move first
 ## slides along the contact (a pole's tangent, a wall's face), then along x or z alone. Returns
 ## the new feet position with y unchanged (the caller follows walk_height()).
-func move_body(from: Vector3, motion: Vector3, radius: float, height: float, max_rise: float) -> Vector3:
+func move_body(
+	from: Vector3, motion: Vector3, radius: float, height: float, max_rise: float
+) -> Vector3:
 	var full := Vector3(from.x + motion.x, from.y, from.z + motion.z)
 	if _can_stand(from, full, radius, height, max_rise):
 		return full
@@ -255,7 +319,9 @@ func move_body(from: Vector3, motion: Vector3, radius: float, height: float, max
 		# Nearly head-on into a pole: keep some speed around it instead of stopping dead (toward
 		# the side the walker is already off-centre, else to its right).
 		if bool(contact[1]) and t.length() < ROUND_SLIDE * m.length():
-			var side := t.normalized() if t.length_squared() > 1e-16 else Vector2(-m.y, m.x).normalized()
+			var side := (
+				t.normalized() if t.length_squared() > 1e-16 else Vector2(-m.y, m.x).normalized()
+			)
 			t = side * ROUND_SLIDE * m.length()
 		var slid := Vector3(from.x + t.x, from.y, from.z + t.y)
 		if t.length_squared() > 1e-14 and _can_stand(from, slid, radius, height, max_rise):
@@ -291,10 +357,77 @@ func move_body(from: Vector3, motion: Vector3, radius: float, height: float, max
 				shallower = false
 			if not keys.has(key):
 				known = false
-		var outward := not is_nan(esc.x) and Vector2(c.x - from.x, c.z - from.z).dot(Vector2(esc.x - from.x, esc.z - from.z)) > 0.0
+		var outward := (
+			not is_nan(esc.x)
+			and (
+				Vector2(c.x - from.x, c.z - from.z).dot(Vector2(esc.x - from.x, esc.z - from.z))
+				> 0.0
+			)
+		)
 		if shallower or (known and outward):
 			return c
 	return from
+
+
+## The hero's soft push out of the people circles at p, one nudge per collision sub-step
+## (SOFT_RATE of each overlap): the point eased clear of everyone standing near, never through a
+## hard blocker and never onto ground it could not stand on. Returns p unchanged when nobody
+## overlaps. The walkers give way as well (walkers.gd), so a sidewalk keeps flowing.
+func soft_people_move(p: Vector3, radius: float, height: float) -> Vector3:
+	var out := p
+	for k in range(0, people_circles.size(), 4):
+		if absf(p.y - people_circles[k + 1]) > SOFT_Y:
+			continue
+		var off := Vector2(p.x - people_circles[k], p.z - people_circles[k + 2])
+		var dist := off.length()
+		var want := people_circles[k + 3] + radius
+		if dist >= want:
+			continue
+		var n := off / dist if dist > 1e-9 else Vector2(1.0, 0.0)
+		var q := Vector3(
+			out.x + n.x * ((want - dist) * SOFT_RATE),
+			p.y,
+			out.z + n.y * ((want - dist) * SOFT_RATE)
+		)
+		if _can_stand(p, q, radius, height, WS.STEP_HEIGHT):
+			out = q
+	return out
+
+
+## Pushes a body (radius, height) that sits inside blockers out to the nearest free side: a
+## teleport or a load may leave it half inside a building or a car box, and the walk-out rule of
+## move_body only helps once it moves. Deepest face first, at most RESOLVE_STEP a pass and
+## RESOLVE_PASSES passes, and it stops the moment a pass makes things no shallower, so a body
+## deep inside works its way out over a few steps instead of being flung through walls. Returns
+## the pushed point (y unchanged); p itself when nothing overlaps or there was no way out.
+func resolve_out(p: Vector3, radius: float, height: float) -> Vector3:
+	var out := p
+	for _pass in RESOLVE_PASSES:
+		var contact := _push_normal(out, radius, height)
+		var n: Vector2 = contact[0]
+		if n == Vector2.ZERO:
+			return out
+		var overlaps := _overlaps(out, radius, height)
+		var depth := 0.0
+		for v: float in overlaps.values():
+			depth = maxf(depth, v)
+		if depth <= 0.0:
+			return out
+		var q := Vector3(
+			out.x + n.x * minf(depth + 1e-4, RESOLVE_STEP),
+			out.y,
+			out.z + n.y * minf(depth + 1e-4, RESOLVE_STEP)
+		)
+		if is_nan(walk_height(q)):
+			return out
+		var after := _overlaps(q, radius, height)
+		var depth1 := 0.0
+		for v: float in after.values():
+			depth1 = maxf(depth1, v)
+		if depth1 >= depth:
+			return out
+		out = q
+	return out
 
 
 ## The closest point to p (xz, y on the ground) where a circle of `radius` is not blocked, searched
@@ -324,8 +457,17 @@ func nearest_free(p: Vector3, radius: float, max_dist: float) -> Vector3:
 ## sidewalk), a site's parts (kind "building", the site tile), street props (kind "prop", when
 ## include_props) and the ground (kind "ground").
 ## {"hit": bool, "pos": Vector3, "normal": Vector3, "tile": int, "kind": String, "dist": float}
-func raycast(origin: Vector3, dir: Vector3, max_dist: float, include_props: bool = true) -> Dictionary:
-	var miss := {"hit": false, "pos": Vector3.ZERO, "normal": Vector3.ZERO, "tile": -1, "kind": "", "dist": max_dist}
+func raycast(
+	origin: Vector3, dir: Vector3, max_dist: float, include_props: bool = true
+) -> Dictionary:
+	var miss := {
+		"hit": false,
+		"pos": Vector3.ZERO,
+		"normal": Vector3.ZERO,
+		"tile": -1,
+		"kind": "",
+		"dist": max_dist
+	}
 	if dir.length_squared() < 1e-12 or max_dist <= 0.0:
 		return miss
 	var d := dir.normalized()
@@ -366,23 +508,54 @@ func raycast(origin: Vector3, dir: Vector3, max_dist: float, include_props: bool
 				cands.append_array(e["sites"])
 				for b: AABB in cands:
 					var hit := _ray_box(origin, d, b)
-					if not hit.is_empty() and float(hit["t"]) < best_t and float(hit["t"]) <= max_dist:
+					if (
+						not hit.is_empty()
+						and float(hit["t"]) < best_t
+						and float(hit["t"]) <= max_dist
+					):
 						best_t = float(hit["t"])
-						best = {"hit": true, "pos": origin + d * best_t, "normal": hit["normal"], "tile": j, "kind": "building", "dist": best_t}
+						best = {
+							"hit": true,
+							"pos": origin + d * best_t,
+							"normal": hit["normal"],
+							"tile": j,
+							"kind": "building",
+							"dist": best_t
+						}
 				if include_props:
 					for b: AABB in e["props"]:
 						var hit := _ray_box(origin, d, b)
-						if not hit.is_empty() and float(hit["t"]) < best_t and float(hit["t"]) <= max_dist:
+						if (
+							not hit.is_empty()
+							and float(hit["t"]) < best_t
+							and float(hit["t"]) <= max_dist
+						):
 							best_t = float(hit["t"])
-							best = {"hit": true, "pos": origin + d * best_t, "normal": hit["normal"], "tile": j, "kind": "prop", "dist": best_t}
+							best = {
+								"hit": true,
+								"pos": origin + d * best_t,
+								"normal": hit["normal"],
+								"tile": j,
+								"kind": "prop",
+								"dist": best_t
+							}
 					var cy: PackedFloat32Array = e["cyls"]
 					for k in range(0, cy.size(), 4):
-						var tc := _ray_cyl(origin, d, Vector2(cy[k], cy[k + 1]), cy[k + 2], cy[k + 3])
+						var tc := _ray_cyl(
+							origin, d, Vector2(cy[k], cy[k + 1]), cy[k + 2], cy[k + 3]
+						)
 						if tc >= 0.0 and tc < best_t and tc <= max_dist:
 							best_t = tc
 							var hp := origin + d * tc
 							var nn := Vector3(hp.x - cy[k], 0.0, hp.z - cy[k + 1]).normalized()
-							best = {"hit": true, "pos": hp, "normal": nn, "tile": j, "kind": "prop", "dist": tc}
+							best = {
+								"hit": true,
+								"pos": hp,
+								"normal": nn,
+								"tile": j,
+								"kind": "prop",
+								"dist": tc
+							}
 		# Ground: the walkable height at the segment middle (water and parapets use the water surface).
 		var i := D.idx(gx, gz) if D.in_bounds(gx, gz) else -1
 		var mid := origin + d * ((t + seg_end) * 0.5)
@@ -395,7 +568,14 @@ func raycast(origin: Vector3, dir: Vector3, max_dist: float, include_props: bool
 			var tg := (g - origin.y) / d.y
 			if tg < best_t:
 				best_t = tg
-				best = {"hit": true, "pos": origin + d * tg, "normal": Vector3.UP, "tile": i, "kind": "ground", "dist": tg}
+				best = {
+					"hit": true,
+					"pos": origin + d * tg,
+					"normal": Vector3.UP,
+					"tile": i,
+					"kind": "ground",
+					"dist": tg
+				}
 		if best_t <= seg_end or seg_end >= max_dist:
 			break
 		t = seg_end
@@ -438,15 +618,23 @@ func line_of_sight(a: Vector3, b: Vector3) -> bool:
 
 
 ## Free distance along unit dir from origin (<= max_dist) for a sphere of `radius`: a ray against
-## the movement boxes near origin grown by radius (a Minkowski sum), skipping boxes that already
-## contain origin. The third-person camera arm (A 6.6); thin cylinders are ignored.
+## the camera boxes near origin (camera_boxes_near) grown by radius (a Minkowski sum), skipping
+## boxes that already contain origin. The camera arms (A 6.6, the drive and door cameras).
 func sweep_sphere(origin: Vector3, dir: Vector3, max_dist: float, radius: float) -> float:
-	return sweep_boxes(origin, dir, max_dist, radius, boxes_near(origin, max_dist + radius))
+	return sweep_boxes(origin, dir, max_dist, radius, camera_boxes_near(origin, max_dist + radius))
+
+
+## boxes_near() plus every cylinder of CAM_CYL_MIN or more (tree trunks) as its square column: a
+## camera must not end up inside a trunk, while lamp poles are thin enough to flash past.
+## Parkour keeps boxes_near(), so trees are never vaulted.
+func camera_boxes_near(p: Vector3, reach: float) -> Array[AABB]:
+	return boxes_near(p, reach, CAM_CYL_MIN)
 
 
 ## Movement boxes of the tiles around p within `reach` of it (the camera rig gathers them once
-## per frame and sweeps the list several times).
-func boxes_near(p: Vector3, reach: float) -> Array[AABB]:
+## per frame and sweeps the list several times), with the cylinders of radius cyl_min or more as
+## square columns (none by default).
+func boxes_near(p: Vector3, reach: float, cyl_min: float = INF) -> Array[AABB]:
 	var out: Array[AABB] = []
 	var n := maxi(1, ceili(reach))
 	var cx := roundi(p.x)
@@ -456,15 +644,39 @@ func boxes_near(p: Vector3, reach: float) -> Array[AABB]:
 		for dx in range(-n, n + 1):
 			if not D.in_bounds(cx + dx, cz + dz):
 				continue
-			for b: AABB in boxes(D.idx(cx + dx, cz + dz)):
-				var q := Vector3(clampf(p.x, b.position.x, b.end.x), clampf(p.y, b.position.y, b.end.y), clampf(p.z, b.position.z, b.end.z))
+			var i := D.idx(cx + dx, cz + dz)
+			var list := boxes(i)
+			if cyl_min < INF:
+				list = list.duplicate()
+				_cyl_columns(cylinders(i), cyl_min, list)
+			for b: AABB in list:
+				var q := Vector3(
+					clampf(p.x, b.position.x, b.end.x),
+					clampf(p.y, b.position.y, b.end.y),
+					clampf(p.z, b.position.z, b.end.z)
+				)
 				if q.distance_squared_to(p) <= reach2:
 					out.append(b)
 	return out
 
 
+## Appends the cylinders (x, z, r, top) of radius r_min or more to out as square columns.
+static func _cyl_columns(cy: PackedFloat32Array, r_min: float, out: Array[AABB]) -> void:
+	for k in range(0, cy.size(), 4):
+		var r := cy[k + 2]
+		if r >= r_min:
+			out.append(
+				AABB(
+					Vector3(cy[k] - r, WS.GROUND_Y, cy[k + 1] - r),
+					Vector3(r * 2.0, maxf(cy[k + 3] - WS.GROUND_Y, 1e-4), r * 2.0)
+				)
+			)
+
+
 ## sweep_sphere() over a given box list.
-static func sweep_boxes(origin: Vector3, dir: Vector3, max_dist: float, radius: float, list: Array[AABB]) -> float:
+static func sweep_boxes(
+	origin: Vector3, dir: Vector3, max_dist: float, radius: float, list: Array[AABB]
+) -> float:
 	var best := max_dist
 	for b: AABB in list:
 		var g := b.grow(radius)
@@ -527,35 +739,36 @@ func box(i: int) -> AABB:
 
 
 func _hits(p: Vector3, radius: float, height: float) -> bool:
-	var cx := roundi(p.x)
-	var cz := roundi(p.z)
 	var head := p.y + height
-	for dz in range(-1, 2):
-		for dx in range(-1, 2):
-			if not D.in_bounds(cx + dx, cz + dz):
+	for e: Dictionary in _bound_entries(p, radius):
+		for b: AABB in e["boxes"]:
+			if p.y >= b.end.y or b.position.y >= head:
 				continue
-			var e := _entry(D.idx(cx + dx, cz + dz))
-			var bd: AABB = e["bound"]
-			if bd.size.x <= 0.0 or p.x <= bd.position.x - radius or p.x >= bd.end.x + radius or p.z <= bd.position.z - radius or p.z >= bd.end.z + radius:
+			if (
+				p.x > b.position.x - radius
+				and p.x < b.end.x + radius
+				and p.z > b.position.z - radius
+				and p.z < b.end.z + radius
+			):
+				return true
+		var cy: PackedFloat32Array = e["cyls"]
+		for k in range(0, cy.size(), 4):
+			if p.y >= cy[k + 3]:
 				continue
-			for b: AABB in e["boxes"]:
-				if p.y >= b.end.y or b.position.y >= head:
-					continue
-				if p.x > b.position.x - radius and p.x < b.end.x + radius and p.z > b.position.z - radius and p.z < b.end.z + radius:
-					return true
-			var cy: PackedFloat32Array = e["cyls"]
-			for k in range(0, cy.size(), 4):
-				if p.y >= cy[k + 3]:
-					continue
-				var rr := cy[k + 2] + radius
-				var ddx := p.x - cy[k]
-				var ddz := p.z - cy[k + 1]
-				if ddx * ddx + ddz * ddz < rr * rr:
-					return true
+			var rr := cy[k + 2] + radius
+			var ddx := p.x - cy[k]
+			var ddz := p.z - cy[k + 1]
+			if ddx * ddx + ddz * ddz < rr * rr:
+				return true
 	for b: AABB in dynamic_boxes:
 		if p.y >= b.end.y or b.position.y >= head:
 			continue
-		if p.x > b.position.x - radius and p.x < b.end.x + radius and p.z > b.position.z - radius and p.z < b.end.z + radius:
+		if (
+			p.x > b.position.x - radius
+			and p.x < b.end.x + radius
+			and p.z > b.position.z - radius
+			and p.z < b.end.z + radius
+		):
 			return true
 	return false
 
@@ -582,25 +795,11 @@ func _push_normal(p: Vector3, radius: float, height: float) -> Array:
 				continue
 			var e := _entry(D.idx(cx + dx, cz + dz))
 			for b: AABB in e["boxes"]:
-				if p.y >= b.end.y or b.position.y >= head:
-					continue
-				var px := p.x - (b.position.x - radius)
-				var nx := b.end.x + radius - p.x
-				var pz := p.z - (b.position.z - radius)
-				var nz := b.end.z + radius - p.z
-				var depth := minf(minf(px, nx), minf(pz, nz))
-				if depth <= best:
-					continue
-				best = depth
-				cyl = false
-				if depth == px:
-					n = Vector2(-1, 0)
-				elif depth == nx:
-					n = Vector2(1, 0)
-				elif depth == pz:
-					n = Vector2(0, -1)
-				else:
-					n = Vector2(0, 1)
+				var d := _box_face(p, head, b, radius)
+				if d[0] > best:
+					best = d[0]
+					n = d[1]
+					cyl = false
 			var cy: PackedFloat32Array = e["cyls"]
 			for k in range(0, cy.size(), 4):
 				if p.y >= cy[k + 3]:
@@ -611,7 +810,35 @@ func _push_normal(p: Vector3, radius: float, height: float) -> Array:
 					best = depth
 					cyl = true
 					n = off.normalized() if off.length_squared() > 1e-14 else Vector2(1, 0)
+	for b: AABB in dynamic_boxes:
+		var d := _box_face(p, head, b, radius)
+		if d[0] > best:
+			best = d[0]
+			n = d[1]
+			cyl = false
 	return [n, cyl]
+
+
+## [depth, push-out direction (xz, unit)] of box b against a circle of `radius` at p (a body whose
+## head is at head): how far p sits inside b grown by radius, out through its nearest face.
+## [0, ZERO] when b does not overlap.
+func _box_face(p: Vector3, head: float, b: AABB, radius: float) -> Array:
+	if p.y >= b.end.y or b.position.y >= head:
+		return [0.0, Vector2.ZERO]
+	var px := p.x - (b.position.x - radius)
+	var nx := b.end.x + radius - p.x
+	var pz := p.z - (b.position.z - radius)
+	var nz := b.end.z + radius - p.z
+	var depth := minf(minf(px, nx), minf(pz, nz))
+	if depth <= 0.0:
+		return [0.0, Vector2.ZERO]
+	if depth == px:
+		return [depth, Vector2(-1, 0)]
+	if depth == nx:
+		return [depth, Vector2(1, 0)]
+	if depth == pz:
+		return [depth, Vector2(0, -1)]
+	return [depth, Vector2(0, 1)]
 
 
 ## Vector2i(tile, index) -> how far p sits inside each box (grown by radius, distance to its
@@ -632,7 +859,10 @@ func _overlaps(p: Vector3, radius: float, height: float) -> Dictionary:
 				var b := list[k]
 				if p.y >= b.end.y or b.position.y >= head:
 					continue
-				var depth := minf(minf(p.x - (b.position.x - radius), b.end.x + radius - p.x), minf(p.z - (b.position.z - radius), b.end.z + radius - p.z))
+				var depth := minf(
+					minf(p.x - (b.position.x - radius), b.end.x + radius - p.x),
+					minf(p.z - (b.position.z - radius), b.end.z + radius - p.z)
+				)
 				if depth > 0.0:
 					out[Vector2i(i, k)] = depth
 			var cy: PackedFloat32Array = e["cyls"]
@@ -646,7 +876,10 @@ func _overlaps(p: Vector3, radius: float, height: float) -> Dictionary:
 		var b := dynamic_boxes[k]
 		if p.y >= b.end.y or b.position.y >= head:
 			continue
-		var depth := minf(minf(p.x - (b.position.x - radius), b.end.x + radius - p.x), minf(p.z - (b.position.z - radius), b.end.z + radius - p.z))
+		var depth := minf(
+			minf(p.x - (b.position.x - radius), b.end.x + radius - p.x),
+			minf(p.z - (b.position.z - radius), b.end.z + radius - p.z)
+		)
 		if depth > 0.0:
 			out[Vector2i(-1, k)] = depth
 	return out
@@ -655,7 +888,11 @@ func _overlaps(p: Vector3, radius: float, height: float) -> Dictionary:
 ## The nearest free point for a stuck walker at p (nearest_free within 2 u), cached while the
 ## walker stays within 1 m of the last query.
 func _escape_point(p: Vector3, radius: float) -> Vector3:
-	if not is_nan(_esc_from.x) and Vector2(p.x - _esc_from.x, p.z - _esc_from.z).length() < 1.0 * WS.M and is_equal_approx(_esc_r, radius):
+	if (
+		not is_nan(_esc_from.x)
+		and Vector2(p.x - _esc_from.x, p.z - _esc_from.z).length() < 1.0 * WS.M
+		and is_equal_approx(_esc_r, radius)
+	):
 		return _esc_point
 	_esc_from = p
 	_esc_r = radius
@@ -691,7 +928,12 @@ func _cluster(p: Vector3, radius: float, height: float, start: Dictionary) -> Di
 					if keys.has(key) or p.y >= b.end.y or b.position.y >= head:
 						continue
 					var gb := b.grow(radius)
-					if gb.position.x < bound.end.x and gb.end.x > bound.position.x and gb.position.z < bound.end.z and gb.end.z > bound.position.z:
+					if (
+						gb.position.x < bound.end.x
+						and gb.end.x > bound.position.x
+						and gb.position.z < bound.end.z
+						and gb.end.z > bound.position.z
+					):
 						keys[key] = true
 						bound = bound.merge(gb)
 						grew = true
@@ -701,9 +943,19 @@ func _cluster(p: Vector3, radius: float, height: float, start: Dictionary) -> Di
 					if keys.has(key) or p.y >= cy[k + 3]:
 						continue
 					var rr := cy[k + 2] + radius
-					if cy[k] + rr > bound.position.x and cy[k] - rr < bound.end.x and cy[k + 1] + rr > bound.position.z and cy[k + 1] - rr < bound.end.z:
+					if (
+						cy[k] + rr > bound.position.x
+						and cy[k] - rr < bound.end.x
+						and cy[k + 1] + rr > bound.position.z
+						and cy[k + 1] - rr < bound.end.z
+					):
 						keys[key] = true
-						bound = bound.merge(AABB(Vector3(cy[k] - rr, bound.position.y, cy[k + 1] - rr), Vector3(rr * 2.0, 0.0, rr * 2.0)))
+						bound = bound.merge(
+							AABB(
+								Vector3(cy[k] - rr, bound.position.y, cy[k + 1] - rr),
+								Vector3(rr * 2.0, 0.0, rr * 2.0)
+							)
+						)
 						grew = true
 		if not grew:
 			break
@@ -719,10 +971,25 @@ func _key_box(key: Vector2i) -> AABB:
 		return (e["boxes"] as Array[AABB])[key.y]
 	var cy: PackedFloat32Array = e["cyls"]
 	var k := key.y - 100000
-	return AABB(Vector3(cy[k] - cy[k + 2], WS.GROUND_Y, cy[k + 1] - cy[k + 2]), Vector3(cy[k + 2] * 2.0, cy[k + 3] - WS.GROUND_Y, cy[k + 2] * 2.0))
+	return AABB(
+		Vector3(cy[k] - cy[k + 2], WS.GROUND_Y, cy[k + 1] - cy[k + 2]),
+		Vector3(cy[k + 2] * 2.0, cy[k + 3] - WS.GROUND_Y, cy[k + 2] * 2.0)
+	)
 
 
 ## Builds (once) tile i's colliders.
+## The add_test_cylinder() cylinders overlapping tile i, appended to cyls.
+func _add_test_cyls(i: int, cyls: PackedFloat32Array) -> void:
+	for k in range(0, _test_cyls.size(), 4):
+		var r := _test_cyls[k + 2]
+		if (
+			i >= 0
+			and absf(_test_cyls[k] - D.tx(i)) < 0.5 + r
+			and absf(_test_cyls[k + 1] - D.ty(i)) < 0.5 + r
+		):
+			cyls.append_array(_test_cyls.slice(k, k + 4))
+
+
 func _entry(i: int) -> Dictionary:
 	var cached: Variant = _tiles.get(i)
 	if cached != null:
@@ -744,6 +1011,7 @@ func _entry(i: int) -> Dictionary:
 		for s: AABB in view.site_boxes(i):
 			if s.size.x > 0.0 and s.size.z > 0.0:
 				sites.append(s)
+	_add_test_cyls(i, cyls)
 	var all: Array[AABB] = []
 	all.append_array(bodies)
 	all.append_array(walls)
@@ -752,22 +1020,45 @@ func _entry(i: int) -> Dictionary:
 	if not _test_boxes.is_empty() and i >= 0:
 		var tile := AABB(Vector3(D.tx(i) - 0.5, -INF, D.ty(i) - 0.5), Vector3(1.0, INF, 1.0))
 		for b: AABB in _test_boxes:
-			if b.position.x < tile.end.x and b.end.x > tile.position.x and b.position.z < tile.end.z and b.end.z > tile.position.z:
+			if (
+				b.position.x < tile.end.x
+				and b.end.x > tile.position.x
+				and b.position.z < tile.end.z
+				and b.end.z > tile.position.z
+			):
 				all.append(b)
 	var bound := AABB()
 	for b: AABB in all:
 		bound = b if bound.size.x <= 0.0 else bound.merge(b)
 	for k in range(0, cyls.size(), 4):
-		var cb := AABB(Vector3(cyls[k] - cyls[k + 2], WS.GROUND_Y, cyls[k + 1] - cyls[k + 2]), Vector3(cyls[k + 2] * 2.0, maxf(cyls[k + 3] - WS.GROUND_Y, 1e-4), cyls[k + 2] * 2.0))
+		var cb := AABB(
+			Vector3(cyls[k] - cyls[k + 2], WS.GROUND_Y, cyls[k + 1] - cyls[k + 2]),
+			Vector3(cyls[k + 2] * 2.0, maxf(cyls[k + 3] - WS.GROUND_Y, 1e-4), cyls[k + 2] * 2.0)
+		)
 		bound = cb if bound.size.x <= 0.0 else bound.merge(cb)
-	var e := {"boxes": all, "bodies": bodies, "sites": sites, "props": props, "cyls": cyls, "bound": bound, "pick": pick}
+	var e := {
+		"boxes": all,
+		"bodies": bodies,
+		"sites": sites,
+		"props": props,
+		"cyls": cyls,
+		"bound": bound,
+		"pick": pick
+	}
 	_tiles[i] = e
 	return e
 
 
 ## Bodies, walls and posts of the building on tile i, from body_table.gd (or a runtime analysis
 ## when the model is new or its bounds changed since the bake).
-func _building_shapes(_i: int, holder: Node3D, pick: AABB, bodies: Array[AABB], walls: Array[AABB], cyls: PackedFloat32Array) -> void:
+func _building_shapes(
+	_i: int,
+	holder: Node3D,
+	pick: AABB,
+	bodies: Array[AABB],
+	walls: Array[AABB],
+	cyls: PackedFloat32Array
+) -> void:
 	var path := str(holder.get_meta("building_path", ""))
 	var bx: Variant = holder.get_meta("building_xform", null)
 	if path.is_empty() or typeof(bx) != TYPE_TRANSFORM3D:
@@ -797,7 +1088,10 @@ func _model_shapes(path: String, local: AABB) -> Dictionary:
 	if row != null:
 		var r: Array = row
 		var bb: AABB = r[0]
-		if (bb.position - local.position).length() < 2e-3 and (bb.size - local.size).length() < 2e-3:
+		if (
+			(bb.position - local.position).length() < 2e-3
+			and (bb.size - local.size).length() < 2e-3
+		):
 			var cy := PackedFloat32Array(r[3])
 			var bl: Array[AABB] = []
 			bl.assign(r[1])
@@ -808,7 +1102,12 @@ func _model_shapes(path: String, local: AABB) -> Dictionary:
 		return _runtime_shapes[path]
 	if not _warned.has(path):
 		_warned[path] = true
-		push_warning("CollisionWorld: %s has no current body_table entry; analysing it at runtime (re-run scripts/fp/player/body_bake.gd)" % path)
+		push_warning(
+			(
+				"CollisionWorld: %s has no current body_table entry; analysing it at runtime (re-run scripts/fp/player/body_bake.gd)"
+				% path
+			)
+		)
 	var ps := AP.load_scene(path)
 	var out := {}
 	if ps != null:
@@ -869,7 +1168,9 @@ func _prop_shapes(i: int, holder: Node3D, props: Array[AABB], cyls: PackedFloat3
 		var arms := RoadTopology.arms(m)
 		if arms.size() == 1 and sim.terrain[i] != D.WATER and RoadTopology.paved(sim, i):
 			var arm := Vector2(arms[0])
-			var c := Vector3(D.tx(i), 0.0, D.ty(i)) - Vector3(arm.x, 0.0, arm.y) * WS.END_CIRCLE_OFFSET
+			var c := (
+				Vector3(D.tx(i), 0.0, D.ty(i)) - Vector3(arm.x, 0.0, arm.y) * WS.END_CIRCLE_OFFSET
+			)
 			cyls.append_array([c.x, c.z, TRUNK_R, WS.SIDEWALK_TOP + 6.0 * WS.M])
 
 
@@ -911,7 +1212,9 @@ func _prop(path: String, xf: Transform3D, props: Array[AABB], cyls: PackedFloat3
 		cyls.append_array([o.x, o.z, LAMP_R, wb.end.y])
 	else:
 		var c := wb.get_center()
-		cyls.append_array([c.x, c.z, clampf(maxf(wb.size.x, wb.size.z) * 0.5, PROP_R_MIN, PROP_R_MAX), wb.end.y])
+		cyls.append_array(
+			[c.x, c.z, clampf(maxf(wb.size.x, wb.size.z) * 0.5, PROP_R_MIN, PROP_R_MAX), wb.end.y]
+		)
 
 
 ## Local AABB of a prop model's meshes, cached per file.
@@ -927,7 +1230,9 @@ func _model_bounds(path: String) -> AABB:
 			BS._collect(n, Transform3D.IDENTITY, parts, false)
 			var first := true
 			for e: Dictionary in parts:
-				var a: AABB = (e["xform"] as Transform3D) * ((e["node"] as MeshInstance3D).mesh.get_aabb())
+				var a: AABB = (
+					(e["xform"] as Transform3D) * ((e["node"] as MeshInstance3D).mesh.get_aabb())
+				)
 				b = a if first else b.merge(a)
 				first = false
 			n.free()

@@ -20,8 +20,14 @@ const INPUTS: Array[String] = ["act_grab"]
 ## camera (the cosine).
 const GRAB_REACH := 1.1 * WS.M
 const GRAB_CONE := 0.5
-## Where the held person's feet go: HOLD_GAP ahead of the hero's.
-const HOLD_GAP := 0.6 * WS.M
+## Where the held person's feet go: HOLD_GAP ahead of the hero's, far enough that the two bodies
+## clear each other with the hero's hands on their arms.
+const HOLD_GAP := 0.68 * WS.M
+## The held person shifts and turns slightly as they struggle (m, radians, and Hz).
+const HOLD_SWAY_SIDE := 0.12 * WS.M
+const HOLD_SWAY_FORWARD := 0.04 * WS.M
+const HOLD_SWAY_YAW := deg_to_rad(6.0)
+const HOLD_SWAY_HZ := 1.25
 ## The hero's top speed dragging someone (u/s).
 const DRAG_SPEED := 1.1 * WS.M
 ## The reach for them as the hold starts (the rig's push clip, seconds).
@@ -52,6 +58,7 @@ var slams: int = 0
 ## The counter cue, and how long it stays.
 var cue: Label
 var cue_t: float = 0.0
+var _hold_t: float = 0.0
 
 
 func feature_id() -> String:
@@ -105,16 +112,17 @@ func self_test() -> Dictionary:
 ## Takes hold of the person on their feet in front (on foot, upright, free to act). False when
 ## nobody is there or the hero cannot now.
 func grab() -> bool:
-	var tr := ctx.feature("traffic") if ctx != null else null
-	if held_id >= 0 or tr == null or not _free():
+	var traffic := ctx.feature("traffic") if ctx != null else null
+	if held_id >= 0 or traffic == null or not _free():
 		return false
 	var p := ctx.player
 	if p.crouched or not p.grounded:
 		return false
-	var who := _target(tr)
-	if who.is_empty() or not bool(tr.call("grab_walker", int(who["id"]), p.position)):
+	var who := _target(traffic)
+	if who.is_empty() or not bool(traffic.call("grab_walker", int(who["id"]), p.position)):
 		return false
 	held_id = int(who["id"])
+	_hold_t = 0.0
 	grabs += 1
 	p.speed_cap = DRAG_SPEED
 	var rig: Variant = p.avatar.get("rig") if p.avatar != null else null
@@ -129,9 +137,9 @@ func grab() -> bool:
 func release() -> void:
 	if held_id < 0:
 		return
-	var tr := ctx.feature("traffic") if ctx != null else null
-	if tr != null:
-		tr.call("release_walker", held_id)
+	var traffic := ctx.feature("traffic") if ctx != null else null
+	if traffic != null:
+		traffic.call("release_walker", held_id)
 	_end()
 
 
@@ -153,19 +161,40 @@ func tick(dt: float) -> void:
 		cue.visible = cue_t > 0.0 and not ctx.player.photo_mode
 	if held_id < 0:
 		return
-	var tr := ctx.feature("traffic")
-	if tr == null or not _free(true):
+	var traffic := ctx.feature("traffic")
+	if traffic == null or not _free(true):
 		release()
 		return
 	var p := ctx.player
 	var f := p.body_forward()
 	var at := p.position + Vector3(f.x, 0.0, f.z).normalized() * HOLD_GAP
-	if not bool(tr.call("hold_walker", held_id, at, atan2(-f.x, -f.z))):
+	_hold_t += dt
+	var phase := _hold_t * TAU * HOLD_SWAY_HZ
+	var sway := sin(phase)
+	var side := Vector3(f.z, 0.0, -f.x).normalized()
+	at += side * HOLD_SWAY_SIDE * sway + f * HOLD_SWAY_FORWARD * cos(phase * 0.5)
+	var yaw := atan2(-f.x, -f.z) + HOLD_SWAY_YAW * sway
+	if not bool(traffic.call("hold_walker", held_id, at, yaw)):
 		_end()
+		return
+	_grip(true, at)
+
+
+## The hero's hands on the person held, feet at at (or let go).
+func _grip(on: bool, at: Vector3 = Vector3.ZERO) -> void:
+	var p := ctx.player if ctx != null else null
+	var rig: Variant = p.avatar.get("rig") if p != null and p.avatar != null else null
+	if not rig is RefCounted:
+		return
+	var pose: Variant = (rig as RefCounted).get("strike_pose")
+	if pose is RefCounted:
+		(pose as RefCounted).call("set_hold", on, at)
 
 
 func _end() -> void:
 	held_id = -1
+	_hold_t = 0.0
+	_grip(false)
 	if ctx != null and ctx.player != null:
 		ctx.player.speed_cap = INF
 
@@ -215,9 +244,9 @@ func slam(spot: Dictionary, dir: Vector3) -> bool:
 
 ## The drawn feet of the person held, NAN when they are not about.
 func _held_feet() -> Vector3:
-	var tr := ctx.feature("traffic")
-	if tr != null:
-		for w: Dictionary in tr.call("walkers_near", ctx.player.position, GRAB_REACH * 2.0):
+	var traffic := ctx.feature("traffic")
+	if traffic != null:
+		for w: Dictionary in traffic.call("walkers_near", ctx.player.position, GRAB_REACH * 2.0):
 			if int(w["id"]) == held_id:
 				return w["pos"]
 	return Vector3(NAN, NAN, NAN)
@@ -282,12 +311,12 @@ func _free(holding_now: bool = false) -> bool:
 
 
 ## The nearest person on their feet within GRAB_REACH in the cone ahead of the camera, {} for none.
-func _target(tr: Node) -> Dictionary:
+func _target(traffic: Node) -> Dictionary:
 	var p := ctx.player
 	var aim := Vector2(-sin(p.cam_yaw), -cos(p.cam_yaw))
 	var best := {}
 	var bd := INF
-	for w: Dictionary in tr.call("walkers_near", p.position, GRAB_REACH):
+	for w: Dictionary in traffic.call("walkers_near", p.position, GRAB_REACH):
 		var q: Vector3 = w["pos"]
 		var d := Vector2(q.x - p.position.x, q.z - p.position.z)
 		var dist := d.length()

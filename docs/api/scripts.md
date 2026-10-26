@@ -113,7 +113,7 @@ GridFall: a SimCity-style city run by five autonomous GMI Cloud AI mayors. Wires
 - `func load_game(path: String = SAVE_PATH) -> bool`
 - `func new_game() -> void`
 - `static func wants_fp() -> bool`: True when this run will play in first person: no legacy tool mode (cinematic, orbit smoke, orbit photo tour) is selected, and either an FP tool mode is or GRIDFALL_VIEW is not "orbit". Mirrors the boot ladder in _ready(), so the early view flag and enter_fp() always agree.
-- `func focus(p: Vector3, dist: float, reason: String = "") -> void`: Draws attention to a world point. Orbit: moves the camera rig (old behaviour). First person: never teleports; emits GameBus.ping(p, reason) for the HUD and minimap. reason: "event:<type>" | "resident:<id>" | "tile" | "district:<mi>" | "" .
+- `func focus(p: Vector3, dist: float, reason: String = "") -> void`: Draws attention to a world point. Orbit: moves the camera rig (old behaviour). First person: never teleports; emits GameBus.ping(p, reason) for the HUD and minimap. reason: "event:<type>" | "resident:<id>" | "tile" | "auto:tile" | "district:<mi>" | "" .
 - `func notify(text: String, kind: String = "info") -> v`: Player-facing notice: CityHud toast in orbit, GameBus.toast in first person. kind: "info" | "alert" | "success" | "system".
 - `func active_camera() -> Camera3D`: The camera the city view should use for picking and shake.
 - `func enter_fp() -> void`: Switches to first person (S0 §6.3). Safe to call twice.

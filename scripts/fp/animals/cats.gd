@@ -3,9 +3,10 @@ extends Node3D
 ## and going beyond FAR; the world fed to their behaviour (cat_life.gd) before every step; their
 ## bodies (cat_bodies.gd) in their coats; and E to pet one close by. A share of the houses with a
 ## front yard (and no dog) keep a cat there, a share of the shops a shop cat by the door, and by
-## night strays come out by the works yards and in the parks; in the rain they all stay in. Their
-## meows, purrs, hisses and chatter go out on the bus (animal_called), and a dog a cat hisses at
-## barks back.
+## night strays come out by the works yards and in the parks; in the rain they all stay in. A young
+## city without any of those keeps one ambient stray about near the player instead, day or night.
+## Their meows, purrs, hisses and chatter go out on the bus (animal_called), and a dog a cat hisses
+## at barks back.
 
 const D := preload("res://scripts/sim/sim_defs.gd")
 const WS := preload("res://scripts/fp/world_scale.gd")
@@ -13,6 +14,7 @@ const LIFE := preload("res://scripts/fp/animals/cat_life.gd")
 const BODIES := preload("res://scripts/fp/animals/cat_bodies.gd")
 const PACK := preload("res://scripts/fp/animals/dog_pack.gd")
 const FLOCK := preload("res://scripts/fp/animals/pigeon_flock.gd")
+const STREETS := preload("res://scripts/fp/animals/street_spots.gd")
 
 const MAX_STEP := 1.0 / 30.0
 ## Cats come out within NEAR of the player (u) and go beyond FAR, at most MAX_CATS at once.
@@ -21,9 +23,14 @@ const FAR := 3.0
 const MAX_CATS := 6
 ## Shares of the houses with a front yard (and no dog) that keep a cat, of the shops with a shop
 ## cat and, by night, of the works yards and the parks with a stray.
-const HOUSE_SHARE := 0.3
-const SHOP_SHARE := 0.3
+const HOUSE_SHARE := 0.4
+const SHOP_SHARE := 0.4
 const STRAY_SHARE := {D.ZONE_I: 0.4, D.PARK: 0.35}
+## A young city (fewer built homes and shops than YOUNG_LOTS) has no yards, shop doors, works yards
+## or parks for a cat yet: until then one ambient stray (AMBIENT_KEY) keeps to the nearest free
+## sidewalk point to the player, day or night, never in the rain.
+const YOUNG_LOTS := 8
+const AMBIENT_KEY := "a:cat"
 ## A shop cat or a works yard's stray keeps to the sidewalk against the lot, SIDE_ACROSS tiles from
 ## the road's middle, its spot tried SIDE_ALONG along the street, strolling within SIDE_BOX (tiles
 ## along and across, either way) of it; a park's stray round a spot PARK_TRIES off the park's
@@ -41,7 +48,8 @@ const ROOM := 0.5
 const TEMPERS := {
 	"house": Vector3(0.45, 0.4, 0.5),
 	"shop": Vector3(0.6, 0.3, 0.5),
-	"stray": Vector3(0.1, 0.35, 0.8)
+	"stray": Vector3(0.1, 0.35, 0.8),
+	"ambient": Vector3(0.1, 0.35, 0.8),
 }
 ## Coats (cat_bodies.gd COATS) and their odds; calicos and torties are she-cats, gingers mostly he.
 const COAT_ODDS := {
@@ -161,8 +169,9 @@ func free_bodies() -> void:
 
 
 ## Every scan: the cats too far off go (and the strays by day, and all of them in the rain); with
-## the flag on the spots near me get theirs, the nearest first. dog_lots: the lots whose household
-## keeps a dog.
+## the flag on the spots near me get theirs, the nearest first; and in a young city with no spot
+## about, one ambient stray comes out near me (_ambient). dog_lots: the lots whose household keeps
+## a dog.
 func scan(me: Vector3, night: bool, rain: bool, dog_lots: Dictionary) -> void:
 	for c: LIFE.Cat in life.cats.duplicate():
 		if c.key.begins_with("photo:"):
@@ -190,6 +199,7 @@ func scan(me: Vector3, night: bool, rain: bool, dog_lots: Dictionary) -> void:
 		if life.cats.size() >= MAX_CATS:
 			return
 		_spawn("c:%d" % int(e[1]), e[2])
+	_ambient(me)
 
 
 ## True when tile i's spot s wants a cat now: there is one, it has none yet, a stray's only by
@@ -247,7 +257,7 @@ func startle(at: Vector3, r_m: float) -> void:
 			life.startle(c, at)
 
 
-func on_crash(at: Vector3, _speed: float, _what: String) -> void:
+func on_crash(at: Vector3, _speed: float, _cause: String) -> void:
 	startle(at, CRASH_M)
 
 
@@ -448,16 +458,16 @@ static func _pick_coat(roll: float) -> String:
 func _what(c: LIFE.Cat) -> String:
 	if c.home == "shop":
 		return "the shop's %s cat" % c.coat
-	if c.home == "stray":
+	if c.home == "stray" or c.home == "ambient":
 		return "a %s stray" % c.coat
 	return "a %s cat" % c.coat
 
 
-func _on_call(c: LIFE.Cat, call: String) -> void:
-	calls[call] = int(calls.get(call, 0)) + 1
+func _on_call(c: LIFE.Cat, sound: String) -> void:
+	calls[sound] = int(calls.get(sound, 0)) + 1
 	if ctx.bus != null:
-		ctx.bus.animal_called.emit(life.head_of(c), call, life.shoulder_m(c))
-	if call != "hiss" or _pack == null:
+		ctx.bus.animal_called.emit(life.head_of(c), sound, life.shoulder_m(c))
+	if sound != "hiss" or _pack == null:
 		return
 	for d: PACK.Dog in _pack.dogs:
 		if _flat(d.pos, c.pos) < BARK_BACK * WS.M:
@@ -540,6 +550,56 @@ func _park(i: int) -> Dictionary:
 		var box := Rect2(Vector2(p.x, p.z) - Vector2.ONE * PARK_BOX, Vector2.ONE * PARK_BOX * 2.0)
 		return {"lot": i, "kind": "stray", "anchor": p, "box": box, "yaw": off.angle()}
 	return {}
+
+
+## The young city's stray: with fewer built homes and shops than YOUNG_LOTS and no cat of any kind
+## about, one ambient stray (AMBIENT_KEY) keeps to the nearest free sidewalk point to me
+## (street_spots.gd), day or night. Nothing once the city has grown, while another is out, or with
+## no free ground near me.
+func _ambient(me: Vector3) -> void:
+	if life.cats.size() >= MAX_CATS or _cat(AMBIENT_KEY) != null or not _young():
+		return
+	for c: LIFE.Cat in life.cats:
+		if not c.key.begins_with("photo:") and _flat(c.anchor, me) <= NEAR:
+			return
+	var s := STREETS.nearest_road(ctx.sim, me, NEAR, _road_side)
+	if s.is_empty():
+		return
+	_spawn(AMBIENT_KEY, s)
+
+
+## The sidewalk of a straight road tile itself (no lot against it): its first free point, either
+## side of the street.
+func _road_side(i: int) -> Dictionary:
+	var m := RoadTopology.mask(ctx.sim, D.tx(i), D.ty(i))
+	if m != RoadTopology.NS and m != RoadTopology.EW:
+		return {}
+	var run := RoadTopology.run_dir(m)
+	var right := Vector3(-run.z, 0.0, run.x)
+	for s: float in [1.0, -1.0]:
+		for along: float in SIDE_ALONG:
+			var p := _tile_pos(i) + right * (s * SIDE_ACROSS) + run * along
+			if not _room(p):
+				continue
+			p.y = ctx.collision.walk_height(p)
+			var half := run.abs() * SIDE_BOX.x + (right * s).abs() * SIDE_BOX.y
+			var box := Rect2(Vector2(p.x - half.x, p.z - half.z), Vector2(half.x, half.z) * 2.0)
+			var yaw := atan2(-right.x * s, -right.z * s)
+			return {"lot": i, "kind": "ambient", "anchor": p, "box": box, "yaw": yaw}
+	return {}
+
+
+## True while the city has fewer built homes and shops than YOUNG_LOTS: too few yards and doors for
+## the cats to keep anywhere yet.
+func _young() -> bool:
+	var n := 0
+	for i: int in ctx.sim.active:
+		var k := ctx.sim.kind[i]
+		if (k == D.ZONE_R or k == D.ZONE_C) and ctx.sim.level[i] > 0:
+			n += 1
+			if n >= YOUNG_LOTS:
+				return false
+	return true
 
 
 ## True when p is walkable ground (not the road, not water) with ROOM clear round it.

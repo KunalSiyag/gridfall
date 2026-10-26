@@ -63,7 +63,8 @@ Generated from the `##` doc comments in `scripts/`. Regenerate with `python3 too
 - [dog_rig.gd](scripts.fp.animals.md#scriptsfpanimalsdog_riggd): A dog's life on top of its clip (DogBodies puts one on every dog skeleton): the tail wags (wag 0..1, faster as it grows), the head turns and tilts toward a world point (look) and jerks up with each bark (bark 1, easing back to 0 here)
 - [pigeon_body.gd](scripts.fp.animals.md#scriptsfpanimalspigeon_bodygd): The pigeon every pigeon MultiMesh draws: one ArrayMesh built in code (metres, facing +Z, the feet at the origin) and its ShaderMaterial (pigeon.gdshader spreads and beats the wings, strides the legs, fans the tail and bobs and dips the head by each bird's INSTANCE_CUSTOM)
 - [pigeon_flock.gd](scripts.fp.animals.md#scriptsfpanimalspigeon_flockgd): The pigeons' behaviour; the pigeons node (pigeons.gd) decides where flocks live and feeds in the world before every step()
-- [pigeons.gd](scripts.fp.animals.md#scriptsfpanimalspigeonsgd): The pigeons (part of the animals feature): where flocks keep (the sidewalk in front of some shops and of the civic buildings people gather at, and the parks), coming out by day near the player and going beyond FAR; the world fed to their behaviour (pigeon_flock.gd) before every step; one MultiMesh of pigeon_body.gd's bird per flock, and the crumbs the hero throws them (E on a flock close by)
+- [pigeons.gd](scripts.fp.animals.md#scriptsfpanimalspigeonsgd): The pigeons (part of the animals feature): where flocks keep (the sidewalk in front of some shops and of the civic buildings people gather at, the parks, and a share of the plain street corners), coming out by day near the player and going beyond FAR; and where none of those is about, one ambient flock near the player (a young city shows pigeons from its first day)
+- [street_spots.gd](scripts.fp.animals.md#scriptsfpanimalsstreet_spotsgd): Street-spot search shared by the animals feature's guaranteed spawns (pigeons.gd's ambient flock, cats.gd's ambient stray): the spot of the nearest straight road tile to someone, through each caller's own per-tile builder
 
 ## [scripts/fp/audio/](scripts.fp.audio.md)
 
@@ -103,6 +104,7 @@ Generated from the `##` doc comments in `scripts/`. Regenerate with `python3 too
 - [drive_hud.gd](scripts.fp.drive.md#scriptsfpdrivedrive_hudgd): The drive feature's HUD: the get-in / get-out key chip above the minimap line and a speedometer (km/h and the gear) at the bottom centre while driving, clear of the corner captions
 - [drive_model.gd](scripts.fp.drive.md#scriptsfpdrivedrive_modelgd): Arcade handling for the player's car
 - [hijack.gd](scripts.fp.drive.md#scriptsfpdrivehijackgd): The action hijack's moves (the drive feature's action_hijack flag): the hero, at the wheel of a car moving alongside another with someone at its wheel, climbs out through the window onto the roof on that car's side ("out"), leaps across onto the other car's roof ("leap") and swings down to its driver's window ("jack"), where the driver is dragged out and the hero takes the wheel (drive_feature.gd)
+- [seat_pose.gd](scripts.fp.drive.md#scriptsfpdriveseat_posegd): The seated hero against the cabin, for drive_feature.gd
 
 ## [scripts/fp/health/](scripts.fp.health.md)
 
@@ -151,6 +153,7 @@ Generated from the `##` doc comments in `scripts/`. Regenerate with `python3 too
 - [hero_limbs.gd](scripts.fp.player.md#scriptsfpplayerhero_limbsgd): The hero's hands and feet on holds (slice A; hero_rig.gd, for the parkour feature's wall climb): a TwoBoneIK3D a limb (upper arm, forearm and hand; thigh, shin and foot) reaches the end bone for a target with the elbow or knee bent toward a pole, both top-level Marker3Ds placed in world space
 - [hero_look.gd](scripts.fp.player.md#scriptsfpplayerhero_lookgd): The hero's head look (A-player.md 6.9; hero_rig.gd): LookAtModifier3Ds on Neck and Head turn the head toward a look target within the head's limits, the Neck taking a share of the turn
 - [hero_rig.gd](scripts.fp.player.md#scriptsfpplayerhero_riggd): HC's animated hero for the player (slice A stage A2; A-player.md 6.9, TPS_PLAN 2.9)
+- [hero_strike_pose.gd](scripts.fp.player.md#scriptsfpplayerhero_strike_posegd): The hero's strike pose layer (hero_rig.gd, like hero_look.gd and hero_limbs.gd): what makes a strike read as the whole body's work
 - [placeholder_puppet.gd](scripts.fp.player.md#scriptsfpplayerplaceholder_puppetgd): The legacy person (models/real/people/person_*.glb) re-rigged as a jointed puppet, so the placeholder hero walks, runs, crouches and jumps until HC's animated hero replaces it (stage A2)
 - [player.gd](scripts.fp.player.md#scriptsfpplayerplayergd) (`FpPlayer`): The on-foot player (slice A): feet at `position`, a kinematic controller against the analytic CollisionWorld (no physics bodies, D2) and the one current Camera3D
 - [player_avatar.gd](scripts.fp.player.md#scriptsfpplayerplayer_avatargd): The player's visible body (slice A)

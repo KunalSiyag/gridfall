@@ -1,8 +1,9 @@
 extends FpFeature
 ## Dogs, pigeons and cats in the street (integration feature "animals"). Some people out on foot
 ## walk a dog on a lead: residents whose household lives with a dog (unless they are off to work)
-## and a share of everyone else, fewer at night and in the rain. A dog household's dog keeps to the
-## front yard of its house while nobody walks it, and a resident coming out takes it along. The dogs
+## and a share of everyone else, fewer at night and in the rain, more of them while the city is
+## young. A dog household's dog keeps to the front yard of its house while nobody walks it, and a
+## resident coming out takes it along. The dogs
 ## (dog_pack.gd) heel, stop to sniff, roam round an owner who stands still, come over to a crouching
 ## hero, bark at the hero and at people going by, flinch at blows and shouts, defend an owner the
 ## hero hits (biting: hero_hit "bite") and leap clear of cars. A kick or a weapon swing of the
@@ -36,9 +37,15 @@ const MAX_DOGS := 10
 const SCAN_S := 0.5
 const HOMES_S := 10.0
 ## Share of the people out on foot who walk a dog, and what the night (sky.night above NIGHT)
-## and the rain leave of it.
-const WALK_SHARE := 0.08
+## and the rain leave of it. While the city is young (fewer built homes and shops than YOUNG_LOTS,
+## measured with the dog households) half as many again do, so a young city still shows dogs about.
+const WALK_SHARE := 0.12
+const WALK_SHARE_EARLY := 0.18
+const YOUNG_LOTS := 8
 const NIGHT := 0.5
+## Pigeons keep longer hours: out while sky.night is at most PIGEON_NIGHT, from about 5:55 to
+## 18:05, so a city's first morning (it starts at dawn) shows them too.
+const PIGEON_NIGHT := 0.85
 const NIGHT_K := 0.4
 const RAIN_K := 0.25
 const DOG_HOUSEHOLD := "lives with a dog"
@@ -104,6 +111,8 @@ var _homes_t: float = 0.0
 ## The dog households: [resident id, home lot], and their lots (lot -> true).
 var _homes: Array = []
 var _dog_lots: Dictionary = {}
+## The city's dog households read, and whether it is still young (_read_homes()).
+var _young := true
 ## Walker id -> whether they walk a dog (people passing through, decided when first seen).
 var _decided: Dictionary = {}
 ## Lot -> its front yard (_yard()), {} for none.
@@ -460,12 +469,12 @@ func _on_tile_built(i: int, _holder: Node3D) -> void:
 	cats.tile_built(i)
 
 
-func _on_call(d: PACK.Dog, call: String) -> void:
-	calls[call] = int(calls.get(call, 0)) + 1
-	if call == "bark":
+func _on_call(d: PACK.Dog, sound: String) -> void:
+	calls[sound] = int(calls.get(sound, 0)) + 1
+	if sound == "bark":
 		pigeons.startle(d.pos, PIGEONS.BARK_M)
 	if ctx.bus != null:
-		ctx.bus.animal_called.emit(pack.head_of(d), call, pack.shoulder_m(d))
+		ctx.bus.animal_called.emit(pack.head_of(d), sound, pack.shoulder_m(d))
 
 
 func _on_bite(d: PACK.Dog) -> void:
@@ -492,17 +501,17 @@ func _feed(dt: float, speed: float) -> void:
 	pack.time_scale = speed
 	pack.cars.clear()
 	pack.passers.clear()
-	var tr := ctx.feature("traffic")
+	var traffic_f := ctx.feature("traffic")
 	var none := pack.dogs.is_empty() and pigeons.flock.flocks.is_empty()
-	if tr == null or (none and cats.life.cats.is_empty()):
+	if traffic_f == null or (none and cats.life.cats.is_empty()):
 		return
-	_read_traffic(tr)
-	_owners_now(tr, dt)
+	_read_traffic(traffic_f)
+	_owners_now(traffic_f, dt)
 
 
 ## Moving vehicles (for the dodge) and the people going by around the player.
-func _read_traffic(tr: FpFeature) -> void:
-	var pk: Dictionary = tr.call("agents_packed", ctx.player_position(), FAR + 1.0)
+func _read_traffic(traffic_f: FpFeature) -> void:
+	var pk: Dictionary = traffic_f.call("agents_packed", ctx.player_position(), FAR + 1.0)
 	var pos: PackedVector3Array = pk["pos"]
 	var vel: PackedVector3Array = pk["vel"]
 	var kind: PackedStringArray = pk["kind"]
@@ -516,14 +525,14 @@ func _read_traffic(tr: FpFeature) -> void:
 
 
 ## Where every owner is now; a dog whose owner has been off the street LOST_S goes after them.
-func _owners_now(tr: FpFeature, dt: float) -> void:
+func _owners_now(traffic_f: FpFeature, dt: float) -> void:
 	var ids: Array = []
 	for d: PACK.Dog in pack.dogs:
 		if d.walker >= 0:
 			ids.append(d.walker)
 	if ids.is_empty():
 		return
-	var by: Dictionary = tr.call("walkers_by_id", ids)
+	var by: Dictionary = traffic_f.call("walkers_by_id", ids)
 	for d: PACK.Dog in pack.dogs.duplicate():
 		if d.walker < 0:
 			continue
@@ -569,15 +578,15 @@ func _scan() -> void:
 	for d: PACK.Dog in pack.dogs.duplicate():
 		if _flat(d.pos, me) > FAR and not d.key.begins_with("photo:"):
 			_drop(d)
-	pigeons.scan(me, _night() <= NIGHT)
+	pigeons.scan(me, _night() <= PIGEON_NIGHT)
 	_homes_t -= SCAN_S
 	if _homes_t <= 0.0:
 		_homes_t = HOMES_S
 		_read_homes()
 	cats.scan(me, _night() > NIGHT, _raining(), _dog_lots)
-	var tr := ctx.feature("traffic")
-	if tr != null:
-		_walkers(tr, me)
+	var traffic_f := ctx.feature("traffic")
+	if traffic_f != null:
+		_walkers(traffic_f, me)
 	if _night() <= NIGHT and not _raining():
 		_yard_dogs(me)
 
@@ -585,6 +594,7 @@ func _scan() -> void:
 func _read_homes() -> void:
 	_homes.clear()
 	_dog_lots.clear()
+	_young = _built_lots() < YOUNG_LOTS
 	if ctx.residents == null:
 		return
 	for r: Dictionary in ctx.residents.people:
@@ -593,10 +603,20 @@ func _read_homes() -> void:
 			_dog_lots[int(r["home"])] = true
 
 
+## Built homes and shops so far: a young city has few yards and doors for its animals.
+func _built_lots() -> int:
+	var n := 0
+	for i: int in ctx.sim.active:
+		var k := ctx.sim.kind[i]
+		if (k == D.ZONE_R or k == D.ZONE_C) and ctx.sim.level[i] > 0:
+			n += 1
+	return n
+
+
 ## People on foot near the player who walk a dog get it at their side.
-func _walkers(tr: FpFeature, me: Vector3) -> void:
+func _walkers(traffic_f: FpFeature, me: Vector3) -> void:
 	var seen := {}
-	for e: Dictionary in tr.call("walkers_near", me, NEAR):
+	for e: Dictionary in traffic_f.call("walkers_near", me, NEAR):
 		var wid := int(e["id"])
 		seen[wid] = true
 		if _dog_of_walker(wid) != null or bool(e["down"]):
@@ -861,10 +881,11 @@ func _raining() -> bool:
 	return w is Object and is_instance_valid(w) and str((w as Object).get("state")) == "rain"
 
 
-## The share of people passing through who walk a dog now.
+## The share of people passing through who walk a dog now (more of them while the city is young).
 func _walk_share() -> float:
 	var k := NIGHT_K if _night() > NIGHT else 1.0
-	return WALK_SHARE * k * (RAIN_K if _raining() else 1.0)
+	var share := WALK_SHARE_EARLY if _young else WALK_SHARE
+	return share * k * (RAIN_K if _raining() else 1.0)
 
 
 ## A number in [0, 1) that stays the same for key in this city.

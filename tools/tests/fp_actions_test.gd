@@ -1,12 +1,13 @@
 extends SceneTree
 ## Body actions (integration feature "actions"; docs/fp/ARCHITECTURE.md, Body actions): the hero
-## rig's action layer (strike times, the guard, punches, the dance); the strike button punching
-## whoever stands in front (the body turned to them, a press near the end queuing the next) in a
-## jab-cross-hook combo whose hook knocks them down, R shoving, X kicking further than a fist (the
-## whole body, the foot out at contact), swings at nobody; emotes the
-## people around answer; the guard squaring the body to the camera; what blocks the actions;
-## presses (events, a trigger's edge) and held input; the player's car striking people
-## (car_body.gd); person_hit and hero_action on the bus; teardown.
+## rig's action layer (strike times, the strike pose layer's turn into the blow, the guard,
+## punches, the dance); the strike button punching whoever stands in front (the body turned to
+## them, a press near the end queuing the next) in a jab-cross-hook combo whose hook knocks them
+## down, R shoving (the one hit tipping back with the blow), X kicking further than a fist (the
+## whole body, the foot out at contact), swings at nobody; emotes the people around answer; the
+## guard squaring the body to the camera; what blocks the actions; presses (events, a trigger's
+## edge) and held input; the player's car striking people (car_body.gd); person_hit and
+## hero_action on the bus; teardown.
 ## Third person on a grown city; time runs through the feature's tick(1/60), traffic's step and
 ## the player's update_view.
 
@@ -18,6 +19,17 @@ const LG := preload("res://scripts/fp/traffic/lane_graph.gd")
 const BODY := preload("res://scripts/fp/drive/car_body.gd")
 const MODEL := preload("res://scripts/fp/drive/drive_model.gd")
 const DT := 1.0 / 60.0
+const POSE_BONES := [
+	"Head",
+	"LeftUpperArm",
+	"LeftLowerArm",
+	"LeftHand",
+	"LeftMiddleDistal",
+	"RightUpperArm",
+	"RightLowerArm",
+	"RightHand",
+	"RightMiddleDistal",
+]
 
 var fails: Array[String] = []
 var ctx: FpContext
@@ -27,6 +39,7 @@ var rig: RefCounted
 ## [at, cause, info] of every person_hit, and every hero_action's action.
 var hits: Array = []
 var acts: Array[String] = []
+var _post: Dictionary = {}
 
 
 func _init() -> void:
@@ -53,8 +66,14 @@ func _init() -> void:
 	K.check(fails, rig != null, "fixture: the hero is HC's animated rig")
 	_check_inputs()
 	if rig != null:
-		_check_rig()
+		await _check_rig()
+		_check_strike_pose()
+		_sk().get_node("StrikePose").modification_processed.connect(_capture)
+		await _check_guard_pose()
+		await _check_shove_pose()
 	_check_punch()
+	_check_aim_target()
+	_check_aim_offset()
 	_check_shove()
 	_check_combo()
 	_check_kick()
@@ -111,6 +130,115 @@ func _hands_up() -> float:
 	return (y - ctx.player.position.y) / WS.M
 
 
+## The rig's strike pose layer.
+func _pose() -> RefCounted:
+	return rig.get("strike_pose")
+
+
+## Post-modifier world positions of the bones POSE_BONES, captured as the strike pose layer
+## (last of the rig's modifiers) finishes each skeleton update.
+func _capture() -> void:
+	var sk := _sk()
+	for b: String in POSE_BONES:
+		_post[b] = sk.global_transform * sk.get_bone_global_pose(sk.find_bone(b)).origin
+
+
+func _sk() -> Skeleton3D:
+	for n in ctx.player.avatar.find_children("*", "Skeleton3D", true, false):
+		return n
+	return null
+
+
+## Bone b as captured, in the hero's frame (metres): x to the right, y up off the feet, z ahead.
+func _at(b: String) -> Vector3:
+	var p := ctx.player
+	var fwd := p.body_forward()
+	var d: Vector3 = (_post.get(b, p.position) as Vector3) - p.position
+	return Vector3(d.dot(Vector3(-fwd.z, 0.0, fwd.x)), d.y, d.dot(fwd)) / WS.M
+
+
+## The fighting guard: closed fists up at the chin on their own sides, forearms angled up from
+## elbows tucked in under them.
+func _check_guard_pose() -> void:
+	_quiet()
+	f.call("set_guard", true)
+	_step(1.0)
+	await process_frame
+	var head := _at("Head")
+	var ok := true
+	var msg := ""
+	for side: String in ["Left", "Right"]:
+		var s := -1.0 if side == "Left" else 1.0
+		var hand := _at(side + "Hand")
+		var elbow := _at(side + "LowerArm")
+		var tip := _at(side + "MiddleDistal")
+		var rise := rad_to_deg(
+			atan2(hand.y - elbow.y, Vector2(hand.x - elbow.x, hand.z - elbow.z).length())
+		)
+		var curl := (tip - hand).length()
+		ok = (
+			ok
+			and hand.x * s > 0.03
+			and hand.y > head.y - 0.25
+			and tip.y < head.y + 0.05
+			and hand.z > 0.12
+			and rise > 40.0
+			and absf(elbow.x) < 0.24
+			and curl < 0.1
+		)
+		msg += (
+			(
+				" %s fist %.2f m under the head, %.2f out, %.2f to the side; forearm %.0f deg"
+				+ " up, elbow %.2f out; fingertip %.3f m from the wrist;"
+			)
+			% [side, head.y - hand.y, hand.z, hand.x, rise, absf(elbow.x), curl]
+		)
+	K.check(fails, ok, "the guard: closed fists at the chin, elbows tucked in (%s)" % msg)
+	f.call("set_guard", false)
+	_step(0.6)
+
+
+## The shove: no windup overhead (neither hand above the shoulders before the contact), then both
+## palms out at chest height on their own sides, reaching the chest of the person shoved.
+func _check_shove_pose() -> void:
+	_quiet()
+	var w := _person(0.8)
+	hits.clear()
+	f.call("strike", "shove")
+	var high := -INF
+	var shoulder := INF
+	for _k in range(30):
+		_step(DT)
+		await process_frame
+		shoulder = minf(_at("LeftUpperArm").y, _at("RightUpperArm").y)
+		if not hits.is_empty():
+			break
+		high = maxf(high, maxf(_at("LeftHand").y, _at("RightHand").y) - shoulder)
+	K.check(
+		fails,
+		not hits.is_empty() and high < 0.0,
+		"the shove winds up low (hands at most %.2f m off the shoulders before contact)" % high
+	)
+	var p := ctx.player
+	var feet := w.pos + w.vis_off
+	var chest_front := (feet - p.position).dot(p.body_forward()) / WS.M - 0.12
+	var ok := true
+	var msg := ""
+	for side: String in ["Left", "Right"]:
+		var s := -1.0 if side == "Left" else 1.0
+		var hand := _at(side + "Hand")
+		var short := chest_front - (_at(side + "MiddleDistal").z)
+		ok = ok and hand.x * s > 0.05 and hand.y > 1.05 and hand.y < shoulder and short < 0.2
+		msg += (
+			" %s palm %.2f m up, %.2f to the side, %.2f short of their chest;"
+			% [side, hand.y, hand.x, short]
+		)
+	K.check(fails, ok, "both palms meet their chest at contact (%s)" % msg)
+	_step(1.0)
+	_remove(w)
+	_step(0.3)
+
+
 func _causes() -> Array[String]:
 	var out: Array[String] = []
 	for h: Array in hits:
@@ -148,9 +276,11 @@ func _check_inputs() -> void:
 
 func _check_rig() -> void:
 	_step(0.5, false)
-	var jab := float(rig.call("strike_time", "punch_jab"))
-	var cross := float(rig.call("strike_time", "punch_cross"))
-	var times_ok := jab > 0.1 and jab < 0.35 and cross > jab and cross < 0.45
+	var jab := float(_pose().call("measure", "punch_jab"))
+	var cross := float(_pose().call("measure", "punch_cross"))
+	for c: String in ["punch_hook", "push", "throw"]:
+		print("FP_ACTIONS_TEST: strike contact %s %.3f" % [c, float(_pose().call("measure", c))])
+	var times_ok := jab > 0.07 and jab < 0.3 and cross > jab and cross < 0.42
 	K.check(
 		fails,
 		times_ok,
@@ -159,10 +289,20 @@ func _check_rig() -> void:
 	var low := _hands_up()
 	rig.call("set_guard", true)
 	_step(0.4, false)
-	var high := _hands_up()
+	await process_frame
 	var g := float(rig.get("guard"))
-	var up_msg := "the guard raises the fists (%.2f, hands at %.2f m, %.2f m before)"
-	K.check(fails, g > 0.95 and high > low + 0.15, up_msg % [g, high, low])
+	var limbs: RefCounted = rig.get("limbs")
+	var ends: Array = limbs.get("ends")
+	var left_end: Vector3 = ends[0]
+	var right_end: Vector3 = ends[1]
+	var left_y := (left_end.y - ctx.player.position.y) / WS.M
+	var right_y := (right_end.y - ctx.player.position.y) / WS.M
+	var up_msg := "the guard raises both fists (%.2f, ends %.2f/%.2f m vs %.2f m before)"
+	K.check(
+		fails,
+		g > 0.95 and left_y > low + 0.15 and right_y > low + 0.15,
+		up_msg % [g, left_y, right_y, low]
+	)
 	rig.call("set_guard", false)
 	_step(0.4, false)
 	K.check(fails, float(rig.get("guard")) < 0.05, "and drops them again")
@@ -180,6 +320,30 @@ func _check_rig() -> void:
 		rig.call("update", DT, 1.3, true, 0.0, false, false)
 	K.check(fails, not bool(rig.call("action_active")), "walking off ends the dance")
 	_step(1.0, false)
+
+
+## The strike pose layer: each strike clip drives a hand, the chest coils back through the windup
+## and turns into the blow as it lands, and eases back to nothing once the strike is over.
+func _check_strike_pose() -> void:
+	var pose: RefCounted = rig.get("strike_pose")
+	var hand: float = pose.call("hand", "punch_hook")
+	K.check(fails, absf(hand) > 0.5, "each strike clip drives a hand (%+.0f)" % hand)
+	K.check(fails, float(pose.call("weight")) == 0.0, "the pose layer waits, off")
+	rig.call("play_action", "punch_hook")
+	var contact := float(pose.call("measure", "punch_hook"))
+	var coiled := 0.0
+	var peak := 0.0
+	for _k in range(ceili((contact + 0.05) / DT)):
+		_step(DT, false)
+		var w := float(pose.call("weight"))
+		coiled = minf(coiled, w)
+		peak = maxf(peak, w)
+	K.check(fails, coiled < -0.05, "the windup coils the chest back (%.2f)" % coiled)
+	K.check(fails, peak > 0.8, "and the blow lands at the turn's height (%.2f)" % peak)
+	_step(1.5, false)
+	K.check(fails, float(pose.call("weight")) == 0.0, "the pose eases back to nothing")
+	rig.call("stop_action")
+	_step(0.5, false)
 
 
 ## With the guard down the strike button throws a punch at whoever stands in front, and the body
@@ -227,7 +391,24 @@ func _check_shove() -> void:
 	K.check(fails, f.call("strike") == false, "one swing at a time")
 	_step(0.1)
 	K.check(fails, hits.is_empty(), "the shove lands once the arms are out, not at once")
+	var limbs: RefCounted = rig.get("limbs")
+	var weights: PackedFloat32Array = limbs.get("weights")
+	var push_weight := float(_pose().call("push_weight"))
+	K.check(
+		fails,
+		push_weight > 0.2 and weights[0] > 0.05 and weights[1] > 0.05,
+		(
+			"the shove starts driving both hands forward (pose %.2f, IK %.2f/%.2f)"
+			% [push_weight, weights[0], weights[1]]
+		)
+	)
 	_step(0.15)
+	weights = limbs.get("weights")
+	K.check(
+		fails,
+		weights[0] > 0.55 and weights[1] > 0.55,
+		"both hands stay out through shove contact (IK %.2f/%.2f)" % [weights[0], weights[1]]
+	)
 	K.check(fails, _causes() == ["shove"], "it lands on the person in front (%s)" % str(_causes()))
 	var info: Dictionary = hits[0][2] if not hits.is_empty() else {}
 	var reel := not bool(info.get("down", true)) and w.state == "react"
@@ -240,6 +421,16 @@ func _check_shove() -> void:
 	var kick: Vector2 = ctx.player.get("_kick")
 	K.check(fails, kick.length() > 1e-4, "the view jolts as it lands")
 	K.check(fails, acts == ["shove"], "hero_action hears the shove (%s)" % str(acts))
+	var tipped := 0.0
+	for _k in range(21):
+		_step(DT)
+		tipped = minf(tipped, w.vis_tilt)
+	var upright := w.vis_tilt == 0.0
+	K.check(
+		fails,
+		tipped < -0.01 and upright,
+		"they tip back with the blow (%.2f rad) and come upright" % tipped
+	)
 	_step(0.6)
 	K.check(fails, str(f.get("swing")).is_empty(), "the swing ends")
 	_remove(w)
@@ -372,6 +563,17 @@ func _check_guard() -> void:
 		is_equal_approx(p.aim_yaw, p.cam_yaw),
 		"the guard aims the body where the camera looks"
 	)
+	var pose: RefCounted = _pose()
+	var limbs: RefCounted = rig.get("limbs")
+	var weights: PackedFloat32Array = limbs.get("weights")
+	var stance := (
+		float(pose.call("guard_weight")) > 0.9
+		and weights[0] > 0.9
+		and weights[1] > 0.9
+		and weights[2] > 0.9
+		and weights[3] > 0.9
+	)
+	K.check(fails, stance, "both hands rise and the feet set into a guard stance")
 	var off := absf(angle_difference(p.yaw, p.cam_yaw))
 	K.check(fails, off < 0.15, "and the body turns to it (%.2f rad off)" % off)
 	K.check(fails, is_equal_approx(p.rig.arm_scale, 0.8), "the camera closes in")
@@ -379,6 +581,70 @@ func _check_guard() -> void:
 	_step(0.1)
 	var back := is_nan(p.aim_yaw) and is_equal_approx(p.rig.arm_scale, 1.0)
 	K.check(fails, back, "dropping the guard gives the body and the camera back")
+	_step(0.4)
+	K.check(fails, float(pose.call("guard_weight")) < 0.05, "the guard pose eases away")
+	p.teleport(p.position, rad_to_deg(p.cam_yaw))
+
+
+## A farther person centered under the aim ray (from the hero's chest along the camera) wins over
+## a nearer person off to its side.
+func _check_aim_target() -> void:
+	_quiet()
+	var p := ctx.player
+	p.cam_pitch = 0.0
+	p.pitch = 0.0
+	p.update_view(0.0)
+	var aim: Vector3 = p.forward().normalized()
+	var side := Vector3(aim.z, 0.0, -aim.x).normalized()
+	var near := _person(0.55)
+	var centered := _person(0.95)
+	near.pos = p.position + aim * 0.55 * WS.M + side * (0.65 * WS.M) * 0.4
+	centered.pos = p.position + aim * 0.95 * WS.M
+	var chosen: Dictionary = f.call("_find_target", aim)
+	K.check(
+		fails,
+		int(chosen.get("id", -1)) == centered.id,
+		"the target nearest the aim ray wins (%d over nearer %d)" % [centered.id, near.id]
+	)
+	_remove(near)
+	_remove(centered)
+	p.teleport(p.position, rad_to_deg(p.cam_yaw))
+
+
+## The live third-person case: the camera sits behind and off to a shoulder and looks off the
+## body's facing. A farther person straight down the camera's line from the hero still wins over a
+## nearer one off to the camera's side.
+func _check_aim_offset() -> void:
+	_quiet()
+	var p := ctx.player
+	p.cam_yaw = wrapf(p.yaw + 0.94, -PI, PI)
+	p.cam_pitch = -0.15
+	p.pitch = -0.15
+	p.update_view(0.0)
+	var aim := Vector3(-sin(p.cam_yaw), 0.0, -cos(p.cam_yaw))
+	var right := Vector3(-aim.z, 0.0, aim.x)
+	var cam_side := (p.view_position() - p.position).dot(right) / WS.M
+	var s := 1.0 if cam_side >= 0.0 else -1.0
+	var near := _person(0.5)
+	var centered := _person(0.95)
+	near.pos = p.position + aim * 0.45 * WS.M + right * s * 0.65 * WS.M
+	centered.pos = p.position + aim * 0.95 * WS.M
+	var chosen: Dictionary = f.call("_find_target", aim)
+	K.check(
+		fails,
+		int(chosen.get("id", -1)) == centered.id,
+		(
+			(
+				"seen over the shoulder (camera %.2f m to the side), the person centered"
+				+ " ahead of the hero wins (%d, wanted %d over the nearer %d)"
+			)
+			% [cam_side, int(chosen.get("id", -1)), centered.id, near.id]
+		)
+	)
+	_remove(near)
+	_remove(centered)
+	p.cam_pitch = 0.0
+	p.pitch = 0.0
 	p.teleport(p.position, rad_to_deg(p.cam_yaw))
 
 

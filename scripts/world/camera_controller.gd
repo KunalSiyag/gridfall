@@ -28,13 +28,24 @@ func _ready() -> void:
 	position = target_position
 
 
-func focus_world_point(world_pos: Vector3, target_zoom: float = 24.0) -> void:
+## Pans to world_pos and zooms to target_zoom; with keep_zoom it only pans, so attention the user
+## did not ask for never undoes the zoom they picked.
+func focus_world_point(
+	world_pos: Vector3, target_zoom: float = 24.0, keep_zoom: bool = false
+) -> void:
 	target_position = Vector3(
 		clampf(world_pos.x, MIN_COORD + 1.0, MAX_COORD - 1.0),
 		0.0,
 		clampf(world_pos.z, MIN_COORD + 1.0, MAX_COORD - 1.0)
 	)
-	zoom = clampf(target_zoom, MIN_ZOOM, MAX_ZOOM)
+	if not keep_zoom:
+		zoom = clampf(target_zoom, MIN_ZOOM, MAX_ZOOM)
+
+
+## Focus reasons the user did not ask for (a sim event, the chaos director's disaster): the camera
+## pans there at the user's own zoom.
+static func keeps_zoom(reason: String) -> bool:
+	return reason.begins_with("event:") or reason.begins_with("auto:")
 
 
 func reset_view() -> void:

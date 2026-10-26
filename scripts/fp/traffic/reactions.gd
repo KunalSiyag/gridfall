@@ -3,8 +3,10 @@ extends RefCounted
 ## player, struck by the car they drive or dragged out of their own (carjack). A light blow makes
 ## the person reel (hit_chest, hit_head) and slide back a little; a hard one (DOWN), the
 ## HITS_DOWN-th punch in a row or a fast car knocks them down (knockback), and they lie a while
-## before they get up (get_up). Then they shake their head or shout at whoever did it, run off, or
-## walk back to where they were; some of those shoved or punched fight back instead (fight_back):
+## before they get up (get_up). A car that runs them over where they lie shoves them along and
+## leaves them down but up sooner. Then they shake their head or shout at whoever did it, run
+## off, or walk back to where they were; some of those shoved or punched fight back instead
+## (fight_back):
 ## they square up to the hero, close in and throw jabs and crosses (on_hero_hit) until the hero is
 ## down, gets away or drives off. People within WITNESS_R who see it run off or shout too. While a
 ## walker stands where the blow left it its state is "react" (it keeps its edge and plan; the
@@ -68,18 +70,34 @@ const FIGHT_HIT := 1.25 * WS.M
 const FIGHT_CONE := 0.5
 const FIST := Vector2(0.5, 1.45)
 const FIGHT_PUSH := 1.5 * WS.M
-## A knock-down throws the body (hit_feel flag): up LIFT (metres, by strength: a blow, a car) over
-## FLY_S seconds, back to the ground, then up BOUNCE of that again over BOUNCE_S.
-const LIFT := {"blow": Vector2(0.12, 0.3), "car": Vector2(0.3, 0.9)}
+## A knock-down throws the body (hit_feel flag): up LIFT (metres, by strength: a blow, a car), a
+## blow's arc the FLY seconds by its strength (a car: FLY_S), back to the ground, then up BOUNCE
+## of that again over BOUNCE_S. The harder a blow lands the higher and longer the body flies: a
+## hook that finishes someone leaves the ground properly, a jab's third in a row barely does.
+const LIFT := {"blow": Vector2(0.15, 0.45), "car": Vector2(0.3, 0.9)}
+const FLY := Vector2(0.28, 0.42)
 const FLY_S := 0.32
 const BOUNCE := 0.2
 const BOUNCE_S := 0.18
+## A car runs over a body already lying there (hit(), cause "car"): the wheels shove it
+## TRAMPLE_SLIDE metres (m, by strength) along the road over TRAMPLE_S, and whatever lie the
+## knock-down had left it lies on only TRAMPLE_LIE seconds more (by strength) — it scrambles
+## clear of the car.
+const TRAMPLE_LIE := Vector2(1.2, 2.0)
+const TRAMPLE_SLIDE := Vector2(0.2, 0.6)
+const TRAMPLE_S := 0.45
 ## Held by the hero: HOLD_CLIP stopped HOLD_AT seconds in (recoiling); they break free after
 ## HOLD_S. A throw (hit's fling) slides the body over FLING_S.
 const HOLD_CLIP := &"hit_chest"
 const HOLD_AT := 0.12
 const HOLD_S := 6.0
 const FLING_S := 0.7
+## A light blow tips the one hit back as they reel (hit_feel flag), up to TIP rad by strength:
+## deeper for a punch (the head snapping back) than for a shove or a car's nudge (TIP_ELSE),
+## played out over TIP_S of the reel clip's length and back upright by its end.
+const TIP := {"punch": Vector2(0.06, 0.16), "shove": Vector2(0.04, 0.12)}
+const TIP_ELSE := Vector2(0.04, 0.12)
+const TIP_S := 0.7
 ## With hit_feel a throw flies the body up THROW_LIFT times the fling (metres) on a ballistic arc
 ## (gravity G, m/s²), tipped back by up to THROW_TILT (rad) at its height, across all but
 ## THROW_SKID metres of the fling, which it skids along the ground over SKID_S.
@@ -118,6 +136,9 @@ class Reaction:
 	var tilt: float = 0.0  # how far a throw tips the body back at its height (rad)
 	var air: float = 0.0  # a throw's seconds in the air, its slide steady; 0 for an eased slide
 	var skid: float = 0.0  # the share of a throw's slide skidded along the ground
+	var tip: float = 0.0  # the reel's backward tip (rad, hit_feel); 0 for none
+	var tip_t: float = 0.0  # seconds into the tip
+	var tip_s: float = 0.0  # how long the tip takes to play out (s)
 	var drag: Array = []  # dragged out of a car: [from, to, yaw from, yaw to]
 	var was: String = ""  # walker state to give back ("" until the first step starts)
 	var speed: float = 0.0  # pace to give back after a run
@@ -177,11 +198,15 @@ func clear() -> void:
 
 ## w takes a blow from src (a world point) along push (xz, any length) of strength 0..1, cause
 ## "shove", "punch", "car" or "carjack"; fling (m) > 0 throws a body it knocks down that far. Held
-## (grab) and not knocked down, w reels and hangs on. Returns {"down": bool, "clip": StringName},
-## or {} when w cannot take one now (hidden, in a conversation, or down already).
+## (grab) and not knocked down, w reels and hangs on. A car that runs w over where it already lies
+## (_trample) shoves it along and leaves it down but up sooner. Returns {"down": bool, "clip":
+## StringName}, or {} when w cannot take one now (hidden, in a conversation, in the air, or lying
+## there for anything but a car).
 func hit(
 	w: WK.Walker, src: Vector3, push: Vector3, strength: float, cause: String, fling: float = 0.0
 ) -> Dictionary:
+	if cause == "car" and is_down(w):
+		return _trample(w, src, push, strength)
 	var r := _take(w)
 	if r == null:
 		return {}
@@ -207,6 +232,41 @@ func hit(
 	r.fly_t = 0.0
 	_next_step(r)
 	return {"down": r.down, "clip": clip}
+
+
+## A car runs w over where it lies (hit(), cause "car", already knocked down): the wheels shove
+## it along push — however it lies, its facing kept — and it is up sooner, scrambling clear of the
+## car; run over as it rises it is flattened again, the fall playing out once more. Returns hit()'s
+## shape, {} while it is still in the air. The street reacts as for any car hit (hit_walker, this
+## one's caller, carries on the same: witnesses, incidents, the bus).
+func _trample(w: WK.Walker, src: Vector3, push: Vector3, strength: float) -> Dictionary:
+	var r: Reaction = _active.get(w.id)
+	if r == null or not r.down or w.dead or r.mode != "place":
+		return {}
+	if r.lift > 0.0 and r.fly_t < r.fly_s:
+		return {}
+	var s := clampf(strength, 0.0, 1.0)
+	r.hits += 1
+	r.last = clock
+	r.src = src
+	var lie := lerpf(TRAMPLE_LIE.x, TRAMPLE_LIE.y, s)
+	if r.w.react == &"get_up":
+		r.steps = [
+			["place", &"knockback", float(lengths[&"knockback"]) + lie],
+			["place", &"get_up", float(lengths[&"get_up"])],
+		]
+		r.steps.append_array(_after(r, "car"))
+		_next_step(r)
+	else:
+		# Lying there: whatever lie the knock-down had left, it is up in the trample's own.
+		r.left = minf(r.left, float(lengths[&"knockback"]) + lie)
+	r.lift = 0.0
+	r.air = 0.0
+	r.tip = 0.0
+	r.slide = _away(w, src, push) * (lerpf(TRAMPLE_SLIDE.x, TRAMPLE_SLIDE.y, s) * WS.M)
+	r.slide_t = 0.0
+	r.slide_s = TRAMPLE_S
+	return {"down": true, "clip": &"knockback"}
 
 
 ## w's reaction, made for it when it has none; null when it cannot react now (dead, hidden, in a
@@ -302,6 +362,7 @@ func _plan_down(
 	r: Reaction, d: Vector3, strength: float, cause: String, fling: float = 0.0
 ) -> StringName:
 	var car := cause == "car"
+	var s := clampf(strength, 0.0, 1.0)
 	var lie := lerpf(2.5, 6.0, strength) if car else _rng.randf_range(1.2, 2.4)
 	var m := lerpf(1.5, 4.0, strength) if car else lerpf(0.8, 1.4, strength)
 	r.steps = [
@@ -311,10 +372,11 @@ func _plan_down(
 	r.slide = d * ((fling if fling > 0.0 else m) * WS.M)
 	r.slide_s = FLING_S if fling > 0.0 else 0.55
 	var lift: Vector2 = LIFT["car" if car else "blow"]
-	r.lift = lerpf(lift.x, lift.y, clampf(strength, 0.0, 1.0)) * WS.M
-	r.fly_s = FLY_S
+	r.lift = lerpf(lift.x, lift.y, s) * WS.M
+	r.fly_s = FLY_S if car else lerpf(FLY.x, FLY.y, s)
 	r.air = 0.0
 	r.tilt = 0.0
+	r.tip = 0.0
 	if not FeatureFlags.enabled("hit_feel"):
 		r.lift = 0.0
 	elif fling > 0.0:
@@ -330,7 +392,7 @@ func _plan_down(
 
 
 ## A light blow: reeling back (head for a punch, chest otherwise; the other one when the same clip
-## is playing, so a second blow shows).
+## is playing, so a second blow shows), the body tipped back along the blow (hit_feel).
 func _plan_reel(r: Reaction, d: Vector3, strength: float, cause: String) -> StringName:
 	var clip: StringName = &"hit_head" if cause == "punch" else &"hit_chest"
 	if r.w.react == clip:
@@ -340,6 +402,14 @@ func _plan_reel(r: Reaction, d: Vector3, strength: float, cause: String) -> Stri
 	r.lift = 0.0
 	r.slide = d * (lerpf(0.25, 0.6, strength) * WS.M)
 	r.slide_s = ln * 0.8
+	var range: Vector2 = TIP.get(cause, TIP_ELSE)
+	r.tip = (
+		lerpf(range.x, range.y, clampf(strength, 0.0, 1.0))
+		if FeatureFlags.enabled("hit_feel")
+		else 0.0
+	)
+	r.tip_t = 0.0
+	r.tip_s = ln * TIP_S
 	return clip
 
 
@@ -449,9 +519,14 @@ func _new(w: WK.Walker) -> Reaction:
 	return r
 
 
-## Starts r's next step, or gives the walker its own state back when none is left.
+## Starts r's next step, or gives the walker its own state back when none is left. A step taking
+## over from one under way ends a reel's tip (a knock-down's fall comes from its clip; a throw's
+## tilt is applied anew each step).
 func _next_step(r: Reaction) -> void:
 	var w := r.w
+	if not r.mode.is_empty():
+		r.tip = 0.0
+		w.vis_tilt = 0.0
 	if r.was.is_empty():
 		# A chat is over (the other one walks on by itself).
 		r.was = "walk" if w.state == "chat" else w.state
@@ -513,6 +588,8 @@ func step(dt: float) -> void:
 		if r.mode != "drag":
 			_slide(r, dt)
 			_throw(r, dt)
+			if r.mode == "place":
+				_recoil(r, dt)
 		var over := false
 		match r.mode:
 			"place":
@@ -718,6 +795,19 @@ func _throw(r: Reaction, dt: float) -> void:
 	r.w.vis_tilt = -r.tilt * sin(PI * r.fly_t / r.fly_s) if r.fly_t < r.fly_s else 0.0
 	if h == 0.0 and r.fly_t > r.fly_s:
 		r.lift = 0.0
+
+
+## Plays a reel's backward tip out (hit_feel): up through the blow's landing, back upright by the
+## tip's end. Steps that are not a reel leave the body as they found it.
+func _recoil(r: Reaction, dt: float) -> void:
+	if r.tip <= 0.0:
+		return
+	r.tip_t += dt
+	var k := clampf(r.tip_t / maxf(r.tip_s, 1e-3), 0.0, 1.0)
+	r.w.vis_tilt = -r.tip * sin(PI * k)
+	if k >= 1.0:
+		r.tip = 0.0
+		r.w.vis_tilt = 0.0
 
 
 ## Dragged out of a car: w is drawn on from the seat out over the sill to beside the door, turning

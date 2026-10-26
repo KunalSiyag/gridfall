@@ -105,6 +105,7 @@ Getting into the player's car and out of it on foot, for drive_feature.gd (car_d
 - `door: float`: The driver's door: 0 shut .. 1 open.
 - `hold: String`: A phase to wait at, hold_at s into it (the photo tour holds the climb in half way); "" for none.
 - `jack: bool`: Someone is at the wheel, to be dragged out once the door is open (begin_in's p_jack).
+- `seat_drop: float`: How far the seat the climb ends at (and the climb out starts from) sits below the seat marker: the hips' sink (drive_feature.gd's _sink, set for the climb out; 0 on the way in).
 
 ### Functions
 
@@ -131,6 +132,7 @@ Getting into cars and driving them. Near a parked or stopped car, F (Y on a pad)
 - `BODY = preload("res://scripts/fp/drive/car_body.gd")`
 - `ENTRY = preload("res://scripts/fp/drive/car_entry.gd")`
 - `HIJACK = preload("res://scripts/fp/drive/hijack.gd")`
+- `SEAT = preload("res://scripts/fp/drive/seat_pose.gd")`
 - `ENTER_REACH = 2.0 * WS.M`: Reach from the hero to a car's body for the get-in prompt.
 - `EXIT_SPEED = 8.5 * WS.M`: Faster than this the hero stays in (about 30 km/h).
 - `EXIT_GAP = 0.7 * WS.M`: How far beside the body the hero steps out.
@@ -170,6 +172,7 @@ Getting into cars and driving them. Near a parked or stopped car, F (Y on a pad)
 - `view: String`: "chase" or "driver".
 - `entry`: The walk to the door and the climb in, or the climb out (car_entry.gd).
 - `hijack`: The leap across to a moving car (action hijack).
+- `pose`: The hero's seated pose against the cabin (seat_pose.gd).
 
 ### Functions
 
@@ -244,12 +247,13 @@ Arcade handling for the player's car. Throttle and brake set the speed along the
 
 ### Properties
 
+- `top`: This body's handling profile: a slower, heavier machine (a backhoe) tops out below TOP and gets up to speed at a share of a car's rate (a car: {top: TOP, gain: 1}).
 - `accel: float`: Signed acceleration along the heading over the last step (brake lights).
 - `spin: float`: Yaw rate from knocks (rad/s, positive turns the heading toward +X at yaw 0), on top of the steering.
 
 ### Functions
 
-- `func reset(p_yaw: float, p_length: float) -> void`
+- `func reset(p_yaw: float, p_length: float, p_profile: Dictionary = {}) -> void`: p_profile: {"top": u/s, "gain": share of ACCEL} of the body being driven ({}: a car's).
 - `func heading() -> Vector2`
 - `func speed() -> float`: Signed speed along the heading (u/s, negative in reverse).
 - `func step(throttle: float, brake: float, steer_in: float, handbrake: float, surface: String, dt: float) -> Vector2`: One step: throttle, brake and handbrake 0..1, steer -1 (left) .. 1 (right). Returns the xz displacement; yaw and vel move on.
@@ -287,3 +291,29 @@ The action hijack's moves (the drive feature's action_hijack flag): the hero, at
 - `func riding() -> int`: The car whose frame the hero rides now: the one it leaves until the leap is half way.
 - `func feet(a: Dictionary, b: Dictionary) -> Vector3`: The hero's feet now, the cars' car_info()s given ({"pos", "yaw", "half_w", "height"}): a needs to be there until the leap ends, b from the leap on.
 - `func airborne() -> bool`: True while the hero is in the air (the leap).
+
+## `scripts/fp/drive/seat_pose.gd`
+
+extends `RefCounted`
+
+The seated hero against the cabin, for drive_feature.gd. The drive clip is a chair-height pose (soles half a metre under the hips, the head upright), while a car's floor sits under the seat and its roof little above the head: without this module the hero's legs go through the floorpan and the head through the roof. The car's model carries the driver markers (asset_paths.gd): Pedal_L / Pedal_R at the ankle targets on the footwell floor, Wheel_L / Wheel_R on the steering rim and Cab_Roof on the headliner above the seat. This module reads them from the car's full model, seats the hero's feet and hands on them through the rig's limb IK (hero_limbs.gd's order: left hand, right hand, left foot, right foot; the hero's left is the car's +X) and works out how far the hips sink into the cushion so the top of the head clears the roof line (drive_feature.gd reads `sink` back for the driver view and the climb out).
+
+### Constants
+
+- `WS = preload("res://scripts/fp/world_scale.gd")`
+- `AP = preload("res://scripts/fp/asset_paths.gd")`
+- `SKULL_HAIR = 1.40`: The top of the head rides this multiple of the hips-to-head-bone distance above the hips (the skull and hair counted over the head bone).
+- `MAX_SINK = 0.17 * WS.M`: The hips sink at most this far into the seat cushion (u).
+- `HL_SINK = 0.2`: How fast the hips settle to their sunk seat height (halflife, s).
+- `KNEE_POLE = Vector3(0.0, 0.35, 0.55) * WS.M`: The limb IK poles in the car's frame (+Z forward): knees forward and up, elbows out and down.
+- `ELBOW_POLE = Vector3(0.20, -0.28, 0.0) * WS.M`
+
+### Properties
+
+- `sink: float`: How far the hips sit below the seat marker so the head clears the roof (car frame, u).
+
+### Functions
+
+- `func reset() -> void`: A new car (or none): forget the last car's markers and sink.
+- `func off(rig: Variant) -> void`: Lets the limbs go back to their clips, easing out from the last goals they held.
+- `func step(rig: RefCounted, traffic: FpFeature, car_id: int, pos: Vector3, yaw: float, seat: Vector3, dt: float) -> void`: One step while the hero sits in the car at pos (centre, ground height) turned yaw, its seat marker seat (car frame) and full-model node node: the feet and hands onto the car's own markers, and the hips' sink worked out against the roof. Nothing to do before the drive pose is live (the climb in ends in it) or when the model carries no markers.

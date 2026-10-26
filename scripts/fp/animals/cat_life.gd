@@ -696,10 +696,10 @@ func _free(c: Cat, p: Vector3) -> bool:
 	return not col.is_blocked(Vector3(p.x, y, p.z), _radius(c))
 
 
-func _call(c: Cat, call: String) -> void:
+func _call(c: Cat, sound: String) -> void:
 	if on_call.is_valid():
-		on_call.call(c, call)
-	if call == "meow" and c.body.rig != null:
+		on_call.call(c, sound)
+	if sound == "meow" and c.body.rig != null:
 		c.body.rig.bark = 1.0
 
 

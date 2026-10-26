@@ -104,6 +104,9 @@ var hold: String = ""
 var hold_at: float = 0.0
 ## Someone is at the wheel, to be dragged out once the door is open (begin_in's p_jack).
 var jack: bool = false
+## How far the seat the climb ends at (and the climb out starts from) sits below the seat marker:
+## the hips' sink (drive_feature.gd's _sink, set for the climb out; 0 on the way in).
+var seat_drop: float = 0.0
 var _ctx: FpContext
 var _car := Transform3D.IDENTITY
 var _pts: Dictionary = {}
@@ -159,6 +162,7 @@ func begin_in(
 	door = 0.0
 	_ramp_v = Vector4.ZERO
 	jack = p_jack
+	seat_drop = 0.0
 	kind = "in"
 	_go("walk")
 	ctx.player.avatar.visible = true
@@ -652,7 +656,8 @@ func _ride(pos: Vector3, yaw: float) -> void:
 
 
 func _seat_world() -> Vector3:
-	return _car * (_pts["seat"] as Vector3)
+	var s: Vector3 = _pts["seat"]
+	return _car * Vector3(s.x, s.y - seat_drop, s.z)
 
 
 func _door_len() -> float:

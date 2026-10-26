@@ -122,6 +122,6 @@ static func _turn(sk: Skeleton3D, k: int, axis: Vector3, angle: float) -> void:
 	if k < 0 or absf(angle) < 1e-4:
 		return
 	var parent := sk.get_bone_parent(k)
-	var basis := sk.get_bone_global_pose(parent).basis if parent >= 0 else Basis.IDENTITY
-	var local_axis := (basis.inverse() * axis).normalized()
+	var bone_basis := sk.get_bone_global_pose(parent).basis if parent >= 0 else Basis.IDENTITY
+	var local_axis := (bone_basis.inverse() * axis).normalized()
 	sk.set_bone_pose_rotation(k, Quaternion(local_axis, angle) * sk.get_bone_pose_rotation(k))
