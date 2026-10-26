@@ -342,6 +342,9 @@ press_league={
 
 [rendering]
 
+; The browser runs the compatibility renderer: Forward+ has no web backend. The .web override
+; leaves every desktop platform on Forward+.
+rendering_method.web="gl_compatibility"
 anti_aliasing/quality/msaa_3d=2
 anti_aliasing/quality/use_debanding=true
 lights_and_shadows/directional_shadow/size=8192

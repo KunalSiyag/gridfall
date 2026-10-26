@@ -65,6 +65,7 @@ Mid-range building LOD (slice G2): a building mesh's surfaces merged into one, e
 
 - `PROXIES = preload("res://scripts/fp/render/proxies.gd")`
 - `SHADER = preload("res://scripts/fp/render/midlod.gdshader")`
+- `WebSupport = preload("res://scripts/ops/web_support.gd")`
 - `GLASS_PREFIXES = ["Glass", "Window"]`
 - `LIT_PREFIXES = ["WindowLit"]`
 - `MIN_SURFACES = 3`: A mesh with fewer surfaces gains too little to replace.

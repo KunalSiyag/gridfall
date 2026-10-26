@@ -21,6 +21,10 @@ const RETRY_RESULTS := [HTTPRequest.RESULT_CANT_CONNECT, HTTPRequest.RESULT_CANT
 const RETRY_HTTP := [408, 429, 500, 502, 503, 504]
 const REPLAY_CACHE_PATH := "res://data/gmi_replay_cache.json"
 const SESSION_CACHE_PATH := "user://gmi_session_cache.json"
+## Browser localStorage names for the player's own key (web build); written only after the player
+## ticks "Remember on this device", read back at boot. Never a log target (Redact owns the key).
+const WEB_KEY_STORE := "gridfall.gmi_key"
+const WEB_KEY_CONSENT := "gridfall.gmi_key.remember"
 const MAX_LOG := 300
 ## Hybrid reasoning models spend the whole token budget thinking unless told not to.
 ## Keys are model-id prefixes; values are merged into the request body.
@@ -35,6 +39,9 @@ const MODEL_EXTRAS := {
 const TEMPERATURE := 0.7
 
 var api_key: String = ""
+## A key the player typed in the settings (web build or any platform); "" while the boot key
+## (GMI_API_KEY or ~/.factory/settings.json) is the one in use.
+var player_key: String = ""
 var live_enabled: bool = true
 var record_mode: bool = false
 var replay_cache: Dictionary = {}
@@ -61,14 +68,57 @@ func _init() -> void:
 
 func _ready() -> void:
 	api_key = _resolve_api_key()
+	if WebSupport.is_web() and has_remembered_key():
+		player_key = WebSupport.store_get(WEB_KEY_STORE)
+		if not player_key.is_empty():
+			api_key = player_key
 	Redact.add_secret(api_key)
-	live_enabled = not api_key.is_empty() and OS.get_environment("GRIDFALL_OFFLINE") != "1" and FeatureFlags.enabled("gmi_live")
+	_refresh_live()
 	record_mode = OS.get_environment("GRIDFALL_RECORD") == "1"
 	_load_replay_cache()
 
 
 func has_key() -> bool:
 	return not api_key.is_empty()
+
+
+## Recomputes live_enabled from the key in use, GRIDFALL_OFFLINE and the gmi_live flag.
+func _refresh_live() -> void:
+	var offline := OS.get_environment("GRIDFALL_OFFLINE") == "1"
+	live_enabled = not api_key.is_empty() and not offline and FeatureFlags.enabled("gmi_live")
+
+
+## A key the player typed in the settings ("bring your own key"): replaces the boot key in memory
+## and is registered with the redactor so it can never reach a log. The key stays in this session
+## only (remember_player_key() is what, on the web and only after the player ticks Remember, saves
+## it on their own device). An empty key puts the boot key back in use. Returns has_key().
+func set_player_key(key: String) -> bool:
+	player_key = key.strip_edges()
+	api_key = player_key if not player_key.is_empty() else _resolve_api_key()
+	if not api_key.is_empty():
+		Redact.add_secret(api_key)
+	_refresh_live()
+	return has_key()
+
+
+## Saves this key on the player's own device (web build, after they tick Remember): written
+## straight to the browser's localStorage, never through Godot's files or logs. No-op elsewhere.
+func remember_player_key(key: String) -> void:
+	WebSupport.store_set(WEB_KEY_CONSENT, "1")
+	WebSupport.store_set(WEB_KEY_STORE, key.strip_edges())
+
+
+## True when this device holds a remembered key the player asked for (web build only).
+func has_remembered_key() -> bool:
+	var consent := WebSupport.store_get(WEB_KEY_CONSENT) == "1"
+	return consent and not WebSupport.store_get(WEB_KEY_STORE).is_empty()
+
+
+## Drops the Remember tick and the stored key from this device (web build only). The key set with
+## set_player_key stays in memory until cleared or the page closes.
+func forget_remembered_key() -> void:
+	WebSupport.store_erase(WEB_KEY_CONSENT)
+	WebSupport.store_erase(WEB_KEY_STORE)
 
 
 func set_live(enabled: bool) -> void:

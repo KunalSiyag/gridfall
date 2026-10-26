@@ -240,6 +240,7 @@ Generated from the `##` doc comments in `scripts/`. Regenerate with `python3 too
 - [chat_panel_ticker.gd](scripts.fp.ui.md#scriptsfpuichat_panel_tickergd): One line of the collapsed chat ticker (slice C §2): the author (or the card title) in its colour and the text after it, at most two lines, drawn with a dark outline and no background so it reads over the street
 - [chat_panel_widgets.gd](scripts.fp.ui.md#scriptsfpuichat_panel_widgetsgd): Small passive controls of the chat panel and the talk dialogue (slice C): a vector icon, a round avatar with initials, a mood face and typing dots
 - [fp_hud.gd](scripts.fp.ui.md#scriptsfpuifp_hudgd) (`FpHud`): The lean on-foot HUD (slice B): named slots the HUD, chat and other slices fill, and B's widgets in them: indicator chips and the compass (top_bar), toasts and the alert banner (toasts), the rotating minimap and street label (minimap_slot), the interact prompt, first-person crosshair and district caption (center), and the pause menu, place card and full map (overlay)
+- [gmi_key_panel.gd](scripts.fp.ui.md#scriptsfpuigmi_key_panelgd) (`GmiKeyPanel`): The "GMI Cloud" page of the pause menu settings (slice B): the opt-in "bring your own key" field
 - [gps_route.gd](scripts.fp.ui.md#scriptsfpuigps_routegd): GPS route for the waypoint (slice B): a breadth-first search over road tiles from the road nearest the player to the road nearest the waypoint, returned as world points (x, z) with only the corners kept: the player, every turn, the waypoint
 - [hud_caption.gd](scripts.fp.ui.md#scriptsfpuihud_captiongd): District caption (slice B), bottom right of the "center" slot: on arrival and whenever the player walks into another district, its name in the display face with its mayor under it, sliding in over 0.4 s, held for 4 s and faded out
 - [hud_chips.gd](scripts.fp.ui.md#scriptsfpuihud_chipsgd): Top-centre indicator chips (slice B): population, mood and treasury on the left of the clock chip (day, time, speed); power, water, alerts and the "City hall in session" dot on its right, so the clock stays centred while the alert chips come and go
@@ -270,6 +271,7 @@ Generated from the `##` doc comments in `scripts/`. Regenerate with `python3 too
 - [ops_sink.gd](scripts.ops.md#scriptsopsops_sinkgd) (`OpsSink`): Local JSON-lines files for the opt-in ops features (errors, analytics, alerts)
 - [redact.gd](scripts.ops.md#scriptsopsredactgd) (`Redact`): Masks secrets and personal data in text bound for logs and the local ops files: bearer and basic credentials, key=value secrets, sk- keys, JWTs, long random tokens, e-mail addresses and every value registered with add_secret() (the live GMI key)
 - [trace.gd](scripts.ops.md#scriptsopstracegd) (`Trace`): Request and trace ids
+- [web_support.gd](scripts.ops.md#scriptsopsweb_supportgd) (`WebSupport`): Platform glue for the web build
 
 ## [scripts/sim/](scripts.sim.md)
 

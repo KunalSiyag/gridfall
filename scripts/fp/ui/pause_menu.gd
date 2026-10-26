@@ -18,6 +18,8 @@ const ROW_H := 44.0
 const BASE_SENS := 0.0022
 const NEW_CITY := "New city"
 const NEW_CITY_CONFIRM := "Press again to start over"
+## The player's own GMI key page (gmi_key_panel.gd); shown only with the player_gmi_key flag.
+const GMI_TAB := "GMI Cloud"
 ## Settings rows per tab: [key, label, kind, args]. kind "slider": [min, max, step, unit];
 ## "choice": [[label, value], ...].
 const TABS := {
@@ -361,6 +363,15 @@ func _build_settings() -> void:
 		b.pressed.connect(_show_tab.bind(tab))
 		head.add_child(b)
 		_tab_buttons[tab] = b
+	if FeatureFlags.enabled("player_gmi_key"):
+		var b := S.pill_button(GMI_TAB, 14)
+		# The one settings tab that names the service; outside slice B's no-branding scan.
+		b.set_meta(S.OWNER_META, GmiKeyPanel.OWNER)
+		b.toggle_mode = true
+		b.button_group = group
+		b.pressed.connect(_show_tab.bind(GMI_TAB))
+		head.add_child(b)
+		_tab_buttons[GMI_TAB] = b
 	var line := ColorRect.new()
 	line.color = S.PANEL_LINE
 	line.custom_minimum_size = Vector2(0, 1)
@@ -376,6 +387,12 @@ func _build_settings() -> void:
 		_tabs[tab] = page
 		for row: Array in TABS[tab]:
 			page.add_child(_row(row))
+	if FeatureFlags.enabled("player_gmi_key"):
+		var gmi := GmiKeyPanel.new()
+		gmi.setup(ctx)
+		gmi.visible = false
+		v.add_child(gmi)
+		_tabs[GMI_TAB] = gmi
 	var foot := HBoxContainer.new()
 	foot.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	foot.add_theme_constant_override("separation", 8)
@@ -448,6 +465,8 @@ func _show_tab(tab: String) -> void:
 		(_tabs[t] as Control).visible = t == tab
 		(_tab_buttons[t] as Button).set_pressed_no_signal(t == tab)
 	var page: Control = _tabs[tab]
+	if tab == GMI_TAB and page is GmiKeyPanel:
+		(page as GmiKeyPanel).refresh()
 	var first: Control = _first_focusable(page)
 	if first != null and first.is_inside_tree():
 		first.grab_focus.call_deferred()

@@ -21,6 +21,7 @@ const MANIFEST_PATH := "res://assets/posters/manifest.json"
 const PREBAKED_DIR := "res://assets/posters/"
 const ART := preload("res://scripts/fp/posters/poster_art.gd")
 const WORKER := preload("res://scripts/fp/posters/poster_worker.gd")
+const WebSupport := preload("res://scripts/ops/web_support.gd")
 ## Resident textures in the memory cache.
 const LRU_SIZE := 32
 ## D12 budgets.
@@ -729,7 +730,7 @@ func _http_transport(method: String, url: String, headers: PackedStringArray, bo
 	if not to_file.is_empty():
 		req.download_file = to_file
 		req.body_size_limit = DOWNLOAD_LIMIT
-		req.use_threads = true
+		req.use_threads = WebSupport.threads_supported()
 	add_child(req)
 	var m := HTTPClient.METHOD_POST if method == "POST" else HTTPClient.METHOD_GET
 	var err := req.request(url, headers, m, body)

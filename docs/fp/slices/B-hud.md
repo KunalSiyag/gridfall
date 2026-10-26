@@ -99,7 +99,7 @@ A calm, glanceable, AAA-lean HUD (think GTA V or Watch Dogs: the world first, a 
 
 `tools/tests/fp_hud_test.gd`, token `FP_HUD_TEST: PASS`. It uses `fp_kit.make_ctx(root, {"grow": true})` (it includes `sky`, the stub `mode`, the player and the HUD) and `make_feature(ctx, "hud_widgets")`. Its assertions:
 
-- **No branding.** After a forced `stats_updated`, collect the text of every `Label`, `RichTextLabel` and `Button` **that B created** (B tags its nodes, for example with `set_meta("fp_owner", "hud_widgets")`, and skips anything under C's chat panel or D's viewer). None matches `/(Argon|DeepSeek|Kimi|Qwen|Grok|GMI|gemini|MiniMax|model|latency|cache|heuristic)/i`.
+- **No branding.** After a forced `stats_updated`, collect the text of every `Label`, `RichTextLabel` and `Button` **that B created** (B tags its nodes, for example with `set_meta("fp_owner", "hud_widgets")`, and skips anything under C's chat panel, D's viewer, or the pause menu's **GMI Cloud** settings page — that page is the one piece of B chrome that names the service it configures, and its widgets carry `fp_owner = "gmi_key"` instead). None matches `/(Argon|DeepSeek|Kimi|Qwen|Grok|GMI|gemini|MiniMax|model|latency|cache|heuristic)/i`.
 - **Chips.**
   - The population chip shows `sim.stats.population` with separators.
   - Mood equals `round(sentiment.mood*10, 1)` when residents are active.

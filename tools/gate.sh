@@ -9,7 +9,7 @@
 # A step that fails and then passes on a retry reports PASS(flaky), counts as a pass and is listed
 # in $GATE_LOG_DIR/flaky.txt. Every run writes $GATE_LOG_DIR/results.json (step, result, secs).
 #
-# quick:  parse_all, the five legacy unit tests, every tools/tests/fp_*_test.gd
+# quick:  parse_all, the six legacy unit tests, every tools/tests/fp_*_test.gd
 # full:   quick + orbit smoke + FP smoke (headless, heavy)
 # render: FP photo tour + fp_bench (windowed, heavy); perf numbers are report-only
 #
@@ -171,7 +171,7 @@ fi
 
 if [ "$MODE" = "quick" ] || [ "$MODE" = "full" ]; then
 	run_step parse_all "PARSE_ALL: PASS" 180 0 -- -- --headless --path . -s tools/tests/parse_all.gd
-	for t in sim_test buildings_test residents_test expansion_test construction_test save_test; do
+	for t in sim_test buildings_test residents_test expansion_test construction_test save_test web_test; do
 		tok="$(echo "$t" | tr '[:lower:]' '[:upper:]'): PASS"
 		run_step "$t" "$tok" 300 0 -- -- --headless --path . -s "tools/tests/$t.gd"
 	done

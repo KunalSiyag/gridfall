@@ -78,6 +78,7 @@ Renders the CitySim grid in 3D: Kenney roads picked by neighbor mask, zone lots 
 - `WS = preload("res://scripts/fp/world_scale.gd")`
 - `AP = preload("res://scripts/fp/asset_paths.gd")`
 - `STREET = preload("res://scripts/fp/street/street_dressing.gd")`
+- `WebSupport = preload("res://scripts/ops/web_support.gd")`
 - `M = "res://models/"`
 - `B = "res://models/blender/"`
 - `ROAD_STRAIGHT = M + "road-straight.glb"`

@@ -1,0 +1,6 @@
+# Docker builds only ever need the web export and its server config (deploy/web/Dockerfile);
+# keeping the context tiny also keeps .godot/, sources and saves out of any image.
+*
+!build/web/
+!deploy/web/nginx.conf
+!deploy/web/Dockerfile

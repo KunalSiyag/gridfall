@@ -219,3 +219,17 @@ Request and trace ids. A trace groups the calls of one unit of work (the brain's
 - `static func current_label() -> String`
 - `static func session_id() -> String`: One id per game process, shared by analytics, error and alert records.
 - `static func is_id(s: String) -> bool`
+
+## `scripts/ops/web_support.gd`
+
+class_name `WebSupport` · extends `RefCounted`
+
+Platform glue for the web build. Desktop answers the thread questions with a plain yes and the browser store stays empty, so every guard here is a no-op there (gate quick is unchanged). The store is a thin localStorage bridge: values never pass through Godot logs, and the only thing the game ever stores is the player's own GMI API key, after they tick "Remember" (see GmiClient.remember_player_key()).
+
+### Functions
+
+- `static func threads_supported() -> bool`: True when real threads can start (desktop platforms). The no-threads web build answers false, so its callers load synchronously instead. GRIDFALL_NO_THREADS=1 forces it off for tests.
+- `static func is_web() -> bool`: True in the browser export.
+- `static func store_get(name: String) -> String`: localStorage value under name ("" off the web, when missing, or when the browser blocks it).
+- `static func store_set(name: String, value: String) -> void`: Writes value under name (no-op off the web).
+- `static func store_erase(name: String) -> void`: Removes name from the store (no-op off the web).

@@ -234,10 +234,14 @@ extends `RefCounted`
 
 One background thread that runs poster image jobs in order (slice D): decode, resize, WebP, mipmaps and VRAM compression. A plain Thread rather than WorkerThreadPool tasks: Image.compress may fan out onto the pool and wait for it, which can starve when the caller is itself a pool task. Jobs touch only their own input dictionary; the main thread collects finished inputs with take_done().
 
+### Constants
+
+- `WebSupport = preload("res://scripts/ops/web_support.gd")`
+
 ### Functions
 
 - `static func finish_image(input: Dictionary) -> void`: Job for composites: opaque RGB, mipmaps and block compression of input.image (or of the raw RGBA8 readback input.data at input.px); sets input.ok.
-- `func push(fn: Callable, input: Dictionary) -> void`: Queues fn.call(input) on the thread.
+- `func push(fn: Callable, input: Dictionary) -> void`: Queues fn.call(input) on the thread, or runs it on the caller's thread when there is none.
 - `func take_done() -> Array`: Inputs whose job finished since the last call, in order.
 - `func pending() -> int`: Jobs queued or running.
 - `func stop() -> void`: Drops queued jobs, lets a running one finish and joins the thread.

@@ -11,6 +11,7 @@ extends RefCounted
 
 const PROXIES := preload("res://scripts/fp/render/proxies.gd")
 const SHADER := preload("res://scripts/fp/render/midlod.gdshader")
+const WebSupport := preload("res://scripts/ops/web_support.gd")
 const GLASS_PREFIXES := ["Glass", "Window"]
 const LIT_PREFIXES := ["WindowLit"]
 ## A mesh with fewer surfaces gains too little to replace.
@@ -52,7 +53,7 @@ func mesh_for(src: Mesh, path: String) -> ArrayMesh:
 		baked_loads += 1
 		return baked
 	var job := _gather(src, path)
-	if threaded:
+	if threaded and WebSupport.threads_supported():
 		job["task"] = WorkerThreadPool.add_task(_merge.bind(job), false, "G2 mid LOD")
 		_jobs[id] = job
 		return null

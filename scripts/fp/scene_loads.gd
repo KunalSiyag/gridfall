@@ -1,15 +1,21 @@
 extends RefCounted
 ## PackedScenes loaded on background threads (ResourceLoader's threaded loads), for the features
 ## that stream bodies in (the crews' workers, the dogs): request() starts a load, scene() hands
-## the scene out once it is in, and finish() waits for the loads still in flight.
+## the scene out once it is in, and finish() waits for the loads still in flight. Without real
+## threads (the no-threads web build) request() loads on the caller's thread instead.
+
+const WebSupport := preload("res://scripts/ops/web_support.gd")
 
 var _loading: Dictionary = {}
 var _loaded: Dictionary = {}
 
 
-## Starts loading the scene at path on a background thread (once).
+## Starts loading the scene at path on a background thread (once), or at once when there are none.
 func request(path: String) -> void:
 	if _loaded.has(path) or _loading.has(path):
+		return
+	if not WebSupport.threads_supported():
+		_loaded[path] = ResourceLoader.load(path, "PackedScene")
 		return
 	if ResourceLoader.load_threaded_request(path, "PackedScene") == OK:
 		_loading[path] = true
