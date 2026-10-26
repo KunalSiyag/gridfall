@@ -415,25 +415,11 @@ func _walk_edge(w: Walker, dt: float) -> void:
 					lat_t = KEEP_RIGHT
 					if dist < SEP:
 						v *= 0.5
-	# The player: step aside, or stop right in front of them.
 	if player_on:
-		var dp := player_pos - w.pos
-		var ahead := dp.x * fwd.x + dp.z * fwd.y
-		var side := -dp.x * fwd.y + dp.z * fwd.x
-		if Vector2(dp.x, dp.z).length() < WS.PLAYER_RADIUS + PERSON_R:
-			# Soft-solid: the hero's circle presses on us, so give way at once, a little further
-			# out than the usual dodge, and never press back while they are ahead of us.
-			lat_max = GIVE_WAY
-			lat_t = -GIVE_WAY if side > 0.0 else GIVE_WAY
-			if ahead > 0.0:
-				v = 0.0
-		elif ahead > -0.4 * WS.M and ahead < 2.2 * WS.M and absf(side) < 1.2 * WS.M:
-			# Step around the player, leaving the band a little if that is what it takes.
-			lat_t = -(BAND + 0.012) if side > 0.0 else (BAND + 0.012)
-			if ahead > 0.0 and ahead < 0.7 * WS.M and absf(side - w.lat) < 0.5 * WS.M:
-				v = 0.0
-			elif ahead > 0.0:
-				v *= 0.6
+		var yv := _yield_to_player(w, fwd, Vector3(v, lat_t, lat_max))
+		v = yv.x
+		lat_t = yv.y
+		lat_max = yv.z
 	# Posts (lit straights, light poles at crosses): pass them on the other half of the band.
 	if not e.zebra and not _post_cells.is_empty():
 		for gx in range(cx - 1, cx + 2):
@@ -456,6 +442,26 @@ func _walk_edge(w: Walker, dt: float) -> void:
 		_next(w)
 		return
 	_pose(w, dt)
+
+
+## The player: step aside, or stop right in front of them. Takes and returns
+## (speed, lateral target, lateral limit).
+func _yield_to_player(w: Walker, fwd: Vector2, s: Vector3) -> Vector3:
+	var dp := player_pos - w.pos
+	var ahead := dp.x * fwd.x + dp.z * fwd.y
+	var side := -dp.x * fwd.y + dp.z * fwd.x
+	if Vector2(dp.x, dp.z).length() < WS.PLAYER_RADIUS + PERSON_R:
+		# Soft-solid: the hero's circle presses on us, so give way at once, a little further
+		# out than the usual dodge, and never press back while they are ahead of us.
+		return Vector3(0.0 if ahead > 0.0 else s.x, -GIVE_WAY if side > 0.0 else GIVE_WAY, GIVE_WAY)
+	if ahead > -0.4 * WS.M and ahead < 2.2 * WS.M and absf(side) < 1.2 * WS.M:
+		# Step around the player, leaving the band a little if that is what it takes.
+		s.y = -(BAND + 0.012) if side > 0.0 else (BAND + 0.012)
+		if ahead > 0.0 and ahead < 0.7 * WS.M and absf(side - w.lat) < 0.5 * WS.M:
+			s.x = 0.0
+		elif ahead > 0.0:
+			s.x *= 0.6
+	return s
 
 
 ## Unit walking direction on the current edge.

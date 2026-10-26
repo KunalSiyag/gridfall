@@ -10,17 +10,17 @@ const SM := preload("res://scripts/fp/player/spring_math.gd")
 const M := WS.M
 
 # --- Framing
-const PIVOT_BELOW_EYE := 0.10 * M    # pivot 1.55 m above the feet: the neck, 0.10 m under the eye
-const ARM_UP := 0.10 * M             # the "hand" above the shoulder pivot
+const PIVOT_BELOW_EYE := 0.10 * M  # pivot 1.55 m above the feet: the neck, 0.10 m under the eye
+const ARM_UP := 0.10 * M  # the "hand" above the shoulder pivot
 const SHOULDER_X := 0.40 * M
 const DIST_DEFAULT := 3.2 * M
 const DIST_MIN := 1.6 * M
 const DIST_MAX := 5.0 * M
 const ZOOM_STEP := 0.4 * M
 const DIST_RUN_ADD := 0.4 * M
-const CAM_RADIUS := 0.20 * M         # > the near-plane corner (0.124 m at 60 deg), < PLAYER_RADIUS
+const CAM_RADIUS := 0.20 * M  # > the near-plane corner (0.124 m at 60 deg), < PLAYER_RADIUS
 const GROUND_CLEAR := 0.20 * M
-const FADE_NEAR := 0.45 * M          # the hero is hidden when the camera is this close to the head
+const FADE_NEAR := 0.45 * M  # the hero is hidden when the camera is this close to the head
 const FADE_FAR := 0.90 * M
 const LEAD_TIME := 0.12
 const LEAD_MAX := 0.4 * M
@@ -61,7 +61,14 @@ const ASSIST_PITCH := deg_to_rad(6.0)
 const ASSIST_HL := 0.6
 const ASSIST_WAIT := 0.5
 ## Predictive feelers (after Lyra): [yaw offset deg, pitch offset deg, weight, retrace interval frames].
-const FEELERS := [[16.0, 0.0, 0.75, 3], [-16.0, 0.0, 0.75, 3], [32.0, 0.0, 0.5, 5], [-32.0, 0.0, 0.5, 5], [0.0, 20.0, 1.0, 4], [0.0, -20.0, 0.5, 4]]
+const FEELERS := [
+	[16.0, 0.0, 0.75, 3],
+	[-16.0, 0.0, 0.75, 3],
+	[32.0, 0.0, 0.5, 5],
+	[-32.0, 0.0, 0.5, 5],
+	[0.0, 20.0, 1.0, 4],
+	[0.0, -20.0, 0.5, 4]
+]
 
 ## View angles (radians). FpPlayer writes them on look input and reads them back after update().
 var yaw: float = 0.0
@@ -144,13 +151,30 @@ func is_limited() -> bool:
 
 ## Puts every spring, damper, timer and feeler at its steady state for the current pose (spawn,
 ## load, teleport, photo-mode exit): the next frame shows no swoop.
-func snap(feet: Vector3, vel: Vector3, body_yaw: float, eye_h: float, grounded: bool, running: bool, col: CollisionWorld) -> void:
+func snap(
+	feet: Vector3,
+	vel: Vector3,
+	body_yaw: float,
+	eye_h: float,
+	grounded: bool,
+	running: bool,
+	col: CollisionWorld
+) -> void:
 	_solve(0.0, feet, vel, body_yaw, eye_h, grounded, running, col, true)
 
 
 ## One frame. feet, vel (u/s) and body_yaw describe the body; eye_h is the current eye height
 ## above the feet (crouch lowers it); col may be null (no collision).
-func update(dt: float, feet: Vector3, vel: Vector3, body_yaw: float, eye_h: float, grounded: bool, running: bool, col: CollisionWorld) -> void:
+func update(
+	dt: float,
+	feet: Vector3,
+	vel: Vector3,
+	body_yaw: float,
+	eye_h: float,
+	grounded: bool,
+	running: bool,
+	col: CollisionWorld
+) -> void:
 	_solve(dt, feet, vel, body_yaw, eye_h, grounded, running, col, false)
 
 
@@ -180,11 +204,21 @@ func pivot() -> Vector3:
 
 func _pitch_scale() -> float:
 	if pitch > 0.0:
-		return lerpf(1.0, 0.6, pitch / PITCH_MAX)        # worm's-eye: pull in instead of hitting the ground
+		return lerpf(1.0, 0.6, pitch / PITCH_MAX)  # worm's-eye: pull in instead of hitting the ground
 	return lerpf(1.0, 1.15, pitch / PITCH_MIN)
 
 
-func _solve(dt: float, feet: Vector3, vel: Vector3, body_yaw: float, eye_h: float, grounded: bool, running: bool, col: CollisionWorld, snapping: bool) -> void:
+func _solve(
+	dt: float,
+	feet: Vector3,
+	vel: Vector3,
+	body_yaw: float,
+	eye_h: float,
+	grounded: bool,
+	running: bool,
+	col: CollisionWorld,
+	snapping: bool
+) -> void:
 	var t0 := Time.get_ticks_usec()
 	sweeps = 0
 	pitch = clampf(pitch, PITCH_MIN, PITCH_MAX)
@@ -229,7 +263,7 @@ func _solve(dt: float, feet: Vector3, vel: Vector3, body_yaw: float, eye_h: floa
 		_zoom_cur = SM.damp(_zoom_cur, want, HL_ZOOM, dt)
 		fov = SM.damp(fov, fov_goal, HL_FOV, dt)
 	# Rig points: root (inside the body) -> shoulder -> hand -> camera.
-	_boxes = col.boxes_near(_pivot, REACH) if col != null else ([] as Array[AABB])
+	_boxes = col.camera_boxes_near(_pivot, REACH) if col != null else ([] as Array[AABB])
 	# The damped pivot can lag behind into a wall the body walks away from: keep the root on the
 	# free side, swept from the body's own (always free) neck point.
 	var root := _pivot
@@ -256,16 +290,21 @@ func _solve(dt: float, feet: Vector3, vel: Vector3, body_yaw: float, eye_h: floa
 		_feeler_frames[i] -= 1
 		if snapping or _feeler_frames[i] <= 0:
 			var f: Array = FEELERS[i]
-			var d := (Basis(Vector3.UP, deg_to_rad(float(f[0]))) * Basis(rot.x, deg_to_rad(float(f[1])))) * cam_back
+			var d := (
+				(Basis(Vector3.UP, deg_to_rad(float(f[0]))) * Basis(rot.x, deg_to_rad(float(f[1]))))
+				* cam_back
+			)
 			var tf := _sweep(hand, d.normalized(), _zoom_cur, CAM_RADIUS)
 			var frac := tf / maxf(_zoom_cur, 1e-6)
 			_feeler_frac[i] = 1.0 - (1.0 - frac) * float(f[2])
-			_feeler_frames[i] = 0 if frac < 1.0 else int(f[3])   # retrace every frame while blocked
+			_feeler_frames[i] = 0 if frac < 1.0 else int(f[3])  # retrace every frame while blocked
 		soft_goal = minf(soft_goal, _feeler_frac[i])
 	if snapping:
 		_soft_block = soft_goal
 	else:
-		_soft_block = SM.damp(_soft_block, soft_goal, HL_FEELER_IN if soft_goal < _soft_block else HL_RELEASE, dt)
+		_soft_block = SM.damp(
+			_soft_block, soft_goal, HL_FEELER_IN if soft_goal < _soft_block else HL_RELEASE, dt
+		)
 	var want_arm := minf(hard, _zoom_cur * _soft_block)
 	var blocked := hard < _zoom_cur - 1e-6 or _soft_block < 0.9999
 	if snapping:
@@ -273,16 +312,16 @@ func _solve(dt: float, feet: Vector3, vel: Vector3, body_yaw: float, eye_h: floa
 		_release_timer = 0.0
 		_limited = blocked
 	elif want_arm < _arm - 1e-7:
-		_arm = want_arm                                     # pull in at once
+		_arm = want_arm  # pull in at once
 		_release_timer = RELEASE_HOLD
 		_limited = _limited or blocked
 	elif not _limited:
-		_arm = want_arm                                     # zoom and pitch changes follow directly
+		_arm = want_arm  # zoom and pitch changes follow directly
 	elif want_arm <= _arm + 1e-7:
-		_arm = want_arm                                     # still held in: restart the hold
+		_arm = want_arm  # still held in: restart the hold
 		_release_timer = RELEASE_HOLD
 	else:
-		_release_timer -= dt                                # free again: hold, then ease out
+		_release_timer -= dt  # free again: hold, then ease out
 		if _release_timer <= 0.0:
 			_arm = minf(SM.damp(_arm, want_arm, HL_RELEASE, dt), want_arm)
 			if _arm > want_arm - 1e-5 * M and not blocked:
@@ -332,7 +371,9 @@ func _recenter(dt: float, flat: float, speed: float, body_yaw: float) -> void:
 	var diff := wrapf(body_yaw - yaw, -PI, PI)
 	if absf(diff) >= RECENTER_MAX:
 		return
-	var hl := lerpf(RECENTER_HL_WALK, RECENTER_HL_RUN, clampf((speed - WS.WALK) / (WS.RUN - WS.WALK), 0.0, 1.0))
+	var hl := lerpf(
+		RECENTER_HL_WALK, RECENTER_HL_RUN, clampf((speed - WS.WALK) / (WS.RUN - WS.WALK), 0.0, 1.0)
+	)
 	yaw = wrapf(yaw + diff * SM.damp_factor(hl, dt), -PI, PI)
 	pitch = SM.damp(pitch, PITCH_REST, hl * 1.5, dt)
 
@@ -350,7 +391,9 @@ func _assist(dt: float, flat: float) -> void:
 		return
 	var ty := atan2(-d.x, -d.z)
 	var tp := atan2(d.y, Vector2(d.x, d.z).length())
-	var gy := _assist_anchor.x + clampf(wrapf(ty - _assist_anchor.x, -PI, PI), -ASSIST_YAW, ASSIST_YAW)
+	var gy := (
+		_assist_anchor.x + clampf(wrapf(ty - _assist_anchor.x, -PI, PI), -ASSIST_YAW, ASSIST_YAW)
+	)
 	var gp := _assist_anchor.y + clampf(tp - _assist_anchor.y, -ASSIST_PITCH, ASSIST_PITCH)
 	yaw = SM.damp_angle(yaw, gy, ASSIST_HL, dt)
 	pitch = clampf(SM.damp(pitch, gp, ASSIST_HL, dt), PITCH_MIN, PITCH_MAX)

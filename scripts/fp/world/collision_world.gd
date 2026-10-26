@@ -48,6 +48,8 @@ const BOX_PROPS := [
 const SOFT_PROPS := ["tree_bush", "tree_fern"]
 const LAMP_R := 0.15 * WS.M
 const TRUNK_R := 0.25 * WS.M
+## Camera arms treat cylinders this thick or more (trunks, not lamp poles) as solid.
+const CAM_CYL_MIN := 0.2 * WS.M
 const PROP_R_MIN := 0.1 * WS.M
 const PROP_R_MAX := 0.5 * WS.M
 ## Walking head-on into a pole keeps this fraction of the speed, sliding round it.
@@ -82,6 +84,7 @@ var _runtime_shapes: Dictionary = {}
 ## Prop model path -> local AABB of its meshes.
 var _prop_bounds: Dictionary = {}
 var _test_boxes: Array[AABB] = []
+var _test_cyls := PackedFloat32Array()
 ## Boxes that move with the traffic (stopped cars from E's blockers_near), refreshed by the
 ## player a few times a second; they block like walls while listed.
 var dynamic_boxes: Array[AABB] = []
@@ -131,9 +134,17 @@ func add_test_box(b: AABB) -> void:
 	rebuild_all()
 
 
-## Removes every add_test_box() box.
+## Test hook: a world cylinder (a trunk) at x, z of radius r up to top, listed in cylinders() of
+## every tile it overlaps.
+func add_test_cylinder(x: float, z: float, r: float, top: float) -> void:
+	_test_cyls.append_array([x, z, r, top])
+	rebuild_all()
+
+
+## Removes every add_test_box() box and add_test_cylinder() cylinder.
 func clear_test_boxes() -> void:
 	_test_boxes.clear()
+	_test_cyls.clear()
 	rebuild_all()
 
 
@@ -607,15 +618,23 @@ func line_of_sight(a: Vector3, b: Vector3) -> bool:
 
 
 ## Free distance along unit dir from origin (<= max_dist) for a sphere of `radius`: a ray against
-## the movement boxes near origin grown by radius (a Minkowski sum), skipping boxes that already
-## contain origin. The third-person camera arm (A 6.6); thin cylinders are ignored.
+## the camera boxes near origin (camera_boxes_near) grown by radius (a Minkowski sum), skipping
+## boxes that already contain origin. The camera arms (A 6.6, the drive and door cameras).
 func sweep_sphere(origin: Vector3, dir: Vector3, max_dist: float, radius: float) -> float:
-	return sweep_boxes(origin, dir, max_dist, radius, boxes_near(origin, max_dist + radius))
+	return sweep_boxes(origin, dir, max_dist, radius, camera_boxes_near(origin, max_dist + radius))
+
+
+## boxes_near() plus every cylinder of CAM_CYL_MIN or more (tree trunks) as its square column: a
+## camera must not end up inside a trunk, while lamp poles are thin enough to flash past.
+## Parkour keeps boxes_near(), so trees are never vaulted.
+func camera_boxes_near(p: Vector3, reach: float) -> Array[AABB]:
+	return boxes_near(p, reach, CAM_CYL_MIN)
 
 
 ## Movement boxes of the tiles around p within `reach` of it (the camera rig gathers them once
-## per frame and sweeps the list several times).
-func boxes_near(p: Vector3, reach: float) -> Array[AABB]:
+## per frame and sweeps the list several times), with the cylinders of radius cyl_min or more as
+## square columns (none by default).
+func boxes_near(p: Vector3, reach: float, cyl_min: float = INF) -> Array[AABB]:
 	var out: Array[AABB] = []
 	var n := maxi(1, ceili(reach))
 	var cx := roundi(p.x)
@@ -625,7 +644,12 @@ func boxes_near(p: Vector3, reach: float) -> Array[AABB]:
 		for dx in range(-n, n + 1):
 			if not D.in_bounds(cx + dx, cz + dz):
 				continue
-			for b: AABB in boxes(D.idx(cx + dx, cz + dz)):
+			var i := D.idx(cx + dx, cz + dz)
+			var list := boxes(i)
+			if cyl_min < INF:
+				list = list.duplicate()
+				_cyl_columns(cylinders(i), cyl_min, list)
+			for b: AABB in list:
 				var q := Vector3(
 					clampf(p.x, b.position.x, b.end.x),
 					clampf(p.y, b.position.y, b.end.y),
@@ -634,6 +658,19 @@ func boxes_near(p: Vector3, reach: float) -> Array[AABB]:
 				if q.distance_squared_to(p) <= reach2:
 					out.append(b)
 	return out
+
+
+## Appends the cylinders (x, z, r, top) of radius r_min or more to out as square columns.
+static func _cyl_columns(cy: PackedFloat32Array, r_min: float, out: Array[AABB]) -> void:
+	for k in range(0, cy.size(), 4):
+		var r := cy[k + 2]
+		if r >= r_min:
+			out.append(
+				AABB(
+					Vector3(cy[k] - r, WS.GROUND_Y, cy[k + 1] - r),
+					Vector3(r * 2.0, maxf(cy[k + 3] - WS.GROUND_Y, 1e-4), r * 2.0)
+				)
+			)
 
 
 ## sweep_sphere() over a given box list.
@@ -941,6 +978,18 @@ func _key_box(key: Vector2i) -> AABB:
 
 
 ## Builds (once) tile i's colliders.
+## The add_test_cylinder() cylinders overlapping tile i, appended to cyls.
+func _add_test_cyls(i: int, cyls: PackedFloat32Array) -> void:
+	for k in range(0, _test_cyls.size(), 4):
+		var r := _test_cyls[k + 2]
+		if (
+			i >= 0
+			and absf(_test_cyls[k] - D.tx(i)) < 0.5 + r
+			and absf(_test_cyls[k + 1] - D.ty(i)) < 0.5 + r
+		):
+			cyls.append_array(_test_cyls.slice(k, k + 4))
+
+
 func _entry(i: int) -> Dictionary:
 	var cached: Variant = _tiles.get(i)
 	if cached != null:
@@ -962,6 +1011,7 @@ func _entry(i: int) -> Dictionary:
 		for s: AABB in view.site_boxes(i):
 			if s.size.x > 0.0 and s.size.z > 0.0:
 				sites.append(s)
+	_add_test_cyls(i, cyls)
 	var all: Array[AABB] = []
 	all.append_array(bodies)
 	all.append_array(walls)

@@ -62,6 +62,7 @@ func _init() -> void:
 	_check_people(ctx)
 	_check_thin_wall(ctx)
 	_check_stuck(ctx)
+	_check_cam_trunk(ctx)
 	K.finish(self, "FP_PLAYER_TEST", fails)
 
 
@@ -1441,3 +1442,47 @@ func _frontage(ctx: FpContext, off: float) -> Dictionary:
 			continue
 		return {"pos": pos, "yaw": rad_to_deg(atan2(-dir.x, -dir.z)), "tile": i}
 	return {}
+
+
+## Third person: a tree trunk where the camera would sit keeps it out and in front (the rig
+## sweeps trunks as solid columns), through a full turn of the view: never inside the trunk,
+## never seeing the hero through it. Parkour's boxes_near still leaves trees out.
+func _check_cam_trunk(ctx: FpContext) -> void:
+	var p := ctx.player
+	var col := ctx.collision
+	var s := K.sidewalk(ctx, 0.5)
+	K.check(fails, not s.is_empty(), "fixture: a clear straight sidewalk")
+	if s.is_empty():
+		return
+	var start: Vector3 = s["pos"]
+	var r := 0.25 * M
+	p.set_camera_mode("third", false)
+	p.teleport(start, s["yaw"])
+	for _k in range(30):
+		p.update_view(DT)
+	var trunk := p.camera.global_position
+	col.add_test_cylinder(trunk.x, trunk.z, r, start.y + 6.0 * M)
+	var bad := 0
+	for k in range(240):
+		if k >= 30:
+			p.look(TAU / 210.0, 0.0)
+		p.update_view(DT)
+		var c := p.camera.global_position
+		var head := p.eye_position()
+		var axis := Vector2(trunk.x, trunk.z)
+		var seg := Geometry2D.get_closest_point_to_segment(
+			axis, Vector2(head.x, head.z), Vector2(c.x, c.z)
+		)
+		if seg.distance_to(axis) < r:
+			bad += 1
+	var vaultable := col.boxes_near(trunk, 0.1 * M).filter(
+		func(b: AABB) -> bool: return b.has_point(Vector3(trunk.x, start.y + M, trunk.z))
+	)
+	col.clear_test_boxes()
+	p.set_camera_mode("first", false)
+	K.check(
+		fails,
+		bad == 0,
+		"a trunk where the camera sat: inside it or looking through it on %d of 240 frames" % bad
+	)
+	K.check(fails, vaultable.is_empty(), "parkour's boxes_near still leaves the trunk out")
