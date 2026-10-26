@@ -48,6 +48,8 @@ const CLAIM_SPEED := 0.5 * WS.M
 ## 22 km/h and gathers speed at half a car's rate (drive_model.gd, drive_profile).
 const JCB_TOP := 6.1 * WS.M
 const JCB_GAIN := 0.5
+## New construction sites whose backhoe is parked this many a step at most.
+const SITE_MACHINES_PER_STEP := 2
 ## A crew called with no station in town sets off from a road at most this many tiles away.
 const STATION_FAR := 10
 ## A car running the hero down (hit_by_cars) hits at full strength from HIT_FULL (u/s) and throws
@@ -100,6 +102,10 @@ var _static_cam := Vector3(INF, INF, INF)
 var _maint_t: float = 0.0
 var _stops_sig: String = ""
 var _built: bool = false
+## Construction sites whose backhoe still needs parking (site_started fires inside the sim tick, so
+## the lanes are touched on the next step), and finished sites whose machine is to clear.
+var _site_queue: Array = []
+var _site_clear: Array = []
 var _rng := RandomNumberGenerator.new()
 ## Photo tour: the traffic shot's junction and arm, and the pending staging for the next refill.
 var _photo: Dictionary = {}
@@ -162,6 +168,8 @@ func setup(p_ctx: FpContext) -> void:
 		ctx.sim.event_started.connect(_on_event)
 		ctx.sim.event_ended.connect(_on_event)
 		ctx.sim.day_started.connect(_on_day_started)
+		ctx.sim.site_started.connect(_on_site_started)
+		ctx.sim.site_finished.connect(_on_site_finished)
 
 
 func teardown() -> void:
@@ -187,6 +195,12 @@ func teardown() -> void:
 			ctx.sim.event_ended.disconnect(_on_event)
 		if ctx.sim.day_started.is_connected(_on_day_started):
 			ctx.sim.day_started.disconnect(_on_day_started)
+		if ctx.sim.site_started.is_connected(_on_site_started):
+			ctx.sim.site_started.disconnect(_on_site_started)
+		if ctx.sim.site_finished.is_connected(_on_site_finished):
+			ctx.sim.site_finished.disconnect(_on_site_finished)
+	_site_queue.clear()
+	_site_clear.clear()
 	render.clear()
 	occupants.clear()
 	people.clear()
@@ -254,6 +268,10 @@ func on_world_rebuilt() -> void:
 	fleets.read_stops(ctx.view)
 	lanes.stop_sides = fleets.read_stops(ctx.view)
 	ambient.fill_parking()
+	_site_queue.clear()
+	_site_clear.clear()
+	for s: Dictionary in sim.sites.values():
+		ambient.park_site_machine(s)
 	lanes.rebuild_all()
 	lanes.take_dirty()
 	fleets.rebuild_lines(ctx.view)
@@ -334,6 +352,30 @@ func _on_day_started(_day: int) -> void:
 		_after_lane_change()
 
 
+## A new construction site: a backhoe parks beside it (queued; the sim tick must not touch the
+## lanes, so the next step parks it).
+func _on_site_started(site: Dictionary) -> void:
+	if _built:
+		_site_queue.append(site)
+
+
+## A finished site: its machine leaves with the crew.
+func _on_site_finished(site: Dictionary) -> void:
+	if _built:
+		_site_clear.append(site)
+
+
+## Parks and clears the site machines the sim asked for (a few a step at most, so a burst of new
+## sites cannot stall a frame).
+func _drain_sites() -> void:
+	var n := 0
+	while n < SITE_MACHINES_PER_STEP and not _site_queue.is_empty():
+		ambient.park_site_machine(_site_queue.pop_front() as Dictionary)
+		n += 1
+	while not _site_clear.is_empty():
+		ambient.clear_site_machine(_site_clear.pop_front() as Dictionary)
+
+
 func _on_trip_started(id: String, from_i: int, to_i: int, mode: String) -> void:
 	if not _built:
 		return
@@ -392,6 +434,7 @@ func step(dt: float) -> void:
 		fleets.astar_left = FLEETS.ASTAR_PER_FRAME
 	_snap_frame = -1
 	clock += dt
+	_drain_sites()
 	junctions.clock = clock
 	var pp := ctx.player_position()
 	var has_player := ctx.player != null and is_instance_valid(ctx.player) and not hero_aboard

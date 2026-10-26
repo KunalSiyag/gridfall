@@ -62,12 +62,18 @@ func off(rig: Variant) -> void:
 ## markers, and the hips' sink worked out against the roof. Nothing to do before the drive pose
 ## is live (the climb in ends in it) or when the model carries no markers.
 func step(
-	rig: RefCounted, tr: FpFeature, car_id: int, pos: Vector3, yaw: float, seat: Vector3, dt: float
+	rig: RefCounted,
+	traffic: FpFeature,
+	car_id: int,
+	pos: Vector3,
+	yaw: float,
+	seat: Vector3,
+	dt: float
 ) -> void:
 	if str(rig.call("state")) != "drive":
 		off(rig)
 		return
-	var pts := _points(tr, car_id, seat)
+	var pts := _points(traffic, car_id, seat)
 	if not pts.has_all(["Pedal_L", "Pedal_R"]):
 		off(rig)
 		return
@@ -91,10 +97,10 @@ func step(
 ## seat marker (so the live node pose cannot skew them) and cached on the node; {} when the model
 ## has none. The car's roster entry and its full-model node are reached through the traffic
 ## feature (the roster is the drive feature's own slice).
-func _points(tr: FpFeature, car_id: int, seat: Vector3) -> Dictionary:
-	if tr == null or car_id < 0 or not _pts.is_empty():
+func _points(traffic: FpFeature, car_id: int, seat: Vector3) -> Dictionary:
+	if traffic == null or car_id < 0 or not _pts.is_empty():
 		return _pts
-	var vh: Variant = tr.get("vehicles")
+	var vh: Variant = traffic.get("vehicles")
 	if not (vh is Object):
 		return _pts
 	var c: Variant = (vh as Object).get("by_id").get(car_id)

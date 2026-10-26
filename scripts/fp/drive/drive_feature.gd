@@ -152,12 +152,12 @@ func self_test() -> Dictionary:
 ## a parkour move carries the hero).
 func enter_target() -> Dictionary:
 	var p := ctx.player if ctx != null else null
-	var tr := _traffic()
-	if active or _climbing() or p == null or tr == null or ctx.is_modal():
+	var traffic := _traffic()
+	if active or _climbing() or p == null or traffic == null or ctx.is_modal():
 		return {}
 	if p.photo_mode or p.in_conversation() or p.carried:
 		return {}
-	return tr.call("enter_target", p.position, ENTER_REACH)
+	return traffic.call("enter_target", p.position, ENTER_REACH)
 
 
 ## Gets into the nearest car in reach at once. Returns true when the hero is now driving.
@@ -233,8 +233,8 @@ func exit(force: bool = false) -> bool:
 ## One step of the climb in or out, or of braking to a stop for the climb out; _process runs it,
 ## tests call it with their own dt.
 func climb_step(dt: float) -> void:
-	var tr := _traffic()
-	if tr == null or not _still_there(tr):
+	var traffic := _traffic()
+	if traffic == null or not _still_there(traffic):
 		exit(true)
 		return
 	if _stop_t >= 0.0:
@@ -249,7 +249,7 @@ func climb_step(dt: float) -> void:
 	var pull := done == "pull" or (done == "fail" and _jack_id >= 0)
 	if pull and not _pull_out():
 		return
-	tr.call("set_door", entry.door, _jack_id)
+	traffic.call("set_door", entry.door, _jack_id)
 	if done == "seated" or done == "fail":
 		_take_wheel()
 		return
@@ -302,11 +302,11 @@ func _adopt(info: Dictionary) -> void:
 ## Starts the walk to the door of the claimed car, or of car id with its driver still at the wheel
 ## (carjack); false when it cannot (see board).
 func _climb_in(info: Dictionary, id: int = -1) -> bool:
-	var tr := _traffic()
+	var traffic := _traffic()
 	# The car to get into is no obstacle any more; the others near the hero still are.
 	_block_others(id)
-	var boxes: Array = tr.call("blockers_near", _pos, _dims.z + ENTRY.ROUTE_REACH, id)
-	if not entry.begin_in(ctx, info, tr.call("door_info", id), boxes, id >= 0):
+	var boxes: Array = traffic.call("blockers_near", _pos, _dims.z + ENTRY.ROUTE_REACH, id)
+	if not entry.begin_in(ctx, info, traffic.call("door_info", id), boxes, id >= 0):
 		return false
 	ctx.player.set_camera_mode("third", true)
 	return true
@@ -316,14 +316,14 @@ func _climb_in(info: Dictionary, id: int = -1) -> bool:
 ## it, then the driver is dragged out (climb_step's "pull") and the hero climbs in. With no way to
 ## the door the driver is pulled out at once and the hero takes the wheel. False when it is gone.
 func _jack_in(id: int) -> bool:
-	var tr := _traffic()
-	var info: Dictionary = tr.call("car_info", id) if tr != null else {}
+	var traffic := _traffic()
+	var info: Dictionary = traffic.call("car_info", id) if traffic != null else {}
 	if info.is_empty():
 		return false
 	_adopt(info)
 	_jack_id = id
 	if _climb_in(info, id):
-		tr.call("hold_car", id, true)
+		traffic.call("hold_car", id, true)
 		return true
 	if not _pull_out():
 		return false
@@ -334,8 +334,8 @@ func _jack_in(id: int) -> bool:
 ## The pull: traffic drags the driver out (knocked down beside the door) and hands the car over.
 ## False, the hero back on foot, when it is no longer there to take.
 func _pull_out() -> bool:
-	var tr := _traffic()
-	var info: Dictionary = tr.call("claim_car", _jack_id, ctx.player.position)
+	var traffic := _traffic()
+	var info: Dictionary = traffic.call("claim_car", _jack_id, ctx.player.position)
 	if info.is_empty():
 		entry.cancel()
 		_on_foot(Vector3(NAN, NAN, NAN), EXIT_BLEND)
@@ -358,10 +358,10 @@ func _block_others(skip: int = -1) -> void:
 
 ## True while the car being got into is still there: the one the hero has, or the one it is taking
 ## from its driver.
-func _still_there(tr: FpFeature) -> bool:
+func _still_there(traffic: FpFeature) -> bool:
 	if _jack_id >= 0:
-		return bool(tr.call("jackable", _jack_id))
-	return int(tr.call("driven_id")) == car_id
+		return bool(traffic.call("jackable", _jack_id))
+	return int(traffic.call("driven_id")) == car_id
 
 
 ## Behind the wheel: the drive camera takes the view and the hero sits in the driver's seat.
@@ -387,13 +387,13 @@ func _stop_for_exit(dt: float) -> void:
 		return
 	_stop_t = -1.0
 	model.reset(model.yaw, _dims.z, _profile)
-	var tr := _traffic()
-	tr.call("drive_car", _pos, model.yaw, 0.0, 0.0)
+	var traffic := _traffic()
+	traffic.call("drive_car", _pos, model.yaw, 0.0, 0.0)
 	if hud != null:
 		hud.set_speed(false, 0.0)
-	var boxes: Array = tr.call("blockers_near", _pos, _dims.z + ENTRY.ROUTE_REACH)
+	var boxes: Array = traffic.call("blockers_near", _pos, _dims.z + ENTRY.ROUTE_REACH)
 	entry.seat_drop = pose.sink
-	if not entry.begin_out(ctx, _car_info(), tr.call("door_info", -1), boxes):
+	if not entry.begin_out(ctx, _car_info(), traffic.call("door_info", -1), boxes):
 		exit()
 
 
@@ -409,13 +409,13 @@ func _stood_out() -> void:
 ## Back on foot (moved to spot unless it is NAN, facing along the car): the car goes back to
 ## traffic, and walking input and the hero's own camera return, easing over blend s.
 func _on_foot(spot: Vector3, blend: float) -> void:
-	var tr := _traffic()
-	if tr != null:
-		tr.call("leave_car")
+	var traffic := _traffic()
+	if traffic != null:
+		traffic.call("leave_car")
 		if _jack_id >= 0:
 			# Turned back before the pull: the door shuts and the car drives on.
-			tr.call("set_door", 0.0, _jack_id)
-			tr.call("hold_car", _jack_id, false)
+			traffic.call("set_door", 0.0, _jack_id)
+			traffic.call("hold_car", _jack_id, false)
 	_jack_id = -1
 	active = false
 	car_id = -1
@@ -484,8 +484,8 @@ func _process(delta: float) -> void:
 	if not active:
 		_poll_prompt(delta)
 		return
-	var tr := _traffic()
-	if tr == null or int(tr.call("driven_id")) != car_id:
+	var traffic := _traffic()
+	if traffic == null or int(traffic.call("driven_id")) != car_id:
 		exit(true)
 		return
 	var free := not ctx.is_modal()
@@ -619,12 +619,12 @@ func _sit(on: bool) -> void:
 ## The car alongside that F would jump across to now (traffic's hijack_target: {"id", "side",
 ## "gap", "along"}); {} when none, the flag off, too slow, or not at the wheel.
 func hijack_target() -> Dictionary:
-	var tr := _traffic()
-	if not active or _climbing() or tr == null or not FeatureFlags.enabled("action_hijack"):
+	var traffic := _traffic()
+	if not active or _climbing() or traffic == null or not FeatureFlags.enabled("action_hijack"):
 		return {}
 	if model.speed() < HIJACK_MIN:
 		return {}
-	return tr.call("hijack_target", HIJACK_GAP, HIJACK_ALONG, HIJACK_REL, HIJACK_TURN)
+	return traffic.call("hijack_target", HIJACK_GAP, HIJACK_ALONG, HIJACK_REL, HIJACK_TURN)
 
 
 ## F alongside a car with someone at its wheel (action hijack): the hero lets go of the wheel (the
@@ -633,17 +633,17 @@ func hijack_target() -> Dictionary:
 ## car to jump to.
 func jump_across() -> bool:
 	var t := hijack_target()
-	var tr := _traffic()
-	var to: Dictionary = tr.call("car_info", int(t["id"])) if not t.is_empty() else {}
+	var traffic := _traffic()
+	var to: Dictionary = traffic.call("car_info", int(t["id"])) if not t.is_empty() else {}
 	if to.is_empty():
 		return false
-	var door: Dictionary = tr.call("door_info", int(t["id"]))
+	var door: Dictionary = traffic.call("door_info", int(t["id"]))
 	var seat: Vector3 = door.get("seat", Vector3.ZERO)
 	var p := ctx.player
 	var here := Transform3D(Basis(Vector3.UP, model.yaw), _pos)
 	hijack.begin(car_id, int(t["id"]), float(t["side"]), here.affine_inverse() * p.position, seat.z)
-	tr.call("release_car", model.vel)
-	tr.call("set_hero_aboard", true)
+	traffic.call("release_car", model.vel)
+	traffic.call("set_hero_aboard", true)
 	active = false
 	car_id = -1
 	_across = {}
@@ -661,16 +661,16 @@ func jump_across() -> bool:
 ## call it with their own dt. Either car gone, or the one to take no longer there to take at the
 ## window, and the hero drops to the road.
 func _hijack_step(dt: float) -> void:
-	var tr := _traffic()
-	var a: Dictionary = tr.call("car_info", hijack.from_id) if tr != null else {}
-	var b: Dictionary = tr.call("car_info", hijack.to_id) if tr != null else {}
+	var traffic := _traffic()
+	var a: Dictionary = traffic.call("car_info", hijack.from_id) if traffic != null else {}
+	var b: Dictionary = traffic.call("car_info", hijack.to_id) if traffic != null else {}
 	if b.is_empty() or (a.is_empty() and hijack.phase != "jack"):
 		_fall_off()
 		return
 	var was := ctx.player.position
 	var said := hijack.step(dt)
 	if said == "pull":
-		_hijack_in(tr, was)
+		_hijack_in(traffic, was)
 		return
 	var feet := hijack.feet(a, b)
 	if said == "leap" and ctx.bus != null:
@@ -687,9 +687,9 @@ func _hijack_step(dt: float) -> void:
 
 ## At the window: traffic drags the driver out and hands the car over at its speed, the hero at
 ## its wheel.
-func _hijack_in(tr: FpFeature, src: Vector3) -> void:
-	tr.call("set_hero_aboard", false)
-	var info: Dictionary = tr.call("claim_car", hijack.to_id, src, true)
+func _hijack_in(traffic: FpFeature, src: Vector3) -> void:
+	traffic.call("set_hero_aboard", false)
+	var info: Dictionary = traffic.call("claim_car", hijack.to_id, src, true)
 	if info.is_empty():
 		_fall_off()
 		return
@@ -705,9 +705,9 @@ func _hijack_in(tr: FpFeature, src: Vector3) -> void:
 func _fall_off() -> void:
 	hijack.cancel()
 	_limbs_off()
-	var tr := _traffic()
-	if tr != null:
-		tr.call("set_hero_aboard", false)
+	var traffic := _traffic()
+	if traffic != null:
+		traffic.call("set_hero_aboard", false)
 	var p := ctx.player
 	if p != null and is_instance_valid(p) and p.carried:
 		p.release(false)
@@ -854,10 +854,10 @@ func _photo_stage() -> void:
 	for _k in range(PHOTO_FRAMES):
 		await get_tree().process_frame
 	var p := ctx.player
-	var tr := _traffic()
-	if tr == null or active or _climbing():
+	var traffic := _traffic()
+	if traffic == null or active or _climbing():
 		return
-	var near: Dictionary = tr.call("enter_target", p.position, PHOTO_REACH, false)
+	var near: Dictionary = traffic.call("enter_target", p.position, PHOTO_REACH, false)
 	if near.is_empty():
 		return
 	p.teleport(near["pos"], rad_to_deg(p.yaw))
@@ -882,10 +882,10 @@ func _photo_stage() -> void:
 
 
 func _traffic() -> FpFeature:
-	var tr := ctx.feature("traffic") if ctx != null else null
-	if tr == null or not tr.has_method("claim_car"):
+	var traffic := ctx.feature("traffic") if ctx != null else null
+	if traffic == null or not traffic.has_method("claim_car"):
 		return null
-	return tr
+	return traffic
 
 
 func _props() -> FpFeature:

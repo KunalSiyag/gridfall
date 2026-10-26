@@ -19,6 +19,15 @@ const RANGE := 30.0 * WS.M
 const BIKE_CAP := 10
 const BIKE_RANGE := 40.0 * WS.M
 const SEAT_NODE := "Seat_Driver"
+## The driver's contact markers in the full model (vehicles2.py): the feet on the footwell floor
+## and the hands on the rim, as for the player (drive/seat_pose.gd). A model without them keeps
+## the plain sit pose.
+const DRIVER_MARKERS := ["Pedal_L", "Pedal_R", "Wheel_L", "Wheel_R", "Cab_Roof"]
+## The top of the head rides this multiple of the hips-to-head-bone distance above the hips (the
+## skull and hair over the head bone), as in seat_pose.gd.
+const SKULL_HAIR := 1.40
+## The hips sink at most this far into the seat cushion (u), as in seat_pose.gd.
+const MAX_SINK := 0.17 * WS.M
 ## The sit loop is held at this time (s): hands on the lap, head level.
 const SIT: StringName = &"sit"
 const SIT_AT := 1.0
@@ -134,6 +143,14 @@ func _seat_driver(c: VH.Car, residents: Variant) -> Array:
 	var e := [w, _pose_seated(w.body, ride), ride]
 	if ride:
 		e.append_array([seat_point(c.node), _limbs(w.body.skel)])
+		return e
+	# A car driver gets the player's treatment (drive/seat_pose.gd): hands on the rim, feet on the
+	# footwell floor and the hips sunk until the head clears the roof line, so their feet do not
+	# hang through the floorpan the chair-height sit clip leaves them at. The sink is measured on
+	# the first place (below), the body being static.
+	var pts := driver_points(c.node)
+	if pts.has("Pedal_L") and pts.has("Wheel_L"):
+		e.append_array([pts, _limbs(w.body.skel), -1.0])
 	return e
 
 
@@ -261,12 +278,80 @@ func seat_point(node: Node3D) -> Variant:
 	return pos
 
 
+## The driver's contact markers in the full model's own space (Pedal_L/R on the footwell floor,
+## Wheel_L/R on the rim, Cab_Roof above the seat), cached on the node; {} without them (the model
+## keeps the plain sit pose). Absolute, not relative to the seat, so the car's transform takes
+## them to the world.
+static func driver_points(node: Node3D) -> Dictionary:
+	if node.has_meta("driver_pts"):
+		return node.get_meta("driver_pts")
+	var out := {}
+	var inv := node.global_transform.affine_inverse()
+	for n: String in DRIVER_MARKERS:
+		var m := node.find_child(n, true, false) as Node3D
+		if m != null:
+			out[n] = inv * m.global_position
+	node.set_meta("driver_pts", out)
+	return out
+
+
+## How far the driver's hips must sink for the top of the head to clear the roof line (world u),
+## measured on the body as it now stands (the sit pose is static, so this is worked out once).
+static func _measure_sink(b: PPL.Body, c: VH.Car, pts: Dictionary) -> float:
+	if not pts.has("Cab_Roof"):
+		return 0.0
+	var sk := b.skel
+	var hips := sk.find_bone("Hips")
+	var head := sk.find_bone("Head")
+	if hips < 0 or head < 0:
+		return 0.0
+	var h := sk.global_transform * KIT.pose(sk, hips).origin
+	var hd := sk.global_transform * KIT.pose(sk, head).origin
+	if is_nan(h.x) or is_nan(hd.x):
+		return 0.0
+	var top := h.y + (hd.y - h.y) * SKULL_HAIR
+	var roof := (c.node.global_transform * (pts["Cab_Roof"] as Vector3)).y
+	return clampf(top - roof, 0.0, MAX_SINK)
+
+
+## The driver's hands on the rim and feet on the footwell floor, bent to the car's own markers as
+## the bodies differ from the one the sit clip was posed on (the bike's _pedal, held still).
+func _driver_limbs(e: Array, c: VH.Car) -> void:
+	var b: PPL.Body = (e[0] as WK.Walker).body
+	var pts: Dictionary = e[3]
+	var bones: PackedInt32Array = e[4]
+	if bones.size() < 14:
+		return
+	var sk := b.skel
+	var to_sk := sk.global_transform.affine_inverse()
+	var car := c.node.global_transform
+	for k in range(2):
+		var foot := "Pedal_L" if k == 0 else "Pedal_R"
+		var hand := "Wheel_L" if k == 0 else "Wheel_R"
+		if pts.has(foot):
+			_reach(sk, bones.slice(k * 7, k * 7 + 4), to_sk * (car * (pts[foot] as Vector3)))
+		if pts.has(hand):
+			_reach(sk, bones.slice(k * 7 + 4, k * 7 + 7), to_sk * (car * (pts[hand] as Vector3)))
+
+
 ## Puts the driver's hips on the seat, facing the way the vehicle drives (bodies and models face
-## +Z).
+## +Z). A car driver (e[5], with e[3]/e[4] the markers and limb bones) also has the hips sunk for
+## the roof line and the limbs bent onto the markers.
 func _place(e: Array, c: VH.Car, seat: Vector3) -> void:
 	var w: WK.Walker = e[0]
 	var b: PPL.Body = w.body
 	var s := people.scale_of(w)
 	var basis := Basis(Vector3.UP, c.yaw + c.vis_yaw)
 	var hip := c.node.global_transform * seat
-	b.root.global_transform = Transform3D(basis * s, hip - basis * ((e[1] as Vector3) * s))
+	var sink := float(e[5]) if e.size() >= 6 and float(e[5]) > 0.0 else 0.0
+	var xf := Transform3D(
+		basis * s, hip - basis * ((e[1] as Vector3) * s) - Vector3(0.0, sink, 0.0)
+	)
+	b.root.global_transform = xf
+	if e.size() >= 6 and not bool(e[2]):
+		if float(e[5]) < 0.0:
+			sink = _measure_sink(b, c, e[3] as Dictionary)
+			e[5] = sink
+			xf.origin -= Vector3(0.0, sink, 0.0)
+			b.root.global_transform = xf
+		_driver_limbs(e, c)

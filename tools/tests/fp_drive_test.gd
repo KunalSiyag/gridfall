@@ -86,6 +86,8 @@ func _init() -> void:
 	_check_hero_vs_cars()
 	_check_pose_kinds()
 	_check_jcb()
+	await _check_ambient_driver()
+	_check_site_machine()
 	_check_teardown()
 	K.finish(self, "FP_DRIVE_TEST", fails)
 
@@ -1260,6 +1262,156 @@ func _of_model(m: int) -> VH.Car:
 	var c := _stopped_car(m)
 	c.model = m
 	return c
+
+
+## An ambient driver seated by traffic's own occupants.gd gets the same treatment as the player
+## (drive/seat_pose.gd): hands bent onto the rim, feet onto the footwell floor, and the hips sunk
+## until the top of the head clears the roof line, so their feet do not hang through the floorpan
+## the chair-height sit clip leaves them at. occupants.gd sets the bone poses directly (no draw-time
+## modifier), so this is measurable headless.
+func _check_ambient_driver() -> void:
+	var occ: Object = tr.get("occupants")
+	var people: Object = tr.get("people")
+	_clear_others()
+	var m: int = tr.call("car_model_for", "driver-check")
+	var c := _stopped_car(m)
+	# Freeze traffic's own stepping: the seating warms up over frames (the character pool loads in
+	# the background), and a stepped car would drive out of range before it is seated.
+	var was_processing := tr.is_processing()
+	tr.set_process(false)
+	ctx.player.teleport(
+		c.pos + Basis(Vector3.UP, c.yaw) * Vector3(c.half_w + 0.7 * WS.M, 0.0, 0.0), 0.0
+	)
+	ctx.player.update_view(DT)
+	var body: Variant = null
+	for _k in range(120):
+		tr.call("sync_visuals", DT)
+		body = occ.call("body_of", c.id)
+		if body != null:
+			break
+		await process_frame
+	tr.set_process(was_processing)
+	if body == null and not bool(people.get("ok")):
+		K.check(fails, true, "ambient driver: skipped, no character assets")
+		_vh().remove(c)
+		return
+	var node: Node3D = c.node
+	K.check(
+		fails,
+		body != null and node != null,
+		"ambient driver: a driver is seated in the car (body=%s)" % str(body != null)
+	)
+	if body == null or node == null:
+		_vh().remove(c)
+		return
+	var sk: Skeleton3D = (body as Object).get("skel")
+	var worst_foot := 0.0
+	var worst_hand := 0.0
+	for k in range(2):
+		var side := "Left" if k == 0 else "Right"
+		var tag := "L" if k == 0 else "R"
+		var pedal := node.find_child("Pedal_%s" % tag, true, false) as Node3D
+		var wheel := node.find_child("Wheel_%s" % tag, true, false) as Node3D
+		if pedal != null:
+			var toes := sk.find_bone(side + "Toes")
+			if toes >= 0:
+				var at := sk.global_transform * sk.get_bone_global_pose(toes).origin
+				worst_foot = maxf(worst_foot, at.distance_to(pedal.global_position) / WS.M)
+		if wheel != null:
+			var hand := sk.find_bone(side + "Hand")
+			if hand >= 0:
+				var at := sk.global_transform * sk.get_bone_global_pose(hand).origin
+				worst_hand = maxf(worst_hand, at.distance_to(wheel.global_position) / WS.M)
+	K.check(
+		fails,
+		worst_foot < 0.06,
+		"ambient driver: feet on the pedals (worst %.3f m off)" % worst_foot
+	)
+	# The grip is 0.74 m from the shoulder and the arm reaches 0.55 m, so the hand comes as close
+	# as full extension allows (0.19 m, against 0.61 m for the plain sit clip's hands on the lap).
+	K.check(
+		fails,
+		worst_hand < 0.25,
+		"ambient driver: hands up to the rim (worst %.3f m off)" % worst_hand
+	)
+	var roof := node.find_child("Cab_Roof", true, false) as Node3D
+	if roof != null:
+		var hips := sk.find_bone("Hips")
+		var head := sk.find_bone("Head")
+		var top := 0.0
+		if hips >= 0 and head >= 0:
+			var h := sk.global_transform * sk.get_bone_global_pose(hips).origin
+			var hd := sk.global_transform * sk.get_bone_global_pose(head).origin
+			top = h.y + (hd.y - h.y) * SKULL_HAIR
+		K.check(
+			fails,
+			top <= roof.global_position.y + 0.01,
+			(
+				"ambient driver: head under the roof line (top %.3f m, roof %.3f m)"
+				% [top / WS.M, roof.global_position.y / WS.M]
+			)
+		)
+	_vh().remove(c)
+	_clear_others()
+
+
+## A construction site's backhoe: the sim's site_started parks a work machine at the kerb beside the
+## site, and site_finished takes it away with the crew.
+func _check_site_machine() -> void:
+	var amb: Object = tr.get("ambient")
+	amb.set("jcb_model", Callable(tr, "jcb_model"))
+	var m: int = tr.call("jcb_model")
+	K.check(fails, m >= 0, "site machine: fixture, the backhoe model is loaded")
+	if m < 0:
+		return
+	# Clear the kerb first, so the only backhoe that can appear is the site's own.
+	_clear_others()
+	var lg: LG = tr.get("lanes")
+	var vh := _vh()
+	# A lot beside a parkable road tile: the site's own tile and the kerb it works from.
+	var site := -1
+	for r: int in road:
+		if not lg.parkable(r):
+			continue
+		for n: int in lg.neighbours(r):
+			if ctx.sim.kind[n] != D.ROAD:
+				site = n
+				break
+		if site >= 0:
+			break
+	K.check(fails, site >= 0, "site machine: fixture, a lot beside a parkable road")
+	if site < 0:
+		return
+	var s := {
+		"id": 9001,
+		"i": site,
+		"x": D.tx(site),
+		"y": D.ty(site),
+		"type": "build",
+		"plan": "school",
+		"label": "School",
+		"crew": {},
+	}
+	ctx.sim.site_started.emit(s)
+	tr.call("step", DT * 2.0)
+	var found: VH.Car = null
+	for c: VH.Car in vh.cars:
+		if c.label == "a backhoe" and c.slot_tile >= 0:
+			found = c
+	K.check(
+		fails,
+		found != null and lg.neighbours(site).has(found.slot_tile),
+		"site machine: a backhoe parks at the kerb beside the new site"
+	)
+	if found == null:
+		_clear_others()
+		return
+	K.check(fails, absf(found.mass - 5.5) < 1e-6, "site machine: carrying its mass")
+	var id := found.id
+	ctx.sim.site_finished.emit(s)
+	tr.call("step", DT * 2.0)
+	K.check(fails, not vh.by_id.has(id), "site machine: and leaves with the crew when it is built")
+	_clear_others()
 
 
 func _check_teardown() -> void:
