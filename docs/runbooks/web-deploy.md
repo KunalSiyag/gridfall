@@ -23,7 +23,10 @@ Phase A deployment, not the later ground-texture-capped staging used in the A/B 
    template (see the script's help for the one-time install). `EXPORT: PASS` ends the run and
    `build/web/build-report.json` records the cap/audio/dedup numbers and the release version.
    The script deletes the previous export first; the source assets and desktop imports are never
-   touched.
+   touched. Like `tools/gate.sh`, it takes the heavy-run lock itself per step (`flock -w 3600`
+   on `$GATE_TMP/gf-heavy.lock`): never wrap it in a manual `flock` of the same lock — the inner
+   acquisition cannot succeed while its own ancestor holds it, and the run hangs silent until
+   the inner timeout (an hour).
 2. `docker build -t <registry>/gridfall-web:<tag> -f deploy/web/Dockerfile .` from the repo root
    (the root `.dockerignore` keeps the context to `build/web/` and `deploy/web/`). The image
    pre-compresses the `.pck` and `.wasm` with Brotli q11 (`-w 24`) and gzip at build time, so the
@@ -82,6 +85,11 @@ Phase A deployment, not the later ground-texture-capped staging used in the A/B 
 - Save (Esc -> Save) then reload the tab: the console prints
   `GRIDFALL: continuing the saved city, day N tick M` — the save lives in the browser's IndexedDB,
   not on the container. Replacing the image never touches player saves.
+- Serve any built image locally with the exact production headers:
+  `docker run --rm -p 8080:8080 <registry>/gridfall-web:<sha>`, then http://127.0.0.1:8080/.
+  Without a built image, the same Caddy config serves a raw export:
+  `docker run --rm -p 8080:8080 -v $PWD/build/web:/srv:ro
+  -v $PWD/deploy/web/Caddyfile:/etc/caddy/Caddyfile:ro caddy:2-alpine`.
 - A real smoke run: `node deploy/web/smoke.js http://127.0.0.1:8080/` against a local
   `docker run -p 8080:8080 <image>` (needs Chrome; see the script header, ~10 minutes under
   software WebGL). It routes `api.gmi-serving.com` to a local mock that answers 401, so it proves
@@ -102,9 +110,20 @@ https://<public-host>/` for the per-file encodings and headers (Brotli through t
 `immutable` on the hashed payloads, `no-cache` on the loader, COOP/COEP) plus the first-load wire
 bytes and time to first frame; boot to the first-person city in a normal browser; scan the console
 for errors and for `Too many instances using shader instance variables` (none expected on a fresh
-day-1 city — that warning belongs to grown saves, see Known limitations); and one offline mayor
+day-1 city — that warning belongs to grown saves, see Known limitations); one offline mayor
 turn (`GF_SMOKE_OFFLINE=1` smoke above), which fails if a single request leaves for
-`api.gmi-serving.com`.
+`api.gmi-serving.com`; and a real-GPU frame-pacing run on a machine with a GPU:
+`DISPLAY=:0 NODE_PATH=<dir with playwright-core> node tools/web_fps_probe.js
+https://<public-host>/ <outdir>` in a headed Chrome. The probe fails on software WebGL
+(`hardware: false`), records the WebGL `UNMASKED_RENDERER` — label every measurement with the
+GPU that produced it — plus a shadow-piercing `chrome://gpu` dump, and reports rAF
+fps/p50/p95/max on the street and in sky view after a 30 s settle. To measure a **grown city**
+(the scenario that used to trip the 4096 instance-variable cap), pass a save:
+`GF_FPS_SAVE=<path>/gridfall_save.json` seeds it into the browser's IndexedDB before the engine
+boots (Emscripten IDBFS v21 — the probe creates the `FILE_DATA` store with its `timestamp`
+index; without the index the engine logs `IndexedDB not available` and runs on an ephemeral
+in-memory filesystem), and the run fails unless the console prints `GRIDFALL: continuing the
+saved city`.
 
 **Keyed (the player, once, with their own key):** open the site, paste the key, confirm a live
 mayor turn. This is the only check that exercises the real `api.gmi-serving.com` call and the only
@@ -154,6 +173,12 @@ the flag on a split release and expect a complete city.
   at 256 px on the web only (desktop keeps the source resolution). Posters, hoardings and billboard
   art are exempt and keep their source resolution because players read them up close. Raise the cap
   in `tools/web_export.py` (`CAP_LIMIT`) or add a tree to `UNCAPPED_TREES`/`UNCAPPED_NAMES`.
+- **`ERROR: Parameter "t" is null` at `texture_2d_initialize` (`dummy/storage/texture_storage`)
+  in headless runs:** Godot's dummy renderer has no texture storage, so `godot --headless`
+  (gates, tests) logs this once per texture. Benign — the underlying assets are valid and it
+  never fires under a real renderer, browsers included. A harness that greps raw ERROR lines may
+  whitelist exactly `texture_2d_initialize` together with `dummy/storage/texture_storage`, and
+  nothing broader.
 - **Known limitation, fixed in round 3 — Compatibility-renderer SIGSEGV on desktop GL:** entering
   first person on `gl_compatibility` could crash minutes in, when the poster/mayor-image pipeline
   first VRAM-compressed a texture on a worker thread. Godot's Betsy GPU compressor registers its
