@@ -179,6 +179,7 @@ Async GMI Cloud chat client with JSON extraction, a recorded replay cache, and h
 - `breaker`: Opens after 4 consecutive service failures; while open, chat_json goes straight to the cache or heuristic and live_json fails fast with "circuit open".
 - `live_outcomes: Array[bool]`: The last LIVE_WINDOW live outcomes (true = ok), oldest first.
 - `temperature_of: Dictionary`: Models that refused TEMPERATURE (an HTTP 400 naming the temperature) and get 1.0 instead.
+- `sleep_ms`: Test-only hook for the retry backoff's sleep, in milliseconds. Empty in the game, where the retry loop waits on a SceneTree timer; a test assigns a recorder so the backoff contract is checked exactly instead of through frame-timer timing (a SceneTree timer burns frame deltas, so on a loaded runner one stalled frame can end the wait long before its wall-clock delay). Not wired to any flag or environment switch: nothing outside a test ever sets it.
 
 ### Functions
 
