@@ -223,30 +223,7 @@ func new_city(seed_value: int) -> void:
 	log_lines.clear()
 	mayors.clear()
 	for m in D.MAYORS:
-		## "name" is the mayor's human display name; "id" and "model" stay for the API.
-		(
-			mayors
-			. append(
-				{
-					"id": m["id"],
-					"name": m["display"],
-					"model": m["model"],
-					"color": m["color"],
-					"treasury": D.START_FUNDS,
-					"tax_r": 9,
-					"tax_c": 9,
-					"tax_i": 9,
-					"last_income": 0,
-					"last_upkeep": 0,
-					"actions_ok": 0,
-					"actions_rejected": 0,
-					"pop": 0,
-					"jobs": 0,
-					"happiness": 0.5,
-					"annexed": 0,
-				}
-			)
-		)
+		mayors.append(new_mayor(m))
 	district.fill(-1)
 	# The founding city is generated exactly as before (same RNG draws) so its layout is stable.
 	for y in range(D.CORE):
@@ -274,6 +251,30 @@ func new_city(seed_value: int) -> void:
 	_log("GridFall founded. Five GMI-powered mayors take office.", "city")
 	_flush_changes(true)
 	_force_sync -= 1
+
+
+## A fresh mayor record for D.MAYORS[i]: the founding shape new_city() and a load both need.
+## Draws no RNG, so the founding city's layout stays exactly as it was.
+func new_mayor(m: Dictionary) -> Dictionary:
+	## "name" is the mayor's human display name; "id" and "model" stay for the API.
+	return {
+		"id": m["id"],
+		"name": m["display"],
+		"model": m["model"],
+		"color": m["color"],
+		"treasury": D.START_FUNDS,
+		"tax_r": 9,
+		"tax_c": 9,
+		"tax_i": 9,
+		"last_income": 0,
+		"last_upkeep": 0,
+		"actions_ok": 0,
+		"actions_rejected": 0,
+		"pop": 0,
+		"jobs": 0,
+		"happiness": 0.5,
+		"annexed": 0,
+	}
 
 
 ## Unclaimed land around the founding city: the river keeps flowing, woods cluster, and a
@@ -4044,7 +4045,9 @@ func sample_citizens(n: int) -> Array:
 	for i in active:
 		if kind[i] == D.ZONE_R and level[i] > 0:
 			homes.append(i)
-	homes.shuffle()
+	# Seeded from the city seed and the tick, so the same city on the same day samples the same
+	# homes on every boot (a global shuffle() would draw from the shared RNG stream instead).
+	shuffle_seeded(homes, rng_for(101))
 	var out: Array = []
 	var first := [
 		"Ava",
@@ -4104,6 +4107,25 @@ func sample_citizens(n: int) -> Array:
 	return out
 
 
+## A random stream derived from the city seed and the current tick, for the cosmetic draws around
+## the sim (citizen sampling, voice ranking). Two boots of the same save at the same tick draw the
+## same values, and the shared global RNG stream is never touched.
+func rng_for(salt: int) -> RandomNumberGenerator:
+	var r := RandomNumberGenerator.new()
+	r.seed = city_seed * 1000003 + global_tick() * 7919 + salt
+	return r
+
+
+## Fisher-Yates with a caller-owned RNG: Array.shuffle() draws from the global stream, which makes
+## the result depend on whatever else ran before it.
+static func shuffle_seeded(arr: Array, rng: RandomNumberGenerator) -> void:
+	for i in range(arr.size() - 1, 0, -1):
+		var j := rng.randi_range(0, i)
+		var tmp: Variant = arr[i]
+		arr[i] = arr[j]
+		arr[j] = tmp
+
+
 func tile_report(x: int, y: int) -> Dictionary:
 	if not D.in_bounds(x, y):
 		return {}
@@ -4151,8 +4173,23 @@ func tile_report(x: int, y: int) -> Dictionary:
 # ---------------------------------------------------------------- save / load
 
 
+## Mayors as they are saved: every field but the derived pop/jobs/happiness, which the load's
+## recompute rebuilds from the tiles (a value the save carried would be discarded anyway).
+func _saved_mayors() -> Array:
+	var out: Array = []
+	for m in mayors:
+		var saved := (m as Dictionary).duplicate(true)
+		for derived in ["pop", "jobs", "happiness"]:
+			saved.erase(derived)
+		out.append(saved)
+	return out
+
+
 ## A save taken while a sliced job runs completes it first, so it equals the save after the
-## equivalent synchronous tick.
+## equivalent synchronous tick. A mayor record carries its state (treasury, taxes, counters) but
+## not pop/jobs/happiness: those are stage-19 derived caches, recomputed from the tiles on every
+## load (see _rc_stats), so writing them would store a value the next load discards. Without them
+## a save is byte-idempotent: save -> load -> save writes identical bytes.
 func to_dict() -> Dictionary:
 	if not _stepping:
 		_finish_job_now()
@@ -4167,7 +4204,7 @@ func to_dict() -> Dictionary:
 		"terrain": Array(terrain),
 		"burning": Array(burning),
 		"district": Array(district),
-		"mayors": mayors.duplicate(true),
+		"mayors": _saved_mayors(),
 		"ordinances": ordinances.duplicate(),
 		"events": events.duplicate(true),
 		"disabled_until": disabled_until.duplicate(),
@@ -4183,9 +4220,12 @@ func to_dict() -> Dictionary:
 	}
 
 
+## Replaces this city with the parsed save: true when it is a version this build restores.
 func from_dict(data: Dictionary) -> bool:
 	# Version 1 saves predate the 96x96 world and are not converted. Version 2 saves (96x96)
-	# are placed into the bigger world; the fresh wilds generated around them stay.
+	# are placed into the bigger world; the fresh wilds generated around them stay. Version 3
+	# saves may carry a mayor's derived pop/jobs/happiness (this build no longer writes them);
+	# whatever is there, the load's recompute rebuilds those three from the tiles.
 	var version := int(data.get("version", 0))
 	if version != 2 and version != 3:
 		return false
@@ -4231,13 +4271,26 @@ func from_dict(data: Dictionary) -> bool:
 	tick_in_day = int(data.get("tick_in_day", 0))
 	mayors.clear()
 	for m in data.get("mayors", []):
-		mayors.append(m as Dictionary)
-	for mi in range(mini(mayors.size(), D.MAYORS.size())):
-		mayors[mi]["name"] = D.MAYORS[mi]["display"]
-	ordinances = data.get("ordinances", {})
+		# Duplicated: the sim must own its state, so loading the same parsed save twice can never
+		# let one load's spending alias the other's.
+		mayors.append((m as Dictionary).duplicate(true))
+	# A save from a build with fewer mayors (or none) is padded, as the brain pads its own
+	# per-mayor state: every district index and "who owns this tile" lookup needs all five. Missing
+	# fields on a mayor that did load are filled from the founding shape.
+	while mayors.size() < D.MAYORS.size():
+		mayors.append({})
+	mayors.resize(D.MAYORS.size())
+	for mi in range(D.MAYORS.size()):
+		var fresh := new_mayor(D.MAYORS[mi])
+		var m: Dictionary = mayors[mi]
+		for key: Variant in fresh.keys():
+			if not m.has(key):
+				m[key] = fresh[key]
+		m["name"] = D.MAYORS[mi]["display"]
+	ordinances = (data.get("ordinances", {}) as Dictionary).duplicate(true)
 	events.clear()
 	for ev in data.get("events", []):
-		var e: Dictionary = ev
+		var e: Dictionary = (ev as Dictionary).duplicate(true)
 		if not load_remap.is_empty():
 			e["tiles"] = (e.get("tiles", []) as Array).map(
 				func(t: Variant) -> int: return remap_index(int(t))
@@ -4247,14 +4300,14 @@ func from_dict(data: Dictionary) -> bool:
 	var du: Dictionary = data.get("disabled_until", {})
 	for key in du.keys():
 		disabled_until[remap_index(int(key))] = int(du[key])
-	grid_priority = data.get("grid_priority", [2, 0, 1, 3, 4])
+	grid_priority = (data.get("grid_priority", [2, 0, 1, 3, 4]) as Array).duplicate()
 	broken_roads.clear()
 	var br: Dictionary = data.get("broken_roads", {})
 	for key in br.keys():
 		broken_roads[remap_index(int(key))] = int(br[key])
 	history.clear()
 	for h in data.get("history", []):
-		history.append(h as Dictionary)
+		history.append((h as Dictionary).duplicate(true))
 	log_lines.clear()
 	for l in data.get("log", []):
 		log_lines.append(str(l))

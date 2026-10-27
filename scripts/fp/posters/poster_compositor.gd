@@ -148,7 +148,12 @@ func _finish_sync(id: String, t0: int) -> void:
 	var img := _vp.get_texture().get_image()
 	max_read_ms = maxf(max_read_ms, float(Time.get_ticks_usec() - t0) / 1000.0)
 	max_main_ms = maxf(max_read_ms, max_upload_ms)
-	_worker.push(Callable(WORKER, "finish_image"), {"id": id, "image": img})
+	# The compress flag is decided here, on the main thread; finish_image never touches the
+	# RenderingServer from the worker.
+	var compress := GmiImageClient.wants_vram_compress()
+	_worker.push(
+		Callable(WORKER, "finish_image"), {"id": id, "image": img, "compress": compress}
+	)
 	_busy = false
 	_current = ""
 
@@ -156,13 +161,18 @@ func _finish_sync(id: String, t0: int) -> void:
 ## Forwards finished readbacks to the worker and frees the viewport for the next job.
 func _take_readbacks() -> void:
 	var got := _mail.take()
+	# Same main-thread compress decision as _finish_sync.
+	var compress := GmiImageClient.wants_vram_compress()
 	for r: Dictionary in got:
 		var data: PackedByteArray = r["data"]
 		var px: Vector2i = r["px"]
 		if str(r["id"]) != _current:
 			continue
 		if data.size() == px.x * px.y * 4:
-			_worker.push(Callable(WORKER, "finish_image"), {"id": r["id"], "data": data, "px": px})
+			_worker.push(
+				Callable(WORKER, "finish_image"),
+				{"id": r["id"], "data": data, "px": px, "compress": compress}
+			)
 			_busy = false
 			_current = ""
 		else:

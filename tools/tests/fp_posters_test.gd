@@ -315,6 +315,7 @@ func _test_offline_determinism() -> void:
 # ------------------------------------------------------------------ the feature on a grown city
 
 const REAL_BILLBOARD := "res://models/real/props/billboard.glb"
+const LEASE_SIGN := "res://models/real/street/lease_sign.glb"
 
 
 func _test_feature() -> void:
@@ -376,6 +377,7 @@ func _test_feature() -> void:
 	_test_pick_and_viewer(ctx, f, bb_id)
 	await _test_setup_gate(ctx, f)
 	await _test_composites(ctx, f)
+	_test_save_canonical(ctx, f)
 	f.teardown()
 	var left := 0
 	for i in sim.active:
@@ -708,6 +710,55 @@ func _test_save(ctx: FpContext, f: FpFeature) -> void:
 			if str(assigned.get(id, {}).get("overlay", {}).get("headline", "")) == "Rosa Quintero balances the budget again":
 				seeded += 1
 	check(shel > 0 and seeded == shel, "from_dict({}) seeds the Gazette from brain.last_paper (%d of %d)" % [seeded, shel])
+
+
+## A save taken while the FP view still holds a deferred rebuild must record the canonical slot
+## set, not the stale one: on foot the view defers tiles near the camera, so a tile can still be
+## drawn with a carrier its rebuilt holder will not have. to_dict() builds the queue first, so a
+## reload keeps the same posters instead of the carrier the tile has since become. Runs last: it
+## switches the fixture to first person, which rebuilds every holder.
+func _test_save_canonical(ctx: FpContext, f: FpFeature) -> void:
+	ctx.view.set_fp_mode(true)
+	ctx.view.flush_rebuild_queue()
+	f.on_world_rebuilt()
+	var slots: Dictionary = f.get("slots")
+	# A built C lot with a holder, given a lease board its rebuilt holder will not carry (a
+	# built lot draws none), so the live slot set and the canonical one differ.
+	var lot := -1
+	for i: int in ctx.sim.active:
+		if ctx.sim.kind[i] != D.ZONE_C or ctx.sim.level[i] <= 0:
+			continue
+		if ctx.view.tile_holder(i) == null or slots.has("%d:lease:0" % i):
+			continue
+		lot = i
+		break
+	check(lot >= 0, "fixture: a built C lot with a holder and no lease board")
+	if lot < 0:
+		return
+	var holder: Node3D = ctx.view.tile_holder(lot)
+	var sign := (load(LEASE_SIGN) as PackedScene).instantiate() as Node3D
+	holder.add_child(sign)
+	ctx.view.tile_built.emit(lot, holder)
+	var lease_id := "%d:lease:0" % lot
+	check(slots.has(lease_id), "fixture: the lot's live holder carries a lease board")
+	if not slots.has(lease_id):
+		return
+	# The tile is queued for rebuild (as a tile whose sim state changed is), but not rebuilt yet.
+	ctx.view._on_tiles_changed(PackedInt32Array([lot]))
+	var stale := ctx.view.rebuild_pending() > 0 and slots.has(lease_id)
+	check(stale, "the live slot set is still the stale one before the save")
+	var d: Dictionary = f.to_dict()
+	var saved: Dictionary = d["slots"]
+	check(ctx.view.rebuild_pending() == 0, "to_dict builds the pending tiles before it serialises")
+	check(not saved.has(lease_id), "the save records the canonical set, not the stale lease board")
+	# A reload re-derives the same canonical set and restores it exactly.
+	f.from_dict(JSON.parse_string(JSON.stringify(d)))
+	var back: Array = (f.get("slots") as Dictionary).keys()
+	back.sort()
+	var saved_ids: Array = saved.keys()
+	saved_ids.sort()
+	var n := saved_ids.size()
+	check(saved_ids == back, "a reload re-derives the saved slot set (%d vs %d)" % [n, back.size()])
 
 
 func _test_pick_and_viewer(ctx: FpContext, f: FpFeature, bb_id: String) -> void:

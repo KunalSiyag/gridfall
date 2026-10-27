@@ -526,8 +526,29 @@ static func long_edge(kind: String, size: String) -> int:
 
 # ------------------------------------------------------------------ processing
 
+## VRAM compression only where a real device exists: on Compatibility GL and headless there is
+## no main RenderingDevice, and the first S3TC compress spins Betsy up on the worker thread behind
+## a half-initialised RenderingDevice singleton that the main thread's viewport configure then
+## dereferences (engine bug, GL SIGSEGV, fault 0x8). Without a device the image stays RGB8 with
+## mipmaps. Main thread only (RenderingServer is not worker-thread safe).
+static func wants_vram_compress() -> bool:
+	return OS.has_feature("s3tc") and RenderingServer.get_rendering_device() != null
+
+
+## Threaded (streaming) HTTPRequest downloads are not available on the web export: setting
+## use_threads there freezes the browser, even on a threaded web build where threads_supported()
+## answers true. Keep the worker-thread download to the desktop; every web build streams inline.
+static func wants_http_threads() -> bool:
+	return http_threads_for(WebSupport.threads_supported(), WebSupport.is_web())
+
+
+## Pure form of wants_http_threads() so the web branch is testable without a web build.
+static func http_threads_for(threads: bool, web: bool) -> bool:
+	return threads and not web
+
+
 func _start_worker(input: Dictionary) -> void:
-	input["compress"] = OS.has_feature("s3tc")
+	input["compress"] = wants_vram_compress()
 	_worker.push(GmiImageClient._process_image, input)
 
 
@@ -730,7 +751,7 @@ func _http_transport(method: String, url: String, headers: PackedStringArray, bo
 	if not to_file.is_empty():
 		req.download_file = to_file
 		req.body_size_limit = DOWNLOAD_LIMIT
-		req.use_threads = WebSupport.threads_supported()
+		req.use_threads = wants_http_threads()
 	add_child(req)
 	var m := HTTPClient.METHOD_POST if method == "POST" else HTTPClient.METHOD_GET
 	var err := req.request(url, headers, m, body)

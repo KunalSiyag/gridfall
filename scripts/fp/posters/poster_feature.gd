@@ -111,6 +111,13 @@ func on_world_rebuilt() -> void:
 
 
 func to_dict() -> Dictionary:
+	# The slot set is derived from the view's built carriers, and on foot the view defers tiles
+	# near the camera, so a save taken while the queue drains would record slots from stale
+	# holders (a lease board on a lot whose site has already started). Build the queue now so the
+	# saved set is the canonical one a load re-derives from sim state, and a reload keeps the
+	# same posters.
+	if ctx != null and ctx.view != null and not ctx.view.in_setup:
+		ctx.view.flush_rebuild_queue()
 	var d: Dictionary = director.to_dict()
 	var ss := {}
 	for id: String in assigned.keys():

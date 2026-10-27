@@ -1603,7 +1603,9 @@ func to_dict() -> Dictionary:
 func from_dict(d: Dictionary) -> void:
 	people.clear()
 	for v: Variant in d.get("people", []):
-		var r: Dictionary = v
+		# Copied: from_dict normalises fields below, and it must not write back into the parsed
+		# save (loading the same save twice would otherwise share one dictionary).
+		var r: Dictionary = (v as Dictionary).duplicate(true)
 		for k in ["home", "work", "at", "age", "helping", "help_eta", "help_ticks", "broke_days", "arrived", "spent", "plan_day", "wage", "site", "last_site"]:
 			r[k] = int(r.get(k, -1 if k in ["work", "helping", "site", "last_site"] else 0))
 		if sim != null:
@@ -1613,10 +1615,10 @@ func from_dict(d: Dictionary) -> void:
 		people.append(r)
 	departed.clear()
 	for v: Variant in d.get("departed", []):
-		departed.append(v as Dictionary)
+		departed.append((v as Dictionary).duplicate(true))
 	messages.clear()
 	for v: Variant in d.get("messages", []):
-		messages.append(v as Dictionary)
+		messages.append((v as Dictionary).duplicate(true))
 	_seq = int(d.get("seq", people.size()))
 	enabled = bool(d.get("enabled", true))
 	abort_jobs()

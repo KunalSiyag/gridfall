@@ -2,7 +2,7 @@ import json
 
 import pytest
 
-from tools.checks import common, feature_flags, run_all, unused_deps, workflows
+from tools.checks import common, feature_flags, rng_seed, run_all, unused_deps, workflows
 
 REGISTRY = 'const FEATURES := [\n\t{"id": "chat", "path": "res://scripts/fp/chat/fp_chat.gd"},\n]\n'
 
@@ -185,7 +185,7 @@ def test_run_all_selection_outputs_and_crash(repo, monkeypatch, tmp_path, capsys
     assert "### todo_scan: new findings" in summary.read_text()
     assert "## Tech debt" in debt.read_text()
     assert run_all.main(["--root", str(root), "--only", "large_files", "--debt-report", str(debt)]) == 0
-    names = [r.name for r, _ in run_all.collect(root, fast=True, skip={"workflows", "api_docs", "complexity", "dead_code", "duplicates", "unused_deps", "agents_md", "test_map", "feature_flags", "boundaries", "todo_scan"})]
+    names = [r.name for r, _ in run_all.collect(root, fast=True, skip={"workflows", "api_docs", "complexity", "dead_code", "duplicates", "unused_deps", "agents_md", "test_map", "feature_flags", "rng_seed", "boundaries", "todo_scan"})]
     assert names == ["large_files"]
 
     def boom(r):
@@ -195,3 +195,43 @@ def test_run_all_selection_outputs_and_crash(repo, monkeypatch, tmp_path, capsys
     res, _ = run_all.collect(root, verbose=True)[0]
     assert res.new == ["check crashed: RuntimeError('kaput')"]
     assert "SKIP" in run_all.summary_markdown([(common.Result("x", skipped="why"), 0.1)])
+
+
+def test_rng_seed_scope_and_lexing(repo, tmp_path, capsys):
+    root = repo(
+        {
+            "scripts/sim/a.gd": (
+                "func f() -> void:\n"
+                "\tvar x := randf()\n"
+                "\tvar y := rng.randi_range(0, 3)\n"
+                "\tvar r := RandomNumberGenerator.new()\n"
+                "\tvar b := [1, 2]\n"
+                "\tb.shuffle()\n"
+                "\tvar c := b.pick_random()\n"
+                '\tvar s := "randi() in a string"\n'
+                "\t# randf() in a comment\n"
+                "\trandomize()\n"
+            ),
+            "scripts/ai/b.gd": "func g() -> void:\n\tvar v := sim.rng.randf()\n\tvar d := 1.0\n",
+            # Outside the scope: a bare draw is fine (visual layer).
+            "scripts/world/w.gd": "func h() -> void:\n\tvar v := randf()\n",
+            "scripts/fp/x.gd": "func i() -> void:\n\tvar v := randf()\n",
+        }
+    )
+    res = rng_seed.run(root)
+    assert res.stats["files"] == 2
+    assert [n.split(" uses")[0] for n in res.new] == [
+        "scripts/sim/a.gd:2",
+        "scripts/sim/a.gd:6",
+        "scripts/sim/a.gd:7",
+        "scripts/sim/a.gd:10",
+    ]
+    assert res.stats["by_symbol"] == {"pick_random": 1, "randf": 1, "randomize": 1, "shuffle": 1}
+    assert rng_seed.main(["--root", str(root)]) == 1
+    # Baselining the known hits clears them; a new call still fails.
+    rng_seed.run(root, update=True)
+    assert rng_seed.run(root).ok
+    (root / "scripts/sim/a.gd").write_text("func f() -> void:\n\tvar x := randf()\n\tvar z := randf()\n")
+    assert [n.split(" uses")[0] for n in rng_seed.run(root).new] == ["scripts/sim/a.gd:3"]
+    assert rng_seed.main(["--root", str(tmp_path / "empty"), "--verbose"]) == 0
+    capsys.readouterr()

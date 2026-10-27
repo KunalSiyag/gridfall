@@ -58,6 +58,10 @@ var live_outcomes: Array[bool] = []
 var temperature_of: Dictionary = {}
 var _last_failure: String = ""
 var _seq: int = 0
+## Retry-backoff jitter. Its own generator on purpose: jitter should vary between processes, but a
+## draw must never come from the shared global RNG stream, whose state the sim's boot determinism
+## relies on (see CitySim.rng_for).
+var _jitter := RandomNumberGenerator.new()
 var _hdr_request_id: String = ""
 var _hdr_trace_id: String = ""
 
@@ -311,7 +315,7 @@ func _post_with_retry(model: String, system_prompt: String, user_prompt: String,
 			continue
 		if bool(live.get("ok", false)) or not bool(live.get("retryable", false)) or attempt > MAX_RETRIES or not is_inside_tree():
 			break
-		var wait_ms := maxi(backoff_ms(attempt - 1, randf()), int(live.get("retry_after_ms", 0)))
+		var wait_ms := maxi(backoff_ms(attempt - 1, _jitter.randf()), int(live.get("retry_after_ms", 0)))
 		if Time.get_ticks_msec() + wait_ms + 1000 >= deadline:
 			break
 		stats["retries"] = int(stats["retries"]) + 1
