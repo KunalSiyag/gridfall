@@ -210,6 +210,7 @@ func teardown() -> void:
 
 # ------------------------------------------------------------------ world
 
+
 func on_world_rebuilt() -> void:
 	if ctx.sim == null:
 		return
@@ -254,8 +255,14 @@ func on_world_rebuilt() -> void:
 		people.release(w)
 	_static_ver = -1
 	ambient.setup(sim, ctx.residents, lanes, peds, vehicles, walkers)
-	ambient.car_model = func(seed: int) -> int: return _car_models[absi(seed) % _car_models.size()] if not _car_models.is_empty() else -1
-	ambient.person_model = func(seed: int) -> int: return _person_models[absi(seed) % _person_models.size()] if not _person_models.is_empty() else -1
+	ambient.car_model = func(seed: int) -> int:
+		return _car_models[absi(seed) % _car_models.size()] if not _car_models.is_empty() else -1
+	ambient.person_model = func(seed: int) -> int:
+		return (
+			_person_models[absi(seed) % _person_models.size()]
+			if not _person_models.is_empty()
+			else -1
+		)
 	ambient.dims_of = dims
 	ambient.visible = on_screen
 	ambient.bike_model = bike_model
@@ -332,7 +339,12 @@ func _after_lane_change() -> void:
 	var dirty := lanes.take_dirty()
 	vehicles.on_lanes_rebuilt(dirty)
 	for c: VH.Car in vehicles.cars.duplicate():
-		if c.parked and c.slot_tile >= 0 and dirty.has(c.slot_tile) and not lanes.slot_valid(c.slot_tile, c.slot_k):
+		if (
+			c.parked
+			and c.slot_tile >= 0
+			and dirty.has(c.slot_tile)
+			and not lanes.slot_valid(c.slot_tile, c.slot_k)
+		):
 			if c.role == "decor":
 				vehicles.remove(c)
 			else:
@@ -404,6 +416,7 @@ func _on_vehicle_removed(c: VH.Car) -> void:
 
 
 # ------------------------------------------------------------------ time
+
 
 func _process(delta: float) -> void:
 	if ctx == null or ctx.sim == null or not _built:
@@ -485,7 +498,9 @@ func _maintain(sync: bool) -> void:
 		# Roads changed under the lines (or connected the stops at last): try again, less often
 		# while it keeps failing.
 		fleets.rebuild_lines(ctx.view)
-		fleets.backoff = LINE_RETRY if not fleets.stale() else minf(fleets.backoff * 2.0, LINE_RETRY * 16.0)
+		fleets.backoff = (
+			LINE_RETRY if not fleets.stale() else minf(fleets.backoff * 2.0, LINE_RETRY * 16.0)
+		)
 		fleets.retry_t = fleets.backoff
 
 
@@ -551,6 +566,7 @@ func _player_fwd() -> Vector3:
 
 # ------------------------------------------------------------------ visuals
 
+
 ## Draws every agent (full models near, MultiMesh LOD far) and updates lamp states. Parked cars
 ## are redrawn only when the parked set changes or the camera moves a little.
 func sync_visuals(delta: float) -> void:
@@ -597,10 +613,23 @@ func _draw_moving(cam: Vector3) -> void:
 			render.release_car(c)
 			continue
 		var siren := ""
-		if c.role == "crew" and c.owner is Dictionary and str((c.owner as Dictionary).get("phase", "")) != "leaving":
+		if (
+			c.role == "crew"
+			and c.owner is Dictionary
+			and str((c.owner as Dictionary).get("phase", "")) != "leaving"
+		):
 			siren = str((c.owner as Dictionary).get("kind", ""))
 		var brake := c.a < -0.8 * WS.M or c.v < 0.05 * WS.M
-		render.draw_car(c, vehicles.draw_xform(c), cam.distance_to(c.pos), WS.VIS_CAR, brake, siren, c.wheel_spin, IND.side(c))
+		render.draw_car(
+			c,
+			vehicles.draw_xform(c),
+			cam.distance_to(c.pos),
+			WS.VIS_CAR,
+			brake,
+			siren,
+			c.wheel_spin,
+			IND.side(c)
+		)
 
 
 ## Walkers through HC's people when hc, else the legacy merged bodies.
@@ -621,6 +650,7 @@ func _draw_walkers(delta: float, cam: Vector3, hc: bool) -> void:
 			people.add(w, dw, ctx.residents)
 		else:
 			render.draw_walker(w, walkers.draw_xform(w), dw, WS.VIS_PERSON, walkers.draw_phase(w))
+
 
 ## Contact shadows under every vehicle and person drawn this frame.
 func _draw_contact(cam: Vector3, hc: bool) -> void:
@@ -690,6 +720,7 @@ func player_dist(p: Vector2) -> float:
 
 # ------------------------------------------------------------------ models
 
+
 func _load_models() -> void:
 	_car_models.clear()
 	_person_models.clear()
@@ -697,7 +728,7 @@ func _load_models() -> void:
 	_bike_model = -2
 	var v2 := _list(AP.VEHICLES_V2_DIR, CAR_PREFIXES)
 	var sc := WS.VEHICLE_V2_SCALE if not v2.is_empty() else WS.VEHICLE_SCALE
-	for path: String in (v2 if not v2.is_empty() else _list(AP.VEHICLES_LEGACY_DIR, CAR_PREFIXES)):
+	for path: String in v2 if not v2.is_empty() else _list(AP.VEHICLES_LEGACY_DIR, CAR_PREFIXES):
 		var m := render.model_for(path, sc)
 		if m >= 0:
 			_car_models.append(m)
@@ -730,11 +761,19 @@ static func _list(dir_path: String, prefixes: Array) -> Array[String]:
 func vehicle_model(kind: String) -> int:
 	if _vehicle_models.has(kind):
 		return _vehicle_models[kind]
-	var names := {"truck": ["truck", "van_white"], "garbage_truck": ["garbage_truck", "truck"], "ambulance": ["ambulance", "van_white"],
-		"police": ["police", "sedan_white"], "firetruck": ["firetruck", "truck"], "bus": ["bus"]}
+	var names := {
+		"truck": ["truck", "van_white"],
+		"garbage_truck": ["garbage_truck", "truck"],
+		"ambulance": ["ambulance", "van_white"],
+		"police": ["police", "sedan_white"],
+		"firetruck": ["firetruck", "truck"],
+		"bus": ["bus"]
+	}
 	var m := -1
 	for n: String in names.get(kind, [kind]):
-		for d: Array in [[AP.VEHICLES_V2_DIR, WS.VEHICLE_V2_SCALE], [AP.VEHICLES_LEGACY_DIR, WS.VEHICLE_SCALE]]:
+		for d: Array in [
+			[AP.VEHICLES_V2_DIR, WS.VEHICLE_V2_SCALE], [AP.VEHICLES_LEGACY_DIR, WS.VEHICLE_SCALE]
+		]:
 			var path := str(d[0]) + n + ".glb"
 			if ResourceLoader.exists(path):
 				m = render.model_for(path, float(d[1]))
@@ -797,24 +836,62 @@ func bike_model() -> int:
 	for z: float in [-0.52, 0.52]:
 		var wx := Transform3D(Basis(Vector3(0, 0, 1), PI * 0.5), Vector3(0.02 * M, 0.34 * M, z * M))
 		kit.cyl(wx, 0.34 * M, 0.34 * M, 0.04 * M, tyre, 14)
-	kit.box(Transform3D(Basis(Vector3(1, 0, 0), -0.35), Vector3(0, 0.55 * M, 0.02 * M)), Vector3(0.04 * M, 0.04 * M, 0.95 * M), frame)
-	kit.box(Transform3D(Basis(), Vector3(0, 0.62 * M, -0.12 * M)), Vector3(0.04 * M, 0.5 * M, 0.04 * M), frame)
-	kit.box(Transform3D(Basis(), Vector3(0, 0.95 * M, 0.42 * M)), Vector3(0.5 * M, 0.03 * M, 0.03 * M), Color(0.2, 0.2, 0.2))
+	kit.box(
+		Transform3D(Basis(Vector3(1, 0, 0), -0.35), Vector3(0, 0.55 * M, 0.02 * M)),
+		Vector3(0.04 * M, 0.04 * M, 0.95 * M),
+		frame
+	)
+	kit.box(
+		Transform3D(Basis(), Vector3(0, 0.62 * M, -0.12 * M)),
+		Vector3(0.04 * M, 0.5 * M, 0.04 * M),
+		frame
+	)
+	kit.box(
+		Transform3D(Basis(), Vector3(0, 0.95 * M, 0.42 * M)),
+		Vector3(0.5 * M, 0.03 * M, 0.03 * M),
+		Color(0.2, 0.2, 0.2)
+	)
 	var shirt := Color(0.75, 0.2, 0.15)
 	var pants := Color(0.12, 0.13, 0.18)
 	var skin := Color(0.85, 0.66, 0.52)
-	kit.box(Transform3D(Basis(Vector3(1, 0, 0), 0.25), Vector3(0.08 * M, 0.7 * M, 0.0)), Vector3(0.13 * M, 0.55 * M, 0.14 * M), pants)
-	kit.box(Transform3D(Basis(Vector3(1, 0, 0), -0.25), Vector3(-0.08 * M, 0.62 * M, -0.05 * M)), Vector3(0.13 * M, 0.55 * M, 0.14 * M), pants)
-	kit.box(Transform3D(Basis(Vector3(1, 0, 0), 0.55), Vector3(0, 1.22 * M, 0.08 * M)), Vector3(0.38 * M, 0.6 * M, 0.22 * M), shirt)
+	kit.box(
+		Transform3D(Basis(Vector3(1, 0, 0), 0.25), Vector3(0.08 * M, 0.7 * M, 0.0)),
+		Vector3(0.13 * M, 0.55 * M, 0.14 * M),
+		pants
+	)
+	kit.box(
+		Transform3D(Basis(Vector3(1, 0, 0), -0.25), Vector3(-0.08 * M, 0.62 * M, -0.05 * M)),
+		Vector3(0.13 * M, 0.55 * M, 0.14 * M),
+		pants
+	)
+	kit.box(
+		Transform3D(Basis(Vector3(1, 0, 0), 0.55), Vector3(0, 1.22 * M, 0.08 * M)),
+		Vector3(0.38 * M, 0.6 * M, 0.22 * M),
+		shirt
+	)
 	for sx: float in [-0.17, 0.17]:
-		kit.box(Transform3D(Basis(Vector3(1, 0, 0), 1.0), Vector3(sx * M, 1.18 * M, 0.3 * M)), Vector3(0.08 * M, 0.5 * M, 0.08 * M), shirt)
-	kit.cyl(Transform3D(Basis(), Vector3(0, 1.5 * M, 0.26 * M)), 0.11 * M, 0.1 * M, 0.22 * M, skin, 10)
-	kit.cyl(Transform3D(Basis(), Vector3(0, 1.66 * M, 0.25 * M)), 0.13 * M, 0.06 * M, 0.08 * M, Color(0.9, 0.85, 0.1), 10)
+		kit.box(
+			Transform3D(Basis(Vector3(1, 0, 0), 1.0), Vector3(sx * M, 1.18 * M, 0.3 * M)),
+			Vector3(0.08 * M, 0.5 * M, 0.08 * M),
+			shirt
+		)
+	kit.cyl(
+		Transform3D(Basis(), Vector3(0, 1.5 * M, 0.26 * M)), 0.11 * M, 0.1 * M, 0.22 * M, skin, 10
+	)
+	kit.cyl(
+		Transform3D(Basis(), Vector3(0, 1.66 * M, 0.25 * M)),
+		0.13 * M,
+		0.06 * M,
+		0.08 * M,
+		Color(0.9, 0.85, 0.1),
+		10
+	)
 	_bike_model = render.model_proc("cyclist", kit.commit(), Vector3(0.6 * M, 1.8 * M, 1.8 * M))
 	return _bike_model
 
 
 # ------------------------------------------------------------------ helpers for trips and fleets
+
 
 ## Where a person enters or leaves lot i: H's Door_<n> empty when the building has one, else the
 ## middle of its front edge (facing its frontage road).
@@ -897,7 +974,11 @@ func spawn_spot_near(start: Vector2i, length: float) -> Array:
 		var dx := float(start.x) - p.x
 		var dz := float(start.y) - p.z
 		var d2 := dx * dx + dz * dz
-		if t != null and d2 <= WS.TRAFFIC_RADIUS * WS.TRAFFIC_RADIUS and d2 >= AMB.MIN_SPAWN * AMB.MIN_SPAWN:
+		if (
+			t != null
+			and d2 <= WS.TRAFFIC_RADIUS * WS.TRAFFIC_RADIUS
+			and d2 >= AMB.MIN_SPAWN * AMB.MIN_SPAWN
+		):
 			for l: LG.Lane in t.lanes:
 				if (l.kind == LG.STRAIGHT or l.kind == LG.CORNER) and l.length > length + 0.05:
 					var s := l.length * 0.5 + length * 0.5
@@ -958,6 +1039,7 @@ func stop_point(i: int) -> Vector3:
 
 # ------------------------------------------------------------------ CityLife.external
 
+
 ## Adds one vehicle of a fleet (bus, truck, garbage_truck) when its own rules allow.
 func spawn_fleet(kind: String, start: Vector2i) -> void:
 	if _built:
@@ -989,6 +1071,7 @@ func vehicle_counts() -> Dictionary:
 
 
 # ------------------------------------------------------------------ ResidentAvatars.external
+
 
 ## Residents.resident_moved, forwarded (state only: trips spawn from trip_started).
 func on_resident_moved(r: Dictionary) -> void:
@@ -1046,6 +1129,7 @@ func avatar_counts() -> Dictionary:
 
 
 # ------------------------------------------------------------------ public API (contract)
+
 
 ## Agents near p for the minimap and audio (moving vehicles and people on foot; parked cars are
 ## left out): [{id, pos, vel, speed, kind, driver_id, heading, stalled_s}]. heading follows S0 §11
@@ -1181,7 +1265,13 @@ func pick(origin: Vector3, dir: Vector3, max_dist: float) -> Dictionary:
 			continue
 		if w.pos.distance_to(origin) > max_dist + 0.1:
 			continue
-		var t := _ray_box(origin, d, Transform3D(Basis(Vector3.UP, w.yaw), w.pos + w.vis_off), Vector3(0.32 * WS.M, 0.0, 0.25 * WS.M), 1.8 * WS.M)
+		var t := _ray_box(
+			origin,
+			d,
+			Transform3D(Basis(Vector3.UP, w.yaw), w.pos + w.vis_off),
+			Vector3(0.32 * WS.M, 0.0, 0.25 * WS.M),
+			1.8 * WS.M
+		)
 		if t >= 0.0 and t < bt:
 			bt = t
 			best = _walker_target(w, t)
@@ -1190,7 +1280,9 @@ func pick(origin: Vector3, dir: Vector3, max_dist: float) -> Dictionary:
 			continue
 		if c.pos.distance_to(origin) > max_dist + 0.4:
 			continue
-		var t := _ray_box(origin, d, vehicles.draw_xform(c), Vector3(c.half_w, 0.0, c.length * 0.5), c.height)
+		var t := _ray_box(
+			origin, d, vehicles.draw_xform(c), Vector3(c.half_w, 0.0, c.length * 0.5), c.height
+		)
 		if t >= 0.0 and t < bt:
 			bt = t
 			best = _car_target(c, t)
@@ -1208,9 +1300,22 @@ func _walker_target(w: WK.Walker, t: float) -> Dictionary:
 	if not w.resident_id.is_empty() and ctx.residents != null:
 		var r := ctx.residents.find(w.resident_id)
 		if not r.is_empty():
-			return {"kind": "resident", "id": w.resident_id, "tile": tile, "dist": t,
-				"label": "Talk to %s, %s" % [str(r["name"]), str(r["job_title"])], "data": {"state": str(r.get("state", ""))}}
-	return {"kind": "pedestrian", "id": "p%d" % w.id, "tile": tile, "dist": t, "label": "a pedestrian", "data": {}}
+			return {
+				"kind": "resident",
+				"id": w.resident_id,
+				"tile": tile,
+				"dist": t,
+				"label": "Talk to %s, %s" % [str(r["name"]), str(r["job_title"])],
+				"data": {"state": str(r.get("state", ""))}
+			}
+	return {
+		"kind": "pedestrian",
+		"id": "p%d" % w.id,
+		"tile": tile,
+		"dist": t,
+		"label": "a pedestrian",
+		"data": {}
+	}
 
 
 func _car_target(c: VH.Car, t: float) -> Dictionary:
@@ -1228,8 +1333,14 @@ func _car_target(c: VH.Car, t: float) -> Dictionary:
 			if c.role == "resident":
 				label = "%s, %s" % [str(r["name"]), str(r["job_title"])]
 	var state := c.state if not c.state.is_empty() else ("parked" if c.parked else "driving")
-	return {"kind": "vehicle", "id": "v%d" % c.id, "tile": tile, "dist": t, "label": label,
-		"data": {"driver_id": c.driver_id, "state": state, "dest_label": c.dest_label, "mood": mood}}
+	return {
+		"kind": "vehicle",
+		"id": "v%d" % c.id,
+		"tile": tile,
+		"dist": t,
+		"label": label,
+		"data": {"driver_id": c.driver_id, "state": state, "dest_label": c.dest_label, "mood": mood}
+	}
 
 
 ## Distance along the ray (o, unit d) to an oriented box whose bottom centre is xf's origin (half
@@ -1301,6 +1412,7 @@ func bump_car(id: int, j: Vector2, at: Vector2) -> void:
 
 # ------------------------------------------------------------------ people hit
 
+
 ## People on foot within r of p, for the player's blows, the car body and the dogs: [{"id", "pos"
 ## (the drawn feet), "yaw" (facing (sin, 0, cos)), "down", "resident_id", "extra" (0 hands free,
 ## 1 carrying a box, 2 on the phone)}].
@@ -1316,8 +1428,14 @@ func walkers_near(p: Vector3, r: float) -> Array:
 			continue
 		var down := reactions.is_down(w)
 		out.append(
-			{"id": w.id, "pos": q, "yaw": w.yaw, "down": down, "resident_id": w.resident_id,
-			"extra": w.extra}
+			{
+				"id": w.id,
+				"pos": q,
+				"yaw": w.yaw,
+				"down": down,
+				"resident_id": w.resident_id,
+				"extra": w.extra
+			}
 		)
 	return out
 
@@ -1526,6 +1644,7 @@ func _station_road(kind: int, target: Vector2i) -> Vector2i:
 
 
 # ------------------------------------------------------------------ the player's car
+
 
 ## The car the player could get into from p: the nearest one they may take whose body is within r
 ## of p (with occupied false, none with someone at the wheel), as {"id", "label", "pos", "dist",
@@ -1789,7 +1908,14 @@ func anchor_of(id: String) -> Vector3:
 func anim_stats() -> Dictionary:
 	if people != null and people.ok:
 		return people.stats()
-	return {"t0": 0, "t1": 0, "t2": 0, "t3": 0, "anim_us": 0.0, "char_draws": render.draws_people if render != null else 0}
+	return {
+		"t0": 0,
+		"t1": 0,
+		"t2": 0,
+		"t3": 0,
+		"anim_us": 0.0,
+		"char_draws": render.draws_people if render != null else 0
+	}
 
 
 ## The HC avatar a resident is drawn with ("" without HC bodies): job pool by gender, crc32(id).
@@ -1802,6 +1928,7 @@ func resident_avatar(id: String) -> String:
 
 
 # ------------------------------------------------------------------ save, smoke, photos
+
 
 func to_dict() -> Dictionary:
 	if not _built:
@@ -1835,7 +1962,14 @@ func self_test() -> Dictionary:
 		if not w.dead and Vector2(w.pos.x - p.x, w.pos.z - p.z).length_squared() <= r2:
 			people += 1
 	var ok := not lanes.is_empty() and cars >= 1 and people >= 1
-	return {"ok": ok, "detail": "lanes=%d cars=%d people=%d lines=%d" % [lanes.lane_count(), cars, people, fleets.lines.size()]}
+	return {
+		"ok": ok,
+		"detail":
+		(
+			"lanes=%d cars=%d people=%d lines=%d"
+			% [lanes.lane_count(), cars, people, fleets.lines.size()]
+		)
+	}
 
 
 ## The "traffic" shot: the most built-up cross tile with lights, seen at eye height from the
@@ -1875,7 +2009,16 @@ func photo_shots() -> Array:
 	var look := c - right * 0.05 - at
 	var pos := Vector3(at.x, 0, at.y)
 	pos.y = _ground(pos, WS.SIDEWALK_TOP)
-	return [{"name": "traffic", "pos": pos, "yaw": rad_to_deg(atan2(-look.x, -look.y)), "pitch": -2.0, "hour": 10.5, "prepare": "photo_prepare"}]
+	return [
+		{
+			"name": "traffic",
+			"pos": pos,
+			"yaw": rad_to_deg(atan2(-look.x, -look.y)),
+			"pitch": -2.0,
+			"hour": 10.5,
+			"prepare": "photo_prepare"
+		}
+	]
 
 
 ## The arm of cross tile i to shoot from: two straight tiles beyond it (the camera stands on a
@@ -1894,7 +2037,9 @@ func _photo_arm(i: int) -> int:
 			continue
 		var n := 0
 		for tile: int in [n1, n2]:
-			for side: Vector2 in [Vector2(LG.DIRS[e].y, -LG.DIRS[e].x), Vector2(-LG.DIRS[e].y, LG.DIRS[e].x)]:
+			for side: Vector2 in [
+				Vector2(LG.DIRS[e].y, -LG.DIRS[e].x), Vector2(-LG.DIRS[e].y, LG.DIRS[e].x)
+			]:
 				var x := D.tx(tile) + int(side.x)
 				var y := D.ty(tile) + int(side.y)
 				if D.in_bounds(x, y) and D.is_zone(ctx.sim.kind[D.idx(x, y)]):

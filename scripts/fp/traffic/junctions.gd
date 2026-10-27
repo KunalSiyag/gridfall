@@ -48,7 +48,7 @@ var root: Node3D
 var props: Dictionary = {}
 var _on_mats: Array[StandardMaterial3D] = []
 var _off_mats: Array[StandardMaterial3D] = []
-var _walk_mats: Array[StandardMaterial3D] = []    # [hand off, hand on, man off, man on]
+var _walk_mats: Array[StandardMaterial3D] = []  # [hand off, hand on, man off, man on]
 var _pole_mat: StandardMaterial3D
 var _asset: PackedScene
 
@@ -63,8 +63,12 @@ func setup(p_lg: LG, p_root: Node3D) -> void:
 	for c: Color in LAMP_COLS:
 		_on_mats.append(_lamp(c, 6.0))
 		_off_mats.append(_lamp(c.darkened(0.82), 0.0))
-	_walk_mats = [_lamp(Color(1.0, 0.5, 0.1).darkened(0.8), 0.0), _lamp(Color(1.0, 0.5, 0.1), 4.0),
-		_lamp(Color(0.85, 0.95, 1.0).darkened(0.8), 0.0), _lamp(Color(0.85, 0.95, 1.0), 4.0)]
+	_walk_mats = [
+		_lamp(Color(1.0, 0.5, 0.1).darkened(0.8), 0.0),
+		_lamp(Color(1.0, 0.5, 0.1), 4.0),
+		_lamp(Color(0.85, 0.95, 1.0).darkened(0.8), 0.0),
+		_lamp(Color(0.85, 0.95, 1.0), 4.0)
+	]
 	_asset = AP.load_scene(AP.TRAFFIC_LIGHT)
 
 
@@ -132,6 +136,7 @@ func ped_lamp(i: int, arm: int) -> bool:
 
 # ------------------------------------------------------------------ props
 
+
 ## (Re)builds the furniture of every junction tile.
 func rebuild_all() -> void:
 	for i: int in props.keys():
@@ -190,7 +195,9 @@ func update_lamps(p: Vector3, r: float) -> void:
 			for col in range(3):
 				for mi: GeometryInstance3D in groups[axis * 3 + col]:
 					if is_instance_valid(mi):
-						mi.material_override = _on_mats[col] if col == _col_index(st) else _off_mats[col]
+						mi.material_override = (
+							_on_mats[col] if col == _col_index(st) else _off_mats[col]
+						)
 		_show_peds(pr["peds"], walk_ns, walk_ew)
 
 
@@ -223,8 +230,8 @@ func _build_cross(i: int) -> Dictionary:
 	var node := _tile_root(i, "Lights")
 	var kit: KIT = KIT.new()
 	kit.begin()
-	var lamps: Array = []          # axis * 3 + colour -> KIT
-	var groups: Array = []         # axis * 3 + colour -> Array[GeometryInstance3D]
+	var lamps: Array = []  # axis * 3 + colour -> KIT
+	var groups: Array = []  # axis * 3 + colour -> Array[GeometryInstance3D]
 	for k in range(6):
 		var lk: KIT = KIT.new()
 		lk.begin()
@@ -294,7 +301,11 @@ func _mi(mesh: Mesh, mat: Material, shadows: bool) -> MeshInstance3D:
 	var mi := MeshInstance3D.new()
 	mi.mesh = mesh
 	mi.material_override = mat
-	mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_ON if shadows else GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	mi.cast_shadow = (
+		GeometryInstance3D.SHADOW_CASTING_SETTING_ON
+		if shadows
+		else GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	)
 	mi.visibility_range_end = WS.VIS_PROP
 	mi.visibility_range_end_margin = 0.5
 	mi.visibility_range_fade_mode = GeometryInstance3D.VISIBILITY_RANGE_FADE_SELF
@@ -306,7 +317,7 @@ func _mi(mesh: Mesh, mat: Material, shadows: bool) -> MeshInstance3D:
 func _pole_xform(corner: int) -> Transform3D:
 	var c := CORNERS[corner] * POLE_AT
 	var arm: int = CORNER_ARM[corner]
-	var face := LG.DIRS[arm]           # toward the approach the heads face
+	var face := LG.DIRS[arm]  # toward the approach the heads face
 	var z := Vector3(face.x, 0, face.y)
 	var y := Vector3.UP
 	var x := y.cross(z)
@@ -320,9 +331,13 @@ func _pole_mesh(kit: KIT, xf: Transform3D, lamps: Array, axis: int) -> void:
 	# Mast arm along -X at 5.9 m with a tie rod.
 	var arm_xf := xf * Transform3D(Basis(), Vector3(-MAST * 0.5, 5.9 * M, 0))
 	kit.box(arm_xf, Vector3(MAST, 0.13 * M, 0.13 * M), POLE_COL)
-	var tie_xf := xf * Transform3D(Basis(Vector3(0, 0, 1), atan2(0.55, 3.0)), Vector3(-1.5 * M, 6.225 * M, 0))
+	var tie_xf := (
+		xf * Transform3D(Basis(Vector3(0, 0, 1), atan2(0.55, 3.0)), Vector3(-1.5 * M, 6.225 * M, 0))
+	)
 	kit.box(tie_xf, Vector3(3.05 * M, 0.04 * M, 0.04 * M), POLE_COL)
-	kit.cyl(xf * Transform3D(Basis(), Vector3(0, 6.4 * M, 0)), 0.12 * M, 0.02 * M, 0.25 * M, POLE_COL, 8)
+	kit.cyl(
+		xf * Transform3D(Basis(), Vector3(0, 6.4 * M, 0)), 0.12 * M, 0.02 * M, 0.25 * M, POLE_COL, 8
+	)
 	# Main head hanging from the mast over the lane, and a secondary head on the pole.
 	_head(kit, xf * Transform3D(Basis(), Vector3(-MAST + 0.35 * M, 5.15 * M, 0)), lamps, axis, true)
 	_head(kit, xf * Transform3D(Basis(), Vector3(0, 3.4 * M, 0.24 * M)), lamps, axis, false)
@@ -332,17 +347,33 @@ func _pole_mesh(kit: KIT, xf: Transform3D, lamps: Array, axis: int) -> void:
 func _head(kit: KIT, xf: Transform3D, lamps: Array, axis: int, hanging: bool) -> void:
 	var M := WS.M
 	kit.box(xf, Vector3(0.36 * M, 1.02 * M, 0.26 * M), HOUSING_COL)
-	kit.box(xf * Transform3D(Basis(), Vector3(0, 0, -0.14 * M)), Vector3(0.62 * M, 1.26 * M, 0.02 * M), HOUSING_COL)
+	kit.box(
+		xf * Transform3D(Basis(), Vector3(0, 0, -0.14 * M)),
+		Vector3(0.62 * M, 1.26 * M, 0.02 * M),
+		HOUSING_COL
+	)
 	if hanging:
-		kit.box(xf * Transform3D(Basis(), Vector3(0, 0.62 * M, 0)), Vector3(0.05 * M, 0.25 * M, 0.05 * M), POLE_COL)
+		kit.box(
+			xf * Transform3D(Basis(), Vector3(0, 0.62 * M, 0)),
+			Vector3(0.05 * M, 0.25 * M, 0.05 * M),
+			POLE_COL
+		)
 	else:
-		kit.box(xf * Transform3D(Basis(), Vector3(0, 0, -0.2 * M)), Vector3(0.08 * M, 0.08 * M, 0.14 * M), POLE_COL)
+		kit.box(
+			xf * Transform3D(Basis(), Vector3(0, 0, -0.2 * M)),
+			Vector3(0.08 * M, 0.08 * M, 0.14 * M),
+			POLE_COL
+		)
 	for col in range(3):
 		var y := (0.32 - 0.32 * float(col)) * M
 		var lx := xf * Transform3D(Basis(), Vector3(0, y, 0.135 * M))
 		(lamps[axis * 3 + col] as KIT).disc(lx, 0.12 * M, LAMP_COLS[col], 14)
 		# Visor above each lamp.
-		kit.box(xf * Transform3D(Basis(), Vector3(0, y + 0.135 * M, 0.22 * M)), Vector3(0.3 * M, 0.02 * M, 0.18 * M), HOUSING_COL)
+		kit.box(
+			xf * Transform3D(Basis(), Vector3(0, y + 0.135 * M, 0.22 * M)),
+			Vector3(0.3 * M, 0.02 * M, 0.18 * M),
+			HOUSING_COL
+		)
 
 
 ## Pedestrian signal pole at tile-local at, its head facing `face` (across the zebra).
@@ -354,8 +385,20 @@ func _ped_signal(kit: KIT, at: Vector2, face: Vector2, hand: KIT, man: KIT) -> v
 	kit.cyl(xf, 0.06 * M, 0.05 * M, 2.9 * M, POLE_COL, 8)
 	var hx := xf * Transform3D(Basis(), Vector3(0, 2.45 * M, 0.12 * M))
 	kit.box(hx, Vector3(0.34 * M, 0.62 * M, 0.2 * M), HOUSING_COL)
-	hand.disc(hx * Transform3D(Basis(), Vector3(0, 0.15 * M, 0.105 * M)), 0.11 * M, Color(1.0, 0.5, 0.1), 4, PI * 0.25)
-	man.disc(hx * Transform3D(Basis(), Vector3(0, -0.15 * M, 0.105 * M)), 0.11 * M, Color(0.85, 0.95, 1.0), 4, PI * 0.25)
+	hand.disc(
+		hx * Transform3D(Basis(), Vector3(0, 0.15 * M, 0.105 * M)),
+		0.11 * M,
+		Color(1.0, 0.5, 0.1),
+		4,
+		PI * 0.25
+	)
+	man.disc(
+		hx * Transform3D(Basis(), Vector3(0, -0.15 * M, 0.105 * M)),
+		0.11 * M,
+		Color(0.85, 0.95, 1.0),
+		4,
+		PI * 0.25
+	)
 
 
 ## Binds H's traffic-light asset lamps (Signal_Red_*, Signal_Amber_*, Signal_Green_*) into the
@@ -404,16 +447,38 @@ func _build_tee(i: int, t: LG.TileInfo) -> Dictionary:
 		var px := xf * Transform3D(Basis(), Vector3(0, 2.25 * M, 0.06 * M))
 		if yield_sign:
 			var r := 0.5 * M
-			var pts := [Vector3(0, -r, 0), Vector3(r * 0.866, r * 0.5, 0), Vector3(-r * 0.866, r * 0.5, 0)]
+			var pts := [
+				Vector3(0, -r, 0), Vector3(r * 0.866, r * 0.5, 0), Vector3(-r * 0.866, r * 0.5, 0)
+			]
 			kit.tri_plate(px, pts[0], pts[1], pts[2], SIGN_RED)
 			var ri := r * 0.62
-			var inner := [Vector3(0, -ri, 0), Vector3(ri * 0.866, ri * 0.5, 0), Vector3(-ri * 0.866, ri * 0.5, 0)]
-			kit.tri_plate(px * Transform3D(Basis(), Vector3(0, 0, 0.004 * M)), inner[0], inner[1], inner[2], SIGN_WHITE)
-			kit.box(px * Transform3D(Basis(), Vector3(0, 0, -0.012 * M)), Vector3(0.7 * M, 0.55 * M, 0.02 * M), Color(0.5, 0.5, 0.52))
+			var inner := [
+				Vector3(0, -ri, 0),
+				Vector3(ri * 0.866, ri * 0.5, 0),
+				Vector3(-ri * 0.866, ri * 0.5, 0)
+			]
+			kit.tri_plate(
+				px * Transform3D(Basis(), Vector3(0, 0, 0.004 * M)),
+				inner[0],
+				inner[1],
+				inner[2],
+				SIGN_WHITE
+			)
+			kit.box(
+				px * Transform3D(Basis(), Vector3(0, 0, -0.012 * M)),
+				Vector3(0.7 * M, 0.55 * M, 0.02 * M),
+				Color(0.5, 0.5, 0.52)
+			)
 		else:
 			kit.disc(px, 0.4 * M, SIGN_WHITE, 8, PI / 8.0)
-			kit.disc(px * Transform3D(Basis(), Vector3(0, 0, 0.004 * M)), 0.36 * M, SIGN_RED, 8, PI / 8.0)
-			kit.box(px * Transform3D(Basis(), Vector3(0, 0, -0.012 * M)), Vector3(0.74 * M, 0.74 * M, 0.02 * M), Color(0.5, 0.5, 0.52))
+			kit.disc(
+				px * Transform3D(Basis(), Vector3(0, 0, 0.004 * M)), 0.36 * M, SIGN_RED, 8, PI / 8.0
+			)
+			kit.box(
+				px * Transform3D(Basis(), Vector3(0, 0, -0.012 * M)),
+				Vector3(0.74 * M, 0.74 * M, 0.02 * M),
+				Color(0.5, 0.5, 0.52)
+			)
 			var lbl := Label3D.new()
 			lbl.text = "STOP"
 			lbl.font_size = 64
@@ -428,4 +493,8 @@ func _build_tee(i: int, t: LG.TileInfo) -> Dictionary:
 	var mesh := kit.commit()
 	if mesh != null:
 		node.add_child(_mi(mesh, _pole_mat, true))
-	return {"node": node, "sign": at + Vector2(D.tx(i), D.ty(i)), "kind": "yield" if yield_sign else "stop"}
+	return {
+		"node": node,
+		"sign": at + Vector2(D.tx(i), D.ty(i)),
+		"kind": "yield" if yield_sign else "stop"
+	}

@@ -33,7 +33,7 @@ signal quality_changed(preset: String)
 ## Some modal UI opened (true) or the last one closed (false).
 signal modal_changed(active: bool)
 ## The world was rebuilt and every feature ran on_world_rebuilt().
-signal world_ready()
+signal world_ready
 ## A button on a place card: action "ask_here" (C answers through brain.inspect_tile). Emitted by B.
 signal card_action(action: String, tile: int)
 ## The hero got into a car (true) or out of it (false). Emitted by the drive feature.

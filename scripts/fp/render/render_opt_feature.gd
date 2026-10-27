@@ -34,24 +34,46 @@ const RS_SETTINGS := {
 	"atlas": "rendering/lights_and_shadows/directional_shadow/size",
 	"atlas_16": "rendering/lights_and_shadows/directional_shadow/16_bits",
 	"soft": "rendering/lights_and_shadows/directional_shadow/soft_shadow_filter_quality",
-	"ssao": "rendering/environment/ssao/quality", "ssao_half": "rendering/environment/ssao/half_size",
-	"ssao_target": "rendering/environment/ssao/adaptive_target", "ssao_blur": "rendering/environment/ssao/blur_passes",
-	"ssao_from": "rendering/environment/ssao/fadeout_from", "ssao_to": "rendering/environment/ssao/fadeout_to",
-	"ssil": "rendering/environment/ssil/quality", "ssil_half": "rendering/environment/ssil/half_size",
-	"ssil_target": "rendering/environment/ssil/adaptive_target", "ssil_blur": "rendering/environment/ssil/blur_passes",
-	"ssil_from": "rendering/environment/ssil/fadeout_from", "ssil_to": "rendering/environment/ssil/fadeout_to",
+	"ssao": "rendering/environment/ssao/quality",
+	"ssao_half": "rendering/environment/ssao/half_size",
+	"ssao_target": "rendering/environment/ssao/adaptive_target",
+	"ssao_blur": "rendering/environment/ssao/blur_passes",
+	"ssao_from": "rendering/environment/ssao/fadeout_from",
+	"ssao_to": "rendering/environment/ssao/fadeout_to",
+	"ssil": "rendering/environment/ssil/quality",
+	"ssil_half": "rendering/environment/ssil/half_size",
+	"ssil_target": "rendering/environment/ssil/adaptive_target",
+	"ssil_blur": "rendering/environment/ssil/blur_passes",
+	"ssil_from": "rendering/environment/ssil/fadeout_from",
+	"ssil_to": "rendering/environment/ssil/fadeout_to",
 }
 const RS_DEFAULTS := {
-	"atlas": 4096, "atlas_16": true, "soft": 2, "ssao": 2, "ssao_half": true, "ssao_target": 0.5,
-	"ssao_blur": 2, "ssao_from": 50.0, "ssao_to": 300.0, "ssil": 2, "ssil_half": true,
-	"ssil_target": 0.5, "ssil_blur": 4, "ssil_from": 50.0, "ssil_to": 300.0,
+	"atlas": 4096,
+	"atlas_16": true,
+	"soft": 2,
+	"ssao": 2,
+	"ssao_half": true,
+	"ssao_target": 0.5,
+	"ssao_blur": 2,
+	"ssao_from": 50.0,
+	"ssao_to": 300.0,
+	"ssil": 2,
+	"ssil_half": true,
+	"ssil_target": 0.5,
+	"ssil_blur": 4,
+	"ssil_from": 50.0,
+	"ssil_to": 300.0,
 }
 ## The sun keys the aerial coverage widens (the reach, then the three cascade splits).
 const SHADOW_KEYS := [
-	"directional_shadow_max_distance", "directional_shadow_split_1", "directional_shadow_split_2",
+	"directional_shadow_max_distance",
+	"directional_shadow_split_1",
+	"directional_shadow_split_2",
 	"directional_shadow_split_3",
 ]
-const VIEWPORT_KEYS := ["scaling_3d_mode", "scaling_3d_scale", "msaa_3d", "mesh_lod_threshold", "use_occlusion_culling"]
+const VIEWPORT_KEYS := [
+	"scaling_3d_mode", "scaling_3d_scale", "msaa_3d", "mesh_lod_threshold", "use_occlusion_culling"
+]
 
 ## The applied preset: "low", "medium" or "high".
 var preset: String = Q.DEFAULT
@@ -132,7 +154,11 @@ func on_world_rebuilt() -> void:
 func teardown() -> void:
 	_deactivate()
 	if ctx.view != null:
-		for pair: Array in [[ctx.view.tile_built, _on_tile_built], [ctx.view.tile_cleared, _on_tile_cleared], [ctx.view.fp_mode_changed, _on_fp_mode_changed]]:
+		for pair: Array in [
+			[ctx.view.tile_built, _on_tile_built],
+			[ctx.view.tile_cleared, _on_tile_cleared],
+			[ctx.view.fp_mode_changed, _on_fp_mode_changed]
+		]:
 			if (pair[0] as Signal).is_connected(pair[1]):
 				(pair[0] as Signal).disconnect(pair[1])
 	if ctx.bus != null and ctx.bus.quality_changed.is_connected(_on_quality_changed):
@@ -155,8 +181,28 @@ func apply_preset(p: String) -> void:
 		_vp.mesh_lod_threshold = float(k["lod"])
 	_rs("directional_shadow_atlas_set_size", [int(k["atlas"]), bool(k["atlas_16"])])
 	_rs("directional_soft_shadow_filter_set_quality", [int(k["soft"])])
-	_rs("environment_set_ssao_quality", [int(k["ssao"]), bool(k["ssao_half"]), float(_rs_snap["ssao_target"]), int(_rs_snap["ssao_blur"]), float(_rs_snap["ssao_from"]), float(_rs_snap["ssao_to"])])
-	_rs("environment_set_ssil_quality", [int(k["ssil"]), bool(k["ssil_half"]), float(_rs_snap["ssil_target"]), int(_rs_snap["ssil_blur"]), float(_rs_snap["ssil_from"]), float(_rs_snap["ssil_to"])])
+	_rs(
+		"environment_set_ssao_quality",
+		[
+			int(k["ssao"]),
+			bool(k["ssao_half"]),
+			float(_rs_snap["ssao_target"]),
+			int(_rs_snap["ssao_blur"]),
+			float(_rs_snap["ssao_from"]),
+			float(_rs_snap["ssao_to"])
+		]
+	)
+	_rs(
+		"environment_set_ssil_quality",
+		[
+			int(k["ssil"]),
+			bool(k["ssil_half"]),
+			float(_rs_snap["ssil_target"]),
+			int(_rs_snap["ssil_blur"]),
+			float(_rs_snap["ssil_from"]),
+			float(_rs_snap["ssil_to"])
+		]
+	)
 	var cam := _camera()
 	if cam != null:
 		if _cam_far < 0.0:
@@ -179,8 +225,15 @@ func preset_applied(p: String) -> bool:
 	var k := Q.knobs(p)
 	if _vp == null:
 		return false
-	var ok := _vp.scaling_3d_mode == int(k["scaling_mode"]) and is_equal_approx(_vp.scaling_3d_scale, float(k["scale"]))
-	ok = ok and _vp.msaa_3d == int(k["msaa"]) and is_equal_approx(_vp.mesh_lod_threshold, float(k["lod"]))
+	var ok := (
+		_vp.scaling_3d_mode == int(k["scaling_mode"])
+		and is_equal_approx(_vp.scaling_3d_scale, float(k["scale"]))
+	)
+	ok = (
+		ok
+		and _vp.msaa_3d == int(k["msaa"])
+		and is_equal_approx(_vp.mesh_lod_threshold, float(k["lod"]))
+	)
 	var cam := _camera()
 	return ok and (cam == null or is_equal_approx(cam.far, _far_now()))
 
@@ -317,12 +370,21 @@ func self_test() -> Dictionary:
 			continue
 		for k in range((e["gis"] as Array).size()):
 			var gi: Variant = (e["gis"] as Array)[k]
-			if is_instance_valid(gi) and (e["cls"] as PackedByteArray)[k] == HLOD.Cls.BUILDING and (gi as GeometryInstance3D).visibility_range_end <= 0.0:
+			if (
+				is_instance_valid(gi)
+				and (e["cls"] as PackedByteArray)[k] == HLOD.Cls.BUILDING
+				and (gi as GeometryInstance3D).visibility_range_end <= 0.0
+			):
 				fails.append("tile %d unranged" % i)
 				break
 		near += 1
-	var detail := "preset=%s tiles=%d near=%d solid=%d boxes=%d impostor_chunks=%d" % [preset, hlod.tiles.size(), near, solid, boxes, hlod.chunk_nodes.size()]
-	return {"ok": fails.is_empty(), "detail": detail if fails.is_empty() else detail + " " + str(fails)}
+	var detail := (
+		"preset=%s tiles=%d near=%d solid=%d boxes=%d impostor_chunks=%d"
+		% [preset, hlod.tiles.size(), near, solid, boxes, hlod.chunk_nodes.size()]
+	)
+	return {
+		"ok": fails.is_empty(), "detail": detail if fails.is_empty() else detail + " " + str(fails)
+	}
 
 
 ## A skyline from a road just beyond the impostor switch, facing the tallest part of the city, by
@@ -407,7 +469,11 @@ func _frame_work(deadline: int) -> void:
 		_waiting_ready = true
 	if _waiting_ready and _pass_queue.is_empty():
 		_run_waiting(mini(WAIT_BUDGET_USEC, maxi(0, deadline - int(clock.call()))))
-	if not _dirty.is_empty() and _pass_queue.is_empty() and (not ran or int(clock.call()) < deadline):
+	if (
+		not _dirty.is_empty()
+		and _pass_queue.is_empty()
+		and (not ran or int(clock.call()) < deadline)
+	):
 		_rebuild_one()
 	var n: float = ctx.view.night
 	if absf(n - _night) > 0.002:
@@ -586,8 +652,28 @@ func _restore() -> void:
 	var s := _rs_snap
 	_rs("directional_shadow_atlas_set_size", [int(s["atlas"]), bool(s["atlas_16"])])
 	_rs("directional_soft_shadow_filter_set_quality", [int(s["soft"])])
-	_rs("environment_set_ssao_quality", [int(s["ssao"]), bool(s["ssao_half"]), float(s["ssao_target"]), int(s["ssao_blur"]), float(s["ssao_from"]), float(s["ssao_to"])])
-	_rs("environment_set_ssil_quality", [int(s["ssil"]), bool(s["ssil_half"]), float(s["ssil_target"]), int(s["ssil_blur"]), float(s["ssil_from"]), float(s["ssil_to"])])
+	_rs(
+		"environment_set_ssao_quality",
+		[
+			int(s["ssao"]),
+			bool(s["ssao_half"]),
+			float(s["ssao_target"]),
+			int(s["ssao_blur"]),
+			float(s["ssao_from"]),
+			float(s["ssao_to"])
+		]
+	)
+	_rs(
+		"environment_set_ssil_quality",
+		[
+			int(s["ssil"]),
+			bool(s["ssil_half"]),
+			float(s["ssil_target"]),
+			int(s["ssil_blur"]),
+			float(s["ssil_from"]),
+			float(s["ssil_to"])
+		]
+	)
 	var cam := _camera()
 	if cam != null and _cam_far > 0.0:
 		cam.far = _cam_far

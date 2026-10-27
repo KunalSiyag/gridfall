@@ -59,7 +59,9 @@ func setup(p_sim: CitySim, p_env: Environment, p_sun: DirectionalLight3D, p_view
 		_sky_mat = ShaderMaterial.new()
 		_sky_mat.shader = load(SKY_SHADER)
 		_sky_mat.set_shader_parameter("day_sky", load(DAY_HDRI))
-		_sky_mat.set_shader_parameter("dusk_sky", load(DUSK_HDRI) if ResourceLoader.exists(DUSK_HDRI) else load(DAY_HDRI))
+		_sky_mat.set_shader_parameter(
+			"dusk_sky", load(DUSK_HDRI) if ResourceLoader.exists(DUSK_HDRI) else load(DAY_HDRI)
+		)
 		var sky := Sky.new()
 		sky.sky_material = _sky_mat
 		sky.radiance_size = Sky.RADIANCE_SIZE_256
@@ -115,7 +117,9 @@ func _apply(blend: float) -> void:
 		var col := Color(0.55, 0.65, 0.95)
 		if d >= -0.1:
 			var t := (hour - 6.0) / 12.0
-			sun.rotation_degrees = Vector3(-maxf(3.0, 62.0 * d), lerpf(105.0, 255.0, clampf(t, 0.0, 1.0)), 0.0)
+			sun.rotation_degrees = Vector3(
+				-maxf(3.0, 62.0 * d), lerpf(105.0, 255.0, clampf(t, 0.0, 1.0)), 0.0
+			)
 			energy = 1.3 * smoothstep(-0.1, 0.3, d)
 			col = Color(1.0, 0.52, 0.28).lerp(Color(1.0, 0.96, 0.9), smoothstep(0.0, 0.55, d))
 		else:
@@ -132,9 +136,17 @@ func _apply(blend: float) -> void:
 		env.ambient_light_color = Color(0.16, 0.2, 0.32)
 		env.ambient_light_sky_contribution = lerpf(1.0, 0.25, dark)
 		env.ambient_light_energy = lerpf(0.55, 1.0, day_f)
-		var fog := Color(0.03, 0.04, 0.08).lerp(Color(0.62, 0.70, 0.80), day_f).lerp(Color(0.85, 0.55, 0.4), dusk * (1.0 - dark) * 0.5)
+		var fog := Color(0.03, 0.04, 0.08).lerp(Color(0.62, 0.70, 0.80), day_f).lerp(
+			Color(0.85, 0.55, 0.4), dusk * (1.0 - dark) * 0.5
+		)
 		fog = fog.lerp(Color(0.6, 0.62, 0.64) * lerpf(0.15, 1.0, day_f), weather_grey * 0.6)
-		env.fog_light_color = fog.lerp(Color(weather_fog_tint.r, weather_fog_tint.g, weather_fog_tint.b) * lerpf(0.2, 1.0, day_f), weather_fog_tint.a)
+		env.fog_light_color = fog.lerp(
+			(
+				Color(weather_fog_tint.r, weather_fog_tint.g, weather_fog_tint.b)
+				* lerpf(0.2, 1.0, day_f)
+			),
+			weather_fog_tint.a
+		)
 		env.tonemap_exposure = lerpf(1.2, 1.0, day_f) * weather_exposure_mult
 		if fog_begin_override >= 0.0:
 			if _fog_begin_saved < 0.0:
@@ -147,11 +159,22 @@ func _apply(blend: float) -> void:
 		var want_fp := view != null and view.fp_mode and ResourceLoader.exists(DUSK_HDRI_FP)
 		if want_fp != _dusk_fp:
 			_dusk_fp = want_fp
-			_sky_mat.set_shader_parameter("dusk_sky", load(DUSK_HDRI_FP if want_fp else (DUSK_HDRI if ResourceLoader.exists(DUSK_HDRI) else DAY_HDRI)))
+			_sky_mat.set_shader_parameter(
+				"dusk_sky",
+				load(
+					(
+						DUSK_HDRI_FP
+						if want_fp
+						else (DUSK_HDRI if ResourceLoader.exists(DUSK_HDRI) else DAY_HDRI)
+					)
+				)
+			)
 			_sky_mat.set_shader_parameter("dusk_gain", DUSK_GAIN_FP if want_fp else DUSK_GAIN)
 		_sky_mat.set_shader_parameter("dusk", dusk)
 		_sky_mat.set_shader_parameter("night", dark)
-		_sky_mat.set_shader_parameter("tint", Vector3(1.0, 1.0, 1.0).lerp(Vector3(1.15, 0.9, 0.75), dusk))
+		_sky_mat.set_shader_parameter(
+			"tint", Vector3(1.0, 1.0, 1.0).lerp(Vector3(1.15, 0.9, 0.75), dusk)
+		)
 		_sky_mat.set_shader_parameter("exposure", 1.0)
 		_sky_mat.set_shader_parameter("grey", weather_grey)
 	if view != null:

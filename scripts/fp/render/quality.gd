@@ -10,26 +10,56 @@ const DEFAULT := "medium"
 ## shadow atlas and filter, SSAO and SSIL quality and half size, the VIS_* multiplier, the
 ## first-person camera far plane, the mesh LOD threshold (pixels of error) and G1's street lights.
 const PRESETS := {
-	"low": {
-		"scaling_mode": Viewport.SCALING_3D_MODE_FSR2, "scale": 0.59, "msaa": Viewport.MSAA_DISABLED,
-		"atlas": 2048, "atlas_16": true, "soft": RenderingServer.SHADOW_QUALITY_HARD,
-		"ssao": RenderingServer.ENV_SSAO_QUALITY_VERY_LOW, "ssao_half": true,
-		"ssil": RenderingServer.ENV_SSIL_QUALITY_VERY_LOW, "ssil_half": true,
-		"vis": 0.7, "far": 45.0, "lod": 2.0, "lights": 6,
+	"low":
+	{
+		"scaling_mode": Viewport.SCALING_3D_MODE_FSR2,
+		"scale": 0.59,
+		"msaa": Viewport.MSAA_DISABLED,
+		"atlas": 2048,
+		"atlas_16": true,
+		"soft": RenderingServer.SHADOW_QUALITY_HARD,
+		"ssao": RenderingServer.ENV_SSAO_QUALITY_VERY_LOW,
+		"ssao_half": true,
+		"ssil": RenderingServer.ENV_SSIL_QUALITY_VERY_LOW,
+		"ssil_half": true,
+		"vis": 0.7,
+		"far": 45.0,
+		"lod": 2.0,
+		"lights": 6,
 	},
-	"medium": {
-		"scaling_mode": Viewport.SCALING_3D_MODE_FSR2, "scale": 0.77, "msaa": Viewport.MSAA_DISABLED,
-		"atlas": 4096, "atlas_16": true, "soft": RenderingServer.SHADOW_QUALITY_SOFT_LOW,
-		"ssao": RenderingServer.ENV_SSAO_QUALITY_MEDIUM, "ssao_half": true,
-		"ssil": RenderingServer.ENV_SSIL_QUALITY_LOW, "ssil_half": true,
-		"vis": 1.0, "far": WS.CAMERA_FAR, "lod": 1.0, "lights": 12,
+	"medium":
+	{
+		"scaling_mode": Viewport.SCALING_3D_MODE_FSR2,
+		"scale": 0.77,
+		"msaa": Viewport.MSAA_DISABLED,
+		"atlas": 4096,
+		"atlas_16": true,
+		"soft": RenderingServer.SHADOW_QUALITY_SOFT_LOW,
+		"ssao": RenderingServer.ENV_SSAO_QUALITY_MEDIUM,
+		"ssao_half": true,
+		"ssil": RenderingServer.ENV_SSIL_QUALITY_LOW,
+		"ssil_half": true,
+		"vis": 1.0,
+		"far": WS.CAMERA_FAR,
+		"lod": 1.0,
+		"lights": 12,
 	},
-	"high": {
-		"scaling_mode": Viewport.SCALING_3D_MODE_FSR2, "scale": 0.9, "msaa": Viewport.MSAA_DISABLED,
-		"atlas": 4096, "atlas_16": true, "soft": RenderingServer.SHADOW_QUALITY_SOFT_MEDIUM,
-		"ssao": RenderingServer.ENV_SSAO_QUALITY_HIGH, "ssao_half": false,
-		"ssil": RenderingServer.ENV_SSIL_QUALITY_MEDIUM, "ssil_half": false,
-		"vis": 1.3, "far": 75.0, "lod": 0.75, "lights": 16,
+	"high":
+	{
+		"scaling_mode": Viewport.SCALING_3D_MODE_FSR2,
+		"scale": 0.9,
+		"msaa": Viewport.MSAA_DISABLED,
+		"atlas": 4096,
+		"atlas_16": true,
+		"soft": RenderingServer.SHADOW_QUALITY_SOFT_MEDIUM,
+		"ssao": RenderingServer.ENV_SSAO_QUALITY_HIGH,
+		"ssao_half": false,
+		"ssil": RenderingServer.ENV_SSIL_QUALITY_MEDIUM,
+		"ssil_half": false,
+		"vis": 1.3,
+		"far": 75.0,
+		"lod": 0.75,
+		"lights": 16,
 	},
 }
 
