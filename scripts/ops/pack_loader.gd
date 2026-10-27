@@ -11,7 +11,6 @@ extends RefCounted
 ##
 ## Desktop builds have no manifest and every method here is a no-op, so nothing changes there.
 
-
 const MANIFEST_PATH := "res://web_manifest.json"
 const CACHE_DIR := "user://packs"
 
@@ -144,7 +143,9 @@ func _start(host: Node, pack: String) -> void:
 		_finish(pack, false)
 
 
-func _on_download(_result: int, code: int, _headers: PackedStringArray, body: PackedByteArray) -> void:
+func _on_download(
+	_result: int, code: int, _headers: PackedStringArray, body: PackedByteArray
+) -> void:
 	var pack := _active
 	if code != 200 or body.is_empty():
 		push_warning("PackLoader: download failed for %s (HTTP %d)" % [pack, code])

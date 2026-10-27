@@ -24,12 +24,13 @@ func _init() -> void:
 
 func _check_desktop_noop() -> void:
 	var loader := PackLoader.new()
+	var zone := "res://models/real/zones/r1/a.glb"
 	K.check(fails, not loader.load_manifest(), "no manifest in a desktop tree: inactive")
 	K.check(fails, not loader.active(), "an inactive loader streams nothing")
 	K.check(fails, loader.progress() == 1.0, "an inactive loader reports full progress")
-	K.check(fails, loader.pack_of("res://models/real/zones/r1/a.glb") == "", "no pack without a manifest")
-	K.check(fails, loader.needed_for("res://models/real/zones/r1/a.glb") == "", "nothing needed without a manifest")
-	K.check(fails, not loader.request("zones"), "requesting a pack without a manifest fails quietly")
+	K.check(fails, loader.pack_of(zone) == "", "no pack without a manifest")
+	K.check(fails, loader.needed_for(zone) == "", "nothing needed without a manifest")
+	K.check(fails, not loader.request("zones"), "no manifest: request fails quietly")
 
 
 ## A loader pointed at a scratch manifest, so the manifest logic runs headless.
@@ -45,19 +46,27 @@ func _with_manifest(manifest: Dictionary) -> PackLoader:
 
 
 func _check_manifest() -> void:
+	var zone := "res://models/real/zones/r1/a.glb"
+	var midlod := "res://models/real/midlod/t.res"
 	var manifest := {
 		"boot": "boot",
-		"rules": [["models/real/zones/", "zones"], ["models/real/midlod/", "midlod"],
-			["env/", "sky"], ["models/characters/bodies/", "people"]],
-		"packs": {
+		"rules":
+		[
+			["models/real/zones/", "zones"],
+			["models/real/midlod/", "midlod"],
+			["env/", "sky"],
+			["models/characters/bodies/", "people"]
+		],
+		"packs":
+		{
 			"zones": {"file": "releases/abc/packs/zones-11.pck", "bytes": 100},
 			"sky": {"file": "releases/abc/packs/sky-22.pck", "bytes": 200},
 		},
 	}
 	var loader := _with_manifest(manifest)
 	K.check(fails, loader.active(), "a manifest makes the loader active")
-	K.check(fails, loader.pack_of("res://models/real/zones/r1/a.glb") == "zones", "zone asset maps to zones")
-	K.check(fails, loader.pack_of("res://models/real/midlod/t.res") == "midlod", "midlod asset maps to midlod")
+	K.check(fails, loader.pack_of(zone) == "zones", "a zone asset maps to zones")
+	K.check(fails, loader.pack_of(midlod) == "midlod", "a midlod asset maps to midlod")
 	K.check(fails, loader.pack_of("res://env/sky.hdr") == "sky", "an HDRI maps to sky")
 	K.check(fails, loader.pack_of("res://scripts/main.gd") == "", "a boot asset needs no pack")
 	K.check(fails, loader.needed_for("res://env/sky.hdr") == "sky", "an unmounted pack is needed")
@@ -68,15 +77,22 @@ func _check_manifest() -> void:
 	K.check(fails, loader.progress() == 0.0, "no pack mounted yet")
 	loader.set("_mounted", {"sky": true})
 	K.check(fails, loader.progress() == 0.5, "half the packs mounted")
-	K.check(fails, loader.needed_for("res://env/sky.hdr") == "", "a mounted pack is no longer needed")
+	K.check(
+		fails, loader.needed_for("res://env/sky.hdr") == "", "a mounted pack is no longer needed"
+	)
 
 
 func _check_cache_path() -> void:
-	var loader := _with_manifest({
-		"packs": {"zones": {"file": "releases/abc/packs/zones-11.pck", "bytes": 100}},
-	})
-	K.check(fails, loader.cache_path("zones") == "user://packs/zones-11.pck",
-		"the cache file carries the pack's own hash: " + loader.cache_path("zones"))
+	var loader := _with_manifest(
+		{
+			"packs": {"zones": {"file": "releases/abc/packs/zones-11.pck", "bytes": 100}},
+		}
+	)
+	K.check(
+		fails,
+		loader.cache_path("zones") == "user://packs/zones-11.pck",
+		"the cache file carries the pack's own hash: " + loader.cache_path("zones")
+	)
 
 
 ## A cached pack whose size no longer matches its manifest entry must be dropped, not mounted.
