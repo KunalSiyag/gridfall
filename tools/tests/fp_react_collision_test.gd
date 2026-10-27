@@ -12,6 +12,7 @@ extends SceneTree
 const K := preload("res://tools/tests/fp_kit.gd")
 const WS := preload("res://scripts/fp/world_scale.gd")
 const WK := preload("res://scripts/fp/traffic/walkers.gd")
+const LG := preload("res://scripts/fp/traffic/lane_graph.gd")
 const D := preload("res://scripts/sim/sim_defs.gd")
 const OBB := preload("res://scripts/fp/obb2d.gd")
 const DT := 1.0 / 60.0
@@ -29,6 +30,11 @@ const TOL := 0.005 * WS.M
 ## A sweep may drive the body into geometry for this long before it counts as stuck (s); the
 ## press-out clears a real overlap within a couple of ticks.
 const CLEAR_S := 0.25
+## Cruise for the moving-car scenarios: 30 km/h, the round-3 measurement speed.
+const CRUISE := 8.3 * WS.M
+## The block system's designed stop margin (vehicles.gd's MIN_GAP + PLAYER_RADIUS): measured
+## stops land metres beyond it -- a floor, not a fit.
+const STOP_FLOOR := 0.8 * WS.M
 
 var fails: Array[String] = []
 var ctx: FpContext
@@ -95,6 +101,11 @@ func _init() -> void:
 			_posed_heads > 0,
 			"fixture: the heads measured were the posed bones (%d)" % _posed_heads
 		)
+	_check_car_brakes_with_room()
+	_check_car_brakes_point_blank()
+	_check_throw_across_approaching_car()
+	_check_car_brakes_on_the_bend()
+	_check_roof_press_boundary()
 	Engine.time_scale = 1.0
 	K.finish(self, "FP_REACT_COLLISION_TEST", fails)
 
@@ -312,6 +323,447 @@ func _real_car():
 		var h := OBB.heading(c.yaw)
 		return {"car": c, "head": Vector3(h.x, 0.0, h.y)}
 	return null
+
+
+# ------------------------------------------------------------------ moving cars
+
+## The moving-car contract (round 4): an ambient car has no strike path at all -- the
+## block/brake/clamp system owns every approach. A downed or thrown body is a lane block from
+## the hit's first tick, mid-air included (reactions.blocks reads the drawn feet, xz only), so
+## the car brakes under IDM and the movement clamp holds it off even when it could never stop
+## in time. The press-out owns only a body already inside a stopped car (the parked scenario
+## above), and past the roof's height span it does not read the body at all.
+
+
+## A run of same-mask straight road tiles, at least two long: [tiles in order, heading
+## edge]. The moving-car scenarios need one straight with room ahead of the car, not the
+## longest one, so this takes the first run that extends past its start tile.
+func _straight_run() -> Array:
+	var lg: LG = tr.get("lanes")
+	for i: int in lg.tiles.keys():
+		var t = lg.tiles[i]
+		if t.piece != "straight" or t.bridge:
+			continue
+		for e in range(4):
+			if not (t.mask & (1 << e)):
+				continue
+			var tiles: Array[int] = [i]
+			var nx: int = lg.across(i, e)
+			while (
+				nx >= 0
+				and lg.info(nx) != null
+				and (lg.info(nx) as LG.TileInfo).piece == "straight"
+				and (lg.info(nx) as LG.TileInfo).mask == t.mask
+			):
+				tiles.append(nx)
+				nx = lg.across(nx, e)
+			if tiles.size() >= 2:
+				return [tiles, e]
+	return [[], 0]
+
+
+## The straight run's lanes in the heading direction; empty without one.
+func _run_lanes() -> Array:
+	var run := _straight_run()
+	var tiles: Array = run[0]
+	if tiles.size() < 2:
+		return []
+	var lg: LG = tr.get("lanes")
+	return lg.lanes_along(tiles, LG.OPP[int(run[1])], int(run[1]))
+
+
+## A test car on lane at s with path ahead of it, already rolling at v: "test" cars keep no
+## schedule, they just drive their path under IDM.
+func _lane_car(lane: LG.Lane, s: float, path: Array, v: float):
+	var vh = tr.get("vehicles")
+	var m: int = tr.call("car_model_for", "react-collision-moving")
+	var c = vh.make("car", "test", tr.call("dims", m))
+	c.model = m
+	vh.place(c, lane, s)
+	c.path = path.duplicate()
+	c.v = v
+	c.v0 = v
+	return c
+
+
+## A victim knocked down on lane at s by a car-cause blow along it (a small 0.4 m fling: they
+## fall where they stood) and left to settle into the lie. The scenario starts after this.
+func _down_on_lane(lane: LG.Lane, s: float) -> WK.Walker:
+	var lg: LG = tr.get("lanes")
+	var p: Vector2 = lg.pos_at(lane, s)
+	var tan: Vector2 = lg.tan_at(lane, s)
+	var dir := Vector3(tan.x, 0.0, tan.y)
+	var at := Vector3(p.x, WS.GROUND_Y, p.y)
+	var w := _victim(at, dir)
+	react.call("hit", w, at - dir * WS.M, dir * WS.M, STRENGTH, "car", 0.4)
+	for _k in range(90):
+		tr.call("step", DT)
+		_clock += DT
+	return w
+
+
+## Distance of the car's AABB from the body's drawn feet (0 when the feet are inside it).
+func _car_gap(c, w: WK.Walker) -> float:
+	var vh = tr.get("vehicles")
+	var bb: AABB = vh.aabb(c)
+	var p: Vector3 = w.pos + w.vis_off
+	var q := Vector3(
+		clampf(p.x, bb.position.x, bb.end.x),
+		clampf(p.y, bb.position.y, bb.end.y),
+		clampf(p.z, bb.position.z, bb.end.z)
+	)
+	return p.distance_to(q)
+
+
+## The hero watches from five metres to the body's side: close enough that the body draws its
+## posed bones, off the lane so the watching hero is not himself a block on the car's path.
+func _watch_from(feet: Vector3, tan: Vector2) -> void:
+	var side := Vector3(tan.y, 0.0, -tan.x)
+	ctx.player.teleport(feet + side * (5.0 * WS.M), rad_to_deg(atan2(-side.x, -side.z)))
+	ctx.player.input_enabled = false
+	tr.call("sync_visuals", DT)
+
+
+## Closes a moving-car scenario: the standard overlap report, then the car and the victim
+## leave the stage.
+func _finish_moving(label: String, c, w: WK.Walker) -> void:
+	_report(label)
+	wk.remove(w)
+	(tr.get("vehicles") as Object).remove(c)
+	_car_body = null
+
+
+## A downed body twenty metres ahead of a 30 km/h car, room to spare: the brake owns it. The
+## car eases to a stop well short, never touches the body, and holds while the reaction runs.
+func _check_car_brakes_with_room() -> void:
+	var label := "a car with room brakes short of a body on its lane"
+	var lanes := _run_lanes()
+	K.check(fails, lanes.size() >= 2, "fixture: a straight lane run for the moving cars")
+	if lanes.size() < 2:
+		return
+	var lg: LG = tr.get("lanes")
+	var w := _down_on_lane(lanes[0], 0.7)
+	K.check(fails, bool(react.call("is_down", w)), "fixture: the victim lies on the lane")
+	var c = _lane_car(lanes[0], 0.3, lanes.slice(1), CRUISE)
+	_car_body = c
+	_watch_from(w.pos + w.vis_off, lg.tan_at(lanes[0], 0.7))
+	_reset(label)
+	var min_d := INF
+	var stop_t := -1.0
+	var creep := 0.0
+	var t := 0.0
+	while t < 8.0:
+		tr.call("step", DT)
+		tr.call("sync_visuals", DT)
+		t += DT
+		_clock += DT
+		min_d = minf(min_d, _car_gap(c, w))
+		if stop_t < 0.0 and c.v < 0.05 * WS.M:
+			stop_t = t
+		elif stop_t >= 0.0:
+			creep = maxf(creep, c.v)
+		if int(t / DT) % 2 == 0:
+			_sample_body(label, w)
+	K.check(fails, stop_t > 0.0, "%s: the car stopped (at %.2f s)" % [label, stop_t])
+	K.check(
+		fails,
+		creep < 0.05 * WS.M,
+		"%s: once stopped it never crept (max %.2f m/s)" % [label, creep / WS.M]
+	)
+	print("  stop gap: %s %.2f m" % [label, min_d / WS.M])
+	K.check(
+		fails,
+		min_d >= STOP_FLOOR,
+		(
+			"%s: it stopped %.2f m from the body (floor %.2f m)"
+			% [label, min_d / WS.M, STOP_FLOOR / WS.M]
+		)
+	)
+	_finish_moving(label, c, w)
+
+
+## The un-stoppable case: a body three metres ahead of a 30 km/h car cannot be braked for (the
+## hardest stop the IDM allows needs ~4.3 m) -- the movement clamp owns it. The car never
+## reaches the body; it does not so much as creep.
+func _check_car_brakes_point_blank() -> void:
+	var label := "a car that cannot stop still never reaches the body"
+	var lanes := _run_lanes()
+	if lanes.size() < 2:
+		return
+	var lg: LG = tr.get("lanes")
+	var w := _down_on_lane(lanes[0], 0.45)
+	K.check(fails, bool(react.call("is_down", w)), "fixture: the victim lies on the lane")
+	var c = _lane_car(lanes[0], 0.3, lanes.slice(1), CRUISE)
+	_car_body = c
+	_watch_from(w.pos + w.vis_off, lg.tan_at(lanes[0], 0.45))
+	_reset(label)
+	var min_d := INF
+	var max_v := 0.0
+	var t := 0.0
+	while t < 7.0:
+		tr.call("step", DT)
+		tr.call("sync_visuals", DT)
+		t += DT
+		_clock += DT
+		min_d = minf(min_d, _car_gap(c, w))
+		max_v = maxf(max_v, c.v)
+		if int(t / DT) % 2 == 0:
+			_sample_body(label, w)
+	print("  clamp gap: %s %.2f m" % [label, min_d / WS.M])
+	K.check(
+		fails,
+		max_v <= 0.05 * WS.M,
+		"%s: the clamp held it from the first tick (max %.2f m/s)" % [label, max_v / WS.M]
+	)
+	K.check(
+		fails,
+		min_d >= STOP_FLOOR,
+		(
+			"%s: it never came closer than %.2f m (floor %.2f m)"
+			% [label, min_d / WS.M, STOP_FLOOR / WS.M]
+		)
+	)
+	_finish_moving(label, c, w)
+
+
+## A body thrown across an approaching car's nose: the flying body is a lane block from the
+## hit's first tick (the block is xz-only, no height test), so the car brakes for it mid-air;
+## it lands, the clamp keeps the car off it, and nothing is left touching.
+func _check_throw_across_approaching_car() -> void:
+	var label := "a body thrown across an approaching car is braked for, mid-air included"
+	var lanes := _run_lanes()
+	if lanes.size() < 2:
+		return
+	var lg: LG = tr.get("lanes")
+	var lane: LG.Lane = lanes[0]
+	var c = _lane_car(lane, 0.3, lanes.slice(1), CRUISE)
+	_car_body = c
+	var p: Vector2 = lg.pos_at(lane, 0.3 + CRUISE * 1.0)
+	var tan: Vector2 = lg.tan_at(lane, 0.3 + CRUISE * 1.0)
+	var h := Vector3(tan.x, 0.0, tan.y)
+	var side := Vector3(tan.y, 0.0, -tan.x)
+	var at := Vector3(p.x, WS.GROUND_Y, p.y) + side * (4.0 * WS.M) - h * (1.0 * WS.M)
+	var w := _victim(at, -side)
+	_watch_from(Vector3(p.x, WS.GROUND_Y, p.y), tan)
+	_reset(label)
+	var thrown := false
+	var v_at_throw := 0.0
+	var airborne_closing := false
+	var far := 0.0
+	var min_d := INF
+	var t := 0.0
+	while t < 8.0:
+		if not thrown and _car_gap(c, w) < 10.0 * WS.M:
+			react.call("hit", w, at - side * WS.M, -side * WS.M, STRENGTH, "car", 5.0)
+			thrown = true
+			v_at_throw = c.v
+		tr.call("step", DT)
+		tr.call("sync_visuals", DT)
+		t += DT
+		_clock += DT
+		min_d = minf(min_d, _car_gap(c, w))
+		if thrown and bool(react.call("is_down", w)):
+			far = maxf(far, (w.pos + w.vis_off - at).dot(-side))
+			if w.vis_off.y > 0.1 * WS.M and c.v > 1.0 * WS.M:
+				airborne_closing = true
+		if int(t / DT) % 2 == 0:
+			_sample_body(label, w)
+	K.check(fails, thrown, "fixture: the throw happened")
+	K.check(
+		fails,
+		v_at_throw >= 5.0 * WS.M,
+		"fixture: the car was still at speed when the body flew (%.1f m/s)" % (v_at_throw / WS.M)
+	)
+	print("  travel: %s %.2f m" % [label, far / WS.M])
+	K.check(
+		fails,
+		far >= 2.0 * WS.M,
+		"%s: the throw really crossed the lane (%.2f m)" % [label, far / WS.M]
+	)
+	K.check(
+		fails, airborne_closing, "%s: the car was still closing while the body was mid-air" % label
+	)
+	K.check(
+		fails,
+		c.v < 0.05 * WS.M and min_d >= STOP_FLOOR,
+		(
+			"%s: it braked to a stop %.2f m short (floor %.2f m)"
+			% [label, min_d / WS.M, STOP_FLOOR / WS.M]
+		)
+	)
+	_finish_moving(label, c, w)
+
+
+## The fixture's corner turn: {"tile", "lane", "approach", "exit"} for a corner tile whose
+## entry edge faces a straight; empty without one.
+func _corner_turn() -> Dictionary:
+	var lg: LG = tr.get("lanes")
+	for i: int in lg.tiles.keys():
+		var t = lg.tiles[i]
+		if t.piece != "corner":
+			continue
+		var edges: Array[int] = []
+		for e in range(4):
+			if t.mask & (1 << e):
+				edges.append(e)
+		for fe in edges:
+			for te in edges:
+				if fe == te:
+					continue
+				var lane = lg.lane_between(i, fe, te)
+				if lane == null:
+					continue
+				var approach: int = lg.across(i, fe)
+				if (
+					approach < 0
+					or lg.info(approach) == null
+					or (lg.info(approach) as LG.TileInfo).piece != "straight"
+				):
+					continue
+				var nxts: Array = lg.next_lanes(lane)
+				if nxts.is_empty():
+					continue
+				return {"tile": i, "lane": lane, "approach": approach, "exit": nxts[0]}
+	return {}
+
+
+## A car rounding the fixture's corner finds a body lying past the apex: the gap walk follows
+## the curve, so the brake owns it there too -- the car turns in, brakes to a crawl behind the
+## body, and never touches it. (When the reaction ends the block lifts and the car drives on;
+## what a resuming car meets is the routing walkers' business, not this suite's.)
+func _check_car_brakes_on_the_bend() -> void:
+	var label := "a car rounding a bend brakes short of a body past the apex"
+	var turn := _corner_turn()
+	K.check(fails, not turn.is_empty(), "fixture: a corner with a through lane")
+	if turn.is_empty():
+		return
+	var lg: LG = tr.get("lanes")
+	var e := -1
+	for cand in range(4):
+		if lg.across(int(turn["approach"]), cand) == int(turn["tile"]):
+			e = cand
+			break
+	K.check(fails, e >= 0, "fixture: the corner's approach heading")
+	if e < 0:
+		return
+	var approach: Array = lg.lanes_along([int(turn["approach"])], LG.OPP[e], e)
+	K.check(fails, not approach.is_empty(), "fixture: the corner's approach lane")
+	if approach.is_empty():
+		return
+	var lane: LG.Lane = approach[0]
+	var exit: LG.Lane = turn["exit"]
+	var w := _down_on_lane(exit, 0.15)
+	K.check(fails, bool(react.call("is_down", w)), "fixture: the victim lies past the apex")
+	var s0: float = maxf(0.3, lane.length - 0.5)
+	var c = _lane_car(lane, s0, [turn["lane"], exit], CRUISE)
+	_car_body = c
+	_watch_from(w.pos + w.vis_off, lg.tan_at(exit, 0.15))
+	_reset(label)
+	var yaw0: float = c.yaw
+	var turned := 0.0
+	var min_d := INF
+	var crawl := INF
+	var t := 0.0
+	while t < 8.0:
+		tr.call("step", DT)
+		tr.call("sync_visuals", DT)
+		t += DT
+		_clock += DT
+		turned = maxf(turned, absf(wrapf(c.yaw - yaw0, -PI, PI)))
+		min_d = minf(min_d, _car_gap(c, w))
+		crawl = minf(crawl, c.v)
+		if int(t / DT) % 2 == 0:
+			_sample_body(label, w)
+	print(
+		(
+			"  bend: yaw swung %.2f rad, crawl %.2f m/s, gap %.2f m"
+			% [turned, crawl / WS.M, min_d / WS.M]
+		)
+	)
+	K.check(
+		fails,
+		turned > 0.15,
+		"%s: the car was into the turn as it braked (yaw swung %.2f rad)" % [label, turned]
+	)
+	K.check(
+		fails,
+		crawl <= 0.2 * WS.M,
+		(
+			"%s: the brake brought it to a crawl behind the body (slowest %.2f m/s)"
+			% [label, crawl / WS.M]
+		)
+	)
+	K.check(
+		fails,
+		min_d >= STOP_FLOOR,
+		(
+			"%s: it held %.2f m off the body through the turn (floor %.2f m)"
+			% [label, min_d / WS.M, STOP_FLOOR / WS.M]
+		)
+	)
+	_finish_moving(label, c, w)
+
+
+## The press-out reads a car only up to its roof: a body whose feet overlap the car's side at
+## ground level is pressed out, and the same overlap with the body lifted past the roof's
+## height span is left alone -- nothing reaches up and swats a body flying over.
+func _check_roof_press_boundary() -> void:
+	var label := "the press-out reads a car only up to its roof"
+	var lanes := _run_lanes()
+	if lanes.size() < 2:
+		return
+	var vh = tr.get("vehicles")
+	var c = _lane_car(lanes[0], 0.5, lanes.slice(1), 0.0)
+	var bb: AABB = vh.aabb(c)
+	var centre: Vector3 = c.pos
+	var h2: Vector2 = OBB.heading(c.yaw)
+	var side := Vector3(h2.y, 0.0, -h2.x)
+	var at: Vector3 = centre + side * (float(c.half_w) + 1.0 * WS.M)
+	at.y = WS.GROUND_Y
+	var w := _victim(at, side)
+	react.call("hit", w, at - side * WS.M, side * WS.M, STRENGTH, "car", 0.0)
+	for _k in range(60):
+		tr.call("step", DT)
+		_clock += DT
+	K.check(fails, bool(react.call("is_down", w)), "fixture: the victim lies beside the car")
+	# Control: feet a hand's width inside the car's side at ground level -- the press acts.
+	var in_feet: Vector3 = centre + side * (float(c.half_w) - 0.1 * WS.M)
+	in_feet.y = WS.GROUND_Y
+	w.pos = in_feet
+	w.vis_off = Vector3.ZERO
+	var before := Vector2(in_feet.x, in_feet.z)
+	for _k in range(30):
+		tr.call("step", DT)
+		_clock += DT
+	var ground_press := before.distance_to(Vector2((w.pos + w.vis_off).x, (w.pos + w.vis_off).z))
+	# The same overlap with the body lifted past the roof: the press skips it entirely.
+	w.pos = in_feet
+	w.vis_off = Vector3.ZERO
+	var rise: float = bb.end.y + 0.05 * WS.M - WS.GROUND_Y
+	for _k in range(30):
+		w.vis_off.y = rise
+		tr.call("step", DT)
+		w.vis_off.y = rise
+		_clock += DT
+	var roof_press := before.distance_to(Vector2((w.pos + w.vis_off).x, (w.pos + w.vis_off).z))
+	print(
+		(
+			"  press: %.2f m at ground level, %.2f m past the roof"
+			% [ground_press / WS.M, roof_press / WS.M]
+		)
+	)
+	K.check(
+		fails,
+		ground_press >= 0.15 * WS.M,
+		"%s: an overlap at ground level is pressed out (%.2f m)" % [label, ground_press / WS.M]
+	)
+	K.check(
+		fails,
+		roof_press <= 0.02 * WS.M,
+		"%s: the same overlap past the roof is left alone (%.2f m)" % [label, roof_press / WS.M]
+	)
+	vh.remove(c)
+	wk.remove(w)
 
 
 # ------------------------------------------------------------------ measuring
