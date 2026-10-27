@@ -192,4 +192,3 @@ def test_prune_keeps_the_previous_release(tmp_path):
     prune_releases(output, "ccc")
     assert (output / "releases/aaa").exists() is False  # oldest is dropped
     assert (output / "releases/bbb").exists() is True  # the one before the new release survives
-
