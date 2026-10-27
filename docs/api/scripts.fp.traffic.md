@@ -20,6 +20,7 @@ Ambient filler (docs/fp/slices/E-traffic.md §6): unnamed commuters (some of the
 - `WK = preload("res://scripts/fp/traffic/walkers.gd")`
 - `MAX_CARS = 40`
 - `MAX_PEDS = 60`
+- `QUALITY = preload("res://scripts/fp/render/quality.gd")`: The web quality mode (its static density_caps(): {"traffic": n, "crowd": n, "animals": n}; empty off-web, so there the caps below stand).
 - `CARS_PER_TILE = 0.3`: Cars per road tile within the ring, before congestion and trip load.
 - `PEDS_PER_TILE = 1.6`
 - `MIN_SPAWN = 6.0`
@@ -44,6 +45,7 @@ Ambient filler (docs/fp/slices/E-traffic.md §6): unnamed commuters (some of the
 
 - `car_model: Callable`: Callables set by the feature: car_model(seed) -> int, person_model(seed) -> int, dims(model) -> Vector3, visible(pos) -> bool (inside the camera frustum and within car range).
 - `bike_model: Callable`: bike_model() -> int (traffic_feature.bike_model), and the share of cyclists.
+- `caps_override: Variant`: Test hook: a Dictionary used as the density caps instead of quality.gd's (null: read it).
 - `jcb_model: Callable`: jcb_model() -> int (traffic_feature.jcb_model): the backhoe loader parked at a rare share of curb slots (a parked work machine the player can drive, not one in traffic).
 
 ### Functions
