@@ -14,8 +14,10 @@ extends RefCounted
 const MANIFEST_PATH := "res://web_manifest.json"
 const CACHE_DIR := "user://packs"
 
-## Emitted once a pack is mounted (and after a failed one too, so a caller can retry or fall back).
+## Emitted once a pack is mounted and its resources are available.
 signal pack_arrived(pack: String)
+## Emitted after a failed attempt, with a reason code; the pack can be requested again.
+signal pack_failed(pack: String, reason: String)
 
 var _manifest: Dictionary = {}
 var _mounted: Dictionary = {}
@@ -111,13 +113,13 @@ func progress() -> float:
 
 ## Drops the in-memory state (tests, and a scene reload).
 func reset() -> void:
+	_clear_request()
 	_manifest = {}
 	_mounted = {}
 	_loading = {}
 	_pending = []
 	_active = ""
 	_target = ""
-	_http = null
 
 
 func _start(host: Node, pack: String) -> void:
@@ -140,24 +142,35 @@ func _start(host: Node, pack: String) -> void:
 	var url := _url_for(str(entry.get("file", "")))
 	if _http.request(url) != OK:
 		push_warning("PackLoader: could not start the download for " + pack)
-		_finish(pack, false)
+		_finish(pack, false, "request")
 
 
 func _on_download(
-	_result: int, code: int, _headers: PackedStringArray, body: PackedByteArray
+	result: int, code: int, _headers: PackedStringArray, body: PackedByteArray
 ) -> void:
 	var pack := _active
-	if code != 200 or body.is_empty():
+	if pack.is_empty():
+		return
+	if result != HTTPRequest.RESULT_SUCCESS or code != 200:
 		push_warning("PackLoader: download failed for %s (HTTP %d)" % [pack, code])
-		_finish(pack, false)
+		_finish(pack, false, "download")
+		return
+	var expected := int(_manifest["packs"][pack].get("bytes", -1))
+	if body.is_empty() or body.size() != expected:
+		push_warning("PackLoader: download size mismatch for " + pack)
+		_finish(pack, false, "size")
 		return
 	var file := FileAccess.open(_target, FileAccess.WRITE)
 	if file == null:
 		push_warning("PackLoader: cannot write " + _target)
-		_finish(pack, false)
+		_finish(pack, false, "write")
 		return
 	file.store_buffer(body)
+	var write_error := file.get_error()
 	file.close()
+	if write_error != OK:
+		_finish(pack, false, "write")
+		return
 	_mount(pack, _target)
 
 
@@ -165,22 +178,35 @@ func _mount(pack: String, path: String) -> void:
 	if not ProjectSettings.load_resource_pack(path, true):
 		push_warning("PackLoader: could not mount " + path)
 		DirAccess.remove_absolute(ProjectSettings.globalize_path(path))
-		_finish(pack, false)
+		_finish(pack, false, "mount")
 		return
 	_mounted[pack] = true
 	_finish(pack, true)
 
 
-func _finish(pack: String, ok: bool) -> void:
+func _finish(pack: String, ok: bool, reason: String = "") -> void:
+	if not ok and not _target.is_empty() and FileAccess.file_exists(_target):
+		DirAccess.remove_absolute(ProjectSettings.globalize_path(_target))
 	_loading.erase(pack)
 	_active = ""
 	_target = ""
-	if _http != null and _http.get_parent() != null:
+	_clear_request()
+	if ok:
+		pack_arrived.emit(pack)
+	else:
+		pack_failed.emit(pack, reason)
+
+
+func _clear_request() -> void:
+	if _http == null:
+		return
+	if _http.request_completed.is_connected(_on_download):
+		_http.request_completed.disconnect(_on_download)
+	_http.cancel_request()
+	if _http.get_parent() != null:
 		_http.get_parent().remove_child(_http)
 	_http.queue_free()
 	_http = null
-	if ok:
-		pack_arrived.emit(pack)
 
 
 func _url_for(file: String) -> String:

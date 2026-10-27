@@ -15,6 +15,10 @@ func _init() -> void:
 	_check_manifest()
 	_check_cache_path()
 	_check_stale_cache()
+	_check_cached_mount()
+	_check_failed_mount()
+	_check_download_validation()
+	await _check_reset_active_request()
 	if fails.is_empty():
 		print("PACK_LOADER_TEST: PASS")
 	else:
@@ -97,7 +101,10 @@ func _check_cache_path() -> void:
 
 ## A cached pack whose size no longer matches its manifest entry must be dropped, not mounted.
 func _check_stale_cache() -> void:
-	var manifest := {"packs": {"zones": {"file": "releases/abc/packs/zones-11.pck", "bytes": 100}}}
+	var manifest := {
+		"base": "http://127.0.0.1:1",
+		"packs": {"zones": {"file": "releases/abc/packs/zones-11.pck", "bytes": 100}}
+	}
 	var loader := _with_manifest(manifest)
 	var path := loader.cache_path("zones")
 	DirAccess.make_dir_recursive_absolute(PackLoader.CACHE_DIR)
@@ -112,4 +119,158 @@ func _check_stale_cache() -> void:
 	loader.pump(host)
 	K.check(fails, not FileAccess.file_exists(path), "a size-mismatched cache file is deleted")
 	loader.reset()
+	host.queue_free()
+
+
+func _fixture_loader(name: String, size: int) -> PackLoader:
+	return _with_manifest({"packs": {name: {"file": "packs/" + name + ".pck", "bytes": size}}})
+
+
+## Mounting a valid cache never creates an HTTPRequest, so cleanup must accept null.
+func _check_cached_mount() -> void:
+	var loader := _fixture_loader("cache-regression", 0)
+	var path := loader.cache_path("cache-regression")
+	var source := "user://pack_loader_probe.txt"
+	var file := FileAccess.open(source, FileAccess.WRITE)
+	file.store_string("cached pack regression")
+	file.close()
+	var packer := PCKPacker.new()
+	K.check(fails, packer.pck_start(path) == OK, "create the cached PCK fixture")
+	K.check(
+		fails,
+		packer.add_file("res://pack_loader_cache_probe.txt", source) == OK,
+		"add the cached PCK fixture resource"
+	)
+	K.check(fails, packer.flush() == OK, "finish the cached PCK fixture")
+	loader._manifest["packs"]["cache-regression"]["bytes"] = (
+		FileAccess.get_file_as_bytes(path).size()
+	)
+	var arrivals: Array[String] = []
+	loader.pack_arrived.connect(func(pack: String) -> void: arrivals.append(pack))
+	var host := Node.new()
+	get_root().add_child(host)
+	loader.request("cache-regression")
+	K.check(fails, not loader.pump(host), "cache mount finishes without network work")
+	K.check(fails, loader.mounted("cache-regression"), "cached pack mounts")
+	K.check(fails, arrivals == ["cache-regression"], "cached mount emits arrival once")
+	K.check(fails, host.get_child_count() == 0, "cache mount creates no HTTPRequest")
+	K.check(
+		fails,
+		(
+			FileAccess.get_file_as_string("res://pack_loader_cache_probe.txt")
+			== "cached pack regression"
+		),
+		"cached resource is available after mount"
+	)
+	DirAccess.remove_absolute(ProjectSettings.globalize_path(path))
+	DirAccess.remove_absolute(ProjectSettings.globalize_path(source))
+	host.queue_free()
+
+
+## A failed mount reports failure, releases pending state, and remains retryable.
+func _check_failed_mount() -> void:
+	var loader := _fixture_loader("bad-mount-regression", 3)
+	var path := loader.cache_path("bad-mount-regression")
+	var file := FileAccess.open(path, FileAccess.WRITE)
+	file.store_buffer(PackedByteArray([1, 2, 3]))
+	file.close()
+	var failures: Array = []
+	loader.pack_failed.connect(
+		func(pack: String, reason: String) -> void: failures.append([pack, reason])
+	)
+	var host := Node.new()
+	get_root().add_child(host)
+	loader.request("bad-mount-regression")
+	loader.pump(host)
+	K.check(
+		fails, failures == [["bad-mount-regression", "mount"]], "mount failure emits one failure"
+	)
+	K.check(fails, not loader.pending("bad-mount-regression"), "failed pack is no longer pending")
+	K.check(fails, not FileAccess.file_exists(path), "failed mount deletes corrupt cached bytes")
+	K.check(fails, loader.request("bad-mount-regression"), "failed pack can be requested again")
+	loader.reset()
+	host.queue_free()
+
+
+## Even HTTP 200 is a failure when transport failed or the decoded body size is wrong.
+func _check_download_validation() -> void:
+	for sample: Array in [
+		[HTTPRequest.RESULT_CONNECTION_ERROR, 200, PackedByteArray([1, 2, 3]), "download"],
+		[HTTPRequest.RESULT_SUCCESS, 404, PackedByteArray([1, 2, 3]), "download"],
+		[HTTPRequest.RESULT_SUCCESS, 200, PackedByteArray([1, 2]), "size"],
+		[HTTPRequest.RESULT_SUCCESS, 200, PackedByteArray([1, 2, 3, 4]), "size"],
+		[HTTPRequest.RESULT_SUCCESS, 200, PackedByteArray(), "size"],
+	]:
+		var loader := _fixture_loader("download-regression", 3)
+		var path := loader.cache_path("download-regression")
+		var file := FileAccess.open(path, FileAccess.WRITE)
+		file.store_buffer(PackedByteArray([9]))
+		file.close()
+		loader._active = "download-regression"
+		loader._loading = {"download-regression": true}
+		loader._target = path
+		var failures: Array = []
+		var arrivals: Array = []
+		loader.pack_failed.connect(
+			func(pack: String, reason: String) -> void: failures.append([pack, reason])
+		)
+		loader.pack_arrived.connect(func(pack: String) -> void: arrivals.append(pack))
+		loader._on_download(sample[0], sample[1], PackedStringArray(), sample[2])
+		K.check(
+			fails,
+			failures == [["download-regression", sample[3]]],
+			"download validation emits the failure reason: " + str(sample[3])
+		)
+		K.check(fails, arrivals.is_empty(), "invalid download does not emit arrival")
+		K.check(fails, not FileAccess.file_exists(path), "invalid download deletes partial file")
+		K.check(fails, not loader.pending("download-regression"), "invalid download clears pending")
+		K.check(fails, not loader.mounted("download-regression"), "invalid download is not mounted")
+		loader.reset()
+
+
+## Reset cancels a real local request, detaches it, and cannot emit a late completion.
+func _check_reset_active_request() -> void:
+	var server := TCPServer.new()
+	var listening := server.listen(0, "127.0.0.1")
+	K.check(fails, listening == OK, "local reset fixture listens")
+	if listening != OK:
+		return
+	var loader := _fixture_loader("reset-regression", 3)
+	loader._manifest["base"] = "http://127.0.0.1:%d" % server.get_local_port()
+	var host := Node.new()
+	get_root().add_child(host)
+	var completions: Array = []
+	loader.pack_failed.connect(
+		func(pack: String, _reason: String) -> void: completions.append(pack)
+	)
+	loader.pack_arrived.connect(func(pack: String) -> void: completions.append(pack))
+	loader.request("reset-regression")
+	loader.pump(host)
+	var request := loader._http
+	K.check(fails, request != null, "reset fixture starts an HTTPRequest")
+	if request != null:
+		for _frame in range(60):
+			if server.is_connection_available():
+				break
+			await process_frame
+		var connection := server.take_connection() if server.is_connection_available() else null
+		K.check(fails, connection != null, "local request is active before reset")
+		var weak_request: WeakRef = weakref(request)
+		loader.reset()
+		K.check(
+			fails,
+			request.get_http_client_status() == HTTPClient.STATUS_DISCONNECTED,
+			"reset cancels the active transport immediately"
+		)
+		K.check(fails, host.get_child_count() == 0, "reset detaches the request immediately")
+		K.check(fails, loader._http == null, "reset drops the request reference")
+		K.check(fails, not loader.active(), "reset clears the manifest")
+		K.check(fails, not loader.pending("reset-regression"), "reset clears pending state")
+		K.check(fails, not loader.pump(host), "reset leaves no queued work")
+		await process_frame
+		K.check(fails, weak_request.get_ref() == null, "reset frees the request")
+		K.check(fails, completions.is_empty(), "cancelled request emits no late completion")
+		if connection != null:
+			connection.disconnect_from_host()
+	server.stop()
 	host.queue_free()

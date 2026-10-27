@@ -194,7 +194,8 @@ Streams the web build's background packs: the boot pack is the engine's own `.pc
 
 ### Signals
 
-- `pack_arrived(pack: String)`: Emitted once a pack is mounted (and after a failed one too, so a caller can retry or fall back).
+- `pack_arrived(pack: String)`: Emitted once a pack is mounted and its resources are available.
+- `pack_failed(pack: String, reason: String)`: Emitted after a failed attempt, with a reason code; the pack can be requested again.
 
 ### Constants
 
