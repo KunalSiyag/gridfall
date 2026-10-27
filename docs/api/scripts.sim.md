@@ -37,6 +37,7 @@ Tile-based SimCity-style simulation: zoning + demand-driven growth, power/water/
 - `UNITS_PER_PUMP = 32`: Sliced work is counted in units: one unit is a chunk of at most UNIT_WORK tile visits, one road search that misses the route cache, or one resident's turn. A pump starts no step once it has done UNITS_PER_PUMP - STEP_MAX_UNITS units, and a step (with its nested synchronous sections) stays within STEP_MAX_UNITS, so one pump never exceeds UNITS_PER_PUMP on any machine.
 - `STEP_MAX_UNITS = 8`
 - `UNIT_WORK = 2048`
+- `MAX_TICKS_PER_FRAME = 8`: Upper bound on whole ticks in one frame, whatever tick_budget_ms allows.
 
 ### Properties
 
@@ -47,6 +48,8 @@ Tile-based SimCity-style simulation: zoning + demand-driven growth, power/water/
 - `people: Residents`: The AI residents (Residents node). When attached, human behaviour (mood, commuting, spending, moving, fixing what breaks) comes from their decisions instead of fixed formulas.
 - `broken_roads: Dictionary`: Road tiles cut by a downed power line: tile -> incident id.
 - `road_grades: bool`: Road orders may ask for a cheaper grade (D.ROAD_GRADES); off: every road is paved (main.gd: the road_grades flag). Not saved.
+- `tick_budget_ms: float`: Wall-clock budget for whole (unsliced) ticks in one frame. A due tick always runs, so the city never stalls; further ticks wait for the next frame once the budget is spent.
+- `effective_speed: float`: Game speed the sim actually achieved, smoothed over about a second: equal to speed while frames keep up, lower when ticks were deferred and the backlog clamped. For the HUD.
 - `active`: Tiles the per-tick systems process: claimed land plus a small margin. Unclaimed wilds hold no roads or buildings, so skipping them keeps a 192x192 world as cheap as the founding city.
 - `sites: Dictionary`: Open construction sites: tile -> site. "auto" stages construction whenever residents run the city; "staged" / "instant" force it either way.
 - `crew_jobs: Array[Dictionary]`: The player's crew orders, oldest first: {"id", "owner", "label", "x", "y", "tiles" (its site tiles), "work" (the sites' contractor work), "total" and "done" (crew seconds), "crew" (crew index, -1 while it waits for a free crew)}. Their sites carry "job", the order id.
