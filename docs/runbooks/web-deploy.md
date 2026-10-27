@@ -5,7 +5,8 @@ The web build is how people try GridFall without installing anything. `tools/exp
 tree), caps the prop and character textures at 256 px, converts every WAV to Ogg, exports the
 no-threads Godot 4 web build, aliases duplicate PCK payloads to one copy and publishes the result
 under a content-addressed `releases/<hash>/` directory. The `.pck` that ships is ~194 MB instead of
-~654 MB, and the whole site is ~224 MB. A first visit moves ~132 MB (Brotli). `deploy/web/` serves
+~654 MB, and the whole site is ~224 MB. A first visit moves ~137 MB (Brotli; 137.3 MB measured in
+the offline smoke). `deploy/web/` serves
 it from Caddy, a static file server only — players' browsers call `api.gmi-serving.com` themselves
 with each player's own GMI key (CORS allows it), and without a key the game runs offline (replay
 cache, then heuristics). There is no server-side key by design.
@@ -60,8 +61,8 @@ cache, then heuristics). There is no server-side key by design.
   the container maps 443 -> 8080 by default).
 - `curl -sI -H 'Accept-Encoding: br' https://<public-host>/releases/<hash>/index.pck` must report
   `content-encoding: br`, `cache-control: public, max-age=31536000, immutable` and a
-  `content-length` around 100 MB; the same URL with `--compressed` transfers that many bytes
-  instead of 186 MB. `curl -sI https://<public-host>/index.html` must say `cache-control: no-cache`.
+  `content-length` around 130 MB; the same URL with `--compressed` transfers that many bytes
+  instead of 194 MB. `curl -sI https://<public-host>/index.html` must say `cache-control: no-cache`.
 - The page boots to the first-person city in a normal browser; the first visit moves roughly the
   compressed size of the `.pck` plus the `.wasm` and small files. Later visits come from the
   service worker cache; a new release has a new `releases/<hash>/` path and a new
@@ -85,6 +86,26 @@ cache, then heuristics). There is no server-side key by design.
   into the key page, nothing stored, and the run fails if a single request reaches
   `api.gmi-serving.com`: the mayors plan offline (replay cache, then heuristics), which is the
   state every visitor without a key is in.
+
+### Post-redeploy checklist: keyless checks first, one keyed turn last
+
+Verification splits by who holds a GMI key, because the deployment never does.
+
+**Keyless (the operator, every redeploy):** `/healthz`; `python tools/web_measure.py
+https://<public-host>/` for the per-file encodings and headers (Brotli through the gateway,
+`immutable` on the hashed payloads, `no-cache` on the loader, COOP/COEP) plus the first-load wire
+bytes and time to first frame; boot to the first-person city in a normal browser; scan the console
+for errors and for `Too many instances using shader instance variables` (none expected on a fresh
+day-1 city — that warning belongs to grown saves, see Known limitations); and one offline mayor
+turn (`GF_SMOKE_OFFLINE=1` smoke above), which fails if a single request leaves for
+`api.gmi-serving.com`.
+
+**Keyed (the player, once, with their own key):** open the site, paste the key, confirm a live
+mayor turn. This is the only check that exercises the real `api.gmi-serving.com` call and the only
+one that can prove it works under cross-origin isolation — the COOP/COEP headers isolate the page
+even in the no-threads build, and no offline smoke reaches the API. The operator never asks for,
+types or sees the key: ask the player to run this step and report whether the turn went live
+(`GMI_OK` console lines) or fell back (`GMI_FAIL`).
 
 ## Symptoms and fixes
 
