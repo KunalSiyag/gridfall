@@ -166,12 +166,16 @@ func scan(me: Vector3, by_day: bool, rain := false) -> void:
 
 ## The world for this step from the dogs' pack and the cats: the hero on foot and their velocity,
 ## the dogs around, the cats (close by or pouncing, as CAT_NEAR entries) and the people on foot,
-## all of which frighten a squirrel.
+## all of which frighten a squirrel. The squirrels go into the dogs' prey — reachable on the
+## ground, out of a chaser's reach once up the trunk (the dog barks up and gives up below:
+## dog_pack.gd's chase, the cat beat).
 func world(pack: PACK, cat_life: CAT_LIFE) -> void:
 	life.hero_on_foot = pack.hero_on_foot
 	life.hero = pack.hero
 	life.hero_vel = pack.hero_vel
 	life.passers = pack.passers
+	for s: LIFE.Squirrel in life.squirrels:
+		pack.prey.append([s.key, s.pos, not (s.state in ["climb", "hold", "down"])])
 	life.dogs.clear()
 	for d: PACK.Dog in pack.dogs:
 		life.dogs.append([d.pos, Vector3(sin(d.yaw), 0.0, cos(d.yaw)) * d.speed])

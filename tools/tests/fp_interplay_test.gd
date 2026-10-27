@@ -2,7 +2,9 @@ extends SceneTree
 ## The animals' interplay: a free dog spots the pigeons feeding on the ground and gives chase —
 ## the flock goes up — then stands and sniffs where they went; a free dog after a cat sends it
 ## bolting up the nearest trunk (cat_life.gd's tree refuge), barks up at it and gives up below,
-## and the cat comes back down once the dog has gone; a hunter cat stalks a squirrel low and slow
+## and the cat comes back down once the dog has gone; a free dog after a squirrel sends it up its
+## own trunk the same way (the squirrels' feed into the pack's prey, squirrels.world); a hunter
+## cat stalks a squirrel low and slow
 ## — it holds its nerve until the pounce, then goes up its tree — grooms, and watches it up there
 ## as it does the perched birds; with the pigeons up out of reach a hunter watches the birds
 ## perched on a lamp instead of stalking: it sits still with its tail twitching and its eyes on
@@ -61,6 +63,7 @@ func _init() -> void:
 	ctx.sky.night = 0.0
 	_quiet()
 	_check_dog_chases_cat()
+	_check_dog_chases_squirrel()
 	_check_dog_chase()
 	_check_cat_stalks_squirrel()
 	_check_cat_watches()
@@ -126,7 +129,71 @@ func _chaser(key: String, at: Vector3, yaw: float, home: Vector3) -> PACK.Dog:
 	return d
 
 
+## A lawn spot with a squirrel's tree, no pigeons, cats or other squirrels about, the player
+## 30 m off it — the stage for the squirrel checks. {} when the city has none (the check logged).
+func _squirrel_stage(what: String) -> Dictionary:
+	var sq: Node = f.get("squirrels")
+	var spot := _spot_of(sq, false)
+	K.check(fails, not spot.is_empty(), "fixture: a lawn with a squirrel's tree (%s)" % what)
+	if spot.is_empty():
+		return {}
+	FeatureFlags.set_override("pigeons", false)
+	pigeons.clear()
+	cats.clear()
+	sq.call("clear")
+	ctx.player.teleport((spot["home"] as Vector3) + Vector3(30.0 * WS.M, 0.0, 0.0), 0.0)
+	return spot
+
+
 # ------------------------------------------------------------------ checks
+
+
+## A free dog after a squirrel out on its lawn: the squirrel goes up its own trunk, the dog barks
+## up at it and gives up below — the cat beat, by the squirrels' feed into the pack's prey
+## (squirrels.world).
+func _check_dog_chases_squirrel() -> void:
+	var spot := _squirrel_stage("the chase")
+	if spot.is_empty():
+		return
+	var sq_life: SQ_LIFE = (f.get("squirrels") as Node).get("life")
+	var home: Vector3 = spot["home"]
+	var tree: Array = spot["tree"]
+	var trunk := Vector3(tree[0], 0.0, tree[1])
+	# The squirrel 2.5 m out from its trunk, so the dash and the climb read.
+	var out := home - trunk
+	out.y = 0.0
+	out = out.normalized() if out.length_squared() > 1e-12 else Vector3.RIGHT
+	var s := sq_life.add(home, tree, str(spot["key"]))
+	s.pos = home + out * 2.5 * WS.M
+	var d := _chaser("test:sq-chaser", s.pos + out * 3.5 * WS.M, atan2(-out.x, -out.z), home)
+	if d == null:
+		return
+	var chased := false
+	var gave_up := false
+	for _k in range(ceili(15.0 / DT)):
+		_step(DT)
+		if d.act == "chase" and d.chase == s.key:
+			chased = true
+		if chased and d.act == "sniff" and d.chase == "":
+			gave_up = true
+			break
+	# The give-up bark is a volley: it plays out over the next seconds.
+	_step(2.0)
+	var barked := int((f.get("calls") as Dictionary).get("bark", 0))
+	K.check(fails, chased, "dog-squirrel: the dog gives chase (%s)" % d.chase)
+	K.check(
+		fails,
+		s.state in ["climb", "hold"],
+		"dog-squirrel: the squirrel goes up its trunk (%s)" % s.state
+	)
+	K.check(
+		fails,
+		gave_up and barked >= 1,
+		"dog-squirrel: it barks up at the trunk and gives up (%d barks, %s)" % [barked, d.act]
+	)
+	f.call("_drop", d)
+	(f.get("squirrels") as Node).call("clear")
+	FeatureFlags.set_override("pigeons", true)
 
 
 ## A free dog after a cat with a tree at hand: the cat bolts up the trunk (cat_life.gd's tree
@@ -215,20 +282,12 @@ func _check_dog_chases_cat() -> void:
 ## the pounce (a stalking cat reads no nearer than CAT_NEAR to it), then goes up its tree — the
 ## cat grooms, and with it up out of reach the hunter sits watching it as it does the birds.
 func _check_cat_stalks_squirrel() -> void:
-	var sq: Node = f.get("squirrels")
-	var sq_life: SQ_LIFE = sq.get("life")
-	var spot := _spot_of(sq, false)
-	K.check(fails, not spot.is_empty(), "fixture: a lawn with a squirrel's tree")
+	var spot := _squirrel_stage("the stalk")
 	if spot.is_empty():
 		return
-	# No pigeons and no other cats or squirrels about: the stalk is the test's own.
-	FeatureFlags.set_override("pigeons", false)
-	pigeons.clear()
-	cats.clear()
-	sq.call("clear")
+	var sq_life: SQ_LIFE = (f.get("squirrels") as Node).get("life")
 	var home: Vector3 = spot["home"]
 	var s := sq_life.add(home, spot["tree"], str(spot["key"]))
-	ctx.player.teleport(home + Vector3(30.0 * WS.M, 0.0, 0.0), 0.0)
 	var at := home + Vector3(2.5 * WS.M, 0.0, 0.0)
 	var b := cats.bodies.make("cat", 1.0, cats)
 	if b == null:
