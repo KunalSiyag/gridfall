@@ -1185,6 +1185,7 @@ Resident trips (docs/fp/slices/E-traffic.md §4): the AI link. Residents.trip_st
 - `SW = preload("res://scripts/fp/traffic/sidewalks.gd")`
 - `VH = preload("res://scripts/fp/traffic/vehicles.gd")`
 - `WK = preload("res://scripts/fp/traffic/walkers.gd")`
+- `PARKED = preload("res://scripts/fp/traffic/trips_parked.gd")`
 - `INSIDE = ["home", "work", "shopping", "working late"]`
 - `BUS_WAIT = 90.0`
 - `JITTER = 6.0`
@@ -1199,6 +1200,7 @@ Resident trips (docs/fp/slices/E-traffic.md §4): the AI link. Residents.trip_st
 - `cars: Dictionary`: rid -> Car (their own; parked between trips)
 - `standing: Dictionary`: rid -> Walker standing outdoors
 - `held: Dictionary`: rid -> true while in a conversation
+- `parked: PARKED`: The residents' own parked cars and the save's parked table (trips_parked.gd); set up with the rest below.
 
 ### Inner classes
 
@@ -1214,7 +1216,6 @@ Resident trips (docs/fp/slices/E-traffic.md §4): the AI link. Residents.trip_st
 - `func on_moved(r: Dictionary) -> void`: A resident moved without a trip (state only): keeps standing residents in sync.
 - `func on_departed(r: Dictionary) -> void`
 - `func on_day_started() -> void`: Reconciles parked cars with where their owners now live and work (sim.day_started).
-- `func car_of(rid: String, lot: int, toward: int = -1) -> VH.Car`: The resident's own car, creating it (parked near lot, facing road tile `toward` when given) the first time.
 - `func walk_plan(a: Vector3, ta: int, b: Vector3, tb: int) -> Array`: Walking plan from world point a (near road tile ta) to b (near tb): a free leg onto the nearest sidewalk, the network (zebras included), and a free leg off it. [] when unreachable.
 - `func step(dt: float) -> void`: Per-step trip logic (dt: game-scaled seconds).
 - `func on_car_arrived(c: VH.Car) -> void`: A vehicle reached its goal (vehicles.on_arrive).
@@ -1227,6 +1228,31 @@ Resident trips (docs/fp/slices/E-traffic.md §4): the AI link. Residents.trip_st
 - `func vehicle_of(rid: String) -> VH.Car`: The vehicle resident rid is driving or riding right now, or null.
 - `func live_position(rid: String) -> Vector3`: Live position of rid (walker, vehicle), or NAN when not drawn.
 - `func anchor(rid: String) -> Vector3`: Head anchor of rid while drawn (speech bubble, conversation two-shot), or NAN.
+- `func parked_table() -> Dictionary`: Saved parked table: {rid: [tile, slot]}.
+- `func restore_parked(d: Dictionary) -> void`: Restores parked cars from a saved table (only for residents who still exist).
+
+## `scripts/fp/traffic/trips_parked.gd`
+
+extends `RefCounted`
+
+The residents' own parked cars (trips.gd): each resident's car is made once and parked near their lot between trips, an out-of-sight decor car giving up its slot for it, and the parked table is the save's record of who sits where. The cars dictionary is trips.gd's own, shared.
+
+### Constants
+
+- `D = preload("res://scripts/sim/sim_defs.gd")`
+- `LG = preload("res://scripts/fp/traffic/lane_graph.gd")`
+- `VH = preload("res://scripts/fp/traffic/vehicles.gd")`
+
+### Properties
+
+- `f: Object`: the traffic feature (models, door points, visibility)
+- `cars: Dictionary`: trips.gd's rid -> Car, shared (trips clears it on a new world, never reassigns it).
+
+### Functions
+
+- `func car_of(rid: String, lot: int, toward: int = -1) -> VH.Car`: The resident's own car, creating it (parked near lot, facing road tile `toward` when given) the first time.
+- `func park_near(c: VH.Car, lot: int, road: int, toward: int = -1) -> bool`: Parks c in a free slot near lot's frontage (facing road tile `toward` first, then the lot's side), or near tile `road`. With `toward`, the tiles further along that way are tried before the wrong side, and an out-of-sight decor car may give up its slot.
+- `func evict_decor(i: int, k: int) -> bool`: Removes the decor car in slot (i, k) when it is out of sight. True when the slot is now free.
 - `func parked_table() -> Dictionary`: Saved parked table: {rid: [tile, slot]}.
 - `func restore_parked(d: Dictionary) -> void`: Restores parked cars from a saved table (only for residents who still exist).
 

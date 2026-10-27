@@ -2590,7 +2590,7 @@ func _check_horn_street() -> void:
 	var heard: Array = []
 	var cb := func(at: Vector2, radius: float, long: bool) -> void: heard.append([at, radius, long])
 	ctx.bus.horn_sounded.connect(cb)
-	drive.call("_horn")
+	drive.get("input").call("horn")
 	K.check(
 		fails,
 		(
@@ -2610,14 +2610,14 @@ func _check_horn_street() -> void:
 		heard.size() == 2 and bool(heard[1][2]),
 		"horn street: and leaning on it goes out long (%d heard)" % heard.size()
 	)
-	drive.set("_horn_t", 0.0)
+	drive.get("input").set("_horn_t", 0.0)
 	drive.set("bike", true)
-	drive.call("_horn")
+	drive.get("input").call("horn")
 	drive.set("bike", false)
 	K.check(fails, heard.size() == 2, "horn street: a bicycle's bell carries nothing")
 	FeatureFlags.set_override("horn_street", false)
-	drive.set("_horn_t", 0.0)
-	drive.call("_horn")
+	drive.get("input").set("_horn_t", 0.0)
+	drive.get("input").call("horn")
 	FeatureFlags.set_override("horn_street", true)
 	K.check(fails, heard.size() == 2, "horn street: the flag off, the horn is only heard")
 	ctx.bus.horn_sounded.disconnect(cb)
