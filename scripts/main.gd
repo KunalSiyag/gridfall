@@ -25,6 +25,7 @@ var residents: Residents
 var minds: ResidentMinds
 var sky: SkyDirector
 const WS := preload("res://scripts/fp/world_scale.gd")
+const Q := preload("res://scripts/fp/render/quality.gd")
 ## First-person composition (null in orbit mode). Built by enter_fp(), freed by exit_fp().
 var fp: FpMode = null
 ## "orbit" or "fp"; tools and saves can read it.
@@ -48,6 +49,8 @@ func _ready() -> void:
 		GpuMemory.apply_to(get_viewport())
 	if bool(gpu["low"]) or DisplayServer.get_name() != "headless":
 		print(GpuMemory.describe(gpu))
+	# Browser only: a slow frame must not catch physics up 8 steps at once (6-35 ms a step there).
+	Q.cap_physics_steps()
 	var ops := OpsAlerts.new()
 	ops.name = "OpsAlerts"
 	ops.main = self

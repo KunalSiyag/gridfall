@@ -104,10 +104,25 @@ const WEB := {
 ## clamp their budgets to; each owner tunes its own number with before/after FPS evidence.
 const WEB_DENSITY := {"traffic": 12, "crowd": 24, "animals": 6}
 
+## Browser pacing: physics catch-up steps a frame may run, below the engine default of 8. The
+## browser build pays 6-35 ms per physics step, so 8 catch-up steps after a slow frame add more
+## work than the frame itself; at 2 the physics share of a hitch stays bounded and physics time
+## dilates instead. Desktop keeps the engine default.
+const WEB_MAX_PHYSICS_STEPS := 2
+
 
 ## True in the browser export.
 static func is_web() -> bool:
 	return OS.has_feature("web")
+
+
+## Caps the physics catch-up steps per frame in the browser (main.gd calls it once at boot, so
+## it covers the orbit and street modes alike); a slow frame then cannot add a multiple of the
+## per-step physics cost while catching up. Desktop keeps the engine default. web forces the
+## cap in tests.
+static func cap_physics_steps(web: bool = false) -> void:
+	if web or is_web():
+		Engine.max_physics_steps_per_frame = WEB_MAX_PHYSICS_STEPS
 
 
 ## Web tier active: the web build with flag web_quality on. web forces it on in tests.
