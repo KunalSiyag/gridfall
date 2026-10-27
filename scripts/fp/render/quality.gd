@@ -84,6 +84,36 @@ const COMPAT := {
 	"high": {"scale": 1.0, "msaa": Viewport.MSAA_4X},
 }
 
+## Density ceilings the web quality tier (flag web_quality) publishes for the traffic, crowd
+## and animal owners to clamp their budgets to; each owner tunes its own number with
+## before/after FPS evidence. The render knobs of the tier land separately.
+const WEB_DENSITY := {"traffic": 12, "crowd": 24, "animals": 6}
+
+
+## True in the browser export.
+static func is_web() -> bool:
+	return OS.has_feature("web")
+
+
+## Web tier active: the web build with flag web_quality on. web forces it on in tests.
+static func web_mode(web: bool = false) -> bool:
+	return web or (is_web() and FeatureFlags.enabled("web_quality", true))
+
+
+## Density ceilings for the web tier: {} off the web or with the flag off (owners keep their
+## current budgets then). GRIDFALL_WEB_CAPS="traffic=8,crowd=16" overrides single values so
+## profiling can bisect without a rebuild (desktop gl_compatibility runs); unknown keys are
+## ignored.
+static func density_caps(web: bool = false) -> Dictionary:
+	if not web_mode(web):
+		return {}
+	var caps := WEB_DENSITY.duplicate()
+	for pair in OS.get_environment("GRIDFALL_WEB_CAPS").split(",", false):
+		var kv := pair.split("=", true, 1)
+		if kv.size() == 2 and caps.has(kv[0]):
+			caps[kv[0]] = kv[1].to_int()
+	return caps
+
 
 ## True when the running renderer is Compatibility (the web build, or a desktop run with
 ## --rendering-method gl_compatibility). method overrides the running one (tests).
