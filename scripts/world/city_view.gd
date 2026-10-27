@@ -2009,8 +2009,15 @@ func building_aabb(i: int) -> AABB:
 	var path := str(holder.get_meta("building_path"))
 	if path.is_empty():
 		return AABB()
+	# A lot mid-rebuild can keep the path while the xform is gone; get_meta on a missing key
+	# prints an engine ERROR (4.7, object.cpp) even with a default, so guard before reading.
+	if not holder.has_meta("building_xform"):
+		return AABB()
+	var xform: Variant = holder.get_meta("building_xform")
+	if not xform is Transform3D:
+		return AABB()
 	var local := _local_bounds(path)
-	return holder.transform * ((holder.get_meta("building_xform") as Transform3D) * local)
+	return holder.transform * ((xform as Transform3D) * local)
 
 
 ## World-space blocking boxes of the construction site drawn on tile i, one per entry of the
