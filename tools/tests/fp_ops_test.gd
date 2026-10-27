@@ -171,13 +171,27 @@ func _check_client_breaker() -> void:
 	K.check(fails, c.breaker_state() == "closed", "bad replies (service up) do not open the breaker")
 	c.reply = {"ok": false, "error": "network result 13", "retryable": true, "service_fail": true}
 	var before := c.posts
-	var t0 := Time.get_ticks_msec()
+	var waits: Array[int] = []
+	# Record what the retry loop asks the sleeper for instead of waiting on real timers:
+	# SceneTree timers burn frame deltas, so on a loaded runner one stalled frame can end the
+	# wait long before its wall-clock delay and the old took >= 250 check flaked (saw 12 ms).
+	# The jitter stream is seeded so the expected delays replay exactly, draw for draw.
+	c._jitter.seed = 97531
+	c.sleep_ms = func(ms: int) -> void: waits.append(ms)
 	var r6: Dictionary = await c.live_json("chatter", "round", "m", "s", "u", 1, 50, 10.0)
-	var took := Time.get_ticks_msec() - t0
+	c.sleep_ms = Callable()
 	K.check(fails, c.posts - before == 3 and int(r6["attempts"]) == 3 and int(c.stats["retries"]) == 2, "a transient failure is retried twice (%d attempts)" % (c.posts - before))
-	# backoff_ms() is checked exactly above. Here only prove the retries waited: SceneTree timers
-	# count frame deltas, so one slow frame (CI runners) can end the 750 ms minimum early.
-	K.check(fails, took >= 250 and took < 4000, "with backoff between attempts (%d ms)" % took)
+	var replay := RandomNumberGenerator.new()
+	replay.seed = 97531
+	var expected := [
+		GmiClient.backoff_ms(0, replay.randf()),
+		GmiClient.backoff_ms(1, replay.randf()),
+	]
+	K.check(
+		fails,
+		waits == expected,
+		"with backoff between attempts: exactly %s ms (asked %s)" % [expected, waits]
+	)
 	K.check(fails, c.seen_ids[c.seen_ids.size() - 1] == str(r6["request_id"]) and c.seen_ids[c.seen_ids.size() - 3] == str(r6["request_id"]), "retries reuse the call's request id")
 	c.reply = {"ok": false, "error": "HTTP 400 bad", "retryable": false, "service_fail": false}
 	before = c.posts

@@ -64,6 +64,12 @@ var _seq: int = 0
 var _jitter := RandomNumberGenerator.new()
 var _hdr_request_id: String = ""
 var _hdr_trace_id: String = ""
+## Test-only hook for the retry backoff's sleep, in milliseconds. Empty in the game, where the
+## retry loop waits on a SceneTree timer; a test assigns a recorder so the backoff contract is
+## checked exactly instead of through frame-timer timing (a SceneTree timer burns frame deltas,
+## so on a loaded runner one stalled frame can end the wait long before its wall-clock delay).
+## Not wired to any flag or environment switch: nothing outside a test ever sets it.
+var sleep_ms := Callable()
 
 
 func _init() -> void:
@@ -319,7 +325,10 @@ func _post_with_retry(model: String, system_prompt: String, user_prompt: String,
 		if Time.get_ticks_msec() + wait_ms + 1000 >= deadline:
 			break
 		stats["retries"] = int(stats["retries"]) + 1
-		await get_tree().create_timer(float(wait_ms) / 1000.0, true, false, true).timeout
+		if sleep_ms.is_valid():
+			await sleep_ms.call(wait_ms)
+		else:
+			await get_tree().create_timer(float(wait_ms) / 1000.0, true, false, true).timeout
 	result["attempts"] = attempt
 	var ok := bool(live.get("ok", false))
 	if ok or not bool(live.get("service_fail", true)):
