@@ -186,6 +186,35 @@ Local JSON-lines files for the opt-in ops features (errors, analytics, alerts). 
 - `static func append(file_name: String, rec: Dictionary, max_bytes: int = MAX_BYTES) -> bool`: Appends rec as one scrubbed JSON line to dir/file_name. False when the file cannot be written.
 - `static func read_all(file_name: String) -> Array[Dictionary]`: Every parsed record of dir/file_name (the live file only), oldest first.
 
+## `scripts/ops/pack_loader.gd`
+
+class_name `PackLoader` · extends `RefCounted`
+
+Streams the web build's background packs: the boot pack is the engine's own `.pck`, and the others land later under `user://packs/`, each mounted with `ProjectSettings.load_resource_pack`. The engine loads the boot pack before any script runs, so the manifest that says which pack holds an asset rides inside it (`res://web_manifest.json`). A pack is cached in the browser's IDBFS under a name that carries its own content hash, so a repeat visit reuses it without a byte on the wire; a cached file whose size no longer matches its manifest entry is deleted and fetched again rather than failing the load. Desktop builds have no manifest and every method here is a no-op, so nothing changes there.
+
+### Signals
+
+- `pack_arrived(pack: String)`: Emitted once a pack is mounted (and after a failed one too, so a caller can retry or fall back).
+
+### Constants
+
+- `MANIFEST_PATH = "res://web_manifest.json"`
+- `CACHE_DIR = "user://packs"`
+
+### Functions
+
+- `func load_manifest() -> bool`: Reads the manifest the export wrote into the boot pack; false when this build is unsplit.
+- `func active() -> bool`: True when the export shipped a split pack set (and so the runtime should stream it).
+- `func pack_of(path: String) -> String`: The pack that holds the asset at a res:// path, or "" when it rides in the boot pack.
+- `func mounted(pack: String) -> bool`: True once the pack is mounted and its assets can be loaded.
+- `func pending(pack: String) -> bool`: True while the pack is on its way (queued, downloading or mounting).
+- `func needed_for(path: String) -> String`: The pack a path needs, or "" when it is already available (in the boot pack or mounted).
+- `func request(pack: String) -> bool`: Queues a pack (once). Call pump() to advance; returns false when the pack does not exist.
+- `func cache_path(pack: String) -> String`: Local cache path for a pack: its own content hash keeps a stale file from ever being reused.
+- `func pump(host: Node) -> bool`: Advances the queue on a node (one download at a time). Returns true while work remains.
+- `func progress() -> float`: Fraction of the background packs that are in (0..1); 1 when there is nothing to fetch.
+- `func reset() -> void`: Drops the in-memory state (tests, and a scene reload).
+
 ## `scripts/ops/redact.gd`
 
 class_name `Redact` · extends `RefCounted`

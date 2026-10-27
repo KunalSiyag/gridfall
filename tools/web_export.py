@@ -18,14 +18,25 @@ CAP_TREES = (
     "models/real/props/",
     "models/real/street/",
     "models/real/vehicles/",
+    "textures/real/",
 )
 ## Textures players read up close stay at their source resolution; everything else caps at 256 px.
 CAP_LIMIT = 256
+## The tiling ground materials are 2048 px and would alone fill the boot pack; 1024 still tiles
+## cleanly and is a quarter of the bytes.
+CAP_LIMITS = {"textures/real/": 1024}
 UNCAPPED_TREES = ("assets/posters/",)
 UNCAPPED_NAMES = ("poster", "billboard")
 STAGE_TREES = (
     "assets", "data", "env", "fonts", "models", "scenes", "scripts", "shaders", "sounds", "textures", "ui",
 )
+
+
+def cap_limit(relative: str) -> int:
+    for prefix, limit in CAP_LIMITS.items():
+        if relative.startswith(prefix):
+            return limit
+    return CAP_LIMIT
 
 
 def is_uncapped(relative: str) -> bool:
@@ -63,7 +74,7 @@ def stage_project(root: Path, stage: Path, ffmpeg: str = "ffmpeg") -> dict:
             if is_uncapped(relative):
                 kept_full += 1
                 continue
-            path.write_text(cap_import(text))
+            path.write_text(cap_import(text, cap_limit(relative)))
             capped += 1
     audio_before = audio_after = 0
     converted = 0
@@ -98,57 +109,268 @@ def stage_project(root: Path, stage: Path, ffmpeg: str = "ffmpeg") -> dict:
             "wav_bytes": audio_before, "ogg_bytes": audio_after}
 
 
+## Which pack a source path rides in. The longest matching prefix wins; anything unmatched rides
+## in the boot pack, which the engine loads itself. `env/` (the HDRIs) and `assets/` (the posters)
+## are the two big trees no first view needs; the district buildings stay in boot so a loaded city
+## never renders with holes.
+PACK_RULES = (
+    ("sky", "env/"),
+    ("audio", "sounds/music/"),
+    ("audio", "sounds/fp/"),
+    ("posters", "assets/"),
+    ("zones", "models/real/zones/"),
+    ("zones", "models/zones/"),
+    ("props", "models/real/props/"),
+    ("props", "models/props/"),
+    ("traffic", "models/real/vehicles_v2/"),
+    ("traffic", "models/real/vehicles/"),
+    ("traffic", "models/vehicles/"),
+    ("traffic", "models/cars/"),
+    ("people", "models/characters/bodies/"),
+    ("wildlife", "models/real/animals/"),
+    # Baked twins for the mid-LOD city: every caller falls back to a loaded scene when they are
+    # absent, so they can land after the first view without leaving holes.
+    ("midlod", "models/real/midlod/"),
+)
+BOOT_PACK = "boot"
+## The hero bodies and the animation libraries they play ride in boot: the player sees itself first.
+BOOT_PATHS = (
+    "models/characters/anim/",
+    "models/characters/bodies/Male_Adult_06.glb",
+    "models/characters/bodies/Female_Adult_04.glb",
+    "models/characters/roster.json",
+    "models/characters/bonemap_ual.tres",
+    "models/characters/bonemap_rocketbox.tres",
+)
+
+
+def pack_of(src: str) -> str:
+    """The pack for a project-relative source path (for example models/real/zones/r1/a.glb)."""
+    if src.startswith(BOOT_PATHS):
+        return BOOT_PACK
+    best, pack = "", BOOT_PACK
+    for name, prefix in PACK_RULES:
+        if src.startswith(prefix) and len(prefix) > len(best):
+            best, pack = prefix, name
+    return pack
+
+
+def _read_directory(source) -> tuple:
+    header = bytearray(source.read(112))
+    if header[:4] != b"GDPC" or struct.unpack_from("<I", header, 4)[0] != 4:
+        raise ValueError("Expected Godot 4.7 PCK format 4")
+    if struct.unpack_from("<I", header, 20)[0] != 2:
+        raise ValueError("Only unencrypted, relative-offset PCKs are supported")
+    base, directory = struct.unpack_from("<QQ", header, 24)
+    source.seek(directory)
+    count = struct.unpack("<I", source.read(4))[0]
+    entries = []
+    for _ in range(count):
+        length = struct.unpack("<I", source.read(4))[0]
+        # Names are NUL-padded to a 4-byte boundary; the padding must not reach path matching.
+        name = source.read(length).rstrip(b"\0")
+        offset, size = struct.unpack("<QQ", source.read(16))
+        digest = source.read(16)
+        if struct.unpack("<I", source.read(4))[0]:
+            raise ValueError("Encrypted or removed PCK entries are unsupported")
+        entries.append({"name": name, "offset": offset + base, "size": size, "md5": digest})
+    return header, base, entries
+
+
+def _read_at(source, offset: int, size: int) -> bytes:
+    source.seek(offset)
+    return source.read(size)
+
+
+def _source_paths(source, entries: list) -> dict:
+    """Map every entry to the source path it belongs to, so an asset's imports share its pack."""
+    dest_to_src = {}
+    for entry in entries:
+        name = entry["name"]
+        if name.endswith(b".import") or name.endswith(b".remap"):
+            text = _read_at(source, entry["offset"], entry["size"]).decode("utf-8", "replace")
+            cut = len(".import") if name.endswith(b".import") else len(".remap")
+            src = name[:-cut].decode("utf-8", "replace")
+            for match in re.finditer(r"res://\.godot/imported/[^\"\n\]]+", text):
+                dest_to_src[match.group(0)[6:]] = src
+    return dest_to_src
+
+
+def _write_pack(target: Path, header: bytearray, base: int, items: list, read, extra: dict) -> dict:
+    """Write one PCK, aliasing identical payloads inside it. items are (name, size, md5, offset)."""
+    unique = {}
+    written = []
+    with target.open("wb") as output:
+        output.write(header)
+        for name, size, digest, offset in items:
+            key = (digest, size)
+            if key not in unique:
+                if name in extra:
+                    data = extra[name]
+                elif read is not None:
+                    data = read(offset, size)
+                else:
+                    raise ValueError("No payload supplied for " + name.decode("utf-8", "replace"))
+                if len(data) != size or hashlib.md5(data).digest() != digest:
+                    raise ValueError("Corrupt PCK entry: " + name.rstrip(b"\0").decode())
+                output.write(bytes((-output.tell()) % 16))
+                unique[key] = output.tell() - base
+                output.write(data)
+            written.append((name, unique[key], size, digest))
+        output.write(bytes((-output.tell()) % 16))
+        directory = output.tell()
+        output.write(struct.pack("<I", len(written)))
+        for name, offset, size, digest in written:
+            encoded = name + b"\0"
+            encoded += bytes((-len(encoded)) % 4)
+            output.write(struct.pack("<I", len(encoded)) + encoded)
+            output.write(struct.pack("<QQ", offset, size) + digest)
+            output.write(struct.pack("<I", 0))
+        output.seek(32)
+        output.write(struct.pack("<Q", directory))
+    return {"bytes": target.stat().st_size, "entries": len(written), "unique": len(unique)}
+
+
 def deduplicate_pack(path: Path) -> dict:
-    """Alias identical PCK payloads, preserving every resource name and import remap."""
+    """Alias identical PCK payloads in one pack, preserving every resource name and import remap."""
+    before = path.stat().st_size
+    target = path.with_suffix(".dedup.tmp")
     with path.open("rb") as source:
-        header = bytearray(source.read(112))
-        if header[:4] != b"GDPC" or struct.unpack_from("<I", header, 4)[0] != 4:
-            raise ValueError("Expected Godot 4.7 PCK format 4")
-        flags = struct.unpack_from("<I", header, 20)[0]
-        if flags != 2:
-            raise ValueError("Only unencrypted, relative-offset PCKs are supported")
-        base, directory = struct.unpack_from("<QQ", header, 24)
-        source.seek(directory)
-        count = struct.unpack("<I", source.read(4))[0]
-        records = []
-        for _ in range(count):
-            length = struct.unpack("<I", source.read(4))[0]
-            name = source.read(length)
-            offset, size = struct.unpack("<QQ", source.read(16))
-            digest = source.read(16)
-            file_flags = struct.unpack("<I", source.read(4))[0]
-            if file_flags:
-                raise ValueError("Encrypted or removed PCK entries are unsupported")
-            records.append((name, offset + base, size, digest, file_flags))
-        before = path.stat().st_size
-        target = path.with_suffix(".dedup.tmp")
-        unique = {}
-        new_records = []
-        with target.open("wb") as output:
-            output.write(header)
-            for name, offset, size, digest, file_flags in records:
-                key = (digest, size)
-                if key not in unique:
-                    source.seek(offset)
-                    data = source.read(size)
-                    if len(data) != size or hashlib.md5(data).digest() != digest:
-                        raise ValueError("Corrupt PCK entry: " + name.rstrip(b"\0").decode())
-                    output.write(bytes((-output.tell()) % 16))
-                    unique[key] = output.tell() - base
-                    output.write(data)
-                new_records.append((name, unique[key], size, digest, file_flags))
-            output.write(bytes((-output.tell()) % 16))
-            directory = output.tell()
-            output.write(struct.pack("<I", count))
-            for name, offset, size, digest, file_flags in new_records:
-                output.write(struct.pack("<I", len(name)) + name)
-                output.write(struct.pack("<QQ", offset, size) + digest)
-                output.write(struct.pack("<I", file_flags))
-            output.seek(32)
-            output.write(struct.pack("<Q", directory))
+        header, base, entries = _read_directory(source)
+        report = _write_pack(
+            target, header, base,
+            [(e["name"], e["size"], e["md5"], e["offset"]) for e in entries],
+            lambda offset, size: _read_at(source, offset, size),
+            {},
+        )
     target.replace(path)
     return {"pack_before": before, "pack_after": path.stat().st_size,
-            "files": count, "unique_payloads": len(unique)}
+            "files": report["entries"], "unique_payloads": report["unique"]}
+
+
+def split_packs(path: Path, out_dir: Path) -> dict:
+    """Split one PCK into the boot pack plus background packs, and write the load manifest.
+
+    The boot pack stays at `path` (the engine loads it as `<executable>.pck`); the others are
+    content-addressed under `packs/`. A manifest entry inside the boot pack tells the runtime which
+    pack holds an asset, because DirAccess cannot see a pack mounted after startup. Pack file names
+    come from each pack's own entry list, so writing the manifest into the boot pack cannot feed
+    back into a name.
+    """
+    packs_dir = out_dir / "packs"
+    packs_dir.mkdir(parents=True, exist_ok=True)
+    target = path.with_suffix(".split.tmp")
+    with path.open("rb") as source:
+        header, base, entries = _read_directory(source)
+        dest_to_src = _source_paths(source, entries)
+        groups: dict = {}
+        for entry in entries:
+            name = entry["name"]
+            src = dest_to_src.get(name.decode("utf-8", "replace"), name.decode("utf-8", "replace"))
+            groups.setdefault(pack_of(src), []).append(entry)
+        manifest = {"boot": BOOT_PACK,
+                    "rules": [[prefix, name] for name, prefix in
+                              sorted(PACK_RULES, key=lambda rule: -len(rule[1]))],
+                    "packs": {}}
+        reports = {}
+        for name in sorted(groups):
+            if name == BOOT_PACK:
+                continue
+            items = [(e["name"], e["size"], e["md5"], e["offset"]) for e in groups[name]]
+            digest = hashlib.sha256()
+            for entry_name, size, md5, _ in sorted(items):
+                digest.update(entry_name + str(size).encode() + md5)
+            file_name = "%s-%s.pck" % (name, digest.hexdigest()[:16])
+            report = _write_pack(
+                packs_dir / file_name, header, base, items,
+                lambda offset, size: _read_at(source, offset, size), {},
+            )
+            manifest["packs"][name] = {
+                "file": "packs/" + file_name, "bytes": report["bytes"],
+                "sha256": hashlib.sha256((packs_dir / file_name).read_bytes()).hexdigest(),
+            }
+            reports[name] = report
+        # The manifest rides in the boot pack so the runtime never probes the filesystem for it.
+        blob = json.dumps(manifest, sort_keys=True).encode()
+        items = [(e["name"], e["size"], e["md5"], e["offset"]) for e in groups.get(BOOT_PACK, [])]
+        items.append((b"web_manifest.json", len(blob), hashlib.md5(blob).digest(), -1))
+        reports[BOOT_PACK] = _write_pack(
+            target, header, base, items,
+            lambda offset, size: _read_at(source, offset, size),
+            {b"web_manifest.json": blob},
+        )
+    target.replace(path)
+    return {"packs": reports, "manifest": manifest}
+
+
+LOADER_CSS = """#status-progress { display: none !important; }
+#gf-bar { position: absolute; left: 0; right: 0; bottom: 9%; width: min(440px, 62%); margin: 0 auto; }
+#gf-track { height: 6px; border-radius: 3px; background: rgba(255, 255, 255, 0.16); overflow: hidden; }
+#gf-fill { height: 100%; width: 0%; background: #d6ff3f; transition: width 0.25s ease; }
+#gf-label { margin-top: 10px; text-align: center; font: 500 13px/1.4 system-ui, -apple-system,
+	"Segoe UI", Roboto, sans-serif; color: #e8ecf3; letter-spacing: 0.02em; }
+"""
+
+LOADER_BAR = """<div id="gf-bar"><div id="gf-track"><div id="gf-fill"></div></div>
+\t\t\t\t<div id="gf-label">Loading GridFall\u2026</div></div>"""
+
+LOADER_HELPER = """
+\tconst progressFill = document.getElementById('gf-fill');
+\tconst progressLabel = document.getElementById('gf-label');
+\tfunction setProgress(ratio) {
+\t\tconst pct = Math.max(0, Math.min(100, Math.round(ratio * 100)));
+\t\tif (progressFill) {
+\t\t\tprogressFill.style.width = pct + '%';
+\t\t}
+\t\tif (progressLabel) {
+\t\t\tprogressLabel.textContent = 'Loading GridFall ' + pct + '%';
+\t\t}
+\t}
+"""
+
+
+def patch_loader_html(html: str) -> str:
+    """Give the boot page a branded progress bar instead of Godot's bare <progress> element."""
+    replacements = (
+        ("</style>", LOADER_CSS + "\t\t</style>"),
+        ("<progress id=\"status-progress\"></progress>",
+         "<progress id=\"status-progress\"></progress>\n\t\t\t\t" + LOADER_BAR),
+        ("\tconst statusNotice = document.getElementById('status-notice');",
+         "\tconst statusNotice = document.getElementById('status-notice');\n" + LOADER_HELPER),
+        ("\t\t\t\t\tstatusProgress.max = total;",
+         "\t\t\t\t\tstatusProgress.max = total;\n\t\t\t\t\tsetProgress(current / total);"),
+    )
+    for anchor, replacement in replacements:
+        if anchor not in html:
+            raise ValueError("Godot's HTML shell changed; cannot patch the loading screen: " + anchor[:60])
+        html = html.replace(anchor, replacement, 1)
+    return html
+
+
+def rewrite_manifest(pack: Path, prefix: str) -> dict:
+    """Point the manifest's pack paths at the published release directory.
+
+    The split runs before the release hash exists, so the manifest is written with pack paths
+    relative to the release root; once the version is known this rewrites them (and only them) so
+    the runtime can fetch a pack relative to the loader page. Nothing else in the boot pack moves.
+    """
+    with pack.open("rb") as source:
+        header, base, entries = _read_directory(source)
+        payloads = {e["name"]: _read_at(source, e["offset"], e["size"]) for e in entries}
+    manifest = json.loads(payloads[b"web_manifest.json"])
+    for entry in manifest["packs"].values():
+        file = str(entry["file"])
+        if not file.startswith(prefix):
+            entry["file"] = prefix + file
+    blob = json.dumps(manifest, sort_keys=True).encode()
+    items = [(e["name"], e["size"], e["md5"], e["offset"]) for e in entries
+             if e["name"] != b"web_manifest.json"]
+    items.append((b"web_manifest.json", len(blob), hashlib.md5(blob).digest(), -1))
+    payloads[b"web_manifest.json"] = blob
+    target = pack.with_suffix(".manifest.tmp")
+    report = _write_pack(target, header, base, items, None, payloads)
+    target.replace(pack)
+    return report
 
 
 def prune_releases(output: Path, keep: str) -> None:
@@ -166,11 +388,21 @@ def version_site(raw: Path, output: Path, report: dict) -> str:
         if path.is_file():
             digest.update(path.name.encode())
             digest.update(path.read_bytes())
+    packs = raw / "packs"
+    if packs.is_dir():
+        for path in sorted(packs.iterdir()):
+            digest.update(b"packs/" + path.name.encode())
+            digest.update(path.read_bytes())
     version = digest.hexdigest()[:16]
     prefix = "releases/" + version + "/"
     release = output / prefix
     release.mkdir(parents=True, exist_ok=True)
     prune_releases(output, version)
+    # The split ran before the release hash existed; point the manifest's pack paths at it now.
+    if (raw / "packs").is_dir() and (raw / "index.pck").exists():
+        rewrite_manifest(raw / "index.pck", prefix)
+    if packs.is_dir():
+        shutil.copytree(packs, release / "packs", dirs_exist_ok=True)
     names = sorted((p.name for p in raw.iterdir() if p.is_file()))
     # These stay at the root so a reload always revalidates the loader and the PWA scope is /.
     loader = {"index.html", "index.service.worker.js", "index.manifest.json"}
@@ -178,7 +410,7 @@ def version_site(raw: Path, output: Path, report: dict) -> str:
         if name not in loader:
             shutil.copy2(raw / name, release / name)
     # The page and the worker stay at the root; only immutable payloads move into the release.
-    html = (raw / "index.html").read_text()
+    html = patch_loader_html((raw / "index.html").read_text())
     for name in names:
         html = re.sub(
             r'("' + re.escape(name) + r'"\s*:\s*)\d+',
@@ -232,6 +464,8 @@ def main() -> None:
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--godot", default="godot")
     parser.add_argument("--mode", choices=["--export-release", "--export-debug"], default="--export-release")
+    parser.add_argument("--split", action="store_true",
+                        help="also split the pack into boot plus background packs (needs the runtime loader)")
     args = parser.parse_args()
     if not shutil.which("ffmpeg"):
         parser.error("ffmpeg with libvorbis is required for web audio")
@@ -253,6 +487,8 @@ def main() -> None:
             check=True,
         )
         report.update(deduplicate_pack(raw / "index.pck"))
+        if args.split:
+            report["split"] = split_packs(raw / "index.pck", raw)["packs"]
         version_site(raw, output, report)
         print("WEB_EXPORT: " + json.dumps(report), flush=True)
 
