@@ -209,10 +209,11 @@ func _post_collider(at: Vector2, r_m: float, h_m: float, base_m: float = 0.0) ->
 
 
 ## A corner signal pole's solid parts: the concrete base and the shaft above it. The mast, the
-## heads and the cap sit above people or reach over the carriageway. The base is a box the size
-## of the drawn square (its foot's corners reach 0.40 m out, no fitting cylinder covers them)
-## and stops short of the car's step height, so cars nose up to it like a curb; the shaft then
-## holds the stop.
+## heads and the cap sit above people or reach over the carriageway -- overhangs stay visual by
+## contract, and tools/tests/fp_overhang_test.gd walks the lane under them while keeping these
+## entries footprint-sized. The base is a box the size of the drawn square (its foot's corners
+## reach 0.40 m out, no fitting cylinder covers them) and stops short of the car's step height,
+## so cars nose up to it like a curb; the shaft then holds the stop.
 func _pole_colliders(at: Vector2) -> Array:
 	return [_plinth_collider(at), _post_collider(at, 0.11, 6.15, 0.15)]
 

@@ -88,7 +88,7 @@ func _sweep(band: Dictionary) -> Dictionary:
 			var kind := str(placed[slot][0])
 			if int(seen.get(kind, 0)) >= SAMPLES:
 				continue
-			var entry := _entry_of(holder, int(slot))
+			var entry := FIX.entry_of(holder, int(slot))
 			if entry.is_empty():
 				continue
 			var kit: Dictionary = ctx.view.street_kit(kind)
@@ -101,18 +101,6 @@ func _sweep(band: Dictionary) -> Dictionary:
 			res["shape"] = str(entry.get("shape", "box"))
 			_merge(kinds, kind, res)
 	return kinds
-
-
-## The slot's standing collider entry from the holder meta, {} when it has none (walkable).
-func _entry_of(holder: Node3D, slot: int) -> Dictionary:
-	for e: Variant in holder.get_meta("colliders", []):
-		if (
-			typeof(e) == TYPE_DICTIONARY
-			and int((e as Dictionary).get("slot", -1)) == slot
-			and not bool((e as Dictionary).get("down", false))
-		):
-			return e
-	return {}
 
 
 ## The kit's drawn vertices at placement xf vs its collider entry, under band_top:
@@ -163,26 +151,17 @@ func _check_posts() -> void:
 		var holder := ctx.view.tile_holder(i)
 		if holder == null:
 			continue
-		var entries := _signal_entries(holder)
+		var entries := FIX.signal_entries(holder)
 		if entries.is_empty():
 			continue
 		n += 1
-		for mi: MeshInstance3D in (p["node"] as Node3D).find_children(
-			"*", "MeshInstance3D", true, false
-		):
-			for s in mi.mesh.get_surface_count():
-				var arr := mi.mesh.surface_get_arrays(s)
-				if arr.size() <= Mesh.ARRAY_VERTEX:
-					continue
-				var verts: PackedVector3Array = arr[Mesh.ARRAY_VERTEX]
-				for v in verts:
-					var w: Vector3 = mi.global_transform * v
-					if w.y < WS.STEP_HEIGHT or w.y > WS.PLAYER_HEIGHT:
-						continue
-					var u := _under_any(w, entries, holder, WS.PLAYER_HEIGHT)
-					if u > worst:
-						worst = u
-						worst_y = w.y
+		for w: Vector3 in FIX.drawn_verts(p["node"] as Node3D):
+			if w.y < WS.STEP_HEIGHT or w.y > WS.PLAYER_HEIGHT:
+				continue
+			var u := _under_any(w, entries, holder, WS.PLAYER_HEIGHT)
+			if u > worst:
+				worst = u
+				worst_y = w.y
 	K.check(fails, n >= 4, "fixture: at least four junction poles dressed (%d)" % n)
 	K.check(
 		fails,
@@ -195,15 +174,6 @@ func _check_posts() -> void:
 			% [n, worst / WS.M * 1000.0, worst_y / WS.M]
 		)
 	)
-
-
-## The tile's kind "signal" collider entries (junctions.gd owns that kind).
-func _signal_entries(holder: Node3D) -> Array:
-	var out: Array = []
-	for e: Variant in holder.get_meta("colliders", []):
-		if typeof(e) == TYPE_DICTIONARY and str((e as Dictionary).get("kind", "")) == "signal":
-			out.append(e)
-	return out
 
 
 # ------------------------------------------------------------------ margins
