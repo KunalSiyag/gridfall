@@ -226,6 +226,26 @@ def test_loader_page_gets_a_progress_bar():
         patch_loader_html("<style></style>")
 
 
+def test_measure_script_finds_the_assets_the_page_names():
+    from tools.web_measure import asset_paths
+
+    html = (
+        '<script src="releases/abc/index.js"></script>'
+        '<link rel="manifest" href="index.manifest.json">'
+        '{"executable":"releases/abc/index","serviceWorker":"index.service.worker.js",'
+        '"fileSizes":{"releases/abc/index.pck":100,"releases/abc/index.wasm":50}}'
+        '<script src="https://example.com/analytics.js"></script>'
+    )
+    paths = asset_paths(html)
+    assert paths[0] == ""  # the page itself first
+    assert "releases/abc/index.pck" in paths and "releases/abc/index.wasm" in paths
+    assert "releases/abc/index.js" in paths and "index.manifest.json" in paths
+    # The executable is a basename, not a file; external URLs are not probed.
+    assert "releases/abc/index" not in paths
+    assert not any("example.com" in p for p in paths)
+    assert len(paths) == len(set(paths))
+
+
 def test_pack_of_routes_every_tree():
     assert pack_of("env/sky.hdr") == "sky"
     assert pack_of("assets/posters/ad_bank.webp") == "posters"

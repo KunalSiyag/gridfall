@@ -48,19 +48,28 @@ def head(url: str, encoding: str) -> dict:
     }
 
 
-def targets(base: str) -> list:
-    """The loader page plus every asset the page itself names (the executable is a basename)."""
-    status, headers, body = fetch(base, {})
-    html = body.decode("utf-8", "replace")
-    found = sorted(set(re.findall(r"(?:src|href)=\"([^\"]+)\"", html)))
-    # fileSizes keys are the real pck/wasm URLs; the executable value is a basename, not a file.
-    found += sorted(set(re.findall(r"\"([^\"]*\.(?:pck|wasm|js|json|html|png))\":\d+", html)))
-    urls = [""]
-    for path in dict.fromkeys(found):
+def asset_paths(html: str) -> list:
+    """The asset URLs a loader page names: srcs, hrefs and the fileSizes keys.
+
+    The executable value is a basename (the engine appends `.pck`/`.wasm`), so it is not a URL;
+    the fileSizes keys are.
+    """
+    found = list(re.findall(r'(?:src|href)="([^"]+)"', html))
+    found += re.findall(r'"([^"]*\.(?:pck|wasm|js|json|html|png))":\d+', html)
+    out = [""]
+    for path in found:
         if path.startswith(("http:", "https:", "data:", "#")):
             continue
-        urls.append(path.lstrip("/"))
-    return urls
+        cleaned = path.lstrip("/")
+        if cleaned not in out:
+            out.append(cleaned)
+    return out
+
+
+def targets(base: str) -> list:
+    """The loader page plus every asset the page itself names."""
+    status, headers, body = fetch(base, {})
+    return asset_paths(body.decode("utf-8", "replace"))
 
 
 def header_report(base: str) -> list:
