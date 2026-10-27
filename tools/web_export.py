@@ -128,6 +128,9 @@ PACK_RULES = (
     ("traffic", "models/cars/"),
     ("people", "models/characters/bodies/"),
     ("wildlife", "models/real/animals/"),
+    # Baked twins for the mid-LOD city: every caller falls back to a loaded scene when they are
+    # absent, so they can land after the first view without leaving holes.
+    ("midlod", "models/real/midlod/"),
 )
 BOOT_PACK = "boot"
 ## The hero bodies and the animation libraries they play ride in boot: the player sees itself first.
@@ -202,7 +205,12 @@ def _write_pack(target: Path, header: bytearray, base: int, items: list, read, e
         for name, size, digest, offset in items:
             key = (digest, size)
             if key not in unique:
-                data = extra[name] if name in extra else read(offset, size)
+                if name in extra:
+                    data = extra[name]
+                elif read is not None:
+                    data = read(offset, size)
+                else:
+                    raise ValueError("No payload supplied for " + name.decode("utf-8", "replace"))
                 if len(data) != size or hashlib.md5(data).digest() != digest:
                     raise ValueError("Corrupt PCK entry: " + name.rstrip(b"\0").decode())
                 output.write(bytes((-output.tell()) % 16))
@@ -339,6 +347,32 @@ def patch_loader_html(html: str) -> str:
     return html
 
 
+def rewrite_manifest(pack: Path, prefix: str) -> dict:
+    """Point the manifest's pack paths at the published release directory.
+
+    The split runs before the release hash exists, so the manifest is written with pack paths
+    relative to the release root; once the version is known this rewrites them (and only them) so
+    the runtime can fetch a pack relative to the loader page. Nothing else in the boot pack moves.
+    """
+    with pack.open("rb") as source:
+        header, base, entries = _read_directory(source)
+        payloads = {e["name"]: _read_at(source, e["offset"], e["size"]) for e in entries}
+    manifest = json.loads(payloads[b"web_manifest.json"])
+    for entry in manifest["packs"].values():
+        file = str(entry["file"])
+        if not file.startswith(prefix):
+            entry["file"] = prefix + file
+    blob = json.dumps(manifest, sort_keys=True).encode()
+    items = [(e["name"], e["size"], e["md5"], e["offset"]) for e in entries
+             if e["name"] != b"web_manifest.json"]
+    items.append((b"web_manifest.json", len(blob), hashlib.md5(blob).digest(), -1))
+    payloads[b"web_manifest.json"] = blob
+    target = pack.with_suffix(".manifest.tmp")
+    report = _write_pack(target, header, base, items, None, payloads)
+    target.replace(pack)
+    return report
+
+
 def prune_releases(output: Path, keep: str) -> None:
     """Keep the release being published plus the most recent other one, so a boot in flight resolves."""
     root = output / "releases"
@@ -364,6 +398,9 @@ def version_site(raw: Path, output: Path, report: dict) -> str:
     release = output / prefix
     release.mkdir(parents=True, exist_ok=True)
     prune_releases(output, version)
+    # The split ran before the release hash existed; point the manifest's pack paths at it now.
+    if (raw / "packs").is_dir() and (raw / "index.pck").exists():
+        rewrite_manifest(raw / "index.pck", prefix)
     if packs.is_dir():
         shutil.copytree(packs, release / "packs", dirs_exist_ok=True)
     names = sorted((p.name for p in raw.iterdir() if p.is_file()))

@@ -15,6 +15,7 @@ from tools.web_export import (
     pack_of,
     patch_loader_html,
     prune_releases,
+    rewrite_manifest,
     split_packs,
     stage_project,
     version_site,
@@ -255,6 +256,7 @@ def test_pack_of_routes_every_tree():
     assert pack_of("models/real/vehicles_v2/car.glb") == "traffic"
     assert pack_of("models/characters/bodies/Office_Male_01.glb") == "people"
     assert pack_of("models/real/animals/dog.glb") == "wildlife"
+    assert pack_of("models/real/midlod/tower.res") == "midlod"
     assert pack_of("sounds/fp/footstep_grass_1.ogg") == "audio"
     # Boot keeps the city shell, the hero, and everything unmatched.
     assert pack_of("models/real/buildings/tower.glb") == "boot"
@@ -297,3 +299,21 @@ def test_split_packs_groups_imports_with_their_asset(tmp_path):
     assert manifest["packs"]["sky"]["file"].startswith("packs/sky-")
     assert manifest["packs"]["sky"]["bytes"] > 0
     assert len(manifest["packs"]["sky"]["sha256"]) == 64
+
+
+def test_rewrite_manifest_prefixes_only_pack_paths(tmp_path):
+    pack = tmp_path / "index.pck"
+    make_pack(pack, [
+        ("scripts/main.gd", b"extends Node"),
+        ("web_manifest.json", b'{"boot":"boot","rules":[["env/","sky"]],'
+                              b'"packs":{"sky":{"file":"packs/sky-abc.pck","bytes":4}}}'),
+    ])
+    rewrite_manifest(pack, "releases/1234/")
+    boot = read_pack(pack)
+    manifest = json.loads(boot["web_manifest.json"][1])
+    assert manifest["packs"]["sky"]["file"] == "releases/1234/packs/sky-abc.pck"
+    # Everything else is untouched, and rewriting twice does not double the prefix.
+    assert boot["scripts/main.gd"][1] == b"extends Node"
+    rewrite_manifest(pack, "releases/1234/")
+    assert json.loads(read_pack(pack)["web_manifest.json"][1])["packs"]["sky"]["file"] == \
+        "releases/1234/packs/sky-abc.pck"
