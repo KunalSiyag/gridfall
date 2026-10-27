@@ -238,13 +238,16 @@ def test_measure_script_finds_the_assets_the_page_names():
         '<script src="https://example.com/analytics.js"></script>'
     )
     paths = asset_paths(html)
-    assert paths[0] == ""  # the page itself first
-    assert "releases/abc/index.pck" in paths and "releases/abc/index.wasm" in paths
-    assert "releases/abc/index.js" in paths and "index.manifest.json" in paths
-    # The executable is a basename, not a file; external URLs are not probed.
-    assert all(p != "releases/abc/index" for p in paths)
-    assert not any("example.com" in p for p in paths)
-    assert len(paths) == len(set(paths))
+    # Exact set, in order: the page first, then only the assets the page names. The executable
+    # value is a basename (the engine appends .pck/.wasm), so it is not a file, and the external
+    # analytics URL is not probed.
+    assert paths == [
+        "",
+        "releases/abc/index.js",
+        "index.manifest.json",
+        "releases/abc/index.pck",
+        "releases/abc/index.wasm",
+    ]
 
 
 def test_pack_of_routes_every_tree():
