@@ -141,6 +141,29 @@ const log = [];
 	await sleep(15000);
 	const sky = await fps(20);
 	await page.screenshot({ path: path.join(OUT, "sky.png") }).catch(() => {});
+	// exit_fp / enter_fp round trip: Quit to orbit from the pause menu, then Tab back down.
+	// exit_fp once halted the web build on "invalid bus index -1" (audio teardown); it only
+	// reproduces with real audio buses, which this headed run has and headless smoke does not.
+	const crashRe = /bus index|SCRIPT ERROR|unreachable|uncaught/i;
+	const artifactRe = /Pointer Lock/; // CDP input is not a pointer-lock user gesture
+	const exitStart = log.length;
+	await page.keyboard.press("Escape"); // pause menu (focus starts on Resume)
+	await sleep(2000);
+	for (let i = 0; i < 5; i++) {
+		await page.keyboard.press("ArrowDown"); // Resume -> ... -> Quit to orbit
+		await sleep(200);
+	}
+	await page.keyboard.press("Enter");
+	await sleep(6000); // exit_fp is call_deferred; let teardown and audio settle
+	await page.screenshot({ path: path.join(OUT, "orbit-exit.png") }).catch(() => {});
+	const exitBad = log.slice(exitStart).filter((l) => crashRe.test(l) || (l.startsWith("pageerror") && !artifactRe.test(l)));
+	const enterStart = log.length;
+	await page.keyboard.press("Tab"); // orbit -> enter_fp
+	await sleep(8000);
+	await page.screenshot({ path: path.join(OUT, "street-return.png") }).catch(() => {});
+	const enterBad = log.slice(enterStart).filter((l) => crashRe.test(l) || (l.startsWith("pageerror") && !artifactRe.test(l)));
+	const exitFp = { exit_clean: exitBad.length === 0, enter_clean: enterBad.length === 0,
+		lines: exitBad.concat(enterBad).slice(0, 10) };
 	const bad = log.filter((l) => /Too many instances|FSR2|occlusion|SCRIPT ERROR|pageerror|^error/i.test(l));
 	// Checked late: the "continuing" line lands after the GPU banner that ends the boot wait.
 	const continued = log.some((l) => /continuing the saved city/i.test(l));
@@ -148,11 +171,12 @@ const log = [];
 		hardware: !/swiftshader|llvmpipe|software/i.test(renderer),
 		chrome_gpu_hw: webglHw, booted, boot_s: bootS,
 		save_seeded: SAVE ? saveSeeded : null, save_continued: SAVE ? continued : null,
-		street, sky, warnings: bad.slice(0, 40), warning_count: bad.length };
+		street, sky, exit_fp: exitFp, warnings: bad.slice(0, 40), warning_count: bad.length };
 	fs.writeFileSync(path.join(OUT, "console.log"), log.join("\n"));
 	fs.writeFileSync(path.join(OUT, "result.json"), JSON.stringify(result, null, 2));
 	console.log("GF_FPS_RENDERER " + renderer);
 	console.log("GF_FPS_JSON " + JSON.stringify(result));
 	await browser.close();
 	if (SAVE && (saveSeeded !== true || !continued)) process.exit(3);
+	if (!exitFp.exit_clean || !exitFp.enter_clean) process.exit(4);
 })().catch((e) => { console.error("GF_FPS_ERROR", e); process.exit(2); });
