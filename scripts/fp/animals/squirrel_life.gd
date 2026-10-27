@@ -43,6 +43,10 @@ const UP_KEEP := 6.0
 const CHATTER_S := 1.5
 
 const NO_POINT := Vector3(NAN, NAN, NAN)
+const LOD := preload("res://scripts/fp/animals/settle_lod.gd")
+## The states the slow cadence may coarse (settle_lod.gd); any escape state, or the hero coming
+## close, returns the squirrel to full rate.
+const QUIET_STATES := ["forage", "nibble", "hold"]
 
 
 ## One squirrel.
@@ -70,6 +74,9 @@ class Squirrel:
 	var sit: float = 0.0
 	var tail: float = 0.0
 	var lean: float = 0.0
+	## Slow-cadence accumulator while far from the hero, and whether the draw must refresh it.
+	var hz_t: float = 0.0
+	var dirty: bool = true
 
 
 var squirrels: Array = []
@@ -123,20 +130,24 @@ func step(dt: float) -> void:
 	if dt <= 0.0:
 		return
 	for s: Squirrel in squirrels:
-		_threat(s, dt)
+		var sdt := LOD.step_dt(s, s.pos, hero, dt, s.state in QUIET_STATES)
+		if sdt <= 0.0:
+			continue
+		s.dirty = true
+		_threat(s, sdt)
 		match s.state:
 			"forage":
-				_forage(s, dt)
+				_forage(s, sdt)
 			"nibble":
-				_nibble(s, dt)
+				_nibble(s, sdt)
 			"flee":
-				_flee(s, dt)
+				_flee(s, sdt)
 			"climb":
-				_climb(s, dt)
+				_climb(s, sdt)
 			"hold":
-				_hold(s, dt)
+				_hold(s, sdt)
 			_:
-				_down(s, dt)
+				_down(s, sdt)
 
 
 ## A fright at at within r_m metres sends the squirrels on the ground fleeing for their trees.

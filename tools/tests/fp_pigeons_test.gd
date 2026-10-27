@@ -21,6 +21,7 @@ const WS := preload("res://scripts/fp/world_scale.gd")
 const AF := preload("res://scripts/fp/animals/animals_feature.gd")
 const PG := preload("res://scripts/fp/animals/pigeons.gd")
 const FLOCK := preload("res://scripts/fp/animals/pigeon_flock.gd")
+const SLOD := preload("res://scripts/fp/animals/settle_lod.gd")
 const BODY := preload("res://scripts/fp/animals/pigeon_body.gd")
 const DRIVE := preload("res://scripts/fp/drive/drive_feature.gd")
 const DT := 1.0 / 60.0
@@ -69,6 +70,7 @@ func _init() -> void:
 			_check_horn(fk)
 			_check_feed(fk)
 			_check_pause(fk)
+			_check_lod(fk)
 		_check_far()
 		_check_rain()
 		_check_horn_rain()
@@ -497,6 +499,43 @@ func _check_pause(fk: FLOCK.Flock) -> void:
 	for k in range(fk.birds.size()):
 		moved = moved or (fk.birds[k] as FLOCK.Bird).pos != before[k][0]
 	K.check(fails, still and moved, "pause: the birds freeze and come back to life")
+
+
+## A settled flock far from the hero ticks at 4 Hz (settle_lod.gd): short ticks bank until
+## SETTLE_S, then it steps once with the banked time. The hero coming close, a fright or a car
+## bearing down on it wakes it at once.
+func _check_lod(fk: FLOCK.Flock) -> void:
+	var home: Vector3 = spot["home"]
+	var far := home + Vector3(SLOD.NEAR * 2.0, 0.0, 0.0)
+	_wait_down(fk, 40.0)
+	_world(far, Vector3.ZERO, [])
+	var calm := false
+	for _k in range(200):
+		fl.step(0.05)
+		if fl._settled(fk):
+			calm = true
+			break
+	K.check(fails, calm, "lod: the flock settles far from the hero")
+	if not calm:
+		return
+	fk.hz_t = 0.0
+	fk.dirty = false
+	for _k in range(3):
+		fl.step(0.05)
+	K.check(fails, not fk.dirty and fk.hz_t > 0.0, "lod: a settled far flock banks short ticks")
+	for _k in range(2):
+		fl.step(0.05)
+	K.check(fails, fk.dirty, "lod: the banked time steps it at the slow cadence")
+	_world(home + Vector3(0.5, 0.0, 0.0), Vector3.ZERO, [])
+	fk.dirty = false
+	fl.step(0.05)
+	K.check(fails, fk.dirty, "lod: the hero close by keeps the full rate")
+	_world(far, Vector3.ZERO, [])
+	fk.hz_t = 0.0
+	fk.dirty = false
+	fl.startle(home, 0.3)
+	fl.step(0.05)
+	K.check(fails, fk.dirty, "lod: a fright steps a far flock at once")
 
 
 ## The hero going beyond FAR takes the flock away (its MultiMesh freed); coming back brings it.

@@ -15,6 +15,7 @@ const WS := preload("res://scripts/fp/world_scale.gd")
 const AF := preload("res://scripts/fp/animals/animals_feature.gd")
 const SQ := preload("res://scripts/fp/animals/squirrels.gd")
 const LIFE := preload("res://scripts/fp/animals/squirrel_life.gd")
+const SLOD := preload("res://scripts/fp/animals/settle_lod.gd")
 const DT := 1.0 / 60.0
 ## How long the squirrel may take to reach its tree and climb it (s), to come back down (s), and
 ## how long the hero waits off for it (s).
@@ -65,6 +66,7 @@ func _init() -> void:
 		_check_night()
 		_check_rain()
 		_check_flag()
+		_check_lod()
 	_check_teardown()
 	K.finish(self, "FP_SQUIRRELS_TEST", fails)
 
@@ -316,6 +318,39 @@ func _check_flag() -> void:
 	FeatureFlags.set_override("squirrels", true)
 	_step(AF.SCAN_S + 0.1)
 	K.check(fails, _squirrel() != null, "flag: on again, they come back")
+
+
+## A quiet squirrel far from the hero ticks at 4 Hz (settle_lod.gd): short ticks bank until
+## SETTLE_S, then it steps once with the banked time. The hero coming close, or any escape
+## state, runs at full rate.
+func _check_lod() -> void:
+	var s := _squirrel()
+	K.check(fails, s != null, "lod: the spot's squirrel")
+	if s == null:
+		return
+	s.state = "forage"
+	s.hz_t = 0.0
+	life.hero_on_foot = false
+	life.dogs = []
+	life.passers = []
+	life.hero = s.pos + Vector3(SLOD.NEAR * 2.0, 0.0, 0.0)
+	s.dirty = false
+	for _k in range(3):
+		life.step(0.05)
+	K.check(fails, not s.dirty and s.hz_t > 0.0, "lod: a quiet far squirrel banks short ticks")
+	for _k in range(2):
+		life.step(0.05)
+	K.check(fails, s.dirty and s.hz_t == 0.0, "lod: the banked time steps it at the slow cadence")
+	life.hero = s.pos + Vector3(0.2, 0.0, 0.0)
+	s.dirty = false
+	life.step(0.05)
+	K.check(fails, s.dirty, "lod: the hero close by keeps the full rate")
+	life.hero = s.pos + Vector3(SLOD.NEAR * 2.0, 0.0, 0.0)
+	s.state = "climb"
+	s.hz_t = 0.0
+	s.dirty = false
+	life.step(0.05)
+	K.check(fails, s.dirty, "lod: an escape runs at full rate however far")
 
 
 func _check_teardown() -> void:

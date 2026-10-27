@@ -163,6 +163,8 @@ The cats' behaviour; cats.gd decides where cats keep and feeds in the world befo
 - `RADIUS_K = 0.5`: Collision radius and height as shares of the height at the shoulder.
 - `HEIGHT_K = 1.5`
 - `TROT_AT = 0.9 * WS.M`: Gaits: Trot above TROT_AT (m/s), Run above RUN_AT; clip rates within RATES.
+- `LOD = preload("res://scripts/fp/animals/settle_lod.gd")`
+- `CALM_ACTS = ["rest", "watch", "stretch", "purr", "stroll"]`: The acts the slow cadence may coarse (settle_lod.gd); a hunt, a fright, a climb or a greeting always runs at full rate.
 - `RUN_AT = 2.2 * WS.M`
 - `RATES = Vector2(0.5, 4.5)`
 - `RESTS = { &"Sit": [0.35, Vector2(6.0, 16.0)], &"Loaf": [0.3, Vector2(10.0, 30.0)], &"Groom": [0...`: The poses a cat rests in, their odds and how long one lasts (s).
@@ -741,6 +743,7 @@ The pigeons' behaviour; the pigeons node (pigeons.gd) decides where flocks live 
 ### Constants
 
 - `WS = preload("res://scripts/fp/world_scale.gd")`
+- `LOD = preload("res://scripts/fp/animals/settle_lod.gd")`
 - `WALK = 0.32 * WS.M`: Walking (m/s) foraging and hurrying (off, or to crumbs); a step's length (m), which sets the head's bob and the stride; turning on the ground (rad/s); the room each bird keeps (m).
 - `HURRY = 0.85 * WS.M`
 - `STEP_M = 0.075`
@@ -903,6 +906,24 @@ The procedural animals' shared half (used by pigeon_body.gd, duck_body.gd and sq
 - `static func build(cache: Array, parts: Callable) -> ArrayMesh`: A body's mesh, built once by its own parts (a static func of its arrays) and cached.
 - `static func make_material(cache: Array, shader: Shader, params: Dictionary) -> ShaderMaterial`: A body's material, built once (its shader with params set) and cached.
 
+## `scripts/fp/animals/settle_lod.gd`
+
+extends `RefCounted`
+
+Settled-state level of detail, shared by the animal life sims (pigeon_flock, squirrel_life, cat_life): an animal or flock with nothing going on, far from the hero, ticks at 4 Hz — the skipped time banks up and steps whole, so its timers keep pace. Anything happening (a fright, the hero coming close, a car bearing down, a hunt, an escape) takes it back to full rate on the next tick.
+
+### Constants
+
+- `WS = preload("res://scripts/fp/world_scale.gd")`
+- `SETTLE_S = 0.25`: The slow-cadence period (s) and how far from the hero (u) it starts.
+- `NEAR = 25.0 * WS.M`
+
+### Functions
+
+- `static func flock_dt(f: Object, hero: Vector3, cars: Array, dodge_s: float, dt: float) -> float`: A flock's step budget this tick: dt, or nothing while a settled far flock banks time toward its next slow-cadence step. dodge_s is the flock sim's car-dodge horizon (DODGE_S).
+- `static func flock_quiet(f: Object, cars: Array, dodge_s: float) -> bool`: True while nothing about a flock can change on its own: no fright running, no crumbs out, every bird down with none queued to take off, and (for a ground flock) no car that could reach it within the rest of a nap — a flutter-off must not start late. Parked and crawling cars never wake a flock; a perched one looks down on the street and cars cannot reach it.
+- `static func step_dt(a: Object, pos: Vector3, hero: Vector3, dt: float, calm: bool) -> float`: An animal's step budget this tick: dt, or nothing while it banks. calm says its state is a quiet one (the caller knows its states: foraging, resting; never a hunt or an escape).
+
 ## `scripts/fp/animals/squirrel_body.gd`
 
 extends `RefCounted`
@@ -989,6 +1010,8 @@ The squirrels' behaviour; the squirrels node (squirrels.gd) decides where each k
 - `UP_KEEP = 6.0`: Once it is up, nothing but the calm clock brings it down.
 - `CHATTER_S = 1.5`: The chatters it gives while it flees (animal_called), each at most every CHATTER_S (s).
 - `NO_POINT = Vector3(NAN, NAN, NAN)`
+- `LOD = preload("res://scripts/fp/animals/settle_lod.gd")`
+- `QUIET_STATES = ["forage", "nibble", "hold"]`: The states the slow cadence may coarse (settle_lod.gd); any escape state, or the hero coming close, returns the squirrel to full rate.
 
 ### Properties
 

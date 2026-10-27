@@ -89,6 +89,8 @@ var _spots: Dictionary = {}
 ## away), and the tint each instance keeps.
 var _node: MultiMeshInstance3D
 var _tints: Array[Color] = []
+## How many slots the last draw wrote (a change refreshes every slot once).
+var _drew_n: int = -1
 
 
 func setup(p_ctx: FpContext) -> void:
@@ -304,8 +306,14 @@ func _draw() -> void:
 		return
 	var mm := _node.multimesh
 	var n := mini(life.squirrels.size(), mm.instance_count)
+	# The membership changing reshuffles the slots: refresh them all that tick.
+	var force := n != _drew_n
+	_drew_n = n
 	for k in range(n):
 		var s: LIFE.Squirrel = life.squirrels[k]
+		if not force and not s.dirty:
+			continue
+		s.dirty = false
 		mm.set_instance_transform(k, LIFE.xform(s, LIFE.lift(s)))
 		mm.set_instance_custom_data(k, LIFE.pose(s))
 		mm.set_instance_color(k, _tints[k] if k < _tints.size() else COATS[0])

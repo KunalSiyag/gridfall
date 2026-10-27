@@ -36,6 +36,10 @@ const RADIUS_K := 0.5
 const HEIGHT_K := 1.5
 ## Gaits: Trot above TROT_AT (m/s), Run above RUN_AT; clip rates within RATES.
 const TROT_AT := 0.9 * WS.M
+const LOD := preload("res://scripts/fp/animals/settle_lod.gd")
+## The acts the slow cadence may coarse (settle_lod.gd); a hunt, a fright, a climb or a greeting
+## always runs at full rate.
+const CALM_ACTS := ["rest", "watch", "stretch", "purr", "stroll"]
 const RUN_AT := 2.2 * WS.M
 const RATES := Vector2(0.5, 4.5)
 ## The poses a cat rests in, their odds and how long one lasts (s).
@@ -158,6 +162,8 @@ class Cat:
 	var act: String = "rest"
 	var act_t: float = 0.0
 	var act_age: float = 0.0
+	## Slow-cadence accumulator while at leisure far from the hero (step()).
+	var hz_t: float = 0.0
 	var act_dir := Vector3.ZERO
 	var rest: StringName = &"Sit"
 	var goal := NO_POINT
@@ -231,12 +237,15 @@ func step(dt: float) -> void:
 		_freeze()
 		return
 	for c: Cat in cats:
-		_tick(c, dt)
+		var cdt := LOD.step_dt(c, c.pos, hero, dt, c.act in CALM_ACTS)
+		if cdt <= 0.0:
+			continue
+		_tick(c, cdt)
 		_sense(c)
-		_move(c, _want(c), dt)
+		_move(c, _want(c), cdt)
 		_hold(c)
 		_animate(c)
-		_pose(c, dt)
+		_pose(c, cdt)
 
 
 ## Something went off at src close by (a blow, a shout, a sprint past): the cat jumps and runs;
