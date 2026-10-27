@@ -475,10 +475,15 @@ func _queue_fall(delay: float, at: Vector3, db: float) -> void:
 
 ## The hero's swing (hero_action): a whoosh at their shoulder, a jab's higher, a hook's and a
 ## kick's lower, a shove's lower and softer; a landing roll's shoulder thuds on the ground
-## BANK.ROLL_THUD_S later. Emotes and the other parkour moves make no sound here.
+## BANK.ROLL_THUD_S later. The hero's horn or bicycle bell (drive's night_driving flag) sounds at
+## the car through the street's own horn source, in the same pool, volumes and ducking as every
+## other horn in town. Emotes and the other parkour moves make no sound here.
 func _on_hero_action(action: String, at: Vector3) -> void:
 	if action == "roll":
 		_queue_fall(BANK.ROLL_THUD_S, at, BANK.BODY_FALL_DB + BANK.ROLL_DB)
+		return
+	if action == "horn" or action == "bell":
+		emitters.horn(at)
 		return
 	if not SWING_PITCH.has(action):
 		return

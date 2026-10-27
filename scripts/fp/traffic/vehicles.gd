@@ -58,6 +58,14 @@ const HIT_COOL := 2.5
 ## through them.
 const HERO_PUSH := 0.5 * WS.PLAYER_RADIUS
 const HERO_PUSH_RATIO := 1.5
+## The player's horn reaches the cars ahead of them (the horn_reach flag, honk_nudge): a stopped or
+## crawling one within NUDGE_REACH and inside NUDGE_CONE of their heading shakes off a hold or a
+## knock and gets going for NUDGE_S.
+const NUDGE_S := 3.0
+const NUDGE_REACH := 15.0 * WS.M
+const NUDGE_CONE := 0.5
+## A car this slow or slower counts as stopped for a nudge (the drive feature's claim speed).
+const NUDGE_CRAWL := 0.5 * WS.M
 
 
 ## One vehicle.
@@ -83,8 +91,14 @@ class Car extends RefCounted:
 	var gate: int = -1              # approach lane id this vehicle may pass the stop point of
 	var wait_t: float = 0.0
 	var stalled_s: float = 0.0
+	## s the hero has held this car up, stopped with the hero's own car or the hero on foot the
+	## nearest thing in its path (blocked_horns: it honks at them well before the long jam draw).
+	var hero_block_s: float = 0.0
 	var hold: bool = false          # conversation: stop and wait
 	var stun_t: float = 0.0         # s it stays braking after the player's car hit it (shoves.gd)
+	## s of urgency left after the player's horn reached it (honk_nudge): a held or stunned car
+	## shakes it off and gets going while this runs.
+	var nudge_t: float = 0.0
 	var siren: bool = false
 	var far: bool = false
 	var parked: bool = false
@@ -93,6 +107,10 @@ class Car extends RefCounted:
 	var park_t: float = -1.0        # >= 0 while pulling in (0..1)
 	var park_from := Vector3.ZERO
 	var park_from_yaw: float = 0.0
+	## The curb slot a taken car stood in before the player took it over (a backhoe's home for the
+	## save: drive/backhoe.gd finds the machine again by it on the load), else -1.
+	var home_tile: int = -1
+	var home_k: int = -1
 	var pos := Vector3.ZERO
 	var yaw: float = 0.0
 	var vel := Vector3.ZERO
@@ -149,6 +167,9 @@ var on_hit_player: Callable
 var on_hero_push: Callable
 ## _blocks index of the hero on foot, -1 when they are not in it.
 var _hero_block: int = -1
+## Per _blocks entry: true when it is the player's own (their cars or the hero on foot), so a car
+## held up by one of them is the player holding it up (hero_block_s).
+var _block_player: Array = []
 ## The car that last hit the hero, and seconds before another may.
 var _hit_id: int = -1
 var _hit_cool: float = 0.0
@@ -158,6 +179,8 @@ var _hero_was := Vector2(INF, INF)
 ## Drawn body centre of every car near the hero last step (id -> Vector2), for the closing speed
 ## the hero-contact test reads.
 var _body_was: Dictionary = {}
+## The blocked_horns flag, read once a step: cars the player holds up keep a hero_block_s clock.
+var _horn_block: bool = false
 
 
 func setup(p_lg: LG, p_jn: JN, p_sw: SW, seed: int) -> void:
@@ -454,6 +477,7 @@ func step(dt: float) -> void:
 	var decay := exp(-dt * 1.6)
 	var near2 := LOD_NEAR * LOD_NEAR
 	var full2 := LOD_FULL * LOD_FULL
+	_horn_block = FeatureFlags.enabled("blocked_horns")
 	_track_hero(dt)
 	_gather_blocks()
 	for c: Car in cars.duplicate():
@@ -562,15 +586,18 @@ func _drive(c: Car, dt: float) -> void:
 			vl = 0.0
 		hard = minf(hard, sgap)
 	var pl := _player_gap(c)
+	var by_hero := false
 	if float(pl[0]) < gap:
 		gap = pl[0]
 		vl = pl[1]
+		by_hero = bool(pl[3])
 	hard = minf(hard, _block_room(c, pl, dt))
 	var acc := IDM.acc(c.v, vmax, gap, c.v - vl)
 	var hb := _hold_brake(c)
 	if hb > 0.0:
 		acc = minf(acc, -hb)
 	c.stun_t = maxf(0.0, c.stun_t - dt)
+	c.nudge_t = maxf(0.0, c.nudge_t - dt)
 	var v1 := maxf(0.0, c.v + acc * dt)
 	var ds := (c.v + v1) * 0.5 * dt
 	if ds > hard:
@@ -586,9 +613,12 @@ func _drive(c: Car, dt: float) -> void:
 		c.stalled_s += dt
 		if held:
 			c.wait_t += dt
+		if by_hero and _horn_block:
+			c.hero_block_s += dt
 	else:
 		c.stalled_s = 0.0
 		c.wait_t = 0.0
+		c.hero_block_s = 0.0
 	_advance(c, ds)
 	if not c.dead and c.goal_lane != null and c.lane == c.goal_lane and c.s >= c.goal_s - ARRIVE_TOL and c.v < 0.4 * WS.M:
 		c.v = 0.0
@@ -725,11 +755,35 @@ func _stops(c: Car) -> Array:
 
 
 ## How hard c brakes to stand still: stunned by a knock (as hard as it can just after running the
-## hero down), or held by a conversation; 0 when free.
+## hero down), or held by a conversation; 0 when free (or while the player's horn has it going).
 func _hold_brake(c: Car) -> float:
+	if c.nudge_t > 0.0:
+		return 0.0
 	if c.stun_t > 0.0:
 		return IDM.B_MAX if c.id == _hit_id else STUN_BRAKE
 	return IDM.B * 1.5 if c.hold else 0.0
+
+
+## The player's horn reaches the cars ahead of them at, heading (xz, unit): every stopped or
+## crawling one within reach and inside NUDGE_CONE of that heading shakes off a hold or a knock
+## and gets going for NUDGE_S. Returns how many it reached.
+func honk_nudge(at: Vector3, heading: Vector2, reach: float = NUDGE_REACH) -> int:
+	var at2 := Vector2(at.x, at.z)
+	var n := 0
+	for c: Car in cars:
+		if c.dead or c.parked or c.far or c.driven or c.role == PLAYER:
+			continue
+		var rel := Vector2(c.pos.x + c.vis_off.x, c.pos.z + c.vis_off.z) - at2
+		var d := rel.length()
+		if d > reach or d < 1e-6 or rel.normalized().dot(heading) < NUDGE_CONE:
+			continue
+		if c.v > NUDGE_CRAWL:
+			continue
+		c.nudge_t = NUDGE_S
+		c.hold = false
+		c.stun_t = 0.0
+		n += 1
+	return n
 
 
 ## Times the hit cool-down out and follows the hero's ground velocity.
@@ -745,6 +799,7 @@ func _track_hero(dt: float) -> void:
 ## Rebuilds _blocks: the player's cars, the player on foot (when not driving) and extra_blocks.
 func _gather_blocks() -> void:
 	_blocks.clear()
+	_block_player.clear()
 	_hero_block = -1
 	var driving := false
 	for c: Car in cars:
@@ -754,21 +809,27 @@ func _gather_blocks() -> void:
 		var h := Vector2(sin(c.yaw), cos(c.yaw))
 		var v := Vector2(c.vel.x, c.vel.z)
 		_blocks.append([Vector2(c.pos.x, c.pos.z), h, c.length * 0.5, c.half_w, v])
+		_block_player.append(true)
 	if player_on and not driving:
 		_hero_block = _blocks.size()
 		_blocks.append([Vector2(player_pos.x, player_pos.z), Vector2.ZERO, -1.0, 0.0, Vector2.ZERO])
+		_block_player.append(true)
 	if extra_blocks.is_valid():
-		_blocks.append_array(extra_blocks.call())
+		var extra: Array = extra_blocks.call()
+		_blocks.append_array(extra)
+		for _b: Variant in extra:
+			_block_player.append(false)
 
 
-## [gap, speed, hero] to the nearest block on c's path: the distance from its front to the
-## block's edge along the path, the block's speed along the path there and whether it is the hero
-## on foot; [INF, 0, false] when none.
+## [gap, speed, hero, mine] to the nearest block on c's path: the distance from its front to the
+## block's edge along the path, the block's speed along the path there, whether it is the hero on
+## foot and whether it is the player's own at all (a car of theirs, or them on foot); [INF, 0,
+## false, false] when none.
 func _player_gap(c: Car) -> Array:
 	var best := [INF, 0.0]
 	var bi := -1
 	if _blocks.is_empty():
-		return [INF, 0.0, false]
+		return [INF, 0.0, false, false]
 	var front := lg.pos_at(c.lane, c.s)
 	var look := c.v * c.v / (2.0 * IDM.B) + 2.0 * WS.M + c.v * 0.5 + 0.1
 	for i in _blocks.size():
@@ -782,6 +843,7 @@ func _player_gap(c: Car) -> Array:
 			best = g
 			bi = i
 	best.append(bi >= 0 and bi == _hero_block)
+	best.append(bi >= 0 and bool(_block_player[bi]))
 	return best
 
 

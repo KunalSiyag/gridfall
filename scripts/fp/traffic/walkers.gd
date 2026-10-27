@@ -119,6 +119,7 @@ class Walker:
 	var react_t: float = 0.0  # seconds into react
 	var react_rate: float = 1.0  # pace react plays at (0 holds its pose)
 	var vis_tilt: float = 0.0  # drawn tip about the hips (rad, + forward): thrown or dragged
+	var vis_roll: float = 0.0  # drawn side lean about the hips (rad, + toward the body's right)
 
 
 var sw: SW
@@ -158,9 +159,9 @@ func setup(p_sw: SW, p_lg: LG, p_jn: JN, p_vh: VH, seed: int) -> void:
 ## tipped by its vis_tilt about the hips (HIP_M up in the body's own metres).
 static func body_xf(w: Walker, s: float, feet: Vector3) -> Transform3D:
 	var xf := Transform3D(Basis(Vector3.UP, w.yaw) * s, feet)
-	if w.vis_tilt == 0.0:
+	if w.vis_tilt == 0.0 and w.vis_roll == 0.0:
 		return xf
-	var tip := Basis(Vector3.RIGHT, w.vis_tilt)
+	var tip := Basis(Vector3.BACK, w.vis_roll) * Basis(Vector3.RIGHT, w.vis_tilt)
 	var hip := Vector3(0.0, HIP_M, 0.0)
 	return xf * Transform3D(tip, hip - tip * hip)
 
@@ -354,6 +355,16 @@ func _walk_edge(w: Walker, dt: float) -> void:
 	var lat_t := w.lat_jit
 	var lat_max := BAND + 0.012
 	var end := e.length if w.t_end < 0.0 else minf(w.t_end, e.length)
+	# A closed zebra ahead: stop at the back of the queue waiting at its kerb, not inside it.
+	# Only the last SEP * 4 of the approach pays for the queue look (deeper queues than that
+	# just fill in coarser).
+	if not w.far and e.length - w.t < SEP * 4.0:
+		var zq := _peek_zebra(w)
+		if zq != null and not _can_cross(zq):
+			var zd := _zebra_dir(w, zq)
+			var node := zq.a if zd > 0 else zq.b
+			if (e.b if w.dir > 0 else e.a) == node:
+				end = minf(end, maxf(0.0, e.length - SEP * _queue_depth(zq, zd)))
 	if w.far or w.lod_far:
 		w.v = v
 		w.t += v * dt
@@ -406,8 +417,12 @@ func _walk_edge(w: Walker, dt: float) -> void:
 					return
 				if ofwd.dot(fwd) > 0.3:
 					if dist < SEP * 1.6 and o.v < v:
+						# Falling in behind someone: match their pace only once the gap has
+						# opened. Closer than SEP we hang back toward it -- matching their
+						# speed exactly, at any gap, walks a pair pinned to one lateral by a
+						# dodge in lockstep inside each other instead.
 						v = (
-							maxf(o.v, 0.0)
+							o.v * clampf(dist / SEP, 0.0, 1.0)
 							if dist < SEP
 							else lerpf(o.v, v, (dist - SEP) / (SEP * 0.6))
 						)
@@ -415,6 +430,11 @@ func _walk_edge(w: Walker, dt: float) -> void:
 					lat_t = KEEP_RIGHT
 					if dist < SEP:
 						v *= 0.5
+					if dist < SEP * 0.5:
+						# A pocket meet, too close for keep-right to open (say, a dodge the
+						# hero pinned to one side): keep right at the band's edge, slowly.
+						lat_t = BAND
+						v *= 0.7
 	if player_on:
 		var yv := _yield_to_player(w, fwd, Vector3(v, lat_t, lat_max))
 		v = yv.x
@@ -429,7 +449,12 @@ func _walk_edge(w: Walker, dt: float) -> void:
 					if dp.length() < 1.2 * WS.M:
 						var side := -dp.x * fwd.y + dp.y * fwd.x
 						lat_t = -BAND * 0.8 if side > 0.0 else BAND * 0.8
-	w.lat = move_toward(w.lat, clampf(lat_t, -lat_max, lat_max), dt * 0.6 * WS.M)
+	# Sidestep rate: polite when a small adjustment suffices, decisive when the target
+	# is more than a keep-right away (a pocket dodge has to open before the meet).
+	var lat_gap := absf(lat_t - w.lat)
+	w.lat = move_toward(
+		w.lat, clampf(lat_t, -lat_max, lat_max), dt * (0.6 if lat_gap < KEEP_RIGHT else 1.5) * WS.M
+	)
 	w.v = v
 	w.t += v * dt
 	if v < 0.05 * WS.M:
@@ -456,7 +481,10 @@ func _yield_to_player(w: Walker, fwd: Vector2, s: Vector3) -> Vector3:
 		return Vector3(0.0 if ahead > 0.0 else s.x, -GIVE_WAY if side > 0.0 else GIVE_WAY, GIVE_WAY)
 	if ahead > -0.4 * WS.M and ahead < 2.2 * WS.M and absf(side) < 1.2 * WS.M:
 		# Step around the player, leaving the band a little if that is what it takes.
-		s.y = -(BAND + 0.012) if side > 0.0 else (BAND + 0.012)
+		# Keep the side the crowd logic chose: pinning two oncoming walkers to the same
+		# side walks them straight through each other.
+		var dodge := -(BAND + 0.012) if side > 0.0 else (BAND + 0.012)
+		s.y = signf(s.y) * (BAND + 0.012) if absf(s.y) > BAND * 0.5 else dodge
 		if ahead > 0.0 and ahead < 0.7 * WS.M and absf(side - w.lat) < 0.5 * WS.M:
 			s.x = 0.0
 		elif ahead > 0.0:
@@ -617,24 +645,43 @@ func _chat(w: Walker, dt: float) -> void:
 		w.yaw = lerp_angle(w.yaw, atan2(d.x, d.z), minf(1.0, dt * 3.0))
 
 
-## w stops at the curb before a zebra, taking the next free place in the waiting crowd.
+## w stops at the curb before a zebra, taking the next free place in the waiting crowd: its slot
+## is the next free one of that zebra's own queue (walkers stop short of the kerb in SEP steps
+## now, so the places are no longer one shared spot).
 func _begin_wait(w: Walker) -> void:
 	w.state = "wait"
 	w.v = 0.0
 	w.wait_t = 0.0
+	var z := _peek_zebra(w)
+	if z == null:
+		w.wait_slot = 0
+		return
+	var zd := _zebra_dir(w, z)
 	var taken := {}
 	for o: Walker in walkers:
-		if (
-			o != w
-			and o.state == "wait"
-			and not o.dead
-			and o.pos.distance_squared_to(w.pos) < 0.0004
-		):
-			taken[o.wait_slot] = true
+		if o == w or o.dead or o.state != "wait":
+			continue
+		var oz := _peek_zebra(o)
+		if oz == null or oz.id != z.id or _zebra_dir(o, oz) != zd:
+			continue
+		taken[o.wait_slot] = true
 	var k := 0
 	while taken.has(k):
 		k += 1
 	w.wait_slot = k
+
+
+## Walkers already waiting to cross zebra z from side zd (the queue at that kerb: they stopped
+## in SEP steps behind one another, or wherever the block caught them).
+func _queue_depth(z: SW.PedEdge, zd: int) -> int:
+	var n := 0
+	for o: Walker in walkers:
+		if o.dead or o.state != "wait":
+			continue
+		var oz := _peek_zebra(o)
+		if oz != null and oz.id == z.id and _zebra_dir(o, oz) == zd:
+			n += 1
+	return n
 
 
 ## Drawn offset of a waiting walker's place in the crowd (zero once they walk).

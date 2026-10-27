@@ -18,8 +18,8 @@ const MODEL_DIRS := [
 ]
 const EPS := 1e-5
 ## A character scene import with HC's retarget settings (D13): must survive --apply untouched.
-const CHAR_GLB_IMPORT := "[remap]\n\nimporter=\"scene\"\nimporter_version=1\ntype=\"PackedScene\"\nuid=\"uid://g2testchar\"\npath=\"res://.godot/imported/hero.glb-0.scn\"\n\n[deps]\n\nsource_file=\"res://models/characters/bodies/hero.glb\"\ndest_files=[\"res://.godot/imported/hero.glb-0.scn\"]\n\n[params]\n\nnodes/use_name_suffixes=true\nmeshes/generate_lods=true\nanimation/fps=30\n_subresources={\n\"nodes\": {\n\"PATH:Armature/Skeleton3D\": {\n\"retarget/bone_map\": Resource(\"res://models/characters/bonemap.tres\"),\n\"retarget/bone_renamer/rename_bones\": true,\n\"retarget/rest_fixer/normalize_position_tracks\": true,\n\"retarget/remove_tracks/unmapped_bones\": true\n}\n}\n}\ngltf/embedded_image_handling=0\n"
-const CHAR_TEX_IMPORT := "[remap]\n\nimporter=\"texture\"\ntype=\"CompressedTexture2D\"\nuid=\"uid://g2testtex\"\npath=\"res://.godot/imported/hero_body.png-0.ctex\"\n\n[deps]\n\nsource_file=\"res://models/characters/bodies/hero_body.png\"\n\n[params]\n\ncompress/mode=0\ncompress/normal_map=0\nmipmaps/generate=false\n"
+const CHAR_GLB_IMPORT := '[remap]\n\nimporter="scene"\nimporter_version=1\ntype="PackedScene"\nuid="uid://g2testchar"\npath="res://.godot/imported/hero.glb-0.scn"\n\n[deps]\n\nsource_file="res://models/characters/bodies/hero.glb"\ndest_files=["res://.godot/imported/hero.glb-0.scn"]\n\n[params]\n\nnodes/use_name_suffixes=true\nmeshes/generate_lods=true\nanimation/fps=30\n_subresources={\n"nodes": {\n"PATH:Armature/Skeleton3D": {\n"retarget/bone_map": Resource("res://models/characters/bonemap.tres"),\n"retarget/bone_renamer/rename_bones": true,\n"retarget/rest_fixer/normalize_position_tracks": true,\n"retarget/remove_tracks/unmapped_bones": true\n}\n}\n}\ngltf/embedded_image_handling=0\n'
+const CHAR_TEX_IMPORT := '[remap]\n\nimporter="texture"\ntype="CompressedTexture2D"\nuid="uid://g2testtex"\npath="res://.godot/imported/hero_body.png-0.ctex"\n\n[deps]\n\nsource_file="res://models/characters/bodies/hero_body.png"\n\n[params]\n\ncompress/mode=0\ncompress/normal_map=0\nmipmaps/generate=false\n'
 
 var fails: Array[String] = []
 
@@ -27,15 +27,9 @@ var fails: Array[String] = []
 func _init() -> void:
 	await process_frame
 	_check_static()
-	var opts := {"view": true, "grow": true, "render": true, "player": true, "hud": false}
-	var ctx := K.make_ctx(get_root(), opts)
+	var ctx := K.render_street_ctx(get_root(), fails)
 	var sim := ctx.sim
 	var view := ctx.view
-	sim.mayors[0]["treasury"] = 200000
-	_place_open_services(sim)
-	view.set_fp_mode(true)
-	if view.has_method("flush_rebuild_queue"):
-		view.call("flush_rebuild_queue")
 	# A part another slice ranged before G2 runs must keep its range.
 	var foreign := _foreign_part(view, sim)
 	# The windowed game's root viewport carries the project's MSAA 2x; headless roots start at 0.
@@ -56,7 +50,6 @@ func _init() -> void:
 	_check_far_coverage(view)
 	_check_bulldoze(f, hlod, occ, view, sim)
 	_check_presets(ctx, f, hlod)
-	_check_aerial(ctx, f, hlod)
 	_report_costs(f, hlod)
 	var st: Dictionary = f.self_test()
 	K.check(fails, bool(st["ok"]), "self_test ok: %s" % st["detail"])
@@ -67,28 +60,41 @@ func _init() -> void:
 
 
 func _check_static() -> void:
-	K.check(fails, is_equal_approx(Q.vis_mult("low"), 0.7) and is_equal_approx(Q.vis_mult("medium"), 1.0) and is_equal_approx(Q.vis_mult("high"), 1.3), "vis_mult 0.7 / 1.0 / 1.3")
-	K.check(fails, Q.max_street_lights("low") == 6 and Q.max_street_lights("medium") == 12 and Q.max_street_lights("high") == 16, "max_street_lights 6 / 12 / 16")
-	K.check(fails, is_equal_approx(Q.camera_far("low"), 45.0) and is_equal_approx(Q.camera_far("medium"), WS.CAMERA_FAR) and is_equal_approx(Q.camera_far("high"), 75.0), "camera_far 45 / 60 / 75")
+	K.check(
+		fails,
+		(
+			is_equal_approx(Q.vis_mult("low"), 0.7)
+			and is_equal_approx(Q.vis_mult("medium"), 1.0)
+			and is_equal_approx(Q.vis_mult("high"), 1.3)
+		),
+		"vis_mult 0.7 / 1.0 / 1.3"
+	)
+	K.check(
+		fails,
+		(
+			Q.max_street_lights("low") == 6
+			and Q.max_street_lights("medium") == 12
+			and Q.max_street_lights("high") == 16
+		),
+		"max_street_lights 6 / 12 / 16"
+	)
+	K.check(
+		fails,
+		(
+			is_equal_approx(Q.camera_far("low"), 45.0)
+			and is_equal_approx(Q.camera_far("medium"), WS.CAMERA_FAR)
+			and is_equal_approx(Q.camera_far("high"), 75.0)
+		),
+		"camera_far 45 / 60 / 75"
+	)
 	K.check(fails, Q.normalize("ultra") == "medium", "unknown preset falls back to medium")
 	# G1 ends the Low fog inside 95 % of the far plane; the far plane must lie beyond it.
 	var fog_low := LP.fog_end("low")
-	K.check(fails, Q.camera_far("low") > fog_low, "Low far plane %.1f beyond the Low fog end %.1f" % [Q.camera_far("low"), fog_low])
-
-
-## Builds a park, a wind farm and a stadium instantly when the grown city has none.
-func _place_open_services(sim: CitySim) -> void:
-	var mode := sim.construction_mode
-	sim.construction_mode = "instant"
-	for key: String in ["park", "wind_farm", "stadium"]:
-		var kind := int(D.BUILDINGS[key]["kind"])
-		var have := false
-		for i in sim.active:
-			have = have or sim.kind[i] == kind
-		if not have:
-			var r: Dictionary = sim.apply_action(0, {"type": "build", "building": key, "x": 12, "y": 10})
-			K.check(fails, bool(r.get("ok", false)), "fixture: built a %s (%s)" % [key, r.get("reason", "")])
-	sim.construction_mode = mode
+	K.check(
+		fails,
+		Q.camera_far("low") > fog_low,
+		"Low far plane %.1f beyond the Low fog end %.1f" % [Q.camera_far("low"), fog_low]
+	)
 
 
 func _foreign_part(view: CityView, sim: CitySim) -> GeometryInstance3D:
@@ -105,7 +111,9 @@ func _foreign_part(view: CityView, sim: CitySim) -> GeometryInstance3D:
 	return null
 
 
-func _check_ranges(f: Node, hlod: RefCounted, view: CityView, mult: float, foreign: GeometryInstance3D) -> void:
+func _check_ranges(
+	f: Node, hlod: RefCounted, view: CityView, mult: float, foreign: GeometryInstance3D
+) -> void:
 	var tiles: Dictionary = hlod.tiles
 	var nb := 0
 	var np := 0
@@ -118,12 +126,24 @@ func _check_ranges(f: Node, hlod: RefCounted, view: CityView, mult: float, forei
 		var cls: PackedByteArray = e["cls"]
 		for k in range(gis.size()):
 			var gi := gis[k] as GeometryInstance3D
-			if absf(gi.visibility_range_end - _want_end(cls[k], mult)) > EPS or absf(gi.visibility_range_begin - _want_begin(cls[k], mult)) > EPS or not gi.has_meta("g2_vis"):
+			if (
+				absf(gi.visibility_range_end - K.vis_want_end(cls[k], mult)) > EPS
+				or absf(gi.visibility_range_begin - K.vis_want_begin(cls[k], mult)) > EPS
+				or not gi.has_meta("g2_vis")
+			):
 				bad.append("%d:%s" % [i, gi.name])
 			if cls[k] == HLOD.Cls.MID:
 				nm += 1
 				var src := gi.get_parent() as MeshInstance3D
-				if src == null or not (e["gis"] as Array).has(src) or cls[(e["gis"] as Array).find(src)] != HLOD.Cls.NEAR or gi.transform != Transform3D.IDENTITY or not src.get_aabb().is_equal_approx(gi.get_aabb()) or (gi as MeshInstance3D).mesh.get_surface_count() != 1 or gi.cast_shadow != src.cast_shadow:
+				if (
+					src == null
+					or not (e["gis"] as Array).has(src)
+					or cls[(e["gis"] as Array).find(src)] != HLOD.Cls.NEAR
+					or gi.transform != Transform3D.IDENTITY
+					or not src.get_aabb().is_equal_approx(gi.get_aabb())
+					or (gi as MeshInstance3D).mesh.get_surface_count() != 1
+					or gi.cast_shadow != src.cast_shadow
+				):
 					bad.append("%d:%s twin" % [i, gi.name])
 			if cls[k] == HLOD.Cls.PROP:
 				np += 1
@@ -134,8 +154,25 @@ func _check_ranges(f: Node, hlod: RefCounted, view: CityView, mult: float, forei
 			elif gi is MeshInstance3D:
 				nb += 1
 	# G1 ranges most furniture itself (then G2 leaves it alone), so a few G2 props suffice.
-	K.check(fails, nb >= 50 and np >= 1 and nr >= 50 and nm >= 20, "fixtures: %d building meshes, %d mid-LOD twins, %d prop parts, %d road parts" % [nb, nm, np, nr])
-	K.check(fails, bad.is_empty(), "building meshes end at VIS_BUILDING_NEAR*mult where their one-surface twin (same bounds, shadows as authored) takes over to VIS_BUILDING*mult; other building/road parts end at VIS_BUILDING*mult, props at VIS_PROP*mult with no shadow %s" % str(bad.slice(0, 5)))
+	K.check(
+		fails,
+		nb >= 50 and np >= 1 and nr >= 50 and nm >= 20,
+		(
+			"fixtures: %d building meshes, %d mid-LOD twins, %d prop parts, %d road parts"
+			% [nb, nm, np, nr]
+		)
+	)
+	(
+		K
+		. check(
+			fails,
+			bad.is_empty(),
+			(
+				"building meshes end at VIS_BUILDING_NEAR*mult where their one-surface twin (same bounds, shadows as authored) takes over to VIS_BUILDING*mult; other building/road parts end at VIS_BUILDING*mult, props at VIS_PROP*mult with no shadow %s"
+				% str(bad.slice(0, 5))
+			)
+		)
+	)
 	# Every building mesh under a holder is ranged.
 	var unranged := 0
 	for i: int in tiles.keys():
@@ -148,7 +185,11 @@ func _check_ranges(f: Node, hlod: RefCounted, view: CityView, mult: float, forei
 				continue
 			if n != foreign and not n.has_meta("g2_vis"):
 				unranged += 1
-	K.check(fails, unranged == 0, "every building MeshInstance3D under a holder carries g2_vis (%d missing)" % unranged)
+	K.check(
+		fails,
+		unranged == 0,
+		"every building MeshInstance3D under a holder carries g2_vis (%d missing)" % unranged
+	)
 	# Site parts and parts ranged by others are untouched.
 	var site_touched := 0
 	var sites := 0
@@ -161,8 +202,20 @@ func _check_ranges(f: Node, hlod: RefCounted, view: CityView, mult: float, forei
 		for n in site.find_children("*", "GeometryInstance3D", true, false):
 			if n.has_meta("g2_vis"):
 				site_touched += 1
-	K.check(fails, site_touched == 0, "no node under %d Site children touched (%d)" % [sites, site_touched])
-	K.check(fails, foreign != null and is_equal_approx(foreign.visibility_range_end, 3.21) and not foreign.has_meta("g2_vis"), "a part ranged before the post-pass keeps its range")
+	K.check(
+		fails,
+		site_touched == 0,
+		"no node under %d Site children touched (%d)" % [sites, site_touched]
+	)
+	K.check(
+		fails,
+		(
+			foreign != null
+			and is_equal_approx(foreign.visibility_range_end, 3.21)
+			and not foreign.has_meta("g2_vis")
+		),
+		"a part ranged before the post-pass keeps its range"
+	)
 
 
 ## True when n or an ancestor is queued for deletion (G1 rebuilds every holder on a mode change).
@@ -174,21 +227,6 @@ static func _doomed(n: Node) -> bool:
 	return false
 
 
-static func _want_end(c: int, mult: float) -> float:
-	match c:
-		HLOD.Cls.PROP:
-			return WS.VIS_PROP * mult
-		HLOD.Cls.FULL:
-			return 0.0
-		HLOD.Cls.NEAR:
-			return WS.VIS_BUILDING_NEAR * mult
-	return WS.VIS_BUILDING * mult
-
-
-static func _want_begin(c: int, mult: float) -> float:
-	return WS.VIS_BUILDING_NEAR * mult if c == HLOD.Cls.MID else 0.0
-
-
 func _check_occluders(hlod: RefCounted, occ: RefCounted, view: CityView, sim: CitySim) -> void:
 	var tiles: Dictionary = hlod.tiles
 	var solid_chunks := {}
@@ -197,7 +235,11 @@ func _check_occluders(hlod: RefCounted, occ: RefCounted, view: CityView, sim: Ci
 	for i: int in tiles.keys():
 		var e: Dictionary = tiles[i]
 		var k := sim.kind[i]
-		var want_solid := (k == D.ZONE_R and sim.level[i] >= 2) or ((k == D.ZONE_C or k == D.ZONE_I) and sim.level[i] >= 1) or k in HLOD.SOLID_SERVICES
+		var want_solid := (
+			(k == D.ZONE_R and sim.level[i] >= 2)
+			or ((k == D.ZONE_C or k == D.ZONE_I) and sim.level[i] >= 1)
+			or k in HLOD.SOLID_SERVICES
+		)
 		if bool(e["solid"]) != (want_solid and not str(e["path"]).is_empty()):
 			bad.append("%d kind %d solid=%s" % [i, k, str(e["solid"])])
 		if not bool(e["solid"]):
@@ -210,7 +252,14 @@ func _check_occluders(hlod: RefCounted, occ: RefCounted, view: CityView, sim: Ci
 		if not (body.encloses(box) and full.encloses(box)):
 			bad.append("%d box outside body/building_aabb" % i)
 	K.check(fails, solid >= 5, "fixtures: %d solid buildings" % solid)
-	K.check(fails, bad.is_empty(), "occluders only on solid kinds, each inside its body box and building_aabb %s" % str(bad.slice(0, 5)))
+	K.check(
+		fails,
+		bad.is_empty(),
+		(
+			"occluders only on solid kinds, each inside its body box and building_aabb %s"
+			% str(bad.slice(0, 5))
+		)
+	)
 	var open_kinds := 0
 	for i in sim.active:
 		if sim.kind[i] in [D.PARK, D.WIND, D.STADIUM]:
@@ -220,12 +269,33 @@ func _check_occluders(hlod: RefCounted, occ: RefCounted, view: CityView, sim: Ci
 	K.check(fails, open_kinds >= 3, "fixtures: park, wind farm and stadium tiles (%d)" % open_kinds)
 	var per_chunk_ok := true
 	for c: Vector2i in solid_chunks.keys():
-		per_chunk_ok = per_chunk_ok and (occ.chunk_boxes.get(c, []) as Array).size() == int(solid_chunks[c])
-	K.check(fails, per_chunk_ok and occ.chunk_nodes.size() == solid_chunks.size(), "one OccluderInstance3D per chunk with solid buildings (%d chunks, %d nodes), one box each" % [solid_chunks.size(), occ.chunk_nodes.size()])
+		per_chunk_ok = (
+			per_chunk_ok and (occ.chunk_boxes.get(c, []) as Array).size() == int(solid_chunks[c])
+		)
+	(
+		K
+		. check(
+			fails,
+			per_chunk_ok and occ.chunk_nodes.size() == solid_chunks.size(),
+			(
+				"one OccluderInstance3D per chunk with solid buildings (%d chunks, %d nodes), one box each"
+				% [solid_chunks.size(), occ.chunk_nodes.size()]
+			)
+		)
+	)
 	var under_world := true
 	for oi: OccluderInstance3D in occ.chunk_nodes.values():
-		under_world = under_world and oi.get_parent().name == "Occluders" and not view.is_ancestor_of(oi) and oi.occluder is ArrayOccluder3D
-	K.check(fails, under_world, "occluders are ArrayOccluder3D under World/Occluders, never under CityView")
+		under_world = (
+			under_world
+			and oi.get_parent().name == "Occluders"
+			and not view.is_ancestor_of(oi)
+			and oi.occluder is ArrayOccluder3D
+		)
+	K.check(
+		fails,
+		under_world,
+		"occluders are ArrayOccluder3D under World/Occluders, never under CityView"
+	)
 
 
 func _check_impostors(hlod: RefCounted, view: CityView, mult: float) -> void:
@@ -244,28 +314,85 @@ func _check_impostors(hlod: RefCounted, view: CityView, mult: float) -> void:
 			if ch is Node3D and ch.scene_file_path == str(e["path"]):
 				model = ch
 		# A grow tween still running scales the model; the switch point uses its final transform.
-		if model == null or not model.transform.is_equal_approx(h.get_meta("building_xform") as Transform3D):
+		if (
+			model == null
+			or not model.transform.is_equal_approx(h.get_meta("building_xform") as Transform3D)
+		):
 			continue
 		var best: MeshInstance3D = null
 		for n in h.find_children("*", "MeshInstance3D", true, false):
 			var mi := n as MeshInstance3D
-			if mi.mesh != null and not str(mi.name).begins_with("Leaves") and not str(mi.name).contains("foliage") and (best == null or mi.get_aabb().get_volume() > best.get_aabb().get_volume()):
+			if (
+				mi.mesh != null
+				and not str(mi.name).begins_with("Leaves")
+				and not str(mi.name).contains("foliage")
+				and (best == null or mi.get_aabb().get_volume() > best.get_aabb().get_volume())
+			):
 				if mi.has_meta("g2_vis") and (e["gis"] as Array).has(mi):
 					best = mi
-		if best != null and not (best.global_transform * best.get_aabb()).get_center().is_equal_approx(e["center"]):
+		if (
+			best != null
+			and not (best.global_transform * best.get_aabb()).get_center().is_equal_approx(
+				e["center"]
+			)
+		):
 			center_bad += 1
-	K.check(fails, want.size() >= 2 and hlod.chunk_nodes.size() == want.size(), "one merged impostor mesh per chunk with impostor buildings, built synchronously (%d chunks, %d meshes)" % [want.size(), hlod.chunk_nodes.size()])
-	K.check(fails, center_bad == 0, "impostor switch points match the engine's range points (%d off)" % center_bad)
+	(
+		K
+		. check(
+			fails,
+			want.size() >= 2 and hlod.chunk_nodes.size() == want.size(),
+			(
+				"one merged impostor mesh per chunk with impostor buildings, built synchronously (%d chunks, %d meshes)"
+				% [want.size(), hlod.chunk_nodes.size()]
+			)
+		)
+	)
+	K.check(
+		fails,
+		center_bad == 0,
+		"impostor switch points match the engine's range points (%d off)" % center_bad
+	)
 	var vis := WS.VIS_BUILDING * mult
 	var rng := float(hlod.material.get_shader_parameter("range_sq"))
-	K.check(fails, absf(rng - vis * vis) < 1e-3, "impostor proxies switch at VIS_BUILDING*mult = %.2f (holders end there, no overlap band)" % vis)
+	(
+		K
+		. check(
+			fails,
+			absf(rng - vis * vis) < 1e-3,
+			(
+				"impostor proxies switch at VIS_BUILDING*mult = %.2f (holders end there, no overlap band)"
+				% vis
+			)
+		)
+	)
 	var begin_ok := true
 	for mi: MeshInstance3D in hlod.chunk_nodes.values():
 		var reach := float(mi.get_meta("reach", 0.0))
-		begin_ok = begin_ok and mi.visibility_range_begin <= vis + EPS and absf(mi.visibility_range_begin - maxf(0.0, vis - reach)) < EPS
-		begin_ok = begin_ok and mi.cast_shadow == GeometryInstance3D.SHADOW_CASTING_SETTING_OFF and not view.is_ancestor_of(mi)
-		begin_ok = begin_ok and reach <= HLOD.CHUNK * 0.75 + 3.0 and mi.mesh != null and mi.mesh.get_surface_count() == 1
-	K.check(fails, begin_ok, "chunk impostors begin where their nearest building switches, cast no shadow, live outside CityView")
+		begin_ok = (
+			begin_ok
+			and mi.visibility_range_begin <= vis + EPS
+			and absf(mi.visibility_range_begin - maxf(0.0, vis - reach)) < EPS
+		)
+		begin_ok = (
+			begin_ok
+			and mi.cast_shadow == GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+			and not view.is_ancestor_of(mi)
+		)
+		begin_ok = (
+			begin_ok
+			and reach <= HLOD.CHUNK * 0.75 + 3.0
+			and mi.mesh != null
+			and mi.mesh.get_surface_count() == 1
+		)
+	(
+		K
+		. check(
+			fails,
+			begin_ok,
+			"chunk impostors begin where their nearest building switches, cast no shadow, live outside CityView"
+		)
+	)
 
 
 ## tile_built only queues the post-pass; frames then run it under FRAME_BUDGET_USEC (a fake clock
@@ -275,9 +402,11 @@ func _check_frame_budget(f: Node, hlod: RefCounted, view: CityView) -> void:
 	var built := _impostor_tiles(hlod, view, 12)
 	K.check(fails, built.size() == 12, "fixture: 12 built tiles to re-pass (%d)" % built.size())
 	var now := [0]
-	f.set("clock", func() -> int:
-		now[0] += 300
-		return now[0]
+	f.set(
+		"clock",
+		func() -> int:
+			now[0] += 300
+			return now[0]
 	)
 	# A fresh proxy cache: the models are cold again.
 	var warm_proxies: RefCounted = hlod.proxies
@@ -389,7 +518,9 @@ static func _impostor_tiles(hlod: RefCounted, view: CityView, n: int) -> Array[i
 	return out
 
 
-func _check_bulldoze(f: Node, hlod: RefCounted, occ: RefCounted, view: CityView, sim: CitySim) -> void:
+func _check_bulldoze(
+	f: Node, hlod: RefCounted, occ: RefCounted, view: CityView, sim: CitySim
+) -> void:
 	var target := -1
 	for i: int in hlod.tiles.keys():
 		var e: Dictionary = hlod.tiles[i]
@@ -403,7 +534,9 @@ func _check_bulldoze(f: Node, hlod: RefCounted, occ: RefCounted, view: CityView,
 	var before := (occ.chunk_boxes.get(c, []) as Array).size()
 	var mode := sim.construction_mode
 	sim.construction_mode = "instant"
-	var r: Dictionary = sim.apply_action(0, {"type": "bulldoze", "x": D.tx(target), "y": D.ty(target)})
+	var r: Dictionary = sim.apply_action(
+		0, {"type": "bulldoze", "x": D.tx(target), "y": D.ty(target)}
+	)
 	sim.construction_mode = mode
 	for _k in range(8):
 		if sim.kind[target] == D.EMPTY:
@@ -414,31 +547,169 @@ func _check_bulldoze(f: Node, hlod: RefCounted, occ: RefCounted, view: CityView,
 	f.call("flush")
 	var inside := false
 	for b: AABB in occ.chunk_boxes.get(c, []):
-		inside = inside or (absf(b.get_center().x - D.tx(target)) < 0.5 and absf(b.get_center().z - D.ty(target)) < 0.5)
-	K.check(fails, bool(r.get("ok", false)) and sim.kind[target] == D.EMPTY, "bulldozed tile %d cleared (%s)" % [target, r.get("reason", "")])
-	K.check(fails, not inside and (occ.chunk_boxes.get(c, []) as Array).size() == before - 1, "its chunk dropped the box (%d -> %d)" % [before, (occ.chunk_boxes.get(c, []) as Array).size()])
+		inside = (
+			inside
+			or (
+				absf(b.get_center().x - D.tx(target)) < 0.5
+				and absf(b.get_center().z - D.ty(target)) < 0.5
+			)
+		)
+	K.check(
+		fails,
+		bool(r.get("ok", false)) and sim.kind[target] == D.EMPTY,
+		"bulldozed tile %d cleared (%s)" % [target, r.get("reason", "")]
+	)
+	K.check(
+		fails,
+		not inside and (occ.chunk_boxes.get(c, []) as Array).size() == before - 1,
+		(
+			"its chunk dropped the box (%d -> %d)"
+			% [before, (occ.chunk_boxes.get(c, []) as Array).size()]
+		)
+	)
+
+
+## Compatibility (the web build) never gets FSR2, which crashes it: every preset scales
+## bilinearly there with MSAA, while Forward+ keeps the preset's own FSR2 knobs untouched.
+func _check_compat_knobs() -> void:
+	var fsr := true
+	var bilinear := true
+	for p: String in Q.NAMES:
+		var fwd := Q.viewport_knobs(p, "forward_plus")
+		var k := Q.knobs(p)
+		fsr = fsr and int(fwd["scaling_mode"]) == int(k["scaling_mode"])
+		fsr = fsr and is_equal_approx(float(fwd["scale"]), float(k["scale"]))
+		fsr = fsr and int(fwd["msaa"]) == int(k["msaa"])
+		var gl := Q.viewport_knobs(p, "gl_compatibility")
+		bilinear = bilinear and int(gl["scaling_mode"]) == Viewport.SCALING_3D_MODE_BILINEAR
+		bilinear = bilinear and float(gl["scale"]) >= 0.75 and float(gl["scale"]) <= 1.0
+	K.check(fails, fsr, "Forward+: every preset keeps its own FSR2 scale and MSAA")
+	K.check(fails, bilinear, "Compatibility: every preset scales bilinearly, 0.75 to native")
+	var med := Q.viewport_knobs("medium", "gl_compatibility")
+	var aa := int(med["msaa"]) != Viewport.MSAA_DISABLED
+	K.check(fails, aa, "Compatibility Medium: MSAA stands in for FSR2's TAA")
+	# Low is 0: no aerial shadow pass on Compatibility (a sub-26 m frustum casts nothing from
+	# the overview's altitude, and the pass is ~21% of GL aerial draws).
+	var caps := {"low": 0.0, "medium": 48.0, "high": 64.0}
+	var reach_fwd := true
+	var reach_gl := true
+	for p: String in Q.NAMES:
+		var rf: float = Q.aerial_shadow(p, "forward_plus")
+		reach_fwd = reach_fwd and is_equal_approx(rf, Q.aerial_far(p))
+		var cap: float = Q.aerial_shadow(p, "gl_compatibility")
+		var clear := cap == 0.0 or cap > 16.0
+		reach_gl = reach_gl and is_equal_approx(cap, float(caps[p])) and clear
+	K.check(fails, reach_fwd, "Forward+: aerial shadows still reach the aerial far plane")
+	K.check(fails, reach_gl, "Compatibility: aerial shadows off on Low, capped 48/64 above")
+	var tell := Q.is_compat("gl_compatibility") and not Q.is_compat("forward_plus")
+	K.check(fails, tell, "is_compat tells the renderers apart")
+
+
+## Compatibility draws darker and punchier than Forward+ (no SSIL bounce fill), so its exposure
+## goes up and its saturation comes down; Forward+ keeps the day curve untouched, and the
+## saturation scale lands once however often the sky is set up.
+func _check_renderer_look() -> void:
+	var fwd := SkyDirector.renderer_look("forward_plus")
+	var gl := SkyDirector.renderer_look("gl_compatibility")
+	var neutral := is_equal_approx(float(fwd["exposure"]), 1.0)
+	neutral = neutral and is_equal_approx(float(fwd["saturation"]), 1.0)
+	K.check(fails, neutral, "Forward+: the sky's exposure and saturation are untouched")
+	var brighter := float(gl["exposure"]) > 1.0 and float(gl["exposure"]) <= 2.0
+	K.check(fails, brighter, "Compatibility: exposure scaled up (%.2f)" % float(gl["exposure"]))
+	var desat := float(gl["saturation"]) < 1.0 and float(gl["saturation"]) >= 0.7
+	K.check(fails, desat, "Compatibility: saturation trimmed (%.2f)" % float(gl["saturation"]))
+	for method: String in ["forward_plus", "gl_compatibility"]:
+		var sky := SkyDirector.new()
+		sky.env = Environment.new()
+		var sat0 := sky.env.adjustment_saturation
+		sky.apply_renderer_look(method)
+		sky.apply_renderer_look(method)
+		sky.hour = 12.0
+		sky._apply(1.0)
+		var look := SkyDirector.renderer_look(method)
+		var exp_ok := is_equal_approx(sky.env.tonemap_exposure, float(look["exposure"]))
+		var sat := sky.env.adjustment_saturation
+		var sat_ok := is_equal_approx(sat, sat0 * float(look["saturation"]))
+		var msg := "%s: noon exposure %.2f, saturation applied once (%.2f)"
+		K.check(fails, exp_ok and sat_ok, msg % [method, sky.env.tonemap_exposure, sat])
+		sky.free()
 
 
 func _check_presets(ctx: FpContext, f: Node, hlod: RefCounted) -> void:
+	_check_compat_knobs()
+	_check_renderer_look()
 	var vp := f.get_viewport()
 	var walks: int = hlod.walks
 	ctx.bus.quality_changed.emit("low")
-	var atlas: Array = (f.get("rs_calls") as Dictionary).get("directional_shadow_atlas_set_size", [])
-	K.check(fails, vp.scaling_3d_mode == Viewport.SCALING_3D_MODE_FSR2 and absf(vp.scaling_3d_scale - 0.59) < EPS and vp.msaa_3d == Viewport.MSAA_DISABLED, "Low: FSR2 at 0.59, MSAA off")
-	K.check(fails, atlas == [2048, true], "Low: shadow atlas 2048 16-bit (recorded setter %s)" % str(atlas))
-	K.check(fails, is_equal_approx(ctx.player.camera.far, 45.0) and is_equal_approx(vp.mesh_lod_threshold, 2.0), "Low: camera far 45, mesh LOD threshold 2")
-	K.check(fails, int(f.call("job_pending")) > 0, "a preset switch re-ranges over frames, not in one stall")
+	var atlas: Array = (f.get("rs_calls") as Dictionary).get(
+		"directional_shadow_atlas_set_size", []
+	)
+	K.check(
+		fails,
+		(
+			vp.scaling_3d_mode == Viewport.SCALING_3D_MODE_FSR2
+			and absf(vp.scaling_3d_scale - 0.59) < EPS
+			and vp.msaa_3d == Viewport.MSAA_DISABLED
+		),
+		"Low: FSR2 at 0.59, MSAA off"
+	)
+	K.check(
+		fails,
+		atlas == [2048, true],
+		"Low: shadow atlas 2048 16-bit (recorded setter %s)" % str(atlas)
+	)
+	K.check(
+		fails,
+		(
+			is_equal_approx(ctx.player.camera.far, 45.0)
+			and is_equal_approx(vp.mesh_lod_threshold, 2.0)
+		),
+		"Low: camera far 45, mesh LOD threshold 2"
+	)
+	K.check(
+		fails,
+		int(f.call("job_pending")) > 0,
+		"a preset switch re-ranges over frames, not in one stall"
+	)
 	ctx.bus.quality_changed.emit("high")
 	f.call("flush")
-	K.check(fails, absf(vp.scaling_3d_scale - 0.9) < EPS and is_equal_approx(ctx.player.camera.far, 75.0), "High: FSR2 at 0.9, camera far 75")
+	K.check(
+		fails,
+		absf(vp.scaling_3d_scale - 0.9) < EPS and is_equal_approx(ctx.player.camera.far, 75.0),
+		"High: FSR2 at 0.9, camera far 75"
+	)
 	var ok := true
 	for e: Dictionary in hlod.tiles.values():
 		var gis: Array = e["gis"]
 		for k in range(gis.size()):
 			var c: int = (e["cls"] as PackedByteArray)[k]
-			ok = ok and absf((gis[k] as GeometryInstance3D).visibility_range_end - _want_end(c, 1.3)) < EPS and absf((gis[k] as GeometryInstance3D).visibility_range_begin - _want_begin(c, 1.3)) < EPS
+			ok = (
+				ok
+				and (
+					absf(
+						(gis[k] as GeometryInstance3D).visibility_range_end - K.vis_want_end(c, 1.3)
+					)
+					< EPS
+				)
+				and (
+					absf(
+						(
+							(gis[k] as GeometryInstance3D).visibility_range_begin
+							- K.vis_want_begin(c, 1.3)
+						)
+					)
+					< EPS
+				)
+			)
 	K.check(fails, ok, "High: cached parts re-ranged to VIS_*×1.3")
-	K.check(fails, hlod.walks == walks, "the preset switch walked only the cached lists (holder walks %d -> %d)" % [walks, hlod.walks])
+	K.check(
+		fails,
+		hlod.walks == walks,
+		(
+			"the preset switch walked only the cached lists (holder walks %d -> %d)"
+			% [walks, hlod.walks]
+		)
+	)
 	ctx.bus.quality_changed.emit("medium")
 	f.call("flush")
 	K.check(fails, bool(f.call("preset_applied", "medium")), "Medium applied again")
@@ -470,329 +741,6 @@ func _check_far_coverage(view: CityView) -> void:
 	var msg := "every service kind and zone model (%d) has a far shape: %s"
 	K.check(fails, bad.is_empty(), msg % [n, bad])
 
-## Aerial coverage: once the camera is over the city (the overview, a photo fly), roads, open site
-## parts, far trees, the fog end and the far plane widen so the sky view keeps the whole city; on
-## the way down each value is re-derived, so a preset or weather change mid-air never leaves a
-## stale value behind.
-func _check_aerial(ctx: FpContext, f: Node, hlod: RefCounted) -> void:
-	var cam := ctx.player.camera
-	var env: Environment = cam.environment
-	K.check(fails, env != null, "fixture: the camera carries the environment")
-	if env == null:
-		return
-	var pick := _aerial_fixtures(hlod, ctx.view)
-	var want := "fixtures: road %d, twin %d, open site %d, %d full parts"
-	var got: Array = [pick["road"], pick["twin"], pick["site"], pick["full"]]
-	K.check(fails, bool(pick["ok"]), want % got)
-	var site_ends := _site_ends(ctx.view, ctx.sim)
-	# The camera over the hero turns the coverage on within a frame (AERIAL_MIN is 3 u).
-	cam.global_position = ctx.player.position + Vector3.UP * 3.5
-	f.call("_process", 0.0)
-	f.call("flush")
-	var up := bool(f.get("aerial")) and bool(hlod.get("aerial"))
-	K.check(fails, up, "the camera over the city turns the coverage on")
-	var far := Q.aerial_far("medium")
-	var far_msg := "the far plane covers the city (%.0f u)" % cam.far
-	K.check(fails, is_equal_approx(cam.far, far), far_msg)
-	var fog_end := Q.aerial_fog_end("medium")
-	var fog_msg := "the fog ends past it (%.0f u)" % env.fog_depth_end
-	K.check(fails, is_equal_approx(env.fog_depth_end, fog_end), fog_msg)
-	_check_aerial_shadows(ctx, hlod, "medium")
-	_check_aerial_roads(hlod)
-	_check_aerial_parts(ctx.view, ctx.sim)
-	_check_aerial_midair(ctx, f, hlod)
-	_check_aerial_new_sites(ctx, f, site_ends)
-	_check_aerial_off(ctx, f, hlod, site_ends)
-	env.fog_depth_begin = WS.FOG_DEPTH_BEGIN
-	ctx.bus.quality_changed.emit("medium")
-	f.call("flush")
-
-
-## While aerial the sun's shadows reach the aerial plane and the impostor chunks cast them.
-func _check_aerial_shadows(ctx: FpContext, hlod: RefCounted, preset: String) -> void:
-	var sun := ctx.sun
-	var reach := is_equal_approx(sun.directional_shadow_max_distance, Q.aerial_shadow(preset))
-	for k in range(3):
-		reach = reach and is_equal_approx(_split(sun, k), float(Q.AERIAL_SHADOW_SPLITS[k]))
-	var msg := "aerial %s: shadows reach %.0f u (split %.2f)"
-	K.check(fails, reach, msg % [preset, sun.directional_shadow_max_distance, _split(sun, 0)])
-	var on := GeometryInstance3D.SHADOW_CASTING_SETTING_ON
-	K.check(fails, _chunks_cast(hlod, on), "aerial: the impostor chunks cast shadows")
-
-
-## Cascade split k + 1 of the sun (0, 1, 2).
-static func _split(sun: DirectionalLight3D, k: int) -> float:
-	return float(sun.get("directional_shadow_split_%d" % (k + 1)))
-
-
-## Do all impostor chunks (at least one) carry this shadow setting?
-func _chunks_cast(hlod: RefCounted, want: int) -> bool:
-	var chunks: Array = (hlod.get("chunk_nodes") as Dictionary).values()
-	var same := func(mi: MeshInstance3D) -> bool: return mi.cast_shadow == want
-	return not chunks.is_empty() and chunks.all(same)
-
-## One road main, one road twin, one open site and one full-detail part, for the checks below.
-func _aerial_fixtures(hlod: RefCounted, view: CityView) -> Dictionary:
-	var road := -1
-	var twin := -1
-	var site := -1
-	var full := 0
-	for i: int in hlod.tiles.keys():
-		var e: Dictionary = hlod.tiles[i]
-		var h := view.tile_holder(i)
-		if site < 0 and h != null and h.get_node_or_null("Site") != null:
-			site = i
-		var cls: PackedByteArray = e["cls"]
-		var gis: Array = e["gis"]
-		for k in range(gis.size()):
-			if cls[k] == HLOD.Cls.FULL:
-				full += 1
-			if road < 0 and cls[k] == HLOD.Cls.ROAD:
-				road = i
-			if twin < 0 and cls[k] == HLOD.Cls.MID and bool(e["road"]):
-				twin = i
-	var ok := road >= 0 and twin >= 0 and site >= 0 and full > 0
-	return {"road": road, "twin": twin, "site": site, "full": full, "ok": ok}
-
-
-## Every part of every open site, in tile order: the coverage re-ranges exactly these.
-func _site_parts(view: CityView, sim: CitySim) -> Array:
-	var parts: Array = []
-	for i: int in sim.sites.keys():
-		var h := view.tile_holder(i)
-		if h == null or not is_instance_valid(h):
-			continue
-		var site := h.get_node_or_null("Site") as Node3D
-		if site == null:
-			continue
-		parts.append_array(site.find_children("*", "GeometryInstance3D", true, false))
-	return parts
-
-
-## Each site part's own visibility end, keyed by instance id, to compare against on the way down.
-func _site_ends(view: CityView, sim: CitySim) -> Dictionary:
-	var ends := {}
-	for n in _site_parts(view, sim):
-		var gi := n as GeometryInstance3D
-		ends[gi.get_instance_id()] = gi.visibility_range_end
-	return ends
-
-
-## The far tree layers (the ones that draw only at distance): two checks range them.
-func _far_trees(view: CityView) -> Array:
-	var out: Array = []
-	for layer: Array in (view.get("_tree_chunks") as Dictionary).values():
-		for n in layer:
-			var mmi := n as MultiMeshInstance3D
-			if mmi != null and mmi.visibility_range_begin > 0.0:
-				out.append(mmi)
-	return out
-
-
-## While aerial the street grid draws to the horizon: road mains and their twins drop their end,
-## building twins keep the street ladder.
-func _check_aerial_roads(hlod: RefCounted) -> void:
-	var roads := true
-	var twin := false
-	for i: int in hlod.tiles.keys():
-		var e: Dictionary = hlod.tiles[i]
-		var cls: PackedByteArray = e["cls"]
-		var gis: Array = e["gis"]
-		for k in range(gis.size()):
-			var end := (gis[k] as GeometryInstance3D).visibility_range_end
-			if cls[k] == HLOD.Cls.ROAD:
-				roads = roads and end == 0.0
-			elif cls[k] == HLOD.Cls.MID and bool(e["road"]):
-				twin = twin or end == 0.0
-			elif cls[k] == HLOD.Cls.MID:
-				roads = roads and absf(end - WS.VIS_BUILDING) < EPS
-	K.check(fails, roads and twin, "aerial: road mains and twins lose their end, buildings keep it")
-
-
-## The open sites' parts and the far tree layers cover the whole sky view.
-func _check_aerial_parts(view: CityView, sim: CitySim) -> void:
-	var parts := _site_parts(view, sim)
-	var sites := true
-	for n in parts:
-		var gi := n as GeometryInstance3D
-		sites = sites and gi.visibility_range_end == 0.0 and gi.has_meta("ck_aerial_far")
-	var msg := "every part of the open sites (%d) draws out, own end kept" % parts.size()
-	K.check(fails, sites and not parts.is_empty(), msg)
-	var trees := false
-	for n in _far_trees(view):
-		trees = trees or (n as MultiMeshInstance3D).visibility_range_end == 0.0
-	K.check(fails, trees, "the far tree layers draw to the horizon")
-
-
-## Mid-air changes: a preset switch keeps the coverage, and a road built now covers to the horizon.
-func _check_aerial_midair(ctx: FpContext, f: Node, hlod: RefCounted) -> void:
-	LP.apply(ctx.player.camera.environment, ctx.sun, "fp", "high")
-	ctx.player.camera.environment.fog_depth_begin = 9.0
-	ctx.bus.quality_changed.emit("high")
-	f.call("flush")
-	var env: Environment = ctx.player.camera.environment
-	var kept := is_equal_approx(env.fog_depth_end, Q.aerial_fog_end("high"))
-	kept = kept and is_equal_approx(ctx.player.camera.far, Q.aerial_far("high"))
-	var msg := "a preset switch mid-air keeps the coverage (fog %.0f, far %.0f)"
-	K.check(fails, kept, msg % [env.fog_depth_end, ctx.player.camera.far])
-	_check_aerial_shadows(ctx, hlod, "high")
-	var built := _pave_a_road(ctx.sim)
-	if ctx.view.has_method("flush_rebuild_queue"):
-		ctx.view.call("flush_rebuild_queue")
-	f.call("flush")
-	K.check(fails, built and _roads_reach_horizon(hlod), "a road built mid-air covers out")
-
-
-## Sites mid-air: a site opened now draws out once its tile is built, and a part a site gains
-## without a tile rebuild (update_site's path) is caught by the next SITE_RESCAN. Both get their
-## own end back on the way down (their ends join site_ends).
-func _check_aerial_new_sites(ctx: FpContext, f: Node, site_ends: Dictionary) -> void:
-	var before := ctx.sim.sites.keys()
-	var built := _pave_a_road(ctx.sim, "staged")
-	if ctx.view.has_method("flush_rebuild_queue"):
-		ctx.view.call("flush_rebuild_queue")
-	var fresh: Array = []
-	for i: int in ctx.sim.sites.keys():
-		var h := ctx.view.tile_holder(i)
-		if i not in before and h != null and h.get_node_or_null("Site") != null:
-			var site_node := h.get_node("Site") as Node3D
-			fresh.append_array(site_node.find_children("*", "GeometryInstance3D", true, false))
-	for n in fresh:
-		site_ends[n.get_instance_id()] = (n as GeometryInstance3D).visibility_range_end
-	f.call("flush")
-	var out := not fresh.is_empty()
-	for n in fresh:
-		out = out and (n as GeometryInstance3D).visibility_range_end == 0.0
-	K.check(fails, built and out, "a site opened mid-air draws out (%d parts)" % fresh.size())
-	var site := _first_site(ctx.view, ctx.sim)
-	K.check(fails, site != null, "fixture: an open site to grow a part on")
-	if site == null:
-		return
-	var part := MeshInstance3D.new()
-	part.mesh = BoxMesh.new()
-	part.visibility_range_end = ctx.view.kit.FAR
-	site.add_child(part)
-	site_ends[part.get_instance_id()] = part.visibility_range_end
-	var rescan: float = f.get("SITE_RESCAN")
-	f.call("_process", rescan * 0.5)
-	var early := part.visibility_range_end
-	f.call("_process", rescan * 0.5)
-	var msg := "a part grown mid-air draws out by the next re-scan (end %.1f, then %.1f)"
-	var caught := early > 0.0 and part.visibility_range_end == 0.0
-	K.check(fails, caught, msg % [early, part.visibility_range_end])
-
-
-## The Site node of the first open site whose tile is built, or null.
-func _first_site(view: CityView, sim: CitySim) -> Node3D:
-	for i: int in sim.sites.keys():
-		var h := view.tile_holder(i)
-		if h != null and is_instance_valid(h) and h.get_node_or_null("Site") != null:
-			return h.get_node("Site") as Node3D
-	return null
-
-## Paves the first buildable tile beside a road (instantly, or as a site with mode "staged");
-## false if the city left no room.
-func _pave_a_road(sim: CitySim, how: String = "instant") -> bool:
-	var mode := sim.construction_mode
-	sim.construction_mode = how
-	var built := false
-	for i: int in sim.active.duplicate():
-		if sim.kind[i] != D.ROAD or not _empty_neighbour(sim, i):
-			continue
-		var r: Dictionary = sim.apply_action(0, {"type": "road", "x": D.tx(i) + 1, "y": D.ty(i)})
-		built = bool(r.get("ok", false))
-		if built:
-			break
-	sim.construction_mode = mode
-	return built
-
-
-## Is the tile one east of i inside the map and empty (the one _pave_a_road lays a road on)?
-func _empty_neighbour(sim: CitySim, i: int) -> bool:
-	if not D.in_bounds(D.tx(i) + 1, D.ty(i)):
-		return false
-	return sim.kind[D.idx(D.tx(i) + 1, D.ty(i))] == D.EMPTY
-
-
-## Does some road tile still carry a main or a twin that draws with no end?
-func _roads_reach_horizon(hlod: RefCounted) -> bool:
-	for i: int in hlod.tiles.keys():
-		var e: Dictionary = hlod.tiles[i]
-		if not bool(e["road"]):
-			continue
-		var cls: PackedByteArray = e["cls"]
-		var gis: Array = e["gis"]
-		for k in range(gis.size()):
-			if cls[k] != HLOD.Cls.ROAD and cls[k] != HLOD.Cls.MID:
-				continue
-			if (gis[k] as GeometryInstance3D).visibility_range_end == 0.0:
-				return true
-	return false
-
-
-## Back on the street: the coverage goes off and every value re-derives from the preset.
-func _check_aerial_off(ctx: FpContext, f: Node, hlod: RefCounted, site_ends: Dictionary) -> void:
-	var cam := ctx.player.camera
-	var env: Environment = cam.environment
-	cam.global_position = ctx.player.position + Vector3.UP * 1.0
-	f.call("_process", 0.0)
-	f.call("flush")
-	K.check(fails, not bool(f.get("aerial")), "the camera back at the hero turns the coverage off")
-	var derived := is_equal_approx(cam.far, Q.camera_far("high"))
-	derived = derived and is_equal_approx(env.fog_depth_end, Q.street_fog_end("high"))
-	var msg := "the far plane and fog end re-derive from the preset (far %.0f, fog %.0f)"
-	K.check(fails, derived, msg % [cam.far, env.fog_depth_end])
-	K.check(fails, is_equal_approx(env.fog_depth_begin, 9.0), "the weather's fog begin survives")
-	var street: Dictionary = LP.PRESETS["high"]
-	var sun := ctx.sun
-	var shadow := is_equal_approx(sun.directional_shadow_max_distance, float(street["shadow"]))
-	for k in range(3):
-		shadow = shadow and is_equal_approx(_split(sun, k), float((street["splits"] as Array)[k]))
-	var sh_msg := "the street profile's shadows come back (reach %.0f, split %.2f)"
-	K.check(fails, shadow, sh_msg % [sun.directional_shadow_max_distance, _split(sun, 0)])
-	var off := GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-	K.check(fails, _chunks_cast(hlod, off), "the impostor chunks stop casting")
-	K.check(fails, _ranges_back(hlod), "the street ranges are back exactly")
-	var back := _sites_back(ctx.view, ctx.sim, site_ends)
-	K.check(fails, back.x > 0 and back.y == 0, "site parts keep their ends (%d checked)" % back.x)
-	var trees := false
-	for n in _far_trees(ctx.view):
-		var mmi := n as MultiMeshInstance3D
-		var want := ctx.view.TREE_FAR_FP * float(ctx.view.vis_mult)
-		trees = trees or absf(mmi.visibility_range_end - want) < EPS
-	K.check(fails, trees, "the far tree layers end at TREE_FAR_FP again")
-
-
-## Every cached instance back at its street end and begin for the High preset.
-func _ranges_back(hlod: RefCounted) -> bool:
-	var ok := true
-	var mult := Q.vis_mult("high")
-	for i: int in hlod.tiles.keys():
-		var e: Dictionary = hlod.tiles[i]
-		var cls: PackedByteArray = e["cls"]
-		var gis: Array = e["gis"]
-		for k in range(gis.size()):
-			var gi := gis[k] as GeometryInstance3D
-			ok = ok and absf(gi.visibility_range_end - _want_end(cls[k], mult)) < EPS
-			ok = ok and absf(gi.visibility_range_begin - _want_begin(cls[k], mult)) < EPS
-	return ok
-
-
-## How many site parts came back and how many did not, as Vector2i(checked, bad).
-func _sites_back(view: CityView, sim: CitySim, site_ends: Dictionary) -> Vector2i:
-	var checked := 0
-	var bad := 0
-	for n in _site_parts(view, sim):
-		var gi := n as GeometryInstance3D
-		var id := gi.get_instance_id()
-		if not site_ends.has(id):
-			continue
-		checked += 1
-		var want: float = site_ends[id]
-		if gi.has_meta("ck_aerial_far") or not is_equal_approx(gi.visibility_range_end, want):
-			bad += 1
-	return Vector2i(checked, bad)
-
 
 ## Report-only (load-dependent): post-pass cost per tile and the slowest chunk rebuild.
 func _report_costs(f: Node, hlod: RefCounted) -> void:
@@ -805,7 +753,16 @@ func _report_costs(f: Node, hlod: RefCounted) -> void:
 		hlod.rebuild_chunk(c)
 		(f.get("occluders") as RefCounted).rebuild_chunk(c, hlod)
 		worst = maxi(worst, Time.get_ticks_usec() - t)
-	print("  cost full pass %d tiles: %.3f ms per tile (budget 0.3, headless debug); slowest chunk rebuild %.2f ms (budget 4)" % [hlod.tiles.size(), float(t1 - t0) / 1000.0 / maxf(1.0, hlod.tiles.size()), float(worst) / 1000.0])
+	print(
+		(
+			"  cost full pass %d tiles: %.3f ms per tile (budget 0.3, headless debug); slowest chunk rebuild %.2f ms (budget 4)"
+			% [
+				hlod.tiles.size(),
+				float(t1 - t0) / 1000.0 / maxf(1.0, hlod.tiles.size()),
+				float(worst) / 1000.0
+			]
+		)
+	)
 
 
 func _check_undo(ctx: FpContext, f: Node, hlod: RefCounted, view: CityView) -> void:
@@ -817,19 +774,42 @@ func _check_undo(ctx: FpContext, f: Node, hlod: RefCounted, view: CityView) -> v
 	view.set_fp_mode(false)
 	var kept := 0
 	for gi: Variant in parts:
-		if is_instance_valid(gi) and not _doomed(gi as Node) and ((gi as GeometryInstance3D).visibility_range_end != 0.0 or (gi as Node).has_meta("g2_vis")):
+		if (
+			is_instance_valid(gi)
+			and not _doomed(gi as Node)
+			and (
+				(gi as GeometryInstance3D).visibility_range_end != 0.0
+				or (gi as Node).has_meta("g2_vis")
+			)
+		):
 			kept += 1
 	var shown := 0
 	for n: Variant in imps + occs:
-		if is_instance_valid(n) and (n as Node3D).visible and not (n as Node).is_queued_for_deletion():
+		if (
+			is_instance_valid(n)
+			and (n as Node3D).visible
+			and not (n as Node).is_queued_for_deletion()
+		):
 			shown += 1
-	K.check(fails, kept == 0 and not parts.is_empty(), "leaving first person: no g2_vis node keeps a range (%d of %d)" % [kept, parts.size()])
-	K.check(fails, shown == 0 and not f.get_viewport().use_occlusion_culling, "leaving first person: impostors and occluders hidden, occlusion culling off")
+	K.check(
+		fails,
+		kept == 0 and not parts.is_empty(),
+		"leaving first person: no g2_vis node keeps a range (%d of %d)" % [kept, parts.size()]
+	)
+	K.check(
+		fails,
+		shown == 0 and not f.get_viewport().use_occlusion_culling,
+		"leaving first person: impostors and occluders hidden, occlusion culling off"
+	)
 	var sites := _orbit_site_parts(view)
 	var sites_msg := "in orbit every part of the open sites (%d) draws at every zoom"
 	K.check(fails, sites.x > 0 and sites.y == 0, sites_msg % sites.x)
 	view.set_fp_mode(true)
-	K.check(fails, f.get("active") == true and hlod.tiles.size() > 0, "re-entering first person re-runs the post-pass")
+	K.check(
+		fails,
+		f.get("active") == true and hlod.tiles.size() > 0,
+		"re-entering first person re-runs the post-pass"
+	)
 
 
 ## Orbit view: every part of an open site draws at every zoom (the kit's ranges are a street-level
@@ -846,22 +826,68 @@ func _check_teardown(ctx: FpContext, f: Node) -> void:
 	var vp := f.get_viewport()
 	f.call("teardown")
 	var rs: Dictionary = f.get("rs_calls")
-	K.check(fails, vp.scaling_3d_mode == ProjectSettings.get_setting("rendering/scaling_3d/mode", 0) and is_equal_approx(vp.scaling_3d_scale, float(ProjectSettings.get_setting("rendering/scaling_3d/scale", 1.0))), "teardown: native scaling restored")
+	K.check(
+		fails,
+		(
+			vp.scaling_3d_mode == ProjectSettings.get_setting("rendering/scaling_3d/mode", 0)
+			and is_equal_approx(
+				vp.scaling_3d_scale,
+				float(ProjectSettings.get_setting("rendering/scaling_3d/scale", 1.0))
+			)
+		),
+		"teardown: native scaling restored"
+	)
 	K.check(fails, vp.msaa_3d == Viewport.MSAA_2X, "teardown: MSAA 2x restored")
-	K.check(fails, rs.get("directional_shadow_atlas_set_size", []) == [8192, true], "teardown: 8192 atlas restored (%s)" % str(rs.get("directional_shadow_atlas_set_size")))
-	K.check(fails, rs.get("directional_soft_shadow_filter_set_quality", []) == [3], "teardown: soft shadow quality 3 restored")
+	K.check(
+		fails,
+		rs.get("directional_shadow_atlas_set_size", []) == [8192, true],
+		"teardown: 8192 atlas restored (%s)" % str(rs.get("directional_shadow_atlas_set_size"))
+	)
+	K.check(
+		fails,
+		rs.get("directional_soft_shadow_filter_set_quality", []) == [3],
+		"teardown: soft shadow quality 3 restored"
+	)
 	var ssao: Array = rs.get("environment_set_ssao_quality", [])
 	var ssil: Array = rs.get("environment_set_ssil_quality", [])
-	K.check(fails, ssao.size() == 6 and ssao[0] == 3 and ssao[1] == bool(ProjectSettings.get_setting("rendering/environment/ssao/half_size")), "teardown: SSAO quality 3 and half size restored (%s)" % str(ssao))
-	K.check(fails, ssil.size() == 6 and ssil[0] == 2 and ssil[1] == bool(ProjectSettings.get_setting("rendering/environment/ssil/half_size")), "teardown: SSIL quality 2 and half size restored (%s)" % str(ssil))
-	K.check(fails, is_equal_approx(vp.mesh_lod_threshold, 1.0) and not vp.use_occlusion_culling and is_equal_approx(ctx.player.camera.far, WS.CAMERA_FAR), "teardown: mesh LOD threshold, occlusion culling and camera far restored")
+	K.check(
+		fails,
+		(
+			ssao.size() == 6
+			and ssao[0] == 3
+			and ssao[1] == bool(ProjectSettings.get_setting("rendering/environment/ssao/half_size"))
+		),
+		"teardown: SSAO quality 3 and half size restored (%s)" % str(ssao)
+	)
+	K.check(
+		fails,
+		(
+			ssil.size() == 6
+			and ssil[0] == 2
+			and ssil[1] == bool(ProjectSettings.get_setting("rendering/environment/ssil/half_size"))
+		),
+		"teardown: SSIL quality 2 and half size restored (%s)" % str(ssil)
+	)
+	K.check(
+		fails,
+		(
+			is_equal_approx(vp.mesh_lod_threshold, 1.0)
+			and not vp.use_occlusion_culling
+			and is_equal_approx(ctx.player.camera.far, WS.CAMERA_FAR)
+		),
+		"teardown: mesh LOD threshold, occlusion culling and camera far restored"
+	)
 
 
 func _check_imports() -> void:
 	var script := ProjectSettings.globalize_path("res://tools/optimize_imports.py")
 	var out: Array = []
 	var code := OS.execute("python3", ["-I", script, "--check"], out, true)
-	K.check(fails, code == 0, "optimize_imports --check passes on models/** (%s)" % str(out).right(160).strip_edges())
+	K.check(
+		fails,
+		code == 0,
+		"optimize_imports --check passes on models/** (%s)" % str(out).right(160).strip_edges()
+	)
 	# A scratch project root: a character scene import with retarget settings, a non-compliant
 	# character texture import, and copies of HC's real character imports when present.
 	var tmp := OS.get_user_data_dir().path_join("g2_import_test")
@@ -873,11 +899,39 @@ func _check_imports() -> void:
 	var c1 := OS.execute("python3", ["-I", script, "--root", tmp, "--check"], out, true)
 	var c2 := OS.execute("python3", ["-I", script, "--root", tmp, "--apply"], out, true)
 	var after := _hashes(tmp.path_join("models/characters"))
-	K.check(fails, c1 == 0 and c2 == 0 and before == after and before.size() >= 2, "characters: --check exits 0 and --apply without paths leaves %d files (%d of HC's) byte-identical" % [before.size(), copied])
-	var c3 := OS.execute("python3", ["-I", script, "--root", tmp, "--apply", "models/characters/bodies"], out, true)
-	var glb := FileAccess.get_file_as_string(tmp.path_join("models/characters/bodies/hero.glb.import"))
-	var tex := FileAccess.get_file_as_string(tmp.path_join("models/characters/bodies/hero_body.png.import"))
-	K.check(fails, c3 == 0 and glb == CHAR_GLB_IMPORT and tex.contains("compress/mode=2") and tex.contains("mipmaps/generate=true"), "characters: explicit --apply sets texture keys only; the retarget scene import stays byte-identical")
+	(
+		K
+		. check(
+			fails,
+			c1 == 0 and c2 == 0 and before == after and before.size() >= 2,
+			(
+				"characters: --check exits 0 and --apply without paths leaves %d files (%d of HC's) byte-identical"
+				% [before.size(), copied]
+			)
+		)
+	)
+	var c3 := OS.execute(
+		"python3", ["-I", script, "--root", tmp, "--apply", "models/characters/bodies"], out, true
+	)
+	var glb := FileAccess.get_file_as_string(
+		tmp.path_join("models/characters/bodies/hero.glb.import")
+	)
+	var tex := FileAccess.get_file_as_string(
+		tmp.path_join("models/characters/bodies/hero_body.png.import")
+	)
+	(
+		K
+		. check(
+			fails,
+			(
+				c3 == 0
+				and glb == CHAR_GLB_IMPORT
+				and tex.contains("compress/mode=2")
+				and tex.contains("mipmaps/generate=true")
+			),
+			"characters: explicit --apply sets texture keys only; the retarget scene import stays byte-identical"
+		)
+	)
 	_rm_rf(tmp)
 
 

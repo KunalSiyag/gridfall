@@ -39,6 +39,9 @@ const DRIVER_MARKERS := ["Pedal_L", "Pedal_R", "Wheel_L", "Wheel_R", "Cab_Roof"]
 ## The bicycle's cranks and pedals (origin at the bottom bracket, spin about local X; the left
 ## pedal, on +X, straight up at rest).
 const CRANK_NODE := "Crank"
+## The bicycle's rider contact markers: Pedal_L / Pedal_R sit on the pedals and turn with the
+## Crank, Handle_L / Handle_R on the grips. The rider's feet follow the pedals (drive/seat_pose.gd).
+const BIKE_MARKERS := ["Pedal_L", "Pedal_R", "Handle_L", "Handle_R"]
 ## Far LOD next to each vehicles_v2 model (<name>_lod1.glb): one mesh, wheels merged, at most 1,500
 ## triangles, a few flat untextured materials (colour in the albedo); the lamp lenses are the
 ## emissive Light_Head / Light_Tail.

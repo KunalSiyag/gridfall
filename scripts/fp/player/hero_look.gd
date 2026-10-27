@@ -12,6 +12,11 @@ const AP := preload("res://scripts/fp/asset_paths.gd")
 ## target.
 const LOOK_YAW := deg_to_rad(70.0)
 const LOOK_PITCH := deg_to_rad(35.0)
+## Anatomical limits apply to the finished head, not separately to Neck and Head. In combat the
+## chin stays down even when a view target is high above the street.
+const HEAD_PITCH := deg_to_rad(20.0)
+const COMBAT_YAW := deg_to_rad(45.0)
+const COMBAT_PITCH := deg_to_rad(6.0)
 const NECK_INFLUENCE := 0.35
 const NECK_LIMIT := deg_to_rad(45.0)
 const LOOK_DURATION := 0.35
@@ -32,6 +37,7 @@ var look_within: bool = false
 ## The head's forward (world) as the look-at modifiers left it, from the last frame they ran.
 var head_forward: Vector3 = Vector3.ZERO
 var _skeleton: Skeleton3D
+var _holder: Node3D
 var _head_bone: int = -1
 var _goal: Vector3 = Vector3(NAN, NAN, NAN)
 var _dir: Vector3 = Vector3.ZERO
@@ -41,6 +47,7 @@ var _dist: float = 0.0
 ## Adds the modifiers under sk and the target marker under holder (the body).
 func _init(sk: Skeleton3D, holder: Node3D) -> void:
 	_skeleton = sk
+	_holder = holder
 	_head_bone = sk.find_bone("Head")
 	# The Neck goes first so the Head resolves what remains.
 	neck_look = _modifier("NeckLook", "Neck", NECK_LIMIT, NECK_LIMIT)
@@ -115,8 +122,40 @@ func _modifier(n: String, bone: String, yaw_lim: float, pitch_lim: float) -> Loo
 
 func _on_processed() -> void:
 	look_within = head_look.is_target_within_limitation()
+	clamp_head(_skeleton, _holder.global_basis, LOOK_YAW, HEAD_PITCH)
 	var head := _skeleton.get_bone_global_pose(_head_bone).basis
 	head_forward = (_skeleton.global_transform.basis * head.z).normalized()
+
+
+## A direction bounded in the torso's frame. The frame is orthonormalized so stature never
+## changes the limits.
+static func bounded_direction(
+	dir: Vector3, torso: Basis, yaw_max: float, pitch_max: float
+) -> Vector3:
+	var frame := torso.orthonormalized()
+	var local := frame.inverse() * dir.normalized()
+	var yaw := clampf(atan2(local.x, local.z), -yaw_max, yaw_max)
+	var pitch := clampf(atan2(local.y, Vector2(local.x, local.z).length()), -pitch_max, pitch_max)
+	return frame * Vector3(sin(yaw) * cos(pitch), sin(pitch), cos(yaw) * cos(pitch))
+
+
+## Corrects the complete head after the neck, look-at and clip rotations have accumulated. The
+## combat pose calls this again after adding the spine's turn and lean.
+static func clamp_head(sk: Skeleton3D, torso: Basis, yaw_max: float, pitch_max: float) -> void:
+	var bone := sk.find_bone("Head")
+	if bone < 0:
+		return
+	var world := sk.global_basis * sk.get_bone_global_pose(bone).basis
+	var forward := world.z.normalized()
+	var bounded := bounded_direction(forward, torso, yaw_max, pitch_max)
+	var parent := sk.get_bone_parent(bone)
+	var parent_world := sk.global_basis
+	if parent >= 0:
+		parent_world *= sk.get_bone_global_pose(parent).basis
+	var correction := Basis(Quaternion(forward, bounded.normalized()))
+	var pose := sk.get_bone_pose(bone)
+	pose.basis = parent_world.inverse() * correction * parent_world * pose.basis
+	sk.set_bone_pose(bone, pose)
 
 
 ## The analytic limit test, used while the modifier is faded out (its flag is then stale): the

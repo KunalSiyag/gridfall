@@ -27,8 +27,10 @@ func _card(type: int, total: int, free: int) -> Dictionary:
 
 
 func _check_reason() -> void:
-	var r := func(info: Dictionary, env: String = "", auto: bool = true) -> String:
-		return GpuMemory.reason(info, env, auto)
+	var r := func(
+		info: Dictionary, env: String = "", auto: bool = true, web: bool = false
+	) -> String:
+		return GpuMemory.reason(info, env, auto, web)
 	K.check(
 		fails, r.call(_card(DISCRETE, 4096, 3000)) == "4096 MiB of GPU memory", "a 4 GB card is low"
 	)
@@ -74,6 +76,21 @@ func _check_reason() -> void:
 		fails,
 		r.call(_card(DISCRETE, 8192, 6000), "yes", false) == "GRIDFALL_LOW_VRAM=1",
 		"the switch works with the flag off"
+	)
+	K.check(
+		fails,
+		r.call(_card(DISCRETE, 8192, 6000), "", true, true) == "web browser",
+		"the web build defaults to Low on a high-memory card"
+	)
+	K.check(
+		fails,
+		r.call(_card(DISCRETE, 8192, 6000), "0", true, true) == "",
+		"GRIDFALL_LOW_VRAM=0 overrides the web default"
+	)
+	K.check(
+		fails,
+		r.call(_card(DISCRETE, 8192, 6000), "", false, true) == "web browser",
+		"the web default does not depend on the low-memory auto flag"
 	)
 
 
@@ -192,6 +209,11 @@ func _check_apply() -> void:
 	vp.msaa_3d = vp_saved[0]
 	vp.screen_space_aa = vp_saved[1]
 	vp.positional_shadow_atlas_size = vp_saved[2]
+	K.check(
+		fails,
+		GpuMemory.compat("gl_compatibility") and not GpuMemory.compat("forward_plus"),
+		"Compatibility (no screen-space AA) is told apart, so it never asks for FXAA"
+	)
 
 
 func _check_fp_default() -> void:

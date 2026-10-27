@@ -268,6 +268,9 @@ Async poster image client for GMI's hy-image-v3.5-preview (slice D). request() r
 - `func pool_files(kind: String) -> Array`: The pre-baked files that serve kind (its pool, else its family), sorted.
 - `func tick(_dt: float) -> void`: Advances polling, back-off and submit spacing; _process calls tick(delta), tests call it directly.
 - `static func long_edge(kind: String, size: String) -> int`: Long edge in pixels for a processed image: 1024 for wide (billboard, hoarding) art and the Gazette, 512 for portrait ads, walls and notices.
+- `static func wants_vram_compress() -> bool`: VRAM compression only where a real device exists: on Compatibility GL and headless there is no main RenderingDevice, and the first S3TC compress spins Betsy up on the worker thread behind a half-initialised RenderingDevice singleton that the main thread's viewport configure then dereferences (engine bug, GL SIGSEGV, fault 0x8). Without a device the image stays RGB8 with mipmaps. Main thread only (RenderingServer is not worker-thread safe).
+- `static func wants_http_threads() -> bool`: Threaded (streaming) HTTPRequest downloads are not available on the web export: setting use_threads there freezes the browser, even on a threaded web build where threads_supported() answers true. Keep the worker-thread download to the desktop; every web build streams inline.
+- `static func http_threads_for(threads: bool, web: bool) -> bool`: Pure form of wants_http_threads() so the web branch is testable without a web build.
 
 ## `scripts/ai/mayor_turns.gd`
 

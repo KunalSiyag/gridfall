@@ -26,12 +26,17 @@ Body actions (integration slice; docs/fp/ARCHITECTURE.md, Body actions): the her
 - `INPUTS = [ "act_strike", "act_shove", "act_kick", "act_aim", "emote_wave", "emote_yes", "emote_n...`
 - `REACH = 1.2 * WS.M`: Who a swing can reach: on their feet within REACH (feet to feet) inside the cone ahead (the cosine); at contact still within REACH * HOLD_REACH.
 - `KICK_REACH = 1.5 * WS.M`: A kick reaches further.
+- `STEP_MAX = 0.18 * WS.M`: A grounded punch or a weapon swing at someone just inside its reach steps the hero in as it winds up (strike_step): at most STEP_MAX in all, STEP_SPEED a second, never closer than STEP_GAP to them. The player's own combat_step does the moving, so walls, props and other people hold it exactly as they hold a walk, and the reach the blow lands within never grows.
+- `STEP_GAP = 0.95 * WS.M`
+- `STEP_SPEED = 1.2 * WS.M`
+- `STEP_SWINGS = ["jab", "cross", "hook", "swing"]`: The swings that step in: the punches and a weapon swing (a kick, a shove, a throw, a slam and a counter keep their feet).
 - `CONE = 0.4`
 - `AIM_RADIUS = 0.65 * WS.M`: A person must come within this distance of the aim ray at chest height to take a blow.
 - `AIM_HEIGHT = 1.35 * WS.M`
 - `HOLD_REACH = 1.3`
 - `RUN_BONUS = 0.3`: Running adds up to this much strength (at WS.RUN).
 - `BUFFER_S = 0.2`: A press this close to the end of a swing queues the next one (s); punches go on through COMBO within COMBO_S of the last and start again from the jab after it.
+- `WHIFF_RECOVERY = { "jab": 0.08, "cross": 0.1, "hook": 0.14, "shove": 0.12, "kick": 0.18, "swing": 0.14, }`: Missing carries the hero past the intended contact: a brief extra recovery by swing (s).
 - `COMBO_S = 1.0`
 - `EMOTE_GAP = 1.0`
 - `FACE_S = 0.35`: The body faces whoever a swing went for at least this long (s).

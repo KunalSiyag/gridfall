@@ -93,6 +93,28 @@ Forward kinematics over a body's own clip keys, without a tree or a scene: where
 - `func forward_of(root: Node3D) -> Vector3`: The +Z of root (the body's scene root above the skeleton) in skeleton space.
 - `func end_pos(a0: Animation, a1: Animation, w: float, chain: Array, ph: float) -> Vector3`: The position (skeleton metres) of the chain's last bone at phase ph of clip a0 blended toward a1 by w.
 
+## `scripts/fp/player/hero_kick_pose.gd`
+
+extends `RefCounted`
+
+The front kick's foot path in the body's frame (right, up, forward, metres). A bent-knee chamber precedes the extension; the foot returns to that chamber before it plants again.
+
+### Constants
+
+- `REST = Vector3(0.12, 0.08, 0.0)`
+- `CHAMBER = Vector3(0.12, 0.62, 0.25)`
+- `EXTENDED = Vector3(0.12, 0.85, 0.88)`
+- `CHAMBER_AT = 0.5`
+- `RECOIL_S = 0.14`
+- `PLANT_S = 0.34`
+- `RELEASE_S = 0.12`
+- `TAKE_S = 0.035`
+
+### Functions
+
+- `static func foot(t: float, contact: float) -> Vector3`
+- `static func weight(t: float, contact: float) -> float`
+
 ## `scripts/fp/player/hero_limbs.gd`
 
 extends `RefCounted`
@@ -129,6 +151,9 @@ The hero's head look (A-player.md 6.9; hero_rig.gd): LookAtModifier3Ds on Neck a
 - `AP = preload("res://scripts/fp/asset_paths.gd")`
 - `LOOK_YAW = deg_to_rad(70.0)`: Head limits (yaw, pitch), the Neck's share and limit, the modifier's own interpolation, the influence fade when the target leaves the limits, and the halflife that smooths a jumping target.
 - `LOOK_PITCH = deg_to_rad(35.0)`
+- `HEAD_PITCH = deg_to_rad(20.0)`: Anatomical limits apply to the finished head, not separately to Neck and Head. In combat the chin stays down even when a view target is high above the street.
+- `COMBAT_YAW = deg_to_rad(45.0)`
+- `COMBAT_PITCH = deg_to_rad(6.0)`
 - `NECK_INFLUENCE = 0.35`
 - `NECK_LIMIT = deg_to_rad(45.0)`
 - `LOOK_DURATION = 0.35`
@@ -147,6 +172,8 @@ The hero's head look (A-player.md 6.9; hero_rig.gd): LookAtModifier3Ds on Neck a
 - `func set_target(p: Vector3) -> void`: The world point the head turns toward; NAN components let the head return to the clip.
 - `func reset() -> void`: Forgets the smoothed direction (a teleport): the next target is taken at once.
 - `func update(dt: float) -> void`: Smooths the target's direction from the head (a jump between targets turns the head rather than snapping it) and fades the influence out while the target is outside the limits.
+- `static func bounded_direction(dir: Vector3, torso: Basis, yaw_max: float, pitch_max: float) -> Vector3`: A direction bounded in the torso's frame. The frame is orthonormalized so stature never changes the limits.
+- `static func clamp_head(sk: Skeleton3D, torso: Basis, yaw_max: float, pitch_max: float) -> void`: Corrects the complete head after the neck, look-at and clip rotations have accumulated. The combat pose calls this again after adding the spine's turn and lean.
 
 ## `scripts/fp/player/hero_rig.gd`
 
@@ -279,6 +306,8 @@ The hero's strike pose layer (hero_rig.gd, like hero_look.gd and hero_limbs.gd):
 ### Constants
 
 - `SM = preload("res://scripts/fp/player/spring_math.gd")`
+- `LOOK = preload("res://scripts/fp/player/hero_look.gd")`
+- `KICK = preload("res://scripts/fp/player/hero_kick_pose.gd")`
 - `SPEED = { "punch_jab": 1.25, "punch_cross": 1.2, "punch_hook": 1.2, "swing_a": 1.15, "swing_b":...`: Strike clips play this much faster than authored: the windup snaps and the fist is out sooner.
 - `POSE = { "punch_jab": [6.0, 5.0, -1.0], "punch_cross": [14.0, 7.0, -1.0], "punch_hook": [20.0,...`: Per clip: [chest yaw (deg, toward the punching side), lean (deg, forward), when the blow lands (s; -1 for the measurement's own contact)]. The push clip holds its palms out from near its start, so its contact stands as authored.
 - `SPINE_SHARE = 0.45`: The envelope: the spine bone's share of the turn (the chest takes the rest), the windup's coil back as a share of the strike turn (none for a contact too soon to read), how far into the windup the coil is at its deepest (of the contact), and the ease back to nothing once the blow has landed (s).
@@ -292,6 +321,8 @@ The hero's strike pose layer (hero_rig.gd, like hero_look.gd and hero_limbs.gd):
 - `PUSH_RELEASE = 0.16`
 - `GUARD_HALFLIFE = 0.07`: The fighting guard eases its weight by half over this many seconds.
 - `GUARD_MOVE_MAX = 0.12`
+- `GUARD_BRACE_DEG = 3.0`: The hips brace forward in guard, leaning a little further when the hands hold someone close.
+- `GRIP_BRACE_DEG = 7.0`
 - `GUARD_HAND_HEIGHT = 1.42`: Distances in the procedural guard and push poses (skeleton metres). The guard's fists sit at the chin and cheeks with the elbows tucked in under them.
 - `GUARD_HAND_FORWARD = 0.24`
 - `GUARD_HAND_SPREAD = 0.1`
@@ -307,7 +338,7 @@ The hero's strike pose layer (hero_rig.gd, like hero_look.gd and hero_limbs.gd):
 - `PUSH_ELBOW_FORWARD = 0.2`
 - `PUSH_ELBOW_SPREAD = 0.36`
 - `GRIP_HEIGHT = 1.28`: Holding someone: both hands on their upper arms, GRIP_HEIGHT up and GRIP_BACK short of their feet, GRIP_SPREAD to each side.
-- `GRIP_BACK = 0.12`
+- `GRIP_BACK = 0.18`
 - `GRIP_SPREAD = 0.19`
 - `GRIP_ELBOW_HEIGHT = 1.0`
 - `GRIP_ELBOW_SPREAD = 0.34`
@@ -342,13 +373,14 @@ The hero's strike pose layer (hero_rig.gd, like hero_look.gd and hero_limbs.gd):
 - `func set_hold(on: bool, at: Vector3 = Vector3.ZERO) -> void`: Holding someone (on) whose feet stand at at (world): while the guard is up the hands grip them there instead of rising to the chin.
 - `func guard_weight() -> float`: The eased guard weight, for the rig's tests.
 - `func push_weight() -> float`: The forward-hand weight at the shove's contact, for the rig's tests.
+- `func resolve_contact(hit: bool) -> void`: A landed blow snaps the torso back into stance; a miss carries its full follow-through. Gameplay decides the outcome and next-attack timing, the pose only follows that decision.
 - `func end() -> void`: Ends the layer (the strike over, faded out or stopped).
 - `func tick(dt: float) -> void`: Runs the layer's clock on by dt, ending it once its strike is no longer the one playing (a start waits a frame or two for the tree to take its request; stop_action ends it at once).
 - `static func paced(a: AnimationNodeAnimation, clip: String) -> AnimationNode`: Clip's AnimationNode played at its SPEED (a clip SPEED does not name unchanged), through a time scale, so the tree and measure() agree on when its blow lands.
 - `func weight() -> float`: The layer's envelope now (0 with no strike under way), for tests.
 - `func apply(sk: Skeleton3D) -> void`: Applies the layer to sk (the modifier's callback): the spine and chest turned and leaned into the blow by the envelope, on top of the tree's own pose.
 - `static func fist_joints(sk: Skeleton3D, side: String) -> Array`: The joints sk's side ("Left" or "Right") hand closes into a fist: [bone, axis, bend] each, the axis the knuckle line in the bone's own frame turned so the fingers fold toward the palm (the side the thumb's base sits on). Empty when the hand has no finger bones.
-- `static func envelope(t: float, c: float) -> float`: The envelope t seconds into a strike whose blow lands at c: a coil back through the windup (none once the windup is too short to read), the full turn into the blow at the contact, eased back to nothing RECOVER after it.
+- `static func envelope(t: float, c: float, recover: float = RECOVER) -> float`: The envelope t seconds into a strike whose blow lands at c: a coil back through the windup (none once the windup is too short to read), the full turn into the blow at the contact, eased back to nothing RECOVER after it.
 - `static func push_envelope(t: float, c: float) -> float`: Shove hand IK: in over PUSH_IN from the start, held through the contact, then released.
 
 ## `scripts/fp/player/placeholder_puppet.gd`
@@ -504,6 +536,7 @@ The on-foot player (slice A): feet at `position`, a kinematic controller against
 - `func body_forward() -> Vector3`: Unit horizontal direction the body faces.
 - `func tile() -> int`: Tile index under the feet or -1.
 - `func snap_to_ground() -> void`: Puts the feet on the walkable ground under them (no change over unwalkable ground).
+- `func combat_step(motion: Vector3) -> Vector3`: A short, grounded combat step (at most 0.18 m), with the same world collision and ground following as walking. It never enters another person's circle or changes running strength. Returns the actual displacement; an unsafe destination leaves the hero where they stood.
 - `func speed() -> float`: Horizontal speed in u/s.
 - `func simulate(wish: Vector2, sprint: bool, delta: float, crouch: bool = false, jump: bool = false) -> void`: One deterministic movement step; _process calls it with the held input, tests call it directly. wish: x = strafe right, y = forward, each -1..1, relative to the view (cam_yaw). While ctx.is_modal(), simulate itself zeroes wish and jump (gravity and ground snap still run). crouch and jump are held states (a jump fires on the press, buffered JUMP_BUFFER s). In photo mode it flies the camera instead (jump up, crouch down). Any delta is safe: the step is split so that no collision sub-step moves farther than PLAYER_RADIUS (a 0.008 u hoarding grown by the radius is only 0.038 u thick), and a velocity component whose move was blocked drops to zero.
 - `func sprinting() -> bool`: True once a sprint has built up to the free-running pace (WS.SPRINT).

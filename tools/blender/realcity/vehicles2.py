@@ -1479,6 +1479,25 @@ def bus(c, look):
 
 # ----------------------------------------------------------------------------- bicycle
 
+## The rider's contact markers on the bicycle (Blender metres, before the S scale): Pedal_L /
+## Pedal_R sit on the pedals, children of the Crank object (whose origin is the bottom bracket, so
+## they turn with it — the hero's feet follow them); Handle_L / Handle_R sit on the grips either
+## side of the stem. drive/seat_pose.gd reads them: the pedals move, the grips do not.
+BIKE_PEDALS = {"Pedal_L": (0.11, 0.0, 0.17), "Pedal_R": (-0.11, 0.0, -0.17)}
+BIKE_GRIPS = {"Handle_L": (0.26, -0.275, 1.04), "Handle_R": (-0.26, -0.275, 1.04)}
+
+
+def bicycle_points(look, crank):
+    """The bicycle's rider markers (full models only): the pedals as children of the crank object,
+    the grips at the handlebar."""
+    if not look.full:
+        return
+    for name, p in BIKE_PEDALS.items():
+        make_empty(name, (p[0] * S, p[1] * S, p[2] * S), crank)
+    for name, p in BIKE_GRIPS.items():
+        make_empty(name, (p[0] * S, p[1] * S, p[2] * S))
+
+
 def bicycle(c, look, frame="Paint_blue"):
     """Upright city bicycle, 1.75 m long, wheels 0.68 m; Wheel_F / Wheel_R spin about X."""
     mb = c.mb
@@ -1534,6 +1553,7 @@ def bicycle(c, look, frame="Paint_blue"):
             atlas.resolve(cmb)
             cob = cmb.build("Crank")
             cob.location = (0.0, bb[1] * S, bb[2] * S)
+            bicycle_points(look, cob)
         else:
             crank(mb)
     if lod:
@@ -1548,6 +1568,10 @@ def bicycle(c, look, frame="Paint_blue"):
                                (-1, (-0.1, 0.0, 0.6), (-0.11, 0.1, 0.14))):
             t((sd * 0.1, hip[1], hip[2]), knee, 0.065, "@int_dark")
             t(knee, foot, 0.05, "@int_dark")
+        # Lamps as palette lenses where the full model's own sit (build_lod makes them the
+        # emissive Light_Head / Light_Tail): a far bicycle glows at night like any car.
+        bc(mb, (0.0, -0.50, 0.74), (0.05, 0.03, 0.05), look("head"))
+        bc(mb, (0.0, 0.83, 0.77), (0.06, 0.03, 0.04), look("tail"))
     if not lod:
         t((0.06, bb[1], bb[2] + 0.1), (0.05, yr, zw + 0.04), 0.004, "@chain")
         t((0.06, bb[1], bb[2] - 0.1), (0.05, yr, zw - 0.04), 0.004, "@chain")
@@ -1606,6 +1630,48 @@ def bicycle(c, look, frame="Paint_blue"):
 
 # ----------------------------------------------------------------------------- backhoe loader
 
+## Loader-arm rig pivots (Blender metres): the boom hinge on the chassis and the bucket hinge at
+## the boom's far end. The full model carries Arm_Boom / Arm_Bucket as separate objects (rig_part)
+## so the player can raise the arm and curl the bucket (drive/backhoe.gd); the LOD keeps them merged.
+BOOM_PIVOT = (0.0, -1.15, 0.98)
+BUCKET_PIVOT = (0.0, -2.2, 1.42)
+
+
+def _loader_arm(mb, paint, n=10):
+    """The loader arm over the nose: two side tubes from the boom hinge to the bucket hinge and a
+    cross tube between them (metres, absolute; also merged into the LOD body). Draw order matches
+    the original inline block so the LOD export stays byte-identical."""
+    from indkit import tube
+    for sd in (-1, 1):
+        tube(mb, [sd * 0.82 * S, -1.3 * S, 1.0 * S], [sd * 0.82 * S, -2.2 * S, 1.42 * S], 0.07 * S, paint, n=n)
+        tube(mb, [sd * 0.82 * S, -1.15 * S, 0.98 * S], [sd * 0.82 * S, -1.3 * S, 1.0 * S], 0.07 * S, paint, n=n)
+    tube(mb, [-0.82 * S, -2.2 * S, 1.42 * S], [0.82 * S, -2.2 * S, 1.42 * S], 0.05 * S, "@Metal_Dark", n=n)
+
+
+def _bucket(mb, n=10):
+    """The loader bucket: back plate, floor with a forward lip, teeth and side cheeks (metres)."""
+    bx(mb, -1.08, -2.62, 0.32, 1.08, -2.18, 1.02, "@Metal_Dark")
+    bx(mb, -1.08, -2.78, 0.14, 1.08, -2.18, 0.34, "@Metal_Dark")
+    for k in range(3):
+        bx(mb, -0.7 + k * 0.7, -2.84, 0.14, -0.5 + k * 0.7, -2.78, 0.26, "@Metal_Galv")
+    for sd in (-1, 1):
+        bx(mb, min(sd * 1.1, sd * 1.02), -2.78, 0.14, max(sd * 1.1, sd * 1.02), -2.18, 1.02, "@Metal_Dark")
+
+
+def rig_part(name, pivot, build, **kw):
+    """A separate object whose origin is pivot (metres) holding build()'s absolute geometry, so
+    Godot can turn it about the pivot (the wheels use wheel_part the same way)."""
+    mb = MB()
+    mb.push(Matrix.Translation(Vector((-pivot[0] * S, -pivot[1] * S, -pivot[2] * S))))
+    build(mb, **kw)
+    mb.pop()
+    atlas.resolve(mb)
+    ob = mb.build(name)
+    ob.location = (pivot[0] * S, pivot[1] * S, pivot[2] * S)
+    smooth(ob)
+    return ob
+
+
 def backhoe(c, look):
     """JCB-style backhoe loader, 5.6 x 2.3 m: small front wheels, big dual rears, a loader arm
     and bucket over the nose, a folded backhoe arm and stabilisers over the tail, an offset cab
@@ -1628,17 +1694,14 @@ def backhoe(c, look):
         bx(mb, min(sd * 0.7, sd * 0.92), -1.5, 1.02, max(sd * 0.7, sd * 0.92), -1.42, 1.2, look("head"))
     t((-0.75, -0.6, 1.5), (-0.75, -0.6, 1.82), 0.03, "@Metal_Galv")  # exhaust stack
 
-    # loader arm and bucket over the nose
-    for sd in (-1, 1):
-        t((sd * 0.82, -1.3, 1.0), (sd * 0.82, -2.2, 1.42), 0.07)
-        t((sd * 0.82, -1.15, 0.98), (sd * 0.82, -1.3, 1.0), 0.07)
-    t((-0.82, -2.2, 1.42), (0.82, -2.2, 1.42), 0.05, "@Metal_Dark")
-    bx(mb, -1.08, -2.62, 0.32, 1.08, -2.18, 1.02, "@Metal_Dark")  # bucket back
-    bx(mb, -1.08, -2.78, 0.14, 1.08, -2.18, 0.34, "@Metal_Dark")  # bucket floor, lip forward
-    for k in range(3):  # teeth on the lip
-        bx(mb, -0.7 + k * 0.7, -2.84, 0.14, -0.5 + k * 0.7, -2.78, 0.26, "@Metal_Galv")
-    for sd in (-1, 1):
-        bx(mb, min(sd * 1.1, sd * 1.02), -2.78, 0.14, max(sd * 1.1, sd * 1.02), -2.18, 1.02, "@Metal_Dark")
+    # loader arm and bucket over the nose: separate rig parts on the full model (rotatable in
+    # Godot), merged into the body on the LOD
+    if full:
+        rig_part("Arm_Boom", BOOM_PIVOT, _loader_arm, paint=fp, n=n)
+        rig_part("Arm_Bucket", BUCKET_PIVOT, _bucket, n=n)
+    else:
+        _loader_arm(mb, fp, n=n)
+        _bucket(mb, n=n)
 
     # backhoe arm folded over the tail: kingpost (left), boom up, dipper curled under, small bucket
     bx(mb, -0.6, 1.8, 0.55, -0.12, 2.0, 1.5, "@Metal_Dark")

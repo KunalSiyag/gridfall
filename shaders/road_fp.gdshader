@@ -4,8 +4,11 @@ shader_type spatial;
 // is mapped in world metres (continuous along the street) and broken up by a second rotated sample
 // and two noise scales; then the wear real roads show: a darker oil streak down each lane, polished
 // wheel tracks either side of it, grit and dust in the gutters, older greyer stretches, and in rain
-// water standing in the tracks and gutters, rings spreading across it where rain falls. lane_axis (per instance) says where the lanes run:
+// water standing in the tracks and gutters, rings spreading across it where rain falls. lane_axis
+// (one shared material per value, CityView.road_fp_material_for) says where the lanes run:
 // 0 none (junctions), 1 along z, 2 along x, 3-6 round the tile corner +x+z, -x+z, -x-z, +x-z.
+// It is not an instance uniform: on Compatibility those take a slot of a 4096-slot buffer per
+// mesh, and a grown city's road pieces overflow it.
 
 uniform sampler2D albedo_tex : source_color, filter_linear_mipmap_anisotropic, repeat_enable;
 uniform sampler2D normal_tex : hint_normal, filter_linear_mipmap_anisotropic, repeat_enable;
@@ -20,7 +23,7 @@ uniform float half_width = 0.3;
 uniform float wetness = 0.0;
 // Rain falling now (0..1): rings on the standing water.
 uniform float rain = 0.0;
-instance uniform float lane_axis = 0.0;
+uniform float lane_axis = 0.0;
 
 varying vec3 wpos;
 

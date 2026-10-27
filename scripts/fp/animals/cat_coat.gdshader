@@ -7,12 +7,13 @@ render_mode diffuse_burley, specular_schlick_ggx;
 // patches and COLOR.b 1 on the nose and inside the ears. Each cat's coat: base (its ground colour),
 // stripe (a tabby's stripes), patch_col (a calico's or a tortie's second colour) and look: x how
 // strong the stripes are, y how far the white spreads (0 none, 1.2 all over), z how much of the
-// coat is patched, w the eyes from green (0) to amber (1).
+// coat is patched, w the eyes from green (0) to amber (1). One shared material per coat
+// (cat_bodies.material_for): instance uniforms would take Compatibility's 4096-slot buffer.
 
-instance uniform vec3 base : source_color = vec3(0.43, 0.32, 0.21);
-instance uniform vec3 stripe : source_color = vec3(0.09, 0.07, 0.05);
-instance uniform vec3 patch_col : source_color = vec3(0.0);
-instance uniform vec4 look = vec4(1.0, 0.0, 0.0, 0.7);
+uniform vec3 base : source_color = vec3(0.43, 0.32, 0.21);
+uniform vec3 stripe : source_color = vec3(0.09, 0.07, 0.05);
+uniform vec3 patch_col : source_color = vec3(0.0);
+uniform vec4 look = vec4(1.0, 0.0, 0.0, 0.7);
 uniform vec3 white_col : source_color = vec3(0.9, 0.89, 0.86);
 uniform vec3 pink_col : source_color = vec3(0.8, 0.52, 0.52);
 uniform vec3 eye_green : source_color = vec3(0.48, 0.66, 0.22);

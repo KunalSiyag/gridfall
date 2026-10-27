@@ -173,13 +173,17 @@ func _check_view() -> void:
 	)
 	if tr == null:
 		return
-	var m := float(tr.get_instance_shader_parameter(&"track_mask"))
-	var g := float(tr.get_instance_shader_parameter(&"track_grade"))
-	K.check(fails, m == 15.0 and g == 2.0, "the quad knows its mask and grade (%d, %d)" % [m, g])
+	var mat := tr.material_override as ShaderMaterial
+	var m := float(mat.get_shader_parameter(&"track_mask")) if mat != null else -1.0
+	var g := float(mat.get_shader_parameter(&"track_grade")) if mat != null else -1.0
+	K.check(
+		fails,
+		m == 15.0 and g == 2.0 and mat == view.track_material_for(15, 2),
+		"the quad wears the shared material for its mask and grade (%d, %d)" % [m, g]
+	)
 	K.check(
 		fails, is_equal_approx(tr.position.y, WS.ASPHALT_TOP), "the quad lies at carriageway height"
 	)
-	var mat := tr.material_override as ShaderMaterial
 	K.check(
 		fails,
 		(

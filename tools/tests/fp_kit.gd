@@ -5,6 +5,7 @@ extends RefCounted
 
 const D := preload("res://scripts/sim/sim_defs.gd")
 const WS := preload("res://scripts/fp/world_scale.gd")
+const HLOD := preload("res://scripts/fp/render/hlod.gd")
 const REGISTRY := preload("res://scripts/fp/fp_features.gd")
 const WK := preload("res://scripts/fp/traffic/walkers.gd")
 ## The scripted growth recipe used by "grow" (probe-verified on seed 7): the nine actions at
@@ -22,8 +23,16 @@ const GROW_ACTIONS := [
 	{"type": "road", "x": 9, "y": 12, "x2": 4, "y2": 14},
 ]
 const DEFAULT_OPTS := {
-	"seed": 7, "minds": false, "grow": false, "ticks": 0, "view": false,
-	"render": false, "player": true, "hud": true, "audio": false, "client": null,
+	"seed": 7,
+	"minds": false,
+	"grow": false,
+	"ticks": 0,
+	"view": false,
+	"render": false,
+	"player": true,
+	"hud": true,
+	"audio": false,
+	"client": null,
 	"camera_mode": "first",
 }
 const GROW_CAP_TICKS := 120
@@ -34,7 +43,9 @@ const GROW_CAP_TICKS := 120
 ## client keeps the live_enabled and api_key it came with: GmiClient._ready (run by add_child) would
 ## otherwise force live off under GRIDFALL_OFFLINE=1 and load the real key into the fake.
 ## Returns {"sim", "people", "minds", "client"}.
-static func make_sim(root: Node, seed: int = 7, minds: bool = false, client: GmiClient = null) -> Dictionary:
+static func make_sim(
+	root: Node, seed: int = 7, minds: bool = false, client: GmiClient = null
+) -> Dictionary:
 	var sim: CitySim = (load("res://scripts/sim/city_sim.gd") as GDScript).new()
 	sim.name = "CitySim"
 	root.add_child(sim)
@@ -157,13 +168,25 @@ static func make_ctx(root: Node, opts: Dictionary = {}) -> FpContext:
 	if bool(o["render"]):
 		var cam := Camera3D.new()
 		cam.name = "KitRenderCamera"
-		cam.environment = ResourceLoader.load("res://scenes/main-environment.tres", "", ResourceLoader.CACHE_MODE_IGNORE) as Environment
+		cam.environment = (
+			ResourceLoader.load(
+				"res://scenes/main-environment.tres", "", ResourceLoader.CACHE_MODE_IGNORE
+			)
+			as Environment
+		)
 		kit.add_child(cam)
 		cam.make_current()
 		ctx.env = cam.environment
 		var sun := DirectionalLight3D.new()
 		sun.name = "Sun"
-		sun.transform = Transform3D(Basis(Vector3(-0.422618, 0, -0.906308), Vector3(-0.694272, 0.642788, 0.323744), Vector3(0.582563, 0.766044, -0.271654)), Vector3.ZERO)
+		sun.transform = Transform3D(
+			Basis(
+				Vector3(-0.422618, 0, -0.906308),
+				Vector3(-0.694272, 0.642788, 0.323744),
+				Vector3(0.582563, 0.766044, -0.271654)
+			),
+			Vector3.ZERO
+		)
 		sun.light_color = Color(0.98, 0.95, 0.9, 1)
 		sun.light_energy = 1.15
 		sun.shadow_enabled = true
@@ -225,7 +248,9 @@ static func make_ctx(root: Node, opts: Dictionary = {}) -> FpContext:
 		mode.hud = hud
 		hud.setup(ctx)
 	if bool(o["audio"]):
-		var audio: GridFallAudioDirector = (load("res://scripts/audio_director.gd") as GDScript).new()
+		var audio: GridFallAudioDirector = (
+			(load("res://scripts/audio_director.gd") as GDScript).new()
+		)
 		audio.name = "AudioDirector"
 		kit.add_child(audio)
 		ctx.audio = audio
@@ -243,7 +268,9 @@ static func make_player(ctx: FpContext) -> FpPlayer:
 	if ctx.mode != null:
 		ctx.mode.player = p
 	p.setup(ctx)
-	var sp: Dictionary = ctx.mode.spawn_point() if ctx.mode != null else {"pos": Vector3.ZERO, "yaw": 0.0}
+	var sp: Dictionary = (
+		ctx.mode.spawn_point() if ctx.mode != null else {"pos": Vector3.ZERO, "yaw": 0.0}
+	)
 	p.teleport(sp["pos"], float(sp["yaw"]))
 	return p
 
@@ -358,3 +385,56 @@ static func _has_c_lot(sim: CitySim) -> bool:
 		if sim.kind[i] == D.ZONE_C and sim.level[i] >= 1:
 			return true
 	return false
+
+
+## Builds a park, a wind farm and a stadium instantly when the grown city has none (the
+## open-site fixture the render tests share).
+static func place_open_services(fails: Array, sim: CitySim) -> void:
+	var mode := sim.construction_mode
+	sim.construction_mode = "instant"
+	for key: String in ["park", "wind_farm", "stadium"]:
+		var kind := int(D.BUILDINGS[key]["kind"])
+		var have := false
+		for i in sim.active:
+			have = have or sim.kind[i] == kind
+		if not have:
+			var r: Dictionary = sim.apply_action(
+				0, {"type": "build", "building": key, "x": 12, "y": 10}
+			)
+			check(
+				fails,
+				bool(r.get("ok", false)),
+				"fixture: built a %s (%s)" % [key, r.get("reason", "")]
+			)
+	sim.construction_mode = mode
+
+
+## The visibility end a chunk part of class c should carry at visibility multiplier mult
+## (the render tests' shared oracle).
+static func vis_want_end(c: int, mult: float) -> float:
+	match c:
+		HLOD.Cls.PROP:
+			return WS.VIS_PROP * mult
+		HLOD.Cls.FULL:
+			return 0.0
+		HLOD.Cls.NEAR:
+			return WS.VIS_BUILDING_NEAR * mult
+	return WS.VIS_BUILDING * mult
+
+
+## The visibility begin a chunk part of class c should carry (only MID parts fade in).
+static func vis_want_begin(c: int, mult: float) -> float:
+	return WS.VIS_BUILDING_NEAR * mult if c == HLOD.Cls.MID else 0.0
+
+
+## The render tests' street fixture: a grown first-person city with the open-site services and a
+## funded mayor, ready for a render_opt feature. Call after `await process_frame`.
+static func render_street_ctx(root: Node, fails: Array) -> FpContext:
+	var opts := {"view": true, "grow": true, "render": true, "player": true, "hud": false}
+	var ctx := make_ctx(root, opts)
+	ctx.sim.mayors[0]["treasury"] = 200000
+	place_open_services(fails, ctx.sim)
+	ctx.view.set_fp_mode(true)
+	if ctx.view.has_method("flush_rebuild_queue"):
+		ctx.view.call("flush_rebuild_queue")
+	return ctx

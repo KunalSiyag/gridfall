@@ -53,6 +53,14 @@ const HORN_RATE := 0.05          # honks per second per stalled car at full urge
 const HORN_GAP := 6.0            # at most one horn per this many seconds, city-wide ...
 const HORN_GAP_MAX := 14.0       # ... the gap after each horn is drawn from HORN_GAP..HORN_GAP_MAX
 const HORN_CAR_REST := 20.0      # the same car does not honk again for this long
+## A car the player has held up (the blocked_horns flag: traffic's hero_block_s -- their car
+## stopped in its path, or the hero on foot in the road) honks at them after HORN_HERO_S rather
+## than waiting on the long jam draw above, leaning on it once held up HORN_HERO_LEAN_S: at most
+## once per HORN_HERO_REST per car, and no more often than HORN_HERO_GAP city-wide.
+const HORN_HERO_S := 2.5
+const HORN_HERO_LEAN_S := 8.0
+const HORN_HERO_REST := 6.0
+const HORN_HERO_GAP := 2.5
 ## Incident sirens without a visible crew: play at the event for this long after it starts.
 const EVENT_SIREN_S := 35.0
 ## Incidents that send a crew with sirens (utility repairs do not).
@@ -122,6 +130,7 @@ var _t_siren: float = 0.0
 var _force: bool = true
 var _force_wide: bool = true
 var _next_horn: float = -INF          # no horn before this time (the city-wide gap)
+var _next_hero_horn: float = -INF     # ... and none at the player holding a car up before this
 var _honked: Dictionary = {}           # agent id -> time of its last horn
 var _now: float = 0.0
 var _horn_seq: int = 0
@@ -644,15 +653,33 @@ func _engine(a: Dictionary, e_mode: bool) -> void:
 
 
 func _horns(near: Array, lis: Vector3) -> void:
-	if time_scale >= 4 or _now < _next_horn:
+	if time_scale >= 4:
 		return
 	for a: Dictionary in near:
 		if not a.has("stalled_s") or str(a.get("kind", "")) in ["pedestrian", "emergency"]:
 			continue
+		var id := str(a.get("id", ""))
+		var hero_s := float(a.get("hero_block_s", 0.0))
+		if hero_s >= HORN_HERO_S:
+			if _now < _next_hero_horn or _now - float(_honked.get(id, -INF)) < HORN_HERO_REST:
+				continue
+			var at: Vector3 = a["pos"]
+			if at.distance_to(lis) > float(TYPES["horn"]["max"]):
+				continue
+			_next_hero_horn = _now + HORN_HERO_GAP
+			_honked[id] = _now
+			_prune_honked()
+			horn(
+				at,
+				"horn_long" if hero_s >= HORN_HERO_LEAN_S else "horn_short",
+				float(a.get("speed", 0.0))
+			)
+			return
+		if _now < _next_horn:
+			continue
 		var stalled := float(a["stalled_s"])
 		if stalled <= HORN_STALL_S:
 			continue
-		var id := str(a.get("id", ""))
 		if _now - float(_honked.get(id, -INF)) < HORN_CAR_REST:
 			continue
 		var p: Vector3 = a["pos"]
@@ -664,13 +691,19 @@ func _horns(near: Array, lis: Vector3) -> void:
 			continue
 		_next_horn = _now + _rng.randf_range(HORN_GAP, HORN_GAP_MAX)
 		_honked[id] = _now
-		if _honked.size() > 64:
-			for k: String in _honked.keys():
-				if _now - float(_honked[k]) >= HORN_CAR_REST:
-					_honked.erase(k)
+		_prune_honked()
 		# A long lean on the horn is likelier the longer the jam has lasted.
 		horn(p, "horn_long" if _rng.randf() < 0.15 + 0.25 * urge else "horn_short", float(a.get("speed", 0.0)))
 		return
+
+
+## Forgets the cars whose horn rest has run out (the _honked table stays small).
+func _prune_honked() -> void:
+	if _honked.size() <= 64:
+		return
+	for k: String in _honked.keys():
+		if _now - float(_honked[k]) >= HORN_CAR_REST:
+			_honked.erase(k)
 
 
 ## The sim's congestion 0..1 on the tile under p (0 without a sim).

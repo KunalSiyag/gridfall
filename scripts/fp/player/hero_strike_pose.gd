@@ -8,6 +8,8 @@ extends RefCounted
 ## lands; the rig owns the clock (tick) and the tree the clock gates on.
 
 const SM := preload("res://scripts/fp/player/spring_math.gd")
+const LOOK := preload("res://scripts/fp/player/hero_look.gd")
+const KICK := preload("res://scripts/fp/player/hero_kick_pose.gd")
 
 ## Strike clips play this much faster than authored: the windup snaps and the fist is out sooner.
 const SPEED := {
@@ -31,7 +33,7 @@ const POSE := {
 	"swing_b": [12.0, 10.0, -1.0],
 	"push": [0.0, 15.0, 0.15],
 	"throw": [0.0, 10.0, -1.0],
-	"kick": [0.0, 5.0, 0.24],
+	"kick": [8.0, -10.0, 0.24],
 }
 ## The envelope: the spine bone's share of the turn (the chest takes the rest), the windup's coil
 ## back as a share of the strike turn (none for a contact too soon to read), how far into the
@@ -52,6 +54,9 @@ const PUSH_RELEASE := 0.16
 ## The fighting guard eases its weight by half over this many seconds.
 const GUARD_HALFLIFE := 0.07
 const GUARD_MOVE_MAX := 0.12
+## The hips brace forward in guard, leaning a little further when the hands hold someone close.
+const GUARD_BRACE_DEG := 3.0
+const GRIP_BRACE_DEG := 7.0
 ## Distances in the procedural guard and push poses (skeleton metres).
 ## The guard's fists sit at the chin and cheeks with the elbows tucked in under them.
 const GUARD_HAND_HEIGHT := 1.42
@@ -74,7 +79,7 @@ const PUSH_ELBOW_SPREAD := 0.36
 ## Holding someone: both hands on their upper arms, GRIP_HEIGHT up and GRIP_BACK short of their
 ## feet, GRIP_SPREAD to each side.
 const GRIP_HEIGHT := 1.28
-const GRIP_BACK := 0.12
+const GRIP_BACK := 0.18
 const GRIP_SPREAD := 0.19
 const GRIP_ELBOW_HEIGHT := 1.0
 const GRIP_ELBOW_SPREAD := 0.34
@@ -104,6 +109,7 @@ var clip: String = ""
 var side: float = 1.0
 var _t: float = 0.0
 var _c: float = 0.0
+var _recover: float = RECOVER
 var _wait: int = 0
 ## The action clip the rig was last asked for (strike clips included), for the same end.
 var _asked: String = ""
@@ -215,6 +221,7 @@ func note(a: String) -> void:
 func start(a: String) -> void:
 	clip = a
 	_t = 0.0
+	_recover = RECOVER
 	_wait = 2
 	side = hand(a)
 	var spec: Array = POSE[a]
@@ -245,6 +252,12 @@ func guard_weight() -> float:
 ## The forward-hand weight at the shove's contact, for the rig's tests.
 func push_weight() -> float:
 	return push_envelope(_t, _c) if clip == "push" else 0.0
+
+
+## A landed blow snaps the torso back into stance; a miss carries its full follow-through.
+## Gameplay decides the outcome and next-attack timing, the pose only follows that decision.
+func resolve_contact(hit: bool) -> void:
+	_recover = 0.18 if hit else 0.34
 
 
 ## Ends the layer (the strike over, faded out or stopped).
@@ -294,7 +307,7 @@ static func paced(a: AnimationNodeAnimation, clip: String) -> AnimationNode:
 
 ## The layer's envelope now (0 with no strike under way), for tests.
 func weight() -> float:
-	return 0.0 if clip.is_empty() else envelope(_t, _c)
+	return 0.0 if clip.is_empty() else envelope(_t, _c, _recover)
 
 
 ## Applies the layer to sk (the modifier's callback): the spine and chest turned and leaned into
@@ -305,9 +318,10 @@ func apply(sk: Skeleton3D) -> void:
 	if _guard > 0.0:
 		_apply_guard(sk, _guard)
 		_close_fists(sk, _guard)
+		LOOK.clamp_head(sk, _body.global_basis, LOOK.COMBAT_YAW, LOOK.COMBAT_PITCH)
 	if clip.is_empty():
 		return
-	var w := envelope(_t, _c)
+	var w := envelope(_t, _c, _recover)
 	if absf(w) < 1e-3:
 		return
 	var spec: Array = POSE[clip]
@@ -322,6 +336,7 @@ func apply(sk: Skeleton3D) -> void:
 		var q := Quaternion(Vector3.UP, yaw * share) * Quaternion(Vector3.RIGHT, lean * share)
 		pose.basis = Basis(q) * pose.basis
 		sk.set_bone_pose(b, pose)
+	LOOK.clamp_head(sk, _body.global_basis, LOOK.COMBAT_YAW, LOOK.COMBAT_PITCH)
 
 
 ## Guides both palms through the shove (drawn to the chest, then out through impact); otherwise
@@ -329,6 +344,9 @@ func apply(sk: Skeleton3D) -> void:
 ## staggered stance while the hero is still.
 func _update_hand_goals() -> void:
 	if _limbs == null or _body == null:
+		return
+	if clip == "kick":
+		_kick_goals(_body.global_transform)
 		return
 	var push := push_weight()
 	var guard := _guard if clip.is_empty() and _guard_goal > 0.0 else 0.0
@@ -345,6 +363,30 @@ func _update_hand_goals() -> void:
 	else:
 		_release_hands()
 		_release_feet()
+
+
+## A planted left foot takes the weight as the right knee chambers, kicks and folds back.
+func _kick_goals(xf: Transform3D) -> void:
+	var weight := KICK.weight(_t, _c)
+	if weight <= 0.0:
+		_release_feet()
+		return
+	var fwd := xf.basis.z.normalized()
+	var right := -xf.basis.x.normalized()
+	var scale := maxf(xf.basis.x.length(), 1e-4)
+	var foot := KICK.foot(_t, _c)
+	var target := _at(xf.origin, fwd, right, scale, foot.z, foot.y, foot.x)
+	var knee := _at(xf.origin, fwd, right, scale, 0.55, 0.55, foot.x)
+	_set_goal(3, target, knee, weight)
+	var support := _at(xf.origin, fwd, right, scale, -0.05, KICK.REST.y, -0.12)
+	var support_knee := _at(xf.origin, fwd, right, scale, 0.1, 0.55, -0.12)
+	_set_goal(2, support, support_knee, weight)
+	var weights: PackedFloat32Array = _limbs.get("weights")
+	for i in [2, 3]:
+		weights[i] = maxf(weights[i], weight)
+	_limbs.set("weights", weights)
+	_feet_claimed = true
+	_release_hands()
 
 
 ## The shove's hand goals at weight push on the body at xf.
@@ -512,22 +554,24 @@ func _close_fists(sk: Skeleton3D, weight: float) -> void:
 
 
 func _apply_guard(sk: Skeleton3D, weight: float) -> void:
-	# A small forward brace through the pelvis makes the raised hands read as a stance.
+	# A small forward brace through the hips makes the raised hands read as a stance. Holding
+	# someone leans in slightly to keep the elbows bent without closing the body gap.
 	var hips := sk.find_bone("Hips")
 	if hips >= 0:
 		var pose := sk.get_bone_pose(hips)
-		pose.basis = Basis(Quaternion(Vector3.RIGHT, deg_to_rad(3.0) * weight)) * pose.basis
+		var brace := GRIP_BRACE_DEG if _hold else GUARD_BRACE_DEG
+		pose.basis = Basis(Quaternion(Vector3.RIGHT, deg_to_rad(brace) * weight)) * pose.basis
 		sk.set_bone_pose(hips, pose)
 
 
 ## The envelope t seconds into a strike whose blow lands at c: a coil back through the windup
 ## (none once the windup is too short to read), the full turn into the blow at the contact, eased
 ## back to nothing RECOVER after it.
-static func envelope(t: float, c: float) -> float:
+static func envelope(t: float, c: float, recover: float = RECOVER) -> float:
 	if c <= 0.0:
 		return 0.0
 	if t >= c:
-		return 1.0 - smoothstep(0.0, RECOVER, t - c)
+		return 1.0 - smoothstep(0.0, recover, t - c)
 	var coil := -COIL * clampf(c / COIL_SNAP, 0.0, 1.0)
 	var k := t / c
 	if k <= COIL_AT:

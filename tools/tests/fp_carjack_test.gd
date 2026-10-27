@@ -34,7 +34,7 @@ const WHEELS := [
 
 var fails: Array[String] = []
 var ctx: FpContext
-var tr: FpFeature
+var traffic: FpFeature
 var drive: FpFeature
 ## A straight lane with free ground beside the driver's side of a car halfway along it, and the
 ## road tile it is on.
@@ -71,14 +71,14 @@ func _init() -> void:
 func _setup() -> bool:
 	ctx = K.make_ctx(get_root(), {"view": true, "grow": true, "camera_mode": "first"})
 	ctx.player.set_process(false)
-	tr = K.make_feature(ctx, "traffic")
+	traffic = K.make_feature(ctx, "traffic")
 	drive = K.make_feature(ctx, "drive")
-	var ok := tr != null and drive != null
+	var ok := traffic != null and drive != null
 	K.check(fails, ok, "the traffic and drive features are registered")
 	if not ok:
 		return false
-	tr.set("auto_step", false)
-	tr.set("ambient_enabled", false)
+	traffic.set("auto_step", false)
+	traffic.set("ambient_enabled", false)
 	drive.set_process(false)
 	FeatureFlags.set_override("car_doors", true)
 	FeatureFlags.set_override("carjack", true)
@@ -112,7 +112,7 @@ func _check_occupied() -> void:
 ## called), gets up, shouts and runs off, and the hero climbs in and drives.
 func _check_ambient() -> void:
 	var c := _lane_car("ambient")
-	var seated: WK.Walker = (tr.get("occupants") as RefCounted).call("driver_of", c.id)
+	var seated: WK.Walker = (traffic.get("occupants") as RefCounted).call("driver_of", c.id)
 	var t: Dictionary = drive.call("enter_target")
 	var offer := bool(t.get("jack", false)) and int(t.get("id", -1)) == c.id
 	offer = offer and str(drive.call("_prompt_for", t)) == "Pull the driver out"
@@ -154,7 +154,7 @@ func _check_ambient() -> void:
 ## Where the driver came out (at, person_hit's point): beside car c's driver's door, level with
 ## its seat.
 func _check_landing(c: VH.Car, at: Vector3) -> void:
-	var seat: Vector3 = (tr.call("door_info", -1) as Dictionary).get("seat", Vector3.ZERO)
+	var seat: Vector3 = (traffic.call("door_info", -1) as Dictionary).get("seat", Vector3.ZERO)
 	var q := Transform3D(Basis(Vector3.UP, c.yaw), c.pos).affine_inverse() * at
 	var out := (q.x - c.half_w) / WS.M
 	var off := absf(q.z - seat.z) / WS.M
@@ -235,7 +235,7 @@ func _check_resident() -> void:
 	K.check(fails, is_equal_approx(mood, 4.0), "their mood drops by 3 (%.1f)" % mood)
 	var on_foot := trip.mode == "walk" and trip.phase == "walk" and trip.car == null
 	on_foot = on_foot and victim != null and trip.walker == victim and victim.resident_id == rid
-	var trips: TRIPS = tr.get("trips")
+	var trips: TRIPS = traffic.get("trips")
 	K.check(
 		fails,
 		on_foot and not trips.cars.has(rid) and bool(drive.get("active")),
@@ -260,7 +260,7 @@ func _check_turn_back() -> void:
 	var let_go := not c.hold and not c.dead and c.door == 0.0 and hits.is_empty()
 	K.check(
 		fails,
-		let_go and bool(tr.call("jackable", c.id)),
+		let_go and bool(traffic.call("jackable", c.id)),
 		"the car is let go with its driver still at the wheel"
 	)
 
@@ -272,7 +272,7 @@ func _check_flag_off() -> void:
 	var trip := _drive_trip(ctx.residents.people[1])
 	var none: Dictionary = drive.call("enter_target")
 	K.check(fails, none.is_empty(), "carjack off: a resident's car in traffic cannot be taken")
-	var trips: TRIPS = tr.get("trips")
+	var trips: TRIPS = traffic.get("trips")
 	trips.trips.erase(trip.rid)
 	trips.cars.erase(trip.rid)
 	var c := _lane_car("ambient")
@@ -295,13 +295,13 @@ func _check_flag_off() -> void:
 
 
 func _vh() -> VH:
-	return tr.get("vehicles")
+	return traffic.get("vehicles")
 
 
 ## The first car model traffic hands out whose driver's door opens, or -1 (a failed fixture).
 func _door_model() -> int:
-	var render: RefCounted = tr.get("render")
-	for m: int in tr.get("_car_models"):
+	var render: RefCounted = traffic.get("render")
+	for m: int in traffic.get("_car_models"):
 		var mo: RefCounted = render.call("model", m)
 		var d: DOORS.Door = DOORS.of(str(mo.get("key")), mo.get("scene"))
 		if d.ok:
@@ -313,7 +313,7 @@ func _door_model() -> int:
 ## A straight lane on a road tile (not a bridge) with room beside the driver's side of a car of
 ## door_model halfway along it; false (a failed fixture) when there is none.
 func _pick_lane() -> bool:
-	var lg: LG = tr.get("lanes")
+	var lg: LG = traffic.get("lanes")
 	var keys: Array = lg.tiles.keys()
 	keys.sort()
 	for i: int in keys:
@@ -332,7 +332,7 @@ func _pick_lane() -> bool:
 ## Free ground out to 2 m off the driver's side of a car of door_model halfway along l, by its
 ## front, middle and rear: where the hero walks, the door swings and the driver lands.
 func _room_beside(l: LG.Lane) -> bool:
-	var c := _vh().make("car", "ambient", tr.call("dims", door_model))
+	var c := _vh().make("car", "ambient", traffic.call("dims", door_model))
 	_vh().place(c, l, 0.5)
 	var xf := Transform3D(Basis(Vector3.UP, c.yaw), c.pos)
 	var side := c.half_w
@@ -354,14 +354,14 @@ func _lane_car(role: String, rid: String = "") -> VH.Car:
 	for o: VH.Car in _vh().cars.duplicate():
 		_vh().remove(o)
 	ctx.collision.dynamic_boxes = []
-	var c := _vh().make("car", role, tr.call("dims", door_model))
+	var c := _vh().make("car", role, traffic.call("dims", door_model))
 	c.model = door_model
 	c.driver_id = rid
 	_vh().place(c, lane, 0.5)
 	var xf := Transform3D(Basis(Vector3.UP, c.yaw), c.pos)
 	ctx.player.teleport(xf * Vector3(c.half_w + 1.0 * WS.M, 0.0, -0.35 * c.length), 0.0)
 	ctx.player.update_view(DT)
-	tr.call("sync_visuals", DT)
+	traffic.call("sync_visuals", DT)
 	return c
 
 
@@ -376,10 +376,10 @@ func _drive_trip(r: Dictionary) -> TRIPS.Trip:
 	trip.from_i = int(r["home"])
 	trip.to_i = int(r["work"]) if int(r["work"]) >= 0 else trip.from_i
 	var fr: int = ctx.directory.frontage(trip.to_i)
-	trip.dest_tile = fr if (tr.get("lanes") as LG).tiles.has(fr) else lane_tile
+	trip.dest_tile = fr if (traffic.get("lanes") as LG).tiles.has(fr) else lane_tile
 	trip.car = _lane_car("resident", trip.rid)
 	trip.car.owner = trip
-	var trips: TRIPS = tr.get("trips")
+	var trips: TRIPS = traffic.get("trips")
 	trips.trips[trip.rid] = trip
 	trips.cars[trip.rid] = trip.car
 	return trip
@@ -399,7 +399,7 @@ func _jack_climb(c: VH.Car, max_s: float) -> Dictionary:
 		ctx.player.update_view(DT)
 		_tick(DT)
 		if frame % 4 == 0:
-			tr.call("sync_visuals", DT * 4.0)
+			traffic.call("sync_visuals", DT * 4.0)
 		frame += 1
 		secs += DT
 		var ph := str(entry.get("phase"))
@@ -412,14 +412,14 @@ func _jack_climb(c: VH.Car, max_s: float) -> Dictionary:
 
 func _on_hit(at: Vector3, cause: String, info: Dictionary) -> void:
 	hits.append([at, cause, info])
-	victim = tr.call("_walker_by_id", int(info.get("walker", -1)))
+	victim = traffic.call("_walker_by_id", int(info.get("walker", -1)))
 	clips.clear()
 	first_at = Vector3.INF
 
 
 ## One traffic step of dt, noting each new reaction clip of the one last hit.
 func _tick(dt: float) -> void:
-	tr.call("step", dt)
+	traffic.call("step", dt)
 	if victim == null or victim.react == &"":
 		return
 	if not first_at.is_finite():

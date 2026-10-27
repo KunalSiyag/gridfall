@@ -144,10 +144,12 @@ Renders the CitySim grid in 3D: Kenney roads picked by neighbor mask, zone lots 
 - `func set_fp_mode(on: bool) -> void`: Switches between the orbit and the street-level presentation. On a real change it also rebuilds the mode-specific geometry synchronously (tree chunks, every tile: lots, pads, furniture, FX), bypassing the rebuild queue, then emits world_rebuilt and fp_mode_changed. Setting the same value again does nothing; the boot path sets the field before the first setup() instead.
 - `func set_aerial(on: bool) -> void`: Aerial coverage (render_opt): while on, every far tree layer draws to the horizon, so woods and street trees stay visible from the sky. Only the street chunks change (the orbit far layers already have no end); chunks rebuilt later read the flag where they are built.
 - `func track_material() -> Material`: The surface of unpaved road tiles (gravel, dirt track, grass trail): the ground shader in track mode, drawn on a quad over the whole tile (see _track). Its grass matches the street-level ground exactly; in orbit, where the ground is plain, the grass part is cut away.
+- `func track_material_for(mask: int, grade: int) -> Material`: The track material for one tile shape: a shared copy of track_material() carrying the road mask (0..15) and grade. A per-tile instance uniform would take a slot of Compatibility's 4096-slot instance buffer for every mesh using the ground shader.
 - `func lot_ground_material() -> Material`: Ground for a vacant lot on foot: the detail shader turned to patchy earth that fades back to grass at the lot's edges.
 - `func lawn_material() -> ShaderMaterial`: Lawns and park grass of the building models on foot (their flat "Grass" surfaces): the street's metric grass, a little lusher and with fewer worn patches. Null without the ground shader.
 - `func apron_material() -> Material`: Paving for the aprons between lots and road sidewalks: the road's own sidewalk material, world tiled at the road's density (one repeat per 3 m).
-- `func road_fp_material() -> ShaderMaterial`: Carriageway asphalt on foot (shaders/road_fp.gdshader): world-mapped, broken-up asphalt with lane wear; road holders set its `lane_axis` instance parameter. Null when the shader or textures are missing (the road models keep their own asphalt).
+- `func road_fp_material() -> ShaderMaterial`: Carriageway asphalt on foot (shaders/road_fp.gdshader): world-mapped, broken-up asphalt with lane wear; road holders take road_fp_material_for(their lane axis). Null when the shader or textures are missing (the road models keep their own asphalt).
+- `func road_fp_material_for(axis: int) -> ShaderMaterial`: The street asphalt for one lane layout (shaders/road_fp.gdshader's lane_axis, 0..6): a shared copy of road_fp_material(), so no road mesh needs an instance uniform (Compatibility has 4096 slots for those). Null when road_fp_material() is.
 - `func set_light_pole_source(src: Object) -> void`: Sets light_pole_source (E's traffic feature, or null) and, on a change while on foot, re-hangs the street-name blades of the cross tiles already built (they were built before the source).
 - `func set_wetness(w: float) -> void`: Wet streets: road and sidewalk materials darken and turn glossy, the ground shaders and the water follow, and puddles appear by the curbs. w is 0 (dry) .. 1 (soaked).
 - `func set_rain(r: float) -> void`: Rain falling now (0 none .. 1 full): rings on the river and on the puddles in the road.
@@ -305,14 +307,18 @@ Day/night cycle tied to the sim clock: tick 0 is morning, 3 is night. Moves the 
 - `MAX_CYCLE_SPEED = 4`: Above this speed a day lasts under 3 seconds, so the cycle holds at midday instead of strobing.
 - `HOLD_HOUR = 13.0`
 - `MIN_CYCLE_DAY_SECONDS = 3.0`: Days shorter than this many real seconds hold at HOLD_HOUR instead of strobing.
+- `COMPAT_LOOK = {"exposure": 1.6, "saturation": 0.85}`: Compatibility (the web build) draws the same scene darker and punchier than Forward+: no SSIL bounce fill lifts the mid-tones, and its tonemap runs on different output buffers. Its exposure is scaled up and saturation down to match Forward+ shots taken at the same hour (frozen-city street view: luma 0.143 -> 0.248 vs Forward+ 0.241, saturation 0.421 -> 0.243 vs 0.203); Forward+ keeps 1.0.
 
 ### Properties
 
 - `fixed_hour: float`: Fixed clock hour for screenshots and tests; negative follows the sim.
 - `weather_energy_mult: float`: Weather hooks (slice G1's streetscape weather), read inside _apply so they survive the per-frame rewrite: sun energy and exposure multipliers, a depth-fog begin override (negative: none), how grey the sky is (0 clear .. 1 overcast), a fog tint (smog) and how dark sun shadows are (cloud cover diffuses them).
+- `renderer_exposure: float`: The running renderer's exposure scale (renderer_look()), applied on top of the day curve.
 
 ### Functions
 
+- `static func renderer_look(method: String) -> Dictionary`: Exposure and saturation scales for a renderer method (RenderingServer's name for it): COMPAT_LOOK on gl_compatibility, neutral everywhere else.
+- `func apply_renderer_look(method: String) -> void`: Takes on method's look: the exposure scale every frame from here on, and the saturation scale on the shared Environment once (a meta remembers it, so a second setup does not stack it).
 - `func setup(p_sim: CitySim, p_env: Environment, p_sun: DirectionalLight3D, p_view: CityView) -> void`
 - `func reset_weather() -> void`: Clear sky again: drops every weather hook and puts back the fog begin an override replaced.
 - `func clock_text() -> String`

@@ -5,30 +5,31 @@ extends SceneTree
 ## a lone bird walks off from the hero walking at it and flutters off from one stepping up to it
 ## and from a car about to hit it; a sprint at the flock sends it up together with one take-off
 ## clatter, it climbs, wheels and glides back down to its spot once the hero has gone, and a
-## shout, a dog close by and a car driving into it send it up too; E throws crumbs (the pick, a
-## toast) and the birds gather round them and eat them up; pause freezes them; beyond FAR they go
-## and come back; the flag off takes them away; the photo shot; a fresh city (only the founding
-## roads and City Hall) still shows pigeons by the spawn, and where no spot of any kind is near the
-## ambient flock keeps to a sidewalk by the player, none by night, out at dawn; self_test and
-## teardown. Third
+## shout, a dog close by and a car driving into it send it up too; the hero's car horn sends it up
+## as well, out of earshot leaves it be, and in the rain there is nothing to flush; E throws crumbs
+## (the pick, a toast) and the birds gather round them and eat them up; pause freezes them; beyond
+## FAR they go and come back; the flag off takes them away; the photo shot; a fresh city (only the
+## founding roads and City Hall) still shows pigeons by the spawn, and where no spot of any kind
+## is near the ambient flock keeps to a sidewalk by the player, none by night, out at dawn;
+## self_test and teardown. Third
 ## person on a grown city; time runs through the feature's tick(1/60) and traffic's step.
 
 const K := preload("res://tools/tests/fp_kit.gd")
 const FRESH := preload("res://tools/tests/fp_fresh_city.gd")
 const D := preload("res://scripts/sim/sim_defs.gd")
 const WS := preload("res://scripts/fp/world_scale.gd")
-const WK := preload("res://scripts/fp/traffic/walkers.gd")
 const AF := preload("res://scripts/fp/animals/animals_feature.gd")
 const PG := preload("res://scripts/fp/animals/pigeons.gd")
 const FLOCK := preload("res://scripts/fp/animals/pigeon_flock.gd")
 const BODY := preload("res://scripts/fp/animals/pigeon_body.gd")
+const DRIVE := preload("res://scripts/fp/drive/drive_feature.gd")
 const DT := 1.0 / 60.0
 ## The hero waits this far (m) along the street from the spot while the flock lands.
 const AWAY_M := 20.0
 
 var fails: Array[String] = []
 var ctx: FpContext
-var tr: FpFeature
+var traffic: FpFeature
 var f: FpFeature
 var pg: PG
 var fl: FLOCK
@@ -42,29 +43,19 @@ var toasts: Array[String] = []
 
 func _init() -> void:
 	await process_frame
-	# A cat stalking the flock would send it up (fp_cats_test has that).
-	FeatureFlags.set_override("cats", false)
-	ctx = K.make_ctx(get_root(), {"view": true, "grow": true, "camera_mode": "third"})
-	ctx.player.set_process(false)
-	tr = K.make_feature(ctx, "traffic")
-	f = K.make_feature(ctx, "animals")
-	if tr == null or f == null:
+	var fx := FRESH.make_grown(
+		get_root(), func(_at: Vector3, c: String, s: float) -> void: calls.append([c, s])
+	)
+	ctx = fx["ctx"]
+	traffic = fx["traffic"]
+	f = fx["animals"]
+	if not bool(fx["ok"]):
 		K.check(fails, false, "fixture: traffic and animals registered")
 		K.finish(self, "FP_PIGEONS_TEST", fails)
 		return
-	tr.set("auto_step", false)
-	tr.set("ambient_enabled", false)
-	f.set_process(false)
-	pg = f.get("pigeons")
-	fl = pg.flock
-	_quiet()
-	ctx.bus.animal_called.connect(
-		func(_at: Vector3, c: String, s: float) -> void: calls.append([c, s])
-	)
 	ctx.bus.toast.connect(func(t: String, _k: String) -> void: toasts.append(t))
-	ctx.sky.fixed_hour = 12.0
-	ctx.sky.hour = 12.0
-	ctx.sky.night = 0.0
+	pg = fx["pigeons"]
+	fl = fx["flock"]
 	spot = _street_spot()
 	K.check(fails, not spot.is_empty(), "fixture: a sidewalk where pigeons keep")
 	if not spot.is_empty():
@@ -75,9 +66,12 @@ func _init() -> void:
 			_check_solo()
 			_check_scatter(fk)
 			_check_frights(fk)
+			_check_horn(fk)
 			_check_feed(fk)
 			_check_pause(fk)
 		_check_far()
+		_check_rain()
+		_check_horn_rain()
 		_check_flag()
 		_check_photo()
 	_check_fresh_city()
@@ -90,19 +84,7 @@ func _init() -> void:
 
 ## Steps traffic and the animals secs (in 1/60 s steps).
 func _step(secs: float) -> void:
-	for _k in range(ceili(secs / DT - 1e-6)):
-		tr.call("step", DT)
-		f.call("tick", DT)
-
-
-## Nobody walks about and nobody lives with a dog, so only the test's frights are about.
-func _quiet() -> void:
-	var wk: WK = tr.get("walkers")
-	for w: WK.Walker in wk.walkers.duplicate():
-		wk.remove(w)
-	for r: Dictionary in ctx.residents.people:
-		if str(r.get("household", "")) == AF.DOG_HOUSEHOLD:
-			r["household"] = "lives alone"
+	FRESH.step(traffic, f, secs)
 
 
 ## The first flock spot on a sidewalk (in front of a shop or a civic building), else {}.
@@ -413,6 +395,44 @@ func _check_frights(fk: FLOCK.Flock) -> void:
 	_wait_down(fk, 40.0)
 
 
+## The hero's car horn (horn_sounded): a horn at the flock's spot with the drive feature's reach
+## sends every bird up, and one out of earshot (a small radius at a far point) leaves them be.
+func _check_horn(fk: FLOCK.Flock) -> void:
+	var home: Vector3 = spot["home"]
+	var run: Vector3 = spot["run"]
+	_hero_at(AWAY_M)
+	_wait_down(fk, 40.0)
+	ctx.bus.horn_sounded.emit(Vector2(home.x, home.z), DRIVE.HORN_STREET_R, false)
+	_step(0.5)
+	var near := _all_up(fk)
+	_wait_down(fk, 40.0)
+	# A horn whose reach stops short of the flock (the hero in a car well down the street).
+	var far := home + run * 40.0 * WS.M
+	ctx.bus.horn_sounded.emit(Vector2(far.x, far.z), 5.0 * WS.M, true)
+	_step(0.5)
+	var untouched := fk.birds.all(func(b: FLOCK.Bird) -> bool: return not b.air)
+	K.check(fails, near, "horn: a horn at the flock sends every bird up")
+	K.check(fails, untouched, "horn: one out of earshot leaves them be")
+
+
+## While the rain holds (the P2 shelter), a horn finds nothing to flush: no flock is out to hear
+## it, and none comes back out for it either.
+func _check_horn_rain() -> void:
+	var home: Vector3 = spot["home"]
+	FRESH.force_weather(ctx, "rain")
+	_step(AF.SCAN_S + 0.2)
+	var sheltered := _flock() == null
+	ctx.bus.horn_sounded.emit(Vector2(home.x, home.z), DRIVE.HORN_STREET_R, true)
+	_step(0.5)
+	K.check(
+		fails,
+		sheltered and _flock() == null,
+		"horn: in the rain there is nothing to flush (the birds shelter)"
+	)
+	FRESH.force_weather(ctx, "clear")
+	_step(AF.SCAN_S + 0.2)
+
+
 ## E on the flock from 3 m: the pick ("Feed the pigeons"), crumbs (drawn) and a toast; the birds
 ## gather round the crumbs (most within 0.9 m of them after 8 s) and eat them up.
 func _check_feed(fk: FLOCK.Flock) -> void:
@@ -492,6 +512,11 @@ func _check_far() -> void:
 	_step(AF.SCAN_S + 0.1)
 	K.check(fails, gone, "far: beyond FAR the flock goes")
 	K.check(fails, _flock() != null, "far: back again, it comes out again")
+
+
+## In the rain no flock comes out (they shelter, as the cats do); once it clears they come back.
+func _check_rain() -> void:
+	FRESH.rain_gate(ctx, traffic, f, fails, "pigeons", func() -> int: return fl.flocks.size())
 
 
 ## The flag off takes every flock away (nothing to pick); on again, they come back.

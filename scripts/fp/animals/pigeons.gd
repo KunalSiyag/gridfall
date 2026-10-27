@@ -1,20 +1,15 @@
-extends Node3D
+extends "res://scripts/fp/animals/bird_flocks.gd"
 ## The pigeons (part of the animals feature): where flocks keep (the sidewalk in front of some
 ## shops and of the civic buildings people gather at, the parks, and a share of the plain street
 ## corners), coming out by day near the player and going beyond FAR; and where none of those is
 ## about, one ambient flock near the player (a young city shows pigeons from its first day). The
 ## world fed to their behaviour (pigeon_flock.gd) before every step; one MultiMesh of
 ## pigeon_body.gd's bird per flock, and the crumbs the hero throws them (E on a flock close by).
-## Their coos and wingbeats go out on the bus (animal_called).
+## Their coos and wingbeats go out on the bus (animal_called). The shared flock wiring lives in
+## bird_flocks.gd.
 
-const D := preload("res://scripts/sim/sim_defs.gd")
-const WS := preload("res://scripts/fp/world_scale.gd")
-const FLOCK := preload("res://scripts/fp/animals/pigeon_flock.gd")
-const BODY := preload("res://scripts/fp/animals/pigeon_body.gd")
-const PACK := preload("res://scripts/fp/animals/dog_pack.gd")
 const STREETS := preload("res://scripts/fp/animals/street_spots.gd")
 
-const MAX_STEP := 1.0 / 30.0
 ## Flocks come out within NEAR of the player (u) and go beyond FAR, at most MAX_FLOCKS at once.
 const NEAR := 2.2
 const FAR := 2.8
@@ -78,15 +73,11 @@ const KNOCK_M := 8.0
 const FEED_REACH := 4.5
 const FEED_NEAR := 1.5
 const FEED_TOSS := 1.2
-## A pigeon's height at the shoulder (m): animal_called's size.
-const SIZE_M := 0.13
 ## Feathers in the puff of a bird the hero strikes.
 const FEATHERS := 14
 ## A crumb's size (m) and colour.
 const CRUMB := Vector3(0.016, 0.007, 0.012)
 const CRUMB_COL := Color(0.86, 0.74, 0.52)
-## The player's car while they drive, half length and half width (m), for the birds' dodge.
-const CAR := Vector2(2.3, 1.0)
 ## The photo shot stands STAND_M (m) from the flock's crumbs, looking PHOTO_PITCH (degrees) down.
 const PHOTO_KEY := "photo:pigeons"
 const STAND_M := 2.6
@@ -95,108 +86,30 @@ const NO_POINT := Vector3(NAN, NAN, NAN)
 
 static var _crumb_mesh: BoxMesh = null
 
-var ctx: FpContext
-var flock: FLOCK
-## Calls made so far by kind ("coo", "flap", "takeoff") and the times the hero fed a flock.
-var calls: Dictionary = {}
+## The times the hero fed a flock.
 var feeds: int = 0
-## Tile -> the spot of the flock keeping there (_spot_of()), {} for none.
-var _spots: Dictionary = {}
-var _car_was := Vector3.INF
 ## The photo shot's {"spot", "cam"}, {} without one.
 var _photo: Dictionary = {}
 
 
 func setup(p_ctx: FpContext) -> void:
-	ctx = p_ctx
+	setup_flocks(p_ctx)
 	name = "Pigeons"
-	flock = FLOCK.new()
-	flock.col = ctx.collision
-	flock.on_call = _on_call
 
 
-## Boot, load or New City: no flocks until the next scan.
-func rebuilt() -> void:
-	clear()
-	flock.col = ctx.collision
-	_spots.clear()
+## Every scan: the flocks too far off go; in the rain they all stay in (they shelter); else by day
+## (and with the flag on) the spots near me get theirs, the nearest first; and with no flock near me
+## after that, one ambient flock comes out anyway (_baseline).
+func scan(me: Vector3, by_day: bool, rain := false) -> void:
+	var on := by_day and not rain and FeatureFlags.enabled("pigeons")
+	scan_flocks(me, on, MAX_FLOCKS, NEAR, FAR, rain)
+	if on:
+		_baseline(me)
 
 
-func tile_built(_i: int) -> void:
-	_spots.clear()
-
-
-func clear() -> void:
-	if flock == null:
-		return
-	for f: FLOCK.Flock in flock.flocks.duplicate():
-		_drop(f)
-
-
-## Every scan: the flocks too far off go; by day (and with the flag on) the spots near me get
-## theirs, the nearest first; and with no flock near me after that, one ambient flock comes out
-## anyway (_baseline).
-func scan(me: Vector3, by_day: bool) -> void:
-	for f: FLOCK.Flock in flock.flocks.duplicate():
-		if _flat(f.home, me) > FAR and not f.key.begins_with("photo:"):
-			_drop(f)
-	if not by_day or not FeatureFlags.enabled("pigeons"):
-		return
-	var near: Array = []
-	var r := ceili(NEAR)
-	for y in range(roundi(me.z) - r, roundi(me.z) + r + 1):
-		for x in range(roundi(me.x) - r, roundi(me.x) + r + 1):
-			if not D.in_bounds(x, y):
-				continue
-			var i := D.idx(x, y)
-			var s := _spot_of(i)
-			if not s.is_empty() and _flock("s:%d" % i) == null:
-				var d := _flat(s["home"], me)
-				if d <= NEAR:
-					near.append([d, i, s])
-	near.sort_custom(func(a: Array, b: Array) -> bool: return float(a[0]) < float(b[0]))
-	for e: Array in near:
-		if flock.flocks.size() >= MAX_FLOCKS:
-			return
-		_make("s:%d" % int(e[1]), e[2])
-	_baseline(me)
-
-
-## The world for this step from the dogs' pack: the hero on foot, the traffic's cars (and the
-## player's while they drive) and the people on foot around, and the dogs. delta is real seconds.
-func world(pack: PACK, driving: bool, delta: float) -> void:
-	flock.hero_on_foot = pack.hero_on_foot
-	flock.hero = pack.hero
-	flock.hero_vel = pack.hero_vel
-	flock.passers = pack.passers
-	flock.cars = pack.cars.duplicate()
-	flock.dogs.clear()
-	for d: PACK.Dog in pack.dogs:
-		flock.dogs.append([d.pos, Vector3(sin(d.yaw), 0.0, cos(d.yaw)) * d.speed])
-	var at := ctx.player.position if ctx.player != null else Vector3.INF
-	if driving and delta > 0.0 and _car_was.is_finite() and at.is_finite():
-		flock.cars.append([at, (at - _car_was) / delta, CAR.x * WS.M, CAR.y * WS.M])
-	_car_was = at if driving else Vector3.INF
-
-
-## dt game seconds of the flocks (in MAX_STEP steps), then their draw. The flag off takes them away.
+## dt game seconds of the flocks (bird_flocks.gd step_flocks()). The flag off takes them away.
 func step(dt: float) -> void:
-	if not FeatureFlags.enabled("pigeons"):
-		clear()
-		return
-	var left := dt
-	while left > 0.0:
-		var h := minf(left, MAX_STEP)
-		flock.step(h)
-		left -= h
-	_draw()
-
-
-## A fright at at (a blow, a shout, a bark, a crash) sends up the flocks with a bird on the ground
-## within r_m metres of it.
-func startle(at: Vector3, r_m: float) -> void:
-	if r_m > 0.0:
-		flock.startle(at, r_m * WS.M)
+	step_flocks(dt, FeatureFlags.enabled("pigeons"))
 
 
 ## The hero struck bird b of flock f from src at strength 0..1: it is knocked off in a puff of
@@ -360,40 +273,11 @@ func photo_restore() -> void:
 # ------------------------------------------------------------------ flocks
 
 
+## The spot's flock foraging round it (bird_flocks.gd add()), drawn at once.
 func _make(key: String, s: Dictionary) -> FLOCK.Flock:
 	var f := flock.add(key, s["home"], s["radius"], s["run"], s["across"], int(s["n"]))
-	var mm := MultiMesh.new()
-	mm.transform_format = MultiMesh.TRANSFORM_3D
-	mm.use_colors = true
-	mm.use_custom_data = true
-	mm.mesh = BODY.mesh()
-	mm.instance_count = f.birds.size()
-	for k in range(f.birds.size()):
-		mm.set_instance_color(k, (f.birds[k] as FLOCK.Bird).tint)
-	var mi := MultiMeshInstance3D.new()
-	mi.name = "Flock"
-	mi.multimesh = mm
-	mi.material_override = BODY.material()
-	add_child(mi)
-	f.node = mi
-	_draw_flock(f)
+	_make_node(f)
 	return f
-
-
-func _drop(f: FLOCK.Flock) -> void:
-	for n: Node3D in [f.node, f.crumbs_node]:
-		if n != null and is_instance_valid(n):
-			n.free()
-	f.node = null
-	f.crumbs_node = null
-	flock.remove(f)
-
-
-func _flock(key: String) -> FLOCK.Flock:
-	for f: FLOCK.Flock in flock.flocks:
-		if f.key == key:
-			return f
-	return null
 
 
 func _bird_near(f: FLOCK.Flock, g: Vector3) -> bool:
@@ -403,26 +287,11 @@ func _bird_near(f: FLOCK.Flock, g: Vector3) -> bool:
 	return false
 
 
-func _on_call(at: Vector3, sound: String) -> void:
-	calls[sound] = int(calls.get(sound, 0)) + 1
-	if ctx.bus != null:
-		ctx.bus.animal_called.emit(at, sound, SIZE_M)
-
-
 # ------------------------------------------------------------------ draw
 
 
-func _draw() -> void:
-	for f: FLOCK.Flock in flock.flocks:
-		_draw_flock(f)
-
-
-func _draw_flock(f: FLOCK.Flock) -> void:
-	var mm := (f.node as MultiMeshInstance3D).multimesh
-	for k in range(f.birds.size()):
-		var b: FLOCK.Bird = f.birds[k]
-		mm.set_instance_transform(k, FLOCK.xform(b))
-		mm.set_instance_custom_data(k, FLOCK.pose(b))
+## The flock's crumbs once they have moved.
+func _after_draw(f: FLOCK.Flock) -> void:
 	if f.crumbs_moved:
 		f.crumbs_moved = false
 		_draw_crumbs(f)
@@ -460,8 +329,8 @@ static func _crumb() -> BoxMesh:
 # ------------------------------------------------------------------ spots
 
 
-## Tile i's flock spot: {"lot", "home", "radius" (u), "run", "across", "n"} (pigeon_flock.gd add()),
-## or {} for none.
+## Tile i's flock spot: {"key", "lot", "home", "radius" (u), "run", "across", "n"} (pigeon_flock.gd
+## add()), or {} for none.
 func _spot_of(i: int) -> Dictionary:
 	if _spots.has(i):
 		return _spots[i]
@@ -547,7 +416,9 @@ func _spot_dict(
 ) -> Dictionary:
 	var rng := RandomNumberGenerator.new()
 	rng.seed = hash("pigeons:%d" % i) ^ (ctx.sim.city_seed * 7919)
-	var out := {"lot": i, "home": home, "radius": r, "run": run, "across": across}
+	var out := {
+		"key": "s:%d" % i, "lot": i, "home": home, "radius": r, "run": run, "across": across
+	}
 	out["n"] = rng.randi_range(n.x, n.y)
 	return out
 

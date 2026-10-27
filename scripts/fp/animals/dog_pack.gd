@@ -78,6 +78,14 @@ const BARK_REST := Vector2(10.0, 20.0)
 ## makes a dog leap aside.
 const DODGE_S := 1.2
 const DODGE_SIDE := 0.6 * WS.M
+## A free dog spots the pigeons on the ground or a cat within CHASE_AT (m) and gives chase for up
+## to CHASE_S (s) at a run — the birds go up, the cat bolts up the nearest trunk (cat_life.gd's
+## tree refuge), a bark up at it where it went out of reach — then stands and sniffs where they
+## went; it wants no more of it for a while (CHASE_COOL plus a roll, s). Not every dog chases (a
+## roll at its making), and one on a heel lead runs only as far as the lead.
+const CHASE_AT := 6.0 * WS.M
+const CHASE_S := Vector2(2.5, 4.5)
+const CHASE_COOL := 6.0
 ## Where the hero's eyes are for a dog looking up at them (m), standing and crouched.
 const EYES := Vector2(1.55 * WS.M, 0.95 * WS.M)
 ## People going by take this much room (m): a dog steps out of their way.
@@ -136,6 +144,12 @@ class Dog:
 	var goal_t: float = 0.0
 	var trot: bool = false
 	var sniff_t: float = 0.0
+	## Whether it chases the small game it spots (a roll at its making), what it is after (the
+	## prey's key), where that was, and how long until it would chase again.
+	var chases: bool = false
+	var chase: String = ""
+	var chase_at := NO_POINT
+	var chase_cool: float = 0.0
 	var idle: StringName = &"Idle"
 	var gallop: bool = false
 	var barks: int = 0
@@ -174,6 +188,11 @@ var hero_open: bool = false
 var crouched: bool = false
 var cars: Array = []
 var passers: Array = []
+## The small game about, set by the feature each step: [key, where it is now, reachable] — the
+## pigeons on the ground and the cats (one up its refuge tree stays on the list, unreachable, so
+## the chaser gives up below it); the key stays the same while the game keeps about (a street
+## flock's key, "c:<k>" for a cat).
+var prey: Array = []
 var time_scale: float = 1.0
 var _rng := RandomNumberGenerator.new()
 var _next_id: int = 1
@@ -195,6 +214,7 @@ func add(b: BODIES.Body, pos: Vector3, yaw: float) -> Dog:
 	d.idle = IDLES[_rng.randi() % IDLES.size()]
 	d.sniff_t = _rng.randf_range(4.0, 14.0)
 	d.bark_cool = _rng.randf_range(1.0, 4.0)
+	d.chases = _rng.randf() < 0.6
 	dogs.append(d)
 	return d
 
@@ -365,8 +385,19 @@ func _tick(d: Dog, dt: float) -> void:
 		_bite(d)
 	if d.act != "" and d.act_t <= 0.0:
 		_act_over(d)
-	for k: String in ["bark_cool", "lunge_cool", "whine_cool", "goal_t", "sniff_t", "watch_t"]:
+	for k: String in [
+		"bark_cool", "lunge_cool", "whine_cool", "goal_t", "sniff_t", "watch_t", "chase_cool"
+	]:
 		d.set(k, float(d.get(k)) - dt)
+	if d.act == "chase":
+		var p := _prey_of(d.chase)
+		if p.is_empty() or not p[2]:
+			# Game gone up out of its reach (a cat up its refuge tree): a bark up at it from
+			# where it got to (a fence may keep it off the trunk itself), then the give-up
+			# sniff.
+			if not p.is_empty() and _flat(d.pos, p[1]) < BARK_AT * 2.0:
+				bark(d, 2, true)
+			_sniff_spot(d)
 	var far := _flat(d.pos, hero) > NOTICE * 2.0
 	d.angry = maxf(0.0, d.angry - dt * (3.0 if far else 1.0))
 	d.happy = maxf(0.0, d.happy - 0.06 * dt)
@@ -405,6 +436,14 @@ func _sense(d: Dog, dt: float) -> void:
 	if dh < BRUSH and fast and d.act != "flinch":
 		startle(d, hero)
 		return
+	_temper_rules(d, dh)
+	if d.act == "" and d.chases and d.chase_cool <= 0.0 and _free(d):
+		_spot_prey(d)
+
+
+## What its temper makes of the hero near: a barky one barks at them, a shy one runs off, and a
+## friendly one goes over to them crouching.
+func _temper_rules(d: Dog, dh: float) -> void:
 	match d.temper:
 		"barky":
 			if dh < BARK_AT and d.happy < 0.5:
@@ -429,8 +468,9 @@ func _owner_rules(d: Dog, dt: float) -> void:
 		d.goal = NO_POINT
 	elif d.mode == "roam" and moving:
 		d.mode = "heel"
-		if d.act == "sniff" or d.act == "greet":
+		if d.act == "sniff" or d.act == "greet" or d.act == "chase":
 			d.act = ""
+			d.chase = ""
 
 
 ## True when the dog may leave its owner's side (off the lead, or the owner stands still).
@@ -466,6 +506,45 @@ func _watch_passers(d: Dog) -> void:
 			d.goal_t = 3.0
 			d.trot = true
 		return
+
+
+## The game it is after by key, or an empty array when that is gone from the world.
+func _prey_of(key: String) -> Array:
+	if key != "":
+		for p: Array in prey:
+			if p[0] == key:
+				return p
+	return []
+
+
+## A free dog with nothing else on spots the nearest reachable game within CHASE_AT and gives
+## chase; a barky one barks as it sets off.
+func _spot_prey(d: Dog) -> void:
+	var best := ""
+	var best_at := NO_POINT
+	var bd := CHASE_AT
+	for p: Array in prey:
+		if not p[2]:
+			continue
+		var dist := _flat(d.pos, p[1])
+		if dist < bd:
+			bd = dist
+			best = p[0]
+			best_at = p[1]
+	if best == "":
+		return
+	d.chase = best
+	d.chase_at = best_at
+	_start(d, "chase", _rng.randf_range(CHASE_S.x, CHASE_S.y))
+	d.chase_cool = CHASE_COOL + _rng.randf() * 8.0
+	if d.temper == "barky":
+		bark(d, 2, false)
+
+
+## The chase is over, one way or the other: it stands and sniffs where they went.
+func _sniff_spot(d: Dog) -> void:
+	d.chase = ""
+	_start(d, "sniff", 1.6)
 
 
 func _dodge(d: Dog) -> void:
@@ -515,6 +594,8 @@ func _want(d: Dog, dt: float) -> Vector3:
 		return d.act_dir * RUN
 	if d.act == "greet":
 		return _greet(d)
+	if d.act == "chase":
+		return _chase(d)
 	if d.act != "":
 		return Vector3.ZERO
 	if d.angry > 0.0 and hero_on_foot:
@@ -583,6 +664,18 @@ func _greet(d: Dog) -> Vector3:
 		return Vector3.ZERO
 	d.happy = maxf(d.happy, 0.6)
 	return _arrive(d, _bounded(d, _beside_hero(d, GREET_AT)), TROT)
+
+
+## Runs at the game it is after (kept to its lot or its lead) while that is still to be had.
+func _chase(d: Dog) -> Vector3:
+	var p := _prey_of(d.chase)
+	if p.is_empty():
+		return Vector3.ZERO
+	var at: Vector3 = p[1]
+	d.chase_at = at
+	if _flat(d.pos, at) < 0.3 * WS.M:
+		return Vector3.ZERO
+	return _arrive(d, _bounded(d, at), RUN)
 
 
 ## The point dist from the hero on the dog's side of them.
@@ -758,8 +851,12 @@ func _start(d: Dog, act: String, secs: float) -> void:
 	d.restart = true
 
 
-## The act ran its time: the dog stands, or runs off whining when it was struck.
+## The act ran its time: the dog stands, or runs off whining when it was struck; a chase over is a
+## sniff where they went.
 func _act_over(d: Dog) -> void:
+	if d.act == "chase":
+		_sniff_spot(d)
+		return
 	d.act = ""
 	if d.flee_after != Vector3.ZERO:
 		_flee(d, d.flee_after, HIT_FLEE)

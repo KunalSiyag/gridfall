@@ -44,9 +44,14 @@ var vel := Vector2.ZERO
 var steer: float = 0.0
 var length: float = 0.24
 ## This body's handling profile: a slower, heavier machine (a backhoe) tops out below TOP and
-## gets up to speed at a share of a car's rate (a car: {top: TOP, gain: 1}).
+## gets up to speed at a share of a car's rate, and a long working body (a bus, a truck) also
+## steers on a shorter lock and pulls up at a share of a car's braking (a car: {top: TOP, gain:
+## 1, steer: 1, brake: 1}).
 var top := TOP
 var gain := 1.0
+## The body's own steering lock and braking, as shares of a car's.
+var steer_lock := 1.0
+var brake_f := 1.0
 ## Signed acceleration along the heading over the last step (brake lights).
 var accel: float = 0.0
 ## Yaw rate from knocks (rad/s, positive turns the heading toward +X at yaw 0), on top of the
@@ -54,7 +59,8 @@ var accel: float = 0.0
 var spin: float = 0.0
 
 
-## p_profile: {"top": u/s, "gain": share of ACCEL} of the body being driven ({}: a car's).
+## p_profile: {"top": u/s, "gain": share of ACCEL, "steer": share of STEER_MAX, "brake": share of
+## BRAKE} of the body being driven ({}: a car's).
 func reset(p_yaw: float, p_length: float, p_profile: Dictionary = {}) -> void:
 	yaw = p_yaw
 	length = p_length
@@ -64,6 +70,8 @@ func reset(p_yaw: float, p_length: float, p_profile: Dictionary = {}) -> void:
 	spin = 0.0
 	top = float(p_profile.get("top", TOP))
 	gain = float(p_profile.get("gain", 1.0))
+	steer_lock = float(p_profile.get("steer", 1.0))
+	brake_f = float(p_profile.get("brake", 1.0))
 
 
 func heading() -> Vector2:
@@ -84,7 +92,7 @@ func step(
 		return Vector2.ZERO
 	var surf: Array = SURFACES.get(surface, [0.8, 0.7])
 	var vf := speed()
-	var lock := STEER_MAX / (1.0 + absf(vf) / STEER_HALF_AT)
+	var lock := STEER_MAX * steer_lock / (1.0 + absf(vf) / STEER_HALF_AT)
 	var want := clampf(steer_in, -1.0, 1.0) * lock
 	var rate := (
 		STEER_RATE if absf(want) > absf(steer) or signf(want) != signf(steer) else STEER_RETURN
@@ -102,7 +110,9 @@ func step(
 	vf = vel.dot(h)
 	var vs := vel.dot(side)
 	var before := vf
-	vf = _drive(vf, throttle, brake, handbrake, top * float(surf[1]), ACCEL * gain, dt)
+	vf = _drive(
+		vf, throttle, brake, handbrake, top * float(surf[1]), ACCEL * gain, BRAKE * brake_f, dt
+	)
 	accel = (vf - before) / dt
 	var grip := lerpf(GRIP * float(surf[0]), GRIP_HANDBRAKE, hb)
 	vs *= exp(-grip * dt)
@@ -111,19 +121,27 @@ func step(
 
 
 ## Speed along the heading after throttle, brake (reverse once stopped), handbrake and coasting.
-## acc: the body's acceleration (u/s^2, a car's ACCEL scaled by its profile gain).
+## acc: the body's acceleration (u/s^2, a car's ACCEL scaled by its profile gain); bk: its braking
+## (u/s^2, a car's BRAKE scaled by its profile brake share).
 static func _drive(
-	vf: float, throttle: float, brake: float, handbrake: float, top: float, acc: float, dt: float
+	vf: float,
+	throttle: float,
+	brake: float,
+	handbrake: float,
+	top: float,
+	acc: float,
+	bk: float,
+	dt: float
 ) -> float:
 	var stopped := 0.5 * WS.M
 	if throttle > 0.0:
 		if vf < -stopped:
-			vf = minf(vf + BRAKE * throttle * dt, 0.0)
+			vf = minf(vf + bk * throttle * dt, 0.0)
 		else:
 			vf += acc * throttle * maxf(0.0, 1.0 - vf / top) * dt
 	if brake > 0.0:
 		if vf > stopped:
-			vf = maxf(vf - BRAKE * brake * dt, 0.0)
+			vf = maxf(vf - bk * brake * dt, 0.0)
 		else:
 			vf -= acc * 0.7 * brake * maxf(0.0, 1.0 + vf / REVERSE_TOP) * dt
 	if throttle <= 0.0 and brake <= 0.0:
@@ -131,5 +149,5 @@ static func _drive(
 	if handbrake > 0.0:
 		vf = move_toward(vf, 0.0, HANDBRAKE * handbrake * dt)
 	if vf > top:
-		vf = move_toward(vf, top, BRAKE * 0.4 * dt)
+		vf = move_toward(vf, top, bk * 0.4 * dt)
 	return vf

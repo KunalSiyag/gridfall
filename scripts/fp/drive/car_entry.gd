@@ -73,8 +73,14 @@ const OPEN_T := 0.45
 const AWAY := 0.55 * WS.M
 const AWAY_BACK := 0.25 * WS.M
 const AWAY_MAX := 1.2
-## Nothing fixed may stand within DOOR_R of the wide-open door's middle and edge.
+## Nothing fixed may stand within DOOR_R of the panel anywhere over its swing, sampled at
+## SWEEP_AMOUNTS swing steps by SWEEP_POINTS points along it (2 DOOR_R apart at the edge, at most).
 const DOOR_R := 0.08 * WS.M
+const SWEEP_AMOUNTS := 8
+const SWEEP_POINTS := 6
+## A door that rested against someone swings on at most DOOR_RATE (of its swing per s) once they
+## make room, rather than jumping to where its ramp has got to.
+const DOOR_RATE := 4.0
 ## The door camera looks along CAM_DIR (car frame: from behind the door, mirrored ahead of it when
 ## that has more room) at a point just outside the door from CAM_DIST (CAM_MIN at least, after the
 ## pull-in in front of walls). The view eases onto it over FRAME_BLEND s and between it and the
@@ -98,6 +104,9 @@ var phase: String = ""
 var t: float = 0.0
 ## The driver's door: 0 shut .. 1 open.
 var door: float = 0.0
+## How far the door may swing past the people round it, (from, to) -> the amount it gets to
+## (drive_feature sets traffic's door_clear_of_people for the car); unset, it swings freely.
+var clearance: Callable = Callable()
 ## A phase to wait at, hold_at s into it (the photo tour holds the climb in half way); "" for
 ## none.
 var hold: String = ""
@@ -137,6 +146,8 @@ var _walked: float = 0.0
 ## The door's ramp (from, to, elapsed, length) and its curve: "smooth", "out" or "in".
 var _ramp_v := Vector4.ZERO
 var _curve: String = "smooth"
+## The door is behind its ramp, held by someone in its way (catching up at DOOR_RATE).
+var _held: bool = false
 var _cam := Transform3D.IDENTITY
 ## The drive camera's share of the view (0 the door camera .. 1) and where it is heading.
 var _cam_w: float = 0.0
@@ -161,6 +172,7 @@ func begin_in(
 	_cam_goal = 0.0
 	door = 0.0
 	_ramp_v = Vector4.ZERO
+	_held = false
 	jack = p_jack
 	seat_drop = 0.0
 	kind = "in"
@@ -178,6 +190,7 @@ func begin_out(ctx: FpContext, car: Dictionary, pts: Dictionary, boxes: Array = 
 	_cam_w = 1.0
 	_cam_goal = 0.0
 	door = 0.0
+	_held = false
 	kind = "out"
 	_ramp(1.0, OPEN_T, "out")
 	_sound(true)
@@ -214,6 +227,8 @@ func cancel() -> void:
 		_rig_call("stop_gesture", [])
 	door = 0.0
 	_ramp_v = Vector4.ZERO
+	_held = false
+	clearance = Callable()
 	kind = ""
 	phase = ""
 	hold = ""
@@ -462,10 +477,11 @@ func _line_up() -> void:
 	_go("align" if phase == "walk" else "turn")
 
 
+## Lines up on the spot; the climb in waits for the door to stand wide (someone may hold it).
 func _align() -> void:
 	var k := smoothstep(0.0, 1.0, t / _len)
 	_ride(_ground(_from.lerp(_to, k)), lerp_angle(_from_yaw, _to_yaw, k))
-	if t >= _len:
+	if t >= _len and (phase == "align" or _door_settled()):
 		_go("open" if phase == "align" else "climb")
 
 
@@ -551,7 +567,7 @@ func _step_out() -> String:
 ## Seated while the door opens, then the climb out.
 func _open_out() -> void:
 	_place_hips(_seat_world(), _yaw_seat)
-	if t >= OPEN_T:
+	if t >= OPEN_T and _door_settled():
 		_to = _ground(_car * _sill)
 		_go("climb")
 
@@ -600,7 +616,7 @@ func _go(p: String) -> void:
 ## The door shutting (and on the way in the camera settling behind the car); done once it has,
 ## with the slam.
 func _shut(done: String) -> String:
-	if _ramp_v.z < _ramp_v.w or _cam_w < _cam_goal:
+	if _ramp_v.z < _ramp_v.w or _cam_w < _cam_goal or not _door_settled():
 		return ""
 	_sound(false)
 	return done
@@ -622,7 +638,21 @@ func _step_door(dt: float) -> void:
 		x = 1.0 - (1.0 - x) * (1.0 - x)
 	else:
 		x = smoothstep(0.0, 1.0, x)
-	door = lerpf(_ramp_v.x, _ramp_v.y, x)
+	var want := lerpf(_ramp_v.x, _ramp_v.y, x)
+	if not clearance.is_valid():
+		door = want
+		return
+	var was := door
+	var to := float(clearance.call(was, want))
+	if _held:
+		to = move_toward(was, to, DOOR_RATE * dt)
+	door = to
+	_held = absf(door - want) > 1e-4
+
+
+## True once the door has got where its ramp is going (no one holding it on the way).
+func _door_settled() -> bool:
+	return not _held and absf(door - _ramp_v.y) < 1e-4
 
 
 func _sound(open: bool) -> void:
@@ -704,18 +734,23 @@ func _blocked(p: Vector3) -> bool:
 	return false
 
 
-## True when something stands where the door swings (its middle and its edge, wide open).
+## True when something fixed stands anywhere the door sweeps: the panel from shut to wide open,
+## sampled across the swing and along its length (a post just past the hinge included).
 func _door_blocked() -> bool:
 	var col := _ctx.collision
 	if col == null:
 		return false
 	var h: Vector3 = _pts["hinge"]
-	var o: Vector3 = _pts["open_rear"]
-	for f: float in [0.5, 1.0]:
-		var q := _car * h.lerp(o, f)
-		var g := col.walk_height(q)
-		if not is_nan(g) and col.is_blocked(Vector3(q.x, g, q.z), DOOR_R):
-			return true
+	var shut := _flat((_pts["rear"] as Vector3) - h)
+	var swing := shut.angle_to(_flat((_pts["open_rear"] as Vector3) - h))
+	for i in range(1, SWEEP_AMOUNTS + 1):
+		var e := shut.rotated(swing * float(i) / float(SWEEP_AMOUNTS))
+		for j in range(1, SWEEP_POINTS + 1):
+			var f := float(j) / float(SWEEP_POINTS)
+			var q := _car * (h + Vector3(e.x, 0.0, e.y) * f)
+			var g := col.walk_height(q)
+			if not is_nan(g) and col.is_blocked(Vector3(q.x, g, q.z), DOOR_R):
+				return true
 	return false
 
 

@@ -35,7 +35,14 @@ const RETURN_TURN := 0.6
 const STUN_MIN := 0.1
 ## Masses relative to a sedan (the player's car is 1), by kind; a car pulling into a slot does not
 ## give way (FIXED_MASS).
-const MASS := {"car": 1.0, "bus": 6.0, "truck": 4.0, "emergency": 1.6, "bike": 0.12}
+const MASS := {
+	"car": 1.0,
+	"bus": 6.0,
+	"truck": 4.0,
+	"garbage_truck": 5.0,
+	"emergency": 1.6,
+	"bike": 0.12,
+}
 const SEDAN_LENGTH := 0.24
 const FIXED_MASS := 50.0
 ## A body off its lane or slot by more than this (u), or turned by more than OFF_TURN (rad),

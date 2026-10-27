@@ -9,8 +9,9 @@
 # A step that fails and then passes on a retry reports PASS(flaky), counts as a pass and is listed
 # in $GATE_LOG_DIR/flaky.txt. Every run writes $GATE_LOG_DIR/results.json (step, result, secs).
 #
-# quick:  parse_all, the six legacy unit tests, every tools/tests/fp_*_test.gd
-# full:   quick + orbit smoke + FP smoke (headless, heavy)
+# quick:  parse_all, the unit tests (sim, buildings, residents, expansion, construction, saves,
+#          migration, determinism, image client, web), every tools/tests/fp_*_test.gd
+# full:   quick + the two-seed soak (sim_soak_test) + orbit smoke + FP smoke (headless, heavy)
 # render: FP photo tour + fp_bench (windowed, heavy); perf numbers are report-only
 #
 # Every Godot run gets a fresh XDG_DATA_HOME (the smokes save games), GRIDFALL_OFFLINE=1, no GMI
@@ -171,7 +172,7 @@ fi
 
 if [ "$MODE" = "quick" ] || [ "$MODE" = "full" ]; then
 	run_step parse_all "PARSE_ALL: PASS" 180 0 -- -- --headless --path . -s tools/tests/parse_all.gd
-	for t in sim_test buildings_test residents_test expansion_test construction_test save_test web_test; do
+	for t in sim_test buildings_test residents_test expansion_test construction_test save_test save_migration_test sim_determinism_test ai_image_client_test web_test; do
 		tok="$(echo "$t" | tr '[:lower:]' '[:upper:]'): PASS"
 		run_step "$t" "$tok" 300 0 -- -- --headless --path . -s "tools/tests/$t.gd"
 	done
@@ -183,6 +184,7 @@ if [ "$MODE" = "quick" ] || [ "$MODE" = "full" ]; then
 fi
 
 if [ "$MODE" = "full" ]; then
+	run_step sim_soak_test "SIM_SOAK_TEST: PASS" 420 1 -- -- --headless --path . -s tools/tests/sim_soak_test.gd
 	run_step orbit_smoke "GRIDFALL_SMOKE: PASS" 400 1 -- GRIDFALL_SMOKE_TEST=1 -- --headless --path .
 	run_step fp_smoke "FP_SMOKE: PASS" 400 1 -- GRIDFALL_FP_SMOKE=1 -- --headless --path .
 fi

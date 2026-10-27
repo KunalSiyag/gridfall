@@ -8,7 +8,7 @@
 
 extends `FpFeature`
 
-Dogs, pigeons and cats in the street (integration feature "animals"). Some people out on foot walk a dog on a lead: residents whose household lives with a dog (unless they are off to work) and a share of everyone else, fewer at night and in the rain, more of them while the city is young. A dog household's dog keeps to the front yard of its house while nobody walks it, and a resident coming out takes it along. The dogs (dog_pack.gd) heel, stop to sniff, roam round an owner who stands still, come over to a crouching hero, bark at the hero and at people going by, flinch at blows and shouts, defend an owner the hero hits (biting: hero_hit "bite") and leap clear of cars. A kick or a weapon swing of the hero's lands on a dog, a cat or a pigeon in front (strike(): animal_hit). E pets a dog close by. The bodies are Shiba Inus and huskies (dog_bodies.gd) with leads from the owner's hand to the collar (dog_leads.gd). Flocks of pigeons (pigeons.gd) forage on the sidewalks in front of shops and civic buildings and in the parks by day, go up together at a fright and land again once it is calm; E throws them crumbs. Cats (cats.gd) keep to some front yards and shop doors, and by night strays to the works yards and the parks: they rest, stroll, greet a crouching hero, hiss at dogs, stalk the pigeons and run from frights; E pets one. Barks, growls, whines, coos, wingbeats, meows, purrs, hisses and chatter go out on the bus (animal_called) for the audio feature. Motion runs on delta * sim.speed, so pause freezes it.
+Dogs, pigeons, cats and squirrels in the street (integration feature "animals"). Some people out on foot walk a dog on a lead: residents whose household lives with one (unless off to work) and a share of everyone else, fewer at night and in the rain, more while the city is young; a dog household's dog keeps to its front yard while nobody walks it. The dogs (dog_pack.gd) heel, stop to sniff, roam round an owner who stands still, come over to a crouching hero, bark at the hero and at passers-by, flinch at blows and shouts, defend an owner the hero hits (biting: hero_hit "bite"), chase the pigeons and the cats (one up a trunk leaves it barking below) and leap clear of cars. A kick or a weapon swing lands on a dog, a cat or a pigeon in front (strike(): animal_hit); E pets a dog close by. The bodies are Shiba Inus and huskies (dog_bodies.gd) with leads to the collar (dog_leads.gd). Pigeons (pigeons.gd) forage on the sidewalks by the shops and the civic buildings and in the parks by day, go up together at a fright (a shout, a crash, a bark, a car horn) and land again once it is calm; E throws them crumbs; some keep to the high perches instead (perches.gd), lamp tops and roof edges. Cats (cats.gd) keep to some front yards and shop doors, and by night strays to the works yards and the parks: they rest, stroll, greet a crouching hero, hiss at dogs, stalk the pigeons and the squirrels and run from frights, up a trunk from a charging dog; E pets one. Squirrels (squirrels.gd) bound about a lawn with a tree, up its trunk at a fright. Calls go out on the bus; motion runs on delta * sim.speed (pause freezes it).
 
 ### Constants
 
@@ -18,11 +18,14 @@ Dogs, pigeons and cats in the street (integration feature "animals"). Some peopl
 - `PACK = preload("res://scripts/fp/animals/dog_pack.gd")`
 - `LEADS = preload("res://scripts/fp/animals/dog_leads.gd")`
 - `PIGEONS = preload("res://scripts/fp/animals/pigeons.gd")`
+- `PERCHES = preload("res://scripts/fp/animals/perches.gd")`
+- `WATERFOWL = preload("res://scripts/fp/animals/waterfowl.gd")`
 - `CATS = preload("res://scripts/fp/animals/cats.gd")`
+- `SQUIRRELS = preload("res://scripts/fp/animals/squirrels.gd")`
 - `LIFE = preload("res://scripts/fp/animals/cat_life.gd")`
 - `FLOCK = preload("res://scripts/fp/animals/pigeon_flock.gd")`
 - `MAX_STEP = 1.0 / 30.0`
-- `NEAR = 3.0`: Dogs come out within NEAR of the player (u, about their draw distance) and go beyond FAR, at most MAX_DOGS at a time. Owners and yards are looked over every SCAN_S (s), the dog households every HOMES_S.
+- `NEAR = 3.0`: Dogs come out within NEAR of the player (u, about their draw distance) and go beyond FAR, at most MAX_DOGS at a time. Owners and yards are looked over every SCAN_S (s), the dog homes HOMES_S.
 - `FAR = 3.6`
 - `MAX_DOGS = 10`
 - `SCAN_S = 0.5`
@@ -55,7 +58,7 @@ Dogs, pigeons and cats in the street (integration feature "animals"). Some peopl
 - `HE_NAMES = "Biscuit Kuma Rex Bruno Max Rocky Bear Scout Ziggy Hachi Mochi Pepper"`: Dogs' names, a he's and a she's (space-separated).
 - `SHE_NAMES = "Luna Daisy Maple Hazel Olive Nala Juno Sasha Pixie Koda Willow Suki"`
 - `BREED_NAMES = {"shiba": "Shiba Inu", "husky": "husky"}`
-- `PHOTO_BACK = 0.62`: The photo shot stands PHOTO_BACK (tiles) from the middle of the lot toward the road, looking PHOTO_PITCH (degrees) down at its dogs, which stand PHOTO_DEPTH toward the road when the ground there is free.
+- `PHOTO_BACK = 0.62`: The photo shot stands PHOTO_BACK (tiles) from the middle of the lot toward the road, looking PHOTO_PITCH (degrees) down at its dogs, which stand PHOTO_DEPTH toward the road when it is free.
 - `PHOTO_PITCH = -20.0`
 - `PHOTO_DEPTH = 0.45`
 
@@ -81,6 +84,39 @@ Dogs, pigeons and cats in the street (integration feature "animals"). Some peopl
 - `func tick(delta: float) -> void`: One frame of delta real seconds (_process; tests call it with processing off).
 - `func strike(feet: Vector3, dir: Vector3, reach: float, cone: float, strength: float) -> Dictionary`: A blow of the hero's (actions' kicks and weapon swings: a fist goes over the animals) from their feet along the level dir, reaching reach (u, feet to feet less the hero's girth, to the animal's side) inside the cone ahead (the cosine): it lands on the nearest dog, cat or pigeon there (flag animal_hits). A dog yelps, is knocked away and runs off or turns on the hero, a cat yowls, is knocked away and bolts, a pigeon is knocked up and away in a puff of feathers and its flock goes up; animal_hit tells the bus. Returns {"kind" ("dog", "cat" or "pigeon"), "pos", "name"}, or {} when the blow hits none.
 
+## `scripts/fp/animals/bird_flocks.gd`
+
+extends `Node3D`
+
+The flock nodes' shared half, used by the pigeons' two nodes (pigeons.gd's foraging flocks and perches.gd's perched ones): the pigeon_flock.gd list each drives, the world the animals feature feeds it from the dogs' pack before every step (world()), the step loop and the draw (step_flocks(), _draw()), the MultiMesh each flock draws with (pigeon_body.gd's bird, one instance and tint a bird) and the tile spots the node's own _spot_of() finds (scan_flocks() brings the near ones out, the nearest first, within its cap). A fright reaches every flock through startle(); a dog barking, a crash and a knocked-over prop through the node's own on_crash()/on_knock().
+
+### Constants
+
+- `D = preload("res://scripts/sim/sim_defs.gd")`
+- `WS = preload("res://scripts/fp/world_scale.gd")`
+- `FLOCK = preload("res://scripts/fp/animals/pigeon_flock.gd")`
+- `BODY = preload("res://scripts/fp/animals/pigeon_body.gd")`
+- `PACK = preload("res://scripts/fp/animals/dog_pack.gd")`
+- `MAX_STEP = 1.0 / 30.0`
+- `SIZE_M = 0.13`: A pigeon's height at the shoulder (m): animal_called's size.
+- `CAR = Vector2(2.3, 1.0)`: The player's car while they drive, half length and half width (m), for the birds' dodge.
+
+### Properties
+
+- `calls: Dictionary`: Calls made so far by kind ("coo", "flap", "takeoff").
+
+### Functions
+
+- `func setup_flocks(p_ctx: FpContext) -> void`: The node's wiring (from its own setup()): its flock list, the collision world and its calls.
+- `func rebuilt() -> void`: Boot, load or New City: no flocks until the next scan.
+- `func tile_built(_i: int) -> void`: A tile rebuilt: its spots are looked for again.
+- `func clear() -> void`
+- `func scan_flocks(me: Vector3, on: bool, cap: int, near: float, far: float, rain := false) -> void`: Every scan: the flocks too far off go (beyond far); in the rain they all stay in (they shelter, as the cats do) and none comes out; else, while on (the node's flag and by day), the spots near me (within near) get theirs, the nearest first, up to cap of them — each spot the node's own _make() by its "key", each tile's spot its own _spot_of().
+- `func world(pack: PACK, driving: bool, delta: float) -> void`: The world for this step from the dogs' pack: the hero on foot, the traffic's cars (and the player's while they drive) and the people on foot around, and the dogs. delta is real seconds.
+- `func step_flocks(dt: float, on: bool) -> void`: dt game seconds of the flocks (in MAX_STEP steps), then their draw, while on (the node's flag); off takes them away.
+- `func startle(at: Vector3, r_m: float) -> void`: A fright at at (a blow, a shout, a bark, a crash) sends up the flocks with a bird on the ground within r_m metres of it.
+- `func on_horn(at: Vector2, radius: float, _long: bool) -> void`: The hero's car horn sounded at at (street plane, xz): every flock with a bird within radius world units of it goes up together (the same fright a shout is), a long lean on it or a tap alike. In the rain no flock is out (scan_flocks() shelters them), so there is nothing to flush.
+
 ## `scripts/fp/animals/cat_bodies.gd`
 
 extends `"res://scripts/fp/animals/dog_bodies.gd"`
@@ -99,18 +135,20 @@ The cats' bodies: Quaternius' Cat (AP.CAT, built by tools/blender/make_cat.py), 
 
 ### Functions
 
-- `static func material() -> ShaderMaterial`: The coat material every cat shares (each cat's colours are instance uniforms).
-- `static func dress(b: DB.Body, coat: String) -> void`: Gives b coat (a COATS key; a stand-in keeps its box).
+- `static func material() -> ShaderMaterial`: The coat material a body is bound with before dress() (the shader's default coat).
+- `static func material_for(coat: String) -> ShaderMaterial`: The material every cat of coat shares (a COATS key; unknown names give the brown tabby).
+- `static func dress(b: DB.Body, coat: String) -> void`: Gives b coat (a COATS key; a stand-in keeps its box). A pooled body may already wear another coat, so any coat-shader material is replaced.
 - `static func clip_speed(b: DB.Body, clip: StringName) -> float`: Ground speed (u/s) b covers playing gait clip at rate 1.
 
 ## `scripts/fp/animals/cat_life.gd`
 
 extends `RefCounted`
 
-The cats' behaviour; cats.gd decides where cats keep and feeds in the world before every step(). A cat keeps to its spot (a house's front yard, the sidewalk by a shop's door, or by night a stray's patch of sidewalk by a works yard or a park): it sits, loafs, grooms and sleeps there, and now and then stretches and strolls to another place round it. A friendly cat comes over to a crouching hero with its tail up and meows, and purrs when petted; an aloof one walks off from the first pet and from the hero walking at it; a skittish one runs from the hero coming near. A sprint past, a blow or a shout makes a cat jump and run (one the hero strikes yowls, is knocked away and bolts); a dog close by makes it arch its back and hiss, and one coming at it (or still there after the hiss) sends it running. A hunter chatters at the pigeons on the ground nearby, stalks them low and slow, crouches with its tail twitching and pounces (the flock goes up: pigeon_flock.gd's cats), then sits down to groom as if nothing happened. A car about to run a cat down sends it running. Each cat plays its gait at the rate its speed asks for, and its CatRig sways the tail, lowers it on a frightened or wary cat and turns the head to what it watches.
+The cats' behaviour; cats.gd decides where cats keep and feeds in the world before every step(). A cat keeps to its spot (a house's front yard, the sidewalk by a shop's door, or by night a stray's patch of sidewalk by a works yard or a park): it sits, loafs, grooms and sleeps there, and now and then stretches and strolls to another place round it. A friendly cat comes over to a crouching hero with its tail up and meows, and purrs when petted; an aloof one walks off from the first pet and from the hero walking at it; a skittish one runs from the hero coming near. A sprint past, a blow or a shout makes a cat jump and run (one the hero strikes yowls, is knocked away and bolts); a dog close by makes it arch its back and hiss, one coming at it (or still there after the hiss) sends it running, and one charging (very close, or running at it) sends it up the nearest trunk, clinging there until the dog has been gone a while, then back down. A hunter chatters at the pigeons on the ground or a squirrel nearby, stalks it low and slow, crouches with its tail twitching and pounces (the flock goes up: pigeon_flock.gd's cats; the squirrel up its tree), then sits down to groom as if nothing happened; with them up out of reach it watches instead. A car about to run a cat down sends it running. Each cat plays its gait at the rate its speed asks for, and its CatRig sways the tail, lowers it on a frightened or wary cat and turns the head to what it watches.
 
 ### Constants
 
+- `D = preload("res://scripts/sim/sim_defs.gd")`
 - `WS = preload("res://scripts/fp/world_scale.gd")`
 - `DB = preload("res://scripts/fp/animals/dog_bodies.gd")`
 - `BODIES = preload("res://scripts/fp/animals/cat_bodies.gd")`
@@ -147,6 +185,14 @@ The cats' behaviour; cats.gd decides where cats keep and feeds in the world befo
 - `FLEE_S = 4.0`
 - `SCARED_S = 10.0`
 - `STARTLE_S = 0.75`
+- `REFUGE_R = 6.0 * WS.M`: The tree refuge from a charging dog: with a trunk (a street tree's or a lot tree's cylinder, TRUNK_MIN_R and TREE_TOP as in squirrels.gd) within REFUGE_R (m) the cat bolts up it instead of along the ground, climbing at CLIMB_MPS (m/s) to CLING_H (m) and clinging, pitched CLIMB_PITCH against the bark, until no dog has been within HISS for CALM_S (s), then down at DOWN_MPS.
+- `TRUNK_MIN_R = 0.2 * WS.M`
+- `TREE_TOP = 0.15`
+- `CLIMB_MPS = 1.6 * WS.M`
+- `CLING_H = 2.0 * WS.M`
+- `CLIMB_PITCH = -1.1`
+- `CALM_S = 3.0`
+- `DOWN_MPS = 1.2 * WS.M`
 - `KNOCK = 1.5 * WS.M`: Struck by the hero (hit): knocked away at KNOCK (m/s) plus KNOCK_K times the blow's strength, sliding to a stop at PUSH_BRAKE (m/s²), and frightened HIT_FEAR times as long.
 - `KNOCK_K = 3.0 * WS.M`
 - `PUSH_BRAKE = 14.0 * WS.M`
@@ -155,6 +201,7 @@ The cats' behaviour; cats.gd decides where cats keep and feeds in the world befo
 - `POUNCE_AT = 1.0 * WS.M`
 - `CROUCH_S = Vector2(0.8, 1.8)`
 - `POUNCE_S = 1.0`
+- `WATCH_S = Vector2(4.0, 9.0)`: How long a bout of watching the birds up out of reach lasts (s).
 - `LEAP = 3.5 * WS.M`
 - `LEAP_T = Vector2(0.2, 0.55)`
 - `HUNT_REST = Vector2(25.0, 50.0)`
@@ -171,7 +218,7 @@ The cats' behaviour; cats.gd decides where cats keep and feeds in the world befo
 ### Properties
 
 - `on_call: Callable`: Called with (cat, call) for a "meow", a "purr", a "hiss" and a hunter's "chatter".
-- `hero`: The world this step, set by the cats node: the hero's feet and velocity, whether they are on foot and crouched; moving cars as [pos, vel, half length, half width]; the feet of the people on foot around; dogs as [feet, velocity]; the pigeons on the ground; the game's time scale.
+- `hero`: The world this step, set by the cats node: the hero's feet and velocity, whether they are on foot and crouched; moving cars as [pos, vel, half length, half width]; the feet of the people on foot around; dogs as [feet, velocity]; the pigeons on the ground; the birds perched up out of reach; the game's time scale.
 
 ### Inner classes
 
@@ -182,7 +229,7 @@ The cats' behaviour; cats.gd decides where cats keep and feeds in the world befo
 - `func add(b: DB.Body, pos: Vector3, yaw: float, box: Rect2) -> Cat`: A new cat with body b resting at pos facing yaw, keeping to anchor (pos) inside box.
 - `func remove(c: Cat) -> void`
 - `func step(dt: float) -> void`: One step of dt game seconds for every cat.
-- `func startle(c: Cat, src: Vector3) -> void`: Something went off at src close by (a blow, a shout, a sprint past): the cat jumps and runs.
+- `func startle(c: Cat, src: Vector3) -> void`: Something went off at src close by (a blow, a shout, a sprint past): the cat jumps and runs; one up its refuge tree just holds on there.
 - `func hit(c: Cat, src: Vector3, strength: float) -> void`: The hero struck the cat (a kick or a weapon) from src at strength 0..1: it yowls, is knocked away and bolts, frightened HIT_FEAR times as long, and is skittish of the hero from then on.
 - `func girth(c: Cat) -> float`: The cat's collision radius (u).
 - `func pet(c: Cat) -> String`: The hero pets the cat: "purr" (it leans in and purrs), "snub" (an aloof cat's first pet: it sniffs the hand and strolls off) or "hiss" (a frightened or skittish cat hisses and runs).
@@ -212,7 +259,7 @@ A cat's life on top of its clip (CatBodies puts one on every cat skeleton): the 
 
 extends `Node3D`
 
-The cats (part of the animals feature): where cats keep, coming out within NEAR of the player and going beyond FAR; the world fed to their behaviour (cat_life.gd) before every step; their bodies (cat_bodies.gd) in their coats; and E to pet one close by. A share of the houses with a front yard (and no dog) keep a cat there, a share of the shops a shop cat by the door, and by night strays come out by the works yards and in the parks; in the rain they all stay in. A young city without any of those keeps one ambient stray about near the player instead, day or night. Their meows, purrs, hisses and chatter go out on the bus (animal_called), and a dog a cat hisses at barks back.
+The cats (part of the animals feature): where cats keep, coming out within NEAR of the player and going beyond FAR; the world fed to their behaviour (cat_life.gd) before every step; their bodies (cat_bodies.gd) in their coats; and E to pet one close by. A share of the houses with a front yard (and no dog) keep a cat there, a share of the shops a shop cat by the door, and by night strays come out by the works yards and in the parks; in the rain they all stay in. A young city without any of those keeps one ambient stray about near the player instead, day or night. Their meows, purrs, hisses and chatter go out on the bus (animal_called), and a dog a cat hisses at barks back. The dogs may chase a cat (dog_pack.gd's prey): it bolts up the nearest trunk and clings there until the dog gives up below; and a hunter stalks the squirrels too, which answer a cat only close by or pouncing (squirrel_life.gd's CAT_NEAR).
 
 ### Constants
 
@@ -222,6 +269,7 @@ The cats (part of the animals feature): where cats keep, coming out within NEAR 
 - `BODIES = preload("res://scripts/fp/animals/cat_bodies.gd")`
 - `PACK = preload("res://scripts/fp/animals/dog_pack.gd")`
 - `FLOCK = preload("res://scripts/fp/animals/pigeon_flock.gd")`
+- `SQ_LIFE = preload("res://scripts/fp/animals/squirrel_life.gd")`
 - `STREETS = preload("res://scripts/fp/animals/street_spots.gd")`
 - `MAX_STEP = 1.0 / 30.0`
 - `NEAR = 2.4`: Cats come out within NEAR of the player (u) and go beyond FAR, at most MAX_CATS at once.
@@ -272,7 +320,7 @@ The cats (part of the animals feature): where cats keep, coming out within NEAR 
 - `func clear() -> void`
 - `func free_bodies() -> void`: Teardown: no cats, the loads finished and the spare bodies freed.
 - `func scan(me: Vector3, night: bool, rain: bool, dog_lots: Dictionary) -> void`: Every scan: the cats too far off go (and the strays by day, and all of them in the rain); with the flag on the spots near me get theirs, the nearest first; and in a young city with no spot about, one ambient stray comes out near me (_ambient). dog_lots: the lots whose household keeps a dog.
-- `func world(pack: PACK, flock: FLOCK) -> void`: The world for this step from the dogs' pack and the pigeons: the hero on foot, the cars (the player's too while they drive), the people on foot and the dogs around, and the birds on the ground; the cats go into the pigeons' frights as [feet, velocity, FLOCK.CAT_NEAR].
+- `func world(pack: PACK, flock: FLOCK, perched: FLOCK, sq: SQ_LIFE) -> void`: The world for this step from the dogs' pack, the pigeons and the squirrels: the hero on foot, the cars (the player's too while they drive), the people on foot and the dogs around, the birds on the ground and those perched up, and the squirrels (one on the ground is game for a hunter, one up its tree is watched like the perched birds); the cats go into the pigeons' frights as [feet, velocity, FLOCK.CAT_NEAR], and into the dogs' prey — reachable on the ground, out of a chaser's reach once up a refuge tree (the dog gives up below it: dog_pack.gd's chase).
 - `func step(dt: float) -> void`: dt game seconds of the cats (in MAX_STEP steps); 0 freezes them. The flag off takes them away.
 - `func startle(at: Vector3, r_m: float) -> void`: A fright at at (a blow, a shout, a crash) startles the cats within r_m metres of it.
 - `func on_crash(at: Vector3, _speed: float, _cause: String) -> void`
@@ -399,6 +447,9 @@ The dogs' behaviour; the animals feature decides who has a dog and feeds in the 
 - `BARK_REST = Vector2(10.0, 20.0)`
 - `DODGE_S = 1.2`: A car within its length plus DODGE_S seconds of travel ahead and DODGE_SIDE (m) beside its path makes a dog leap aside.
 - `DODGE_SIDE = 0.6 * WS.M`
+- `CHASE_AT = 6.0 * WS.M`: A free dog spots the pigeons on the ground or a cat within CHASE_AT (m) and gives chase for up to CHASE_S (s) at a run — the birds go up, the cat bolts up the nearest trunk (cat_life.gd's tree refuge), a bark up at it where it went out of reach — then stands and sniffs where they went; it wants no more of it for a while (CHASE_COOL plus a roll, s). Not every dog chases (a roll at its making), and one on a heel lead runs only as far as the lead.
+- `CHASE_S = Vector2(2.5, 4.5)`
+- `CHASE_COOL = 6.0`
 - `EYES = Vector2(1.55 * WS.M, 0.95 * WS.M)`: Where the hero's eyes are for a dog looking up at them (m), standing and crouched.
 - `PERSON_R = 0.25 * WS.M`: People going by take this much room (m): a dog steps out of their way.
 - `IDLES = [&"Idle", &"Idle_2", &"Idle_2_HeadLow"]`
@@ -409,6 +460,7 @@ The dogs' behaviour; the animals feature decides who has a dog and feeds in the 
 
 - `on_call: Callable`: Called with (dog, call) when a dog barks, growls or whines, and with (dog) when its lunge lands.
 - `hero`: The world this step, set by the feature: the hero's feet and velocity, whether they are on foot (not driving, not in photo mode), open to a bite and crouched; moving cars as [pos, vel, half length, half width]; the feet of the people on foot around; the game's time scale.
+- `prey: Array`: The small game about, set by the feature each step: [key, where it is now, reachable] — the pigeons on the ground and the cats (one up its refuge tree stays on the list, unreachable, so the chaser gives up below it); the key stays the same while the game keeps about (a street flock's key, "c:<k>" for a cat).
 
 ### Inner classes
 
@@ -466,6 +518,167 @@ A dog's life on top of its clip (DogBodies puts one on every dog skeleton): the 
 - `func bind(skel: Skeleton3D, scene: Node3D, tail: Array[String] = TAIL, neck := "Neck1") ->`: Finds the bones (the tail's, root first, and the neck's) and the model's axes in skeleton space (the animal faces +Z in scene, its right is -X).
 - `func calm() -> void`: Back to a still tail and a straight head (a body going back to the pool).
 
+## `scripts/fp/animals/duck_body.gd`
+
+extends `RefCounted`
+
+The duck every duck MultiMesh draws: one ArrayMesh built in code (metres, facing +Z, the soles at the origin) and its ShaderMaterial (duck.gdshader spreads and beats the wings and pitches the neck and head down to dabble by each duck's INSTANCE_CUSTOM). A mallard drawn to float low: a wide loaf of a body about 0.36 m from the bill tip to the tail tip, the waterline crossing its flank about two-thirds up, so a duck whose origin the behaviour puts at the water surface sits in the water as one does. One mesh serves both sexes: the vertex colours paint the DRAKE (a grey flank, a chestnut breast, a white neck ring, a green head, an olive bill) and duck.gdshader mixes them toward the hen's mottled browns by the duck's drake share.
+
+### Constants
+
+- `SHADER = preload("res://scripts/fp/animals/duck.gdshader")`
+- `PB = preload("res://scripts/fp/animals/proc_body.gd")`
+- `SHOULDER = Vector3(0.05, 0.012, 0.045)`: The pivots the shader moves parts about (m): the +X wing's shoulder, the hip a dab tips the body forward about and the neck's base.
+- `HIP = Vector3(0.0, -0.01, 0.0)`
+- `NECK = Vector3(0.0, 0.0, 0.098)`
+- `PLUMAGE = 0.0`: UV.x: the part the fragment shader colours.
+- `BILL = 1.0`
+- `EYE = 2.0`
+- `SPECULUM = 3.0`
+- `FEET = 4.0`
+- `R_BODY = 0.0`: UV.y: the plumage region a hen's palette is mixed into (part 0 only).
+- `R_NECK = 1.0`
+- `R_HEAD = 2.0`
+- `R_WING = 3.0`
+- `R_UNDER = 4.0`
+- `SPREAD = 1.0`: UV2.x: what the vertex shader moves (its sign is the side).
+- `FOLDED = 2.0`
+- `NECK_TAG = 3.0`
+- `FOOT_TAG = 4.0`
+- `SEGS = 12`: The hulls' ring segments and the head's rings; SEGS 10-12 keeps the mesh cheap.
+- `HEAD_RINGS = 7`
+- `BILL_SEGS = 10`
+- `FLAT = 0.25`: How much of a ring's height the back is flattened by (see PB.loft()).
+- `BODY = [ Vector4(-0.15, -0.009, 0.008, 0.008), Vector4(-0.132, -0.014, 0.024, 0.018), Vector4(...`: The body's rings from the tail tip to the breast: (z, centre y, half width, half height), m. The widest ring is 0.13 m across and 0.11 m tall with its belly at -0.073 and its back at 0.037, so the waterline at y 0 crosses it two-thirds up.
+- `NECK_RINGS = [ Vector4(0.098, 0.0, 0.034, 0.0), Vector4(0.102, 0.012, 0.032, 0.15), Vector4(0.106, 0...`: The neck's rings from inside the breast up into the head: (z, y, radius, share of the head's motion).
+- `HEAD = Vector3(0.0, 0.082, 0.13)`: The head's centre and radii (m).
+- `HEAD_R = Vector3(0.024, 0.026, 0.032)`
+- `BILL_RINGS = [ Vector4(0.15, 0.079, 0.016, 0.009), Vector4(0.167, 0.078, 0.015, 0.0075), Vector4(0.1...`: The bill's rings forward from inside the head: (z, y, half width, half height), m; a mallard's flat bill, nearly as long as the head.
+- `EYE_AT = Vector3(0.0195, 0.089, 0.143)`: The eye on the +X side (the -X one mirrors it) and its radius, m.
+- `EYE_R = 0.005`
+- `SPAN_M = 0.24`: The spread wing (+X): span (m) out from the shoulder and, at each share of it, the leading and trailing edges (z, m); the chord is sampled at WING_C and arched by WING_ARCH (m).
+- `WING_ARCH = 0.01`
+- `WING_E = [0.0, 0.15, 0.3, 0.45, 0.6, 0.75, 0.88, 1.0]`
+- `WING_LE = [0.048, 0.054, 0.058, 0.057, 0.048, 0.032, 0.01, -0.018]`
+- `WING_TE = [-0.062, -0.068, -0.07, -0.066, -0.058, -0.046, -0.032, -0.012]`
+- `WING_C = [0.0, 0.2, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0]`
+- `FOLD_S = [0.0, 0.18, 0.36, 0.5, 0.62, 0.74, 0.86, 1.0]`: The folded wing: its rows from the shoulder back over the tail (FOLD_S) and its columns across the chord (FOLD_T), its surface _fold_at(s, t, sx, out) from FOLD_Z (z at each end), FOLD_Y (the chord's top at each end) and FOLD_CHORD (its depth at each end), m.
+- `FOLD_T = [0.0, 0.2, 0.4, 0.6, 0.8, 1.0]`
+- `FOLD_Z = Vector2(0.082, -0.118)`
+- `FOLD_Y = Vector2(0.03, 0.006)`
+- `FOLD_CHORD = Vector2(0.065, 0.35)`
+- `SPEC_FOLD_S = Vector2(0.5, 0.86)`: The speculum patches: the folded wing's shares of FOLD_S and FOLD_T, the spread wing's of WING_E and WING_C, the patch's grid, and how far it is lifted clear of the wing (m).
+- `SPEC_FOLD_T = Vector2(0.35, 0.7)`
+- `SPEC_WING_E = Vector2(0.26, 0.52)`
+- `SPEC_WING_C = Vector2(0.42, 0.72)`
+- `SPEC_ROWS = 4`
+- `SPEC_COLS = 3`
+- `SPEC_OUT = 0.0016`
+- `FLANK_COL = Color(0.72, 0.73, 0.71)`: Plumage (sRGB; the vertices carry it linear), the drake's: his pale grey flank, dark brown back, pale belly, chestnut breast and black tail, the white of his undertail coverts, the green of his head and neck, the white of his neck ring and his wing's grey-brown feathers.
+- `BACK_COL = Color(0.33, 0.3, 0.26)`
+- `BELLY_COL = Color(0.78, 0.78, 0.75)`
+- `BREAST_COL = Color(0.45, 0.21, 0.11)`
+- `TAIL_COL = Color(0.2, 0.19, 0.2)`
+- `VENT_COL = Color(0.86, 0.86, 0.84)`
+- `NECK_COL = Color(0.15, 0.42, 0.24)`
+- `HEAD_COL = Color(0.17, 0.46, 0.27)`
+- `CROWN_COL = Color(0.1, 0.28, 0.18)`
+- `RING_COL = Color(0.93, 0.93, 0.9)`
+- `COVERT_COL = Color(0.55, 0.52, 0.46)`
+- `PRIMARY_COL = Color(0.42, 0.4, 0.38)`
+- `TIP_COL = Color(0.26, 0.25, 0.25)`
+- `EDGE_COL = Color(0.68, 0.65, 0.57)`
+- `UNDER_COL = Color(0.8, 0.79, 0.75)`
+- `SPEC_COL = Color(0.16, 0.26, 0.55)`
+
+### Functions
+
+- `static func mesh() -> ArrayMesh`: The shared duck mesh (built once).
+- `static func material() -> ShaderMaterial`: The shared material, its pivots set from this file's constants.
+
+## `scripts/fp/animals/duck_flock.gd`
+
+extends `"res://scripts/fp/animals/pigeon_flock.gd"`
+
+The waterfowl's behaviour; the waterfowl node (waterfowl.gd) decides where flocks live (a spot on the water) and feeds in the world before every step(). A flock of mallards sits on the water: each duck paddles from place to place round its spot, now and then tips tail-up to feed under the surface or preens its feathers with a little shake of its wings, a drake among the hens. A fright — the hero wading in or walking down to the bank close by, a shout, a crash, a dog coming at the water — and the flock bursts off with a clatter of wings: they run along the surface beating hard, climb away, wheel round over the water and glide back down to land once it is calm. The birds are the pigeons' (pigeon_flock.gd's Bird) with the shader's channels read the duck's way: its "wing" the wingbeat's angle, "open" how far the wings are spread, "peck" the dabble share (the neck and head pitched down, the body tipped with it) and "bob" the drake share (pose()'s fourth channel); the poses the statics inherited from pigeon_flock.gd produce are just so.
+
+### Constants
+
+- `PADDLE = 0.3 * WS.M`: Paddling about (m/s), turning (rad/s) and the room each duck keeps on the water (m).
+- `PADDLE_TURN = 2.5`
+- `DUCK_SPACE = 0.3 * WS.M`
+- `DABBLE_S = Vector2(1.5, 3.5)`: How long a dabble (its neck under), an up-end (tipped tail-up) and a preen last (s), and the odds of each when a duck decides what to do next.
+- `UP_END_S = Vector2(1.0, 2.2)`
+- `PREEN_S = Vector2(3.0, 7.0)`
+- `ODDS = Vector3(0.55, 0.2, 0.15)`
+- `DUCK_WARY = 6.0 * WS.M`: The hero on foot within DUCK_WARY (m) of a duck, or sprinting within DUCK_SPRINT, a dog within DUCK_DOG_NEAR or running within DUCK_DOG_FAR, and anyone wading within TRAMPLE_M send the flock up. Nothing on the water can be run down: cars keep to the road.
+- `DUCK_SPRINT = 12.0 * WS.M`
+- `DUCK_SPRINT_MPS = 2.8 * WS.M`
+- `DUCK_DOG_NEAR = 4.0 * WS.M`
+- `DUCK_DOG_FAR = 8.0 * WS.M`
+- `TRAMPLE_M = 2.0 * WS.M`
+- `RUN_M = 2.0 * WS.M`: Taking off: a run of RUN_M (m) along the water beating hard, then climbing at DUCK_LIFT (m/s) away from the fright for DUCK_UP_S (s); flying (m/s) and its acceleration.
+- `DUCK_LIFT = 3.0 * WS.M`
+- `DUCK_UP_S = Vector2(0.8, 1.2)`
+- `DUCK_CRUISE = 7.5 * WS.M`
+- `DUCK_AIR_ACCEL = 8.0 * WS.M`
+- `DUCK_ALARM_S = Vector2(8.0, 14.0)`: The flush keeps the flock up DUCK_ALARM_S (s); it wheels at least DUCK_WHEEL_S and lands once nothing is within DUCK_CALM (m) of its spot, and after DUCK_WHEEL_MAX anyway.
+- `DUCK_WHEEL_S = 8.0`
+- `DUCK_WHEEL_MAX = 30.0`
+- `DUCK_CALM = 5.0 * WS.M`
+- `DUCK_WHEEL_R = 14.0 * WS.M`: The wheel, over the water round the home: its radius and height (m), a duck a lane out and up of it.
+- `DUCK_WHEEL_UP = 10.0 * WS.M`
+- `DUCK_GLIDE = 0.5`: Gliding in: height lost per metre, the speeds (m/s) and where the flare starts (m from the landing point).
+- `DUCK_LAND_MPS = Vector2(1.2, 5.0)`
+- `DUCK_FLARE = 1.2 * WS.M`
+- `DUCK_BEAT_HZ = Vector3(8.0, 5.0, 7.0)`: Wingbeats (Hz) on the run, cruising and flaring; the wing's angle (rad) at the bottom and top of a beat and held in a glide.
+- `DUCK_BEAT = Vector2(-0.7, 1.1)`
+- `DUCK_GLIDE_WING = 0.38`
+- `DRAKE_K = 0.4`: Drakes among a flock.
+- `WATER_BOB = 0.004 * WS.M`: The bob of the water under a paddling duck (m) and how deep its up-end's tail rides.
+
+### Functions
+
+- `func add_waterfowl(key: String, home: Vector3, radius: float, n: int) -> Flock`: A flock of n mallards on the water round home (at the water's surface) within radius (u), a drake or two among the hens.
+- `func step(dt: float) -> void`: One step of dt game seconds for every flock: its rules, then each duck on the water or in the air, then their room on the water kept.
+- `func scatter(f: Flock, src: Vector3) -> void`: A fright at src sends the whole flock off the water, the ducks nearest it first off the water with one clatter of wings; those coming down climb again.
+
+## `scripts/fp/animals/perches.gd`
+
+extends `"res://scripts/fp/animals/bird_flocks.gd"`
+
+The perched birds (part of the animals feature): pigeons that keep to the high perches by day, the same bird and behaviour as the sidewalk flocks (pigeon_body.gd, pigeon_flock.gd), the flock wiring shared with them (bird_flocks.gd). A share of the street lamps keeps one bird on its top, and a share of the built lots a row along the roof edge of its tallest block facing the road, all deterministic from the city seed. They sit, preen and turn on their perches above the passing street — people, cars and the hero below never stir them — and only a fright on the street itself, a shout, a blow, a dog barking or a crash, sends them up with a clatter to wheel over the roofs and glide back onto their perches. Their coos go out on the bus (animal_called). The flag off takes them away (the flocks, not the spots).
+
+### Constants
+
+- `NEAR = 3.0`: Perched flocks come out within NEAR of the player (u) and go beyond FAR, at most MAX_PERCHES of them (one a lamp, one a roof edge) at once.
+- `FAR = 3.6`
+- `MAX_PERCHES = 3`
+- `ROOF_SHARES = { D.HALL: 1.0, D.TRAIN: 1.0, D.STADIUM: 0.6, D.UNIVERSITY: 0.6, D.SCHOOL: 0.4, D.ZONE_C...`: This share of a lot's kind keeps a row on its roof edge; a plain home's share of that again.
+- `ROOF_N = Vector2i(2, 5)`: A roof edge keeps ROOF_N birds at most along it, EDGE_STEP (u) apart, on the edge of the roof's tallest block (a block at least MIN_BLOCK (u) each way) facing the lot's road. The birds stand on the horizontal roof top, inset ROOF_INSET (u) from the lip so they are never left on the wall face: the roof is the block's own top, raised to the model's top when that stands only ROOF_LIFT_MAX (u) prouder of it (a parapet or coping; a tower or spire is left out of it).
+- `EDGE_STEP = 0.09`
+- `MIN_BLOCK = 0.12`
+- `ROOF_INSET = 0.02`
+- `ROOF_LIFT_MAX = 0.06`
+- `LAMP_SHARE = 0.35`: This share of the street lamps keeps a bird on the top.
+- `LAMP_R = Vector2(0.007, 0.009)`: A lamp to perch on: a prop cylinder of about a lamp pole's radius whose top stands LAMP_Y (u) or more over the street (a hydrant or a low post is no perch), and not above LAMP_TOP (u).
+- `LAMP_Y = 0.12`
+- `LAMP_TOP = 0.5`
+- `STARTLE = { "jab": 3.0, "cross": 3.0, "hook": 3.0, "kick": 3.0, "swing": 3.0, "shove": 3.0, "danc...`: The hero's swings, shove, shout, dance and parkour moves send the perched birds up within these (m); someone hit in the street those within SEEN_HIT, a dog's bark those within BARK_M, a crash those within CRASH_M and a prop knocked over those within KNOCK_M.
+- `SEEN_HIT = 6.0`
+- `BARK_M = 5.0`
+- `CRASH_M = 20.0`
+- `KNOCK_M = 6.0`
+
+### Functions
+
+- `func setup(p_ctx: FpContext) -> void`
+- `func scan(me: Vector3, by_day: bool, rain := false) -> void`: Every scan (bird_flocks.gd scan_flocks()): the perched flocks too far off go; in the rain they all stay in (they shelter); else by day (and with the flag on) the lamp and roof-edge spots near me get theirs, the nearest first.
+- `func step(dt: float) -> void`: dt game seconds of the perched flocks (bird_flocks.gd step_flocks()). The flag off takes them away.
+- `func on_crash(at: Vector3, _speed: float, _what: String) -> void`
+- `func on_knock(at: Vector3, _kind: String, _speed: float) -> void`
+- `func detail() -> String`: Self-test line: how many birds sit perched in how many flocks.
+
 ## `scripts/fp/animals/pigeon_body.gd`
 
 extends `RefCounted`
@@ -475,6 +688,7 @@ The pigeon every pigeon MultiMesh draws: one ArrayMesh built in code (metres, fa
 ### Constants
 
 - `SHADER = preload("res://scripts/fp/animals/pigeon.gdshader")`
+- `PB = preload("res://scripts/fp/animals/proc_body.gd")`
 - `SHOULDER = Vector3(0.03, 0.134, 0.035)`: The pivots the shader moves parts about (m): the +X wing's shoulder, the hip and the neck's base.
 - `HIP = Vector3(0.0, 0.067, 0.0)`
 - `NECK = Vector3(0.0, 0.124, 0.06)`
@@ -513,10 +727,6 @@ The pigeon every pigeon MultiMesh draws: one ArrayMesh built in code (metres, fa
 - `BREAST_COL = Color(0.5, 0.48, 0.56)`
 - `TAIL_COL = Color(0.5, 0.52, 0.58)`
 
-### Inner classes
-
-- `Arrays`: The arrays the mesh is built into; part, under and tag go on the vertices added next.
-
 ### Functions
 
 - `static func mesh() -> ArrayMesh`: The shared pigeon mesh (built once).
@@ -526,7 +736,7 @@ The pigeon every pigeon MultiMesh draws: one ArrayMesh built in code (metres, fa
 
 extends `RefCounted`
 
-The pigeons' behaviour; the pigeons node (pigeons.gd) decides where flocks live and feeds in the world before every step(). A flock forages round its spot: each bird walks from place to place with the pigeon's head bob, pecks at the ground, stands about, and now and then a cock puffs up and turns round cooing. Birds walk out of the way of people and off from the hero walking at them; one too close, or about to be run over, flutters a few metres off. A sprint close by, a swing or a shout, a blow, a dog near or running, or a crowd of birds in a car's way sends the flock up together (scatter(); a bird the hero strikes is knocked up and away first, hit()): they burst off with a clatter of wings, climb away from the fright, wheel round over the street or the park and glide back down to land once it is calm. Crumbs (feed()) bring the flock in close, round the hero's feet, until they are eaten.
+The pigeons' behaviour; the pigeons node (pigeons.gd) decides where flocks live and feeds in the world before every step(). A flock forages round its spot: each bird walks from place to place with the pigeon's head bob, pecks at the ground, stands about, and now and then a cock puffs up and turns round cooing. Birds walk out of the way of people and off from the hero walking at them; one too close, or about to be run over, flutters a few metres off. A sprint close by, a swing or a shout, a blow, a dog near or running, or a crowd of birds in a car's way sends the flock up together (scatter(); a bird the hero strikes is knocked up and away first, hit()): they burst off with a clatter of wings, climb away from the fright, wheel round over the street or the park and glide back down to land once it is calm. Crumbs (feed()) bring the flock in close, round the hero's feet, until they are eaten. A perched flock (add_perched()) sits its birds each on one fixed point, a lamp top or a roof edge: they sit, preen and turn there above the street, and nothing passing below reaches them; only a fright on the street itself sends them up, to wheel round and glide back onto their perches.
 
 ### Constants
 
@@ -602,6 +812,7 @@ The pigeons' behaviour; the pigeons node (pigeons.gd) decides where flocks live 
 
 - `func add(key: String, home: Vector3, radius: float, run: Vector3, across: Vector3, n: int) -> Flock`: A flock of n foraging round home (on the ground) within radius (u): along run and across it (unit vectors, across toward the lot) on a sidewalk, round home in a park (run ZERO).
 - `func remove(f: Flock) -> void`
+- `func add_perched(key: String, points: PackedVector3Array) -> Flock`: A flock of birds perched on points, one each: they sit and preen there until a fright on the street sends them up, wheel round and glide back onto their own point.
 - `func step(dt: float) -> void`: One step of dt game seconds for every flock.
 - `func scatter(f: Flock, src: Vector3) -> void`: A fright at src sends the whole flock up, the birds nearest it first, with one clatter of wings (a lone bird's flap); birds coming down climb again.
 - `func startle(src: Vector3, r: float) -> int`: A fright at src (a blow, a shout, a bark) sends up every flock with a bird on the ground within r (u) of it. Returns how many flocks went.
@@ -612,19 +823,13 @@ The pigeons' behaviour; the pigeons node (pigeons.gd) decides where flocks live 
 
 ## `scripts/fp/animals/pigeons.gd`
 
-extends `Node3D`
+extends `"res://scripts/fp/animals/bird_flocks.gd"`
 
-The pigeons (part of the animals feature): where flocks keep (the sidewalk in front of some shops and of the civic buildings people gather at, the parks, and a share of the plain street corners), coming out by day near the player and going beyond FAR; and where none of those is about, one ambient flock near the player (a young city shows pigeons from its first day). The world fed to their behaviour (pigeon_flock.gd) before every step; one MultiMesh of pigeon_body.gd's bird per flock, and the crumbs the hero throws them (E on a flock close by). Their coos and wingbeats go out on the bus (animal_called).
+The pigeons (part of the animals feature): where flocks keep (the sidewalk in front of some shops and of the civic buildings people gather at, the parks, and a share of the plain street corners), coming out by day near the player and going beyond FAR; and where none of those is about, one ambient flock near the player (a young city shows pigeons from its first day). The world fed to their behaviour (pigeon_flock.gd) before every step; one MultiMesh of pigeon_body.gd's bird per flock, and the crumbs the hero throws them (E on a flock close by). Their coos and wingbeats go out on the bus (animal_called). The shared flock wiring lives in bird_flocks.gd.
 
 ### Constants
 
-- `D = preload("res://scripts/sim/sim_defs.gd")`
-- `WS = preload("res://scripts/fp/world_scale.gd")`
-- `FLOCK = preload("res://scripts/fp/animals/pigeon_flock.gd")`
-- `BODY = preload("res://scripts/fp/animals/pigeon_body.gd")`
-- `PACK = preload("res://scripts/fp/animals/dog_pack.gd")`
 - `STREETS = preload("res://scripts/fp/animals/street_spots.gd")`
-- `MAX_STEP = 1.0 / 30.0`
 - `NEAR = 2.2`: Flocks come out within NEAR of the player (u) and go beyond FAR, at most MAX_FLOCKS at once.
 - `FAR = 2.8`
 - `MAX_FLOCKS = 4`
@@ -649,11 +854,9 @@ The pigeons (part of the animals feature): where flocks keep (the sidewalk in fr
 - `FEED_REACH = 4.5`: E feeds a flock with a bird on the ground within FEED_NEAR (m) of where the view meets the ground, FEED_REACH (m) or less from the hero's feet; the crumbs land FEED_TOSS (m) in front of them, toward it.
 - `FEED_NEAR = 1.5`
 - `FEED_TOSS = 1.2`
-- `SIZE_M = 0.13`: A pigeon's height at the shoulder (m): animal_called's size.
 - `FEATHERS = 14`: Feathers in the puff of a bird the hero strikes.
 - `CRUMB = Vector3(0.016, 0.007, 0.012)`: A crumb's size (m) and colour.
 - `CRUMB_COL = Color(0.86, 0.74, 0.52)`
-- `CAR = Vector2(2.3, 1.0)`: The player's car while they drive, half length and half width (m), for the birds' dodge.
 - `PHOTO_KEY = "photo:pigeons"`: The photo shot stands STAND_M (m) from the flock's crumbs, looking PHOTO_PITCH (degrees) down.
 - `STAND_M = 2.6`
 - `PHOTO_PITCH = -28.0`
@@ -661,18 +864,13 @@ The pigeons (part of the animals feature): where flocks keep (the sidewalk in fr
 
 ### Properties
 
-- `calls: Dictionary`: Calls made so far by kind ("coo", "flap", "takeoff") and the times the hero fed a flock.
+- `feeds: int`: The times the hero fed a flock.
 
 ### Functions
 
 - `func setup(p_ctx: FpContext) -> void`
-- `func rebuilt() -> void`: Boot, load or New City: no flocks until the next scan.
-- `func tile_built(_i: int) -> void`
-- `func clear() -> void`
-- `func scan(me: Vector3, by_day: bool) -> void`: Every scan: the flocks too far off go; by day (and with the flag on) the spots near me get theirs, the nearest first; and with no flock near me after that, one ambient flock comes out anyway (_baseline).
-- `func world(pack: PACK, driving: bool, delta: float) -> void`: The world for this step from the dogs' pack: the hero on foot, the traffic's cars (and the player's while they drive) and the people on foot around, and the dogs. delta is real seconds.
-- `func step(dt: float) -> void`: dt game seconds of the flocks (in MAX_STEP steps), then their draw. The flag off takes them away.
-- `func startle(at: Vector3, r_m: float) -> void`: A fright at at (a blow, a shout, a bark, a crash) sends up the flocks with a bird on the ground within r_m metres of it.
+- `func scan(me: Vector3, by_day: bool, rain := false) -> void`: Every scan: the flocks too far off go; in the rain they all stay in (they shelter); else by day (and with the flag on) the spots near me get theirs, the nearest first; and with no flock near me after that, one ambient flock comes out anyway (_baseline).
+- `func step(dt: float) -> void`: dt game seconds of the flocks (bird_flocks.gd step_flocks()). The flag off takes them away.
 - `func hit(f: FLOCK.Flock, b: FLOCK.Bird, src: Vector3, strength: float) -> void`: The hero struck bird b of flock f from src at strength 0..1: it is knocked off in a puff of feathers and the flock goes up.
 - `func on_crash(at: Vector3, _speed: float, _what: String) -> void`
 - `func on_knock(at: Vector3, _kind: String, _speed: float) -> void`
@@ -682,6 +880,191 @@ The pigeons (part of the animals feature): where flocks keep (the sidewalk in fr
 - `func photo_shot(me: Vector3) -> Dictionary`: The photo shot ("pigeons"): the flock spot nearest me with room to stand STAND_M from it, seen from there; photo_prepare() brings its birds in to feed on crumbs. {} without one (or with the flag off).
 - `func photo_prepare() -> void`: The photo's flock (pinned, so the scan keeps it while the camera moves there) feeding round crumbs at its home, the birds already about them.
 - `func photo_restore() -> void`
+
+## `scripts/fp/animals/proc_body.gd`
+
+extends `RefCounted`
+
+The procedural animals' shared half (used by pigeon_body.gd, duck_body.gd and squirrel_body.gd): the arrays a body's mesh is built into and the shape builders that loft them — a tube of elliptic rings, an ellipsoid, a sheet through a grid of points and a thin beam. A body file sets the arrays' part, region and tag for the vertices it adds next, calls these builders with its own tables and colour callables, and ends with the ArrayMesh; its shader reads the UVs these leave (UV.x the part, UV.y the region, UV2.x the motion tag, UV2.y the vertex's share of that motion).
+
+### Inner classes
+
+- `Arrays`: The arrays the mesh is built into; part, region and tag go on the vertices added next.
+
+### Functions
+
+- `static func loft(b: Arrays, centres: PackedVector3Array, radii: PackedVector2Array, w: PackedFloat32Array, segs: int, colour: Callable, flat: float = 0.0, parts: PackedFloat32Array = PackedFloat32Array()) -> void`: A tube through centres with elliptic rings (radii: half width, half height), closed at both ends; w each ring's share of the motion its tag moves (empty: none), parts each ring's part the fragment colours (empty: the arrays' own), colour(u along, up -1..1) its vertex colour (an invalid Callable: white). flat squashes the ring's top so a back can be flatter than a belly.
+- `static func ellipsoid(b: Arrays, c: Vector3, r: Vector3, segs: int, col: Color) -> void`: An ellipsoid at c of half-axes r (segs around), every vertex at share 1 of the motion.
+- `static func sheet(b: Arrays, grid: Array[PackedVector3Array], cols: Array[PackedColorArray], out: Vector3, regions: Array[PackedFloat32Array] = []) -> void`: A sheet through grid (rows of points) with a colour per point, its normals turned toward out. regions, when given, is a UV.y per point (a patch's share across it); otherwise every point carries the region the caller set.
+- `static func beam(b: Arrays, from: Vector3, to: Vector3, w: float, h: float) -> void`: A thin box from a to b, w wide and h deep, flat-shaded (no end caps).
+- `static func rings(table: Array) -> Array`: The centres and elliptic radii of a ring table (z, centre y, half width, half height).
+- `static func neck_rings(table: Array) -> Array`: The rings of a neck table (z, y, radius, share of the head's motion): centres, circular radii and the shares.
+- `static func material(shader: Shader, params: Dictionary) -> ShaderMaterial`: The material for a body's shader with every parameter of params set.
+- `static func build(cache: Array, parts: Callable) -> ArrayMesh`: A body's mesh, built once by its own parts (a static func of its arrays) and cached.
+- `static func make_material(cache: Array, shader: Shader, params: Dictionary) -> ShaderMaterial`: A body's material, built once (its shader with params set) and cached.
+
+## `scripts/fp/animals/squirrel_body.gd`
+
+extends `RefCounted`
+
+The squirrel every squirrel MultiMesh draws: one ArrayMesh built in code (metres, facing +Z, the feet at the origin) and its ShaderMaterial (squirrel.gdshader swings the four legs in a gallop, sits the front of the body up, sways the tail and leans the run by each animal's INSTANCE_CUSTOM). The vertex colours paint an eastern grey squirrel of about half a kilogram: 0.22 m from the nose to the tail's root, 0.09 m at the shoulder, a grizzled grey-brown back fading to the cream belly and throat, a blunt muzzle, small tufted ears, dark eyes, slim front paws under bigger hind haunches, and the signature: a fluffed tail rising in a gentle S up over the back, grey with a pale silver fringe. Each animal's instance colour tints it.
+
+### Constants
+
+- `SHADER = preload("res://scripts/fp/animals/squirrel.gdshader")`
+- `PB = preload("res://scripts/fp/animals/proc_body.gd")`
+- `HIP = Vector3(0.0, 0.05, -0.012)`: The pivots the shader moves parts about (m): the hips (the sit-up and the run lean), the head's base, the tail's root, the front leg's shoulder, the hind leg's hip and an ear's base.
+- `NECK = Vector3(0.0, 0.07, 0.092)`
+- `RUMP = Vector3(0.0, 0.058, -0.064)`
+- `SHOULDER = Vector3(0.009, 0.048, 0.068)`
+- `THIGH = Vector3(0.015, 0.052, -0.016)`
+- `EAR_BASE = Vector3(0.0085, 0.105, 0.101)`
+- `SIT_RAD = 1.0`: The sit-up's angle at full share (rad), the head's extra pitch with it (rad), how far the ears lay back with the run's lean (rad) and the gait's body bob (m).
+- `HEAD_PITCH = 0.45`
+- `EAR_LAY = 0.8`
+- `BOB_M = 0.004`
+- `PLUMAGE = 0.0`: UV.x: the part the fragment shader colours.
+- `EYE = 1.0`
+- `PAW = 2.0`
+- `TUFT = 3.0`
+- `TAIL = 1.0`: UV2.x: what the vertex shader moves (its sign is the side).
+- `LEG = 2.0`
+- `HEAD = 3.0`
+- `EAR = 4.0`
+- `SEGS = 12`
+- `TRUNK = [ Vector4(-0.068, 0.058, 0.011, 0.012), Vector4(-0.048, 0.058, 0.024, 0.028), Vector4(-...`: The trunk's rings from the tail's root to the shoulders: (z, centre y, half width, half height), m; TRUNK_S each ring's share of the sit-up (planted at the hips, lifting with the chest).
+- `TRUNK_S = [0.0, 0.0, 0.08, 0.32, 0.62, 0.85, 0.95, 1.0]`
+- `NECK_RINGS = [ Vector4(0.072, 0.055, 0.013, 0.014), Vector4(0.086, 0.064, 0.011, 0.012), Vector4(0.0...`: The neck's rings into the head, tagged HEAD to take its extra pitch too: the same, with NECK_S their shares of the sit-up.
+- `NECK_S = [0.9, 0.97, 1.0]`
+- `SKULL = Vector3(0.0, 0.088, 0.115)`: The head: the skull and the blunt pale muzzle over it (m).
+- `SKULL_R = Vector3(0.021, 0.022, 0.028)`
+- `MUZZLE = Vector3(0.0, 0.082, 0.137)`
+- `MUZZLE_R = Vector3(0.012, 0.01, 0.014)`
+- `FRONT_LEG_R = [ Vector4(0.066, 0.049, 0.006, 0.0065), Vector4(0.076, 0.031, 0.0062, 0.006), Vector4(0...`: A front leg's rings from the shoulder down to the paw, and a hind leg's from the haunch down to its long foot (the last two rings of each the dark paw): (z, centre y, half width, half height), m, set out from the middle at the leg's pivot's x.
+- `HIND_LEG_R = [ Vector4(-0.018, 0.062, 0.016, 0.018), Vector4(-0.024, 0.042, 0.012, 0.012), Vector4(-...`
+- `TAIL_R = [ Vector4(-0.064, 0.058, 0.012, 0.011), Vector4(-0.085, 0.052, 0.02, 0.017), Vector4(-0...`: The tail's rings from its root up over the back in a gentle S: (z, centre y, half width, half height), m; TAIL_S each ring's share of the sway (the root still, the tip most).
+- `TAIL_S = [0.0, 0.1, 0.25, 0.42, 0.6, 0.78, 0.92, 1.0]`
+- `RUMP_COL = Color(0.52, 0.44, 0.36)`: Plumage (sRGB; the vertices carry it linear).
+- `BACK_COL = Color(0.47, 0.44, 0.39)`
+- `HEAD_COL = Color(0.44, 0.42, 0.39)`
+- `MUZZLE_COL = Color(0.63, 0.59, 0.53)`
+- `BELLY_COL = Color(0.9, 0.86, 0.78)`
+- `TAIL_COL = Color(0.55, 0.53, 0.5)`
+- `FRINGE_COL = Color(0.82, 0.81, 0.79)`
+- `EAR_COL = Color(0.38, 0.35, 0.32)`
+
+### Functions
+
+- `static func mesh() -> ArrayMesh`: The shared squirrel mesh (built once).
+- `static func material() -> ShaderMaterial`: The shared material, its pivots and scales set from this file's constants.
+
+## `scripts/fp/animals/squirrel_life.gd`
+
+extends `RefCounted`
+
+The squirrels' behaviour; the squirrels node (squirrels.gd) decides where each keeps (a lawn and its tree), feeds the world before every step() and draws them (squirrel_body.gd's mesh, one MultiMesh). A squirrel forages round its spot: it bounds from place to place in the gait's hops, stops, sits up on its haunches and nibbles with its paws at its mouth, its tail swaying behind it. A fright — the hero walking up to it or sprinting near, a dog close by or running, a person stepping on it — and it chatters once, dashes for its tree and runs up the trunk, clinging there head-up until the trouble has gone, then comes back down to its lawn.
+
+### Constants
+
+- `WS = preload("res://scripts/fp/world_scale.gd")`
+- `BOUND_MPS = 3.2 * WS.M`: A bound: BOUND_MPS (m/s) eating ground in HOP_S (s) hops that lift the body HOP_UP (m).
+- `HOP_S = 0.19`
+- `HOP_UP = 0.05 * WS.M`
+- `AMBLE = 0.9 * WS.M`: An amble between close spots (m/s), turning (rad/s).
+- `TURN = 7.0`
+- `NIBBLE_S = Vector2(0.7, 1.6)`: Sitting up to nibble lasts NIBBLE_S (s); now and then a pause without it.
+- `PAUSE_S = Vector2(0.2, 0.6)`
+- `DASH_MPS = 4.6 * WS.M`: Fleeing: a dash of DASH_MPS (m/s) to the tree, a climb of CLIMB_MPS (m/s) up it to CLING_H (m), and holding there until CALM_S (s) after the last fright; then down again.
+- `CLIMB_MPS = 1.4 * WS.M`
+- `CLING_H = 2.2 * WS.M`
+- `CALM_S = 3.0`
+- `WARY = 2.6 * WS.M`: The frights: the hero on foot within WARY (m) or sprinting within SPRINT (m) of it, a dog within DOG_NEAR (m) or running (faster than DOG_RUN_MPS) within DOG_FAR (m), and anyone stepping within TRAMPLE (m). A cat counts only within CAT_NEAR (one stalking low and slow gets that close) or running (a pounce).
+- `SPRINT = 5.5 * WS.M`
+- `SPRINT_MPS = 2.8 * WS.M`
+- `DOG_NEAR = 3.5 * WS.M`
+- `DOG_FAR = 7.0 * WS.M`
+- `DOG_RUN_MPS = 2.5 * WS.M`
+- `TRAMPLE = 0.9 * WS.M`
+- `CAT_NEAR = 0.8 * WS.M`
+- `UP_KEEP = 6.0`: Once it is up, nothing but the calm clock brings it down.
+- `CHATTER_S = 1.5`: The chatters it gives while it flees (animal_called), each at most every CHATTER_S (s).
+- `NO_POINT = Vector3(NAN, NAN, NAN)`
+
+### Properties
+
+- `on_call: Callable`: Called with (at, "chatter") when one flees.
+- `hero`: The world this step, set by the squirrels node: the hero's feet and velocity and whether they are on foot; dogs as [feet, velocity] (and cats as [feet, velocity, CAT_NEAR]); the feet of the people on foot around.
+
+### Inner classes
+
+- `Squirrel`: One squirrel.
+
+### Functions
+
+- `func add(home: Vector3, tree: Array, key := "") -> Squirrel`: A squirrel for the lawn at home with its tree ([x, z, r] of the trunk), keyed by its spot.
+- `func squirrel(key: String) -> Squirrel`: The squirrel with this key, or null.
+- `func remove(s: Squirrel) -> void`
+- `func step(dt: float) -> void`: One step of dt game seconds for every squirrel.
+- `func startle(at: Vector3, r_m: float) -> void`: A fright at at within r_m metres sends the squirrels on the ground fleeing for their trees.
+- `static func pose(s: Squirrel) -> Color`: The pose the shader takes from INSTANCE_CUSTOM.
+- `static func xform(s: Squirrel, up: float) -> Transform3D`: The squirrel's transform: its yaw, the climb's pitch up the trunk, its bound's lift.
+- `static func lift(s: Squirrel) -> float`: How far off the ground its bound carries it (m) at this moment: the hop's arc while it forages or dashes, nothing while it sits up, climbs or clings.
+- `func lawn_ok(p: Vector3) -> bool`: Walkable lawn under the squirrel (not the road, not water), with room clear round it: where the node picks a squirrel's home, and where it bounds to.
+
+## `scripts/fp/animals/squirrels.gd`
+
+extends `Node3D`
+
+The squirrels (part of the animals feature): where they keep (a lawn with a tree — the woods that ring the city, the street's own trees and the lots that have one), coming out by day near the player and going beyond FAR; the world fed to their behaviour (squirrel_life.gd) before every step; one MultiMesh of squirrel_body.gd's squirrel, one instance and tint a squirrel. A squirrel bounds about its patch, stops, sits up on its haunches to nibble and sways its tail; the hero walking up to it or sprinting near, a dog close by or running, a cat pouncing at it (CAT_NEAR, squirrel_life.gd), a person stepping on it or a shout sends it chattering up its trunk, where it clings head-up until the trouble has gone and then comes back down to its lawn. Its chatters go out on the bus (animal_called).
+
+### Constants
+
+- `D = preload("res://scripts/sim/sim_defs.gd")`
+- `WS = preload("res://scripts/fp/world_scale.gd")`
+- `LIFE = preload("res://scripts/fp/animals/squirrel_life.gd")`
+- `BODY = preload("res://scripts/fp/animals/squirrel_body.gd")`
+- `PACK = preload("res://scripts/fp/animals/dog_pack.gd")`
+- `CAT_LIFE = preload("res://scripts/fp/animals/cat_life.gd")`
+- `MAX_STEP = 1.0 / 30.0`
+- `SIZE_M = 0.09`: A squirrel's height at the shoulder (m): animal_called's size.
+- `NEAR = 3.0`: Squirrels come out within NEAR of the player (u) and go beyond FAR, at most MAX_SQUIRRELS at once.
+- `FAR = 3.6`
+- `MAX_SQUIRRELS = 3`
+- `TRUNK_R = 0.25 * WS.M`: A tree to climb: the collision world's trunk cylinder (0.25 m across; a lamp pole is 0.15 m, so never mistaken for a tree), at least TREE_TOP (u) tall. The woods' trees carry no collider, so they are read from city_view.gd's own planting (see _forest_tree()).
+- `TRUNK_MIN_R = 0.20 * WS.M`
+- `TREE_TOP = 0.15`
+- `FOREST_SHARE = 0.5`: The woods: this share of the map's forest tiles keeps a squirrel, at one of the tile's own four trees, which city_view.gd plants FOREST_SPREAD (u) either way off the tile's middle at 1.0 to 1.6 times a street tree's size.
+- `FOREST_N = 4`
+- `FOREST_SPREAD = 0.85`
+- `FOREST_STEP = 0.1`
+- `FORAGE_R = 0.5`: Its lawn: a patch within FORAGE_R (m) of its trunk, a point of it picked FORAGE_TRIES angles round the trunk at one of FORAGE_STEPS (m) out.
+- `FORAGE_TRIES = 12`
+- `FORAGE_STEPS = [0.2, 0.32, 0.46]`
+- `FORAGE_ROOM = 0.1`
+- `COATS = [ Color(0.62, 0.6, 0.58), Color(0.5, 0.44, 0.37), Color(0.4, 0.33, 0.27), Color(0.72, 0...`: The tint of each squirrel's coat, rolled per spot: greys, browns and a near-black.
+- `STARTLE = { "jab": 3.0, "cross": 3.0, "hook": 3.0, "kick": 3.5, "swing": 3.5, "shove": 3.0, "danc...`: The hero's swings, shove, shout and parkour moves startle the squirrels within these (m); someone hit those within SEEN_HIT, a crash those within CRASH_M, a prop knocked over those within KNOCK_M and a bark those within BARK_M.
+- `SEEN_HIT = 6.0`
+- `CRASH_M = 20.0`
+- `KNOCK_M = 6.0`
+- `BARK_M = 5.0`
+
+### Properties
+
+- `calls: Dictionary`: Calls made so far by kind ("chatter").
+
+### Functions
+
+- `func setup(p_ctx: FpContext) -> void`
+- `func rebuilt() -> void`: Boot, load or New City: no squirrels until the next scan.
+- `func tile_built(_i: int) -> void`: A tile rebuilt: its spots are looked for again.
+- `func clear() -> void`
+- `func scan(me: Vector3, by_day: bool, rain := false) -> void`: Every scan: the squirrels too far off go; in the rain they all stay in (they shelter in their dreys, as the cats do); else while the flag is on and it is day the spots near me get theirs, the nearest first, up to MAX_SQUIRRELS of them.
+- `func world(pack: PACK, cat_life: CAT_LIFE) -> void`: The world for this step from the dogs' pack and the cats: the hero on foot and their velocity, the dogs around, the cats (close by or pouncing, as CAT_NEAR entries) and the people on foot, all of which frighten a squirrel.
+- `func step(dt: float) -> void`: dt game seconds of the squirrels (in MAX_STEP steps), then their draw; the flag off takes them away.
+- `func startle(at: Vector3, r_m: float) -> void`: A fright at at (a blow, a shout, a crash, a bark) sends the squirrels within r_m metres of it up their trees.
+- `func on_crash(at: Vector3, _speed: float, _cause: String) -> void`
+- `func on_knock(at: Vector3, _kind: String, _speed: float) -> void`
+- `func detail() -> String`: Self-test line: how many squirrels keep about their trees.
 
 ## `scripts/fp/animals/street_spots.gd`
 
@@ -696,3 +1079,37 @@ Street-spot search shared by the animals feature's guaranteed spawns (pigeons.gd
 ### Functions
 
 - `static func nearest_road(sim: CitySim, me: Vector3, r: float, build: Callable) -> Dictionary`: The spot build(i) built for the nearest road tile within r of me (flat), the nearest tile winning, {} when none is near or none of them has one. build(i) -> the tile's spot Dictionary (pigeons.gd _road_spot, cats.gd _road_side).
+
+## `scripts/fp/animals/waterfowl.gd`
+
+extends `"res://scripts/fp/animals/bird_flocks.gd"`
+
+The waterfowl node: the ducks on the city's water (the river, the ponds), as the pigeons' two nodes are (bird_flocks.gd's shared half driving a duck_flock.gd list, one MultiMesh of the duck_body.gd duck an instance and tint a bird). Every open water tile has a share of a flock of mallards on it, brought out within NEAR of the player by the scan, the nearest first, up to MAX_FLOCKS of them, and dropped again beyond FAR; by night they are gone (off to roost) and the flag takes them away. Their take-offs at a fright go out on the bus (animal_called).
+
+### Constants
+
+- `DUCK = preload("res://scripts/fp/animals/duck_flock.gd")`
+- `DUCK_BODY = preload("res://scripts/fp/animals/duck_body.gd")`
+- `NEAR = 3.0`: Ducks come out within NEAR of the player (u) and go beyond FAR, at most MAX_FLOCKS at once.
+- `FAR = 3.6`
+- `MAX_FLOCKS = 2`
+- `WATER_SHARE = 0.5`: The share of the open water tiles that keep a flock (no bridge over them), and the ducks on one (a drake or two among the hens).
+- `DUCKS = Vector2i(3, 6)`
+- `SPOT_R = 0.3`: A flock keeps within SPOT_R (u) of its spot; the spot sits ON_BANK (tile units) off the middle of its tile, toward the nearest land, so the ducks feed near a bank the hero can walk down to (the tile's middle where its neighbours are all water).
+- `ON_BANK = 0.4`
+- `STARTLE = { "jab": 3.0, "cross": 3.0, "hook": 3.0, "kick": 4.0, "swing": 4.0, "shove": 3.0, "danc...`: The hero's swings, shove, shout, dance and parkour moves startle the ducks within these (m); someone hit those within SEEN_HIT, a crash those within CRASH_M, a prop knocked over those within KNOCK_M and a bark those within BARK_M.
+- `SEEN_HIT = 8.0`
+- `CRASH_M = 25.0`
+- `KNOCK_M = 8.0`
+- `BARK_M = 6.0`
+- `DUCK_M = 0.15`: A duck's height at the shoulder (m): animal_called's size.
+
+### Functions
+
+- `func setup(p_ctx: FpContext) -> void`: The node's wiring (the feature's setup()): the waterfowl's half of it.
+- `func setup_flocks(p_ctx: FpContext) -> void`: The node's wiring: its own flock list (duck_flock.gd, not the pigeons'), the collision world and its calls.
+- `func scan(me: Vector3, by_day: bool, rain := false) -> void`: Every scan (the feature's): while the waterfowl flag is on and it is day, the near spots get their flocks; in the rain they all stay in (they shelter on the bank, as the cats do).
+- `func step(dt: float) -> void`: dt game seconds of the flocks while the flag is on; off takes them away.
+- `func on_crash(at: Vector3) -> void`: A car crashed into something at at, or a prop was knocked over there: the ducks near go up.
+- `func on_knock(at: Vector3) -> void`
+- `func detail() -> String`: Self-test line: how many ducks sit on the water in how many flocks.

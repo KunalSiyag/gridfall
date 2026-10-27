@@ -6,13 +6,17 @@ extends RefCounted
 ## crouching hero with its tail up and meows, and purrs when petted; an aloof one walks off from the
 ## first pet and from the hero walking at it; a skittish one runs from the hero coming near. A
 ## sprint past, a blow or a shout makes a cat jump and run (one the hero strikes yowls, is knocked
-## away and bolts); a dog close by makes it arch its back and hiss, and one coming at it (or still
-## there after the hiss) sends it running. A hunter chatters at the pigeons on the ground nearby,
-## stalks them low and slow, crouches with its tail twitching and pounces (the flock goes up:
-## pigeon_flock.gd's cats), then sits down to groom as if nothing happened. A car about to run a cat
-## down sends it running. Each cat plays its gait at the rate its speed asks for, and its CatRig
+## away and bolts); a dog close by makes it arch its back and hiss, one coming at it (or still
+## there after the hiss) sends it running, and one charging (very close, or running at it) sends it
+## up the nearest trunk, clinging there until the dog has been gone a while, then back down. A
+## hunter chatters at the pigeons on the ground or a squirrel nearby, stalks it low and slow,
+## crouches with its tail twitching and pounces (the flock goes up: pigeon_flock.gd's cats; the
+## squirrel up its tree), then sits down to groom as if nothing happened; with them up out of
+## reach it watches instead. A car about to run a cat down sends it running. Each cat plays its
+## gait at the rate its speed asks for, and its CatRig
 ## sways the tail, lowers it on a frightened or wary cat and turns the head to what it watches.
 
+const D := preload("res://scripts/sim/sim_defs.gd")
 const WS := preload("res://scripts/fp/world_scale.gd")
 const DB := preload("res://scripts/fp/animals/dog_bodies.gd")
 const BODIES := preload("res://scripts/fp/animals/cat_bodies.gd")
@@ -69,6 +73,18 @@ const FLEE_M := Vector2(5.0, 9.0)
 const FLEE_S := 4.0
 const SCARED_S := 10.0
 const STARTLE_S := 0.75
+## The tree refuge from a charging dog: with a trunk (a street tree's or a lot tree's cylinder,
+## TRUNK_MIN_R and TREE_TOP as in squirrels.gd) within REFUGE_R (m) the cat bolts up it instead of
+## along the ground, climbing at CLIMB_MPS (m/s) to CLING_H (m) and clinging, pitched CLIMB_PITCH
+## against the bark, until no dog has been within HISS for CALM_S (s), then down at DOWN_MPS.
+const REFUGE_R := 6.0 * WS.M
+const TRUNK_MIN_R := 0.2 * WS.M
+const TREE_TOP := 0.15
+const CLIMB_MPS := 1.6 * WS.M
+const CLING_H := 2.0 * WS.M
+const CLIMB_PITCH := -1.1
+const CALM_S := 3.0
+const DOWN_MPS := 1.2 * WS.M
 ## Struck by the hero (hit): knocked away at KNOCK (m/s) plus KNOCK_K times the blow's strength,
 ## sliding to a stop at PUSH_BRAKE (m/s²), and frightened HIT_FEAR times as long.
 const KNOCK := 1.5 * WS.M
@@ -82,6 +98,8 @@ const PREY := 9.0 * WS.M
 const POUNCE_AT := 1.0 * WS.M
 const CROUCH_S := Vector2(0.8, 1.8)
 const POUNCE_S := 1.0
+## How long a bout of watching the birds up out of reach lasts (s).
+const WATCH_S := Vector2(4.0, 9.0)
 const LEAP := 3.5 * WS.M
 const LEAP_T := Vector2(0.2, 0.55)
 const HUNT_REST := Vector2(25.0, 50.0)
@@ -136,7 +154,7 @@ class Cat:
 	## A knock (u/s) from a blow, dying away.
 	var push := Vector3.ZERO
 	## What it does: "rest" (in its pose), "stretch", "stroll", "greet", "purr", "startle", "flee",
-	## "hiss", "stalk", "crouch" or "pounce".
+	## "hiss", "stalk", "crouch", "pounce", "watch" or up its refuge tree ("climb", "hold", "down").
 	var act: String = "rest"
 	var act_t: float = 0.0
 	var act_age: float = 0.0
@@ -144,6 +162,11 @@ class Cat:
 	var rest: StringName = &"Sit"
 	var goal := NO_POINT
 	var prey := NO_POINT
+	## Its refuge from a charging dog: the trunk it bolts up ([x, z, r], empty while it has none),
+	## how far up it clings (m), and since when no dog has been about while it is up there.
+	var tree: Array = []
+	var climb_y: float = 0.0
+	var calm_t: float = 0.0
 	## What frightened it last (a dog it hisses at, the hero, a car) and for how long it stays wary.
 	var threat := NO_POINT
 	var scared: float = 0.0
@@ -160,7 +183,8 @@ var col: CollisionWorld = null
 var on_call: Callable
 ## The world this step, set by the cats node: the hero's feet and velocity, whether they are on
 ## foot and crouched; moving cars as [pos, vel, half length, half width]; the feet of the people on
-## foot around; dogs as [feet, velocity]; the pigeons on the ground; the game's time scale.
+## foot around; dogs as [feet, velocity]; the pigeons on the ground; the birds perched up out of
+## reach; the game's time scale.
 var hero := Vector3(INF, INF, INF)
 var hero_vel := Vector3.ZERO
 var hero_on_foot: bool = false
@@ -169,6 +193,7 @@ var cars: Array = []
 var passers: Array = []
 var dogs: Array = []
 var prey: Array = []
+var birds_up: Array = []
 var time_scale: float = 1.0
 var _rng := RandomNumberGenerator.new()
 var _next_id: int = 1
@@ -214,9 +239,10 @@ func step(dt: float) -> void:
 		_pose(c, dt)
 
 
-## Something went off at src close by (a blow, a shout, a sprint past): the cat jumps and runs.
+## Something went off at src close by (a blow, a shout, a sprint past): the cat jumps and runs;
+## one up its refuge tree just holds on there.
 func startle(c: Cat, src: Vector3) -> void:
-	if c.act in ["startle", "flee"]:
+	if c.act in ["startle", "flee", "climb", "hold", "down"]:
 		return
 	c.threat = src
 	c.scared = SCARED_S
@@ -288,10 +314,42 @@ func _tick(c: Cat, dt: float) -> void:
 		var near := hero_on_foot and _flat(c.pos, hero) < MEOW_AT
 		if near and c.temper != "skittish" and c.act in ["rest", "stroll", "greet"]:
 			_call(c, "meow")
+	_act_tick(c, dt)
+
+
+## The act's own step: arrivals at the goal, the tree states' climb, hold and down, and an act
+## run out runs _done.
+func _act_tick(c: Cat, dt: float) -> void:
 	if c.act == "stroll" and _flat(c.pos, c.goal) < 0.15 * WS.M:
 		_rest(c, &"")
-	elif c.act == "flee" and not is_nan(c.goal.x) and _flat(c.pos, c.goal) < 0.3 * WS.M:
-		_rest(c, &"Sit")
+	elif c.act == "flee" and not is_nan(c.goal.x):
+		# A tree flee ends at the bark (the trunk's width counts as reached) and goes up it; a
+		# ground one just stops there.
+		var reach := 0.3 * WS.M if c.tree.is_empty() else float(c.tree[2]) + _radius(c) + 0.1 * WS.M
+		if _flat(c.pos, c.goal) <= reach:
+			if c.tree.is_empty():
+				_rest(c, &"Sit")
+			else:
+				_up_tree(c)
+	elif c.act == "climb":
+		c.climb_y = minf(c.climb_y + CLIMB_MPS * dt, CLING_H)
+		if c.climb_y >= CLING_H:
+			c.calm_t = 0.0
+			_start(c, "hold", 1e9)
+	elif c.act == "hold":
+		var dogged := false
+		for dg: Array in dogs:
+			if _flat(c.pos, dg[0]) < HISS * 1.5:
+				dogged = true
+				break
+		c.calm_t = 0.0 if dogged else c.calm_t + dt
+		if c.calm_t >= CALM_S:
+			_start(c, "down", 1e9)
+	elif c.act == "down":
+		c.climb_y = maxf(c.climb_y - DOWN_MPS * dt, 0.0)
+		if c.climb_y <= 0.0:
+			c.tree = []
+			_rest(c, &"Sit")
 	elif c.act_t <= 0.0:
 		_done(c)
 
@@ -309,6 +367,9 @@ func _done(c: Cat) -> void:
 		"pounce":
 			c.hunt_cool = _rng.randf_range(HUNT_REST.x, HUNT_REST.y)
 			_rest(c, &"Groom")
+		"watch":
+			c.hunt_cool = _rng.randf_range(HUNT_REST.x, HUNT_REST.y) * 0.25
+			_rest(c, &"Sit")
 		"rest":
 			var lazy := c.rest == &"Sleep" or c.rest == &"Loaf"
 			if lazy and _rng.randf() < 0.5:
@@ -324,7 +385,7 @@ func _done(c: Cat) -> void:
 
 
 func _sense(c: Cat) -> void:
-	if c.act in ["startle", "pounce"]:
+	if c.act in ["startle", "pounce", "climb", "hold", "down"]:
 		return
 	if _dodge(c) or _dogs(c):
 		return
@@ -346,7 +407,8 @@ func _dodge(c: Cat) -> bool:
 
 
 ## A dog close by: the cat hisses at it, and runs from one coming at it, one very close or one
-## still there after the hiss.
+## still there after the hiss. From one charging (very close or running at it) it bolts up the
+## nearest trunk instead when there is one (the tree refuge).
 func _dogs(c: Cat) -> bool:
 	for dg: Array in dogs:
 		var at: Vector3 = dg[0]
@@ -357,7 +419,13 @@ func _dogs(c: Cat) -> bool:
 		var coming := Vector2(vel.x, vel.z).length() > DOG_RUN_MPS and vel.dot(c.pos - at) > 0.0
 		var hissed := c.scared > 0.0 and c.act != "hiss"
 		if c.act != "flee" and (d < BOLT or coming or hissed):
-			_flee(c, c.pos - at, at)
+			var t: Array = []
+			if d < BOLT or coming:
+				t = _refuge(c)
+			if t.is_empty():
+				_flee(c, c.pos - at, at)
+			else:
+				_flee_tree(c, t, at)
 			return true
 		if c.act != "hiss" and c.act != "flee":
 			_start(c, "hiss", _rng.randf_range(HISS_S.x, HISS_S.y))
@@ -366,6 +434,57 @@ func _dogs(c: Cat) -> bool:
 		c.threat = at
 		return true
 	return false
+
+
+## The nearest trunk worth bolting up within REFUGE_R of the cat, as [x, z, r]: a street tree's or
+## a lot tree's cylinder (tall enough to hold it), or [] for none about.
+func _refuge(c: Cat) -> Array:
+	var best: Array = []
+	if col == null:
+		return best
+	var i0 := col.tile_at(c.pos)
+	if i0 < 0:
+		return best
+	var bd := REFUGE_R
+	for dy: int in [-1, 0, 1]:
+		for dx: int in [-1, 0, 1]:
+			var x := D.tx(i0) + dx
+			var y := D.ty(i0) + dy
+			if not D.in_bounds(x, y):
+				continue
+			var cyls := col.cylinders(D.idx(x, y))
+			var j := 0
+			while j + 3 < cyls.size():
+				var r := cyls[j + 2]
+				if r >= TRUNK_MIN_R and cyls[j + 3] >= TREE_TOP:
+					var dist := _flat(c.pos, Vector3(cyls[j], 0.0, cyls[j + 1]))
+					if dist < bd:
+						bd = dist
+						best = [cyls[j], cyls[j + 1], r]
+				j += 4
+	return best
+
+
+## Bolts for the refuge trunk t ([x, z, r]) away from the dog at src, and up it.
+func _flee_tree(c: Cat, t: Array, src: Vector3) -> void:
+	c.threat = src
+	c.scared = SCARED_S
+	c.tree = t
+	var at := Vector3(t[0], c.pos.y, t[1])
+	var to := at - c.pos
+	to.y = 0.0
+	c.act_dir = to.normalized() if to.length_squared() > 1e-12 else _fwd(c)
+	c.goal = at
+	_start(c, "flee", FLEE_S * 2.0)
+
+
+## At the bark on a tree flee: up the trunk it goes, facing out from it.
+func _up_tree(c: Cat) -> void:
+	c.yaw = atan2(c.pos.x - float(c.tree[0]), c.pos.z - float(c.tree[1]))
+	c.pos = Vector3(c.tree[0], c.pos.y, c.tree[1]) + _fwd(c) * (float(c.tree[2]) + _radius(c))
+	c.climb_y = 0.0
+	c.speed = 0.0
+	_start(c, "climb", 1e9)
 
 
 ## The hero close by: a sprint past startles the cat; a skittish cat runs from them, a friendly one
@@ -409,7 +528,9 @@ func _wary(c: Cat, dh: float, hs: float) -> bool:
 
 
 ## A hunter by day: chatters at the nearest pigeon on the ground and stalks it, crouches within
-## POUNCE_AT; gives up when the birds are gone or it strays too far.
+## POUNCE_AT; gives up when the birds are gone or it strays too far. With the pigeons up out of
+## reach it watches them instead: sits with its tail twitching and its eyes on the nearest, until
+## they are gone or the bout runs out.
 func _hunt(c: Cat) -> void:
 	if not c.hunter or c.hunt_cool > 0.0 or c.act in ["greet", "purr", "stretch"]:
 		return
@@ -424,16 +545,40 @@ func _hunt(c: Cat) -> void:
 		if c.act == "stalk" and _flat(c.pos, p) < POUNCE_AT:
 			_start(c, "crouch", _rng.randf_range(CROUCH_S.x, CROUCH_S.y))
 		return
+	var up := _nearest_up(c)
+	if c.act == "watch":
+		if is_nan(up.x) or _flat(up, c.anchor) > HUNT_LEASH:
+			_rest(c, &"Sit")
+		else:
+			c.prey = up
+		return
 	if not is_nan(p.x) and _flat(p, c.anchor) < HUNT_LEASH:
 		c.prey = p
 		_start(c, "stalk", 40.0)
 		_call(c, "chatter")
+	elif not is_nan(up.x) and _flat(up, c.anchor) < HUNT_LEASH:
+		c.prey = up
+		_start(c, "watch", _rng.randf_range(WATCH_S.x, WATCH_S.y))
+		if _rng.randf() < 0.3:
+			_call(c, "chatter")
 
 
 func _nearest_prey(c: Cat) -> Vector3:
 	var best := NO_POINT
 	var bd := PREY
 	for p: Vector3 in prey:
+		var d := _flat(c.pos, p)
+		if d < bd:
+			bd = d
+			best = p
+	return best
+
+
+## The nearest bird up out of reach (a perch), NO_POINT for none.
+func _nearest_up(c: Cat) -> Vector3:
+	var best := NO_POINT
+	var bd := PREY
+	for p: Vector3 in birds_up:
 		var d := _flat(c.pos, p)
 		if d < bd:
 			bd = d
@@ -495,21 +640,24 @@ func _move(c: Cat, want: Vector3, dt: float) -> void:
 	_slide(c, _fwd(c) * c.speed * dt)
 
 
-## What a cat standing still turns to: the dog it hisses at, the bird it crouches at, the hero it
-## greets or purrs for; NO_POINT for nothing.
+## What a cat standing still turns to: the dog it hisses at, the bird it crouches at or watches,
+## the hero it greets or purrs for; NO_POINT for nothing.
 func _faces(c: Cat) -> Vector3:
 	match c.act:
 		"hiss":
 			return c.threat
-		"crouch":
+		"crouch", "watch":
 			return c.prey
 		"greet", "purr":
 			return hero if hero_on_foot else NO_POINT
 	return NO_POINT
 
 
-## Nobody walks through the hero, the people going by or another cat.
+## Nobody walks through the hero, the people going by or another cat; a cat up its tree is out of
+## their way already.
 func _hold(c: Cat) -> void:
+	if c.act in ["climb", "hold", "down"]:
+		return
 	var r := _radius(c)
 	if hero_on_foot:
 		_keep_off(c, hero, r + WS.PLAYER_RADIUS + GAP)
@@ -548,6 +696,15 @@ func _slide(c: Cat, motion: Vector3) -> void:
 
 func _animate(c: Cat) -> void:
 	var b := c.body
+	if c.act in ["climb", "hold", "down"]:
+		# Up the refuge trunk: against the bark at its climb height, pitched up, scrambling (Run)
+		# or clinging (Crouch).
+		b.root.position = c.pos + Vector3.UP * c.climb_y
+		b.root.rotation = Vector3(CLIMB_PITCH, c.yaw, 0.0)
+		var up_clip := &"Crouch" if c.act == "hold" else &"Run"
+		DB.play(b, up_clip, (1.0 if c.act == "hold" else 1.3) * time_scale, c.restart)
+		c.restart = false
+		return
 	b.root.position = c.pos
 	b.root.rotation = Vector3(0.0, c.yaw, 0.0)
 	var clip: StringName = ONE_SHOTS.get(c.act, &"")
@@ -570,14 +727,24 @@ func _animate(c: Cat) -> void:
 	c.restart = false
 
 
-## The tail and the head: up (as the clips carry it) in greeting, low on a frightened cat and
-## half down on a wary one strolling, twitching on the hunt, lashing at a dog; eyes on the bird it
-## stalks, the dog it hisses at or the hero close by.
+## The tail and the head: the tail's droop and sway from the act (_tail), the eyes on the bird,
+## the dog or the hero (_gaze), both eased toward their mark.
 func _pose(c: Cat, dt: float) -> void:
 	var rig := c.body.rig as CAT_RIG
 	if rig == null:
 		return
 	rig.pace = time_scale
+	var ts := _tail(c)
+	var f := 1.0 - exp(-3.0 * dt)
+	rig.droop = lerpf(rig.droop, ts.x, f)
+	rig.wag = lerpf(rig.wag, ts.y, f)
+	rig.look = _gaze(c)
+
+
+## The tail for the act, as [droop, sway]: up (as the clips carry it) in greeting, low on a
+## frightened cat and half down on a wary one strolling, twitching on the hunt and watching,
+## lashing at a dog.
+func _tail(c: Cat) -> Vector2:
 	var droop := 0.0
 	var sway := 0.15
 	match c.act:
@@ -585,10 +752,13 @@ func _pose(c: Cat, dt: float) -> void:
 			sway = 0.2
 		"flee", "startle":
 			droop = 0.9
+		"climb", "hold", "down":
+			droop = 0.6
+			sway = 0.4
 		"stroll":
 			droop = 0.0 if c.temper == "friendly" else 0.4
 			sway = 0.25
-		"stalk", "crouch":
+		"stalk", "crouch", "watch":
 			sway = 0.75
 		"hiss":
 			sway = 1.0
@@ -596,17 +766,22 @@ func _pose(c: Cat, dt: float) -> void:
 			sway = 0.0 if c.rest == &"Sleep" else 0.12
 	if c.scared > 0.0 and c.act != "hiss":
 		sway = maxf(sway, 0.6)
-	var f := 1.0 - exp(-3.0 * dt)
-	rig.droop = lerpf(rig.droop, droop, f)
-	rig.wag = lerpf(rig.wag, sway, f)
-	rig.look = NO_POINT
-	if c.act in ["stalk", "crouch"] and not is_nan(c.prey.x):
-		rig.look = c.prey
-	elif c.act == "hiss":
-		rig.look = c.threat + Vector3(0.0, 0.3 * WS.M, 0.0)
-	elif c.act != "rest" or c.rest != &"Sleep":
-		if hero_on_foot and _flat(c.pos, hero) < NOTICE:
-			rig.look = hero + Vector3(0.0, EYES.y if crouched else EYES.x, 0.0)
+	return Vector2(droop, sway)
+
+
+## What the cat's eyes are on: the bird it stalks or watches, the dog it hisses at or watches
+## from up the tree, or the hero close by; NO_POINT for no one.
+func _gaze(c: Cat) -> Vector3:
+	if c.act in ["climb", "hold", "down"] and not is_nan(c.threat.x):
+		# Up the tree: its eyes stay on the dog below.
+		return c.threat + Vector3(0.0, 0.3 * WS.M, 0.0)
+	if c.act in ["stalk", "crouch", "watch"] and not is_nan(c.prey.x):
+		return c.prey
+	if c.act == "hiss":
+		return c.threat + Vector3(0.0, 0.3 * WS.M, 0.0)
+	if (c.act != "rest" or c.rest != &"Sleep") and hero_on_foot and _flat(c.pos, hero) < NOTICE:
+		return hero + Vector3(0.0, EYES.y if crouched else EYES.x, 0.0)
+	return NO_POINT
 
 
 # ------------------------------------------------------------------ helpers
@@ -641,6 +816,7 @@ func _rest(c: Cat, pose: StringName) -> void:
 	var span: Vector2 = RESTS[pose][1]
 	c.rest = pose
 	c.goal = NO_POINT
+	c.tree = []
 	_start(c, "rest", _rng.randf_range(span.x, span.y))
 
 
@@ -667,13 +843,16 @@ func _stroll(c: Cat, away: Vector3) -> void:
 	_rest(c, &"Sit")
 
 
-## Runs off the way of away from src, to a free spot FLEE_M off when there is one.
+## Runs off the way of away from src, to a free spot FLEE_M off when there is one. A cat up its
+## refuge tree drops to the ground first (the climb's height goes with the tree).
 func _flee(c: Cat, away: Vector3, src: Vector3) -> void:
 	away.y = 0.0
 	if away.length_squared() < 1e-12:
 		away = -_fwd(c)
 	c.threat = src
 	c.scared = SCARED_S
+	c.tree = []
+	c.climb_y = 0.0
 	c.act_dir = away.normalized()
 	c.goal = NO_POINT
 	for turn: float in [0.0, 0.5, -0.5, 1.0, -1.0]:

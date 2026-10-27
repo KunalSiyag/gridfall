@@ -27,6 +27,7 @@ var _clock: float = 0.0
 ## District -> _clock when its caption last showed.
 var _shown_at: Dictionary = {}
 var _in_conversation: bool = false
+var _has_render_target: bool = false
 
 
 func setup(p_ctx: FpContext) -> void:
@@ -120,6 +121,26 @@ func caption_text() -> String:
 	return _title.text if _box.visible and _box.modulate.a > 0.0 else ""
 
 
+## Whether the district caption can be drawn into a viewport with a render target.
+static func can_draw(display_server: String, has_viewport_texture: bool) -> bool:
+	return display_server != "headless" and has_viewport_texture
+
+
+## FontVariation labels need a glyph-atlas texture when they become visible. Resolve the viewport
+## target once it is ready, but never ask the headless dummy renderer to create that texture.
+func _render_target_ready() -> bool:
+	if _has_render_target:
+		return true
+	var display_server := DisplayServer.get_name()
+	if display_server == "headless":
+		return can_draw(display_server, false)
+	var viewport := get_viewport()
+	if viewport == null:
+		return false
+	_has_render_target = can_draw(display_server, viewport.get_texture() != null)
+	return _has_render_target
+
+
 func _process(delta: float) -> void:
 	_clock += delta
 	if _age == INF:
@@ -133,6 +154,9 @@ func _process(delta: float) -> void:
 	var blocked := (
 		ctx.is_modal() or _in_conversation or (ctx.player != null and ctx.player.photo_mode)
 	)
+	if not _render_target_ready():
+		_box.visible = false
+		return
 	var k_in := clampf(_age / FADE_IN, 0.0, 1.0)
 	var k_out := clampf((life - _age) / FADE_OUT, 0.0, 1.0)
 	var ease_in := 1.0 - (1.0 - k_in) * (1.0 - k_in) * (1.0 - k_in)

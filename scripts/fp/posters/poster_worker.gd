@@ -17,7 +17,10 @@ var _stop: bool = false
 
 
 ## Job for composites: opaque RGB, mipmaps and block compression of input.image (or of the raw
-## RGBA8 readback input.data at input.px); sets input.ok.
+## RGBA8 readback input.data at input.px); sets input.ok. input.compress (decided on the main
+## thread, see GmiImageClient.wants_vram_compress) gates the S3TC pass: Image.compress on a
+## worker thread without a main RenderingDevice spins up a half-initialised one and crashes the
+## main thread's viewport configure (engine bug), so there the image stays RGB8 with mipmaps.
 static func finish_image(input: Dictionary) -> void:
 	var img: Image = input.get("image", null)
 	if img == null and input.has("data"):
@@ -29,7 +32,7 @@ static func finish_image(input: Dictionary) -> void:
 		return
 	img.convert(Image.FORMAT_RGB8)
 	img.generate_mipmaps()
-	if OS.has_feature("s3tc"):
+	if bool(input.get("compress", false)):
 		img.compress(Image.COMPRESS_S3TC, Image.COMPRESS_SOURCE_SRGB)
 	input["ok"] = true
 

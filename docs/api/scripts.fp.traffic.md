@@ -57,6 +57,27 @@ Ambient filler (docs/fp/slices/E-traffic.md §6): unnamed commuters (some of the
 - `func park_site_machine(site: Dictionary) -> VH.Car`: Parks a backhoe at the kerb of a road tile beside the construction site (a work machine on the job), the slot nearest the site's own kerb, if one is free. Returns the car, or null when the flag is off, the site already has one, no slot is free or no road runs beside the site.
 - `func clear_site_machine(site: Dictionary) -> void`: The machine parked beside the site leaves with the crew (nothing when it had none).
 
+## `scripts/fp/traffic/body_spheres.gd`
+
+extends `RefCounted`
+
+The posed body's collision points, and the press-out that keeps a knocked-down or thrown body out of the geometry its clips sweep it into. of() gives [feet, torso, head] from the drawn feet and the head (people.gd head_of -- the posed bone while a body draws it, else the standing estimate); a clip that lies the body down puts the head and torso far past whatever stopped the feet, so reactions.gd measures all three. press_out() eases the whole drawn body along the shallowest way clear whenever a reaction runs.
+
+### Constants
+
+- `WS = preload("res://scripts/fp/world_scale.gd")`
+- `D = preload("res://scripts/sim/sim_defs.gd")`
+- `WK = preload("res://scripts/fp/traffic/walkers.gd")`
+- `OBB = preload("res://scripts/fp/obb2d.gd")`
+- `BODY_R = 0.25 * WS.M`
+- `HEAD_R = 0.14 * WS.M`
+
+### Functions
+
+- `static func of(feet: Vector3, head: Vector3) -> Array[Vector3]`: The collision points of the body drawn from feet: [feet, torso, head], the torso between them (the last is the head -- whatever rad_of says of it).
+- `static func rad_of(k: int) -> float`: Radius of the k-th sphere of of() (the head and anything past it).
+- `static func press_out(w: WK.Walker, extent: Callable, collision: CollisionWorld, cars: Array = []) -> void`: Eases the whole drawn body out of whatever the clips have pressed it into, along the shallowest way clear, while a reaction runs. Horizontal only -- the flight keeps its arc. However deep, this tick: the sweeps that put the body past its feet (a fall, a get-up fold, a flight's tilt) move it faster than any lean could ease, and a capped ease would trail 30 cm into a wall by the fold's end. A full correction reads as the body sliding along what stopped it; the shallow presses stay as subtle as before. cars holds the moving car bodies the static world does not (traffic's near cars as [xz centre, yaw, Vector2(half width, half length), y bottom, y top]): a body thrown or slid into a real car comes clear of it the same way, or it would lie inside the drawn vehicle with nothing to press it out.
+
 ## `scripts/fp/traffic/car_doors.gd`
 
 extends `RefCounted`
@@ -161,6 +182,123 @@ Contact shadows: a soft dark patch on the ground under every drawn vehicle and p
 - `func finish() -> void`: Uploads this frame's patches (one buffer write).
 - `func origin(k: int) -> Vector3`: Patch k's centre (tests).
 - `func clear() -> void`
+
+## `scripts/fp/traffic/crowd_reacts.gd`
+
+extends `RefCounted`
+
+The crowd's answer to what the street sees and hears, split out of reactions.gd (which keeps the Reaction records, the blow, the fall and the witness loop that picks who reacts): a knock-down rocks the onlookers who stay back as one (crowd_gasp), and the hero's horn startles the people it reaches (horn_street). Wired like fight_back.gd: the walkers, the roll and the record lifecycle shared from reactions.gd's setup, the records untyped, and reactions.gd's clock read through now.
+
+### Constants
+
+- `WS = preload("res://scripts/fp/world_scale.gd")`
+- `WK = preload("res://scripts/fp/traffic/walkers.gd")`
+- `GASP_TIP = 0.12`: A knock-down the street sees (severity 2) rocks the onlookers who stay back as one (crowd_gasp): no beat of looking first, a sharp backward tip (GASP_TIP rad over GASP_S) before they shout. Once per crowd: another body falling within GASP_CD seconds and GASP_R of the last gets the plain reaction.
+- `GASP_S = 0.5`
+- `GASP_CD = 6.0`
+- `GASP_R = 10.0 * WS.M`
+- `HORN_TIP = 0.08`: A horn (horn_street) startles the people it reaches: a beat turned toward the car, rocked back a touch (HORN_TIP over HORN_TIP_S), the ones within HORN_NEAR stepping back off the road — a long press reaches HORN_LONG_NEAR and they shake their head at it. Once per crowd: a horn within HORN_CD seconds and HORN_R of the last gets no answer. One exception: a long press on the heels of its own tap (within ESCALATE_S, from the same place within ESCALATE_R) escalates the ripple in flight instead — the cooldown is for honk spam, not for leaning on the horn.
+- `HORN_TIP_S = 0.4`
+- `HORN_NEAR = 8.0 * WS.M`
+- `HORN_LONG_NEAR = 12.0 * WS.M`
+- `HORN_STEP = 0.25 * WS.M`
+- `HORN_CD = 5.0`
+- `HORN_R = 20.0 * WS.M`
+- `ESCALATE_S = 1.0`
+- `ESCALATE_R = 2.0 * WS.M`
+
+### Properties
+
+- `wk: WK`: Shared from reactions.gd's setup: the walkers, the roll, the record lifecycle and the clock.
+- `active: Dictionary`: The live reactions (walker id -> record), for the horn escalation to find the tap's own.
+
+### Functions
+
+- `func gasp_due(at: Vector3) -> bool`: True when a knock-down at at may rock the crowd as one (crowd_gasp): the flag on, and no gasp within GASP_CD seconds and GASP_R of it.
+- `func apply_gasp(r) -> void`: r is one of the crowd who stays: it rocks back as one with them — no beat of looking first, a sharp backward tip before the shout.
+- `func noted_gasp(at: Vector3) -> void`: The gasp played: the crowd round at is quiet for GASP_CD seconds.
+- `func startle(src: Vector3, radius: float, long: bool) -> Array`: A car horn sounded at src and carries radius (u; horn_street): the people it reaches who are free startle — a beat turned toward the car, rocked back a touch, the ones within HORN_NEAR stepping back off the road and then composing themselves (a long press reaches HORN_LONG_NEAR and they shake their head at it). Honk spam gets no answer: one ripple per HORN_CD seconds within HORN_R of the last. Returns those startled.
+
+## `scripts/fp/traffic/fight_back.gd`
+
+extends `RefCounted`
+
+The scrap and the care for a body on the ground: fighting back, the tempers, counter cues and downed awareness, split out of reactions.gd. reactions.gd keeps the Reaction records, the blow, the fall and the street watching; this layer borrows the records through the state setup() shares (the active table by reference, the _new/_free/_after callables) and stays untyped about Reaction so the two classes never preload each other. reactions.gd drives it: begin() from _next_step, step_fight()/step_check() from the step match, the rest from hit(), witness() and _after().
+
+### Constants
+
+- `WS = preload("res://scripts/fp/world_scale.gd")`
+- `WK = preload("res://scripts/fp/traffic/walkers.gd")`
+- `FIGHT_ODDS = {"shove": 0.3, "punch": 0.4}`: Fighting back (fight_back): the share of those shoved or punched (and not knocked down) who do, by cause (fight_odds starts as this); how long a fight may last (s); how close they come (feet to feet; within FIGHT_SLACK of it counts), from how far they run there and beyond how far they give up.
+- `FIGHT_S = 20.0`
+- `FIGHT_REACH = 0.9 * WS.M`
+- `FIGHT_SLACK = 0.05 * WS.M`
+- `FIGHT_RUN = 3.0 * WS.M`
+- `FIGHT_LOST = 12.0 * WS.M`
+- `FIGHT_BLOWS = [[&"punch_jab", 0.2, 0.45, 0.7], [&"punch_cross", 0.29, 0.6, 0.8]]`: Their punches in turn: [clip, contact time (s), strength 0..1, seconds the clip plays]; the pause between two (s) and before the first.
+- `FIGHT_GAP = Vector2(0.45, 1.1)`
+- `FIGHT_FIRST = 0.25`
+- `WIND_RATE = 0.5`: A punch at the hero holds its clip back at WIND_RATE through the first half of the run to contact, then plays at 2 - WIND_RATE, so the clip arrives with the blow's own timing (counter_cues): the wind-up reads, the strike snaps, the counter window never moves.
+- `FIGHT_HIT = 1.25 * WS.M`: A punch lands on the hero within FIGHT_HIT (feet to feet) inside the cone ahead (the cosine), from the fist FIST ahead and up (metres), and pushes them on at FIGHT_PUSH (u/s).
+- `FIGHT_CONE = 0.5`
+- `FIST = Vector2(0.5, 1.45)`
+- `FIGHT_PUSH = 1.5 * WS.M`
+- `TEMPERS = ["plain", "guard", "dancer", "caller", "bolt", "bruiser"]`: How a fighter fights (fight_tempers), in pick order with their shares: a temper is fixed to who the fighter is — their walker id and resident id hashed into the shares, so the same person always fights the same way whatever the order of things around them. One plain; a guard turns GUARD_SHARE of the hero's blows that reach them while the scrap is theirs; a dancer sidesteps their way (by id parity) round the ring at DANCE_W (rad/s); a caller brings at most CALL_MAX of those near enough to see in with them; a bolt's scrap lasts BOLT_S before they run; a bruiser leads with the cross and answers a blow the moment it lands.
+- `TEMPER_SHARE = [0.34, 0.18, 0.16, 0.12, 0.1, 0.1]`
+- `T_PLAIN = 0`
+- `T_GUARD = 1`
+- `T_DANCER = 2`
+- `T_CALLER = 3`
+- `T_BOLT = 4`
+- `T_BRUISER = 5`
+- `GUARD_SHARE = 0.45`
+- `DANCE_W = 0.7`
+- `CALL_MAX = 2`
+- `BOLT_S = 2.5`
+- `CHIP_HIT = 0.26`: A guard's guard wears out (guard_chip): every blow turned aside chips it by CHIP_HIT plus CHIP_K times the blow's strength, and the one that takes it past 1 lands in full instead.
+- `CHIP_K = 0.2`
+- `CHECK_R = 6.0 * WS.M`: Downed awareness (downed_awareness): a blow that leaves someone down brings the nearest free onlooker within CHECK_R over to look — they come within CHECK_NEAR (feet to feet), lean in (rad, + forward) with a slow head shake for CHECK_S, then walk on; once for each knock-down. A fighter whose hero goes down stands over them a beat (STAND_OVER_S) before walking off. CHECK_CAP bounds the walk over.
+- `CHECK_NEAR = 0.8 * WS.M`
+- `CHECK_S = 2.4`
+- `CHECK_LEAN = 0.3`
+- `CHECK_CAP = 9.0`
+- `STAND_OVER_S = 1.3`
+- `RUN_F = 2.6`: A walker's own speed times this is their run; the fighter capsule radii (u) handed to the collision world. Both as reactions.gd (its RUN_F, BODY_R and BODY_H).
+- `BODY_R = 0.25 * WS.M`
+- `BODY_H = 1.7 * WS.M`
+- `WITNESS_R = 8.0 * WS.M`: How near a brawler's call for friends reaches, as reactions.gd's WITNESS_R.
+
+### Properties
+
+- `hero_open: bool`: The hero can be fought now (on foot and in control; traffic sets it every step), and who hears of a punch that lands on them: on_hero_hit(at, strength, push).
+- `hero_down: bool`: The hero is down on the ground now (traffic sets it every step beside hero_open; downed_awareness).
+- `on_wind_up: Callable`: Who hears of a punch thrown at the hero as it starts: on_wind_up(walker id, fist, seconds until it lands); and who may counter it as it lands: on_hero_parry(walker id, fist) -> true when it is countered (it then misses).
+- `fight_odds: Dictionary`: The share who fight back, by cause (test hook), and the punches that landed on the hero or were countered.
+- `fight_temper: Dictionary`: Walker id -> their temper among TEMPERS (a test hook, overriding the identity hash), and the share of the hero's blows a guard turns aside (a test hook too).
+- `active: Dictionary`: reactions.gd's live state, shared at setup: walker id -> Reaction of everyone down or reacting, the spawner of a Reaction for a walker (_new), the "may start a reaction" test (_free) and the after-blow planner (_after, for a turned-aside blow's scrap going on).
+
+### Functions
+
+- `func temper_of(w: WK.Walker) -> int`: w's temper among TEMPERS: the test pin (fight_temper) wins, else it is fixed to who w is (fight_tempers) — their id and resident id hashed into the shares, so the same person always fights the same way whatever the order of things around them. Plain without the flag.
+- `func arm(r) -> void`: A fighter's temper, and their way round the hero, fixed; a fresh scrap starts with a whole guard (guard_chip).
+- `func fights_back(r, cause: String) -> bool`: True when r's walker fights the hero back: always once they have, else by fight_odds for the cause while the hero can be fought. A fighter's temper is fixed the moment they square up.
+- `func turned_aside(r, cause: String, strength: float) -> bool`: True when the hero's blow lands on a guarded fighter's guard instead (fight_tempers): the scrap is still theirs (fighting, or waiting to) and they turn guard_share of the blows that reach them aside. Nothing of it counts: no reel back, no slide, nothing toward the knock-down. But the guard wears (guard_chip): each blow turned aside chips it, and the one that takes the chip past 1 lands in full.
+- `func guarded_plan(r, cause: String) -> StringName`: The blow they turned aside (fight_tempers): a short duck behind the guard, then the scrap goes on as it was. Plans the steps; the caller (reactions.hit) starts them.
+- `func after_fight(r) -> Array`: A fighter's plan once the blow is over (fight_tempers): a caller shouts their call longer and drafts friends into it; the scrap itself and what follows it are fight_steps.
+- `func fight_steps(r) -> Array`: The scrap and what follows it, by temper (fight_tempers): a bolt's fight is short and ends in them running off; anyone else's may run its course and ends in a walk back.
+- `func call_friends(r) -> void`: A caller drafts friends into the scrap (fight_tempers): up to CALL_MAX of the people around within WITNESS_R who are free shout with them, square up and join in, each their own way.
+- `func run_step() -> Array`
+- `func send_checker(r) -> void`: Sends the nearest free onlooker within CHECK_R to look r's downed victim over (downed_awareness): once for each knock-down, and never one of the fight's own. The checker walks up beside the body, leans in a moment, then walks on (the "check" step, step_check).
+- `func step_check(r, dt: float) -> bool`: The checker walks up beside the body they came for, then leans over it with a slow head shake (CHECK_S) and walks on. Over at once when the one they came for is up again or gone. A hand's width past CHECK_NEAR counts as arrived: the walk clamps at the ring, and without the slack a landing exactly on it would never tip into the lean.
+- `func begin(r) -> void`: The first step of a scrap (reactions' _next_step calls this as a "fight" step starts): blows come in pairs from FIGHT_FIRST on; a bruiser leads with the cross and answers a blow the moment it lands (fight_tempers).
+- `func step_fight(r, dt: float) -> bool`: Fighting back: squares up to the hero, closes in to FIGHT_REACH and throws a punch whenever the pause is over. Over (true) once the punch under way is done and the hero cannot be fought, is FIGHT_LOST away or the step's time is up.
+- `func dancing(r) -> bool`: A dancer sidesteps while they wait for their punch (fight_tempers).
+- `func orbit(r, dist: float, dt: float) -> void`: A dancer steps their own way round the hero on the ring of FIGHT_REACH (fight_tempers), facing them all the while: near enough to punch from, never still for the hero to line up.
+- `func close_in(r, dir: Vector3, room: float, dt: float) -> void`: Runs at the hero from afar and walks the last metres (by at most room), stopped by walls and posts.
+- `func punch(r, dt: float, dist: float) -> void`: The punch under way: at its contact time it reaches a hero still within FIGHT_HIT in the cone ahead (reach_hero); once the clip has played, the next punch of the pair waits a pause.
+- `func reach_hero(w: WK.Walker, strength: float) -> void`: w's punch of strength reaches the hero: countered (on_hero_parry), it misses; else it lands (on_hero_hit).
+- `static func fist(w: WK.Walker) -> Vector3`: Where w's fist lands: FIST ahead of and up from its drawn feet.
+- `func set_feet(w: WK.Walker, q: Vector3) -> void`: Draws w's feet at q, on the ground there (off the curb into the road, say).
 
 ## `scripts/fp/traffic/fleets.gd`
 
@@ -327,7 +465,8 @@ Junction control (docs/fp/slices/E-traffic.md §2): 4-way traffic lights on cros
 
 ### Properties
 
-- `props: Dictionary`: tile -> {"node": Node3D, "groups": Array[MeshInstance3D] (axis * 3 + colour), "peds": Array[GeometryInstance3D] per (axis * 2 + walk), "poles": Array[Node3D], "state": int}
+- `props: Dictionary`: tile -> {"node": Node3D, "groups": Array[MeshInstance3D] (axis * 3 + colour), "peds": Array[GeometryInstance3D] per (axis * 2 + walk), "poles": Array[Node3D], "state": int, "colliders": Array of holder-local solid entries (written into the view's holder meta)}
+- `holder_of: Callable`: The view's tile holder, so our posts can be written into its `colliders` meta (the channel CollisionWorld reads), and the collision refresh to call once they changed. traffic_feature wires both: only its ctx holds the view and the collision world.
 
 ### Functions
 
@@ -339,7 +478,7 @@ Junction control (docs/fp/slices/E-traffic.md §2): 4-way traffic lights on cros
 - `func ped_walk(i: int, arm: int) -> bool`: True when people may step onto the zebra across arm `arm` of signalled tile i: its walk phase follows the parallel green (zebras across N/S arms walk with E-W green).
 - `func ped_lamp(i: int, arm: int) -> bool`: True while the walk lamp of that zebra shows "walk" (the whole parallel green).
 - `func rebuild_all() -> void`: (Re)builds the furniture of every junction tile.
-- `func build_props(i: int) -> void`: Rebuilds the furniture of tile i (none unless it is a tee or a cross).
+- `func build_props(i: int) -> void`: Rebuilds the furniture of tile i (none unless it is a tee or a cross), then writes its solid parts into the tile's colliders.
 - `func light_pole(i: int, corner: int) -> Node3D`: The light pole on cross tile i at corner (0..3 = NE, SE, SW, NW), or null.
 - `func update_lamps(p: Vector3, r: float) -> void`: Lamp states of cross tiles near p (within r): swaps materials only on change.
 
@@ -609,13 +748,17 @@ Asset building for people.gd: the layered clips (a box held in both hands, a pho
 
 extends `RefCounted`
 
-People hit in the street (docs/fp/ARCHITECTURE.md, Body actions): shoved or punched by the player, struck by the car they drive or dragged out of their own (carjack). A light blow makes the person reel (hit_chest, hit_head) and slide back a little; a hard one (DOWN), the HITS_DOWN-th punch in a row or a fast car knocks them down (knockback), and they lie a while before they get up (get_up). A car that runs them over where they lie shoves them along and leaves them down but up sooner. Then they shake their head or shout at whoever did it, run off, or walk back to where they were; some of those shoved or punched fight back instead (fight_back): they square up to the hero, close in and throw jabs and crosses (on_hero_hit) until the hero is down, gets away or drives off. People within WITNESS_R who see it run off or shout too. While a walker stands where the blow left it its state is "react" (it keeps its edge and plan; the slide and the walk back move only its drawn offset), and a run gives it its own state back at RUN_F times its pace with the run clip. The hero may take hold of someone (grab): they hang in the hero's hands (hold_to) in HOLD_CLIP, reeling from blows without falling free, until let go (release), knocked down or HOLD_S is up, then react as to a shove. A punch thrown at the hero is announced as it starts (on_wind_up) and may be countered as it arrives (on_hero_parry). What follows a blow for the city (memory, mood, crews) is incidents.gd's.
+People hit in the street (docs/fp/ARCHITECTURE.md, Body actions): shoved or punched by the player, struck by the car they drive or dragged out of their own (carjack). A light blow makes the person reel (hit_chest, hit_head) and slide back a little; a hard one (DOWN), the HITS_DOWN-th punch in a row or a fast car knocks them down (knockback), and they lie a while before they get up (get_up). A car that runs them over where they lie shoves them along and leaves them down but up sooner. Then they shake their head or shout at whoever did it, run off, or walk back to where they were; some of those shoved or punched fight back instead (fight_back): they square up to the hero, close in and throw jabs and crosses (on_hero_hit) until the hero is down, gets away or drives off — each their own way (fight_tempers), fixed to who they are: one turns the hero's blows aside, one sidesteps round them while they wait, one calls friends over, one squares up and bolts, and a tough one leads with the cross and answers a blow at once. People within WITNESS_R who see it run off or shout too. While a walker stands where the blow left it its state is "react" (it keeps its edge and plan; the slide and the walk back move only its drawn offset), and a run gives it its own state back at RUN_F times its pace with the run clip. The hero may take hold of someone (grab): they hang in the hero's hands (hold_to) in HOLD_CLIP, reeling from blows without falling free, until let go (release), knocked down or HOLD_S is up, then react as to a shove. A punch thrown at the hero is announced as it starts (on_wind_up), holds back then snaps through its wind-up (counter_cues) and may be countered as it arrives (on_hero_parry). What follows a blow for the city (memory, mood, crews) is incidents.gd's.
 
 ### Constants
 
 - `WS = preload("res://scripts/fp/world_scale.gd")`
 - `AP = preload("res://scripts/fp/asset_paths.gd")`
 - `WK = preload("res://scripts/fp/traffic/walkers.gd")`
+- `BS = preload("res://scripts/fp/traffic/body_spheres.gd")`
+- `D = preload("res://scripts/sim/sim_defs.gd")`
+- `FB = preload("res://scripts/fp/traffic/fight_back.gd")`: The scrap and the care for a body on the ground, split out of this file: fighting back, the tempers, counter cues and downed awareness live there. This file keeps the Reaction records and the after-blow plans; the layer borrows them (its back-link is a weakref). The aliases further down keep the old RE.* names working for tests and benches.
+- `CR = preload("res://scripts/fp/traffic/crowd_reacts.gd")`: The crowd's answer to what the street sees and hears (the knock-down gasp, the horn startle), split out the same way; its constants stay under the old names via the alias below.
 - `LENGTHS = {&"knockback": 0.833, &"get_up": 1.54, &"hit_head": 0.417, &"hit_chest": 0.333}`: Clip lengths (s) in HC's libraries (the female clips match); setup() reads them again.
 - `ONCE = [&"knockback", &"get_up", &"hit_head", &"hit_chest"]`: Clips that play once: the walker does not turn while they run (it may be lying down).
 - `WITNESS_R = 8.0 * WS.M`
@@ -626,23 +769,25 @@ People hit in the street (docs/fp/ARCHITECTURE.md, Body actions): shoved or punc
 - `BACK_V = 1.1 * WS.M`
 - `BODY_R = 0.25 * WS.M`
 - `BODY_H = 1.7 * WS.M`
+- `HEAD_R = 0.14 * WS.M`
+- `DOWN_REACH = 0.4 * WS.M`: A fall sweeps the posed body this far past the drawn feet (the clip's tip, the lie's reach), so a knock-down's slide clamps them that much clear besides its capsule: the fall needs its own floor, and landing against the wall leaves the lie and the rise inside it.
 - `SEE = [0.3, 0.6, 0.85]`: Share of the people around who react, and of those the share who run off, by severity (a shove, a punch, a knock-down).
 - `FLEE = [0.15, 0.5, 0.6]`
 - `ANSWERS = { "wave": [10.0, 0.75, 0.0, &"wave", 2.8], "yes": [5.0, 0.75, 0.0, &"yes", 2.5], "no": ...`: Who answers an emote of the hero's: [range (m), the cosine of the cone ahead, share, clip, seconds]. A share of 0 is the nearest person in the cone; otherwise each of those around answers with that chance, at most ANSWER_MAX of them.
 - `ANSWER_MAX = 4`
-- `FIGHT_ODDS = {"shove": 0.3, "punch": 0.4}`: Fighting back (fight_back): the share of those shoved or punched (and not knocked down) who do, by cause (fight_odds starts as this); how long a fight may last (s); how close they come (feet to feet; within FIGHT_SLACK of it counts), from how far they run there and beyond how far they give up.
-- `FIGHT_S = 20.0`
-- `FIGHT_REACH = 0.9 * WS.M`
-- `FIGHT_SLACK = 0.05 * WS.M`
-- `FIGHT_RUN = 3.0 * WS.M`
-- `FIGHT_LOST = 12.0 * WS.M`
-- `FIGHT_BLOWS = [[&"punch_jab", 0.2, 0.45, 0.7], [&"punch_cross", 0.29, 0.6, 0.8]]`: Their punches in turn: [clip, contact time (s), strength 0..1, seconds the clip plays]; the pause between two (s) and before the first.
-- `FIGHT_GAP = Vector2(0.45, 1.1)`
-- `FIGHT_FIRST = 0.25`
-- `FIGHT_HIT = 1.25 * WS.M`: A punch lands on the hero within FIGHT_HIT (feet to feet) inside the cone ahead (the cosine), from the fist FIST ahead and up (metres), and pushes them on at FIGHT_PUSH (u/s).
-- `FIGHT_CONE = 0.5`
-- `FIST = Vector2(0.5, 1.45)`
-- `FIGHT_PUSH = 1.5 * WS.M`
+- `FIGHT_ODDS = FB.FIGHT_ODDS`: The fight layer's constants under their old names, for the tests and benches that read them; fight_back.gd (FB) owns them now.
+- `FIGHT_BLOWS = FB.FIGHT_BLOWS`
+- `FIGHT_REACH = FB.FIGHT_REACH`
+- `WIND_RATE = FB.WIND_RATE`
+- `CHECK_NEAR = FB.CHECK_NEAR`
+- `STAND_OVER_S = FB.STAND_OVER_S`
+- `T_PLAIN = FB.T_PLAIN`
+- `T_GUARD = FB.T_GUARD`
+- `T_DANCER = FB.T_DANCER`
+- `T_CALLER = FB.T_CALLER`
+- `T_BOLT = FB.T_BOLT`
+- `T_BRUISER = FB.T_BRUISER`
+- `HORN_CD = CR.HORN_CD`: The crowd layer's constants under their old names, for the tests that read them; crowd_reacts.gd (CR) owns them now.
 - `LIFT = {"blow": Vector2(0.15, 0.45), "car": Vector2(0.3, 0.9)}`: A knock-down throws the body (hit_feel flag): up LIFT (metres, by strength: a blow, a car), a blow's arc the FLY seconds by its strength (a car: FLY_S), back to the ground, then up BOUNCE of that again over BOUNCE_S. The harder a blow lands the higher and longer the body flies: a hook that finishes someone leaves the ground properly, a jab's third in a row barely does.
 - `FLY = Vector2(0.28, 0.42)`
 - `FLY_S = 0.32`
@@ -658,6 +803,7 @@ People hit in the street (docs/fp/ARCHITECTURE.md, Body actions): shoved or punc
 - `TIP = {"punch": Vector2(0.06, 0.16), "shove": Vector2(0.04, 0.12)}`: A light blow tips the one hit back as they reel (hit_feel flag), up to TIP rad by strength: deeper for a punch (the head snapping back) than for a shove or a car's nudge (TIP_ELSE), played out over TIP_S of the reel clip's length and back upright by its end.
 - `TIP_ELSE = Vector2(0.04, 0.12)`
 - `TIP_S = 0.7`
+- `STAGGER_S = Vector2(0.08, 0.16)`: A directional finisher staggers before falling, by strength (seconds).
 - `THROW_LIFT = 0.3`: With hit_feel a throw flies the body up THROW_LIFT times the fling (metres) on a ballistic arc (gravity G, m/s²), tipped back by up to THROW_TILT (rad) at its height, across all but THROW_SKID metres of the fling, which it skids along the ground over SKID_S.
 - `G = 9.8`
 - `THROW_TILT = 0.7`
@@ -671,31 +817,39 @@ People hit in the street (docs/fp/ARCHITECTURE.md, Body actions): shoved or punc
 
 ### Properties
 
-- `hero_open: bool`: The hero can be fought now (on foot and in control; traffic sets it every step), and who hears of a punch that lands on them: on_hero_hit(at, strength, push).
-- `on_wind_up: Callable`: Who hears of a punch thrown at the hero as it starts: on_wind_up(walker id, fist, seconds until it lands); and who may counter it as it lands: on_hero_parry(walker id, fist) -> true when it is countered (it then misses).
-- `fight_odds: Dictionary`: The share who fight back, by cause (test hook), and the punches that landed on the hero or were countered.
+- `fight`: The fight layer (fight_back.gd): the scrap, the tempers, counter cues and the care for a body on the ground. Its state keeps the old names here through the properties below, so tests, benches and the traffic feature wire it as before.
+- `crowd`: The crowd layer (crowd_reacts.gd): the knock-down gasp and the horn startle, its cooldowns its own.
+- `hero_open: bool:`: The hero can be fought now (on foot and in control; traffic sets it every step), and who hears of a punch that lands on them: on_hero_hit(at, strength, push).
+- `hero_down: bool:`: The hero is down on the ground now (traffic sets it every step beside hero_open; downed_awareness).
+- `on_wind_up: Callable:`: Who hears of a punch thrown at the hero as it starts: on_wind_up(walker id, fist, seconds until it lands); and who may counter it as it lands: on_hero_parry(walker id, fist) -> true when it is countered (it then misses).
+- `body_extent: Callable`: The posed body's collision points at a base position (people.gd body_spheres: [feet, torso, head]); set by the traffic feature. Without it only the feet capsule is kept clear, and the fall, the lie and the get-up pose the head and torso past whatever stopped the feet.
+- `cars_near: Callable`: The moving car bodies near a point, as [xz centre, yaw, Vector2(half width, half length), y bottom, y top]; set by the traffic feature. Without it a body thrown or slid into a real car lies inside the drawn vehicle: the static world the press-out reads holds no cars.
+- `fight_odds: Dictionary:`: The share who fight back, by cause (test hook), and the punches that landed on the hero or were countered.
+- `fight_temper: Dictionary:`: Walker id -> their temper among TEMPERS (a test hook, overriding the identity hash), and the share of the hero's blows a guard turns aside (a test hook too).
 
 ### Inner classes
 
-- `Reaction`: One person reacting: the steps still to come, [mode, clip, seconds] with mode "place" (stand and play the clip), "back" (walk back to the walker's own place), "run", "fight" or "held" (in the hero's hands).
+- `Reaction`: One person reacting: the steps still to come, [mode, clip, seconds] with mode "place" (stand and play the clip), "back" (walk back to the walker's own place), "run", "fight", "held" (in the hero's hands) or "check" (walk up to a body and lean over it, downed_awareness).
 
 ### Functions
 
 - `func setup(p_wk: WK, p_collision: CollisionWorld, seed: int) -> void`
 - `func clear() -> void`
-- `func hit(w: WK.Walker, src: Vector3, push: Vector3, strength: float, cause: String, fling: float = 0.0) -> Dictionary`: w takes a blow from src (a world point) along push (xz, any length) of strength 0..1, cause "shove", "punch", "car" or "carjack"; fling (m) > 0 throws a body it knocks down that far. Held (grab) and not knocked down, w reels and hangs on. A car that runs w over where it already lies (_trample) shoves it along and leaves it down but up sooner. Returns {"down": bool, "clip": StringName}, or {} when w cannot take one now (hidden, in a conversation, in the air, or lying there for anything but a car).
+- `func hit(w: WK.Walker, src: Vector3, push: Vector3, strength: float, cause: String, fling: float = 0.0) -> Dictionary`: w takes a blow from src (a world point) along push (xz, any length) of strength 0..1, cause "shove", "punch", "car" or "carjack"; fling (m) > 0 throws a body it knocks down that far. Held (grab) and not knocked down, w reels and hangs on. A car that runs w over where it already lies (_trample) shoves it along and leaves it down but up sooner. A guarded fighter may turn a punch or a shove aside instead (fight_tempers). Returns {"down": bool, "clip": StringName}, or {} when w cannot take one now (hidden, in a conversation, in the air, or lying there for anything but a car).
 - `func grab(w: WK.Walker, src: Vector3) -> bool`: The hero takes hold of w (src: the hero's feet): it hangs in the hero's hands, where hold_to puts it, until let go (release), knocked down or HOLD_S is up, then reacts as to a shove. False when w cannot be held now (as hit()).
 - `func hold_to(w: WK.Walker, p: Vector3, yaw: float) -> bool`: Where the hero's hands hold w now: its feet go to p (stopped by walls and posts), turned to yaw. False once w is no longer held.
 - `func release(w: WK.Walker) -> void`: The hero lets go of w: it reacts as to a shove from where it stands.
 - `func held(w: WK.Walker) -> bool`: True while the hero holds w.
-- `func witness(w: WK.Walker, src: Vector3, severity: int) -> Array`: People within WITNESS_R of w who see what happened to it (severity 0 a shove, 1 a punch, 2 a knock-down) and are not reacting already: some run off, some shout at src (shake their head at a shove). Returns them.
+- `func temper_of(w: WK.Walker) -> int`: w's temper among TEMPERS (fight_back.gd rolls it; kept here for the tests that pin it).
+- `func witness(w: WK.Walker, src: Vector3, severity: int) -> Array`: People within WITNESS_R of w who see what happened to it (severity 0 a shove, 1 a punch, 2 a knock-down) and are not reacting already: some run off, some shout at src (shake their head at a shove). A knock-down with crowd_gasp on rocks the ones who stay back as one (GASP_TIP, no delay), once per crowd (GASP_CD/GASP_R). Returns them.
 - `func answer_emote(p: Vector3, fwd: Vector3, emote: String) -> Array`: People who answer the hero's emote ("wave", "yes", "no", "shout", "dance"; ANSWERS) made at p facing fwd (xz): after a moment they turn to p and wave, nod or shake their head. Returns them.
+- `func startle(src: Vector3, radius: float, long: bool) -> Array`: A car horn sounded at src and carries radius (u; horn_street): the crowd answers (crowd_reacts.gd's startle; kept here for the traffic feature and the tests).
 - `func step(dt: float) -> void`
 - `func fighting(w: WK.Walker) -> bool`: True while w is fighting the hero (closing in or punching).
 - `static func throw_height(t: float, lift: float, fly: float = FLY_S) -> float`: How high a body thrown up to lift for fly seconds sits t seconds after the blow (0 once it has landed).
 - `func blocks() -> Array`: Lane blocks for vehicles.gd: the people hit, until they walk or run on, as circles at their drawn feet (on a sidewalk they are clear of every lane).
 - `func drag_out(w: WK.Walker, from: Vector3, from_yaw: float) -> void`: Car-jacked w (just knocked down by the carjack's blow) is dragged out of the car first: drawn from from (its feet in the driver's seat, facing from_yaw) out to where the blow found it over DRAG_S in the sit pose, then it falls.
-- `func is_down(w: WK.Walker) -> bool`: True while w is knocked down (lying or getting up).
+- `func is_down(w: WK.Walker) -> bool`: True once w has taken a knock-down, including its short stagger before falling.
 - `func count() -> int`
 - `func pose(w: WK.Walker, clip: StringName, t: float, secs: float = 60.0) -> void`: Stages w playing clip from t seconds in, for secs (photos, tests). The caller releases its body so the next one starts at t.
 
@@ -703,7 +857,7 @@ People hit in the street (docs/fp/ARCHITECTURE.md, Body actions): shoved or punc
 
 extends `RefCounted`
 
-Draws E's agents (docs/fp/slices/E-traffic.md §3 Draw calls). Vehicles: the full GLB only within NEAR of the camera (pooled per model, capped), beyond that one MultiMeshInstance3D per model built from a single-surface, vertex-coloured merge of the GLB (H's <name>_lod1.glb when it exists), with shadows to SHADOW_DIST and none beyond. Parked cars go through a static layer rebuilt only when the parked set changes or the camera moves. Brake lights, siren flashes and wheel spin (and a bicycle's cranks) on full models, and their indicators blink (indicators.gd); after dark their head and tail lamps light up, the nearest moving vehicles throw headlight beams, and the head and tail lamps of the merged ones glow. Responding crews near the camera wash their surroundings in flashing siren light. A car with its driver's door open (the player's) swings it out on a hinge cut from its body (car_doors.gd). People (the legacy static bodies, until HC's rigged ones): every distance draws the merged body through the people shader, which swings the legs and arms from per-instance stride data and dithers people in and out (spawned in view, or at the edge of VIS_PERSON). Same geometry and colours as the GLB, one draw per body model and layer.
+Draws E's agents (docs/fp/slices/E-traffic.md §3 Draw calls). Vehicles: the full GLB only within NEAR of the camera (pooled per model, capped), beyond that one MultiMeshInstance3D per model built from a single-surface, vertex-coloured merge of the GLB (H's <name>_lod1.glb when it exists), with shadows to SHADOW_DIST and none beyond. Parked cars go through a static layer rebuilt only when the parked set changes or the camera moves. Brake lights, siren flashes and wheel spin (and a bicycle's cranks) on full models, and their indicators blink (indicators.gd); after dark their head and tail lamps light up, the nearest moving vehicles throw headlight beams, and the head and tail lamps of the merged ones glow — bicycles too, whose small lenses light on the full model and whose lod1 carries them as emissive materials, so a cyclist reads at night at any distance. The car the hero drives carries its own dedicated beam after dark (the night_driving flag), a bicycle a small dim lamp at its handlebar instead. Responding crews near the camera wash their surroundings in flashing siren light. A car with its driver's door open (the player's) swings it out on a hinge cut from its body (car_doors.gd). People (the legacy static bodies, until HC's rigged ones): every distance draws the merged body through the people shader, which swings the legs and arms from per-instance stride data and dithers people in and out (spawned in view, or at the edge of VIS_PERSON). Same geometry and colours as the GLB, one draw per body model and layer.
 
 ### Constants
 
@@ -738,6 +892,10 @@ Draws E's agents (docs/fp/slices/E-traffic.md §3 Draw calls). Vehicles: the ful
 - `BEAM_ENERGY = 2.4`
 - `BEAM_DECAY = 0.5`: Distance falloff exponent of a beam: gentler than inverse distance, so someone standing in front of a waiting car is lit, not blown out, while the road 10-30 m ahead still gets a pool.
 - `BEAM_HEIGHT = 0.65 * WS.M`
+- `HERO_BIKE_RANGE = 12.0 * WS.M`: The hero's own lamp (the night_driving flag): a dedicated spot for the car they drive, so it always lights the road ahead after dark however full the shared pool is; a bicycle carries a small dim lamp at its handlebar instead (its models have no headlamps of their own).
+- `HERO_BIKE_ANGLE = 18.0`
+- `HERO_BIKE_ENERGY = 1.2`
+- `HERO_BIKE_HEIGHT = 1.05 * WS.M`
 - `WASHES = 3`: Siren light washes: flashing omni lights on responding crews near the camera.
 - `WASH_DIST = 3.0`
 - `WASH_RANGE = 14.0 * WS.M`
@@ -748,6 +906,10 @@ Draws E's agents (docs/fp/slices/E-traffic.md §3 Draw calls). Vehicles: the ful
 - `LOD_WET_ROUGH = 0.2`
 - `PEOPLE_SHADER = """`
 - `VEHICLE_SHADER = """`
+
+### Properties
+
+- `hero_lamp: SpotLight3D`: The hero's own lamp (the night_driving flag, _place_hero): the spot itself, and whether it is lit this frame.
 
 ### Inner classes
 
@@ -763,7 +925,7 @@ Draws E's agents (docs/fp/slices/E-traffic.md §3 Draw calls). Vehicles: the ful
 - `func set_glow(g: float) -> void`: Lamp glow of the merged vehicles (0 by day, 1 at night).
 - `func set_wet(w: float) -> void`: How wet the streets are (0..1): the paint of every car and the merged bodies follow.
 - `func begin_static() -> void`: Starts a rebuild of the static (parked) layer.
-- `func draw_car(c: VH.Car, xf: Transform3D, d: float, vis_end: float, brake: bool, siren: String, spin: float, blink: int = 0) -> void`: blink: the side its indicators signal (indicators.gd side()).
+- `func draw_car(c: VH.Car, xf: Transform3D, d: float, vis_end: float, brake: bool, siren: String, spin: float, blink: int = 0, hero: bool = false) -> void`: blink: the side its indicators signal (indicators.gd side()); hero: the car the hero drives (the night_driving flag), which takes the dedicated lamp in _place_hero after dark instead of competing for the pool.
 - `func draw_parked(c: VH.Car, xf: Transform3D, d: float, vis_end: float) -> void`: A parked car into the static layer (between begin_static and finish_static).
 - `func draw_walker(w: WK.Walker, xf: Transform3D, d: float, vis_end: float, phase: float = 0.0) -> void`: A person: always the merged body through the people shader (stride and opacity per instance).
 - `func release_car(c: VH.Car) -> void`: Returns a vehicle's full node to its pool.
@@ -795,7 +957,7 @@ Cars the player's car knocks (slice E): a hit car slides off with the momentum i
 - `RETURN_SPEED = 1.2 * WS.M`: Then its body steers back onto the lane at this speed (u/s) and turn rate (rad/s), the car staying stunned at least STUN_MIN (s) at a time until it is back.
 - `RETURN_TURN = 0.6`
 - `STUN_MIN = 0.1`
-- `MASS = {"car": 1.0, "bus": 6.0, "truck": 4.0, "emergency": 1.6, "bike": 0.12}`: Masses relative to a sedan (the player's car is 1), by kind; a car pulling into a slot does not give way (FIXED_MASS).
+- `MASS = { "car": 1.0, "bus": 6.0, "truck": 4.0, "garbage_truck": 5.0, "emergency": 1.6, "bike":...`: Masses relative to a sedan (the player's car is 1), by kind; a car pulling into a slot does not give way (FIXED_MASS).
 - `SEDAN_LENGTH = 0.24`
 - `FIXED_MASS = 50.0`
 - `OFF_BLOCK = 0.3 * WS.M`: A body off its lane or slot by more than this (u), or turned by more than OFF_TURN (rad), blocks lane traffic.
@@ -898,6 +1060,7 @@ Traffic and pedestrians on lanes (slice E, docs/fp/slices/E-traffic.md): one roa
 - `IND = preload("res://scripts/fp/traffic/indicators.gd")`
 - `DOORS = preload("res://scripts/fp/traffic/car_doors.gd")`
 - `REACT = preload("res://scripts/fp/traffic/reactions.gd")`
+- `BS = preload("res://scripts/fp/traffic/body_spheres.gd")`
 - `INCIDENTS = preload("res://scripts/fp/traffic/incidents.gd")`
 - `JACK = preload("res://scripts/fp/traffic/carjack.gd")`
 - `MAX_STEP = 1.0 / 30.0`
@@ -908,8 +1071,12 @@ Traffic and pedestrians on lanes (slice E, docs/fp/slices/E-traffic.md): one roa
 - `PHOTO_BACK = 1.3`: The traffic photo stands this far from the junction centre along the arm.
 - `LINE_RETRY = 10.0`: Seconds between attempts to rebuild bus lines that no longer match the roads.
 - `CLAIM_SPEED = 0.5 * WS.M`: The player can take a parked car, their own, or a car in traffic (an ambient one, or with carjack a resident's) crawling below this speed.
+- `DOOR_HALVINGS = 24`: A driver's door swinging past people (door_clear_of_people): the arc of the swing each body blocks is found by DOOR_HALVINGS halvings of the angle off it, and the door stops DOOR_SLACK short of touching them rather than pushing into them.
+- `DOOR_SLACK = 0.001 * WS.M`
 - `JCB_TOP = 6.1 * WS.M`: The backhoe loader (the jcb flag): a work machine, not a highway one — it tops out around 22 km/h and gathers speed at half a car's rate (drive_model.gd, drive_profile).
 - `JCB_GAIN = 0.5`
+- `HEAVY_PROFILES = { "garbage_truck": {"top": 19.4 * WS.M, "gain": 0.30, "steer": 0.55, "brake": 0.70}, "t...`: The town's working vehicles at the wheel (the heavy_motors flag), by fleet class: each drives like itself — its own top speed (m/s), a share of a car's get-up-and-go, of its steering lock and of its braking (drive_model.gd). Their mass is shoves.gd's by kind.
+- `BIKE_PROFILE = {"top": 7.0 * WS.M, "gain": 0.55, "steer": 1.45, "brake": 1.30}`: A bicycle at the wheel (the bike_ride flag): a hero pedals quicker than the town's cyclists ride, turns far tighter than any car and pulls up short, and it weighs almost nothing.
 - `SITE_MACHINES_PER_STEP = 2`: New construction sites whose backhoe is parked this many a step at most.
 - `STATION_FAR = 10`: A crew called with no station in town sets off from a road at most this many tiles away.
 - `HIT_FULL = 14.0 * WS.M`: A car running the hero down (hit_by_cars) hits at full strength from HIT_FULL (u/s) and throws them on along its heading at its own speed.
@@ -940,7 +1107,7 @@ Traffic and pedestrians on lanes (slice E, docs/fp/slices/E-traffic.md): one roa
 - `func person_model_for(rid: String) -> int`
 - `func dims(m: int) -> Vector3`: World size (x width, y height, z length) of a model.
 - `func jcb_model() -> int`: The backhoe loader (the jcb flag): H's yellow machine, a construction body parked at the curb that drives like a car, slower and heavier. -1 when the flag is off or the model is missing.
-- `func drive_profile(id: int) -> Dictionary`: The handling profile of car id (drive_model.gd reset): the backhoe tops out at JCB_TOP and gathers speed at JCB_GAIN of a car's rate; a car is {}.
+- `func drive_profile(id: int) -> Dictionary`: The handling profile of car id (drive_model.gd reset): the backhoe tops out at JCB_TOP and gathers speed at JCB_GAIN of a car's rate, a bicycle rides like itself (BIKE_PROFILE), and the town's working vehicles drive like themselves (HEAVY_PROFILES, by their model's fleet class); a car is {}. A special profile also carries the body's mass (the Car's, as the takeover recorded it), for car_body.gd's impulse math.
 - `func bike_model() -> int`: A cyclist: H's bicycle when present, else a procedural bicycle and rider (one mesh).
 - `func door_point(lot: int) -> Vector3`: Where a person enters or leaves lot i: H's Door_<n> empty when the building has one, else the middle of its front edge (facing its frontage road).
 - `func place_label(lot: int) -> String`
@@ -959,7 +1126,7 @@ Traffic and pedestrians on lanes (slice E, docs/fp/slices/E-traffic.md): one roa
 - `func position_of(id: String) -> Vector3`: Live position of a resident while drawn; else the tile they are at.
 - `func avatar_pick(screen_pos: Vector2, cam: Camera3D) -> String`: The drawn resident closest to screen_pos within 26 px of camera cam, or "".
 - `func avatar_counts() -> Dictionary`: {walking, driving, standing, total} for the HUD and the smoke prints.
-- `func agents_near(p: Vector3, r: float) -> Array`: Agents near p for the minimap and audio (moving vehicles and people on foot; parked cars are left out): [{id, pos, vel, speed, kind, driver_id, heading, stalled_s}]. heading follows S0 §11 (forward = (-sin h, 0, -cos h)), so it holds for stopped agents too; vel is u/s. The entries are each agent's own dictionary, refreshed once per frame: read them now, copy one to keep it.
+- `func agents_near(p: Vector3, r: float) -> Array`: Agents near p for the minimap and audio (moving vehicles and people on foot; parked cars are left out): [{id, pos, vel, speed, kind, driver_id, heading, stalled_s, hero_block_s}]. heading follows S0 §11 (forward = (-sin h, 0, -cos h)), so it holds for stopped agents too; vel is u/s. hero_block_s is the seconds the player has held that car up (their car or the hero on foot the nearest thing in its path; 0 when the blocked_horns flag is off). The entries are each agent's own dictionary, refreshed once per frame: read them now, copy one to keep it.
 - `func agents_packed(p: Vector3, r: float) -> Dictionary`: The cheap form of agents_near for per-frame consumers: parallel packed arrays {"pos": PackedVector3Array, "vel": PackedVector3Array, "heading": PackedFloat32Array, "kind": PackedStringArray} of the agents within r of p (same conventions, no dictionaries).
 - `func visible_near(p: Vector3, r: float) -> Array`: Visible named residents near p (on foot, in a vehicle, or standing outdoors; never indoors).
 - `func is_resident_visible(id: String) -> bool`
@@ -990,6 +1157,8 @@ Traffic and pedestrians on lanes (slice E, docs/fp/slices/E-traffic.md): one roa
 - `func seat_offset() -> Variant`: The driver's hip point in the driven car's own frame (+Z forward), or null until its full model is drawn (the merged far LOD has no seat).
 - `func door_info(id: int = -1) -> Dictionary`: The driver's door of car id (the car the player drives when id < 0), in the car's frame (+Z forward, +X its left and the driver's side, y up from the ground; world units): {"hinge", "handle", "seat" (the hip point), "rear" (the rear edge at the belt line), "open_rear" (that edge with the door wide open)}, or {} when its model has no door that opens (car_doors.gd).
 - `func set_door(amount: float, id: int = -1) -> void`: Opens the driver's door by amount (0 shut .. 1 open): of the car the player drives, or of car id (one they are taking from its driver). Drawn on its full model.
+- `func door_clear_of_people(id: int, amount: float, from: float = 0.0) -> float`: How far the driver's door of car id (the driven car's when id < 0) swings from `from` toward `amount` (0 shut .. 1 open) before its panel runs into someone on foot: amount itself when the way is clear, else the last amount clear of everyone (the arc of the swing each body blocks, from body_spheres.of round people.head_of). A door already resting against someone may still swing away from them; one they stand in the way of stays put rather than push into them.
+- `func is_bicycle(id: int) -> bool`: True when car id is a bicycle: the drive feature boards and leaves one with no door to open.
 - `func light_pole(i: int, corner: int) -> Node3D`: The traffic-light pole on cross tile i at corner (0..3 = NE, SE, SW, NW), or null.
 - `func anchor_of(id: String) -> Vector3`: Live head anchor of resident id while drawn (else above where they are). With HC bodies it is the Head bone's world position (an estimate from the stature while no body draws them).
 - `func anim_stats() -> Dictionary`: Animated-people stats for G2's bench: {"t0", "t1", "t2", "t3"} people on screen per LOD tier, "anim_us" microseconds advancing mixers this frame (T0 trees included), "char_draws" character draws (shadows extra), plus "off" (off-screen bodies holding their pose), "bodies" (instanced) and "people_us" (the whole people pass). Legacy static people report their shader draws only.
@@ -1096,6 +1265,10 @@ Every road vehicle (docs/fp/slices/E-traffic.md §3): ambient filler, resident c
 - `HIT_COOL = 2.5`
 - `HERO_PUSH = 0.5 * WS.PLAYER_RADIUS`: The hero on foot is eased out of a car's body by at least this much a step (u), so a car they walk into pushes them clear. A car that reaches them on the move pushes by its own travel that step as well (HERO_PUSH_RATIO times it), so its body carries them along instead of passing through them.
 - `HERO_PUSH_RATIO = 1.5`
+- `NUDGE_S = 3.0`: The player's horn reaches the cars ahead of them (the horn_reach flag, honk_nudge): a stopped or crawling one within NUDGE_REACH and inside NUDGE_CONE of their heading shakes off a hold or a knock and gets going for NUDGE_S.
+- `NUDGE_REACH = 15.0 * WS.M`
+- `NUDGE_CONE = 0.5`
+- `NUDGE_CRAWL = 0.5 * WS.M`: A car this slow or slower counts as stopped for a nudge (the drive feature's claim speed).
 
 ### Properties
 
@@ -1125,6 +1298,7 @@ Every road vehicle (docs/fp/slices/E-traffic.md §3): ambient filler, resident c
 - `func draw_xform(c: Car) -> Transform3D`: Drawn transform of c (with the smoothing offsets, and carried on by the time its simulation LOD has not stepped yet, never past what its last step allowed).
 - `func aabb(c: Car) -> AABB`: World AABB of c (from its oriented box).
 - `func step(dt: float) -> void`: Advances every vehicle by dt seconds of game-scaled time.
+- `func honk_nudge(at: Vector3, heading: Vector2, reach: float = NUDGE_REACH) -> int`: The player's horn reaches the cars ahead of them at, heading (xz, unit): every stopped or crawling one within reach and inside NUDGE_CONE of that heading shakes off a hold or a knock and gets going for NUDGE_S. Returns how many it reached.
 - `func permit(c: Car, x: LG.Lane, mv: LG.Lane, after: LG.Lane, d_stop: float) -> bool`: True when c may pass the stop point of approach x into move mv (then the lane `after`).
 - `func hold_reason(c: Car, x: LG.Lane, mv: LG.Lane, after: LG.Lane, d_stop: float) -> String`: Why c must hold at the stop point of approach x ("" when it may go): red, amber, zebra, yield, box, room.
 - `func why_held(c: Car) -> String`: The hold reason for c at the next stop point within reach ("" when none), for tests and tuning.

@@ -649,8 +649,13 @@ func _random_disaster() -> void:
 		if D.is_zone(sim.kind[i]) and sim.level[i] > 0:
 			spots.append(i)
 	var keys: Array = D.DISASTERS.keys()
-	var t: String = keys[randi() % keys.size()]
-	var s := spots[randi() % spots.size()] if not spots.is_empty() else D.idx(16, 16)
+	# Both picks come from the city seed, not the process-global stream: the disaster lands in the
+	# save, so the same city at the same tick must choose the same surprise (AGENTS.md).
+	var rng := sim.rng_for(307)
+	var t: String = keys[rng.randi_range(0, keys.size() - 1)]
+	var s := D.idx(16, 16)
+	if not spots.is_empty():
+		s = spots[rng.randi_range(0, spots.size() - 1)]
 	cancel_arm()
 	var ev := sim.trigger_disaster(t, D.tx(s), D.ty(s), "player", "A surprise from the player.")
 	if not ev.is_empty():

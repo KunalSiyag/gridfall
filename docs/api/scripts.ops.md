@@ -156,12 +156,13 @@ Low-GPU-memory mode. decide() reads the graphics card once per process (the Rend
 ### Functions
 
 - `static func probe() -> Dictionary`: The card: {"adapter", "vendor", "type" (RenderingDevice.DeviceType), "total_mib", "free_mib", "source"}; memory is -1 when unknown (headless, or no tool reports it).
-- `static func reason(info: Dictionary, env: String, auto: bool) -> String`: Why the mode is on for this card, or "" when it is off. env is GRIDFALL_LOW_VRAM; auto is the "low_vram_auto" flag.
+- `static func reason(info: Dictionary, env: String, auto: bool, web: bool = false) -> String`: Why the mode is on for this card, or "" when it is off. env is GRIDFALL_LOW_VRAM; auto is the "low_vram_auto" flag; web is the browser build, which always starts lean (WebGL 2 on whatever laptop opens the page, and it cannot read the card's memory), so it starts on Low too.
 - `static func decide() -> Dictionary`: probe() with "low" and "reason", decided on the first call and cached for the process.
 - `static func low() -> bool`: Whether the low-GPU-memory mode is on.
 - `static func set_override(on: bool, why: String = "test") -> v`: Sets the decision for this process (tests); clear() forgets it.
 - `static func clear() -> void`
 - `static func apply_to(vp: Viewport) -> void`: Shrinks what the renderer allocates: the sun's shadow atlas 8192 -> 4096 and its filter, SSAO quality, MSAA off (FXAA instead) and the lamp shadow atlas of vp. Also sets SETTINGS as project values for this process (never saved).
+- `static func compat(method: String) -> bool`: True for the Compatibility renderer's method name (gl_compatibility).
 - `static func describe(info: Dictionary) -> String`: One line for the log: the card, its memory and the decision.
 - `static func parse_nvidia(text: String) -> Array[Dictionary]`: Rows of `nvidia-smi --query-gpu=name,memory.total,memory.free --format=csv,noheader,nounits`: [{"name", "total_mib", "free_mib"}]; malformed lines are skipped.
 - `static func pick_row(rows: Array[Dictionary], adapter: String) -> Dictionary`: The row whose name the adapter carries (several cards), else the first; {} when there is none.

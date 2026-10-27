@@ -1,21 +1,22 @@
 extends FpFeature
-## Dogs, pigeons and cats in the street (integration feature "animals"). Some people out on foot
-## walk a dog on a lead: residents whose household lives with a dog (unless they are off to work)
-## and a share of everyone else, fewer at night and in the rain, more of them while the city is
-## young. A dog household's dog keeps to the front yard of its house while nobody walks it, and a
-## resident coming out takes it along. The dogs
-## (dog_pack.gd) heel, stop to sniff, roam round an owner who stands still, come over to a crouching
-## hero, bark at the hero and at people going by, flinch at blows and shouts, defend an owner the
-## hero hits (biting: hero_hit "bite") and leap clear of cars. A kick or a weapon swing of the
-## hero's lands on a dog, a cat or a pigeon in front (strike(): animal_hit). E pets a dog close by.
-## The bodies are Shiba Inus and huskies (dog_bodies.gd) with leads from the owner's hand to the
-## collar (dog_leads.gd). Flocks of pigeons (pigeons.gd) forage on the sidewalks in front of shops
-## and civic buildings and in the parks by day, go up together at a fright and land again once it is
-## calm; E throws them crumbs. Cats (cats.gd) keep to some front yards and shop doors, and by night
-## strays to the works yards and the parks: they rest, stroll, greet a crouching hero, hiss at dogs,
-## stalk the pigeons and run from frights; E pets one. Barks, growls, whines, coos, wingbeats,
-## meows, purrs, hisses and chatter go out on the bus (animal_called) for the audio feature. Motion
-## runs on delta * sim.speed, so pause freezes it.
+## Dogs, pigeons, cats and squirrels in the street (integration feature "animals"). Some people
+## out on foot walk a dog on a lead: residents whose household lives with one (unless off to work)
+## and a share of everyone else, fewer at night and in the rain, more while the city is young; a
+## dog household's dog keeps to its front yard while nobody walks it. The dogs (dog_pack.gd) heel,
+## stop to sniff, roam round an owner who stands still, come over to a crouching hero, bark at the
+## hero and at passers-by, flinch at blows and shouts, defend an owner the hero hits (biting:
+## hero_hit "bite"), chase the pigeons and the cats (one up a trunk leaves it barking below) and
+## leap clear of cars. A kick or a weapon swing lands on a dog, a cat or a pigeon in front
+## (strike(): animal_hit); E pets a dog close by. The bodies are Shiba Inus and huskies
+## (dog_bodies.gd) with leads to the collar (dog_leads.gd). Pigeons (pigeons.gd) forage on the
+## sidewalks by the shops and the civic buildings and in the parks by day, go up together at a
+## fright (a shout, a crash, a bark, a car horn) and land again once it is calm; E throws them
+## crumbs; some keep to the high perches instead (perches.gd), lamp tops and roof edges. Cats
+## (cats.gd) keep to some front yards and shop doors, and by night strays to the works yards and
+## the parks: they rest, stroll, greet a crouching hero, hiss at dogs, stalk the pigeons and the
+## squirrels and run from frights, up a trunk from a charging dog; E pets one. Squirrels
+## (squirrels.gd) bound about a lawn with a tree, up its trunk at a fright. Calls go out on the
+## bus; motion runs on delta * sim.speed (pause freezes it).
 
 const D := preload("res://scripts/sim/sim_defs.gd")
 const WS := preload("res://scripts/fp/world_scale.gd")
@@ -23,14 +24,16 @@ const BODIES := preload("res://scripts/fp/animals/dog_bodies.gd")
 const PACK := preload("res://scripts/fp/animals/dog_pack.gd")
 const LEADS := preload("res://scripts/fp/animals/dog_leads.gd")
 const PIGEONS := preload("res://scripts/fp/animals/pigeons.gd")
+const PERCHES := preload("res://scripts/fp/animals/perches.gd")
+const WATERFOWL := preload("res://scripts/fp/animals/waterfowl.gd")
 const CATS := preload("res://scripts/fp/animals/cats.gd")
+const SQUIRRELS := preload("res://scripts/fp/animals/squirrels.gd")
 const LIFE := preload("res://scripts/fp/animals/cat_life.gd")
 const FLOCK := preload("res://scripts/fp/animals/pigeon_flock.gd")
 
 const MAX_STEP := 1.0 / 30.0
-## Dogs come out within NEAR of the player (u, about their draw distance) and go beyond FAR, at
-## most MAX_DOGS at a time. Owners and yards are looked over every SCAN_S (s), the dog households
-## every HOMES_S.
+## Dogs come out within NEAR of the player (u, about their draw distance) and go beyond FAR, at most
+## MAX_DOGS at a time. Owners and yards are looked over every SCAN_S (s), the dog homes HOMES_S.
 const NEAR := 3.0
 const FAR := 3.6
 const MAX_DOGS := 10
@@ -86,8 +89,7 @@ const HE_NAMES := "Biscuit Kuma Rex Bruno Max Rocky Bear Scout Ziggy Hachi Mochi
 const SHE_NAMES := "Luna Daisy Maple Hazel Olive Nala Juno Sasha Pixie Koda Willow Suki"
 const BREED_NAMES := {"shiba": "Shiba Inu", "husky": "husky"}
 ## The photo shot stands PHOTO_BACK (tiles) from the middle of the lot toward the road, looking
-## PHOTO_PITCH (degrees) down at its dogs, which stand PHOTO_DEPTH toward the road when the ground
-## there is free.
+## PHOTO_PITCH (degrees) down at its dogs, which stand PHOTO_DEPTH toward the road when it is free.
 const PHOTO_BACK := 0.62
 const PHOTO_PITCH := -20.0
 const PHOTO_DEPTH := 0.45
@@ -96,7 +98,10 @@ var bodies: BODIES
 var pack: PACK
 var leads: LEADS
 var pigeons: PIGEONS
+var perches: PERCHES
+var waterfowl: WATERFOWL
 var cats: CATS
+var squirrels: SQUIRRELS
 ## The dogs live on game time even with the sim paused (the photo tour).
 var live: bool = false
 var pets: int = 0
@@ -142,10 +147,19 @@ func setup(p_ctx: FpContext) -> void:
 	pigeons = PIGEONS.new()
 	add_child(pigeons)
 	pigeons.setup(ctx)
+	perches = PERCHES.new()
+	add_child(perches)
+	perches.setup(ctx)
+	waterfowl = WATERFOWL.new()
+	add_child(waterfowl)
+	waterfowl.setup(ctx)
 	cats = CATS.new()
 	add_child(cats)
 	cats.setup(ctx)
 	cats.yard_of = _yard
+	squirrels = SQUIRRELS.new()
+	add_child(squirrels)
+	squirrels.setup(ctx)
 	if ctx.bus != null:
 		link_signal(ctx.bus.interact_requested, _on_interact)
 		link_signal(ctx.bus.person_hit, _on_person_hit)
@@ -154,6 +168,13 @@ func setup(p_ctx: FpContext) -> void:
 		link_signal(ctx.bus.prop_knocked, pigeons.on_knock)
 		link_signal(ctx.bus.car_impact, cats.on_crash)
 		link_signal(ctx.bus.prop_knocked, cats.on_knock)
+		link_signal(ctx.bus.car_impact, perches.on_crash)
+		link_signal(ctx.bus.prop_knocked, perches.on_knock)
+		for n: Node3D in [waterfowl, squirrels]:
+			link_signal(ctx.bus.car_impact, Callable(n, "on_crash"))
+			link_signal(ctx.bus.prop_knocked, Callable(n, "on_knock"))
+		for n: Node3D in [pigeons, perches]:
+			link_signal(ctx.bus.horn_sounded, Callable(n, "on_horn"))
 	if ctx.view != null:
 		link_signal(ctx.view.tile_built, _on_tile_built)
 
@@ -162,7 +183,10 @@ func setup(p_ctx: FpContext) -> void:
 func on_world_rebuilt() -> void:
 	_clear()
 	pigeons.rebuilt()
+	perches.rebuilt()
+	waterfowl.rebuilt()
 	cats.rebuilt()
+	squirrels.rebuilt()
 	pack.col = ctx.collision
 	_yards.clear()
 	_decided.clear()
@@ -192,9 +216,10 @@ func self_test() -> Dictionary:
 	for d: PACK.Dog in pack.dogs:
 		if d.walker >= 0:
 			walked += 1
+	var seen := [pigeons.detail(), perches.detail(), waterfowl.detail()]
+	seen.append_array([cats.detail(), squirrels.detail()])
 	var out := "%s, %d dogs out (%d on leads), " % [looks, pack.dogs.size(), walked]
-	out += "%s, %s" % [pigeons.detail(), cats.detail()]
-	return {"ok": leads != null and is_instance_valid(leads), "detail": out}
+	return {"ok": leads != null and is_instance_valid(leads), "detail": out + ", ".join(seen)}
 
 
 ## The nearest along the ray of the dog to pet (_pick_dog()), the flock of pigeons to feed
@@ -334,7 +359,10 @@ func tick(delta: float) -> void:
 			_scan()
 	_feed(dt, speed)
 	pigeons.world(pack, _driving(), delta)
-	cats.world(pack, pigeons.flock)
+	perches.world(pack, _driving(), delta)
+	waterfowl.world(pack, _driving(), delta)
+	cats.world(pack, pigeons.flock, perches.flock, squirrels.life)
+	squirrels.world(pack, cats.life)
 	if dt <= 0.0:
 		pack.step(0.0)
 	var left := dt
@@ -343,7 +371,10 @@ func tick(delta: float) -> void:
 		pack.step(h)
 		left -= h
 	pigeons.step(dt)
+	perches.step(dt)
+	waterfowl.step(dt)
 	cats.step(dt)
+	squirrels.step(dt)
 	_draw_leads()
 
 
@@ -377,7 +408,10 @@ func _on_interact(t: Dictionary) -> void:
 ## it), and the dogs around who saw it flinch.
 func _on_person_hit(at: Vector3, cause: String, info: Dictionary) -> void:
 	pigeons.startle(at, PIGEONS.SEEN_HIT)
+	perches.startle(at, PERCHES.SEEN_HIT)
+	waterfowl.startle(at, WATERFOWL.SEEN_HIT)
 	cats.startle(at, CATS.SEEN_HIT)
+	squirrels.startle(at, SQUIRRELS.SEEN_HIT)
 	var wid := int(info.get("walker", -1))
 	for d: PACK.Dog in pack.dogs:
 		if wid >= 0 and d.walker == wid and cause in ["punch", "shove"]:
@@ -392,7 +426,10 @@ func _on_person_hit(at: Vector3, cause: String, info: Dictionary) -> void:
 ## pigeons go up at those and at a dance or a parkour move close by (PIGEONS.STARTLE).
 func _on_hero_action(action: String, at: Vector3) -> void:
 	pigeons.startle(at, float(PIGEONS.STARTLE.get(action, 0.0)))
+	perches.startle(at, float(PERCHES.STARTLE.get(action, 0.0)))
+	waterfowl.startle(at, float(WATERFOWL.STARTLE.get(action, 0.0)))
 	cats.startle(at, float(CATS.STARTLE.get(action, 0.0)))
+	squirrels.startle(at, float(SQUIRRELS.STARTLE.get(action, 0.0)))
 	if action == "wave":
 		for d: PACK.Dog in pack.dogs:
 			if d.temper == "friendly" and d.angry <= 0.0 and _flat(d.pos, at) < WAVE_AT:
@@ -429,12 +466,13 @@ func strike(feet: Vector3, dir: Vector3, reach: float, cone: float, strength: fl
 		if g <= bg:
 			bg = g
 			best = ["cat", c]
-	for f: FLOCK.Flock in pigeons.flock.flocks:
-		for b: FLOCK.Bird in f.birds:
-			var g := _gap(feet, aim, b.pos, 0.0, cone) if b.pos.y - feet.y < BIRD_LOW else INF
-			if g <= bg:
-				bg = g
-				best = ["pigeon", b, f]
+	for src: FLOCK in [pigeons.flock, perches.flock]:
+		for f: FLOCK.Flock in src.flocks:
+			for b: FLOCK.Bird in f.birds:
+				var g := _gap(feet, aim, b.pos, 0.0, cone) if b.pos.y - feet.y < BIRD_LOW else INF
+				if g <= bg:
+					bg = g
+					best = ["pigeon", b, f]
 	return _struck(best, feet, strength) if not best.is_empty() else {}
 
 
@@ -466,6 +504,8 @@ func _struck(what: Array, feet: Vector3, strength: float) -> Dictionary:
 func _on_tile_built(i: int, _holder: Node3D) -> void:
 	_yards.erase(i)
 	pigeons.tile_built(i)
+	perches.tile_built(i)
+	waterfowl.tile_built(i)
 	cats.tile_built(i)
 
 
@@ -473,6 +513,8 @@ func _on_call(d: PACK.Dog, sound: String) -> void:
 	calls[sound] = int(calls.get(sound, 0)) + 1
 	if sound == "bark":
 		pigeons.startle(d.pos, PIGEONS.BARK_M)
+		perches.startle(d.pos, PERCHES.BARK_M)
+		waterfowl.startle(d.pos, WATERFOWL.BARK_M)
 	if ctx.bus != null:
 		ctx.bus.animal_called.emit(pack.head_of(d), sound, pack.shoulder_m(d))
 
@@ -501,8 +543,23 @@ func _feed(dt: float, speed: float) -> void:
 	pack.time_scale = speed
 	pack.cars.clear()
 	pack.passers.clear()
+	# The small game the dogs might chase: the street flocks with birds still on the ground.
+	pack.prey.clear()
+	for f: FLOCK.Flock in pigeons.flock.flocks:
+		var down := false
+		for b: FLOCK.Bird in f.birds:
+			if not b.air:
+				down = true
+				break
+		if down:
+			pack.prey.append([f.key, f.home, true])
 	var traffic_f := ctx.feature("traffic")
-	var none := pack.dogs.is_empty() and pigeons.flock.flocks.is_empty()
+	var none := (
+		pack.dogs.is_empty()
+		and pigeons.flock.flocks.is_empty()
+		and perches.flock.flocks.is_empty()
+		and waterfowl.flock.flocks.is_empty()
+	)
 	if traffic_f == null or (none and cats.life.cats.is_empty()):
 		return
 	_read_traffic(traffic_f)
@@ -572,22 +629,27 @@ func _draw_leads() -> void:
 
 
 ## Every SCAN_S: the dogs too far off go; owners and front yards near the player get theirs, and
-## the pigeons' spots their flocks.
+## the pigeons' spots their flocks. In the rain the diurnal animals all stay in (they shelter).
 func _scan() -> void:
 	var me := ctx.player_position()
+	var rain := _raining()
 	for d: PACK.Dog in pack.dogs.duplicate():
 		if _flat(d.pos, me) > FAR and not d.key.begins_with("photo:"):
 			_drop(d)
-	pigeons.scan(me, _night() <= PIGEON_NIGHT)
+	var day := _night() <= PIGEON_NIGHT
+	pigeons.scan(me, day, rain)
+	perches.scan(me, day, rain)
+	waterfowl.scan(me, day, rain)
+	squirrels.scan(me, day, rain)
 	_homes_t -= SCAN_S
 	if _homes_t <= 0.0:
 		_homes_t = HOMES_S
 		_read_homes()
-	cats.scan(me, _night() > NIGHT, _raining(), _dog_lots)
+	cats.scan(me, _night() > NIGHT, rain, _dog_lots)
 	var traffic_f := ctx.feature("traffic")
 	if traffic_f != null:
 		_walkers(traffic_f, me)
-	if _night() <= NIGHT and not _raining():
+	if _night() <= NIGHT and not rain:
 		_yard_dogs(me)
 
 
@@ -811,8 +873,14 @@ func _photo_spot(lot: int) -> Vector3:
 func _clear() -> void:
 	if pigeons != null:
 		pigeons.clear()
+	if perches != null:
+		perches.clear()
+	if waterfowl != null:
+		waterfowl.clear()
 	if cats != null:
 		cats.clear()
+	if squirrels != null:
+		squirrels.clear()
 	if pack == null:
 		return
 	for d: PACK.Dog in pack.dogs.duplicate():

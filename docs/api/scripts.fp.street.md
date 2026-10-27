@@ -58,7 +58,7 @@ Street-level dressing that CityView adds to its tile holders in fp_mode (slice G
 - `BOX_ALONG = 0.15`
 - `BOX_GAP = 0.032`
 - `LAMP_POLES = [Vector2(-0.34, 0.25), Vector2(0.34, -0.25)]`: Lit straights: the baked lamp poles, (across, along) in the piece frame (roads.py:166-167).
-- `KITS = { "tree": [PROPS + "tree_small.glb", 0.009], "pit": ["", -1.0], "bench": [PROPS + "benc...`: Batched kinds: model path (or "" for a procedural kit) and the collider override (r > 0: a cylinder of that radius; r == 0: the kit's bounding box; r < 0: walkable, none).
+- `KITS = { "tree": [PROPS + "tree_small.glb", 0.009], "pit": ["", -1.0], "bench": [PROPS + "benc...`: Batched kinds: model path (or "" for a procedural kit) and the collider override (r > 0: a cylinder of that radius; r == 0: the kit's bounding box; r < 0: walkable, none). A collider must cover everything its model draws in the body band (a mover's height span); tools/tests/fp_prop_coverage_test.gd measures the drawn parts against it, class by class.
 - `LAMP_BULB = Vector3(0.0, 0.4112, 0.085)`: lamp_street.glb: its bulb, in the lamp's frame (the arm reaches 1.7 m toward the road, +Z).
 - `FAR_KINDS = ["tree", "lamp", "apron"]`: Kinds that stay visible out to the fog (street trees, lamps, lot aprons); the rest end at WS.VIS_PROP.
 - `SHADOW_KINDS = ["tree", "lamp"]`: Kinds whose batches cast shadows.

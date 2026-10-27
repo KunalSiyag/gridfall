@@ -7,8 +7,9 @@ extends FpFeature
 ## (the actions feature's "throw": knocked down and flung) and H again lets go; after a while they
 ## break free (traffic's reactions.gd holds them). The hold ends when the hero can no longer act
 ## (driving, knocked down, a modal open). Someone fighting the hero who starts a punch flashes the
-## counter cue under the crosshair (hero_threatened) until it lands: the guard raised in time
-## counters it (the actions feature's parry, the counters flag). Environmental attacks (the slams
+## counter cue above their head (hero_threatened) until it lands, the mark growing through the
+## wind-up and fading once it has (counter_cues): the guard raised in time counters it (the actions
+## feature's parry, the counters flag). Environmental attacks (the slams
 ## flag): R with something solid just beyond the person held slams them into it instead of
 ## throwing them (slam_spot, slam; the actions feature's "slam"): a light street prop goes over
 ## with them, a wall, a post, a parked car or a prop that holds stops them dead (hero_slammed).
@@ -22,7 +23,7 @@ const GRAB_REACH := 1.1 * WS.M
 const GRAB_CONE := 0.5
 ## Where the held person's feet go: HOLD_GAP ahead of the hero's, far enough that the two bodies
 ## clear each other with the hero's hands on their arms.
-const HOLD_GAP := 0.68 * WS.M
+const HOLD_GAP := 0.58 * WS.M
 ## The held person shifts and turns slightly as they struggle (m, radians, and Hz).
 const HOLD_SWAY_SIDE := 0.12 * WS.M
 const HOLD_SWAY_FORWARD := 0.04 * WS.M
@@ -32,8 +33,12 @@ const HOLD_SWAY_HZ := 1.25
 const DRAG_SPEED := 1.1 * WS.M
 ## The reach for them as the hold starts (the rig's push clip, seconds).
 const REACH_S := 0.3
-## The counter cue stays this long past the punch's landing (s).
+## The counter cue stays this long past the punch's landing (s). It rides CUE_HEAD above the
+## attacker's head bone (re-read every frame, so it follows them), or CUE_LIFT above the fist
+## itself when the attacker is gone (a bare threat in a test).
 const CUE_TAIL := 0.15
+const CUE_HEAD := 0.1 * WS.M
+const CUE_LIFT := 0.65 * WS.M
 ## A slam: something solid at most SLAM_REACH beyond the body of the person held (taken as
 ## SLAM_BODY_R round their feet, SLAM_HEIGHT tall), looked for in steps of SLAM_STEP; a knockable
 ## prop at most SLAM_TIE further than a wall is the one they hit. They hit it at SLAM_SPEED, with
@@ -55,9 +60,15 @@ var held_id: int = -1
 var grabs: int = 0
 ## Slams so far.
 var slams: int = 0
-## The counter cue, and how long it stays.
+## The counter cue, how long it stays, how far the window it is showing runs to its landing, and
+## where in the world it rides (over the attacker's head). cue_wid and cue_fist re-resolve that
+## anchor every frame, so the mark follows a moving attacker.
 var cue: Label
 var cue_t: float = 0.0
+var cue_secs: float = 0.0
+var cue_at := Vector3.ZERO
+var cue_wid: int = -1
+var cue_fist := Vector3.ZERO
 var _hold_t: float = 0.0
 
 
@@ -74,14 +85,12 @@ func setup(p_ctx: FpContext) -> void:
 		cue = S.label("!", 34, S.RED)
 		cue.name = "CounterCue"
 		cue.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-		cue.anchor_left = 0.5
-		cue.anchor_right = 0.5
-		cue.anchor_top = 0.5
-		cue.anchor_bottom = 0.5
-		cue.offset_left = -20.0
-		cue.offset_right = 20.0
-		cue.offset_top = 28.0
-		cue.offset_bottom = 72.0
+		cue.anchor_left = 0.0
+		cue.anchor_right = 0.0
+		cue.anchor_top = 0.0
+		cue.anchor_bottom = 0.0
+		cue.offset_right = 40.0
+		cue.offset_bottom = 44.0
 		cue.visible = false
 		ctx.hud.slot("center").add_child(cue)
 
@@ -158,7 +167,23 @@ func _process(delta: float) -> void:
 func tick(dt: float) -> void:
 	cue_t = maxf(0.0, cue_t - dt)
 	if cue != null:
-		cue.visible = cue_t > 0.0 and not ctx.player.photo_mode
+		# The mark rides over the attacker's head; it has no anchor behind the camera.
+		var on := cue_t > 0.0 and not ctx.player.photo_mode
+		if on:
+			cue_at = _cue_anchor(cue_fist, cue_wid)
+		var cam := ctx.player.camera if on else null
+		on = on and cam != null and not cam.is_position_behind(cue_at)
+		if on:
+			cue.position = cam.unproject_position(cue_at) - cue.size * 0.5
+		cue.visible = on
+		if on:
+			var look := (
+				cue_look(cue_t, cue_secs)
+				if FeatureFlags.enabled("counter_cues")
+				else Vector2(34.0, 1.0)
+			)
+			cue.add_theme_font_size_override("font_size", roundi(look.x))
+			cue.modulate = Color(1.0, 1.0, 1.0, look.y)
 	if held_id < 0:
 		return
 	var traffic := ctx.feature("traffic")
@@ -346,10 +371,44 @@ func _unhandled_input(event: InputEvent) -> void:
 		get_viewport().set_input_as_handled()
 
 
-## A punch at the hero lands in secs: the cue shows until just after (the counters flag).
-func _on_threatened(_at: Vector3, secs: float) -> void:
-	if FeatureFlags.enabled("counters"):
-		cue_t = maxf(cue_t, secs + CUE_TAIL)
+## How the cue looks with cue_t left of a window that ran secs to the landing (counter_cues):
+## the "!" grows through the wind-up as the blow closes, and what stays past the landing shrinks
+## and fades out. Returns [font size px, alpha].
+static func cue_look(left: float, secs: float) -> Vector2:
+	if left > CUE_TAIL:
+		var urgency := 1.0 - (left - CUE_TAIL) / maxf(secs, 1e-6)
+		return Vector2(lerpf(26.0, 40.0, clampf(urgency, 0.0, 1.0)), 1.0)
+	return Vector2(26.0, clampf(left / CUE_TAIL, 0.0, 1.0))
+
+
+## A punch at the hero lands in secs, thrown by wid from at (the fist): the cue rides over the
+## attacker's head until just after the landing (the counters flag).
+func _on_threatened(at: Vector3, secs: float, wid: int) -> void:
+	if not FeatureFlags.enabled("counters"):
+		return
+	var until := secs + CUE_TAIL
+	if until >= cue_t:
+		cue_t = until
+		cue_secs = secs
+		cue_fist = at
+		cue_wid = wid
+		cue_at = _cue_anchor(at, wid)
+
+
+## Where the cue rides for a punch thrown by wid from at (the fist): CUE_HEAD above the
+## attacker's head bone (the drawn body, through traffic's people), or CUE_LIFT above the fist
+## itself when the attacker is gone.
+func _cue_anchor(at: Vector3, wid: int) -> Vector3:
+	var traffic := ctx.feature("traffic")
+	if traffic != null and wid >= 0:
+		var people: Variant = traffic.get("people")
+		var walkers: Variant = traffic.get("walkers")
+		if people != null and walkers != null:
+			for w: Variant in walkers.get("walkers"):
+				if int(w.get("id")) == wid:
+					var base: Vector3 = (w.get("pos") as Vector3) + (w.get("vis_off") as Vector3)
+					return (people.call("head_of", w, base) as Vector3) + Vector3.UP * CUE_HEAD
+	return at + Vector3.UP * CUE_LIFT
 
 
 func _on_drive_changed(active: bool) -> void:

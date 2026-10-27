@@ -4,8 +4,8 @@ usage: python3 tools/checks/run_all.py [--base REF] [--fast] [--only a,b] [--ski
                                        [--json OUT] [--summary FILE] [--debt-report FILE]
 
 Checks: gdlint, gdformat (files changed since --base), complexity, dead_code, duplicates,
-boundaries, large_files, todo_scan, agents_md, test_map, feature_flags, unused_deps, workflows,
-api_docs. --fast skips the slow parser-based gdlint and gdformat (pre-commit runs those on the
+boundaries, large_files, todo_scan, agents_md, test_map, feature_flags, rng_seed, unused_deps,
+workflows, api_docs. --fast skips the slow parser-based gdlint and gdformat (pre-commit runs those on the
 staged files itself). Exit 0 when every check passes; legacy findings are baselined under
 tools/checks/baselines/ and only new ones fail. Each check is also a script of its own with
 --update-baseline (see its --help).
@@ -32,6 +32,7 @@ from tools.checks import (  # noqa: E402
     format as gdformat_check,
     large_files,
     lint,
+    rng_seed,
     test_map,
     todo_scan,
     unused_deps,
@@ -64,6 +65,7 @@ def registry(base: str | None):
         ("agents_md", lambda r: agents_md.run(r)),
         ("test_map", lambda r: test_map.run(r)),
         ("feature_flags", lambda r: feature_flags.run(r)),
+        ("rng_seed", lambda r: rng_seed.run(r)),
         ("unused_deps", lambda r: unused_deps.run(r)),
         ("workflows", lambda r: workflows.run(r)),
         ("api_docs", api_docs_check),

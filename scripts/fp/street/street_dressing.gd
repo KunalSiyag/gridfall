@@ -35,6 +35,8 @@ const BOX_GAP := 0.032
 const LAMP_POLES := [Vector2(-0.34, 0.25), Vector2(0.34, -0.25)]
 ## Batched kinds: model path (or "" for a procedural kit) and the collider override
 ## (r > 0: a cylinder of that radius; r == 0: the kit's bounding box; r < 0: walkable, none).
+## A collider must cover everything its model draws in the body band (a mover's height span);
+## tools/tests/fp_prop_coverage_test.gd measures the drawn parts against it, class by class.
 const KITS := {
 	"tree": [PROPS + "tree_small.glb", 0.009],
 	"pit": ["", -1.0],
@@ -42,16 +44,16 @@ const KITS := {
 	"bench_park": [PROPS + "bench_park.glb", 0.0],
 	"bin": [PROPS + "trash_bin.glb", 0.0],
 	"bollard": [PROPS + "bollard.glb", 0.0062],
-	"hydrant": [PROPS + "hydrant.glb", 0.0075],
+	"hydrant": [PROPS + "hydrant.glb", 0.0092],
 	"mailbox": [PROPS + "mailbox.glb", 0.0],
 	"planter": [PROPS + "planter_round.glb", 0.0],
 	"utility": [PROPS + "utility_box.glb", 0.0],
 	"rack": [AP.BIKE_RACK, 0.0],
-	"meter": [AP.PARKING_METER, 0.004],
+	"meter": [AP.PARKING_METER, 0.0],
 	"ramp": [AP.CROSSWALK_RAMP, -1.0],
 	"apron": ["", -1.0],
 	"lamp": [PROPS + "lamp_street.glb", 0.009],
-	"cone": [PROPS + "cone.glb", 0.009],
+	"cone": [PROPS + "cone.glb", 0.013],
 	"wheelie": [PROPS + "trash_bin_wheelie.glb", 0.0],
 	"carton": ["", 0.0],
 }
@@ -364,8 +366,8 @@ func _dress_end(i: int, mask: int, cols: Array) -> void:
 	)
 
 
-## Swaps the road model's Asphalt surfaces for CityView's street-level asphalt and tells it where the
-## lanes run (see shaders/road_fp.gdshader: 1 along z, 2 along x, 3-6 round a tile corner).
+## Swaps the road model's Asphalt surfaces for CityView's street-level asphalt in the copy for where
+## the lanes run (see shaders/road_fp.gdshader: 1 along z, 2 along x, 3-6 round a tile corner).
 func _asphalt(model: Node3D, mask: int, kind_name: String) -> void:
 	var mat := view.road_fp_material()
 	if mat == null:
@@ -393,24 +395,21 @@ func _asphalt(model: Node3D, mask: int, kind_name: String) -> void:
 					. find(c)
 				)
 			)
+	mat = view.road_fp_material_for(axis)
 	for n in model.find_children("*", "MeshInstance3D", true, false):
 		var mi := n as MeshInstance3D
 		if mi.mesh == null:
 			continue
-		var hit := false
 		for s in range(mi.mesh.get_surface_count()):
 			var m := mi.mesh.surface_get_material(s)
 			if m != null and m.resource_name == "Asphalt":
 				mi.set_surface_override_material(s, mat)
-				hit = true
 			elif m != null and m.resource_name == "Metal_Dark":
 				# Manhole covers and gutter grates: worn cast iron, not a blue-grey mirror.
 				mi.set_surface_override_material(s, _iron_mat())
 			elif m != null and m.resource_name == "Grass" and view.lawn_material() != null:
 				# The cul-de-sac island: the same metric grass as the verges round it.
 				mi.set_surface_override_material(s, view.lawn_material())
-		if hit:
-			mi.set_instance_shader_parameter(&"lane_axis", float(axis))
 
 
 func _dress_straight(

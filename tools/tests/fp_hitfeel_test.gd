@@ -226,10 +226,15 @@ func _check_throw() -> void:
 	print("FP_HITFEEL_TEST: throw peak=%.2f m, down again at %.2f s" % [peak, landed_at])
 	K.check(fails, down, "fixture: the kick knocks them down")
 	K.check(fails, peak > 0.25 and peak < 0.45, "the blow throws them up (%.2f m)" % peak)
+	var stagger := (
+		lerpf(RE.STAGGER_S.x, RE.STAGGER_S.y, 0.75)
+		if FeatureFlags.enabled("directional_hits")
+		else 0.0
+	)
 	K.check(
 		fails,
-		landed_at > 0.5 and landed_at < 0.85,
-		"on an arc that carries (%.2f s to come down)" % landed_at
+		landed_at > 0.5 + stagger and landed_at < 0.85 + stagger,
+		"on an arc that carries after %.2f s stagger (%.2f s to come down)" % [stagger, landed_at]
 	)
 	K.check(fails, absf(_air(w)) < 0.005, "and lie on the ground (%.3f m)" % _air(w))
 	_remove(w)

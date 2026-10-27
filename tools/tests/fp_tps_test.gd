@@ -62,8 +62,10 @@ func _init() -> void:
 	_check_interaction(ctx)
 	await _check_toggle(ctx)
 	_check_conversation(ctx)
-	_check_cost(ctx)
+	# 12 runs last of the play checks: its 5 x 600 cost frames would otherwise leave the
+	# animator's phase different for the gait analysis, whose step/heel-strike sync rides on it.
 	await _check_avatar(ctx)
+	_check_cost(ctx)
 	K.finish(self, "FP_TPS_TEST", fails)
 
 
@@ -338,32 +340,129 @@ func _check_conversation(ctx: FpContext) -> void:
 	traffic.queue_free()
 
 
-## 12. rig.update averages under 100 us over 600 frames on a built-up street.
+## 12. rig.update and a player frame stay in budget on a built-up street. All of it is wall
+## clock, so a loaded box would flake it: every round also measures a fixed calibrator workload
+## (_calib_us) of a player frame's own mix, and the budgets are asserted on the load-normalised
+## costs -- each cost in calibrator units, against ratios taken from a quiet box with the
+## original budgets' headroom -- with a generous absolute ceiling as the safety net. The median
+## of COST_ROUNDS rounds keeps another process's burst out of the numbers.
+const COST_ROUNDS := 5
+const CAL_SPINS := 6000
+## A collision query runs every CAL_QUERY_SPINS spins of the calibrator, at the rig's own reach,
+## so its mix matches a player frame's: GDScript math plus the engine collision queries over the
+## boxes near the hero.
+const CAL_QUERY_SPINS := 200
+const CAL_REACH := 6.2 * M
+## Budgets in calibrator units (one unit is one _calib_us workload). A quiet box measures
+## rig.update at about 0.06 units (71 us), a player frame at 0.30 (360 us), an interact tick at
+## 0.10 (122 us); a loaded box (other agents' gates running) measured 0.060 / 0.369 / 0.081
+## over 5-round medians, so the calibration holds within about 25 %. The budgets are the quiet
+## ratios with the original budgets' headroom (100 us rig, 500 us frame + tick/6, 200 us tick):
+## a real cost regression fails them on any box, and a loaded box that slows everything does not.
+const RIG_PER_CAL := 0.09
+const FRAME_PER_CAL := 0.50
+const TICK_PER_CAL := 0.15
+## Absolute ceilings (us), far past any honest number even on a loaded box: the safety net that
+## still catches a broken calibration (a cost exploding while the calibrator does not).
+const RIG_CEIL_US := 600.0
+const FRAME_CEIL_US := 2500.0
+const TICK_CEIL_US := 800.0
+
+
 func _check_cost(ctx: FpContext) -> void:
 	var p := ctx.player
 	var s := _street(ctx)
 	p.teleport((s["pos"] as Vector3) - (s["run"] as Vector3) * 0.4, s["yaw"])
-	var total := 0.0
+	var rig: Array = []
+	var frames: Array = []
+	var ticks: Array = []
+	var cal: Array = []
 	var sweeps := 0
-	var frame_us := 0.0
-	for k in range(600):
-		var t0 := Time.get_ticks_usec()
-		p.look(0.004, 0.0)
-		p.simulate(Vector2(0.3, 1.0) if k < 300 else Vector2(-0.3, -1.0), k % 200 < 100, DT)
-		p.update_view(DT)
-		frame_us += float(Time.get_ticks_usec() - t0)
-		total += p.rig.update_us
-		sweeps += p.rig.sweeps
-	var avg := total / 600.0
-	K.check(fails, avg < 100.0, "12. rig.update averages %.1f us (< 100), %.1f sweeps per frame" % [avg, float(sweeps) / 600.0])
 	var feat := ctx.feature("interact")
-	var it := 0.0
-	if feat != null:
-		var t1 := Time.get_ticks_usec()
-		for k in range(60):
-			feat.call("evaluate")
-		it = float(Time.get_ticks_usec() - t1) / 60.0
-	K.check(fails, frame_us / 600.0 + it / 6.0 < 500.0 and it < 200.0, "12. a player frame costs %.0f us and an interact tick %.0f us (frame + tick/6 < 500, tick < 200)" % [frame_us / 600.0, it])
+	# Warm up: the collision world lazily enters tiles on the first query, and the first frames
+	# pay for it. The rounds themselves must all cost the same thing.
+	for _warm in range(30):
+		p.look(0.004, 0.0)
+		p.simulate(Vector2(0.3, 1.0), true, DT)
+		p.update_view(DT)
+	var at := p.rig.pivot()
+	for r in range(COST_ROUNDS):
+		var total := 0.0
+		var frame_us := 0.0
+		for k in range(600):
+			var t0 := Time.get_ticks_usec()
+			p.look(0.004, 0.0)
+			p.simulate(Vector2(0.3, 1.0) if k < 300 else Vector2(-0.3, -1.0), k % 200 < 100, DT)
+			p.update_view(DT)
+			frame_us += float(Time.get_ticks_usec() - t0)
+			total += p.rig.update_us
+			sweeps += p.rig.sweeps
+		rig.append(total / 600.0)
+		frames.append(frame_us / 600.0)
+		if feat != null:
+			var t1 := Time.get_ticks_usec()
+			for k in range(60):
+				feat.call("evaluate")
+			ticks.append(float(Time.get_ticks_usec() - t1) / 60.0)
+		else:
+			ticks.append(0.0)
+		cal.append(_calib_us(ctx.collision, at))
+	var r_us := _median(rig)
+	var f_us := _median(frames)
+	var i_us := _median(ticks)
+	var c_us := _median(cal)
+	var per_frame := float(sweeps) / float(600 * COST_ROUNDS)
+	var rig_units := r_us / c_us
+	var frame_units := f_us / c_us
+	var tick_units := i_us / c_us
+	print(
+		(
+			"  cost: calibrator %.0f us, rig %.1f us, frame %.0f us, tick %.0f us"
+			% [c_us, r_us, f_us, i_us]
+		)
+	)
+	K.check(
+		fails,
+		rig_units < RIG_PER_CAL and r_us < RIG_CEIL_US,
+		(
+			"12. rig.update: %.1f us = %.3f calibrator units (< %.3f; %.1f sweeps/frame)"
+			% [r_us, rig_units, RIG_PER_CAL, per_frame]
+		)
+	)
+	K.check(
+		fails,
+		(
+			frame_units + tick_units / 6.0 < FRAME_PER_CAL
+			and tick_units < TICK_PER_CAL
+			and f_us < FRAME_CEIL_US
+			and i_us < TICK_CEIL_US
+		),
+		(
+			"12. a frame %.0f us + tick/6 %.0f us: %.3f + %.3f/6 units < %.3f, tick < %.3f"
+			% [f_us, i_us, frame_units, tick_units, FRAME_PER_CAL, TICK_PER_CAL]
+		)
+	)
+
+
+## A fixed workload of a player frame's own mix -- GDScript math plus the engine collision
+## queries the frame runs -- measured once per round: the run's own speed probe. Only how fast
+## the machine runs right now moves the number.
+func _calib_us(col: CollisionWorld, at: Vector3) -> float:
+	var t0 := Time.get_ticks_usec()
+	var acc := 0.0
+	var v := Vector3(0.31, 0.17, 0.29)
+	for k in range(CAL_SPINS):
+		v = v.rotated(Vector3.UP, 0.001).lerp(Vector3(0.5, 0.5, 0.5), 0.01)
+		acc += v.length_squared()
+		if k % CAL_QUERY_SPINS == 0:
+			acc += float(col.camera_boxes_near(at, CAL_REACH).size())
+	return float(Time.get_ticks_usec() - t0) + (0.0 if acc > 0.0 else 1.0e9)
+
+
+func _median(v: Array) -> float:
+	var a: Array = v.duplicate()
+	a.sort()
+	return float(a[a.size() / 2])
 
 
 ## 13. The hero is drawn in third person (shadow-only in first person: item 10) and leans into a

@@ -622,13 +622,16 @@ func residents_spoke(_day: int) -> void:
 	for i in range(D.MAYORS.size()):
 		complaints[i] = {}
 	var ranked: Array = []
+	# The jitter that breaks score ties comes from the sim's seeded stream, not the global RNG, so
+	# the voices the mayors hear are the same on every boot of the same save.
+	var jitter := sim.rng_for(211)
 	for r in ppl.people:
 		var d := sim.district[int(r["home"])]
 		var c := str(r["complaint"])
 		if c != "none":
 			complaints[d][c] = int(complaints[d].get(c, 0)) + 1
 		if not str(r["thought"]).is_empty():
-			ranked.append([absf(float(r["mood"]) - 5.5) + (2.0 if not str(r["message"]).is_empty() else 0.0) + randf(), r])
+			ranked.append([absf(float(r["mood"]) - 5.5) + (2.0 if not str(r["message"]).is_empty() else 0.0) + jitter.randf(), r])
 	ranked.sort_custom(func(a: Array, b: Array) -> bool: return float(a[0]) > float(b[0]))
 	var out: Array = []
 	for pair: Array in ranked.slice(0, 6):
@@ -934,22 +937,24 @@ func to_dict() -> Dictionary:
 func from_dict(d: Dictionary) -> void:
 	_queue.clear()
 	mayor_state.clear()
+	# Everything below is copied out of d: the brain owns its state, so loading the same parsed
+	# save twice never lets the two loads share (and mutate) one dictionary.
 	for ms: Variant in d.get("mayor_state", []):
-		mayor_state.append(ms as Dictionary)
+		mayor_state.append((ms as Dictionary).duplicate(true))
 	while mayor_state.size() < D.MAYORS.size():
 		mayor_state.append({"thoughts": [], "results": [], "post": "", "mood": "ready", "log": [], "source": "", "latency_ms": 0, "day": 0})
-	proposals = d.get("proposals", {})
+	proposals = (d.get("proposals", {}) as Dictionary).duplicate(true)
 	decree = str(d.get("decree", ""))
 	decree_day = int(d.get("decree_day", -1))
-	last_paper = d.get("last_paper", {})
-	last_voices = d.get("last_voices", [])
-	last_council = d.get("last_council", {})
-	last_chaos = d.get("last_chaos", {})
-	last_operator = d.get("last_operator", {})
+	last_paper = (d.get("last_paper", {}) as Dictionary).duplicate(true)
+	last_voices = (d.get("last_voices", []) as Array).duplicate(true)
+	last_council = (d.get("last_council", {}) as Dictionary).duplicate(true)
+	last_chaos = (d.get("last_chaos", {}) as Dictionary).duplicate(true)
+	last_operator = (d.get("last_operator", {}) as Dictionary).duplicate(true)
 	chaos_last_day = int(d.get("chaos_last_day", -10))
 	complaints.clear()
 	for c: Variant in d.get("complaints", []):
-		complaints.append(c as Dictionary)
+		complaints.append((c as Dictionary).duplicate(true))
 	while complaints.size() < D.MAYORS.size():
 		complaints.append({})
 	turns.from_dict(d.get("turns", {}))
