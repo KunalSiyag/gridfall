@@ -111,3 +111,55 @@ static func lying_box(ctx: FpContext, tile: int, slot: int) -> AABB:
 			continue
 		return holder.transform * CK.collider_aabb(d)
 	return AABB()
+
+
+# ------------------------------------------------------------------ shared reads
+
+
+## The slot's standing collider entry from the holder meta, {} when it has none (walkable):
+## the channel CollisionWorld reads.
+static func entry_of(holder: Node3D, slot: int) -> Dictionary:
+	for e: Variant in holder.get_meta("colliders", []):
+		if (
+			typeof(e) == TYPE_DICTIONARY
+			and int((e as Dictionary).get("slot", -1)) == slot
+			and not bool((e as Dictionary).get("down", false))
+		):
+			return e
+	return {}
+
+
+## The tile's kind "signal" collider entries (junctions.gd owns that kind).
+static func signal_entries(holder: Node3D) -> Array:
+	var out: Array = []
+	for e: Variant in holder.get_meta("colliders", []):
+		if typeof(e) == TYPE_DICTIONARY and str((e as Dictionary).get("kind", "")) == "signal":
+			out.append(e)
+	return out
+
+
+## The traffic feature's reactions, people and walkers, after checking the posed-body extent
+## is wired into reactions: {"react", "pe", "wk"}.
+static func reactions_wired(fails: Array[String], tr) -> Dictionary:
+	var react = tr.get("reactions")
+	var pe = tr.get("people")
+	var wk = tr.get("walkers")
+	K.check(
+		fails,
+		(react.get("body_extent") as Callable).is_valid(),
+		"fixture: the posed-body extent is wired into reactions"
+	)
+	return {"react": react, "pe": pe, "wk": wk}
+
+
+## Every vertex a node's MeshInstance3D children draw, in world space (the drawn sweeps).
+static func drawn_verts(node: Node3D) -> PackedVector3Array:
+	var out: PackedVector3Array = []
+	for mi: MeshInstance3D in node.find_children("*", "MeshInstance3D", true, false):
+		for s in mi.mesh.get_surface_count():
+			var arr := mi.mesh.surface_get_arrays(s)
+			if arr.size() <= Mesh.ARRAY_VERTEX:
+				continue
+			for v: Vector3 in arr[Mesh.ARRAY_VERTEX]:
+				out.append(mi.global_transform * v)
+	return out

@@ -37,6 +37,10 @@ const LAMP_POLES := [Vector2(-0.34, 0.25), Vector2(0.34, -0.25)]
 ## (r > 0: a cylinder of that radius; r == 0: the kit's bounding box; r < 0: walkable, none).
 ## A collider must cover everything its model draws in the body band (a mover's height span);
 ## tools/tests/fp_prop_coverage_test.gd measures the drawn parts against it, class by class.
+## What a model draws ABOVE the band is overhang and stays visual by contract: the tree's crown
+## (only its trunk is solid; the leaves NEAR_FADE near the camera) is the one overhang a
+## walking mover's head passes through, and tools/tests/fp_overhang_test.gd walks and throws
+## through it to keep those bands free of colliders.
 const KITS := {
 	"tree": [PROPS + "tree_small.glb", 0.009],
 	"pit": ["", -1.0],
