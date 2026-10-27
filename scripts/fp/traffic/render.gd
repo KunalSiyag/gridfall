@@ -550,7 +550,11 @@ func _release_node(m: Model, node: Node3D) -> void:
 ## poses the Arm_* nodes and caches its rig on the car's node): the next car of its model starts
 ## folded, put back from the rest the rig cached.
 func _fold_rig(node: Node3D) -> void:
-	var rig: Variant = node.get_meta("backhoe_arm_rig", null)
+	# No get_meta default here: with an explicit default a missing key is an engine error, and
+	# only a backhoe's node ever carries the rig.
+	if not node.has_meta("backhoe_arm_rig"):
+		return
+	var rig: Variant = node.get_meta("backhoe_arm_rig")
 	if typeof(rig) != TYPE_DICTIONARY:
 		return
 	var b: Node3D = (rig as Dictionary).get("boom")

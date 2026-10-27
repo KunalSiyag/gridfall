@@ -59,6 +59,7 @@ func _init() -> void:
 	_check_api_compat()
 	_check_agents_api()
 	_check_people_draw()
+	_check_fold_rig_silent()
 	_check_grounding()
 	_check_contact_shadows()
 	_check_drivers()
@@ -835,6 +836,40 @@ func _check_people_draw() -> void:
 
 
 ## People waiting at a zebra take distinct places along the curb, clear of the light poles.
+## A body back in the pool is folded (render.gd's _fold_rig), and only a backhoe's node ever
+## carries a rig, so folding a plain pooled body must be silent. The missing-meta read it once
+## made is an engine-level error a SceneTree test cannot see, so the fold runs in a child Godot
+## (fp_fold_check.gd) and its captured output is grepped.
+func _check_fold_rig_silent() -> void:
+	var out: Array = []
+	var code := (
+		OS
+		. execute(
+			OS.get_executable_path(),
+			[
+				"--headless",
+				"--path",
+				ProjectSettings.globalize_path("res://"),
+				"-s",
+				"res://tools/tests/fp_fold_check.gd",
+			],
+			out,
+			true
+		)
+	)
+	var log := "\n".join(PackedStringArray(out))
+	K.check(
+		fails,
+		code == 0 and "FP_FOLD_CHECK: DONE" in log,
+		"fold-rig: the child fold ran (exit %d)" % code
+	)
+	K.check(
+		fails,
+		not "does not have any 'meta' values" in log and not "SCRIPT ERROR" in log,
+		"fold-rig: folding a plain pooled body prints no missing-meta engine error"
+	)
+
+
 func _check_wait_crowd() -> void:
 	var sw: SW = f.get("peds")
 	var wk: WK = f.get("walkers")
