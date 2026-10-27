@@ -65,6 +65,7 @@ func _init() -> void:
 	_check_drivers()
 	_check_wait_crowd()
 	_check_ambient_spawns()
+	_check_density_caps()
 	_check_following()
 	_check_parking_clearance()
 	_check_parked_shove()
@@ -1035,6 +1036,66 @@ func _straight_run() -> Array:
 				best = run
 				best_e = e
 	return [best, best_e]
+
+
+## The web density caps (quality.gd, through ambient's caps_override hook): a present
+## "traffic"/"crowd" key clamps that spawn target and the fill it drives; a missing key or an
+## empty Dictionary caps nothing.
+func _check_density_caps() -> void:
+	_quiet()
+	f.set("ambient_enabled", true)
+	var vh := _vh()
+	var wk: WK = f.get("walkers")
+	var amb = f.get("ambient")
+	var p := ctx.player_position()
+	var t0: Vector2i = amb.targets(p)
+	K.check(
+		fails, t0.x > 3 and t0.y > 3, "fixture: uncapped targets above the test caps (%s)" % str(t0)
+	)
+	if t0.x <= 3 or t0.y <= 3:
+		return
+	amb.set("caps_override", {})
+	K.check(
+		fails,
+		amb.targets(p) == t0,
+		"density caps: an empty Dictionary changes nothing (%s)" % str(amb.targets(p))
+	)
+	amb.set("caps_override", {"traffic": t0.x - 2})
+	var t1: Vector2i = amb.targets(p)
+	K.check(
+		fails,
+		t1 == Vector2i(t0.x - 2, t0.y),
+		(
+			"density caps: only a present key clamps (traffic %d: %s -> %s)"
+			% [t0.x - 2, str(t0), str(t1)]
+		)
+	)
+	amb.set("caps_override", {"traffic": 999, "crowd": 999})
+	K.check(
+		fails, amb.targets(p) == t0, "density caps: caps above the internal targets change nothing"
+	)
+	# The fill respects the clamp: with both caps 0 a synchronous fill spawns nothing.
+	var seen := {}
+	for c: VH.Car in vh.cars:
+		seen[c.id] = true
+	for w: WK.Walker in wk.walkers:
+		seen[w.id] = true
+	amb.set("caps_override", {"traffic": 0, "crowd": 0})
+	var want0: Vector2i = amb.targets(p)
+	f.call("_maintain", true)
+	var spawned := 0
+	for c: VH.Car in vh.cars:
+		if c.role == "ambient" and not seen.has(c.id):
+			spawned += 1
+	for w: WK.Walker in wk.walkers:
+		if w.role == "ambient" and not seen.has(w.id):
+			spawned += 1
+	amb.set("caps_override", null)
+	K.check(
+		fails,
+		spawned == 0 and want0 == Vector2i.ZERO,
+		"density caps: a zero cap spawns nothing on a synchronous fill (%d spawned)" % spawned
+	)
 
 
 func _check_following() -> void:

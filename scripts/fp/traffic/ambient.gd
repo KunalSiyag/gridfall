@@ -18,6 +18,9 @@ const VH := preload("res://scripts/fp/traffic/vehicles.gd")
 const WK := preload("res://scripts/fp/traffic/walkers.gd")
 const MAX_CARS := 40
 const MAX_PEDS := 60
+## The web quality mode (its static density_caps(): {"traffic": n, "crowd": n, "animals": n};
+## empty off-web, so there the caps below stand).
+const QUALITY := preload("res://scripts/fp/render/quality.gd")
 ## Cars per road tile within the ring, before congestion and trip load.
 const CARS_PER_TILE := 0.3
 const PEDS_PER_TILE := 1.6
@@ -65,6 +68,8 @@ var visible: Callable
 ## bike_model() -> int (traffic_feature.bike_model), and the share of cyclists.
 var bike_model: Callable
 var bike_chance: float = 0.0
+## Test hook: a Dictionary used as the density caps instead of quality.gd's (null: read it).
+var caps_override: Variant = null
 ## jcb_model() -> int (traffic_feature.jcb_model): the backhoe loader parked at a rare share of
 ## curb slots (a parked work machine the player can drive, not one in traffic).
 var jcb_model: Callable
@@ -108,6 +113,15 @@ func counts() -> Vector2i:
 	return Vector2i(c, p)
 
 
+## The web density caps (quality.gd's density_caps): a present "traffic"/"crowd" key clamps
+## that spawn target, a missing one caps nothing, so off-web (an empty Dictionary) nothing
+## changes. Read each call, so a quality-mode change mid-run applies at the next fill.
+func _caps() -> Dictionary:
+	if caps_override != null:
+		return caps_override
+	return QUALITY.density_caps()
+
+
 ## [target cars, target pedestrians] near p from road density, congestion and trip load.
 func targets(p: Vector3) -> Vector2i:
 	var n := 0
@@ -134,6 +148,11 @@ func targets(p: Vector3) -> Vector2i:
 		return Vector2i.ZERO
 	var cars := clampi(int(float(n) * CARS_PER_TILE + load * 1.5), 2, MAX_CARS)
 	var peds := clampi(int(float(np) * PEDS_PER_TILE + load_p * 2.0), 2, MAX_PEDS)
+	var caps := _caps()
+	if caps.has("traffic"):
+		cars = mini(cars, int(caps["traffic"]))
+	if caps.has("crowd"):
+		peds = mini(peds, int(caps["crowd"]))
 	return Vector2i(cars, peds)
 
 
