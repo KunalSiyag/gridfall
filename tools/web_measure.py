@@ -48,7 +48,7 @@ def head(url: str, encoding: str) -> dict:
     }
 
 
-def asset_paths(html: str) -> list:
+def asset_paths(html: str) -> list[str]:
     """The asset URLs a loader page names: srcs, hrefs and the fileSizes keys.
 
     The executable value is a basename (the engine appends `.pck`/`.wasm`), so it is not a URL;
@@ -66,7 +66,7 @@ def asset_paths(html: str) -> list:
     return out
 
 
-def targets(base: str) -> list:
+def targets(base: str) -> list[str]:
     """The loader page plus every asset the page itself names."""
     status, headers, body = fetch(base, {})
     return asset_paths(body.decode("utf-8", "replace"))

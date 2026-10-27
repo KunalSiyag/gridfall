@@ -242,7 +242,7 @@ def test_measure_script_finds_the_assets_the_page_names():
     assert "releases/abc/index.pck" in paths and "releases/abc/index.wasm" in paths
     assert "releases/abc/index.js" in paths and "index.manifest.json" in paths
     # The executable is a basename, not a file; external URLs are not probed.
-    assert "releases/abc/index" not in paths
+    assert all(p != "releases/abc/index" for p in paths)
     assert not any("example.com" in p for p in paths)
     assert len(paths) == len(set(paths))
 
