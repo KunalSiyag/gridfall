@@ -74,6 +74,39 @@ static func knobs(preset: String) -> Dictionary:
 	return PRESETS[normalize(preset)]
 
 
+## The Compatibility renderer (the web build) has no FSR2: on the desktop GL driver setting it
+## crashes the engine as the first frame draws. It scales bilinearly instead, with no temporal pass
+## to hide aliasing, so the scale stays near native and MSAA (its only 3D antialiasing) stands in
+## for FSR2's TAA.
+const COMPAT := {
+	"low": {"scale": 0.77, "msaa": Viewport.MSAA_DISABLED},
+	"medium": {"scale": 1.0, "msaa": Viewport.MSAA_2X},
+	"high": {"scale": 1.0, "msaa": Viewport.MSAA_4X},
+}
+
+
+## True when the running renderer is Compatibility (the web build, or a desktop run with
+## --rendering-method gl_compatibility). method overrides the running one (tests).
+static func is_compat(method: String = "") -> bool:
+	var m := method
+	if m.is_empty():
+		m = RenderingServer.get_current_rendering_method()
+	return m == "gl_compatibility"
+
+
+## The viewport's 3D scaling knobs for a preset on a renderer: the preset's own (FSR2) on
+## Forward+, COMPAT's bilinear scale and MSAA on Compatibility.
+static func viewport_knobs(preset: String, method: String = "") -> Dictionary:
+	var k := knobs(preset)
+	var out := {"scaling_mode": int(k["scaling_mode"]), "scale": float(k["scale"])}
+	out["msaa"] = int(k["msaa"])
+	if is_compat(method):
+		var c: Dictionary = COMPAT[normalize(preset)]
+		out = {"scaling_mode": Viewport.SCALING_3D_MODE_BILINEAR, "scale": float(c["scale"])}
+		out["msaa"] = int(c["msaa"])
+	return out
+
+
 ## Multiplier on every WS.VIS_* range: 0.7 / 1.0 / 1.3.
 static func vis_mult(preset: String) -> float:
 	return float(knobs(preset)["vis"])
@@ -109,14 +142,25 @@ static func aerial_fog_end(preset: String) -> float:
 	return 0.95 * aerial_far(preset)
 
 
-## Sun shadows while the camera is aerial reach as far as the aerial plane, so the city keeps its
-## shadows from the sky (the impostor chunks cast them then: one low-poly draw per chunk and
-## cascade). The cascade splits move out with them: the camera hangs over the roofs, so the nearest
-## ground is far from the lens (split 1 is all a 2-split preset uses).
+## Sun shadows while the camera is aerial reach as far as the aerial plane on Forward+, so the
+## city keeps its shadows from the sky (the impostor chunks cast them then: one low-poly draw per
+## chunk and cascade). On Compatibility every cascade redraws each shadowed mesh in the forward
+## pass, and a full aerial reach there costs hundreds of draws, so its reach caps tighter. Low
+## drops the pass entirely: at the overview's 26 u altitude a sub-26 m frustum casts nothing
+## anyway (measured: reach 24 == shadows off, draw-for-draw), and the pass is ~660 draws plus
+## 1-2 ms of render CPU the 2-core web box cannot spare. Every nonzero cap sits clear of the
+## street profile's 8/12/16 reaches, so render_opt's street-value snapshot never mistakes one for
+## the other. The cascade splits stay fractions of the reach: the camera hangs over the roofs, so
+## the nearest ground is far from the lens (split 1 is all a 2-split preset uses).
 const AERIAL_SHADOW_SPLITS := [0.4, 0.6, 0.8]
+## Aerial shadow reach per preset on Compatibility; 0 means the sun's shadow pass is off while
+## aerial (render_opt disables it and restores the street state on exit).
+const COMPAT_AERIAL_SHADOW := {"low": 0.0, "medium": 48.0, "high": 64.0}
 
 
-static func aerial_shadow(preset: String) -> float:
+static func aerial_shadow(preset: String, method: String = "") -> float:
+	if is_compat(method):
+		return float(COMPAT_AERIAL_SHADOW[normalize(preset)])
 	return aerial_far(preset)
 
 

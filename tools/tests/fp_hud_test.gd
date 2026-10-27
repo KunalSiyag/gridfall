@@ -11,6 +11,7 @@ const WS := preload("res://scripts/fp/world_scale.gd")
 const S := preload("res://scripts/fp/ui/hud_style.gd")
 const MinimapModel := preload("res://scripts/fp/ui/minimap_model.gd")
 const MinimapView := preload("res://scripts/fp/ui/minimap_view.gd")
+const Caption := preload("res://scripts/fp/ui/hud_caption.gd")
 ## A GmiClient that counts every call (B must make none).
 const STUB_CLIENT := """extends GmiClient
 var calls: int = 0
@@ -394,6 +395,21 @@ func _check_compass_labels() -> void:
 func _check_caption(ctx: FpContext) -> void:
 	var cap := ctx.hud.caption
 	var sim := ctx.sim
+	K.check(
+		fails,
+		not Caption.can_draw("headless", true),
+		"headless never requests a caption font texture"
+	)
+	K.check(
+		fails, not Caption.can_draw("x11", false), "a missing viewport texture skips caption drawing"
+	)
+	K.check(fails, Caption.can_draw("x11", true), "a live window viewport can draw the caption")
+	if DisplayServer.get_name() == "headless":
+		K.check(
+			fails,
+			not cap.call("_render_target_ready"),
+			"the dummy renderer does not initialize a caption glyph texture"
+		)
 	var a := _find(ctx, func(i: int) -> bool: return sim.district[i] >= 0 and sim.terrain[i] != D.WATER)
 	var da := sim.district[a] if a >= 0 else -1
 	var b := _find(ctx, func(i: int) -> bool: return sim.district[i] >= 0 and sim.district[i] != da and sim.terrain[i] != D.WATER)
@@ -404,21 +420,42 @@ func _check_caption(ctx: FpContext) -> void:
 	ctx.player.teleport(Vector3(D.tx(a), 0, D.ty(a)), 0.0)
 	cap.arrive()
 	cap._process(0.5)
-	K.check(fails, cap.caption_text() == str(D.MAYORS[da]["district"]), "arriving shows the district caption (%s)" % cap.caption_text())
+	var a_title := str(D.MAYORS[da]["district"])
+	K.check(
+		fails, _caption_matches(cap, a_title), "arriving sets the district caption (%s)" % a_title
+	)
 	cap._process(10.0)
 	ctx.player.teleport(Vector3(D.tx(b), 0, D.ty(b)), 0.0)
 	cap.check()
 	cap._process(0.5)
 	var db := sim.district[b]
+	var b_title := str(D.MAYORS[db]["district"])
 	var sub := (cap.find_child("Mayor", true, false) as Label).text
-	K.check(fails, cap.caption_text() == str(D.MAYORS[db]["district"]) and sub == "Mayor " + D.mayor_display(db) and not S.branded(sub), "entering another district captions it with its mayor (%s, %s)" % [cap.caption_text(), sub])
+	var caption_ok := _caption_matches(cap, b_title)
+	caption_ok = caption_ok and sub == "Mayor " + D.mayor_display(db) and not S.branded(sub)
+	K.check(
+		fails,
+		caption_ok,
+		"entering another district captions it with its mayor (%s, %s)" % [b_title, sub]
+	)
 	cap._process(10.0)
 	ctx.player.teleport(Vector3(D.tx(a), 0, D.ty(a)), 0.0)
 	cap.check()
 	cap._process(0.5)
-	K.check(fails, cap.caption_text().is_empty() and cap.district == da, "walking back within the cooldown shows no caption again")
+	var hidden_again := cap.district == da and float(cap.get("_age")) == INF
+	if DisplayServer.get_name() != "headless":
+		hidden_again = hidden_again and cap.caption_text().is_empty()
+	K.check(fails, hidden_again, "walking back within the cooldown shows no caption again")
 	ctx.player.teleport(keep, 0.0)
 	cap.check()
+
+
+func _caption_matches(cap: Control, expected: String) -> bool:
+	if DisplayServer.get_name() == "headless":
+		var title := cap.find_child("District", true, false) as Label
+		var box := cap.get("_box") as Control
+		return title != null and title.text == expected and box != null and not box.visible
+	return cap.caption_text() == expected
 
 
 func _check_reload(ctx: FpContext) -> void:

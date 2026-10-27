@@ -148,6 +148,14 @@ the flag on a split release and expect a complete city.
   at 256 px on the web only (desktop keeps the source resolution). Posters, hoardings and billboard
   art are exempt and keep their source resolution because players read them up close. Raise the cap
   in `tools/web_export.py` (`CAP_LIMIT`) or add a tree to `UNCAPPED_TREES`/`UNCAPPED_NAMES`.
+- **Known limitation, fixed in round 3 — Compatibility-renderer SIGSEGV on desktop GL:** entering
+  first person on `gl_compatibility` could crash minutes in, when the poster/mayor-image pipeline
+  first VRAM-compressed a texture on a worker thread. Godot's Betsy GPU compressor registers its
+  local RenderingDevice as the global singleton before its context driver exists, and the engine's
+  per-frame viewport HDR check dereferences the null driver (upstream draft on file). Both runtime
+  compression sites now skip GPU compression unless `RenderingServer.get_rendering_device()` is
+  non-null. The web build never had a rendering device, so its images stay uncompressed either way;
+  no action needed.
 
 ## Known limitations (web / gl_compatibility)
 

@@ -109,9 +109,13 @@ var _occ_root: Node3D
 var _waiting_ready: bool = false
 var _wait_queue: Array = []
 ## The street profile's sun shadow reach and three splits, as it last set them; empty when none is
-## held. _shadow_set is the aerial reach this feature last wrote.
+## held. _shadow_set is the aerial reach this feature last wrote. _shadow_off_held tracks the
+## Compatibility-Low aerial state, where the sun's shadow pass is disabled outright: the street
+## profile's shadow_enabled is kept in _street_shadow_enabled until the street values return.
 var _street_shadow: Array = []
 var _shadow_set: float = -1.0
+var _shadow_off_held: bool = false
+var _street_shadow_enabled: bool = true
 ## Seconds since the last open-site re-scan while aerial.
 var _aerial_site_t: float = 0.0
 ## Tiles built since their last post-pass: tile index -> holder, in arrival order.
@@ -175,9 +179,10 @@ func apply_preset(p: String) -> void:
 	preset = Q.normalize(p)
 	var k := Q.knobs(preset)
 	if _vp != null:
-		_vp.scaling_3d_mode = int(k["scaling_mode"]) as Viewport.Scaling3DMode
-		_vp.scaling_3d_scale = float(k["scale"])
-		_vp.msaa_3d = int(k["msaa"]) as Viewport.MSAA
+		var vk := Q.viewport_knobs(preset)
+		_vp.scaling_3d_mode = int(vk["scaling_mode"]) as Viewport.Scaling3DMode
+		_vp.scaling_3d_scale = float(vk["scale"])
+		_vp.msaa_3d = int(vk["msaa"]) as Viewport.MSAA
 		_vp.mesh_lod_threshold = float(k["lod"])
 	_rs("directional_shadow_atlas_set_size", [int(k["atlas"]), bool(k["atlas_16"])])
 	_rs("directional_soft_shadow_filter_set_quality", [int(k["soft"])])
@@ -223,15 +228,16 @@ func apply_preset(p: String) -> void:
 ## True when the viewport and camera carry preset p's knobs (self-test and tests).
 func preset_applied(p: String) -> bool:
 	var k := Q.knobs(p)
+	var vk := Q.viewport_knobs(p)
 	if _vp == null:
 		return false
 	var ok := (
-		_vp.scaling_3d_mode == int(k["scaling_mode"])
-		and is_equal_approx(_vp.scaling_3d_scale, float(k["scale"]))
+		_vp.scaling_3d_mode == int(vk["scaling_mode"])
+		and is_equal_approx(_vp.scaling_3d_scale, float(vk["scale"]))
 	)
 	ok = (
 		ok
-		and _vp.msaa_3d == int(k["msaa"])
+		and _vp.msaa_3d == int(vk["msaa"])
 		and is_equal_approx(_vp.mesh_lod_threshold, float(k["lod"]))
 	)
 	var cam := _camera()
@@ -284,10 +290,24 @@ func _aerial_shadows(on: bool) -> void:
 		if _street_shadow.is_empty() or not is_equal_approx(reach, _shadow_set):
 			_street_shadow = keys.map(func(k: String) -> float: return float(sun.get(k)))
 		_shadow_set = Q.aerial_shadow(preset)
-		var vals: Array = [_shadow_set] + Q.AERIAL_SHADOW_SPLITS
-		for k in range(keys.size()):
-			sun.set(keys[k], vals[k])
+		if _shadow_set <= 0.0:
+			# Compatibility Low: no aerial shadow pass at all (the reach that would cast from the
+			# overview's altitude is longer than the city is tall; see quality.gd).
+			if not _shadow_off_held:
+				_street_shadow_enabled = sun.shadow_enabled
+				_shadow_off_held = true
+			sun.shadow_enabled = false
+		else:
+			if _shadow_off_held:
+				sun.shadow_enabled = _street_shadow_enabled
+				_shadow_off_held = false
+			var vals: Array = [_shadow_set] + Q.AERIAL_SHADOW_SPLITS
+			for k in range(keys.size()):
+				sun.set(keys[k], vals[k])
 	elif not _street_shadow.is_empty():
+		if _shadow_off_held:
+			sun.shadow_enabled = _street_shadow_enabled
+			_shadow_off_held = false
 		for k in range(keys.size()):
 			sun.set(keys[k], _street_shadow[k])
 		_street_shadow = []

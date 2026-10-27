@@ -49,12 +49,17 @@ static func probe() -> Dictionary:
 
 
 ## Why the mode is on for this card, or "" when it is off. env is GRIDFALL_LOW_VRAM; auto is the
-## "low_vram_auto" flag.
-static func reason(info: Dictionary, env: String, auto: bool) -> String:
+## "low_vram_auto" flag; web is the browser build, which always starts lean (WebGL 2 on whatever
+## laptop opens the page, and it cannot read the card's memory), so it starts on Low too.
+static func reason(info: Dictionary, env: String, auto: bool, web: bool = false) -> String:
 	var e := env.strip_edges().to_lower()
 	if e in TRUE_WORDS:
 		return "GRIDFALL_LOW_VRAM=1"
-	if e in FALSE_WORDS or not auto:
+	if e in FALSE_WORDS:
+		return ""
+	if web:
+		return "web browser"
+	if not auto:
 		return ""
 	var t := int(info.get("type", -1))
 	var total := int(info.get("total_mib", -1))
@@ -76,7 +81,10 @@ static func decide() -> Dictionary:
 	if _info.is_empty():
 		var info := probe()
 		info["reason"] = reason(
-			info, OS.get_environment("GRIDFALL_LOW_VRAM"), FeatureFlags.enabled("low_vram_auto")
+			info,
+			OS.get_environment("GRIDFALL_LOW_VRAM"),
+			FeatureFlags.enabled("low_vram_auto"),
+			OS.has_feature("web")
 		)
 		info["low"] = not str(info["reason"]).is_empty()
 		_info = info
@@ -118,8 +126,15 @@ static func apply_to(vp: Viewport) -> void:
 	)
 	if vp != null:
 		vp.msaa_3d = Viewport.MSAA_DISABLED
-		vp.screen_space_aa = Viewport.SCREEN_SPACE_AA_FXAA
+		# Compatibility (the web build) has no screen-space AA at all; asking for FXAA only warns.
+		if not compat(RenderingServer.get_current_rendering_method()):
+			vp.screen_space_aa = Viewport.SCREEN_SPACE_AA_FXAA
 		vp.positional_shadow_atlas_size = mini(vp.positional_shadow_atlas_size, LAMP_ATLAS)
+
+
+## True for the Compatibility renderer's method name (gl_compatibility).
+static func compat(method: String) -> bool:
+	return method == "gl_compatibility"
 
 
 ## One line for the log: the card, its memory and the decision.

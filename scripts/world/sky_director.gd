@@ -18,6 +18,12 @@ const MAX_CYCLE_SPEED := 4
 const HOLD_HOUR := 13.0
 ## Days shorter than this many real seconds hold at HOLD_HOUR instead of strobing.
 const MIN_CYCLE_DAY_SECONDS := 3.0
+## Compatibility (the web build) draws the same scene darker and punchier than Forward+: no SSIL
+## bounce fill lifts the mid-tones, and its tonemap runs on different output buffers. Its exposure
+## is scaled up and saturation down to match Forward+ shots taken at the same hour (frozen-city
+## street view: luma 0.143 -> 0.248 vs Forward+ 0.241, saturation 0.421 -> 0.243 vs 0.203);
+## Forward+ keeps 1.0.
+const COMPAT_LOOK := {"exposure": 1.6, "saturation": 0.85}
 
 var sim: CitySim
 var env: Environment
@@ -44,6 +50,26 @@ var _dusk_fp: bool = false
 var _fog_begin_saved: float = -1.0
 ## The scene's sun shadow opacity, which weather_shadow_mult scales.
 var _shadow_opacity: float = 1.0
+## The running renderer's exposure scale (renderer_look()), applied on top of the day curve.
+var renderer_exposure: float = 1.0
+
+
+## Exposure and saturation scales for a renderer method (RenderingServer's name for it):
+## COMPAT_LOOK on gl_compatibility, neutral everywhere else.
+static func renderer_look(method: String) -> Dictionary:
+	if method == "gl_compatibility":
+		return COMPAT_LOOK
+	return {"exposure": 1.0, "saturation": 1.0}
+
+
+## Takes on method's look: the exposure scale every frame from here on, and the saturation scale
+## on the shared Environment once (a meta remembers it, so a second setup does not stack it).
+func apply_renderer_look(method: String) -> void:
+	var look := renderer_look(method)
+	renderer_exposure = float(look["exposure"])
+	if env != null and not env.has_meta("renderer_saturation"):
+		env.set_meta("renderer_saturation", float(look["saturation"]))
+		env.adjustment_saturation *= float(look["saturation"])
 
 
 func setup(p_sim: CitySim, p_env: Environment, p_sun: DirectionalLight3D, p_view: CityView) -> void:
@@ -55,6 +81,7 @@ func setup(p_sim: CitySim, p_env: Environment, p_sun: DirectionalLight3D, p_view
 		_shadow_opacity = sun.shadow_opacity
 	if OS.has_environment("GRIDFALL_HOUR"):
 		fixed_hour = float(OS.get_environment("GRIDFALL_HOUR"))
+	apply_renderer_look(RenderingServer.get_current_rendering_method())
 	if env != null and ResourceLoader.exists(SKY_SHADER) and ResourceLoader.exists(DAY_HDRI):
 		_sky_mat = ShaderMaterial.new()
 		_sky_mat.shader = load(SKY_SHADER)
@@ -147,7 +174,7 @@ func _apply(blend: float) -> void:
 			),
 			weather_fog_tint.a
 		)
-		env.tonemap_exposure = lerpf(1.2, 1.0, day_f) * weather_exposure_mult
+		env.tonemap_exposure = lerpf(1.2, 1.0, day_f) * weather_exposure_mult * renderer_exposure
 		if fog_begin_override >= 0.0:
 			if _fog_begin_saved < 0.0:
 				_fog_begin_saved = env.fog_depth_begin

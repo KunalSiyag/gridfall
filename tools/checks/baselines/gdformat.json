@@ -106,7 +106,6 @@
  "tools/tests/fp_overview_test.gd",
  "tools/tests/fp_photo_tour.gd",
  "tools/tests/fp_posters_test.gd",
- "tools/tests/fp_renderperf_test.gd",
  "tools/tests/fp_seams_test.gd",
  "tools/tests/fp_shots.gd",
  "tools/tests/fp_simperf_test.gd",

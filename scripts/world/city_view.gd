@@ -196,8 +196,12 @@ var _lawn_mat: ShaderMaterial
 var _bank_mat: ShaderMaterial
 var _apron_mat: StandardMaterial3D
 var _road_fp_mat: ShaderMaterial
+## lane_axis -> road_fp_mat's copy for it (road_fp_material_for).
+var _road_fp_variants: Dictionary = {}
 ## Unpaved road tiles: their shared material and quad (track_material, _track).
 var _track_mat: Material
+## mask * 16 + grade -> track_mat's copy for that tile shape (track_material_for).
+var _track_variants: Dictionary = {}
 var _track_mesh: Mesh
 var _water_node: MeshInstance3D
 var _bed_node: MeshInstance3D
@@ -588,8 +592,9 @@ func _apply_ground_mode() -> void:
 	for g in _ground_chunks:
 		if is_instance_valid(g):
 			g.material_override = gm
-	if _track_mat is ShaderMaterial:
-		(_track_mat as ShaderMaterial).set_shader_parameter("cut_grass", not fp_mode)
+	for tm: Material in [_track_mat] + _track_variants.values():
+		if tm is ShaderMaterial:
+			(tm as ShaderMaterial).set_shader_parameter("cut_grass", not fp_mode)
 	if _bed_node != null:
 		_bed_node.material_override = _bank_material() if fp_mode else _pbr("dirt", Color(0.22, 0.2, 0.17), 0.6)
 	if _water_mat != null:
@@ -650,8 +655,24 @@ func track_material() -> Material:
 	return _track_mat
 
 
+## The track material for one tile shape: a shared copy of track_material() carrying the road mask
+## (0..15) and grade. A per-tile instance uniform would take a slot of Compatibility's 4096-slot
+## instance buffer for every mesh using the ground shader.
+func track_material_for(mask: int, grade: int) -> Material:
+	var base := track_material()
+	if not (base is ShaderMaterial):
+		return base
+	var key := mask * 16 + grade
+	if not _track_variants.has(key):
+		var sm := (base as ShaderMaterial).duplicate() as ShaderMaterial
+		sm.set_shader_parameter("track_mask", float(mask))
+		sm.set_shader_parameter("track_grade", float(grade))
+		_track_variants[key] = sm
+	return _track_variants[key]
+
+
 ## An unpaved road tile's surface: one quad at ASPHALT_TOP (the height the tile's walkers and cars
-## keep) told the tile's road mask and grade.
+## keep) in the material for the tile's road mask and grade.
 func _track(mask: int, grade: int) -> MeshInstance3D:
 	if _track_mesh == null:
 		var pm := PlaneMesh.new()
@@ -662,9 +683,7 @@ func _track(mask: int, grade: int) -> MeshInstance3D:
 	mi.mesh = _track_mesh
 	mi.position.y = WS.ASPHALT_TOP
 	mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-	mi.material_override = track_material()
-	mi.set_instance_shader_parameter(&"track_mask", float(mask))
-	mi.set_instance_shader_parameter(&"track_grade", float(grade))
+	mi.material_override = track_material_for(mask, grade)
 	return mi
 
 
@@ -734,8 +753,8 @@ func apron_material() -> Material:
 
 
 ## Carriageway asphalt on foot (shaders/road_fp.gdshader): world-mapped, broken-up asphalt with lane
-## wear; road holders set its `lane_axis` instance parameter. Null when the shader or textures are
-## missing (the road models keep their own asphalt).
+## wear; road holders take road_fp_material_for(their lane axis). Null when the shader or textures
+## are missing (the road models keep their own asphalt).
 func road_fp_material() -> ShaderMaterial:
 	if _road_fp_mat == null and ResourceLoader.exists(ROAD_SHADER) and ResourceLoader.exists(TEX + "asphalt_albedo.jpg"):
 		_road_fp_mat = ShaderMaterial.new()
@@ -748,6 +767,20 @@ func road_fp_material() -> ShaderMaterial:
 		_road_fp_mat.set_shader_parameter("half_width", WS.ROAD_HALF)
 		_road_fp_mat.set_shader_parameter("wetness", wetness)
 	return _road_fp_mat
+
+
+## The street asphalt for one lane layout (shaders/road_fp.gdshader's lane_axis, 0..6): a shared
+## copy of road_fp_material(), so no road mesh needs an instance uniform (Compatibility has 4096
+## slots for those). Null when road_fp_material() is.
+func road_fp_material_for(axis: int) -> ShaderMaterial:
+	var base := road_fp_material()
+	if base == null:
+		return null
+	if not _road_fp_variants.has(axis):
+		var sm := base.duplicate() as ShaderMaterial
+		sm.set_shader_parameter("lane_axis", float(axis))
+		_road_fp_variants[axis] = sm
+	return _road_fp_variants[axis]
 
 
 ## Sets light_pole_source (E's traffic feature, or null) and, on a change while on foot, re-hangs
@@ -771,6 +804,9 @@ func set_wetness(w: float) -> void:
 		if is_instance_valid(m):
 			_wet_material(m, w)
 	var shaded: Array = [_ground_fp_mat, _lot_mat, _road_fp_mat, _lawn_mat, _track_mat as ShaderMaterial]
+	shaded.append_array(_road_fp_variants.values())
+	for tm: Material in _track_variants.values():
+		shaded.append(tm as ShaderMaterial)
 	for sm: ShaderMaterial in shaded:
 		if sm != null:
 			sm.set_shader_parameter("wetness", w)
@@ -787,6 +823,8 @@ func set_rain(r: float) -> void:
 		_water_mat.set_shader_parameter("rain", on)
 	if _road_fp_mat != null:
 		_road_fp_mat.set_shader_parameter("rain", on)
+	for sm: ShaderMaterial in _road_fp_variants.values():
+		sm.set_shader_parameter("rain", on)
 
 
 func _wet_material(m: BaseMaterial3D, w: float) -> void:

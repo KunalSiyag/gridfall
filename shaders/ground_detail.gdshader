@@ -19,17 +19,20 @@ uniform float lot_edge = 0.0;
 uniform vec3 grass_tint : source_color = vec3(1.0, 1.0, 1.0);
 uniform float normal_strength = 0.7;
 uniform float wetness = 0.0;
-// Unpaved road tiles (CityView.track_material): the tile's road mask and grade come per instance;
-// the carriageway shape mirrors RoadTopology.is_carriageway. cut_grass discards everything but the
-// track itself (orbit view, where the ground under it is not this shader).
+// Unpaved road tiles (CityView.track_material_for): the tile's road mask and grade come from one
+// shared material per (mask, grade); the carriageway shape mirrors RoadTopology.is_carriageway.
+// cut_grass discards everything but the track itself (orbit view, where the ground under it is
+// not this shader). No instance uniforms here: on Compatibility every mesh drawn with a shader
+// that declares one takes a slot of a 4096-slot buffer, set or not, and a grown city's ground,
+// lawns and site parts overflow it (the engine then crashes).
 uniform bool track = false;
 uniform bool cut_grass = false;
 uniform float road_half = 0.3;
 uniform float lane_offset = 0.15;
 uniform vec2 corner_radii = vec2(0.2, 0.8);
 uniform vec2 end_circle = vec2(0.04, 0.38);
-instance uniform float track_mask = 0.0;
-instance uniform float track_grade = 0.0;
+uniform float track_mask = 0.0;
+uniform float track_grade = 0.0;
 
 varying vec3 wpos;
 varying vec2 luv;

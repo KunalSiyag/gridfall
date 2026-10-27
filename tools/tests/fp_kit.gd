@@ -5,6 +5,7 @@ extends RefCounted
 
 const D := preload("res://scripts/sim/sim_defs.gd")
 const WS := preload("res://scripts/fp/world_scale.gd")
+const HLOD := preload("res://scripts/fp/render/hlod.gd")
 const REGISTRY := preload("res://scripts/fp/fp_features.gd")
 const WK := preload("res://scripts/fp/traffic/walkers.gd")
 ## The scripted growth recipe used by "grow" (probe-verified on seed 7): the nine actions at
@@ -384,3 +385,56 @@ static func _has_c_lot(sim: CitySim) -> bool:
 		if sim.kind[i] == D.ZONE_C and sim.level[i] >= 1:
 			return true
 	return false
+
+
+## Builds a park, a wind farm and a stadium instantly when the grown city has none (the
+## open-site fixture the render tests share).
+static func place_open_services(fails: Array, sim: CitySim) -> void:
+	var mode := sim.construction_mode
+	sim.construction_mode = "instant"
+	for key: String in ["park", "wind_farm", "stadium"]:
+		var kind := int(D.BUILDINGS[key]["kind"])
+		var have := false
+		for i in sim.active:
+			have = have or sim.kind[i] == kind
+		if not have:
+			var r: Dictionary = sim.apply_action(
+				0, {"type": "build", "building": key, "x": 12, "y": 10}
+			)
+			check(
+				fails,
+				bool(r.get("ok", false)),
+				"fixture: built a %s (%s)" % [key, r.get("reason", "")]
+			)
+	sim.construction_mode = mode
+
+
+## The visibility end a chunk part of class c should carry at visibility multiplier mult
+## (the render tests' shared oracle).
+static func vis_want_end(c: int, mult: float) -> float:
+	match c:
+		HLOD.Cls.PROP:
+			return WS.VIS_PROP * mult
+		HLOD.Cls.FULL:
+			return 0.0
+		HLOD.Cls.NEAR:
+			return WS.VIS_BUILDING_NEAR * mult
+	return WS.VIS_BUILDING * mult
+
+
+## The visibility begin a chunk part of class c should carry (only MID parts fade in).
+static func vis_want_begin(c: int, mult: float) -> float:
+	return WS.VIS_BUILDING_NEAR * mult if c == HLOD.Cls.MID else 0.0
+
+
+## The render tests' street fixture: a grown first-person city with the open-site services and a
+## funded mayor, ready for a render_opt feature. Call after `await process_frame`.
+static func render_street_ctx(root: Node, fails: Array) -> FpContext:
+	var opts := {"view": true, "grow": true, "render": true, "player": true, "hud": false}
+	var ctx := make_ctx(root, opts)
+	ctx.sim.mayors[0]["treasury"] = 200000
+	place_open_services(fails, ctx.sim)
+	ctx.view.set_fp_mode(true)
+	if ctx.view.has_method("flush_rebuild_queue"):
+		ctx.view.call("flush_rebuild_queue")
+	return ctx
