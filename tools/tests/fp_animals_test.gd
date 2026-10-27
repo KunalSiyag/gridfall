@@ -19,6 +19,7 @@ const FRESH := preload("res://tools/tests/fp_fresh_city.gd")
 const WS := preload("res://scripts/fp/world_scale.gd")
 const WK := preload("res://scripts/fp/traffic/walkers.gd")
 const AF := preload("res://scripts/fp/animals/animals_feature.gd")
+const CAPS := preload("res://scripts/fp/animals/animal_caps.gd")
 const PACK := preload("res://scripts/fp/animals/dog_pack.gd")
 const BODIES := preload("res://scripts/fp/animals/dog_bodies.gd")
 const DT := 1.0 / 60.0
@@ -89,8 +90,65 @@ func _init() -> void:
 		_check_far(w, d)
 	_check_yard()
 	_check_young_city()
+	_check_caps()
 	_check_teardown()
 	K.finish(self, "FP_ANIMALS_TEST", fails)
+
+
+## The web tier's animals cap (quality.gd density_caps "animals", flag web_quality):
+## animal_caps.gd's split() shares it over the groups by their desktop budgets, largest
+## remainder; off the web (this desktop run) the feature keeps every MAX_*.
+func _check_caps() -> void:
+	var split := CAPS.split(6)
+	var sum := 0
+	for k in split:
+		sum += int(split[k])
+	K.check(fails, sum == 6, "caps: the split spends the cap (%s)" % str(split))
+	K.check(
+		fails,
+		int(split["dogs"]) == 2 and int(split["cats"]) == 1,
+		"caps: shared out by the desktop budgets"
+	)
+	K.check(
+		fails,
+		int(split["squirrels"]) == 1 and int(split["pigeons"]) == 1 and int(split["ducks"]) == 1,
+		"caps: the small groups keep one each"
+	)
+	var none := CAPS.split(0)
+	var any := false
+	for k in none:
+		any = any or int(none[k]) > 0
+	K.check(fails, not any, "caps: a cap of 0 leaves nobody")
+	var tight := CAPS.split(3)
+	K.check(fails, int(tight["squirrels"]) == 0, "caps: a tight cap can leave a group none")
+	var exact := true
+	for cap in range(0, 26):
+		var s := CAPS.split(cap)
+		var tot := 0
+		for k in s:
+			tot += int(s[k])
+			exact = exact and int(s[k]) <= int(CAPS.DESKTOP[k])
+		exact = exact and tot == cap
+	K.check(fails, exact, "caps: every cap 0..25 splits exactly, none over budget")
+	var full := CAPS.split(99)
+	var matches := true
+	for k in CAPS.DESKTOP:
+		matches = matches and int(full[k]) == int(CAPS.DESKTOP[k])
+	K.check(fails, matches, "caps: a wide cap never tops the desktop budgets (%s)" % str(full))
+	K.check(
+		fails,
+		(
+			int(f.get("max_dogs")) == AF.MAX_DOGS
+			and int((f.get("cats") as Node).get("max_cats")) == int(CAPS.DESKTOP["cats"])
+			and (
+				int((f.get("squirrels") as Node).get("max_squirrels"))
+				== int(CAPS.DESKTOP["squirrels"])
+			)
+			and int((f.get("pigeons") as Node).get("max_flocks")) == int(CAPS.DESKTOP["pigeons"])
+			and int((f.get("waterfowl") as Node).get("max_flocks")) == int(CAPS.DESKTOP["ducks"])
+		),
+		"caps: off the web every group keeps its desktop budget"
+	)
 
 
 # ------------------------------------------------------------------ helpers

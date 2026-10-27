@@ -30,15 +30,18 @@ const CATS := preload("res://scripts/fp/animals/cats.gd")
 const SQUIRRELS := preload("res://scripts/fp/animals/squirrels.gd")
 const LIFE := preload("res://scripts/fp/animals/cat_life.gd")
 const FLOCK := preload("res://scripts/fp/animals/pigeon_flock.gd")
+const CAPS := preload("res://scripts/fp/animals/animal_caps.gd")
+const M := preload("res://scripts/fp/animals/animal_math.gd")
 
 const MAX_STEP := 1.0 / 30.0
 ## Dogs come out within NEAR of the player (u, about their draw distance) and go beyond FAR, at most
 ## MAX_DOGS at a time. Owners and yards are looked over every SCAN_S (s), the dog homes HOMES_S.
 const NEAR := 3.0
 const FAR := 3.6
-const MAX_DOGS := 10
+const MAX_DOGS := CAPS.MAX_DOGS
 const SCAN_S := 0.5
 const HOMES_S := 10.0
+
 ## Share of the people out on foot who walk a dog, and what the night (sky.night above NIGHT)
 ## and the rain leave of it. While the city is young (fewer built homes and shops than YOUNG_LOTS,
 ## measured with the dog households) half as many again do, so a young city still shows dogs about.
@@ -104,6 +107,8 @@ var cats: CATS
 var squirrels: SQUIRRELS
 ## The dogs live on game time even with the sim paused (the photo tour).
 var live: bool = false
+## The dogs' ceiling: MAX_DOGS, or the web tier's share of the animals cap (setup()).
+var max_dogs := MAX_DOGS
 var pets: int = 0
 var bites: int = 0
 ## Animals the hero struck so far.
@@ -132,6 +137,8 @@ func feature_id() -> String:
 
 func setup(p_ctx: FpContext) -> void:
 	super.setup(p_ctx)
+	# The web tier's density ceiling (animal_caps.gd): {} off the web, every MAX_* keeps.
+	var caps := CAPS.capped()
 	bodies = BODIES.new()
 	bodies.check()
 	bodies.start()
@@ -159,7 +166,9 @@ func setup(p_ctx: FpContext) -> void:
 	cats.yard_of = _yard
 	squirrels = SQUIRRELS.new()
 	add_child(squirrels)
+	squirrels.max_squirrels = int(caps.get("squirrels", SQUIRRELS.MAX_SQUIRRELS))
 	squirrels.setup(ctx)
+	CAPS.apply(self, caps)
 	if ctx.bus != null:
 		link_signal(ctx.bus.interact_requested, _on_interact)
 		link_signal(ctx.bus.person_hit, _on_person_hit)
@@ -252,7 +261,7 @@ func _pick_dog(origin: Vector3, dir: Vector3, max_dist: float) -> Dictionary:
 		var c := _back(dog)
 		if c.distance_to(head) > PET_REACH:
 			continue
-		var t := _ray_ball(origin, d, c, 0.75 * pack.shoulder_m(dog) * WS.M)
+		var t := M.ray_ball(origin, d, c, 0.75 * pack.shoulder_m(dog) * WS.M)
 		if t >= 0.0 and t < bt:
 			bt = t
 			best = dog
@@ -304,7 +313,7 @@ func photo_prepare() -> void:
 	bodies.blocking = true
 	var lot := int(_photo["lot"])
 	var y: Dictionary = _photo["yard"]
-	var road := _tile_pos(ctx.directory.frontage(lot)) - _tile_pos(lot)
+	var road := M.tile_pos(ctx.directory.frontage(lot)) - M.tile_pos(lot)
 	var side := Vector3(-road.z, 0.0, road.x)
 	for k in range(2):
 		var at: Vector3 = (_photo["at"] as Vector3) + side * (0.05 if k == 0 else -0.05)
@@ -418,7 +427,7 @@ func _on_person_hit(at: Vector3, cause: String, info: Dictionary) -> void:
 			if d.angry <= 0.0:
 				_toast("%s goes for you!" % d.name, "info")
 			pack.defend(d)
-		elif _flat(d.pos, at) < SEEN_HIT * WS.M:
+		elif M.flat(d.pos, at) < SEEN_HIT * WS.M:
 			pack.startle(d, at)
 
 
@@ -432,14 +441,14 @@ func _on_hero_action(action: String, at: Vector3) -> void:
 	squirrels.startle(at, float(SQUIRRELS.STARTLE.get(action, 0.0)))
 	if action == "wave":
 		for d: PACK.Dog in pack.dogs:
-			if d.temper == "friendly" and d.angry <= 0.0 and _flat(d.pos, at) < WAVE_AT:
+			if d.temper == "friendly" and d.angry <= 0.0 and M.flat(d.pos, at) < WAVE_AT:
 				d.happy = maxf(d.happy, 0.7)
 		return
 	if not STARTLE.has(action):
 		return
 	var r := float(STARTLE[action]) * WS.M
 	for d: PACK.Dog in pack.dogs:
-		if _flat(d.pos, at) < r:
+		if M.flat(d.pos, at) < r:
 			pack.startle(d, at)
 
 
@@ -457,19 +466,19 @@ func strike(feet: Vector3, dir: Vector3, reach: float, cone: float, strength: fl
 	var best: Array = []
 	var bg := reach - WS.PLAYER_RADIUS
 	for d: PACK.Dog in pack.dogs:
-		var g := _gap(feet, aim, d.pos, pack.girth(d), cone)
+		var g := M.gap(feet, aim, d.pos, pack.girth(d), cone)
 		if g <= bg:
 			bg = g
 			best = ["dog", d]
 	for c: LIFE.Cat in cats.life.cats:
-		var g := _gap(feet, aim, c.pos, cats.life.girth(c), cone)
+		var g := M.gap(feet, aim, c.pos, cats.life.girth(c), cone)
 		if g <= bg:
 			bg = g
 			best = ["cat", c]
 	for src: FLOCK in [pigeons.flock, perches.flock]:
 		for f: FLOCK.Flock in src.flocks:
 			for b: FLOCK.Bird in f.birds:
-				var g := _gap(feet, aim, b.pos, 0.0, cone) if b.pos.y - feet.y < BIRD_LOW else INF
+				var g := M.gap(feet, aim, b.pos, 0.0, cone) if b.pos.y - feet.y < BIRD_LOW else INF
 				if g <= bg:
 					bg = g
 					best = ["pigeon", b, f]
@@ -608,7 +617,7 @@ func _owners_now(traffic_f: FpFeature, dt: float) -> void:
 ## owner.
 func _owner_gone(d: PACK.Dog) -> void:
 	var y := {}
-	if d.home >= 0 and _flat(_tile_pos(d.home), ctx.player_position()) < FAR:
+	if d.home >= 0 and M.flat(M.tile_pos(d.home), ctx.player_position()) < FAR:
 		y = _yard(d.home)
 	if y.is_empty():
 		_drop(d)
@@ -634,7 +643,7 @@ func _scan() -> void:
 	var me := ctx.player_position()
 	var rain := _raining()
 	for d: PACK.Dog in pack.dogs.duplicate():
-		if _flat(d.pos, me) > FAR and not d.key.begins_with("photo:"):
+		if M.flat(d.pos, me) > FAR and not d.key.begins_with("photo:"):
 			_drop(d)
 	var day := _night() <= PIGEON_NIGHT
 	pigeons.scan(me, day, rain)
@@ -728,11 +737,11 @@ func _walk_with(e: Dictionary, key: String, r: Dictionary) -> void:
 ## Dog households near the player whose dog nobody walks keep it in the front yard.
 func _yard_dogs(me: Vector3) -> void:
 	for h: Array in _homes:
-		if pack.dogs.size() >= MAX_DOGS:
+		if pack.dogs.size() >= max_dogs:
 			return
 		var lot := int(h[1])
 		var key := "r:" + str(h[0])
-		if _flat(_tile_pos(lot), me) > NEAR or _dog_of(key) != null:
+		if M.flat(M.tile_pos(lot), me) > NEAR or _dog_of(key) != null:
 			continue
 		var y := _yard(lot)
 		if y.is_empty():
@@ -748,9 +757,9 @@ func _yard_dogs(me: Vector3) -> void:
 
 
 ## A new dog for key at at facing yaw (a yard dog barks more often), of breed or one picked by
-## key; null while its body still loads or with MAX_DOGS out.
+## key; null while its body still loads or with the dogs' ceiling (max_dogs) out.
 func _spawn(key: String, at: Vector3, yaw: float, yard: bool, breed := "") -> PACK.Dog:
-	if pack.dogs.size() >= MAX_DOGS:
+	if pack.dogs.size() >= max_dogs:
 		return null
 	var rng := RandomNumberGenerator.new()
 	rng.seed = hash(key) ^ (ctx.sim.city_seed * 7919)
@@ -788,8 +797,8 @@ func _yard(lot: int) -> Dictionary:
 	var lv := ctx.sim.level[lot]
 	var house := ctx.sim.kind[lot] == D.ZONE_R and lv > 0 and lv <= YARD_LEVEL
 	if fr >= 0 and house and ctx.collision != null:
-		var c := _tile_pos(lot)
-		var road := _tile_pos(fr) - c
+		var c := M.tile_pos(lot)
+		var road := M.tile_pos(fr) - c
 		var side := Vector3(-road.z, 0.0, road.x)
 		var spot := _free_spot(c, road, side)
 		if not is_nan(spot.x):
@@ -831,7 +840,7 @@ func _photo_yard() -> Dictionary:
 	for i in range(ctx.sim.kind.size()):
 		if ctx.sim.kind[i] != D.ZONE_R:
 			continue
-		var dist := _flat(_tile_pos(i), me)
+		var dist := M.flat(M.tile_pos(i), me)
 		if dist >= best_d:
 			continue
 		var y := _yard(i)
@@ -849,8 +858,8 @@ func _photo_yard() -> Dictionary:
 ## the middle of lot) when the ground there is free, else the spot itself.
 func _photo_dogs(lot: int, y: Dictionary) -> Vector3:
 	var a: Vector3 = y["anchor"]
-	var c := _tile_pos(lot)
-	var road := _tile_pos(ctx.directory.frontage(lot)) - c
+	var c := M.tile_pos(lot)
+	var road := M.tile_pos(ctx.directory.frontage(lot)) - c
 	var p := a + road * maxf(PHOTO_DEPTH - (a - c).dot(road), 0.0)
 	p.y = ctx.collision.walk_height(p)
 	var r := PACK.RADIUS_K * float(BODIES.BREEDS["husky"]["shoulder_m"]) * WS.M
@@ -861,8 +870,8 @@ func _photo_dogs(lot: int, y: Dictionary) -> Vector3:
 
 ## Where the photo camera stands in front of lot (feet; y NAN off the ground).
 func _photo_spot(lot: int) -> Vector3:
-	var c := _tile_pos(lot)
-	var pos := c + (_tile_pos(ctx.directory.frontage(lot)) - c) * PHOTO_BACK
+	var c := M.tile_pos(lot)
+	var pos := c + (M.tile_pos(ctx.directory.frontage(lot)) - c) * PHOTO_BACK
 	pos.y = ctx.collision.walk_height(pos)
 	return pos
 
@@ -969,32 +978,3 @@ func _camera_pos() -> Vector3:
 func _toast(t: String, kind: String) -> void:
 	if ctx.bus != null:
 		ctx.bus.toast.emit(t, kind)
-
-
-static func _tile_pos(i: int) -> Vector3:
-	return Vector3(D.tx(i), 0.0, D.ty(i))
-
-
-static func _flat(a: Vector3, b: Vector3) -> float:
-	return Vector2(a.x - b.x, a.z - b.z).length()
-
-
-## How far the side of something r (u) round at pos is from the feet (flat), INF outside the cone
-## round aim (the cosine).
-static func _gap(feet: Vector3, aim: Vector3, pos: Vector3, r: float, cone: float) -> float:
-	var d := Vector3(pos.x - feet.x, 0.0, pos.z - feet.z)
-	var dist := d.length()
-	if dist > 1e-5 and d.dot(aim) / dist < cone:
-		return INF
-	return maxf(dist - r, 0.0)
-
-
-## Distance along the ray (o, unit d) to the ball (c, r), or -1 when it misses.
-static func _ray_ball(o: Vector3, d: Vector3, c: Vector3, r: float) -> float:
-	var oc := c - o
-	var t := oc.dot(d)
-	var miss := oc.length_squared() - t * t
-	if miss > r * r:
-		return -1.0
-	var half := sqrt(r * r - miss)
-	return maxf(t - half, 0.0) if t + half >= 0.0 else -1.0

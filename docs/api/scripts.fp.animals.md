@@ -4,6 +4,45 @@
 
 [Index](index.md)
 
+## `scripts/fp/animals/animal_caps.gd`
+
+extends `RefCounted`
+
+The web tier's animals density cap (quality.gd WEB_DENSITY "animals", flag web_quality) split over the animals feature's groups, and its application to the feature. Pulled out of animals_feature.gd for the 1000-line cap; split() is static and pure so the tests read it without a city.
+
+### Constants
+
+- `Q = preload("res://scripts/fp/render/quality.gd")`
+- `CATS = preload("res://scripts/fp/animals/cats.gd")`
+- `SQUIRRELS = preload("res://scripts/fp/animals/squirrels.gd")`
+- `PIGEONS = preload("res://scripts/fp/animals/pigeons.gd")`
+- `WATERFOWL = preload("res://scripts/fp/animals/waterfowl.gd")`
+- `MAX_DOGS = 10`: The dogs' desktop budget lives here so DESKTOP can read it without preloading the feature (which preloads this); animals_feature.gd aliases it.
+- `DESKTOP = { "dogs": MAX_DOGS, "cats": CATS.MAX_CATS, "squirrels": SQUIRRELS.MAX_SQUIRRELS, "pigeo...`: The desktop budgets the web tier's animals cap splits between (split()). A flock counts as one group; its birds stay the flock's own budget.
+
+### Functions
+
+- `static func split(cap: int) -> Dictionary`: The web tier's animals cap split over the groups in proportion to their desktop budgets, largest remainder, so the small groups thin out first as the cap tightens; none ever gets more than its desktop budget, and cap 0 or less leaves nobody.
+- `static func capped() -> Dictionary`: The split for the running build: the "animals" cap split over the groups on the web tier, {} off it (the feature then keeps every MAX_*).
+- `static func apply(f: Node, caps: Dictionary) -> void`: The feature's ceilings from capped()'s split (a {} split is a no-op): the dogs', the cats' and the flock counts'. The squirrels' ceiling the feature sets itself before the squirrels' setup() — their MultiMesh sizes from it.
+
+## `scripts/fp/animals/animal_math.gd`
+
+extends `RefCounted`
+
+The flat-world helpers the animals modules work in (u, y up): a tile's ground position, flat distance, the strike cone's gap and the pick ray's ball hit. animals_feature.gd's copies moved here for the 1000-line cap; the other modules' own copies may follow.
+
+### Constants
+
+- `D = preload("res://scripts/sim/sim_defs.gd")`
+
+### Functions
+
+- `static func tile_pos(i: int) -> Vector3`
+- `static func flat(a: Vector3, b: Vector3) -> float`
+- `static func gap(feet: Vector3, aim: Vector3, pos: Vector3, r: float, cone: float) -> float`: How far the side of something r (u) round at pos is from the feet (flat), INF outside the cone round aim (the cosine).
+- `static func ray_ball(o: Vector3, d: Vector3, c: Vector3, r: float) -> float`: Distance along the ray (o, unit d) to the ball (c, r), or -1 when it misses.
+
 ## `scripts/fp/animals/animals_feature.gd`
 
 extends `FpFeature`
@@ -24,10 +63,12 @@ Dogs, pigeons, cats and squirrels in the street (integration feature "animals").
 - `SQUIRRELS = preload("res://scripts/fp/animals/squirrels.gd")`
 - `LIFE = preload("res://scripts/fp/animals/cat_life.gd")`
 - `FLOCK = preload("res://scripts/fp/animals/pigeon_flock.gd")`
+- `CAPS = preload("res://scripts/fp/animals/animal_caps.gd")`
+- `M = preload("res://scripts/fp/animals/animal_math.gd")`
 - `MAX_STEP = 1.0 / 30.0`
 - `NEAR = 3.0`: Dogs come out within NEAR of the player (u, about their draw distance) and go beyond FAR, at most MAX_DOGS at a time. Owners and yards are looked over every SCAN_S (s), the dog homes HOMES_S.
 - `FAR = 3.6`
-- `MAX_DOGS = 10`
+- `MAX_DOGS = CAPS.MAX_DOGS`
 - `SCAN_S = 0.5`
 - `HOMES_S = 10.0`
 - `WALK_SHARE = 0.12`: Share of the people out on foot who walk a dog, and what the night (sky.night above NIGHT) and the rain leave of it. While the city is young (fewer built homes and shops than YOUNG_LOTS, measured with the dog households) half as many again do, so a young city still shows dogs about.
@@ -65,6 +106,7 @@ Dogs, pigeons, cats and squirrels in the street (integration feature "animals").
 ### Properties
 
 - `live: bool`: The dogs live on game time even with the sim paused (the photo tour).
+- `max_dogs`: The dogs' ceiling: MAX_DOGS, or the web tier's share of the animals cap (setup()).
 - `struck: int`: Animals the hero struck so far.
 - `calls: Dictionary`: Calls made so far by kind ("bark", "growl", "whine").
 
@@ -314,6 +356,7 @@ The cats (part of the animals feature): where cats keep, coming out within NEAR 
 
 ### Properties
 
+- `max_cats`: The cats' ceiling: MAX_CATS, or the web tier's share of the animals cap (the feature's setup()); read by the scan, _spawn and the young city's stray.
 - `yard_of: Callable`: Lot -> its front yard ({"anchor", "box", "yaw"} or {}), the animals feature's.
 - `calls: Dictionary`: Calls made so far by kind ("meow", "purr", "hiss", "chatter") and the times a cat purred for the hero.
 
@@ -871,6 +914,7 @@ The pigeons (part of the animals feature): where flocks keep (the sidewalk in fr
 ### Properties
 
 - `feeds: int`: The times the hero fed a flock.
+- `max_flocks`: The flocks' ceiling: MAX_FLOCKS, or the web tier's share of the animals cap (the feature's setup()).
 
 ### Functions
 
@@ -1074,6 +1118,7 @@ The squirrels (part of the animals feature): where they keep (a lawn with a tree
 ### Properties
 
 - `calls: Dictionary`: Calls made so far by kind ("chatter").
+- `max_squirrels`: The squirrels' ceiling: MAX_SQUIRRELS, or the web tier's share of the animals cap (the feature's setup()); read by the scan and the MultiMesh's size (setup()).
 
 ### Functions
 
@@ -1126,6 +1171,10 @@ The waterfowl node: the ducks on the city's water (the river, the ponds), as the
 - `KNOCK_M = 8.0`
 - `BARK_M = 6.0`
 - `DUCK_M = 0.15`: A duck's height at the shoulder (m): animal_called's size.
+
+### Properties
+
+- `max_flocks`: The flocks' ceiling: MAX_FLOCKS, or the web tier's share of the animals cap (the feature's setup()).
 
 ### Functions
 

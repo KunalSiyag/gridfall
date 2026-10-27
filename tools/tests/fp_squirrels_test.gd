@@ -67,6 +67,7 @@ func _init() -> void:
 		_check_rain()
 		_check_flag()
 		_check_lod()
+	_check_capped_out()
 	_check_teardown()
 	K.finish(self, "FP_SQUIRRELS_TEST", fails)
 
@@ -351,6 +352,22 @@ func _check_lod() -> void:
 	s.dirty = false
 	life.step(0.05)
 	K.check(fails, s.dirty, "lod: an escape runs at full rate however far")
+
+
+## The web tier's cap can give the squirrels nothing (cap_split()): none set up then — no
+## MultiMesh — and a scan and a step spawn and draw nobody, with nothing logged.
+func _check_capped_out() -> void:
+	var s: SQ = SQ.new()
+	s.max_squirrels = 0
+	s.setup(ctx)
+	K.check(fails, s.get("_node") == null, "caps: a share of 0 builds no MultiMesh")
+	s.scan(ctx.player.position, true)
+	s.step(0.1)
+	var s_life: Object = s.get("life")
+	K.check(
+		fails, (s_life.get("squirrels") as Array).is_empty(), "caps: a share of 0 spawns nobody"
+	)
+	s.free()
 
 
 func _check_teardown() -> void:

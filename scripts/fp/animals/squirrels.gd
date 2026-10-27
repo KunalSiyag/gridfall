@@ -79,9 +79,12 @@ var ctx: FpContext
 var life: LIFE
 ## Calls made so far by kind ("chatter").
 var calls: Dictionary = {}
+## The squirrels' ceiling: MAX_SQUIRRELS, or the web tier's share of the animals cap (the
+## feature's setup()); read by the scan and the MultiMesh's size (setup()).
+var max_squirrels := MAX_SQUIRRELS
 ## Tile -> the spot of the squirrel keeping there (_spot_of()), {} for none.
 var _spots: Dictionary = {}
-## The one MultiMesh every squirrel is drawn by (MAX_SQUIRRELS instances, the spare ones scaled
+## The one MultiMesh every squirrel is drawn by (max_squirrels instances, the spare ones scaled
 ## away), and the tint each instance keeps.
 var _node: MultiMeshInstance3D
 var _tints: Array[Color] = []
@@ -95,18 +98,21 @@ func setup(p_ctx: FpContext) -> void:
 	life = LIFE.new()
 	life.col = ctx.collision
 	life.on_call = _on_call
-	_node = MultiMeshInstance3D.new()
-	_node.name = "Squirrels"
-	var mm := MultiMesh.new()
-	mm.transform_format = MultiMesh.TRANSFORM_3D
-	mm.use_colors = true
-	mm.use_custom_data = true
-	mm.mesh = BODY.mesh()
-	mm.instance_count = MAX_SQUIRRELS
-	mm.visible_instance_count = 0
-	_node.multimesh = mm
-	_node.material_override = BODY.material()
-	add_child(_node)
+	# A web-tier share of 0 (cap_split()) sets none up at all: no MultiMesh, and the scan
+	# spawns nobody, so nothing is drawn or logged.
+	if max_squirrels > 0:
+		_node = MultiMeshInstance3D.new()
+		_node.name = "Squirrels"
+		var mm := MultiMesh.new()
+		mm.transform_format = MultiMesh.TRANSFORM_3D
+		mm.use_colors = true
+		mm.use_custom_data = true
+		mm.mesh = BODY.mesh()
+		mm.instance_count = max_squirrels
+		mm.visible_instance_count = 0
+		_node.multimesh = mm
+		_node.material_override = BODY.material()
+		add_child(_node)
 
 
 ## Boot, load or New City: no squirrels until the next scan.
@@ -153,7 +159,7 @@ func scan(me: Vector3, by_day: bool, rain := false) -> void:
 				near.append([d, s])
 	near.sort_custom(func(a: Array, b: Array) -> bool: return float(a[0]) < float(b[0]))
 	for e: Array in near:
-		if life.squirrels.size() >= MAX_SQUIRRELS:
+		if life.squirrels.size() >= max_squirrels:
 			return
 		_make(str((e[1] as Dictionary)["key"]), e[1])
 
