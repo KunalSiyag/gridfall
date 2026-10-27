@@ -233,6 +233,7 @@ func _kick(e: Dictionary, at: Vector3, fly: Vector3, speed: float) -> bool:
 	var cur := Vector3(t.vel.x, 0.0, t.vel.z).dot(dir)
 	if cur >= speed * 0.9:
 		return false
+	_drop_lying(e)
 	t.kick(at, fly - dir * maxf(cur, 0.0))
 	e["age"] = 0.0
 	if ctx.bus != null and speed >= KICK_REPORT:
@@ -282,6 +283,19 @@ func _lying_radius(t: TUMBLE) -> float:
 	if absf(t.axis.x) > 0.5:
 		return (t.half.x + t.half.z * cs + t.half.y * s) * 0.5
 	return (t.half.z + t.half.x * cs + t.half.y * s) * 0.5
+
+
+## How far a fallen prop's body reaches along the level unit vector n (u): the support of its
+## lying box's world extents (the drawn body it became, see _write_lying) from the side the
+## approach meets. Its mean radius when its kit has no box to draw.
+func _lying_reach(t: TUMBLE, n: Vector2, kind: String) -> float:
+	if ctx.view == null:
+		return _lying_radius(t)
+	var kit: Dictionary = ctx.view.street_kit(kind)
+	if kit.is_empty():
+		return _lying_radius(t)
+	var lying: AABB = t.xform() * (kit["aabb"] as AABB)
+	return absf(n.x) * lying.size.x * 0.5 + absf(n.y) * lying.size.z * 0.5
 
 
 # ------------------------------------------------------------------ on foot and in traffic
@@ -355,12 +369,16 @@ func _bump_hero(delta: float) -> void:
 func _bump_fallen(e: Dictionary, c: Vector2, y: float, v: Vector2) -> void:
 	var t: TUMBLE = e["t"]
 	var to := Vector2(t.pos.x, t.pos.z) - c
-	var reach := PERSON_R + _lying_radius(t)
-	if float(e["bump"]) > 0.0 or to.length_squared() >= reach * reach or to.is_zero_approx():
+	if float(e["bump"]) > 0.0 or to.is_zero_approx():
+		return
+	# The drawn body lies as a box: the side of it the approach meets is what is reached for (its
+	# long side reaches farther than its mean radius), a stride short of the touch.
+	var n := to.normalized()
+	var reach := PERSON_R + CONTACT + _lying_reach(t, n, str(e["kind"])) + v.length() * STEP
+	if to.length_squared() >= reach * reach:
 		return
 	if absf(t.pos.y - t.drop() - y) > STEP_OFF:
 		return
-	var n := to.normalized()
 	var dv := _bounce(_level_vel(e), float(KINDS[e["kind"]][0]), v, PERSON_MASS, n)
 	if dv.length() >= BUMP_MIN:
 		_push(e, Vector3(c.x, y, c.y) + Vector3(n.x, 0.0, n.y) * PERSON_R, dv)
@@ -444,8 +462,10 @@ func _chain(e: Dictionary) -> void:
 
 
 ## Fallen prop e takes the level velocity change dv (u/s), pushed at world point `at`; reported on
-## the bus from KICK_REPORT.
+## the bus from KICK_REPORT. What it wore on the ground (see _write_lying) comes off first: it
+## sets off bare, and writes a box again where it next rests.
 func _push(e: Dictionary, at: Vector3, dv: Vector2) -> void:
+	_drop_lying(e)
 	(e["t"] as TUMBLE).kick(at, Vector3(dv.x, 0.0, dv.y))
 	e["age"] = 0.0
 	e["bump"] = BUMP_GAP
@@ -493,11 +513,15 @@ func _on_drive_changed(active: bool) -> void:
 
 
 ## Moves every fallen prop on by STEP; with chain, the fast ones then knock into what they reach.
+## Once a tumble rests, its drawn body becomes a solid thing on the ground (see _write_lying).
 func _step_all(chain: bool) -> void:
 	var floor_at := ctx.collision.walk_height
 	var blocked := ctx.collision.body_blocked
 	for e: Dictionary in down:
-		(e["t"] as TUMBLE).step(STEP, floor_at, blocked)
+		var t := e["t"] as TUMBLE
+		t.step(STEP, floor_at, blocked)
+		if t.resting and not e.has("fallen_tile"):
+			_write_lying(e)
 	if chain:
 		for e: Dictionary in down.duplicate():
 			_chain(e)
@@ -557,6 +581,7 @@ func _may_stand(t: TUMBLE) -> bool:
 
 ## Stands fallen prop e up in its place again.
 func _stand(e: Dictionary) -> void:
+	_drop_lying(e)
 	e["gone"] = true
 	if is_instance_valid(e["node"]):
 		(e["node"] as Node3D).queue_free()
@@ -575,10 +600,91 @@ func _clear(i: int) -> void:
 		if i >= 0 and int(e["tile"]) != i:
 			keep.append(e)
 		else:
+			_drop_lying(e)
 			e["gone"] = true
 			if is_instance_valid(e["node"]):
 				(e["node"] as Node3D).queue_free()
 	down = keep
+
+
+## Once a tumble rests, its drawn body is a solid thing on the ground: nothing else blocks the
+## way through it (the knockdown marked its standing collider "down"). Write a lying box into the
+## colliders meta of the tile under it -- kind "fallen", no slot, so standing the prop up again
+## can never resurrect it as a phantom -- then refresh collision there. Nothing blocks the
+## tumble while it flies, by design; the box lands only when it rests. MAX_DOWN bounds how many
+## lie at once.
+func _write_lying(e: Dictionary) -> void:
+	if ctx.view == null:
+		return
+	var t: TUMBLE = e["t"]
+	var kit: Dictionary = ctx.view.street_kit(str(e["kind"]))
+	if kit.is_empty():
+		return
+	var aabb: AABB = t.xform() * (kit["aabb"] as AABB)
+	if _body_in(aabb):
+		return
+	var i := D.idx(int(round(t.pos.x)), int(round(t.pos.z)))
+	var holder: Node3D = ctx.view.tile_holder(i)
+	if holder == null:
+		return
+	var local := holder.transform.affine_inverse() * aabb
+	var cols: Array = holder.get_meta("colliders", [])
+	cols.append(
+		{
+			"shape": "box",
+			"pos": local.position + Vector3(local.size.x * 0.5, 0.0, local.size.z * 0.5),
+			"size": local.size,
+			"yaw": 0.0,
+			"kind": "fallen",
+			"id": "%d:%d" % [int(e["tile"]), int(e["slot"])]
+		}
+	)
+	holder.set_meta("colliders", cols)
+	e["fallen_tile"] = i
+	if ctx.collision != null and is_instance_valid(ctx.collision):
+		ctx.collision.invalidate(i)
+
+
+## True when the hero or a walker stands within the lying box (grown round their reach): the box
+## is written only once they leave it, so it never materializes around a body -- a body that was
+## there gets pushed out by its own next move instead. Resting holds, so this retries each tick.
+func _body_in(aabb: AABB) -> bool:
+	var grow := aabb.grow(0.35 * WS.M)
+	var hero := ctx.player_position()
+	if grow.has_point(hero):
+		return true
+	var traffic := ctx.feature("traffic")
+	if traffic == null or not traffic.has_method("walkers"):
+		return false
+	var wk = traffic.get("walkers")
+	for w in wk.walkers:
+		if grow.has_point(w.pos):
+			return true
+	return false
+
+
+## Removes the lying box that fell prop e wore (written when its tumble first rested): when it
+## stands, its holder is drawn again, or a hit sets it moving. Its home tile and slot name the
+## entry; fallen_tile is where it landed, which may be another tile.
+func _drop_lying(e: Dictionary) -> void:
+	if not e.has("fallen_tile"):
+		return
+	var i := int(e["fallen_tile"])
+	e.erase("fallen_tile")
+	if ctx.view == null:
+		return
+	var holder: Node3D = ctx.view.tile_holder(i)
+	if holder == null:
+		return
+	var id := "%d:%d" % [int(e["tile"]), int(e["slot"])]
+	var cols: Array = []
+	for c: Variant in holder.get_meta("colliders", []):
+		if typeof(c) == TYPE_DICTIONARY and str((c as Dictionary).get("id", "")) == id:
+			continue
+		cols.append(c)
+	holder.set_meta("colliders", cols)
+	if ctx.collision != null and is_instance_valid(ctx.collision):
+		ctx.collision.invalidate(i)
 
 
 func _on_tile_built(i: int, _holder: Node3D) -> void:

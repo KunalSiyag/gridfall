@@ -9,6 +9,7 @@ extends RefCounted
 const WS := preload("res://scripts/fp/world_scale.gd")
 const D := preload("res://scripts/sim/sim_defs.gd")
 const WK := preload("res://scripts/fp/traffic/walkers.gd")
+const OBB := preload("res://scripts/fp/obb2d.gd")
 const BODY_R := 0.25 * WS.M
 const HEAD_R := 0.14 * WS.M
 
@@ -29,8 +30,13 @@ static func rad_of(k: int) -> float:
 ## However deep, this tick: the sweeps that put the body past its feet (a fall, a get-up fold,
 ## a flight's tilt) move it faster than any lean could ease, and a capped ease would trail
 ## 30 cm into a wall by the fold's end. A full correction reads as the body sliding along what
-## stopped it; the shallow presses stay as subtle as before.
-static func press_out(w: WK.Walker, extent: Callable, collision: CollisionWorld) -> void:
+## stopped it; the shallow presses stay as subtle as before. cars holds the moving car bodies
+## the static world does not (traffic's near cars as [xz centre, yaw, Vector2(half width, half
+## length), y bottom, y top]): a body thrown or slid into a real car comes clear of it the
+## same way, or it would lie inside the drawn vehicle with nothing to press it out.
+static func press_out(
+	w: WK.Walker, extent: Callable, collision: CollisionWorld, cars: Array = []
+) -> void:
 	if not extent.is_valid() or collision == null:
 		return
 	var spheres: Array = extent.call(w, w.pos + w.vis_off)
@@ -39,6 +45,9 @@ static func press_out(w: WK.Walker, extent: Callable, collision: CollisionWorld)
 	for k in range(spheres.size()):
 		var q: Vector3 = spheres[k]
 		var e := _press_at(q, rad_of(k), spheres[0], collision)
+		var c := _press_car(q, rad_of(k), spheres[0], cars)
+		if c.x > e.x:
+			e = c
 		if e.x > depth:
 			depth = e.x
 			dir = Vector2(e.y, e.z)
@@ -87,6 +96,63 @@ static func _press_at(q: Vector3, rad: float, feet: Vector3, collision: Collisio
 				if e.x > best.x:
 					best = e
 	return best
+
+
+## Deepest press of sphere (q, rad) against the moving car bodies, and the way clear:
+## (depth, dir x, dir z), depth 0 when clear. A car is its yaw'd rectangle between y bottom and
+## y top (its world aabb's span; a body flying over or resting on the roof is clear of it, as
+## with the static boxes' faces). A centre inside escapes through the side face its feet came
+## in by, never the nearer face, exactly as with the boxes.
+static func _press_car(q: Vector3, rad: float, feet: Vector3, cars: Array) -> Vector3:
+	var best := Vector3.ZERO
+	for b: Array in cars:
+		if q.y < float(b[3]) or q.y > float(b[4]):
+			continue
+		var u := OBB.side_axis(float(b[1]))
+		var v := OBB.heading(float(b[1]))
+		var h: Vector2 = b[2]
+		var d := Vector2(q.x, q.z) - (b[0] as Vector2)
+		var lx := d.dot(u)
+		var lz := d.dot(v)
+		var off := Vector2(lx - clampf(lx, -h.x, h.x), lz - clampf(lz, -h.y, h.y))
+		var e := Vector3.ZERO
+		if off.length_squared() > 1e-14:
+			var dist := off.length()
+			if dist < rad:
+				var way := (u * off.x + v * off.y) / dist
+				e = Vector3(rad - dist, way.x, way.y)
+		else:
+			e = _press_face_car(feet, rad, b[0], lx, lz, u, v, h)
+		if e.x > best.x:
+			best = e
+	return best
+
+
+## A centre inside a car's rectangle escapes through the side face its feet came in by, plus the
+## radius; the rectangle's own frame (u across, v along, half extents h, centre).
+static func _press_face_car(
+	feet: Vector3,
+	rad: float,
+	centre: Vector2,
+	lx: float,
+	lz: float,
+	u: Vector2,
+	v: Vector2,
+	h: Vector2
+) -> Vector3:
+	var df := Vector2(feet.x, feet.z) - centre
+	var fx := -1.0 if df.dot(u) <= -h.x else (1.0 if df.dot(u) >= h.x else 0.0)
+	var fz := -1.0 if df.dot(v) <= -h.y else (1.0 if df.dot(v) >= h.y else 0.0)
+	var dx := h.x - absf(lx)
+	var dz := h.y - absf(lz)
+	if fx == 0.0 and fz == 0.0:
+		if dx <= dz:
+			fx = -1.0 if lx < 0.0 else 1.0
+		else:
+			fz = -1.0 if lz < 0.0 else 1.0
+	if fx != 0.0 and (fz == 0.0 or dx <= dz):
+		return Vector3(dx + rad, u.x * fx, u.y * fx)
+	return Vector3(dz + rad, v.x * fz, v.y * fz)
 
 
 ## Back out from a shape's closest point: how deep the sphere reaches past it (0 when clear, and

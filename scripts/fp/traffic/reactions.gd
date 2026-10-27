@@ -233,6 +233,10 @@ var on_hero_parry: Callable:
 ## head]); set by the traffic feature. Without it only the feet capsule is kept clear, and the
 ## fall, the lie and the get-up pose the head and torso past whatever stopped the feet.
 var body_extent: Callable
+## The moving car bodies near a point, as [xz centre, yaw, Vector2(half width, half length),
+## y bottom, y top]; set by the traffic feature. Without it a body thrown or slid into a real
+## car lies inside the drawn vehicle: the static world the press-out reads holds no cars.
+var cars_near: Callable
 ## The share who fight back, by cause (test hook), and the punches that landed on the hero or
 ## were countered.
 var fight_odds: Dictionary:
@@ -756,7 +760,10 @@ func step(dt: float) -> void:
 		if over:
 			_next_step(r)
 		if not w.dead:
-			BS.press_out(w, body_extent, collision)
+			var cars: Array = (
+				cars_near.call(w.pos + w.vis_off, 2.5 * WS.M) if cars_near.is_valid() else []
+			)
+			BS.press_out(w, body_extent, collision, cars)
 
 
 ## Stands and plays the step's clip (turning to face src once a one-shot is over); true when done.

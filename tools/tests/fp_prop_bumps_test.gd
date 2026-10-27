@@ -21,6 +21,7 @@ const WK := preload("res://scripts/fp/traffic/walkers.gd")
 const VH := preload("res://scripts/fp/traffic/vehicles.gd")
 const LG := preload("res://scripts/fp/traffic/lane_graph.gd")
 const OBB := preload("res://scripts/fp/obb2d.gd")
+const FIX := preload("res://tools/tests/support/props_fixture.gd")
 const DT := 1.0 / 60.0
 const KMH := WS.M / 3.6
 const CLUTTER := ["cone", "wheelie", "carton"]
@@ -329,11 +330,14 @@ func _check_blows(bin: Dictionary) -> void:
 
 ## The hero running into a fallen bin kicks it along.
 func _check_hero_kick(bin: Dictionary) -> void:
+	# The hero steps clear first: the lying box is written only once no body stands within it.
+	var clear_of: Vector3 = bin["spot"]
+	ctx.player.teleport(Vector3(clear_of.x + 0.5, clear_of.y, clear_of.z), 0.0)
 	var t := _fell(bin)
 	if t == null:
 		return
 	var from := t.pos
-	var dir := _clear_dir(from)
+	var dir := _clear_dir(from, FIX.lying_box(ctx, int(bin["tile"]), int(bin["slot"])))
 	K.check(fails, dir != Vector3.ZERO, "fixture: a clear run at the fallen bin")
 	if dir == Vector3.ZERO:
 		_reset()
@@ -359,7 +363,7 @@ func _check_walker_kick(bin: Dictionary) -> void:
 	if t == null:
 		return
 	var from := t.pos
-	var dir := _clear_dir(from)
+	var dir := _clear_dir(from, FIX.lying_box(ctx, int(bin["tile"]), int(bin["slot"])))
 	if dir == Vector3.ZERO:
 		dir = Vector3(1.0, 0.0, 0.0)
 	var side := Vector3(dir.z, 0.0, -dir.x)
@@ -715,10 +719,11 @@ func _clear(p: Vector3, dir: Vector3, len: float) -> bool:
 	return true
 
 
-## A level axis direction the hero can run along through p from APPROACH back to as far past it,
-## or zero.
-func _clear_dir(p: Vector3) -> Vector3:
+## A level axis direction the hero can run along through p from APPROACH back to the fallen
+## bin's lying box (its face ends the run: the box is the target, not an obstacle), or zero.
+func _clear_dir(p: Vector3, lying: AABB) -> Vector3:
 	for d: Vector3 in [Vector3.RIGHT, Vector3.LEFT, Vector3.BACK, Vector3.FORWARD]:
-		if _clear(p - d * APPROACH, d, APPROACH * 2.0):
+		var face := absf(d.x) * lying.size.x * 0.5 + absf(d.z) * lying.size.z * 0.5
+		if _clear(p - d * APPROACH, d, APPROACH - face - WS.PLAYER_RADIUS):
 			return d
 	return Vector3.ZERO

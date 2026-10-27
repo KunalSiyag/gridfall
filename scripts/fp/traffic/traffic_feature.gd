@@ -257,6 +257,11 @@ func on_world_rebuilt() -> void:
 	peds.rebuild_all()
 	junctions.setup(lanes, _props_root)
 	junctions.clock = clock
+	# Junction posts are solid: junctions writes their colliders into the view's holder meta and
+	# calls collision back; only this ctx holds the view and the collision world.
+	junctions.holder_of = func(i: int) -> Node3D:
+		return ctx.view.tile_holder(i) if ctx.view != null else null
+	junctions.colliders_changed = func(i: int) -> void: ctx.collision.invalidate(i)
 	vehicles.setup(lanes, junctions, peds, sim.city_seed)
 	vehicles.on_arrive = _on_vehicle_arrived
 	vehicles.on_removed = _on_vehicle_removed
@@ -269,6 +274,17 @@ func on_world_rebuilt() -> void:
 	reactions.setup(walkers, ctx.collision, sim.city_seed)
 	reactions.body_extent = (func(w: WK.Walker, base: Vector3) -> Array:
 		return BS.of(base, people.head_of(w, base)))
+	# The moving car bodies the reaction's press-out must see too (the static world holds none
+	# of them): [xz centre, yaw, Vector2(half width, half length), y bottom, y top].
+	reactions.cars_near = func(p: Vector3, r: float) -> Array:
+		var out: Array = []
+		for b: Array in bodies_near(p, r):
+			var c: VH.Car = vehicles.by_id.get(int(b[0])) if _built else null
+			if c == null:
+				continue
+			var bb := vehicles.aabb(c)
+			out.append([b[1], b[2], b[3], bb.position.y, bb.end.y])
+		return out
 	reactions.on_hero_hit = _on_hero_punched
 	reactions.on_wind_up = _on_wind_up
 	reactions.on_hero_parry = _on_hero_parry

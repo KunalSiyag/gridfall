@@ -44,8 +44,14 @@ var sim: CitySim
 var clock: float = 0.0
 var root: Node3D
 ## tile -> {"node": Node3D, "groups": Array[MeshInstance3D] (axis * 3 + colour), "peds":
-## Array[GeometryInstance3D] per (axis * 2 + walk), "poles": Array[Node3D], "state": int}
+## Array[GeometryInstance3D] per (axis * 2 + walk), "poles": Array[Node3D], "state": int,
+## "colliders": Array of holder-local solid entries (written into the view's holder meta)}
 var props: Dictionary = {}
+## The view's tile holder, so our posts can be written into its `colliders` meta (the channel
+## CollisionWorld reads), and the collision refresh to call once they changed. traffic_feature
+## wires both: only its ctx holds the view and the collision world.
+var holder_of: Callable
+var colliders_changed: Callable
 var _on_mats: Array[StandardMaterial3D] = []
 var _off_mats: Array[StandardMaterial3D] = []
 var _walk_mats: Array[StandardMaterial3D] = []  # [hand off, hand on, man off, man on]
@@ -146,17 +152,18 @@ func rebuild_all() -> void:
 		build_props(i)
 
 
-## Rebuilds the furniture of tile i (none unless it is a tee or a cross).
+## Rebuilds the furniture of tile i (none unless it is a tee or a cross), then writes its solid
+## parts into the tile's colliders.
 func build_props(i: int) -> void:
 	_free_props(i)
 	var t: LG.TileInfo = lg.info(i)
 	# Tracks have no curb to stand signs on and no signals.
-	if t == null or root == null or t.grade != 0:
-		return
-	if t.lights:
-		props[i] = _build_cross(i)
-	elif t.stem >= 0:
-		props[i] = _build_tee(i, t)
+	if t != null and root != null and t.grade == 0:
+		if t.lights:
+			props[i] = _build_cross(i)
+		elif t.stem >= 0:
+			props[i] = _build_tee(i, t)
+	_sync_pole_colliders(i)
 
 
 func _free_props(i: int) -> void:
@@ -164,6 +171,64 @@ func _free_props(i: int) -> void:
 	if p.has("node") and is_instance_valid(p["node"]):
 		(p["node"] as Node3D).queue_free()
 	props.erase(i)
+
+
+## Writes tile i's junction colliders into its holder's `colliders` meta, replacing our earlier
+## entries, then refreshes collision. Runs on every build_props: the view rebuilds a tile's
+## holder fresh (G1's furniture colliders with it), so our posts must be re-added each time.
+func _sync_pole_colliders(i: int) -> void:
+	if not holder_of.is_valid():
+		return
+	var holder: Node3D = holder_of.call(i)
+	if holder == null:
+		return
+	var entries: Array = (props.get(i, {}) as Dictionary).get("colliders", [])
+	var cols: Array = []
+	for c: Variant in holder.get_meta("colliders", []):
+		if typeof(c) == TYPE_DICTIONARY and str((c as Dictionary).get("kind", "")) == "signal":
+			continue
+		cols.append(c)
+	cols.append_array(entries)
+	holder.set_meta("colliders", cols)
+	if colliders_changed.is_valid():
+		colliders_changed.call(i)
+
+
+## Holder-local collider entry for one of our posts, in metres: base_m raises it above the
+## sidewalk (the shaft of a signal pole starts on top of its plinth). kind "signal" is ours --
+## G1's dressing owns "sign" and the knockable street kinds.
+func _post_collider(at: Vector2, r_m: float, h_m: float, base_m: float = 0.0) -> Dictionary:
+	return {
+		"shape": "cyl",
+		"pos": Vector3(at.x, WS.SIDEWALK_TOP + base_m * WS.M, at.y),
+		"r": r_m * WS.M,
+		"h": h_m * WS.M,
+		"yaw": 0.0,
+		"kind": "signal"
+	}
+
+
+## A corner signal pole's solid parts: the concrete base and the shaft above it. The mast, the
+## heads and the cap sit above people or reach over the carriageway. The base is a box the size
+## of the drawn square (its foot's corners reach 0.40 m out, no fitting cylinder covers them)
+## and stops short of the car's step height, so cars nose up to it like a curb; the shaft then
+## holds the stop.
+func _pole_colliders(at: Vector2) -> Array:
+	return [_plinth_collider(at), _post_collider(at, 0.11, 6.15, 0.15)]
+
+
+## Holder-local box collider for a pole's concrete base, in metres: the drawn base is a
+## chamfered square (foot ±0.28 m at the ground, ±0.21 m by its 0.15 m top), so the box covers
+## every corner with a 5 mm margin where a cylinder of any radius would miss some. kind "signal"
+## is ours -- G1's dressing owns "sign" and the knockable street kinds.
+func _plinth_collider(at: Vector2) -> Dictionary:
+	return {
+		"shape": "box",
+		"pos": Vector3(at.x, WS.SIDEWALK_TOP, at.y),
+		"size": Vector3(0.57, 0.15, 0.57) * WS.M,
+		"yaw": 0.0,
+		"kind": "signal"
+	}
 
 
 ## The light pole on cross tile i at corner (0..3 = NE, SE, SW, NW), or null.
@@ -244,6 +309,7 @@ func _build_cross(i: int) -> Dictionary:
 		peds.append(pk)
 	var ped_nodes: Array = [[], [], [], []]
 	var poles: Array = []
+	var cols: Array = []  # holder-local solid entries (see _sync_pole_colliders)
 	var asset_ok := _asset != null
 	for corner in range(4):
 		var arm: int = CORNER_ARM[corner]
@@ -253,6 +319,7 @@ func _build_cross(i: int) -> Dictionary:
 		pole.transform = xf
 		node.add_child(pole)
 		poles.append(pole)
+		cols.append_array(_pole_colliders(CORNERS[corner] * POLE_AT))
 		var axis := 0 if (arm == 0 or arm == 2) else 1
 		if asset_ok:
 			var inst := _asset.instantiate() as Node3D
@@ -276,6 +343,7 @@ func _build_cross(i: int) -> Dictionary:
 		var axis := 0 if (arm == 1 or arm == 3) else 1
 		for s: float in [1.0, -1.0]:
 			var at := a * PED_SIGNAL_AT + p * (s * lat)
+			cols.append(_post_collider(at, 0.06, 2.9))
 			var face := -p * s
 			_ped_signal(kit, at, face, peds[axis * 2], peds[axis * 2 + 1])
 	var mesh := kit.commit()
@@ -294,7 +362,14 @@ func _build_cross(i: int) -> Dictionary:
 			var g := _mi(pm, _walk_mats[k % 2 * 2], false)
 			node.add_child(g)
 			(ped_nodes[k] as Array).append(g)
-	return {"node": node, "groups": groups, "peds": ped_nodes, "poles": poles, "state": -1}
+	return {
+		"node": node,
+		"groups": groups,
+		"peds": ped_nodes,
+		"poles": poles,
+		"state": -1,
+		"colliders": cols
+	}
 
 
 func _mi(mesh: Mesh, mat: Material, shadows: bool) -> MeshInstance3D:
@@ -490,11 +565,14 @@ func _build_tee(i: int, t: LG.TileInfo) -> Dictionary:
 			lbl.visibility_range_end = 1.5
 			lbl.transform = px * Transform3D(Basis(), Vector3(0, 0, 0.01 * M))
 			node.add_child(lbl)
+	# The sign pole is solid (the kit fallback and the sign asset stand on the same spot).
+	var cols: Array = [_post_collider(at, 0.045, 2.55)]
 	var mesh := kit.commit()
 	if mesh != null:
 		node.add_child(_mi(mesh, _pole_mat, true))
 	return {
 		"node": node,
 		"sign": at + Vector2(D.tx(i), D.ty(i)),
-		"kind": "yield" if yield_sign else "stop"
+		"kind": "yield" if yield_sign else "stop",
+		"colliders": cols
 	}
