@@ -1,7 +1,9 @@
 extends SceneTree
 ## Hero health (integration feature "health"; docs/fp/ARCHITECTURE.md, Health): the bar and its
 ## HUD (the arc round the minimap, the vignette, photo mode); crashes and hard landings by their
-## speed (softer rolled off); punches and the guard; a car's blow knocking the hero down (the
+## speed (softer rolled off); punches, the guard and the guard's poise (guard_chip); the flinch
+## the way a blow came from, with
+## the view jolt (hero_flinch); a car's blow knocking the hero down (the
 ## throw, the rig, input back once up); health coming back; a knock-out (the fade, the wake outside
 ## the nearest hospital, healed, the toast; City Hall without one); save and load; people who fight
 ## back (fight_back) and cars that cannot stop running the hero down (hit_by_cars), each off with
@@ -60,6 +62,8 @@ func _init() -> void:
 	_check_crash()
 	_check_fall()
 	_check_punch()
+	_check_guard_chip()
+	_check_flinch()
 	_check_regen()
 	_check_car()
 	_check_knock_out()
@@ -396,6 +400,125 @@ func _check_punch() -> void:
 	_step(0.2)
 
 
+## The guard's poise (guard_chip): each punch the guard catches drains it, the one that beats it
+## lands in full and drops the guard — a beat of stagger — and the poise knits back once the
+## blows stop. With the flag off the guard never tires.
+func _check_guard_chip() -> void:
+	_heal()
+	var p := ctx.player
+	var up := Vector3(0.0, 1.45 * WS.M, 0.0)
+	var want := HEALTH.PUNCH + HEALTH.PUNCH_K * 0.5
+	var guarded := want * HEALTH.GUARD_K
+	act.call("set_guard", true)
+	_step(0.2)
+	var fwd := p.body_forward()
+	var costs: Array = []
+	for _i: int in 3:
+		hurts.clear()
+		ctx.bus.hero_hit.emit(p.position + fwd * (0.6 * WS.M) + up, "punch", 0.5, -fwd * 0.07)
+		var got := _last("punch")
+		costs.append(float(got[0]) if not got.is_empty() else 0.0)
+	K.check(
+		fails,
+		absf(float(costs[0]) - guarded) < 0.01 and absf(float(costs[1]) - guarded) < 0.01,
+		"the guard takes most of the first two (%.1f, %.1f)" % [float(costs[0]), float(costs[1])]
+	)
+	K.check(
+		fails,
+		absf(float(costs[2]) - want) < 0.01,
+		"the third beats the guard and lands in full (%.1f)" % float(costs[2])
+	)
+	K.check(fails, not p.input_enabled, "and the break staggers the hero")
+	_step(0.05)
+	K.check(fails, not bool(act.get("guarding")), "the broken guard drops")
+	_step(1.0)
+	K.check(fails, p.input_enabled, "for a beat, then the input is back")
+	_step(2.2)
+	K.check(
+		fails,
+		float(f.get("poise")) > 0.5,
+		"the poise knits back once the blows stop (%.2f)" % float(f.get("poise"))
+	)
+	FeatureFlags.set_override("guard_chip", false)
+	act.call("set_guard", true)
+	_step(0.2)
+	for _i: int in 3:
+		ctx.bus.hero_hit.emit(p.position + fwd * (0.6 * WS.M) + up, "punch", 0.5, -fwd * 0.07)
+	var got := _last("punch")
+	var last_cost := float(got[0]) if not got.is_empty() else 0.0
+	K.check(
+		fails,
+		absf(last_cost - guarded) < 0.01 and bool(act.get("guarding")),
+		"with the flag off the guard never tires (%.1f)" % last_cost
+	)
+	act.call("set_guard", false)
+	FeatureFlags.set_override("guard_chip", true)
+	_step(0.2)
+
+
+## A blow that lands flinches the body the way it came from — one in the face snaps the head
+## back, one in the back folds the chest — the camera rolling toward the side that was hit,
+## harder for a harder blow (hero_flinch); with the flag off the two fixed flinches alternate.
+func _check_flinch() -> void:
+	_heal()
+	var p := ctx.player
+	var fwd := p.body_forward()
+	ctx.bus.hero_hit.emit(p.position, "punch", 0.5, -fwd * 0.07)
+	K.check(fails, f.get("flinch_clip") == "hit_head", "a blow in the face snaps the head back")
+	_step(1.0)
+	ctx.bus.hero_hit.emit(p.position, "punch", 0.5, fwd * 0.07)
+	K.check(fails, f.get("flinch_clip") == "hit_chest", "one in the back folds the chest")
+	# The view jolt scales with the blow while hit_feel is on.
+	_step(1.0)
+	f.set("hp", HEALTH.MAX_HP)
+	var k0: Vector2 = p.get("_kick")
+	ctx.bus.hero_hit.emit(p.position, "punch", 0.1, -fwd * 0.07)
+	var light: Vector2 = (p.get("_kick") as Vector2) - k0
+	_step(1.0)
+	k0 = p.get("_kick")
+	ctx.bus.hero_hit.emit(p.position, "punch", 1.0, -fwd * 0.07)
+	var hard: Vector2 = (p.get("_kick") as Vector2) - k0
+	K.check(
+		fails,
+		hard.length() > light.length() * 1.5,
+		"a harder blow jolts the view harder (%.4f over %.4f)" % [hard.length(), light.length()]
+	)
+	# The camera rolls toward the side that was hit (right is (cos, -sin) of the yaw).
+	var right3 := Vector3(cos(p.yaw), 0.0, -sin(p.yaw))
+	_step(1.0)
+	f.set("hp", HEALTH.MAX_HP)
+	k0 = p.get("_kick")
+	ctx.bus.hero_hit.emit(p.position, "punch", 0.5, -right3 * 0.07)
+	var from_right: Vector2 = (p.get("_kick") as Vector2) - k0
+	_step(1.0)
+	k0 = p.get("_kick")
+	ctx.bus.hero_hit.emit(p.position, "punch", 0.5, right3 * 0.07)
+	var from_left: Vector2 = (p.get("_kick") as Vector2) - k0
+	K.check(
+		fails,
+		absf(from_right.y) > 1e-4 and signf(from_right.y) == -signf(from_left.y),
+		(
+			"and the camera rolls toward the side that was hit (%.4f, %.4f)"
+			% [from_right.y, from_left.y]
+		)
+	)
+	# With the flag off the two fixed flinches alternate, whatever the direction.
+	FeatureFlags.set_override("hero_flinch", false)
+	_step(1.0)
+	f.set("hp", HEALTH.MAX_HP)
+	ctx.bus.hero_hit.emit(p.position, "punch", 0.5, -fwd * 0.07)
+	var first: String = f.get("flinch_clip")
+	_step(1.0)
+	ctx.bus.hero_hit.emit(p.position, "punch", 0.5, -fwd * 0.07)
+	var second: String = f.get("flinch_clip")
+	FeatureFlags.set_override("hero_flinch", true)
+	K.check(
+		fails,
+		first != second and first in HEALTH.FLINCHES and second in HEALTH.FLINCHES,
+		"hero_flinch off: the two fixed flinches alternate (%s, %s)" % [first, second]
+	)
+
+
 func _check_regen() -> void:
 	_heal()
 	f.call("hurt", 40.0, "punch")
@@ -530,6 +653,7 @@ func _check_fight_back() -> void:
 	react.set("fight_odds", {"punch": 1.0, "shove": 1.0})
 	var p := ctx.player
 	var w := _stranger(1.0)
+	react.set("fight_temper", {w.id: 0})  # plain (fight_tempers): jabs, as the checks expect
 	var push := p.body_forward() * (1.5 * WS.M)
 	var info: Dictionary = tr.call("hit_walker", w.id, p.position, push, 0.45, "punch")
 	K.check(fails, not info.is_empty() and not bool(info["down"]), "a jab makes them reel")

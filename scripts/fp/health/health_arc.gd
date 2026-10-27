@@ -17,17 +17,21 @@ const AMBER_AT := 0.5
 const RED_AT := 0.25
 const TRACK := Color(0.02, 0.03, 0.05, 0.55)
 const TRAIL := Color(1.0, 1.0, 1.0, 0.6)
+## The guard's poise (guard_chip): a thin cool sliver inside the ring while it is short of full.
+const POISE_COL := Color(0.55, 0.75, 1.0, 0.8)
+const POISE_W := 2.5
 ## The trail waits TRAIL_WAIT seconds after a hurt, then eats down with this half-life (s).
 const TRAIL_WAIT := 0.35
 const HL_TRAIL := 0.18
 const PULSE_HZ := 1.6
 
-## Health shown (0..1) and the trail behind it.
+## Health shown (0..1) and the trail behind it; the guard's poise (0..1, -1 hidden).
 var value: float = 1.0
 var trail: float = 1.0
+var _poise: float = -1.0
 var _wait: float = 0.0
 var _t: float = 0.0
-var _drawn := Vector3(-1.0, -1.0, -1.0)
+var _drawn := Vector4(-1.0, -1.0, -1.0, -1.0)
 
 
 func setup() -> void:
@@ -36,12 +40,15 @@ func setup() -> void:
 	set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 
 
-## Shows health v (0..1) after dt seconds: a drop leaves the trail behind for a moment.
-func set_health(v: float, dt: float) -> void:
+## Shows health v (0..1) after dt seconds: a drop leaves the trail behind for a moment. poise
+## (0..1, the guard_chip guard's poise) draws as a thin sliver inside the ring while short of
+## full; -1 hides it.
+func set_health(v: float, dt: float, poise: float = -1.0) -> void:
 	var nv := clampf(v, 0.0, 1.0)
 	if nv < value - 1e-4:
 		_wait = TRAIL_WAIT
 	value = nv
+	_poise = poise
 	_t += dt
 	if trail <= value:
 		trail = value
@@ -51,7 +58,7 @@ func set_health(v: float, dt: float) -> void:
 		trail = lerpf(trail, value, S.damp(HL_TRAIL, dt))
 		if trail - value < 1e-3:
 			trail = value
-	var key := Vector3(value, trail, colour().a)
+	var key := Vector4(value, trail, colour().a, poise)
 	if not key.is_equal_approx(_drawn):
 		_drawn = key
 		queue_redraw()
@@ -72,6 +79,17 @@ func _draw() -> void:
 		draw_arc(CENTRE, RADIUS, a, FROM + span * trail, _points(trail - value), TRAIL, WIDTH, true)
 	if value > 0.0:
 		draw_arc(CENTRE, RADIUS, FROM, FROM + span * value, _points(value), colour(), WIDTH, true)
+	if _poise >= 0.0 and _poise < 1.0 - 1e-3:
+		draw_arc(
+			CENTRE,
+			RADIUS - WIDTH - 4.0,
+			FROM,
+			FROM + span * _poise,
+			_points(_poise),
+			POISE_COL,
+			POISE_W,
+			true
+		)
 
 
 static func _points(share: float) -> int:

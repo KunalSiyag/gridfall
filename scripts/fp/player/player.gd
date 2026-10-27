@@ -423,6 +423,37 @@ func snap_to_ground() -> void:
 		position.y = g
 
 
+## A short, grounded combat step (at most 0.18 m), with the same world collision and ground
+## following as walking. It never enters another person's circle or changes running strength.
+## Returns the actual displacement; an unsafe destination leaves the hero where they stood.
+func combat_step(motion: Vector3) -> Vector3:
+	if ctx == null or ctx.collision == null or not grounded or crouched or carried or photo_mode:
+		return Vector3.ZERO
+	var col := ctx.collision
+	var move := Vector3(motion.x, 0.0, motion.z).limit_length(0.18 * WS.M)
+	var at := col.move_body(position, move, WS.PLAYER_RADIUS, WS.PLAYER_HEIGHT, WS.STEP_HEIGHT)
+	var ground := col.walk_height(at)
+	if is_nan(ground) or absf(ground - position.y) > WS.STEP_HEIGHT:
+		return Vector3.ZERO
+	_refresh_people()
+	for k in range(0, col.people_circles.size(), 4):
+		var person := Vector3(
+			col.people_circles[k], col.people_circles[k + 1], col.people_circles[k + 2]
+		)
+		var gap := WS.PLAYER_RADIUS + col.people_circles[k + 3]
+		if (
+			absf(person.y - at.y) < col.SOFT_Y
+			and Vector2(person.x - at.x, person.z - at.z).length() < gap
+		):
+			return Vector3.ZERO
+	var moved := at - position
+	position = at
+	snap_to_ground()
+	if moved.length_squared() > 1e-12:
+		_advance_gait(Vector2(moved.x, moved.z), WS.WALK)
+	return moved
+
+
 ## Horizontal speed in u/s.
 func speed() -> float:
 	return Vector2(velocity.x, velocity.z).length()

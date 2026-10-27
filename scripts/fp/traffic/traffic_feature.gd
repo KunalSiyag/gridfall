@@ -29,6 +29,7 @@ const SHOVES := preload("res://scripts/fp/traffic/shoves.gd")
 const IND := preload("res://scripts/fp/traffic/indicators.gd")
 const DOORS := preload("res://scripts/fp/traffic/car_doors.gd")
 const REACT := preload("res://scripts/fp/traffic/reactions.gd")
+const BS := preload("res://scripts/fp/traffic/body_spheres.gd")
 const INCIDENTS := preload("res://scripts/fp/traffic/incidents.gd")
 const JACK := preload("res://scripts/fp/traffic/carjack.gd")
 const MAX_STEP := 1.0 / 30.0
@@ -161,6 +162,7 @@ func setup(p_ctx: FpContext) -> void:
 		ctx.view.tile_cleared.connect(_on_tile_cleared)
 	if ctx.bus != null:
 		ctx.bus.conversation_changed.connect(_on_conversation)
+		ctx.bus.horn_sounded.connect(_on_horn)
 	if ctx.residents != null:
 		ctx.residents.trip_started.connect(_on_trip_started)
 		ctx.residents.resident_departed.connect(_on_departed)
@@ -183,6 +185,8 @@ func teardown() -> void:
 		_attach(false)
 	if ctx.bus != null and ctx.bus.conversation_changed.is_connected(_on_conversation):
 		ctx.bus.conversation_changed.disconnect(_on_conversation)
+	if ctx.bus != null and ctx.bus.horn_sounded.is_connected(_on_horn):
+		ctx.bus.horn_sounded.disconnect(_on_horn)
 	if ctx.residents != null:
 		if ctx.residents.trip_started.is_connected(_on_trip_started):
 			ctx.residents.trip_started.disconnect(_on_trip_started)
@@ -244,6 +248,8 @@ func on_world_rebuilt() -> void:
 	vehicles.extra_blocks = func() -> Array: return shoves.blocks() + reactions.blocks()
 	walkers.setup(peds, lanes, junctions, vehicles, sim.city_seed)
 	reactions.setup(walkers, ctx.collision, sim.city_seed)
+	reactions.body_extent = (func(w: WK.Walker, base: Vector3) -> Array:
+		return BS.of(base, people.head_of(w, base)))
 	reactions.on_hero_hit = _on_hero_punched
 	reactions.on_wind_up = _on_wind_up
 	reactions.on_hero_parry = _on_hero_parry
@@ -457,6 +463,8 @@ func step(dt: float) -> void:
 	walkers.player_on = has_player
 	var open := _hero_open()
 	reactions.hero_open = open
+	var hf: FpFeature = ctx.feature("health")
+	reactions.hero_down = hf != null and bool(hf.call("downed"))
 	vehicles.player_hittable = open and FeatureFlags.enabled("hit_by_cars")
 	vehicles.step(dt)
 	shoves.step(dt)
@@ -1530,10 +1538,16 @@ func _on_hero_punched(at: Vector3, strength: float, push: Vector3) -> void:
 		ctx.bus.hero_hit.emit(at, "punch", strength, push)
 
 
+## The hero's horn sounded at (xz), carrying radius world units (horn_street): the people it
+## reaches startle (reactions.gd startle).
+func _on_horn(at: Vector2, radius: float, long: bool) -> void:
+	reactions.startle(Vector3(at.x, 0.0, at.y), radius, long)
+
+
 ## Someone fighting the hero throws a punch from fist that lands in secs (reactions.gd).
-func _on_wind_up(_id: int, fist: Vector3, secs: float) -> void:
+func _on_wind_up(id: int, fist: Vector3, secs: float) -> void:
 	if ctx.bus != null:
-		ctx.bus.hero_threatened.emit(fist, secs)
+		ctx.bus.hero_threatened.emit(fist, secs, id)
 
 
 ## The punch of person id reaches the hero from fist: true when the hero counters it (the actions

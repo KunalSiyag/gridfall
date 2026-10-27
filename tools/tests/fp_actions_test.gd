@@ -71,6 +71,7 @@ func _init() -> void:
 		_sk().get_node("StrikePose").modification_processed.connect(_capture)
 		await _check_guard_pose()
 		await _check_shove_pose()
+		await _check_combat_head()
 	_check_punch()
 	_check_aim_target()
 	_check_aim_offset()
@@ -83,11 +84,48 @@ func _init() -> void:
 	_check_blocked()
 	await _check_held_input()
 	_check_car()
+	_check_recovery()
 	_check_teardown()
 	K.finish(self, "FP_ACTIONS_TEST", fails)
 
 
 # ------------------------------------------------------------------ helpers
+
+
+## Contact shortens the torso's follow-through; missing adds a brief next-attack recovery.
+## The flag-off cases prove that target selection alone never changes the legacy timing.
+func _check_recovery() -> void:
+	var outcomes := []
+	for on: bool in [true, false]:
+		FeatureFlags.set_override("strike_recovery", on)
+		for contact: bool in [true, false]:
+			f.call("cancel")
+			_quiet()
+			_step(1.1)
+			if contact:
+				_person(0.8)
+			K.check(fails, bool(f.call("strike")), "recovery fixture starts a jab")
+			_step(0.38)
+			outcomes.append([float(f.get("_len")), float(_pose().call("weight"))])
+	FeatureFlags.set_override("strike_recovery", true)
+	K.check(
+		fails,
+		float(outcomes[1][0]) > float(outcomes[0][0]) + 0.05,
+		"a missed jab recovers longer than a landed jab (%s)" % str(outcomes)
+	)
+	K.check(
+		fails,
+		float(outcomes[0][1]) < 0.01 and float(outcomes[1][1]) > 0.1,
+		"contact returns the torso to stance while a miss follows through"
+	)
+	K.check(
+		fails,
+		is_equal_approx(float(outcomes[2][0]), float(outcomes[3][0])),
+		"recovery flag off keeps landed and missed timing equal"
+	)
+	_quiet()
+	f.call("cancel")
+	_step(1.1)
 
 
 ## Steps the actions feature (unless feature is false: the rig on its own), traffic and the player.
@@ -141,12 +179,50 @@ func _capture() -> void:
 	var sk := _sk()
 	for b: String in POSE_BONES:
 		_post[b] = sk.global_transform * sk.get_bone_global_pose(sk.find_bone(b)).origin
+	_post["head_forward"] = (
+		(sk.global_basis * sk.get_bone_global_pose(sk.find_bone("Head")).basis.z).normalized()
+	)
 
 
 func _sk() -> Skeleton3D:
 	for n in ctx.player.avatar.find_children("*", "Skeleton3D", true, false):
 		return n
 	return null
+
+
+## Guard and strikes keep the chin down even while the camera looks high above the street.
+func _check_combat_head() -> void:
+	var p := ctx.player
+	p.look(0.0, -1.0)
+	f.call("set_guard", true)
+	var guard_pitch := 0.0
+	for _k in 24:
+		_step(DT)
+		await process_frame
+		if _k > 12:
+			var dir: Vector3 = _post.get("head_forward", p.body_forward())
+			guard_pitch = maxf(guard_pitch, absf(asin(clampf(dir.y, -1.0, 1.0))))
+	K.check(
+		fails,
+		guard_pitch < deg_to_rad(8.0),
+		"guard keeps head level (%.1f deg)" % rad_to_deg(guard_pitch)
+	)
+	f.call("set_guard", false)
+	f.call("strike")
+	var strike_pitch := 0.0
+	for _k in 20:
+		_step(DT)
+		await process_frame
+		var dir: Vector3 = _post.get("head_forward", p.body_forward())
+		strike_pitch = maxf(strike_pitch, absf(asin(clampf(dir.y, -1.0, 1.0))))
+	K.check(
+		fails,
+		strike_pitch < deg_to_rad(8.0),
+		"strike keeps head level (%.1f deg)" % rad_to_deg(strike_pitch)
+	)
+	p.look(0.0, 1.0)
+	f.call("cancel")
+	_step(1.1)
 
 
 ## Bone b as captured, in the hero's frame (metres): x to the right, y up off the feet, z ahead.

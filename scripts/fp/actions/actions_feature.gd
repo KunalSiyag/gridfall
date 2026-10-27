@@ -77,6 +77,16 @@ const INPUTS: Array[String] = [
 const REACH := 1.2 * WS.M
 ## A kick reaches further.
 const KICK_REACH := 1.5 * WS.M
+## A grounded punch or a weapon swing at someone just inside its reach steps the hero in as it
+## winds up (strike_step): at most STEP_MAX in all, STEP_SPEED a second, never closer than
+## STEP_GAP to them. The player's own combat_step does the moving, so walls, props and other
+## people hold it exactly as they hold a walk, and the reach the blow lands within never grows.
+const STEP_MAX := 0.18 * WS.M
+const STEP_GAP := 0.95 * WS.M
+const STEP_SPEED := 1.2 * WS.M
+## The swings that step in: the punches and a weapon swing (a kick, a shove, a throw, a slam and
+## a counter keep their feet).
+const STEP_SWINGS := ["jab", "cross", "hook", "swing"]
 const CONE := 0.4
 ## A person must come within this distance of the aim ray at chest height to take a blow.
 const AIM_RADIUS := 0.65 * WS.M
@@ -87,6 +97,15 @@ const RUN_BONUS := 0.3
 ## A press this close to the end of a swing queues the next one (s); punches go on through COMBO
 ## within COMBO_S of the last and start again from the jab after it.
 const BUFFER_S := 0.2
+## Missing carries the hero past the intended contact: a brief extra recovery by swing (s).
+const WHIFF_RECOVERY := {
+	"jab": 0.08,
+	"cross": 0.1,
+	"hook": 0.14,
+	"shove": 0.12,
+	"kick": 0.18,
+	"swing": 0.14,
+}
 const COMBO_S := 1.0
 const EMOTE_GAP := 1.0
 ## The body faces whoever a swing went for at least this long (s).
@@ -141,6 +160,8 @@ var _weapon: Dictionary = {}
 var _emote_gap: float = 0.0
 var _face_t: float = 0.0
 var _face_yaw: float = NAN
+## How far the swing under way has stepped in (u).
+var _stepped: float = 0.0
 
 
 func feature_id() -> String:
@@ -229,6 +250,7 @@ func _begin(kind: String, clip: String, who: Dictionary) -> void:
 	var s: Array = SWINGS[kind]
 	swing = kind
 	_t = 0.0
+	_stepped = 0.0
 	_len = float(s[3])
 	_hit_at = float(s[5])
 	_landed = false
@@ -439,6 +461,7 @@ func _advance(dt: float) -> void:
 		cancel()
 		return
 	_t += dt
+	_step_in(dt)
 	if not _landed and _t >= _hit_at:
 		_land()
 	if _t >= _len:
@@ -449,9 +472,46 @@ func _advance(dt: float) -> void:
 			strike(next)
 
 
+## The step-in (strike_step): while a punch or a weapon swing at someone chosen winds up, the
+## hero steps toward them, stopping STEP_GAP short. The player's combat_step does the moving, so
+## the world holds it exactly as it holds a walk.
+func _step_in(dt: float) -> void:
+	if _target < 0 or swing not in STEP_SWINGS or _t >= _hit_at:
+		return
+	if not FeatureFlags.enabled("strike_step"):
+		return
+	var who := _walker(_target, _reach() * HOLD_REACH)
+	if who.is_empty():
+		return
+	var feet := ctx.player.position
+	var to := (who["pos"] as Vector3) - feet
+	to.y = 0.0
+	var gap := to.length()
+	if gap < 1e-9:
+		return
+	var room := minf(STEP_MAX - _stepped, minf(STEP_SPEED * dt, gap - STEP_GAP))
+	if room <= 1e-9:
+		return
+	_stepped += ctx.player.combat_step(to * (room / gap)).length()
+
+
 ## The blow lands on the swing's target if they are still in reach and on their feet; a swing at
 ## nobody lands on the street prop in front, if there is one.
 func _land() -> void:
+	var before := hits + animal_hits + prop_hits
+	_land_target()
+	if FeatureFlags.enabled("strike_recovery") and swing in WHIFF_RECOVERY:
+		var contact := hits + animal_hits + prop_hits > before
+		if not contact:
+			_len += float(WHIFF_RECOVERY[swing])
+			_face_t = maxf(_face_t, _len - _t)
+		var rig := _rig()
+		if rig != null:
+			(rig.get("strike_pose") as RefCounted).call("resolve_contact", contact)
+
+
+## Resolves the selected target, or the animal/prop fallback, exactly once per swing.
+func _land_target() -> void:
 	_landed = true
 	if _target < 0:
 		if not _strike_animal():

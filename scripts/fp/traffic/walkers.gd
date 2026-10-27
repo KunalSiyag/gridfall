@@ -119,6 +119,7 @@ class Walker:
 	var react_t: float = 0.0  # seconds into react
 	var react_rate: float = 1.0  # pace react plays at (0 holds its pose)
 	var vis_tilt: float = 0.0  # drawn tip about the hips (rad, + forward): thrown or dragged
+	var vis_roll: float = 0.0  # drawn side lean about the hips (rad, + toward the body's right)
 
 
 var sw: SW
@@ -158,9 +159,9 @@ func setup(p_sw: SW, p_lg: LG, p_jn: JN, p_vh: VH, seed: int) -> void:
 ## tipped by its vis_tilt about the hips (HIP_M up in the body's own metres).
 static func body_xf(w: Walker, s: float, feet: Vector3) -> Transform3D:
 	var xf := Transform3D(Basis(Vector3.UP, w.yaw) * s, feet)
-	if w.vis_tilt == 0.0:
+	if w.vis_tilt == 0.0 and w.vis_roll == 0.0:
 		return xf
-	var tip := Basis(Vector3.RIGHT, w.vis_tilt)
+	var tip := Basis(Vector3.BACK, w.vis_roll) * Basis(Vector3.RIGHT, w.vis_tilt)
 	var hip := Vector3(0.0, HIP_M, 0.0)
 	return xf * Transform3D(tip, hip - tip * hip)
 

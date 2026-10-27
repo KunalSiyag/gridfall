@@ -5,8 +5,12 @@ extends SceneTree
 ## with hit_feel up on an arc and tipped back), letting go and breaking free, the hold ending in a
 ## car; counters (the counters flag): the cue as a fighter's punch starts, the guard raised in time
 ## countering it (the punch misses, the hook floors them), a guard held up since earlier only
-## blocking, and the flag off; teardown. Third person on a grown city; time runs through traffic's
-## step, the features' tick(1/60) and the player's simulate and update_view.
+## blocking, and the flag off; the counter window reading (counter_cues): the wind-up holding back
+## then snapping with the blow's own timing kept, the cue growing through the wind-up and fading
+## once the blow has landed, and the flag off; the crowd gasp (crowd_gasp): a knock-down rocking
+## the onlookers who stay back as one, once per crowd, and the flag off; teardown. Third person
+## on a grown city; time runs
+## through traffic's step, the features' tick(1/60) and the player's simulate and update_view.
 
 const K := preload("res://tools/tests/fp_kit.gd")
 const WS := preload("res://scripts/fp/world_scale.gd")
@@ -30,6 +34,7 @@ var react: RefCounted
 ## [amount, cause] of every hero_hurt; how many hero_threatened.
 var hurts: Array = []
 var threats: int = 0
+var _grip_bones: Dictionary = {}
 
 
 func _init() -> void:
@@ -52,16 +57,18 @@ func _init() -> void:
 	ctx.bus.hero_hurt.connect(
 		func(a: float, cause: String, _h: float, _d: bool) -> void: hurts.append([a, cause])
 	)
-	ctx.bus.hero_threatened.connect(func(_at: Vector3, _s: float) -> void: threats += 1)
+	ctx.bus.hero_threatened.connect(func(_at: Vector3, _s: float, _w: int) -> void: threats += 1)
 	ctx.player.input_enabled = true
 	_check_setup()
 	await _check_grab()
 	_check_punch_held()
-	_check_throw()
+	await _check_throw()
 	_check_let_go()
 	_check_counter()
 	_check_guard_held()
 	_check_counters_off()
+	_check_cue_window()
+	_check_gasp()
 	_check_teardown()
 	K.finish(self, "FP_BRAWL_TEST", fails)
 
@@ -130,10 +137,12 @@ func _hurt(cause: String) -> int:
 	return hurts.filter(func(h: Array) -> bool: return str(h[1]) == cause).size()
 
 
-## Someone fighting the hero, metres ahead: a jab makes them fight back (fight_odds 1).
+## Someone fighting the hero, metres ahead: a jab makes them fight back (fight_odds 1, plain
+## temper: the counter and cue checks ride the jab's timing).
 func _fighter(metres: float) -> WK.Walker:
 	react.set("fight_odds", {"punch": 1.0, "shove": 1.0})
 	var w := _stranger(metres)
+	react.set("fight_temper", {w.id: 0})
 	var push := ctx.player.body_forward() * WS.M
 	tr.call("hit_walker", w.id, ctx.player.position, push, 0.45, "punch")
 	return w
@@ -176,7 +185,7 @@ func _check_grab() -> void:
 		absf(gap - HOLD_M) < 0.08 and still,
 		"in the hands, %.2f m ahead (%.2f)" % [HOLD_M, gap]
 	)
-	K.check(fails, gap > 0.6, "the two bodies clear each other (feet %.2f m apart)" % gap)
+	K.check(fails, gap > 0.52, "their bodies clear each other (feet %.2f m apart)" % gap)
 	await _check_grip(w)
 	var forward := p.body_forward()
 	var side := Vector3(forward.z, 0.0, -forward.x).normalized()
@@ -220,22 +229,70 @@ func _check_grip(w: WK.Walker) -> void:
 	var rig: Variant = p.avatar.get("rig") if p.avatar != null else null
 	if not rig is RefCounted:
 		return
-	_step(DT)
-	await process_frame
-	var ends: Array = (rig as RefCounted).get("limbs").get("ends")
+	var limbs: RefCounted = rig.get("limbs")
+	var iks: Array = limbs.get("iks")
+	for i in 2:
+		(iks[i] as TwoBoneIK3D).modification_processed.connect(
+			_capture_arm.bind("Left" if i == 0 else "Right")
+		)
+	for _k in 3:
+		_step(DT)
+		await process_frame
+	var ends: Array = limbs.get("ends")
+	var targets: Array = limbs.get("targets")
+	var sk: Skeleton3D = rig.get("skeleton")
 	var fwd := p.body_forward()
 	var right := Vector3(-fwd.z, 0.0, fwd.x)
 	var ok := true
 	var msg := ""
 	for i in 2:
 		var s := -1.0 if i == 0 else 1.0
+		var side := "Left" if i == 0 else "Right"
 		var arm := _feet(w) - fwd * 0.08 * WS.M + Vector3.UP * 1.3 * WS.M + right * s * 0.19 * WS.M
 		var hand: Vector3 = ends[i]
 		var off := (hand - arm).length() / WS.M
 		var on_side := (hand - p.position).dot(right) * s > (_feet(w) - p.position).dot(right) * s
-		ok = ok and off < 0.2 and on_side
+		var shoulder_i := sk.find_bone(side + "UpperArm")
+		var elbow_i := sk.find_bone(side + "LowerArm")
+		var hand_i := sk.find_bone(side + "Hand")
+		var chain_len := (
+			sk.get_bone_global_rest(shoulder_i).origin.distance_to(
+				sk.get_bone_global_rest(elbow_i).origin
+			)
+			+ sk.get_bone_global_rest(elbow_i).origin.distance_to(
+				sk.get_bone_global_rest(hand_i).origin
+			)
+		)
+		var shoulder: Vector3 = _grip_bones[side + "UpperArm"]
+		var elbow: Vector3 = _grip_bones[side + "LowerArm"]
+		hand = _grip_bones[side + "Hand"]
+		var reach_ratio := (
+			shoulder.distance_to((targets[i] as Marker3D).global_position)
+			/ (chain_len * sk.global_basis.y.length())
+		)
+		var bend := 180.0 - rad_to_deg((shoulder - elbow).angle_to(hand - elbow))
+		ok = ok and off < 0.2 and on_side and reach_ratio < 0.85 and bend > 25.0
 		msg += " %s hand %.2f m from their arm;" % ["left" if i == 0 else "right", off]
-	K.check(fails, ok, "both hands hold them by the arms (%s)" % msg)
+		msg += " arm uses %.0f%% of full reach;" % (reach_ratio * 100.0)
+		msg += " elbow bends %.0f deg;" % bend
+	for i in 2:
+		(iks[i] as TwoBoneIK3D).modification_processed.disconnect(
+			_capture_arm.bind("Left" if i == 0 else "Right")
+		)
+	K.check(fails, ok, "both hands hold them by the arms with bent elbows (%s)" % msg)
+	var people: Variant = tr.get("people")
+	var hero_head: Vector3 = rig.call("bone_world", "Head")
+	var walker_head: Vector3 = people.call("head_of", w, _feet(w))
+	var head_gap := hero_head.distance_to(walker_head) / WS.M
+	K.check(fails, head_gap > 0.4, "their heads stay apart (%.2f m)" % head_gap)
+
+
+func _capture_arm(side: String) -> void:
+	var rig: RefCounted = ctx.player.avatar.get("rig")
+	var sk: Skeleton3D = rig.get("skeleton")
+	for suffix: String in ["UpperArm", "LowerArm", "Hand"]:
+		var bone := side + suffix
+		_grip_bones[bone] = sk.global_transform * sk.get_bone_global_pose(sk.find_bone(bone)).origin
 
 
 func _check_punch_held() -> void:
@@ -276,8 +333,21 @@ func _check_throw() -> void:
 	var sep0 := 0.0
 	var sep10 := 0.0
 	var tip10 := 0.0
+	var draw_error := 0.0
+	var drawn_frames := 0
+	var people: RefCounted = tr.get("people")
+	people.set("blocking", true)
 	for k in range(90):
 		_step(DT)
+		tr.call("sync_visuals", DT)
+		await process_frame
+		if w.body != null:
+			var expected := WK.body_xf(w, float(people.call("scale_of", w)), _feet(w))
+			var drawn: Node3D = w.body.get("root")
+			draw_error = maxf(
+				draw_error, drawn.transform.origin.distance_to(expected.origin) / WS.M
+			)
+			drawn_frames += 1
 		peak = maxf(peak, _air(w))
 		tip = minf(tip, w.vis_tilt)
 		var sep := _flat(_feet(w), p.position) / WS.M
@@ -293,6 +363,14 @@ func _check_throw() -> void:
 		(
 			"10 frames after the throw lets go they are %.2f m further off and tipping (%.2f rad)"
 			% [sep10 - sep0, tip10]
+		)
+	)
+	K.check(
+		fails,
+		drawn_frames > 60 and draw_error < 0.001,
+		(
+			"drawn body follows the simulated throw without lag (%d frames, %.4f m error)"
+			% [drawn_frames, draw_error]
 		)
 	)
 	var flung := (_feet(w) - before).dot(aim) / WS.M
@@ -386,6 +464,168 @@ func _check_counters_off() -> void:
 	(tr.get("walkers") as WK).remove(w)
 
 
+## The contact time (s) of the punch w is throwing.
+func _contact(w: WK.Walker) -> float:
+	for spec: Array in RE.FIGHT_BLOWS:
+		if spec[0] == w.react:
+			return float(spec[1])
+	return 0.2
+
+
+## The counter window reads (counter_cues): a punch holds its wind-up back through the first
+## half of the run to contact, then snaps, the blow's own clock untouched; the cue grows through
+## the wind-up and fades once the blow has landed, and with the flag off both keep their plain
+## old look.
+func _check_cue_window() -> void:
+	_fresh()
+	FeatureFlags.set_override("counter_cues", true)
+	# The wind-up: the clip holds back, snaps in, and the blow lands on its own clock.
+	var w := _fighter(1.0)
+	K.check(fails, _until_punch(w, 8.0), "fixture: they throw a punch")
+	K.check(
+		fails,
+		is_equal_approx(w.react_rate, RE.WIND_RATE),
+		"the wind-up holds its clip back (%.2fx)" % w.react_rate
+	)
+	var people: RefCounted = tr.get("people")
+	var head: Vector3 = (
+		(people.call("head_of", w, w.pos + w.vis_off) as Vector3) + Vector3.UP * BRAWL.CUE_HEAD
+	)
+	K.check(
+		fails,
+		(f.get("cue_at") as Vector3).distance_to(head) < 0.05 * WS.M,
+		"the cue anchors over the attacker's head"
+	)
+	var contact := _contact(w)
+	_step(contact * 0.5 + 4.0 * DT)
+	K.check(
+		fails,
+		is_equal_approx(w.react_rate, 2.0 - RE.WIND_RATE),
+		"the strike snaps in (%.2fx)" % w.react_rate
+	)
+	_step(contact * 0.5 - 2.0 * DT)
+	K.check(fails, w.react_rate == 1.0, "and the clip runs free again past the landing")
+	K.check(fails, _hurt("punch") >= 1, "the blow still lands on its own clock")
+	(tr.get("walkers") as WK).remove(w)
+	# The cue, watched through the window of a blow landing in 0.29 s.
+	var cue: Label = f.get("cue")
+	f.call("_on_threatened", ctx.player.position, 0.29, -1)
+	f.call("tick", 0.0)
+	K.check(
+		fails,
+		cue.visible and cue.get_theme_font_size("font_size") <= 27 and cue.modulate.a > 0.99,
+		"the cue opens small (%d px)" % cue.get_theme_font_size("font_size")
+	)
+	f.call("tick", 0.2)
+	K.check(
+		fails,
+		cue.get_theme_font_size("font_size") > 30 and cue.modulate.a > 0.99,
+		"grows through the wind-up (%d px)" % cue.get_theme_font_size("font_size")
+	)
+	f.call("tick", 0.085)
+	K.check(
+		fails,
+		cue.get_theme_font_size("font_size") >= 39,
+		"reaching full size as the blow closes (%d px)" % cue.get_theme_font_size("font_size")
+	)
+	f.call("tick", 0.08)
+	var a := cue.modulate.a
+	K.check(
+		fails,
+		cue.get_theme_font_size("font_size") == 26 and absf(a - 0.5) < 0.03,
+		"fades after the landing (26 px, %.2f)" % a
+	)
+	f.call("tick", 0.1)
+	K.check(fails, not cue.visible, "and goes")
+	# The mark rides over the threat in the world, not parked at screen centre.
+	var cam: Camera3D = ctx.player.camera
+	f.call("_on_threatened", ctx.player.position, 0.4, -1)
+	f.call("tick", 0.0)
+	var at := Vector2(cue.position + cue.size * 0.5)
+	var want := cam.unproject_position(ctx.player.position + Vector3.UP * BRAWL.CUE_LIFT)
+	K.check(
+		fails,
+		cue.visible and at.distance_to(want) < 40.0,
+		"the cue rides over the threat (%.0f px off)" % at.distance_to(want)
+	)
+	f.call("_on_threatened", ctx.player.position + ctx.player.body_forward() * WS.M, 0.6, -1)
+	f.call("tick", 0.0)
+	var moved := Vector2(cue.position + cue.size * 0.5)
+	K.check(
+		fails,
+		moved.distance_to(at) > 20.0,
+		"and follows it across the world (%.0f px)" % moved.distance_to(at)
+	)
+	var fade := BRAWL.cue_look(0.075, 0.29)
+	K.check(
+		fails,
+		(
+			is_equal_approx(BRAWL.cue_look(0.44, 0.29).x, 26.0)
+			and BRAWL.cue_look(0.155, 0.29).x >= 39.0
+			and is_equal_approx(fade.x, 26.0)
+			and is_equal_approx(fade.y, 0.5)
+		),
+		"cue_look keeps the window's phases (26 to 40 px, the tail fading)"
+	)
+	# The flag off: the plain mark of before.
+	FeatureFlags.set_override("counter_cues", false)
+	f.call("_on_threatened", ctx.player.position, 0.29, -1)
+	f.call("tick", 0.0)
+	K.check(
+		fails,
+		cue.get_theme_font_size("font_size") == 34 and cue.modulate.a == 1.0,
+		"counter_cues off keeps the plain mark (34 px, full)"
+	)
+	FeatureFlags.set_override("counter_cues", true)
+	f.call("tick", 0.5)
+
+
+## The crowd gasps (crowd_gasp): a knock-down in view rocks the onlookers who stay back as one
+## (no beat of looking first, a sharp backward tip); the next body to fall right there gets the
+## plain reaction (once per crowd); and nothing of it with the flag off.
+func _check_gasp() -> void:
+	_fresh()
+	FeatureFlags.set_override("crowd_gasp", true)
+	var rocked := _gaspers([2.0, 2.4, 2.8, 3.2])
+	K.check(
+		fails, rocked[0] > 0 and rocked[1] == 0, "the street gasps: %d rock back as one" % rocked[0]
+	)
+	var again := _gaspers([2.1, 2.5, 2.9])
+	K.check(
+		fails,
+		again[0] == 0 and again[1] > 0,
+		"one gasp per crowd: the next body there gets the plain reaction"
+	)
+	_fresh()
+	FeatureFlags.set_override("crowd_gasp", false)
+	var off := _gaspers([2.0, 2.4, 2.8])
+	K.check(fails, off[0] == 0 and off[1] > 0, "no gasp with the flag off")
+	FeatureFlags.reload()
+
+
+## Downs a passer-by in front of the hero with bystanders standing at the given metres out, and
+## counts the ones who stay: [how many rock back at once (the gasp), how many take the plain
+## beat first]. Runners are neither.
+func _gaspers(metres: Array) -> Array:
+	var bys: Array = []
+	for m: float in metres:
+		bys.append(_stranger(m))
+	var v := _stranger(1.2)
+	var push := ctx.player.body_forward() * WS.M
+	tr.call("hit_walker", v.id, ctx.player.position, push, 1.0, "punch")
+	var rocked := 0
+	var plain := 0
+	for b: WK.Walker in bys:
+		var r: RE.Reaction = (react.get("_active") as Dictionary).get(b.id, null)
+		if r == null or r.steps.is_empty() or str(r.steps[0][0]) != "place":
+			continue
+		if r.tip > 0.0 and r.delay == 0.0:
+			rocked += 1
+		else:
+			plain += 1
+	return [rocked, plain]
+
+
 func _check_teardown() -> void:
 	_fresh()
 	var w := _stranger(0.9)
@@ -395,5 +635,5 @@ func _check_teardown() -> void:
 	f.teardown()
 	var gone := not bool(react.call("held", w)) and ctx.player.speed_cap == INF
 	K.check(fails, gone and cue.is_queued_for_deletion(), "teardown lets go and takes the cue away")
-	ctx.bus.hero_threatened.emit(ctx.player.position, 0.3)
+	ctx.bus.hero_threatened.emit(ctx.player.position, 0.3, -1)
 	K.check(fails, f.get("cue") == null, "and hears no more threats")
