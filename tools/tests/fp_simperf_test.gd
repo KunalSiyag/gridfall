@@ -209,9 +209,18 @@ func _check_sync_guard() -> void:
 	sim.set_process(false)
 	sim.new_city(7)
 	sim.set_speed(16)
+	# A loose wall-clock budget, so only the tick-count cap applies.
+	sim.tick_budget_ms = 1.0e9
 	var t0 := sim.global_tick()
 	sim._process(30.0)
 	check(not sim.sliced and sim.global_tick() - t0 == 8, "sync path: a 30 s frame at speed 16 runs exactly 8 ticks (%d)" % (sim.global_tick() - t0))
+	var left := sim._time_accum
+	check(left <= sim.tick_seconds(), "sync path: backlog clamped to one tick (%.1f s)" % left)
+	sim.tick_budget_ms = 0.0
+	t0 = sim.global_tick()
+	sim._process(30.0)
+	var ran := sim.global_tick() - t0
+	check(ran == 1, "sync path: a spent budget still runs the one due tick (%d)" % ran)
 	sim.queue_free()
 
 

@@ -40,6 +40,8 @@ const _JOB_NONE := 0
 const _JOB_TICK := 1
 const _JOB_POST := 2
 const _JOB_RECOMPUTE := 3
+## Upper bound on whole ticks in one frame, whatever tick_budget_ms allows.
+const MAX_TICKS_PER_FRAME := 8
 
 ## Time-sliced ticking for first person. false (default): _process runs step_tick() synchronously,
 ## exactly as today. true: a due tick runs as a resumable job, at most slice_budget_ms per frame.
@@ -112,6 +114,14 @@ var broken_roads: Dictionary = {}
 ## the road_grades flag). Not saved.
 var road_grades: bool = true
 
+## Wall-clock budget for whole (unsliced) ticks in one frame. A due tick always runs, so the city
+## never stalls; further ticks wait for the next frame once the budget is spent.
+var tick_budget_ms: float = 8.0
+## Game speed the sim actually achieved, smoothed over about a second: equal to speed while
+## frames keep up, lower when ticks were deferred and the backlog clamped. For the HUD.
+var effective_speed: float = 0.0
+## Game seconds dropped by the backlog clamp that crews have not yet given back.
+var _crew_debt: float = 0.0
 var _time_accum: float = 0.0
 var _event_seq: int = 0
 var _changed: Dictionary = {}
@@ -544,39 +554,77 @@ func set_speed(s: int) -> void:
 func _process(delta: float) -> void:
 	if kind.is_empty():
 		return
-	if speed > 0 and not crew_jobs.is_empty():
-		_crew_frame(delta * float(speed))
+	var gain := delta * float(speed) if speed > 0 else 0.0
+	if gain > 0.0 and not crew_jobs.is_empty():
+		var crew_s := maxf(gain - _crew_debt, 0.0)
+		_crew_debt = maxf(_crew_debt - gain, 0.0)
+		if crew_s > 0.0:
+			_crew_frame(crew_s)
+	var dropped := 0.0
 	if sliced:
-		_process_sliced(delta)
-		return
-	if speed <= 0:
-		return
+		dropped = _process_sliced(delta)
+	elif speed > 0:
+		dropped = _process_whole(delta)
+	_note_speed(delta, gain, dropped)
+
+
+## Unsliced ticking: whole ticks until the frame's tick_budget_ms is spent (at most
+## MAX_TICKS_PER_FRAME), then the backlog is clamped. Returns the game seconds dropped.
+func _process_whole(delta: float) -> float:
 	if waiting_for_ai:
 		if day_gate.is_valid() and not bool(day_gate.call()):
-			return
+			return 0.0
 		waiting_for_ai = false
 		waiting_changed.emit(false)
 		_begin_day()
-		return
+		return 0.0
 	_time_accum += delta * float(speed)
 	var tick_len := tick_seconds()
-	var guard := 0
-	while _time_accum >= tick_len and guard < 8 and not waiting_for_ai:
+	var t0 := Time.get_ticks_usec()
+	var ran := 0
+	while _time_accum >= tick_len and ran < MAX_TICKS_PER_FRAME and not waiting_for_ai:
+		if ran > 0 and float(Time.get_ticks_usec() - t0) >= tick_budget_ms * 1000.0:
+			break
 		_time_accum -= tick_len
-		guard += 1
+		ran += 1
 		step_tick()
+	return _clamp_backlog(tick_len)
+
+
+## Keeps at most one tick of time pending (two while a sliced job that owns one is in flight).
+## Without it a frame that runs long leaves more due ticks for the next one and frames spiral.
+## Only wall-clock pacing changes: the ticks and their order do not. Returns the seconds dropped.
+func _clamp_backlog(tick_len: float) -> float:
+	var cap := tick_len * (2.0 if _job_from_accum else 1.0)
+	if _time_accum <= cap:
+		return 0.0
+	var dropped := _time_accum - cap
+	_time_accum = cap
+	if not crew_jobs.is_empty():
+		_crew_debt += dropped
+	return dropped
+
+
+func _note_speed(delta: float, gain: float, dropped: float) -> void:
+	if delta <= 0.0:
+		return
+	var now := maxf(gain - dropped, 0.0) / delta
+	effective_speed = lerpf(effective_speed, now, clampf(delta, 0.0, 1.0))
+	if speed <= 0:
+		effective_speed = 0.0
 
 
 ## Sliced mode: at most one job in flight. A due tick starts as a job (and gets its first slice
 ## this frame); the time it covers is subtracted when it commits. A job in flight keeps pumping
-## even at speed 0, so a tick never freezes half done.
-func _process_sliced(delta: float) -> void:
+## even at speed 0, so a tick never freezes half done. Returns the game seconds the backlog clamp
+## dropped.
+func _process_sliced(delta: float) -> float:
 	if speed > 0 and not waiting_for_ai:
 		_time_accum += delta * float(speed)
 	if _job.is_empty() and speed > 0:
 		if waiting_for_ai:
 			if day_gate.is_valid() and not bool(day_gate.call()):
-				return
+				return 0.0
 			waiting_for_ai = false
 			waiting_changed.emit(false)
 			_start_job(_JOB_POST, [_tagged("day_end", "day_start", _task_day_start)])
@@ -584,6 +632,7 @@ func _process_sliced(delta: float) -> void:
 			_job_from_accum = true
 	if not _job.is_empty():
 		pump(slice_budget_ms)
+	return _clamp_backlog(tick_seconds())
 
 
 func day_progress() -> float:
