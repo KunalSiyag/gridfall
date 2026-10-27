@@ -123,7 +123,7 @@ Further rules:
 
 ### 3. Agents (`agents.gd`)
 
-Use packed arrays, or one small Dictionary per agent pooled from a free list. Node instances are pooled too.
+Use packed arrays, or one small Dictionary per agent pooled from a free list. Node instances are pooled too, and a node back in its pool is reset for its next body: a door cut open is shut again at the next draw, and a backhoe loader's arm left posed is folded as the node is released (`render.gd` `_fold_rig`).
 
 **Cars.**
 - IDM with `v0` = lane limit (crews use `EMERGENCY_SPEED`), `T = 1.5 s`, `a = 1.0 * M`, `b = 2.0 * M` (m/s²), `s0 = 2.0 * M` and `δ = 4`.
@@ -135,7 +135,7 @@ Use packed arrays, or one small Dictionary per agent pooled from a free list. No
 - Yaw follows the lane tangent.
 - Vehicles are scaled `WS.VEHICLE_SCALE` (legacy GLBs) or `VEHICLE_V2_SCALE` (H). People are scaled `WS.PEOPLE_SCALE` in FP.
 - When wheel nodes exist (`AP.WHEEL_NODES`, or `AP.BIKE_WHEEL_NODES` on the bicycle), spin them at `v / wheel_radius`.
-- **Draw calls.** Vehicles: full models only within 2 u of the player; beyond, one `MultiMeshInstance3D` per H `<name>_lod1.glb` model (single material, static wheels), filled each frame from the agent arrays. People follow the LOD tiers of deliverable 9 (HC bodies) or, before HC, the same 2 u rule with the legacy GLBs. With the legacy multi-material GLBs (sedan_blue 11 materials, person_a 5), 60 cars and 80 people would cost about 960 draws before shadows.
+- **Draw calls.** Vehicles: full models only within 2 u of the player; beyond, one `MultiMeshInstance3D` per H `<name>_lod1.glb` model (single material, static wheels), filled each frame from the agent arrays. People follow the LOD tiers of deliverable 9 (HC bodies) or, before HC, the same 2 u rule with the legacy GLBs. With the legacy multi-material GLBs (sedan_blue 11 materials, person_a 5), 60 cars and 80 people would cost about 960 draws before shadows. After dark the full models' head and tail lenses light through per-instance overrides and the merged meshes' lamp vertices glow (the lod1's emissive `Light_Head` / `Light_Tail`, flagged with vertex alpha in the merge) — bicycles included: a cyclist reads at night at any distance, its small lamps lit, never a headlight beam.
 
 **Pedestrians.**
 - They walk sidewalk polylines with centrelines inside `WS.PED_BAND` ([0.355, 0.405] from the road centreline) at `PED_WALK` (±15% per person), with feet on `SIDEWALK_TOP`. Lamps and signs stand in `CURB_FURNITURE` and shelters, racks and meters in `FRONT_FURNITURE`, so the band is clear except for the two small posts baked into lit straights at model-local (±0.4, ±0.2) (`roads.py:168-169`), which walkers sidestep.
@@ -208,6 +208,7 @@ Edge cases:
 ### 8. Save (`traffic_feature.to_dict`)
 
 - `{"parked": {resident_id: [tile, slot]}}` (cast both back to int on load).
+- On load a saved car reclaims its own slot (`trips.gd` `restore_parked`): the deterministic decor fill has usually taken it, and the ownerless decor car gives way — removed out of sight, as any resident parking near may evict one. A slot held by a car with an owner (another resident's, the player's) keeps it, and the saved car parks nearby instead.
 - Agents in flight are not saved. On load, residents appear at their `r.at` (inside or parked), and ambient traffic is filled synchronously (deliverable 6).
 
 ### 9. Animated people from HC's roster (D13; TPS_PLAN §1.10–1.11)
@@ -285,6 +286,8 @@ Edge cases:
 
 **Conversation.** `conversation_changed(id, true)` stops the agent within 2 s, it turns to face the player, and `anchor_of(id)` stays within `0.1 * M` of its head while it stands.
 
+**Lamps.** After dark a near bicycle's small head and tail lenses light through per-instance surface overrides (never a headlight beam), the bicycle's merged far LOD carries lamp-flagged vertices (vertex alpha < 0.75, from the lod1's emissive `Light_Head` / `Light_Tail`), and by day the imported lamp materials are back.
+
 **People (stage E2; skipped with a printed note while `AP.CHAR_ROSTER` is missing).**
 - The same resident id gets the same body in two fresh runs and after `to_dict` → `from_dict`; no resident or ambient walker uses a hero avatar; a nurse resident's body is from the medical pool (or casual when the pool is empty for that gender).
 - Every HC body's world AABB height is 0.080–0.090 u (1.61–1.80 m).
@@ -298,7 +301,7 @@ Edge cases:
 - `pick(Vector2)` returns a String.
 - In a CityView without FpMode (orbit), `_on_moved` still sets `a["speed"]` from `sim.tick_seconds()` as before, and avatar y and scale are unchanged.
 
-**Save.** Parked cars survive `to_dict` → JSON → `from_dict`. Right after `from_dict`, with no frame in between, at least 2 cars and 2 pedestrians exist when roads exist.
+**Save.** Parked cars survive `to_dict` → JSON → `from_dict`. Right after `from_dict`, with no frame in between, at least 2 cars and 2 pedestrians exist when roads exist. A saved car reclaims its own slot when the deterministic decor fill has taken it (the ownerless decor car gives way, out of sight); another resident's car in it keeps the slot, and the saved car parks nearby instead.
 
 **FP smoke and photo tour.**
 - FP smoke: `self_test()` passes when the lane graph is non-empty and at least 1 car (moving, ambient or parked) and at least 1 pedestrian agent exist within `TRAFFIC_RADIUS` of the player. It runs after the post-load fill, so it never depends on frames having passed.

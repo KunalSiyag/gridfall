@@ -6,14 +6,20 @@ extends FpFeature
 ## walks to its door, opens it and pulls them out. W / S or the triggers drive and brake (S
 ## reverses once stopped), A / D or the left stick steer, Space (A) is the handbrake, the mouse or
 ## right stick look around, V switches to the driver's view, and F again stops the car and gets
-## out through the driver's door (or at once beside it). The car belongs to the traffic feature
+## out through the driver's door (or at once beside it). In the backhoe loader, Y / U raise and
+## lower the loader arm and I / O curl and tip its bucket (backhoe.gd, the backhoe_arm flag), and
+## a bucket tipped out with O then curled back in with I, the arm low over a construction site,
+## digs a growing dirt pile. The car belongs to the traffic feature
 ## (lane traffic stops for it and it stays where it is left). It is a rigid box (car_body.gd): it
 ## bounces off walls, slides along them at a glance, spins when hit off-centre, shoves the cars it
 ## hits and knocks street props over; car_impact on the bus reports the hard hits and car_door the
 ## door opening and shutting. Alongside a moving car with someone at its wheel, F jumps across
 ## (the action_hijack flag, hijack.gd): the hero lets go of the wheel, climbs out onto the roof,
 ## leaps onto the other car and drags its driver out through the window, its own car rolling on
-## with nobody at the wheel.
+## with nobody at the wheel. After dark (the night_driving flag) the car the hero drives always
+## throws its own headlight beam (a bicycle a small dim lamp at its handlebar), and H at the
+## wheel sounds the horn (a bicycle's bell) on the bus, which the street hears through its own
+## horn source.
 
 const WS := preload("res://scripts/fp/world_scale.gd")
 const MODEL := preload("res://scripts/fp/drive/drive_model.gd")
@@ -22,6 +28,7 @@ const BODY := preload("res://scripts/fp/drive/car_body.gd")
 const ENTRY := preload("res://scripts/fp/drive/car_entry.gd")
 const HIJACK := preload("res://scripts/fp/drive/hijack.gd")
 const SEAT := preload("res://scripts/fp/drive/seat_pose.gd")
+const ARM := preload("res://scripts/fp/drive/backhoe.gd")
 
 ## Reach from the hero to a car's body for the get-in prompt.
 const ENTER_REACH := 2.0 * WS.M
@@ -53,9 +60,12 @@ const SETTLE := 0.3
 const PROMPT_TICK := 0.15
 ## car_impact goes out at most this often (s), for the hardest hit.
 const IMPACT_GAP := 0.25
+## The horn (a bicycle's bell) sounds at most this often (s).
+const HORN_GAP := 0.75
 ## How far the horn carries into the street (horn_sounded, the horn_street flag), and the hold
 ## that turns a press long.
 const HORN_STREET_R := 35.0 * WS.M
+const HORN_LONG_S := 0.6
 ## Stopped cars this close to the hero block it on foot (as FpPlayer polls them).
 const BLOCKER_REACH := 2.0 * WS.M
 ## The photo shot's car is the nearest one to get into this close to the spawn point, picked
@@ -78,6 +88,8 @@ var active: bool = false
 var car_id: int = -1
 var model := MODEL.new()
 var body := BODY.new()
+## True while the hero is on a bicycle (no door to open: on and off it at once).
+var bike: bool = false
 ## "chase" or "driver".
 var view: String = "chase"
 var hud: HUD
@@ -96,6 +108,11 @@ var _prev_mode: String = "first"
 var _target: Dictionary = {}
 var _t: float = 0.0
 var _impact_t: float = 0.0
+## Seconds until the horn (a bicycle's bell) can sound again (the night_driving flag).
+var _horn_t: float = 0.0
+## The horn press being held down (the horn_street flag), or -1 with none.
+var _horn_hold: float = -1.0
+var _horn_long_done := false
 ## The walk to the door and the climb in, or the climb out (car_entry.gd).
 var entry := ENTRY.new()
 ## Seconds spent braking to a stop before the climb out, or -1.
@@ -110,6 +127,8 @@ var hijack := HIJACK.new()
 var _across: Dictionary = {}
 ## The hero's seated pose against the cabin (seat_pose.gd).
 var pose := SEAT.new()
+## The backhoe's arm and bucket rig (backhoe.gd, the backhoe_arm flag).
+var arm := ARM.new()
 
 
 func feature_id() -> String:
@@ -126,6 +145,7 @@ func setup(p_ctx: FpContext) -> void:
 
 func teardown() -> void:
 	exit(true)
+	arm.clear()
 	if hud != null and is_instance_valid(hud):
 		hud.queue_free()
 	hud = null
@@ -133,10 +153,17 @@ func teardown() -> void:
 
 func on_world_rebuilt() -> void:
 	exit(true)
+	arm.clear()
 
 
-func from_dict(_d: Dictionary) -> void:
+## Save: the backhoe rigs the hero has posed and the pile it dug, put back on the load.
+func to_dict() -> Dictionary:
+	return arm.save_dict(_traffic())
+
+
+func from_dict(d: Dictionary) -> void:
 	exit(true)
+	arm.from_dict(d.get("backhoe", {}))
 
 
 func self_test() -> Dictionary:
@@ -174,14 +201,17 @@ func enter() -> bool:
 ## Gets into the nearest car in reach the long way (car_doors): the hero walks round to its
 ## driver's door, opens it, climbs in and shuts it, then drives (climb_step runs it); someone at
 ## the wheel (carjack) is dragged out once the door is open, the car waiting till then. At once
-## (enter) without the flag, or when the door cannot open (a model without one, the stand-in
-## figure, no room beside it or no clear way round). Returns true when it started.
+## (enter) without the flag, for a bicycle (there is no door: the hero gets on), or when the door
+## cannot open (a model without one, the stand-in figure, no room beside it or no clear way round).
+## Returns true when it started.
 func board() -> bool:
 	if not FeatureFlags.enabled("car_doors"):
 		return enter()
 	var t := enter_target()
 	if bool(t.get("jack", false)):
 		return _jack_in(int(t["id"]))
+	if not t.is_empty() and bool(_traffic().call("is_bicycle", int(t["id"]))):
+		return enter()
 	var info := _claim()
 	if info.is_empty():
 		return false
@@ -191,12 +221,12 @@ func board() -> bool:
 
 
 ## Gets out the long way (car_doors): the car brakes to a stop, the door opens and the hero
-## climbs out and shuts it (climb_step runs it). At once (exit) without the flag. False when the
-## car is too fast (it says so).
+## climbs out and shuts it (climb_step runs it). At once (exit) without the flag, and off a
+## bicycle (there is no door to open). False when the car is too fast (it says so).
 func leave() -> bool:
 	if not active or _climbing():
 		return false
-	if not FeatureFlags.enabled("car_doors"):
+	if not FeatureFlags.enabled("car_doors") or bike:
 		return exit()
 	if absf(model.speed()) > EXIT_SPEED:
 		_toast("Slow down to get out")
@@ -285,10 +315,14 @@ func _adopt(info: Dictionary) -> void:
 	var traffic := _traffic()
 	if traffic != null and traffic.has_method("drive_profile"):
 		_profile = traffic.call("drive_profile", car_id)
+	bike = traffic != null and bool(traffic.call("is_bicycle", car_id))
 	model.reset(float(info["yaw"]), _dims.z, _profile)
-	body.setup(_dims.x, _dims.z, _dims.y)
+	body.setup(_dims.x, _dims.z, _dims.y, float(_profile.get("mass", 1.0)))
 	_seat = null
 	pose.reset()
+	arm.reset()
+	_horn_t = 0.0
+	_horn_hold = -1.0
 	_hero_off = Vector3.ZERO
 	_cam_yaw = model.yaw
 	_orbit = 0.0
@@ -309,10 +343,21 @@ func _climb_in(info: Dictionary, id: int = -1) -> bool:
 	# The car to get into is no obstacle any more; the others near the hero still are.
 	_block_others(id)
 	var boxes: Array = traffic.call("blockers_near", _pos, _dims.z + ENTRY.ROUTE_REACH, id)
+	entry.clearance = _door_clearance(id)
 	if not entry.begin_in(ctx, info, traffic.call("door_info", id), boxes, id >= 0):
 		return false
 	ctx.player.set_camera_mode("third", true)
 	return true
+
+
+## The door of car id (the driven car's when -1) swings only as far as the people round it let
+## it (traffic's door_clear_of_people), so it comes to rest against someone in its way.
+func _door_clearance(id: int) -> Callable:
+	var traffic := _traffic()
+	if traffic == null or not traffic.has_method("door_clear_of_people"):
+		return Callable()
+	return func(from: float, to: float) -> float:
+		return float(traffic.call("door_clear_of_people", id, to, from))
 
 
 ## Starts taking car id from its driver: it waits while the hero walks round to its door and opens
@@ -377,6 +422,8 @@ func _take_wheel() -> void:
 	p.set_camera_mode("third", false)
 	_ride()
 	_sit(true)
+	if FeatureFlags.enabled("backhoe_arm") and arm.at_wheel(_traffic(), car_id):
+		_toast("Backhoe: Y U raise and lower the arm, I O curl and tip the bucket")
 
 
 ## Brakes to a stop for the climb out; stopped, the door opens (or, with no room for the door or
@@ -396,6 +443,7 @@ func _stop_for_exit(dt: float) -> void:
 		hud.set_speed(false, 0.0)
 	var boxes: Array = traffic.call("blockers_near", _pos, _dims.z + ENTRY.ROUTE_REACH)
 	entry.seat_drop = pose.sink
+	entry.clearance = _door_clearance(-1)
 	if not entry.begin_out(ctx, _car_info(), traffic.call("door_info", -1), boxes):
 		exit()
 
@@ -422,12 +470,15 @@ func _on_foot(spot: Vector3, blend: float) -> void:
 	_jack_id = -1
 	active = false
 	car_id = -1
+	bike = false
 	_stop_t = -1.0
 	_limbs_off()
 	pose.reset()
+	arm.reset()
 	if hud != null:
 		hud.set_prompt("")
 		hud.set_speed(false, 0.0)
+		hud.set_rig(false)
 	var p := ctx.player
 	if p != null and is_instance_valid(p):
 		_sit(false)
@@ -475,6 +526,7 @@ func _climbing() -> bool:
 func _process(delta: float) -> void:
 	if ctx == null or ctx.player == null:
 		return
+	arm.apply_saved(_traffic())
 	var dt := minf(delta, 0.1)
 	if hijack.running():
 		if not ctx.is_modal():
@@ -509,6 +561,7 @@ func _process(delta: float) -> void:
 	if hud != null:
 		hud.set_prompt(_drive_prompt(free, delta))
 		hud.set_speed(free, model.speed())
+		hud.set_rig(free and FeatureFlags.enabled("backhoe_arm") and arm.rigged())
 
 
 ## The get-in prompt, a few times a second while on foot.
@@ -546,7 +599,16 @@ func drive_step(throttle: float, brake: float, steer: float, hand: float, dt: fl
 	_pos = to
 	_traffic().call("drive_car", _pos, model.yaw, model.speed(), model.accel)
 	_ride(dt)
+	if FeatureFlags.enabled("backhoe_arm"):
+		arm.step(ctx, _traffic(), car_id, _pos, model.heading(), dt)
 	_impact_t -= dt
+	_horn_t -= dt
+	# A press the hero leans on turns long once held past HORN_LONG_S.
+	if _horn_hold >= 0.0:
+		_horn_hold = _horn_hold + dt if Input.is_action_pressed("vehicle_horn") else -1.0
+		if _horn_hold >= HORN_LONG_S and not _horn_long_done:
+			_horn_long_done = true
+			_horn_street(true)
 	_report()
 
 
@@ -566,6 +628,30 @@ func _report() -> void:
 	_impact_t = IMPACT_GAP
 	var p: Vector2 = best[0]
 	ctx.bus.car_impact.emit(Vector3(p.x, _pos.y + _dims.y * 0.5, p.y), float(best[1]), str(best[2]))
+
+
+## The horn, or a bicycle's bell (the night_driving flag): one press sounds it at the car on
+## hero_action, at most once per HORN_GAP seconds, and carries through the street (horn_sounded).
+func _horn() -> void:
+	if _horn_t > 0.0:
+		return
+	_horn_t = HORN_GAP
+	_horn_hold = 0.0
+	_horn_long_done = false
+	if ctx.bus != null:
+		ctx.bus.hero_action.emit(
+			"bell" if bike else "horn", _pos + Vector3(0.0, _dims.y * 0.5, 0.0)
+		)
+		_horn_street(false)
+
+
+## Puts the horn on the bus for the street round it (the horn_street flag): a tap short, a press
+## leaned on long; a bicycle's bell carries nothing.
+func _horn_street(long: bool) -> void:
+	if bike or not FeatureFlags.enabled("horn_street") or ctx.bus == null:
+		return
+	var at := _pos + Vector3(0.0, _dims.y * 0.5, 0.0)
+	ctx.bus.horn_sounded.emit(Vector2(at.x, at.z), HORN_STREET_R, long)
 
 
 ## The hero rides along, body turned to the car's heading, placed so that the seated hips are on
@@ -657,6 +743,7 @@ func jump_across() -> bool:
 	if hud != null:
 		hud.set_prompt("")
 		hud.set_speed(false, 0.0)
+		hud.set_rig(false)
 	return true
 
 
@@ -740,21 +827,17 @@ func _input(event: InputEvent) -> void:
 	var handled := false
 	var driving := active and not _climbing()
 	if event.is_action_pressed("vehicle_enter"):
-		# Driving or climbing, the key is always taken (a refusal toasts why); on foot only with a
-		# car near. On the way to the door it turns back.
-		if _climbing():
-			if entry.kind == "in" and not entry.aboard():
-				exit()
-			handled = true
-		elif active:
-			if not jump_across():
-				leave()
-			handled = true
-		else:
-			handled = board()
+		handled = _enter_key()
 	elif driving and event.is_action_pressed("view_toggle"):
 		view = "driver" if view == "chase" else "chase"
 		handled = true
+	elif driving and event.is_action_pressed("vehicle_horn"):
+		# The horn, or a bicycle's bell (the night_driving flag). The press is only taken with
+		# the flag on, so H keeps its other meaning with it off (the actions feature leaves it
+		# be while driving either way).
+		if FeatureFlags.enabled("night_driving"):
+			_horn()
+			handled = true
 	elif (
 		driving and event is InputEventMouseMotion and Input.mouse_mode == Input.MOUSE_MODE_CAPTURED
 	):
@@ -764,6 +847,21 @@ func _input(event: InputEvent) -> void:
 		handled = true
 	if handled and is_inside_tree():
 		get_viewport().set_input_as_handled()
+
+
+## The vehicle_enter key (F, pad Y): driving or climbing, the key is always taken (a refusal
+## toasts why); on foot only with a car near. On the way to the door it turns back. Returns
+## whether the drive feature took it.
+func _enter_key() -> bool:
+	if _climbing():
+		if entry.kind == "in" and not entry.aboard():
+			exit()
+		return true
+	if active:
+		if not jump_across():
+			leave()
+		return true
+	return board()
 
 
 func _orbit_by(d_yaw: float, d_pitch: float) -> void:

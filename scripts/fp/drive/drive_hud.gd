@@ -5,11 +5,14 @@ extends Control
 const S := preload("res://scripts/fp/ui/hud_style.gd")
 const WS := preload("res://scripts/fp/world_scale.gd")
 const CHIP_FROM_BOTTOM := 190.0
+## The arm-key row sits this far above the chip's line (the chip's own height and a gap).
+const RIG_FROM_BOTTOM := 38.0
 const SPEEDO_FROM_BOTTOM := 20.0
 const FADE := 0.12
 
 var _chip: PanelContainer
 var _chip_label: Label
+var _rig: PanelContainer
 var _speedo: PanelContainer
 var _speed: Label
 var _gear: Label
@@ -37,7 +40,35 @@ func setup() -> void:
 	h.add_child(_chip_label)
 	_chip.visible = false
 	add_child(_chip)
+	_build_rig()
 	_build_speedo()
+
+
+## The backhoe's arm keys, a quiet row above the chip while the hero is at its wheel.
+func _build_rig() -> void:
+	_rig = PanelContainer.new()
+	_rig.name = "RigKeys"
+	_rig.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_rig.add_theme_stylebox_override("panel", S.box(Color(0.04, 0.05, 0.08, 0.6), S.RADIUS, 10, 6))
+	var h := HBoxContainer.new()
+	h.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	h.add_theme_constant_override("separation", 9)
+	_rig.add_child(h)
+	for part: Array in [["Y", "U", "arm"], ["I", "O", "bucket"]]:
+		if h.get_child_count() > 0:
+			var gap := Control.new()
+			gap.mouse_filter = Control.MOUSE_FILTER_IGNORE
+			gap.custom_minimum_size = Vector2(12.0, 0.0)
+			h.add_child(gap)
+		for k: String in [part[0], part[1]]:
+			var cap := S.key_cap(k, 13)
+			cap.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+			h.add_child(cap)
+		var lab := S.label(str(part[2]), 16, S.TEXT, S.bold(), 2)
+		lab.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+		h.add_child(lab)
+	_rig.visible = false
+	add_child(_rig)
 
 
 func _build_speedo() -> void:
@@ -80,6 +111,16 @@ func prompt_text() -> String:
 	return _chip_label.text if _want else ""
 
 
+## The backhoe's arm-key row, above the chip while the hero is at its wheel ("" hides it).
+func set_rig(show: bool) -> void:
+	_rig.visible = show
+
+
+## True while the arm-key row shows.
+func rig_shown() -> bool:
+	return _rig.visible
+
+
 ## Speedometer for a signed speed in u/s (hidden when show is false).
 func set_speed(show: bool, v: float) -> void:
 	_speedo.visible = show
@@ -104,6 +145,13 @@ func _process(delta: float) -> void:
 		var sz := _chip.get_combined_minimum_size()
 		_chip.size = sz
 		_chip.position = (Vector2(view.x * 0.5, view.y - CHIP_FROM_BOTTOM) - sz * 0.5).round()
+	if _rig.visible:
+		var view := size if size.x > 0.0 else get_viewport_rect().size
+		var sz := _rig.get_combined_minimum_size()
+		_rig.size = sz
+		_rig.position = (
+			(Vector2(view.x * 0.5, view.y - CHIP_FROM_BOTTOM - RIG_FROM_BOTTOM) - sz * 0.5).round()
+		)
 	if _speedo.visible:
 		var view := size if size.x > 0.0 else get_viewport_rect().size
 		var sz := _speedo.get_combined_minimum_size()

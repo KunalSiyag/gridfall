@@ -21,7 +21,7 @@ const APART := 1.2
 
 var fails: Array[String] = []
 var ctx: FpContext
-var tr: FpFeature
+var traffic: FpFeature
 var drive: FpFeature
 var hijack: HIJACK
 ## A straight lane with open road along its left (the oncoming side) where the player's car runs.
@@ -48,13 +48,13 @@ func _init() -> void:
 func _setup() -> bool:
 	ctx = K.make_ctx(get_root(), {"view": true, "grow": true, "camera_mode": "first"})
 	ctx.player.set_process(false)
-	tr = K.make_feature(ctx, "traffic")
+	traffic = K.make_feature(ctx, "traffic")
 	drive = K.make_feature(ctx, "drive")
-	if tr == null or drive == null:
+	if traffic == null or drive == null:
 		K.check(fails, false, "the traffic and drive features are registered")
 		return false
-	tr.set("auto_step", false)
-	tr.set("ambient_enabled", false)
+	traffic.set("auto_step", false)
+	traffic.set("ambient_enabled", false)
 	drive.set_process(false)
 	hijack = drive.get("hijack")
 	for f: String in ["car_doors", "carjack", "action_hijack"]:
@@ -66,13 +66,13 @@ func _setup() -> bool:
 
 ## The door model and the lane; false (a failed fixture) without them.
 func _fixtures() -> bool:
-	var render: RefCounted = tr.get("render")
-	for m: int in tr.get("_car_models"):
+	var render: RefCounted = traffic.get("render")
+	for m: int in traffic.get("_car_models"):
 		var mo: RefCounted = render.call("model", m)
 		if DOORS.of(str(mo.get("key")), mo.get("scene")).ok:
 			model_id = m
 			break
-	var lg: LG = tr.get("lanes")
+	var lg: LG = traffic.get("lanes")
 	var ids: Array = lg.tiles.keys()
 	ids.sort()
 	for i: int in ids:
@@ -87,7 +87,7 @@ func _fixtures() -> bool:
 ## True when the road off the left of l (where the player's car runs) is open ground all along it
 ## and on as far again past its end (where the car left rolls on).
 func _open_left(l: LG.Lane) -> bool:
-	var dims: Vector3 = tr.call("dims", maxi(model_id, 0))
+	var dims: Vector3 = traffic.call("dims", maxi(model_id, 0))
 	var off := dims.x + APART * WS.M
 	var from: Vector2 = l.pts[0]
 	var h := (l.pts[l.pts.size() - 1] - from).normalized()
@@ -122,9 +122,9 @@ func _check_hijack() -> void:
 	hits.clear()
 	actions.clear()
 	drive.call("_input", K.action_event("vehicle_enter"))
-	var shoves: RefCounted = tr.get("shoves")
+	var shoves: RefCounted = traffic.get("shoves")
 	var left := (
-		int(tr.call("driven_id")) == -1 and not a.driven and bool(shoves.call("is_shoved", a))
+		int(traffic.call("driven_id")) == -1 and not a.driven and bool(shoves.call("is_shoved", a))
 	)
 	K.check(fails, hijack.running() and left, "F lets go of the wheel: the hero sets off")
 	var r := _run_hijack(b)
@@ -158,7 +158,7 @@ func _check_hijack() -> void:
 ## The car left (at a_v as the hijack ended) slows by about 0.6 m/s^2 plus 0.12 per m/s, as a
 ## coasting car does, and stands still where it stops.
 func _check_coast(a: VH.Car, a_v: float) -> void:
-	var shoves: RefCounted = tr.get("shoves")
+	var shoves: RefCounted = traffic.get("shoves")
 	var want := a_v
 	for _k in range(60):
 		want -= (0.6 * WS.M + 0.12 * want) * DT
@@ -215,7 +215,7 @@ func _check_gone() -> void:
 
 
 func _vh() -> VH:
-	return tr.get("vehicles")
+	return traffic.get("vehicles")
 
 
 ## The player at the wheel of a car level with an ambient car moving along the lane, APART m off its
@@ -224,7 +224,7 @@ func _side_by_side() -> VH.Car:
 	drive.call("exit", true)
 	for o: VH.Car in _vh().cars.duplicate():
 		_vh().remove(o)
-	var dims: Vector3 = tr.call("dims", model_id)
+	var dims: Vector3 = traffic.call("dims", model_id)
 	var b := _vh().make("car", "ambient", dims)
 	b.model = model_id
 	_vh().place(b, lane, lane.length * 0.3)
@@ -235,18 +235,18 @@ func _side_by_side() -> VH.Car:
 	var xf := Transform3D(Basis(Vector3.UP, b.yaw), b.pos)
 	a.pos = xf * Vector3(dims.x + APART * WS.M, 0.0, 0.0)
 	a.yaw = b.yaw
-	var info: Dictionary = tr.call("claim_car", a.id)
+	var info: Dictionary = traffic.call("claim_car", a.id)
 	drive.call("_adopt", info)
 	drive.call("_take_wheel")
 	var model: RefCounted = drive.get("model")
 	model.set("vel", model.call("heading") * SPEED * WS.M)
 	drive.call("drive_step", 0.0, 0.0, 0.0, 0.0, DT)
-	tr.call("sync_visuals", DT)
+	traffic.call("sync_visuals", DT)
 	return b
 
 
 func _driven() -> VH.Car:
-	return _vh().by_id.get(int(tr.call("driven_id")))
+	return _vh().by_id.get(int(traffic.call("driven_id")))
 
 
 ## Turns the player's car by dy where it stands.
@@ -285,7 +285,7 @@ func _run_hijack(b: VH.Car) -> Dictionary:
 		if hijack.running() and ctx.player.grounded == hijack.airborne():
 			out["air"] = false
 	var left: VH.Car = _vh().by_id.get(a)
-	var shoves: RefCounted = tr.get("shoves")
+	var shoves: RefCounted = traffic.get("shoves")
 	out["a_v"] = (shoves.call("body_vel", left) as Vector2).length() if left != null else 0.0
 	return out
 
@@ -317,4 +317,4 @@ func _step() -> void:
 
 
 func _tick() -> void:
-	tr.call("step", DT)
+	traffic.call("step", DT)

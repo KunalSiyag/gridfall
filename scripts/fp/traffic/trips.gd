@@ -988,7 +988,10 @@ func restore_parked(d: Dictionary) -> void:
 			c.model = m
 			c.driver_id = rid
 			cars[rid] = c
-		if lg.slot_valid(i, k) and (lg.slot_free(i, k) or lg.slot_owner(i, k) == "car:%d" % c.id):
+		# The saved car's own slot back: the decor car that took it gives way (owned cars keep it).
+		if lg.slot_valid(i, k) and (
+			lg.slot_free(i, k) or lg.slot_owner(i, k) == "car:%d" % c.id or _evict_decor(i, k)
+		):
 			vh.park_at(c, i, k)
 		else:
 			_park_near(c, -1, i)

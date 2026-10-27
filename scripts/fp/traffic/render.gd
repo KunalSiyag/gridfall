@@ -6,7 +6,11 @@ extends RefCounted
 ## rebuilt only when the parked set changes or the camera moves. Brake lights, siren flashes and
 ## wheel spin (and a bicycle's cranks) on full models, and their indicators blink
 ## (indicators.gd); after dark their head and tail lamps light up, the nearest moving vehicles
-## throw headlight beams, and the head and tail lamps of the merged ones glow. Responding
+## throw headlight beams, and the head and tail lamps of the merged ones glow — bicycles too,
+## whose small lenses light on the full model and whose lod1 carries them as emissive materials,
+## so a cyclist reads at night at any distance. The car the hero
+## drives carries its own dedicated beam after dark (the night_driving flag), a bicycle a small
+## dim lamp at its handlebar instead. Responding
 ## crews near the camera wash their surroundings in flashing siren light. A car with its driver's
 ## door open (the player's) swings it out on a hinge cut from its body (car_doors.gd).
 ## People (the legacy static bodies, until HC's rigged ones): every distance draws the merged body
@@ -56,6 +60,13 @@ const BEAM_ENERGY := 2.4
 ## front of a waiting car is lit, not blown out, while the road 10-30 m ahead still gets a pool.
 const BEAM_DECAY := 0.5
 const BEAM_HEIGHT := 0.65 * WS.M
+## The hero's own lamp (the night_driving flag): a dedicated spot for the car they drive, so it
+## always lights the road ahead after dark however full the shared pool is; a bicycle carries a
+## small dim lamp at its handlebar instead (its models have no headlamps of their own).
+const HERO_BIKE_RANGE := 12.0 * WS.M
+const HERO_BIKE_ANGLE := 18.0
+const HERO_BIKE_ENERGY := 1.2
+const HERO_BIKE_HEIGHT := 1.05 * WS.M
 ## Siren light washes: flashing omni lights on responding crews near the camera.
 const WASHES := 3
 const WASH_DIST := 3.0
@@ -181,6 +192,12 @@ var _beam_cands: Array = []
 var _wash_cands: Array = []
 var beams_on: int = 0
 var washes_on: int = 0
+## The hero's own lamp (the night_driving flag, _place_hero): the spot itself, and whether it is
+## lit this frame.
+var hero_lamp: SpotLight3D = null
+var hero_beam_on: bool = false
+## This frame's hero lamp request from draw_car: [transform, length, bicycle].
+var _hero_cand: Array = []
 var _siren_mats: Dictionary = {}
 var _siren_dark: StandardMaterial3D
 var _made_this_frame: int = 0
@@ -418,8 +435,20 @@ func begin_static() -> void:
 		(m.lists[L_SFAR] as Array).clear()
 
 
-## blink: the side its indicators signal (indicators.gd side()).
-func draw_car(c: VH.Car, xf: Transform3D, d: float, vis_end: float, brake: bool, siren: String, spin: float, blink: int = 0) -> void:
+## blink: the side its indicators signal (indicators.gd side()); hero: the car the hero drives
+## (the night_driving flag), which takes the dedicated lamp in _place_hero after dark instead of
+## competing for the pool.
+func draw_car(
+	c: VH.Car,
+	xf: Transform3D,
+	d: float,
+	vis_end: float,
+	brake: bool,
+	siren: String,
+	spin: float,
+	blink: int = 0,
+	hero: bool = false
+) -> void:
 	c.node = _place(c.model, c.node, c.lod, xf, d, vis_end, false)
 	c.lod = _last_lod
 	var lit := _glow > LAMPS_ON
@@ -431,7 +460,10 @@ func draw_car(c: VH.Car, xf: Transform3D, d: float, vis_end: float, brake: bool,
 		_extras(c.node, model(c.model), brake, lit, siren, spin)
 		_blink(c.node, blink)
 	if c.lod >= 0:
-		if lit and d < BEAM_DIST and c.kind != "bike":
+		if hero:
+			if lit:
+				_hero_cand = [xf, c.length, c.kind == "bike"]
+		elif lit and d < BEAM_DIST and c.kind != "bike":
 			_beam_cands.append([d, xf, c.length])
 		if _siren_mats.has(siren) and d < WASH_DIST:
 			_wash_cands.append([d, xf, siren, c.height])
@@ -507,10 +539,28 @@ func _release_node(m: Model, node: Node3D) -> void:
 	if node == null:
 		return
 	node.visible = false
+	_fold_rig(node)
 	if m != null:
 		m.pool.append(node)
 	else:
 		node.queue_free()
+
+
+## A node back in the pool forgets the pose a rigged machine was left with (drive's backhoe arm
+## poses the Arm_* nodes and caches its rig on the car's node): the next car of its model starts
+## folded, put back from the rest the rig cached.
+func _fold_rig(node: Node3D) -> void:
+	var rig: Variant = node.get_meta("backhoe_arm_rig", null)
+	if typeof(rig) != TYPE_DICTIONARY:
+		return
+	var b: Node3D = (rig as Dictionary).get("boom")
+	var k: Node3D = (rig as Dictionary).get("bucket")
+	if is_instance_valid(b) and is_instance_valid(k):
+		b.transform = (rig as Dictionary)["boom_rest"]
+		k.global_transform = b.global_transform * (rig as Dictionary)["bucket_in_boom"]
+		b.remove_meta("arm_boom")
+		k.remove_meta("arm_bucket")
+	node.remove_meta("backhoe_arm_rig")
 
 
 ## Returns a vehicle's full node to its pool.
@@ -673,7 +723,48 @@ func _place_beams() -> void:
 	for k in range(n, _beams.size()):
 		_beams[k].visible = false
 	beams_on = n
+	_place_hero()
 	_beam_cands.clear()
+
+
+## The hero's own lamp (the night_driving flag): the car they drive always lights the road ahead
+## after dark from this dedicated spot, however full the shared pool is; a bicycle carries a
+## small dim lamp at its handlebar instead (it has no headlamps of its own).
+func _place_hero() -> void:
+	hero_beam_on = false
+	if hero_lamp == null:
+		hero_lamp = SpotLight3D.new()
+		hero_lamp.name = "HeroBeam"
+		hero_lamp.light_color = Color(1.0, 0.93, 0.8)
+		hero_lamp.spot_angle_attenuation = 0.6
+		hero_lamp.spot_attenuation = BEAM_DECAY
+		hero_lamp.light_specular = 0.6
+		hero_lamp.shadow_enabled = false
+		hero_lamp.visible = false
+		root.add_child(hero_lamp)
+	var on := (
+		not _hero_cand.is_empty()
+		and _glow > LAMPS_ON
+		and root != null
+		and root.is_inside_tree()
+	)
+	if on:
+		var xf: Transform3D = _hero_cand[0]
+		var bike := bool(_hero_cand[2])
+		var fwd := xf.basis.z.normalized()
+		var p := xf.origin + fwd * (float(_hero_cand[1]) * 0.5)
+		hero_lamp.spot_range = HERO_BIKE_RANGE if bike else BEAM_RANGE
+		hero_lamp.spot_angle = HERO_BIKE_ANGLE if bike else BEAM_ANGLE
+		hero_lamp.light_energy = (HERO_BIKE_ENERGY if bike else BEAM_ENERGY) * clampf(
+			(_glow - LAMPS_ON) / 0.3, 0.0, 1.0
+		)
+		p.y += HERO_BIKE_HEIGHT if bike else BEAM_HEIGHT
+		hero_lamp.transform = Transform3D(
+			Basis.looking_at((fwd + Vector3(0, -0.09, 0)).normalized(), Vector3.UP), p
+		)
+	hero_lamp.visible = on
+	hero_beam_on = on
+	_hero_cand.clear()
 
 
 func _beam(k: int) -> SpotLight3D:
@@ -794,5 +885,10 @@ func clear() -> void:
 			l.queue_free()
 	_beams.clear()
 	_washes.clear()
+	if hero_lamp != null and is_instance_valid(hero_lamp):
+		hero_lamp.queue_free()
+	hero_lamp = null
+	hero_beam_on = false
+	_hero_cand.clear()
 	_beam_cands.clear()
 	_wash_cands.clear()

@@ -69,6 +69,7 @@ func _init() -> void:
 	_check_parked_shove()
 	_check_lights()
 	_check_night_lamps()
+	_check_bike_lamps()
 	_check_indicators()
 	_check_tee()
 	_check_player_yield()
@@ -80,6 +81,8 @@ func _init() -> void:
 	_check_conversation()
 	_check_people_e2()
 	_check_save()
+	_check_save_reclaim()
+	_check_save_owned()
 	_check_buses()
 	_check_fleets()
 	_check_people_async()
@@ -1392,6 +1395,78 @@ func _check_night_lamps() -> void:
 	)
 	_check_wet_paint(node)
 	_vh().remove(car)
+	ctx.player.teleport(saved, 0.0)
+
+
+## A bicycle's own lamps after dark: the far LOD's merged mesh carries lamp-flagged vertices
+## (vertex alpha under 0.75, from the lod1's emissive Light_Head / Light_Tail lens materials), so
+## a cyclist glows at distance like any car, and the full model's small lenses light through the
+## same per-instance overrides as a car's (no headlight beam: a bicycle never takes one). By day
+## the imported lamps are back.
+func _check_bike_lamps() -> void:
+	_quiet()
+	var m: int = f.call("bike_model")
+	K.check(fails, m >= 0, "bike lamps: the bicycle model is loaded")
+	if m < 0:
+		return
+	var rd = f.get("render")
+	var lod_mesh: Mesh = null
+	for mod in rd.get("models"):
+		if str(mod.get("key")).begins_with(AP.BICYCLE):
+			lod_mesh = mod.get("lod_mesh")
+			break
+	var flagged := 0
+	if lod_mesh != null and lod_mesh.get_surface_count() > 0:
+		var arrays: Array = lod_mesh.surface_get_arrays(0)
+		var raw: Variant = arrays[Mesh.ARRAY_COLOR]
+		for col: Color in raw if raw is PackedColorArray else PackedColorArray():
+			if col.a < 0.75:
+				flagged += 1
+	K.check(
+		fails,
+		flagged >= 16,
+		"bike lamps: the far LOD's lamp vertices are flagged to glow (%d)" % flagged
+	)
+	var run: Array = _straight_run()
+	var tiles: Array[int] = run[0]
+	var e: int = run[1]
+	if tiles.size() < 3:
+		K.check(fails, false, "fixture: a straight run for the bike lamps")
+		return
+	var lanes := _lg().lanes_along(tiles, LG.OPP[e], e)
+	var bike := _vh().make("bike", "test", f.call("dims", m))
+	bike.model = m
+	_vh().place(bike, lanes[1], 0.5)
+	bike.v = 0.0
+	var dir := Vector3(LG.DIRS[e].x, 0, LG.DIRS[e].y)
+	var right := Vector3(-dir.z, 0, dir.x)
+	var saved := ctx.player.position
+	ctx.player.teleport(bike.pos + dir * 0.6 + right * 0.23, 0.0)
+	rd.set_glow(1.0)
+	f.sync_visuals(DT)
+	var node: Node3D = bike.node
+	var lit := false
+	if node != null and node.has_meta("head") and node.has_meta("tail"):
+		var head: Array = node.get_meta("head")
+		var tail: Array = node.get_meta("tail")
+		lit = (
+			bike.lod == 0
+			and (head[0] as MeshInstance3D).get_surface_override_material(int(head[1])) != null
+			and (tail[0] as MeshInstance3D).get_surface_override_material(int(tail[1])) != null
+		)
+	K.check(
+		fails,
+		lit and int(rd.get("beams_on")) == 0,
+		"bike lamps: a near bicycle lights its own small lamps after dark, no beam"
+	)
+	rd.set_glow(0.0)
+	f.sync_visuals(DT)
+	var day_ok := node != null and bike.node == node
+	if day_ok and node.has_meta("head"):
+		var head: Array = node.get_meta("head")
+		day_ok = (head[0] as MeshInstance3D).get_surface_override_material(int(head[1])) == null
+	K.check(fails, day_ok, "bike lamps: by day the imported lamps are back")
+	_vh().remove(bike)
 	ctx.player.teleport(saved, 0.0)
 
 
@@ -2787,6 +2862,103 @@ func _check_save() -> void:
 		cars >= 2 and peds >= 2,
 		"save: right after from_dict there are cars (%d) and pedestrians (%d)" % [cars, peds]
 	)
+
+
+## A fresh world, as a load rebuilds it, with the saved slot taken by a decor car (the audit
+## condition): [tile, slot, the decor car, the whole save], or [] when the fixture fails.
+func _reclaim_fixture() -> Array:
+	var trips: TRIPS = f.get("trips")
+	for tr: TRIPS.Trip in trips.trips.values():
+		trips.complete_now(tr)
+	var d: Dictionary = f.to_dict()
+	var want: Variant = d.get("parked", {}).get(fixture_rid, null)
+	if typeof(want) != TYPE_ARRAY or (want as Array).size() < 2:
+		K.check(fails, false, "reclaim: fixture: the resident's car is parked")
+		return []
+	var i := int(want[0])
+	var k := int(want[1])
+	f.on_world_rebuilt()
+	if not _lg().slot_valid(i, k):
+		K.check(fails, false, "reclaim: fixture: the saved slot still stands")
+		return []
+	var decor: VH.Car = null
+	for x: VH.Car in _vh().cars:
+		if x.parked and x.slot_tile == i and x.slot_k == k:
+			decor = x
+			break
+	if decor == null:
+		var m: int = f.call("car_model_for", fixture_rid)
+		decor = _vh().make("car", "decor", f.call("dims", m))
+		decor.model = m
+		_vh().park_at(decor, i, k)
+	K.check(
+		fails,
+		decor.parked and decor.role == "decor" and decor.slot_tile == i,
+		"reclaim: fixture: a decor car holds the saved slot"
+	)
+	return [i, k, decor, d]
+
+
+## The audit case: after a load the deterministic decor fill has taken the saved slot, and the
+## saved car takes its own slot back -- the decor car, nobody's, gives way out of sight.
+func _check_save_reclaim() -> void:
+	var fx := _reclaim_fixture()
+	if fx.is_empty():
+		return
+	var i: int = fx[0]
+	var k: int = fx[1]
+	f.from_dict({"parked": {fixture_rid: [i, k]}})
+	var c: VH.Car = (f.get("trips") as TRIPS).cars.get(fixture_rid, null)
+	K.check(
+		fails,
+		(
+			c != null
+			and c.parked
+			and c.slot_tile == i
+			and c.slot_k == k
+			and _lg().slot_owner(i, k) == "car:%d" % c.id
+		),
+		"reclaim: the saved car takes its slot back from the decor car"
+	)
+	K.check(fails, (fx[2] as VH.Car).dead, "reclaim: and the decor car gives way")
+
+
+## A slot held by a car with an owner keeps it: another resident's car stays put, and the saved
+## car parks nearby instead.
+func _check_save_owned() -> void:
+	var fx := _reclaim_fixture()
+	if fx.is_empty():
+		return
+	var i: int = fx[0]
+	var k: int = fx[1]
+	var trips: TRIPS = f.get("trips")
+	# The load fills the slot another way: another resident's car sits in it.
+	_vh().remove(fx[2])
+	var r2 := ""
+	for r: Dictionary in ctx.residents.people:
+		if str(r["id"]) != fixture_rid and not trips.cars.has(str(r["id"])):
+			r2 = str(r["id"])
+			break
+	K.check(fails, not r2.is_empty(), "reclaim: fixture: a second resident")
+	if r2.is_empty():
+		return
+	trips.restore_parked({r2: [i, k]})
+	var c2: VH.Car = trips.cars.get(r2, null)
+	f.from_dict({"parked": {fixture_rid: [i, k]}})
+	var c3: VH.Car = trips.cars.get(fixture_rid, null)
+	K.check(
+		fails,
+		c2 != null and c2.parked and c2.slot_tile == i and c2.slot_k == k,
+		"reclaim: another resident's car keeps the slot"
+	)
+	K.check(
+		fails,
+		c3 != null and c3.parked and c3.slot_tile >= 0 and (c3.slot_tile != i or c3.slot_k != k),
+		"reclaim: and the saved car parks nearby instead"
+	)
+	# Leave the world as _check_save left it: a fresh build with the whole save restored.
+	f.on_world_rebuilt()
+	f.from_dict(fx[3])
 
 
 ## Outside tests body scenes load in the background: a scene arrives within a few seconds and a

@@ -45,10 +45,26 @@ const LINE_RETRY := 10.0
 ## The player can take a parked car, their own, or a car in traffic (an ambient one, or with
 ## carjack a resident's) crawling below this speed.
 const CLAIM_SPEED := 0.5 * WS.M
+## A driver's door swinging past people (door_clear_of_people): the arc of the swing each body
+## blocks is found by DOOR_HALVINGS halvings of the angle off it, and the door stops DOOR_SLACK
+## short of touching them rather than pushing into them.
+const DOOR_HALVINGS := 24
+const DOOR_SLACK := 0.001 * WS.M
 ## The backhoe loader (the jcb flag): a work machine, not a highway one — it tops out around
 ## 22 km/h and gathers speed at half a car's rate (drive_model.gd, drive_profile).
 const JCB_TOP := 6.1 * WS.M
 const JCB_GAIN := 0.5
+## The town's working vehicles at the wheel (the heavy_motors flag), by fleet class: each drives
+## like itself — its own top speed (m/s), a share of a car's get-up-and-go, of its steering lock
+## and of its braking (drive_model.gd). Their mass is shoves.gd's by kind.
+const HEAVY_PROFILES := {
+	"garbage_truck": {"top": 19.4 * WS.M, "gain": 0.30, "steer": 0.55, "brake": 0.70},
+	"truck": {"top": 25.0 * WS.M, "gain": 0.45, "steer": 0.65, "brake": 0.75},
+	"bus": {"top": 21.7 * WS.M, "gain": 0.35, "steer": 0.60, "brake": 0.70},
+}
+## A bicycle at the wheel (the bike_ride flag): a hero pedals quicker than the town's cyclists
+## ride, turns far tighter than any car and pulls up short, and it weighs almost nothing.
+const BIKE_PROFILE := {"top": 7.0 * WS.M, "gain": 0.55, "steer": 1.45, "brake": 1.30}
 ## New construction sites whose backhoe is parked this many a step at most.
 const SITE_MACHINES_PER_STEP := 2
 ## A crew called with no station in town sets off from a road at most this many tiles away.
@@ -162,6 +178,7 @@ func setup(p_ctx: FpContext) -> void:
 		ctx.view.tile_cleared.connect(_on_tile_cleared)
 	if ctx.bus != null:
 		ctx.bus.conversation_changed.connect(_on_conversation)
+		ctx.bus.hero_action.connect(_on_hero_action)
 		ctx.bus.horn_sounded.connect(_on_horn)
 	if ctx.residents != null:
 		ctx.residents.trip_started.connect(_on_trip_started)
@@ -185,6 +202,8 @@ func teardown() -> void:
 		_attach(false)
 	if ctx.bus != null and ctx.bus.conversation_changed.is_connected(_on_conversation):
 		ctx.bus.conversation_changed.disconnect(_on_conversation)
+	if ctx.bus != null and ctx.bus.hero_action.is_connected(_on_hero_action):
+		ctx.bus.hero_action.disconnect(_on_hero_action)
 	if ctx.bus != null and ctx.bus.horn_sounded.is_connected(_on_horn):
 		ctx.bus.horn_sounded.disconnect(_on_horn)
 	if ctx.residents != null:
@@ -411,6 +430,14 @@ func _on_conversation(id: String, active: bool) -> void:
 		trips.hold(id, active)
 
 
+## The player's horn reaches the traffic round them (the horn_reach flag): a stopped car ahead of
+## the car they drive shakes off a hold or a knock and gets going. A bicycle's bell does not.
+func _on_hero_action(action: String, at: Vector3) -> void:
+	if action != "horn" or _driven == null or not FeatureFlags.enabled("horn_reach"):
+		return
+	vehicles.honk_nudge(at, Vector2(sin(_driven.yaw), cos(_driven.yaw)))
+
+
 func _on_vehicle_arrived(c: VH.Car) -> void:
 	if c.role == "resident":
 		trips.on_car_arrived(c)
@@ -614,6 +641,8 @@ func _draw_parked(cam: Vector3) -> void:
 
 
 func _draw_moving(cam: Vector3) -> void:
+	# The hero's own lamp after dark rides on a dedicated spot in render.gd, not the pool's.
+	var hero_own := FeatureFlags.enabled("night_driving")
 	for c: VH.Car in vehicles.cars:
 		if c.dead or c.parked:
 			continue
@@ -636,7 +665,8 @@ func _draw_moving(cam: Vector3) -> void:
 			brake,
 			siren,
 			c.wheel_spin,
-			IND.side(c)
+			IND.side(c),
+			c == _driven and hero_own
 		)
 
 
@@ -821,12 +851,33 @@ func jcb_model() -> int:
 
 
 ## The handling profile of car id (drive_model.gd reset): the backhoe tops out at JCB_TOP and
-## gathers speed at JCB_GAIN of a car's rate; a car is {}.
+## gathers speed at JCB_GAIN of a car's rate, a bicycle rides like itself (BIKE_PROFILE), and the
+## town's working vehicles drive like themselves (HEAVY_PROFILES, by their model's fleet class);
+## a car is {}. A special profile also carries the body's mass (the Car's, as the takeover
+## recorded it), for car_body.gd's impulse math.
 func drive_profile(id: int) -> Dictionary:
 	var c: VH.Car = vehicles.by_id.get(id) if _built else null
-	if c == null or c.model != jcb_model():
+	if c == null:
 		return {}
-	return {"top": JCB_TOP, "gain": JCB_GAIN}
+	var p: Dictionary
+	if c.model == jcb_model():
+		p = {"top": JCB_TOP, "gain": JCB_GAIN}
+	elif c.kind == "bike":
+		p = BIKE_PROFILE.duplicate()
+	else:
+		p = HEAVY_PROFILES.get(_heavy_class(c.model), {}).duplicate()
+	if not p.is_empty():
+		p["mass"] = c.mass if c.mass > 0.0 else SHOVES.mass_of(c)
+	return p
+
+
+## The fleet class of model m ("bus", "garbage_truck", "truck" — matched specific first, for the
+## fallbacks in vehicle_model), "" when it is none of them.
+func _heavy_class(m: int) -> String:
+	for kind: String in HEAVY_PROFILES:
+		if m == vehicle_model(kind):
+			return kind
+	return ""
 
 
 ## A cyclist: H's bicycle when present, else a procedural bicycle and rider (one mesh).
@@ -836,65 +887,65 @@ func bike_model() -> int:
 	if AP.load_scene(AP.BICYCLE) != null:
 		_bike_model = render.model_for(AP.BICYCLE, WS.VEHICLE_V2_SCALE)
 		return _bike_model
-	var M := WS.M
+	var u := WS.M
 	var kit: KIT = KIT.new()
 	kit.begin()
 	var frame := Color(0.12, 0.35, 0.6)
 	var tyre := Color(0.05, 0.05, 0.05)
 	for z: float in [-0.52, 0.52]:
-		var wx := Transform3D(Basis(Vector3(0, 0, 1), PI * 0.5), Vector3(0.02 * M, 0.34 * M, z * M))
-		kit.cyl(wx, 0.34 * M, 0.34 * M, 0.04 * M, tyre, 14)
+		var wx := Transform3D(Basis(Vector3(0, 0, 1), PI * 0.5), Vector3(0.02 * u, 0.34 * u, z * u))
+		kit.cyl(wx, 0.34 * u, 0.34 * u, 0.04 * u, tyre, 14)
 	kit.box(
-		Transform3D(Basis(Vector3(1, 0, 0), -0.35), Vector3(0, 0.55 * M, 0.02 * M)),
-		Vector3(0.04 * M, 0.04 * M, 0.95 * M),
+		Transform3D(Basis(Vector3(1, 0, 0), -0.35), Vector3(0, 0.55 * u, 0.02 * u)),
+		Vector3(0.04 * u, 0.04 * u, 0.95 * u),
 		frame
 	)
 	kit.box(
-		Transform3D(Basis(), Vector3(0, 0.62 * M, -0.12 * M)),
-		Vector3(0.04 * M, 0.5 * M, 0.04 * M),
+		Transform3D(Basis(), Vector3(0, 0.62 * u, -0.12 * u)),
+		Vector3(0.04 * u, 0.5 * u, 0.04 * u),
 		frame
 	)
 	kit.box(
-		Transform3D(Basis(), Vector3(0, 0.95 * M, 0.42 * M)),
-		Vector3(0.5 * M, 0.03 * M, 0.03 * M),
+		Transform3D(Basis(), Vector3(0, 0.95 * u, 0.42 * u)),
+		Vector3(0.5 * u, 0.03 * u, 0.03 * u),
 		Color(0.2, 0.2, 0.2)
 	)
 	var shirt := Color(0.75, 0.2, 0.15)
 	var pants := Color(0.12, 0.13, 0.18)
 	var skin := Color(0.85, 0.66, 0.52)
 	kit.box(
-		Transform3D(Basis(Vector3(1, 0, 0), 0.25), Vector3(0.08 * M, 0.7 * M, 0.0)),
-		Vector3(0.13 * M, 0.55 * M, 0.14 * M),
+		Transform3D(Basis(Vector3(1, 0, 0), 0.25), Vector3(0.08 * u, 0.7 * u, 0.0)),
+		Vector3(0.13 * u, 0.55 * u, 0.14 * u),
 		pants
 	)
 	kit.box(
-		Transform3D(Basis(Vector3(1, 0, 0), -0.25), Vector3(-0.08 * M, 0.62 * M, -0.05 * M)),
-		Vector3(0.13 * M, 0.55 * M, 0.14 * M),
+		Transform3D(Basis(Vector3(1, 0, 0), -0.25), Vector3(-0.08 * u, 0.62 * u, -0.05 * u)),
+		Vector3(0.13 * u, 0.55 * u, 0.14 * u),
 		pants
 	)
 	kit.box(
-		Transform3D(Basis(Vector3(1, 0, 0), 0.55), Vector3(0, 1.22 * M, 0.08 * M)),
-		Vector3(0.38 * M, 0.6 * M, 0.22 * M),
+		Transform3D(Basis(Vector3(1, 0, 0), 0.55), Vector3(0, 1.22 * u, 0.08 * u)),
+		Vector3(0.38 * u, 0.6 * u, 0.22 * u),
 		shirt
 	)
 	for sx: float in [-0.17, 0.17]:
 		kit.box(
-			Transform3D(Basis(Vector3(1, 0, 0), 1.0), Vector3(sx * M, 1.18 * M, 0.3 * M)),
-			Vector3(0.08 * M, 0.5 * M, 0.08 * M),
+			Transform3D(Basis(Vector3(1, 0, 0), 1.0), Vector3(sx * u, 1.18 * u, 0.3 * u)),
+			Vector3(0.08 * u, 0.5 * u, 0.08 * u),
 			shirt
 		)
 	kit.cyl(
-		Transform3D(Basis(), Vector3(0, 1.5 * M, 0.26 * M)), 0.11 * M, 0.1 * M, 0.22 * M, skin, 10
+		Transform3D(Basis(), Vector3(0, 1.5 * u, 0.26 * u)), 0.11 * u, 0.1 * u, 0.22 * u, skin, 10
 	)
 	kit.cyl(
-		Transform3D(Basis(), Vector3(0, 1.66 * M, 0.25 * M)),
-		0.13 * M,
-		0.06 * M,
-		0.08 * M,
+		Transform3D(Basis(), Vector3(0, 1.66 * u, 0.25 * u)),
+		0.13 * u,
+		0.06 * u,
+		0.08 * u,
 		Color(0.9, 0.85, 0.1),
 		10
 	)
-	_bike_model = render.model_proc("cyclist", kit.commit(), Vector3(0.6 * M, 1.8 * M, 1.8 * M))
+	_bike_model = render.model_proc("cyclist", kit.commit(), Vector3(0.6 * u, 1.8 * u, 1.8 * u))
 	return _bike_model
 
 
@@ -1140,9 +1191,11 @@ func avatar_counts() -> Dictionary:
 
 
 ## Agents near p for the minimap and audio (moving vehicles and people on foot; parked cars are
-## left out): [{id, pos, vel, speed, kind, driver_id, heading, stalled_s}]. heading follows S0 §11
-## (forward = (-sin h, 0, -cos h)), so it holds for stopped agents too; vel is u/s. The entries
-## are each agent's own dictionary, refreshed once per frame: read them now, copy one to keep it.
+## left out): [{id, pos, vel, speed, kind, driver_id, heading, stalled_s, hero_block_s}]. heading
+## follows S0 §11 (forward = (-sin h, 0, -cos h)), so it holds for stopped agents too; vel is u/s.
+## hero_block_s is the seconds the player has held that car up (their car or the hero on foot the
+## nearest thing in its path; 0 when the blocked_horns flag is off). The entries are each agent's
+## own dictionary, refreshed once per frame: read them now, copy one to keep it.
 func agents_near(p: Vector3, r: float) -> Array:
 	var out: Array = []
 	if not _built:
@@ -1223,6 +1276,7 @@ func _info(k: int) -> Dictionary:
 		d["speed"] = c.v
 		d["driver_id"] = c.driver_id
 		d["stalled_s"] = c.stalled_s
+		d["hero_block_s"] = c.hero_block_s
 	else:
 		var w: WK.Walker = a
 		d["id"] = 1000000 + w.id
@@ -1679,7 +1733,7 @@ func enter_target(p: Vector3, r: float, occupied: bool = true) -> Dictionary:
 			best = c
 	if best == null:
 		return {}
-	var label := "your car" if best.role == VH.PLAYER else "the car"
+	var label := "your " + _body_name(best) if best.role == VH.PLAYER else "the " + _body_name(best)
 	return {"id": best.id, "label": label, "pos": best.pos, "dist": bd, "jack": _jacks(best)}
 
 
@@ -1850,16 +1904,179 @@ func set_door(amount: float, id: int = -1) -> void:
 		c.door = clampf(amount, 0.0, 1.0)
 
 
+## How far the driver's door of car id (the driven car's when id < 0) swings from `from` toward
+## `amount` (0 shut .. 1 open) before its panel runs into someone on foot: amount itself when the
+## way is clear, else the last amount clear of everyone (the arc of the swing each body blocks,
+## from body_spheres.of round people.head_of). A door already resting against someone may still
+## swing away from them; one they stand in the way of stays put rather than push into them.
+func door_clear_of_people(id: int, amount: float, from: float = 0.0) -> float:
+	var c: VH.Car = _driven if id < 0 else vehicles.by_id.get(id)
+	var band := _door_band(c)
+	var out := amount
+	for b: Array in _door_bodies(band):
+		var arc := _door_body_arc(band, b)
+		if arc.is_empty():
+			continue
+		var at := float(arc["at"])
+		var half := float(arc["half"])
+		if from <= at - half:
+			out = minf(out, at - half)
+		elif from <= at:
+			out = minf(out, from)
+		elif from < at + half:
+			out = maxf(out, from)
+		else:
+			out = maxf(out, at + half)
+	return out
+
+
+## Car c's door panel for door_clear_of_people: its car transform, hinge and shut rear edge (car
+## frame) and its foot and belt heights; {} when c has no door that opens.
+func _door_band(c: VH.Car) -> Dictionary:
+	var m: RD.Model = render.model(c.model) if c != null and c.model >= 0 else null
+	if m == null or m.scene == null:
+		return {}
+	var d: DOORS.Door = DOORS.of(m.key, m.scene)
+	if not d.ok:
+		return {}
+	var pts := DOORS.points(d)
+	var rear: Vector3 = m.offset * (pts["rear"] as Vector3)
+	return {
+		"xf": Transform3D(Basis(Vector3.UP, c.yaw), c.pos),
+		"hinge": m.offset * (pts["hinge"] as Vector3),
+		"rear": rear,
+		"foot": (m.offset * (d.body_xf * Vector3(0.0, d.bottom, 0.0))).y,
+		"belt": rear.y,
+	}
+
+
+## The bodies of everyone on foot within the door's reach, in its car's frame: [centre, radius].
+func _door_bodies(band: Dictionary) -> Array:
+	var out: Array = []
+	if band.is_empty():
+		return out
+	var xf: Transform3D = band["xf"]
+	var inv := xf.affine_inverse()
+	var hinge: Vector3 = band["hinge"]
+	var reach := _flat2((band["rear"] as Vector3) - hinge).length() + BS.BODY_R + 0.3 * WS.M
+	var at := xf * hinge
+	for w: WK.Walker in walkers.walkers:
+		var feet := w.pos + w.vis_off
+		if w.state == "hidden" or _flat2(feet - at).length() > reach:
+			continue
+		var spheres := BS.of(feet, people.head_of(w, feet))
+		for k in range(spheres.size()):
+			out.append([inv * spheres[k], BS.rad_of(k)])
+	return out
+
+
+## The arc of the door's swing (in door amounts, 0 shut .. 1 open) that body b (its centre and
+## radius, car frame) blocks: the amount the panel points straight at it at, and the half-width
+## of the amounts whose panel comes within DOOR_SLACK of it; {} when it never comes that close.
+func _door_body_arc(band: Dictionary, b: Array) -> Dictionary:
+	var hinge: Vector3 = band["hinge"]
+	var shut := _flat2((band["rear"] as Vector3) - hinge)
+	var v := _flat2((b[0] as Vector3) - hinge)
+	var rho := v.length()
+	var q: Vector3 = b[0]
+	var gap := q.y - clampf(q.y, float(band["foot"]), float(band["belt"]))
+	var r := float(b[1]) - DOOR_SLACK
+	if rho < 1e-6 or r <= absf(gap):
+		return {}
+	var reach := sqrt(r * r - gap * gap)
+	var length := shut.length()
+	if maxf(rho - length, 0.0) >= reach:
+		return {}
+	return {
+		"at": _door_angle(shut, v) / DOORS.OPEN_ANGLE,
+		"half": _door_arc_half(rho, length, reach) / DOORS.OPEN_ANGLE,
+	}
+
+
+## The angle (radians) off a body's own direction at which the panel, swung from the hinge, comes
+## within reach of it: the panel is further off it the further it is swung, so halve on the angle.
+static func _door_arc_half(rho: float, length: float, reach: float) -> float:
+	var lo := 0.0
+	var hi := PI
+	for _i in DOOR_HALVINGS:
+		var mid := (lo + hi) * 0.5
+		if _door_off_dist(rho, length, mid) < reach:
+			lo = mid
+		else:
+			hi = mid
+	return lo
+
+
+## Distance from a point rho from the hinge to the panel (length length) swung off radians off the
+## point's own direction: the panel's far end once that is the nearest part of it.
+static func _door_off_dist(rho: float, length: float, off: float) -> float:
+	var along := rho * cos(off)
+	if along <= 0.0:
+		return rho
+	if along >= length:
+		return sqrt(maxf(rho * rho + length * length - 2.0 * rho * length * cos(off), 0.0))
+	return rho * absf(sin(off))
+
+
+## The angle from a to b (xz), positive the way car_doors' door swings open.
+static func _door_angle(a: Vector2, b: Vector2) -> float:
+	return atan2(a.x * b.y - a.y * b.x, a.dot(b))
+
+
+static func _flat2(v: Vector3) -> Vector2:
+	return Vector2(v.x, v.z)
+
+
 ## True when the player may take c (moving: a car in traffic at any speed, for an action hijack).
 func _claimable(c: VH.Car, moving: bool = false) -> bool:
-	if c.dead or c.far or c.driven or c.kind != "car" or c.park_t >= 0.0 or c.model < 0:
+	if c.dead or c.far or c.driven or c.park_t >= 0.0 or c.model < 0:
 		return false
 	if c.role == VH.PLAYER:
 		return true
+	# The town's working vehicles and the bicycles are taken only once nearly stopped: none of
+	# them is leapt onto at speed.
+	if _fleet_wheel(c) or _bike_ride(c):
+		return not moving and c.v < CLAIM_SPEED
+	if c.kind != "car":
+		return false
 	if c.parked:
 		return c.slot_tile >= 0
 	var who := c.role == "ambient" or (c.role == "resident" and _jacks(c))
 	return who and (moving or c.v < CLAIM_SPEED)
+
+
+## A cyclist the hero may take over (the bike_ride flag), once it has nearly stopped: it is ridden
+## from its saddle, not leapt onto at speed.
+func _bike_ride(c: VH.Car) -> bool:
+	return FeatureFlags.enabled("bike_ride") and c.kind == "bike"
+
+
+## True when car id is a bicycle: the drive feature boards and leaves one with no door to open.
+func is_bicycle(id: int) -> bool:
+	var c: VH.Car = vehicles.by_id.get(id) if _built else null
+	return c != null and c.kind == "bike"
+
+
+## The town's working vehicles the hero may take the wheel of once they have nearly stopped (the
+## heavy_motors flag): the buses at their stops, the garbage trucks and the delivery trucks held
+## up in traffic. Never one still moving: none is leapt onto at speed.
+func _fleet_wheel(c: VH.Car) -> bool:
+	return (
+		FeatureFlags.enabled("heavy_motors")
+		and (c.role == "bus" or c.role == "garbage" or c.role == "truck")
+	)
+
+
+## How a car names itself in prompts: the working vehicles and the bicycle by their own names,
+## else a car.
+static func _body_name(c: VH.Car) -> String:
+	if c.kind == "bus":
+		return "bus"
+	if c.kind == "truck":
+		return "garbage truck" if c.role == "garbage" else "truck"
+	if c.kind == "bike":
+		return "bicycle"
+	return "car"
 
 
 ## True when taking c means dragging its driver out first (carjack).
@@ -1868,16 +2085,23 @@ func _jacks(c: VH.Car) -> bool:
 
 
 func _take_over(o: VH.Car) -> VH.Car:
-	var c := vehicles.make("car", VH.PLAYER, Vector3(o.half_w * 2.0, o.height, o.length))
+	# A bicycle stays one at the wheel (render/occupants treat it as one); every other body
+	# becomes a plain car the hero drives.
+	var kind := "bike" if o.kind == "bike" else "car"
+	var c := vehicles.make(kind, VH.PLAYER, Vector3(o.half_w * 2.0, o.height, o.length))
 	c.model = o.model
 	c.pos = o.pos + o.vis_off
 	c.yaw = o.yaw + o.vis_yaw
-	c.label = "Your car"
+	c.label = "Your " + _body_name(o)
 	c.state = "yours"
-	c.mass = o.mass
+	# A working body keeps its heft: its own mass where it carries one, else its kind's.
+	c.mass = o.mass if o.mass > 0.0 else SHOVES.mass_of(o)
 	# Its drawn model carries over, so the car does not vanish for a frame.
 	c.node = o.node
 	c.lod = o.lod
+	# The slot it stood in rides the car (a backhoe's home for the save: backhoe.gd).
+	c.home_tile = o.slot_tile
+	c.home_k = o.slot_k
 	o.node = null
 	if o.owner is TRIPS.Trip:
 		trips.complete_now(o.owner)

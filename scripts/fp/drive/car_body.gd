@@ -30,7 +30,9 @@ const ITERATIONS := 4
 ## The most one contact pushes the body out at once (u, at least a substep's travel): a car that
 ## starts overlapping something eases out instead of jumping.
 const MAX_PUSH := 0.02
-## Mass of the player's car; other bodies are given relative to a sedan (1.0).
+## The default mass of the player's body (a sedan; others are given relative to it). The
+## driven body's own mass comes with setup (a bicycle near nothing, a bus six sedans), so a
+## light body bounces off what a heavy one shoves.
 const MASS := 1.0
 ## Hits closing faster than this are listed in hits.
 const IMPACT_SPEED := 1.5 * WS.M
@@ -46,6 +48,8 @@ const PERSON_MASS := 0.08
 ## Half width and half length (u), and height.
 var half := Vector2(0.045, 0.12)
 var height: float = 0.075
+## The body's own mass (setup from the driven car's, as the takeover recorded it; a sedan 1.0).
+var mass := MASS
 var inertia: float = OBB.box_inertia(Vector2(0.045, 0.12), MASS)
 ## The last move's hits closing faster than IMPACT_SPEED: [point Vector2, speed (u/s), what],
 ## what "wall" (anything fixed), "car", "prop" or "person".
@@ -67,10 +71,11 @@ var _struck: Dictionary = {}
 var _clock: float = 0.0
 
 
-func setup(half_w: float, length: float, p_height: float) -> void:
+func setup(half_w: float, length: float, p_height: float, p_mass: float = MASS) -> void:
 	half = Vector2(half_w, length * 0.5)
 	height = p_height
-	inertia = OBB.box_inertia(half, MASS)
+	mass = p_mass
+	inertia = OBB.box_inertia(half, mass)
 
 
 ## Moves the body from the feet position pos by the model's velocity over dt (the model's yaw has
@@ -193,7 +198,7 @@ func _impulse(
 		return Vector2.ZERO
 	var ra := _cross(r, nrm)
 	var rbn := _cross(rb, nrm)
-	var k := 1.0 / MASS + im + ra * ra / inertia + rbn * rbn * ii
+	var k := 1.0 / mass + im + ra * ra / inertia + rbn * rbn * ii
 	var e := RESTITUTION if -vn > REST_SPEED else 0.0
 	var jn := -(1.0 + e) * vn / k
 	var j := nrm * jn
@@ -203,7 +208,7 @@ func _impulse(
 		var t := vt / st
 		var rt := _cross(r, t)
 		var rbt := _cross(rb, t)
-		var kt := 1.0 / MASS + im + rt * rt / inertia + rbt * rbt * ii
+		var kt := 1.0 / mass + im + rt * rt / inertia + rbt * rbt * ii
 		j -= t * minf(st / kt, FRICTION * jn)
 	_apply(model, r, j)
 	if -vn > IMPACT_SPEED:
@@ -236,7 +241,7 @@ func _knock_props(model: MODEL, u: Vector2, v: Vector2) -> bool:
 			continue
 		var m := float(kn["mass"])
 		var ra := _cross(r, nrm)
-		var jn := -(1.0 + PROP_BOUNCE) * vn / (1.0 / MASS + 1.0 / m + ra * ra / inertia)
+		var jn := -(1.0 + PROP_BOUNCE) * vn / (1.0 / mass + 1.0 / m + ra * ra / inertia)
 		# The prop flies off along the push, dragged a little along the car's slide.
 		var fly := -nrm * (jn / m) + (va - nrm * vn) * 0.5
 		var at := Vector3(p.x, _feet, p.y)
@@ -282,7 +287,7 @@ func _strike_people(model: MODEL) -> void:
 
 
 func _apply(model: MODEL, r: Vector2, j: Vector2) -> void:
-	model.vel += j / MASS
+	model.vel += j / mass
 	var dw := _cross(r, j) / inertia
 	model.spin += dw
 	_omega += dw
