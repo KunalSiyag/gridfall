@@ -53,6 +53,9 @@ const SETTLE := 0.3
 const PROMPT_TICK := 0.15
 ## car_impact goes out at most this often (s), for the hardest hit.
 const IMPACT_GAP := 0.25
+## How far the horn carries into the street (horn_sounded, the horn_street flag), and the hold
+## that turns a press long.
+const HORN_STREET_R := 35.0 * WS.M
 ## Stopped cars this close to the hero block it on foot (as FpPlayer polls them).
 const BLOCKER_REACH := 2.0 * WS.M
 ## The photo shot's car is the nearest one to get into this close to the spawn point, picked

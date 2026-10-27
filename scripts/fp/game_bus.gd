@@ -61,6 +61,11 @@ signal person_hit(at: Vector3, cause: String, info: Dictionary)
 ## across a gap), or "hijack" (leaping from the car the hero drove onto one to take), as it starts,
 ## at their feet. Emitted by the actions, brawl, parkour and drive features.
 signal hero_action(action: String, at: Vector3)
+## The hero's car horn sounded at at (street plane, xz): radius is how far it carries in world
+## units, long true when the hero leans on it (a tap first, the held press turning long). Emitted
+## by the drive feature (the horn_street flag); the street's answer to it -- people startled,
+## birds up -- lives with the agents that draw them.
+signal horn_sounded(at: Vector2, radius: float, long: bool)
 ## A weapon in the hero's hand landed a blow at a point on what ("person" or "prop"): kind "bat",
 ## "pipe" or "bottle", broke true when it broke (a bottle does on its first). Emitted by the melee
 ## feature.
@@ -81,9 +86,10 @@ signal story_filed(story: Dictionary)
 ## or "bite" (a dog defending its owner), strength 0..1 and push the xz velocity (u/s) it throws
 ## the hero along. Emitted by traffic and the animals feature; the health feature takes the damage.
 signal hero_hit(at: Vector3, cause: String, strength: float, push: Vector3)
-## Someone fighting the hero started a punch from their fist at that lands in secs, unless the
-## guard goes up in time to counter it (the actions feature's parry). Emitted by traffic.
-signal hero_threatened(at: Vector3, secs: float)
+## Someone fighting the hero (wid, the walkers_near id) started a punch from their fist at that
+## lands in secs, unless the guard goes up in time to counter it (the actions feature's parry).
+## Emitted by traffic.
+signal hero_threatened(at: Vector3, secs: float, wid: int)
 ## The hero slammed the person they held into something (the brawl feature's slam): at is the
 ## contact at chest height, what "wall" (a wall, a post or a parked car) or the street prop's kind,
 ## over true when the prop went over with them. Emitted by the brawl feature.
