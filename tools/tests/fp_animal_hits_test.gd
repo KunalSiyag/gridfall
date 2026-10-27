@@ -24,7 +24,7 @@ const KICK := 0.75
 
 var fails: Array[String] = []
 var ctx: FpContext
-var tr: FpFeature
+var traffic: FpFeature
 var f: FpFeature
 var act: FpFeature
 var feel: FpFeature
@@ -42,21 +42,21 @@ func _init() -> void:
 	await process_frame
 	ctx = K.make_ctx(get_root(), {"view": true, "grow": true, "camera_mode": "third"})
 	ctx.player.set_process(false)
-	tr = K.make_feature(ctx, "traffic")
+	traffic = K.make_feature(ctx, "traffic")
 	f = K.make_feature(ctx, "animals")
 	act = K.make_feature(ctx, "actions")
 	feel = K.make_feature(ctx, "hit_feel")
 	melee = K.make_feature(ctx, "melee")
-	if tr == null or f == null or act == null or feel == null or melee == null:
+	if traffic == null or f == null or act == null or feel == null or melee == null:
 		K.check(fails, false, "fixture: traffic, animals, actions, hit_feel and melee registered")
 		K.finish(self, "FP_ANIMAL_HITS_TEST", fails)
 		return
-	tr.set("auto_step", false)
-	tr.set("ambient_enabled", false)
+	traffic.set("auto_step", false)
+	traffic.set("ambient_enabled", false)
 	for n: FpFeature in [f, act, feel, melee]:
 		n.set_process(false)
 	ac = (act.get_script() as GDScript).get_script_constant_map()
-	K.quiet_walkers(tr)
+	K.quiet_walkers(traffic)
 	_no_dogs_at_home()
 	ctx.bus.animal_called.connect(func(_at: Vector3, c: String, _s: float) -> void: calls.append(c))
 	ctx.bus.animal_hit.connect(
@@ -82,7 +82,7 @@ func _init() -> void:
 ## Steps traffic, the animals and the player secs (in 1/60 s steps).
 func _step(secs: float) -> void:
 	for _k in range(ceili(secs / DT - 1e-6)):
-		tr.call("step", DT)
+		traffic.call("step", DT)
 		f.call("tick", DT)
 		ctx.player.simulate(Vector2.ZERO, false, DT)
 		ctx.player.update_view(DT)
@@ -361,7 +361,7 @@ func _check_dog() -> void:
 	if walk.is_empty() or r.is_empty():
 		return
 	ctx.player.teleport(walk["pos"], float(walk["yaw"]))
-	var wk: WK = tr.get("walkers")
+	var wk: WK = traffic.get("walkers")
 	var w := wk.make("resident")
 	w.extra = 0
 	w.resident_id = str(r["id"])

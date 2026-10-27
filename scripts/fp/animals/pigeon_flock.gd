@@ -9,6 +9,11 @@ extends RefCounted
 ## burst off with a clatter of wings, climb away from the fright, wheel round over the street or the
 ## park and glide back down to land once it is calm. Crumbs (feed()) bring the flock in close, round
 ## the hero's feet, until they are eaten.
+##
+## A perched flock (add_perched()) sits its birds each on one fixed point, a lamp top or a roof
+## edge: they sit, preen and turn there above the street, and nothing passing below reaches them;
+## only a fright on the street itself sends them up, to wheel round and glide back onto their
+## perches.
 
 const WS := preload("res://scripts/fp/world_scale.gd")
 
@@ -155,6 +160,9 @@ class Flock:
 	## A sidewalk flock: along the street and toward the lot (units); ZERO for a park's.
 	var run := Vector3.ZERO
 	var across := Vector3.ZERO
+	## A perched flock (add_perched()): its birds sit each on one fixed point (its b.goal) above
+	## the street and land back on it.
+	var perched: bool = false
 	var birds: Array = []
 	## Seconds it keeps off the ground after a fright, how long it has been up, and whether it is
 	## coming down.
@@ -223,6 +231,36 @@ func add(key: String, home: Vector3, radius: float, run: Vector3, across: Vector
 
 func remove(f: Flock) -> void:
 	flocks.erase(f)
+
+
+## A flock of birds perched on points, one each: they sit and preen there until a fright on the
+## street sends them up, wheel round and glide back onto their own point.
+func add_perched(key: String, points: PackedVector3Array) -> Flock:
+	var f := Flock.new()
+	f.key = key
+	f.perched = true
+	var mid := Vector3.ZERO
+	for p: Vector3 in points:
+		mid += p
+	f.home = mid / maxf(points.size(), 1)
+	var spread := 0.1
+	for p: Vector3 in points:
+		spread = maxf(spread, _flat(p, f.home))
+	f.radius = spread
+	f.wheel_dir = 1.0 if _rng.randf() < 0.5 else -1.0
+	f.coo_t = _rng.randf_range(COO_S.x, COO_S.y)
+	for k in range(points.size()):
+		var b := Bird.new()
+		b.pos = points[k]
+		b.goal = points[k]
+		b.yaw = _rng.randf() * TAU
+		b.size = _rng.randf_range(0.92, 1.08)
+		b.tint = _morph()
+		b.act = "perch"
+		b.act_t = _rng.randf_range(0.5, 2.5)
+		f.birds.append(b)
+	flocks.append(f)
+	return f
 
 
 ## One step of dt game seconds for every flock.
@@ -339,27 +377,29 @@ func _flock_rules(f: Flock, dt: float) -> void:
 
 
 ## Where a fright for the whole flock comes from: the hero sprinting close, a dog near or running,
-## a crowd of birds in a car's way; NO_POINT when there is none.
+## a crowd of birds in a car's way; NO_POINT when there is none. A perched flock looks down on the
+## street: its distances are straight-line ones, and no car below can reach it.
 func _threat(f: Flock) -> Vector3:
 	var reach := f.radius + FRIGHT + 2.0 * WS.M
 	var fast := Vector2(hero_vel.x, hero_vel.z).length() > SPRINT_MPS
-	if hero_on_foot and fast and _flat(hero, f.home) < reach and _nearest(f, hero) < FRIGHT:
+	if hero_on_foot and fast and _apart(f, hero, f.home) < reach and _nearest(f, hero) < FRIGHT:
 		return hero
 	for dg: Array in dogs:
 		var at: Vector3 = dg[0]
-		if _flat(at, f.home) > reach:
+		if _apart(f, at, f.home) > reach:
 			continue
 		var d := _nearest(f, at)
 		var running := Vector2((dg[1] as Vector3).x, (dg[1] as Vector3).z).length() > DOG_RUN_MPS
 		if d < (float(dg[2]) if dg.size() > 2 else DOG_NEAR) or (running and d < DOG_FAR):
 			return at
-	for c: Array in cars:
-		var hits := 0
-		for b: Bird in f.birds:
-			if not b.air and _in_path(b, c):
-				hits += 1
-		if hits >= CROWD:
-			return c[0]
+	if not f.perched:
+		for c: Array in cars:
+			var hits := 0
+			for b: Bird in f.birds:
+				if not b.air and _in_path(b, c):
+					hits += 1
+			if hits >= CROWD:
+				return c[0]
 	return NO_POINT
 
 
@@ -378,11 +418,11 @@ func _maybe_land(f: Flock) -> void:
 
 
 func _calm(f: Flock) -> bool:
-	if hero_on_foot and _flat(hero, f.home) < CALM + f.radius:
+	if hero_on_foot and _apart(f, hero, f.home) < CALM + f.radius:
 		return false
 	for dg: Array in dogs:
 		var near := 2.0 * float(dg[2]) if dg.size() > 2 else DOG_FAR
-		if _flat(dg[0], f.home) < near + f.radius:
+		if _apart(f, dg[0], f.home) < near + f.radius:
 			return false
 	return true
 
@@ -404,8 +444,10 @@ func _coo(f: Flock, dt: float) -> void:
 	_call(b.pos + Vector3(0.0, 0.18 * WS.M, 0.0), "coo")
 
 
-## Ground birds keep SPACE apart.
+## Ground birds keep SPACE apart; a perched flock sits on points already spaced.
 func _space_out(f: Flock) -> void:
+	if f.perched:
+		return
 	var n := f.birds.size()
 	for i in range(n):
 		var a: Bird = f.birds[i]
@@ -434,6 +476,9 @@ func _ground(f: Flock, b: Bird, dt: float) -> void:
 		if b.delay <= 0.0:
 			_take_off(f, b)
 		return
+	if f.perched:
+		_perch(b, dt)
+		return
 	if _shy(f, b):
 		return
 	b.act_t -= dt
@@ -455,6 +500,29 @@ func _ground(f: Flock, b: Bird, dt: float) -> void:
 		_:
 			if b.act_t <= 0.0:
 				_next(f, b)
+
+
+## A perched bird: sits still on its point, now and then turning round on it or dipping into a
+## preen. The street below never reaches it; only the flock's frights (scatter) send it up.
+func _perch(b: Bird, dt: float) -> void:
+	b.act_t -= dt
+	match b.act:
+		"turn":
+			b.yaw += 1.4 * dt
+			if b.act_t <= 0.0:
+				b.act = "perch"
+				b.act_t = _rng.randf_range(1.5, 4.0)
+		"preen":
+			b.peck = 0.35 * (0.5 - 0.5 * cos(TAU * 1.1 * b.act_t))
+			if b.act_t <= 0.0:
+				b.peck = 0.0
+				b.act = "perch"
+				b.act_t = _rng.randf_range(1.5, 4.0)
+		_:
+			if b.act_t <= 0.0:
+				b.act = "preen" if _rng.randf() < 0.3 else "turn"
+				b.act_t = _rng.randf_range(1.2, 3.0)
+				b.yaw = fposmod(b.yaw + PI * 0.25 * _rng.randf_range(-1.0, 1.0), TAU)
 
 
 ## The hero or someone walking at the bird, or a car about to hit it: it walks out of the way or
@@ -678,7 +746,7 @@ func _wheel(f: Flock, b: Bird, dt: float) -> void:
 		b.land_in -= dt
 		if b.land_in <= 0.0:
 			b.act = "down"
-			b.goal = _land_goal(f)
+			b.goal = _land_goal(f, b)
 
 
 ## Gliding in to goal on a slope, wings held up, slowing and flaring over the last metre.
@@ -717,15 +785,18 @@ func _hop_step(f: Flock, b: Bird, dt: float) -> void:
 		_land(f, b)
 
 
-func _land(_f: Flock, b: Bird) -> void:
+func _land(f: Flock, b: Bird) -> void:
 	b.air = false
-	b.act = "stand"
+	b.act = "perch" if f.perched else "stand"
 	b.act_t = _rng.randf_range(0.4, 1.4)
 	b.vel = Vector3.ZERO
 	b.pitch = 0.0
 	b.roll = 0.0
 	b.wing = 0.0
 	b.flare = false
+	if f.perched:
+		b.pos = b.goal
+		return
 	var y := col.walk_height(b.pos) if col != null else b.goal.y
 	b.pos.y = y if not is_nan(y) else b.goal.y
 
@@ -746,9 +817,11 @@ func _beat(b: Bird, hz: float, dt: float) -> void:
 	b.wing = lerpf(BEAT.x, BEAT.y, 0.5 + 0.5 * cos(TAU * b.phase))
 
 
-## Where a bird lands: by the crumbs, else a spot of the flock's (the furthest of a few from the
-## hero when they are about).
-func _land_goal(f: Flock) -> Vector3:
+## Where a bird lands: its own perch for a perched one, by the crumbs, else a spot of the flock's
+## (the furthest of a few from the hero when they are about).
+func _land_goal(f: Flock, b: Bird) -> Vector3:
+	if f.perched:
+		return b.goal
 	if not f.crumb_spots.is_empty():
 		var c: Vector3 = f.crumb_spots[_rng.randi() % f.crumb_spots.size()]
 		return c + Vector3(_rng.randf() - 0.5, 0.0, _rng.randf() - 0.5) * 2.0 * CRUMB_R
@@ -872,8 +945,14 @@ func _nearest(f: Flock, p: Vector3) -> float:
 	var best := INF
 	for b: Bird in f.birds:
 		if not b.air:
-			best = minf(best, _flat(b.pos, p))
+			best = minf(best, _apart(f, b.pos, p))
 	return best
+
+
+## How far apart two places are for the flock: flat for a ground flock, whose birds share the
+## street, straight-line for a perched one, which looks down on it.
+func _apart(f: Flock, a: Vector3, b: Vector3) -> float:
+	return a.distance_to(b) if f.perched else _flat(a, b)
 
 
 func _middle(birds: Array) -> Vector3:

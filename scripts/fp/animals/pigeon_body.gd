@@ -7,6 +7,7 @@ extends RefCounted
 ## tints it to its morph.
 
 const SHADER := preload("res://scripts/fp/animals/pigeon.gdshader")
+const PB := preload("res://scripts/fp/animals/proc_body.gd")
 ## The pivots the shader moves parts about (m): the +X wing's shoulder, the hip and the neck's base.
 const SHOULDER := Vector3(0.03, 0.134, 0.035)
 const HIP := Vector3(0.0, 0.067, 0.0)
@@ -77,130 +78,67 @@ const VENT_COL := Color(0.48, 0.5, 0.55)
 const BREAST_COL := Color(0.5, 0.48, 0.56)
 const TAIL_COL := Color(0.5, 0.52, 0.58)
 
-static var _mesh: ArrayMesh = null
-static var _mat: ShaderMaterial = null
-
-
-## The arrays the mesh is built into; part, under and tag go on the vertices added next.
-class Arrays:
-	extends RefCounted
-	var v := PackedVector3Array()
-	var n := PackedVector3Array()
-	var c := PackedColorArray()
-	var uv := PackedVector2Array()
-	var uv2 := PackedVector2Array()
-	var ix := PackedInt32Array()
-	var part: float = 0.0
-	var under: float = 0.0
-	var tag: float = 0.0
-
-	func add(p: Vector3, nrm: Vector3, col: Color, w: float) -> int:
-		v.append(p)
-		n.append(nrm)
-		c.append(col.srgb_to_linear())
-		uv.append(Vector2(part, under))
-		uv2.append(Vector2(tag, w))
-		return v.size() - 1
-
-	## Triangle a b d, wound clockwise seen from the side its normals face (Godot's front).
-	func tri(a: int, b: int, d: int) -> void:
-		var g := (v[b] - v[a]).cross(v[d] - v[a])
-		if g.dot(n[a] + n[b] + n[d]) > 0.0:
-			ix.append_array(PackedInt32Array([a, d, b]))
-		else:
-			ix.append_array(PackedInt32Array([a, b, d]))
-
-	func quad(a: int, b: int, d: int, e: int) -> void:
-		tri(a, b, d)
-		tri(a, d, e)
-
-	func mesh() -> ArrayMesh:
-		var arrays := []
-		arrays.resize(Mesh.ARRAY_MAX)
-		arrays[Mesh.ARRAY_VERTEX] = v
-		arrays[Mesh.ARRAY_NORMAL] = n
-		arrays[Mesh.ARRAY_COLOR] = c
-		arrays[Mesh.ARRAY_TEX_UV] = uv
-		arrays[Mesh.ARRAY_TEX_UV2] = uv2
-		arrays[Mesh.ARRAY_INDEX] = ix
-		var m := ArrayMesh.new()
-		m.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, arrays)
-		return m
+static var _cache: Array = [null]
+static var _mcache: Array = [null]
 
 
 ## The shared pigeon mesh (built once).
 static func mesh() -> ArrayMesh:
-	if _mesh == null:
-		var b := Arrays.new()
-		_body(b)
-		_head(b)
-		for sx: float in [1.0, -1.0]:
-			_folded_wing(b, sx)
-			_spread_wing(b, sx)
-			_leg(b, sx)
-		_tail(b)
-		_mesh = b.mesh()
-	return _mesh
+	return PB.build(_cache, _pigeon_parts)
 
 
 ## The shared material, its pivots set from this file's constants.
 static func material() -> ShaderMaterial:
-	if _mat == null:
-		_mat = ShaderMaterial.new()
-		_mat.shader = SHADER
-		_mat.set_shader_parameter("shoulder", SHOULDER)
-		_mat.set_shader_parameter("hip", HIP)
-		_mat.set_shader_parameter("neck", NECK)
-	return _mat
+	return PB.make_material(_mcache, SHADER, {"shoulder": SHOULDER, "hip": HIP, "neck": NECK})
+
+
+static func _pigeon_parts(b: PB.Arrays) -> void:
+	_body(b)
+	_head(b)
+	for sx: float in [1.0, -1.0]:
+		_folded_wing(b, sx)
+		_spread_wing(b, sx)
+		_leg(b, sx)
+	_tail(b)
 
 
 # ------------------------------------------------------------------ parts
 
 
-static func _body(b: Arrays) -> void:
-	var centres := PackedVector3Array()
-	var radii := PackedVector2Array()
-	for r: Vector4 in BODY:
-		centres.append(Vector3(0.0, r.y, r.x))
-		radii.append(Vector2(r.z, r.w))
+static func _body(b: PB.Arrays) -> void:
+	var rg := PB.rings(BODY)
 	b.part = PLUMAGE
-	_loft(
+	PB.loft(
 		b,
-		centres,
-		radii,
+		rg[0],
+		rg[1],
 		PackedFloat32Array(),
 		SEGS,
 		func(u: float, up: float) -> Color: return _body_col(u, up)
 	)
-	centres.clear()
-	radii.clear()
-	var w := PackedFloat32Array()
-	for r: Vector4 in NECK_RINGS:
-		centres.append(Vector3(0.0, r.y, r.x))
-		radii.append(Vector2(r.z, r.z))
-		w.append(r.w)
+	var nr := PB.neck_rings(NECK_RINGS)
 	b.part = SHEEN
-	_loft(b, centres, radii, w, SEGS, func(_u: float, _up: float) -> Color: return NECK_COL)
+	PB.loft(b, nr[0], nr[1], nr[2], SEGS, func(_u: float, _up: float) -> Color: return NECK_COL)
 
 
-static func _head(b: Arrays) -> void:
+static func _head(b: PB.Arrays) -> void:
 	b.part = PLUMAGE
-	_ellipsoid(b, HEAD, HEAD_R, SEGS, HEAD_COL)
+	PB.ellipsoid(b, HEAD, HEAD_R, SEGS, HEAD_COL)
 	b.part = CERE
-	_ellipsoid(b, Vector3(0.0, 0.1915, 0.1065), Vector3(0.0055, 0.0032, 0.006), 8, Color.WHITE)
+	PB.ellipsoid(b, Vector3(0.0, 0.1915, 0.1065), Vector3(0.0055, 0.0032, 0.006), 8, Color.WHITE)
 	b.part = EYE
 	for sx: float in [1.0, -1.0]:
-		_ellipsoid(b, Vector3(0.0128 * sx, 0.1945, 0.0955), Vector3.ONE * 0.0042, 8, Color.WHITE)
+		PB.ellipsoid(b, Vector3(0.0128 * sx, 0.1945, 0.0955), Vector3.ONE * 0.0042, 8, Color.WHITE)
 	b.part = BEAK
 	var base := Vector3(0.0, 0.187, 0.105)
 	var tip := Vector3(0.0, 0.181, 0.125)
 	var centres := PackedVector3Array([base, base.lerp(tip, 0.5), tip])
 	var radii := PackedVector2Array([Vector2(0.005, 0.004), Vector2(0.0032, 0.0026), Vector2.ZERO])
-	_loft(b, centres, radii, PackedFloat32Array([1.0, 1.0, 1.0]), 8, Callable())
+	PB.loft(b, centres, radii, PackedFloat32Array([1.0, 1.0, 1.0]), 8, Callable())
 
 
 ## The wing folded on the sx side's flank, from the shoulder back over the tail.
-static func _folded_wing(b: Arrays, sx: float) -> void:
+static func _folded_wing(b: PB.Arrays, sx: float) -> void:
 	b.part = PLUMAGE
 	b.tag = FOLDED * sx
 	var grid: Array[PackedVector3Array] = []
@@ -219,14 +157,14 @@ static func _folded_wing(b: Arrays, sx: float) -> void:
 			crow.append(_fold_col(s))
 		grid.append(row)
 		cols.append(crow)
-	_sheet(b, grid, cols, Vector3(sx, 0.3, 0.0))
+	PB.sheet(b, grid, cols, Vector3(sx, 0.3, 0.0))
 	b.tag = 0.0
 
 
 ## The wing spread from the sx side's shoulder (the shader grows it out as the bird opens it).
-static func _spread_wing(b: Arrays, sx: float) -> void:
+static func _spread_wing(b: PB.Arrays, sx: float) -> void:
 	b.part = PLUMAGE
-	b.under = 1.0
+	b.region = 1.0
 	b.tag = SPREAD * sx
 	var grid: Array[PackedVector3Array] = []
 	var cols: Array[PackedColorArray] = []
@@ -241,12 +179,12 @@ static func _spread_wing(b: Arrays, sx: float) -> void:
 			crow.append(_wing_col(e, c))
 		grid.append(row)
 		cols.append(crow)
-	_sheet(b, grid, cols, Vector3.UP)
-	b.under = 0.0
+	PB.sheet(b, grid, cols, Vector3.UP)
+	b.region = 0.0
 	b.tag = 0.0
 
 
-static func _tail(b: Arrays) -> void:
+static func _tail(b: PB.Arrays) -> void:
 	b.part = PLUMAGE
 	b.tag = TAIL
 	var grid: Array[PackedVector3Array] = []
@@ -261,116 +199,21 @@ static func _tail(b: Arrays) -> void:
 			crow.append(TAIL_COL if l < 0.79 else BAR_COL)
 		grid.append(row)
 		cols.append(crow)
-	_sheet(b, grid, cols, Vector3.UP)
+	PB.sheet(b, grid, cols, Vector3.UP)
 	b.tag = 0.0
 
 
 ## The sx side's leg: the bare shank and four toes (three forward, one back).
-static func _leg(b: Arrays, sx: float) -> void:
+static func _leg(b: PB.Arrays, sx: float) -> void:
 	b.part = FEET
 	b.tag = LEG * sx
-	_beam(b, Vector3(0.011 * sx, 0.058, 0.002), Vector3(0.013 * sx, 0.006, 0.01), 0.0045, 0.0045)
+	PB.beam(b, Vector3(0.011 * sx, 0.058, 0.002), Vector3(0.013 * sx, 0.006, 0.01), 0.0045, 0.0045)
 	var foot := Vector3(0.013 * sx, 0.0016, 0.01)
 	for toe: Vector2 in [Vector2(-0.35, 0.026), Vector2(0.0, 0.031), Vector2(0.4, 0.024)]:
 		var dir := Vector3(sin(toe.x) * sx, 0.0, cos(toe.x))
-		_beam(b, foot, foot + dir * toe.y, 0.0035, 0.0028)
-	_beam(b, foot, foot + Vector3(0.0, 0.0, -0.017), 0.0035, 0.0028)
+		PB.beam(b, foot, foot + dir * toe.y, 0.0035, 0.0028)
+	PB.beam(b, foot, foot + Vector3(0.0, 0.0, -0.017), 0.0035, 0.0028)
 	b.tag = 0.0
-
-
-# ------------------------------------------------------------------ shapes
-
-
-## A tube through centres with elliptic rings (radii: half width, half height), closed at both
-## ends; w is each ring's share of the head's motion (empty: none), colour(u along, up -1..1) its
-## vertex colour (an invalid Callable: white).
-static func _loft(
-	b: Arrays,
-	centres: PackedVector3Array,
-	radii: PackedVector2Array,
-	w: PackedFloat32Array,
-	segs: int,
-	colour: Callable
-) -> void:
-	var n := centres.size()
-	var first := b.v.size()
-	for k in range(n):
-		var t := (centres[mini(k + 1, n - 1)] - centres[maxi(k - 1, 0)]).normalized()
-		var up := t.cross(Vector3.RIGHT).normalized()
-		var r := radii[k]
-		for j in range(segs):
-			var a := TAU * j / segs
-			var p := centres[k] + Vector3.RIGHT * r.x * cos(a) + up * r.y * sin(a)
-			var nrm := Vector3.RIGHT * cos(a) / maxf(r.x, 1e-4) + up * sin(a) / maxf(r.y, 1e-4)
-			var col := Color.WHITE
-			if colour.is_valid():
-				col = colour.call(float(k) / (n - 1), sin(a))
-			b.add(p, nrm.normalized(), col, w[k] if not w.is_empty() else 0.0)
-	for k in range(n - 1):
-		for j in range(segs):
-			var a0 := first + k * segs + j
-			var a1 := first + k * segs + (j + 1) % segs
-			b.quad(a0, a1, a1 + segs, a0 + segs)
-	for end: int in [0, n - 1]:
-		var t := (centres[mini(end + 1, n - 1)] - centres[maxi(end - 1, 0)]).normalized()
-		var out := -t if end == 0 else t
-		var ring := first + end * segs
-		var col := b.c[ring]
-		var mid := b.add(centres[end], out, col, w[end] if not w.is_empty() else 0.0)
-		for j in range(segs):
-			b.tri(mid, ring + j, ring + (j + 1) % segs)
-
-
-static func _ellipsoid(b: Arrays, c: Vector3, r: Vector3, segs: int, col: Color) -> void:
-	var rings := 7
-	var centres := PackedVector3Array()
-	var radii := PackedVector2Array()
-	var w := PackedFloat32Array()
-	for k in range(rings):
-		var phi := PI * float(k) / (rings - 1)
-		centres.append(c + Vector3(0.0, 0.0, -r.z * cos(phi)))
-		radii.append(Vector2(r.x, r.y) * maxf(sin(phi), 0.02))
-		w.append(1.0)
-	_loft(b, centres, radii, w, segs, func(_u: float, _up: float) -> Color: return col)
-
-
-## A sheet through grid (rows of points) with a colour per point, its normals turned toward out.
-static func _sheet(
-	b: Arrays, grid: Array[PackedVector3Array], cols: Array[PackedColorArray], out: Vector3
-) -> void:
-	var rows := grid.size()
-	var per := grid[0].size()
-	var first := b.v.size()
-	for r in range(rows):
-		for k in range(per):
-			var along := grid[mini(r + 1, rows - 1)][k] - grid[maxi(r - 1, 0)][k]
-			var across := grid[r][mini(k + 1, per - 1)] - grid[r][maxi(k - 1, 0)]
-			var nrm := along.cross(across).normalized()
-			if nrm.dot(out) < 0.0:
-				nrm = -nrm
-			b.add(grid[r][k], nrm, cols[r][k], 0.0)
-	for r in range(rows - 1):
-		for k in range(per - 1):
-			var a := first + r * per + k
-			b.quad(a, a + 1, a + per + 1, a + per)
-
-
-## A thin box from a to b, w wide and h deep, flat-shaded (no end caps).
-static func _beam(b: Arrays, from: Vector3, to: Vector3, w: float, h: float) -> void:
-	var d := (to - from).normalized()
-	var ref := Vector3.UP if absf(d.y) < 0.9 else Vector3.BACK
-	var s1 := d.cross(ref).normalized()
-	var s2 := d.cross(s1).normalized()
-	for face: Array in [[s1, s2], [s2, -s1], [-s1, -s2], [-s2, s1]]:
-		var nrm: Vector3 = face[0]
-		var edge: Vector3 = face[1]
-		var off := nrm * (0.5 * (w if absf(nrm.dot(s1)) > 0.5 else h))
-		var half := edge * (0.5 * (w if absf(edge.dot(s1)) > 0.5 else h))
-		var k := b.add(from + off - half, nrm, Color.WHITE, 0.0)
-		b.add(from + off + half, nrm, Color.WHITE, 0.0)
-		b.add(to + off + half, nrm, Color.WHITE, 0.0)
-		b.add(to + off - half, nrm, Color.WHITE, 0.0)
-		b.quad(k, k + 1, k + 2, k + 3)
 
 
 # ------------------------------------------------------------------ plumage

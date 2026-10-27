@@ -6,7 +6,9 @@ extends Node3D
 ## night strays come out by the works yards and in the parks; in the rain they all stay in. A young
 ## city without any of those keeps one ambient stray about near the player instead, day or night.
 ## Their meows, purrs, hisses and chatter go out on the bus (animal_called), and a dog a cat hisses
-## at barks back.
+## at barks back. The dogs may chase a cat (dog_pack.gd's prey): it bolts up the nearest trunk and
+## clings there until the dog gives up below; and a hunter stalks the squirrels too, which answer
+## a cat only close by or pouncing (squirrel_life.gd's CAT_NEAR).
 
 const D := preload("res://scripts/sim/sim_defs.gd")
 const WS := preload("res://scripts/fp/world_scale.gd")
@@ -14,6 +16,7 @@ const LIFE := preload("res://scripts/fp/animals/cat_life.gd")
 const BODIES := preload("res://scripts/fp/animals/cat_bodies.gd")
 const PACK := preload("res://scripts/fp/animals/dog_pack.gd")
 const FLOCK := preload("res://scripts/fp/animals/pigeon_flock.gd")
+const SQ_LIFE := preload("res://scripts/fp/animals/squirrel_life.gd")
 const STREETS := preload("res://scripts/fp/animals/street_spots.gd")
 
 const MAX_STEP := 1.0 / 30.0
@@ -210,10 +213,13 @@ func _open(i: int, s: Dictionary, night: bool) -> bool:
 	return _photo_lot < 0 or _flat(s["anchor"], _photo["yard"]["anchor"]) >= PHOTO_CLEAR * WS.M
 
 
-## The world for this step from the dogs' pack and the pigeons: the hero on foot, the cars (the
-## player's too while they drive), the people on foot and the dogs around, and the birds on the
-## ground; the cats go into the pigeons' frights as [feet, velocity, FLOCK.CAT_NEAR].
-func world(pack: PACK, flock: FLOCK) -> void:
+## The world for this step from the dogs' pack, the pigeons and the squirrels: the hero on foot,
+## the cars (the player's too while they drive), the people on foot and the dogs around, the birds
+## on the ground and those perched up, and the squirrels (one on the ground is game for a hunter,
+## one up its tree is watched like the perched birds); the cats go into the pigeons' frights as
+## [feet, velocity, FLOCK.CAT_NEAR], and into the dogs' prey — reachable on the ground, out of a
+## chaser's reach once up a refuge tree (the dog gives up below it: dog_pack.gd's chase).
+func world(pack: PACK, flock: FLOCK, perched: FLOCK, sq: SQ_LIFE) -> void:
 	_pack = pack
 	life.hero_on_foot = pack.hero_on_foot
 	life.hero = pack.hero
@@ -225,13 +231,26 @@ func world(pack: PACK, flock: FLOCK) -> void:
 	life.dogs.clear()
 	for d: PACK.Dog in pack.dogs:
 		life.dogs.append([d.pos, Vector3(sin(d.yaw), 0.0, cos(d.yaw)) * d.speed])
+	for c: LIFE.Cat in life.cats:
+		if not c.key.begins_with("photo:"):
+			pack.prey.append([c.key, c.pos, not (c.act in ["climb", "hold", "down"])])
 	life.prey.clear()
+	life.birds_up.clear()
 	if life.cats.is_empty():
 		return
 	for f: FLOCK.Flock in flock.flocks:
 		for b: FLOCK.Bird in f.birds:
 			if not b.air:
 				life.prey.append(b.pos)
+	for f: FLOCK.Flock in perched.flocks:
+		for b: FLOCK.Bird in f.birds:
+			life.birds_up.append(b.pos)
+	if sq != null:
+		for s: SQ_LIFE.Squirrel in sq.squirrels:
+			if s.state in ["flee", "climb", "hold", "down"]:
+				life.birds_up.append(s.pos + Vector3.UP * s.climb_y)
+			else:
+				life.prey.append(s.pos)
 	for c: LIFE.Cat in life.cats:
 		flock.dogs.append([c.pos, life.velocity(c), FLOCK.CAT_NEAR])
 

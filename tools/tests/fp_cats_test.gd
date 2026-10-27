@@ -1,6 +1,6 @@
 extends SceneTree
 ## Cats (the animals feature; docs/fp/ARCHITECTURE.md, Animals): a shop's or a house's cat comes out
-## near the player in its coat (the coat shader's instance uniforms) and stays in in the rain; it
+## near the player in its coat (one shared coat material per coat) and stays in in the rain; it
 ## rests in its poses and strolls round its spot; a friendly cat comes over to a crouching hero and
 ## meows; E picks it and pets it (it purrs), an aloof cat walks off from the first pet, a skittish
 ## one hisses and runs and runs from the hero walking up; a shout makes it jump and run with its
@@ -28,7 +28,7 @@ const DT := 1.0 / 60.0
 
 var fails: Array[String] = []
 var ctx: FpContext
-var tr: FpFeature
+var traffic: FpFeature
 var f: FpFeature
 var cats: CATS
 var life: LIFE
@@ -47,14 +47,14 @@ func _init() -> void:
 	FeatureFlags.set_override("pigeons", false)
 	ctx = K.make_ctx(get_root(), {"view": true, "grow": true, "camera_mode": "third"})
 	ctx.player.set_process(false)
-	tr = K.make_feature(ctx, "traffic")
+	traffic = K.make_feature(ctx, "traffic")
 	f = K.make_feature(ctx, "animals")
-	if tr == null or f == null:
+	if traffic == null or f == null:
 		K.check(fails, false, "fixture: traffic and animals registered")
 		K.finish(self, "FP_CATS_TEST", fails)
 		return
-	tr.set("auto_step", false)
-	tr.set("ambient_enabled", false)
+	traffic.set("auto_step", false)
+	traffic.set("ambient_enabled", false)
 	f.set_process(false)
 	cats = f.get("cats")
 	cats.bodies.blocking = true
@@ -107,7 +107,7 @@ func _run(c: LIFE.Cat) -> void:
 ## Steps traffic and the animals secs (in 1/60 s steps).
 func _step(secs: float) -> void:
 	for _k in range(ceili(secs / DT - 1e-6)):
-		tr.call("step", DT)
+		traffic.call("step", DT)
 		f.call("tick", DT)
 
 
@@ -135,7 +135,7 @@ func _live(secs: float, hero: Vector3, opts: Dictionary = {}, each: Callable = C
 
 ## Nobody walks about and nobody lives with a dog, so only the test's frights are about.
 func _quiet() -> void:
-	var wk: WK = tr.get("walkers")
+	var wk: WK = traffic.get("walkers")
 	for w: WK.Walker in wk.walkers.duplicate():
 		wk.remove(w)
 	for r: Dictionary in ctx.residents.people:
@@ -211,9 +211,9 @@ func _check_spawn() -> LIFE.Cat:
 	var mi: MeshInstance3D = null
 	for n: Node in c.body.root.find_children("*", "MeshInstance3D", true, false):
 		mi = n as MeshInstance3D
-	var look: Variant = mi.get_instance_shader_parameter(&"look") if mi != null else null
-	var dressed := mi != null and mi.material_override == CB.material()
-	dressed = dressed and look == CB.COATS[c.coat][3]
+	var coat_mat := mi.material_override as ShaderMaterial if mi != null else null
+	var dressed := coat_mat != null and coat_mat == CB.material_for(c.coat)
+	dressed = dressed and coat_mat.get_shader_parameter(&"look") == CB.COATS[c.coat][3]
 	var clips := c.body.ap != null and c.body.ap.has_animation(&"Loaf")
 	K.check(
 		fails,

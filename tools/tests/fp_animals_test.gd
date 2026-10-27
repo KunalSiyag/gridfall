@@ -26,7 +26,7 @@ const WALK_MPS := 1.4
 
 var fails: Array[String] = []
 var ctx: FpContext
-var tr: FpFeature
+var traffic: FpFeature
 var health: FpFeature
 var f: FpFeature
 var pack: PACK
@@ -46,18 +46,18 @@ func _init() -> void:
 	FeatureFlags.set_override("cats", false)
 	ctx = K.make_ctx(get_root(), {"view": true, "grow": true, "camera_mode": "third"})
 	ctx.player.set_process(false)
-	tr = K.make_feature(ctx, "traffic")
+	traffic = K.make_feature(ctx, "traffic")
 	health = K.make_feature(ctx, "health")
 	f = K.make_feature(ctx, "animals")
 	walk = K.sidewalk(ctx, 0.6)
-	if tr == null or health == null or f == null or walk.is_empty():
+	if traffic == null or health == null or f == null or walk.is_empty():
 		K.check(
 			fails, false, "fixture: traffic, health and animals registered, a straight sidewalk"
 		)
 		K.finish(self, "FP_ANIMALS_TEST", fails)
 		return
-	tr.set("auto_step", false)
-	tr.set("ambient_enabled", false)
+	traffic.set("auto_step", false)
+	traffic.set("ambient_enabled", false)
 	health.set_process(false)
 	f.set_process(false)
 	pack = f.get("pack")
@@ -99,7 +99,7 @@ func _init() -> void:
 ## Steps traffic, the dogs and the player secs (in 1/60 s steps).
 func _step(secs: float) -> void:
 	for _k in range(ceili(secs / DT - 1e-6)):
-		tr.call("step", DT)
+		traffic.call("step", DT)
 		f.call("tick", DT)
 		ctx.player.simulate(Vector2.ZERO, false, DT)
 		ctx.player.update_view(DT)
@@ -116,32 +116,18 @@ func _walk_on(w: WK.Walker, mps: float) -> void:
 	_step(DT)
 
 
-## Removes every walker, so only the test's own people are about.
+## The test's own people only, nobody at home with a dog, and the k-th resident who lives with one
+## out on a walk (the shared fixtures in fp_fresh_city.gd).
 func _quiet() -> void:
-	var wk: WK = tr.get("walkers")
-	for w: WK.Walker in wk.walkers.duplicate():
-		wk.remove(w)
+	K.quiet_walkers(traffic)
 
 
-## Nobody in the city lives with a dog but the test's own owners.
 func _no_dogs_at_home() -> void:
-	for r: Dictionary in ctx.residents.people:
-		if str(r.get("household", "")) == AF.DOG_HOUSEHOLD:
-			r["household"] = "lives alone"
+	FRESH.no_dogs_at_home(ctx)
 
 
-## The k-th resident with a home, made to live with a dog and to be out (state).
 func _owner(k: int, state: String) -> Dictionary:
-	var n := 0
-	for r: Dictionary in ctx.residents.people:
-		if int(r.get("home", -1)) < 0:
-			continue
-		if n == k:
-			r["household"] = AF.DOG_HOUSEHOLD
-			r["state"] = state
-			return r
-		n += 1
-	return {}
+	return FRESH.dog_owner(ctx, k, state)
 
 
 func _dog_of(w: WK.Walker) -> PACK.Dog:
@@ -192,7 +178,7 @@ func _called(c: String) -> bool:
 ## clip, the lead drawn.
 func _check_lead() -> WK.Walker:
 	var r := _owner(0, "park")
-	var wk: WK = tr.get("walkers")
+	var wk: WK = traffic.get("walkers")
 	var w := wk.make("resident")
 	w.extra = 0
 	w.resident_id = str(r["id"])
@@ -305,7 +291,7 @@ func _check_defend(w: WK.Walker, d: PACK.Dog) -> void:
 	calls.clear()
 	bites.clear()
 	var hp0 := float(health.get("hp"))
-	tr.call("hit_walker", w.id, p.position, Vector3.ZERO, 0.4, "punch")
+	traffic.call("hit_walker", w.id, p.position, Vector3.ZERO, 0.4, "punch")
 	K.check(
 		fails,
 		d.angry > 0.0 and _called("growl"),
@@ -412,7 +398,7 @@ func _check_far(w: WK.Walker, d: PACK.Dog) -> void:
 	same = same and (f.get("bodies") as BODIES).made == made
 	K.check(fails, gone, "far: beyond FAR the dogs go")
 	K.check(fails, same, "far: back again, the same dog comes out (a pooled body)")
-	(tr.get("walkers") as WK).remove(w)
+	(traffic.get("walkers") as WK).remove(w)
 
 
 ## The photo shot: a Shiba Inu and a husky in the front yard of the nearest house, gone after. A
@@ -461,7 +447,7 @@ func _check_yard() -> void:
 		_step(DT)
 		inside = inside and d.lot_box.grow(0.01).has_point(Vector2(d.pos.x, d.pos.z))
 	K.check(fails, inside, "yard: it keeps to the front of its lot for 8 s")
-	var wk: WK = tr.get("walkers")
+	var wk: WK = traffic.get("walkers")
 	var w := wk.make("resident")
 	w.extra = 0
 	w.resident_id = str(r["id"])

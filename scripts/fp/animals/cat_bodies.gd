@@ -38,6 +38,8 @@ const COATS := {
 }
 
 static var _mat: ShaderMaterial = null
+## Coat name -> its shared material (material_for).
+static var _coat_mats: Dictionary = {}
 
 
 func _init() -> void:
@@ -46,7 +48,7 @@ func _init() -> void:
 	label = "Cat"
 
 
-## The coat material every cat shares (each cat's colours are instance uniforms).
+## The coat material a body is bound with before dress() (the shader's default coat).
 static func material() -> ShaderMaterial:
 	if _mat == null:
 		_mat = ShaderMaterial.new()
@@ -54,17 +56,30 @@ static func material() -> ShaderMaterial:
 	return _mat
 
 
-## Gives b coat (a COATS key; a stand-in keeps its box).
+## The material every cat of coat shares (a COATS key; unknown names give the brown tabby).
+static func material_for(coat: String) -> ShaderMaterial:
+	var key := coat if COATS.has(coat) else "brown tabby"
+	if not _coat_mats.has(key):
+		var c: Array = COATS[key]
+		var m := ShaderMaterial.new()
+		m.shader = COAT_SHADER
+		m.set_shader_parameter(&"base", c[0])
+		m.set_shader_parameter(&"stripe", c[1])
+		m.set_shader_parameter(&"patch_col", c[2])
+		m.set_shader_parameter(&"look", c[3])
+		_coat_mats[key] = m
+	return _coat_mats[key]
+
+
+## Gives b coat (a COATS key; a stand-in keeps its box). A pooled body may already wear another
+## coat, so any coat-shader material is replaced.
 static func dress(b: DB.Body, coat: String) -> void:
-	var c: Array = COATS.get(coat, COATS["brown tabby"])
+	var mat := material_for(coat)
 	for n: Node in b.root.find_children("*", "GeometryInstance3D", true, false):
 		var g := n as GeometryInstance3D
-		if g.material_override != material():
-			continue
-		g.set_instance_shader_parameter(&"base", c[0])
-		g.set_instance_shader_parameter(&"stripe", c[1])
-		g.set_instance_shader_parameter(&"patch_col", c[2])
-		g.set_instance_shader_parameter(&"look", c[3])
+		var cur := g.material_override as ShaderMaterial
+		if cur != null and cur.shader == COAT_SHADER:
+			g.material_override = mat
 
 
 ## Ground speed (u/s) b covers playing gait clip at rate 1.
