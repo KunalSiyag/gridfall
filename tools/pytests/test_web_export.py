@@ -294,8 +294,8 @@ def test_measure_script_finds_the_assets_the_page_names():
 def test_pack_of_routes_every_tree():
     assert pack_of("env/sky.hdr") == "sky"
     assert pack_of("assets/posters/ad_bank.webp") == "posters"
-    assert pack_of("models/real/zones/r1/house.glb") == "zones"
-    assert pack_of("models/zones/c2/block.glb") == "zones"
+    assert pack_of("models/real/zones/r1/house.glb") == "boot"
+    assert pack_of("models/zones/c2/block.glb") == "boot"
     assert pack_of("models/real/props/bin.glb") == "props"
     assert pack_of("models/real/vehicles_v2/car.glb") == "traffic"
     assert pack_of("models/characters/bodies/Office_Male_01.glb") == "people"
@@ -314,6 +314,7 @@ def test_pack_of_routes_every_tree():
 def test_split_packs_groups_imports_with_their_asset(tmp_path):
     pack = tmp_path / "index.pck"
     imported = "res://.godot/imported/house.glb-abc.scn"
+    sky_imported = "res://.godot/imported/sky.hdr-abc.ctex"
 
     def importer(dest: str) -> bytes:
         return f'[deps]\ndest_files=["{dest}"]\n'.encode()
@@ -324,18 +325,26 @@ def test_split_packs_groups_imports_with_their_asset(tmp_path):
         (".godot/imported/house.glb-abc.scn", b"zone-scene"),
         ("scripts/main.gd", b"extends Node"),
         ("env/sky.hdr", b"hdri"),
+        ("env/sky.hdr.import", importer(sky_imported)),
+        (".godot/imported/sky.hdr-abc.ctex", b"sky-texture"),
+        ("models/real/midlod/house.res", b"baked-twin"),
+        ("models/zones/c2/block.glb", b"legacy-zone"),
     ])
     report = split_packs(pack, tmp_path)
-    assert set(report["packs"]) == {"boot", "zones", "sky"}
-    # The imported scene follows the asset it belongs to, not the boot pack.
+    assert set(report["packs"]) == {"boot", "midlod", "sky"}
+    # Option A keeps source buildings and their imports in boot; twins arrive later.
     boot = read_pack(pack)
     assert "scripts/main.gd" in boot
-    assert "models/real/zones/r1/house.glb" not in boot
-    assert ".godot/imported/house.glb-abc.scn" not in boot
+    assert boot["models/real/zones/r1/house.glb"][1] == b"zone-glb"
+    assert boot[".godot/imported/house.glb-abc.scn"][1] == b"zone-scene"
+    assert boot["models/zones/c2/block.glb"][1] == b"legacy-zone"
     assert "web_manifest.json" in boot
-    zones = read_pack(tmp_path / report["manifest"]["packs"]["zones"]["file"])
-    assert zones["models/real/zones/r1/house.glb"][1] == b"zone-glb"
-    assert zones[".godot/imported/house.glb-abc.scn"][1] == b"zone-scene"
+    assert ".godot/imported/sky.hdr-abc.ctex" not in boot
+    sky = read_pack(tmp_path / report["manifest"]["packs"]["sky"]["file"])
+    assert sky["env/sky.hdr"][1] == b"hdri"
+    assert sky[".godot/imported/sky.hdr-abc.ctex"][1] == b"sky-texture"
+    twins = read_pack(tmp_path / report["manifest"]["packs"]["midlod"]["file"])
+    assert twins["models/real/midlod/house.res"][1] == b"baked-twin"
     # The manifest the runtime reads: rules plus a file per background pack.
     manifest = json.loads(boot["web_manifest.json"][1])
     assert manifest["boot"] == "boot"

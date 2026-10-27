@@ -118,8 +118,6 @@ PACK_RULES = (
     ("audio", "sounds/music/"),
     ("audio", "sounds/fp/"),
     ("posters", "assets/"),
-    ("zones", "models/real/zones/"),
-    ("zones", "models/zones/"),
     ("props", "models/real/props/"),
     ("props", "models/props/"),
     ("traffic", "models/real/vehicles_v2/"),

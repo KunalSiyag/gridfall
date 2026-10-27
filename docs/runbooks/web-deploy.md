@@ -109,6 +109,22 @@ types or sees the key: ask the player to run this step and report whether the tu
 
 ## Symptoms and fixes
 
+### Split-pack staging and rollback
+
+`tools/web_export.py --split` is opt-in export groundwork, not the current live deployment.
+Its default keeps district buildings (including their imported resources) in the boot pack
+(Option A); baked mid-LOD twins remain a background pack. Unsplit exports are unchanged.
+Runtime streaming and its `web_split_packs` flag still need to be wired and verified after
+round 3. Re-measure the merged round-3 boot dependency closure before shipping split packs;
+earlier staging sizes do not describe that build.
+
+A split release with `web_split_packs` disabled is **not a rollback**: the flag cannot restore
+assets absent from its boot pack. Keep a verified unsplit immutable release available and
+replace the deployment with that release if streaming needs to be rolled back. Do not disable
+the flag on a split release and expect a complete city.
+
+### Troubleshooting
+
 - **Black screen or "wasm" compile error:** the browser got the wrong MIME type or a truncated
   file. `curl -I https://<host>/releases/<hash>/index.wasm` must say `Content-Type:
   application/wasm`; check the gateway really forwards the whole response.
