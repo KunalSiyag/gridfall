@@ -35,7 +35,6 @@
  "scripts/fp/posters/poster_surfaces.gd",
  "scripts/fp/posters/wall_spot_baker.gd",
  "scripts/fp/render/hlod.gd",
- "scripts/fp/render/midlod.gd",
  "scripts/fp/render/occluders.gd",
  "scripts/fp/render/proxies.gd",
  "scripts/fp/render/proxy_bake.gd",

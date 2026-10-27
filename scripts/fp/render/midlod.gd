@@ -117,9 +117,13 @@ static func load_baked(src: Mesh, path: String) -> ArrayMesh:
 
 ## True when baked was merged from src as it is now (same surfaces, same bounds).
 static func fresh(baked: Mesh, src: Mesh) -> bool:
-	var box: Variant = baked.get_meta("src_aabb", null)
+	# A stale bake from before tagging has neither key; get_meta on a missing key prints an
+	# engine ERROR (4.7), so probe with has_meta first.
+	if not baked.has_meta("src_surfaces") or not baked.has_meta("src_aabb"):
+		return false
+	var box: Variant = baked.get_meta("src_aabb")
 	return (
-		int(baked.get_meta("src_surfaces", -1)) == src.get_surface_count()
+		int(baked.get_meta("src_surfaces")) == src.get_surface_count()
 		and box is AABB
 		and (box as AABB).is_equal_approx(src.get_aabb())
 	)
@@ -139,7 +143,9 @@ static func merged(src: Mesh, path: String) -> ArrayMesh:
 ## Main thread: copies the surfaces with their colour and kind.
 static func _gather(src: Mesh, path: String) -> Dictionary:
 	var models: Dictionary = PROXIES.bake().get("models", {})
-	var mats: Dictionary = (models.get(path, {}) as Dictionary).get("mats", (PROXIES.bake().get("road_mats", {}) as Dictionary).get(path, {}))
+	var mats: Dictionary = (models.get(path, {}) as Dictionary).get(
+		"mats", (PROXIES.bake().get("road_mats", {}) as Dictionary).get(path, {})
+	)
 	var surfaces: Array = []
 	for s in range(src.get_surface_count()):
 		var mat := src.surface_get_material(s)
@@ -158,7 +164,14 @@ static func _gather(src: Mesh, path: String) -> Dictionary:
 			if name.begins_with(p):
 				col.a = 1.0
 		var arr := src.surface_get_arrays(s)
-		surfaces.append({"v": arr[Mesh.ARRAY_VERTEX], "n": arr[Mesh.ARRAY_NORMAL], "i": arr[Mesh.ARRAY_INDEX], "c": col})
+		surfaces.append(
+			{
+				"v": arr[Mesh.ARRAY_VERTEX],
+				"n": arr[Mesh.ARRAY_NORMAL],
+				"i": arr[Mesh.ARRAY_INDEX],
+				"c": col
+			}
+		)
 	return {"surfaces": surfaces, "out": null}
 
 
