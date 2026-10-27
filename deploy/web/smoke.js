@@ -2,7 +2,9 @@
 // dockerised Caddy serving build/web (docs/runbooks/web-deploy.md). Verifies: boot, the
 // first-person city, the GMI Cloud key page (apply / remember / forget via localStorage), a
 // bogus key actually being used for live calls (GMI_FAIL console lines, redacted), Save +
-// reload keeping the IndexedDB save ("GRIDFALL: continuing the saved city"), and screenshots
+// reload keeping the IndexedDB save ("GRIDFALL: continuing the saved city"), quitting first
+// person to the orbit overview and dropping back down without an uncaught exception
+// (exit_fp once halted the web build on "invalid bus index -1"), and screenshots
 // at every step; console.log and summary.json land in $GF_SMOKE_OUT (default: a gf-web-smoke
 // folder in the system temp dir), shots under it in shots/.
 //
@@ -299,7 +301,15 @@ const OFFLINE = process.env.GF_SMOKE_OFFLINE === "1";
 	await page.reload({ waitUntil: "domcontentloaded" });
 	const reloaded = await waitEngine(page, 600000, 25000, reloadStart);
 	check("engine booted again after reload", reloaded);
-	const continuing = consoleLines.slice(reloadStart).filter((l) => /GRIDFALL: continuing the saved city/i.test(l.text));
+	// The "continuing" line prints only after the IDBFS mount resolves, which can lag the
+	// boot banner by many seconds on a loaded box; give it a grace window before judging.
+	const continuingDeadline = Date.now() + 60000;
+	let continuing = [];
+	while (Date.now() < continuingDeadline) {
+		continuing = consoleLines.slice(reloadStart).filter((l) => /GRIDFALL: continuing the saved city/i.test(l.text));
+		if (continuing.length > 0) break;
+		await sleep(2000);
+	}
 	check("reload continues the saved city (IndexedDB persisted)", continuing.length > 0,
 		continuing[0] ? continuing[continuing.length - 1].text : "no line");
 	const lsAfterReload = await page.evaluate(() => ({
@@ -311,6 +321,38 @@ const OFFLINE = process.env.GF_SMOKE_OFFLINE === "1";
 			lsAfterReload.key === lsBeforeReload && lsAfterReload.consent === "1", JSON.stringify(lsAfterReload));
 	await sleep(5000);
 	await shot(page, "13-reloaded.png");
+
+	// --- phase 9: quit to orbit and back (exit_fp / enter_fp must not throw) ----------
+	// exit_fp() teardown once crashed the web build ("invalid bus index -1" in
+	// sample_set_volumes_linear) and halted the game, so keep the round trip under test.
+	// Pause menu order is Resume, Save, Load, New city, Settings, Quit to orbit, Quit.
+	// The pointer-lock NotAllowedError is an automation artifact: real keyboards count as
+	// user gestures, but CDP-injected keys may not re-lock the pointer in headless Chrome.
+	const crashRe = /bus index|SCRIPT ERROR|unreachable|uncaught/i;
+	const artifactRe = /Pointer Lock/;
+	const fpExitStart = consoleLines.length;
+	await page.keyboard.press("Escape"); // pause menu (focus starts on Resume)
+	await sleep(1200);
+	for (let i = 0; i < 5; i++) {
+		await page.keyboard.press("ArrowDown"); // Resume -> ... -> Quit to orbit
+		await sleep(150);
+	}
+	await page.keyboard.press("Enter");
+	await sleep(4000); // exit_fp is call_deferred; let the teardown and audio settle
+	await shot(page, "14-orbit.png");
+	const fpExitBad = consoleLines.slice(fpExitStart).filter(
+		(l) => (l.type === "pageerror" || crashRe.test(l.text)) && !artifactRe.test(l.text));
+	check("quit to orbit (exit_fp) throws no uncaught exception", fpExitBad.length === 0,
+		fpExitBad.slice(0, 2).map((e) => e.text.slice(0, 120)).join(" | ") || "clean");
+	// Tab in the orbit view re-enters first person (main.gd _unhandled_input).
+	const fpEnterStart = consoleLines.length;
+	await page.keyboard.press("Tab");
+	await sleep(4000);
+	await shot(page, "15-back-on-street.png");
+	const fpEnterBad = consoleLines.slice(fpEnterStart).filter(
+		(l) => (l.type === "pageerror" || crashRe.test(l.text)) && !artifactRe.test(l.text));
+	check("Tab back to the street (enter_fp) stays clean", fpEnterBad.length === 0,
+		fpEnterBad.slice(0, 2).map((e) => e.text.slice(0, 120)).join(" | ") || "clean");
 
 	// --- wrap up --------------------------------------------------------------------
 	// Engine warnings (push_warning, and their "at:" lines) also arrive as console.error.
