@@ -508,7 +508,7 @@ The dogs' behaviour; the animals feature decides who has a dog and feeds in the 
 
 - `on_call: Callable`: Called with (dog, call) when a dog barks, growls or whines, and with (dog) when its lunge lands.
 - `hero`: The world this step, set by the feature: the hero's feet and velocity, whether they are on foot (not driving, not in photo mode), open to a bite and crouched; moving cars as [pos, vel, half length, half width]; the feet of the people on foot around; the game's time scale.
-- `prey: Array`: The small game about, set by the feature each step: [key, where it is now, reachable] — the pigeons on the ground and the cats (one up its refuge tree stays on the list, unreachable, so the chaser gives up below it); the key stays the same while the game keeps about (a street flock's key, "c:<k>" for a cat).
+- `prey: Array`: The small game about, set by the feature each step: [key, where it is now, reachable] — the pigeons on the ground, the cats and the squirrels (one up its refuge tree stays on the list, unreachable, so the chaser gives up below it); the key stays the same while the game keeps about (a street flock's key, "c:<k>" for a cat, "sq:<k>" for a squirrel).
 
 ### Inner classes
 
@@ -1127,7 +1127,7 @@ The squirrels (part of the animals feature): where they keep (a lawn with a tree
 - `func tile_built(_i: int) -> void`: A tile rebuilt: its spots are looked for again.
 - `func clear() -> void`
 - `func scan(me: Vector3, by_day: bool, rain := false) -> void`: Every scan: the squirrels too far off go; in the rain they all stay in (they shelter in their dreys, as the cats do); else while the flag is on and it is day the spots near me get theirs, the nearest first, up to MAX_SQUIRRELS of them.
-- `func world(pack: PACK, cat_life: CAT_LIFE) -> void`: The world for this step from the dogs' pack and the cats: the hero on foot and their velocity, the dogs around, the cats (close by or pouncing, as CAT_NEAR entries) and the people on foot, all of which frighten a squirrel.
+- `func world(pack: PACK, cat_life: CAT_LIFE) -> void`: The world for this step from the dogs' pack and the cats: the hero on foot and their velocity, the dogs around, the cats (close by or pouncing, as CAT_NEAR entries) and the people on foot, all of which frighten a squirrel. The squirrels go into the dogs' prey — reachable on the ground, out of a chaser's reach once up the trunk (the dog barks up and gives up below: dog_pack.gd's chase, the cat beat).
 - `func step(dt: float) -> void`: dt game seconds of the squirrels (in MAX_STEP steps), then their draw; the flag off takes them away.
 - `func startle(at: Vector3, r_m: float) -> void`: A fright at at (a blow, a shout, a crash, a bark) sends the squirrels within r_m metres of it up their trees.
 - `func on_crash(at: Vector3, _speed: float, _cause: String) -> void`

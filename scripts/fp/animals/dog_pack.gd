@@ -189,9 +189,9 @@ var crouched: bool = false
 var cars: Array = []
 var passers: Array = []
 ## The small game about, set by the feature each step: [key, where it is now, reachable] — the
-## pigeons on the ground and the cats (one up its refuge tree stays on the list, unreachable, so
-## the chaser gives up below it); the key stays the same while the game keeps about (a street
-## flock's key, "c:<k>" for a cat).
+## pigeons on the ground, the cats and the squirrels (one up its refuge tree stays on the list,
+## unreachable, so the chaser gives up below it); the key stays the same while the game keeps
+## about (a street flock's key, "c:<k>" for a cat, "sq:<k>" for a squirrel).
 var prey: Array = []
 var time_scale: float = 1.0
 var _rng := RandomNumberGenerator.new()
