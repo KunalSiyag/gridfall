@@ -16,6 +16,7 @@ extends RefCounted
 ## perches.
 
 const WS := preload("res://scripts/fp/world_scale.gd")
+const LOD := preload("res://scripts/fp/animals/settle_lod.gd")
 
 ## Walking (m/s) foraging and hurrying (off, or to crumbs); a step's length (m), which sets the
 ## head's bob and the stride; turning on the ground (rad/s); the room each bird keeps (m).
@@ -179,6 +180,9 @@ class Flock:
 	var crumb_spots := PackedVector3Array()
 	var crumbs_moved: bool = false
 	var coo_t: float = 0.0
+	## Slow-cadence accumulator while settled (settle_lod.gd), and whether the draw refreshes it.
+	var hz_t: float = 0.0
+	var dirty: bool = true
 	## The pigeons node's MultiMeshInstance3D and crumbs.
 	var node: Node3D = null
 	var crumbs_node: Node3D = null
@@ -268,13 +272,23 @@ func step(dt: float) -> void:
 	if dt <= 0.0:
 		return
 	for f: Flock in flocks:
-		_flock_rules(f, dt)
+		var fdt := LOD.flock_dt(f, hero, cars, DODGE_S, dt)
+		if fdt <= 0.0:
+			continue
+		f.dirty = true
+		_flock_rules(f, fdt)
 		for b: Bird in f.birds:
 			if b.air:
-				_fly(f, b, dt)
+				_fly(f, b, fdt)
 			else:
-				_ground(f, b, dt)
+				_ground(f, b, fdt)
 		_space_out(f)
+
+
+## True while nothing about f can change on its own and no car bears down on it: the
+## settle_lod.gd gate for the slow cadence (also what the tests prod).
+func _settled(f: Flock) -> bool:
+	return LOD.flock_quiet(f, cars, DODGE_S)
 
 
 ## A fright at src sends the whole flock up, the birds nearest it first, with one clatter of wings

@@ -22,6 +22,7 @@ const WK := preload("res://scripts/fp/traffic/walkers.gd")
 const AF := preload("res://scripts/fp/animals/animals_feature.gd")
 const CATS := preload("res://scripts/fp/animals/cats.gd")
 const LIFE := preload("res://scripts/fp/animals/cat_life.gd")
+const SLOD := preload("res://scripts/fp/animals/settle_lod.gd")
 const CB := preload("res://scripts/fp/animals/cat_bodies.gd")
 const FLOCK := preload("res://scripts/fp/animals/pigeon_flock.gd")
 const DT := 1.0 / 60.0
@@ -99,12 +100,52 @@ func _run(c: LIFE.Cat) -> void:
 	_check_hunt(c)
 	_check_pounce_flock(c)
 	_check_pause(c)
+	_check_lod(c)
 
 
 # ------------------------------------------------------------------ helpers
 
 
 ## Steps traffic and the animals secs (in 1/60 s steps).
+## A cat at leisure far from the hero ticks at 4 Hz (settle_lod.gd): short ticks bank until
+## SETTLE_S, then it steps once with the banked time. The hero coming close, or anything active
+## (a hunt here), runs at full rate.
+func _check_lod(c: LIFE.Cat) -> void:
+	_reset(c)
+	life.hero_on_foot = true
+	life.hero_vel = Vector3.ZERO
+	life.dogs = []
+	life.cars = []
+	life.prey = []
+	life.passers = []
+	var far := c.pos + Vector3(SLOD.NEAR * 2.0, 0.0, 0.0)
+	life.hero = far
+	c.hz_t = 0.0
+	var t0: float = c.act_t
+	for _k in range(3):
+		life.step(0.05)
+	K.check(fails, c.act_t == t0 and c.hz_t > 0.0, "lod: a resting far cat banks short ticks")
+	for _k in range(2):
+		life.step(0.05)
+	# The banked 0.25 s steps it once: the nap resets, and the time came off the act's clock
+	# (act_t counts the seconds left; the rest ending and a new act beginning also proves it).
+	K.check(
+		fails,
+		c.hz_t == 0.0 and (c.act_t < t0 - 0.24 or c.act != "rest"),
+		"lod: the banked time steps it at the slow cadence"
+	)
+	life.hero = c.pos + Vector3(SLOD.NEAR * 0.5, 0.0, 0.0)
+	c.hz_t = 0.0
+	life.step(0.05)
+	K.check(fails, c.hz_t == 0.0, "lod: the hero close by keeps the full rate")
+	life.hero = far
+	c.act = "stalk"
+	c.hz_t = 0.0
+	life.step(0.05)
+	K.check(fails, c.hz_t == 0.0, "lod: a hunt runs at full rate however far")
+	_reset(c)
+
+
 func _step(secs: float) -> void:
 	for _k in range(ceili(secs / DT - 1e-6)):
 		traffic.call("step", DT)

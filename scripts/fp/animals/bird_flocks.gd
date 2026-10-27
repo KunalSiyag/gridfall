@@ -193,6 +193,9 @@ func _draw() -> void:
 
 
 func _draw_flock(f: FLOCK.Flock) -> void:
+	if not f.dirty:
+		return
+	f.dirty = false
 	var mm := (f.node as MultiMeshInstance3D).multimesh
 	for k in range(f.birds.size()):
 		var b: FLOCK.Bird = f.birds[k]
