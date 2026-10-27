@@ -61,6 +61,13 @@ const BOLT_S := 2.5
 const CHIP_HIT := 0.26
 const CHIP_K := 0.2
 const BREAK_S := 1.2
+## The brawl ring (brawl_ring): more than RING_SLOTS fighting the hero slot by arrival (slot_seq,
+## taken as the scrap starts) — the first two engage as ever, the rest hold the ring at RING_R,
+## facing in and punching nothing, until a slot ahead opens (one down or out of the fight) and
+## they step in. The crowd round them jeers (crowd_reacts.gd's step). Off: every fighter piles
+## in at once.
+const RING_SLOTS := 2
+const RING_R := 2.2 * WS.M
 ## Downed awareness (downed_awareness): a blow that leaves someone down brings the nearest free
 ## onlooker within CHECK_R over to look — they come within CHECK_NEAR (feet to feet), lean in
 ## (rad, + forward) with a slow head shake for CHECK_S, then walk on; once for each knock-down.
@@ -101,6 +108,8 @@ var fight_temper: Dictionary = {}
 var guard_share := GUARD_SHARE
 var punches_landed: int = 0
 var punches_parried: int = 0
+## The next arrival's slot among the hero's fighters (brawl_ring).
+var _seq: int = 0
 
 var wk: WK
 var collision: CollisionWorld
@@ -313,6 +322,8 @@ func step_check(r, dt: float) -> bool:
 ## come in pairs from FIGHT_FIRST on; a bruiser leads with the cross and answers a blow the
 ## moment it lands (fight_tempers).
 func begin(r) -> void:
+	r.slot_seq = _seq
+	_seq += 1
 	r.blow_t = -1.0
 	r.pause = FIGHT_FIRST
 	if FeatureFlags.enabled("fight_tempers") and r.temper == T_BRUISER:
@@ -342,6 +353,9 @@ func step_fight(r, dt: float) -> bool:
 		return true
 	var dir := to / maxf(dist, 1e-6)
 	w.yaw = lerp_angle(w.yaw, atan2(dir.x, dir.z), minf(1.0, dt * 10.0))
+	if not _engaged(r):
+		_ring_hold(r, dt)
+		return false
 	if r.broken > 0.0:
 		# Off balance with the guard beaten (guard_break): facing the hero, throwing nothing.
 		r.broken = maxf(0.0, r.broken - dt)
@@ -369,6 +383,47 @@ func step_fight(r, dt: float) -> bool:
 		if on_wind_up.is_valid() and r.aimed:
 			on_wind_up.call(w.id, fist(w), float(FIGHT_BLOWS[r.blow][1]))
 	return false
+
+
+## True when r holds one of the RING_SLOTS engaging slots round the hero (brawl_ring): slots go
+## by arrival, and a fighter down or out of the scrap's mode frees theirs for the next in order.
+## Without the flag every fighter engages, as before.
+func _engaged(r) -> bool:
+	if not FeatureFlags.enabled("brawl_ring"):
+		return true
+	var ahead := 0
+	for o in active.values():
+		if o == r or not o.fighter or o.down or o.mode != "fight" or o.slot_seq < 0:
+			continue
+		if o.slot_seq < r.slot_seq:
+			ahead += 1
+	return ahead < RING_SLOTS
+
+
+## A fighter without a slot holds the ring (brawl_ring): RING_R out on the ray from the hero
+## through them, facing in, punching nothing — until a slot ahead opens and they step in.
+func _ring_hold(r, dt: float) -> void:
+	var w: WK.Walker = r.w
+	var me := w.pos + w.vis_off
+	var dir := Vector3(me.x - wk.player_pos.x, 0.0, me.z - wk.player_pos.z)
+	if dir.length_squared() < 1e-6:
+		dir = Vector3(sin(w.yaw), 0.0, cos(w.yaw))
+	dir = dir.normalized()
+	var to: Vector3 = wk.player_pos + dir * RING_R - me
+	to.y = 0.0
+	var room := to.length()
+	if room <= 0.05 * WS.M:
+		w.vis_v = 0.0
+		w.gait = move_toward(w.gait, 0.0, dt * 4.0)
+		return
+	var step: Vector3 = to / room * minf(r.speed * dt, room)
+	var q := me + step
+	if collision != null:
+		q = collision.move_body(me, step, BODY_R, BODY_H, WS.STEP_HEIGHT)
+	set_feet(w, q)
+	w.vis_v = r.speed
+	w.gait = move_toward(w.gait, 1.0, dt * 4.0)
+	w.phase += step.length() / (0.75 * WS.M) * PI
 
 
 ## A dancer sidesteps while they wait for their punch (fight_tempers).

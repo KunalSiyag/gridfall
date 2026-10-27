@@ -18,6 +18,7 @@ const WK := preload("res://scripts/fp/traffic/walkers.gd")
 const LG := preload("res://scripts/fp/traffic/lane_graph.gd")
 const VH := preload("res://scripts/fp/traffic/vehicles.gd")
 const HEALTH := preload("res://scripts/fp/health/health_feature.gd")
+const TF := preload("res://scripts/fp/traffic/traffic_feature.gd")
 const DT := 1.0 / 60.0
 
 var fails: Array[String] = []
@@ -678,10 +679,15 @@ func _check_hit_attacker() -> void:
 		"even their knock-down calls no crew on the hero"
 	)
 	K.check(fails, streak.size() == n0, "someone else's blows never feed the assault streak")
+	K.check(
+		fails,
+		int(info.get("by", TF.BY_HERO)) != TF.BY_HERO,
+		"and a walker's blow never names the hero (BY_HERO is the hero's alone)"
+	)
 	var own: Dictionary = tr.call("hit_walker", other.id, p.position, push, 1.0, "punch")
 	K.check(
 		fails,
-		not own.is_empty() and int(own.get("by", -2)) == -1,
+		not own.is_empty() and int(own.get("by", -2)) == TF.BY_HERO,
 		"the hero's own knock-down names the hero (%s)" % str(own.get("by", "?"))
 	)
 	K.check(

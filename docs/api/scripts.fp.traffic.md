@@ -206,6 +206,10 @@ The crowd's answer to what the street sees and hears, split out of reactions.gd 
 - `HORN_R = 20.0 * WS.M`
 - `ESCALATE_S = 1.0`
 - `ESCALATE_R = 2.0 * WS.M`
+- `RING_MIN = 3`: A brawl with a ring on it (brawl_ring — three or more fighting the hero) draws jeers from the crowd: every JEER_CD seconds one of the onlookers within JEER_R of the hero turns to the fight and shouts a beat (JEER_S). The fight's own never jeer (they are not free).
+- `JEER_CD = 1.4`
+- `JEER_R = 10.0 * WS.M`
+- `JEER_S = 0.9`
 
 ### Properties
 
@@ -217,6 +221,7 @@ The crowd's answer to what the street sees and hears, split out of reactions.gd 
 - `func gasp_due(at: Vector3) -> bool`: True when a knock-down at at may rock the crowd as one (crowd_gasp): the flag on, and no gasp within GASP_CD seconds and GASP_R of it.
 - `func apply_gasp(r) -> void`: r is one of the crowd who stays: it rocks back as one with them — no beat of looking first, a sharp backward tip before the shout.
 - `func noted_gasp(at: Vector3) -> void`: The gasp played: the crowd round at is quiet for GASP_CD seconds.
+- `func step(dt: float) -> void`: The crowd's beat (reactions.gd's step): while a brawl has a ring on it (brawl_ring), someone near turns to the fight and jeers, one per JEER_CD seconds.
 - `func startle(src: Vector3, radius: float, long: bool) -> Array`: A car horn sounded at src and carries radius (u; horn_street): the people it reaches who are free startle — a beat turned toward the car, rocked back a touch, the ones within HORN_NEAR stepping back off the road and then composing themselves (a long press reaches HORN_LONG_NEAR and they shake their head at it). Honk spam gets no answer: one ripple per HORN_CD seconds within HORN_R of the last. Returns those startled.
 
 ## `scripts/fp/traffic/fight_back.gd`
@@ -258,6 +263,8 @@ The scrap and the care for a body on the ground: fighting back, the tempers, cou
 - `CHIP_HIT = 0.26`: A guard's guard wears out (guard_chip): every blow turned aside chips it by CHIP_HIT plus CHIP_K times the blow's strength, and the one that takes it past 1 lands in full instead. Beaten, the guard drops for BREAK_S (guard_break): the fighter stands off balance, throwing nothing and turning nothing aside, until the guard knits back whole and can be chipped anew.
 - `CHIP_K = 0.2`
 - `BREAK_S = 1.2`
+- `RING_SLOTS = 2`: The brawl ring (brawl_ring): more than RING_SLOTS fighting the hero slot by arrival (slot_seq, taken as the scrap starts) — the first two engage as ever, the rest hold the ring at RING_R, facing in and punching nothing, until a slot ahead opens (one down or out of the fight) and they step in. The crowd round them jeers (crowd_reacts.gd's step). Off: every fighter piles in at once.
+- `RING_R = 2.2 * WS.M`
 - `CHECK_R = 6.0 * WS.M`: Downed awareness (downed_awareness): a blow that leaves someone down brings the nearest free onlooker within CHECK_R over to look — they come within CHECK_NEAR (feet to feet), lean in (rad, + forward) with a slow head shake for CHECK_S, then walk on; once for each knock-down. A fighter whose hero goes down stands over them a beat (STAND_OVER_S) before walking off. CHECK_CAP bounds the walk over.
 - `CHECK_NEAR = 0.8 * WS.M`
 - `CHECK_S = 2.4`
@@ -1091,6 +1098,7 @@ Traffic and pedestrians on lanes (slice E, docs/fp/slices/E-traffic.md): one roa
 - `PICK_PX = 26.0`
 - `PHOTO_BACK = 1.3`: The traffic photo stands this far from the junction centre along the arm.
 - `LINE_RETRY = 10.0`: Seconds between attempts to rebuild bus lines that no longer match the roads.
+- `BY_HERO = -1`: Who struck, in hit_walker's by and person_hit's info "by": the hero. Anything else is the attacker walker's id — an NPC attack path must pass it, never this.
 - `CLAIM_SPEED = 0.5 * WS.M`: The player can take a parked car, their own, or a car in traffic (an ambient one, or with carjack a resident's) crawling below this speed.
 - `DOOR_HALVINGS = 24`: A driver's door swinging past people (door_clear_of_people): the arc of the swing each body blocks is found by DOOR_HALVINGS halvings of the angle off it, and the door stops DOOR_SLACK short of touching them rather than pushing into them.
 - `DOOR_SLACK = 0.001 * WS.M`
@@ -1157,7 +1165,7 @@ Traffic and pedestrians on lanes (slice E, docs/fp/slices/E-traffic.md): one roa
 - `func bump_car(id: int, j: Vector2, at: Vector2) -> void`: The player's car hit vehicle id with impulse j (xz, u/s times a sedan's mass) at xz point at: the car is knocked (shoves.gd).
 - `func walkers_near(p: Vector3, r: float) -> Array`: People on foot within r of p, for the player's blows, the car body and the dogs: [{"id", "pos" (the drawn feet), "yaw" (facing (sin, 0, cos)), "down", "resident_id", "extra" (0 hands free, 1 carrying a box, 2 on the phone)}].
 - `func walkers_by_id(ids: Array) -> Dictionary`: For the dogs on their leads: the people on foot ids (walkers_near ids) as drawn now, by id: {"pos" (the feet), "yaw", "down", "hand" (the left hand, world)}. An id left out is off the street (gone, beyond the traffic radius or indoors).
-- `func hit_walker(id: int, src: Vector3, push: Vector3, strength: float, cause: String, fling: float = 0.0, by: int = -1) -> Dictionary`: Person id (walkers_near) takes a blow from src (a world point) along push, of strength 0..1, cause "shove", "punch", "car" or "carjack" (dragged out of their car); fling (metres, NOT world units like the rest) > 0 throws them that far if it knocks them down. by names who struck: -1 the hero (the default — every caller today), else the attacker walker's id, so a blow that is not the hero's never freezes the hero's world, sets the victim's dog on them or calls the law on them (info "by"). They react and the people around see it (reactions.gd), the city hears of it (incidents.gd) and the bus emits person_hit. Returns that signal's info, {} when they could not be hit now.
+- `func hit_walker(id: int, src: Vector3, push: Vector3, strength: float, cause: String, fling: float = 0.0, by: int = BY_HERO) -> Dictionary`: Person id (walkers_near) takes a blow from src (a world point) along push, of strength 0..1, cause "shove", "punch", "car" or "carjack" (dragged out of their car); fling (metres, NOT world units like the rest) > 0 throws them that far if it knocks them down. by names who struck: BY_HERO the hero (the default — every caller today), else the attacker walker's id, so a blow that is not the hero's never freezes the hero's world, sets the victim's dog on them or calls the law on them (info "by"). They react and the people around see it (reactions.gd), the city hears of it (incidents.gd) and the bus emits person_hit. Returns that signal's info, {} when they could not be hit now.
 - `func grab_walker(id: int, src: Vector3) -> bool`: The hero takes hold of person id (walkers_near) from src, their feet (reactions.gd grab). False when they cannot be held now.
 - `func hold_walker(id: int, p: Vector3, yaw: float) -> bool`: Person id, held, goes where the hero's hands are: feet at p, turned to yaw. False once they are no longer held (let go, knocked down, broken free or gone).
 - `func release_walker(id: int) -> void`: The hero lets go of person id.
