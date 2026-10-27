@@ -63,6 +63,7 @@ func _init() -> void:
 	await _check_grab()
 	_check_punch_held()
 	await _check_throw()
+	_check_throw_impact()
 	_check_let_go()
 	_check_counter()
 	_check_guard_held()
@@ -386,6 +387,92 @@ func _check_throw() -> void:
 			arc,
 			"up on an arc (%.2f m), tipped back (%.2f rad), down again flat" % [peak, tip]
 		)
+
+
+## A wall 1.5 m along the throw, thin and 3 m tall (the flight meets its face, 0.39 m of reach
+## short of the plane).
+func _impact_wall(feet: Vector3, run: Vector3, metres: float) -> AABB:
+	var across := Vector3(absf(run.z), 0.0, absf(run.x))
+	var c := feet + run * ((metres + 0.1) * WS.M) + Vector3.UP * (1.5 * WS.M)
+	var size := across * (3.0 * WS.M) + Vector3(absf(run.x), 0.0, absf(run.z)) * (0.2 * WS.M)
+	size.y = 3.0 * WS.M
+	return AABB(c - size * 0.5, size)
+
+
+func _check_throw_impact() -> void:
+	# The throw's clear arc runs 3 m; a wall 1.5 m along it is met still on the arc (throw_impact).
+	_fresh()
+	var p := ctx.player
+	var w := _stranger(0.9)
+	f.call("grab")
+	_step(0.4)
+	var before := _feet(w)
+	var aim := Vector3(-sin(p.cam_yaw), 0.0, -cos(p.cam_yaw))
+	var hits: Array = []
+	var on_hit := func(_at: Vector3, _cause: String, info: Dictionary) -> void: hits.append(info)
+	ctx.bus.person_hit.connect(on_hit)
+	ctx.collision.add_test_box(_impact_wall(before, aim, 1.5))
+	K.check(fails, bool(act.call("strike", "shove")), "R with someone held throws toward the wall")
+	var peak := 0.0
+	for k in range(150):
+		_step(DT)
+		peak = maxf(peak, _air(w))
+	ctx.collision.clear_test_boxes()
+	ctx.bus.person_hit.disconnect(on_hit)
+	var flung := (_feet(w) - before).dot(aim) / WS.M
+	K.check(fails, bool(react.call("is_down", w)), "they go down out of the throw")
+	K.check(
+		fails,
+		flung > 0.05 and flung < 0.65,
+		"the wall stops the throw short, back off the face (%.2f m of a 3 m arc)" % flung
+	)
+	K.check(
+		fails,
+		peak > 0.3 and peak < 1.2,
+		"and it meets the wall still on the arc (peak %.2f m)" % peak
+	)
+	K.check(fails, hits.size() == 1, "the throw emits its one person_hit (%d)" % hits.size())
+	var impact := {}
+	if hits.size() == 1:
+		impact = hits[0].get("impact", {})
+	K.check(
+		fails,
+		impact.has("at") and impact.has("in"),
+		"marked with the predicted impact on that one emission (never a second)"
+	)
+	if impact.has("at") and impact.has("in"):
+		var at: Vector3 = impact["at"]
+		# The prediction should land where the flight truly met the wall: the observed stop is
+		# the rest point plus the rebound back off the face.
+		var gap := _flat(at, before + aim * ((flung + 0.35) * WS.M)) / WS.M
+		var secs := float(impact["in"])
+		K.check(fails, gap < 0.3, "predicted where the flight truly struck (%.2f m off)" % gap)
+		K.check(fails, secs > 0.15 and secs < 0.8, "%.2f s into the flight" % secs)
+	# Off: the flight stops dead at the face as before, nothing marked.
+	FeatureFlags.set_override("throw_impact", false)
+	_fresh()
+	w = _stranger(0.9)
+	f.call("grab")
+	_step(0.4)
+	before = _feet(w)
+	hits.clear()
+	ctx.bus.person_hit.connect(on_hit)
+	ctx.collision.add_test_box(_impact_wall(before, aim, 1.5))
+	act.call("strike", "shove")
+	_step(2.5)
+	ctx.collision.clear_test_boxes()
+	ctx.bus.person_hit.disconnect(on_hit)
+	FeatureFlags.set_override("throw_impact", true)
+	var dead := (_feet(w) - before).dot(aim) / WS.M
+	K.check(
+		fails,
+		bool(react.call("is_down", w)) and dead > 0.5 and dead < 1.05,
+		"flag off: the flight stops dead at the face (%.2f m), no rebound" % dead
+	)
+	var marked := false
+	for info in hits:
+		marked = marked or info.has("impact")
+	K.check(fails, not marked, "flag off: nothing is marked")
 
 
 func _check_let_go() -> void:

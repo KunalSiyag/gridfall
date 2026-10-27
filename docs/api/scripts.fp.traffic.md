@@ -760,6 +760,7 @@ People hit in the street (docs/fp/ARCHITECTURE.md, Body actions): shoved or punc
 - `D = preload("res://scripts/sim/sim_defs.gd")`
 - `FB = preload("res://scripts/fp/traffic/fight_back.gd")`: The scrap and the care for a body on the ground, split out of this file: fighting back, the tempers, counter cues and downed awareness live there. This file keeps the Reaction records and the after-blow plans; the layer borrows them (its back-link is a weakref). The aliases further down keep the old RE.* names working for tests and benches.
 - `CR = preload("res://scripts/fp/traffic/crowd_reacts.gd")`: The crowd's answer to what the street sees and hears (the knock-down gasp, the horn startle), split out the same way; its constants stay under the old names via the alias below.
+- `TI = preload("res://scripts/fp/traffic/throw_impact.gd")`
 - `LENGTHS = {&"knockback": 0.833, &"get_up": 1.54, &"hit_head": 0.417, &"hit_chest": 0.333}`: Clip lengths (s) in HC's libraries (the female clips match); setup() reads them again.
 - `ONCE = [&"knockback", &"get_up", &"hit_head", &"hit_chest"]`: Clips that play once: the walker does not turn while they run (it may be lying down).
 - `WITNESS_R = 8.0 * WS.M`
@@ -1032,6 +1033,24 @@ Pedestrian network (docs/fp/slices/E-traffic.md §3 Pedestrians): sidewalk polyl
 - `func nearest_on_tile(p: Vector2, i: int) -> Array`: Nearest point on a sidewalk (non-zebra) edge of tile i to p: [edge, t] or [].
 - `func route(from: int, to: int, max_nodes: int = 6000) -> Array`: A* over the network from node `from` to node `to`: [[edge id, dir (+1 a->b, -1 b->a)], ...] or [] when unreachable within max_nodes expansions.
 - `func rebuild_tile(i: int) -> void`: Rebuilds the sidewalk edges of tile i (removes them when it is no longer a road).
+
+## `scripts/fp/traffic/throw_impact.gd`
+
+extends `RefCounted`
+
+A thrown or flung body meeting a wall or a solid prop mid-flight (the throw_impact flag; docs/fp/ARCHITECTURE.md, Integration: brawl). reactions.gd plans the flight: impact_ahead probes the airborne slide for what it strikes and the throw's one person_hit carries the prediction in its info ({"at", "in"}) — marked there, never a second emission, so incidents and the street's answers do not double-book. Then, frame by frame, rebound_if_blocked turns the flight's collision clamp (the step the geometry eats) into a short rebound off the face, once a throw, the body slumping where it comes to rest. Pure helpers over the Reaction record; reactions.gd calls both.
+
+### Constants
+
+- `WS = preload("res://scripts/fp/world_scale.gd")`
+- `REBOUND_M = 0.35`: The rebound's length (m) and seconds.
+- `REBOUND_S = 0.3`
+- `IMPACT_STEP_M = 0.1`: Metres between the flight line's probes when a throw's impact is predicted.
+
+### Functions
+
+- `static func impact_ahead(collision: CollisionWorld, p: Vector3, flight: Vector3, air: float, reach: float, height: float) -> Dictionary`: The predicted strike of a throw's flight from p along flight (the airborne slide, u) on the first wall or solid prop in the way: {"at", "in" (seconds into the flight)}; {} on a clear arc, with the flag off, or with nothing to probe with.
+- `static func rebound_if_blocked(r, p: Vector3, move: Vector3, q: Vector3) -> void`: The flight's step from p by move landed at q instead: when the geometry ate enough of it, head-on and mid-air, the throw rebounds off the face (throw_impact, once a throw).
 
 ## `scripts/fp/traffic/traffic_feature.gd`
 

@@ -1567,6 +1567,10 @@ func hit_walker(
 	var seen := reactions.witness(w, src, sev)
 	var at := w.pos + w.vis_off
 	var info := incidents.report(w, at, strength, cause, res, seen)
+	if res.has("impact"):
+		# A throw that meets a wall or a solid prop mid-flight: marked here, on the throw's one
+		# emission (a second person_hit would double-book incidents and double-startle the street).
+		info["impact"] = res["impact"]
 	if ctx.bus != null:
 		ctx.bus.person_hit.emit(at, cause, info)
 	return info
