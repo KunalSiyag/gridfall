@@ -68,6 +68,9 @@ const HEAVY_PROFILES := {
 ## A bicycle at the wheel (the bike_ride flag): a hero pedals quicker than the town's cyclists
 ## ride, turns far tighter than any car and pulls up short, and it weighs almost nothing.
 const BIKE_PROFILE := {"top": 7.0 * WS.M, "gain": 0.55, "steer": 1.45, "brake": 1.30}
+## A step-through scooter at the wheel (the scooters flag): about 45 km/h flat out, quicker off
+## the mark than a bicycle, turning nearly as tight, and light — a car feels the knock, but little.
+const SCOOTER_PROFILE := {"top": 12.5 * WS.M, "gain": 0.85, "steer": 1.30, "brake": 1.10}
 ## New construction sites whose backhoe is parked this many a step at most.
 const SITE_MACHINES_PER_STEP := 2
 ## A crew called with no station in town sets off from a road at most this many tiles away.
@@ -312,6 +315,8 @@ func on_world_rebuilt() -> void:
 	ambient.visible = on_screen
 	ambient.bike_model = bike_model
 	ambient.bike_chance = AMB.BIKE_CHANCE if FeatureFlags.enabled("cyclists") else 0.0
+	ambient.scooter_model = scooter_model
+	ambient.scooter_chance = AMB.SCOOTER_CHANCE if FeatureFlags.enabled("scooters") else 0.0
 	ambient.jcb_model = jcb_model
 	trips.setup(self, sim, ctx.residents, lanes, peds, vehicles, walkers)
 	trips.reset()
@@ -870,6 +875,16 @@ func jcb_model() -> int:
 	return render.model_for(AP.VEHICLES_V2_DIR + "backhoe_yellow.glb", WS.VEHICLE_V2_SCALE)
 
 
+## A step-through scooter (the scooters flag): H's model. -1 when the flag is off or the GLB is
+## missing (no procedural stand-in: the share simply stays cars and bicycles).
+func scooter_model() -> int:
+	if not FeatureFlags.enabled("scooters"):
+		return -1
+	if AP.load_scene(AP.SCOOTER) == null:
+		return -1
+	return render.model_for(AP.SCOOTER, WS.VEHICLE_V2_SCALE)
+
+
 ## The handling profile of car id (drive_model.gd reset): the backhoe tops out at JCB_TOP and
 ## gathers speed at JCB_GAIN of a car's rate, a bicycle rides like itself (BIKE_PROFILE), and the
 ## town's working vehicles drive like themselves (HEAVY_PROFILES, by their model's fleet class);
@@ -884,6 +899,8 @@ func drive_profile(id: int) -> Dictionary:
 		p = {"top": JCB_TOP, "gain": JCB_GAIN}
 	elif c.kind == "bike":
 		p = BIKE_PROFILE.duplicate()
+	elif c.kind == "scooter":
+		p = SCOOTER_PROFILE.duplicate()
 	else:
 		p = HEAVY_PROFILES.get(_heavy_class(c.model), {}).duplicate()
 	if not p.is_empty():
@@ -2077,9 +2094,9 @@ func _claimable(c: VH.Car, moving: bool = false) -> bool:
 		return false
 	if c.role == VH.PLAYER:
 		return true
-	# The town's working vehicles and the bicycles are taken only once nearly stopped: none of
-	# them is leapt onto at speed.
-	if _fleet_wheel(c) or _bike_ride(c):
+	# The town's working vehicles, the bicycles and the scooters are taken only once nearly
+	# stopped: none of them is leapt onto at speed.
+	if _fleet_wheel(c) or _bike_ride(c) or _scooter_ride(c):
 		return not moving and c.v < CLAIM_SPEED
 	if c.kind != "car":
 		return false
@@ -2101,6 +2118,18 @@ func is_bicycle(id: int) -> bool:
 	return c != null and c.kind == "bike"
 
 
+## A scooter the hero may ride (the scooters flag), once it has nearly stopped: it is stepped
+## onto from its floorboard, not leapt onto at speed.
+func _scooter_ride(c: VH.Car) -> bool:
+	return FeatureFlags.enabled("scooters") and c.kind == "scooter"
+
+
+## True when car id is a scooter: the drive feature steps on and off one with no door to open.
+func is_scooter(id: int) -> bool:
+	var c: VH.Car = vehicles.by_id.get(id) if _built else null
+	return c != null and c.kind == "scooter"
+
+
 ## The town's working vehicles the hero may take the wheel of once they have nearly stopped (the
 ## heavy_motors flag): the buses at their stops, the garbage trucks and the delivery trucks held
 ## up in traffic. Never one still moving: none is leapt onto at speed.
@@ -2120,6 +2149,8 @@ static func _body_name(c: VH.Car) -> String:
 		return "garbage truck" if c.role == "garbage" else "truck"
 	if c.kind == "bike":
 		return "bicycle"
+	if c.kind == "scooter":
+		return "scooter"
 	return "car"
 
 
@@ -2129,9 +2160,9 @@ func _jacks(c: VH.Car) -> bool:
 
 
 func _take_over(o: VH.Car) -> VH.Car:
-	# A bicycle stays one at the wheel (render/occupants treat it as one); every other body
-	# becomes a plain car the hero drives.
-	var kind := "bike" if o.kind == "bike" else "car"
+	# A bicycle or scooter stays one at the wheel (render/occupants treat it as one); every other
+	# body becomes a plain car the hero drives.
+	var kind := o.kind if o.kind in ["bike", "scooter"] else "car"
 	var c := vehicles.make(kind, VH.PLAYER, Vector3(o.half_w * 2.0, o.height, o.length))
 	c.model = o.model
 	c.pos = o.pos + o.vis_off

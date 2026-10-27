@@ -88,6 +88,9 @@ var model := MODEL.new()
 var body := BODY.new()
 ## True while the hero is on a bicycle (no door to open: on and off it at once).
 var bike: bool = false
+## True when the driven vehicle is a step-through scooter: no door like a bicycle, but a motor
+## horn and its own drive profile.
+var scooter: bool = false
 ## "chase" or "driver".
 var view: String = "chase"
 var hud: HUD
@@ -217,11 +220,11 @@ func board() -> bool:
 
 ## Gets out the long way (car_doors): the car brakes to a stop, the door opens and the hero
 ## climbs out and shuts it (climb_step runs it). At once (exit) without the flag, and off a
-## bicycle (there is no door to open). False when the car is too fast (it says so).
+## bicycle or a scooter (there is no door to open). False when the car is too fast (it says so).
 func leave() -> bool:
 	if not active or _climbing():
 		return false
-	if not FeatureFlags.enabled("car_doors") or bike:
+	if not FeatureFlags.enabled("car_doors") or bike or scooter:
 		return exit()
 	if absf(model.speed()) > EXIT_SPEED:
 		_toast("Slow down to get out")
@@ -311,6 +314,7 @@ func _adopt(info: Dictionary) -> void:
 	if traffic != null and traffic.has_method("drive_profile"):
 		_profile = traffic.call("drive_profile", car_id)
 	bike = traffic != null and bool(traffic.call("is_bicycle", car_id))
+	scooter = traffic != null and bool(traffic.call("is_scooter", car_id))
 	model.reset(float(info["yaw"]), _dims.z, _profile)
 	body.setup(_dims.x, _dims.z, _dims.y, float(_profile.get("mass", 1.0)))
 	_seat = null
@@ -465,6 +469,7 @@ func _on_foot(spot: Vector3, blend: float) -> void:
 	active = false
 	car_id = -1
 	bike = false
+	scooter = false
 	_stop_t = -1.0
 	_limbs_off()
 	pose.reset()

@@ -221,6 +221,7 @@ Getting into cars and driving them. Near a parked or stopped car, F (Y on a pad)
 ### Properties
 
 - `bike: bool`: True while the hero is on a bicycle (no door to open: on and off it at once).
+- `scooter: bool`: True when the driven vehicle is a step-through scooter: no door like a bicycle, but a motor horn and its own drive profile.
 - `view: String`: "chase" or "driver".
 - `entry`: The walk to the door and the climb in, or the climb out (car_entry.gd).
 - `hijack`: The leap across to a moving car (action hijack).
@@ -240,7 +241,7 @@ Getting into cars and driving them. Near a parked or stopped car, F (Y on a pad)
 - `func enter_target() -> Dictionary`: The car the hero could get into now ({} when none, while driving or climbing in or out, or while a parkour move carries the hero).
 - `func enter() -> bool`: Gets into the nearest car in reach at once. Returns true when the hero is now driving.
 - `func board() -> bool`: Gets into the nearest car in reach the long way (car_doors): the hero walks round to its driver's door, opens it, climbs in and shuts it, then drives (climb_step runs it); someone at the wheel (carjack) is dragged out once the door is open, the car waiting till then. At once (enter) without the flag, for a bicycle (there is no door: the hero gets on), or when the door cannot open (a model without one, the stand-in figure, no room beside it or no clear way round). Returns true when it started.
-- `func leave() -> bool`: Gets out the long way (car_doors): the car brakes to a stop, the door opens and the hero climbs out and shuts it (climb_step runs it). At once (exit) without the flag, and off a bicycle (there is no door to open). False when the car is too fast (it says so).
+- `func leave() -> bool`: Gets out the long way (car_doors): the car brakes to a stop, the door opens and the hero climbs out and shuts it (climb_step runs it). At once (exit) without the flag, and off a bicycle or a scooter (there is no door to open). False when the car is too fast (it says so).
 - `func exit(force: bool = false) -> bool`: Gets out at once beside the driver's door (force: at any speed, wherever there is room or on the spot); also ends a climb in or out half way (a hero still outside the car stays where it stands). Returns true when the hero is on foot again.
 - `func climb_step(dt: float) -> void`: One step of the climb in or out, or of braking to a stop for the climb out; _process runs it, tests call it with their own dt.
 - `func drive_step(throttle: float, brake: float, steer: float, hand: float, dt: float) -> void`: One driving step with the given controls (throttle, brake, handbrake 0..1, steer -1..1).
@@ -390,6 +391,7 @@ The seated hero against the cabin, for drive_feature.gd. The drive clip is a cha
 - `BIKE_GRIPS = ["Handle_L", "Handle_R"]`: The bicycle's hands: the grips on the handlebar, not a steering rim.
 - `BIKE_PEDALS = ["Pedal_L", "Pedal_R"]`: The bicycle's feet, and the crank they turn with (asset_paths.gd).
 - `BIKE_LEAN = deg_to_rad(54.0)`: On a bicycle the rider pitches this far forward about the hips: the drive clip sits upright in a car seat, and an upright rider's hands fall a third of a metre short of the grips. The avatar's own transform carries the walk lean and is rewritten every frame, so the skeleton node is the one turned (and put back exactly as it was).
+- `SCOOT_LEAN = deg_to_rad(26.0)`: A step-through scooter sits the rider much taller: a slight lean to the grips, none of the bicycle's fold.
 
 ### Properties
 

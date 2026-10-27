@@ -42,6 +42,7 @@ const MASS := {
 	"garbage_truck": 5.0,
 	"emergency": 1.6,
 	"bike": 0.12,
+	"scooter": 0.3,
 }
 const SEDAN_LENGTH := 0.24
 const FIXED_MASS := 50.0

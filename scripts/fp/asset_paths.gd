@@ -22,6 +22,7 @@ const PARKING_METER := STREET_DIR + "parking_meter.glb"
 const LEASE_SIGN := STREET_DIR + "lease_sign.glb"
 const BOLLARD := "res://models/real/props/bollard.glb"
 const BICYCLE := VEHICLES_V2_DIR + "bicycle.glb"
+const SCOOTER := VEHICLES_V2_DIR + "scooter.glb"
 ## Animation names every rigged person provides, as Godot lists them after import. H names the
 ## Blender actions "<name>-loop" (and "sit") so the importer sets LOOP_LINEAR; H's test confirms
 ## the suffix is stripped on 4.7.2. If it is not, H changes this list to the suffixed names.

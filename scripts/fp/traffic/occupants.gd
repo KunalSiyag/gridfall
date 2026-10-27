@@ -22,7 +22,9 @@ const SEAT_NODE := "Seat_Driver"
 ## The driver's contact markers in the full model (vehicles2.py): the feet on the footwell floor
 ## and the hands on the rim, as for the player (drive/seat_pose.gd). A model without them keeps
 ## the plain sit pose.
-const DRIVER_MARKERS := ["Pedal_L", "Pedal_R", "Wheel_L", "Wheel_R", "Cab_Roof"]
+const DRIVER_MARKERS := [
+	"Pedal_L", "Pedal_R", "Wheel_L", "Wheel_R", "Cab_Roof", "Handle_L", "Handle_R"
+]
 ## The top of the head rides this multiple of the hips-to-head-bone distance above the hips (the
 ## skull and hair over the head bone), as in seat_pose.gd.
 const SKULL_HAIR := 1.40
@@ -59,10 +61,17 @@ func setup(p_people: PPL) -> void:
 	riding = 0
 
 
-## Seats a driver in each of the CAP nearest moving vehicles within RANGE (a rider on each of the
-## BIKE_CAP nearest bicycles within BIKE_RANGE) that show their full model, and releases the
-## rest. Call between people.begin and people.finish, after render.draw_car.
-func sync(cars: Array, cam: Vector3, residents: Variant) -> void:
+## Seats a driver in each of the CAP nearest moving vehicles within RANGE (a rider on each of
+## the BIKE_CAP nearest two-wheelers within BIKE_RANGE) that show their full model, and releases
+## the rest. Call between people.begin and people.finish, after render.draw_car.
+##
+## A two-wheeler (bicycle or scooter) rides in the riders' bucket and range, not a car seat's.
+static func _small(c: VH.Car) -> bool:
+	return c.kind == "bike" or c.kind == "scooter"
+
+
+## The cars that can show a driver from cam, nearest first: [distance, car, seat point].
+func _candidates(cars: Array, cam: Vector3) -> Array:
 	var cands: Array = []
 	for c: VH.Car in cars:
 		if c.dead or c.parked or c.far or c.role == VH.PLAYER:
@@ -72,20 +81,25 @@ func sync(cars: Array, cam: Vector3, residents: Variant) -> void:
 		if c.node == null or not c.node.visible or not c.node.is_inside_tree():
 			continue
 		var d := cam.distance_to(c.pos)
-		if d > (BIKE_RANGE if c.kind == "bike" else RANGE):
+		if d > (BIKE_RANGE if _small(c) else RANGE):
 			continue
 		var seat: Variant = seat_point(c.node)
 		if seat != null:
 			cands.append([d, c, seat])
 	cands.sort_custom(func(a: Array, b: Array) -> bool: return float(a[0]) < float(b[0]))
+	return cands
+
+
+func sync(cars: Array, cam: Vector3, residents: Variant) -> void:
+	var cands := _candidates(cars, cam)
 	var keep := {}
 	var left := {false: CAP, true: BIKE_CAP}
 	for cand: Array in cands:
 		var c: VH.Car = cand[1]
-		var bike := c.kind == "bike"
-		if int(left[bike]) <= 0:
+		var small := _small(c)
+		if int(left[small]) <= 0:
 			continue
-		left[bike] = int(left[bike]) - 1
+		left[small] = int(left[small]) - 1
 		var e: Array = _by_car.get(c.id, [])
 		if e.is_empty():
 			e = _seat_driver(c, residents)
@@ -146,12 +160,14 @@ func _seat_driver(c: VH.Car, residents: Variant) -> Array:
 	if ride:
 		e.append_array([seat_point(c.node), _limbs(w.body.skel)])
 		return e
+	# A scooter rider takes the car path below: the sit pose with the limbs bent onto the markers
+	# (the hands find the Handle_ grips when there is no Wheel_ rim), nothing to pedal.
 	# A car driver gets the player's treatment (drive/seat_pose.gd): hands on the rim, feet on the
 	# footwell floor and the hips sunk until the head clears the roof line, so their feet do not
 	# hang through the floorpan the chair-height sit clip leaves them at. The sink is measured on
 	# the first place (below), the body being static.
 	var pts := driver_points(c.node)
-	if pts.has("Pedal_L") and pts.has("Wheel_L"):
+	if pts.has("Pedal_L") and (pts.has("Wheel_L") or pts.has("Handle_L")):
 		e.append_array([pts, _limbs(w.body.skel), -1.0])
 	return e
 
@@ -330,6 +346,8 @@ func _driver_limbs(e: Array, c: VH.Car) -> void:
 	for k in range(2):
 		var foot := "Pedal_L" if k == 0 else "Pedal_R"
 		var hand := "Wheel_L" if k == 0 else "Wheel_R"
+		if not pts.has(hand):
+			hand = "Handle_L" if k == 0 else "Handle_R"
 		if pts.has(foot):
 			_reach(sk, bones.slice(k * 7, k * 7 + 4), to_sk * (car * (pts[foot] as Vector3)))
 		if pts.has(hand):

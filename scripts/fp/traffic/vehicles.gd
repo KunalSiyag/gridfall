@@ -439,7 +439,8 @@ func update_pose(c: Car) -> void:
 	h = h.normalized()
 	var ctr := pf - h * (0.3 * L)
 	var lat := c.lat_off
-	if c.kind == "bike":
+	if c.kind == "bike" or c.kind == "scooter":
+		# The two-wheelers ride the carriageway edge and slip alongside where a car cannot.
 		lat = BIKE_LAT * (1.0 - lg.pass_factor(c.lane, c.s)) if c.lane.kind == LG.STRAIGHT else BIKE_LAT * 0.5
 	elif c.lane.shifted and c.half_w > SEDAN_HW:
 		lat -= lg.pass_factor(c.lane, maxf(c.s - L * 0.5, 0.0)) * (c.half_w - SEDAN_HW + 0.004)
@@ -651,6 +652,8 @@ func _vmax(c: Car) -> float:
 		d += l.length
 	if c.kind == "bike":
 		v = minf(v, c.v0 if c.v0 > 0.0 else 4.0 * WS.M)
+	elif c.kind == "scooter":
+		v = minf(v, c.v0 if c.v0 > 0.0 else 9.7 * WS.M)
 	return maxf(v, 0.5 * WS.M)
 
 
@@ -702,9 +705,16 @@ func _leader(c: Car) -> Array:
 	return [best, bv]
 
 
-## Cars pass cyclists riding at the carriageway edge.
+## Cars pass the two-wheelers riding at the carriageway edge, and a scooter filters past a
+## bicycle; a bicycle behind anything queues.
 func _ignores(c: Car, o: Car) -> bool:
-	return o.kind == "bike" and c.kind != "bike" and o.lane != null and lg.pass_factor(o.lane, o.s) < 0.3
+	if o.lane == null or lg.pass_factor(o.lane, o.s) >= 0.3:
+		return false
+	if o.kind == "bike":
+		return c.kind != "bike"
+	if o.kind == "scooter":
+		return c.kind != "bike" and c.kind != "scooter"
+	return false
 
 
 ## [distance from c's front to the nearest point it must stop at (INF when none)].
@@ -1030,7 +1040,7 @@ func _threat(t: LG.TileInfo, e: int, mv: LG.Lane, secs: float) -> bool:
 		var l: LG.Lane = f[0]
 		var extra: float = f[1]
 		for o: Car in l.cars:
-			if o.kind == "bike" and o.v < 0.05:
+			if (o.kind == "bike" or o.kind == "scooter") and o.v < 0.05:
 				continue
 			var omv := _next_move(o, a)
 			if omv != null and omv != mv and not mv.conflicts.has(omv.id):

@@ -49,6 +49,9 @@ ROAD_VEHICLES = ("sedan", "hatchback", "suv", "coupe", "taxi", "van", "pickup", 
                  "garbage_truck", "firetruck", "ambulance")
 WHEELS = ["Wheel_FL", "Wheel_FR", "Wheel_RL", "Wheel_RR"]
 BIKE_WHEELS = ["Wheel_F", "Wheel_R"]
+## The two-wheelers: bicycle-sized (under the road-vehicle scale bounds), Wheel_F / Wheel_R,
+## no car glass.
+TWO_WHEELERS = ("bicycle", "scooter")
 # Godot turns nodes with these name suffixes into physics bodies / colliders on import (use_name_suffixes)
 PHYS_SUFFIXES = ("-colonly", "_colonly", "-col", "_col", "-convcolonly", "_convcolonly", "-convcol", "_convcol",
                  "-rigid", "_rigid", "-vehicle", "_vehicle", "-wheel", "_wheel", "-noimp", "_noimp", "-occonly",
@@ -285,12 +288,12 @@ def check(f):
                 flags.append("LOD_NO_LAMPS")
         if abs(gy[0]) > 2e-3:
             flags.append("WHEELS!=0")
-        if base != "bicycle" and (not (0.17 <= length <= 0.65) or width > 0.13):
+        if base not in TWO_WHEELERS and (not (0.17 <= length <= 0.65) or width > 0.13):
             flags.append("SCALE(len=%.3f,w=%.3f)" % (length, width))
         if not lod:
             if len(mats) > 8:
                 flags.append("MATS=%d>8" % len(mats))
-            for wn in (BIKE_WHEELS if base == "bicycle" else WHEELS):
+            for wn in (BIKE_WHEELS if base in TWO_WHEELERS else WHEELS):
                 w = bpy.data.objects.get(wn)
                 if w is None or w.type != "MESH":
                     flags.append("MISSING_" + wn)
@@ -303,7 +306,7 @@ def check(f):
                     flags.append("WHEEL_AIR:%s" % wn)
             if "Seat_Driver" not in [o.name for o in objs]:
                 flags.append("MISSING_Seat_Driver")
-            if base != "bicycle":
+            if base not in TWO_WHEELERS:
                 g = bpy.data.materials.get("Glass_Car")
                 a = None
                 if g is not None and g.node_tree:
