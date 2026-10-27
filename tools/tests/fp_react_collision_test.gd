@@ -131,9 +131,11 @@ func _post(feet: Vector3, run: Vector3, metres: float) -> AABB:
 # ------------------------------------------------------------------ scenarios
 
 
-## Hits w with cause along dir (src behind them, push along dir), samples the drawn body to the
-## reaction's end. The hero watches 2.5 m back, so the body draws and its head is the posed
-## bone.
+## Hits w with cause along dir (src behind them, push along dir) with a fling in metres
+## (reactions.hit takes metres: a 2.5 sends the body 2.5 m along the run), samples the drawn
+## body to the reaction's end, and returns hit()'s dict with "travel" added: the farthest the
+## body got along dir while down (the flight and the skid; the walk after get-up is not a
+## throw). The hero watches 2.5 m back, so the body draws and its head is the posed bone.
 func _hit_and_watch(
 	label: String, w: WK.Walker, feet: Vector3, dir: Vector3, cause: String, fling_m: float
 ) -> Dictionary:
@@ -144,18 +146,35 @@ func _hit_and_watch(
 	var src := feet - dir * (1.2 * WS.M)
 	src.y = feet.y
 	_reset(label)
-	var ret: Dictionary = react.call("hit", w, src, dir * WS.M, STRENGTH, cause, fling_m * WS.M)
+	var ret: Dictionary = react.call("hit", w, src, dir * WS.M, STRENGTH, cause, fling_m)
 	var t := 0.0
 	var ticks := 0
+	var far := 0.0
 	while t < REACT_S:
 		tr.call("step", DT)
 		tr.call("sync_visuals", DT)
 		t += DT
 		ticks += 1
 		_clock += DT
+		if bool(react.call("is_down", w)):
+			far = maxf(far, (w.pos + w.vis_off - feet).dot(dir))
 		if int(t / DT) % 2 == 0:
 			_sample_body(label, w)
+	ret["travel"] = far
 	return ret
+
+
+## The throw claims with teeth: while down, the body really travelled the metres the fling
+## promises -- a fling passed in the wrong scale (12 cm instead of 2.5 m) stops short of every
+## obstacle and fails here.
+func _reached(label: String, ret: Dictionary, floor_m: float) -> void:
+	var far := float(ret.get("travel", 0.0))
+	print("  travel: %s %.2f m" % [label, far / WS.M])
+	K.check(
+		fails,
+		far >= floor_m * WS.M,
+		"%s: the throw carried %.2f m (floor %.2f m)" % [label, far / WS.M, floor_m]
+	)
 
 
 ## A punch knocks them down, the throw flies them into a wall 1.2 m along the run.
@@ -165,6 +184,7 @@ func _check_throw_into_wall(at: Vector3, run: Vector3) -> void:
 	var w := _victim(at, run)
 	var ret := _hit_and_watch(label, w, at, run, "punch", 2.5)
 	K.check(fails, bool(ret.get("down", false)), "fixture: the punch knocks them down")
+	_reached(label, ret, 0.35)
 	_report(label)
 	wk.remove(w)
 	ctx.collision.clear_test_boxes()
@@ -176,6 +196,7 @@ func _check_throw_into_car(at: Vector3, run: Vector3) -> void:
 	var w := _victim(at, run)
 	var ret := _hit_and_watch("a body thrown at a car lands clear of it", w, at, run, "car", 2.5)
 	K.check(fails, bool(ret.get("down", false)), "fixture: the car knocks them down")
+	_reached("a body thrown at a car lands clear of it", ret, 0.6)
 	_report("a body thrown at a car lands clear of it")
 	wk.remove(w)
 	ctx.collision.clear_test_boxes()
@@ -187,6 +208,7 @@ func _check_throw_into_post(at: Vector3, run: Vector3) -> void:
 	var w := _victim(at, run)
 	var ret := _hit_and_watch("a body thrown at a post lands clear of it", w, at, run, "punch", 2.5)
 	K.check(fails, bool(ret.get("down", false)), "fixture: the punch knocks them down")
+	_reached("a body thrown at a post lands clear of it", ret, 0.25)
 	_report("a body thrown at a post lands clear of it")
 	wk.remove(w)
 	ctx.collision.clear_test_boxes()
@@ -261,6 +283,7 @@ func _check_throw_into_real_car(_at: Vector3, _run: Vector3) -> void:
 	var w := _victim(victim_at, head)
 	var ret := _hit_and_watch(label, w, victim_at, head, "car", 2.5)
 	K.check(fails, bool(ret.get("down", false)), "fixture: the car knocks them down")
+	_reached(label, ret, 0.3)
 	_report(label)
 	wk.remove(w)
 	_car_body = null
