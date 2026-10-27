@@ -84,6 +84,7 @@ func _init() -> void:
 		_check_roam(w, d)
 		_check_pet(d)
 		_check_defend(w, d)
+		_check_defend_npc(w, d)
 		_check_startle(d)
 		_check_dodge(d)
 		_check_pause(d)
@@ -377,6 +378,25 @@ func _check_defend(w: WK.Walker, d: PACK.Dog) -> void:
 	p.input_enabled = false
 	_step(4.0)
 	K.check(fails, d.angry <= 0.0, "defend: it calms down after its bites (%.1f s)" % d.angry)
+
+
+## The same punch on the owner, but thrown by another person (hit_walker's by names them): the
+## dog startles with the street and never goes for the hero.
+func _check_defend_npc(w: WK.Walker, d: PACK.Dog) -> void:
+	var p := ctx.player
+	calls.clear()
+	toasts.clear()
+	traffic.call("hit_walker", w.id, p.position, Vector3.ZERO, 0.4, "punch", 0.0, w.id + 1000)
+	_step(0.5)
+	K.check(
+		fails,
+		d.angry <= 0.0 and not _called("growl"),
+		"defend: someone else's punch never sets the dog on the hero"
+	)
+	var went := false
+	for t in toasts:
+		went = went or "goes for you" in t
+	K.check(fails, not went, "and no %s goes for you! toast" % d.name)
 
 
 ## A shout close by makes the dog flinch (an Idle_HitReact clip) and bark.

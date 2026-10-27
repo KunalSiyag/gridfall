@@ -1,6 +1,7 @@
 extends FpFeature
 ## Hit feel (integration feature "hit_feel"; docs/fp/ARCHITECTURE.md, Hit feel): what a blow feels
-## like. A blow of the hero's that lands (person_hit "punch" or "shove") freezes the world for a few
+## like. A blow of the hero's that lands (person_hit "punch" or "shove", and only the hero's —
+## info "by") freezes the world for a few
 ## hundredths of a second (hit-stop: Engine.time_scale dips to STOP_SCALE for real seconds, longer
 ## for a harder blow and one that knocks them down) and shakes the camera (the player's shake).
 ## Someone the player's car knocks down, a blow on the hero (hero_hurt) and a crash in the car
@@ -127,6 +128,8 @@ func _on_person_hit(_at: Vector3, cause: String, info: Dictionary) -> void:
 	var down := bool(info.get("down", false))
 	match cause:
 		"punch", "shove":
+			if int(info.get("by", -1)) >= 0:
+				return  # someone else's blow: the hero's world keeps running
 			hit_stop(lerpf(BLOW_STOP.x, BLOW_STOP.y, s) + (DOWN_STOP if down else 0.0))
 			shake(lerpf(BLOW_SHAKE.x, BLOW_SHAKE.y, s) + (DOWN_SHAKE if down else 0.0))
 		"car":

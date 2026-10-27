@@ -64,6 +64,7 @@ func _init() -> void:
 	_check_punch()
 	_check_guard_chip()
 	_check_flinch()
+	_check_hit_attacker()
 	_check_regen()
 	_check_car()
 	_check_knock_out()
@@ -644,6 +645,50 @@ func _check_save() -> void:
 	var up := not bool(f.call("knocked")) and ctx.player.input_enabled
 	up = up and str(rig.call("state")) == "loco"
 	K.check(fails, up and is_equal_approx(_hp(), 50.0), "a load mid knock-down stands the hero up")
+
+
+## Who struck is named in the blow's info ("by": -1 the hero, else a walker's id): an NPC's
+## punches never feed the assault streak nor call a crew on the hero; the hero's knock-down does.
+func _check_hit_attacker() -> void:
+	_heal()
+	_quiet()
+	var p := ctx.player
+	var streak: Array = (tr.get("incidents") as RefCounted).get("_punches")
+	var n0 := streak.size()
+	var w := _stranger(1.0)
+	var other := _stranger(2.0)
+	var push := p.body_forward() * (1.5 * WS.M)
+	var info: Dictionary = tr.call(
+		"hit_walker", w.id, p.position, push, 0.45, "punch", 0.0, other.id
+	)
+	K.check(
+		fails,
+		not info.is_empty() and int(info.get("by", -1)) == other.id,
+		"a blow by another walker names them in the info"
+	)
+	K.check(
+		fails,
+		str(info.get("crew", "")) == "",
+		"and calls no crew (a punch down by the hero would call the police)"
+	)
+	info = tr.call("hit_walker", w.id, p.position, push, 1.0, "punch", 0.0, other.id)
+	K.check(
+		fails,
+		bool(info.get("down", false)) and str(info.get("crew", "")) == "",
+		"even their knock-down calls no crew on the hero"
+	)
+	K.check(fails, streak.size() == n0, "someone else's blows never feed the assault streak")
+	var own: Dictionary = tr.call("hit_walker", other.id, p.position, push, 1.0, "punch")
+	K.check(
+		fails,
+		not own.is_empty() and int(own.get("by", -2)) == -1,
+		"the hero's own knock-down names the hero (%s)" % str(own.get("by", "?"))
+	)
+	K.check(
+		fails, streak.size() == n0 + 1, "the hero's own does (fp_carjack sees it call the police)"
+	)
+	(tr.get("walkers") as WK).remove(w)
+	(tr.get("walkers") as WK).remove(other)
 
 
 func _check_fight_back() -> void:

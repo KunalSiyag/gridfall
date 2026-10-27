@@ -42,10 +42,18 @@ func setup(p_f: Object) -> void:
 
 
 ## The person_hit info for walker w hit by cause at world point at (res: reactions.gd hit()'s
-## result, seen: the walkers who saw it): {"walker", "resident_id", "name", "down", "street",
-## "strength", "witnesses" (their resident ids), "crew" ("police", "ambulance" or "")}.
+## result, seen: the walkers who saw it, by: who struck — -1 the hero, else a walker's id):
+## {"walker", "resident_id", "name", "down", "street", "strength", "by", "witnesses" (their
+## resident ids), "crew" ("police", "ambulance" or "")}. A crew answers the hero's violence only:
+## a blow by someone else never counts toward the assault streak nor dispatches one.
 func report(
-	w: WK.Walker, at: Vector3, strength: float, cause: String, res: Dictionary, seen: Array
+	w: WK.Walker,
+	at: Vector3,
+	strength: float,
+	cause: String,
+	res: Dictionary,
+	seen: Array,
+	by: int = -1
 ) -> Dictionary:
 	var down := bool(res.get("down", false))
 	var street := _street(at)
@@ -57,6 +65,7 @@ func report(
 		"down": down,
 		"street": street,
 		"strength": strength,
+		"by": by,
 		"witnesses": [],
 		"crew": "",
 	}
@@ -73,7 +82,8 @@ func report(
 		f.ctx.residents.remember(s, str(SAW_LINES.get(cause, SAW_LINES["shove"])) % where)
 		f.ctx.residents.nudge_mood(s, SAW_MOOD)
 		(info["witnesses"] as Array).append(o.resident_id)
-	info["crew"] = _crew(cause, down, at)
+	if by < 0:
+		info["crew"] = _crew(cause, down, at)
 	return info
 
 

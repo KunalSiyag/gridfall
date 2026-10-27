@@ -47,6 +47,7 @@ func _init() -> void:
 	p.teleport(p.position, rad_to_deg(p.yaw))
 	_check_punch()
 	_check_strength()
+	_check_attacker_marker()
 	_check_arc_spec()
 	_check_hero_hurt()
 	_check_crash()
@@ -132,6 +133,30 @@ func _check_punch() -> void:
 	_step(1.5)
 	K.check(fails, ctx.player.shake_amount() == 0.0, "the shake dies away")
 	_remove(w)
+	_settle()
+
+
+## A blow that is not the hero's (person_hit info "by" a walker's id) never stops or shakes the
+## hero's world; the same blow from the hero does. Dicts with no "by" read as the hero's.
+func _check_attacker_marker() -> void:
+	_settle()
+	var s0 := int(hf.get("stops"))
+	ctx.bus.person_hit.emit(ctx.player.position, "punch", {"strength": 0.8, "down": true, "by": 7})
+	_real(0.15)
+	K.check(
+		fails,
+		int(hf.get("stops")) == s0 and not bool(hf.call("stopped")),
+		"a punch thrown by someone else stops nothing"
+	)
+	K.check(fails, ctx.player.shake_amount() == 0.0, "and shakes nothing")
+	ctx.bus.person_hit.emit(ctx.player.position, "punch", {"strength": 0.8, "down": true, "by": -1})
+	_real(0.05)
+	K.check(
+		fails,
+		int(hf.get("stops")) == s0 + 1 and bool(hf.call("stopped")),
+		"the same punch from the hero stops the world"
+	)
+	_real(0.2)
 	_settle()
 
 
