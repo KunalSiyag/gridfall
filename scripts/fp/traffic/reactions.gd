@@ -6,20 +6,19 @@ extends RefCounted
 ## before they get up (get_up). A car that runs them over where they lie shoves them along and
 ## leaves them down but up sooner. Then they shake their head or shout at whoever did it, run
 ## off, or walk back to where they were; some of those shoved or punched fight back instead
-## (fight_back):
-## they square up to the hero, close in and throw jabs and crosses (on_hero_hit) until the hero is
-## down, gets away or drives off — each their own way (fight_tempers), fixed to who they are: one
-## turns the hero's blows aside, one sidesteps round them while they wait, one calls friends over,
-## one squares up and bolts, and a tough one leads with the cross and answers a blow at once.
-## People within WITNESS_R who see it run off or shout too. While a
-## walker stands where the blow left it its state is "react" (it keeps its edge and plan; the
-## slide and the walk back move only its drawn offset), and a run gives it its own state back at
-## RUN_F times its pace with the run clip. The hero may take hold of someone (grab): they hang in
-## the hero's hands (hold_to) in HOLD_CLIP, reeling from blows without falling free, until let go
-## (release), knocked down or HOLD_S is up, then react as to a shove. A punch thrown at the hero
-## is announced as it starts (on_wind_up), holds back then snaps through its wind-up
-## (counter_cues) and may be countered as it arrives (on_hero_parry). What follows a blow for the
-## city (memory, mood, crews) is incidents.gd's.
+## (fight_back): they square up to the hero, close in and throw jabs and crosses (on_hero_hit)
+## until the hero is down, gets away or drives off — each their own way (fight_tempers), fixed to
+## who they are: one turns the hero's blows aside, one sidesteps round them while they wait, one
+## calls friends over, one squares up and bolts, and a tough one leads with the cross and answers a
+## blow at once. People within WITNESS_R who see it run off or shout too. While a walker stands
+## where the blow left it its state is "react" (it keeps its edge and plan; the slide and the walk
+## back move only its drawn offset), and a run gives it its own state back at RUN_F times its pace
+## with the run clip. The hero may take hold of someone (grab): they hang in the hero's hands
+## (hold_to) in HOLD_CLIP, reeling from blows without falling free, until let go (release), knocked
+## down or HOLD_S is up, then react as to a shove. A punch thrown at the hero is announced as it
+## starts (on_wind_up), holds back then snaps through its wind-up (counter_cues) and may be
+## countered as it arrives (on_hero_parry). What follows a blow for the city (memory, mood, crews)
+## is incidents.gd's.
 
 const WS := preload("res://scripts/fp/world_scale.gd")
 const AP := preload("res://scripts/fp/asset_paths.gd")
@@ -183,6 +182,7 @@ class Reaction:
 	var called: bool = false  # a caller has already shouted their friends over
 	var chip: float = 0.0  # how beaten a guard's guard is (guard_chip); the blow past 1 lands
 	var broken: float = 0.0  # seconds the beaten guard stays down (guard_break): all blows land
+	var slot_seq: int = -1  # arrival order among the hero's fighters (brawl_ring)
 	var stood_over: bool = false  # the stand-over beat for a downed hero already played
 	var checked: bool = false  # someone already came to look this one over (downed_awareness)
 	var check_of: int = -1  # the checker: whose knock-down this one came to look at
@@ -736,6 +736,7 @@ func _finish(r: Reaction) -> void:
 
 func step(dt: float) -> void:
 	clock += dt
+	crowd.step(dt)
 	for r: Reaction in _active.values():
 		var w := r.w
 		if (

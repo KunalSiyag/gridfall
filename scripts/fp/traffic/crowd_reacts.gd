@@ -32,6 +32,13 @@ const HORN_CD := 5.0
 const HORN_R := 20.0 * WS.M
 const ESCALATE_S := 1.0
 const ESCALATE_R := 2.0 * WS.M
+## A brawl with a ring on it (brawl_ring — three or more fighting the hero) draws jeers from the
+## crowd: every JEER_CD seconds one of the onlookers within JEER_R of the hero turns to the
+## fight and shouts a beat (JEER_S). The fight's own never jeer (they are not free).
+const RING_MIN := 3
+const JEER_CD := 1.4
+const JEER_R := 10.0 * WS.M
+const JEER_S := 0.9
 
 ## Shared from reactions.gd's setup: the walkers, the roll, the record lifecycle and the clock.
 var wk: WK
@@ -46,6 +53,7 @@ var _gasp_t := -INF  # and when, on reactions.gd's clock
 var _horn_p := Vector3.ZERO  # where a horn last startled the street (horn_street)
 var _horn_t := -INF  # and when, on reactions.gd's clock
 var _horn_long := false  # the ripple in flight came from a held press
+var _jeer_t := 0.0  # the crowd's next jeer, on reactions.gd's clock (brawl_ring)
 
 
 ## True when a knock-down at at may rock the crowd as one (crowd_gasp): the flag on, and no gasp
@@ -71,6 +79,39 @@ func apply_gasp(r) -> void:
 func noted_gasp(at: Vector3) -> void:
 	_gasp_t = now.call()
 	_gasp_p = at
+
+
+## The crowd's beat (reactions.gd's step): while a brawl has a ring on it (brawl_ring), someone
+## near turns to the fight and jeers, one per JEER_CD seconds.
+func step(dt: float) -> void:
+	if not FeatureFlags.enabled("brawl_ring") or wk == null:
+		return
+	_jeer_t -= dt
+	if _jeer_t > 0.0:
+		return
+	var fighting := 0
+	for id in active:
+		var o = active[id]
+		if o.fighter and not o.down and o.mode == "fight":
+			fighting += 1
+	if fighting < RING_MIN:
+		return
+	_jeer_t = JEER_CD
+	var at: Vector3 = wk.player_pos
+	var r2 := JEER_R * JEER_R
+	var near: Array = []
+	for o: WK.Walker in wk.walkers:
+		if not is_free.call(o):
+			continue
+		if (o.pos + o.vis_off).distance_squared_to(at) > r2:
+			continue
+		near.append(o)
+	if near.is_empty():
+		return
+	var j = new_reaction.call(near[rng.randi() % near.size()])
+	j.src = at
+	j.delay = 0.0
+	j.steps = [["place", &"shout", JEER_S]]
 
 
 ## A car horn sounded at src and carries radius (u; horn_street): the people it reaches who are

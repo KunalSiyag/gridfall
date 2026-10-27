@@ -42,6 +42,9 @@ const PICK_PX := 26.0
 const PHOTO_BACK := 1.3
 ## Seconds between attempts to rebuild bus lines that no longer match the roads.
 const LINE_RETRY := 10.0
+## Who struck, in hit_walker's by and person_hit's info "by": the hero. Anything else is the
+## attacker walker's id — an NPC attack path must pass it, never this.
+const BY_HERO := -1
 ## The player can take a parked car, their own, or a car in traffic (an ambient one, or with
 ## carjack a resident's) crawling below this speed.
 const CLAIM_SPEED := 0.5 * WS.M
@@ -1552,7 +1555,7 @@ func _left_hand(w: WK.Walker, q: Vector3) -> Vector3:
 ## Person id (walkers_near) takes a blow from src (a world point) along push, of strength 0..1,
 ## cause "shove", "punch", "car" or "carjack" (dragged out of their car); fling (metres, NOT
 ## world units like the rest) > 0 throws them that far if it knocks them down. by names who
-## struck: -1 the hero (the default — every caller today), else the attacker walker's id, so a
+## struck: BY_HERO the hero (the default — every caller today), else the attacker walker's id, so a
 ## blow that is not the hero's never freezes the hero's world, sets the victim's dog on them or
 ## calls the law on them (info "by"). They react and the people around see it (reactions.gd), the
 ## city hears of it (incidents.gd) and the bus emits person_hit. Returns that signal's info, {}
@@ -1564,7 +1567,7 @@ func hit_walker(
 	strength: float,
 	cause: String,
 	fling: float = 0.0,
-	by: int = -1
+	by: int = BY_HERO
 ) -> Dictionary:
 	var w := _walker_by_id(id) if _built else null
 	if w == null:

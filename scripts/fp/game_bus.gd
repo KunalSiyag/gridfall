@@ -51,7 +51,7 @@ signal prop_knocked(at: Vector3, kind: String, speed: float)
 ## Someone on foot was hit at a point (their feet): cause "shove" or "punch" (the hero's fists
 ## and kicks), "car" (the car the player drives) or "carjack" (dragged out of the car the player
 ## takes); info is traffic_feature.gd hit_walker()'s {"walker", "resident_id", "name", "down",
-## "street", "strength", "by" (-1 the hero, else the attacker walker's id), "witnesses",
+## "street", "strength", "by" (BY_HERO the hero, else the attacker walker's id), "witnesses",
 ## "crew"}, a throw that meets a wall or a solid prop mid-flight adding "impact" {"at", "in"}
 ## (throw_impact — marked on this one emission, never a second person_hit). Emitted by traffic.
 signal person_hit(at: Vector3, cause: String, info: Dictionary)
