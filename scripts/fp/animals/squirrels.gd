@@ -12,6 +12,7 @@ extends Node3D
 const D := preload("res://scripts/sim/sim_defs.gd")
 const WS := preload("res://scripts/fp/world_scale.gd")
 const LIFE := preload("res://scripts/fp/animals/squirrel_life.gd")
+const FT := preload("res://scripts/fp/forest_trees.gd")
 const BODY := preload("res://scripts/fp/animals/squirrel_body.gd")
 const PACK := preload("res://scripts/fp/animals/dog_pack.gd")
 const CAT_LIFE := preload("res://scripts/fp/animals/cat_life.gd")
@@ -26,17 +27,12 @@ const FAR := 3.6
 const MAX_SQUIRRELS := 3
 ## A tree to climb: the collision world's trunk cylinder (0.25 m across; a lamp pole is 0.15 m, so
 ## never mistaken for a tree), at least TREE_TOP (u) tall. The woods' trees carry no collider, so
-## they are read from city_view.gd's own planting (see _forest_tree()).
-const TRUNK_R := 0.25 * WS.M
+## they are read from the planting hash (forest_trees.gd).
 const TRUNK_MIN_R := 0.20 * WS.M
 const TREE_TOP := 0.15
-## The woods: this share of the map's forest tiles keeps a squirrel, at one of the tile's own four
-## trees, which city_view.gd plants FOREST_SPREAD (u) either way off the tile's middle at 1.0 to
-## 1.6 times a street tree's size.
+## The woods: this share of the map's forest tiles keeps a squirrel, at one of the tile's own
+## trees.
 const FOREST_SHARE := 0.5
-const FOREST_N := 4
-const FOREST_SPREAD := 0.85
-const FOREST_STEP := 0.1
 ## Its lawn: a patch within FORAGE_R (m) of its trunk, a point of it picked FORAGE_TRIES angles
 ## round the trunk at one of FORAGE_STEPS (m) out.
 const FORAGE_R := 0.5
@@ -232,14 +228,14 @@ func _spot_of(i: int) -> Dictionary:
 
 ## The tree of tile i as [x, z, trunk radius]: the first trunk cylinder the collision world holds
 ## for it (a street tree or a lot's), else — in the woods, which carry no colliders — one of the
-## tile's own trees (city_view.gd's, see _forest_tree()).
+## tile's own trees (forest_trees.gd's hash, city_view.gd's planting).
 func _tree_at(i: int) -> Array:
 	if ctx.sim.kind[i] == D.FOREST:
 		var rng := RandomNumberGenerator.new()
 		rng.seed = hash("squirrels:%d" % i) ^ (ctx.sim.city_seed * 7919)
 		if rng.randf() >= FOREST_SHARE:
 			return []
-		return _forest_tree(D.tx(i), D.ty(i), rng.randi_range(0, FOREST_N - 1))
+		return FT.tree(D.tx(i), D.ty(i), rng.randi_range(0, FT.N - 1))
 	var cyls := ctx.collision.cylinders(i)
 	var j := 0
 	while j + 3 < cyls.size():
@@ -247,18 +243,6 @@ func _tree_at(i: int) -> Array:
 			return [cyls[j], cyls[j + 1], cyls[j + 2]]
 		j += 4
 	return []
-
-
-## The t-th tree city_view.gd plants on the forest tile (gx, gz): its world xz and the trunk radius
-## of the model drawn there (its own hash, so a squirrel climbs a tree that is really there; the
-## woods' trees are 1.0 to 1.6 times the size of a street one).
-func _forest_tree(gx: int, gz: int, t: int) -> Array:
-	var h := absi(gx * 73856093 ^ gz * 19349663)
-	var hh := (h >> (t * 4)) & 0xffff
-	var ox := float(hh % 61) / 60.0 - 0.5
-	var oz := float((hh >> 6) % 61) / 60.0 - 0.5
-	var sc := 1.0 + float(hh % 7) * FOREST_STEP
-	return [gx + ox * FOREST_SPREAD, gz + oz * FOREST_SPREAD, TRUNK_R * sc]
 
 
 ## The squirrel's lawn: a point of free ground within FORAGE_R (m) of its trunk, clear of the

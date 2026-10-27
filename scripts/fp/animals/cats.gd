@@ -221,6 +221,8 @@ func _open(i: int, s: Dictionary, night: bool) -> bool:
 ## chaser's reach once up a refuge tree (the dog gives up below it: dog_pack.gd's chase).
 func world(pack: PACK, flock: FLOCK, perched: FLOCK, sq: SQ_LIFE) -> void:
 	_pack = pack
+	if ctx != null and ctx.sim != null:
+		life.kinds = ctx.sim.kind
 	life.hero_on_foot = pack.hero_on_foot
 	life.hero = pack.hero
 	life.hero_vel = pack.hero_vel

@@ -22,6 +22,7 @@ const DB := preload("res://scripts/fp/animals/dog_bodies.gd")
 const BODIES := preload("res://scripts/fp/animals/cat_bodies.gd")
 const CAT_RIG := preload("res://scripts/fp/animals/cat_rig.gd")
 const DOGS := preload("res://scripts/fp/animals/dog_pack.gd")
+const FT := preload("res://scripts/fp/forest_trees.gd")
 
 ## Speeds (m/s): strolling, trotting over to the hero, running and stalking; acceleration (m/s²)
 ## and turn rate (rad/s).
@@ -82,6 +83,9 @@ const STARTLE_S := 0.75
 ## along the ground, climbing at CLIMB_MPS (m/s) to CLING_H (m) and clinging, pitched CLIMB_PITCH
 ## against the bark, until no dog has been within HISS for CALM_S (s), then down at DOWN_MPS.
 const REFUGE_R := 6.0 * WS.M
+## In the woods the cat knows its trees: a denser stand (forest_trees.gd plants four a tile) may
+## be bolted to from this far (u); a real trunk cylinder still wins when it is nearer.
+const WOODS_R := 10.0 * WS.M
 const TRUNK_MIN_R := 0.2 * WS.M
 const TREE_TOP := 0.15
 const CLIMB_MPS := 1.6 * WS.M
@@ -185,6 +189,9 @@ class Cat:
 
 var cats: Array = []
 var col: CollisionWorld = null
+## The sim's kind array (fed by the node each world()), so the woods' trees (forest_trees.gd)
+## can be a refuge where no trunk collider stands.
+var kinds := PackedInt32Array()
 ## Called with (cat, call) for a "meow", a "purr", a "hiss" and a hunter's "chatter".
 var on_call: Callable
 ## The world this step, set by the cats node: the hero's feet and velocity, whether they are on
@@ -446,7 +453,8 @@ func _dogs(c: Cat) -> bool:
 
 
 ## The nearest trunk worth bolting up within REFUGE_R of the cat, as [x, z, r]: a street tree's or
-## a lot tree's cylinder (tall enough to hold it), or [] for none about.
+## a lot tree's cylinder (tall enough to hold it), or in the woods — which carry no colliders —
+## the nearest of the tile's own trees (forest_trees.gd), or [] for none about.
 func _refuge(c: Cat) -> Array:
 	var best: Array = []
 	if col == null:
@@ -455,6 +463,11 @@ func _refuge(c: Cat) -> Array:
 	if i0 < 0:
 		return best
 	var bd := REFUGE_R
+	if not kinds.is_empty():
+		best = FT.nearest(c.pos, i0, WOODS_R, kinds)
+		if not best.is_empty():
+			bd = _flat(c.pos, Vector3(best[0], 0.0, best[1]))
+	var cyl_r := minf(bd, REFUGE_R)
 	for dy: int in [-1, 0, 1]:
 		for dx: int in [-1, 0, 1]:
 			var x := D.tx(i0) + dx
@@ -467,8 +480,8 @@ func _refuge(c: Cat) -> Array:
 				var r := cyls[j + 2]
 				if r >= TRUNK_MIN_R and cyls[j + 3] >= TREE_TOP:
 					var dist := _flat(c.pos, Vector3(cyls[j], 0.0, cyls[j + 1]))
-					if dist < bd:
-						bd = dist
+					if dist < cyl_r:
+						cyl_r = dist
 						best = [cyls[j], cyls[j + 1], r]
 				j += 4
 	return best
