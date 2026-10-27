@@ -69,9 +69,13 @@ static func normalize(preset: String) -> String:
 	return preset if PRESETS.has(preset) else DEFAULT
 
 
-## Every knob of a preset (unknown names give the default preset).
-static func knobs(preset: String) -> Dictionary:
-	return PRESETS[normalize(preset)]
+## Every knob of a preset (unknown names give the default preset), with the web tier's overlay
+## merged on top when web_mode() is on. web forces the tier in tests.
+static func knobs(preset: String, web: bool = false) -> Dictionary:
+	var k: Dictionary = PRESETS[normalize(preset)].duplicate()
+	if web_mode(web):
+		k.merge(WEB, true)
+	return k
 
 
 ## The Compatibility renderer (the web build) has no FSR2: on the desktop GL driver setting it
@@ -84,9 +88,20 @@ const COMPAT := {
 	"high": {"scale": 1.0, "msaa": Viewport.MSAA_4X},
 }
 
-## Density ceilings the web quality tier (flag web_quality) publishes for the traffic, crowd
-## and animal owners to clamp their budgets to; each owner tunes its own number with
-## before/after FPS evidence. The render knobs of the tier land separately.
+## The web tier's render knobs (flag web_quality), below Low: the browser build auto-selects
+## Low (fp_mode's GpuMemory probe) and this overlay cheapens it further — the 2-core web box
+## cannot feed Low's scaling, shadow atlas and ranges at a steady frame rate. Merged over the
+## preset inside knobs() when web_mode() is on; desktop runs never see it.
+const WEB := {
+	"scale": 0.6,
+	"atlas": 1024,
+	"vis": 0.55,
+	"far": 35.0,
+	"lod": 2.5,
+	"lights": 4,
+}
+## Density ceilings the web quality tier publishes for the traffic, crowd and animal owners to
+## clamp their budgets to; each owner tunes its own number with before/after FPS evidence.
 const WEB_DENSITY := {"traffic": 12, "crowd": 24, "animals": 6}
 
 
@@ -126,30 +141,36 @@ static func is_compat(method: String = "") -> bool:
 
 ## The viewport's 3D scaling knobs for a preset on a renderer: the preset's own (FSR2) on
 ## Forward+, COMPAT's bilinear scale and MSAA on Compatibility.
-static func viewport_knobs(preset: String, method: String = "") -> Dictionary:
-	var k := knobs(preset)
+static func viewport_knobs(preset: String, method: String = "", web: bool = false) -> Dictionary:
+	var k := knobs(preset, web)
 	var out := {"scaling_mode": int(k["scaling_mode"]), "scale": float(k["scale"])}
 	out["msaa"] = int(k["msaa"])
 	if is_compat(method):
 		var c: Dictionary = COMPAT[normalize(preset)]
 		out = {"scaling_mode": Viewport.SCALING_3D_MODE_BILINEAR, "scale": float(c["scale"])}
 		out["msaa"] = int(c["msaa"])
+	if web_mode(web):
+		# The web tier scales below COMPAT Low; the bilinear pass has no TAA to hide aliasing,
+		# but MSAA costs more than it earns at 0.6 scale on the 2-core web box.
+		out["scale"] = float(WEB["scale"])
+		out["msaa"] = Viewport.MSAA_DISABLED
 	return out
 
 
-## Multiplier on every WS.VIS_* range: 0.7 / 1.0 / 1.3.
-static func vis_mult(preset: String) -> float:
-	return float(knobs(preset)["vis"])
+## Multiplier on every WS.VIS_* range: 0.7 / 1.0 / 1.3 (0.55 in the web tier).
+static func vis_mult(preset: String, web: bool = false) -> float:
+	return float(knobs(preset, web)["vis"])
 
 
-## Street lights G1 keeps lit around the player: 6 / 12 / 16.
-static func max_street_lights(preset: String) -> int:
-	return int(knobs(preset)["lights"])
+## Street lights G1 keeps lit around the player: 6 / 12 / 16 (4 in the web tier).
+static func max_street_lights(preset: String, web: bool = false) -> int:
+	return int(knobs(preset, web)["lights"])
 
 
-## First-person camera far plane in world units: 45 / WS.CAMERA_FAR (60) / 75.
-static func camera_far(preset: String) -> float:
-	return float(knobs(preset)["far"])
+## First-person camera far plane in world units: 45 / WS.CAMERA_FAR (60) / 75 (35 in the web
+## tier).
+static func camera_far(preset: String, web: bool = false) -> float:
+	return float(knobs(preset, web)["far"])
 
 
 ## How far the camera must see while it is over the city (the overview lifts it up to 32 u, and a
