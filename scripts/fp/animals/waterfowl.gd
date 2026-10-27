@@ -59,6 +59,11 @@ func setup(p_ctx: FpContext) -> void:
 	name = "Waterfowl"
 
 
+## The flocks' ceiling: MAX_FLOCKS, or the web tier's share of the animals cap (the feature's
+## setup()).
+var max_flocks := MAX_FLOCKS
+
+
 ## The node's wiring: its own flock list (duck_flock.gd, not the pigeons'), the collision world
 ## and its calls.
 func setup_flocks(p_ctx: FpContext) -> void:
@@ -72,7 +77,7 @@ func setup_flocks(p_ctx: FpContext) -> void:
 ## their flocks; in the rain they all stay in (they shelter on the bank, as the cats do).
 func scan(me: Vector3, by_day: bool, rain := false) -> void:
 	var on := by_day and not rain and FeatureFlags.enabled("waterfowl")
-	scan_flocks(me, on, MAX_FLOCKS, NEAR, FAR, rain)
+	scan_flocks(me, on, max_flocks, NEAR, FAR, rain)
 
 
 ## dt game seconds of the flocks while the flag is on; off takes them away.

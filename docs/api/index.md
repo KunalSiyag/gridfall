@@ -53,6 +53,8 @@ Generated from the `##` doc comments in `scripts/`. Regenerate with `python3 too
 
 ## [scripts/fp/animals/](scripts.fp.animals.md)
 
+- [animal_caps.gd](scripts.fp.animals.md#scriptsfpanimalsanimal_capsgd): The web tier's animals density cap (quality.gd WEB_DENSITY "animals", flag web_quality) split over the animals feature's groups, and its application to the feature
+- [animal_math.gd](scripts.fp.animals.md#scriptsfpanimalsanimal_mathgd): The flat-world helpers the animals modules work in (u, y up): a tile's ground position, flat distance, the strike cone's gap and the pick ray's ball hit
 - [animals_feature.gd](scripts.fp.animals.md#scriptsfpanimalsanimals_featuregd): Dogs, pigeons, cats and squirrels in the street (integration feature "animals")
 - [bird_flocks.gd](scripts.fp.animals.md#scriptsfpanimalsbird_flocksgd): The flock nodes' shared half, used by the pigeons' two nodes (pigeons.gd's foraging flocks and perches.gd's perched ones): the pigeon_flock.gd list each drives, the world the animals feature feeds it from the dogs' pack before every step (world()), the step loop and the draw (step_flocks(), _draw()), the MultiMesh each flock draws with (pigeon_body.gd's bird, one instance and tint a bird) and the tile spots the node's own _spot_of() finds (scan_flocks() brings the near ones out, the nearest first, within its cap)
 - [cat_bodies.gd](scripts.fp.animals.md#scriptsfpanimalscat_bodiesgd): The cats' bodies: Quaternius' Cat (AP.CAT, built by tools/blender/make_cat.py), loaded, pooled and scaled as the dogs' bodies are (dog_bodies.gd), with a CatRig on the skeleton for the tail and the head and the coat shader (cat_coat.gdshader) on the body; dress() gives a body its coat

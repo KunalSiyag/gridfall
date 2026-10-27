@@ -88,6 +88,9 @@ static var _crumb_mesh: BoxMesh = null
 
 ## The times the hero fed a flock.
 var feeds: int = 0
+## The flocks' ceiling: MAX_FLOCKS, or the web tier's share of the animals cap (the feature's
+## setup()).
+var max_flocks := MAX_FLOCKS
 ## The photo shot's {"spot", "cam"}, {} without one.
 var _photo: Dictionary = {}
 
@@ -102,7 +105,7 @@ func setup(p_ctx: FpContext) -> void:
 ## after that, one ambient flock comes out anyway (_baseline).
 func scan(me: Vector3, by_day: bool, rain := false) -> void:
 	var on := by_day and not rain and FeatureFlags.enabled("pigeons")
-	scan_flocks(me, on, MAX_FLOCKS, NEAR, FAR, rain)
+	scan_flocks(me, on, max_flocks, NEAR, FAR, rain)
 	if on:
 		_baseline(me)
 
@@ -400,7 +403,7 @@ func _road_spot(i: int) -> Dictionary:
 ## to me (street_spots.gd), so a young city without shops, civic buildings or parks still shows
 ## pigeons. Nothing when the player is off the streets (no free point near them).
 func _baseline(me: Vector3) -> void:
-	if _flock(BASELINE_KEY) != null or flock.flocks.size() >= MAX_FLOCKS:
+	if _flock(BASELINE_KEY) != null or flock.flocks.size() >= max_flocks:
 		return
 	for f: FLOCK.Flock in flock.flocks:
 		if not f.key.begins_with("photo:") and _flat(f.home, me) <= NEAR:

@@ -114,6 +114,9 @@ const NO_POINT := Vector3(NAN, NAN, NAN)
 var ctx: FpContext
 var life: LIFE
 var bodies: BODIES
+## The cats' ceiling: MAX_CATS, or the web tier's share of the animals cap (the feature's
+## setup()); read by the scan, _spawn and the young city's stray.
+var max_cats := MAX_CATS
 ## Lot -> its front yard ({"anchor", "box", "yaw"} or {}), the animals feature's.
 var yard_of: Callable
 ## Calls made so far by kind ("meow", "purr", "hiss", "chatter") and the times a cat purred for the
@@ -199,7 +202,7 @@ func scan(me: Vector3, night: bool, rain: bool, dog_lots: Dictionary) -> void:
 				near.append([d, i, s])
 	near.sort_custom(func(a: Array, b: Array) -> bool: return float(a[0]) < float(b[0]))
 	for e: Array in near:
-		if life.cats.size() >= MAX_CATS:
+		if life.cats.size() >= max_cats:
 			return
 		_spawn("c:%d" % int(e[1]), e[2])
 	_ambient(me)
@@ -417,9 +420,9 @@ func photo_restore() -> void:
 
 
 ## A new cat for key at spot s (of coat, or one picked by key); null while its body still loads or
-## with MAX_CATS out.
+## with the cats' ceiling (max_cats) out.
 func _spawn(key: String, s: Dictionary, coat := "") -> LIFE.Cat:
-	if life.cats.size() >= MAX_CATS and not key.begins_with("photo:"):
+	if life.cats.size() >= max_cats and not key.begins_with("photo:"):
 		return null
 	var rng := RandomNumberGenerator.new()
 	rng.seed = hash(key) ^ (ctx.sim.city_seed * 7919)
@@ -578,7 +581,7 @@ func _park(i: int) -> Dictionary:
 ## (street_spots.gd), day or night. Nothing once the city has grown, while another is out, or with
 ## no free ground near me.
 func _ambient(me: Vector3) -> void:
-	if life.cats.size() >= MAX_CATS or _cat(AMBIENT_KEY) != null or not _young():
+	if life.cats.size() >= max_cats or _cat(AMBIENT_KEY) != null or not _young():
 		return
 	for c: LIFE.Cat in life.cats:
 		if not c.key.begins_with("photo:") and _flat(c.anchor, me) <= NEAR:
