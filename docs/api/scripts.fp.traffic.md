@@ -255,8 +255,9 @@ The scrap and the care for a body on the ground: fighting back, the tempers, cou
 - `DANCE_W = 0.7`
 - `CALL_MAX = 2`
 - `BOLT_S = 2.5`
-- `CHIP_HIT = 0.26`: A guard's guard wears out (guard_chip): every blow turned aside chips it by CHIP_HIT plus CHIP_K times the blow's strength, and the one that takes it past 1 lands in full instead.
+- `CHIP_HIT = 0.26`: A guard's guard wears out (guard_chip): every blow turned aside chips it by CHIP_HIT plus CHIP_K times the blow's strength, and the one that takes it past 1 lands in full instead. Beaten, the guard drops for BREAK_S (guard_break): the fighter stands off balance, throwing nothing and turning nothing aside, until the guard knits back whole and can be chipped anew.
 - `CHIP_K = 0.2`
+- `BREAK_S = 1.2`
 - `CHECK_R = 6.0 * WS.M`: Downed awareness (downed_awareness): a blow that leaves someone down brings the nearest free onlooker within CHECK_R over to look — they come within CHECK_NEAR (feet to feet), lean in (rad, + forward) with a slow head shake for CHECK_S, then walk on; once for each knock-down. A fighter whose hero goes down stands over them a beat (STAND_OVER_S) before walking off. CHECK_CAP bounds the walk over.
 - `CHECK_NEAR = 0.8 * WS.M`
 - `CHECK_S = 2.4`
@@ -282,7 +283,7 @@ The scrap and the care for a body on the ground: fighting back, the tempers, cou
 - `func temper_of(w: WK.Walker) -> int`: w's temper among TEMPERS: the test pin (fight_temper) wins, else it is fixed to who w is (fight_tempers) — their id and resident id hashed into the shares, so the same person always fights the same way whatever the order of things around them. Plain without the flag.
 - `func arm(r) -> void`: A fighter's temper, and their way round the hero, fixed; a fresh scrap starts with a whole guard (guard_chip).
 - `func fights_back(r, cause: String) -> bool`: True when r's walker fights the hero back: always once they have, else by fight_odds for the cause while the hero can be fought. A fighter's temper is fixed the moment they square up.
-- `func turned_aside(r, cause: String, strength: float) -> bool`: True when the hero's blow lands on a guarded fighter's guard instead (fight_tempers): the scrap is still theirs (fighting, or waiting to) and they turn guard_share of the blows that reach them aside. Nothing of it counts: no reel back, no slide, nothing toward the knock-down. But the guard wears (guard_chip): each blow turned aside chips it, and the one that takes the chip past 1 lands in full.
+- `func turned_aside(r, cause: String, strength: float) -> bool`: True when the hero's blow lands on a guarded fighter's guard instead (fight_tempers): the scrap is still theirs (fighting, or waiting to) and they turn guard_share of the blows that reach them aside. Nothing of it counts: no reel back, no slide, nothing toward the knock-down. But the guard wears (guard_chip): each blow turned aside chips it, and the one that takes the chip past 1 lands in full — the beaten guard dropping a beat (guard_break): off balance, everything landing, until it knits back.
 - `func guarded_plan(r, cause: String) -> StringName`: The blow they turned aside (fight_tempers): a short duck behind the guard, then the scrap goes on as it was. Plans the steps; the caller (reactions.hit) starts them.
 - `func after_fight(r) -> Array`: A fighter's plan once the blow is over (fight_tempers): a caller shouts their call longer and drafts friends into it; the scrap itself and what follows it are fight_steps.
 - `func fight_steps(r) -> Array`: The scrap and what follows it, by temper (fight_tempers): a bolt's fight is short and ends in them running off; anyone else's may run its course and ends in a walk back.
@@ -781,6 +782,7 @@ People hit in the street (docs/fp/ARCHITECTURE.md, Body actions): shoved or punc
 - `WIND_RATE = FB.WIND_RATE`
 - `CHECK_NEAR = FB.CHECK_NEAR`
 - `STAND_OVER_S = FB.STAND_OVER_S`
+- `BREAK_S = FB.BREAK_S`
 - `T_PLAIN = FB.T_PLAIN`
 - `T_GUARD = FB.T_GUARD`
 - `T_DANCER = FB.T_DANCER`
@@ -835,7 +837,7 @@ People hit in the street (docs/fp/ARCHITECTURE.md, Body actions): shoved or punc
 
 - `func setup(p_wk: WK, p_collision: CollisionWorld, seed: int) -> void`
 - `func clear() -> void`
-- `func hit(w: WK.Walker, src: Vector3, push: Vector3, strength: float, cause: String, fling: float = 0.0) -> Dictionary`: w takes a blow from src (a world point) along push (xz, any length) of strength 0..1, cause "shove", "punch", "car" or "carjack"; fling (m) > 0 throws a body it knocks down that far. Held (grab) and not knocked down, w reels and hangs on. A car that runs w over where it already lies (_trample) shoves it along and leaves it down but up sooner. A guarded fighter may turn a punch or a shove aside instead (fight_tempers). Returns {"down": bool, "clip": StringName}, or {} when w cannot take one now (hidden, in a conversation, in the air, or lying there for anything but a car).
+- `func hit(w: WK.Walker, src: Vector3, push: Vector3, strength: float, cause: String, fling: float = 0.0) -> Dictionary`: w takes a blow from src (a world point) along push (xz, any length) of strength 0..1, cause "shove", "punch", "car" or "carjack"; fling (metres, NOT world units like the rest) > 0 throws a body it knocks down that far. Held (grab) and not knocked down, w reels and hangs on. A car that runs w over where it already lies (_trample) shoves it along and leaves it down but up sooner. A guarded fighter may turn a punch or a shove aside instead (fight_tempers). Returns {"down": bool, "clip": StringName}, or {} when w cannot take one now (hidden, in a conversation, in the air, or lying there for anything but a car).
 - `func grab(w: WK.Walker, src: Vector3) -> bool`: The hero takes hold of w (src: the hero's feet): it hangs in the hero's hands, where hold_to puts it, until let go (release), knocked down or HOLD_S is up, then reacts as to a shove. False when w cannot be held now (as hit()).
 - `func hold_to(w: WK.Walker, p: Vector3, yaw: float) -> bool`: Where the hero's hands hold w now: its feet go to p (stopped by walls and posts), turned to yaw. False once w is no longer held.
 - `func release(w: WK.Walker) -> void`: The hero lets go of w: it reacts as to a shove from where it stands.
@@ -1136,7 +1138,7 @@ Traffic and pedestrians on lanes (slice E, docs/fp/slices/E-traffic.md): one roa
 - `func bump_car(id: int, j: Vector2, at: Vector2) -> void`: The player's car hit vehicle id with impulse j (xz, u/s times a sedan's mass) at xz point at: the car is knocked (shoves.gd).
 - `func walkers_near(p: Vector3, r: float) -> Array`: People on foot within r of p, for the player's blows, the car body and the dogs: [{"id", "pos" (the drawn feet), "yaw" (facing (sin, 0, cos)), "down", "resident_id", "extra" (0 hands free, 1 carrying a box, 2 on the phone)}].
 - `func walkers_by_id(ids: Array) -> Dictionary`: For the dogs on their leads: the people on foot ids (walkers_near ids) as drawn now, by id: {"pos" (the feet), "yaw", "down", "hand" (the left hand, world)}. An id left out is off the street (gone, beyond the traffic radius or indoors).
-- `func hit_walker(id: int, src: Vector3, push: Vector3, strength: float, cause: String, fling: float = 0.0) -> Dictionary`: Person id (walkers_near) takes a blow from src (a world point) along push, of strength 0..1, cause "shove", "punch", "car" or "carjack" (dragged out of their car); fling (m) > 0 throws them that far if it knocks them down. They react and the people around see it (reactions.gd), the city hears of it (incidents.gd) and the bus emits person_hit. Returns that signal's info, {} when they could not be hit now.
+- `func hit_walker(id: int, src: Vector3, push: Vector3, strength: float, cause: String, fling: float = 0.0) -> Dictionary`: Person id (walkers_near) takes a blow from src (a world point) along push, of strength 0..1, cause "shove", "punch", "car" or "carjack" (dragged out of their car); fling (metres, NOT world units like the rest) > 0 throws them that far if it knocks them down. They react and the people around see it (reactions.gd), the city hears of it (incidents.gd) and the bus emits person_hit. Returns that signal's info, {} when they could not be hit now.
 - `func grab_walker(id: int, src: Vector3) -> bool`: The hero takes hold of person id (walkers_near) from src, their feet (reactions.gd grab). False when they cannot be held now.
 - `func hold_walker(id: int, p: Vector3, yaw: float) -> bool`: Person id, held, goes where the hero's hands are: feet at p, turned to yaw. False once they are no longer held (let go, knocked down, broken free or gone).
 - `func release_walker(id: int) -> void`: The hero lets go of person id.

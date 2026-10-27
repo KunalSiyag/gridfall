@@ -1,7 +1,9 @@
 extends SceneTree
 ## Fighters' tempers (flag fight_tempers): a person who fights back fights their own way, fixed
 ## to who they are. A guard turns the hero's blows aside while the scrap is theirs (nothing of
-## them moves, nothing counts), the guard chipping until one lands in full (guard_chip); a
+## them moves, nothing counts), the guard chipping until one lands in full (guard_chip), the
+## beaten guard dropping for a beat of off-balance, everything landing, until it knits back
+## (guard_break); a
 ## dancer sidesteps round the hero while waiting to punch; a
 ## caller shouts friends over and they join in; a bolt squares up, thinks better of it and runs;
 ## a bruiser leads with the cross and answers a blow the moment it lands. With the flag off
@@ -21,6 +23,7 @@ func _init() -> void:
 	_check_fixed()
 	_check_guard()
 	_check_guard_chip()
+	_check_guard_break()
 	_check_dancer()
 	_check_caller()
 	_check_bolt()
@@ -59,6 +62,11 @@ func _jab(re: RE, w: WK.Walker) -> Dictionary:
 func _run(re: RE, secs: float) -> void:
 	for _k in range(ceili(secs / DT - 1e-6)):
 		re.step(DT)
+
+
+## The live reaction of walker w in re, null when none.
+func _record(re: RE, w: WK.Walker) -> Variant:
+	return (re.get("_active") as Dictionary).get(w.id)
 
 
 ## A temper is fixed to who the walker is, and the pin or the flag decides it.
@@ -175,6 +183,75 @@ func _check_guard_chip() -> void:
 		off_clips == ["hit_chest", "hit_chest", "hit_chest"],
 		"with the flag off the guard never tires (%s)" % str(off_clips)
 	)
+
+
+## A beaten guard drops and staggers open (guard_break): the breaking blow lands in full, the
+## fighter throws nothing while off balance and turns nothing aside — a shove mid-stagger lands
+## and moves them (a shove, so the three-punch knock-down rule does not cut in) — and once the
+## guard knits back it turns blows aside again. With the flag off the guard fails quietly: no
+## stagger, no recovery.
+func _check_guard_break() -> void:
+	var f := _pair(RE.T_GUARD)
+	var w: WK.Walker = f["w"]
+	var re: RE = f["re"]
+	re.guard_share = 1.0
+	_jab(re, w)
+	_run(re, 3.0)
+	for _i: int in 2:
+		_jab(re, w)
+		_run(re, 0.2)
+	K.check(fails, str(_jab(re, w)["clip"]) == "hit_head", "the breaking jab lands in full")
+	var r: Variant = _record(re, w)
+	K.check(fails, r != null and float(r.get("broken")) > 0.0, "and the beaten guard drops")
+	var waited := 0.0
+	while waited < 2.0 and str(r.get("mode")) != "fight":
+		re.step(DT)
+		waited += DT
+	K.check(fails, str(r.get("mode")) == "fight", "the scrap resumes after the breaking blow")
+	var punched := false
+	var watched := 0.0
+	while watched < 0.6 and float(r.get("broken")) > 0.0:
+		re.step(DT)
+		watched += DT
+		punched = punched or float(r.get("blow_t")) >= 0.0
+	K.check(fails, not punched, "and they throw nothing while off balance")
+	var q := w.pos + w.vis_off
+	re.hit(w, Vector3.ZERO, Vector3(0.0, 0.0, 1.0) * WS.M, 0.45, "shove")
+	_run(re, 0.3)
+	K.check(
+		fails, (w.pos + w.vis_off).distance_to(q) > 0.02 * WS.M, "a blow mid-stagger lands unturned"
+	)
+	var out_t := 0.0
+	while out_t < 3.0 and float(r.get("broken")) > 0.0:
+		re.step(DT)
+		out_t += DT
+	_run(re, 0.3)
+	var q2 := w.pos + w.vis_off
+	var last := str(_jab(re, w)["clip"])
+	_run(re, 0.2)
+	K.check(
+		fails,
+		last == "hit_chest" and (w.pos + w.vis_off).distance_to(q2) < 0.02 * WS.M,
+		"once the guard knits back it turns blows aside again"
+	)
+	FeatureFlags.set_override("guard_break", false)
+	var g := _pair(RE.T_GUARD)
+	var w2: WK.Walker = g["w"]
+	var re2: RE = g["re"]
+	re2.guard_share = 1.0
+	_jab(re2, w2)
+	_run(re2, 3.0)
+	for _i: int in 2:
+		_jab(re2, w2)
+		_run(re2, 0.2)
+	_jab(re2, w2)
+	var r2: Variant = _record(re2, w2)
+	K.check(
+		fails,
+		r2 != null and float(r2.get("broken")) == 0.0 and float(r2.get("chip")) > 1.0,
+		"with the flag off the guard just fails: no stagger, no recovery"
+	)
+	FeatureFlags.set_override("guard_break", true)
 
 
 ## A dancer sidesteps round the hero while they wait, keeping their ring, and keeps punching.
