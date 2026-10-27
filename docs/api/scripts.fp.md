@@ -126,6 +126,26 @@ Human place names for the city: streets for road runs, addresses for lots, busin
 - `func street_at(p: Vector3) -> String`: Street label for a world point: road -> intersection_name; lot -> its frontage street; else the nearest road within 2 tiles; else district_name.
 - `func planned_name(i: int, target_kind: int, target_level: int) -> String`: The name tile i will carry once a construction site finishes as (target_kind, target_level): the same rules as landmark_name / business_name / place_name, computed for the target instead of the current kind. "" when the target has no name (roads, R1 houses, demolition).
 
+## `scripts/fp/forest_trees.gd`
+
+extends `RefCounted`
+
+The woods' synthetic trees. city_view.gd plants them by exactly this hash (its tree chunks: N trees on every in-bounds forest tile), so the animals that climb them — squirrels first, cats bolting from a charging dog — find a trunk that is really drawn. The forest tiles carry no colliders, so this hash is the only way to know where their trunks stand.
+
+### Constants
+
+- `WS = preload("res://scripts/fp/world_scale.gd")`
+- `D = preload("res://scripts/sim/sim_defs.gd")`
+- `N = 4`: The trees a forest tile keeps, how far (u) off the tile's middle they fall, the size step between them, and a street tree's trunk radius (u) they scale from (they draw at 1.0 to 1.6 times a street tree).
+- `SPREAD = 0.85`
+- `STEP = 0.1`
+- `TRUNK_R = 0.25 * WS.M`
+
+### Functions
+
+- `static func tree(gx: int, gz: int, t: int) -> Array`: The t-th tree the view plants on the forest tile (gx, gz): its world xz and trunk radius [x, z, r]. The tile's own hash, so the answer never moves.
+- `static func nearest(p: Vector3, i0: int, r: float, kinds: PackedInt32Array) -> Array`: The nearest wood tree to p within r (u), as [x, z, r], or [] for none: the forest tiles of the 3x3 neighbourhood of tile i0 are enough for any r up to a tile and a half. kinds is the sim's kind array (PackedInt32Array).
+
 ## `scripts/fp/fp_context.gd`
 
 class_name `FpContext` · extends `RefCounted`

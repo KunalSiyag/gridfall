@@ -23,6 +23,7 @@ const AF := preload("res://scripts/fp/animals/animals_feature.gd")
 const CATS := preload("res://scripts/fp/animals/cats.gd")
 const LIFE := preload("res://scripts/fp/animals/cat_life.gd")
 const SLOD := preload("res://scripts/fp/animals/settle_lod.gd")
+const FT := preload("res://scripts/fp/forest_trees.gd")
 const CB := preload("res://scripts/fp/animals/cat_bodies.gd")
 const FLOCK := preload("res://scripts/fp/animals/pigeon_flock.gd")
 const DT := 1.0 / 60.0
@@ -101,6 +102,7 @@ func _run(c: LIFE.Cat) -> void:
 	_check_pounce_flock(c)
 	_check_pause(c)
 	_check_lod(c)
+	_check_wood_refuge(c)
 
 
 # ------------------------------------------------------------------ helpers
@@ -144,6 +146,76 @@ func _check_lod(c: LIFE.Cat) -> void:
 	life.step(0.05)
 	K.check(fails, c.hz_t == 0.0, "lod: a hunt runs at full rate however far")
 	_reset(c)
+
+
+## A cat cornered in the woods — the forest tiles carry no trunk colliders — bolts up one of
+## the tile's own trees: forest_trees.gd's hash, the same trees city_view.gd draws.
+func _check_wood_refuge(c: LIFE.Cat) -> void:
+	var clear := -1
+	for i in range(ctx.sim.kind.size()):
+		if not _trunks_near(i):
+			clear = i
+			break
+	K.check(fails, clear >= 0, "woods: a clearing with no trunk cylinder about")
+	if clear < 0:
+		return
+	var at := Vector3(D.tx(clear), 0.0, D.ty(clear))
+	c.pos = at
+	c.act = "rest"
+	c.tree = []
+	var kinds := PackedInt32Array()
+	kinds.resize(ctx.sim.kind.size())
+	for dy: int in [-1, 0, 1]:
+		for dx: int in [-1, 0, 1]:
+			var x := D.tx(clear) + dx
+			var y := D.ty(clear) + dy
+			if D.in_bounds(x, y):
+				kinds[D.idx(x, y)] = D.FOREST
+	life.kinds = kinds
+	var t: Array = life.call("_refuge", c)
+	K.check(fails, not t.is_empty(), "woods: a trunk the hash plants is the refuge")
+	var drawn := false
+	for dy: int in [-1, 0, 1]:
+		for dx: int in [-1, 0, 1]:
+			for k in range(FT.N):
+				if FT.tree(D.tx(clear) + dx, D.ty(clear) + dy, k) == t:
+					drawn = true
+	K.check(fails, drawn, "woods: the refuge is a tree the view really draws")
+	# A dog charging at it sends it up that trunk.
+	life.hero = Vector3(INF, INF, INF)
+	life.hero_on_foot = false
+	life.prey = []
+	var dog := at + Vector3(0.06, 0.0, 0.0)
+	life.dogs = [[dog, (at - dog).normalized() * 3.0 * WS.M]]
+	# A resting cat this far from the hero may bank the first ticks (settle_lod.gd): the dog's
+	# charge registers within the slow cadence, so give it a nap's worth of ticks.
+	var went_up := false
+	for _k in range(20):
+		life.step(DT)
+		if c.act in ["flee", "climb", "hold"] and not c.tree.is_empty():
+			went_up = true
+			break
+	K.check(fails, went_up, "woods: the charging dog sends it up the tree (%s)" % c.act)
+	life.dogs = []
+	life.kinds = PackedInt32Array()
+	_reset(c)
+
+
+## True when the 3x3 tiles round tile i hold a trunk cylinder a cat could climb.
+func _trunks_near(i: int) -> bool:
+	for dy: int in [-1, 0, 1]:
+		for dx: int in [-1, 0, 1]:
+			var x := D.tx(i) + dx
+			var y := D.ty(i) + dy
+			if not D.in_bounds(x, y):
+				continue
+			var cyls: PackedFloat32Array = ctx.collision.cylinders(D.idx(x, y))
+			var j := 0
+			while j + 3 < cyls.size():
+				if cyls[j + 2] >= LIFE.TRUNK_MIN_R and cyls[j + 3] >= LIFE.TREE_TOP:
+					return true
+				j += 4
+	return false
 
 
 func _step(secs: float) -> void:

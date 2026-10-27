@@ -154,6 +154,7 @@ The cats' behaviour; cats.gd decides where cats keep and feeds in the world befo
 - `BODIES = preload("res://scripts/fp/animals/cat_bodies.gd")`
 - `CAT_RIG = preload("res://scripts/fp/animals/cat_rig.gd")`
 - `DOGS = preload("res://scripts/fp/animals/dog_pack.gd")`
+- `FT = preload("res://scripts/fp/forest_trees.gd")`
 - `STROLL = 0.5 * WS.M`: Speeds (m/s): strolling, trotting over to the hero, running and stalking; acceleration (m/s²) and turn rate (rad/s).
 - `TROT = 1.3 * WS.M`
 - `RUN = 3.6 * WS.M`
@@ -188,6 +189,7 @@ The cats' behaviour; cats.gd decides where cats keep and feeds in the world befo
 - `SCARED_S = 10.0`
 - `STARTLE_S = 0.75`
 - `REFUGE_R = 6.0 * WS.M`: The tree refuge from a charging dog: with a trunk (a street tree's or a lot tree's cylinder, TRUNK_MIN_R and TREE_TOP as in squirrels.gd) within REFUGE_R (m) the cat bolts up it instead of along the ground, climbing at CLIMB_MPS (m/s) to CLING_H (m) and clinging, pitched CLIMB_PITCH against the bark, until no dog has been within HISS for CALM_S (s), then down at DOWN_MPS.
+- `WOODS_R = 10.0 * WS.M`: In the woods the cat knows its trees: a denser stand (forest_trees.gd plants four a tile) may be bolted to from this far (u); a real trunk cylinder still wins when it is nearer.
 - `TRUNK_MIN_R = 0.2 * WS.M`
 - `TREE_TOP = 0.15`
 - `CLIMB_MPS = 1.6 * WS.M`
@@ -219,6 +221,7 @@ The cats' behaviour; cats.gd decides where cats keep and feeds in the world befo
 
 ### Properties
 
+- `kinds`: The sim's kind array (fed by the node each world()), so the woods' trees (forest_trees.gd) can be a refuge where no trunk collider stands.
 - `on_call: Callable`: Called with (cat, call) for a "meow", a "purr", a "hiss" and a hunter's "chatter".
 - `hero`: The world this step, set by the cats node: the hero's feet and velocity, whether they are on foot and crouched; moving cars as [pos, vel, half length, half width]; the feet of the people on foot around; dogs as [feet, velocity]; the pigeons on the ground; the birds perched up out of reach; the game's time scale.
 
@@ -1045,6 +1048,7 @@ The squirrels (part of the animals feature): where they keep (a lawn with a tree
 - `D = preload("res://scripts/sim/sim_defs.gd")`
 - `WS = preload("res://scripts/fp/world_scale.gd")`
 - `LIFE = preload("res://scripts/fp/animals/squirrel_life.gd")`
+- `FT = preload("res://scripts/fp/forest_trees.gd")`
 - `BODY = preload("res://scripts/fp/animals/squirrel_body.gd")`
 - `PACK = preload("res://scripts/fp/animals/dog_pack.gd")`
 - `CAT_LIFE = preload("res://scripts/fp/animals/cat_life.gd")`
@@ -1053,13 +1057,9 @@ The squirrels (part of the animals feature): where they keep (a lawn with a tree
 - `NEAR = 3.0`: Squirrels come out within NEAR of the player (u) and go beyond FAR, at most MAX_SQUIRRELS at once.
 - `FAR = 3.6`
 - `MAX_SQUIRRELS = 3`
-- `TRUNK_R = 0.25 * WS.M`: A tree to climb: the collision world's trunk cylinder (0.25 m across; a lamp pole is 0.15 m, so never mistaken for a tree), at least TREE_TOP (u) tall. The woods' trees carry no collider, so they are read from city_view.gd's own planting (see _forest_tree()).
-- `TRUNK_MIN_R = 0.20 * WS.M`
+- `TRUNK_MIN_R = 0.20 * WS.M`: A tree to climb: the collision world's trunk cylinder (0.25 m across; a lamp pole is 0.15 m, so never mistaken for a tree), at least TREE_TOP (u) tall. The woods' trees carry no collider, so they are read from the planting hash (forest_trees.gd).
 - `TREE_TOP = 0.15`
-- `FOREST_SHARE = 0.5`: The woods: this share of the map's forest tiles keeps a squirrel, at one of the tile's own four trees, which city_view.gd plants FOREST_SPREAD (u) either way off the tile's middle at 1.0 to 1.6 times a street tree's size.
-- `FOREST_N = 4`
-- `FOREST_SPREAD = 0.85`
-- `FOREST_STEP = 0.1`
+- `FOREST_SHARE = 0.5`: The woods: this share of the map's forest tiles keeps a squirrel, at one of the tile's own trees.
 - `FORAGE_R = 0.5`: Its lawn: a patch within FORAGE_R (m) of its trunk, a point of it picked FORAGE_TRIES angles round the trunk at one of FORAGE_STEPS (m) out.
 - `FORAGE_TRIES = 12`
 - `FORAGE_STEPS = [0.2, 0.32, 0.46]`

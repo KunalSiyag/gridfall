@@ -28,6 +28,7 @@ Generated from the `##` doc comments in `scripts/`. Regenerate with `python3 too
 - [asset_paths.gd](scripts.fp.md#scriptsfpasset_pathsgd): First-person asset paths
 - [body_contacts.gd](scripts.fp.md#scriptsfpbody_contactsgd): Contacts of a box body on the ground plane (a car) with the walker's world: CollisionWorld's boxes and cylinders that reach above the body's step and start below its roof, and ground it cannot drive onto (water and the bridge parapets, where walk_height is NAN, or a rise above WS.STEP_HEIGHT)
 - [city_directory.gd](scripts.fp.md#scriptsfpcity_directorygd) (`CityDirectory`): Human place names for the city: streets for road runs, addresses for lots, business and landmark names, district names
+- [forest_trees.gd](scripts.fp.md#scriptsfpforest_treesgd): The woods' synthetic trees
 - [fp_context.gd](scripts.fp.md#scriptsfpfp_contextgd) (`FpContext`): Service locator for first-person slices
 - [fp_feature.gd](scripts.fp.md#scriptsfpfp_featuregd) (`FpFeature`): A first-person feature module owned by one slice
 - [fp_features.gd](scripts.fp.md#scriptsfpfp_featuresgd): Every first-person feature, in setup order
