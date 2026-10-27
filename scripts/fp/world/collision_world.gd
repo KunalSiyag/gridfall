@@ -1050,7 +1050,10 @@ func _entry(i: int) -> Dictionary:
 
 
 ## Bodies, walls and posts of the building on tile i, from body_table.gd (or a runtime analysis
-## when the model is new or its bounds changed since the bake).
+## when the model is new or its bounds changed since the bake). A holder whose model metas are
+## missing or wrong-shaped blocks as the whole pick box. The reads go through has_meta first:
+## get_meta with a null default prints an engine ERROR for a missing key
+## (fp_building_meta_check.gd locks the silence).
 func _building_shapes(
 	_i: int,
 	holder: Node3D,
@@ -1059,8 +1062,11 @@ func _building_shapes(
 	walls: Array[AABB],
 	cyls: PackedFloat32Array
 ) -> void:
-	var path := str(holder.get_meta("building_path", ""))
-	var bx: Variant = holder.get_meta("building_xform", null)
+	if not holder.has_meta("building_path") or not holder.has_meta("building_xform"):
+		bodies.append(pick)
+		return
+	var path := str(holder.get_meta("building_path"))
+	var bx: Variant = holder.get_meta("building_xform")
 	if path.is_empty() or typeof(bx) != TYPE_TRANSFORM3D:
 		bodies.append(pick)
 		return
