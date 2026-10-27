@@ -7,7 +7,8 @@ extends RefCounted
 ## GmiClient.remember_player_key()).
 
 
-## True when real threads can start (desktop platforms). The no-threads web build answers false,
+## True when real threads can start (desktop platforms and the
+## threaded web build). A no-threads web build answers false,
 ## so its callers load synchronously instead. GRIDFALL_NO_THREADS=1 forces it off for tests.
 static func threads_supported() -> bool:
 	if OS.get_environment("GRIDFALL_NO_THREADS") == "1":

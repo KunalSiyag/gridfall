@@ -259,7 +259,7 @@ Platform glue for the web build. Desktop answers the thread questions with a pla
 
 ### Functions
 
-- `static func threads_supported() -> bool`: True when real threads can start (desktop platforms). The no-threads web build answers false, so its callers load synchronously instead. GRIDFALL_NO_THREADS=1 forces it off for tests.
+- `static func threads_supported() -> bool`: True when real threads can start (desktop platforms and the threaded web build). A no-threads web build answers false, so its callers load synchronously instead. GRIDFALL_NO_THREADS=1 forces it off for tests.
 - `static func is_web() -> bool`: True in the browser export.
 - `static func store_get(name: String) -> String`: localStorage value under name ("" off the web, when missing, or when the browser blocks it).
 - `static func store_set(name: String, value: String) -> void`: Writes value under name (no-op off the web).

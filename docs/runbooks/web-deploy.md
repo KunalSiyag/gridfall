@@ -3,7 +3,7 @@
 The web build is how people try GridFall without installing anything. `tools/export.sh web` runs
 `tools/web_export.py`, which builds an isolated staging copy of the project (never the source
 tree), caps the prop and character textures at 256 px, converts every WAV to Ogg, exports the
-no-threads Godot 4 web build, aliases duplicate PCK payloads to one copy and publishes the result
+Godot 4 web build, aliases duplicate PCK payloads to one copy and publishes the result
 under a content-addressed `releases/<hash>/` directory. The `.pck` that ships is ~194 MB instead of
 ~654 MB, and the whole site is ~224 MB. A first visit moves ~137 MB (Brotli; 137.3 MB measured in
 the offline smoke). `deploy/web/` serves
@@ -11,9 +11,15 @@ it from Caddy, a static file server only — players' browsers call `api.gmi-ser
 with each player's own GMI key (CORS allows it), and without a key the game runs offline (replay
 cache, then heuristics). There is no server-side key by design.
 
+The source Web preset now enables Thread Support. The recorded live `cd173a9` image remains
+single-threaded until an explicitly approved rollout after round 3; merging the preset does not
+change a running deployment. See [the six-surface thread audit and A/B evidence](web-threads.md)
+before building or deploying the threaded variant. The size figures above describe the recorded
+Phase A deployment, not the later ground-texture-capped staging used in the A/B experiment.
+
 ## Build and ship a new image
 
-1. `tools/export.sh web` — needs `ffmpeg` with libvorbis and the `web_nothreads_release.zip` export
+1. `tools/export.sh web` — needs `ffmpeg` with libvorbis and the `web_release.zip` export
    template (see the script's help for the one-time install). `EXPORT: PASS` ends the run and
    `build/web/build-report.json` records the cap/audio/dedup numbers and the release version.
    The script deletes the previous export first; the source assets and desktop imports are never
@@ -68,8 +74,8 @@ cache, then heuristics). There is no server-side key by design.
   service worker cache; a new release has a new `releases/<hash>/` path and a new
   `CACHE_VERSION`, so a reload after a redeploy fetches the new build instead of the old one.
 - The response headers include `cross-origin-opener-policy: same-origin` and
-  `cross-origin-embedder-policy: require-corp` even though the build is no-threads (kept for a
-  possible threaded variant and harmless otherwise).
+  `cross-origin-embedder-policy: require-corp`: the threaded source preset refuses to boot
+  without them, and they are harmless on the recorded single-threaded live build.
 - Esc -> Settings -> **GMI Cloud**: a pasted key is sent only to `api.gmi-serving.com`
   (`GMI_FAIL` console lines show rejected keys working the retry path), **Remember on this device**
   keeps it in the browser's `localStorage` (`gridfall.gmi_key`), Forget erases it.
@@ -103,7 +109,7 @@ turn (`GF_SMOKE_OFFLINE=1` smoke above), which fails if a single request leaves 
 **Keyed (the player, once, with their own key):** open the site, paste the key, confirm a live
 mayor turn. This is the only check that exercises the real `api.gmi-serving.com` call and the only
 one that can prove it works under cross-origin isolation — the COOP/COEP headers isolate the page
-even in the no-threads build, and no offline smoke reaches the API. The operator never asks for,
+on the recorded single-threaded live build too, and no offline smoke reaches the API. The operator never asks for,
 types or sees the key: ask the player to run this step and report whether the turn went live
 (`GMI_OK` console lines) or fell back (`GMI_FAIL`).
 

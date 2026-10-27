@@ -47,7 +47,7 @@ need_tpl() {
 	case "$1" in
 		linux) echo "linux_release.x86_64" ;;
 		windows) echo "windows_release_x86_64.exe" ;;
-		web) echo "web_nothreads_release.zip" ;;  # the Web preset exports the no-threads variant
+		web) echo "web_release.zip" ;;  # must match Web's variant/thread_support=true
 	esac
 }
 missing=0
