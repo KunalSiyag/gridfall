@@ -404,15 +404,15 @@ func _on_interact(t: Dictionary) -> void:
 		_toast("%s growls at you. Leave %s be." % [d.name, "him" if d.he else "her"], "info")
 
 
-## Someone hit in the street: their dog defends them from the hero's fists (a car only startles
-## it), and the dogs around who saw it flinch.
+## Someone hit in the street: their dog defends them from the hero's fists (a blow by someone
+## else — info "by" — reads as nobody's for that defense), and the dogs around who saw it flinch.
 func _on_person_hit(at: Vector3, cause: String, info: Dictionary) -> void:
 	pigeons.startle(at, PIGEONS.SEEN_HIT)
 	perches.startle(at, PERCHES.SEEN_HIT)
 	waterfowl.startle(at, WATERFOWL.SEEN_HIT)
 	cats.startle(at, CATS.SEEN_HIT)
 	squirrels.startle(at, SQUIRRELS.SEEN_HIT)
-	var wid := int(info.get("walker", -1))
+	var wid := int(info.get("walker", -1)) if int(info.get("by", -1)) < 0 else -1
 	for d: PACK.Dog in pack.dogs:
 		if wid >= 0 and d.walker == wid and cause in ["punch", "shove"]:
 			if d.angry <= 0.0:

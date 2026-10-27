@@ -1551,11 +1551,20 @@ func _left_hand(w: WK.Walker, q: Vector3) -> Vector3:
 
 ## Person id (walkers_near) takes a blow from src (a world point) along push, of strength 0..1,
 ## cause "shove", "punch", "car" or "carjack" (dragged out of their car); fling (metres, NOT
-## world units like the rest) > 0 throws them that far if it knocks them down. They react and the
-## people around see it (reactions.gd), the city hears of it (incidents.gd) and the bus emits
-## person_hit. Returns that signal's info, {} when they could not be hit now.
+## world units like the rest) > 0 throws them that far if it knocks them down. by names who
+## struck: -1 the hero (the default — every caller today), else the attacker walker's id, so a
+## blow that is not the hero's never freezes the hero's world, sets the victim's dog on them or
+## calls the law on them (info "by"). They react and the people around see it (reactions.gd), the
+## city hears of it (incidents.gd) and the bus emits person_hit. Returns that signal's info, {}
+## when they could not be hit now.
 func hit_walker(
-	id: int, src: Vector3, push: Vector3, strength: float, cause: String, fling: float = 0.0
+	id: int,
+	src: Vector3,
+	push: Vector3,
+	strength: float,
+	cause: String,
+	fling: float = 0.0,
+	by: int = -1
 ) -> Dictionary:
 	var w := _walker_by_id(id) if _built else null
 	if w == null:
@@ -1566,7 +1575,7 @@ func hit_walker(
 	var sev := 2 if bool(res["down"]) else (0 if cause == "shove" else 1)
 	var seen := reactions.witness(w, src, sev)
 	var at := w.pos + w.vis_off
-	var info := incidents.report(w, at, strength, cause, res, seen)
+	var info := incidents.report(w, at, strength, cause, res, seen, by)
 	if res.has("impact"):
 		# A throw that meets a wall or a solid prop mid-flight: marked here, on the throw's one
 		# emission (a second person_hit would double-book incidents and double-startle the street).
