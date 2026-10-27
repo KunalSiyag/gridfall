@@ -240,7 +240,7 @@ One background thread that runs poster image jobs in order (slice D): decode, re
 
 ### Functions
 
-- `static func finish_image(input: Dictionary) -> void`: Job for composites: opaque RGB, mipmaps and block compression of input.image (or of the raw RGBA8 readback input.data at input.px); sets input.ok.
+- `static func finish_image(input: Dictionary) -> void`: Job for composites: opaque RGB, mipmaps and block compression of input.image (or of the raw RGBA8 readback input.data at input.px); sets input.ok. input.compress (decided on the main thread, see GmiImageClient.wants_vram_compress) gates the S3TC pass: Image.compress on a worker thread without a main RenderingDevice spins up a half-initialised one and crashes the main thread's viewport configure (engine bug), so there the image stays RGB8 with mipmaps.
 - `func push(fn: Callable, input: Dictionary) -> void`: Queues fn.call(input) on the thread, or runs it on the caller's thread when there is none.
 - `func take_done() -> Array`: Inputs whose job finished since the last call, in order.
 - `func pending() -> int`: Jobs queued or running.

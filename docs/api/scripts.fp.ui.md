@@ -297,6 +297,7 @@ District caption (slice B), bottom right of the "center" slot: on arrival and wh
 - `func check() -> void`: Reads the player's district and shows its caption when it changed (and is off cooldown).
 - `func show_district(d: int) -> void`: Shows the caption for district d (-1: unclaimed land).
 - `func caption_text() -> String`: The caption text while it shows ("" otherwise).
+- `static func can_draw(display_server: String, has_viewport_texture: bool) -> bool`: Whether the district caption can be drawn into a viewport with a render target.
 
 ## `scripts/fp/ui/hud_chips.gd`
 

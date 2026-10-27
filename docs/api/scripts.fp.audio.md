@@ -191,6 +191,10 @@ Positional city sound (slice I): logical sources (engines, horns, sirens, constr
 - `HORN_GAP = 6.0`: at most one horn per this many seconds, city-wide ...
 - `HORN_GAP_MAX = 14.0`: ... the gap after each horn is drawn from HORN_GAP..HORN_GAP_MAX
 - `HORN_CAR_REST = 20.0`: the same car does not honk again for this long
+- `HORN_HERO_S = 2.5`: A car the player has held up (the blocked_horns flag: traffic's hero_block_s -- their car stopped in its path, or the hero on foot in the road) honks at them after HORN_HERO_S rather than waiting on the long jam draw above, leaning on it once held up HORN_HERO_LEAN_S: at most once per HORN_HERO_REST per car, and no more often than HORN_HERO_GAP city-wide.
+- `HORN_HERO_LEAN_S = 8.0`
+- `HORN_HERO_REST = 6.0`
+- `HORN_HERO_GAP = 2.5`
 - `EVENT_SIREN_S = 35.0`: Incident sirens without a visible crew: play at the event for this long after it starts.
 - `SIREN_EVENTS = ["fire", "tornado", "earthquake", "flood", "gridlock", "blackout", "sewage_burst", "smo...`: Incidents that send a crew with sirens (utility repairs do not).
 - `REFRESH = 0.125`: s between source scores / assignments

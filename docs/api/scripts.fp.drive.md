@@ -4,6 +4,49 @@
 
 [Index](index.md)
 
+## `scripts/fp/drive/backhoe.gd`
+
+extends `RefCounted`
+
+The backhoe loader's arm rig, for drive_feature.gd. The full model carries the loader arm and bucket as their own nodes (vehicles2.py's rig_part: Arm_Boom hinged at the chassis mount, Arm_Bucket at the boom's far end), so at the wheel of the yellow machine Y / U raise and lower the arm and I / O curl and tip the bucket (the backhoe_arm flag). The angles ease while the keys are held and hold once let go, the bucket swinging with the boom about its own hinge; a car without the nodes (every other model) leaves the rig idle. A dig over a construction site — the bucket tipped out with O, then curled back in with I with the arm low — grows a dirt pile in front of the machine, which stays once the hero drives off and starts again wherever the next dig happens to be.
+
+### Constants
+
+- `WS = preload("res://scripts/fp/world_scale.gd")`
+- `BOOM_NODE = "Arm_Boom"`: The nodes the rig is found by, and the cache of them on the car's node (found once per car).
+- `BUCKET_NODE = "Arm_Bucket"`
+- `RIG_META = "backhoe_arm_rig"`
+- `BOOM_RATE = deg_to_rad(14.0)`: The arm swings and the bucket curls at these rates (rad/s): a full sweep in ~4 s and ~2 s.
+- `BUCKET_RATE = deg_to_rad(38.0)`
+- `BOOM_MIN = deg_to_rad(-2.0)`: The arm hangs from just under level (folded over the nose) to well up for hauling.
+- `BOOM_MAX = deg_to_rad(52.0)`
+- `BUCKET_MIN = deg_to_rad(-75.0)`: The bucket curls from tipped out under the arm (scooping) to tucked in (holding).
+- `BUCKET_MAX = deg_to_rad(15.0)`
+- `DIG_BOOM = deg_to_rad(14.0)`: Curling the bucket in with the arm below this (the lip at the ground) digs, and only while the bucket still has room to curl and only over a construction site: tip it out with O first, then a curl of I is the scoop. The pile grows a level a second, up to PILE_MAX.
+- `DIG_RATE = 1.0`
+- `PILE_MAX = 6.0`
+- `PILE_W = 1.4`: The dirt pile: a squat mound this wide at the base and this high when full (m).
+- `PILE_H = 0.55`
+- `HINGE_AHEAD = 2.2`: The dig spot sits at the bucket hinge, this far ahead of the car's centre (m, the model's loader geometry).
+- `PILE_MOVE = 3.0`: A dig this far from where the pile stands starts it again at the new spot (m).
+- `DIRT = Color(0.33, 0.22, 0.12)`: Dirt brown, rough.
+
+### Properties
+
+- `boom: float`: The boom and bucket angles (rad; positive raises the arm, curls the bucket in).
+- `pile: float`: The pile's size so far, in dig levels (0 when there is none).
+
+### Functions
+
+- `func reset() -> void`: Another car (or none): forget its rig; the pile it dug stays put, its nodes keeping their angles until the next backhoe picks them up from the node metas.
+- `func clear() -> void`: The world going: forget the rig and take the pile with it (its nodes are freed with the scene), and drop whatever a save had left to put back (a load re-fills this from its own save after the rebuild).
+- `func at_wheel(traffic: FpFeature, car_id: int) -> bool`: True when the car carries the rig (the backhoe's own model), for the key hint on getting in.
+- `func rigged() -> bool`: True while the car at the wheel carries the rig (found by its last step).
+- `func save_dict(traffic: FpFeature) -> Dictionary`: The drive feature's save: the rigs the hero has posed -- each found again on the load by the curb slot its machine came from, which the deterministic parking fill re-fills -- and the pile where it stands, wrapped under "backhoe", or {} with nothing posed and no pile.
+- `func from_dict(d: Variant) -> void`: The save's "backhoe" half: the poses wait for their machines and the pile for a drawn car's parent, all put back by apply_saved once the load's frames have drawn them.
+- `func apply_saved(traffic: FpFeature) -> void`: Puts back what a save left, once the load's frames have drawn the world: each posed backhoe is found by the curb slot its machine came from (a machine parks there again) and posed, the pile standing where it stood -- its level kept, so a dig left half-done goes on from there. Nothing to do once all is back.
+- `func step(ctx: FpContext, traffic: FpFeature, car_id: int, pos: Vector3, heading: Vector2, dt: float) -> void`: One step at the wheel of car car_id at pos turned along heading (its centre, on the ground): the keys ease the arm and bucket, and a dig at a site grows the pile. Nothing to do without the rig (any other car).
+
 ## `scripts/fp/drive/car_body.gd`
 
 extends `RefCounted`
@@ -24,7 +67,7 @@ The player's car as a rigid box on the ground plane. Each step it moves by the h
 - `TURN_STEP = 0.08`
 - `ITERATIONS = 4`: Contacts resolved per substep.
 - `MAX_PUSH = 0.02`: The most one contact pushes the body out at once (u, at least a substep's travel): a car that starts overlapping something eases out instead of jumping.
-- `MASS = 1.0`: Mass of the player's car; other bodies are given relative to a sedan (1.0).
+- `MASS = 1.0`: The default mass of the player's body (a sedan; others are given relative to it). The driven body's own mass comes with setup (a bicycle near nothing, a bus six sedans), so a light body bounces off what a heavy one shoves.
 - `IMPACT_SPEED = 1.5 * WS.M`: Hits closing faster than this are listed in hits.
 - `PERSON_R = 0.3 * WS.M`: People: a body this wide (u) is struck when the car closes on them faster than PERSON_SPEED, each at most once per PERSON_COOL seconds, as hard as the closing speed over PERSON_FULL (1 knocks anyone down). They weigh PERSON_MASS of a sedan, so the car loses little speed.
 - `PERSON_SPEED = 0.5 * WS.M`
@@ -35,11 +78,12 @@ The player's car as a rigid box on the ground plane. Each step it moves by the h
 ### Properties
 
 - `half`: Half width and half length (u), and height.
+- `mass`: The body's own mass (setup from the driven car's, as the takeover recorded it; a sedan 1.0).
 - `hits: Array`: The last move's hits closing faster than IMPACT_SPEED: [point Vector2, speed (u/s), what], what "wall" (anything fixed), "car", "prop" or "person".
 
 ### Functions
 
-- `func setup(half_w: float, length: float, p_height: float) -> void`
+- `func setup(half_w: float, length: float, p_height: float, p_mass: float = MASS) -> void`
 - `func move(model: MODEL, pos: Vector3, yaw0: float, dt: float, col: CollisionWorld, traffic: Object, props: Object) -> Vector3`: Moves the body from the feet position pos by the model's velocity over dt (the model's yaw has already turned from yaw0 this step), resolving contacts on the way; the model's velocity and spin take the impulses. traffic and props are those features, or null. Returns the new feet position with y unchanged.
 
 ## `scripts/fp/drive/car_entry.gd`
@@ -87,7 +131,10 @@ Getting into the player's car and out of it on foot, for drive_feature.gd (car_d
 - `AWAY = 0.55 * WS.M`
 - `AWAY_BACK = 0.25 * WS.M`
 - `AWAY_MAX = 1.2`
-- `DOOR_R = 0.08 * WS.M`: Nothing fixed may stand within DOOR_R of the wide-open door's middle and edge.
+- `DOOR_R = 0.08 * WS.M`: Nothing fixed may stand within DOOR_R of the panel anywhere over its swing, sampled at SWEEP_AMOUNTS swing steps by SWEEP_POINTS points along it (2 DOOR_R apart at the edge, at most).
+- `SWEEP_AMOUNTS = 8`
+- `SWEEP_POINTS = 6`
+- `DOOR_RATE = 4.0`: A door that rested against someone swings on at most DOOR_RATE (of its swing per s) once they make room, rather than jumping to where its ramp has got to.
 - `CAM_DIR = Vector3(0.72, 0.3, -0.62)`: The door camera looks along CAM_DIR (car frame: from behind the door, mirrored ahead of it when that has more room) at a point just outside the door from CAM_DIST (CAM_MIN at least, after the pull-in in front of walls). The view eases onto it over FRAME_BLEND s and between it and the drive camera over CAM_BLEND s.
 - `CAM_DIST = 3.2 * WS.M`
 - `CAM_MIN = 1.6 * WS.M`
@@ -103,6 +150,7 @@ Getting into the player's car and out of it on foot, for drive_feature.gd (car_d
 - `phase: String`: In: "walk", "align", "open", "jack" (someone at the wheel), "step", "turn", "climb", "close". Out: "open", "climb", "away", "close".
 - `t: float`: Seconds into the phase.
 - `door: float`: The driver's door: 0 shut .. 1 open.
+- `clearance: Callable`: How far the door may swing past the people round it, (from, to) -> the amount it gets to (drive_feature sets traffic's door_clear_of_people for the car); unset, it swings freely.
 - `hold: String`: A phase to wait at, hold_at s into it (the photo tour holds the climb in half way); "" for none.
 - `jack: bool`: Someone is at the wheel, to be dragged out once the door is open (begin_in's p_jack).
 - `seat_drop: float`: How far the seat the climb ends at (and the climb out starts from) sits below the seat marker: the hips' sink (drive_feature.gd's _sink, set for the climb out; 0 on the way in).
@@ -122,7 +170,7 @@ Getting into the player's car and out of it on foot, for drive_feature.gd (car_d
 
 extends `FpFeature`
 
-Getting into cars and driving them. Near a parked or stopped car, F (Y on a pad) gets in: the hero walks round to the driver's door, opens it, climbs in and shuts it (car_entry.gd, the car_doors flag; at once without it), and the camera chases the car. Someone at the wheel of a car stopped in traffic is dragged out first (the carjack flag): the car waits while the hero walks to its door, opens it and pulls them out. W / S or the triggers drive and brake (S reverses once stopped), A / D or the left stick steer, Space (A) is the handbrake, the mouse or right stick look around, V switches to the driver's view, and F again stops the car and gets out through the driver's door (or at once beside it). The car belongs to the traffic feature (lane traffic stops for it and it stays where it is left). It is a rigid box (car_body.gd): it bounces off walls, slides along them at a glance, spins when hit off-centre, shoves the cars it hits and knocks street props over; car_impact on the bus reports the hard hits and car_door the door opening and shutting. Alongside a moving car with someone at its wheel, F jumps across (the action_hijack flag, hijack.gd): the hero lets go of the wheel, climbs out onto the roof, leaps onto the other car and drags its driver out through the window, its own car rolling on with nobody at the wheel.
+Getting into cars and driving them. Near a parked or stopped car, F (Y on a pad) gets in: the hero walks round to the driver's door, opens it, climbs in and shuts it (car_entry.gd, the car_doors flag; at once without it), and the camera chases the car. Someone at the wheel of a car stopped in traffic is dragged out first (the carjack flag): the car waits while the hero walks to its door, opens it and pulls them out. W / S or the triggers drive and brake (S reverses once stopped), A / D or the left stick steer, Space (A) is the handbrake, the mouse or right stick look around, V switches to the driver's view, and F again stops the car and gets out through the driver's door (or at once beside it). In the backhoe loader, Y / U raise and lower the loader arm and I / O curl and tip its bucket (backhoe.gd, the backhoe_arm flag), and a bucket tipped out with O then curled back in with I, the arm low over a construction site, digs a growing dirt pile. The car belongs to the traffic feature (lane traffic stops for it and it stays where it is left). It is a rigid box (car_body.gd): it bounces off walls, slides along them at a glance, spins when hit off-centre, shoves the cars it hits and knocks street props over; car_impact on the bus reports the hard hits and car_door the door opening and shutting. Alongside a moving car with someone at its wheel, F jumps across (the action_hijack flag, hijack.gd): the hero lets go of the wheel, climbs out onto the roof, leaps onto the other car and drags its driver out through the window, its own car rolling on with nobody at the wheel. After dark (the night_driving flag) the car the hero drives always throws its own headlight beam (a bicycle a small dim lamp at its handlebar), and H at the wheel sounds the horn (a bicycle's bell) on the bus, which the street hears through its own horn source.
 
 ### Constants
 
@@ -133,6 +181,7 @@ Getting into cars and driving them. Near a parked or stopped car, F (Y on a pad)
 - `ENTRY = preload("res://scripts/fp/drive/car_entry.gd")`
 - `HIJACK = preload("res://scripts/fp/drive/hijack.gd")`
 - `SEAT = preload("res://scripts/fp/drive/seat_pose.gd")`
+- `ARM = preload("res://scripts/fp/drive/backhoe.gd")`
 - `ENTER_REACH = 2.0 * WS.M`: Reach from the hero to a car's body for the get-in prompt.
 - `EXIT_SPEED = 8.5 * WS.M`: Faster than this the hero stays in (about 30 km/h).
 - `EXIT_GAP = 0.7 * WS.M`: How far beside the body the hero steps out.
@@ -156,6 +205,9 @@ Getting into cars and driving them. Near a parked or stopped car, F (Y on a pad)
 - `SETTLE = 0.3`: Ground following: the body rises onto a curb at once and settles down at this rate (u/s).
 - `PROMPT_TICK = 0.15`
 - `IMPACT_GAP = 0.25`: car_impact goes out at most this often (s), for the hardest hit.
+- `HORN_GAP = 0.75`: The horn (a bicycle's bell) sounds at most this often (s).
+- `HORN_STREET_R = 35.0 * WS.M`: How far the horn carries into the street (horn_sounded, the horn_street flag), and the hold that turns a press long.
+- `HORN_LONG_S = 0.6`
 - `BLOCKER_REACH = 2.0 * WS.M`: Stopped cars this close to the hero block it on foot (as FpPlayer polls them).
 - `PHOTO_REACH = 30.0 * WS.M`: The photo shot's car is the nearest one to get into this close to the spawn point, picked PHOTO_FRAMES frames after the tour puts the hero there (traffic fills the street round it).
 - `PHOTO_FRAMES = 3`
@@ -169,10 +221,12 @@ Getting into cars and driving them. Near a parked or stopped car, F (Y on a pad)
 
 ### Properties
 
+- `bike: bool`: True while the hero is on a bicycle (no door to open: on and off it at once).
 - `view: String`: "chase" or "driver".
 - `entry`: The walk to the door and the climb in, or the climb out (car_entry.gd).
 - `hijack`: The leap across to a moving car (action hijack).
 - `pose`: The hero's seated pose against the cabin (seat_pose.gd).
+- `arm`: The backhoe's arm and bucket rig (backhoe.gd, the backhoe_arm flag).
 
 ### Functions
 
@@ -180,12 +234,13 @@ Getting into cars and driving them. Near a parked or stopped car, F (Y on a pad)
 - `func setup(p_ctx: FpContext) -> void`
 - `func teardown() -> void`
 - `func on_world_rebuilt() -> void`
-- `func from_dict(_d: Dictionary) -> void`
+- `func to_dict() -> Dictionary`: Save: the backhoe rigs the hero has posed and the pile it dug, put back on the load.
+- `func from_dict(d: Dictionary) -> void`
 - `func self_test() -> Dictionary`
 - `func enter_target() -> Dictionary`: The car the hero could get into now ({} when none, while driving or climbing in or out, or while a parkour move carries the hero).
 - `func enter() -> bool`: Gets into the nearest car in reach at once. Returns true when the hero is now driving.
-- `func board() -> bool`: Gets into the nearest car in reach the long way (car_doors): the hero walks round to its driver's door, opens it, climbs in and shuts it, then drives (climb_step runs it); someone at the wheel (carjack) is dragged out once the door is open, the car waiting till then. At once (enter) without the flag, or when the door cannot open (a model without one, the stand-in figure, no room beside it or no clear way round). Returns true when it started.
-- `func leave() -> bool`: Gets out the long way (car_doors): the car brakes to a stop, the door opens and the hero climbs out and shuts it (climb_step runs it). At once (exit) without the flag. False when the car is too fast (it says so).
+- `func board() -> bool`: Gets into the nearest car in reach the long way (car_doors): the hero walks round to its driver's door, opens it, climbs in and shuts it, then drives (climb_step runs it); someone at the wheel (carjack) is dragged out once the door is open, the car waiting till then. At once (enter) without the flag, for a bicycle (there is no door: the hero gets on), or when the door cannot open (a model without one, the stand-in figure, no room beside it or no clear way round). Returns true when it started.
+- `func leave() -> bool`: Gets out the long way (car_doors): the car brakes to a stop, the door opens and the hero climbs out and shuts it (climb_step runs it). At once (exit) without the flag, and off a bicycle (there is no door to open). False when the car is too fast (it says so).
 - `func exit(force: bool = false) -> bool`: Gets out at once beside the driver's door (force: at any speed, wherever there is room or on the spot); also ends a climb in or out half way (a hero still outside the car stays where it stands). Returns true when the hero is on foot again.
 - `func climb_step(dt: float) -> void`: One step of the climb in or out, or of braking to a stop for the climb out; _process runs it, tests call it with their own dt.
 - `func drive_step(throttle: float, brake: float, steer: float, hand: float, dt: float) -> void`: One driving step with the given controls (throttle, brake, handbrake 0..1, steer -1..1).
@@ -207,6 +262,7 @@ The drive feature's HUD: the get-in / get-out key chip above the minimap line an
 - `S = preload("res://scripts/fp/ui/hud_style.gd")`
 - `WS = preload("res://scripts/fp/world_scale.gd")`
 - `CHIP_FROM_BOTTOM = 190.0`
+- `RIG_FROM_BOTTOM = 38.0`: The arm-key row sits this far above the chip's line (the chip's own height and a gap).
 - `SPEEDO_FROM_BOTTOM = 20.0`
 - `FADE = 0.12`
 
@@ -215,6 +271,8 @@ The drive feature's HUD: the get-in / get-out key chip above the minimap line an
 - `func setup() -> void`
 - `func set_prompt(text: String) -> void`: Shows the key chip with text ("" hides it).
 - `func prompt_text() -> String`: The chip text while it shows, else "".
+- `func set_rig(show: bool) -> void`: The backhoe's arm-key row, above the chip while the hero is at its wheel ("" hides it).
+- `func rig_shown() -> bool`: True while the arm-key row shows.
 - `func set_speed(show: bool, v: float) -> void`: Speedometer for a signed speed in u/s (hidden when show is false).
 - `func speed_text() -> String`
 
@@ -247,13 +305,14 @@ Arcade handling for the player's car. Throttle and brake set the speed along the
 
 ### Properties
 
-- `top`: This body's handling profile: a slower, heavier machine (a backhoe) tops out below TOP and gets up to speed at a share of a car's rate (a car: {top: TOP, gain: 1}).
+- `top`: This body's handling profile: a slower, heavier machine (a backhoe) tops out below TOP and gets up to speed at a share of a car's rate, and a long working body (a bus, a truck) also steers on a shorter lock and pulls up at a share of a car's braking (a car: {top: TOP, gain: 1, steer: 1, brake: 1}).
+- `steer_lock`: The body's own steering lock and braking, as shares of a car's.
 - `accel: float`: Signed acceleration along the heading over the last step (brake lights).
 - `spin: float`: Yaw rate from knocks (rad/s, positive turns the heading toward +X at yaw 0), on top of the steering.
 
 ### Functions
 
-- `func reset(p_yaw: float, p_length: float, p_profile: Dictionary = {}) -> void`: p_profile: {"top": u/s, "gain": share of ACCEL} of the body being driven ({}: a car's).
+- `func reset(p_yaw: float, p_length: float, p_profile: Dictionary = {}) -> void`: p_profile: {"top": u/s, "gain": share of ACCEL, "steer": share of STEER_MAX, "brake": share of BRAKE} of the body being driven ({}: a car's).
 - `func heading() -> Vector2`
 - `func speed() -> float`: Signed speed along the heading (u/s, negative in reverse).
 - `func step(throttle: float, brake: float, steer_in: float, handbrake: float, surface: String, dt: float) -> Vector2`: One step: throttle, brake and handbrake 0..1, steer -1 (left) .. 1 (right). Returns the xz displacement; yaw and vel move on.
@@ -296,7 +355,7 @@ The action hijack's moves (the drive feature's action_hijack flag): the hero, at
 
 extends `RefCounted`
 
-The seated hero against the cabin, for drive_feature.gd. The drive clip is a chair-height pose (soles half a metre under the hips, the head upright), while a car's floor sits under the seat and its roof little above the head: without this module the hero's legs go through the floorpan and the head through the roof. The car's model carries the driver markers (asset_paths.gd): Pedal_L / Pedal_R at the ankle targets on the footwell floor, Wheel_L / Wheel_R on the steering rim and Cab_Roof on the headliner above the seat. This module reads them from the car's full model, seats the hero's feet and hands on them through the rig's limb IK (hero_limbs.gd's order: left hand, right hand, left foot, right foot; the hero's left is the car's +X) and works out how far the hips sink into the cushion so the top of the head clears the roof line (drive_feature.gd reads `sink` back for the driver view and the climb out).
+The seated hero against the cabin, for drive_feature.gd. The drive clip is a chair-height pose (soles half a metre under the hips, the head upright), while a car's floor sits under the seat and its roof little above the head: without this module the hero's legs go through the floorpan and the head through the roof. The car's model carries the driver markers (asset_paths.gd): Pedal_L / Pedal_R at the ankle targets on the footwell floor, Wheel_L / Wheel_R on the steering rim and Cab_Roof on the headliner above the seat. This module reads them from the car's full model, seats the hero's feet and hands on them through the rig's limb IK (hero_limbs.gd's order: left hand, right hand, left foot, right foot; the hero's left is the car's +X) and works out how far the hips sink into the cushion so the top of the head clears the roof line (drive_feature.gd reads `sink` back for the driver view and the climb out). A bicycle is the same idea with moving markers (AP.BIKE_MARKERS): the hands go on the grips, the feet on the pedals — which the crank carries round, so the feet follow them — and there is no roof to duck under.
 
 ### Constants
 
@@ -307,6 +366,10 @@ The seated hero against the cabin, for drive_feature.gd. The drive clip is a cha
 - `HL_SINK = 0.2`: How fast the hips settle to their sunk seat height (halflife, s).
 - `KNEE_POLE = Vector3(0.0, 0.35, 0.55) * WS.M`: The limb IK poles in the car's frame (+Z forward): knees forward and up, elbows out and down.
 - `ELBOW_POLE = Vector3(0.20, -0.28, 0.0) * WS.M`
+- `BIKE_ANKLE = 0.10 * WS.M`: On a bicycle the feet stand this far above the pedal they are on (u), so they stay level as the crank carries the pedals round under them.
+- `BIKE_GRIPS = ["Handle_L", "Handle_R"]`: The bicycle's hands: the grips on the handlebar, not a steering rim.
+- `BIKE_PEDALS = ["Pedal_L", "Pedal_R"]`: The bicycle's feet, and the crank they turn with (asset_paths.gd).
+- `BIKE_LEAN = deg_to_rad(54.0)`: On a bicycle the rider pitches this far forward about the hips: the drive clip sits upright in a car seat, and an upright rider's hands fall a third of a metre short of the grips. The avatar's own transform carries the walk lean and is rewritten every frame, so the skeleton node is the one turned (and put back exactly as it was).
 
 ### Properties
 

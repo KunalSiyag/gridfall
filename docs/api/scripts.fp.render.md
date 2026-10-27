@@ -174,19 +174,23 @@ First-person quality presets (slice G2): the knobs each preset sets, and the sta
 - `NAMES = ["low", "medium", "high"]`
 - `DEFAULT = "medium"`
 - `PRESETS = { "low": { "scaling_mode": Viewport.SCALING_3D_MODE_FSR2, "scale": 0.59, "msaa": Viewpo...`: Per preset: 3D scaling (FSR2 also brings its own temporal AA, so MSAA stays off), directional shadow atlas and filter, SSAO and SSIL quality and half size, the VIS_* multiplier, the first-person camera far plane, the mesh LOD threshold (pixels of error) and G1's street lights.
+- `COMPAT = { "low": {"scale": 0.77, "msaa": Viewport.MSAA_DISABLED}, "medium": {"scale": 1.0, "msa...`: The Compatibility renderer (the web build) has no FSR2: on the desktop GL driver setting it crashes the engine as the first frame draws. It scales bilinearly instead, with no temporal pass to hide aliasing, so the scale stays near native and MSAA (its only 3D antialiasing) stands in for FSR2's TAA.
 - `AERIAL_FAR = {"low": 80.0, "medium": 110.0, "high": 110.0}`: How far the camera must see while it is over the city (the overview lifts it up to 32 u, and a photo fly can go higher): past every visible ground point at the lowest pitch, with margin. Low keeps the tightest plane that still covers the overview horizon (the low_vram budget): at the default pitch nothing lies past 80 at any city size, and only pitches under ~45 degrees over cities wider than ~90 tiles lose a far slice, where 110 would cost Low +1 to +9 ms of GPU.
-- `AERIAL_SHADOW_SPLITS = [0.4, 0.6, 0.8]`: Sun shadows while the camera is aerial reach as far as the aerial plane, so the city keeps its shadows from the sky (the impostor chunks cast them then: one low-poly draw per chunk and cascade). The cascade splits move out with them: the camera hangs over the roofs, so the nearest ground is far from the lens (split 1 is all a 2-split preset uses).
+- `AERIAL_SHADOW_SPLITS = [0.4, 0.6, 0.8]`: Sun shadows while the camera is aerial reach as far as the aerial plane on Forward+, so the city keeps its shadows from the sky (the impostor chunks cast them then: one low-poly draw per chunk and cascade). On Compatibility every cascade redraws each shadowed mesh in the forward pass, and a full aerial reach there costs hundreds of draws, so its reach caps tighter. Low drops the pass entirely: at the overview's 26 u altitude a sub-26 m frustum casts nothing anyway (measured: reach 24 == shadows off, draw-for-draw), and the pass is ~660 draws plus 1-2 ms of render CPU the 2-core web box cannot spare. Every nonzero cap sits clear of the street profile's 8/12/16 reaches, so render_opt's street-value snapshot never mistakes one for the other. The cascade splits stay fractions of the reach: the camera hangs over the roofs, so the nearest ground is far from the lens (split 1 is all a 2-split preset uses).
+- `COMPAT_AERIAL_SHADOW = {"low": 0.0, "medium": 48.0, "high": 64.0}`: Aerial shadow reach per preset on Compatibility; 0 means the sun's shadow pass is off while aerial (render_opt disables it and restores the street state on exit).
 
 ### Functions
 
 - `static func normalize(preset: String) -> String`: The preset name itself when known, else DEFAULT.
 - `static func knobs(preset: String) -> Dictionary`: Every knob of a preset (unknown names give the default preset).
+- `static func is_compat(method: String = "") -> bool`: True when the running renderer is Compatibility (the web build, or a desktop run with --rendering-method gl_compatibility). method overrides the running one (tests).
+- `static func viewport_knobs(preset: String, method: String = "") -> Dictionary`: The viewport's 3D scaling knobs for a preset on a renderer: the preset's own (FSR2) on Forward+, COMPAT's bilinear scale and MSAA on Compatibility.
 - `static func vis_mult(preset: String) -> float`: Multiplier on every WS.VIS_* range: 0.7 / 1.0 / 1.3.
 - `static func max_street_lights(preset: String) -> int`: Street lights G1 keeps lit around the player: 6 / 12 / 16.
 - `static func camera_far(preset: String) -> float`: First-person camera far plane in world units: 45 / WS.CAMERA_FAR (60) / 75.
 - `static func aerial_far(preset: String) -> float`: The far plane while the camera is aerial (render_opt's aerial coverage), never below the street-plane value.
 - `static func aerial_fog_end(preset: String) -> float`: Depth-fog end while the camera is aerial, inside 95% of the aerial far plane (the same rule the street profile applies to its own plane: light_profile.fog_end).
-- `static func aerial_shadow(preset: String) -> float`
+- `static func aerial_shadow(preset: String, method: String = "") -> float`
 - `static func street_fog_end(preset: String) -> float`: The street fog end for a preset (light_profile.fog_end's rule, for restoring it on exit).
 
 ## `scripts/fp/render/render_opt_feature.gd`
@@ -211,7 +215,7 @@ Render performance (slice G2): applies the quality preset (FSR2 scaling, shadow 
 - `RS_SETTINGS = { "atlas": "rendering/lights_and_shadows/directional_shadow/size", "atlas_16": "renderi...`: Project defaults of the global RenderingServer knobs (headless has no getters for them).
 - `RS_DEFAULTS = { "atlas": 4096, "atlas_16": true, "soft": 2, "ssao": 2, "ssao_half": true, "ssao_targe...`
 - `SHADOW_KEYS = [ "directional_shadow_max_distance", "directional_shadow_split_1", "directional_shadow_...`: The sun keys the aerial coverage widens (the reach, then the three cascade splits).
-- `VIEWPORT_KEYS = ["scaling_3d_mode", "scaling_3d_scale", "msaa_3d", "mesh_lod_threshold", "use_occlusion...`
+- `VIEWPORT_KEYS = [ "scaling_3d_mode", "scaling_3d_scale", "msaa_3d", "mesh_lod_threshold", "use_occlusio...`
 
 ### Properties
 

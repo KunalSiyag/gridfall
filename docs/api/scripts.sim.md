@@ -16,7 +16,7 @@ Tile-based SimCity-style simulation: zoning + demand-driven growth, power/water/
 - `day_started(day: int)`
 - `day_ended(day: int)`
 - `territory_changed(mi: int)`
-- `stats_updated()`
+- `stats_updated`
 - `event_started(ev: Dictionary)`
 - `event_ended(ev: Dictionary)`
 - `city_log(message: String, category: String)`
@@ -55,6 +55,7 @@ Tile-based SimCity-style simulation: zoning + demand-driven growth, power/water/
 ### Functions
 
 - `func new_city(seed_value: int) -> void`
+- `func new_mayor(m: Dictionary) -> Dictionary`: A fresh mayor record for D.MAYORS[i]: the founding shape new_city() and a load both need. Draws no RNG, so the founding city's layout stays exactly as it was.
 - `func district_rect(d: int) -> Rect2i`: Bounding box of the tiles district d owns (it grows as the mayor annexes plots).
 - `func plot_claimed(p: Vector2i) -> bool`: A plot is claimed once any of its tiles belongs to a district (annexation takes whole plots; the founding city's districts split its plots between them).
 - `func is_surveyed(x: int, y: int) -> bool`: Whether tile x,y lies on surveyed land (claimed or within SURVEY_RANGE plots of it).
@@ -130,9 +131,11 @@ Tile-based SimCity-style simulation: zoning + demand-driven growth, power/water/
 - `func open_lots(d: int, max_n: int = 14) -> Array`: Empty land tiles in district d next to a road (best spots for zoning/buildings).
 - `func city_summary() -> Dictionary`
 - `func sample_citizens(n: int) -> Array`
+- `func rng_for(salt: int) -> RandomNumberGenerator`: A random stream derived from the city seed and the current tick, for the cosmetic draws around the sim (citizen sampling, voice ranking). Two boots of the same save at the same tick draw the same values, and the shared global RNG stream is never touched.
+- `static func shuffle_seeded(arr: Array, rng: RandomNumberGenerator) -> void`: Fisher-Yates with a caller-owned RNG: Array.shuffle() draws from the global stream, which makes the result depend on whatever else ran before it.
 - `func tile_report(x: int, y: int) -> Dictionary`
-- `func to_dict() -> Dictionary`: A save taken while a sliced job runs completes it first, so it equals the save after the equivalent synchronous tick.
-- `func from_dict(data: Dictionary) -> bool`
+- `func to_dict() -> Dictionary`: A save taken while a sliced job runs completes it first, so it equals the save after the equivalent synchronous tick. A mayor record carries its state (treasury, taxes, counters) but not pop/jobs/happiness: those are stage-19 derived caches, recomputed from the tiles on every load (see _rc_stats), so writing them would store a value the next load discards. Without them a save is byte-idempotent: save -> load -> save writes identical bytes.
+- `func from_dict(data: Dictionary) -> bool`: Replaces this city with the parsed save: true when it is a version this build restores.
 - `func remap_index(i: int) -> int`: Moves a tile index saved in an older world layout to the current one (-1 if it falls outside).
 
 ## `scripts/sim/residents.gd`

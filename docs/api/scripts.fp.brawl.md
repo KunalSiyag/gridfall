@@ -8,7 +8,7 @@
 
 extends `FpFeature`
 
-Close combat (integration feature "brawl"; docs/fp/ARCHITECTURE.md, Brawl): grapples and the counter cue. H (or the back mouse button) takes hold of the person on their feet in front within GRAB_REACH: they hang in the hero's hands HOLD_GAP ahead, the hero's fists up and the body squared to the camera, dragged along at DRAG_SPEED at most. Punches land on them where they hang (the combo's hook or the third in a row puts them down), R throws them where the camera looks (the actions feature's "throw": knocked down and flung) and H again lets go; after a while they break free (traffic's reactions.gd holds them). The hold ends when the hero can no longer act (driving, knocked down, a modal open). Someone fighting the hero who starts a punch flashes the counter cue under the crosshair (hero_threatened) until it lands: the guard raised in time counters it (the actions feature's parry, the counters flag). Environmental attacks (the slams flag): R with something solid just beyond the person held slams them into it instead of throwing them (slam_spot, slam; the actions feature's "slam"): a light street prop goes over with them, a wall, a post, a parked car or a prop that holds stops them dead (hero_slammed).
+Close combat (integration feature "brawl"; docs/fp/ARCHITECTURE.md, Brawl): grapples and the counter cue. H (or the back mouse button) takes hold of the person on their feet in front within GRAB_REACH: they hang in the hero's hands HOLD_GAP ahead, the hero's fists up and the body squared to the camera, dragged along at DRAG_SPEED at most. Punches land on them where they hang (the combo's hook or the third in a row puts them down), R throws them where the camera looks (the actions feature's "throw": knocked down and flung) and H again lets go; after a while they break free (traffic's reactions.gd holds them). The hold ends when the hero can no longer act (driving, knocked down, a modal open). Someone fighting the hero who starts a punch flashes the counter cue above their head (hero_threatened) until it lands, the mark growing through the wind-up and fading once it has (counter_cues): the guard raised in time counters it (the actions feature's parry, the counters flag). Environmental attacks (the slams flag): R with something solid just beyond the person held slams them into it instead of throwing them (slam_spot, slam; the actions feature's "slam"): a light street prop goes over with them, a wall, a post, a parked car or a prop that holds stops them dead (hero_slammed).
 
 ### Constants
 
@@ -17,14 +17,16 @@ Close combat (integration feature "brawl"; docs/fp/ARCHITECTURE.md, Brawl): grap
 - `INPUTS = ["act_grab"]`
 - `GRAB_REACH = 1.1 * WS.M`: Who can be grabbed: on their feet within GRAB_REACH (feet to feet) inside the cone ahead of the camera (the cosine).
 - `GRAB_CONE = 0.5`
-- `HOLD_GAP = 0.68 * WS.M`: Where the held person's feet go: HOLD_GAP ahead of the hero's, far enough that the two bodies clear each other with the hero's hands on their arms.
+- `HOLD_GAP = 0.58 * WS.M`: Where the held person's feet go: HOLD_GAP ahead of the hero's, far enough that the two bodies clear each other with the hero's hands on their arms.
 - `HOLD_SWAY_SIDE = 0.12 * WS.M`: The held person shifts and turns slightly as they struggle (m, radians, and Hz).
 - `HOLD_SWAY_FORWARD = 0.04 * WS.M`
 - `HOLD_SWAY_YAW = deg_to_rad(6.0)`
 - `HOLD_SWAY_HZ = 1.25`
 - `DRAG_SPEED = 1.1 * WS.M`: The hero's top speed dragging someone (u/s).
 - `REACH_S = 0.3`: The reach for them as the hold starts (the rig's push clip, seconds).
-- `CUE_TAIL = 0.15`: The counter cue stays this long past the punch's landing (s).
+- `CUE_TAIL = 0.15`: The counter cue stays this long past the punch's landing (s). It rides CUE_HEAD above the attacker's head bone (re-read every frame, so it follows them), or CUE_LIFT above the fist itself when the attacker is gone (a bare threat in a test).
+- `CUE_HEAD = 0.1 * WS.M`
+- `CUE_LIFT = 0.65 * WS.M`
 - `SLAM_REACH = 0.8 * WS.M`: A slam: something solid at most SLAM_REACH beyond the body of the person held (taken as SLAM_BODY_R round their feet, SLAM_HEIGHT tall), looked for in steps of SLAM_STEP; a knockable prop at most SLAM_TIE further than a wall is the one they hit. They hit it at SLAM_SPEED, with PERSON_MASS (a sedan is 1), handing a prop (1 + SLAM_GIVE) times its share of that; the bus hears of it at SLAM_CHEST up. They fall to a side with SLAM_SIDE clear.
 - `SLAM_BODY_R = 0.25 * WS.M`
 - `SLAM_HEIGHT = 1.7 * WS.M`
@@ -40,7 +42,7 @@ Close combat (integration feature "brawl"; docs/fp/ARCHITECTURE.md, Brawl): grap
 
 - `held_id: int`: The walkers_near id of the person held, -1 for none; holds taken so far.
 - `slams: int`: Slams so far.
-- `cue: Label`: The counter cue, and how long it stays.
+- `cue: Label`: The counter cue, how long it stays, how far the window it is showing runs to its landing, and where in the world it rides (over the attacker's head). cue_wid and cue_fist re-resolve that anchor every frame, so the mark follows a moving attacker.
 
 ### Functions
 
@@ -56,3 +58,4 @@ Close combat (integration feature "brawl"; docs/fp/ARCHITECTURE.md, Brawl): grap
 - `func tick(dt: float) -> void`: One step: the cue fades, and the person held goes where the hero's hands are (or the hold ends).
 - `func slam_spot(dir: Vector3) -> Dictionary`: What the person held would hit thrown along the level dir (the slams flag): the nearest thing solid within SLAM_REACH of their body, a knockable street prop standing there ({"what": its kind, "tile", "slot", "mass"}) or anything else that blocks a body, a wall, a post or a parked car ({"what": "wall"}). "at" is the contact at the height of their feet, "gap" how far off it is and "side" the level unit direction they fall to off it. {} for open street (a drop or water too), nobody held or the flag off.
 - `func slam(spot: Dictionary, dir: Vector3) -> bool`: The person held hits spot (slam_spot's) thrown along the level unit dir: a prop there that gives way to the body goes over (the props feature's knock), and the bus hears of it (hero_slammed). True when a prop went over.
+- `static func cue_look(left: float, secs: float) -> Vector2`: How the cue looks with cue_t left of a window that ran secs to the landing (counter_cues): the "!" grows through the wind-up as the blow closes, and what stays past the landing shrinks and fades out. Returns [font size px, alpha].

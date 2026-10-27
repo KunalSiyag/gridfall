@@ -23,25 +23,27 @@ The hero's health (the health feature) as an arc round the left of the minimap i
 - `RED_AT = 0.25`
 - `TRACK = Color(0.02, 0.03, 0.05, 0.55)`
 - `TRAIL = Color(1.0, 1.0, 1.0, 0.6)`
+- `POISE_COL = Color(0.55, 0.75, 1.0, 0.8)`: The guard's poise (guard_chip): a thin cool sliver inside the ring while it is short of full.
+- `POISE_W = 2.5`
 - `TRAIL_WAIT = 0.35`: The trail waits TRAIL_WAIT seconds after a hurt, then eats down with this half-life (s).
 - `HL_TRAIL = 0.18`
 - `PULSE_HZ = 1.6`
 
 ### Properties
 
-- `value: float`: Health shown (0..1) and the trail behind it.
+- `value: float`: Health shown (0..1) and the trail behind it; the guard's poise (0..1, -1 hidden).
 
 ### Functions
 
 - `func setup() -> void`
-- `func set_health(v: float, dt: float) -> void`: Shows health v (0..1) after dt seconds: a drop leaves the trail behind for a moment.
+- `func set_health(v: float, dt: float, poise: float = -1.0) -> void`: Shows health v (0..1) after dt seconds: a drop leaves the trail behind for a moment. poise (0..1, the guard_chip guard's poise) draws as a thin sliver inside the ring while short of full; -1 hides it.
 - `func colour() -> Color`: The fill's colour: green, amber, then a pulsing red.
 
 ## `scripts/fp/health/health_feature.gd`
 
 extends `FpFeature`
 
-The hero's health (integration slice; docs/fp/ARCHITECTURE.md, Health): MAX_HP points, shown as an arc round the left of the minimap. Crashes in the car the hero drives (car_impact), hard landings (the player's landed signal; one rolled off counts softer), people who fight back (hero_hit "punch", the fight_back flag), dogs defending their owners (hero_hit "bite", the animals feature) and cars that cannot stop for the hero on foot (hero_hit "car", hit_by_cars) cost points, and REGEN_DELAY seconds after the last hurt they come back. A blow makes the body flinch (a guard raised toward it takes most of a punch); a car or a bad fall knocks the hero down, to lie a moment and get up. With nothing left they are knocked out: out of the car, down, the screen fades to black and they come round outside the nearest hospital (City Hall without one), healed. Every hurt goes out on the bus (hero_hurt); health is saved with the city.
+The hero's health (integration slice; docs/fp/ARCHITECTURE.md, Health): MAX_HP points, shown as an arc round the left of the minimap. Crashes in the car the hero drives (car_impact), hard landings (the player's landed signal; one rolled off counts softer), people who fight back (hero_hit "punch", the fight_back flag), dogs defending their owners (hero_hit "bite", the animals feature) and cars that cannot stop for the hero on foot (hero_hit "car", hit_by_cars) cost points, and REGEN_DELAY seconds after the last hurt they come back. A blow makes the body flinch the way it came from, the camera rolling toward the side that was hit (hero_flinch; a guard raised toward it takes most of a punch); a car or a bad fall knocks the hero down, to lie a moment and get up. With nothing left they are knocked out: out of the car, down, the screen fades to black and they come round outside the nearest hospital (City Hall without one), healed. Every hurt goes out on the bus (hero_hurt); health is saved with the city.
 
 ### Constants
 
@@ -61,6 +63,12 @@ The hero's health (integration slice; docs/fp/ARCHITECTURE.md, Health): MAX_HP p
 - `PUNCH = 5.0`: A punch or a bite costs PUNCH + PUNCH_K times its strength; the guard up toward a punch takes GUARD_K of that (a dog goes for the legs, under it).
 - `PUNCH_K = 10.0`
 - `GUARD_K = 0.3`
+- `POISE_HIT = 0.2`: The guard's poise (guard_chip): a punch the guard catches drains it by POISE_HIT + POISE_K times the blow's strength; once no guarded blow has landed for POISE_DELAY it knits back at POISE_REGEN a second. At none left the guard breaks: that blow lands in full, the guard drops and the hero staggers BREAK_S — input held, the view dipped (BREAK_KICK, pitch and roll off the side the blow came from).
+- `POISE_K = 0.3`
+- `POISE_REGEN = 0.3`
+- `POISE_DELAY = 0.8`
+- `BREAK_S = 0.8`
+- `BREAK_KICK = Vector2(-0.12, 0.05)`
 - `CAR_K = 100.0`: A car's blow costs CAR_K times its strength (0..1) and from CAR_DOWN on knocks the hero down.
 - `CAR_DOWN = 0.25`
 - `LIE_S = 1.4`: Knocked down: the body falls (the rig's knockback), lies LIE_S seconds and gets up (its get_up; GET_UP s without the rig). The push throws the body on along the ground, slowing at SLIDE_DECEL (u/s²; a tumble on the road), so a car at v throws the hero v² / (2 SLIDE_DECEL) on: further than it takes to stop at full braking.
@@ -72,12 +80,16 @@ The hero's health (integration slice; docs/fp/ARCHITECTURE.md, Health): MAX_HP p
 - `KICK = Vector2(-0.03, 0.04)`: The view kick (pitch, roll; radians) of a flinch and of a knock-down.
 - `KICK_DOWN = Vector2(0.3, 0.12)`
 - `FLINCHES = ["hit_head", "hit_chest"]`
+- `FLINCH_SCALE = Vector2(0.7, 1.5)`: A flinch's nudge grows across a blow's strength from this share of KICK to this much of it (hero_flinch, with hit_feel on; one size with it off), and a blow this far from the front (the cosine) reads as a head snap, anything else a fold of the chest.
+- `FLINCH_FRONT = 0.25`
 
 ### Properties
 
 - `hp: float`: Health points, 0..MAX_HP.
 - `out: bool`: Knocked out: from the fall until the hero comes round.
 - `hurts: int`: Hurts and knock-outs so far, and where the hero came round last (the hospital's name, "" at City Hall).
+- `flinch_clip: String`: The clip the last flinch played (a test hook).
+- `poise: float`: The guard's poise, 1 full (guard_chip; the arc shows it while short of full).
 
 ### Functions
 
@@ -88,9 +100,10 @@ The hero's health (integration slice; docs/fp/ARCHITECTURE.md, Health): MAX_HP p
 - `func from_dict(d: Dictionary) -> void`
 - `func teardown() -> void`
 - `func self_test() -> Dictionary`
-- `func hurt(amount: float, cause: String, push: Vector3 = Vector3.ZERO, knock: bool = false) -> void`: Takes amount of health for cause ("punch", "bite", "car", "crash", "fall"): the body flinches, or with knock it goes down and slides on along push (xz, u/s); with nothing left the hero is knocked out. bus.hero_hurt hears of it. Nothing while knocked out.
+- `func hurt(amount: float, cause: String, push: Vector3 = Vector3.ZERO, knock: bool = false, felt: float = -1.0) -> void`: Takes amount of health for cause ("punch", "bite", "car", "crash", "fall"): the body flinches, or with knock it goes down and slides on along push (xz, u/s); with nothing left the hero is knocked out. felt (0..1) is how hard the blow reads on the flinch (derived from amount when left). bus.hero_hurt hears of it. Nothing while knocked out.
 - `func knocked() -> bool`: True while the hero is on the ground (knocked down or out) or coming round.
 - `func tick(dt: float) -> void`: One step: health comes back, a knock-down runs out and the hero gets up, a knock-out runs its fade and moves the hero; the slide and the HUD follow.
+- `func downed() -> bool`: True while the hero is down on the ground (knocked down or out): traffic reads it so the fight's reactions can answer a fall (downed_awareness).
 - `func hospital_spot(from: Vector3) -> Dictionary`: Where a hero knocked out near from comes round: the sidewalk outside the nearest hospital, facing the street ({"pos", "yaw" (deg), "name"}), else City Hall's spawn point (name "").
 
 ## `scripts/fp/health/health_screen.gd`
