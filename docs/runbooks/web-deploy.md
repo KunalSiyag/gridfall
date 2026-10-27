@@ -150,10 +150,44 @@ Both are logged on every boot of the current build and both are fixed by the rou
   A fresh day-1 city boots and plays. Round 3 moves the road shader's per-mesh attributes out of
   instance variables.
 
-## Registry-URL follow-up
+## Replace an instance, do not expect an in-place redeploy
 
-The GMI register form takes an **Image URL** only, and the instance is pinned to the digest it was
-created with. A new push to `:main` does not move a running instance: update the template's image
-reference (or recreate the instance) to deploy a new build. Tag every push with the merge commit
-(`:main` and `:<sha>`) so a running instance can be traced back to its code, and record the digest
-the instance actually pulled.
+The GMI register form takes an **Image URL** only. A running instance keeps the image it was
+created with: pushing `:main` or editing the template does not update it. As verified on
+2026-10-27, the instance menu offers Shell, Log, Monitoring and Detail, but no redeploy action.
+
+1. Edit the existing private template, pin its Image URL to `<repository>@sha256:<digest>`, and
+   save. Keep its region and port mapping unchanged. Tag registry pushes with both `:main` and
+   `:<merge-sha>` for traceability, but use the immutable digest in the template.
+2. With approval for temporary overlap billing, create a **replacement** instance from that
+   template: IOWA IDC-1, Container (2 CPU, 4 GiB, $0.0475/hr), HTTPS/2 443 -> 8080, no extra
+   models or environment variables. Do not use the separate public-listing action.
+3. Wait for the new instance to reach RUNNING. Its public URL is **new**; tell the owner and
+   run the complete keyless post-redeploy checklist against that URL. Keep the old one running
+   if any check fails. The player's keyed check remains a separate manual step.
+4. Only after the replacement passes, terminate the **old** instance by its exact ID and confirm
+   that only the replacement remains RUNNING. Recheck `/healthz` on the new URL. Do not terminate
+   the replacement by accident; save the URL and image digest with the deployment record.
+
+### Verified deployment, 2026-10-27
+
+- **Current URL:** https://ct-cc58dbb0-1190-4eab-891f-bb58578e8ad2-web.caas-us1.gmicloud.ai
+- Instance name: `gridfall-web-cd173a9`; image tags `:main` and `:cd173a9` resolve to
+  `sha256:c651bbe324e7861db1c2552c08953225c75229eb05fe1c20451d6cda336600b4`.
+- Old instance `22bdf518-fe51-4da8-8022-27effbf3fed0` was terminated **after** replacement checks
+  passed; its former URL is retired. The replacement stayed RUNNING and healthy afterward.
+- Live first load: **451.8 MB / 689.3 s** (old, gzip) -> **137.36 MB / 93.82 s** (new, Brotli),
+  time to first rendered frame measured in software WebGL. This is 69.6% fewer bytes and 7.35x
+  faster first frame, not a hardware-browser performance guarantee.
+- `/healthz` 200; Brotli passes through the gateway; COOP/COEP present;
+  `crossOriginIsolated === true`; SharedArrayBuffer available; Range 206; loader `no-cache`;
+  hashed payloads `immutable`. Offline smoke **8/8**; screenshot shows a REPLAY mayor action;
+  no GMI requests or stored key; save/reload persisted; explicit first-person view verified;
+  no instance-uniform-limit errors. Engine first log arrived in 44 s (not the first-frame metric).
+- Known FSR2/occlusion warnings remain in this pre-round-3 build. Automated reload also produced
+  pointer-lock user-gesture and AudioContext autoplay warnings; these are not engine failures.
+  The smoke's engine-error check does not count JavaScript `pageerror` events, so inspect them too.
+- **Still manual:** the owner opens the new URL with their own key and confirms a live mayor
+  turn under isolation. No operator handles the key.
+- Header probes must compare HTTP field names case-insensitively: the gateway sends lowercase
+  names. A Title-Case-only lookup falsely reports identity encoding and missing isolation headers.

@@ -36,14 +36,16 @@ def fetch(url: str, headers: dict) -> tuple:
 
 def head(url: str, encoding: str) -> dict:
     status, headers, body = fetch(url, {"Accept-Encoding": encoding, "Range": "bytes=0-0"})
+    # HTTP field names are case-insensitive; converting HTTPMessage to dict loses that lookup.
+    headers = {name.lower(): value for name, value in headers.items()}
     return {
         "status": status,
-        "encoding": headers.get("Content-Encoding", "identity"),
-        "cache": headers.get("Cache-Control", ""),
-        "coop": headers.get("Cross-Origin-Opener-Policy", ""),
-        "coep": headers.get("Cross-Origin-Embedder-Policy", ""),
-        "type": headers.get("Content-Type", ""),
-        "content_range": headers.get("Content-Range", ""),
+        "encoding": headers.get("content-encoding", "identity"),
+        "cache": headers.get("cache-control", ""),
+        "coop": headers.get("cross-origin-opener-policy", ""),
+        "coep": headers.get("cross-origin-embedder-policy", ""),
+        "type": headers.get("content-type", ""),
+        "content_range": headers.get("content-range", ""),
         "probe_bytes": len(body),
     }
 

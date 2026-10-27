@@ -227,6 +227,47 @@ def test_loader_page_gets_a_progress_bar():
         patch_loader_html("<style></style>")
 
 
+@pytest.mark.parametrize("case", [str.lower, str.title, str.upper])
+def test_measure_headers_are_case_insensitive(monkeypatch, case):
+    from tools import web_measure
+
+    headers = {
+        "content-encoding": "br",
+        "cache-control": "public, max-age=31536000, immutable",
+        "cross-origin-opener-policy": "same-origin",
+        "cross-origin-embedder-policy": "require-corp",
+        "content-type": "application/wasm",
+        "content-range": "bytes 0-0/6902599",
+    }
+
+    def fetch(url, request_headers):
+        assert url == "https://example.org/index.wasm"
+        assert request_headers == {"Accept-Encoding": "br", "Range": "bytes=0-0"}
+        return 206, {case(name): value for name, value in headers.items()}, b"x"
+
+    monkeypatch.setattr(web_measure, "fetch", fetch)
+    assert web_measure.head("https://example.org/index.wasm", "br") == {
+        "status": 206,
+        "encoding": "br",
+        "cache": headers["cache-control"],
+        "coop": "same-origin",
+        "coep": "require-corp",
+        "type": "application/wasm",
+        "content_range": "bytes 0-0/6902599",
+        "probe_bytes": 1,
+    }
+
+
+def test_measure_headers_default_only_when_absent(monkeypatch):
+    from tools import web_measure
+
+    monkeypatch.setattr(web_measure, "fetch", lambda *_: (206, {}, b"x"))
+    assert web_measure.head("https://example.org/index.pck", "identity") == {
+        "status": 206, "encoding": "identity", "cache": "", "coop": "", "coep": "",
+        "type": "", "content_range": "", "probe_bytes": 1,
+    }
+
+
 def test_measure_script_finds_the_assets_the_page_names():
     from tools.web_measure import asset_paths
 
