@@ -76,6 +76,7 @@ const FIGHT_REACH := FB.FIGHT_REACH
 const WIND_RATE := FB.WIND_RATE
 const CHECK_NEAR := FB.CHECK_NEAR
 const STAND_OVER_S := FB.STAND_OVER_S
+const BREAK_S := FB.BREAK_S
 const T_PLAIN := FB.T_PLAIN
 const T_GUARD := FB.T_GUARD
 const T_DANCER := FB.T_DANCER
@@ -178,6 +179,7 @@ class Reaction:
 	var strafe: int = 1  # a dancer's way round the hero (+1 or -1, by id parity)
 	var called: bool = false  # a caller has already shouted their friends over
 	var chip: float = 0.0  # how beaten a guard's guard is (guard_chip); the blow past 1 lands
+	var broken: float = 0.0  # seconds the beaten guard stays down (guard_break): all blows land
 	var stood_over: bool = false  # the stand-over beat for a downed hero already played
 	var checked: bool = false  # someone already came to look this one over (downed_awareness)
 	var check_of: int = -1  # the checker: whose knock-down this one came to look at
@@ -300,7 +302,8 @@ func clear() -> void:
 
 
 ## w takes a blow from src (a world point) along push (xz, any length) of strength 0..1, cause
-## "shove", "punch", "car" or "carjack"; fling (m) > 0 throws a body it knocks down that far. Held
+## "shove", "punch", "car" or "carjack"; fling (metres, NOT world units like the rest) > 0 throws
+## a body it knocks down that far. Held
 ## (grab) and not knocked down, w reels and hangs on. A car that runs w over where it already lies
 ## (_trample) shoves it along and leaves it down but up sooner. A guarded fighter may turn a punch
 ## or a shove aside instead (fight_tempers). Returns {"down": bool, "clip": StringName}, or {}

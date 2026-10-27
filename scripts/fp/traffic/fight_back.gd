@@ -56,8 +56,11 @@ const CALL_MAX := 2
 const BOLT_S := 2.5
 ## A guard's guard wears out (guard_chip): every blow turned aside chips it by CHIP_HIT plus
 ## CHIP_K times the blow's strength, and the one that takes it past 1 lands in full instead.
+## Beaten, the guard drops for BREAK_S (guard_break): the fighter stands off balance, throwing
+## nothing and turning nothing aside, until the guard knits back whole and can be chipped anew.
 const CHIP_HIT := 0.26
 const CHIP_K := 0.2
+const BREAK_S := 1.2
 ## Downed awareness (downed_awareness): a blow that leaves someone down brings the nearest free
 ## onlooker within CHECK_R over to look — they come within CHECK_NEAR (feet to feet), lean in
 ## (rad, + forward) with a slow head shake for CHECK_S, then walk on; once for each knock-down.
@@ -135,6 +138,7 @@ func arm(r) -> void:
 	r.temper = temper_of(r.w)
 	r.strafe = 1 if r.w.id % 2 == 0 else -1
 	r.chip = 0.0
+	r.broken = 0.0
 
 
 ## True when r's walker fights the hero back: always once they have, else by fight_odds for the
@@ -151,7 +155,8 @@ func fights_back(r, cause: String) -> bool:
 ## scrap is still theirs (fighting, or waiting to) and they turn guard_share of the blows that
 ## reach them aside. Nothing of it counts: no reel back, no slide, nothing toward the knock-down.
 ## But the guard wears (guard_chip): each blow turned aside chips it, and the one that takes the
-## chip past 1 lands in full.
+## chip past 1 lands in full — the beaten guard dropping a beat (guard_break): off balance,
+## everything landing, until it knits back.
 func turned_aside(r, cause: String, strength: float) -> bool:
 	if not r.fighter or r.held or cause not in ["punch", "shove"]:
 		return false
@@ -164,12 +169,17 @@ func turned_aside(r, cause: String, strength: float) -> bool:
 				in_it = true
 		if not in_it:
 			return false
-	if rng.randf() >= guard_share:
+	# A guard still down from its beating (guard_break) turns nothing: everything lands.
+	var open: bool = FeatureFlags.enabled("guard_break") and r.broken > 0.0
+	if open or rng.randf() >= guard_share:
 		return false
 	if FeatureFlags.enabled("guard_chip"):
 		r.chip += CHIP_HIT + CHIP_K * clampf(strength, 0.0, 1.0)
 		if r.chip >= 1.0:
-			# The guard is beaten: this one lands.
+			# The guard is beaten: this one lands, and the guard drops a beat (guard_break).
+			if FeatureFlags.enabled("guard_break"):
+				r.chip = 0.0
+				r.broken = BREAK_S
 			return false
 	return true
 
@@ -332,6 +342,13 @@ func step_fight(r, dt: float) -> bool:
 		return true
 	var dir := to / maxf(dist, 1e-6)
 	w.yaw = lerp_angle(w.yaw, atan2(dir.x, dir.z), minf(1.0, dt * 10.0))
+	if r.broken > 0.0:
+		# Off balance with the guard beaten (guard_break): facing the hero, throwing nothing.
+		r.broken = maxf(0.0, r.broken - dt)
+		w.react = &""
+		w.vis_v = 0.0
+		w.gait = move_toward(w.gait, 0.0, dt * 4.0)
+		return false
 	r.pause -= dt
 	if dist > FIGHT_REACH + FIGHT_SLACK:
 		close_in(r, dir, dist - FIGHT_REACH, dt)

@@ -1550,10 +1550,10 @@ func _left_hand(w: WK.Walker, q: Vector3) -> Vector3:
 
 
 ## Person id (walkers_near) takes a blow from src (a world point) along push, of strength 0..1,
-## cause "shove", "punch", "car" or "carjack" (dragged out of their car); fling (m) > 0 throws them
-## that far if it knocks them down. They react and the people around see it (reactions.gd), the
-## city hears of it (incidents.gd) and the bus emits person_hit. Returns that signal's info, {}
-## when they could not be hit now.
+## cause "shove", "punch", "car" or "carjack" (dragged out of their car); fling (metres, NOT
+## world units like the rest) > 0 throws them that far if it knocks them down. They react and the
+## people around see it (reactions.gd), the city hears of it (incidents.gd) and the bus emits
+## person_hit. Returns that signal's info, {} when they could not be hit now.
 func hit_walker(
 	id: int, src: Vector3, push: Vector3, strength: float, cause: String, fling: float = 0.0
 ) -> Dictionary:
