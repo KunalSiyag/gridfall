@@ -65,6 +65,7 @@ func _init() -> void:
 	_check_post_colliders(targets)
 	_check_remount(targets)
 	_check_walk(targets)
+	_check_building_meta_silent()
 	_print_report(targets)
 	K.finish(self, "FP_PROP_COLLISION_TEST", fails)
 
@@ -892,6 +893,40 @@ func _is_down(t: Dictionary) -> bool:
 		if int(e["tile"]) == int(t["tile"]) and int(e["slot"]) == int(t["slot"]):
 			return true
 	return false
+
+
+## A building holder whose model metas are missing or wrong-shaped falls back to the whole pick
+## box, silently. The missing-meta read is an engine-level error a SceneTree test cannot see, so
+## the shapes run in a child Godot (fp_building_meta_check.gd) and its captured output is
+## grepped -- the same class as the fold-rig read fixed in #60.
+func _check_building_meta_silent() -> void:
+	var out: Array = []
+	var code := (
+		OS
+		. execute(
+			OS.get_executable_path(),
+			[
+				"--headless",
+				"--path",
+				ProjectSettings.globalize_path("res://"),
+				"-s",
+				"res://tools/tests/fp_building_meta_check.gd",
+			],
+			out,
+			true
+		)
+	)
+	var log := "\n".join(PackedStringArray(out))
+	K.check(
+		fails,
+		code == 0 and "FP_BUILDING_META_CHECK: DONE" in log,
+		"building meta: the child shapes run fell back four ways (exit %d)" % code
+	)
+	K.check(
+		fails,
+		not "does not have any 'meta' values" in log and not "SCRIPT ERROR" in log,
+		"building meta: a half-dressed holder's shapes print no missing-meta engine error"
+	)
 
 
 # ------------------------------------------------------------------ report
