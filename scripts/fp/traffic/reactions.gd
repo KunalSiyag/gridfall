@@ -34,6 +34,7 @@ const FB := preload("res://scripts/fp/traffic/fight_back.gd")
 ## The crowd's answer to what the street sees and hears (the knock-down gasp, the horn startle),
 ## split out the same way; its constants stay under the old names via the alias below.
 const CR := preload("res://scripts/fp/traffic/crowd_reacts.gd")
+const TI := preload("res://scripts/fp/traffic/throw_impact.gd")
 ## Clip lengths (s) in HC's libraries (the female clips match); setup() reads them again.
 const LENGTHS := {&"knockback": 0.833, &"get_up": 1.54, &"hit_head": 0.417, &"hit_chest": 0.333}
 ## Clips that play once: the walker does not turn while they run (it may be lying down).
@@ -154,6 +155,8 @@ class Reaction:
 	var tilt: float = 0.0  # how far a throw tips the body back at its height (rad)
 	var air: float = 0.0  # a throw's seconds in the air, its slide steady; 0 for an eased slide
 	var skid: float = 0.0  # the share of a throw's slide skidded along the ground
+	var impact: Dictionary = {}  # a throw's predicted wall/prop strike {"at", "in"} (throw_impact)
+	var impacted: bool = false  # the mid-flight rebound already played
 	var tip: float = 0.0  # the reel's backward tip (rad, hit_feel); 0 for none
 	var tip_t: float = 0.0  # seconds into the tip
 	var tip_s: float = 0.0  # how long the tip takes to play out (s)
@@ -324,6 +327,8 @@ func hit(
 		var gclip := fight.guarded_plan(r, cause)
 		_next_step(r)
 		return {"down": false, "clip": gclip}
+	r.impact = {}
+	r.impacted = false
 	r.hits = r.hits + 1 if clock - r.last < HITS_S else 1
 	r.last = clock
 	var d := _away(w, src, push)
@@ -347,7 +352,9 @@ func hit(
 	r.slide_t = 0.0
 	r.fly_t = 0.0
 	_next_step(r)
-	return {"down": r.down, "clip": clip}
+	if r.impact.is_empty():
+		return {"down": r.down, "clip": clip}
+	return {"down": r.down, "clip": clip, "impact": r.impact}
 
 
 ## Tip and roll away from the blow in the unchanged body's frame. Finishers get a short reel
@@ -525,6 +532,14 @@ func _plan_down(
 		r.skid = clampf(THROW_SKID / fling, 0.0, 0.5)
 		r.slide_s = r.air + SKID_S
 		r.tilt = THROW_TILT
+		r.impact = TI.impact_ahead(
+			collision,
+			r.w.pos + r.w.vis_off,
+			r.slide * (1.0 - r.skid),
+			r.air,
+			BODY_R + DOWN_REACH,
+			BODY_H
+		)
 	return &"knockback"
 
 
@@ -841,6 +856,7 @@ func _slide(r: Reaction, dt: float) -> void:
 	if collision != null:
 		var reach := BODY_R + (DOWN_REACH if r.down else 0.0)
 		q = collision.move_body(p, move, reach, BODY_H, WS.STEP_HEIGHT)
+		TI.rebound_if_blocked(r, p, move, q)
 	_set_feet(r.w, q)
 
 

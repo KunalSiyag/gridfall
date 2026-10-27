@@ -120,6 +120,7 @@ func _init() -> void:
 	_check_horn_reach()
 	_check_horn_street()
 	_check_body_mass()
+	_check_person_ram()
 	_check_teardown()
 	K.finish(self, "FP_DRIVE_TEST", fails)
 
@@ -2718,6 +2719,68 @@ func _ram_throw(kind: String, role: String, m: int, sm: int) -> Array:
 	drive.call("exit", true)
 	_clear_all()
 	return [thrown, closing / WS.M * 3.6, kept / WS.M * 3.6]
+
+
+## The person case of the strike the ram tests cover car-on-car (collision's backlog): a car at
+## speed strikes a walker in its path through car_body's _strike_people (hit_walker, cause "car")
+## — knocked down, slid metres down the road, one person_hit. Metres end to end, so a fling or
+## slide staged in the wrong unit shows up here as centimetres.
+func _check_person_ram() -> void:
+	_clear_all()
+	var wk: WK = traffic.get("walkers")
+	K.quiet_walkers(traffic)
+	var m: int = traffic.call("car_model_for", "person-ram")
+	var c := _vh().make("car", "ambient", traffic.call("dims", m))
+	c.model = m
+	_vh().place(c, lanes[0], 0.2)
+	c.v = 0.0
+	_beside(c, OBB.side_axis(c.yaw), -0.6)
+	var hits: Array = []
+	var cb := func(_at: Vector3, cause: String, info: Dictionary) -> void:
+		hits.append([cause, bool(info.get("down", false))])
+	ctx.bus.person_hit.connect(cb)
+	if not bool(drive.call("enter")):
+		ctx.bus.person_hit.disconnect(cb)
+		_clear_all()
+		K.check(fails, false, "person ram: fixture, the hero gets in")
+		return
+	var fwd := Vector2(sin(c.yaw), cos(c.yaw))
+	var start := Vector2(c.pos.x, c.pos.z)
+	var spot := start + fwd * (15.0 * WS.M)
+	var w := wk.make("ambient")
+	w.extra = 0
+	wk.stand(w, Vector3(spot.x, c.pos.y, spot.y), atan2(-fwd.x, -fwd.y))
+	var thrown := 0.0
+	var settle := -1.0
+	for _k in range(roundi(10.0 / DT)):
+		drive.call("drive_step", 1.0, 0.0, 0.0, 0.0, DT)
+		traffic.call("step", DT)
+		thrown = maxf(
+			thrown,
+			Vector2(w.pos.x + w.vis_off.x - spot.x, w.pos.z + w.vis_off.z - spot.y).length() / WS.M
+		)
+		if settle < 0.0 and not hits.is_empty():
+			settle = 2.5
+		elif settle >= 0.0:
+			settle -= DT
+			if settle < 0.0:
+				break
+	drive.call("exit", true)
+	ctx.bus.person_hit.disconnect(cb)
+	_clear_all()
+	K.check(
+		fails,
+		hits.size() == 1 and str(hits[0][0]) == "car" and bool(hits[0][1]),
+		"person ram: the car strikes them once, a car hit that puts them down (%d)" % hits.size()
+	)
+	K.check(
+		fails,
+		thrown > 1.2 and thrown < 6.0,
+		(
+			"person ram: and slides them metres down the road (%.2f m, 1.5-4 by the car's pace)"
+			% thrown
+		)
+	)
 
 
 ## The audio feature's emitters, made if the night check has not (its step is the test's to drive).
