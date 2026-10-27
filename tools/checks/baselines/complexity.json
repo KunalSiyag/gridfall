@@ -25,7 +25,7 @@
  "scripts/fp/traffic/render.gd::_extras": 22,
  "scripts/fp/traffic/traffic_feature.gd::_maintain": 23,
  "scripts/fp/traffic/traffic_feature.gd::sync_visuals": 21,
- "scripts/fp/traffic/trips.gd::_park_near": 30,
+ "scripts/fp/traffic/trips_parked.gd::park_near": 30,
  "scripts/fp/traffic/trips.gd::_plan_drive": 31,
  "scripts/fp/traffic/vehicles.gd::_drive": 22,
  "scripts/fp/traffic/vehicles.gd::_stops": 24,

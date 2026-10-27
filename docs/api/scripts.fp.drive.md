@@ -182,6 +182,7 @@ Getting into cars and driving them. Near a parked or stopped car, F (Y on a pad)
 - `HIJACK = preload("res://scripts/fp/drive/hijack.gd")`
 - `SEAT = preload("res://scripts/fp/drive/seat_pose.gd")`
 - `ARM = preload("res://scripts/fp/drive/backhoe.gd")`
+- `INPUT = preload("res://scripts/fp/drive/drive_input.gd")`
 - `ENTER_REACH = 2.0 * WS.M`: Reach from the hero to a car's body for the get-in prompt.
 - `EXIT_SPEED = 8.5 * WS.M`: Faster than this the hero stays in (about 30 km/h).
 - `EXIT_GAP = 0.7 * WS.M`: How far beside the body the hero steps out.
@@ -205,9 +206,7 @@ Getting into cars and driving them. Near a parked or stopped car, F (Y on a pad)
 - `SETTLE = 0.3`: Ground following: the body rises onto a curb at once and settles down at this rate (u/s).
 - `PROMPT_TICK = 0.15`
 - `IMPACT_GAP = 0.25`: car_impact goes out at most this often (s), for the hardest hit.
-- `HORN_GAP = 0.75`: The horn (a bicycle's bell) sounds at most this often (s).
-- `HORN_STREET_R = 35.0 * WS.M`: How far the horn carries into the street (horn_sounded, the horn_street flag), and the hold that turns a press long.
-- `HORN_LONG_S = 0.6`
+- `HORN_STREET_R = INPUT.HORN_STREET_R`: The horn's carry into the street (horn_sounded), aliased for the street's listeners; the horn and its keys live in drive_input.gd.
 - `BLOCKER_REACH = 2.0 * WS.M`: Stopped cars this close to the hero block it on foot (as FpPlayer polls them).
 - `PHOTO_REACH = 30.0 * WS.M`: The photo shot's car is the nearest one to get into this close to the spawn point, picked PHOTO_FRAMES frames after the tour puts the hero there (traffic fills the street round it).
 - `PHOTO_FRAMES = 3`
@@ -227,6 +226,7 @@ Getting into cars and driving them. Near a parked or stopped car, F (Y on a pad)
 - `hijack`: The leap across to a moving car (action hijack).
 - `pose`: The hero's seated pose against the cabin (seat_pose.gd).
 - `arm`: The backhoe's arm and bucket rig (backhoe.gd, the backhoe_arm flag).
+- `input`: The keys and the horn (drive_input.gd).
 
 ### Functions
 
@@ -275,6 +275,26 @@ The drive feature's HUD: the get-in / get-out key chip above the minimap line an
 - `func rig_shown() -> bool`: True while the arm-key row shows.
 - `func set_speed(show: bool, v: float) -> void`: Speedometer for a signed speed in u/s (hidden when show is false).
 - `func speed_text() -> String`
+
+## `scripts/fp/drive/drive_input.gd`
+
+extends `RefCounted`
+
+The drive feature's input (drive_feature.gd): F takes or leaves a car (a second press on the way to the door turns back), V toggles the chase and driver views, the mouse orbits the chase camera, and H sounds the horn (a bicycle's bell, the night_driving flag) at most once per HORN_GAP — a press leaned on past HORN_LONG_S carries long through the street (horn_sounded, the horn_street flag). The state the rest of the drive reads stays on the feature.
+
+### Constants
+
+- `WS = preload("res://scripts/fp/world_scale.gd")`
+- `HORN_GAP = 0.75`: The horn (a bicycle's bell) sounds at most this often (s).
+- `HORN_STREET_R = 35.0 * WS.M`: How far the horn carries into the street (horn_sounded, the horn_street flag), and the hold that turns a press long.
+- `HORN_LONG_S = 0.6`
+
+### Functions
+
+- `func reset() -> void`: Clears the horn timers (a fresh claim: nothing held, nothing cooling down).
+- `func step(dt: float) -> void`: Per drive step: the horn's cooldown, and a press still down past HORN_LONG_S turning long.
+- `func input(event: InputEvent) -> void`: The feature's _input: F at any time, the rest while driving (not climbing in or out).
+- `func horn() -> void`: The horn, or a bicycle's bell (the night_driving flag): one press sounds it at the car on hero_action, at most once per HORN_GAP seconds, and carries through the street (horn_sounded).
 
 ## `scripts/fp/drive/drive_model.gd`
 
