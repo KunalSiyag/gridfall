@@ -124,6 +124,10 @@ var _turns: Dictionary = {}
 var wk: WK
 var collision: CollisionWorld
 var rng: RandomNumberGenerator
+## The sim seed reactions.gd's setup() hands over with the shared stream: the seeded rolls
+## (fight_seeded_rolls) key on it, so a fresh fixture without setup() (base_seed 0) is
+## deterministic too.
+var base_seed: int = 0
 ## reactions.gd's live state, shared at setup: walker id -> Reaction of everyone down or
 ## reacting, the spawner of a Reaction for a walker (_new), the "may start a reaction" test
 ## (_free) and the after-blow planner (_after, for a turned-aside blow's scrap going on).
@@ -151,6 +155,15 @@ func temper_of(w: WK.Walker) -> int:
 	return T_PLAIN
 
 
+## Deterministic roll in [0, 1) keyed by the sim seed, the walker's identity and a salt, so a
+## reaction's outcome no longer depends on how many unrelated reactions ran before it (the
+## shared stream made it order-dependent). Follows temper_of's hash pattern. A one-shot decision
+## (fight) takes a constant salt; a per-blow roll (guard) salts with the blow's count, so the
+## share turned aside still varies blow to blow.
+func _roll(w: WK.Walker, salt: String) -> float:
+	return float(absi(hash("%d|%d|%s|%s" % [base_seed, w.id, w.resident_id, salt]) % 1000)) / 1000.0
+
+
 ## A fighter's temper, and their way round the hero, fixed; a fresh scrap starts with a whole
 ## guard (guard_chip).
 func arm(r) -> void:
@@ -164,7 +177,10 @@ func arm(r) -> void:
 ## cause while the hero can be fought. A fighter's temper is fixed the moment they square up.
 func fights_back(r, cause: String) -> bool:
 	if not r.fighter and hero_open and FeatureFlags.enabled("fight_back"):
-		r.fighter = rng.randf() < float(fight_odds.get(cause, 0.0))
+		if FeatureFlags.enabled("fight_seeded_rolls"):
+			r.fighter = _roll(r.w, "fight:" + cause) < float(fight_odds.get(cause, 0.0))
+		else:
+			r.fighter = rng.randf() < float(fight_odds.get(cause, 0.0))
 		if r.fighter and FeatureFlags.enabled("fight_tempers"):
 			arm(r)
 	return r.fighter
@@ -190,7 +206,15 @@ func turned_aside(r, cause: String, strength: float) -> bool:
 			return false
 	# A guard still down from its beating (guard_break) turns nothing: everything lands.
 	var open: bool = FeatureFlags.enabled("guard_break") and r.broken > 0.0
-	if open or rng.randf() >= guard_share:
+	if FeatureFlags.enabled("fight_seeded_rolls"):
+		if not open:
+			# Per-blow salt, so the share turned aside varies blow to blow (order-independent).
+			var roll := _roll(r.w, "guard:%d" % r.guard_rolls)
+			r.guard_rolls += 1
+			open = roll >= guard_share
+	elif open or rng.randf() >= guard_share:
+		open = true
+	if open:
 		return false
 	if FeatureFlags.enabled("guard_chip"):
 		r.chip += CHIP_HIT + CHIP_K * clampf(strength, 0.0, 1.0)

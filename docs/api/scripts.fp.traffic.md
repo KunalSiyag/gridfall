@@ -288,6 +288,7 @@ The scrap and the care for a body on the ground: fighting back, the tempers, cou
 - `fight_odds: Dictionary`: The share who fight back, by cause (test hook), and the punches that landed on the hero or were countered.
 - `fight_temper: Dictionary`: Walker id -> their temper among TEMPERS (a test hook, overriding the identity hash), and the share of the hero's blows a guard turns aside (a test hook too).
 - `last_disarm`: Whether the blow just turned aside would knock a swung weapon loose (weapon_disarm): reactions.hit reads it into the res. And walker id -> their count of turn-asides this scrap (the disarm roll's seed; reset as the scrap starts).
+- `base_seed: int`: The sim seed reactions.gd's setup() hands over with the shared stream: the seeded rolls (fight_seeded_rolls) key on it, so a fresh fixture without setup() (base_seed 0) is deterministic too.
 - `active: Dictionary`: reactions.gd's live state, shared at setup: walker id -> Reaction of everyone down or reacting, the spawner of a Reaction for a walker (_new), the "may start a reaction" test (_free) and the after-blow planner (_after, for a turned-aside blow's scrap going on).
 
 ### Functions
@@ -1417,6 +1418,7 @@ People on foot (docs/fp/slices/E-traffic.md §3 Pedestrians): they walk the side
 
 ### Functions
 
+- `static func seeded_rng(seed: int) -> RandomNumberGenerator`: A stream seeded at declaration: an unseeded RandomNumberGenerator is randomized per process, so a member whose default must reproduce run to run (a fixture skipping setup()) seeds its own. setup() reseeds from the sim seed as ever.
 - `func setup(p_sw: SW, p_lg: LG, p_jn: JN, p_vh: VH, seed: int) -> void`
 - `static func body_xf(w: Walker, s: float, feet: Vector3) -> Transform3D`: The drawn body's transform: at feet turned to w's yaw, scaled by s (the body faces +Z) and tipped by its vis_tilt about the hips (HIP_M up in the body's own metres).
 - `func make(role: String) -> Walker`
