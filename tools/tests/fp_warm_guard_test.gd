@@ -24,14 +24,10 @@ func _initialize() -> void:
 	_check((view as CityView)._warm_one(a), "warm_one loads synchronously headless")
 	_check((view as CityView)._sync_load_reported.has(a), "fallback recorded the path")
 	_check((view as CityView)._warm_one(a), "second warm of the same path is a cache hit")
-	_check(
-		(view as CityView)._sync_load_reported.size() == 1,
-		"the repeat was not reported twice"
-	)
+	_check((view as CityView)._sync_load_reported.size() == 1, "the repeat was not reported twice")
 	(view as CityView)._report_sync_load(a)
 	_check(
-		(view as CityView)._sync_load_reported.size() == 1,
-		"report_sync_load dedupes a known path"
+		(view as CityView)._sync_load_reported.size() == 1, "report_sync_load dedupes a known path"
 	)
 	_check((view as CityView)._warm_one(b), "a second kind still warms")
 	_check(
@@ -39,4 +35,9 @@ func _initialize() -> void:
 		"the second kind is reported once of its own"
 	)
 	view.free()
-	quit(1 if _fail > 0 else 0)
+	if _fail == 0:
+		print("FP_WARM_GUARD_TEST: PASS")
+		quit(0)
+	else:
+		print("FP_WARM_GUARD_TEST: FAIL (", _fail, ")")
+		quit(1)
