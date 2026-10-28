@@ -629,6 +629,8 @@ func _update_agents(lis: Vector3, wide: bool) -> void:
 
 func _engine(a: Dictionary, e_mode: bool) -> void:
 	var kind := str(a.get("kind", "car"))
+	if FeatureFlags.enabled("class_audio") and kind == "bike":
+		return  # a bicycle has no engine
 	var heavy := kind in ["bus", "truck", "garbage_truck", "emergency"]
 	var key := "eng:%s" % str(a["id"])
 	var speed := float(a.get("speed", 0.0))
@@ -645,8 +647,12 @@ func _engine(a: Dictionary, e_mode: bool) -> void:
 	var s: Src = _sources.get(key, null)
 	if s != null and s.stream == BANK.stream("engine_idle") and m < 1.5:
 		idle = true
-	opts["stream"] = "engine_idle" if idle else "engine_run"
-	opts["pitch"] = (1.0 if idle else engine_pitch(speed)) * (0.74 if heavy else 1.0)
+	opts["stream"] = "engine_idle" if idle else BANK.engine_run_stream(kind, heavy)
+	# The class loops (a diesel chug, a two-stroke whine) already carry their own pitch.
+	var class_loop := FeatureFlags.enabled("class_audio") and (heavy or kind == "scooter")
+	opts["pitch"] = 1.0 if idle else engine_pitch(speed)
+	if heavy and not class_loop:
+		opts["pitch"] *= 0.74
 	opts["gain"] = -2.0 if idle else lerpf(-9.0, 0.0, clampf(m / 12.0, 0.0, 1.0))
 	opts["trim_db"] = 4.0 if heavy else 0.0
 	request(key, "engine", a["pos"], opts)
@@ -671,7 +677,7 @@ func _horns(near: Array, lis: Vector3) -> void:
 			_prune_honked()
 			horn(
 				at,
-				"horn_long" if hero_s >= HORN_HERO_LEAN_S else "horn_short",
+				BANK.horn_stream(str(a.get("kind", "car")), hero_s >= HORN_HERO_LEAN_S),
 				float(a.get("speed", 0.0))
 			)
 			return
@@ -693,7 +699,8 @@ func _horns(near: Array, lis: Vector3) -> void:
 		_honked[id] = _now
 		_prune_honked()
 		# A long lean on the horn is likelier the longer the jam has lasted.
-		horn(p, "horn_long" if _rng.randf() < 0.15 + 0.25 * urge else "horn_short", float(a.get("speed", 0.0)))
+		var long := _rng.randf() < 0.15 + 0.25 * urge
+		horn(p, BANK.horn_stream(str(a.get("kind", "car")), long), float(a.get("speed", 0.0)))
 		return
 
 

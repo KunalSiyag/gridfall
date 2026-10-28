@@ -18,26 +18,134 @@ const STEP_VARIANTS := 6
 const SPLASH_VARIANTS := 4
 ## Every looping asset (their .import files set loop=true).
 const LOOPS: Array[String] = [
-	"engine_idle", "engine_run", "siren_two_tone", "construction_loop", "fire_crackle", "river_loop",
-	"river_bed", "fountain_loop", "plant_hum", "park_birds", "night_insects", "traffic_hum", "rain",
+	"engine_idle",
+	"engine_run",
+	"engine_heavy",
+	"engine_scooter",
+	"siren_two_tone",
+	"construction_loop",
+	"fire_crackle",
+	"river_loop",
+	"river_bed",
+	"fountain_loop",
+	"plant_hum",
+	"park_birds",
+	"night_insects",
+	"traffic_hum",
+	"rain",
 ]
 const ONE_SHOTS: Array[String] = [
-	"horn_short", "horn_long", "chat_blip", "chat_blip_soft", "alert_stinger", "crash_heavy",
-	"crash_light", "prop_clatter", "prop_clang", "car_door_open", "car_door_close", "punch_hit",
-	"punch_whoosh", "body_fall", "dog_bark_1", "dog_bark_2", "dog_bark_3", "dog_growl", "dog_whine",
-	"dog_snap", "pigeon_coo_1", "pigeon_coo_2", "pigeon_flap", "pigeon_takeoff", "cat_meow_1",
-	"cat_meow_2", "cat_meow_3", "cat_purr", "cat_hiss", "cat_chatter", "bat_hit", "pipe_hit",
-	"bottle_smash", "dog_yelp", "cat_yowl",
+	"horn_short",
+	"horn_long",
+	"horn_truck_short",
+	"horn_truck_long",
+	"horn_scooter_short",
+	"horn_scooter_long",
+	"bell_bicycle",
+	"chat_blip",
+	"chat_blip_soft",
+	"alert_stinger",
+	"crash_heavy",
+	"crash_light",
+	"prop_clatter",
+	"prop_clang",
+	"car_door_open",
+	"car_door_close",
+	"punch_hit",
+	"punch_whoosh",
+	"body_fall",
+	"dog_bark_1",
+	"dog_bark_2",
+	"dog_bark_3",
+	"dog_growl",
+	"dog_whine",
+	"dog_snap",
+	"pigeon_coo_1",
+	"pigeon_coo_2",
+	"pigeon_flap",
+	"pigeon_takeoff",
+	"cat_meow_1",
+	"cat_meow_2",
+	"cat_meow_3",
+	"cat_purr",
+	"cat_hiss",
+	"cat_chatter",
+	"bat_hit",
+	"pipe_hit",
+	"bottle_smash",
+	"dog_yelp",
+	"cat_yowl",
 ]
 ## Stored as WAV (with every footstep_*); everything else is .ogg.
 const WAV_SOUNDS: Array[String] = [
-	"engine_idle", "engine_run", "siren_two_tone", "horn_short", "horn_long", "chat_blip",
-	"chat_blip_soft", "alert_stinger", "crash_heavy", "crash_light", "prop_clatter", "prop_clang",
-	"car_door_open", "car_door_close", "punch_hit", "punch_whoosh", "body_fall", "dog_bark_1",
-	"dog_bark_2", "dog_bark_3", "dog_growl", "dog_whine", "dog_snap", "pigeon_coo_1", "pigeon_coo_2",
-	"pigeon_flap", "pigeon_takeoff", "cat_meow_1", "cat_meow_2", "cat_meow_3", "cat_purr", "cat_hiss",
-	"cat_chatter", "bat_hit", "pipe_hit", "bottle_smash", "dog_yelp", "cat_yowl",
+	"engine_idle",
+	"engine_run",
+	"siren_two_tone",
+	"horn_short",
+	"horn_long",
+	"chat_blip",
+	"chat_blip_soft",
+	"alert_stinger",
+	"crash_heavy",
+	"crash_light",
+	"prop_clatter",
+	"prop_clang",
+	"car_door_open",
+	"car_door_close",
+	"punch_hit",
+	"punch_whoosh",
+	"body_fall",
+	"dog_bark_1",
+	"dog_bark_2",
+	"dog_bark_3",
+	"dog_growl",
+	"dog_whine",
+	"dog_snap",
+	"pigeon_coo_1",
+	"pigeon_coo_2",
+	"pigeon_flap",
+	"pigeon_takeoff",
+	"cat_meow_1",
+	"cat_meow_2",
+	"cat_meow_3",
+	"cat_purr",
+	"cat_hiss",
+	"cat_chatter",
+	"bat_hit",
+	"pipe_hit",
+	"bottle_smash",
+	"dog_yelp",
+	"cat_yowl",
 ]
+
+## Each class's own voice (the class_audio flag): [short, long] by agent kind. A bicycle's is
+## its bell (and the long of a bell is the bell). Anything unlisted honks like a car.
+const HORN_STREAMS := {
+	"truck": ["horn_truck_short", "horn_truck_long"],
+	"bus": ["horn_truck_short", "horn_truck_long"],
+	"emergency": ["horn_truck_short", "horn_truck_long"],
+	"scooter": ["horn_scooter_short", "horn_scooter_long"],
+	"bike": ["bell_bicycle", "bell_bicycle"],
+}
+
+
+## The stream a honk of kind's class plays: its own with the class_audio flag, else the car's.
+static func horn_stream(kind: String, long: bool) -> String:
+	if not FeatureFlags.enabled("class_audio"):
+		return "horn_long" if long else "horn_short"
+	var pair: Array = HORN_STREAMS.get(kind, ["horn_short", "horn_long"])
+	return pair[1] if long else pair[0]
+
+
+## The running loop of kind's class (the class_audio flag): a diesel chug for the heavy motors,
+## a two-stroke whine for scooters, the car loop otherwise.
+static func engine_run_stream(kind: String, heavy: bool) -> String:
+	if not FeatureFlags.enabled("class_audio"):
+		return "engine_run"
+	if heavy:
+		return "engine_heavy"
+	return "engine_scooter" if kind == "scooter" else "engine_run"
+
 
 ## Bus names (created by audio_feature.setup when missing).
 const BUS_MUSIC := &"Music"
@@ -77,8 +185,12 @@ const IMPACT_MIN_GAIN := 0.3
 ## The one-shot a knocked prop of each kind plays (KNOCK_DEFAULT for the metal ones; a carton
 ## thuds), at most one per KNOCK_GAP (s).
 const KNOCK_STREAMS := {
-	"bin": "prop_clatter", "bench_park": "prop_clatter", "planter": "crash_light",
-	"cone": "prop_clatter", "wheelie": "prop_clatter", "carton": "body_fall",
+	"bin": "prop_clatter",
+	"bench_park": "prop_clatter",
+	"planter": "crash_light",
+	"cone": "prop_clatter",
+	"wheelie": "prop_clatter",
+	"carton": "body_fall",
 }
 const KNOCK_DEFAULT := "prop_clang"
 const KNOCK_GAP := 0.1

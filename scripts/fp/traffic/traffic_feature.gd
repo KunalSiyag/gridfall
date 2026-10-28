@@ -463,7 +463,8 @@ func _on_conversation(id: String, active: bool) -> void:
 ## The player's horn reaches the traffic round them (the horn_reach flag): a stopped car ahead of
 ## the car they drive shakes off a hold or a knock and gets going. A bicycle's bell does not.
 func _on_hero_action(action: String, at: Vector3) -> void:
-	if action != "horn" or _driven == null or not FeatureFlags.enabled("horn_reach"):
+	# Any horn voice (the class_audio flag's truck/scooter words and the held long lean) reaches.
+	if not action.begins_with("horn") or _driven == null or not FeatureFlags.enabled("horn_reach"):
 		return
 	vehicles.honk_nudge(at, Vector2(sin(_driven.yaw), cos(_driven.yaw)))
 
@@ -2125,6 +2126,13 @@ func _bike_ride(c: VH.Car) -> bool:
 func is_bicycle(id: int) -> bool:
 	var c: VH.Car = vehicles.by_id.get(id) if _built else null
 	return c != null and c.kind == "bike"
+
+
+## The fleet kind (car, bike, scooter, truck, bus, emergency, park) of the car with id, "" when
+## unknown — the drive side reads its ride's voice from it.
+func car_kind(id: int) -> String:
+	var c: VH.Car = vehicles.by_id.get(id) if _built else null
+	return c.kind if c != null else ""
 
 
 ## A scooter the hero may ride (the scooters flag), once it has nearly stopped: it is stepped

@@ -347,6 +347,81 @@ def horn(seconds: float, name: str) -> np.ndarray:
     return norm_peak(fade_edges(out, 0.0, 0.01), -1.0)
 
 
+def horn_voice(seconds: float, name: str, voices: list[tuple[float, float]], harms: int,
+               cut: tuple[float, float], peaks: list[tuple[float, float, float]]) -> np.ndarray:
+    """The car horn's shape (horn(), above) retuned for another class: voices are the (Hz, amp)
+    pairs of the blast, harms how many partials each carries, cut the band the horn speaks in
+    and peaks the formant bells. The class_audio flag's truck and scooter horns."""
+    rng = rng_for(name)
+    n = int(seconds * SR)
+    t = secs(n)
+    out = np.zeros(n)
+    for f0, a in voices:
+        bend = 1.0 - 0.035 * np.exp(-t / 0.018)
+        fr = f0 * bend * (1.0 + 0.002 * np.sin(2 * np.pi * 31.0 * t))
+        out += a * tone(fr, [1.0 / (k ** 0.75) for k in range(1, harms + 1)])
+    out = np.tanh(1.6 * out / np.max(np.abs(out)))
+    out = circ_filter(out, chain(band(cut[0], cut[1], 2), *[bell(f, q, g) for f, q, g in peaks]))
+    env = np.clip(t / 0.012, 0, 1) * np.clip((seconds - t) / 0.05, 0, 1)
+    out *= env
+    out += 0.08 * rng.standard_normal(n) * np.exp(-t / 0.004)
+    return norm_peak(fade_edges(out, 0.0, 0.01), -1.0)
+
+
+def horn_truck(seconds: float, name: str) -> np.ndarray:
+    """A lorry's air horn: a low triple blast with a slow, heavy ring."""
+    return horn_voice(seconds, name, [(196.0, 1.0), (247.0, 0.95), (147.0, 0.6)], 12,
+                      (150.0, 4200.0), [(900.0, 2.0, 6.0), (1800.0, 2.5, 4.0)])
+
+
+def horn_scooter(seconds: float, name: str) -> np.ndarray:
+    """A scooter's horn: a thin, high two-note buzz."""
+    return horn_voice(seconds, name, [(623.0, 1.0), (784.0, 0.6)], 8,
+                      (500.0, 7000.0), [(2600.0, 2.0, 5.0), (3900.0, 2.5, 3.0)])
+
+
+def synth_bell_bicycle() -> np.ndarray:
+    """A bicycle striker bell: two bright dings (ding-ding), each a fast-decaying metal ring."""
+    rng = rng_for("bell_bicycle")
+    n = int(0.8 * SR)
+    strike = modes(int(0.5 * SR), [(2093.0, 0.45, 1.0), (2960.0, 0.28, 0.6), (5274.0, 0.14, 0.3)],
+                   rng)
+    buf = np.zeros(n)
+    add_at(buf, strike, 0, wrap=False)
+    add_at(buf, strike * 0.85, int(0.17 * SR), wrap=False)
+    return norm_peak(fade_edges(buf, 0.0, 0.06), -3.0)
+
+
+def synth_engine_heavy() -> np.ndarray:
+    """A diesel workhorse (bus, lorry, garbage truck): a slow, deep firing chug under the rumble,
+    little tyre song."""
+    rng = rng_for("engine_heavy")
+    seconds = 2.0
+    n = int(seconds * SR)
+    ex = engine_pulses(rng, n, seconds, 44.0, [1.0, 0.82, 0.94, 0.86], 0.14, 0.0003, 0.008, 3,
+                       [(88.0, 0.016, 1.0), (176.0, 0.008, 0.6), (352.0, 0.005, 0.3),
+                        (700.0, 0.003, 0.12)], 0.5)
+    ex = circ_filter(ex, chain(band(35.0, 1800.0, 2), bell(120.0, 1.2, 5.0)))
+    rumble = circ_filter(noise(rng, n, -6.0), band(20.0, 180.0, 2))
+    tyre = circ_filter(noise(rng, n, -2.0), chain(band(250.0, 2200.0, 2), bell(800.0, 1.1, 5.0)))
+    body = 1.0 * unit(ex) + 0.7 * unit(rumble) + 0.4 * unit(tyre)
+    return norm_rms(body, -20.0)
+
+
+def synth_engine_scooter() -> np.ndarray:
+    """A small two-stroke: a fast, bright firing whine with a light ring, almost no rumble."""
+    rng = rng_for("engine_scooter")
+    seconds = 1.5
+    n = int(seconds * SR)
+    ex = engine_pulses(rng, n, seconds, 96.0, [1.0, 0.9], 0.10, 0.0002, 0.01, 2,
+                       [(400.0, 0.006, 1.0), (800.0, 0.004, 0.5), (1600.0, 0.003, 0.25)], 0.6)
+    ex = circ_filter(ex, chain(band(150.0, 5200.0, 2), bell(1200.0, 1.4, 4.0)))
+    whine = tone(np.full(n, 190.0), [1.0, 0.4, 0.15]) * 0.10
+    hiss = circ_filter(noise(rng, n, -4.0), band(1200.0, 4800.0, 2)) * 0.25
+    body = 0.9 * unit(ex) + unit(whine) + hiss
+    return norm_rms(body, -21.0)
+
+
 def synth_siren_two_tone() -> np.ndarray:
     seconds = 4.4
     n = int(seconds * SR)
@@ -1562,7 +1637,8 @@ def synth_alert_stinger() -> np.ndarray:
 # ------------------------------------------------------------------ catalogue
 
 ## Sounds stored as WAV (started often; see the module docstring).
-WAV_SOUNDS = {"engine_idle", "engine_run", "siren_two_tone", "horn_short", "horn_long", "chat_blip",
+WAV_SOUNDS = {"engine_idle", "engine_run", "siren_two_tone",
+              "horn_short", "horn_long", "chat_blip",
               "chat_blip_soft", "alert_stinger", "crash_heavy", "crash_light", "prop_clatter", "prop_clang",
               "car_door_open", "car_door_close", "punch_hit", "punch_whoosh", "body_fall", "dog_bark_1",
               "dog_bark_2", "dog_bark_3", "dog_growl", "dog_whine", "dog_snap", "pigeon_coo_1", "pigeon_coo_2",
@@ -1581,6 +1657,13 @@ def catalogue() -> dict[str, tuple[object, bool]]:
         "engine_run": (synth_engine_run, True),
         "horn_short": (lambda: horn(0.28, "horn_short"), False),
         "horn_long": (lambda: horn(0.95, "horn_long"), False),
+        "horn_truck_short": (lambda: horn_truck(0.36, "horn_truck_short"), False),
+        "horn_truck_long": (lambda: horn_truck(1.2, "horn_truck_long"), False),
+        "horn_scooter_short": (lambda: horn_scooter(0.22, "horn_scooter_short"), False),
+        "horn_scooter_long": (lambda: horn_scooter(0.75, "horn_scooter_long"), False),
+        "bell_bicycle": (synth_bell_bicycle, False),
+        "engine_heavy": (synth_engine_heavy, True),
+        "engine_scooter": (synth_engine_scooter, True),
         "siren_two_tone": (synth_siren_two_tone, True),
         "construction_loop": (synth_construction, True),
         "fire_crackle": (synth_fire, True),
