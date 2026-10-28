@@ -122,6 +122,8 @@ var _height: Dictionary = {"target_m": 1.75, "female_factor": 0.95, "jitter": [0
 var _amb_groups: Array = []  # [[weight, [avatar indices]], ...]
 var _scenes: Dictionary = {}  # path -> PackedScene (null: missing or failed)
 var _pending: Dictionary = {}  # paths with a background load running
+## Body-scene load initiations; tests assert a dressed walker's seat/take adds none.
+var scene_loads: int = 0
 var _lod_frame: int = -1
 # Frame state.
 var _frame: int = 0
@@ -254,6 +256,8 @@ func reset(p_root: Node3D, city_seed: int) -> void:
 	if ok:
 		_probe("m")
 		_probe("f")
+		if not WebSupport.threads_supported():
+			_prewarm_ambient()
 
 
 ## Frees every body and LOD layer.
@@ -382,20 +386,28 @@ func dress(w: WK.Walker, residents: Variant) -> void:
 			w.av = ai
 			var c := crc32(w.resident_id)
 			w.h_m = stature((avatars[ai] as Avatar).gender, float((c >> 8) & 0xFFFF) / 65535.0)
-			return
-	_rng.seed = hash(Vector3i(_city_seed, w.id, 7919))
-	var total := 0.0
-	for gw: Array in _amb_groups:
-		total += float(gw[0])
-	var x := _rng.randf() * total
-	var members: Array[int] = (_amb_groups[_amb_groups.size() - 1] as Array)[1]
-	for gw: Array in _amb_groups:
-		x -= float(gw[0])
-		if x <= 0.0:
-			members = gw[1]
-			break
-	w.av = members[_rng.randi() % members.size()]
-	w.h_m = stature((avatars[w.av] as Avatar).gender, _rng.randf())
+	if w.av < 0:
+		_rng.seed = hash(Vector3i(_city_seed, w.id, 7919))
+		var total := 0.0
+		for gw: Array in _amb_groups:
+			total += float(gw[0])
+		var x := _rng.randf() * total
+		var members: Array[int] = (_amb_groups[_amb_groups.size() - 1] as Array)[1]
+		for gw: Array in _amb_groups:
+			x -= float(gw[0])
+			if x <= 0.0:
+				members = gw[1]
+				break
+		w.av = members[_rng.randi() % members.size()]
+		w.h_m = stature((avatars[w.av] as Avatar).gender, _rng.randf())
+	# Threaded builds warm the body scene the moment the avatar is chosen: by the time a body
+	# is taken or a driver seated the load has finished (the null-retry in _scene stays as the
+	# fallback). No-threads builds pre-warm the ambient set at reset instead (world build, not
+	# mid-play), so a seat never blocks a frame on a glb parse. Headless skips the kick: there
+	# are no frames to keep smooth, and the dummy renderer's unlocked storages race threaded
+	# loads (mesh/RID "is null" noise) for zero benefit.
+	if w.av >= 0 and WebSupport.threads_supported() and DisplayServer.get_name() != "headless":
+		_scene((avatars[w.av] as Avatar).path)
 
 
 ## Avatar name of walker w ("" before it is dressed).
@@ -836,40 +848,21 @@ func release(w: WK.Walker) -> void:
 	w.tier = -1
 
 
-## The PackedScene at path: loaded at once when blocking, else from a background load (null while
-## that runs, and for good when it fails or the file is missing).
+## The PackedScene at path: loaded at once when blocking, else from a background load (null
+## while that runs, and for good when it fails or the file is missing). Body in people_kit.
 func _scene(path: String) -> PackedScene:
-	if _scenes.has(path):
-		return _scenes[path]
-	if not _pending.has(path):
-		if not ResourceLoader.exists(path):
-			_scenes[path] = null
-			return null
-		# Blocking (tests) and the no-threads web build load on the caller's thread.
-		if blocking or not WebSupport.threads_supported():
-			_scenes[path] = AP.load_scene(path)
-			return _scenes[path]
-		if ResourceLoader.load_threaded_request(path, "PackedScene", true) != OK:
-			_scenes[path] = null
-			return null
-		_pending[path] = true
-	if (
-		not blocking
-		and ResourceLoader.load_threaded_get_status(path) == ResourceLoader.THREAD_LOAD_IN_PROGRESS
-	):
-		return null
-	# Finished, failed, or blocking (load_threaded_get then waits for the load).
-	_pending.erase(path)
-	var ps := ResourceLoader.load_threaded_get(path) as PackedScene
-	_scenes[path] = ps
-	return ps
+	return KIT.scene(self, path)
 
 
 ## Waits for every background scene load still running and keeps the results.
 func finish_loads() -> void:
-	for path: String in _pending.keys():
-		_scenes[path] = ResourceLoader.load_threaded_get(path) as PackedScene
-	_pending.clear()
+	KIT.finish_loads(self)
+
+
+## Loads every ambient avatar's body scene up front (the no-threads web build calls this at
+## world build so a first seat or take never blocks a frame on a glb parse). Body in people_kit.
+func _prewarm_ambient() -> void:
+	KIT.prewarm_ambient(self)
 
 
 func _make(ai: int) -> Body:

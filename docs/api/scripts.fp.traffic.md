@@ -700,6 +700,7 @@ Animated people from HC's roster (docs/fp/slices/E-traffic.md deliverable 9, TPS
 ### Properties
 
 - `blocking: bool`: Load body and lod1 scenes on the calling thread (deterministic tests), not in the background.
+- `scene_loads: int`: Body-scene load initiations; tests assert a dressed walker's seat/take adds none.
 
 ### Inner classes
 
@@ -746,6 +747,8 @@ Asset building for people.gd: the layered clips (a box held in both hands, a pho
 - `BLOWS = [&"knockback", &"hit_head", &"hit_chest"]`
 - `REACT_XFADE = 0.08`
 - `T3_SHADER = """`
+- `AP = preload("res://scripts/fp/asset_paths.gd")`
+- `WebSupport = preload("res://scripts/ops/web_support.gd")`
 
 ### Functions
 
@@ -759,6 +762,9 @@ Asset building for people.gd: the layered clips (a box held in both hands, a pho
 - `static func fill(mmi: MultiMeshInstance3D, xfs: Array[Transform3D], cols: Array[Color]) -> void`: Shows xfs (fade in the alpha of cols) on mmi, growing its buffer by doubling.
 - `static func crc32(s: String) -> int`: CRC-32 (IEEE, as zlib) of s's UTF-8 bytes.
 - `static func pose(sk: Skeleton3D, bone: int) -> Transform3D`: Bone pose in skeleton space from the local poses.
+- `static func scene(pe: RefCounted, path: String) -> PackedScene`: The PackedScene at path: loaded at once when pe.blocking, else from a background load (null while that runs, and for good when it fails or the file is missing).
+- `static func finish_loads(pe: RefCounted) -> void`: Waits for every background scene load still running and keeps the results.
+- `static func prewarm_ambient(pe: RefCounted) -> void`: Loads every ambient avatar's body scene up front: on no-threads builds (the web export) this blocks at world build so play never hitches on a first seat or take; on threaded builds tests call it directly (in-game, dress-time requests warm the same paths lazily). One scene at a time: the headless dummy renderer's RID/material storage races when many threaded loads finalize together, and a loading screen does not need the parallelism.
 
 ## `scripts/fp/traffic/reactions.gd`
 

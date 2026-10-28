@@ -294,3 +294,65 @@ static func pose(sk: Skeleton3D, bone: int) -> Transform3D:
 		t = sk.get_bone_pose(p) * t
 		p = sk.get_bone_parent(p)
 	return t
+
+
+# ------------------------------------------------------------------ body-scene loading
+#
+# The load cache itself lives on the people instance (_scenes, _pending, scene_loads); the
+# mechanics live here so people.gd stays under the 1000-line cap until the planned split.
+
+const AP := preload("res://scripts/fp/asset_paths.gd")
+const WebSupport := preload("res://scripts/ops/web_support.gd")
+
+
+## The PackedScene at path: loaded at once when pe.blocking, else from a background load
+## (null while that runs, and for good when it fails or the file is missing).
+static func scene(pe: RefCounted, path: String) -> PackedScene:
+	if pe._scenes.has(path):
+		return pe._scenes[path]
+	if not pe._pending.has(path):
+		if not ResourceLoader.exists(path):
+			pe._scenes[path] = null
+			return null
+		# Blocking (tests) and the no-threads web build load on the caller's thread.
+		if pe.blocking or not WebSupport.threads_supported():
+			pe.scene_loads += 1
+			pe._scenes[path] = AP.load_scene(path)
+			return pe._scenes[path]
+		if ResourceLoader.load_threaded_request(path, "PackedScene", true) != OK:
+			pe._scenes[path] = null
+			return null
+		pe.scene_loads += 1
+		pe._pending[path] = true
+	if (
+		not pe.blocking
+		and ResourceLoader.load_threaded_get_status(path) == ResourceLoader.THREAD_LOAD_IN_PROGRESS
+	):
+		return null
+	# Finished, failed, or blocking (load_threaded_get then waits for the load).
+	pe._pending.erase(path)
+	var ps := ResourceLoader.load_threaded_get(path) as PackedScene
+	pe._scenes[path] = ps
+	return ps
+
+
+## Waits for every background scene load still running and keeps the results.
+static func finish_loads(pe: RefCounted) -> void:
+	for path: String in pe._pending.keys():
+		pe._scenes[path] = ResourceLoader.load_threaded_get(path) as PackedScene
+	pe._pending.clear()
+
+
+## Loads every ambient avatar's body scene up front: on no-threads builds (the web export)
+## this blocks at world build so play never hitches on a first seat or take; on threaded
+## builds tests call it directly (in-game, dress-time requests warm the same paths lazily).
+## One scene at a time: the headless dummy renderer's RID/material storage races when many
+## threaded loads finalize together, and a loading screen does not need the parallelism.
+static func prewarm_ambient(pe: RefCounted) -> void:
+	if not pe.ok:
+		return
+	for gw: Array in pe._amb_groups:
+		for ai: int in gw[1]:
+			scene(pe, (pe.avatars[ai] as RefCounted).get("path"))
+			finish_loads(pe)
+	finish_loads(pe)
