@@ -5,7 +5,7 @@ usage: python3 tools/checks/run_all.py [--base REF] [--fast] [--only a,b] [--ski
 
 Checks: gdlint, gdformat (files changed since --base), complexity, dead_code, duplicates,
 boundaries, large_files, todo_scan, agents_md, test_map, feature_flags, rng_seed, unused_deps,
-workflows, api_docs. --fast skips the slow parser-based gdlint and gdformat (pre-commit runs those on the
+workflows, api_docs, web_headers. --fast skips the slow parser-based gdlint and gdformat (pre-commit runs those on the
 staged files itself). Exit 0 when every check passes; legacy findings are baselined under
 tools/checks/baselines/ and only new ones fail. Each check is also a script of its own with
 --update-baseline (see its --help).
@@ -36,6 +36,7 @@ from tools.checks import (  # noqa: E402
     test_map,
     todo_scan,
     unused_deps,
+    web_headers,
     workflows,
 )
 
@@ -68,6 +69,7 @@ def registry(base: str | None):
         ("rng_seed", lambda r: rng_seed.run(r)),
         ("unused_deps", lambda r: unused_deps.run(r)),
         ("workflows", lambda r: workflows.run(r)),
+        ("web_headers", lambda r: web_headers.run(r)),
         ("api_docs", api_docs_check),
     ]
 

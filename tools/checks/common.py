@@ -1,6 +1,8 @@
 """Shared helpers for the repo checks: paths, file lists, baselines, a GDScript lexer, results."""
 from __future__ import annotations
 
+import argparse
+
 import functools
 import json
 import os
@@ -41,6 +43,15 @@ class Result:
             "warnings": self.warnings,
             "stats": self.stats,
         }
+
+
+def cli(run, argv: list[str] | None = None, description: str = "") -> int:
+    """Standard --root/-v entry point for one-function checks."""
+    ap = argparse.ArgumentParser(description=description)
+    ap.add_argument("--root", default=str(REPO))
+    ap.add_argument("-v", "--verbose", action="store_true")
+    a = ap.parse_args(argv)
+    return report(run(Path(a.root)), a.verbose)
 
 
 def report(result: Result, verbose: bool = False, out=None) -> int:
