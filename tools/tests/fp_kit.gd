@@ -286,7 +286,16 @@ static func make_feature(ctx: FpContext, id: String) -> FpFeature:
 	if path.is_empty() or not ResourceLoader.exists(path):
 		push_error("fp_kit: no registered feature " + id)
 		return null
-	var f: FpFeature = (load(path) as GDScript).new()
+	var scr := load(path) as GDScript
+	if scr == null:
+		# A compile error above kills load() and would otherwise surface as a null call that
+		# hangs the test coroutine (the watchdog catches the hang; this names the cause).
+		printerr("fp_kit.make_feature: FAILED to load %s (script compile error?)" % path)
+		return null
+	var f: FpFeature = scr.new()
+	if f == null:
+		printerr("fp_kit.make_feature: FAILED to instantiate %s" % path)
+		return null
 	f.name = id
 	ctx.world_root.get_parent().get_node("Features").add_child(f)
 	ctx.features[id] = f
@@ -340,12 +349,74 @@ static func sidewalk(ctx: FpContext, length: float) -> Dictionary:
 
 
 ## Prints "<TOKEN>: PASS" or "<TOKEN>: FAIL <fails>" and quits 0/1. fails is Array[String].
+## Disarms the watchdog first: reaching finish is the proof the test did not hang.
 static func finish(tree: SceneTree, token: String, fails: Array) -> void:
+	watchdog_disarm()
 	if fails.is_empty():
 		print("%s: PASS" % token)
 	else:
 		print("%s: FAIL %s" % [token, str(fails)])
 	tree.quit(0 if fails.is_empty() else 1)
+
+
+# ------------------------------------------------------------------ watchdog
+
+
+## A script error mid-await kills a test's _init coroutine but not the engine, which then
+## idles until the outer timeout (fp_audio_test hung 27 min this way on a compile error).
+## The watchdog is a node on the SceneTree root -- it keeps processing after the test script
+## is dead -- and fails the run when finish() has not disarmed it within budget_s. Arm it as
+## the first line of _init: K.watchdog(self, "FP_X_TEST") (budget_s defaults to the gate's
+## per-step timeout; only a synchronous busy-loop beats it, and that the gate's timeout sees).
+class Watchdog:
+	extends Node
+	const MSG := (
+		"%s: FAIL watchdog" + " (did not finish; a script error may have killed the test coroutine)"
+	)
+	var token := ""
+	var deadline_msec := 0
+	var autokill := true
+	var fired := false
+
+	func _process(_dt: float) -> void:
+		if fired or Time.get_ticks_msec() < deadline_msec:
+			return
+		fired = true
+		if autokill:
+			print(MSG % token)
+			get_tree().quit(1)
+		else:
+			print("%s: watchdog fired (self-test)" % token)
+
+
+static var _wd: Watchdog = null
+
+
+## Arms the watchdog for this run; re-arming replaces the previous one. autokill = false is
+## for the watchdog's own self-test (fp_watchdog_test), which must observe the fire and still
+## exit clean.
+static func watchdog(
+	tree: SceneTree, token: String, budget_s: float = 300.0, autokill := true
+) -> void:
+	watchdog_disarm()
+	_wd = Watchdog.new()
+	_wd.name = "FpKitWatchdog"
+	_wd.token = token
+	_wd.deadline_msec = Time.get_ticks_msec() + int(budget_s * 1000.0)
+	_wd.autokill = autokill
+	tree.root.add_child(_wd)
+
+
+## Disarms the watchdog (finish calls it; safe when never armed).
+static func watchdog_disarm() -> void:
+	if _wd != null and is_instance_valid(_wd):
+		_wd.queue_free()
+	_wd = null
+
+
+## True once the armed watchdog has fired (the self-test's observation point).
+static func watchdog_fired() -> bool:
+	return _wd != null and _wd.fired
 
 
 ## Prints an ok/FAIL line and appends what to fails when ok is false (shared check helper).
