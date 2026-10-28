@@ -3,14 +3,20 @@ extends SceneTree
 ## Asserts the run stays on the calendar (every day lands), every bounded array stays inside its
 ## cap (no runaway growth), and the stats stay finite; prints one report-only line per seed with
 ## the end-state shape and a fingerprint hash for eyeball comparison across gate runs. Script
-## errors during the soak fail the gate step itself. Registered in tools/gate.sh full (not quick;
-## it costs about a minute and a half). Prints SIM_SOAK_TEST: PASS|FAIL.
+## errors during the soak fail the gate step itself. Every ten days the world is saved mid-day
+## and reloaded (sim_save_kit's document/load_into_new), asserting the re-saved bytes are
+## identical — the no-drift check over every saved field — and the soak continues in the loaded
+## world, so a field that only drifts after many days is caught. Registered in tools/gate.sh full
+## (not quick; it costs about a minute and a half). Prints SIM_SOAK_TEST: PASS|FAIL.
 
 const SK := preload("res://tools/tests/sim_save_kit.gd")
 const D := preload("res://scripts/sim/sim_defs.gd")
 
 const SEEDS := [7, 11]
 const DAYS := 50
+## Save/reload cadence in days; day 50 is skipped (nothing follows it, and the end-of-soak
+## fingerprint already covers the final state).
+const ROUNDTRIP_EVERY := 10
 
 ## Generous but leak-catching caps (the peaks a seed-7 soak reaches: sites 109, events 2; the rest
 ## are the code's own trims: history 120, log 200, messages 300, departed 40, people 100).
@@ -48,12 +54,25 @@ func _soak(seed_v: int) -> void:
 	# The bounded arrays move during the day too (construction peaks mid-run), so the peaks are
 	# tracked tick by tick, not just read off the end state.
 	var peak := {"sites": 0, "events": 0, "messages": 0, "people": 0}
-	for _t in range(DAYS * D.GROWTH_TICKS_PER_DAY):
-		sim.step_tick()
-		peak["sites"] = maxi(peak["sites"], sim.sites.size())
-		peak["events"] = maxi(peak["events"], sim.events.size())
-		peak["messages"] = maxi(peak["messages"], people.messages.size())
-		peak["people"] = maxi(peak["people"], people.people.size())
+	for day_i in range(DAYS):
+		for t in range(D.GROWTH_TICKS_PER_DAY):
+			sim.step_tick()
+			peak["sites"] = maxi(peak["sites"], sim.sites.size())
+			peak["events"] = maxi(peak["events"], sim.events.size())
+			peak["messages"] = maxi(peak["messages"], people.messages.size())
+			peak["people"] = maxi(peak["people"], people.people.size())
+			# Round-trip mid-day, when the world is quiescent: no day-end job in flight, no
+			# day-gate hold. A boundary save would capture the gate-held world whose pending
+			# day-start cascade runs on load instead (the designed resume path), so the loaded
+			# world legitimately differs there; mid-day it must match byte for byte.
+			if (
+				t == D.GROWTH_TICKS_PER_DAY / 2
+				and (day_i + 1) % ROUNDTRIP_EVERY == 0
+				and day_i + 1 < DAYS
+			):
+				w = _roundtrip(w, seed_v, day_i + 1)
+				sim = w["sim"]
+				people = w["people"]
 	var secs := (Time.get_ticks_msec() - t0) / 1000.0
 	check(
 		sim.day == day0 + DAYS,
@@ -140,3 +159,22 @@ func _soak(seed_v: int) -> void:
 	)
 	print(head + " " + tail)
 	SK.free_world(w)
+
+
+## Saves the world mid-soak, reloads it into a fresh world, and returns the loaded world (the old
+## one is freed). Asserts the reload is accepted, the re-saved bytes are identical, and the loaded
+## state matches the pre-save state: a field that only misbehaves after many days (a counter that
+## saturates, a relaxation that converges differently after a load) is caught here.
+func _roundtrip(w: Dictionary, seed_v: int, day: int) -> Dictionary:
+	var doc: Dictionary = JSON.parse_string(JSON.stringify(SK.document(w)))
+	var w2: Dictionary = SK.load_into_new(get_root(), doc)
+	check(bool(w2.get("ok", true)), "seed %d day %d: the mid-soak save reloads" % [seed_v, day])
+	if not w2.get("ok", true):
+		return w
+	var doc2: Dictionary = JSON.parse_string(JSON.stringify(SK.document(w2)))
+	check(
+		JSON.stringify(doc2) == JSON.stringify(doc),
+		"seed %d day %d: the re-saved bytes are identical" % [seed_v, day]
+	)
+	SK.free_world(w)
+	return w2
