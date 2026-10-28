@@ -53,6 +53,7 @@ Ambient filler (docs/fp/slices/E-traffic.md §6): unnamed commuters (some of the
 - `func setup(p_sim: CitySim, p_people: Residents, p_lg: LG, p_sw: SW, p_vh: VH, p_wk: WK) -> void`
 - `func refresh_tiles() -> void`: Re-reads the road tiles (after a lane rebuild).
 - `func counts() -> Vector2i`
+- `func refresh_caps() -> void`: Marks the cached web density caps stale (the quality mode changed); the next fill re-reads.
 - `func targets(p: Vector3) -> Vector2i`: [target cars, target pedestrians] near p from road density, congestion and trip load.
 - `func maintain(p: Vector3, fwd: Vector3, sync: bool) -> void`: Removes ambient agents beyond the radius (out of sight) and tops up toward the targets. sync: fill completely now (first fill or after a teleport), anywhere out of the camera's view.
 - `func fill_parking() -> int`: Fills curb slots with parked cars, deterministically per slot (bulk: one lane rebuild after). Returns how many were parked.

@@ -70,6 +70,8 @@ var bike_model: Callable
 var bike_chance: float = 0.0
 ## Test hook: a Dictionary used as the density caps instead of quality.gd's (null: read it).
 var caps_override: Variant = null
+var _caps_cache: Dictionary = {}
+var _caps_dirty := true
 ## jcb_model() -> int (traffic_feature.jcb_model): the backhoe loader parked at a rare share of
 ## curb slots (a parked work machine the player can drive, not one in traffic).
 var jcb_model: Callable
@@ -115,11 +117,20 @@ func counts() -> Vector2i:
 
 ## The web density caps (quality.gd's density_caps): a present "traffic"/"crowd" key clamps
 ## that spawn target, a missing one caps nothing, so off-web (an empty Dictionary) nothing
-## changes. Read each call, so a quality-mode change mid-run applies at the next fill.
+## changes. Cached at the first read: they only change with the quality mode, which re-reads
+## them through refresh_caps() (settings_changed), instead of an environment read per fill.
 func _caps() -> Dictionary:
 	if caps_override != null:
 		return caps_override
-	return QUALITY.density_caps()
+	if _caps_dirty:
+		_caps_cache = QUALITY.density_caps()
+		_caps_dirty = false
+	return _caps_cache
+
+
+## Marks the cached web density caps stale (the quality mode changed); the next fill re-reads.
+func refresh_caps() -> void:
+	_caps_dirty = true
 
 
 ## [target cars, target pedestrians] near p from road density, congestion and trip load.
