@@ -4,7 +4,8 @@ extends SceneTree
 ## speed (softer rolled off); punches, the guard and the guard's poise (guard_chip); the flinch
 ## the way a blow came from, with
 ## the view jolt (hero_flinch); a car's blow knocking the hero down (the
-## throw, the rig, input back once up); health coming back; a knock-out (the fade, the wake outside
+## throw, the rig, input back once up); a guarded fighter turning a swung weapon aside and knocking
+## it loose (weapon_disarm); health coming back; a knock-out (the fade, the wake outside
 ## the nearest hospital, healed, the toast; City Hall without one); save and load; people who fight
 ## back (fight_back) and cars that cannot stop running the hero down (hit_by_cars), each off with
 ## its flag; teardown. Third person on a grown city; time runs through traffic's step, the
@@ -26,10 +27,13 @@ var ctx: FpContext
 var tr: FpFeature
 var act: FpFeature
 var f: FpFeature
+var m: FpFeature
 var rig: RefCounted
 ## [amount, cause, health, down] of every hero_hurt, and the text of every toast.
 var hurts: Array = []
 var toasts: Array[String] = []
+## [at, kind, what, broke] of every weapon_hit (the melee feature).
+var weapon_blows: Array = []
 
 
 func _init() -> void:
@@ -39,17 +43,23 @@ func _init() -> void:
 	tr = K.make_feature(ctx, "traffic")
 	act = K.make_feature(ctx, "actions")
 	f = K.make_feature(ctx, "health")
-	if tr == null or act == null or f == null:
-		K.check(fails, false, "the traffic, actions and health features are registered")
+	m = K.make_feature(ctx, "melee")
+	if tr == null or act == null or f == null or m == null:
+		K.check(fails, false, "the traffic, actions, health and melee features are registered")
 		K.finish(self, "FP_HEALTH_TEST", fails)
 		return
 	tr.set("auto_step", false)
 	tr.set("ambient_enabled", false)
 	act.set_process(false)
 	f.set_process(false)
+	m.set_process(false)
 	_quiet()
 	ctx.bus.hero_hurt.connect(_on_hurt)
 	ctx.bus.toast.connect(func(t: String, _kind: String) -> void: toasts.append(t))
+	ctx.bus.weapon_hit.connect(
+		func(at: Vector3, kind: String, what: String, broke: bool) -> void:
+			weapon_blows.append([at, kind, what, broke])
+	)
 	var p := ctx.player
 	p.input_enabled = true
 	p.teleport(p.position, rad_to_deg(p.yaw))
@@ -71,6 +81,7 @@ func _init() -> void:
 	_check_knock_out()
 	_check_save()
 	_check_fight_back()
+	_check_weapon_disarm()
 	_check_run_down()
 	_check_teardown()
 	K.finish(self, "FP_HEALTH_TEST", fails)
@@ -746,6 +757,71 @@ func _check_fight_back() -> void:
 	FeatureFlags.set_override("fight_back", true)
 	(tr.get("walkers") as WK).remove(calm)
 	react.set("fight_odds", {"punch": 0.4, "shove": 0.3})
+
+
+## A guarded fighter turns a swung weapon aside and knocks it from the hero's hand
+## (weapon_disarm): nothing of the blow counts (no weapon_hit), and it lies a metre ahead to be
+## picked up again. With the flag off the swing is wasted but the weapon stays in hand.
+func _check_weapon_disarm() -> void:
+	_heal()
+	_quiet()
+	var react: RefCounted = tr.get("reactions")
+	var share0: float = react.get("guard_share")
+	react.set("fight_odds", {"punch": 1.0, "shove": 1.0})
+	react.set("guard_share", 1.0)
+	var p := ctx.player
+	var w := _stranger(1.0)
+	react.set("fight_temper", {w.id: 1})  # guard (fight_tempers): turns blows aside
+	m.call("from_dict", {"held": "bat"})
+	weapon_blows.clear()
+	act.call("strike")
+	var t := 0.0
+	while t < 8.0 and not bool(react.call("fighting", w)):
+		_step(0.05)
+		t += 0.05
+	K.check(fails, bool(react.call("fighting", w)), "the first swing lands, and they square up")
+	weapon_blows.clear()
+	var d0 := int(m.get("disarmed"))
+	act.call("strike")
+	_step(1.0)
+	K.check(
+		fails,
+		str(m.get("held_kind")).is_empty(),
+		"a guarded swing is knocked out of the hero's hand"
+	)
+	K.check(fails, int(m.get("disarmed")) == d0 + 1, "and counted apart from drops")
+	var info: Dictionary = act.get("last_hit")
+	K.check(
+		fails,
+		bool(info.get("guarded", false)) and not bool(info.get("down", true)),
+		"the blow that never landed says so (%s)" % str(info.get("guarded"))
+	)
+	K.check(fails, weapon_blows.is_empty(), "no weapon_hit for a blow that never landed")
+	var loose := false
+	for it: Object in (m.get("items") as Dictionary).values():
+		if (
+			int(it.get("spot")) == -1
+			and (it.get("pos") as Vector3).distance_to(p.position) < 2.0 * WS.M
+		):
+			loose = true
+	K.check(fails, loose, "it lies a metre or so ahead, to be won back")
+	FeatureFlags.set_override("weapon_disarm", false)
+	m.call("from_dict", {"held": "bat"})
+	act.call("strike")
+	_step(1.0)
+	K.check(
+		fails,
+		str(m.get("held_kind")) == "bat" and weapon_blows.size() == 1,
+		"with the flag off the swing is wasted but the bat stays in hand"
+	)
+	FeatureFlags.set_override("weapon_disarm", true)
+	(tr.get("walkers") as WK).remove(w)
+	react.set("fight_temper", {})
+	react.set("guard_share", share0)
+	react.set("fight_odds", {"punch": 0.4, "shove": 0.3})
+	m.call("from_dict", {})
+	_heal()
+	_quiet()
 
 
 func _check_run_down() -> void:

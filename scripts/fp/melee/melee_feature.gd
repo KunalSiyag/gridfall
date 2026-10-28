@@ -7,7 +7,9 @@ extends FpFeature
 ## picks it up (pick() and interact_requested; with one in hand the two swap), Z drops it, and
 ## getting into a car or being knocked down drops it too. In hand it follows the right fist, and
 ## the actions feature swings it instead of punching (held(), landed()): weapon_hit on the bus
-## reports every blow it lands, and a bottle breaks on the first one, in a spray of glass.
+## reports every blow it lands, and a bottle breaks on the first one, in a spray of glass. A swing
+## a guarded fighter turns aside never lands: it knocks the weapon from the hero's hand instead,
+## to lie a metre off and be picked up again (weapon_disarm).
 
 const WS := preload("res://scripts/fp/world_scale.gd")
 const D := preload("res://scripts/sim/sim_defs.gd")
@@ -28,8 +30,10 @@ const REFRESH_S := 0.5
 ## E reaches a weapon within PICK_R (m) of the feet, the look passing within PICK_BALL (m) of it.
 const PICK_R := 1.8
 const PICK_BALL := 0.35
-## A dropped weapon lands DROP_AHEAD (m) in front of the feet.
+## A dropped weapon lands DROP_AHEAD (m) in front of the feet; one knocked loose (weapon_disarm)
+## flies DISARM_AHEAD.
 const DROP_AHEAD := 0.45
+const DISARM_AHEAD := 1.0
 ## Where the grip sits in the right hand's bone frame (metres, scaled to the world): the weapon's
 ## +Y comes out of the fist on the thumb side.
 const HOLD := Transform3D(Basis(Vector3(0.0, 0.0, 1.0), -PI * 0.5), Vector3(0.0, 0.085, 0.03))
@@ -53,9 +57,10 @@ var spots: Array[Dictionary] = []
 var items: Dictionary = {}
 ## The kind in the hero's hand ("" for none).
 var held_kind: String = ""
-## Weapons picked up, dropped and broken so far (tests).
+## Weapons picked up, dropped, knocked loose and broken so far (tests).
 var taken: int = 0
 var dropped: int = 0
+var disarmed: int = 0
 var broken: int = 0
 var _held_node: MeshInstance3D = null
 var _taken_spots: Dictionary = {}  # spot index -> true while taken
@@ -159,16 +164,35 @@ func take(id: int) -> bool:
 
 ## Puts the weapon in hand down in front of the hero's feet; false with nothing in hand.
 func drop() -> bool:
+	return _lose(DROP_AHEAD)
+
+
+## A swing a guarded fighter turned aside knocks the weapon from the hero's hand (weapon_disarm):
+## it lands DISARM_AHEAD (m) ahead and lies to be picked up again. False with nothing in hand.
+func disarm() -> bool:
+	return _lose(DISARM_AHEAD, true)
+
+
+## The weapon in hand leaves it, landing ahead (m) in front of the feet; a knocked-loose one says
+## so and counts apart.
+func _lose(ahead: float, knocked := false) -> bool:
 	if held_kind.is_empty() or ctx.player == null:
 		return false
+	var kind := held_kind
 	var p := ctx.player
-	var at := p.position + p.body_forward() * DROP_AHEAD * WS.M
+	var at := p.position + p.body_forward() * ahead * WS.M
 	if ctx.collision != null:
 		var y := ctx.collision.walk_height(at)
 		at.y = p.position.y if is_nan(y) or absf(y - p.position.y) > 0.5 * WS.M else y
-	_lay(held_kind, at, p.yaw + PI * 0.5, -1)
+	_lay(kind, at, p.yaw + PI * 0.5, -1)
 	_set_held("")
-	dropped += 1
+	if knocked:
+		disarmed += 1
+		if ctx.bus != null:
+			var lbl := str(KIT.KINDS[kind]["label"])
+			ctx.bus.toast.emit("Your %s is knocked loose!" % lbl, "system")
+	else:
+		dropped += 1
 	return true
 
 

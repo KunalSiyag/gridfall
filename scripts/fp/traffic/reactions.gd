@@ -326,7 +326,7 @@ func hit(
 	if fight.turned_aside(r, cause, strength):
 		var gclip := fight.guarded_plan(r, cause)
 		_next_step(r)
-		return {"down": false, "clip": gclip}
+		return {"down": false, "clip": gclip, "guarded": true}
 	r.impact = {}
 	r.impacted = false
 	r.hits = r.hits + 1 if clock - r.last < HITS_S else 1
