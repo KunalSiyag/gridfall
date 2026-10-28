@@ -124,7 +124,7 @@ Slice I's sound assets (sounds/fp/, made by tools/audio/synth_fp_sfx.py): names,
 
 extends `FpFeature`
 
-City sound on foot (slice I). Creates the Music, SFX, Ambience and UI buses the first time the hero goes on foot and keeps them for the rest of the session: a bus is never removed while the game runs, so no player can be left pointing at a bus that is gone (on the web build a sample on a missing bus throws in the mixer). Puts the AudioDirector's music under the street (set_fp) and runs three parts: positional emitters (engines, horns, sirens, construction, fire, fountains, plants, the river, passers-by's steps, the player's car crashing, the street props it knocks over and its doors, people hit in the street, the hero's swings, rolls and the blows they take, dogs barking, growling, whining and yelping, pigeons, cats, and the hero's kicks and swings landing on them), the area beds (with rain from G1's weather) and the hero's footsteps (splashing on wet paving), plus the chat blip and alert stingers. Pausing muffles the music (the only thing still playing); talking to someone ducks the beds.
+City sound on foot (slice I). Creates the Music, SFX, Ambience and UI buses the first time the hero goes on foot and keeps them for the rest of the session: a bus is never removed while the game runs, so no player can be left pointing at a bus that is gone (on the web build a sample on a missing bus throws in the mixer). Puts the AudioDirector's music under the street (set_fp) and runs three parts: positional emitters (engines, horns, sirens, construction, fire, fountains, plants, the river, passers-by's steps, the player's car crashing, the street props it knocks over and its doors, people hit in the street, the hero's swings, rolls and the blows they take (a blow's thump panning toward where it came from in first person, hit_direction), dogs barking, growling, whining and yelping, pigeons, cats, and the hero's kicks and swings landing on them), the area beds (with rain from G1's weather) and the hero's footsteps (splashing on wet paving), plus the chat blip and alert stingers. Pausing muffles the music (the only thing still playing); talking to someone ducks the beds.
 
 ### Constants
 
@@ -148,6 +148,7 @@ City sound on foot (slice I). Creates the Music, SFX, Ambience and UI buses the 
 - `REVERB_WET_URBAN = 0.15`
 - `BLIP_PITCH = {"mayor": 0.94, "press": 1.06, "council": 0.9}`
 - `HERO_HIT_FULL = {"punch": 12.0, "car": 60.0, "bite": 7.5}`: The health a blow on the hero takes (hero_hurt) to sound at full level, by cause.
+- `DIR_THUMP_M = 0.9`: How far off the hero's head (m) a punch's thump pans toward where the blow came from (hero_hit_dir; hit_direction, first person) — about a fist's reach.
 - `SWING_PITCH = { "jab": 1.1, "cross": 0.95, "hook": 0.85, "kick": 0.75, "shove": 0.8, "swing": 0.7, "c...`: The pitch of each swing's whoosh (hero_action).
 - `WEAPON_SOUNDS = {"bat": "bat_hit", "pipe": "pipe_hit", "bottle": "bottle_smash"}`: The sound of a weapon's blow (weapon_hit) by its kind, and how much quieter on a street prop.
 - `WEAPON_PROP_DB = -4.0`

@@ -6,7 +6,8 @@ extends FpFeature
 ## and runs three parts: positional emitters
 ## (engines, horns, sirens, construction, fire, fountains, plants, the river, passers-by's steps,
 ## the player's car crashing, the street props it knocks over and its doors, people hit in the
-## street, the hero's swings, rolls and the blows they take, dogs barking, growling, whining and
+## street, the hero's swings, rolls and the blows they take (a blow's thump panning toward where
+## it came from in first person, hit_direction), dogs barking, growling, whining and
 ## yelping, pigeons, cats, and the hero's kicks and swings landing on them), the area beds (with
 ## rain from G1's weather) and the hero's footsteps (splashing on wet paving), plus the chat blip
 ## and alert stingers. Pausing muffles the music (the only thing still playing); talking to someone
@@ -37,6 +38,9 @@ const REVERB_WET_URBAN := 0.15
 const BLIP_PITCH := {"mayor": 0.94, "press": 1.06, "council": 0.9}
 ## The health a blow on the hero takes (hero_hurt) to sound at full level, by cause.
 const HERO_HIT_FULL := {"punch": 12.0, "car": 60.0, "bite": 7.5}
+## How far off the hero's head (m) a punch's thump pans toward where the blow came from
+## (hero_hit_dir; hit_direction, first person) — about a fist's reach.
+const DIR_THUMP_M := 0.9
 ## The pitch of each swing's whoosh (hero_action).
 const SWING_PITCH := {
 	"jab": 1.1,
@@ -63,6 +67,11 @@ var blips_played: int = 0
 var last_blip: String = ""
 var stingers_played: int = 0
 var duck_db: float = 0.0
+## The way the blow behind the next hero_hurt came from (hero_hit_dir): a screen angle — 0 ahead,
+## +PI/2 from the right — pending until that hurt's thump reads it (health emits the two
+## back to back, the direction first).
+var _hit_dir := 0.0
+var _hit_dir_pending := false
 var _ui: Array[AudioStreamPlayer] = []
 var _ui_next: int = 0
 var _now: float = 0.0
@@ -128,6 +137,7 @@ func setup(p_ctx: FpContext) -> void:
 		_link(bus.hero_slammed, _on_hero_slammed)
 		_link(bus.weapon_hit, _on_weapon_hit)
 		_link(bus.hero_hurt, _on_hero_hurt)
+		_link(bus.hero_hit_dir, _on_hero_hit_dir)
 		_link(bus.animal_called, _on_animal_called)
 		_link(bus.animal_hit, _on_animal_hit)
 	if ctx.sim != null:
@@ -437,11 +447,23 @@ func _on_hero_slammed(at: Vector3, _what: String, _over: bool) -> void:
 	emitters.shot("hit", at, "punch_hit", BANK.SLAM_DB, pitch)
 
 
+## The blow behind the next hero_hurt came from angle on the screen (hero_hit_dir; hit_direction,
+## first person): remembered for that hurt's thump, nothing played here.
+func _on_hero_hit_dir(angle: float) -> void:
+	_hit_dir = angle
+	_hit_dir_pending = true
+
+
 ## The hero hurt (hero_hurt) by a punch, a car or a dog: the thump at their chest by the health it
 ## took (full level at HERO_HIT_FULL), a car's lower and louder, a bite's jaws snapping at the knee;
 ## knocked down, they land BANK.BODY_FALL_S later. A crash sounds as the car's (car_impact) and a
-## fall as the landing.
+## fall as the landing. In first person the thump pans a fist's reach toward where the blow came
+## from (hero_hit_dir; hit_direction).
 func _on_hero_hurt(amount: float, cause: String, _health: float, down: bool) -> void:
+	# The pending direction is this hurt's (health emits it just before); read and clear it
+	# whatever the cause, so a cause without a thump never leaves a stale one behind.
+	var dir_ok := _hit_dir_pending
+	_hit_dir_pending = false
 	if not HERO_HIT_FULL.has(cause):
 		return
 	var car := cause == "car"
@@ -451,7 +473,14 @@ func _on_hero_hurt(amount: float, cause: String, _health: float, down: bool) -> 
 	if cause == "bite":
 		emitters.shot("dog", at + Vector3(0.0, BANK.SNAP_Y * WS.M, 0.0), "dog_snap", trim, pitch)
 	else:
-		emitters.shot("hit", at + Vector3(0.0, 1.3 * WS.M, 0.0), "punch_hit", trim, pitch)
+		var pos := at + Vector3(0.0, 1.3 * WS.M, 0.0)
+		var p := ctx.player
+		if dir_ok and not car and p != null:
+			# The body's right is (cos, -sin) of its yaw and it faces (-sin, -cos).
+			var r3 := Vector3(cos(p.yaw), 0.0, -sin(p.yaw))
+			var f3 := Vector3(-sin(p.yaw), 0.0, -cos(p.yaw))
+			pos += (r3 * sin(_hit_dir) + f3 * cos(_hit_dir)) * DIR_THUMP_M * WS.M
+		emitters.shot("hit", pos, "punch_hit", trim, pitch)
 	if down:
 		_queue_fall(BANK.BODY_FALL_S, at, BANK.BODY_FALL_DB)
 

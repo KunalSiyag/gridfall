@@ -193,16 +193,13 @@ func hurt(
 
 
 ## First person only (hit_direction): the screen-edge arc toward where the blow came from, beside
-## the vignette's flash (health_screen's flash_from). push points the way the blow travelled; the
-## marker shows its source — angle 0 dead ahead, +PI/2 from the right. No push, no marker.
+## the vignette's flash (health_screen's flash_from), and the hurt's thump panning the same way
+## (hero_hit_dir, just before hero_hurt; the audio feature reads it). push points the way the
+## blow travelled; the marker shows its source — angle 0 dead ahead, +PI/2 from the right. No
+## push, no marker.
 func _flash_from(push: Vector3) -> void:
 	var p := ctx.player
-	if (
-		_screen == null
-		or p == null
-		or p.camera_mode != "first"
-		or not FeatureFlags.enabled("hit_direction")
-	):
+	if p == null or p.camera_mode != "first" or not FeatureFlags.enabled("hit_direction"):
 		return
 	var src := Vector2(-push.x, -push.z)
 	if src.length_squared() < 1e-10:
@@ -211,7 +208,11 @@ func _flash_from(push: Vector3) -> void:
 	# The body's right is (cos, -sin) and it faces (-sin, -cos) (see _flinch_body).
 	var side := src.dot(Vector2(cos(p.yaw), -sin(p.yaw)))
 	var front := src.dot(Vector2(-sin(p.yaw), -cos(p.yaw)))
-	_screen.call("flash_from", atan2(side, front))
+	var ang := atan2(side, front)
+	if ctx.bus != null:
+		ctx.bus.hero_hit_dir.emit(ang)
+	if _screen != null:
+		_screen.call("flash_from", ang)
 
 
 ## True while the hero is on the ground (knocked down or out) or coming round.

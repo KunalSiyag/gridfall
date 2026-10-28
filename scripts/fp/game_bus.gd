@@ -102,6 +102,10 @@ signal hero_slammed(at: Vector3, what: String, over: bool)
 ## car they drive) or "fall" (a hard landing); health is what is left (0..100, 0 knocked out) and
 ## down is true when it put them on the ground. Emitted by the health feature.
 signal hero_hurt(amount: float, cause: String, health: float, down: bool)
+## The blow behind a hero_hurt came from angle on the screen (hit_direction, first person with a
+## push only): 0 dead ahead, +PI/2 from the right, +-PI from behind — health's _flash_from emits
+## it just before hero_hurt; the health screen's arc and the audio thump's pan both read it.
+signal hero_hit_dir(angle: float)
 ## An animal called out at a point (its head): a dog's "bark", "growl" or "whine", a pigeon's
 ## "coo", a lone pigeon's "flap" or a flock's "takeoff", a cat's "meow", "purr", "hiss" or
 ## "chatter" (at a bird it stalks); size is its height at the shoulder (m), so a small dog yaps
