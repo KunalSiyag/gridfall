@@ -103,6 +103,10 @@ const SHAKE_MAX := Vector3(0.03, 0.025, 0.04)
 const SHAKE_HZ := 9.0
 ## Half way through a first-person roll (tumble_view) the eye is this high.
 const TUMBLE_EYE := 0.5 * WS.M
+## Knocked down (down_view): the first-person eye sinks to this height flat on the ground and
+## tips this far up (radians; the sky, and whoever stands over the hero) at full lie.
+const DOWN_EYE := 0.3 * WS.M
+const DOWN_PITCH := 0.4
 # --- Camera modes and the right stick
 const MODE_BLEND := 0.35
 const STICK_YAW := deg_to_rad(270.0)
@@ -237,6 +241,9 @@ var speed_cap: float = INF
 var _kick: Vector2 = Vector2.ZERO
 ## Shake trauma (0..1), the clock its wobble runs on and the turn it gives now (radians).
 var _trauma: float = 0.0
+## How far the body is down on the ground (0..1; the health feature drives it through the
+## knock-down's fall, lie and get-up; down_view): the first-person eye goes with it.
+var down_w := 0.0
 var _shake_t: float = 0.0
 var _shake: Vector3 = Vector3.ZERO
 ## Seconds into the first-person roll (tumble_view) and its length: over once the one reaches the
@@ -1569,8 +1576,13 @@ func _fp_local() -> Transform3D:
 		bv = -BOB_V * _bob_amp * cos(2.0 * _gait_phase)
 		bl = BOB_L * _bob_amp * sin(_gait_phase)
 	var tb := _tumble()
-	var eye := Vector3(bl, _eye_h + _cam_dy + bv - tb.y, 0.0)
-	return Transform3D(Basis.from_euler(Vector3(cam_pitch + tb.x, 0.0, 0.0)), eye) * _kick_xform()
+	# Down on the ground (down_view): the eye sinks with the body and tips up to the sky.
+	var dw := 0.0
+	if FeatureFlags.enabled("down_view"):
+		dw = SM.smooth01(clampf(down_w, 0.0, 1.0))
+	var eye := Vector3(bl, lerpf(_eye_h + _cam_dy + bv - tb.y, DOWN_EYE, dw), 0.0)
+	var e := Vector3(cam_pitch + tb.x + DOWN_PITCH * dw, 0.0, 0.0)
+	return Transform3D(Basis.from_euler(e), eye) * _kick_xform()
 
 
 ## The first-person roll (tumble_view) now: the pitch it adds (radians, once round forward) and
