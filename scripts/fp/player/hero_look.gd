@@ -75,6 +75,10 @@ func reset() -> void:
 ## Smooths the target's direction from the head (a jump between targets turns the head rather
 ## than snapping it) and fades the influence out while the target is outside the limits.
 func update(dt: float) -> void:
+	# An off-tree skeleton has no meaningful world transform (fixtures, pre-attach);
+	# the look_marker guard below already assumes the rig may be detached.
+	if _skeleton == null or not _skeleton.is_inside_tree():
+		return
 	var head := _skeleton.global_transform * _skeleton.get_bone_global_pose(_head_bone).origin
 	var want := 0.0
 	if not is_nan(_goal.x):

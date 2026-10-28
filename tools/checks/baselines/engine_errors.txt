@@ -5,6 +5,5 @@
 regex|^\d+ RID allocations of type '[^']+' were leaked at exit|dummy-renderer shutdown report in every headless step; counts/types vary run to run
 regex|^\d+ resources still in use at exit|same exit-time report family as the RID leaks; count varies
 substr|Pages in use exist at exit in PagedAllocator:|same exit-time report family (Variant bucket pool)
-substr|Condition "!is_inside_tree()" is true. Returning: Transform3D()|off-tree pose/skeleton reads in traffic pose machinery (e.g. people.gd:422); benign identity fallback, 19k/run via fp_low_shapes_test's crowd; burn-down #1
 substr|Parameter "t" is null.|dummy renderer initializes a null texture during scene loads of textured models (people.gd _scene bodies via occupants._seat_driver, city_view.gd _inst buildings); headless-only, intermittent, benign -- no game-code fix
 substr|Another resource is loaded from path 'res://models/characters/bodies/mat/Male_Adult_15_head.tres'|Godot resource-cache duplicate-load note (cyclic inclusion), 1x in fp_react_collision_test
