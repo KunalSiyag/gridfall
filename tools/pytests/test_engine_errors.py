@@ -61,8 +61,17 @@ def test_load_allowlist_parses_entries_and_comments(tmp_path):
 )
 def test_load_allowlist_rejects_malformed_lines(tmp_path, line):
     path = write_allowlist(tmp_path, line)
-    with pytest.raises(SystemExit):
+    with pytest.raises(ValueError):
         engine_errors.load_allowlist(path)
+
+
+def test_main_reports_broken_inputs_as_3(tmp_path, monkeypatch, capsys):
+    log = write_log(tmp_path, "ERROR: something")
+    monkeypatch.setattr(engine_errors, "BASELINE", write_allowlist(tmp_path, "substr|no reason"))
+    assert engine_errors.main([str(log)]) == 3
+    monkeypatch.setattr(engine_errors, "BASELINE", write_allowlist(tmp_path, "substr|ok|fine"))
+    assert engine_errors.main([str(tmp_path / "absent.log")]) == 3
+    assert "broken checker inputs" in capsys.readouterr().err
 
 
 def test_covered_by_substr_and_regex(tmp_path):
