@@ -125,6 +125,21 @@ static func cap_physics_steps(web: bool = false) -> void:
 		Engine.max_physics_steps_per_frame = WEB_MAX_PHYSICS_STEPS
 
 
+## Set by park_physics_server; tests assert the web path parks and the desktop path does not.
+static var physics_parked := false
+
+
+## Parks the 3D physics server in the browser: the physics space is empty (CollisionWorld is
+## analytic, nothing registers a body, area or shape, and no shipped script rides the physics
+## frame), so GodotPhysics pays its ~5-7 ms per-step scaffolding on wasm to simulate nothing.
+## Physics frames still tick for SceneTree timers; desktop keeps the server active. web forces
+## the park in tests.
+static func park_physics_server(web: bool = false) -> void:
+	if web or is_web():
+		PhysicsServer3D.set_active(false)
+		physics_parked = true
+
+
 ## Web tier active: the web build with flag web_quality on. web forces it on in tests.
 static func web_mode(web: bool = false) -> bool:
 	return web or (is_web() and FeatureFlags.enabled("web_quality", true))

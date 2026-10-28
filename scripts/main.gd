@@ -51,6 +51,8 @@ func _ready() -> void:
 		print(GpuMemory.describe(gpu))
 	# Browser only: a slow frame must not catch physics up 8 steps at once (6-35 ms a step there).
 	Q.cap_physics_steps()
+	# ...and with an empty physics space the server itself is parked (CollisionWorld is analytic).
+	Q.park_physics_server()
 	var ops := OpsAlerts.new()
 	ops.name = "OpsAlerts"
 	ops.main = self
