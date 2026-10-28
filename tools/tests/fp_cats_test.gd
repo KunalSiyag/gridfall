@@ -44,6 +44,7 @@ var toasts: Array[String] = []
 
 
 func _init() -> void:
+	K.watchdog(self, "FP_CATS_TEST")
 	await process_frame
 	# Pigeon flocks about would draw the cat's hunts (the hunt check brings its own).
 	FeatureFlags.set_override("pigeons", false)
