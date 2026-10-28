@@ -34,7 +34,9 @@ const ESCALATE_S := 1.0
 const ESCALATE_R := 2.0 * WS.M
 ## A brawl with a ring on it (brawl_ring — three or more fighting the hero) draws jeers from the
 ## crowd: every JEER_CD seconds one of the onlookers within JEER_R of the hero turns to the
-## fight and shouts a beat (JEER_S). The fight's own never jeer (they are not free).
+## fight and shouts a beat (JEER_S). The fight's own never jeer (they are not free). Which
+## onlooker answers picks off the same seeded hash as the fight rolls (fight_seeded_rolls), never
+## the shared stream, so unrelated reactions running first change nothing for it.
 const RING_MIN := 3
 const JEER_CD := 1.4
 const JEER_R := 10.0 * WS.M
@@ -43,6 +45,10 @@ const JEER_S := 0.9
 ## Shared from reactions.gd's setup: the walkers, the roll, the record lifecycle and the clock.
 var wk: WK
 var rng: RandomNumberGenerator
+## The sim seed reactions.gd's setup() hands over beside the shared stream: the seeded jeer pick
+## (fight_seeded_rolls) keys on it, so a fresh fixture without setup() (base_seed 0) is
+## deterministic too.
+var base_seed: int = 0
 var new_reaction: Callable
 var is_free: Callable
 var now: Callable
@@ -54,6 +60,14 @@ var _horn_p := Vector3.ZERO  # where a horn last startled the street (horn_stree
 var _horn_t := -INF  # and when, on reactions.gd's clock
 var _horn_long := false  # the ripple in flight came from a held press
 var _jeer_t := 0.0  # the crowd's next jeer, on reactions.gd's clock (brawl_ring)
+var _jeer_n := 0  # jeers answered, the seeded pick's per-emote salt (fight_seeded_rolls)
+
+
+## reactions.gd's setup() hands the sim seed over beside the shared stream; the seeded jeer
+## pick's counter restarts with each setup, so a re-seeded fixture replays the same jeers.
+func seed_setup(seed: int) -> void:
+	base_seed = seed
+	_jeer_n = 0
 
 
 ## True when a knock-down at at may rock the crowd as one (crowd_gasp): the flag on, and no gasp
@@ -108,7 +122,16 @@ func step(dt: float) -> void:
 		near.append(o)
 	if near.is_empty():
 		return
-	var j = new_reaction.call(near[rng.randi() % near.size()])
+	var pick: int
+	if FeatureFlags.enabled("fight_seeded_rolls"):
+		# Seeded like fight_back.gd's rolls: the hero's spot rounded to the metre, so float
+		# noise cannot fork a replay, and one salt per answered emote.
+		var spot := "%d:%d" % [roundi(at.x), roundi(at.z)]
+		pick = absi(hash("%d|%s|%s|%d" % [base_seed, "jeer", spot, _jeer_n]) % near.size())
+	else:
+		pick = rng.randi() % near.size()
+	_jeer_n += 1
+	var j = new_reaction.call(near[pick])
 	j.src = at
 	j.delay = 0.0
 	j.steps = [["place", &"shout", JEER_S]]

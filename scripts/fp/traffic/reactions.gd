@@ -200,8 +200,7 @@ var _rng := WK.seeded_rng(9157)  # seeded so fixtures skipping setup() reproduce
 ## on the ground. Its state keeps the old names here through the properties below, so tests,
 ## benches and the traffic feature wire it as before.
 var fight := FB.new()
-## The crowd layer (crowd_reacts.gd): the knock-down gasp and the horn startle, its cooldowns its
-## own.
+## The crowd layer (crowd_reacts.gd): the knock-down gasp and the horn startle, cooldowns its own.
 var crowd := CR.new()
 ## The hero can be fought now (on foot and in control; traffic sets it every step), and who hears
 ## of a punch that lands on them: on_hero_hit(at, strength, push).
@@ -293,6 +292,7 @@ func setup(p_wk: WK, p_collision: CollisionWorld, seed: int) -> void:
 	crowd.is_free = _free
 	crowd.active = _active
 	crowd.now = func() -> float: return clock
+	crowd.seed_setup(seed)
 	clock = 0.0
 	if not ResourceLoader.exists(AP.CHAR_LIB_M):
 		return
