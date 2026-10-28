@@ -537,13 +537,20 @@ func _make_buses() -> void:
 		var i := AudioServer.bus_count - 1
 		AudioServer.set_bus_name(i, b)
 		AudioServer.set_bus_send(i, &"Master")
-	if music_filter != null:
-		# The buses and their effects are still there from the last stay on foot; add nothing twice.
-		return
-	music_filter = AudioEffectLowPassFilter.new()
+	# A fresh instance of this feature is created on every entry, while the buses and their
+	# effects are kept: adopt what is already on the bus (reset to the open values), create only
+	# what is missing. Never stack a second filter or reverb.
+	music_filter = (
+		_bus_effect(BANK.BUS_MUSIC, AudioEffectLowPassFilter) as AudioEffectLowPassFilter
+	)
+	if music_filter == null:
+		music_filter = AudioEffectLowPassFilter.new()
+		_add_effect(BANK.BUS_MUSIC, music_filter)
 	music_filter.cutoff_hz = MUSIC_CUTOFF_OPEN
-	_add_effect(BANK.BUS_MUSIC, music_filter)
-	sfx_reverb = AudioEffectReverb.new()
+	sfx_reverb = _bus_effect(BANK.BUS_SFX, AudioEffectReverb) as AudioEffectReverb
+	if sfx_reverb == null:
+		sfx_reverb = AudioEffectReverb.new()
+		_add_effect(BANK.BUS_SFX, sfx_reverb)
 	sfx_reverb.room_size = 0.5
 	sfx_reverb.damping = 0.6
 	sfx_reverb.spread = 0.9
@@ -552,10 +559,22 @@ func _make_buses() -> void:
 	sfx_reverb.predelay_feedback = 0.2
 	sfx_reverb.dry = 1.0
 	sfx_reverb.wet = REVERB_WET_OPEN
-	_add_effect(BANK.BUS_SFX, sfx_reverb)
-	var lim := AudioEffectHardLimiter.new()
-	lim.ceiling_db = -1.0
-	_add_effect(BANK.BUS_SFX, lim)
+	if _bus_effect(BANK.BUS_SFX, AudioEffectHardLimiter) == null:
+		var lim := AudioEffectHardLimiter.new()
+		lim.ceiling_db = -1.0
+		_add_effect(BANK.BUS_SFX, lim)
+
+
+## The first effect of the given class already on the bus, or null.
+func _bus_effect(bus_name: StringName, what: Variant) -> AudioEffect:
+	var i := AudioServer.get_bus_index(bus_name)
+	if i < 0:
+		return null
+	for k in range(AudioServer.get_bus_effect_count(i)):
+		var e := AudioServer.get_bus_effect(i, k)
+		if is_instance_of(e, what):
+			return e
+	return null
 
 
 func _add_effect(bus_name: StringName, e: AudioEffect) -> void:

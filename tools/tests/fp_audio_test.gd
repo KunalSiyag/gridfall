@@ -939,8 +939,7 @@ func _check_budget(ctx: FpContext, f: FpFeature) -> void:
 
 func _check_teardown(ctx: FpContext, f: FpFeature) -> void:
 	f.teardown()
-	# The buses outlive the stay on foot: a kept bus can never resolve to index -1 for a
-	# sample the mixer is still finishing, which is what crashed the web build on exit_fp.
+	# Buses outlive the stay on foot: a kept bus never resolves to -1 for a finishing sample.
 	var kept := true
 	for b in ["Music", "SFX", "Ambience", "UI"]:
 		kept = kept and AudioServer.get_bus_index(b) >= 0
@@ -949,17 +948,19 @@ func _check_teardown(ctx: FpContext, f: FpFeature) -> void:
 	K.check(fails, back and _em(f).count_assigned() == 0, "teardown: buses kept, director to orbit")
 	var dead := _players_with_dead_bus(get_root())
 	K.check(fails, dead.is_empty(), "teardown: every live player's bus resolves (%s)" % [dead])
-	f.call("_make_buses")
-	var music_fx := AudioServer.get_bus_effect_count(AudioServer.get_bus_index("Music"))
-	var sfx_fx := AudioServer.get_bus_effect_count(AudioServer.get_bus_index("SFX"))
-	K.check(
-		fails,
-		music_fx == 1 and sfx_fx == 2,
-		"teardown: coming back on foot adds no second filter or reverb (%d/%d)" % [music_fx, sfx_fx]
-	)
+	# A fresh instance per entry (FpMode.setup) must adopt, reset and not stack: muffle, re-enter.
+	(f.get("music_filter") as AudioEffectLowPassFilter).cutoff_hz = 800.0
+	var f2: FpFeature = K.make_feature(ctx, "audio")
+	var mi := AudioServer.get_bus_index("Music")
+	var si := AudioServer.get_bus_index("SFX")
+	var mf2 := f2.get("music_filter") as AudioEffectLowPassFilter
+	var adopted := mf2 == AudioServer.get_bus_effect(mi, 0) and mf2.cutoff_hz == 20000.0
+	K.check(fails, AudioServer.get_bus_effect_count(mi) == 1, "teardown: one music filter stays")
+	K.check(fails, AudioServer.get_bus_effect_count(si) == 2, "teardown: reverb + limiter stay")
+	K.check(fails, adopted, "teardown: a fresh instance adopts and resets the effects")
+	f2.teardown()
 
 
-## Every live audio player under node points at a bus that exists (the web mixer's crash case).
 func _players_with_dead_bus(node: Node) -> Array[String]:
 	var out: Array[String] = []
 	var playerish := node is AudioStreamPlayer or node is AudioStreamPlayer3D
@@ -970,9 +971,8 @@ func _players_with_dead_bus(node: Node) -> Array[String]:
 	return out
 
 
-## Static scan of the sources: nothing removes or renames a bus at runtime (a player routed to
-## a bus that is gone throws in the web mixer), and every literal bus name assigned anywhere is
-## one the game actually has (Master, or the four the audio feature creates).
+## Static scan of the sources: nothing removes or renames a bus at runtime (a player on a gone
+## bus throws in the web mixer), and every literal bus name is one the game actually has.
 func _check_bus_scan() -> void:
 	var allowed := ["Master", "Music", "SFX", "Ambience", "UI"]
 	var rx := RegEx.create_from_string("\\.bus\\s*=\\s*&?\"([A-Za-z_]+)\"")
