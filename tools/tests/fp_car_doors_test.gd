@@ -60,6 +60,7 @@ func _init() -> void:
 		_check_turn_back()
 		_check_blocked()
 		_check_held_by_person()
+		_check_drawn_frame()
 		_check_post_in_swing()
 		_check_flag_off()
 	K.finish(self, "FP_CAR_DOORS_TEST", fails)
@@ -375,6 +376,36 @@ func _check_held_by_person() -> void:
 
 ## A thin post just past the hinge, inside the door's swing but off its shut and wide-open lines:
 ## the door never opens into it (the hero gets in at once instead).
+## A parked car whose drawn frame sits off its logic frame (vis_off still in flight after an
+## unpark): the people-arc follows the DRAWN frame, so someone standing at the drawn door holds
+## it, and the logic-frame spot the drawn door no longer occupies blocks nobody.
+func _check_drawn_frame() -> void:
+	var c := _place_car()
+	c.vis_off = Basis(Vector3.UP, c.yaw) * Vector3(1.0 * WS.M, 0.0, 0.0)  # 1 m to its left
+	var pts: Dictionary = traffic.call("door_info", c.id)
+	var hinge: Vector3 = pts["hinge"]
+	var rel := Vector3(hinge.x + 0.42 * WS.M, 0.0, (hinge.z + (pts["rear"] as Vector3).z) * 0.5)
+	var wk: WK = traffic.get("walkers")
+	var w := wk.make("ambient")
+	w.hold = true
+	# At the DRAWN door: holds the swing.
+	var drawn := Transform3D(Basis(Vector3.UP, c.yaw + c.vis_yaw), c.pos + c.vis_off) * rel
+	drawn.y = ctx.collision.walk_height(drawn)
+	wk.stand(w, drawn, 0.0)
+	var held := float(traffic.call("door_clear_of_people", c.id, 1.0, 0.0))
+	K.check(fails, held < 0.9, "drawn frame: someone at the drawn door holds it (cap %.2f)" % held)
+	# At the LOGIC-frame spot (1 m off the drawn door): nobody blocks.
+	var logic := Transform3D(Basis(Vector3.UP, c.yaw), c.pos) * rel
+	logic.y = ctx.collision.walk_height(logic)
+	wk.stand(w, logic, 0.0)
+	var clear := float(traffic.call("door_clear_of_people", c.id, 1.0, 0.0))
+	K.check(
+		fails, clear == 1.0, "drawn frame: the logic-frame spot blocks nobody (cap %.2f)" % clear
+	)
+	w.hold = false
+	wk.remove(w)
+
+
 func _check_post_in_swing() -> void:
 	var c := _place_car()
 	var pts: Dictionary = traffic.call("door_info", c.id)
