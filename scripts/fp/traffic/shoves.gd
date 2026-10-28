@@ -184,6 +184,22 @@ func step(dt: float) -> void:
 				_still_t.erase(id)
 
 
+## Tows every parked car standing off its slot back to its slot now: the save path settles the
+## parked table (S0 §6.4) and cannot wait the TOW_AFTER standstill step() needs, so it tows in
+## sight too — the live world and the saved slot table must agree at the instant of the save.
+func settle_parked() -> void:
+	for id: int in _moved.keys():
+		var c: VH.Car = _moved[id]
+		_shoves.erase(id)
+		_moved.erase(id)
+		_still_t.erase(id)
+		if c.dead or not c.parked or c.slot_tile < 0:
+			continue
+		c.stun_t = 0.0
+		if _off_slot(c):
+			vehicles.park_at(c, c.slot_tile, c.slot_k)
+
+
 ## Lane blocks for vehicles.gd (_gather_blocks): [xz centre, heading, half length, half width, xz
 ## velocity, car id] of every knocked lane car off its lane and every parked car knocked out of
 ## its slot (the player's own cars are blocks already).

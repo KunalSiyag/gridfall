@@ -714,9 +714,10 @@ func _test_save(ctx: FpContext, f: FpFeature) -> void:
 
 ## A save taken while the FP view still holds a deferred rebuild must record the canonical slot
 ## set, not the stale one: on foot the view defers tiles near the camera, so a tile can still be
-## drawn with a carrier its rebuilt holder will not have. to_dict() builds the queue first, so a
-## reload keeps the same posters instead of the carrier the tile has since become. Runs last: it
-## switches the fixture to first person, which rebuilds every holder.
+## drawn with a carrier its rebuilt holder will not have. to_dict() is pure (S0 §6.4): a serialise
+## without the flush photographs the stale live set, and the flush the save path runs first
+## (Main._canonicalise_for_save) is what makes the saved set the canonical one a reload
+## re-derives. Runs last: it switches the fixture to first person, which rebuilds every holder.
 func _test_save_canonical(ctx: FpContext, f: FpFeature) -> void:
 	ctx.view.set_fp_mode(true)
 	ctx.view.flush_rebuild_queue()
@@ -747,9 +748,16 @@ func _test_save_canonical(ctx: FpContext, f: FpFeature) -> void:
 	ctx.view._on_tiles_changed(PackedInt32Array([lot]))
 	var stale := ctx.view.rebuild_pending() > 0 and slots.has(lease_id)
 	check(stale, "the live slot set is still the stale one before the save")
+	# to_dict() is pure: the deferred rebuild stays pending, and the serialise photographs the
+	# stale live set, not the canonical one.
+	var live: Dictionary = f.to_dict()
+	check(ctx.view.rebuild_pending() > 0, "to_dict leaves the deferred rebuild pending")
+	check((live["slots"] as Dictionary).has(lease_id), "to_dict records the stale live set")
+	# The save path flushes first (Main._canonicalise_for_save), then serialises.
+	ctx.view.flush_rebuild_queue()
+	check(ctx.view.rebuild_pending() == 0, "the save path's flush builds the pending tiles")
 	var d: Dictionary = f.to_dict()
 	var saved: Dictionary = d["slots"]
-	check(ctx.view.rebuild_pending() == 0, "to_dict builds the pending tiles before it serialises")
 	check(not saved.has(lease_id), "the save records the canonical set, not the stale lease board")
 	# A reload re-derives the same canonical set and restores it exactly.
 	f.from_dict(JSON.parse_string(JSON.stringify(d)))

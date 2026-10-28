@@ -69,6 +69,7 @@ func _init() -> void:
 	_check_following()
 	_check_parking_clearance()
 	_check_parked_shove()
+	_check_save_settles_parked()
 	_check_lights()
 	_check_night_lamps()
 	_check_bike_lamps()
@@ -1200,11 +1201,10 @@ func _check_parking_clearance() -> void:
 # ------------------------------------------------------------------ shoves
 
 
-## The player's car knocks a parked car toward the road (bump_car): it slides off its slot for
-## good, braking on its tyres, and blocks lane traffic until, having stood out of sight for
-## TOW_AFTER s, it is towed back to its slot.
-func _check_parked_shove() -> void:
-	_quiet()
+## Bumps a parked car off its slot toward the road at 4 m/s -- the shove both parked checks
+## start from. Returns the car with its slot position and yaw from before the bump, or an
+## empty Dictionary when the fixture has no parked car.
+func _bump_parked_off_slot() -> Dictionary:
 	var c: VH.Car = null
 	for p: VH.Car in _vh().cars:
 		if p.parked and not p.dead and not p.far and p.slot_tile >= 0:
@@ -1212,8 +1212,7 @@ func _check_parked_shove() -> void:
 			break
 	K.check(fails, c != null, "fixture: a parked car")
 	if c == null:
-		return
-	var sh: SHOVES = f.get("shoves")
+		return {}
 	var home := c.pos
 	var yaw0 := c.yaw
 	var q := Vector2(c.pos.x, c.pos.z)
@@ -1221,6 +1220,21 @@ func _check_parked_shove() -> void:
 	if (Vector2(roundf(q.x), roundf(q.y)) - q).dot(side) < 0.0:
 		side = -side
 	f.call("bump_car", c.id, side * (4.0 * WS.M * SHOVES.mass_of(c)), q)
+	return {"car": c, "home": home, "yaw": yaw0}
+
+
+## The player's car knocks a parked car toward the road (bump_car): it slides off its slot for
+## good, braking on its tyres, and blocks lane traffic until, having stood out of sight for
+## TOW_AFTER s, it is towed back to its slot.
+func _check_parked_shove() -> void:
+	_quiet()
+	var fx := _bump_parked_off_slot()
+	if fx.is_empty():
+		return
+	var c: VH.Car = fx["car"]
+	var sh: SHOVES = f.get("shoves")
+	var home: Vector3 = fx["home"]
+	var yaw0: float = fx["yaw"]
 	var shoved := sh.is_shoved(c)
 	_step(3.0)
 	var moved := Vector2(c.pos.x - home.x, c.pos.z - home.z).length()
@@ -1241,6 +1255,37 @@ func _check_parked_shove() -> void:
 			and sh.blocks().is_empty()
 		),
 		"shoves: having stood out of sight %.0f s it is towed back to its slot" % SHOVES.TOW_AFTER
+	)
+	sh.visible = Callable(f, "on_screen")
+
+
+## The save path settles the parked table (canonicalise_for_save, S0 §6.4): a parked car knocked
+## out of its slot is towed back at the save — not after the TOW_AFTER standstill step() needs,
+## and in sight — so the live world, the saved slot table and any reload agree at that instant.
+func _check_save_settles_parked() -> void:
+	_quiet()
+	var sh: SHOVES = f.get("shoves")
+	var fx := _bump_parked_off_slot()
+	if fx.is_empty():
+		return
+	var c: VH.Car = fx["car"]
+	var home: Vector3 = fx["home"]
+	var yaw0: float = fx["yaw"]
+	_step(3.0)
+	var blocks := sh.blocks().filter(func(b: Array) -> bool: return int(b[5]) == c.id)
+	K.check(fails, not blocks.is_empty(), "fixture: the knocked parked car stands off its slot")
+	# In sight the step() tow never comes; the save path's settle tows anyway.
+	sh.visible = func(_p: Vector3) -> bool: return true
+	f.call("canonicalise_for_save")
+	K.check(
+		fails,
+		(
+			c.pos.distance_to(home) < 0.01 * WS.M
+			and is_equal_approx(c.yaw, yaw0)
+			and sh.blocks().is_empty()
+			and not sh.is_shoved(c)
+		),
+		"save settle: a knocked parked car is towed back to its slot at the save, in sight"
 	)
 	sh.visible = Callable(f, "on_screen")
 

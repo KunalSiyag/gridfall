@@ -145,7 +145,7 @@ Campaign, newspaper, shop and notice posters on the streets (slice D). Wires the
 - `func feature_id() -> String`
 - `func setup(p_ctx: FpContext) -> void`
 - `func on_world_rebuilt() -> void`
-- `func to_dict() -> Dictionary`
+- `func to_dict() -> Dictionary`: Save section. Pure (S0 §6.4): the save path flushes the view's deferred rebuild queue first (Main._canonicalise_for_save), so the slot set read here is the canonical one a load re-derives from sim state, and a reload keeps the same posters instead of the carrier a tile has since become.
 - `func from_dict(d: Dictionary) -> void`
 - `func teardown() -> void`
 - `func glow(kind: String = "billboard")`: Emission energy of a lit poster from view.night (0 noon .. 1 midnight). The emission is the print itself (EMISSION_OP_MULTIPLY), so this is how bright the print glows on its own.

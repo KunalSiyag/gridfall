@@ -481,6 +481,7 @@ func grow_offline(days: int, cap_ms: int) -> void   # coroutine
 - `version`, `player`, `time_scale` and `day_phase` are reserved keys. A feature id must not use them.
 - `day_phase` is `sim.tick_phase()` at save time. The sim saves only whole ticks, and an FP tick is 300 s (6 game hours), so without it a load rewinds the clock to the last tick boundary. `from_dict` calls `sim.set_tick_phase(day_phase)`, or `set_tick_phase(0)` when the key is missing (fresh city, old save).
 - A feature whose `to_dict()` returns `{}` is left out.
+- Before any section serialises, `Main._canonicalise_for_save()` settles the live world once: it flushes the view's deferred rebuild queue (the poster slots are derived from the built carriers) and runs each feature's `canonicalise_for_save()` (traffic tows a parked car knocked out of its slot back to its slot), and the sim's own `to_dict()` finishes any in-flight sliced job. A feature's `to_dict()` is pure: it photographs settled state and moves nothing.
 - An orbit save has no `"fp"` key. Loading it in FP spawns the player at the spawn point. Loading an FP save in orbit ignores the `"fp"` key.
 
 ---
@@ -526,6 +527,9 @@ func teardown() -> void
 func to_dict() -> Dictionary
 ## Restores the save section. {} means a fresh city: player at spawn_point(), features reset.
 func from_dict(d: Dictionary) -> void
+## Settles every feature for a save (§6.4); Main._canonicalise_for_save() calls it once before
+## serialising, so a feature's to_dict() stays pure.
+func canonicalise_for_save() -> void
 ## Sets the sim speed to s, snapped to WS.TIME_SCALES; emits bus.time_scale_changed. Paused: stored, applied on resume.
 func set_time_scale(s: int) -> void
 ## +1 / -1 through WS.TIME_SCALES (bound to time_faster / time_slower).

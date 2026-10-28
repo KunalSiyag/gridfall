@@ -34,6 +34,13 @@ func from_dict(_d: Dictionary) -> void:
 	pass
 
 
+## Settle live state before the save path serialises (S0 §6.4): finish any pending relocation or
+## deferred work whose mid-flight photograph would disagree with a reload. Main calls it once per
+## save through FpMode.canonicalise_for_save(); to_dict() stays pure and reads what this settled.
+func canonicalise_for_save() -> void:
+	pass
+
+
 ## Disconnect from long-lived objects (sim, view, residents, brain, bus); FpMode frees the node after.
 func teardown() -> void:
 	pass
