@@ -28,6 +28,7 @@ var acts: Array[String] = []
 
 
 func _init() -> void:
+	K.watchdog(self, "FP_MELEE_TEST")
 	await process_frame
 	ctx = K.make_ctx(get_root(), {"view": true, "grow": true, "camera_mode": "third"})
 	ctx.player.set_process(false)

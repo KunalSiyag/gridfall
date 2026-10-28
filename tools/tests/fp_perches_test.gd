@@ -36,6 +36,7 @@ var calls: Array = []
 
 
 func _init() -> void:
+	K.watchdog(self, "FP_PERCHES_TEST")
 	await process_frame
 	var fx := FRESH.open_grown(self, "FP_PERCHES_TEST", fails, calls)
 	if fx.is_empty():
