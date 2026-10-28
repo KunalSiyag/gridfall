@@ -209,7 +209,7 @@ The crowd's answer to what the street sees and hears, split out of reactions.gd 
 - `HORN_R = 20.0 * WS.M`
 - `ESCALATE_S = 1.0`
 - `ESCALATE_R = 2.0 * WS.M`
-- `RING_MIN = 3`: A brawl with a ring on it (brawl_ring — three or more fighting the hero) draws jeers from the crowd: every JEER_CD seconds one of the onlookers within JEER_R of the hero turns to the fight and shouts a beat (JEER_S). The fight's own never jeer (they are not free).
+- `RING_MIN = 3`: A brawl with a ring on it (brawl_ring — three or more fighting the hero) draws jeers from the crowd: every JEER_CD seconds one of the onlookers within JEER_R of the hero turns to the fight and shouts a beat (JEER_S). The fight's own never jeer (they are not free). Which onlooker answers picks off the same seeded hash as the fight rolls (fight_seeded_rolls), never the shared stream, so unrelated reactions running first change nothing for it.
 - `JEER_CD = 1.4`
 - `JEER_R = 10.0 * WS.M`
 - `JEER_S = 0.9`
@@ -217,10 +217,12 @@ The crowd's answer to what the street sees and hears, split out of reactions.gd 
 ### Properties
 
 - `wk: WK`: Shared from reactions.gd's setup: the walkers, the roll, the record lifecycle and the clock.
+- `base_seed: int`: The sim seed reactions.gd's setup() hands over beside the shared stream: the seeded jeer pick (fight_seeded_rolls) keys on it, so a fresh fixture without setup() (base_seed 0) is deterministic too.
 - `active: Dictionary`: The live reactions (walker id -> record), for the horn escalation to find the tap's own.
 
 ### Functions
 
+- `func seed_setup(seed: int) -> void`: reactions.gd's setup() hands the sim seed over beside the shared stream; the seeded jeer pick's counter restarts with each setup, so a re-seeded fixture replays the same jeers.
 - `func gasp_due(at: Vector3) -> bool`: True when a knock-down at at may rock the crowd as one (crowd_gasp): the flag on, and no gasp within GASP_CD seconds and GASP_R of it.
 - `func apply_gasp(r) -> void`: r is one of the crowd who stays: it rocks back as one with them — no beat of looking first, a sharp backward tip before the shout.
 - `func noted_gasp(at: Vector3) -> void`: The gasp played: the crowd round at is quiet for GASP_CD seconds.
@@ -834,7 +836,7 @@ People hit in the street (docs/fp/ARCHITECTURE.md, Body actions): shoved or punc
 ### Properties
 
 - `fight`: The fight layer (fight_back.gd): the scrap, the tempers, counter cues and the care for a body on the ground. Its state keeps the old names here through the properties below, so tests, benches and the traffic feature wire it as before.
-- `crowd`: The crowd layer (crowd_reacts.gd): the knock-down gasp and the horn startle, its cooldowns its own.
+- `crowd`: The crowd layer (crowd_reacts.gd): the knock-down gasp and the horn startle, cooldowns its own.
 - `hero_open: bool:`: The hero can be fought now (on foot and in control; traffic sets it every step), and who hears of a punch that lands on them: on_hero_hit(at, strength, push).
 - `hero_down: bool:`: The hero is down on the ground now (traffic sets it every step beside hero_open; downed_awareness).
 - `on_wind_up: Callable:`: Who hears of a punch thrown at the hero as it starts: on_wind_up(walker id, fist, seconds until it lands); and who may counter it as it lands: on_hero_parry(walker id, fist) -> true when it is countered (it then misses).

@@ -25,6 +25,7 @@ func _init() -> void:
 	_check_double_run(false)
 	_check_re_setup_ids()
 	_check_order_independence()
+	_check_jeer_pick()
 	FeatureFlags.reload()
 	K.finish(self, "FP_REACT_DETERMINISM_TEST", fails)
 
@@ -153,6 +154,64 @@ func _victim_outcome(pre: int) -> Dictionary:
 	return {"fighter": fighter, "guard_clip": guard_clip}
 
 
+## The ring layout: walkers 1-3 on the hero (the ring's fighters), 4-5 free in jeer reach, 6-8
+## thirty metres off for unrelated blow-ups.
+const RING_SPOTS: Array[Vector3] = [
+	Vector3(1.5, 0.0, 0.0) * WS.M,
+	Vector3(-1.5, 0.0, 0.0) * WS.M,
+	Vector3(0.0, 0.0, 1.5) * WS.M,
+	Vector3(6.0, 0.0, 0.0) * WS.M,
+	Vector3(0.0, 0.0, 6.0) * WS.M,
+	Vector3(31.2, 0.0, 1.2) * WS.M,
+	Vector3(32.0, 0.0, 0.0) * WS.M,
+	Vector3(32.0, 0.0, 1.2) * WS.M,
+]
+
+
+## The ring fixture: _build's six walkers moved onto the layout (walker 6 already stands on
+## spot 6), plus two made for spots 7-8.
+func _build_ring() -> Dictionary:
+	var f := _build(true)
+	var wk: WK = f["wk"]
+	var people: Array = f["people"]
+	for i in 5:
+		wk.stand(people[i], RING_SPOTS[i], PI)
+	for i in range(6, 8):
+		var w := wk.make("ambient")
+		w.resident_id = "r-%d" % w.id
+		wk.stand(w, RING_SPOTS[i], PI)
+		people.append(w)
+	return f
+
+
+## The jeer probe: pre unrelated blow-ups run while nobody fights, then three punched walkers
+## square up (ring minimum) and the crowd is stepped until the first jeer lands. Returns the
+## jeered onlooker's id (-1 when none). With fight_seeded_rolls the pick hashes the seed, the
+## hero's spot and the jeer count, so pre changes nothing.
+func _jeer_pick(pre: int) -> int:
+	var f := _build_ring()
+	var re: RE = f["re"]
+	var people: Array = f["people"]
+	re.fight_odds = {"punch": 1.0, "shove": 0.5}
+	for i in pre:
+		var o: WK.Walker = people[6 + i % 2]
+		_blow(re, o, 0.4, "punch")
+		re.witness(o, o.pos, 1)
+		_run(re, 0.6)
+	for i in 3:
+		_blow(re, people[i], 0.4, "punch")
+	var picked := -1
+	for _k in 240:  # up to 4 s, stopping at the first jeer
+		re.step(DT)
+		var active: Dictionary = re.get("_active")
+		for id in active:
+			if id == people[3].id or id == people[4].id:
+				picked = id
+		if picked != -1:
+			break
+	return picked
+
+
 # ------------------------------------------------------------------ scenarios
 
 
@@ -207,3 +266,52 @@ func _check_order_independence() -> void:
 	var legacy2 := _victim_outcome(2)
 	FeatureFlags.set_override("fight_seeded_rolls", true)
 	K.check(fails, legacy == legacy2, "and the shared stream still replays without the flag")
+
+
+## With fight_seeded_rolls the crowd's jeer pick (crowd_reacts.gd, brawl_ring) hashes the seed,
+## the hero's spot and the jeer count, so a busy street first changes nothing; and re-running
+## setup() on one module restarts the count, so the replay re-picks the same onlooker.
+func _check_jeer_pick() -> void:
+	var quiet := _jeer_pick(0)
+	var busy := _jeer_pick(4)
+	K.check(fails, quiet != -1, "fixture: a jeer landed on an onlooker")
+	K.check(
+		fails, quiet == busy, "unrelated reactions change no jeer pick (%d vs %d)" % [quiet, busy]
+	)
+	# Re-seeding the same module restarts the jeer count: the walkers re-made on the same ids,
+	# the ring re-formed, the first jeer re-picks the same onlooker.
+	var f := _build_ring()
+	var wk: WK = f["wk"]
+	var re: RE = f["re"]
+	re.fight_odds = {"punch": 1.0, "shove": 0.5}
+	for i in 3:
+		_blow(re, f["people"][i], 0.4, "punch")
+	_run(re, 2.0)
+	wk.setup(null, null, null, null, SEED)
+	wk.player_pos = Vector3.ZERO
+	var people: Array = []
+	for s2 in RING_SPOTS:
+		var w := wk.make("ambient")
+		w.resident_id = "r-%d" % w.id
+		wk.stand(w, s2, PI)
+		w.state = "walk"
+		people.append(w)
+	re.setup(wk, null, SEED)
+	re.hero_open = true
+	re.fight_odds = {"punch": 1.0, "shove": 0.5}
+	for i in 3:
+		_blow(re, people[i], 0.4, "punch")
+	var second := -1
+	for _k in 240:
+		re.step(DT)
+		var active: Dictionary = re.get("_active")
+		for id in active:
+			if id == people[3].id or id == people[4].id:
+				second = id
+		if second != -1:
+			break
+	K.check(
+		fails,
+		second == quiet,
+		"a re-seeded module re-picks the same jeer (%d vs %d)" % [second, quiet]
+	)
