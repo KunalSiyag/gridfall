@@ -66,6 +66,7 @@ func _init() -> void:
 	_check_drivers()
 	_check_wait_crowd()
 	_check_ambient_spawns()
+	_check_posts_debounce()
 	_check_density_caps()
 	_check_scooters()
 	_check_following()
@@ -1116,6 +1117,25 @@ func _straight_run() -> Array:
 ## The web density caps (quality.gd, through ambient's caps_override hook): a present
 ## "traffic"/"crowd" key clamps that spawn target and the fill it drives; a missing key or an
 ## empty Dictionary caps nothing.
+## A built or cleared road tile only FLAGS the walker-post rebuild (a growth tick fires
+## _tile_changed per tile — traffic_perf_probe times the global rebuild at ~0.24 ms native);
+## the next step() runs it once.
+func _check_posts_debounce() -> void:
+	var keys: Array = _lg().tiles.keys()
+	if keys.is_empty():
+		return
+	f.set("_posts_dirty", false)
+	f.call("_tile_changed", keys[0])
+	f.call("_tile_changed", keys[mini(1, keys.size() - 1)])
+	K.check(
+		fails,
+		bool(f.get("_posts_dirty")),
+		"posts: changed tiles flag the global rebuild instead of running it per tile"
+	)
+	f.call("step", DT)
+	K.check(fails, not bool(f.get("_posts_dirty")), "posts: the next step runs the rebuild once")
+
+
 func _check_density_caps() -> void:
 	_quiet()
 	f.set("ambient_enabled", true)
