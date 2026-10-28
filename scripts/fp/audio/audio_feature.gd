@@ -1,6 +1,9 @@
 extends FpFeature
-## City sound on foot (slice I). Owns the Music, SFX, Ambience and UI buses while on foot, puts the
-## AudioDirector's music under the street (set_fp), and runs three parts: positional emitters
+## City sound on foot (slice I). Creates the Music, SFX, Ambience and UI buses the first time the
+## hero goes on foot and keeps them for the rest of the session: a bus is never removed while the
+## game runs, so no player can be left pointing at a bus that is gone (on the web build a sample
+## on a missing bus throws in the mixer). Puts the AudioDirector's music under the street (set_fp)
+## and runs three parts: positional emitters
 ## (engines, horns, sirens, construction, fire, fountains, plants, the river, passers-by's steps,
 ## the player's car crashing, the street props it knocks over and its doors, people hit in the
 ## street, the hero's swings, rolls and the blows they take, dogs barking, growling, whining and
@@ -53,8 +56,6 @@ var blips_played: int = 0
 var last_blip: String = ""
 var stingers_played: int = 0
 var duck_db: float = 0.0
-var _created_buses: Array[StringName] = []
-var _effects: Array = []               # [bus name, AudioEffect] added by this feature
 var _ui: Array[AudioStreamPlayer] = []
 var _ui_next: int = 0
 var _now: float = 0.0
@@ -177,7 +178,8 @@ func teardown() -> void:
 		footsteps.unbind()
 	for p in _ui:
 		p.stop()
-	_remove_buses()
+	# The buses stay: every player is stopped or routed back to an orbit bus, and a kept bus
+	# can never resolve to index -1 for a sample the mixer is still finishing (the web crash).
 
 
 ## Buses exist, beds are playing (at most AMBIENCE.MAX_PLAYING) and every emitter uses
@@ -535,11 +537,20 @@ func _make_buses() -> void:
 		var i := AudioServer.bus_count - 1
 		AudioServer.set_bus_name(i, b)
 		AudioServer.set_bus_send(i, &"Master")
-		_created_buses.append(b)
-	music_filter = AudioEffectLowPassFilter.new()
+	# A fresh instance of this feature is created on every entry, while the buses and their
+	# effects are kept: adopt what is already on the bus (reset to the open values), create only
+	# what is missing. Never stack a second filter or reverb.
+	music_filter = (
+		_bus_effect(BANK.BUS_MUSIC, AudioEffectLowPassFilter) as AudioEffectLowPassFilter
+	)
+	if music_filter == null:
+		music_filter = AudioEffectLowPassFilter.new()
+		_add_effect(BANK.BUS_MUSIC, music_filter)
 	music_filter.cutoff_hz = MUSIC_CUTOFF_OPEN
-	_add_effect(BANK.BUS_MUSIC, music_filter)
-	sfx_reverb = AudioEffectReverb.new()
+	sfx_reverb = _bus_effect(BANK.BUS_SFX, AudioEffectReverb) as AudioEffectReverb
+	if sfx_reverb == null:
+		sfx_reverb = AudioEffectReverb.new()
+		_add_effect(BANK.BUS_SFX, sfx_reverb)
 	sfx_reverb.room_size = 0.5
 	sfx_reverb.damping = 0.6
 	sfx_reverb.spread = 0.9
@@ -548,10 +559,22 @@ func _make_buses() -> void:
 	sfx_reverb.predelay_feedback = 0.2
 	sfx_reverb.dry = 1.0
 	sfx_reverb.wet = REVERB_WET_OPEN
-	_add_effect(BANK.BUS_SFX, sfx_reverb)
-	var lim := AudioEffectHardLimiter.new()
-	lim.ceiling_db = -1.0
-	_add_effect(BANK.BUS_SFX, lim)
+	if _bus_effect(BANK.BUS_SFX, AudioEffectHardLimiter) == null:
+		var lim := AudioEffectHardLimiter.new()
+		lim.ceiling_db = -1.0
+		_add_effect(BANK.BUS_SFX, lim)
+
+
+## The first effect of the given class already on the bus, or null.
+func _bus_effect(bus_name: StringName, what: Variant) -> AudioEffect:
+	var i := AudioServer.get_bus_index(bus_name)
+	if i < 0:
+		return null
+	for k in range(AudioServer.get_bus_effect_count(i)):
+		var e := AudioServer.get_bus_effect(i, k)
+		if is_instance_of(e, what):
+			return e
+	return null
 
 
 func _add_effect(bus_name: StringName, e: AudioEffect) -> void:
@@ -559,27 +582,3 @@ func _add_effect(bus_name: StringName, e: AudioEffect) -> void:
 	if i < 0:
 		return
 	AudioServer.add_bus_effect(i, e)
-	_effects.append([bus_name, e])
-
-
-func _remove_buses() -> void:
-	for pair: Array in _effects:
-		var i := AudioServer.get_bus_index(pair[0])
-		if i < 0:
-			continue
-		for k in range(AudioServer.get_bus_effect_count(i) - 1, -1, -1):
-			if AudioServer.get_bus_effect(i, k) == pair[1]:
-				AudioServer.remove_bus_effect(i, k)
-	_effects.clear()
-	var idx: Array[int] = []
-	for b in _created_buses:
-		var i := AudioServer.get_bus_index(b)
-		if i > 0:
-			idx.append(i)
-	idx.sort()
-	idx.reverse()
-	for i in idx:
-		AudioServer.remove_bus(i)
-	_created_buses.clear()
-	music_filter = null
-	sfx_reverb = null

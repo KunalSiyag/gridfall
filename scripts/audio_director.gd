@@ -106,16 +106,19 @@ func set_fp(on: bool) -> void:
 		for p in players:
 			if p != null:
 				_orbit_bus[p] = p.bus
+		# Route onto a bus only when it exists right now: on the web build a player left on a
+		# missing bus throws in the mixer (invalid bus index -1), so fall back to Master.
 		for p in [_nominal_player, _crisis_player]:
-			if p != null:
+			if p != null and AudioServer.get_bus_index(FP_MUSIC_BUS) >= 0:
 				p.bus = FP_MUSIC_BUS
-		if _sfx_player != null:
+		if _sfx_player != null and AudioServer.get_bus_index(FP_UI_BUS) >= 0:
 			_sfx_player.bus = FP_UI_BUS
 	else:
 		process_mode = _orbit_process_mode
 		for p in players:
 			if p != null and _orbit_bus.has(p):
-				p.bus = _orbit_bus[p]
+				var back: StringName = _orbit_bus[p]
+				p.bus = back if AudioServer.get_bus_index(back) >= 0 else &"Master"
 		_orbit_bus.clear()
 	_apply_volumes()
 

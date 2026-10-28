@@ -4,7 +4,7 @@ extends SceneTree
 ## 24-player cap and stealing, manual doppler, horns, sirens, footsteps by surface (polling and the
 ## stepped signal), ambience beds, settings, the pause muffle, the talk duck, UI cues, crashes,
 ## knocked props, car doors, blows, swings and rolls, weapons, dogs, pigeons, cats, the frame
-## budget and teardown. Headless runs the Dummy audio driver, so this asserts node state.
+## budget, the kept buses and the bus scan. Headless runs the Dummy audio driver: node state.
 
 const K := preload("res://tools/tests/fp_kit.gd")
 const D := preload("res://scripts/sim/sim_defs.gd")
@@ -54,6 +54,7 @@ func _init() -> void:
 	var st: Dictionary = f.self_test()
 	K.check(fails, bool(st["ok"]), "self_test: %s" % st["detail"])
 	_check_teardown(ctx, f)
+	_check_bus_scan()
 	K.finish(self, "FP_AUDIO_TEST", fails)
 
 
@@ -938,8 +939,62 @@ func _check_budget(ctx: FpContext, f: FpFeature) -> void:
 
 func _check_teardown(ctx: FpContext, f: FpFeature) -> void:
 	f.teardown()
-	var gone := true
+	# Buses outlive the stay on foot: a kept bus never resolves to -1 for a finishing sample.
+	var kept := true
 	for b in ["Music", "SFX", "Ambience", "UI"]:
-		gone = gone and AudioServer.get_bus_index(b) < 0
+		kept = kept and AudioServer.get_bus_index(b) >= 0
 	var nom := ctx.audio.get_node("NominalStemPlayer") as AudioStreamPlayer
-	K.check(fails, gone and not ctx.audio.is_fp() and nom.bus == &"Master" and _em(f).count_assigned() == 0, "teardown: buses removed, director back to orbit, emitters stopped")
+	var back := kept and not ctx.audio.is_fp() and nom.bus == &"Master"
+	K.check(fails, back and _em(f).count_assigned() == 0, "teardown: buses kept, director to orbit")
+	var dead := _players_with_dead_bus(get_root())
+	K.check(fails, dead.is_empty(), "teardown: every live player's bus resolves (%s)" % [dead])
+	# A fresh instance per entry (FpMode.setup) must adopt, reset and not stack: muffle, re-enter.
+	(f.get("music_filter") as AudioEffectLowPassFilter).cutoff_hz = 800.0
+	var f2: FpFeature = K.make_feature(ctx, "audio")
+	var mi := AudioServer.get_bus_index("Music")
+	var si := AudioServer.get_bus_index("SFX")
+	var mf2 := f2.get("music_filter") as AudioEffectLowPassFilter
+	var adopted := mf2 == AudioServer.get_bus_effect(mi, 0) and mf2.cutoff_hz == 20000.0
+	K.check(fails, AudioServer.get_bus_effect_count(mi) == 1, "teardown: one music filter stays")
+	K.check(fails, AudioServer.get_bus_effect_count(si) == 2, "teardown: reverb + limiter stay")
+	K.check(fails, adopted, "teardown: a fresh instance adopts and resets the effects")
+	f2.teardown()
+
+
+func _players_with_dead_bus(node: Node) -> Array[String]:
+	var out: Array[String] = []
+	var playerish := node is AudioStreamPlayer or node is AudioStreamPlayer3D
+	if (playerish or node is AudioStreamPlayer2D) and AudioServer.get_bus_index(node.get("bus")) < 0:
+		out.append(str(node.get_path()))
+	for ch in node.get_children():
+		out.append_array(_players_with_dead_bus(ch))
+	return out
+
+
+## Static scan of the sources: nothing removes or renames a bus at runtime (a player on a gone
+## bus throws in the web mixer), and every literal bus name is one the game actually has.
+func _check_bus_scan() -> void:
+	var allowed := ["Master", "Music", "SFX", "Ambience", "UI"]
+	var rx := RegEx.create_from_string("\\.bus\\s*=\\s*&?\"([A-Za-z_]+)\"")
+	var bad: Array[String] = []
+	for path in _gd_files("res://scripts"):
+		var src := FileAccess.get_file_as_string(path)
+		if src.contains("remove_bus("):
+			bad.append("%s removes a bus" % path)
+		if src.contains("set_bus_name(") and not path.ends_with("audio_feature.gd"):
+			bad.append("%s renames a bus" % path)
+		for m in rx.search_all(src):
+			if not allowed.has(m.get_string(1)):
+				bad.append("%s: unknown bus \"%s\"" % [path, m.get_string(1)])
+	var what := "bus scan: no runtime bus removal and no unknown literal bus names (%s)"
+	K.check(fails, bad.is_empty(), what % [bad])
+
+
+func _gd_files(dir_path: String) -> Array[String]:
+	var out: Array[String] = []
+	for n in DirAccess.get_files_at(dir_path):
+		if n.ends_with(".gd"):
+			out.append(dir_path + "/" + n)
+	for sub in DirAccess.get_directories_at(dir_path):
+		out.append_array(_gd_files(dir_path + "/" + sub))
+	return out
