@@ -7,7 +7,8 @@ extends SceneTree
 ## throw, the rig, input back once up); a guarded fighter turning a swung weapon aside and knocking
 ## it loose (weapon_disarm); health coming back; a knock-out (the fade, the wake outside
 ## the nearest hospital, healed, the toast; City Hall without one); save and load; people who fight
-## back (fight_back) and cars that cannot stop running the hero down (hit_by_cars), each off with
+## back (fight_back), the screen-edge arc toward where a blow came from in first person
+## (hit_direction), and cars that cannot stop running the hero down (hit_by_cars), each off with
 ## its flag; teardown. Third person on a grown city; time runs through traffic's step, the
 ## features' tick(1/60) and the player's simulate and update_view.
 
@@ -75,6 +76,7 @@ func _init() -> void:
 	_check_punch()
 	_check_guard_chip()
 	_check_flinch()
+	_check_hit_direction()
 	_check_hit_attacker()
 	_check_regen()
 	_check_car()
@@ -530,6 +532,56 @@ func _check_flinch() -> void:
 		first != second and first in HEALTH.FLINCHES and second in HEALTH.FLINCHES,
 		"hero_flinch off: the two fixed flinches alternate (%s, %s)" % [first, second]
 	)
+
+
+## The blow-direction marker (hit_direction, first person): a short red arc on the screen's edge
+## toward where the blow came from — none in third person, none with the flag off, fading away
+## over about half a second.
+func _check_hit_direction() -> void:
+	_heal()
+	var p := ctx.player
+	var screen: Control = f.get("_screen")
+	var wedge: Control = screen.get("wedge")
+	K.check(fails, wedge != null, "the health screen hosts the marker")
+	var right3 := Vector3(cos(p.yaw), 0.0, -sin(p.yaw))
+	_step(0.2)
+	var a0 := float(wedge.get("alpha"))
+	ctx.bus.hero_hit.emit(p.position, "punch", 0.5, -right3 * 0.07)
+	_step(0.1)
+	K.check(
+		fails, float(wedge.get("alpha")) == a0, "no marker in third person (a blow from the right)"
+	)
+	p.set_camera_mode("first", false)
+	_heal()
+	ctx.bus.hero_hit.emit(p.position, "punch", 0.5, -right3 * 0.07)
+	_step(0.1)
+	var ang := float(wedge.get("ang"))
+	K.check(
+		fails,
+		float(wedge.get("alpha")) > 0.3 and absf(ang - PI * 0.5) < 0.01,
+		"in first person it marks the right edge (%.2f rad)" % ang
+	)
+	_step(1.0)
+	_heal()
+	ctx.bus.hero_hit.emit(p.position, "punch", 0.5, p.body_forward() * 0.07)
+	_step(0.1)
+	ang = float(wedge.get("ang"))
+	K.check(
+		fails, absf(absf(ang) - PI) < 0.01, "and the bottom edge for one from behind (%.2f)" % ang
+	)
+	_step(0.9)
+	K.check(
+		fails,
+		float(wedge.get("alpha")) == 0.0 and not wedge.visible,
+		"fading away over half a second or so"
+	)
+	FeatureFlags.set_override("hit_direction", false)
+	_heal()
+	ctx.bus.hero_hit.emit(p.position, "punch", 0.5, -right3 * 0.07)
+	_step(0.1)
+	K.check(fails, float(wedge.get("alpha")) == 0.0, "none with the flag off")
+	FeatureFlags.set_override("hit_direction", true)
+	p.set_camera_mode("third", false)
 
 
 func _check_regen() -> void:

@@ -43,7 +43,7 @@ The hero's health (the health feature) as an arc round the left of the minimap i
 
 extends `FpFeature`
 
-The hero's health (integration slice; docs/fp/ARCHITECTURE.md, Health): MAX_HP points, shown as an arc round the left of the minimap. Crashes in the car the hero drives (car_impact), hard landings (the player's landed signal; one rolled off counts softer), people who fight back (hero_hit "punch", the fight_back flag), dogs defending their owners (hero_hit "bite", the animals feature) and cars that cannot stop for the hero on foot (hero_hit "car", hit_by_cars) cost points, and REGEN_DELAY seconds after the last hurt they come back. A blow makes the body flinch the way it came from, the camera rolling toward the side that was hit (hero_flinch; a guard raised toward it takes most of a punch); a car or a bad fall knocks the hero down, to lie a moment and get up. With nothing left they are knocked out: out of the car, down, the screen fades to black and they come round outside the nearest hospital (City Hall without one), healed. Every hurt goes out on the bus (hero_hurt); health is saved with the city.
+The hero's health (integration slice; docs/fp/ARCHITECTURE.md, Health): MAX_HP points, shown as an arc round the left of the minimap. Crashes in the car the hero drives (car_impact), hard landings (the player's landed signal; one rolled off counts softer), people who fight back (hero_hit "punch", the fight_back flag), dogs defending their owners (hero_hit "bite", the animals feature) and cars that cannot stop for the hero on foot (hero_hit "car", hit_by_cars) cost points, and REGEN_DELAY seconds after the last hurt they come back. A blow makes the body flinch the way it came from, the camera rolling toward the side that was hit (hero_flinch; a guard raised toward it takes most of a punch), and in first person a short red arc flashes on the screen's edge toward where it came from (hit_direction); a car or a bad fall knocks the hero down, to lie a moment and get up. With nothing left they are knocked out: out of the car, down, the screen fades to black and they come round outside the nearest hospital (City Hall without one), healed. Every hurt goes out on the bus (hero_hurt); health is saved with the city.
 
 ### Constants
 
@@ -110,11 +110,12 @@ The hero's health (integration slice; docs/fp/ARCHITECTURE.md, Health): MAX_HP p
 
 extends `Control`
 
-The health feature's full-screen layer in the overlay slot (under the pause menu): a red vignette that flashes with each hurt and stays, pulsing, while health is low, and the knock-out's fade to black with its caption.
+The health feature's full-screen layer in the overlay slot (under the pause menu): a red vignette that flashes with each hurt and stays, pulsing, while health is low, the direction marker's arc toward where a blow came from (hit_direction, first person — hit_wedge.gd), and the knock-out's fade to black with its caption.
 
 ### Constants
 
 - `S = preload("res://scripts/fp/ui/hud_style.gd")`
+- `WEDGE = preload("res://scripts/fp/health/hit_wedge.gd")`
 - `LOW_FROM = 0.6`: The vignette stays once this share of health is lost, up to LOW_MAX strong with none left.
 - `LOW_MAX = 0.6`
 - `PULSE_HZ = 1.2`
@@ -125,4 +126,29 @@ The health feature's full-screen layer in the overlay slot (under the pause menu
 
 - `func setup() -> void`
 - `func flash(k: float) -> void`: A hurt that cost share k of the full bar.
+- `func flash_from(a: float) -> void`: A blow from angle a round the view (0 dead ahead, +PI/2 from the right) flashes the direction marker (hit_direction; health_feature asks in first person only).
 - `func set_state(lost: float, dark: float, words: float, dt: float) -> void`: lost: the share of health lost (0..1); dark: the knock-out's black (0..1); words: its caption (0..1); dt: seconds since the last call.
+
+## `scripts/fp/health/hit_wedge.gd`
+
+extends `Control`
+
+The blow-direction marker (hit_direction, first person): a short red arc a little in from the screen's edge, toward the side a blow came from (angle 0 dead ahead, +PI/2 from the right, PI from behind), fading away over about FADE_S. health_screen.gd hosts it and flashes it on a hurt that carries a push; health_feature.gd only asks in first person.
+
+### Constants
+
+- `S = preload("res://scripts/fp/ui/hud_style.gd")`
+- `FADE_S = 0.5`: The marker fades with this half-life (s), gone (under 2%) in about FADE_S.
+- `HL = FADE_S / 5.6`
+- `SPAN = 0.45`: The arc spans SPAN rad each way of the blow's angle, WIDTH px thick, INSET of the way out to the screen's edge.
+- `WIDTH = 10.0`
+- `INSET = 0.86`
+
+### Properties
+
+- `ang`: The blow's angle round the view and how bright the marker still is (tests).
+
+### Functions
+
+- `func flash(a: float) -> void`: A blow from angle a (0 dead ahead, +PI/2 from the right): the marker shows full and fades.
+- `func fade(dt: float) -> void`: dt seconds pass; the marker fades away.

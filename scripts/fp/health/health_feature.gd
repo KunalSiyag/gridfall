@@ -6,7 +6,8 @@ extends FpFeature
 ## animals feature) and cars that cannot stop for the hero on foot (hero_hit "car", hit_by_cars)
 ## cost points, and REGEN_DELAY seconds after the last hurt they come back. A blow makes the body
 ## flinch the way it came from, the camera rolling toward the side that was hit (hero_flinch; a
-## guard raised toward it takes most of a punch); a car or a bad fall knocks the hero
+## guard raised toward it takes most of a punch), and in first person a short red arc flashes on
+## the screen's edge toward where it came from (hit_direction); a car or a bad fall knocks the hero
 ## down, to lie a moment and get up. With nothing left they are knocked out: out of the car, down,
 ## the screen fades to black and they come round outside the nearest hospital (City Hall without
 ## one), healed. Every hurt goes out on the bus (hero_hurt); health is saved with the city.
@@ -186,8 +187,31 @@ func hurt(
 		_flinch_body(push, felt if felt >= 0.0 else clampf(amount / (MAX_HP * 0.25), 0.0, 1.0))
 	if _screen != null:
 		_screen.call("flash", amount / MAX_HP)
+	_flash_from(push)
 	if ctx.bus != null:
 		ctx.bus.hero_hurt.emit(amount, cause, hp, down)
+
+
+## First person only (hit_direction): the screen-edge arc toward where the blow came from, beside
+## the vignette's flash (health_screen's flash_from). push points the way the blow travelled; the
+## marker shows its source — angle 0 dead ahead, +PI/2 from the right. No push, no marker.
+func _flash_from(push: Vector3) -> void:
+	var p := ctx.player
+	if (
+		_screen == null
+		or p == null
+		or p.camera_mode != "first"
+		or not FeatureFlags.enabled("hit_direction")
+	):
+		return
+	var src := Vector2(-push.x, -push.z)
+	if src.length_squared() < 1e-10:
+		return
+	src = src.normalized()
+	# The body's right is (cos, -sin) and it faces (-sin, -cos) (see _flinch_body).
+	var side := src.dot(Vector2(cos(p.yaw), -sin(p.yaw)))
+	var front := src.dot(Vector2(-sin(p.yaw), -cos(p.yaw)))
+	_screen.call("flash_from", atan2(side, front))
 
 
 ## True while the hero is on the ground (knocked down or out) or coming round.

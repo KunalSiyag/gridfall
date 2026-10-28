@@ -1,9 +1,11 @@
 extends Control
 ## The health feature's full-screen layer in the overlay slot (under the pause menu): a red
-## vignette that flashes with each hurt and stays, pulsing, while health is low, and the
-## knock-out's fade to black with its caption.
+## vignette that flashes with each hurt and stays, pulsing, while health is low, the direction
+## marker's arc toward where a blow came from (hit_direction, first person — hit_wedge.gd), and
+## the knock-out's fade to black with its caption.
 
 const S := preload("res://scripts/fp/ui/hud_style.gd")
+const WEDGE := preload("res://scripts/fp/health/hit_wedge.gd")
 ## The vignette stays once this share of health is lost, up to LOW_MAX strong with none left.
 const LOW_FROM := 0.6
 const LOW_MAX := 0.6
@@ -14,6 +16,7 @@ const FLASH_K := 4.0
 const HL_FLASH := 0.25
 
 var vignette: TextureRect
+var wedge: Control
 var black: ColorRect
 var caption: Label
 var _flash: float = 0.0
@@ -32,6 +35,9 @@ func setup() -> void:
 	vignette.texture = _vignette_texture()
 	vignette.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	add_child(vignette)
+	wedge = WEDGE.new()
+	wedge.name = "Wedge"
+	add_child(wedge)
 	black = ColorRect.new()
 	black.name = "Black"
 	black.mouse_filter = Control.MOUSE_FILTER_IGNORE
@@ -53,6 +59,12 @@ func flash(k: float) -> void:
 	_flash = clampf(maxf(_flash, k * FLASH_K), 0.0, 1.0)
 
 
+## A blow from angle a round the view (0 dead ahead, +PI/2 from the right) flashes the direction
+## marker (hit_direction; health_feature asks in first person only).
+func flash_from(a: float) -> void:
+	wedge.call("flash", a)
+
+
 ## lost: the share of health lost (0..1); dark: the knock-out's black (0..1); words: its
 ## caption (0..1); dt: seconds since the last call.
 func set_state(lost: float, dark: float, words: float, dt: float) -> void:
@@ -62,6 +74,7 @@ func set_state(lost: float, dark: float, words: float, dt: float) -> void:
 	var pulse := 0.8 + 0.2 * sin(_t * TAU * PULSE_HZ)
 	vignette.modulate.a = maxf(_flash, low * LOW_MAX * pulse)
 	vignette.visible = vignette.modulate.a > 0.004
+	wedge.call("fade", dt)
 	black.modulate.a = dark
 	black.visible = dark > 0.0
 	caption.modulate.a = words

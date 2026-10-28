@@ -125,7 +125,8 @@ Generated from the `##` doc comments in `scripts/`. Regenerate with `python3 too
 
 - [health_arc.gd](scripts.fp.health.md#scriptsfphealthhealth_arcgd): The hero's health (the health feature) as an arc round the left of the minimap in minimap_slot: it fills from the bottom up, green when well, amber below AMBER_AT and red below RED_AT, where it pulses; after a hurt a pale trail eats down to the new value
 - [health_feature.gd](scripts.fp.health.md#scriptsfphealthhealth_featuregd): The hero's health (integration slice; docs/fp/ARCHITECTURE.md, Health): MAX_HP points, shown as an arc round the left of the minimap
-- [health_screen.gd](scripts.fp.health.md#scriptsfphealthhealth_screengd): The health feature's full-screen layer in the overlay slot (under the pause menu): a red vignette that flashes with each hurt and stays, pulsing, while health is low, and the knock-out's fade to black with its caption
+- [health_screen.gd](scripts.fp.health.md#scriptsfphealthhealth_screengd): The health feature's full-screen layer in the overlay slot (under the pause menu): a red vignette that flashes with each hurt and stays, pulsing, while health is low, the direction marker's arc toward where a blow came from (hit_direction, first person — hit_wedge.gd), and the knock-out's fade to black with its caption
+- [hit_wedge.gd](scripts.fp.health.md#scriptsfphealthhit_wedgegd): The blow-direction marker (hit_direction, first person): a short red arc a little in from the screen's edge, toward the side a blow came from (angle 0 dead ahead, +PI/2 from the right, PI from behind), fading away over about FADE_S
 
 ## [scripts/fp/hitfeel/](scripts.fp.hitfeel.md)
 
