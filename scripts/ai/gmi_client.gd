@@ -551,6 +551,8 @@ func _cache_lookup(key: String, day: int) -> Dictionary:
 ## brain flushes at every day end). Record mode writes exactly as before.
 func flush_cache() -> void:
 	if not record_mode:
+		if session_cache.is_empty():
+			return
 		var entries := 0
 		for key: String in session_cache.keys():
 			entries += (session_cache[key] as Array).size()

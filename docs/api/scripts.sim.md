@@ -77,6 +77,7 @@ Tile-based SimCity-style simulation: zoning + demand-driven growth, power/water/
 - `func step_tick() -> void`
 - `func start() -> void`: Emits day_started for the very first day (call once after wiring listeners).
 - `func day_start_deferred() -> bool`: True while the sliced day job emits day_started: Residents then leaves its day-start work to begin_day() / pump_day(), which the job runs after the emission.
+- `func day_end_deferred() -> bool`: True while the sliced day job runs its day-end tasks (the post-tick job): the brain then spreads its dusk work one piece per frame through its spread-source queue, as at dawn.
 - `func work_based() -> bool`: True when residents decide behaviour; incidents then end only when someone fixes them.
 - `func global_tick() -> int`
 - `func begin_tick() -> bool`: Starts a sliced tick now if none is in flight and the day gate is open (waiting_for_ai false). Returns true if a job started. _process calls it when _time_accum reaches a tick; tests call it.

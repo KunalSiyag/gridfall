@@ -407,7 +407,17 @@ func _check_minds() -> void:
 # ---------------------------------------------------------------- 4b. client flush
 
 func _check_flush() -> void:
-	var client: GmiClient = (load("res://scripts/ai/gmi_client.gd") as GDScript).new()
+	# The day-end sweep flushes every dusk; with nothing remembered that must not write a file.
+	var script: GDScript = load("res://scripts/ai/gmi_client.gd")
+	var path0 := GmiClient.SESSION_CACHE_PATH
+	DirAccess.remove_absolute(ProjectSettings.globalize_path(path0))
+	var empty: GmiClient = script.new()
+	get_root().add_child(empty)
+	empty.record_mode = false
+	empty.flush_cache()
+	check(not FileAccess.file_exists(path0), "flush_cache with an empty cache writes nothing")
+	empty.queue_free()
+	var client: GmiClient = script.new()
 	get_root().add_child(client)
 	client.record_mode = false
 	for day in range(1, 7):

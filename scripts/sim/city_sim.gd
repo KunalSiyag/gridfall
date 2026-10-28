@@ -761,6 +761,12 @@ func day_start_deferred() -> bool:
 	return _defer_day
 
 
+## True while the sliced day job runs its day-end tasks (the post-tick job): the brain then
+## spreads its dusk work one piece per frame through its spread-source queue, as at dawn.
+func day_end_deferred() -> bool:
+	return _job_kind == _JOB_POST
+
+
 # ---------------------------------------------------------------- simulation core
 
 
