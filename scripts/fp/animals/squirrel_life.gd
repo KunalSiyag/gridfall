@@ -5,7 +5,10 @@ extends RefCounted
 ## stops, sits up on its haunches and nibbles with its paws at its mouth, its tail swaying behind
 ## it. A fright — the hero walking up to it or sprinting near, a dog close by or running, a person
 ## stepping on it — and it chatters once, dashes for its tree and runs up the trunk, clinging there
-## head-up until the trouble has gone, then comes back down to its lawn.
+## head-up until the trouble has gone, then comes back down to its lawn. Two squirrels whose
+## lawns touch now and then chase one another instead: one runs a spiral round its trunk, the
+## other cuts straight after it, both chattering, and a catch swaps who chases whom — a game,
+## and it yields to any real fright.
 
 const WS := preload("res://scripts/fp/world_scale.gd")
 
@@ -42,6 +45,19 @@ const UP_KEEP := 6.0
 ## The chatters it gives while it flees (animal_called), each at most every CHATTER_S (s).
 const CHATTER_S := 1.5
 
+## The chase (play): homes within PLAY_NEAR (m) are playmates; a calm foraging pair starts a
+## chase at PLAY_ODDS a second, each round PLAY_ROUND_S (s) long. The one chased runs its spiral
+## at PLAY_MPS (m/s), its circle breathing between SPIRAL_R (m) round the trunk; the chaser cuts
+## after it a touch faster (PLAY_CHASE_MPS, m/s — the chase must end in a catch), counting one
+## within PLAY_CATCH (m).
+const PLAY_NEAR := 2.5 * WS.M
+const PLAY_ODDS := 0.02
+const PLAY_ROUND_S := Vector2(4.0, 7.0)
+const PLAY_CATCH := 0.35 * WS.M
+const PLAY_MPS := 2.4 * WS.M
+const PLAY_CHASE_MPS := 2.9 * WS.M
+const SPIRAL_R := Vector2(0.5, 1.1)
+
 const NO_POINT := Vector3(NAN, NAN, NAN)
 const LOD := preload("res://scripts/fp/animals/settle_lod.gd")
 ## The states the slow cadence may coarse (settle_lod.gd); any escape state, or the hero coming
@@ -69,6 +85,13 @@ class Squirrel:
 	var climb_y: float = 0.0
 	var calm_t: float = 0.0
 	var chatter_t: float = 0.0
+	## The chase: the playmate's key while a chase is on, who chases whom, a grace before a fresh
+	## chaser may count a catch (so a catch parts them before the next), and whether the parts
+	## have swapped already (the game runs two rounds at most).
+	var play_with := ""
+	var play_chaser := false
+	var play_cd: float = 0.0
+	var play_swapped := false
 	## The pose the shader takes from INSTANCE_CUSTOM.
 	var stride: float = 0.0
 	var sit: float = 0.0
@@ -122,6 +145,7 @@ func squirrel(key: String) -> Squirrel:
 
 
 func remove(s: Squirrel) -> void:
+	_stop_play(s)
 	squirrels.erase(s)
 
 
@@ -146,6 +170,8 @@ func step(dt: float) -> void:
 				_climb(s, sdt)
 			"hold":
 				_hold(s, sdt)
+			"play":
+				_play(s, sdt)
 			_:
 				_down(s, sdt)
 
@@ -174,7 +200,7 @@ static func xform(s: Squirrel, up: float) -> Transform3D:
 ## How far off the ground its bound carries it (m) at this moment: the hop's arc while it forages
 ## or dashes, nothing while it sits up, climbs or clings.
 static func lift(s: Squirrel) -> float:
-	if not s.state in ["forage", "flee"]:
+	if not s.state in ["forage", "flee", "play"]:
 		return 0.0
 	return HOP_UP * sin(PI * fposmod(s.hop_t, 1.0))
 
@@ -184,6 +210,8 @@ static func lift(s: Squirrel) -> float:
 
 ## Bounds about its lawn: a goal within FORAGE_R of home, hops of the gait, now and then a nibble.
 func _forage(s: Squirrel, dt: float) -> void:
+	if _maybe_play(s, dt):
+		return
 	s.lean = move_toward(s.lean, 0.12, dt * 4.0)
 	s.sit = move_toward(s.sit, 0.0, dt * 5.0)
 	s.tail = lerpf(s.tail, 0.3 * sin(TAU * fposmod(s.hop_t * 2.4, 1.0)), 1.0 - exp(-6.0 * dt))
@@ -315,6 +343,7 @@ func _threat(s: Squirrel, dt: float) -> void:
 
 ## Off for its tree, with one chatter as it goes.
 func _flee_tree(s: Squirrel) -> void:
+	_stop_play(s)
 	if s.tree.is_empty():
 		return
 	s.state = "flee"
@@ -359,6 +388,139 @@ func lawn_ok(p: Vector3) -> bool:
 	if is_nan(g) or col.surface_at(p) == "asphalt":
 		return false
 	return not col.is_blocked(Vector3(p.x, g, p.z), 0.06 * WS.M)
+
+
+# ------------------------------------------------------------------ the chase
+
+
+## Calm foraging with a playmate's lawn within reach, and the odds come up: a chase breaks out.
+func _maybe_play(s: Squirrel, dt: float) -> bool:
+	if s.play_with != "" or _rng.randf() > PLAY_ODDS * dt:
+		return false
+	for o: Squirrel in squirrels:
+		if (
+			o != s
+			and o.play_with == ""
+			and o.state in ["forage", "nibble"]
+			and _flat(o.home, s.home) < PLAY_NEAR
+		):
+			_start_play(s, o)
+			return true
+	return false
+
+
+## Off they go: a runs after b, who runs the spiral round its trunk, both chattering, for one
+## round; a catch swaps who chases whom.
+func _start_play(a: Squirrel, b: Squirrel) -> void:
+	var round_s := _rng.randf_range(PLAY_ROUND_S.x, PLAY_ROUND_S.y)
+	for pair: Array in [[a, b, true], [b, a, false]]:
+		var one: Squirrel = pair[0]
+		one.state = "play"
+		one.play_with = (pair[1] as Squirrel).key
+		one.play_chaser = pair[2]
+		one.state_t = round_s
+		one.play_cd = 0.0
+		one.play_swapped = false
+	_call(a.pos + Vector3(0.0, 0.12 * WS.M, 0.0), "chatter")
+
+
+## The chase itself: the one chased runs a spiral round its trunk — its circle breathing out and
+## in as it goes — and the chaser cuts straight after it, round the trunk rather than through it.
+## A catch tumbles them together: the chaser sits the tumble out a beat (its grace) while the
+## other bolts, then gives chase with the parts swapped; the next catch (or a round run out)
+## ends the game and both go back to their lawns. A real fright breaks the game at once
+## (_threat's _flee_tree clears it).
+func _play(s: Squirrel, dt: float) -> void:
+	s.lean = move_toward(s.lean, 0.18, dt * 5.0)
+	s.sit = move_toward(s.sit, 0.0, dt * 8.0)
+	s.tail = lerpf(s.tail, 0.5 * sin(TAU * fposmod(s.hop_t * 3.0, 1.0)), 1.0 - exp(-6.0 * dt))
+	s.hop_t += dt / (HOP_S * 0.9)
+	s.state_t -= dt
+	s.play_cd = maxf(0.0, s.play_cd - dt)
+	s.chatter_t -= dt
+	if s.chatter_t <= 0.0:
+		s.chatter_t = CHATTER_S
+		_call(s.pos + Vector3(0.0, 0.12 * WS.M, 0.0), "chatter")
+	var other := squirrel(s.play_with)
+	if other == null or other.state != "play" or s.state_t <= 0.0:
+		_stop_play(s)
+		return
+	var dir := Vector3.ZERO
+	if s.play_chaser:
+		if s.play_cd > 0.0:
+			# The tumble's beat: caught it, sit up a moment while it bolts.
+			s.sit = move_toward(s.sit, 0.6, dt * 6.0)
+			s.stride = move_toward(s.stride, 0.0, dt * 6.0)
+			return
+		dir = other.pos - s.pos
+		dir.y = 0.0
+		if not s.tree.is_empty():
+			# Round the trunk, not through it.
+			var off := s.pos - Vector3(s.tree[0], s.pos.y, s.tree[1])
+			off.y = 0.0
+			var keep := float(s.tree[2]) + 0.12 * WS.M
+			if off.length() < keep and off.length_squared() > 1e-10:
+				dir += off.normalized() * (keep - off.length()) * 8.0
+		if dir.length() < PLAY_CATCH:
+			# Caught: the second catch ends the game; the first swaps who chases whom for a
+			# shorter round back, with a grace to run apart before the next catch can count.
+			if s.play_swapped:
+				_stop_play(s)
+				return
+			var round_s := _rng.randf_range(PLAY_ROUND_S.x * 0.5, PLAY_ROUND_S.y * 0.5)
+			for pair: Array in [[s, false], [other, true]]:
+				var one: Squirrel = pair[0]
+				one.play_chaser = pair[1]
+				one.state_t = round_s
+				one.play_cd = 1.0
+				one.play_swapped = true
+			return
+	else:
+		var trunk := s.home if s.tree.is_empty() else Vector3(s.tree[0], s.pos.y, s.tree[1])
+		var away := s.pos - trunk
+		away.y = 0.0
+		if away.length_squared() < 1e-8:
+			away = _out(s)
+		var r_want := lerpf(SPIRAL_R.x, SPIRAL_R.y, 0.5 + 0.5 * sin(s.state_t * 2.1)) * WS.M
+		var radial := away.normalized() * clampf(r_want - away.length(), -1.0, 1.0)
+		dir = Vector3(-away.z, 0.0, away.x).normalized() + radial * 1.6
+	if dir.length_squared() < 1e-10:
+		return
+	dir = dir.normalized()
+	s.yaw = rotate_toward(s.yaw, atan2(dir.x, dir.z), TURN * 1.6 * dt)
+	var dist := (PLAY_CHASE_MPS if s.play_chaser else PLAY_MPS) * dt
+	s.stride = fposmod(s.stride + dist / (HOP_S * BOUND_MPS), 1.0)
+	# Only over good lawn, as a forage hop: where the ground runs out (a wall, the kerb, the
+	# road), the game breaks up.
+	var nxt := s.pos + dir * dist
+	if not lawn_ok(nxt):
+		_stop_play(s)
+		return
+	s.pos = nxt
+	var g := _ground(s.pos)
+	if not is_nan(g):
+		s.pos.y = g
+
+
+## The game is over: both back to foraging on their lawns. When a real fright broke it, the
+## frightened one is already off for its tree and only its playmate goes back to its lawn.
+func _stop_play(s: Squirrel) -> void:
+	if s.play_with == "":
+		return
+	var other := squirrel(s.play_with)
+	if other != null and other.play_with == s.key:
+		other.play_with = ""
+		other.play_chaser = false
+		other.play_swapped = false
+		if other.state == "play":
+			other.state = "forage"
+			other.goal = _next_goal(other)
+	s.play_with = ""
+	s.play_chaser = false
+	s.play_swapped = false
+	if s.state == "play":
+		s.state = "forage"
+		s.goal = _next_goal(s)
 
 
 func _ground(p: Vector3) -> float:

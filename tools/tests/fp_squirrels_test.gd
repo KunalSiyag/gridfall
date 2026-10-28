@@ -3,7 +3,9 @@ extends SceneTree
 ## near the player — a tree in the woods that ring the city, a street tree, a lot's own — keeps a
 ## squirrel, drawn by one MultiMesh of the squirrel an instance: it bounds about its patch of
 ## grass at the foot of its trunk, stops and sits up on its haunches to nibble with its paws at its
-## mouth, its tail swaying behind it. The hero walking up to it (or sprinting near) makes it
+## mouth, its tail swaying behind it; two whose lawns touch now and then chase one another in
+## spirals round a trunk, chattering, a catch swapping who chases whom. The hero walking up to
+## it (or sprinting near) makes it
 ## chatter once, dash for its tree and run up the trunk, where it clings head-up until the trouble
 ## has been gone, then comes back down to its lawn; a shout and a dog close by do the same. By
 ## night none comes out; the flag off takes them away; self_test and teardown. Third person on a
@@ -63,6 +65,7 @@ func _init() -> void:
 		_check_down()
 		_check_shout()
 		_check_dog()
+		_check_play()
 		_check_night()
 		_check_rain()
 		_check_flag()
@@ -70,6 +73,26 @@ func _init() -> void:
 	_check_capped_out()
 	_check_teardown()
 	K.finish(self, "FP_SQUIRRELS_TEST", fails)
+
+
+## A CollisionWorld that declares the disc round block_at unwalkable and leaves the rest to the
+## real world: how the block-in-the-spiral check stages its wall.
+class BlockedCol:
+	extends CollisionWorld
+	var real: CollisionWorld = null
+	var block_at := Vector3.ZERO
+	var block_r: float = 0.0
+
+	func walk_height(p: Vector3) -> float:
+		if Vector2(p.x - block_at.x, p.z - block_at.z).length() < block_r:
+			return NAN
+		return real.walk_height(p)
+
+	func surface_at(p: Vector3) -> String:
+		return real.surface_at(p)
+
+	func is_blocked(p: Vector3, radius: float) -> bool:
+		return real.is_blocked(p, radius)
 
 
 # ------------------------------------------------------------------ helpers
@@ -265,6 +288,182 @@ func _check_shout() -> void:
 	while t <= DOWN_S and s.state != "forage" and s.state != "nibble":
 		_step(0.25)
 		t += 0.25
+
+
+## Two squirrels whose lawns touch now and then chase one another, in spirals round a trunk,
+## chattering, until a catch swaps their parts or the round ends; and the game yields to any
+## real fright. The trigger, the motion, the game's course and the fright, each a check below;
+## then the fixture is put back clean for the checks that follow.
+func _check_play() -> void:
+	var s := _squirrel()
+	K.check(fails, s != null, "play: the spot's squirrel is out to test")
+	if s == null:
+		return
+	var mate := _forge_mate(s)
+	if not _play_triggered(s, mate):
+		sq.clear()
+		_step(AF.SCAN_S + 0.1)
+		return
+	_play_motion(s, mate)
+	_play_round(s, mate)
+	_play_blocked(s, mate)
+	_play_threat(s, mate)
+	sq.clear()
+	_step(AF.SCAN_S + 0.1)
+
+
+## A playmate for s whose lawn touches its own, sharing its trunk (and its tint row, so the one
+## MultiMesh draws it too).
+func _forge_mate(s: LIFE.Squirrel) -> LIFE.Squirrel:
+	var mate := life.add(spot["home"] + Vector3(1.2 * WS.M, 0.0, 0.0), s.tree, "sq:test-mate")
+	sq._tints.append(sq._tint("sq:test-mate"))
+	sq._draw()
+	return mate
+
+
+## The chase breaks out on its own within a spell of shared calm foraging.
+func _play_triggered(s: LIFE.Squirrel, mate: LIFE.Squirrel) -> bool:
+	calls.clear()
+	var t := 0.0
+	var on := false
+	while t <= 90.0:
+		_step(0.5)
+		t += 0.5
+		if s.state == "play" or mate.state == "play":
+			on = true
+			break
+	K.check(fails, on, "play: two squirrels whose lawns touch now and then chase one another")
+	return on
+
+
+## The chase's motion: the chaser closes on the one it chases; the one chased runs a spiral
+## round its trunk.
+func _play_motion(s: LIFE.Squirrel, mate: LIFE.Squirrel) -> void:
+	var chaser: LIFE.Squirrel = s if s.play_chaser else mate
+	var leader: LIFE.Squirrel = mate if s.play_chaser else s
+	var trunk := Vector3(s.tree[0], 0.0, s.tree[1])
+	var gap0 := _flat(chaser.pos, leader.pos)
+	var gap_min := gap0
+	var r_max := 0.0
+	var p0a := s.pos
+	var p0b := mate.pos
+	var moved := 0.0
+	var t := 0.0
+	while t <= 2.5 and (s.state == "play" or mate.state == "play"):
+		_step(0.25)
+		t += 0.25
+		gap_min = minf(gap_min, _flat(s.pos, mate.pos))
+		moved = maxf(moved, maxf(_flat(s.pos, p0a), _flat(mate.pos, p0b)))
+		if leader.state == "play" and not leader.play_chaser:
+			r_max = maxf(r_max, _flat(leader.pos, trunk))
+	K.check(
+		fails,
+		gap_min < gap0 - 0.2 * WS.M or gap_min <= LIFE.PLAY_CATCH * 1.2,
+		"play: the chaser cuts after the one it chases and closes"
+	)
+	K.check(
+		fails,
+		moved > 0.3 * WS.M and r_max < LIFE.SPIRAL_R.y * WS.M + float(s.tree[2]) + 0.4 * WS.M,
+		"play: the one chased runs a spiral round its trunk"
+	)
+
+
+## The game's course: it goes with chatter; a catch swaps who chases whom, or a round simply
+## ends; and when it ends both go back to foraging with the play fields cleared.
+func _play_round(s: LIFE.Squirrel, mate: LIFE.Squirrel) -> void:
+	var s_chased: bool = s.play_chaser
+	var t := 0.0
+	var swapped := false
+	var over := false
+	while t <= LIFE.PLAY_ROUND_S.y * 2.0 + 1.0:
+		_step(0.25)
+		t += 0.25
+		if s.state != "play" and mate.state != "play":
+			over = true
+			break
+		if s.state == "play" and s.play_chaser != s_chased:
+			swapped = true
+			break
+	t = 0.0
+	while not over and t <= 15.0:
+		_step(0.25)
+		t += 0.25
+		if s.state != "play" and mate.state != "play":
+			over = true
+	K.check(fails, _count("chatter") > 0, "play: the chase goes with chatter")
+	K.check(fails, swapped or over, "play: a catch swaps who chases whom, or the round ends")
+	K.check(
+		fails,
+		over and s.play_with == "" and mate.play_with == "",
+		"play: when the round is run both go back to their lawns"
+	)
+
+
+## Where the ground runs out, the game breaks up: with a block staged inside the spiral's ring
+## (a wall where the circle would run), no step of the chase ever enters it, and the chase ends
+## where it cannot run.
+func _play_blocked(s: LIFE.Squirrel, mate: LIFE.Squirrel) -> void:
+	var trunk := Vector3(s.tree[0], 0.0, s.tree[1])
+	var fake := BlockedCol.new()
+	fake.real = life.col
+	fake.block_r = 0.45 * WS.M
+	# The side of the trunk that stands clearer of the pair.
+	var mid := (s.home + mate.home) * 0.5
+	var away := trunk - mid
+	away.y = 0.0
+	if away.length_squared() < 1e-8:
+		away = Vector3.RIGHT
+	away = away.normalized()
+	var best := -1.0
+	for side: float in [1.0, -1.0]:
+		var c := trunk + away * (0.8 * WS.M * side)
+		var d := minf(_flat(c, s.pos), _flat(c, mate.pos))
+		if d > best:
+			best = d
+			fake.block_at = c
+	K.check(
+		fails, best >= fake.block_r, "play: the block stands clear of the pair as the chase begins"
+	)
+	life.col = fake
+	life._start_play(s, mate)
+	var t := 0.0
+	var entered := false
+	# A tick at a time, and only a squirrel still in the game is measured: once the game has
+	# broken up the pair goes back to foraging, whose hops are not the chase's steps.
+	while t <= 15.0 and (s.state == "play" or mate.state == "play"):
+		_step(DT)
+		t += DT
+		for one: LIFE.Squirrel in [s, mate]:
+			if one.state != "play":
+				continue
+			var d := Vector2(one.pos.x - fake.block_at.x, one.pos.z - fake.block_at.z).length()
+			entered = entered or d < fake.block_r
+	life._stop_play(s)
+	life.col = fake.real
+	fake.free()
+	K.check(fails, not entered, "play: no step of the chase enters a block inside the spiral")
+	K.check(
+		fails,
+		t <= 15.0 and s.play_with == "" and mate.play_with == "",
+		"play: where the ground runs out, the game breaks up"
+	)
+
+
+## The game yields to a real fright: a bark mid-chase breaks it and sends both up their trees.
+func _play_threat(s: LIFE.Squirrel, mate: LIFE.Squirrel) -> void:
+	life._start_play(s, mate)
+	sq.startle(mate.pos, SQ.BARK_M)
+	_step(0.5)
+	var cleared: bool = s.play_with == "" and mate.play_with == ""
+	var t := 0.0
+	var up := false
+	while t <= UP_S:
+		_step(0.25)
+		t += 0.25
+		if s.state in ["climb", "hold"] and mate.state in ["climb", "hold"]:
+			up = true
+			break
+	K.check(fails, cleared and up, "play: a bark mid-chase ends the game; both dash for the tree")
 
 
 ## A dog running up to it sends it up its tree as well.

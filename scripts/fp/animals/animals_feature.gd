@@ -15,8 +15,9 @@ extends FpFeature
 ## (cats.gd) keep to some front yards and shop doors, and by night strays to the works yards and
 ## the parks: they rest, stroll, greet a crouching hero, hiss at dogs, stalk the pigeons and the
 ## squirrels and run from frights, up a trunk from a charging dog; E pets one. Squirrels
-## (squirrels.gd) bound about a lawn with a tree, up its trunk at a fright. Calls go out on the
-## bus; motion runs on delta * sim.speed (pause freezes it).
+## (squirrels.gd) bound about a lawn with a tree, up its trunk at a fright; two whose lawns
+## touch chase one another in spirals round a trunk, a catch swapping who chases whom. Calls
+## go out on the bus; motion runs on delta * sim.speed (pause freezes it).
 
 const D := preload("res://scripts/sim/sim_defs.gd")
 const WS := preload("res://scripts/fp/world_scale.gd")
