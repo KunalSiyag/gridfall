@@ -419,6 +419,12 @@ func _on_day_started(_day: int) -> void:
 		_after_lane_change()
 
 
+## The construction sites' parked machines (site id -> car id): the drive side's backhoe work
+## loop (the backhoe_work flag) animates them. {} until built.
+func site_machines() -> Dictionary:
+	return ambient.site_machine_ids() if _built else {}
+
+
 ## A new construction site: a backhoe parks beside it (queued; the sim tick must not touch the
 ## lanes, so the next step parks it).
 func _on_site_started(site: Dictionary) -> void:

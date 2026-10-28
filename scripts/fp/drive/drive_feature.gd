@@ -527,6 +527,7 @@ func _process(delta: float) -> void:
 		return
 	arm.apply_saved(_traffic())
 	var dt := minf(delta, 0.1)
+	arm.work_step(ctx, _traffic(), dt)  # the site backhoes' work loop (the backhoe_work flag)
 	if hijack.running():
 		if not ctx.is_modal():
 			_hijack_step(dt)
