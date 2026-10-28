@@ -115,6 +115,7 @@ func _check_guard() -> void:
 		not res.is_empty() and str(res["clip"]) == "hit_chest" and not bool(res["down"]),
 		"their guard turns the next jab aside"
 	)
+	K.check(fails, bool(res.get("guarded", false)), "and the blow says it never landed")
 	K.check(
 		fails,
 		(w.pos + w.vis_off).distance_to(q) < 0.02 * WS.M,

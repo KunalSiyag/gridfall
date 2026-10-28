@@ -8,7 +8,7 @@
 
 extends `FpFeature`
 
-Melee weapons (integration feature "melee"; docs/fp/ARCHITECTURE.md, Melee weapons): a baseball bat, a steel pipe or a bottle lying about the city for the hero to pick up and swing. Bats lie in the parks and by some homes, pipes on the sidewalk by the industrial lots and bottles by the shops (a share of each, the same ones every time for a city); those within SHOW_R of the hero are drawn, and one taken lies there again once the hero has been away beyond HIDE_R. E by one picks it up (pick() and interact_requested; with one in hand the two swap), Z drops it, and getting into a car or being knocked down drops it too. In hand it follows the right fist, and the actions feature swings it instead of punching (held(), landed()): weapon_hit on the bus reports every blow it lands, and a bottle breaks on the first one, in a spray of glass.
+Melee weapons (integration feature "melee"; docs/fp/ARCHITECTURE.md, Melee weapons): a baseball bat, a steel pipe or a bottle lying about the city for the hero to pick up and swing. Bats lie in the parks and by some homes, pipes on the sidewalk by the industrial lots and bottles by the shops (a share of each, the same ones every time for a city); those within SHOW_R of the hero are drawn, and one taken lies there again once the hero has been away beyond HIDE_R. E by one picks it up (pick() and interact_requested; with one in hand the two swap), Z drops it, and getting into a car or being knocked down drops it too. In hand it follows the right fist, and the actions feature swings it instead of punching (held(), landed()): weapon_hit on the bus reports every blow it lands, and a bottle breaks on the first one, in a spray of glass. A swing a guarded fighter turns aside never lands while weapon_disarm is on, and the odd turn-aside (DISARM_ODDS) knocks the weapon from the hero's hand, to lie a metre off and be picked up again.
 
 ### Constants
 
@@ -24,7 +24,8 @@ Melee weapons (integration feature "melee"; docs/fp/ARCHITECTURE.md, Melee weapo
 - `REFRESH_S = 0.5`
 - `PICK_R = 1.8`: E reaches a weapon within PICK_R (m) of the feet, the look passing within PICK_BALL (m) of it.
 - `PICK_BALL = 0.35`
-- `DROP_AHEAD = 0.45`: A dropped weapon lands DROP_AHEAD (m) in front of the feet.
+- `DROP_AHEAD = 0.45`: A dropped weapon lands DROP_AHEAD (m) in front of the feet; one knocked loose (weapon_disarm) flies DISARM_AHEAD.
+- `DISARM_AHEAD = 1.0`
 - `HOLD = Transform3D(Basis(Vector3(0.0, 0.0, 1.0), -PI * 0.5), Vector3(0.0, 0.085, 0.03))`: Where the grip sits in the right hand's bone frame (metres, scaled to the world): the weapon's +Y comes out of the fist on the thumb side.
 - `GLASS = 18`
 
@@ -33,7 +34,7 @@ Melee weapons (integration feature "melee"; docs/fp/ARCHITECTURE.md, Melee weapo
 - `spots: Array[Dictionary]`: Every place a weapon lies when nobody has taken it: {"kind", "pos", "yaw", "lot"}.
 - `items: Dictionary`: The weapons lying in the world now, by id.
 - `held_kind: String`: The kind in the hero's hand ("" for none).
-- `taken: int`: Weapons picked up, dropped and broken so far (tests).
+- `taken: int`: Weapons picked up, dropped, knocked loose and broken so far (tests).
 
 ### Inner classes
 
@@ -52,6 +53,7 @@ Melee weapons (integration feature "melee"; docs/fp/ARCHITECTURE.md, Melee weapo
 - `func landed(what: String, at: Vector3) -> bool`: A swing of the weapon in hand landed at a point on what ("person", "animal" or "prop"): weapon_hit, and a bottle breaks. Returns true when it broke.
 - `func take(id: int) -> bool`: Picks up the weapon with this id (one in hand is put down where it lay). False when there is no such weapon.
 - `func drop() -> bool`: Puts the weapon in hand down in front of the hero's feet; false with nothing in hand.
+- `func disarm() -> bool`: A swing a guarded fighter turned aside, when the turn-aside rolls a disarm (weapon_disarm, fight_back's DISARM_ODDS), knocks the weapon from the hero's hand: it lands DISARM_AHEAD (m) ahead and lies to be picked up again. False with nothing in hand.
 - `func refresh() -> void`: Draws the weapons at the spots within SHOW_R of the hero and lets those beyond HIDE_R go (a taken spot's weapon comes back once the hero is that far away).
 - `func pick(origin: Vector3, dir: Vector3, max_dist: float) -> Dictionary`: The weapon on the ground nearest along the ray, within PICK_R of the feet: {"kind": "weapon", "id", "tile", "pos", "dist", "label", "data": {"weapon"}}, or {}.
 - `func self_test() -> Dictionary`

@@ -1583,6 +1583,11 @@ func hit_walker(
 		# A throw that meets a wall or a solid prop mid-flight: marked here, on the throw's one
 		# emission (a second person_hit would double-book incidents and double-startle the street).
 		info["impact"] = res["impact"]
+	if bool(res.get("guarded", false)):
+		# A guarded fighter turned the blow aside (fight_tempers): nothing of it counted. Marked
+		# here so the caller can answer — a swung weapon can be knocked loose (weapon_disarm).
+		info["guarded"] = true
+		info["disarm"] = bool(res.get("disarm", false))
 	if ctx.bus != null:
 		ctx.bus.person_hit.emit(at, cause, info)
 	return info
