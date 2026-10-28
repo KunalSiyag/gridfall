@@ -199,6 +199,22 @@ func _check_hero_steps_then_shaft(pole: Vector3) -> void:
 			% [near / WS.M, stop / WS.M]
 		)
 	)
+	# The fixture's hero rig is detached from the tree: bone_world must answer its NaN
+	# sentinel (callers read NaN as "skip", never as a position), and the walk's foot
+	# contacts must never carry a NaN or garbage position from such a rig.
+	var rig: Variant = p.avatar.get("rig")
+	var hw: Vector3 = rig.call("bone_world", "Hips")
+	K.check(
+		fails, is_nan(hw.x), "an off-tree rig's bone_world answers the NaN sentinel, not a position"
+	)
+	var bad_contacts := 0
+	for c: Dictionary in rig.get("contacts"):
+		var cp: Vector3 = c["pos"]
+		if is_nan(cp.x) or is_nan(cp.y) or is_nan(cp.z):
+			bad_contacts += 1
+	K.check(
+		fails, bad_contacts == 0, "foot contacts never carry a NaN position (%d)" % bad_contacts
+	)
 
 
 ## Walking walkers: never a collision query -- the pole point is in the sidestep data and the
