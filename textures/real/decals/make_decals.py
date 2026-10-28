@@ -311,8 +311,11 @@ def main():
     Image.fromarray(np.clip(img, 0, 255).astype(np.uint8), "RGBA").save(os.path.join(OUT, "drain_0.png"), optimize=True)
     save("stain_0", *stain(51))
     save("puddle_0", *puddle(61))
-    # ORM for puddles: full AO, near-mirror roughness, no metal.
-    Image.fromarray(np.full((16, 16, 3), (255, 12, 0), np.uint8), "RGB").save(os.path.join(OUT, "puddle_orm.png"))
+    # ORM for puddles: full AO, no metal. Roughness 56/255 (~0.22): a wet sheen, not a mirror.
+    # At 12 a puddle was a perfect sky mirror, and a chain of them along a kerb at dawn read as
+    # a pale jagged band on the plaza (the "stripes on the ground" report); 0.22 keeps the wet
+    # look but scatters the sky instead of reflecting it.
+    Image.fromarray(np.full((16, 16, 3), (255, 56, 0), np.uint8), "RGB").save(os.path.join(OUT, "puddle_orm.png"))
     hoarding(71)
     grime(81)
     hedge(91)
