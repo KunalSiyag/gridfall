@@ -172,12 +172,15 @@ func _process(_delta: float) -> void:
 
 
 ## A staggered mayor turn under its own trace id; -1 (none due) or a mayor still deciding: nothing.
-func _run_turn(mi: int) -> void:
+## The day the turn belongs to (the staggered round's day in the drip and the gate); queued
+## dusk turns pass it bound, because they run after sim.day and turns.day have moved on.
+func _run_turn(mi: int, day: int = -1) -> void:
 	if mi < 0 or _mayor_in_flight[mi]:
 		return
+	var on_day := turns.day if day < 0 else day
 	var prev := [Trace.current(), Trace.current_label()]
-	Trace.begin("day %d turn %s" % [turns.day, str(D.MAYORS[mi]["id"])])
-	_run_mayor(mi, turns.day)
+	Trace.begin("day %d turn %s" % [on_day, str(D.MAYORS[mi]["id"])])
+	_run_mayor(mi, on_day)
 	Trace.set_current(prev[0], prev[1])
 
 
@@ -231,11 +234,22 @@ func _support_due(role: String, day: int) -> bool:
 	return false
 
 
-func _on_day_ended(_day: int) -> void:
-	# Staggered turns still waiting run now, on their own day and before its calls are flushed.
-	for mi: int in turns.take_all(_mayor_in_flight):
-		_run_turn(mi)
-	client.flush_cache()
+func _on_day_ended(day: int) -> void:
+	# Staggered turns still waiting run on their own day: one per frame in the sliced day job
+	# (the pump stops while the spread queue holds pieces, so they land before day_started; a
+	# save drains the queue first — to_dict() calls _finish_queue), inline in the sync path, as
+	# the dawn round already spreads. They bind the ending day, which turns.day and sim.day
+	# leave behind before they run. The session-cache flush trails the queue, so its write
+	# (IndexedDB sync on the web) leaves the day-boundary frame; saves and quit flush inline.
+	if sim.has_method("day_end_deferred") and sim.day_end_deferred():
+		for mi: int in turns.take_all(_mayor_in_flight):
+			_queue.append(_run_turn.bind(mi, day))
+		_queue.append(client.flush_cache)
+		busy_changed.emit(pending_calls())
+	else:
+		for mi: int in turns.take_all(_mayor_in_flight):
+			_run_turn(mi)
+		client.flush_cache()
 
 
 func _run_support(role: String, day: int, fn: Callable) -> void:

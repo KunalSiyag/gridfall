@@ -4,13 +4,16 @@ extends SceneTree
 ## one per frame through sim.run_in_phase, while the synchronous path (step_tick) still runs the
 ## whole round inline. Both paths end in the same city and brain state, every call of a round
 ## carries that round's trace id, and a save mid-round drains the round first. Staggered turns
-## (street mode) land without forcing a synchronous finish. Headless, offline.
+## (street mode) land without forcing a synchronous finish. The dusk sweep (waiting staggered
+## turns plus the session-cache flush) spreads the same way, on the ending day, before the next
+## dawn; the sync path still runs it inside day_ended. Headless, offline.
 ## Prints FP_BRAINSPREAD_TEST: PASS|FAIL.
 
 const TICKS := 20
 ## Frames per game day in _street_frames.
 const DAY_FRAMES := 1600
 const ROLES := ["mayor", "citizens", "news", "chaos", "operator", "council"]
+const D := preload("res://scripts/sim/sim_defs.gd")
 
 var fails: Array[String] = []
 
@@ -34,12 +37,13 @@ func _init() -> void:
 	_check_traces(a, "sync")
 	_check_traces(b, "sliced")
 	check(Trace.current().is_empty(), "no trace is left current after the rounds")
-	_check_save_mid_round(b)
+	await _check_save_mid_round(b)
 	_free_world(a)
 	_free_world(b)
 	await process_frame
 	await _check_staggered()
 	await process_frame
+	await _check_day_end_spread()
 	print("FP_BRAINSPREAD_TEST: " + ("PASS" if fails.is_empty() else "FAIL " + str(fails)))
 	quit(0 if fails.is_empty() else 1)
 
@@ -195,8 +199,15 @@ func _check_save_mid_round(w: Dictionary) -> void:
 	var sim: CitySim = w["sim"]
 	var brain: CityBrain = w["brain"]
 	var guard := 0
-	while not brain.spread_pending() and guard < 200000:
+	# The dusk sweep (a lone flush piece on unstaggered days) also pends the spread; let frames
+	# drain it and hold out for a mid-round pend (the day's round still short of its five mayors).
+	while (
+		(not brain.spread_pending() or int(w["decided"]) - int(w["base"]) == 5) and guard < 200000
+	):
 		guard += 1
+		if brain.spread_pending():
+			await process_frame
+			continue
 		if not sim.is_tick_running():
 			sim.begin_tick()
 		sim.pump(4.0)
@@ -275,6 +286,146 @@ func _street_frames(sim: CitySim, done: Callable) -> void:
 		frame += 1
 		sim._process(sim.day_seconds / float(DAY_FRAMES))
 		await process_frame
+
+
+## The dusk sweep spreads like the dawn round (docs/fp/slices/F-simperf.md): in the sliced day job
+## _on_day_ended leaves the waiting staggered turns — each bound to the ending day, which sim.day
+## and turns.day leave behind before they run — and the session-cache flush on the brain's queue,
+## so the boundary frame returns with the cache unwritten. The pump stops while the queue holds
+## work, so the pieces land one per frame before the next day_started. The sync path (step_tick)
+## still runs the whole sweep inside the emission, cache write included.
+func _check_day_end_spread() -> void:
+	await _dusk_sweep_sliced()
+	await _dusk_sweep_sync()
+
+
+## begin_tick when idle and pump(4.0) until done() holds; while work spreads the pump would
+## return at once, so those frames just pass (the brain's _process pops one piece per frame).
+func _pump_frames(sim: CitySim, done: Callable) -> void:
+	var guard := 0
+	while not bool(done.call()) and guard < 200000:
+		guard += 1
+		if sim.spread_pending():
+			await process_frame
+			continue
+		if not sim.is_tick_running():
+			sim.begin_tick()
+		sim.pump(4.0)
+
+
+func _dusk_sweep_sliced() -> void:
+	var w := _world(true)
+	var sim: CitySim = w["sim"]
+	var client: GmiClient = w["client"]
+	client.record_mode = false
+	var path := GmiClient.SESSION_CACHE_PATH
+	DirAccess.remove_absolute(ProjectSettings.globalize_path(path))
+	sim.set_speed(1)
+	sim.slice_budget_ms = 0.0
+	var brain: CityBrain = w["brain"]
+	var last := D.GROWTH_TICKS_PER_DAY - 1
+	await _street_frames(
+		sim,
+		func() -> bool:
+			return sim.day == 1 and sim.tick_in_day == last - 1 and not sim.job_pending()
+	)
+	# Five staggered turns for day 1, as its dawn would have queued them, this late in the day.
+	# Frames after this point only pass while the sim spreads work (never idle), so the brain's
+	# _process drip (MayorTurns.sim_idle) cannot fire them before the day-end sweep does.
+	brain.turns.start(1, true)
+	client.remember("brain|m0", 1, {"note": "dusk"})
+	var calls0: int = (w["calls"] as Array).size()
+	var forced0 := int(sim.slice_stats().get("sync_finishes", 0))
+	var dusk := {"end": -1, "deferred": false, "pending": false, "due": -1, "file": true}
+	var dawn := {"at": -1, "file": false}
+	sim.day_ended.connect(
+		func(d: int) -> void:
+			dusk["end"] = d
+			dusk["deferred"] = sim.day_end_deferred()
+			dusk["pending"] = brain.spread_pending()
+			dusk["due"] = brain.turns.due.size()
+			dusk["file"] = FileAccess.file_exists(path)
+	)
+	sim.day_started.connect(
+		func(d: int) -> void:
+			if d == 2:
+				dawn["at"] = (w["calls"] as Array).size()
+				dawn["file"] = FileAccess.file_exists(path)
+	)
+	await _pump_frames(sim, func() -> bool: return int(dusk["end"]) >= 1)
+	await _pump_frames(sim, func() -> bool: return int(dawn["at"]) >= 0)
+	var held := (w["calls"] as Array).slice(calls0, int(dawn["at"]))
+	var mayors := held.filter(
+		func(c: Array) -> bool: return str(c[1]) == "mayor" and int(c[0]) == 1
+	)
+	var swept := (
+		int(dusk["end"]) == 1
+		and bool(dusk["deferred"])
+		and bool(dusk["pending"])
+		and int(dusk["due"]) == 0
+		and not bool(dusk["file"])
+	)
+	check(
+		swept, "sliced: day_ended queues the dusk sweep (turns + flush), the cache still unwritten"
+	)
+	check(
+		mayors.size() == 5, "sliced: the swept turns still ran on the ending day (%s)" % str(mayors)
+	)
+	check(bool(dawn["file"]), "sliced: the flush landed before the next dawn")
+	check(
+		int(sim.slice_stats().get("sync_finishes", 0)) == forced0,
+		"sliced: the dusk pieces never forced a synchronous finish"
+	)
+	await _pump_frames(
+		sim, func() -> bool: return not sim.job_pending() and not sim.spread_pending()
+	)
+	DirAccess.remove_absolute(ProjectSettings.globalize_path(path))
+	_free_world(w)
+	await process_frame
+
+
+## The sync path: the same sweep runs inside the emission, the flush write included. The
+## world's first dawn ran before stagger could be set, so the staggered round is day 2's.
+func _dusk_sweep_sync() -> void:
+	var s := _world(false)
+	var sbrain: CityBrain = s["brain"]
+	sbrain.stagger_mayors = true
+	var ssim: CitySim = s["sim"]
+	var sclient: GmiClient = s["client"]
+	sclient.record_mode = false
+	var path := GmiClient.SESSION_CACHE_PATH
+	while ssim.day < 2:
+		ssim.step_tick()
+	DirAccess.remove_absolute(ProjectSettings.globalize_path(path))
+	sclient.remember("brain|m0", 2, {"note": "dusk"})
+	var scalls0: int = (s["calls"] as Array).size()
+	var obs := {"end": -1, "deferred": true, "pending": true, "due": -1, "file": false}
+	ssim.day_ended.connect(
+		func(d: int) -> void:
+			obs["end"] = d
+			obs["deferred"] = ssim.day_end_deferred()
+			obs["pending"] = sbrain.spread_pending()
+			obs["due"] = sbrain.turns.due.size()
+			obs["file"] = FileAccess.file_exists(path)
+	)
+	while ssim.day < 3:
+		ssim.step_tick()
+	var smayors := (s["calls"] as Array).slice(scalls0).filter(
+		func(c: Array) -> bool: return str(c[1]) == "mayor" and int(c[0]) == 2
+	)
+	var inline := (
+		int(obs["end"]) == 2
+		and not bool(obs["deferred"])
+		and not bool(obs["pending"])
+		and int(obs["due"]) == 0
+		and bool(obs["file"])
+	)
+	check(inline, "sync: the dusk sweep runs inside day_ended, cache write included")
+	check(smayors.size() == 5, "sync: the swept turns ran on the ending day (%s)" % str(smayors))
+	check(Trace.current().is_empty(), "no trace is left current after the dusk sweeps")
+	DirAccess.remove_absolute(ProjectSettings.globalize_path(path))
+	_free_world(s)
+	await process_frame
 
 
 func _node(path: String) -> Node:
