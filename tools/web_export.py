@@ -19,12 +19,15 @@ CAP_TREES = (
     "models/real/street/",
     "models/real/vehicles/",
     "textures/real/",
+    "env/",
 )
 ## Textures players read up close stay at their source resolution; everything else caps at 256 px.
 CAP_LIMIT = 256
 ## The tiling ground materials are 2048 px and would alone fill the boot pack; 1024 still tiles
-## cleanly and is a quarter of the bytes.
-CAP_LIMITS = {"textures/real/": 1024}
+## cleanly and is a quarter of the bytes. The sky HDRIs are 2048x1024 and import lossless (~11 MB
+## each in the sky pack); 1024 px wide keeps the horizon smooth (the sky shader never reads finer
+## detail) and quarters them too.
+CAP_LIMITS = {"textures/real/": 1024, "env/": 1024}
 UNCAPPED_TREES = ("assets/posters/",)
 UNCAPPED_NAMES = ("poster", "billboard")
 STAGE_TREES = (
