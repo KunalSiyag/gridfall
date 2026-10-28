@@ -28,6 +28,9 @@ The backhoe loader's arm rig, for drive_feature.gd. The full model carries the l
 - `PILE_W = 1.4`: The dirt pile: a squat mound this wide at the base and this high when full (m).
 - `PILE_H = 0.55`
 - `HINGE_AHEAD = 2.2`: The dig spot sits at the bucket hinge, this far ahead of the car's centre (m, the model's loader geometry).
+- `WORK_STAGES = ["clearing", "excavation", "grading"]`: The work loop (the backhoe_work flag): the stages a parked site machine digs through.
+- `WORK_CYCLE_S = 9.0`: One dig cycle's span (s): the arm down, a curled scoop, the haul up, the dump, the settle.
+- `WORK_META = "arm_work"`: A pose the work loop wrote carries this tag on the boom node, so a save keeps only the hero's own posing (save_dict skips tagged rigs, the hero's first step at the wheel clears the tag).
 - `PILE_MOVE = 3.0`: A dig this far from where the pile stands starts it again at the new spot (m).
 - `DIRT = Color(0.33, 0.22, 0.12)`: Dirt brown, rough.
 
@@ -46,6 +49,7 @@ The backhoe loader's arm rig, for drive_feature.gd. The full model carries the l
 - `func from_dict(d: Variant) -> void`: The save's "backhoe" half: the poses wait for their machines and the pile for a drawn car's parent, all put back by apply_saved once the load's frames have drawn them.
 - `func apply_saved(traffic: FpFeature) -> void`: Puts back what a save left, once the load's frames have drawn the world: each posed backhoe is found by the curb slot its machine came from (a machine parks there again) and posed, the pile standing where it stood -- its level kept, so a dig left half-done goes on from there. Nothing to do once all is back.
 - `func step(ctx: FpContext, traffic: FpFeature, car_id: int, pos: Vector3, heading: Vector2, dt: float) -> void`: One step at the wheel of car car_id at pos turned along heading (its centre, on the ground): the keys ease the arm and bucket, and a dig at a site grows the pile. Nothing to do without the rig (any other car).
+- `func work_step(ctx: FpContext, traffic: FpFeature, dt: float) -> void`: One frame of the site machines' work loop (the backhoe_work flag): every backhoe parked at a live construction site (traffic's site machines) digs its cycle while the site is clearing, excavating or grading. The hero's own machine never joins (a driven car is skipped), a machine the hero has posed stays theirs, and a site past the digging stages leaves its machine still. Nothing to do without the flag, the sim or a site machine.
 
 ## `scripts/fp/drive/car_body.gd`
 

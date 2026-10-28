@@ -466,6 +466,11 @@ func park_site_machine(site: Dictionary) -> VH.Car:
 	return null
 
 
+## The site machines parked (site id -> car id), for the backhoe's work loop; {} while none.
+func site_machine_ids() -> Dictionary:
+	return _site_machines
+
+
 ## The machine parked beside the site leaves with the crew (nothing when it had none).
 func clear_site_machine(site: Dictionary) -> void:
 	var sid := int(site.get("id", -1))

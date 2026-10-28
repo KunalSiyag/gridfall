@@ -120,6 +120,7 @@ func _init() -> void:
 	await _check_horn_voices_rides()
 	await _check_ambient_driver()
 	_check_site_machine()
+	_check_backhoe_work()
 	_check_car_vs_posts()
 	_check_blocked_horns()
 	_check_horn_reach()
@@ -2905,6 +2906,116 @@ func _check_site_machine() -> void:
 	ctx.sim.site_finished.emit(s)
 	traffic.call("step", DT * 2.0)
 	K.check(fails, not vh.by_id.has(id), "site machine: and leaves with the crew when it is built")
+	_clear_others()
+
+
+## A site backhoe works the site on its own (the backhoe_work flag): parked beside a live site
+## in a digging stage its arm cycles through the dig on its own phase, the flag off or the stage
+## past the digging leaves it still, the hero at its wheel freezes it, and the loop's own posing
+## is never saved.
+func _check_backhoe_work() -> void:
+	FeatureFlags.set_override("backhoe_work", true)
+	var amb: Object = traffic.get("ambient")
+	amb.set("jcb_model", Callable(traffic, "jcb_model"))
+	var m: int = traffic.call("jcb_model")
+	K.check(fails, m >= 0, "backhoe work: fixture, the backhoe model is loaded")
+	if m < 0:
+		return
+	_clear_others()
+	var lg: LG = traffic.get("lanes")
+	var vh := _vh()
+	var site := -1
+	for r: int in road:
+		if not lg.parkable(r):
+			continue
+		for n: int in lg.neighbours(r):
+			if ctx.sim.kind[n] != D.ROAD:
+				site = n
+				break
+		if site >= 0:
+			break
+	K.check(fails, site >= 0, "backhoe work: fixture, a lot beside a parkable road")
+	if site < 0:
+		return
+	var s := {
+		"id": 9007,
+		"i": site,
+		"x": D.tx(site),
+		"y": D.ty(site),
+		"type": "build",
+		"plan": "school",
+		"label": "School",
+		"crew": {},
+		"stages": D.SITE_STAGES["build"],
+		"stage": 1,
+		"stage_work": 10.0,
+		"progress": 0.0,
+	}
+	ctx.sim.sites[site] = s
+	ctx.sim.site_started.emit(s)
+	traffic.call("step", DT * 2.0)
+	var found: VH.Car = null
+	for c: VH.Car in vh.cars:
+		if c.label == "a backhoe" and c.slot_tile >= 0:
+			found = c
+	K.check(fails, found != null, "backhoe work: the site's machine parks beside it")
+	if found == null:
+		ctx.sim.sites.erase(site)
+		_clear_others()
+		return
+	_beside(found, OBB.side_axis(found.yaw), -0.6)
+	traffic.call("sync_visuals", DT)
+	var node: Node3D = found.node
+	var boom: Node3D = node.find_child("Arm_Boom", true, false) if node != null else null
+	K.check(fails, boom != null, "backhoe work: the drawn machine carries its arm")
+	if boom == null:
+		ctx.sim.sites.erase(site)
+		ctx.sim.site_finished.emit(s)
+		traffic.call("step", DT * 2.0)
+		_clear_others()
+		return
+	(drive.get("arm") as Object).call("work_step", ctx, traffic, DT)
+	var a0 := float(boom.get_meta("arm_boom", 0.0))
+	for _k in range(24):
+		(drive.get("arm") as Object).call("work_step", ctx, traffic, 0.25)
+	var a1 := float(boom.get_meta("arm_boom", 0.0))
+	K.check(
+		fails,
+		boom.has_meta("arm_work") and absf(a1 - a0) > 0.01,
+		"backhoe work: the arm works the dig cycle on its own (%.2f -> %.2f rad)" % [a0, a1]
+	)
+	var sv: Dictionary = (drive.get("arm") as Object).save_dict(traffic)
+	K.check(fails, sv.is_empty(), "backhoe work: the loop's own posing is never saved")
+	s["stage"] = 3
+	for _k in range(8):
+		(drive.get("arm") as Object).call("work_step", ctx, traffic, 0.25)
+	K.check(
+		fails,
+		is_equal_approx(float(boom.get_meta("arm_boom", 0.0)), a1),
+		"backhoe work: past the digging stages the machine idles"
+	)
+	s["stage"] = 1
+	K.check(fails, drive.call("enter") == true, "backhoe work: the hero gets in")
+	for _k in range(8):
+		(drive.get("arm") as Object).call("work_step", ctx, traffic, 0.25)
+	K.check(
+		fails,
+		is_equal_approx(float(boom.get_meta("arm_boom", 0.0)), a1),
+		"backhoe work: the hero at the wheel takes the arm over where it is"
+	)
+	K.check(fails, drive.call("leave") == true, "backhoe work: and back out")
+	FeatureFlags.set_override("backhoe_work", false)
+	for _k in range(8):
+		(drive.get("arm") as Object).call("work_step", ctx, traffic, 0.25)
+	K.check(
+		fails,
+		is_equal_approx(float(boom.get_meta("arm_boom", 0.0)), a1),
+		"backhoe work: the flag off leaves the arm where it was"
+	)
+	FeatureFlags.set_override("backhoe_work", true)
+	ctx.sim.sites.erase(site)
+	ctx.sim.site_finished.emit(s)
+	traffic.call("step", DT * 2.0)
 	_clear_others()
 
 

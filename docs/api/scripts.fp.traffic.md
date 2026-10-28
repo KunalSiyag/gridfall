@@ -62,6 +62,7 @@ Ambient filler (docs/fp/slices/E-traffic.md §6): unnamed commuters (some of the
 - `func maintain(p: Vector3, fwd: Vector3, sync: bool) -> void`: Removes ambient agents beyond the radius (out of sight) and tops up toward the targets. sync: fill completely now (first fill or after a teleport), anywhere out of the camera's view.
 - `func fill_parking() -> int`: Fills curb slots with parked vehicles, deterministically per slot (bulk: one lane rebuild after). Returns how many were parked.
 - `func park_site_machine(site: Dictionary) -> VH.Car`: Parks a backhoe at the kerb of a road tile beside the construction site (a work machine on the job), the slot nearest the site's own kerb, if one is free. Returns the car, or null when the flag is off, the site already has one, no slot is free or no road runs beside the site.
+- `func site_machine_ids() -> Dictionary`: The site machines parked (site id -> car id), for the backhoe's work loop; {} while none.
 - `func clear_site_machine(site: Dictionary) -> void`: The machine parked beside the site leaves with the crew (nothing when it had none).
 
 ## `scripts/fp/traffic/body_spheres.gd`
@@ -1185,6 +1186,7 @@ Traffic and pedestrians on lanes (slice E, docs/fp/slices/E-traffic.md): one roa
 - `func setup(p_ctx: FpContext) -> void`
 - `func teardown() -> void`
 - `func on_world_rebuilt() -> void`
+- `func site_machines() -> Dictionary`: The construction sites' parked machines (site id -> car id): the drive side's backhoe work loop (the backhoe_work flag) animates them. {} until built.
 - `func step(dt: float) -> void`: Advances everything by dt seconds of game-scaled time (test hook; _process calls it in steps of at most 1/30 s).
 - `func sync_visuals(delta: float) -> void`: Draws every agent (full models near, MultiMesh LOD far) and updates lamp states. Parked cars are redrawn only when the parked set changes or the camera moves a little.
 - `func on_screen(p: Vector3) -> bool`: True when p could be on screen now (inside the camera frustum and within car range).

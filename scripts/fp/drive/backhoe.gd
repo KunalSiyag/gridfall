@@ -36,6 +36,13 @@ const PILE_H := 0.55
 ## The dig spot sits at the bucket hinge, this far ahead of the car's centre (m, the model's
 ## loader geometry).
 const HINGE_AHEAD := 2.2
+## The work loop (the backhoe_work flag): the stages a parked site machine digs through.
+const WORK_STAGES := ["clearing", "excavation", "grading"]
+## One dig cycle's span (s): the arm down, a curled scoop, the haul up, the dump, the settle.
+const WORK_CYCLE_S := 9.0
+## A pose the work loop wrote carries this tag on the boom node, so a save keeps only the hero's
+## own posing (save_dict skips tagged rigs, the hero's first step at the wheel clears the tag).
+const WORK_META := "arm_work"
 ## A dig this far from where the pile stands starts it again at the new spot (m).
 const PILE_MOVE := 3.0
 ## Dirt brown, rough.
@@ -55,6 +62,9 @@ var _dirt: Dictionary = {}
 var _saved_poses: Array = []
 ## The pile a save left to stand again ([x, y, z, levels]), else empty.
 var _saved_pile: Array = []
+## The work loop's own clock (s of stepped frames; like construction_kit's animate, so a replay
+## at the same frames sees the same sweep).
+var _work_t: float = 0.0
 
 
 ## Another car (or none): forget its rig; the pile it dug stays put, its nodes keeping their
@@ -101,6 +111,8 @@ func save_dict(traffic: FpFeature) -> Dictionary:
 			var rig: Dictionary = node.get_meta(RIG_META)
 			if rig.is_empty() or int(c.get("home_tile")) < 0:
 				continue
+			if (rig["boom"] as Node3D).has_meta(WORK_META):
+				continue  # the work loop's own posing is never saved
 			var p_boom := float((rig["boom"] as Node3D).get_meta("arm_boom", 0.0))
 			var p_bucket := float((rig["bucket"] as Node3D).get_meta("arm_bucket", 0.0))
 			if is_zero_approx(p_boom) and is_zero_approx(p_bucket):
@@ -199,6 +211,9 @@ func step(
 		BUCKET_RATE * dt
 	)
 	_apply()
+	if not _rig.is_empty() and (_rig["boom"] as Node3D).has_meta(WORK_META):
+		# The hero's own posing now: the arm is theirs, the save may keep it.
+		(_rig["boom"] as Node3D).remove_meta(WORK_META)
 	var spot := pos + Vector3(heading.x, 0.0, heading.y) * HINGE_AHEAD * WS.M
 	var ground := _dig_ground(ctx, spot)
 	if (
@@ -278,6 +293,98 @@ func _pose(rig: Dictionary, p_boom: float, p_bucket: float) -> void:
 	)
 	b.set_meta("arm_boom", p_boom)
 	k.set_meta("arm_bucket", p_bucket)
+
+
+## One frame of the site machines' work loop (the backhoe_work flag): every backhoe parked at a
+## live construction site (traffic's site machines) digs its cycle while the site is clearing,
+## excavating or grading. The hero's own machine never joins (a driven car is skipped), a machine
+## the hero has posed stays theirs, and a site past the digging stages leaves its machine still.
+## Nothing to do without the flag, the sim or a site machine.
+func work_step(ctx: FpContext, traffic: FpFeature, dt: float) -> void:
+	if not FeatureFlags.enabled("backhoe_work"):
+		return
+	if ctx == null or ctx.sim == null or traffic == null or dt <= 0.0:
+		return
+	_work_t += dt
+	var machines: Dictionary = traffic.call("site_machines")
+	if machines.is_empty():
+		return
+	var vh: Variant = traffic.get("vehicles")
+	if not (vh is Object):
+		return
+	var by_id: Variant = (vh as Object).get("by_id")
+	for sid: Variant in machines.keys():
+		var c: Variant = (by_id as Dictionary).get(int(machines[sid]))
+		if c == null or bool((c as Object).get("driven")):
+			continue
+		_work_machine(ctx, c, int(sid))
+
+
+## One site's machine digs its cycle: the pose is a pure function of the loop clock and the
+## site's phase (the site id, the day and the city seed hashed, so a replay sees the same sweep),
+## written with the work tag. The hero's own posing (an untagged rig off the rest) is left alone.
+func _work_machine(ctx: FpContext, c: Variant, sid: int) -> void:
+	var node: Node3D = (c as Object).get("node") as Node3D
+	if node == null:
+		return
+	var rig: Dictionary = node.get_meta(RIG_META) if node.has_meta(RIG_META) else _rig_on(node)
+	if rig.is_empty():
+		return
+	node.set_meta(RIG_META, rig)
+	if not _site_digging(ctx, sid):
+		return
+	var b: Node3D = rig["boom"]
+	if not b.has_meta(WORK_META) and not is_zero_approx(float(b.get_meta("arm_boom", 0.0))):
+		return  # posed by the hero: the loop never takes a machine back
+	var phase := float(absi(hash(Vector3i(sid, ctx.sim.day, ctx.sim.city_seed))) % 1000) / 1000.0
+	var p := fposmod(_work_t / WORK_CYCLE_S + phase, 1.0)
+	_pose(rig, _work_boom(p), _work_bucket(p))
+	b.set_meta(WORK_META, true)
+
+
+## True while the site with id sid is in a digging stage (clearing, excavation, grading).
+func _site_digging(ctx: FpContext, sid: int) -> bool:
+	for s: Variant in ctx.sim.sites.values():
+		if int((s as Dictionary).get("id", -1)) == sid:
+			return ctx.sim.site_stage_name(s) in WORK_STAGES
+	return false
+
+
+## The 0..1 share of the cycle's segment [a, b] covered by p, eased at both ends.
+static func _work_ramp(p: float, a: float, b: float) -> float:
+	return smoothstep(a, b, p)
+
+
+## The boom angle through the cycle (rad): carry, lower to the ground, hold for the scoop, haul
+## up, hold for the dump, and settle back for the next pass.
+static func _work_boom(p: float) -> float:
+	var down := deg_to_rad(5.0)
+	var carry := deg_to_rad(40.0)
+	var up := deg_to_rad(45.0)
+	if p < 0.20:
+		return lerpf(carry, down, _work_ramp(p, 0.0, 0.20))
+	if p < 0.40:
+		return down
+	if p < 0.65:
+		return lerpf(down, up, _work_ramp(p, 0.40, 0.65))
+	if p < 0.80:
+		return up
+	return lerpf(up, carry, _work_ramp(p, 0.80, 1.0))
+
+
+## The bucket angle through the cycle (rad): tipped out as the arm drops, the curl is the scoop,
+## held through the haul, tipped out at the top for the dump, curled home for the next pass.
+static func _work_bucket(p: float) -> float:
+	var out := deg_to_rad(-60.0)
+	if p < 0.20:
+		return lerpf(BUCKET_MAX, out, _work_ramp(p, 0.0, 0.20))
+	if p < 0.40:
+		return lerpf(out, BUCKET_MAX, _work_ramp(p, 0.20, 0.40))
+	if p < 0.65:
+		return BUCKET_MAX
+	if p < 0.80:
+		return lerpf(BUCKET_MAX, out, _work_ramp(p, 0.65, 0.80))
+	return lerpf(out, BUCKET_MAX, _work_ramp(p, 0.80, 1.0))
 
 
 ## The ground height at the spot ahead while it is a construction site's ground (the pile grows
