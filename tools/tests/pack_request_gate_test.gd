@@ -37,7 +37,7 @@ class FakeStream:
 func _fixture_scene() -> String:
 	var path := "user://gf_gate_fixture.tscn"
 	var f := FileAccess.open(path, FileAccess.WRITE)
-	f.store_string("[gd_scene format=3]\n\n[node name=\"Fixture\" type=\"Node3D\"]\n")
+	f.store_string('[gd_scene format=3]\n\n[node name="Fixture" type="Node3D"]\n')
 	f.close()
 	return path
 
@@ -69,9 +69,7 @@ func _init() -> void:
 	K.check(fails, view._pack_waiting.get("traffic", []) == [fixture], "pending pack: path waits")
 	K.check(fails, stream.demands == ["traffic"], "pending pack: pack demanded once")
 	K.check(fails, view._scene(fixture) == null, "pending pack: second miss stays uncached")
-	K.check(
-		fails, view._pack_waiting["traffic"].size() == 1, "pending pack: wait recorded once"
-	)
+	K.check(fails, view._pack_waiting["traffic"].size() == 1, "pending pack: wait recorded once")
 
 	# _warm_one yields (false) instead of caching a miss.
 	K.check(fails, view._warm_one(fixture) == false, "pending pack: _warm_one yields")
@@ -90,7 +88,8 @@ func _init() -> void:
 	var missing := "user://gf_gate_missing.tscn"
 	K.check(fails, view._scene(missing) == null, "genuine miss returns null")
 	K.check(
-		fails, view._scenes.has(missing) and view._scenes[missing] == null,
+		fails,
+		view._scenes.has(missing) and view._scenes[missing] == null,
 		"genuine miss caches null (terminates)"
 	)
 
