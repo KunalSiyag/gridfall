@@ -93,10 +93,13 @@ func _image_client(c: GmiClient, fake: FakeTransport) -> GmiImageClient:
 	return ic
 
 
-## Advances virtual time in 50 ms steps, ticking and yielding frames, until done() or a wall cap.
-func _pump(ic: GmiImageClient, done: Callable, wall_ms: int = 3000) -> bool:
+## Advances virtual time in 50 ms steps until done() or the VIRTUAL-ms cap: the cap was wall
+## ms, which a loaded CI box stretches into far fewer frames, so the pump stopped mid-flight and
+## the day-cap asserts saw half-run state. A 30 s wall backstop keeps a stuck done() off the gate.
+func _pump(ic: GmiImageClient, done: Callable, virt_ms: int = 30000) -> bool:
 	var t0 := Time.get_ticks_msec()
-	while Time.get_ticks_msec() - t0 < wall_ms:
+	var end := _ms + virt_ms
+	while _ms < end and Time.get_ticks_msec() - t0 < 30000:
 		_ms += 50.0
 		ic.tick(0.05)
 		await process_frame
@@ -176,7 +179,7 @@ func _test_live_flow() -> void:
 	ic.request("campaign_argon", "test campaign prompt one", "1536x640")
 	state["returned"] = true
 	check(got.is_empty(), "a cache hit is still deferred")
-	await _pump(ic, func() -> bool: return not got.is_empty(), 500)
+	await _pump(ic, func() -> bool: return not got.is_empty(), 5000)
 	check(fake.calls.size() == n_calls, "the same prompt again makes 0 transport calls")
 	check(int(ic.stats["cache_hits"]) == hits + 1, "stats.cache_hits increments")
 	check(not got.is_empty() and got[0]["after_return"], "cache hit image_ready fires after request() returned")
@@ -190,7 +193,7 @@ func _test_default_transport_offline() -> void:
 	var got: Array = []
 	ic.image_ready.connect(func(_k: String, _t: Texture2D, m: Dictionary) -> void: got.append(m))
 	ic.request("gazette", "offline guard prompt", "768x1152")
-	await _pump(ic, func() -> bool: return not got.is_empty(), 500)
+	await _pump(ic, func() -> bool: return not got.is_empty(), 5000)
 	check(ic.http_requests == 0 and ic.transport_calls == 0, "default transport under GRIDFALL_OFFLINE=1 makes 0 network requests")
 	check(not got.is_empty() and not got[0].get("provisional", true), "the offline request still gets a final texture")
 	ic.queue_free()
@@ -213,16 +216,16 @@ func _test_breaker() -> void:
 	var got: Array[Dictionary] = []
 	ic.image_ready.connect(func(_k: String, _t: Texture2D, m: Dictionary) -> void: got.append(m))
 	ic.request("campaign_kimi", "breaker prompt after", "1536x640")
-	await _pump(ic, func() -> bool: return not got.is_empty(), 500)
+	await _pump(ic, func() -> bool: return not got.is_empty(), 5000)
 	check(fake.calls.size() == n_calls, "an open breaker makes 0 transport calls")
 	check(not got.is_empty() and str(got[-1].get("source", "")) in ["prebaked", "procedural"] and not got[-1].get("provisional", true), "an open breaker falls back")
 	_day += 1
 	check(not ic.breaker_open(), "a later game day closes the breaker")
 	fake.default_reply = _ok_reply
 	ic.request("campaign_kimi", "breaker prompt next day", "1536x640")
-	await _pump(ic, func() -> bool: return fake.calls.size() > n_calls, 500)
+	await _pump(ic, func() -> bool: return fake.calls.size() > n_calls, 5000)
 	check(fake.calls.size() > n_calls, "after the reset the live path submits again")
-	await _pump(ic, func() -> bool: return ic.in_flight() == 0, 1500)
+	await _pump(ic, func() -> bool: return ic.in_flight() == 0, 15000)
 	ic.queue_free()
 	c.queue_free()
 
@@ -255,7 +258,7 @@ func _test_budgets() -> void:
 	var before := fake.posts().size()
 	finals.clear()
 	var last := ic.request("gazette", "budget prompt past the session cap", "768x1152")
-	await _pump(ic, func() -> bool: return finals.has(last), 800)
+	await _pump(ic, func() -> bool: return finals.has(last), 8000)
 	check(fake.posts().size() == before, "after 30 per session no more live submits")
 	check(finals.has(last) and str(finals[last].get("source", "")) != "live", "past the session cap the request falls back")
 	ic.queue_free()
@@ -276,7 +279,7 @@ func _test_queue_order() -> void:
 	var order: Array = fake.posts().map(func(p: Dictionary) -> String: return str(p["body"]))
 	check(order.size() == 3 and str(order[0]).contains("near") and str(order[1]).contains("far") and str(order[2]).contains("no position"), "equal priority submits nearest pos first, INF last")
 	check(ic.peak_in_flight <= GmiImageClient.MAX_IN_FLIGHT, "queue run keeps <= 2 in flight")
-	await _pump(ic, func() -> bool: return ic.in_flight() == 0, 1500)
+	await _pump(ic, func() -> bool: return ic.in_flight() == 0, 15000)
 	ic.queue_free()
 	c.queue_free()
 
