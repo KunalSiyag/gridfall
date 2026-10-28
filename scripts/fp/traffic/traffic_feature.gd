@@ -183,6 +183,7 @@ func setup(p_ctx: FpContext) -> void:
 		ctx.bus.conversation_changed.connect(_on_conversation)
 		ctx.bus.hero_action.connect(_on_hero_action)
 		ctx.bus.horn_sounded.connect(_on_horn)
+		ctx.bus.settings_changed.connect(_on_settings_changed)
 	if ctx.residents != null:
 		ctx.residents.trip_started.connect(_on_trip_started)
 		ctx.residents.resident_departed.connect(_on_departed)
@@ -1627,6 +1628,12 @@ func _hero_open() -> bool:
 func _on_hero_punched(at: Vector3, strength: float, push: Vector3) -> void:
 	if ctx.bus != null:
 		ctx.bus.hero_hit.emit(at, "punch", strength, push)
+
+
+## The settings changed: the quality mode may be new, so the ambient spawn caps re-read at the
+## next fill (ambient.gd caches them, quality.gd's density_caps).
+func _on_settings_changed(_s: Dictionary) -> void:
+	ambient.refresh_caps()
 
 
 ## The hero's horn sounded at (xz), carrying radius world units (horn_street): the people it

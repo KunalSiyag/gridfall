@@ -1096,6 +1096,19 @@ func _check_density_caps() -> void:
 		spawned == 0 and want0 == Vector2i.ZERO,
 		"density caps: a zero cap spawns nothing on a synchronous fill (%d spawned)" % spawned
 	)
+	# The live (non-override) read is cached until refresh_caps: off-web it is empty either
+	# way, so drive the cache directly.
+	amb.set("_caps_cache", {"traffic": t0.x - 1})
+	amb.set("_caps_dirty", false)
+	K.check(
+		fails, amb.targets(p).x == t0.x - 1, "density caps: the cached caps apply without a re-read"
+	)
+	amb.call("refresh_caps")
+	K.check(
+		fails,
+		amb.targets(p).x == t0.x,
+		"density caps: refresh_caps re-reads at the next fill (back to %d)" % t0.x
+	)
 
 
 func _check_following() -> void:
