@@ -124,6 +124,10 @@ var _static_ver: int = -1
 var _static_cam := Vector3(INF, INF, INF)
 var _maint_t: float = 0.0
 var _stops_sig: String = ""
+## A built/cleared road tile wants the global walker-post rebuild; it runs once at the next
+## step, not once per tile of a growth tick (traffic_perf_probe: 0.24 ms native per call, and a
+## day-1 city fires _tile_changed ~275 times).
+var _posts_dirty := false
 var _built: bool = false
 ## Construction sites whose backhoe still needs parking (site_started fires inside the sim tick, so
 ## the lanes are touched on the next step), and finished sites whose machine is to clear.
@@ -379,7 +383,7 @@ func _tile_changed(i: int) -> void:
 	junctions.build_props(i)
 	for n: int in lanes.neighbours(i):
 		junctions.build_props(n)
-	walkers.rebuild_posts(ctx.sim)
+	_posts_dirty = true
 	ambient.refresh_tiles()
 	_after_lane_change()
 
@@ -524,6 +528,9 @@ func step(dt: float) -> void:
 	reactions.step(dt)
 	trips.step(dt)
 	fleets.step(dt)
+	if _posts_dirty:
+		_posts_dirty = false
+		walkers.rebuild_posts(ctx.sim)
 	_maint_t -= dt
 	if _maint_t <= 0.0:
 		_maint_t = 0.5
