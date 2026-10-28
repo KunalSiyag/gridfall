@@ -190,6 +190,8 @@ var wetness: float = 0.0
 var _queue: Dictionary = {}
 ## Scene paths being loaded on a thread for the queue (path -> true).
 var _warming: Dictionary = {}
+## Paths whose warm-up already reported a blocking main-thread load (one line per path).
+var _sync_load_reported: Dictionary = {}
 var _flicker_lights: Array[OmniLight3D] = []
 var _street: STREET
 var _ground_chunks: Array[MeshInstance3D] = []
@@ -1541,12 +1543,24 @@ func warm_scenes(paths: Array) -> void:
 
 ## Polls one threaded load; true once the scene is in the cache. Headless runs (the dummy renderer's
 ## texture storage is not thread-safe) load on the main thread instead.
+## The threaded warm-up fell back to a blocking main-thread load of path (65-100 ms for the
+## realistic GLBs — the pop-in spike when a tile's model first appears). Expected headless;
+## anywhere else it means the build lost thread support. Reported once per path.
+func _report_sync_load(path: String) -> void:
+	if _sync_load_reported.has(path):
+		return
+	_sync_load_reported[path] = true
+	if DisplayServer.get_name() != "headless":
+		push_warning("city_view: blocking model load, threaded warm-up unavailable: %s" % path)
+
+
 func _warm_one(path: String) -> bool:
 	if _scenes.has(path):
 		return true
 	if not _warming.has(path):
 		if DisplayServer.get_name() == "headless" or not WebSupport.threads_supported() \
 				or ResourceLoader.load_threaded_request(path, "PackedScene") != OK:
+			_report_sync_load(path)
 			_scene(path)
 			return true
 		_warming[path] = true
