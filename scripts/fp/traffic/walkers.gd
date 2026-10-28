@@ -145,6 +145,23 @@ var on_done: Callable
 var on_removed: Callable
 
 
+## Deterministic default streams (the multiplier bases setup() reseeds from): fixtures that
+## skip setup() and only make()/stand() reproduce run to run — an unseeded
+## RandomNumberGenerator is randomized per process. The game always overrides these in setup().
+func _init() -> void:
+	_rng.seed = 7027
+	_look_rng.seed = 4099
+
+
+## A stream seeded at declaration: an unseeded RandomNumberGenerator is randomized per process,
+## so a member whose default must reproduce run to run (a fixture skipping setup()) seeds its
+## own. setup() reseeds from the sim seed as ever.
+static func seeded_rng(seed: int) -> RandomNumberGenerator:
+	var g := RandomNumberGenerator.new()
+	g.seed = seed
+	return g
+
+
 func setup(p_sw: SW, p_lg: LG, p_jn: JN, p_vh: VH, seed: int) -> void:
 	sw = p_sw
 	lg = p_lg
@@ -153,6 +170,8 @@ func setup(p_sw: SW, p_lg: LG, p_jn: JN, p_vh: VH, seed: int) -> void:
 	_rng.seed = seed * 7027 + 11
 	_look_rng.seed = seed * 4099 + 23
 	walkers.clear()
+	# A fixture that re-runs setup() gets the same ids again, not the old run's next ones.
+	_next_id = 1
 
 
 ## The drawn body's transform: at feet turned to w's yaw, scaled by s (the body faces +Z) and

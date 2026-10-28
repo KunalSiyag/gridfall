@@ -182,6 +182,7 @@ class Reaction:
 	var called: bool = false  # a caller has already shouted their friends over
 	var chip: float = 0.0  # how beaten a guard's guard is (guard_chip); the blow past 1 lands
 	var broken: float = 0.0  # seconds the beaten guard stays down (guard_break): all blows land
+	var guard_rolls: int = 0  # seeded guard rolls consulted, one per blow (fight_seeded_rolls)
 	var slot_seq: int = -1  # arrival order among the hero's fighters (brawl_ring)
 	var stood_over: bool = false  # the stand-over beat for a downed hero already played
 	var checked: bool = false  # someone already came to look this one over (downed_awareness)
@@ -194,7 +195,7 @@ var collision: CollisionWorld
 var lengths: Dictionary = LENGTHS.duplicate()
 var clock: float = 0.0
 var _active: Dictionary = {}  # walker id -> Reaction
-var _rng := RandomNumberGenerator.new()
+var _rng := WK.seeded_rng(9157)  # seeded so fixtures skipping setup() reproduce (walkers.gd)
 ## The fight layer (fight_back.gd): the scrap, the tempers, counter cues and the care for a body
 ## on the ground. Its state keeps the old names here through the properties below, so tests,
 ## benches and the traffic feature wire it as before.
@@ -281,6 +282,7 @@ func setup(p_wk: WK, p_collision: CollisionWorld, seed: int) -> void:
 	fight.wk = wk
 	fight.collision = collision
 	fight.rng = _rng
+	fight.base_seed = seed
 	fight.active = _active
 	fight.new_reaction = _new
 	fight.is_free = _free
@@ -306,12 +308,11 @@ func clear() -> void:
 
 ## w takes a blow from src (a world point) along push (xz, any length) of strength 0..1, cause
 ## "shove", "punch", "car" or "carjack"; fling (metres, NOT world units like the rest) > 0 throws
-## a body it knocks down that far. Held
-## (grab) and not knocked down, w reels and hangs on. A car that runs w over where it already lies
-## (_trample) shoves it along and leaves it down but up sooner. A guarded fighter may turn a punch
-## or a shove aside instead (fight_tempers). Returns {"down": bool, "clip": StringName}, or {}
-## when w cannot take one now (hidden, in a conversation, in the air, or lying there for anything
-## but a car).
+## a body it knocks down that far. Held (grab) and not knocked down, w reels and hangs on. A car
+## that runs w over where it already lies (_trample) shoves it along and leaves it down but up
+## sooner. A guarded fighter may turn a punch or a shove aside instead (fight_tempers). Returns
+## {"down": bool, "clip": StringName}, or {} when w cannot take one now (hidden, in a
+## conversation, in the air, or lying there for anything but a car).
 func hit(
 	w: WK.Walker, src: Vector3, push: Vector3, strength: float, cause: String, fling: float = 0.0
 ) -> Dictionary:
@@ -623,9 +624,8 @@ func witness(w: WK.Walker, src: Vector3, severity: int) -> Array:
 	return out
 
 
-## People who answer the hero's emote ("wave", "yes", "no", "shout", "dance"; ANSWERS) made at
-## p facing fwd (xz): after a moment they turn to p and wave, nod or shake their head. Returns
-## them.
+## People who answer the hero's emote ("wave", "yes", "no", "shout", "dance"; ANSWERS) made at p
+## facing fwd (xz): after a moment they turn to p and wave, nod or shake their head. Returns them.
 func answer_emote(p: Vector3, fwd: Vector3, emote: String) -> Array:
 	var spec: Array = ANSWERS.get(emote, [])
 	var out: Array = []
