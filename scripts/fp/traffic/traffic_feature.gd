@@ -1999,8 +1999,9 @@ func door_clear_of_people(id: int, amount: float, from: float = 0.0) -> float:
 	return out
 
 
-## Car c's door panel for door_clear_of_people: its car transform, hinge and shut rear edge (car
-## frame) and its foot and belt heights; {} when c has no door that opens.
+## Car c's door panel for door_clear_of_people: its DRAWN car transform (pos + vis_off, yaw +
+## vis_yaw, the frame door_info and car_entry build from), hinge and shut rear edge (car frame)
+## and its foot and belt heights; {} when c has no door that opens.
 func _door_band(c: VH.Car) -> Dictionary:
 	var m: RD.Model = render.model(c.model) if c != null and c.model >= 0 else null
 	if m == null or m.scene == null:
@@ -2011,7 +2012,7 @@ func _door_band(c: VH.Car) -> Dictionary:
 	var pts := DOORS.points(d)
 	var rear: Vector3 = m.offset * (pts["rear"] as Vector3)
 	return {
-		"xf": Transform3D(Basis(Vector3.UP, c.yaw), c.pos),
+		"xf": Transform3D(Basis(Vector3.UP, c.yaw + c.vis_yaw), c.pos + c.vis_off),
 		"hinge": m.offset * (pts["hinge"] as Vector3),
 		"rear": rear,
 		"foot": (m.offset * (d.body_xf * Vector3(0.0, d.bottom, 0.0))).y,
