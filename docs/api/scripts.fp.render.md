@@ -76,6 +76,7 @@ Mid-range building LOD (slice G2): a building mesh's surfaces merged into one, e
 
 - `threaded: bool`: false builds on the calling thread (tests).
 - `use_baked: bool`: false ignores BAKED_DIR and always merges at runtime (tests).
+- `pack_stream: WebPackStream`: Web split builds: set by render_opt from FpContext. On a baked-twin miss we demand the midlod pack once and fall back to a runtime merge; when the pack lands, fresh mesh_for calls pick up the baked files. Completed runtime twins are never evicted.
 
 ### Functions
 

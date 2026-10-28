@@ -111,3 +111,7 @@ signal hero_hit_dir(angle: float)
 ## "chatter" (at a bird it stalks); size is its height at the shoulder (m), so a small dog yaps
 ## higher. Emitted by the animals feature.
 signal animal_called(at: Vector3, call: String, size: float)
+## A web background pack finished downloading and mounting (split builds only): its scenes,
+## meshes, textures and sounds can now be loaded. FpMode forwards Main's WebPackStream arrivals
+## here; features refresh pack-dependent assets through it, never their own HTTPRequests.
+signal pack_ready(pack: String)
