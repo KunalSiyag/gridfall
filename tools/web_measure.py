@@ -152,11 +152,12 @@ const CHROME = process.env.GF_MEASURE_CHROME || "/usr/bin/google-chrome";
 		if (drawn) { firstFrameMs = Date.now() - t0; break; }
 		await new Promise((r) => setTimeout(r, 500));
 	}
+	const coi = await page.evaluate(() => crossOriginIsolated).catch(() => null);
 	const byEncoding = {};
 	for (const f of files) byEncoding[f.encoding] = (byEncoding[f.encoding] || 0) + f.wire;
 	const big = files.filter((f) => f.wire > 100000).sort((a, b) => b.wire - a.wire);
 	console.log("GF_MEASURE " + JSON.stringify({
-		first_frame_ms: firstFrameMs, wire_bytes: bytes,
+		first_frame_ms: firstFrameMs, wire_bytes: bytes, cross_origin_isolated: coi,
 		by_encoding: byEncoding, big_files: big, files: files.length,
 	}));
 	await browser.close();
