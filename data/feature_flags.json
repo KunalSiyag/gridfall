@@ -1,6 +1,7 @@
 {
   "_doc": "Feature flags (scripts/ops/feature_flags.gd). Overrides: user://feature_flags.json {\"name\": bool} (ignored when GRIDFALL_FLAGS_IGNORE_USER=1), then env GRIDFALL_FLAGS=\"overview=0,analytics=1\". First-person features use their registry id from scripts/fp/fp_features.gd; FpMode skips a disabled one.",
   "flags": {
+    "web_split_packs": {"default": false, "description": "Web only: stream the optional background packs (midlod, sky, traffic, people, props, wildlife, posters, audio) after the playable boot instead of shipping them in it. Needs a split export; on an unsplit build the flag changes nothing. A split build with the flag off is a configuration error, not a rollback: roll back with the unsplit release."},
     "sim_perf": {"default": true, "description": "First-person feature: time-sliced sim ticks so growth ticks never freeze the street (slice F)."},
     "streetscape": {"default": true, "description": "First-person feature: street-level light profile, weather and street lights (slice G1)."},
     "render_opt": {"default": true, "description": "First-person feature: quality preset application, LOD ranges and far-building chunks (slice G2)."},

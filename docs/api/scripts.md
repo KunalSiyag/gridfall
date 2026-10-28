@@ -104,6 +104,7 @@ GridFall: a SimCity-style city run by five autonomous GMI Cloud AI mayors. Wires
 
 - `fp: FpMode`: First-person composition (null in orbit mode). Built by enter_fp(), freed by exit_fp().
 - `view_mode: String`: "orbit" or "fp"; tools and saves can read it.
+- `pack_stream: WebPackStream`: Web background packs (split builds). Always present; inert off the web / on unsplit builds.
 - `autosave_enabled: bool`: Autosaves (the first tick of each morning, quitting) are on only in normal play: tool runs, tests and the benchmark never touch the player's city.
 - `autosave_path: String`: Where autosaves go; tests point it away from the player's slot.
 

@@ -102,6 +102,9 @@ const SHIRTS := [Color(0.95, 0.35, 0.30), Color(0.30, 0.55, 0.95), Color(0.35, 0
 
 var sim: CitySim
 var camera: Camera3D
+## Web background packs (split builds); null everywhere else. Read-only here: the view asks
+## request_path() on an asset miss, Main owns the lifecycle.
+var pack_stream: WebPackStream = null
 var overlay_mode: String = "none"
 
 var _scenes: Dictionary = {}

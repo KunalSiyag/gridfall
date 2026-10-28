@@ -13,6 +13,10 @@ extends RefCounted
 
 const MANIFEST_PATH := "res://web_manifest.json"
 const CACHE_DIR := "user://packs"
+## Per-attempt ceiling for one pack download; the coordinator's watchdog enforces the policy,
+## this is the transport-level backstop.
+
+var _manifest_state := "none"  # "none" (no file), "invalid" (unusable), "ok"
 
 ## Emitted once a pack is mounted and its resources are available.
 signal pack_arrived(pack: String)
@@ -31,14 +35,73 @@ var _target: String = ""
 ## Reads the manifest the export wrote into the boot pack; false when this build is unsplit.
 func load_manifest() -> bool:
 	if not FileAccess.file_exists(MANIFEST_PATH):
+		_manifest_state = "none"
 		return false
 	var text := FileAccess.get_file_as_string(MANIFEST_PATH)
 	var parsed: Variant = JSON.parse_string(text)
-	if typeof(parsed) != TYPE_DICTIONARY:
-		push_warning("PackLoader: web_manifest.json is not an object")
+	if typeof(parsed) != TYPE_DICTIONARY or not _validate(parsed):
+		push_warning("PackLoader: web_manifest.json failed validation")
+		_manifest = {}
+		_manifest_state = "invalid"
 		return false
 	_manifest = parsed
-	return not _manifest.get("packs", {}).is_empty()
+	_manifest_state = "ok"
+	return true
+
+
+## "none" (unsplit build), "invalid" (a manifest was there but unusable) or "ok".
+func manifest_status() -> String:
+	return _manifest_state
+
+
+## Structural validation: every rule needs a known pack, every pack a plausible relative file
+## and a positive byte count, before any request is started from it.
+func _validate(manifest: Dictionary) -> bool:
+	var packs: Variant = manifest.get("packs")
+	if typeof(packs) != TYPE_DICTIONARY or (packs as Dictionary).is_empty():
+		return false
+	if not manifest.get("base", "") is String:
+		return false
+	for name: Variant in (packs as Dictionary).keys():
+		if not _valid_pack_entry(name, (packs as Dictionary)[name]):
+			return false
+	var rules: Variant = manifest.get("rules", [])
+	if not rules is Array:
+		return false
+	for rule: Variant in rules as Array:
+		if not _valid_rule(rule, packs as Dictionary):
+			return false
+	return true
+
+
+## One packs entry: a plain relative .pck path (no traversal, scheme or host) and a positive
+## byte count, so a crafted manifest can never steer the fetch or fake the cache.
+func _valid_pack_entry(name: Variant, entry: Variant) -> bool:
+	if not name is String or typeof(entry) != TYPE_DICTIONARY:
+		return false
+	var file: Variant = (entry as Dictionary).get("file")
+	var bytes: Variant = (entry as Dictionary).get("bytes")
+	if not file is String or (not bytes is float and not bytes is int):
+		return false
+	var file_s := str(file)
+	if (
+		file_s.is_empty()
+		or file_s.contains("..")
+		or file_s.contains("://")
+		or file_s.begins_with("/")
+		or not file_s.ends_with(".pck")
+	):
+		return false
+	return int(bytes) > 0
+
+
+## One rule: [path prefix, pack it lives in]; the pack must exist in the manifest.
+func _valid_rule(rule: Variant, packs: Dictionary) -> bool:
+	if not rule is Array or (rule as Array).size() != 2:
+		return false
+	if not (rule as Array)[0] is String or not (rule as Array)[1] is String:
+		return false
+	return packs.has((rule as Array)[1])
 
 
 ## True when the export shipped a split pack set (and so the runtime should stream it).
@@ -57,6 +120,31 @@ func pack_of(path: String) -> String:
 			best = prefix
 			found = str(rule[1])
 	return found
+
+
+## The packs the manifest declares (download order is the coordinator's business).
+func pack_names() -> PackedStringArray:
+	return PackedStringArray(_manifest.get("packs", {}).keys())
+
+
+## The pack currently downloading/mounting, or "".
+func active_pack() -> String:
+	return _active
+
+
+## Bytes fetched so far for the active transfer (0 while idle or before the first chunk).
+func downloaded_bytes() -> int:
+	if _http == null:
+		return 0
+	return _http.get_downloaded_bytes()
+
+
+## Declared size of a pack from the manifest (0 when unknown); feeds the attempt ceiling.
+func pack_bytes(pack: String) -> int:
+	var entry: Variant = _manifest.get("packs", {}).get(pack, {})
+	if not entry is Dictionary:
+		return 0
+	return int((entry as Dictionary).get("bytes", 0))
 
 
 ## True once the pack is mounted and its assets can be loaded.
@@ -79,13 +167,32 @@ func needed_for(path: String) -> String:
 
 ## Queues a pack (once). Call pump() to advance; returns false when the pack does not exist.
 func request(pack: String) -> bool:
+	return _enqueue(pack, false)
+
+
+## Queues a pack at the front (a consumer asked for an asset in it right now). Never touches
+## the active transfer; returns false when the pack does not exist.
+func request_next(pack: String) -> bool:
+	return _enqueue(pack, true)
+
+
+func _enqueue(pack: String, front: bool) -> bool:
 	if pack.is_empty() or _mounted.has(pack) or _loading.has(pack) or _pending.has(pack):
 		return _mounted.has(pack)
 	if not _manifest.get("packs", {}).has(pack):
 		push_warning("PackLoader: no such pack: " + pack)
 		return false
-	_pending.append(pack)
+	if front:
+		_pending.push_front(pack)
+	else:
+		_pending.append(pack)
 	return true
+
+
+## Cancels the active transfer, if any, emitting pack_failed with the given reason once.
+func cancel_active(reason: String = "cancelled") -> void:
+	if not _active.is_empty():
+		_finish(_active, false, reason)
 
 
 ## Local cache path for a pack: its own content hash keeps a stale file from ever being reused.
@@ -115,6 +222,7 @@ func progress() -> float:
 func reset() -> void:
 	_clear_request()
 	_manifest = {}
+	_manifest_state = "none"
 	_mounted = {}
 	_loading = {}
 	_pending = []
@@ -137,6 +245,9 @@ func _start(host: Node, pack: String) -> void:
 	_target = path
 	_http = HTTPRequest.new()
 	_http.name = "PackRequest"
+	# No transport-level timeout: a 30+ MB pack on a slow link takes minutes. The
+	# coordinator's stall watchdog owns transfer limits via downloaded_bytes().
+	_http.timeout = 0.0
 	host.add_child(_http)
 	_http.request_completed.connect(_on_download)
 	var url := _url_for(str(entry.get("file", "")))
@@ -160,15 +271,28 @@ func _on_download(
 		push_warning("PackLoader: download size mismatch for " + pack)
 		_finish(pack, false, "size")
 		return
-	var file := FileAccess.open(_target, FileAccess.WRITE)
+	# Download to a temporary name; only a complete, size-verified body is promoted to the
+	# content-keyed cache path, so a partial write never poses as a cached pack.
+	var part := _target + ".part"
+	var file := FileAccess.open(part, FileAccess.WRITE)
 	if file == null:
-		push_warning("PackLoader: cannot write " + _target)
+		push_warning("PackLoader: cannot write " + part)
 		_finish(pack, false, "write")
 		return
 	file.store_buffer(body)
 	var write_error := file.get_error()
 	file.close()
 	if write_error != OK:
+		DirAccess.remove_absolute(ProjectSettings.globalize_path(part))
+		_finish(pack, false, "write")
+		return
+	if (
+		DirAccess.rename_absolute(
+			ProjectSettings.globalize_path(part), ProjectSettings.globalize_path(_target)
+		)
+		!= OK
+	):
+		DirAccess.remove_absolute(ProjectSettings.globalize_path(part))
 		_finish(pack, false, "write")
 		return
 	_mount(pack, _target)
@@ -185,8 +309,12 @@ func _mount(pack: String, path: String) -> void:
 
 
 func _finish(pack: String, ok: bool, reason: String = "") -> void:
-	if not ok and not _target.is_empty() and FileAccess.file_exists(_target):
-		DirAccess.remove_absolute(ProjectSettings.globalize_path(_target))
+	if not ok and not _target.is_empty():
+		# Remove only this attempt's partial; a finished download's mount failure deletes the
+		# promoted file itself in _mount.
+		var part := _target + ".part"
+		if FileAccess.file_exists(part):
+			DirAccess.remove_absolute(ProjectSettings.globalize_path(part))
 	_loading.erase(pack)
 	_active = ""
 	_target = ""
