@@ -486,6 +486,7 @@ Junction control (docs/fp/slices/E-traffic.md §2): 4-way traffic lights on cros
 
 ### Properties
 
+- `vis_mult: float`: The quality preset's visibility scale (CityView.vis_mult), set by the traffic feature; the signal/sign GLBs are ranged with it at build time (street_dressing's _range convention).
 - `props: Dictionary`: tile -> {"node": Node3D, "groups": Array[MeshInstance3D] (axis * 3 + colour), "peds": Array[GeometryInstance3D] per (axis * 2 + walk), "poles": Array[Node3D], "state": int, "colliders": Array of holder-local solid entries (written into the view's holder meta)}
 - `holder_of: Callable`: The view's tile holder, so our posts can be written into its `colliders` meta (the channel CollisionWorld reads), and the collision refresh to call once they changed. traffic_feature wires both: only its ctx holds the view and the collision world.
 

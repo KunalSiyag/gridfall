@@ -43,6 +43,9 @@ var lg: LG
 var sim: CitySim
 var clock: float = 0.0
 var root: Node3D
+## The quality preset's visibility scale (CityView.vis_mult), set by the traffic feature; the
+## signal/sign GLBs are ranged with it at build time (street_dressing's _range convention).
+var vis_mult: float = 1.0
 ## tile -> {"node": Node3D, "groups": Array[MeshInstance3D] (axis * 3 + colour), "peds":
 ## Array[GeometryInstance3D] per (axis * 2 + walk), "poles": Array[Node3D], "state": int,
 ## "colliders": Array of holder-local solid entries (written into the view's holder meta)}
@@ -326,6 +329,7 @@ func _build_cross(i: int) -> Dictionary:
 			var inst := _asset.instantiate() as Node3D
 			if inst != null:
 				pole.add_child(inst)
+				_range_asset(inst)
 				_bind_asset_lamps(inst, axis, groups)
 				_bind_asset_peds(inst, 1 - axis, ped_nodes)
 				continue
@@ -477,6 +481,19 @@ func _ped_signal(kit: KIT, at: Vector2, face: Vector2, hand: KIT, man: KIT) -> v
 	)
 
 
+## The signal and sign GLBs arrive unranged: without this every lamp lens and sign face in the
+## city drew at every distance (790 of 2732 draws on the day-10 draw census). Range them like the
+## kit parts (_mi): VIS_PROP scaled by the quality preset, dithered out over half a metre.
+func _range_asset(inst: Node3D) -> void:
+	for n in inst.find_children("*", "GeometryInstance3D", true, false):
+		var gi := n as GeometryInstance3D
+		if gi.visibility_range_end != 0.0:
+			continue
+		gi.visibility_range_end = WS.VIS_PROP * vis_mult
+		gi.visibility_range_end_margin = 0.5
+		gi.visibility_range_fade_mode = GeometryInstance3D.VISIBILITY_RANGE_FADE_SELF
+
+
 ## Binds H's traffic-light asset lamps (Signal_Red_*, Signal_Amber_*, Signal_Green_*) into the
 ## lamp groups: each node gets its own material_override on state changes.
 func _bind_asset_lamps(inst: Node, axis: int, groups: Array) -> void:
@@ -518,6 +535,7 @@ func _build_tee(i: int, t: LG.TileInfo) -> Dictionary:
 		var inst := ps.instantiate() as Node3D
 		inst.transform = xf
 		node.add_child(inst)
+		_range_asset(inst)
 	else:
 		kit.cyl(xf, 0.045 * M, 0.045 * M, 2.55 * M, POLE_COL, 8)
 		var px := xf * Transform3D(Basis(), Vector3(0, 2.25 * M, 0.06 * M))
