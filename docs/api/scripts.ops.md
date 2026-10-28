@@ -202,16 +202,22 @@ Streams the web build's background packs: the boot pack is the engine's own `.pc
 
 - `MANIFEST_PATH = "res://web_manifest.json"`
 - `CACHE_DIR = "user://packs"`
+- `DOWNLOAD_TIMEOUT_S = 60.0`: Per-attempt ceiling for one pack download; the coordinator's watchdog enforces the policy, this is the transport-level backstop.
 
 ### Functions
 
 - `func load_manifest() -> bool`: Reads the manifest the export wrote into the boot pack; false when this build is unsplit.
+- `func manifest_status() -> String`: "none" (unsplit build), "invalid" (a manifest was there but unusable) or "ok".
 - `func active() -> bool`: True when the export shipped a split pack set (and so the runtime should stream it).
 - `func pack_of(path: String) -> String`: The pack that holds the asset at a res:// path, or "" when it rides in the boot pack.
+- `func pack_names() -> PackedStringArray`: The packs the manifest declares (download order is the coordinator's business).
+- `func active_pack() -> String`: The pack currently downloading/mounting, or "".
 - `func mounted(pack: String) -> bool`: True once the pack is mounted and its assets can be loaded.
 - `func pending(pack: String) -> bool`: True while the pack is on its way (queued, downloading or mounting).
 - `func needed_for(path: String) -> String`: The pack a path needs, or "" when it is already available (in the boot pack or mounted).
 - `func request(pack: String) -> bool`: Queues a pack (once). Call pump() to advance; returns false when the pack does not exist.
+- `func request_next(pack: String) -> bool`: Queues a pack at the front (a consumer asked for an asset in it right now). Never touches the active transfer; returns false when the pack does not exist.
+- `func cancel_active(reason: String = "cancelled")`: Cancels the active transfer, if any, emitting pack_failed with the given reason once.
 - `func cache_path(pack: String) -> String`: Local cache path for a pack: its own content hash keeps a stale file from ever being reused.
 - `func pump(host: Node) -> bool`: Advances the queue on a node (one download at a time). Returns true while work remains.
 - `func progress() -> float`: Fraction of the background packs that are in (0..1); 1 when there is nothing to fetch.
@@ -250,6 +256,37 @@ Request and trace ids. A trace groups the calls of one unit of work (the brain's
 - `static func current_label() -> String`
 - `static func session_id() -> String`: One id per game process, shared by analytics, error and alert records.
 - `static func is_id(s: String) -> bool`
+
+## `scripts/ops/web_pack_stream.gd`
+
+class_name `WebPackStream` · extends `Node`
+
+Background-pack streaming policy for the split web build (ops layer). Owns the one PackLoader pump, the download order, bounded retries and the status snapshot the HUD shows. Created by Main on every platform but inert unless activate() succeeds: streaming needs the web_split_packs flag AND the web platform AND a validated manifest. A split build with the flag off is a configuration error (the boot pack cannot conjure the missing packs); roll a split release back by replacing it with the unsplit one, never by disabling the flag. Downloads continue while the pause menu stops the world (PROCESS_MODE_ALWAYS); mounting the arrived packs refreshes geometry only through the normal render processing of the consumers.
+
+### Signals
+
+- `pack_ready(pack: String)`
+- `state_changed(snapshot: Dictionary)`
+
+### Constants
+
+- `DEFAULT_ORDER = [ "midlod", "sky", "traffic", "people", "props", "wildlife", "posters", "audio" ]`: Default background order: midlod first (it ends runtime gather stalls), then the decorative packs. Packs absent from the manifest are skipped; unknown manifest packs queue last.
+- `RETRY_DELAYS_S = [2.0, 8.0]`: Automatic retry backoff after the first attempt: two retries, after 2 and 8 seconds.
+- `REQUEST_TIMEOUT_S = 60.0`: One download attempt may take at most this long before the watchdog cancels it.
+
+### Properties
+
+- `force_platform`: Test seam: "web" makes the platform check pass off the web; never set in game code.
+
+### Functions
+
+- `func setup(loader: PackLoader, clock: Callable = Callable()) -> void`: Inject the loader and (tests only) a fake msec clock. Call before activate().
+- `func loader_active() -> bool`: True when the embedded manifest is valid, whatever the flag says (a split build).
+- `func activate() -> int`: Starts streaming when the flag, the platform and the manifest all allow it. See ACTIVATE_*.
+- `func request_path(path: String) -> String`: The pack a path still needs, or "" when it is available. Demanding an unqueued pack moves it ahead of the queued optional packs, but never cancels the active transfer or leapfrogs midlod's first request; demands among themselves keep their arrival order. A failed pack stays failed (the retry budget is not resettable by consumers); the HUD uses retry_failed().
+- `func mounted(pack: String) -> bool`: True once the pack's assets can be loaded.
+- `func snapshot() -> Dictionary`: A point-in-time copy of the pack states for the HUD; safe to keep and diff.
+- `func retry_failed() -> void`: The HUD's retry button: a fresh bounded cycle for failed packs only.
 
 ## `scripts/ops/web_support.gd`
 

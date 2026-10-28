@@ -293,6 +293,7 @@ Generated from the `##` doc comments in `scripts/`. Regenerate with `python3 too
 - [pack_loader.gd](scripts.ops.md#scriptsopspack_loadergd) (`PackLoader`): Streams the web build's background packs: the boot pack is the engine's own `.pck`, and the others land later under `user://packs/`, each mounted with `ProjectSettings.load_resource_pack`
 - [redact.gd](scripts.ops.md#scriptsopsredactgd) (`Redact`): Masks secrets and personal data in text bound for logs and the local ops files: bearer and basic credentials, key=value secrets, sk- keys, JWTs, long random tokens, e-mail addresses and every value registered with add_secret() (the live GMI key)
 - [trace.gd](scripts.ops.md#scriptsopstracegd) (`Trace`): Request and trace ids
+- [web_pack_stream.gd](scripts.ops.md#scriptsopsweb_pack_streamgd) (`WebPackStream`): Background-pack streaming policy for the split web build (ops layer)
 - [web_support.gd](scripts.ops.md#scriptsopsweb_supportgd) (`WebSupport`): Platform glue for the web build
 
 ## [scripts/sim/](scripts.sim.md)

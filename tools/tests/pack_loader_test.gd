@@ -18,7 +18,11 @@ func _init() -> void:
 	_check_cached_mount()
 	_check_failed_mount()
 	_check_download_validation()
+	_check_manifest_validation()
+	_check_request_next()
+	_check_cancel_active()
 	await _check_reset_active_request()
+	_check_promote_and_mount()
 	if fails.is_empty():
 		print("PACK_LOADER_TEST: PASS")
 	else:
@@ -203,7 +207,7 @@ func _check_download_validation() -> void:
 	]:
 		var loader := _fixture_loader("download-regression", 3)
 		var path := loader.cache_path("download-regression")
-		var file := FileAccess.open(path, FileAccess.WRITE)
+		var file := FileAccess.open(path + ".part", FileAccess.WRITE)
 		file.store_buffer(PackedByteArray([9]))
 		file.close()
 		loader._active = "download-regression"
@@ -222,7 +226,12 @@ func _check_download_validation() -> void:
 			"download validation emits the failure reason: " + str(sample[3])
 		)
 		K.check(fails, arrivals.is_empty(), "invalid download does not emit arrival")
-		K.check(fails, not FileAccess.file_exists(path), "invalid download deletes partial file")
+		K.check(
+			fails,
+			not FileAccess.file_exists(path + ".part"),
+			"invalid download deletes the partial file"
+		)
+		K.check(fails, not FileAccess.file_exists(path), "a failed attempt never poses as cache")
 		K.check(fails, not loader.pending("download-regression"), "invalid download clears pending")
 		K.check(fails, not loader.mounted("download-regression"), "invalid download is not mounted")
 		loader.reset()
@@ -274,3 +283,128 @@ func _check_reset_active_request() -> void:
 			connection.disconnect_from_host()
 	server.stop()
 	host.queue_free()
+
+
+## load_manifest()'s deep validation, exercised through _validate() (the test cannot write
+## res://) plus the manifest_status() transitions the coordinator branches on.
+func _check_manifest_validation() -> void:
+	var loader := PackLoader.new()
+	K.check(fails, loader.manifest_status() == "none", "a fresh loader has no manifest")
+	var good := {
+		"packs": {"zones": {"file": "packs/zones-1.pck", "bytes": 100}},
+		"rules": [["models/real/zones/", "zones"]],
+	}
+	K.check(fails, loader._validate(good), "a valid manifest passes")
+	for sample: Dictionary in [
+		{"packs": {}},  # no packs
+		{"packs": {"zones": {"file": "packs/z-1.pck"}}},  # missing bytes
+		{"packs": {"zones": {"file": "packs/z-1.pck", "bytes": 0}}},  # zero bytes
+		{"packs": {"zones": {"file": "../z-1.pck", "bytes": 1}}},  # traversal
+		{"packs": {"zones": {"file": "http://x/z-1.pck", "bytes": 1}}},  # scheme
+		{"packs": {"zones": {"file": "/abs/z-1.pck", "bytes": 1}}},  # absolute
+		{"packs": {"zones": {"file": "packs/z-1.txt", "bytes": 1}}},  # not a .pck
+		{"packs": {"zones": {"file": "packs/z-1.pck", "bytes": 1}}, "rules": "nope"},
+		{"packs": {"zones": {"file": "packs/z-1.pck", "bytes": 1}}, "rules": [["only-one"]]},
+		{
+			"packs": {"zones": {"file": "packs/z-1.pck", "bytes": 1}},
+			"rules": [["models/", "nope"]],  # rule names an unknown pack
+		},
+		{"base": 5, "packs": {"zones": {"file": "packs/z-1.pck", "bytes": 1}}},  # non-string base
+	]:
+		K.check(fails, not loader._validate(sample), "rejects: " + JSON.stringify(sample))
+	loader.set("_manifest", good)
+	loader.set("_manifest_state", "ok")
+	K.check(fails, loader.manifest_status() == "ok", "a validated manifest reports ok")
+	K.check(fails, loader.active(), "an ok manifest makes the loader active")
+	# load_manifest() leaves an empty manifest beside the "invalid" state; mirror that.
+	loader.set("_manifest", {})
+	loader.set("_manifest_state", "invalid")
+	K.check(fails, not loader.active(), "an invalid manifest keeps the loader inert")
+	K.check(fails, not loader.request("zones"), "an invalid manifest refuses requests")
+
+
+## A demanded pack jumps the queue without disturbing what is already moving.
+func _check_request_next() -> void:
+	var loader := _with_manifest(
+		{
+			"packs":
+			{
+				"a": {"file": "packs/a-1.pck", "bytes": 1},
+				"b": {"file": "packs/b-1.pck", "bytes": 1},
+				"c": {"file": "packs/c-1.pck", "bytes": 1},
+			}
+		}
+	)
+	K.check(fails, loader.request("a") and loader.request("b"), "two packs queue")
+	K.check(fails, loader.request_next("c"), "a demanded pack queues ahead")
+	K.check(
+		fails, loader._pending == ["c", "a", "b"], "demand front-enqueues: " + str(loader._pending)
+	)
+	K.check(fails, not loader.request_next("c"), "an already-queued pack is not re-queued")
+	loader.reset()
+
+
+## The watchdog's escape hatch: cancel_active fails the active pack once, clears its state.
+func _check_cancel_active() -> void:
+	var loader := _fixture_loader("hang", 1)
+	var failures: Array = []
+	loader.pack_failed.connect(
+		func(pack: String, reason: String) -> void: failures.append([pack, reason])
+	)
+	loader.cancel_active("timeout")
+	K.check(fails, failures.is_empty(), "cancel with nothing active emits nothing")
+	loader._active = "hang"
+	loader._loading = {"hang": true}
+	loader.cancel_active("timeout")
+	K.check(fails, failures == [["hang", "timeout"]], "cancel_active emits the cancel reason")
+	K.check(fails, loader.active_pack() == "", "cancel_active clears the active pack")
+	K.check(fails, not loader.pending("hang"), "cancel_active clears pending state")
+	loader.reset()
+
+
+## The web path: bytes arrive, promote from .part, mount. A good cache must survive alongside.
+func _check_promote_and_mount() -> void:
+	var loader := _fixture_loader("promote-regression", 0)
+	var path := loader.cache_path("promote-regression")
+	var staging := "user://packs/promote-staging.pck"
+	var source := "user://pack_loader_probe.txt"
+	var file := FileAccess.open(source, FileAccess.WRITE)
+	file.store_string("promoted pack regression")
+	file.close()
+	var packer := PCKPacker.new()
+	K.check(fails, packer.pck_start(staging) == OK, "create the download fixture PCK")
+	K.check(
+		fails,
+		packer.add_file("res://pack_loader_promote_probe.txt", source) == OK,
+		"add the download fixture resource"
+	)
+	K.check(fails, packer.flush() == OK, "finish the download fixture PCK")
+	var body := FileAccess.get_file_as_bytes(staging)
+	loader._manifest["packs"]["promote-regression"]["bytes"] = body.size()
+	var arrivals: Array[String] = []
+	var failures: Array = []
+	loader.pack_arrived.connect(func(pack: String) -> void: arrivals.append(pack))
+	loader.pack_failed.connect(
+		func(pack: String, reason: String) -> void: failures.append([pack, reason])
+	)
+	loader._active = "promote-regression"
+	loader._loading = {"promote-regression": true}
+	loader._target = path
+	loader._on_download(HTTPRequest.RESULT_SUCCESS, 200, PackedStringArray(), body)
+	K.check(fails, arrivals == ["promote-regression"], "a good download promotes and mounts")
+	K.check(fails, failures.is_empty(), "a good download emits no failure")
+	K.check(fails, not FileAccess.file_exists(path + ".part"), "no partial file survives a mount")
+	K.check(fails, FileAccess.file_exists(path), "the promoted pack becomes the cache")
+	K.check(fails, loader.mounted("promote-regression"), "the promoted pack is mounted")
+	K.check(
+		fails,
+		(
+			FileAccess.get_file_as_string("res://pack_loader_promote_probe.txt")
+			== "promoted pack regression"
+		),
+		"the promoted pack's resource loads"
+	)
+	DirAccess.remove_absolute(ProjectSettings.globalize_path(path))
+	DirAccess.remove_absolute(ProjectSettings.globalize_path(staging))
+	DirAccess.remove_absolute(ProjectSettings.globalize_path(source))
+	loader.reset()

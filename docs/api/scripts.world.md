@@ -126,6 +126,7 @@ Renders the CitySim grid in 3D: Kenney roads picked by neighbor mask, zone lots 
 
 ### Properties
 
+- `pack_stream: WebPackStream`: Web background packs (split builds); null everywhere else. Read-only here: the view asks request_path() on an asset miss, Main owns the lifecycle.
 - `night: float`: 0 at noon, 1 at midnight; set by SkyDirector.
 - `in_setup: bool`: True while setup() runs (from its first line until just before world_rebuilt.emit()). tile_built listeners that do per-tile work skip it while in_setup and do one full pass on world_rebuilt.
 - `fp_mode: bool`: Street-level presentation: hides builder aids and the AI presentation layer, stops ambient traffic, picking and camera shake. Persists across setup().

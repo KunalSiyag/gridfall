@@ -172,7 +172,7 @@ fi
 
 if [ "$MODE" = "quick" ] || [ "$MODE" = "full" ]; then
 	run_step parse_all "PARSE_ALL: PASS" 180 0 -- -- --headless --path . -s tools/tests/parse_all.gd
-	for t in sim_test buildings_test residents_test expansion_test construction_test save_test save_migration_test sim_determinism_test sim_tick_budget_test ai_image_client_test web_test web_pacing_test; do
+	for t in sim_test buildings_test residents_test expansion_test construction_test save_test save_migration_test sim_determinism_test sim_tick_budget_test ai_image_client_test web_test web_pacing_test pack_loader_test web_pack_stream_test; do
 		tok="$(echo "$t" | tr '[:lower:]' '[:upper:]'): PASS"
 		run_step "$t" "$tok" 300 0 -- -- --headless --path . -s "tools/tests/$t.gd"
 	done

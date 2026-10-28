@@ -34,6 +34,10 @@ var view_mode: String = "orbit"
 var _orbit_speed: int = 1
 ## FpMode.to_dict() from the last exit_fp(), so Tab in orbit returns the hero to where they were.
 var _fp_saved: Dictionary = {}
+## Web background packs (split builds). Always present; inert off the web / on unsplit builds.
+var pack_stream: WebPackStream = null
+## Retained until the HUD exists, then shown once (never replayed per pack).
+var _pack_config_error := ""
 ## Autosaves (the first tick of each morning, quitting) are on only in normal play: tool runs,
 ## tests and the benchmark never touch the player's city.
 var autosave_enabled: bool = false
@@ -58,6 +62,7 @@ func _ready() -> void:
 	var start := {"view": "fp" if wants_fp() else "orbit", "flags": FeatureFlags.snapshot()}
 	start["low_vram"] = bool(gpu["low"])
 	Analytics.track("session_start", start)
+	_setup_pack_stream()
 	sim.set_speed(0)
 	sim.road_grades = FeatureFlags.enabled("road_grades")
 	residents = Residents.new()
@@ -77,7 +82,10 @@ func _ready() -> void:
 	var resume := _resume_data()
 	view.fp_mode = wants_fp()
 	view.setup(sim, camera)
+	view.pack_stream = pack_stream
 	hud.setup(sim, brain, client)
+	if not _pack_config_error.is_empty():
+		notify(_pack_config_error)
 	sky = SkyDirector.new()
 	sky.name = "SkyDirector"
 	add_child(sky)
@@ -164,6 +172,23 @@ func _ready() -> void:
 
 
 ## A fresh city at launch: day 1 starts and the clock runs at GRIDFALL_SPEED (default 1).
+## Web background packs (split builds). Created before the view and first person exist, so
+## nothing can load an asset whose pack has not arrived. A split build with the flag off (or a
+## bad manifest) is a configuration error, not a playable city: surface it once the HUD is up
+## rather than opening half a city. Inert on desktop and on unsplit web builds.
+func _setup_pack_stream() -> void:
+	pack_stream = WebPackStream.new()
+	pack_stream.name = "WebPackStream"
+	add_child(pack_stream)
+	var stream_code := pack_stream.activate()
+	if stream_code == WebPackStream.ACTIVATE_BAD_MANIFEST:
+		_pack_config_error = "city detail packs are broken in this build (bad manifest)"
+	elif stream_code == WebPackStream.ACTIVATE_FLAG_OFF and pack_stream.loader_active():
+		_pack_config_error = "this build needs web_split_packs enabled; play the unsplit release"
+	if not _pack_config_error.is_empty():
+		push_error("GridFall: " + _pack_config_error)
+
+
 func _start_new() -> void:
 	sim.start()
 	var start_speed := int(OS.get_environment("GRIDFALL_SPEED")) if OS.has_environment("GRIDFALL_SPEED") else 1
