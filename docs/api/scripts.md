@@ -98,6 +98,7 @@ GridFall: a SimCity-style city run by five autonomous GMI Cloud AI mayors. Wires
 - `TOOL_MODES = [ "GRIDFALL_CINEMATIC", "GRIDFALL_SMOKE_TEST", "GRIDFALL_PHOTO_DIR", "GRIDFALL_FP_SMOKE...`: Environment switches that make a run a tool run (trailer, smokes, photo tours).
 - `D = preload("res://scripts/sim/sim_defs.gd")`
 - `WS = preload("res://scripts/fp/world_scale.gd")`
+- `Q = preload("res://scripts/fp/render/quality.gd")`
 
 ### Properties
 
