@@ -288,7 +288,22 @@ func quit_game() -> void:
 	get_tree().quit()
 
 
+## Brings the live world to a settled state for a save (S0 §6.4), so every serialiser below
+## stays pure. Flushes the view's deferred rebuild queue (on foot it defers tiles near the
+## camera, and the poster slots are derived from the built carriers, so an unflushed save would
+## record slots from stale holders) and settles the FP features (a parked car knocked out of
+## its slot is towed back to its slot now, not after shoves' TOW_AFTER standstill, so the live
+## world, the saved slot table and any reload agree). The sim's own to_dict already finishes any
+## in-flight sliced job.
+func _canonicalise_for_save() -> void:
+	if view != null and view.has_method("flush_rebuild_queue") and not view.in_setup:
+		view.call("flush_rebuild_queue")
+	if fp != null:
+		fp.canonicalise_for_save()
+
+
 func _write_save(path: String, reason: String) -> Error:
+	_canonicalise_for_save()
 	var data := {"sim": sim.to_dict(), "brain": brain.to_dict(), "client": client.to_dict(), "residents": residents.to_dict(), "minds": minds.to_dict(), "saved_at": Time.get_datetime_string_from_system()}
 	if fp != null:
 		data["fp"] = fp.to_dict()

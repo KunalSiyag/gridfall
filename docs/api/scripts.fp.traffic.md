@@ -1001,6 +1001,7 @@ Cars the player's car knocks (slice E): a hit car slides off with the momentum i
 - `func bump(c: VH.Car, j: Vector2, at: Vector2) -> void`: The player's car hit c with impulse j (u/s times a sedan's mass) at xz point `at`: c's body takes the change in velocity and spin. A lane car keeps what it can of the part along its heading as lane speed (it never rolls back along its lane) and slides off with the rest.
 - `func coast(c: VH.Car, vel: Vector2) -> void`: Car c, let go of at velocity vel (u/s, xz) with nobody at the wheel, rolls on along it, slowing as a coasting car does, until it stops or runs into a wall or another car.
 - `func step(dt: float) -> void`: Moves every knocked body on by dt: slides, stops, waits and steers back; tows parked cars left in the way out of sight.
+- `func settle_parked() -> void`: Tows every parked car standing off its slot back to its slot now: the save path settles the parked table (S0 §6.4) and cannot wait the TOW_AFTER standstill step() needs, so it tows in sight too — the live world and the saved slot table must agree at the instant of the save.
 - `func blocks() -> Array`: Lane blocks for vehicles.gd (_gather_blocks): [xz centre, heading, half length, half width, xz velocity, car id] of every knocked lane car off its lane and every parked car knocked out of its slot (the player's own cars are blocks already).
 
 ## `scripts/fp/traffic/sidewalks.gd`
@@ -1201,6 +1202,7 @@ Traffic and pedestrians on lanes (slice E, docs/fp/slices/E-traffic.md): one roa
 - `func anim_stats() -> Dictionary`: Animated-people stats for G2's bench: {"t0", "t1", "t2", "t3"} people on screen per LOD tier, "anim_us" microseconds advancing mixers this frame (T0 trees included), "char_draws" character draws (shadows extra), plus "off" (off-screen bodies holding their pose), "bodies" (instanced) and "people_us" (the whole people pass). Legacy static people report their shader draws only.
 - `func resident_avatar(id: String) -> String`: The HC avatar a resident is drawn with ("" without HC bodies): job pool by gender, crc32(id).
 - `func to_dict() -> Dictionary`
+- `func canonicalise_for_save() -> void`: The save path settles the parked table (S0 §6.4): a parked car knocked out of its slot is towed back to its slot now, so the live world, the saved slot table and any reload agree at the moment of the save. shoves.gd would tow it only after TOW_AFTER s out of sight.
 - `func from_dict(d: Dictionary) -> void`
 - `func self_test() -> Dictionary`
 - `func photo_shots() -> Array`: The "traffic" shot: the most built-up cross tile with lights, seen at eye height from the sidewalk of one of its arms, 1.3 tiles back, beside the inbound lane: the queue at the light, the zebra in front of it, the poles and the cross traffic.

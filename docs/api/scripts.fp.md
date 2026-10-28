@@ -191,6 +191,7 @@ A first-person feature module owned by one slice. FpMode instantiates it from th
 - `func on_world_rebuilt() -> void`: The city view was rebuilt (boot, load, New City). Re-attach anything tied to tiles.
 - `func to_dict() -> Dictionary`: Feature state for save["fp"][feature_id()]. Return {} for nothing.
 - `func from_dict(_d: Dictionary) -> void`: Restore state; d is {} for a fresh city or an old save.
+- `func canonicalise_for_save() -> void`: Settle live state before the save path serialises (S0 §6.4): finish any pending relocation or deferred work whose mid-flight photograph would disagree with a reload. Main calls it once per save through FpMode.canonicalise_for_save(); to_dict() stays pure and reads what this settled.
 - `func teardown() -> void`: Disconnect from long-lived objects (sim, view, residents, brain, bus); FpMode frees the node after.
 - `func pick(_origin: Vector3, _dir: Vector3, _max_dist: float) -> Dictionary`: Interaction pick along a ray (A's interact queries every feature). Return a target dict (§9) or {} when this feature owns nothing on the ray within max_dist.
 - `func self_test() -> Dictionary`: Called by the FP smoke after the world is up. {"ok": bool, "detail": String}.
@@ -236,6 +237,7 @@ First-person composition root: builds the context, bus, player, collision, HUD a
 - `func teardown() -> void`: Tears down the features (reverse order) and the HUD, releases the mouse, unpauses.
 - `func to_dict() -> Dictionary`: Save section, see S0 §6.4. day_phase is how far the current 300 s growth tick has run (0..1): the sim saves only whole ticks, which would rewind the FP clock by up to 6 game hours.
 - `func from_dict(d: Dictionary) -> void`: Restores the save section. {} means a fresh city: player at spawn_point(), features reset, and the tick phase at 0 (also for saves without day_phase).
+- `func canonicalise_for_save() -> void`: Settles every feature for a save (§6.4): Main._canonicalise_for_save() calls this once before serialising, so a feature's to_dict() needs no side effect to be consistent.
 - `func set_time_scale(s: int) -> void`: Sets the sim speed to s, snapped to WS.TIME_SCALES; emits bus.time_scale_changed. Paused: stored, applied on resume.
 - `func step_time_scale(dir: int) -> void`: +1 / -1 through WS.TIME_SCALES (bound to time_faster / time_slower).
 - `func skip_to_morning() -> void`: Runs the rest of today's ticks now, so the next day starts at 06:00 (bound to time_skip). Coroutine: toasts "Skipping to morning...", awaits 2 frames, then calls sim.skip_to_next_day().

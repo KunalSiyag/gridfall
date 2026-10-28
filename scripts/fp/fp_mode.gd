@@ -191,6 +191,13 @@ func from_dict(d: Dictionary) -> void:
 		f.from_dict(fd if typeof(fd) == TYPE_DICTIONARY else {})
 
 
+## Settles every feature for a save (§6.4): Main._canonicalise_for_save() calls this once before
+## serialising, so a feature's to_dict() needs no side effect to be consistent.
+func canonicalise_for_save() -> void:
+	for f in _feature_list():
+		f.canonicalise_for_save()
+
+
 ## Sets the sim speed to s, snapped to WS.TIME_SCALES; emits bus.time_scale_changed. Paused: stored, applied on resume.
 func set_time_scale(s: int) -> void:
 	var best: int = WS.TIME_SCALES[0]

@@ -2218,6 +2218,15 @@ func to_dict() -> Dictionary:
 	return {"parked": trips.parked_table()}
 
 
+## The save path settles the parked table (S0 §6.4): a parked car knocked out of its slot is
+## towed back to its slot now, so the live world, the saved slot table and any reload agree at
+## the moment of the save. shoves.gd would tow it only after TOW_AFTER s out of sight.
+func canonicalise_for_save() -> void:
+	if not _built:
+		return
+	shoves.settle_parked()
+
+
 func from_dict(d: Dictionary) -> void:
 	if not _built:
 		return
