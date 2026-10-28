@@ -1,0 +1,10 @@
+# Engine ERROR:/USER ERROR: lines the gate tolerates. Format: substr|text|reason or
+# regex|pattern|reason (pattern is a Python re searched in the text after the prefix).
+# Every entry is debt: burn these down and delete the line. Seeded 2026-10-28 from the
+# gate quick logs in /tmp/claude-1000 (main @ 0c9556b..646d701); provenance in PR #90.
+regex|^\d+ RID allocations of type '[^']+' were leaked at exit|dummy-renderer shutdown report in every headless step; counts/types vary run to run
+regex|^\d+ resources still in use at exit|same exit-time report family as the RID leaks; count varies
+substr|Pages in use exist at exit in PagedAllocator:|same exit-time report family (Variant bucket pool)
+substr|Condition "!is_inside_tree()" is true. Returning: Transform3D()|off-tree pose/skeleton reads in traffic pose machinery (e.g. people.gd:422); benign identity fallback, 19k/run via fp_low_shapes_test's crowd; burn-down #1
+substr|Parameter "t" is null.|seen 1-2x in fp_animals/fp_crews/fp_react_collision/fp_road_grades; source not yet isolated; burn-down
+substr|Another resource is loaded from path 'res://models/characters/bodies/mat/Male_Adult_15_head.tres'|Godot resource-cache duplicate-load note (cyclic inclusion), 1x in fp_react_collision_test

@@ -9,6 +9,10 @@
 # A step that fails and then passes on a retry reports PASS(flaky), counts as a pass and is listed
 # in $GATE_LOG_DIR/flaky.txt. Every run writes $GATE_LOG_DIR/results.json (step, result, secs).
 #
+# A step also fails when its log holds an engine ERROR:/USER ERROR: line that no entry in
+# tools/checks/baselines/engine_errors.txt covers (tools/checks/engine_errors.py does the scan);
+# Godot prints those without failing the run, which hid real bugs (#67/#72).
+#
 # quick:  parse_all, the unit tests (sim, buildings, residents, expansion, construction, saves,
 #          migration, determinism, image client, web), every tools/tests/fp_*_test.gd
 # full:   quick + the two-seed soak (sim_soak_test) + orbit smoke + FP smoke (headless, heavy)
@@ -76,6 +80,8 @@ classify() {
 		echo "FAIL(no-token)"
 	elif [ "$rc" -ne 0 ]; then
 		echo "FAIL(exit=$rc)"
+	elif ! python3 tools/checks/engine_errors.py "$log" >/dev/null 2>&1; then
+		echo "FAIL(engine-error)"
 	else
 		echo "PASS"
 	fi
@@ -122,6 +128,9 @@ run_step() {
 		mv -f "$log" "$GATE_LOG_DIR/$name.try$attempt.log"
 		printf '%-28s %s, retrying (%d/%d)\n' "$name" "$res" "$attempt" "$GATE_RETRIES" >&2
 	done
+	if [ "$res" = "FAIL(engine-error)" ]; then
+		python3 tools/checks/engine_errors.py "$log" >&2
+	fi
 	if [ "$res" = "PASS" ] && [ "$attempt" -gt 1 ]; then
 		res="PASS(flaky)"
 		printf '%s\t%s\t%s\t%s\n' "$name" "$first" "$attempt" "$(date -u +%Y-%m-%dT%H:%M:%SZ)" >>"$GATE_LOG_DIR/flaky.txt"
