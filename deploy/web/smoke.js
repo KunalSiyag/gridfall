@@ -126,6 +126,9 @@ const OFFLINE = process.env.GF_SMOKE_OFFLINE === "1";
 	const booted = await waitEngine(page, 600000, 25000);
 	check("engine booted (console activity)", booted,
 		`${((Date.now() - t0) / 1000).toFixed(0)}s to first log`);
+	const coiCold = await page.evaluate(() => crossOriginIsolated);
+	check("cross-origin isolated after cold load (threads)", coiCold === true,
+		`crossOriginIsolated=${coiCold}`);
 	await shot(page, "01-boot.png");
 	countWire = false;
 	console.log(`first load on the wire: ${(wireBytes / 1e6).toFixed(1)} MB`);
@@ -301,6 +304,9 @@ const OFFLINE = process.env.GF_SMOKE_OFFLINE === "1";
 	await page.reload({ waitUntil: "domcontentloaded" });
 	const reloaded = await waitEngine(page, 600000, 25000, reloadStart);
 	check("engine booted again after reload", reloaded);
+	const coiReload = await page.evaluate(() => crossOriginIsolated);
+	check("cross-origin isolated after reload (threads)", coiReload === true,
+		`crossOriginIsolated=${coiReload}`);
 	// The "continuing" line prints only after the IDBFS mount resolves, which can lag the
 	// boot banner by many seconds on a loaded box; give it a grace window before judging.
 	const continuingDeadline = Date.now() + 60000;
