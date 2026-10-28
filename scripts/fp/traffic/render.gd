@@ -462,8 +462,8 @@ func draw_car(
 	if c.lod >= 0:
 		if hero:
 			if lit:
-				_hero_cand = [xf, c.length, c.kind == "bike"]
-		elif lit and d < BEAM_DIST and c.kind != "bike":
+				_hero_cand = [xf, c.length, c.kind == "bike" or c.kind == "scooter"]
+		elif lit and d < BEAM_DIST and c.kind != "bike" and c.kind != "scooter":
 			_beam_cands.append([d, xf, c.length])
 		if _siren_mats.has(siren) and d < WASH_DIST:
 			_wash_cands.append([d, xf, siren, c.height])

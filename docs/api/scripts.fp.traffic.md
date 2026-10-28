@@ -35,17 +35,21 @@ Ambient filler (docs/fp/slices/E-traffic.md §6): unnamed commuters (some of the
 - `BIKE_CHANCE = 0.18`: Share of the ambient traffic that is cyclists (the cyclists flag; 0 off), riding at about BIKE_V0 on a bicycle of BIKE_DIMS (as a resident's, trips.gd).
 - `BIKE_V0 = 4.0 * WS.M`
 - `BIKE_DIMS = Vector3(0.6 * WS.M, 1.8 * WS.M, 1.8 * WS.M)`
+- `SCOOTER_CHANCE = 0.08`: Share of the ambient traffic on step-through scooters (the scooters flag; 0 off), of the model's own size, ridden at about SCOOTER_V0.
+- `SCOOTER_V0 = 9.7 * WS.M`
 - `TRACK_BIKE_BOOST = 3.0`: On an unpaved road (D.ROAD_GRADES) the cyclist chance is TRACK_BIKE_BOOST times higher (at most TRACK_BIKE_MAX), and only TRACK_CARS of the cars that would spawn there do.
 - `TRACK_BIKE_MAX = 0.6`
 - `TRACK_CARS = 0.35`
 - `JCB_IN = 37`
+- `PARK_SCOOTER_IN = 9`: A scooter stands at about one in PARK_SCOOTER_IN of the filled curb slots (the scooters flag).
 - `SITE_MACHINES_MAX = 6`: At most this many backhoes park beside construction sites at once, however many sites are open.
 
 ### Properties
 
-- `car_model: Callable`: Callables set by the feature: car_model(seed) -> int, person_model(seed) -> int, dims(model) -> Vector3, visible(pos) -> bool (inside the camera frustum and within car range).
+- `car_model: Callable`: Callables set by the feature: car_model(seed) -> int, person_model(seed) -> int, dims(model) -> Vector3, visible(pos) -> bool (in the camera frustum and within car range).
 - `bike_model: Callable`: bike_model() -> int (traffic_feature.bike_model), and the share of cyclists.
 - `caps_override: Variant`: Test hook: a Dictionary used as the density caps instead of quality.gd's (null: read it).
+- `scooter_model: Callable`: scooter_model() -> int (traffic_feature.scooter_model), and the share of scooter riders.
 - `jcb_model: Callable`: jcb_model() -> int (traffic_feature.jcb_model): the backhoe loader parked at a rare share of curb slots (a parked work machine the player can drive, not one in traffic).
 
 ### Functions
@@ -56,7 +60,7 @@ Ambient filler (docs/fp/slices/E-traffic.md §6): unnamed commuters (some of the
 - `func refresh_caps() -> void`: Marks the cached web density caps stale (the quality mode changed); the next fill re-reads.
 - `func targets(p: Vector3) -> Vector2i`: [target cars, target pedestrians] near p from road density, congestion and trip load.
 - `func maintain(p: Vector3, fwd: Vector3, sync: bool) -> void`: Removes ambient agents beyond the radius (out of sight) and tops up toward the targets. sync: fill completely now (first fill or after a teleport), anywhere out of the camera's view.
-- `func fill_parking() -> int`: Fills curb slots with parked cars, deterministically per slot (bulk: one lane rebuild after). Returns how many were parked.
+- `func fill_parking() -> int`: Fills curb slots with parked vehicles, deterministically per slot (bulk: one lane rebuild after). Returns how many were parked.
 - `func park_site_machine(site: Dictionary) -> VH.Car`: Parks a backhoe at the kerb of a road tile beside the construction site (a work machine on the job), the slot nearest the site's own kerb, if one is free. Returns the car, or null when the flag is off, the site already has one, no slot is free or no road runs beside the site.
 - `func clear_site_machine(site: Dictionary) -> void`: The machine parked beside the site leaves with the crew (nothing when it had none).
 
@@ -630,7 +634,7 @@ Drivers seated in the moving vehicles nearest the camera. Only while a vehicle d
 - `BIKE_CAP = 10`: Riders: their own cap, out to where render.gd stops drawing the full bicycle (NEAR).
 - `BIKE_RANGE = 40.0 * WS.M`
 - `SEAT_NODE = "Seat_Driver"`
-- `DRIVER_MARKERS = ["Pedal_L", "Pedal_R", "Wheel_L", "Wheel_R", "Cab_Roof"]`: The driver's contact markers in the full model (vehicles2.py): the feet on the footwell floor and the hands on the rim, as for the player (drive/seat_pose.gd). A model without them keeps the plain sit pose.
+- `DRIVER_MARKERS = [ "Pedal_L", "Pedal_R", "Wheel_L", "Wheel_R", "Cab_Roof", "Handle_L", "Handle_R" ]`: The driver's contact markers in the full model (vehicles2.py): the feet on the footwell floor and the hands on the rim, as for the player (drive/seat_pose.gd). A model without them keeps the plain sit pose.
 - `SKULL_HAIR = 1.40`: The top of the head rides this multiple of the hips-to-head-bone distance above the hips (the skull and hair over the head bone), as in seat_pose.gd.
 - `MAX_SINK = 0.17 * WS.M`: The hips sink at most this far into the seat cushion (u), as in seat_pose.gd.
 - `SIT = &"sit"`: The sit loop is held at this time (s): hands on the lap, head level.
@@ -649,7 +653,7 @@ Drivers seated in the moving vehicles nearest the camera. Only while a vehicle d
 ### Functions
 
 - `func setup(p_people: PPL) -> void`
-- `func sync(cars: Array, cam: Vector3, residents: Variant) -> void`: Seats a driver in each of the CAP nearest moving vehicles within RANGE (a rider on each of the BIKE_CAP nearest bicycles within BIKE_RANGE) that show their full model, and releases the rest. Call between people.begin and people.finish, after render.draw_car.
+- `func sync(cars: Array, cam: Vector3, residents: Variant) -> void`
 - `func clear() -> void`: Releases every seated body.
 - `func body_of(id: int) -> PPL.Body`: The seated body in car id (null when it has no driver drawn).
 - `func driver_of(id: int) -> WK.Walker`: The driver drawn in car id (the stand-in walker carrying its avatar and stature), or null.
@@ -1121,6 +1125,7 @@ Traffic and pedestrians on lanes (slice E, docs/fp/slices/E-traffic.md): one roa
 - `JCB_GAIN = 0.5`
 - `HEAVY_PROFILES = { "garbage_truck": {"top": 19.4 * WS.M, "gain": 0.30, "steer": 0.55, "brake": 0.70}, "t...`: The town's working vehicles at the wheel (the heavy_motors flag), by fleet class: each drives like itself — its own top speed (m/s), a share of a car's get-up-and-go, of its steering lock and of its braking (drive_model.gd). Their mass is shoves.gd's by kind.
 - `BIKE_PROFILE = {"top": 7.0 * WS.M, "gain": 0.55, "steer": 1.45, "brake": 1.30}`: A bicycle at the wheel (the bike_ride flag): a hero pedals quicker than the town's cyclists ride, turns far tighter than any car and pulls up short, and it weighs almost nothing.
+- `SCOOTER_PROFILE = {"top": 12.5 * WS.M, "gain": 0.85, "steer": 1.30, "brake": 1.10}`: A step-through scooter at the wheel (the scooters flag): about 45 km/h flat out, quicker off the mark than a bicycle, turning nearly as tight, and light — a car feels the knock, but little.
 - `SITE_MACHINES_PER_STEP = 2`: New construction sites whose backhoe is parked this many a step at most.
 - `STATION_FAR = 10`: A crew called with no station in town sets off from a road at most this many tiles away.
 - `HIT_FULL = 14.0 * WS.M`: A car running the hero down (hit_by_cars) hits at full strength from HIT_FULL (u/s) and throws them on along its heading at its own speed.
@@ -1151,6 +1156,7 @@ Traffic and pedestrians on lanes (slice E, docs/fp/slices/E-traffic.md): one roa
 - `func person_model_for(rid: String) -> int`
 - `func dims(m: int) -> Vector3`: World size (x width, y height, z length) of a model.
 - `func jcb_model() -> int`: The backhoe loader (the jcb flag): H's yellow machine, a construction body parked at the curb that drives like a car, slower and heavier. -1 when the flag is off or the model is missing.
+- `func scooter_model() -> int`: A step-through scooter (the scooters flag): H's model. -1 when the flag is off or the GLB is missing (no procedural stand-in: the share simply stays cars and bicycles).
 - `func drive_profile(id: int) -> Dictionary`: The handling profile of car id (drive_model.gd reset): the backhoe tops out at JCB_TOP and gathers speed at JCB_GAIN of a car's rate, a bicycle rides like itself (BIKE_PROFILE), and the town's working vehicles drive like themselves (HEAVY_PROFILES, by their model's fleet class); a car is {}. A special profile also carries the body's mass (the Car's, as the takeover recorded it), for car_body.gd's impulse math.
 - `func bike_model() -> int`: A cyclist: H's bicycle when present, else a procedural bicycle and rider (one mesh).
 - `func door_point(lot: int) -> Vector3`: Where a person enters or leaves lot i: H's Door_<n> empty when the building has one, else the middle of its front edge (facing its frontage road).
@@ -1203,6 +1209,7 @@ Traffic and pedestrians on lanes (slice E, docs/fp/slices/E-traffic.md): one roa
 - `func set_door(amount: float, id: int = -1) -> void`: Opens the driver's door by amount (0 shut .. 1 open): of the car the player drives, or of car id (one they are taking from its driver). Drawn on its full model.
 - `func door_clear_of_people(id: int, amount: float, from: float = 0.0) -> float`: How far the driver's door of car id (the driven car's when id < 0) swings from `from` toward `amount` (0 shut .. 1 open) before its panel runs into someone on foot: amount itself when the way is clear, else the last amount clear of everyone (the arc of the swing each body blocks, from body_spheres.of round people.head_of). A door already resting against someone may still swing away from them; one they stand in the way of stays put rather than push into them.
 - `func is_bicycle(id: int) -> bool`: True when car id is a bicycle: the drive feature boards and leaves one with no door to open.
+- `func is_scooter(id: int) -> bool`: True when car id is a scooter: the drive feature steps on and off one with no door to open.
 - `func light_pole(i: int, corner: int) -> Node3D`: The traffic-light pole on cross tile i at corner (0..3 = NE, SE, SW, NW), or null.
 - `func anchor_of(id: String) -> Vector3`: Live head anchor of resident id while drawn (else above where they are). With HC bodies it is the Head bone's world position (an estimate from the stature while no body draws them).
 - `func anim_stats() -> Dictionary`: Animated-people stats for G2's bench: {"t0", "t1", "t2", "t3"} people on screen per LOD tier, "anim_us" microseconds advancing mixers this frame (T0 trees included), "char_draws" character draws (shadows extra), plus "off" (off-screen bodies holding their pose), "bodies" (instanced) and "people_us" (the whole people pass). Legacy static people report their shader draws only.

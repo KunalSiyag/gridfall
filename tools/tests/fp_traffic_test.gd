@@ -66,6 +66,7 @@ func _init() -> void:
 	_check_wait_crowd()
 	_check_ambient_spawns()
 	_check_density_caps()
+	_check_scooters()
 	_check_following()
 	_check_parking_clearance()
 	_check_parked_shove()
@@ -704,13 +705,16 @@ func _check_api_compat() -> void:
 func _check_agents_api() -> void:
 	f.set("ambient_enabled", true)
 	f.call("_maintain", true)
-	_step(1.0)
+	# Settle past the walkers' turn-in: a walker that just started moving has its yaw still
+	# lerping to its velocity, which is a fine state, not a wrong heading convention.
+	_step(2.5)
 	var p := ctx.player_position()
 	var list: Array = f.agents_near(p, 40.0)
 	var keys := ["id", "pos", "vel", "speed", "kind", "driver_id", "heading", "stalled_s"]
 	var bad_keys := 0
 	var moving := 0
 	var bad_head := 0
+	var bad_kinds := {}
 	for a: Dictionary in list:
 		for k: String in keys:
 			if not a.has(k):
@@ -721,6 +725,7 @@ func _check_agents_api() -> void:
 			var h := float(a["heading"])
 			if Vector3(-sin(h), 0, -cos(h)).dot(v.normalized()) < 0.97:
 				bad_head += 1
+				bad_kinds[a["kind"]] = true
 	K.check(
 		fails,
 		not list.is_empty() and bad_keys == 0,
@@ -730,8 +735,8 @@ func _check_agents_api() -> void:
 		fails,
 		moving > 0 and bad_head == 0,
 		(
-			"agents_near: heading is S0's convention for all %d moving agents (%d off)"
-			% [moving, bad_head]
+			"agents_near: heading is S0's convention for all %d moving agents (%d off: %s)"
+			% [moving, bad_head, bad_kinds.keys()]
 		)
 	)
 	var packed: Dictionary = f.agents_packed(p, 40.0)
@@ -995,6 +1000,74 @@ func _check_ambient_spawns() -> void:
 			% [peds_new, faded, peds_bad]
 		)
 	)
+
+
+## Step-through scooters (the scooters flag): a share of the ambient traffic rides one at about
+## 35 km/h, and the curb pick stands one at a share of the filled slots — the backhoe keeps its
+## rarer share first, and with no scooter model (the flag off) the slot stays a car's.
+func _check_scooters() -> void:
+	var sm: int = f.call("scooter_model")
+	K.check(fails, sm >= 0, "scooter: fixture, the scooter model is loaded (the scooters flag)")
+	if sm < 0:
+		return
+	var amb: Variant = f.get("ambient")
+	var chance0: float = amb.scooter_chance
+	var pick: Array = amb._park_pick(10, 99, 42, 7)
+	K.check(
+		fails,
+		int(pick[0]) == 42 and str(pick[1]) == "scooter",
+		"scooter: the curb pick takes a scooter at its share: %s" % str(pick)
+	)
+	pick = amb._park_pick(37, 99, 42, 7)
+	K.check(fails, int(pick[0]) == 99, "scooter: the backhoe keeps its rarer share: %s" % str(pick))
+	pick = amb._park_pick(10, 99, -1, 7)
+	K.check(
+		fails,
+		int(pick[0]) == 7 and str(pick[1]) == "car",
+		"scooter: no scooter model, no scooter at the curb: %s" % str(pick)
+	)
+	# The street share: at chance 1 every spawn is a scooter, riding at its own pace.
+	_quiet()
+	var bk: float = amb.bike_chance
+	f.set("ambient_enabled", true)
+	amb.bike_chance = 0.0
+	amb.scooter_chance = 1.0
+	amb.maintain(ctx.player_position(), Vector3(0, 0, -1), true)
+	f.set("ambient_enabled", false)
+	var n := 0
+	var sc := 0
+	var bad := 0
+	for c: VH.Car in _vh().cars:
+		if c.role == "ambient" and not c.parked:
+			n += 1
+			if c.kind == "scooter":
+				sc += 1
+				if c.model != sm or c.v0 < 8.0 * WS.M or c.v0 > 11.5 * WS.M or c.v > c.v0 + 1e-4:
+					bad += 1
+	K.check(
+		fails, n > 0 and sc == n, "scooter: every spawn a scooter at share 1 (%d of %d)" % [sc, n]
+	)
+	K.check(
+		fails,
+		bad == 0,
+		(
+			"scooter: they ride the scooter model at 29-41 km/h, never over their own pace (%d off)"
+			% bad
+		)
+	)
+	_quiet()
+	f.set("ambient_enabled", true)
+	amb.scooter_chance = 0.0
+	amb.maintain(ctx.player_position(), Vector3(0, 0, -1), true)
+	f.set("ambient_enabled", false)
+	sc = 0
+	for c: VH.Car in _vh().cars:
+		if c.role == "ambient" and not c.parked and c.kind == "scooter":
+			sc += 1
+	K.check(fails, sc == 0, "scooter: none at share 0 (%d)" % sc)
+	amb.bike_chance = bk
+	amb.scooter_chance = chance0
+	_quiet()
 
 
 # ------------------------------------------------------------------ car following

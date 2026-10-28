@@ -32,6 +32,7 @@ First-person asset paths. Slice H owns this list and produces the files; every c
 - `LEASE_SIGN = STREET_DIR + "lease_sign.glb"`
 - `BOLLARD = "res://models/real/props/bollard.glb"`
 - `BICYCLE = VEHICLES_V2_DIR + "bicycle.glb"`
+- `SCOOTER = VEHICLES_V2_DIR + "scooter.glb"`
 - `PERSON_ANIMS = ["idle", "walk", "run", "talk", "sit"]`: Animation names every rigged person provides, as Godot lists them after import. H names the Blender actions "<name>-loop" (and "sit") so the importer sets LOOP_LINEAR; H's test confirms the suffix is stripped on 4.7.2. If it is not, H changes this list to the suffixed names.
 - `PERSON_LOOPING = ["idle", "walk", "run", "talk"]`
 - `WHEEL_NODES = ["Wheel_FL", "Wheel_FR", "Wheel_RL", "Wheel_RR"]`: Separate wheel nodes on vehicles_v2 road vehicles (origin at the hub, spin about local X).

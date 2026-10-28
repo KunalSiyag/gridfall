@@ -39,6 +39,9 @@ const BIKE_PEDALS := ["Pedal_L", "Pedal_R"]
 ## avatar's own transform carries the walk lean and is rewritten every frame, so the skeleton
 ## node is the one turned (and put back exactly as it was).
 const BIKE_LEAN := deg_to_rad(54.0)
+## A step-through scooter sits the rider much taller: a slight lean to the grips, none of the
+## bicycle's fold.
+const SCOOT_LEAN := deg_to_rad(26.0)
 
 ## How far the hips sit below the seat marker so the head clears the roof (car frame, u).
 var sink: float = 0.0
@@ -50,6 +53,9 @@ var _goals: Array = []
 var _node: Node3D = null
 ## True when the car is a bicycle (its hands go on the grips, its feet on the pedals).
 var _bike: bool = false
+## True when it is a step-through scooter (the same grips, but the pedals are floorboard foot
+## markers — nothing turns — and the rider sits tall).
+var _scoot: bool = false
 ## The skeleton leaning over the handlebar, and its own transform before the lean.
 var _lean_sk: Node3D = null
 var _lean_base: Transform3D = Transform3D.IDENTITY
@@ -67,6 +73,7 @@ func reset() -> void:
 	_pts = {}
 	_node = null
 	_bike = false
+	_scoot = false
 	sink = 0.0
 
 
@@ -111,6 +118,15 @@ func step(
 		_reach(rig, 0, pts, BIKE_GRIPS[0], car, ELBOW_POLE)
 		_reach(rig, 1, pts, BIKE_GRIPS[1], car, Vector3(-ELBOW_POLE.x, ELBOW_POLE.y, ELBOW_POLE.z))
 		return
+	if _scoot:
+		# Tall on the saddle: a slight lean to the grips and the feet flat on the floorboard,
+		# no roof to duck under (sink stays 0).
+		_lean(rig, car.basis.x, SCOOT_LEAN)
+		_reach(rig, 0, pts, BIKE_GRIPS[0], car, ELBOW_POLE)
+		_reach(rig, 1, pts, BIKE_GRIPS[1], car, Vector3(-ELBOW_POLE.x, ELBOW_POLE.y, ELBOW_POLE.z))
+		_reach(rig, 2, pts, "Pedal_L", car, KNEE_POLE)
+		_reach(rig, 3, pts, "Pedal_R", car, KNEE_POLE)
+		return
 	# The hips sink until the top of the head clears the roof line (the marker sits on it).
 	if dt > 0.0 and pts.has("Cab_Roof"):
 		var hips: Vector3 = rig.call("bone_world", "Hips")
@@ -146,6 +162,7 @@ func _points(traffic: FpFeature, car_id: int, seat: Vector3) -> Dictionary:
 		_pts = node.get_meta("drive_pts")
 		_node = node
 		_bike = _pts.has("crank_pivot")
+		_scoot = not _bike and _pts.has(BIKE_GRIPS[0])
 		return _pts
 	var seat_node := node.find_child("Seat_Driver", true, false) as Node3D
 	if seat_node == null:
@@ -158,6 +175,7 @@ func _points(traffic: FpFeature, car_id: int, seat: Vector3) -> Dictionary:
 		if m != null:
 			_pts[n] = seat + node_basis * (m.global_position - base)
 	_crank(node, node_basis, base, seat)
+	_scoot = not _bike and _pts.has(BIKE_GRIPS[0])
 	node.set_meta("drive_pts", _pts)
 	_node = node
 	return _pts
@@ -201,9 +219,10 @@ func _pedals(rig: RefCounted, pts: Dictionary, car: Transform3D) -> void:
 		i += 1
 
 
-## Pitches the rider's skeleton BIKE_LEAN forward about the hips, turning about side (the
-## bicycle's +X in the world, so the top goes toward its +Z front); the hips stay where they are.
-func _lean(rig: RefCounted, side: Vector3) -> void:
+## Pitches the rider's skeleton forward about the hips by the given angle (BIKE_LEAN on a
+## bicycle, SCOOT_LEAN on a scooter), turning about side (the vehicle's +X in the world, so the
+## top goes toward its +Z front); the hips stay where they are.
+func _lean(rig: RefCounted, side: Vector3, amount: float = BIKE_LEAN) -> void:
 	var sk := rig.get("skeleton") as Node3D
 	if sk == null:
 		return
@@ -215,7 +234,7 @@ func _lean(rig: RefCounted, side: Vector3) -> void:
 	var hips: Vector3 = rig.call("bone_world", "Hips")
 	if is_nan(hips.x):
 		return
-	var turn := Basis(side.normalized(), BIKE_LEAN)
+	var turn := Basis(side.normalized(), amount)
 	sk.global_transform = Transform3D(turn, hips - turn * hips) * sk.global_transform
 
 

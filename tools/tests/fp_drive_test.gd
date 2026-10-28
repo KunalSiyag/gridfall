@@ -112,6 +112,7 @@ func _init() -> void:
 	await _check_backhoe_pile_save()
 	_check_heavy_motors()
 	await _check_bike_ride()
+	await _check_scooter_ride()
 	await _check_night_driving()
 	await _check_ambient_driver()
 	_check_site_machine()
@@ -2093,20 +2094,35 @@ func _check_bike_ride() -> void:
 ## writes the avatar's transform and the bones' poses — so it must sit at seat_pose.gd's
 ## BIKE_LEAN, unmoved, frame after frame. The bike is drawn and ridden
 ## in full (the hero rig has to be live), so this awaits frames like the arm check.
-func _check_bike_pedalling(node: Node3D, pedal: Node3D, grip: Node3D) -> void:
+## [rig, avatar, skeleton, lean_lo, lean_hi] for the ride-pose legs (bike and scooter): the
+## hero's rig, its avatar node and skeleton, and the lean-range accumulators both keep.
+func _ride_rig() -> Array:
 	var rig: Variant = ctx.player.avatar.get("rig")
-	var av: Node3D = ctx.player.avatar
 	var skel: Node3D = null
 	if rig is Object:
 		skel = (rig as Object).get("skeleton") as Node3D
-	var lean_lo := PI
-	var lean_hi := 0.0
-	var marks: Array[Node3D] = [
+	return [rig, ctx.player.avatar, skel, PI, 0.0]
+
+
+## [left grip, right grip, left foot, right foot] markers of a two-wheeler's node: the given
+## left-side grip and foot, the mirrored pair found on the node.
+func _ride_marks(node: Node3D, grip: Node3D, foot_l: Node3D) -> Array[Node3D]:
+	return [
 		grip,
 		node.find_child("Handle_R", true, false) as Node3D,
-		pedal,
+		foot_l,
 		node.find_child("Pedal_R", true, false) as Node3D,
 	]
+
+
+func _check_bike_pedalling(node: Node3D, pedal: Node3D, grip: Node3D) -> void:
+	var rr: Array = _ride_rig()
+	var rig: Variant = rr[0]
+	var av: Node3D = rr[1]
+	var skel: Node3D = rr[2]
+	var lean_lo: float = rr[3]
+	var lean_hi: float = rr[4]
+	var marks: Array[Node3D] = _ride_marks(node, grip, pedal)
 	var gaps: Array[float] = [0.0, 0.0, 0.0, 0.0]
 	var ped_travel := 0.0
 	var quarters := {}
@@ -2191,10 +2207,219 @@ func _check_bike_claim(m: int) -> void:
 	_clear_others()
 
 
+## A scooter the hero steps onto (the scooters flag) rides like itself: about 45 km/h, quick off
+## the mark and nearly as tight-turning as a bicycle, its rider nearly upright — hands on the
+## grips, feet on the floorboard, a slight forward lean — with no door to open and no bell.
+func _check_scooter_ride() -> void:
+	var m: int = traffic.call("scooter_model")
+	K.check(fails, m >= 0, "scooter: fixture, the scooter model is loaded")
+	if m < 0:
+		return
+	_clear_all()
+	var c := _vh().make("scooter", "ambient", traffic.call("dims", m))
+	c.model = m
+	_vh().place(c, lanes[0], 0.35)
+	c.v = 0.0
+	_beside(c, OBB.side_axis(c.yaw), -0.6)
+	var t: Dictionary = drive.call("enter_target")
+	K.check(
+		fails,
+		int(t.get("id", -1)) == c.id and str(t.get("label", "")) == "the scooter",
+		"scooter: a stopped scooter is the get-in target by name: %s" % str(t)
+	)
+	K.check(fails, drive.call("enter") == true, "scooter: the hero steps on")
+	K.check(fails, bool(drive.get("scooter")), "scooter: the drive state knows it is a scooter")
+	K.check(fails, not bool(drive.get("bike")), "scooter: and not a bicycle (a horn, not a bell)")
+	K.check(fails, _car().kind == "scooter", "scooter: the body stays a scooter at the wheel")
+	K.check(fails, str(_car().label) == "Your scooter", "scooter: and is the hero's own scooter")
+	var dm: MODEL = drive.get("model")
+	K.check(
+		fails,
+		(
+			dm.top > 7.0 * WS.M
+			and dm.top < 0.5 * MODEL.TOP
+			and dm.gain > 0.55
+			and dm.steer_lock > 1.0
+			and dm.brake_f > 1.0
+		),
+		(
+			"scooter: it rides on its own profile (%.0f km/h top, gain %.2f, lock %.2f)"
+			% [dm.top / WS.M * 3.6, dm.gain, dm.steer_lock]
+		)
+	)
+	K.check(
+		fails,
+		absf(SHOVES.mass_of(_car()) - 0.3) < 1e-6,
+		"scooter: and at a third of a car's mass a car feels the knock, but little"
+	)
+	if not await _check_scooter_node():
+		_clear_all()
+		return
+	_clear_all()
+	_check_scooter_claim(m)
+
+
+## Waits for the full model to load, checks its rider markers (grips, floorboard, no crank),
+## then rides it seated and steps off. False when the model never arrives.
+func _check_scooter_node() -> bool:
+	var node: Node3D = null
+	for _k in range(120):
+		traffic.call("sync_visuals", DT)
+		ctx.player.update_view(DT)
+		node = _car().node
+		if node != null:
+			break
+		await process_frame
+	var grip := node.find_child("Handle_L", true, false) as Node3D if node != null else null
+	var pedal := node.find_child("Pedal_L", true, false) as Node3D if node != null else null
+	K.check(
+		fails,
+		node != null and grip != null and pedal != null,
+		"scooter: the full model carries the rider markers (grips, floorboard)"
+	)
+	K.check(
+		fails,
+		(
+			node != null
+			and node.find_child("Crank", true, false) == null
+			and not node.has_meta("crank")
+		),
+		"scooter: and no crank: the feet do not turn with anything"
+	)
+	if node == null or grip == null or pedal == null:
+		drive.call("exit", true)
+		return false
+	await _check_scooter_seated(node, grip)
+	var pose: Object = drive.get("pose")
+	K.check(
+		fails,
+		pose != null and bool(pose.get("_scoot")) and not bool(pose.get("_bike")),
+		"scooter: the seat pose knows it is a scooter (grips, floorboard, no roof)"
+	)
+	_check_scooter_leave(pose)
+	return true
+
+
+## Off it at once, with no door to open, and the body goes back to traffic; the getoff pose is
+## idempotent (a leave without a geton, a second off, a reset then off all move nothing).
+func _check_scooter_leave(pose: Object) -> void:
+	K.check(fails, drive.call("leave") == true, "scooter: leave steps the hero off at once")
+	K.check(fails, not bool(drive.get("active")), "scooter: and the hero is on foot again")
+	var sk := (ctx.player.avatar.get("rig") as Object).get("skeleton") as Node3D
+	K.check(
+		fails,
+		sk != null and sk.global_transform.basis.y.normalized().y > 0.99,
+		"scooter: and stands up straight again (the riding lean is undone)"
+	)
+	if sk != null and pose != null:
+		var rig: Variant = ctx.player.avatar.get("rig")
+		var xf := sk.transform
+		K.check(fails, drive.call("leave") == false, "scooter: leave again off foot does nothing")
+		pose.call("off", rig)
+		K.check(fails, sk.transform == xf, "scooter: a getoff without a geton moves nothing")
+		pose.call("off", rig)
+		K.check(fails, sk.transform == xf, "scooter: and nor does a second (no stacked lean)")
+		pose.call("reset")
+		pose.call("off", rig)
+		K.check(fails, sk.transform == xf, "scooter: reset then off leaves it be as well")
+
+
+## 150 frames at part throttle on a scooter: the hands stay on the grips, the feet stay on the
+## floorboard (nothing to pedal), the rider holds the slight scooter lean, and it gets going.
+func _check_scooter_seated(node: Node3D, grip: Node3D) -> void:
+	var rr: Array = _ride_rig()
+	var marks: Array[Node3D] = _ride_marks(
+		node, grip, node.find_child("Pedal_L", true, false) as Node3D
+	)
+	var rig: Variant = rr[0]
+	var av: Node3D = rr[1]
+	var skel: Node3D = rr[2]
+	var lean_lo: float = rr[3]
+	var lean_hi: float = rr[4]
+	if marks.has(null):
+		K.check(fails, false, "scooter: fixture, all four rider markers")
+		return
+	var gaps: Array[float] = [0.0, 0.0, 0.0, 0.0]
+	var samples := 0
+	var speed := 0.0
+	for _k in range(150):
+		drive.call("drive_step", 0.55, 0.0, 0.0, 0.0, DT)
+		traffic.call("sync_visuals", DT)
+		ctx.player.update_view(DT)
+		await process_frame
+		if rig == null or str((rig as RefCounted).call("state")) != "drive":
+			continue
+		samples += 1
+		speed = (drive.get("model") as MODEL).speed()
+		if samples > BIKE_EASE_IN:
+			var ends: Array = ((rig as RefCounted).get("limbs") as Object).get("ends")
+			for i in range(4):
+				gaps[i] = maxf(
+					gaps[i], (ends[i] as Vector3).distance_to(marks[i].global_position) / WS.M
+				)
+			if skel != null and av != null:
+				var lean := av.global_transform.basis.y.angle_to(skel.global_transform.basis.y)
+				lean_lo = minf(lean_lo, lean)
+				lean_hi = maxf(lean_hi, lean)
+	K.check(
+		fails,
+		samples >= 20,
+		"scooter: the hero rides it, seated on the saddle (%d frames)" % samples
+	)
+	K.check(
+		fails,
+		maxf(gaps[0], gaps[1]) < BIKE_HAND_GAP,
+		"scooter: the hands stay on the grips (%.2f / %.2f m off at worst)" % [gaps[0], gaps[1]]
+	)
+	K.check(
+		fails,
+		maxf(gaps[2], gaps[3]) < BIKE_FOOT_GAP,
+		"scooter: the feet stay on the floorboard (%.2f / %.2f m off at worst)" % [gaps[2], gaps[3]]
+	)
+	K.check(
+		fails,
+		lean_lo > deg_to_rad(8.0) and lean_hi < deg_to_rad(38.0),
+		(
+			"scooter: a slight forward lean, none of the bicycle's fold (%.0f..%.0f deg)"
+			% [rad_to_deg(lean_lo), rad_to_deg(lean_hi)]
+		)
+	)
+	K.check(
+		fails,
+		speed > 3.0 * WS.M,
+		"scooter: and it is quick off the mark (%.0f km/h after the run)" % (speed / WS.M * 3.6)
+	)
+
+
+## A scooter still moving is not claimable (the scooters flag), and none is with the flag off.
+func _check_scooter_claim(m: int) -> void:
+	var fast := _vh().make("scooter", "ambient", traffic.call("dims", m))
+	fast.model = m
+	_vh().place(fast, lanes[0], 0.35)
+	fast.v = 3.0 * KMH
+	_beside(fast, OBB.side_axis(fast.yaw), -0.6)
+	var rolling: Dictionary = drive.call("enter_target")
+	K.check(
+		fails, rolling.is_empty(), "scooter: none still moving is get-at-able: %s" % str(rolling)
+	)
+	fast.v = 0.0
+	FeatureFlags.set_override("scooters", false)
+	var off2: Dictionary = drive.call("enter_target")
+	K.check(
+		fails,
+		off2.is_empty(),
+		"scooter: the flag off parks no claim on the scooters: %s" % str(off2)
+	)
+	FeatureFlags.set_override("scooters", true)
+	_vh().remove(fast)
+	_clear_others()
+
+
 ## Night driving (the night_driving flag): after dark the car the hero drives always throws its
-## own beam — a dedicated lamp beside the street's shared pool, a bicycle a small dim one at its
-## handlebar — and H at the wheel sounds the horn (a bicycle's bell) on hero_action, which the
-## audio feature plays through the street's own horn source. The flag off leaves both off.
+## own beam — a dedicated lamp beside the street's shared pool, a bicycle or scooter a small dim
+## one at its handlebar — and H at the wheel sounds the horn (a bicycle's bell) on hero_action,
+## which the audio feature plays through the street's own horn source. The flag off leaves both
+## off.
 func _check_night_driving() -> void:
 	FeatureFlags.set_override("night_driving", true)
 	_clear_others()
@@ -2265,6 +2490,31 @@ func _check_night_driving() -> void:
 	_press_horn()
 	await process_frame
 	K.check(fails, heard == ["bell"], "night: H on a bicycle rings the bell instead")
+	# A scooter: the same small lens lamp at its handlebar, but a motor horn, not a bell.
+	K.check(fails, drive.call("leave") == true, "night: off the bicycle")
+	_clear_all()
+	var sm: int = traffic.call("scooter_model")
+	var scoot := _vh().make("scooter", "ambient", traffic.call("dims", sm))
+	scoot.model = sm
+	_vh().place(scoot, lanes[0], 0.35)
+	scoot.v = 0.0
+	_beside(scoot, OBB.side_axis(scoot.yaw), -0.6)
+	K.check(fails, drive.call("enter") == true, "night: and onto a scooter")
+	K.check(
+		fails,
+		bool(drive.get("scooter")) and not bool(drive.get("bike")),
+		"night: the drive state knows it is a scooter"
+	)
+	await _night_frames(4, 1.0)
+	K.check(
+		fails,
+		rd.hero_beam_on and rd.hero_lamp != null and rd.hero_lamp.spot_angle < RD.BEAM_ANGLE,
+		"night: a scooter carries the same small lamp at its handlebar"
+	)
+	heard.clear()
+	_press_horn()
+	await process_frame
+	K.check(fails, heard == ["horn"], "night: H on a scooter sounds a horn, not a bell")
 	# The flag off: neither lamp nor horn.
 	FeatureFlags.set_override("night_driving", false)
 	heard.clear()
@@ -2276,7 +2526,7 @@ func _check_night_driving() -> void:
 	# Tidy: the flag back to its default, the sky back to day, the hero off the bicycle.
 	FeatureFlags.set_override("night_driving", true)
 	ctx.bus.hero_action.disconnect(on_horn)
-	K.check(fails, drive.call("leave") == true, "night: and off the bicycle again")
+	K.check(fails, drive.call("leave") == true, "night: and off the scooter again")
 	ctx.sky.night = 0.0
 	_clear_all()
 

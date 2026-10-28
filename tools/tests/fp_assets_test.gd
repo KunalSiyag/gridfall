@@ -29,6 +29,7 @@ func _init() -> void:
 
 # ------------------------------------------------------------------ AP paths
 
+
 func _check_paths() -> void:
 	var hc := _hc_names()
 	var consts: Dictionary = (AP as Script).get_script_constant_map()
@@ -36,7 +37,12 @@ func _check_paths() -> void:
 	var loaded := 0
 	for name: String in consts.keys():
 		var v: Variant = consts[name]
-		if typeof(v) != TYPE_STRING or not str(v).begins_with("res://") or name in NOT_H or name in hc:
+		if (
+			typeof(v) != TYPE_STRING
+			or not str(v).begins_with("res://")
+			or name in NOT_H
+			or name in hc
+		):
 			continue
 		var p := str(v)
 		if p.ends_with("/"):
@@ -71,38 +77,64 @@ func _hc_names() -> Array[String]:
 
 # ------------------------------------------------------------------ vehicles_v2
 
+
 func _check_vehicles() -> void:
 	var names := _glbs(AP.VEHICLES_V2_DIR)
 	var full: Array[String] = []
 	for n in names:
 		if not n.ends_with("_lod1"):
 			full.append(n)
-	K.check(fails, full.size() >= 24, "vehicles_v2 has every legacy key plus the bicycle (%d models)" % full.size())
+	K.check(
+		fails,
+		full.size() >= 24,
+		"vehicles_v2 has every legacy key plus the bicycle (%d models)" % full.size()
+	)
 	for n in full:
 		var root := _inst(AP.VEHICLES_V2_DIR + n + ".glb")
 		if root == null:
 			K.check(fails, false, "%s loads" % n)
 			continue
-		var wheels: Array = AP.BIKE_WHEEL_NODES if n == "bicycle" else AP.WHEEL_NODES
+		var wheels: Array = AP.BIKE_WHEEL_NODES if n in ["bicycle", "scooter"] else AP.WHEEL_NODES
 		var bad: Array[String] = []
 		for w: String in wheels:
 			var mi := root.find_child(w, true, false) as MeshInstance3D
 			if mi == null or mi.mesh == null:
 				bad.append(w + " missing")
 			elif mi.mesh.get_aabb().get_center().length() > 0.001:
-				bad.append("%s origin off its hub by %.4f" % [w, mi.mesh.get_aabb().get_center().length()])
+				bad.append(
+					"%s origin off its hub by %.4f" % [w, mi.mesh.get_aabb().get_center().length()]
+				)
 		K.check(fails, bad.is_empty(), "%s wheels %s" % [n, "ok" if bad.is_empty() else str(bad)])
-		K.check(fails, root.find_child("Seat_Driver", true, false) != null, "%s has Seat_Driver" % n)
+		K.check(
+			fails, root.find_child("Seat_Driver", true, false) != null, "%s has Seat_Driver" % n
+		)
 		var box := _aabb(root)
 		if n.begins_with("sedan_"):
-			K.check(fails, box.size.z >= 0.21 and box.size.z <= 0.25, "%s length %.3f in 0.21..0.25" % [n, box.size.z])
+			K.check(
+				fails,
+				box.size.z >= 0.21 and box.size.z <= 0.25,
+				"%s length %.3f in 0.21..0.25" % [n, box.size.z]
+			)
 		if n == "bus":
-			K.check(fails, box.size.z >= 0.55 and box.size.z <= 0.65, "bus length %.3f in 0.55..0.65" % box.size.z)
-		K.check(fails, absf(box.position.y) < 0.002, "%s wheels touch y = 0 (min y %.4f)" % [n, box.position.y])
-		if n != "bicycle":
+			K.check(
+				fails,
+				box.size.z >= 0.55 and box.size.z <= 0.65,
+				"bus length %.3f in 0.55..0.65" % box.size.z
+			)
+		K.check(
+			fails,
+			absf(box.position.y) < 0.002,
+			"%s wheels touch y = 0 (min y %.4f)" % [n, box.position.y]
+		)
+		# The two-wheelers carry no glass at all (no windshield; the GLBs have no Glass_Car
+		# material), so the see-through import check only applies to the four-wheelers.
+		if not (n in ["bicycle", "scooter"]):
 			var glass := _material(root, "Glass_Car") as BaseMaterial3D
-			K.check(fails, glass != null and glass.transparency != BaseMaterial3D.TRANSPARENCY_DISABLED,
-				"%s Glass_Car imports see-through" % n)
+			K.check(
+				fails,
+				glass != null and glass.transparency != BaseMaterial3D.TRANSPARENCY_DISABLED,
+				"%s Glass_Car imports see-through" % n
+			)
 		root.free()
 		var lod := _inst(AP.VEHICLES_V2_DIR + n + AP.VEHICLE_LOD_SUFFIX)
 		if lod == null:
@@ -122,12 +154,24 @@ func _check_vehicles() -> void:
 				if m != null and m.resource_name == "Light_Head" and m.emission_enabled:
 					lamp = true
 				var arr := mi.mesh.surface_get_arrays(s)
-				var idx: PackedInt32Array = arr[Mesh.ARRAY_INDEX] if arr[Mesh.ARRAY_INDEX] != null else PackedInt32Array()
-				tris += (idx.size() if not idx.is_empty() else (arr[Mesh.ARRAY_VERTEX] as PackedVector3Array).size()) / 3
+				var idx: PackedInt32Array = (
+					arr[Mesh.ARRAY_INDEX] if arr[Mesh.ARRAY_INDEX] != null else PackedInt32Array()
+				)
+				tris += (
+					(
+						idx.size()
+						if not idx.is_empty()
+						else (arr[Mesh.ARRAY_VERTEX] as PackedVector3Array).size()
+					)
+					/ 3
+				)
 		# Slice E merges a far LOD by material albedo (emissive materials become lamps): flat colours,
 		# no textures, one mesh (docs/fp/requests/H-needs.md).
-		K.check(fails, meshes.size() == 1 and mats.size() <= 16 and not textured,
-			"%s_lod1 is one mesh with %d <= 16 flat untextured materials" % [n, mats.size()])
+		K.check(
+			fails,
+			meshes.size() == 1 and mats.size() <= 16 and not textured,
+			"%s_lod1 is one mesh with %d <= 16 flat untextured materials" % [n, mats.size()]
+		)
 		K.check(fails, tris <= 1500, "%s_lod1 has %d <= 1500 triangles" % [n, tris])
 		if n != "bicycle":
 			K.check(fails, lamp, "%s_lod1 has an emissive Light_Head" % n)
@@ -136,19 +180,27 @@ func _check_vehicles() -> void:
 
 # ------------------------------------------------------------------ street kit
 
+
 func _check_street() -> void:
 	var bb := _inst(AP.BILLBOARD_POSTER)
 	if bb != null:
 		var p := _poster(bb, "Poster_0", "billboard")
 		if p != null:
 			var s := p.mesh.get_aabb().size
-			K.check(fails, absf(s.x - 0.34) <= 0.005 and absf(s.y - 0.15) <= 0.005,
-				"billboard Poster_0 is 0.34 x 0.15 (%.4f x %.4f)" % [s.x, s.y])
+			K.check(
+				fails,
+				absf(s.x - 0.34) <= 0.005 and absf(s.y - 0.15) <= 0.005,
+				"billboard Poster_0 is 0.34 x 0.15 (%.4f x %.4f)" % [s.x, s.y]
+			)
 		for b: String in ["Bulb_0", "Bulb_1"]:
 			K.check(fails, bb.find_child(b, true, false) != null, "billboard has %s" % b)
 		bb.free()
-	for spec: Array in [[AP.HOARDING, ["Poster_0", "Poster_1"]], [AP.BUS_SHELTER, ["Poster_0"]],
-			[AP.POSTER_FRAME, ["Poster_0"]], [AP.LEASE_SIGN, ["Poster_0"]]]:
+	for spec: Array in [
+		[AP.HOARDING, ["Poster_0", "Poster_1"]],
+		[AP.BUS_SHELTER, ["Poster_0"]],
+		[AP.POSTER_FRAME, ["Poster_0"]],
+		[AP.LEASE_SIGN, ["Poster_0"]]
+	]:
 		var root := _inst(str(spec[0]))
 		if root == null:
 			K.check(fails, false, "%s loads" % spec[0])
@@ -162,10 +214,16 @@ func _check_street() -> void:
 			var nm := pre + "0"
 			var g := tl.find_child(nm, true, false)
 			K.check(fails, g is GeometryInstance3D, "traffic_light has lens %s" % nm)
-		for nm: String in AP.SIGN_TEXT_NODES + [AP.WALK_NODE_PREFIX + "0", AP.DONT_WALK_NODE_PREFIX + "0"]:
+		for nm: String in (
+			AP.SIGN_TEXT_NODES + [AP.WALK_NODE_PREFIX + "0", AP.DONT_WALK_NODE_PREFIX + "0"]
+		):
 			K.check(fails, tl.find_child(nm, true, false) is Node3D, "traffic_light has %s" % nm)
 		var box := _aabb(tl)
-		K.check(fails, box.position.x <= -0.25, "traffic_light mast reaches x = %.3f <= -0.25" % box.position.x)
+		K.check(
+			fails,
+			box.position.x <= -0.25,
+			"traffic_light mast reaches x = %.3f <= -0.25" % box.position.x
+		)
 		tl.free()
 	var sign := _inst(AP.STREET_SIGN)
 	if sign != null:
@@ -175,7 +233,11 @@ func _check_street() -> void:
 	var ped := _inst(AP.PED_SIGNAL)
 	if ped != null:
 		for nm: String in [AP.WALK_NODE_PREFIX + "0", AP.DONT_WALK_NODE_PREFIX + "0"]:
-			K.check(fails, ped.find_child(nm, true, false) is GeometryInstance3D, "ped_signal has %s" % nm)
+			K.check(
+				fails,
+				ped.find_child(nm, true, false) is GeometryInstance3D,
+				"ped_signal has %s" % nm
+			)
 		ped.free()
 
 
@@ -202,11 +264,14 @@ func _poster(root: Node, nm: String, where: String) -> MeshInstance3D:
 				break
 	K.check(fails, n_ok, "%s %s faces +Z in node space" % [where, nm])
 	var m := mi.mesh.surface_get_material(0)
-	K.check(fails, m != null and m.resource_name == "Poster", "%s %s uses material Poster" % [where, nm])
+	K.check(
+		fails, m != null and m.resource_name == "Poster", "%s %s uses material Poster" % [where, nm]
+	)
 	return mi
 
 
 # ------------------------------------------------------------------ zones: doors and poster spots
+
 
 func _check_zones() -> void:
 	var sampled: Array[String] = []
@@ -214,7 +279,9 @@ func _check_zones() -> void:
 		var names := _glbs(ZONES + z + "/")
 		for k in range(mini(2, names.size())):
 			sampled.append(ZONES + z + "/" + names[k] + ".glb")
-	K.check(fails, sampled.size() == 4, "two r1 and two c1 zone models to sample (%d)" % sampled.size())
+	K.check(
+		fails, sampled.size() == 4, "two r1 and two c1 zone models to sample (%d)" % sampled.size()
+	)
 	var doors := 0
 	var spots := 0
 	var with_doors := 0
@@ -234,13 +301,23 @@ func _check_zones() -> void:
 	if doors == 0 and spots == 0 and _door_models == 0:
 		# The door fix is in the generator (arch.py) but the zone and building GLBs have not been
 		# re-exported yet (H-needs.md: re-export window). Report it; enforce once any model has doors.
-		print("FP_ASSETS doors=PENDING: no zone or building model carries Door_<n> / PosterSpot_<n> yet")
+		print(
+			"FP_ASSETS doors=PENDING: no zone or building model carries Door_<n> / PosterSpot_<n> yet"
+		)
 		return
-	K.check(fails, with_doors == sampled.size(), "every sampled zone model has a Door_<n> with scale.y >= 0.1 (%d/%d)" % [with_doors, sampled.size()])
+	K.check(
+		fails,
+		with_doors == sampled.size(),
+		(
+			"every sampled zone model has a Door_<n> with scale.y >= 0.1 (%d/%d)"
+			% [with_doors, sampled.size()]
+		)
+	)
 	K.check(fails, spots > 0, "sampled zone models carry PosterSpot_<n> empties (%d)" % spots)
 
 
 # ------------------------------------------------------------------ physics
+
 
 func _check_no_physics() -> void:
 	var count := 0
@@ -251,19 +328,38 @@ func _check_no_physics() -> void:
 			if root == null:
 				continue
 			count += 1
-			if not dir.begins_with(AP.STREET_DIR) and not root.find_children(AP.DOOR_SPOT_PREFIX + "*", "Node3D", true, false).is_empty():
+			if (
+				not dir.begins_with(AP.STREET_DIR)
+				and not (
+					root.find_children(AP.DOOR_SPOT_PREFIX + "*", "Node3D", true, false).is_empty()
+				)
+			):
 				_door_models += 1
 			for c in root.find_children("*", "Node", true, false):
-				if c is CollisionObject3D or c is CollisionShape3D or c is CollisionPolygon3D or c is VehicleWheel3D \
-						or c is Joint3D or c is NavigationRegion3D:
+				if (
+					c is CollisionObject3D
+					or c is CollisionShape3D
+					or c is CollisionPolygon3D
+					or c is VehicleWheel3D
+					or c is Joint3D
+					or c is NavigationRegion3D
+				):
 					bad.append("%s%s:%s" % [dir.trim_prefix("res://models/real/"), n, c.name])
 			root.free()
 	print("physics scan models=%d door_models=%d" % [count, _door_models])
 	K.check(fails, count > 40, "scanned every zone, building and street model (%d)" % count)
-	K.check(fails, bad.is_empty(), "no physics nodes in zone, building or street models %s" % ("" if bad.is_empty() else str(bad.slice(0, 8))))
+	K.check(
+		fails,
+		bad.is_empty(),
+		(
+			"no physics nodes in zone, building or street models %s"
+			% ("" if bad.is_empty() else str(bad.slice(0, 8)))
+		)
+	)
 
 
 # ------------------------------------------------------------------ helpers
+
 
 func _inst(path: String) -> Node3D:
 	var ps := AP.load_scene(path)

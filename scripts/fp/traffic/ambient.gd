@@ -46,6 +46,10 @@ const PARK_OTHER := 0.18
 const BIKE_CHANCE := 0.18
 const BIKE_V0 := 4.0 * WS.M
 const BIKE_DIMS := Vector3(0.6 * WS.M, 1.8 * WS.M, 1.8 * WS.M)
+## Share of the ambient traffic on step-through scooters (the scooters flag; 0 off), of the
+## model's own size, ridden at about SCOOTER_V0.
+const SCOOTER_CHANCE := 0.08
+const SCOOTER_V0 := 9.7 * WS.M
 ## On an unpaved road (D.ROAD_GRADES) the cyclist chance is TRACK_BIKE_BOOST times higher (at most
 ## TRACK_BIKE_MAX), and only TRACK_CARS of the cars that would spawn there do.
 const TRACK_BIKE_BOOST := 3.0
@@ -59,8 +63,8 @@ var sw: SW
 var vh: VH
 var wk: WK
 var radius: float = minf(CAR_RING, WS.TRAFFIC_RADIUS)
-## Callables set by the feature: car_model(seed) -> int, person_model(seed) -> int, dims(model) -> Vector3,
-## visible(pos) -> bool (inside the camera frustum and within car range).
+## Callables set by the feature: car_model(seed) -> int, person_model(seed) -> int,
+## dims(model) -> Vector3, visible(pos) -> bool (in the camera frustum and within car range).
 var car_model: Callable
 var person_model: Callable
 var dims_of: Callable
@@ -72,10 +76,15 @@ var bike_chance: float = 0.0
 var caps_override: Variant = null
 var _caps_cache: Dictionary = {}
 var _caps_dirty := true
+## scooter_model() -> int (traffic_feature.scooter_model), and the share of scooter riders.
+var scooter_model: Callable
+var scooter_chance: float = 0.0
 ## jcb_model() -> int (traffic_feature.jcb_model): the backhoe loader parked at a rare share of
 ## curb slots (a parked work machine the player can drive, not one in traffic).
 var jcb_model: Callable
 const JCB_IN := 37
+## A scooter stands at about one in PARK_SCOOTER_IN of the filled curb slots (the scooters flag).
+const PARK_SCOOTER_IN := 9
 ## At most this many backhoes park beside construction sites at once, however many sites are open.
 const SITE_MACHINES_MAX := 6
 ## Site id -> the backhoe parked beside that site (a work machine on the job), cleared when the
@@ -175,7 +184,11 @@ func maintain(p: Vector3, fwd: Vector3, sync: bool) -> void:
 		if c.role != "ambient" or c.parked:
 			continue
 		var d2 := _d2(c.pos, p)
-		var gone: bool = d2 > r2 or (c.stuck and not visible.call(c.pos)) or (c.stalled_s > 40.0 and d2 > 36.0 and not visible.call(c.pos))
+		var gone: bool = (
+			d2 > r2
+			or (c.stuck and not visible.call(c.pos))
+			or (c.stalled_s > 40.0 and d2 > 36.0 and not visible.call(c.pos))
+		)
 		if gone and not visible.call(c.pos):
 			vh.remove(c)
 	var rp2 := (PED_RING + 0.7) * (PED_RING + 0.7)
@@ -211,7 +224,9 @@ func _d2(a: Vector3, b: Vector3) -> float:
 ## A random road tile within the spawn ring (min_r..r; r < 0: the car ring), weighted toward busy
 ## streets. Whether the spot is in view is the caller's check (never "behind the player" alone:
 ## at the edge of the city there may be no road behind).
-func _pick_tile(p: Vector3, _fwd: Vector3, sync: bool, r: float = -1.0, min_r: float = MIN_SPAWN) -> int:
+func _pick_tile(
+	p: Vector3, _fwd: Vector3, sync: bool, r: float = -1.0, min_r: float = MIN_SPAWN
+) -> int:
 	if _road_tiles.is_empty():
 		return -1
 	var rr := radius if r < 0.0 else r
@@ -267,11 +282,17 @@ func _spawn_car(p: Vector3, fwd: Vector3, sync: bool) -> bool:
 	var pick := _bike_or_car(t)
 	if pick < 0:
 		return false
-	var bike := pick == 1
-	var m := _model(bike)
+	var kind := "car" if pick == 0 else ("bike" if pick == 1 else "scooter")
+	var m := _model(kind)
 	if m < 0:
 		return false
-	var dims: Vector3 = BIKE_DIMS if bike else dims_of.call(m)
+	return _spawn_on(l, p, kind, m, sync)
+
+
+## Places the new vehicle on l near p: never on the hero, never in view unless sync. False when
+## the lane cannot hold it or it would show.
+func _spawn_on(l: LG.Lane, p: Vector3, kind: String, m: int, sync: bool) -> bool:
+	var dims: Vector3 = BIKE_DIMS if kind == "bike" else dims_of.call(m)
 	if l.length < dims.z + 0.05:
 		return false
 	var s := _rng.randf_range(dims.z + 0.02, l.length - 0.02)
@@ -283,7 +304,7 @@ func _spawn_car(p: Vector3, fwd: Vector3, sync: bool) -> bool:
 		return false
 	if not sync and _in_view(l, s, dims.z):
 		return false
-	var c := _place_new(l, s, m, dims, bike, sync)
+	var c := _place_new(l, s, m, dims, kind, sync)
 	if not sync and visible.call(c.pos):
 		vh.remove(c)
 		return false
@@ -301,8 +322,8 @@ func _in_view(l: LG.Lane, s: float, len: float) -> bool:
 	return false
 
 
-## 1 to spawn a cyclist on tile t, 0 for a car, -1 for nothing. Tracks and trails carry more
-## cyclists, and most cars keep to paved streets.
+## 1 to spawn a cyclist on tile t, 2 for a scooter, 0 for a car, -1 for nothing. Tracks and
+## trails carry more cyclists, scooters keep to the paved streets like the cars do.
 func _bike_or_car(t: LG.TileInfo) -> int:
 	var rough := t.grade != D.GRADE_PAVED
 	var chance := minf(bike_chance * TRACK_BIKE_BOOST, TRACK_BIKE_MAX) if rough else bike_chance
@@ -310,24 +331,34 @@ func _bike_or_car(t: LG.TileInfo) -> int:
 		return 1
 	if rough and _rng.randf() > TRACK_CARS:
 		return -1
+	if scooter_chance > 0.0 and scooter_model.is_valid() and _rng.randf() < scooter_chance:
+		return 2
 	return 0
 
 
-## The model of a new ambient vehicle: the bicycle, else a car model by the stream.
-func _model(bike: bool) -> int:
-	return int(bike_model.call()) if bike else int(car_model.call(_rng.randi()))
+## The model of a new ambient vehicle: the bicycle or the scooter, else a car model by the stream.
+func _model(kind: String) -> int:
+	if kind == "bike":
+		return int(bike_model.call())
+	if kind == "scooter":
+		return int(scooter_model.call())
+	return int(car_model.call(_rng.randi()))
 
 
-## A new ambient car (or cyclist, at their own speed) of model m on l at s.
-func _place_new(l: LG.Lane, s: float, m: int, dims: Vector3, bike: bool, sync: bool) -> VH.Car:
-	var c := vh.make("bike" if bike else "car", "ambient", dims)
+## A new ambient car (or cyclist / scooter rider, at their own speed) of model m on l at s.
+func _place_new(l: LG.Lane, s: float, m: int, dims: Vector3, kind: String, sync: bool) -> VH.Car:
+	var c := vh.make(kind, "ambient", dims)
 	c.model = m
-	c.label = "a cyclist" if bike else "a commuter"
-	if bike:
+	c.label = (
+		"a cyclist" if kind == "bike" else ("a scooter" if kind == "scooter" else "a commuter")
+	)
+	if kind == "bike":
 		c.v0 = BIKE_V0 * _rng.randf_range(0.85, 1.15)
+	elif kind == "scooter":
+		c.v0 = SCOOTER_V0 * _rng.randf_range(0.85, 1.15)
 	vh.place(c, l, s)
 	c.v = l.limit * c.speed_f * (_rng.randf_range(0.6, 1.0) if sync else 0.9)
-	if bike:
+	if kind != "car":
 		c.v = minf(c.v, c.v0)
 	return c
 
@@ -364,8 +395,8 @@ func _spawn_ped(p: Vector3, fwd: Vector3, sync: bool) -> bool:
 	return true
 
 
-## Fills curb slots with parked cars, deterministically per slot (bulk: one lane rebuild after).
-## Returns how many were parked.
+## Fills curb slots with parked vehicles, deterministically per slot (bulk: one lane rebuild
+## after). Returns how many were parked.
 func fill_parking() -> int:
 	var n := 0
 	lg.bulk = true
@@ -380,19 +411,32 @@ func fill_parking() -> int:
 			if float(h % 1000) / 1000.0 >= chance:
 				continue
 			var jcb := int(jcb_model.call()) if jcb_model.is_valid() else -1
-			var m := int(jcb if jcb >= 0 and h % JCB_IN == 0 else car_model.call(h / 1000))
-			var dims: Vector3 = dims_of.call(m)
-			var c := vh.make("car", "decor", dims)
-			c.model = m
-			if m == jcb:
+			var sco := int(scooter_model.call()) if scooter_model.is_valid() else -1
+			var pick := _park_pick(h, jcb, sco, int(car_model.call(h / 1000)))
+			var dims: Vector3 = dims_of.call(pick[0])
+			var c := vh.make(pick[1], "decor", dims)
+			c.model = pick[0]
+			if jcb >= 0 and int(pick[0]) == jcb:
 				c.label = "a backhoe"
 				c.mass = 5.5
+			elif pick[1] == "scooter":
+				c.label = "a scooter"
 			else:
 				c.label = "a parked car"
 			vh.park_at(c, i, k)
 			n += 1
 	lg.bulk = false
 	return n
+
+
+## The parked vehicle a slot's hash picks, [model, kind]: the backhoe at 1 in JCB_IN, else a
+## scooter at 1 in PARK_SCOOTER_IN when its model is there, else the car model off the hash.
+static func _park_pick(h: int, jcb: int, sco: int, car: int) -> Array:
+	if jcb >= 0 and h % JCB_IN == 0:
+		return [jcb, "car"]
+	if sco >= 0 and h % PARK_SCOOTER_IN == 1:
+		return [sco, "scooter"]
+	return [car, "car"]
 
 
 ## Parks a backhoe at the kerb of a road tile beside the construction site (a work machine on the

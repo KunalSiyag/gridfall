@@ -88,7 +88,7 @@ MATS_SWATCHES = [
     "Paint_yellow", "Paint_beige", "Paint_orange", "Paint_darkred", "Paint_navy", "Paint_garbage", "Paint_fire",
     "Sign_Red", "Sign_Blue", "Sign_Green", "Sign_White", "Reflective_White", "Chrome", "Rubber", "Plastic_Black",
     "Plastic_Grey", "Metal_Dark", "Metal_Galv", "Metal_White", "Metal_Yellow", "Metal_Red", "Metal_Green",
-    "Metal_Blue", "Steel_White", "Paint_teal", "Paint_backhoe",
+    "Metal_Blue", "Steel_White", "Paint_teal", "Paint_backhoe", "Paint_mint",
 ]
 # Flat specs some MATS_SWATCHES need when the module that defines them is not imported.
 _FALLBACK = {
@@ -97,6 +97,7 @@ _FALLBACK = {
     "Steel_White": ("flat", (0.72, 0.73, 0.72), 0.4, 0.35, {}),
     "Paint_teal": ("flat", (0.02, 0.22, 0.24), 0.3, 0.2, {"coat": 1.0}),
     "Paint_backhoe": ("flat", (0.96, 0.72, 0.02), 0.32, 0.15, {"coat": 1.0}),
+    "Paint_mint": ("flat", (0.45, 0.72, 0.66), 0.28, 0.15, {"coat": 1.0}),
 }
 
 

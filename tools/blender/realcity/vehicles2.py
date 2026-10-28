@@ -1628,6 +1628,133 @@ def bicycle(c, look, frame="Paint_blue"):
     return (0.0, 0.33, 1.0)
 
 
+# ----------------------------------------------------------------------------- step-through scooter
+
+## The scooter's rider markers (Blender metres): the grips on the handlebar (the bicycle's grip
+## names, so drive/seat_pose.gd reads them as the hand holds) and the feet on the floorboard,
+## static (no crank: seat_pose seats the hero as in a car, with a scooter's slight forward lean).
+# The bars sweep back toward the saddle (a classic step-through stance), so a nearly upright
+# rider reaches the grips: 0.63 m ahead and 0.22 m up from the seat, not the 0.75 m of a flat bar.
+SCOOTER_GRIPS = {"Handle_L": (0.27, -0.32, 1.02), "Handle_R": (-0.27, -0.32, 1.02)}
+SCOOTER_FEET = {"Pedal_L": (0.11, 0.10, 0.35), "Pedal_R": (-0.11, 0.10, 0.35)}
+
+
+def scooter(c, look, frame="Paint_mint"):
+    """Step-through scooter, 1.75 m long, wheels 0.42 m; Wheel_F / Wheel_R spin about X.
+
+    The floorboard between the leg shield and the saddle carries the feet, so there is no crank:
+    the rider sits nearly upright with a slight lean to the grips. Lamps sit on the headset and
+    the tail panel; the far LOD merges everything, keeps the palette lenses where the full
+    model's own sit and adds a rough rider, so a scooter beyond the seated bodies' range
+    (traffic/occupants.gd) is still ridden and still glows at night.
+    """
+    mb = c.mb
+    from indkit import tube
+    lod = look.lod
+    fp = look("paint")
+    R, yf, yr = 0.21, -0.62, 0.66
+    zw = R
+    n = 4 if lod else 10
+    t = lambda a, b, rr, m=fp: tube(mb, [v * S for v in a], [v * S for v in b], rr * S, m, n=n)  # noqa: E731
+    # front fork from the axle up to the headset, steering column hidden by the leg shield
+    for sd in (-1, 1):
+        t((sd * 0.045, yf, zw), (sd * 0.035, -0.50, 0.86), 0.013, "@Metal_Galv")
+    # leg shield: a slab leaning forward, from the floorboard front to the headset
+    mb.push(Matrix.Translation(Vector((0.0, -0.33 * S, 0.33 * S))) @ RX(math.radians(18)))
+    bc(mb, (0.0, 0.0, 0.31), (0.36, 0.07, 0.62), fp)
+    bc(mb, (0.0, 0.045, 0.31), (0.28, 0.02, 0.52), "@plastic_black")  # inner knee panel
+    mb.pop()
+    bx(mb, -0.13, -0.34, 0.24, 0.13, -0.08, 0.35, fp)  # apron skirt onto the floorboard
+    # floorboard and the spine back to under the saddle
+    bx(mb, -0.15, -0.10, 0.26, 0.15, 0.42, 0.33, "@plastic_black")
+    bc(mb, (0.0, 0.46, 0.40), (0.22, 0.16, 0.22), fp)
+    # headset, the riser sweeping the handlebar back toward the rider, grips and (full only)
+    # mirrors
+    bc(mb, (0.0, -0.50, 0.97), (0.16, 0.15, 0.13), fp)
+    t((0.0, -0.48, 0.99), (0.0, -0.32, 1.03), 0.015, "@Metal_Galv")
+    t((-0.30, -0.32, 1.02), (0.30, -0.32, 1.02), 0.013, "@Metal_Galv")
+    for sd in (-1, 1):
+        bc(mb, (sd * 0.27, -0.32, 1.02), (0.11, 0.05, 0.05), "@plastic_black")
+        if look.full:
+            t((sd * 0.20, -0.32, 1.02), (sd * 0.24, -0.28, 1.13), 0.006, "@Metal_Galv")
+            bc(mb, (sd * 0.245, -0.27, 1.15), (0.02, 0.05, 0.10), "@plastic_black")
+    # headlamp on the headset front
+    mb.cyl((0.0, -0.56 * S, 0.97 * S), 0.05 * S, 0.05 * S, "@plastic_black", n=10,
+           axis=Matrix.Rotation(math.pi / 2, 4, "X"), smooth=False, caps=(True, False))
+    mb.cyl((0.0, -0.59 * S, 0.97 * S), 0.042 * S, 0.001 * S, look("head"), n=10,
+           axis=Matrix.Rotation(math.pi / 2, 4, "X"), smooth=False, caps=(False, True))
+    # saddle on its base, then the bodywork wrapping the rear wheel
+    bx(mb, -0.10, 0.06, 0.58, 0.10, 0.52, 0.72, fp)
+    sad = [(0.0, -0.20), (0.10, -0.17), (0.15, -0.05), (0.15, 0.15), (0.10, 0.20),
+           (-0.10, 0.20), (-0.15, 0.15), (-0.15, -0.05), (-0.10, -0.17)]
+    mb.push(Matrix.Translation(Vector((0.0, 0.28 * S, 0.74 * S))))
+    pts = [(x * S, y * S) for x, y in sad]
+    if sum(a[0] * b[1] - b[0] * a[1] for a, b in zip(pts, pts[1:] + pts[:1])) < 0:
+        pts = list(reversed(pts))
+    mb.prism(pts, 0.0, 0.06 * S, "@leather_black")
+    mb.pop()
+    bc(mb, (0.0, 0.60, 0.50), (0.30, 0.52, 0.34), fp)
+    bc(mb, (0.0, 0.38, 0.62), (0.26, 0.28, 0.22), fp)
+    bc(mb, (0.0, 0.885, 0.60), (0.10, 0.03, 0.05), "@plastic_black")
+    bc(mb, (0.0, 0.903, 0.60), (0.08, 0.012, 0.035), look("tail"))
+    # mudguards hugging the wheels
+    for yc in (yf, yr):
+        mb.lathe([(R * 1.14 * S, -0.04 * S), (R * 1.14 * S, 0.04 * S)], fp, n=10 if lod else 14,
+                 c=(0, yc * S, zw * S), axis=RY90, a0=math.radians(55), a1=math.radians(235), smooth=True)
+    if look.full:
+        # exhaust: header from under the floorboard to the muffler on the right of the rear wheel
+        t((0.08, 0.30, 0.15), (0.12, 0.62, 0.18), 0.024, "@Metal_Galv")
+        mb.cyl((0.13 * S, 0.76 * S, 0.20 * S), 0.048 * S, 0.22 * S, "@Metal_Galv", n=10,
+               axis=Matrix.Rotation(math.pi / 2, 4, "X"), smooth=True, caps=(True, True))
+    if lod:
+        # Far LOD only: a rough rider, nearly upright, hands to the grips, feet on the floorboard.
+        hip, sh = (0.0, 0.23, 0.84), (0.0, 0.09, 1.32)
+        t(hip, sh, 0.14)
+        bc(mb, (0.0, 0.10, 1.50), (0.18, 0.21, 0.22), "@leather_black")
+        for sd in (-1, 1):
+            t((sd * 0.16, sh[1], sh[2] - 0.04), (sd * 0.26, -0.30, 1.03), 0.04)
+            t((sd * 0.09, hip[1], hip[2]), (sd * 0.11, -0.02, 0.55), 0.06, "@int_dark")
+            t((sd * 0.11, -0.02, 0.55), (sd * 0.11, 0.10, 0.35), 0.05, "@int_dark")
+        # Lamps as palette lenses where the full model's own sit (build_lod makes them the
+        # emissive Light_Head / Light_Tail): a far scooter glows at night like any car.
+        bc(mb, (0.0, -0.59, 0.97), (0.07, 0.02, 0.06), look("head"))
+        bc(mb, (0.0, 0.90, 0.60), (0.08, 0.02, 0.04), look("tail"))
+    for name, y in (("Wheel_F", yf), ("Wheel_R", yr)):
+        def geo(m, lod=lod):
+            nn = 10 if lod else 20
+            m.push(RY90)
+            m.lathe([(R * 0.86 * S, -0.038 * S), (R * S, -0.032 * S), (R * S, 0.032 * S),
+                     (R * 0.86 * S, 0.038 * S)], "@tyre", n=nn, smooth=True)
+            m.lathe([(R * 0.86 * S, 0.020 * S), (R * 0.60 * S, 0.016 * S), (R * 0.60 * S, -0.016 * S),
+                     (R * 0.86 * S, -0.020 * S)], "@rim_alloy", n=nn, smooth=False)
+            m.cyl((0, 0, -0.03 * S), 0.03 * S, 0.06 * S, "@rim_alloy", n=8, smooth=False)
+            if not lod:
+                for k in range(5):
+                    a = 2 * math.pi * k / 5
+                    m.push(rotz(a))
+                    m.prism([(0.05 * S, -0.015 * S), (R * 0.58 * S, -0.025 * S),
+                             (R * 0.58 * S, 0.025 * S), (0.05 * S, 0.015 * S)],
+                            0.008 * S, 0.020 * S, "@rim_alloy", caps=(False, True))
+                    m.pop()
+            else:
+                m.lathe([(R * 0.60 * S, 0.0), (0.03 * S, 0.0)], "@rim_barrel", n=8, smooth=False)
+            m.pop()
+        if look.full:
+            wmb = MB()
+            geo(wmb)
+            atlas.resolve(wmb)
+            ob = wmb.build(name)
+            ob.location = (0, y * S, zw * S)
+        else:
+            mb.push(Matrix.Translation(Vector((0, y * S, zw * S))))
+            geo(mb)
+            mb.pop()
+    if look.full:
+        for nm, p in list(SCOOTER_GRIPS.items()) + list(SCOOTER_FEET.items()):
+            make_empty(nm, (p[0] * S, p[1] * S, p[2] * S))
+    return (0.0, 0.23, 0.80)
+
+
 # ----------------------------------------------------------------------------- backhoe loader
 
 ## Loader-arm rig pivots (Blender metres): the boom hinge on the chassis and the bucket hinge at
@@ -1789,7 +1916,7 @@ def build_vehicle(c, kind="car", paint="Paint_blue", lod=False, name=None, **kw)
     c.cage = MB()
     c.body_obs = []
     fn = {"car": car, "truck": truck, "garbage_truck": garbage_truck, "firetruck": firetruck,
-          "ambulance": ambulance, "bus": bus, "bicycle": bicycle, "backhoe": backhoe}[kind]
+          "ambulance": ambulance, "bus": bus, "bicycle": bicycle, "backhoe": backhoe, "scooter": scooter}[kind]
     hip = fn(c, look, **kw)
     _finish(c, name or kind, look, hip)
 
@@ -1844,8 +1971,10 @@ CARS = {
     "ambulance": _v("Paint_white", kind="ambulance"),
     "backhoe_yellow": _v("Paint_backhoe", kind="backhoe"),
     "bicycle": _v("Paint_teal", kind="bicycle"),
+    "scooter": _v("Paint_mint", kind="scooter"),
 }
 core.MATS.setdefault("Paint_teal", ("flat", (0.02, 0.22, 0.24), 0.3, 0.2, {"coat": 1.0}))
+core.MATS.setdefault("Paint_mint", ("flat", (0.45, 0.72, 0.66), 0.28, 0.15, {"coat": 1.0}))
 core.MATS.setdefault("Paint_backhoe", ("flat", (0.96, 0.72, 0.02), 0.32, 0.15, {"coat": 1.0}))
 
 
@@ -1856,7 +1985,7 @@ def _entry(name, lod):
 
     def fn(c, _name=name, _kind=kind, _paint=paint, _lod=lod, _kw=d):
         build_vehicle(c, kind=_kind, paint=_paint, lod=_lod, name=_name + ("_lod1" if _lod else ""), **_kw)
-    legacy = "vehicles/" + name if name != "bicycle" else "vehicles_v2/bicycle"
+    legacy = "vehicles/" + name if name not in ("bicycle", "scooter") else "vehicles_v2/" + name
     return (fn, {"_seed_key": legacy})
 
 
