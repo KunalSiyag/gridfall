@@ -1172,6 +1172,7 @@ Traffic and pedestrians on lanes (slice E, docs/fp/slices/E-traffic.md): one roa
 
 ### Properties
 
+- `section_us_max: Dictionary`: Worst microseconds per _tile_changed step since reset_section_stats() (fp_bench's hitch rows).
 - `people: PPL`: HC's animated people (deliverable 9); ok == false draws the legacy static people instead.
 - `shoves: SHOVES`: Cars the player's car knocked: their slides, stuns and the way back onto their lanes.
 - `hero_aboard: bool`: True while the hero is up on a moving car (an action hijack): not on foot in the street, so nobody stops or steps aside for them (set_hero_aboard).
@@ -1186,6 +1187,7 @@ Traffic and pedestrians on lanes (slice E, docs/fp/slices/E-traffic.md): one roa
 - `func setup(p_ctx: FpContext) -> void`
 - `func teardown() -> void`
 - `func on_world_rebuilt() -> void`
+- `func reset_section_stats() -> void`
 - `func site_machines() -> Dictionary`: The construction sites' parked machines (site id -> car id): the drive side's backhoe work loop (the backhoe_work flag) animates them. {} until built.
 - `func step(dt: float) -> void`: Advances everything by dt seconds of game-scaled time (test hook; _process calls it in steps of at most 1/30 s).
 - `func sync_visuals(delta: float) -> void`: Draws every agent (full models near, MultiMesh LOD far) and updates lamp states. Parked cars are redrawn only when the parked set changes or the camera moves a little.

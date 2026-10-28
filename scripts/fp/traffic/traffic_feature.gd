@@ -86,6 +86,8 @@ var junctions: JN
 var vehicles: VH
 var walkers: WK
 var render: RD
+## Worst microseconds per _tile_changed step since reset_section_stats() (fp_bench's hitch rows).
+var section_us_max: Dictionary = {}
 ## HC's animated people (deliverable 9); ok == false draws the legacy static people instead.
 var people: PPL
 var contact: CS
@@ -374,19 +376,36 @@ func _on_tile_cleared(i: int) -> void:
 	_tile_changed(i)
 
 
+func reset_section_stats() -> void:
+	section_us_max.clear()
+
+
+func _section(name: String, t0: int) -> int:
+	var now := Time.get_ticks_usec()
+	section_us_max[name] = maxi(int(section_us_max.get(name, 0)), now - t0)
+	return now
+
+
 func _tile_changed(i: int) -> void:
 	var was_road := lanes.tiles.has(i)
 	var is_road := ctx.sim.kind[i] == D.ROAD
 	if not was_road and not is_road:
 		return
+	var t := Time.get_ticks_usec()
 	lanes.rebuild_around(i)
+	t = _section("lanes", t)
 	peds.rebuild_around(i)
+	t = _section("peds", t)
 	junctions.build_props(i)
 	for n: int in lanes.neighbours(i):
 		junctions.build_props(n)
+	t = _section("junctions", t)
 	_posts_dirty = true
+	t = _section("walkers", t)
 	ambient.refresh_tiles()
+	t = _section("ambient", t)
 	_after_lane_change()
+	_section("after", t)
 
 
 ## Smooths vehicles on rebuilt tiles and moves any car whose slot vanished.
@@ -538,7 +557,9 @@ func step(dt: float) -> void:
 	fleets.step(dt)
 	if _posts_dirty:
 		_posts_dirty = false
+		var tw := Time.get_ticks_usec()
 		walkers.rebuild_posts(ctx.sim)
+		_section("walkers_rebuild", tw)
 	_maint_t -= dt
 	if _maint_t <= 0.0:
 		_maint_t = 0.5
