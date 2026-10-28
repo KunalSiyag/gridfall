@@ -48,11 +48,14 @@ const PROXY_ID := 1 << 24
 
 var people: PPL
 ## car id -> [the Walker proxy holding the body, its Hips in CharacterRoot space, riding(, the
-## saddle point, the limb bones)]
+## saddle point, the limb bones)]. Car drivers add [markers, limb bones, sink, the car basis the
+## limbs were last bent for]; riders add [seat, limb bones, a pedal memo {th, legs, arms}].
 var _by_car: Dictionary = {}
 var seated: int = 0
 ## How many of the seated are riding bicycles.
 var riding: int = 0
+## IK limb re-poses (_driver_limbs, _pedal's legs and arms); tests assert a held pose adds none.
+var ik_runs: int = 0
 
 
 func setup(p_people: PPL) -> void:
@@ -206,26 +209,46 @@ static func _pose_seated(b: POOL.Body, ride: bool = false) -> Vector3:
 ## its grip, as the bodies differ from the one the clip was posed on.
 func _pedal(e: Array, c: VH.Car, th: float) -> void:
 	var b: POOL.Body = (e[0] as WK.Walker).body
-	b.ap.active = true
-	b.ap.seek(fposmod(th / TAU, 1.0) * b.ap.get_animation(RIDE).length, true)
-	b.ap.active = false
+	var basis := c.node.global_transform.basis.orthonormalized()
+	# The pose is a pure function of the crank turn and the bike's basis (the body rides the
+	# bike rigidly): the legs re-run when either moves, the arms (fixed grips) only when the
+	# basis does, and a rider held at a light with still cranks re-runs nothing.
+	if e.size() < 6:
+		e.append({})
+	var memo: Dictionary = e[5]
+	var legs := (
+		not memo.has("th")
+		or not is_equal_approx(float(memo["th"]), th)
+		or not (memo["legs"] as Basis).is_equal_approx(basis)
+	)
+	var arms := not memo.has("arms") or not (memo["arms"] as Basis).is_equal_approx(basis)
+	if not legs and not arms:
+		return
+	ik_runs += 1
+	if legs:
+		b.ap.active = true
+		b.ap.seek(fposmod(th / TAU, 1.0) * b.ap.get_animation(RIDE).length, true)
+		b.ap.active = false
+		memo["th"] = th
+		memo["legs"] = basis
 	var crank := c.node.get_meta("crank") as Node3D if c.node.has_meta("crank") else null
-	if crank == null or e.size() < 4:
+	if crank == null:
 		return
 	var sk := b.skel
 	var to_sk := sk.global_transform.affine_inverse()
-	var basis := c.node.global_transform.basis.orthonormalized()
 	var axle := crank.global_position
 	var seat := c.node.global_transform * (e[3] as Vector3)
 	var bones: PackedInt32Array = e[4]
 	for k in range(2):
 		var sx := 1.0 - 2.0 * k
-		var ang := th + PI * k
-		var pedal := Vector3(sx * PEDAL_X, CRANK_R * cos(ang), CRANK_R * sin(ang))
-		var leg := bones.slice(k * 7, k * 7 + 4)
-		_reach(sk, leg, to_sk * (axle + basis * pedal * WS.M))
-		var wrist := Vector3(sx * WRIST.x, WRIST.y, WRIST.z)
-		_reach(sk, bones.slice(k * 7 + 4, k * 7 + 7), to_sk * (seat + basis * wrist * WS.M))
+		if legs:
+			var ang := th + PI * k
+			var pedal := Vector3(sx * PEDAL_X, CRANK_R * cos(ang), CRANK_R * sin(ang))
+			_reach(sk, bones.slice(k * 7, k * 7 + 4), to_sk * (axle + basis * pedal * WS.M))
+		if arms:
+			var wrist := Vector3(sx * WRIST.x, WRIST.y, WRIST.z)
+			_reach(sk, bones.slice(k * 7 + 4, k * 7 + 7), to_sk * (seat + basis * wrist * WS.M))
+	memo["arms"] = basis
 
 
 ## The rider's limb bones: per side (left, right) upper leg, lower leg, foot, toes, upper arm,
@@ -364,7 +387,8 @@ func _place(e: Array, c: VH.Car, seat: Vector3) -> void:
 	var s := people.scale_of(w)
 	var basis := Basis(Vector3.UP, c.yaw + c.vis_yaw)
 	var hip := c.node.global_transform * seat
-	var sink := float(e[5]) if e.size() >= 6 and float(e[5]) > 0.0 else 0.0
+	# e[5] is a rider's pedal memo (a Dictionary), so only a car driver's sink reads it.
+	var sink := float(e[5]) if e.size() >= 6 and not bool(e[2]) and float(e[5]) > 0.0 else 0.0
 	var xf := Transform3D(
 		basis * s, hip - basis * ((e[1] as Vector3) * s) - Vector3(0.0, sink, 0.0)
 	)
@@ -375,4 +399,13 @@ func _place(e: Array, c: VH.Car, seat: Vector3) -> void:
 			e[5] = sink
 			xf.origin -= Vector3(0.0, sink, 0.0)
 			b.root.global_transform = xf
-		_driver_limbs(e, c)
+		# The sit pose is static and the markers are car-space, so in the skeleton's frame the
+		# limb goals move only with the car's basis (a grade, a turn while vis_yaw catches up):
+		# re-bend the limbs once at seating and when that basis moves, not every frame.
+		var cb := c.node.global_transform.basis
+		if e.size() < 7 or not (e[6] as Basis).is_equal_approx(cb):
+			if e.size() < 7:
+				e.resize(7)
+			e[6] = cb
+			ik_runs += 1
+			_driver_limbs(e, c)

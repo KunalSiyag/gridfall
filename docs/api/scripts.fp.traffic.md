@@ -651,6 +651,7 @@ Drivers seated in the moving vehicles nearest the camera. Only while a vehicle d
 ### Properties
 
 - `riding: int`: How many of the seated are riding bicycles.
+- `ik_runs: int`: IK limb re-poses (_driver_limbs, _pedal's legs and arms); tests assert a held pose adds none.
 
 ### Functions
 
