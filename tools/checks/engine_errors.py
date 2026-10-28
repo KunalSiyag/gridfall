@@ -9,11 +9,13 @@ SCRIPT ERROR, so real bugs (e.g. get_meta on a missing key, #67/#72) slipped thr
 
 Default mode scans each LOG and exits 1 listing every ERROR:/USER ERROR: line that no entry
 in tools/checks/baselines/engine_errors.txt covers. --collect instead prints every distinct
-error line across the logs with a count, for seeding or auditing the allowlist.
+error line across the logs with a count, for seeding or auditing the allowlist. Exit codes:
+0 clean, 1 uncovered engine errors, 2 usage, 3 a broken allowlist or unreadable log -- the
+gate reports 2/3 as FAIL(engine-check), never FAIL(engine-error), so a broken checker is
+not mistaken for game errors.
 
 Allowlist format, one entry per line: `substr|<literal>|<reason>` or `regex|<pattern>|<reason>`.
-The reason is mandatory and shown when --audit lists the entries. Blank lines and lines
-starting with # are comments. A substr entry covers a line when the literal appears in the
+The reason is mandatory. Blank lines and lines starting with # are comments. A substr entry covers a line when the literal appears in the
 error text (after the `ERROR: ` / `USER ERROR: ` prefix); a regex entry when the pattern
 searches it.
 """
@@ -42,12 +44,12 @@ def load_allowlist(path: Path | None = None) -> list[tuple[str, str, str]]:
             continue
         parts = line.split("|", 2)
         if len(parts) != 3 or parts[0] not in ("substr", "regex") or not parts[1] or not parts[2]:
-            raise SystemExit(f"{path}:{lineno}: want 'substr|text|reason' or 'regex|pattern|reason'")
+            raise ValueError(f"{path}:{lineno}: want 'substr|text|reason' or 'regex|pattern|reason'")
         if parts[0] == "regex":
             try:
                 re.compile(parts[1])  # fail at load, not mid-gate
             except re.error as exc:
-                raise SystemExit(f"{path}:{lineno}: bad regex: {exc}") from exc
+                raise ValueError(f"{path}:{lineno}: bad regex: {exc}") from exc
         out.append((parts[0], parts[1], parts[2]))
     return out
 
@@ -78,15 +80,19 @@ def main(argv: list[str]) -> int:
     if not logs:
         print(__doc__, file=sys.stderr)
         return 2
-    counts: dict[str, int] = {}
-    for log in logs:
-        for text in error_lines(log):
-            counts[text] = counts.get(text, 0) + 1
-    if collect:
-        for text in sorted(counts, key=lambda t: (-counts[t], t)):
-            print(f"{counts[text]:6d}  {text}")
-        return 0
-    allowlist = load_allowlist()
+    try:
+        counts: dict[str, int] = {}
+        for log in logs:
+            for text in error_lines(log):
+                counts[text] = counts.get(text, 0) + 1
+        if collect:
+            for text in sorted(counts, key=lambda t: (-counts[t], t)):
+                print(f"{counts[text]:6d}  {text}")
+            return 0
+        allowlist = load_allowlist()
+    except (OSError, ValueError) as exc:
+        print(f"engine_errors: broken checker inputs: {exc}", file=sys.stderr)
+        return 3
     new = {text: n for text, n in counts.items() if not covered(text, allowlist)}
     if not new:
         return 0

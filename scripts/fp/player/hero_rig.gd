@@ -556,7 +556,9 @@ func snap(crouched: bool) -> void:
 ## A bone's world position (the animated pose, before the look-at modifiers).
 func bone_world(bone: String) -> Vector3:
 	var i := skeleton.find_bone(bone)
-	if i < 0:
+	# An off-tree skeleton has no meaningful world transform (fixtures, pre-attach): same
+	# NaN sentinel as an unknown bone, which callers already handle.
+	if i < 0 or not skeleton.is_inside_tree():
 		return Vector3(NAN, NAN, NAN)
 	return skeleton.global_transform * skeleton.get_bone_global_pose(i).origin
 
@@ -924,7 +926,7 @@ func _update_contacts() -> void:
 		if st == "loco"
 		else float(tree.get(P_CBS)) >= STEP_MIN_MOVE * float(speeds["crouch_walk"])
 	)
-	if ph >= 0.0 and _prev_phase >= 0.0 and st == _prev_state and walking:
+	if ph >= 0.0 and _prev_phase >= 0.0 and st == _prev_state and walking and skeleton.is_inside_tree():
 		var d := wrapf(ph - _prev_phase, -0.5, 0.5)
 		var cp := _contact_phases(st)
 		for f in range(2):

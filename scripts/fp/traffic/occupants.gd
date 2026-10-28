@@ -67,7 +67,9 @@ func sync(cars: Array, cam: Vector3, residents: Variant) -> void:
 	for c: VH.Car in cars:
 		if c.dead or c.parked or c.far or c.role == VH.PLAYER:
 			continue
-		if c.node == null or not c.node.visible:
+		# A pooled car node stays visible while detached; only an in-tree node has a
+		# meaningful global_transform for the seat and limb reads below.
+		if c.node == null or not c.node.visible or not c.node.is_inside_tree():
 			continue
 		var d := cam.distance_to(c.pos)
 		if d > (BIKE_RANGE if c.kind == "bike" else RANGE):

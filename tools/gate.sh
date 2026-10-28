@@ -80,10 +80,13 @@ classify() {
 		echo "FAIL(no-token)"
 	elif [ "$rc" -ne 0 ]; then
 		echo "FAIL(exit=$rc)"
-	elif ! python3 tools/checks/engine_errors.py "$log" >/dev/null 2>&1; then
-		echo "FAIL(engine-error)"
 	else
-		echo "PASS"
+		python3 tools/checks/engine_errors.py "$log" >/dev/null 2>&1
+		case $? in
+			0) echo "PASS" ;;
+			1) echo "FAIL(engine-error)" ;;
+			*) echo "FAIL(engine-check)" ;; # a broken checker is not a game error
+		esac
 	fi
 }
 
@@ -128,9 +131,9 @@ run_step() {
 		mv -f "$log" "$GATE_LOG_DIR/$name.try$attempt.log"
 		printf '%-28s %s, retrying (%d/%d)\n' "$name" "$res" "$attempt" "$GATE_RETRIES" >&2
 	done
-	if [ "$res" = "FAIL(engine-error)" ]; then
-		python3 tools/checks/engine_errors.py "$log" >&2
-	fi
+	case "$res" in
+		"FAIL(engine-error)"|"FAIL(engine-check)") python3 tools/checks/engine_errors.py "$log" >&2 || true ;;
+	esac
 	if [ "$res" = "PASS" ] && [ "$attempt" -gt 1 ]; then
 		res="PASS(flaky)"
 		printf '%s\t%s\t%s\t%s\n' "$name" "$first" "$attempt" "$(date -u +%Y-%m-%dT%H:%M:%SZ)" >>"$GATE_LOG_DIR/flaky.txt"
