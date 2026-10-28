@@ -150,6 +150,7 @@ func _check_spawn() -> void:
 ## the surface or preen their wings; none leaves the water.
 func _check_float() -> void:
 	var fk := _flock()
+	K.check(fails, fk != null, "float: a flock is out to test")
 	if fk == null:
 		return
 	var home: Vector3 = spot["home"]
@@ -179,6 +180,7 @@ func _check_float() -> void:
 ## spread, a take-off's clatter, wheeling high over the water.
 func _check_flush() -> void:
 	var fk := _flock()
+	K.check(fails, fk != null, "flush: a flock is out to test")
 	if fk == null:
 		return
 	calls.clear()
@@ -208,6 +210,7 @@ func _check_flush() -> void:
 ## The hero off, the flock glides back down and lands on the water and goes back to feeding.
 func _check_land() -> void:
 	var fk := _flock()
+	K.check(fails, fk != null, "land: a flock is out to test")
 	if fk == null:
 		return
 	var home: Vector3 = spot["home"]
@@ -268,6 +271,7 @@ func _check_flag() -> void:
 ## still flushes them; one well out of earshot leaves them be.
 func _check_horn() -> void:
 	var fk := _flock()
+	K.check(fails, fk != null, "horn: a flock is out to test")
 	if fk == null:
 		return
 	var home: Vector3 = spot["home"]
