@@ -88,6 +88,7 @@ var model := MODEL.new()
 var body := BODY.new()
 ## True while the hero is on a bicycle (no door to open: on and off it at once).
 var bike: bool = false
+var kind: String = ""
 ## True when the driven vehicle is a step-through scooter: no door like a bicycle, but a motor
 ## horn and its own drive profile.
 var scooter: bool = false
@@ -314,6 +315,7 @@ func _adopt(info: Dictionary) -> void:
 	if traffic != null and traffic.has_method("drive_profile"):
 		_profile = traffic.call("drive_profile", car_id)
 	bike = traffic != null and bool(traffic.call("is_bicycle", car_id))
+	kind = String(traffic.call("car_kind", car_id)) if traffic != null else ""
 	scooter = traffic != null and bool(traffic.call("is_scooter", car_id))
 	model.reset(float(info["yaw"]), _dims.z, _profile)
 	body.setup(_dims.x, _dims.z, _dims.y, float(_profile.get("mass", 1.0)))

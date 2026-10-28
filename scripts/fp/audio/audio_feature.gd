@@ -39,8 +39,15 @@ const BLIP_PITCH := {"mayor": 0.94, "press": 1.06, "council": 0.9}
 const HERO_HIT_FULL := {"punch": 12.0, "car": 60.0, "bite": 7.5}
 ## The pitch of each swing's whoosh (hero_action).
 const SWING_PITCH := {
-	"jab": 1.1, "cross": 0.95, "hook": 0.85, "kick": 0.75, "shove": 0.8, "swing": 0.7,
-	"counter": 0.85, "throw": 0.75, "slam": 0.7,
+	"jab": 1.1,
+	"cross": 0.95,
+	"hook": 0.85,
+	"kick": 0.75,
+	"shove": 0.8,
+	"swing": 0.7,
+	"counter": 0.85,
+	"throw": 0.75,
+	"slam": 0.7,
 }
 ## The sound of a weapon's blow (weapon_hit) by its kind, and how much quieter on a street prop.
 const WEAPON_SOUNDS := {"bat": "bat_hit", "pipe": "pipe_hit", "bottle": "bottle_smash"}
@@ -67,9 +74,9 @@ var _duck_target: float = 0.0
 var _sfx_db: float = 0.0
 var _talking: Dictionary = {}
 var _last_knock: float = -INF
-var _falls: Array = []                 # [due on _now, feet, dB] of bodies hitting the ground
+var _falls: Array = []  # [due on _now, feet, dB] of bodies hitting the ground
 var _rng := RandomNumberGenerator.new()
-var _links: Array = []                 # [Signal, Callable]
+var _links: Array = []  # [Signal, Callable]
 var _muffle: Tween
 
 
@@ -198,12 +205,25 @@ func self_test() -> Dictionary:
 			bad.append("bed %s on bus %s" % [b, p.bus])
 	var players := emitters.players() if emitters != null else []
 	for p: AudioStreamPlayer3D in players:
-		if not is_equal_approx(p.unit_size, WS.AUDIO_UNIT_SIZE) or p.doppler_tracking != AudioStreamPlayer3D.DOPPLER_TRACKING_DISABLED:
+		if (
+			not is_equal_approx(p.unit_size, WS.AUDIO_UNIT_SIZE)
+			or p.doppler_tracking != AudioStreamPlayer3D.DOPPLER_TRACKING_DISABLED
+		):
 			bad.append("emitter %s unit_size %.2f" % [p.name, p.unit_size])
 	if ctx.audio != null and not ctx.audio.is_fp():
 		bad.append("director not on foot")
-	var detail := "beds=%d (%s) emitters=%d/%d sources=%d steps=%s banks=%d" % [beds, ambience.loudest(),
-		emitters.count_assigned(), players.size(), emitters.sources().size(), "signal" if not footsteps.polling else "poll", emitters.bank_count()]
+	var detail := (
+		"beds=%d (%s) emitters=%d/%d sources=%d steps=%s banks=%d"
+		% [
+			beds,
+			ambience.loudest(),
+			emitters.count_assigned(),
+			players.size(),
+			emitters.sources().size(),
+			"signal" if not footsteps.polling else "poll",
+			emitters.bank_count()
+		]
+	)
 	if not bad.is_empty():
 		detail = ", ".join(bad) + " | " + detail
 	return {"ok": bad.is_empty(), "detail": detail}
@@ -322,8 +342,17 @@ func _on_pause_changed(paused: bool) -> void:
 	if _muffle != null:
 		_muffle.kill()
 	_muffle = create_tween().set_pause_mode(Tween.TWEEN_PAUSE_PROCESS)
-	_muffle.tween_property(music_filter, "cutoff_hz", MUSIC_CUTOFF_PAUSED if paused else MUSIC_CUTOFF_OPEN, MUFFLE_S) \
-		.set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_OUT)
+	(
+		_muffle
+		. tween_property(
+			music_filter,
+			"cutoff_hz",
+			MUSIC_CUTOFF_PAUSED if paused else MUSIC_CUTOFF_OPEN,
+			MUFFLE_S
+		)
+		. set_trans(Tween.TRANS_SINE)
+		. set_ease(Tween.EASE_OUT)
+	)
 
 
 func _on_conversation_changed(resident_id: String, active: bool) -> void:
@@ -475,17 +504,41 @@ func _queue_fall(delay: float, at: Vector3, db: float) -> void:
 	_falls.insert(i, [due, at, db])
 
 
+## The stream for the hero's own horn action (the class_audio flag; drive names the action by
+## the ride): each class's short press and held long lean, and a real bell for the bicycle —
+## the bell used to borrow the car horn. Without the flag every horn is the car's.
+const HERO_HORNS := {
+	"horn": "horn_short",
+	"horn_long": "horn_long",
+	"horn_truck": "horn_truck_short",
+	"horn_truck_long": "horn_truck_long",
+	"horn_scooter": "horn_scooter_short",
+	"horn_scooter_long": "horn_scooter_long",
+	"bell": "bell_bicycle",
+}
+
+
 ## The hero's swing (hero_action): a whoosh at their shoulder, a jab's higher, a hook's and a
 ## kick's lower, a shove's lower and softer; a landing roll's shoulder thuds on the ground
 ## BANK.ROLL_THUD_S later. The hero's horn or bicycle bell (drive's night_driving flag) sounds at
 ## the car through the street's own horn source, in the same pool, volumes and ducking as every
 ## other horn in town. Emotes and the other parkour moves make no sound here.
+## The bank stream a hero horn action plays, or "" when action is not a horn.
+static func _hero_horn_stream(action: String) -> String:
+	if not HERO_HORNS.has(action):
+		return ""
+	if not FeatureFlags.enabled("class_audio"):
+		return "horn_long" if action == "horn_long" else "horn_short"
+	return str(HERO_HORNS[action])
+
+
 func _on_hero_action(action: String, at: Vector3) -> void:
 	if action == "roll":
 		_queue_fall(BANK.ROLL_THUD_S, at, BANK.BODY_FALL_DB + BANK.ROLL_DB)
 		return
-	if action == "horn" or action == "bell":
-		emitters.horn(at)
+	var horn_stream := _hero_horn_stream(action)
+	if not horn_stream.is_empty():
+		emitters.horn(at, horn_stream)
 		return
 	if not SWING_PITCH.has(action):
 		return

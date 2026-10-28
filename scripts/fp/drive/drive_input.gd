@@ -41,6 +41,11 @@ func step(dt: float) -> void:
 		_horn_hold = _horn_hold + dt if Input.is_action_pressed("vehicle_horn") else -1.0
 		if _horn_hold >= HORN_LONG_S and not _horn_long_done:
 			_horn_long_done = true
+			# A held press sounds long too (the class_audio flag), not only in the street.
+			if FeatureFlags.enabled("class_audio") and not _d.bike and _d.ctx.bus != null:
+				_d.ctx.bus.hero_action.emit(
+					_horn_action(true), _d._pos + Vector3(0.0, _d._dims.y * 0.5, 0.0)
+				)
 			_horn_street(true)
 
 
@@ -84,7 +89,7 @@ func horn() -> void:
 	_horn_long_done = false
 	if _d.ctx.bus != null:
 		_d.ctx.bus.hero_action.emit(
-			"bell" if _d.bike else "horn", _d._pos + Vector3(0.0, _d._dims.y * 0.5, 0.0)
+			_horn_action(false), _d._pos + Vector3(0.0, _d._dims.y * 0.5, 0.0)
 		)
 		_horn_street(false)
 
@@ -102,6 +107,22 @@ func _enter_key() -> bool:
 			_d.leave()
 		return true
 	return _d.board()
+
+
+## The hero_action word for this ride's horn (the class_audio flag): a bicycle's bell, the
+## scooter's or a lorry's own voice, and a held press's long lean. Without the flag every horn
+## is the car's, as before.
+func _horn_action(long: bool) -> String:
+	if _d.bike:
+		return "bell"
+	if not FeatureFlags.enabled("class_audio"):
+		return "horn"
+	var a := "horn"
+	if _d.scooter:
+		a = "horn_scooter"
+	elif _d.kind in ["truck", "bus", "emergency"]:
+		a = "horn_truck"
+	return (a + "_long") if long else a
 
 
 ## Puts the horn on the bus for the street round it (the horn_street flag): a tap short, a press

@@ -34,6 +34,7 @@ const WK := preload("res://scripts/fp/traffic/walkers.gd")
 const MODEL := preload("res://scripts/fp/drive/drive_model.gd")
 const SHOVES := preload("res://scripts/fp/traffic/shoves.gd")
 const SEAT := preload("res://scripts/fp/drive/seat_pose.gd")
+const BANK := preload("res://scripts/fp/audio/audio_bank.gd")
 const RD := preload("res://scripts/fp/traffic/render.gd")
 const EM := preload("res://scripts/fp/audio/emitters.gd")
 const DRIVE := preload("res://scripts/fp/drive/drive_feature.gd")
@@ -114,6 +115,9 @@ func _init() -> void:
 	await _check_bike_ride()
 	await _check_scooter_ride()
 	await _check_night_driving()
+	_check_horn_voices_bank()
+	await _check_horn_voices_pool()
+	await _check_horn_voices_rides()
 	await _check_ambient_driver()
 	_check_site_machine()
 	_check_car_vs_posts()
@@ -2514,7 +2518,7 @@ func _check_night_driving() -> void:
 	heard.clear()
 	_press_horn()
 	await process_frame
-	K.check(fails, heard == ["horn"], "night: H on a scooter sounds a horn, not a bell")
+	K.check(fails, heard == ["horn_scooter"], "night: H on a scooter buzzes its own horn")
 	# The flag off: neither lamp nor horn.
 	FeatureFlags.set_override("night_driving", false)
 	heard.clear()
@@ -2533,6 +2537,203 @@ func _check_night_driving() -> void:
 
 ## Steps frames at the wheel with the sky held at night (1 after dark, 0 by day): render lights
 ## its lamps a frame behind (set_glow runs after finish), so the states take a frame to settle.
+## Every class speaks in its own horn voice (the class_audio flag): the bank maps each kind to
+## its streams, a held H leans on the long horn through the same street source, a bicycle's bell
+## has no long, and with the flag off everything is the car's horn again.
+func _check_horn_voices_bank() -> void:
+	FeatureFlags.set_override("class_audio", true)
+	K.check(
+		fails,
+		(
+			BANK.horn_stream("truck", false) == "horn_truck_short"
+			and BANK.horn_stream("bus", true) == "horn_truck_long"
+			and BANK.horn_stream("emergency", false) == "horn_truck_short"
+			and BANK.horn_stream("scooter", false) == "horn_scooter_short"
+		),
+		"voices: the heavy kinds and the scooter keep their own horns"
+	)
+	K.check(
+		fails,
+		(
+			BANK.horn_stream("bike", false) == "bell_bicycle"
+			and BANK.horn_stream("bike", true) == "bell_bicycle"
+			and BANK.horn_stream("golfkart", true) == "horn_long"
+		),
+		"voices: a bicycle's bell either way, an unknown kind honks like a car"
+	)
+	K.check(
+		fails,
+		(
+			BANK.engine_run_stream("bus", true) == "engine_heavy"
+			and BANK.engine_run_stream("scooter", false) == "engine_scooter"
+			and BANK.engine_run_stream("car", false) == "engine_run"
+		),
+		"voices: the heavy diesel and two-stroke loops ride beside the car's"
+	)
+	FeatureFlags.set_override("class_audio", false)
+	K.check(
+		fails,
+		(
+			BANK.horn_stream("truck", true) == "horn_long"
+			and BANK.horn_stream("scooter", false) == "horn_short"
+			and BANK.engine_run_stream("bus", true) == "engine_run"
+			and BANK.engine_run_stream("scooter", false) == "engine_run"
+		),
+		"voices: the flag off puts every kind back in the car's seat"
+	)
+	FeatureFlags.set_override("class_audio", true)
+
+
+## The pool carries the class streams (a lorry's engine chugs diesel, a scooter's whines
+## two-stroke, a bicycle has no engine source), and a car's held H leans on the long horn.
+func _check_horn_voices_pool() -> void:
+	FeatureFlags.set_override("class_audio", true)
+	_clear_others()
+	var audio_f: FpFeature = K.make_feature(ctx, "audio")
+	if audio_f != null:
+		audio_f.set_process(false)
+	var em: Object = audio_f.get("emitters") if audio_f != null else null
+	K.check(fails, em is Object, "voices: the audio feature exposes its emitters")
+	if not (em is Object):
+		return
+	var at: Vector3 = ctx.player_position()
+	em.call(
+		"_engine", {"id": 901, "kind": "truck", "pos": at, "speed": 0.5, "vel": Vector3.ZERO}, true
+	)
+	em.call(
+		"_engine",
+		{"id": 902, "kind": "scooter", "pos": at, "speed": 0.5, "vel": Vector3.ZERO},
+		true
+	)
+	em.call(
+		"_engine", {"id": 903, "kind": "bike", "pos": at, "speed": 0.3, "vel": Vector3.ZERO}, true
+	)
+	var eng_t: Object = em.call("source", "eng:901")
+	var eng_s: Object = em.call("source", "eng:902")
+	K.check(
+		fails,
+		(
+			eng_t != null
+			and eng_t.get("stream") == BANK.stream("engine_heavy")
+			and eng_s != null
+			and eng_s.get("stream") == BANK.stream("engine_scooter")
+			and em.call("source", "eng:903") == null
+		),
+		"voices: a lorry chugs, a scooter whines, a bicycle has no engine"
+	)
+	var heard: Array[String] = []
+	var on_horn := func(action: String, _p: Vector3) -> void: heard.append(action)
+	ctx.bus.hero_action.connect(on_horn)
+	var h0 := int(em.get("horns_played"))
+	var m: int = traffic.call("car_model_for", "night-drive")
+	var c := _stopped_car(m)
+	_beside(c, OBB.side_axis(c.yaw), -0.6)
+	K.check(fails, drive.call("enter") == true, "voices: the hero gets in a car")
+	_press_horn()
+	await process_frame
+	K.check(fails, heard == ["horn"], "voices: a tap on H sounds the car horn")
+	_hold_horn()
+	for _k in range(45):
+		drive.call("drive_step", 0.0, 0.0, 0.0, 0.0, DT)
+		await process_frame
+	_release_horn()
+	K.check(fails, heard == ["horn", "horn_long"], "voices: a held H leans on the long horn")
+	var seq := int(em.get("horns_played"))
+	var last: Object = em.call("source", "horn:%d" % seq)
+	K.check(
+		fails,
+		seq == h0 + 2 and last != null and last.get("stream") == BANK.stream("horn_long"),
+		"voices: both reach the street's horn source, the lean on the long one"
+	)
+	ctx.bus.hero_action.disconnect(on_horn)
+	K.check(fails, drive.call("leave") == true, "voices: and out of the car")
+	_clear_all()
+
+
+## A scooter's tap is its own buzz and a held H its long lean; a bicycle's bell stays a bell
+## with no long; the flag off makes a scooter honk like a car and holding adds nothing.
+func _check_horn_voices_rides() -> void:
+	FeatureFlags.set_override("class_audio", true)
+	_clear_others()
+	var heard: Array[String] = []
+	var on_horn := func(action: String, _p: Vector3) -> void: heard.append(action)
+	ctx.bus.hero_action.connect(on_horn)
+	K.check(fails, _enter_ride("scooter"), "voices: the hero climbs on a scooter")
+	_press_horn()
+	await process_frame
+	_hold_horn()
+	for _k in range(45):
+		drive.call("drive_step", 0.0, 0.0, 0.0, 0.0, DT)
+		await process_frame
+	_release_horn()
+	K.check(
+		fails,
+		heard == ["horn_scooter", "horn_scooter_long"],
+		"voices: a scooter's tap buzzes and its held H leans on the long buzz"
+	)
+	heard.clear()
+	K.check(fails, drive.call("leave") == true, "voices: off the scooter")
+	_clear_all()
+	K.check(fails, _enter_ride("bike"), "voices: and onto a bicycle")
+	_press_horn()
+	await process_frame
+	_hold_horn()
+	for _k in range(45):
+		drive.call("drive_step", 0.0, 0.0, 0.0, 0.0, DT)
+		await process_frame
+	_release_horn()
+	K.check(
+		fails, heard == ["bell"], "voices: a bicycle's bell stays a bell however long H is held"
+	)
+	heard.clear()
+	K.check(fails, drive.call("leave") == true, "voices: off the bicycle")
+	_clear_all()
+	FeatureFlags.set_override("class_audio", false)
+	K.check(fails, _enter_ride("scooter"), "voices: back on a scooter with the flag off")
+	_press_horn()
+	await process_frame
+	_hold_horn()
+	for _k in range(45):
+		drive.call("drive_step", 0.0, 0.0, 0.0, 0.0, DT)
+		await process_frame
+	_release_horn()
+	K.check(
+		fails, heard == ["horn"], "voices: the flag off honks the car horn and holding adds nothing"
+	)
+	ctx.bus.hero_action.disconnect(on_horn)
+	FeatureFlags.set_override("class_audio", true)
+	K.check(fails, drive.call("leave") == true, "voices: and off again")
+	_clear_all()
+
+
+func _enter_ride(kind: String) -> bool:
+	var m: int = traffic.call("bike_model") if kind == "bike" else traffic.call("scooter_model")
+	var ride := _vh().make(kind, "ambient", traffic.call("dims", m))
+	ride.model = m
+	_vh().place(ride, lanes[0], 0.35)
+	ride.v = 0.0
+	_beside(ride, OBB.side_axis(ride.yaw), -0.6)
+	return drive.call("enter") == true
+
+
+func _hold_horn() -> void:
+	var h := InputEventKey.new()
+	h.keycode = KEY_H
+	h.physical_keycode = KEY_H
+	h.pressed = true
+	Input.parse_input_event(h)
+	Input.flush_buffered_events()
+
+
+func _release_horn() -> void:
+	var h := InputEventKey.new()
+	h.keycode = KEY_H
+	h.physical_keycode = KEY_H
+	h.pressed = false
+	Input.parse_input_event(h)
+	Input.flush_buffered_events()
+
+
 func _night_frames(frames: int, night: float) -> void:
 	ctx.sky.night = night
 	for _k in range(frames):
@@ -2545,12 +2746,8 @@ func _night_frames(frames: int, night: float) -> void:
 
 ## One H press through the input map (the vehicle_horn action), as the player's own would come.
 func _press_horn() -> void:
-	var h := InputEventKey.new()
-	h.keycode = KEY_H
-	h.physical_keycode = KEY_H
-	h.pressed = true
-	Input.parse_input_event(h)
-	Input.flush_buffered_events()
+	_hold_horn()
+	_release_horn()
 
 
 ## A stopped ambient car of model m at the usual spot, for asking traffic about it.

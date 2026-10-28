@@ -55,9 +55,10 @@ Slice I's sound assets (sounds/fp/, made by tools/audio/synth_fp_sfx.py): names,
 - `STEP_ALIASES = {"gravel": "dirt", "trail": "grass"}`: Surfaces without their own steps: unpaved road grades borrow the nearest recorded one.
 - `STEP_VARIANTS = 6`
 - `SPLASH_VARIANTS = 4`: The wet layer played over a step on soaked paving: footstep_splash_<n>.
-- `LOOPS = [ "engine_idle", "engine_run", "siren_two_tone", "construction_loop", "fire_crackle", "...`: Every looping asset (their .import files set loop=true).
-- `ONE_SHOTS = [ "horn_short", "horn_long", "chat_blip", "chat_blip_soft", "alert_stinger", "crash_hea...`
+- `LOOPS = [ "engine_idle", "engine_run", "engine_heavy", "engine_scooter", "siren_two_tone", "con...`: Every looping asset (their .import files set loop=true).
+- `ONE_SHOTS = [ "horn_short", "horn_long", "horn_truck_short", "horn_truck_long", "horn_scooter_short...`
 - `WAV_SOUNDS = [ "engine_idle", "engine_run", "siren_two_tone", "horn_short", "horn_long", "chat_blip"...`: Stored as WAV (with every footstep_*); everything else is .ogg.
+- `HORN_STREAMS = { "truck": ["horn_truck_short", "horn_truck_long"], "bus": ["horn_truck_short", "horn_t...`: Each class's own voice (the class_audio flag): [short, long] by agent kind. A bicycle's is its bell (and the long of a bell is the bell). Anything unlisted honks like a car.
 - `BUS_MUSIC = &"Music"`: Bus names (created by audio_feature.setup when missing).
 - `BUS_SFX = &"SFX"`
 - `BUS_AMBIENCE = &"Ambience"`
@@ -107,6 +108,8 @@ Slice I's sound assets (sounds/fp/, made by tools/audio/synth_fp_sfx.py): names,
 
 ### Functions
 
+- `static func horn_stream(kind: String, long: bool) -> String`: The stream a honk of kind's class plays: its own with the class_audio flag, else the car's.
+- `static func engine_run_stream(kind: String, heavy: bool) -> String`: The running loop of kind's class (the class_audio flag): a diesel chug for the heavy motors, a two-stroke whine for scooters, the car loop otherwise.
 - `static func stream(name: String) -> AudioStream`: The stream sounds/fp/<name>.wav or .ogg, loaded once; null when the file is missing.
 - `static func path_of(name: String) -> String`
 - `static func is_wav(name: String) -> bool`
@@ -148,6 +151,7 @@ City sound on foot (slice I). Creates the Music, SFX, Ambience and UI buses the 
 - `SWING_PITCH = { "jab": 1.1, "cross": 0.95, "hook": 0.85, "kick": 0.75, "shove": 0.8, "swing": 0.7, "c...`: The pitch of each swing's whoosh (hero_action).
 - `WEAPON_SOUNDS = {"bat": "bat_hit", "pipe": "pipe_hit", "bottle": "bottle_smash"}`: The sound of a weapon's blow (weapon_hit) by its kind, and how much quieter on a street prop.
 - `WEAPON_PROP_DB = -4.0`
+- `HERO_HORNS = { "horn": "horn_short", "horn_long": "horn_long", "horn_truck": "horn_truck_short", "ho...`: The stream for the hero's own horn action (the class_audio flag; drive names the action by the ride): each class's short press and held long lean, and a real bell for the bicycle — the bell used to borrow the car horn. Without the flag every horn is the car's.
 
 ### Properties
 
