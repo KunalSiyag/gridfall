@@ -7,4 +7,6 @@ pre-commit==4.7.0
 pytest==9.1.1
 pytest-cov==7.1.0
 PyYAML==6.0.3
+# test_decals.py reads the puddle PNGs (same pin as tools/requirements.txt).
+Pillow==12.2.0
 actionlint-py==1.7.12.25
