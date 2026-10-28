@@ -164,6 +164,7 @@ Service locator for first-person slices. FpMode fills it once in setup(); fields
 - `residents: Residents`: may be inactive (GRIDFALL_RESIDENTS=0): check residents.is_active()
 - `env: Environment`: the shared Environment (Main.camera.environment), mutated by SkyDirector
 - `world_root: Node3D`: FpMode/World: put in-world FP nodes here, never under CityView
+- `pack_stream: WebPackStream`: web split builds only; inert elsewhere. Request, never download.
 - `features: Dictionary`: feature_id -> FpFeature
 - `settings: Dictionary`: see FpMode.DEFAULT_SETTINGS; change only via mode.apply_settings()
 - `ws: GDScript`: convenience; prefer your own `const WS := preload(...)` for typing
@@ -287,6 +288,7 @@ Signals that cross first-person slices. Emitters and listeners are listed in doc
 - `hero_slammed(at: Vector3, what: String, over: bool)`: The hero slammed the person they held into something (the brawl feature's slam): at is the contact at chest height, what "wall" (a wall, a post or a parked car) or the street prop's kind, over true when the prop went over with them. Emitted by the brawl feature.
 - `hero_hurt(amount: float, cause: String, health: float, down: bool)`: The hero lost amount of health to cause: "punch", "car" or "bite" (hero_hit), "crash" (in the car they drive) or "fall" (a hard landing); health is what is left (0..100, 0 knocked out) and down is true when it put them on the ground. Emitted by the health feature.
 - `animal_called(at: Vector3, call: String, size: float)`: An animal called out at a point (its head): a dog's "bark", "growl" or "whine", a pigeon's "coo", a lone pigeon's "flap" or a flock's "takeoff", a cat's "meow", "purr", "hiss" or "chatter" (at a bird it stalks); size is its height at the shoulder (m), so a small dog yaps higher. Emitted by the animals feature.
+- `pack_ready(pack: String)`: A web background pack finished downloading and mounting (split builds only): its scenes, meshes, textures and sounds can now be loaded. FpMode forwards Main's WebPackStream arrivals here; features refresh pack-dependent assets through it, never their own HTTPRequests.
 
 ## `scripts/fp/obb2d.gd`
 
