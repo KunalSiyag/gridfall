@@ -476,6 +476,8 @@ The on-foot player (slice A): feet at `position`, a kinematic controller against
 - `SHAKE_MAX = Vector3(0.03, 0.025, 0.04)`
 - `SHAKE_HZ = 9.0`
 - `TUMBLE_EYE = 0.5 * WS.M`: Half way through a first-person roll (tumble_view) the eye is this high.
+- `DOWN_EYE = 0.3 * WS.M`: Knocked down (down_view): the first-person eye sinks to this height flat on the ground and tips this far up (radians; the sky, and whoever stands over the hero) at full lie.
+- `DOWN_PITCH = 0.4`
 - `MODE_BLEND = 0.35`
 - `STICK_YAW = deg_to_rad(270.0)`
 - `STICK_YAW_FAST = deg_to_rad(400.0)`
@@ -519,6 +521,7 @@ The on-foot player (slice A): feet at `position`, a kinematic controller against
 - `carried: bool`: True while another owner moves the body through carry(): simulate leaves it alone until release(); teleport() and ride() end it.
 - `carry_wish: Vector2`: While carried: the input simulate was last given (the view-relative wish, sprint and crouch; none while a modal is open) for the owner to read (a climb on a wall). A jump press is take_jump()'s.
 - `speed_cap: float`: The most the body walks or runs at (u/s), INF for no limit: dragging someone held, say.
+- `down_w`: How far the body is down on the ground (0..1; the health feature drives it through the knock-down's fall, lie and get-up; down_view): the first-person eye goes with it.
 
 ### Functions
 

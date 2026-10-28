@@ -54,11 +54,15 @@ const BREAK_KICK := Vector2(-0.12, 0.05)
 const CAR_K := 100.0
 const CAR_DOWN := 0.25
 ## Knocked down: the body falls (the rig's knockback), lies LIE_S seconds and gets up (its get_up;
-## GET_UP s without the rig). The push throws the body on along the ground, slowing at SLIDE_DECEL
+## GET_UP s without the rig) — and in first person the eye goes with it, sinking flat through the
+## fall and tipping a little up to the sky through the lie (down_view). The push throws the body
+## on along the ground, slowing at SLIDE_DECEL
 ## (u/s²; a tumble on the road), so a car at v throws the hero v² / (2 SLIDE_DECEL) on: further
 ## than it takes to stop at full braking.
 const LIE_S := 1.4
 const GET_UP := 1.6
+## The fall's length for the down-view when the rig gives no knockback length.
+const FALL_S := 0.35
 const SLIDE_DECEL := 7.0 * WS.M
 ## Knocked out: the fade to black (s), the black (the hero is moved half way through) and the
 ## fade back in.
@@ -87,6 +91,8 @@ var woke_at: String = ""
 var _since: float = INF
 ## Seconds left on the ground (and getting up) while knocked down; < 0 when standing.
 var _down_t: float = -1.0
+## The current knock-down's phases (fall, lie, get-up): the down-view ramps over them.
+var _down_span := Vector3.ZERO
 ## Seconds since the knock-out while out; < 0 otherwise.
 var _ko_t: float = -1.0
 var _woke: bool = false
@@ -236,6 +242,8 @@ func tick(dt: float) -> void:
 		_down_t -= dt
 		if _down_t < 0.0:
 			_stand()
+		else:
+			_down_view()
 	elif hp < MAX_HP and _since >= REGEN_DELAY:
 		hp = minf(MAX_HP, hp + REGEN_RATE * dt)
 	if poise < 1.0 and _poise_since >= POISE_DELAY:
@@ -357,11 +365,32 @@ func _knock_down(push: Vector3, lie: float) -> void:
 	_push = Vector3(push.x, 0.0, push.z)
 	p.kick_view(KICK_DOWN.x, KICK_DOWN.y)
 	_down_t = lie + GET_UP
+	_down_span = Vector3(FALL_S, lie, GET_UP)
 	var rig := _rig()
 	if rig != null:
 		rig.call("play_action", "knockdown", lie)
 		var lens: Dictionary = rig.get("lengths")
-		_down_t = float(lens.get("knockback", 0.0)) + lie + float(lens.get("get_up", GET_UP))
+		_down_span = Vector3(
+			float(lens.get("knockback", 0.0)), lie, float(lens.get("get_up", GET_UP))
+		)
+		if _down_span.x <= 0.0:
+			_down_span.x = FALL_S
+		_down_t = _down_span.x + _down_span.y + _down_span.z
+
+
+## The down-view weight for the player's first-person eye (down_view): up through the fall, flat
+## through the lie, back to standing through the get-up.
+func _down_view() -> void:
+	var p := ctx.player
+	if p == null:
+		return
+	var e := (_down_span.x + _down_span.y + _down_span.z) - _down_t
+	var w := 1.0
+	if e < _down_span.x:
+		w = e / maxf(_down_span.x, 0.01)
+	elif e > _down_span.x + _down_span.y:
+		w = 1.0 - (e - _down_span.x - _down_span.y) / maxf(_down_span.z, 0.01)
+	p.down_w = clampf(w, 0.0, 1.0)
 
 
 ## Knocked out: out of the car the hero drives, down until the screen is black.
@@ -384,6 +413,7 @@ func _stand() -> void:
 	var p := ctx.player
 	if p == null:
 		return
+	p.down_w = 0.0
 	p.autopilot = {}
 	if _took_input:
 		p.input_enabled = true
