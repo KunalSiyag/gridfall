@@ -13,8 +13,6 @@ extends RefCounted
 
 const MANIFEST_PATH := "res://web_manifest.json"
 const CACHE_DIR := "user://packs"
-## Per-attempt ceiling for one pack download; the coordinator's watchdog enforces the policy,
-## this is the transport-level backstop.
 
 var _manifest_state := "none"  # "none" (no file), "invalid" (unusable), "ok"
 

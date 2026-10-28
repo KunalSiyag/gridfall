@@ -75,6 +75,13 @@ Phase A deployment, not the later ground-texture-capped staging used in the A/B 
   compressed size of the `.pck` plus the `.wasm` and small files. Later visits come from the
   service worker cache; a new release has a new `releases/<hash>/` path and a new
   `CACHE_VERSION`, so a reload after a redeploy fetches the new build instead of the old one.
+- If those headers ever go missing (a proxy strips them, a wrong serving config), the player
+  no longer gets a hung splash: an `html/head_include` script in the Web export preset checks
+  `crossOriginIsolated` in the real document at parse time and shows a plain-language
+  full-page notice (reload once, then Chrome/Edge/Firefox desktop). It only fires when the
+  browser reports `crossOriginIsolated === false`, so non-threaded local exports are never
+  nagged. Asserts in smoke.js/web_measure.py evaluate it only after the engine boot marker —
+  the pre-commit CDP about:blank reports `complete` + `false` and is a trap.
 - The response headers include `cross-origin-opener-policy: same-origin` and
   `cross-origin-embedder-policy: require-corp`: the threaded source preset refuses to boot
   without them, and they are harmless on the recorded single-threaded live build.
