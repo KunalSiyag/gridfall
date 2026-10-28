@@ -1845,7 +1845,11 @@ func _build_tile(i: int, animate: bool) -> void:
 			_dust_puff(Vector3(x, 0.1, y))
 	if fp_mode and not holder.has_meta("colliders") and k == D.ROAD:
 		holder.set_meta("colliders", [])
+	# Timed apart from the build itself: handlers (traffic's lane rebuilds) can cost more than
+	# the tile, and one_tile lumps them together otherwise.
+	var te := Time.get_ticks_usec()
 	tile_built.emit(i, holder)
+	_section("tile_built_emit", te)
 
 
 ## Draws an open construction site: kit stage visuals sized to the building it will become.

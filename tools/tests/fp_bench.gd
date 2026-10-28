@@ -147,6 +147,10 @@ func _reset_stats(sim: CitySim, ro: Object) -> void:
 	if ro != null and ro.has_method("reset_stats"):
 		ro.call("reset_stats")
 	main.view.reset_section_stats()
+	for id: String in ["hud_widgets", "traffic"]:
+		var f: Object = fp.ctx.feature(id)
+		if f != null and f.has_method("reset_section_stats"):
+			f.call("reset_section_stats")
 
 
 ## fps, avg, p50, p99 and max of the frame times (ms) of one row.
@@ -198,6 +202,20 @@ func _breakdown(r: Dictionary, hitches: Array) -> void:
 	for k: String in main.view.section_us_max:
 		sections[k] = snappedf(int(main.view.section_us_max[k]) / 1000.0, 0.1)
 	r["view_sections_ms"] = sections
+	# Features that time their own hot spots the same way (hud_widgets' minimap flush and GPS
+	# reroute, traffic's per-tile rebuild steps).
+	var fsections := {}
+	for id: String in ["hud_widgets", "traffic"]:
+		var f: Object = fp.ctx.feature(id)
+		var m: Variant = f.get("section_us_max") if f != null else null
+		if typeof(m) != TYPE_DICTIONARY or (m as Dictionary).is_empty():
+			continue
+		var sub := {}
+		for k: String in m:
+			sub[k] = snappedf(int(m[k]) / 1000.0, 0.1)
+		fsections[id] = sub
+	if not fsections.is_empty():
+		r["feature_sections_ms"] = fsections
 	if not prof.is_empty():
 		r["signals"] = _top(prof, 12)
 		prof.clear()
