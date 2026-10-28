@@ -48,8 +48,9 @@ var shakes: int = 0
 var _stop_left: float = 0.0
 var _base_scale: float = 1.0
 ## Rendered frames (ticks) the stop under way has spanned: a stop never ends before its second,
-## so however short it is — or however coarse the frames (a 20-25 fps cap, a hitch) — at least one
-## whole frozen frame is drawn past the one it lands on.
+## so however short it is — or however coarse the frames (a 20-25 fps cap) — at least one whole
+## frozen frame is drawn. A single frame that outlasts the longest stop ends it as ever: the
+## frozen frame was up longer than any stop asks (a real hitch).
 var _stop_ticks: int = 0
 var _last_us: int = 0
 
@@ -90,7 +91,7 @@ func tick(real_dt: float) -> void:
 	_stop_ticks += 1
 	_stop_left -= real_dt
 	if _stop_left <= 0.0:
-		if _stop_ticks >= 2:
+		if _stop_ticks >= 2 or real_dt >= STOP_MAX:
 			_end_stop()
 		else:
 			_stop_left = 1e-4  # the second frame's hold; the next tick ends it
