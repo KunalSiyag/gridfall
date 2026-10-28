@@ -111,9 +111,12 @@ void fragment() {
 	alb *= 1.0 - 0.25 * pool;
 	ALBEDO = alb;
 	ROUGHNESS = mix(rough, 0.22, wetness * 0.8);
-	ROUGHNESS = mix(ROUGHNESS, 0.03, pool);
+	// Pools sheen, not mirror: at 0.03 with a flattened normal each pool pixel is a sky sample
+	// (a glaring jagged band at grazing angles on the web GL build); 0.25 stays glossier than
+	// the surrounding wet asphalt (~0.34) so the standing water still reads, via the darkened albedo.
+	ROUGHNESS = mix(ROUGHNESS, 0.25, pool);
 	SPECULAR = mix(0.35, 0.6, wetness);
-	NORMAL_MAP = mix(nrm, vec3(0.5, 0.5, 1.0), pool * 0.9);
+	NORMAL_MAP = mix(nrm, vec3(0.5, 0.5, 1.0), pool * 0.5);
 	if (rain > 0.0 && pool > 0.0) {
 		vec2 tilt = rings(m, 0.35, TIME * 1.3) + rings(m + vec2(0.17, 0.41), 0.5, TIME * 1.05 + 0.5);
 		NORMAL_MAP.xy += 0.35 * rain * pool * tilt;

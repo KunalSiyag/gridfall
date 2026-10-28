@@ -243,7 +243,7 @@ void fragment() {
 	// Rain: darker, with a satin sheen on bare earth (grass blades stay fairly matte); water stands in ruts.
 	alb *= mix(1.0, mix(0.72, 0.55, earth), wetness);
 	rough = mix(rough, mix(0.55, 0.25, earth), wetness);
-	rough = mix(rough, 0.05, puddle * wetness * 0.85);	ALBEDO = alb;
+	rough = mix(rough, 0.20, puddle * wetness * 0.85);	ALBEDO = alb;
 	NORMAL_MAP = nrm;
 	NORMAL_MAP_DEPTH = normal_strength;
 	ROUGHNESS = rough;
