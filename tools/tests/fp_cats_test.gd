@@ -334,6 +334,18 @@ func _check_spawn() -> LIFE.Cat:
 		dressed and clips and c.body.rig is CB.CAT_RIG and not c.name.is_empty(),
 		"spawn: %s, a %s %s cat in the cat's body and its coat" % [c.name, c.temper, c.coat]
 	)
+	K.check(
+		fails,
+		(
+			c.body.skel != null
+			and (
+				c.body.skel.modifier_callback_mode_process
+				== Skeleton3D.MODIFIER_CALLBACK_MODE_PROCESS_IDLE
+			)
+		),
+		"spawn: the CatRig runs on the idle frame, not once per physics frame"
+	)
+	K.check_modifier_modes(fails, get_root())
 	cats.scan(ctx.player.position, false, true, {})
 	var gone := _cat() == null
 	_step(AF.SCAN_S + 0.1)

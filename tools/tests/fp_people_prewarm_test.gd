@@ -60,4 +60,17 @@ func _init() -> void:
 		pe.get("scene_loads") == settled,
 		"a seat after warming initiates no load (still %d)" % settled
 	)
+
+	# The body a seat lends runs its skeleton modifiers (the T0 head look) on the idle frame
+	# with the hand-advanced mixers, not once per physics frame (web catch-up multiplies that).
+	var seated: Array = (pe.get("_pool") as RefCounted).get("_seated")
+	var sk := (seated[0].get("skel") if not seated.is_empty() else null) as Skeleton3D
+	K.check(
+		fails,
+		(
+			sk != null
+			and sk.modifier_callback_mode_process == Skeleton3D.MODIFIER_CALLBACK_MODE_PROCESS_IDLE
+		),
+		"a seated body's modifiers run on the idle frame, not once per physics frame"
+	)
 	K.finish(self, "FP_PEOPLE_PREWARM_TEST", fails)
