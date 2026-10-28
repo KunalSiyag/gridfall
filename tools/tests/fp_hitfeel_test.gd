@@ -46,6 +46,7 @@ func _init() -> void:
 	var p := ctx.player
 	p.teleport(p.position, rad_to_deg(p.yaw))
 	_check_punch()
+	_check_low_fps()
 	_check_strength()
 	_check_attacker_marker()
 	_check_arc_spec()
@@ -72,9 +73,10 @@ func _step(secs: float) -> void:
 		ctx.player.update_view(DT)
 
 
-## Runs the hit-stop clock on by real seconds.
+## Runs the hit-stop clock on by real seconds, one frame's tick at a time (tick is per frame).
 func _real(secs: float) -> void:
-	hf.call("tick", secs)
+	for _k in range(ceili(secs / DT - 1e-6)):
+		hf.call("tick", DT)
 
 
 func _quiet() -> void:
@@ -134,6 +136,33 @@ func _check_punch() -> void:
 	K.check(fails, ctx.player.shake_amount() == 0.0, "the shake dies away")
 	_remove(w)
 	_settle()
+
+
+## At a 20-25 fps cap (or a hitch) the frame a blow lands on could charge the whole stop before
+## one frozen frame is drawn; so no stop ends before its second frame — every stop holds at least
+## one full frame past the one it lands on — and then runs out in real seconds as ever.
+func _check_low_fps() -> void:
+	hf.call("hit_stop", 0.04)  # the shortest stops: a bite, a weak animal hit
+	K.check(fails, bool(hf.call("stopped")), "low fps: the stop starts")
+	hf.call("tick", 0.05)  # the 20 fps frame it landed on: free
+	K.check(
+		fails,
+		bool(hf.call("stopped")) and is_equal_approx(Engine.time_scale, HF.STOP_SCALE),
+		"low fps: still frozen after the landing frame"
+	)
+	hf.call("tick", 0.05)  # the next frame charges in full: 0.04 < 0.05, so the stop ends
+	K.check(
+		fails,
+		not bool(hf.call("stopped")) and is_equal_approx(Engine.time_scale, 1.0),
+		"low fps: and time runs again a frame later"
+	)
+	# At 60 fps the same stop still reads as a few frames, as before.
+	hf.call("hit_stop", 0.045)
+	var frames := 1  # the landing frame, free
+	while bool(hf.call("stopped")) and frames < 12:
+		hf.call("tick", DT)
+		frames += 1
+	K.check(fails, frames >= 3 and frames <= 6, "60 fps: it holds a few frames (%d)" % frames)
 
 
 ## A blow that is not the hero's (person_hit info "by" a walker's id) never stops or shakes the
