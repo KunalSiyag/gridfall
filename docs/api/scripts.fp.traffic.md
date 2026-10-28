@@ -1391,6 +1391,12 @@ Every road vehicle (docs/fp/slices/E-traffic.md §3): ambient filler, resident c
 - `NUDGE_REACH = 15.0 * WS.M`
 - `NUDGE_CONE = 0.5`
 - `NUDGE_CRAWL = 0.5 * WS.M`: A car this slow or slower counts as stopped for a nudge (the drive feature's claim speed).
+- `PASS_SLOW = 0.7`: A leader with an own top speed under this share of the follower's is worth passing (overtaking): backhoe-paced machines, buses and trucks, not cars momentarily slow in a queue.
+- `PASS_LAT = -2.0 * WS.LANE_OFFSET`: Lateral drift target while passing: the opposing lane's centre, two lane offsets over.
+- `PASS_LAT_RATE = 1.0`: Lateral drift speed while swinging out and back in (m/s before the WS.M scale).
+- `PASS_CLEAR = 2.5`: A pass starts only with no oncoming vehicle within this world distance (u) of the car.
+- `PASS_AHEAD = 1.5`: The leader needs this much clear road of its own ahead (u): never leapfrog a queue.
+- `PASS_DONE = 0.3`: The pass is done once the car's front is this far (u) past the leader's front.
 
 ### Properties
 

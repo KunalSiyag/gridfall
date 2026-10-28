@@ -66,6 +66,19 @@ const NUDGE_REACH := 15.0 * WS.M
 const NUDGE_CONE := 0.5
 ## A car this slow or slower counts as stopped for a nudge (the drive feature's claim speed).
 const NUDGE_CRAWL := 0.5 * WS.M
+## A leader with an own top speed under this share of the follower's is worth passing
+## (overtaking): backhoe-paced machines, buses and trucks, not cars momentarily slow in a queue.
+const PASS_SLOW := 0.7
+## Lateral drift target while passing: the opposing lane's centre, two lane offsets over.
+const PASS_LAT := -2.0 * WS.LANE_OFFSET
+## Lateral drift speed while swinging out and back in (m/s before the WS.M scale).
+const PASS_LAT_RATE := 1.0
+## A pass starts only with no oncoming vehicle within this world distance (u) of the car.
+const PASS_CLEAR := 2.5
+## The leader needs this much clear road of its own ahead (u): never leapfrog a queue.
+const PASS_AHEAD := 1.5
+## The pass is done once the car's front is this far (u) past the leader's front.
+const PASS_DONE := 0.3
 
 
 ## One vehicle.
@@ -117,6 +130,10 @@ class Car extends RefCounted:
 	var vis_off := Vector3.ZERO
 	var vis_yaw: float = 0.0
 	var lat_off: float = 0.0
+	## Overtaking: lateral drift into the opposing lane while passing a slow leader (0 at rest).
+	var pass_off: float = 0.0
+	## Overtaking: the slow vehicle being passed (cleared once past it).
+	var passing: Car = null
 	var driver_id: String = ""
 	var label: String = ""
 	var dest_label: String = ""
@@ -181,6 +198,8 @@ var _hero_was := Vector2(INF, INF)
 var _body_was: Dictionary = {}
 ## The blocked_horns flag, read once a step: cars the player holds up keep a hero_block_s clock.
 var _horn_block: bool = false
+## The overtaking flag, read once a step next to _horn_block (off: _pass_step never starts a pass).
+var _overtaking: bool = true
 
 
 func setup(p_lg: LG, p_jn: JN, p_sw: SW, seed: int) -> void:
@@ -438,7 +457,7 @@ func update_pose(c: Car) -> void:
 		h = lg.tan_at(c.lane, c.s)
 	h = h.normalized()
 	var ctr := pf - h * (0.3 * L)
-	var lat := c.lat_off
+	var lat := c.lat_off + c.pass_off
 	if c.kind == "bike" or c.kind == "scooter":
 		# The two-wheelers ride the carriageway edge and slip alongside where a car cannot.
 		lat = BIKE_LAT * (1.0 - lg.pass_factor(c.lane, c.s)) if c.lane.kind == LG.STRAIGHT else BIKE_LAT * 0.5
@@ -479,6 +498,7 @@ func step(dt: float) -> void:
 	var near2 := LOD_NEAR * LOD_NEAR
 	var full2 := LOD_FULL * LOD_FULL
 	_horn_block = FeatureFlags.enabled("blocked_horns")
+	_overtaking = FeatureFlags.enabled("overtaking")
 	_track_hero(dt)
 	_gather_blocks()
 	for c: Car in cars.duplicate():
@@ -573,13 +593,14 @@ func _drive(c: Car, dt: float) -> void:
 		c.v = 0.0
 		return
 	var vmax := _vmax(c)
+	var stop := _stops(c)
+	var sgap: float = stop[0]
+	_pass_step(c, dt, vmax, sgap)
 	var lead := _leader(c)
 	var gap: float = lead[0]
 	var vl: float = lead[1]
 	var hard: float = gap - MIN_GAP
 	var held := false
-	var stop := _stops(c)
-	var sgap: float = stop[0]
 	if sgap < INF:
 		held = true
 		if sgap + IDM.S0 < gap:
@@ -708,6 +729,10 @@ func _leader(c: Car) -> Array:
 ## Cars pass the two-wheelers riding at the carriageway edge, and a scooter filters past a
 ## bicycle; a bicycle behind anything queues.
 func _ignores(c: Car, o: Car) -> bool:
+	if c.passing == o:
+		# Committed to the pass (a good way into the opposing lane): the leader no longer caps
+		# the car, so it accelerates past; before that the drift starts at a follow distance.
+		return c.pass_off < 0.4 * PASS_LAT
 	if o.lane == null or lg.pass_factor(o.lane, o.s) >= 0.3:
 		return false
 	if o.kind == "bike":
@@ -715,6 +740,79 @@ func _ignores(c: Car, o: Car) -> bool:
 	if o.kind == "scooter":
 		return c.kind != "bike" and c.kind != "scooter"
 	return false
+
+
+## Overtaking, one step: hold the swing while the pass runs, start one behind a slow leader with
+## the opposing lane clear, and always ease pass_off toward the target. Flag off: a pass never
+## starts (an in-flight one finishes its swing back), and nothing else in the step changes.
+func _pass_step(c: Car, dt: float, vmax: float, sgap: float) -> void:
+	var target := 0.0
+	if c.passing != null:
+		if _passed(c, c.passing) or sgap < 1.0:
+			c.passing = null
+		else:
+			target = PASS_LAT
+	elif (
+		_overtaking
+		and not c.hold
+		and c.stun_t <= 0.0
+		and sgap > 1.0
+		and c.lane.kind == LG.STRAIGHT
+	):
+		var o := _slow_ahead(c, vmax)
+		if o != null and _pass_room(c):
+			c.passing = o
+			target = PASS_LAT
+	c.pass_off = move_toward(c.pass_off, target, dt * PASS_LAT_RATE * WS.M)
+
+
+## The immediate leader on the same lane when it is inherently slow (an own top speed well under
+## the follower's) with clear road of its own ahead; null when there is nothing worth passing.
+func _slow_ahead(c: Car, vmax: float) -> Car:
+	if c.kind == "bike" or c.kind == "scooter":
+		return null
+	var idx := c.lane.cars.find(c)
+	for k in range(idx + 1, c.lane.cars.size()):
+		var o: Car = c.lane.cars[k]
+		if _ignores(c, o) or o.kind == "bike" or o.kind == "scooter":
+			continue
+		if o.v0 > 0.0 and o.v0 <= PASS_SLOW * vmax and _leader(o)[0] > PASS_AHEAD:
+			return o
+		return null
+	return null
+
+
+## Room for the swing: the lane does not already run at PASS_OFFSET past parked cars, the car is
+## not about to park, and no oncoming vehicle on the opposing run is within PASS_CLEAR.
+func _pass_room(c: Car) -> bool:
+	if lg.pass_factor(c.lane, c.s) >= 0.3 or lg.pass_factor(c.lane, minf(c.s + 0.6, c.lane.length)) >= 0.3:
+		return false
+	if c.goal_lane == c.lane and c.goal_s >= 0.0 and c.goal_s - c.s < 1.0:
+		return false
+	var ol: LG.Lane = lg.lane_between(c.lane.tile, c.lane.to_e, c.lane.from_e)
+	if ol == null or ol.kind != LG.STRAIGHT:
+		return false
+	for x: Car in ol.cars + ol.tails:
+		if x.pos.distance_to(c.pos) < PASS_CLEAR:
+			return false
+	return true
+
+
+## True once the pass is complete: the leader's front fell behind, or it left the lane and its
+## body no longer covers it. The lane's cars list (ascending s) is re-sorted at the crossing.
+func _passed(c: Car, o: Car) -> bool:
+	if o.lane == c.lane:
+		if c.s - o.s > PASS_DONE:
+			return true
+		if c.s > o.s:
+			var l := c.lane
+			l.cars.erase(c)
+			var k := l.cars.size()
+			while k > 0 and (l.cars[k - 1] as Car).s > c.s:
+				k -= 1
+			l.cars.insert(k, c)
+		return false
+	return not c.lane.tails.has(o)
 
 
 ## [distance from c's front to the nearest point it must stop at (INF when none)].
