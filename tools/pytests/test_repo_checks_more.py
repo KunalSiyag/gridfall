@@ -185,7 +185,7 @@ def test_run_all_selection_outputs_and_crash(repo, monkeypatch, tmp_path, capsys
     assert "### todo_scan: new findings" in summary.read_text()
     assert "## Tech debt" in debt.read_text()
     assert run_all.main(["--root", str(root), "--only", "large_files", "--debt-report", str(debt)]) == 0
-    names = [r.name for r, _ in run_all.collect(root, fast=True, skip={"workflows", "api_docs", "complexity", "dead_code", "duplicates", "unused_deps", "agents_md", "test_map", "feature_flags", "rng_seed", "boundaries", "todo_scan"})]
+    names = [r.name for r, _ in run_all.collect(root, fast=True, skip={"workflows", "api_docs", "complexity", "dead_code", "duplicates", "unused_deps", "agents_md", "test_map", "feature_flags", "rng_seed", "boundaries", "todo_scan", "web_headers"})]
     assert names == ["large_files"]
 
     def boom(r):
