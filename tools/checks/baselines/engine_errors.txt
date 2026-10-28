@@ -6,4 +6,4 @@ regex|^\d+ RID allocations of type '[^']+' were leaked at exit|dummy-renderer sh
 regex|^\d+ resources still in use at exit|same exit-time report family as the RID leaks; count varies
 substr|Pages in use exist at exit in PagedAllocator:|same exit-time report family (Variant bucket pool)
 substr|Parameter "t" is null.|dummy renderer initializes a null texture during scene loads of textured models (people.gd _scene bodies via occupants._seat_driver, city_view.gd _inst buildings); headless-only, intermittent, benign -- no game-code fix
-substr|Another resource is loaded from path 'res://models/characters/bodies/mat/Male_Adult_15_head.tres'|Godot resource-cache duplicate-load note (cyclic inclusion), 1x in fp_react_collision_test
+substr|Another resource is loaded from path 'res://models/characters/bodies/mat/Male_Adult_15_head.tres'|threaded body load has the shared head material in flight while a blocking seat load pulls the same dependency; Godot dedups, benign, 0-1x (fp_react_collision)
