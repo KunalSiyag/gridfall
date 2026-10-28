@@ -21,8 +21,13 @@ const DEFAULT_ORDER: Array[String] = [
 ]
 ## Automatic retry backoff after the first attempt: two retries, after 2 and 8 seconds.
 const RETRY_DELAYS_S: Array[float] = [2.0, 8.0]
-## One download attempt may take at most this long before the watchdog cancels it.
-const REQUEST_TIMEOUT_S := 60.0
+## Cancel a transfer with no progress for this long. Progress resets the clock, so a slow
+## but steady download is never touched: a 30+ MB pack on a 4-5 Mbps link takes minutes.
+const STALL_S := 20.0
+## Even steady progress has a bound: at least MIN_ATTEMPT_S, then 100 kB/s of the pack's
+## declared size. A transfer past the ceiling is cancelled as stuck-in-name-only.
+const MIN_ATTEMPT_S := 120.0
+const MIN_RATE_BYTES_S := 100000.0
 
 ## activate() results.
 enum {
@@ -45,6 +50,8 @@ var _retry_at := {}  # pack -> deadline msec
 var _demanded: Array[String] = []  # demand order; keeps later demands behind earlier ones
 var _active_pack := ""
 var _active_since := 0
+var _last_bytes := 0
+var _last_progress := 0  # fake-clock msec of the last byte increase
 var _midlod_started := false
 var _activated := false
 
@@ -171,9 +178,21 @@ func retry_failed() -> void:
 func _process(_delta: float) -> void:
 	if not _activated:
 		return
-	# Watchdog first: a stuck attempt frees the queue for the packs behind it.
-	if not _active_pack.is_empty() and _now() - _active_since > int(REQUEST_TIMEOUT_S * 1000.0):
-		_loader.cancel_active("timeout")
+	# Watchdog first: a stuck attempt frees the queue for the packs behind it. Progress
+	# resets the stall clock; the ceiling bounds even a steadily creeping transfer.
+	if not _active_pack.is_empty():
+		var got := _loader.downloaded_bytes()
+		if got > _last_bytes:
+			_last_bytes = got
+			_last_progress = _now()
+		var ceiling_s: float = maxf(
+			MIN_ATTEMPT_S, float(_loader.pack_bytes(_active_pack)) / MIN_RATE_BYTES_S
+		)
+		if (
+			_now() - _last_progress > int(STALL_S * 1000.0)
+			or _now() - _active_since > int(ceiling_s * 1000.0)
+		):
+			_loader.cancel_active("timeout")
 	for pack: String in _states:
 		if _states[pack] == "retry_wait" and _now() >= int(_retry_at.get(pack, 0)):
 			_states[pack] = "queued"
@@ -189,6 +208,8 @@ func _process(_delta: float) -> void:
 	if active != _active_pack:
 		_active_pack = active
 		_active_since = _now()
+		_last_bytes = 0
+		_last_progress = _now()
 		if not _active_pack.is_empty():
 			_states[_active_pack] = "downloading"
 			_demanded.erase(_active_pack)

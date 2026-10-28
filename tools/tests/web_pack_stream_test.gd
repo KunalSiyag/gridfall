@@ -17,10 +17,14 @@ class FakeLoader:
 	var plan := {}
 	var starts: Array[String] = []
 	var pump_calls := 0
+	var downloaded := 0  # tests bump this to fake download progress
 
 	func pump(host: Node) -> bool:
 		pump_calls += 1
 		return super.pump(host)
+
+	func downloaded_bytes() -> int:
+		return downloaded
 
 	func _start(_host: Node, pack: String) -> void:
 		starts.append(pack)
@@ -42,7 +46,8 @@ func _init() -> void:
 	await _test_default_order_and_completion()
 	await _test_demand_reprioritisation()
 	await _test_retries_and_suppression()
-	await _test_timeout_watchdog()
+	await _test_stall_watchdog()
+	await _test_progress_and_ceiling()
 	await _test_flag_off_inert()
 	FeatureFlags.set_override("web_split_packs", false)
 	if fails.is_empty():
@@ -224,8 +229,8 @@ func _test_retries_and_suppression() -> void:
 	stream.queue_free()
 
 
-## A transfer stuck past 60s is cancelled, reported, and retried like any failure.
-func _test_timeout_watchdog() -> void:
+## A transfer with no byte progress for 20s is cancelled, reported, and retried.
+func _test_stall_watchdog() -> void:
 	var clock := [0]
 	var stream := _make(["midlod", "traffic"], clock, {"traffic": "hang"})
 	var loader := _loader_of(stream)
@@ -237,13 +242,46 @@ func _test_timeout_watchdog() -> void:
 	await process_frame
 	await process_frame
 	K.check(fails, loader.starts == ["midlod", "traffic"], "the hanging pack is underway")
-	clock[0] += 59000
+	clock[0] += 19000
 	await process_frame
-	K.check(fails, failed.is_empty(), "no watchdog before 60s")
+	K.check(fails, failed.is_empty(), "no watchdog inside the stall window")
 	clock[0] += 2000
 	await process_frame
-	K.check(fails, failed == [["traffic", "timeout"]], "the watchdog cancels at 60s")
-	K.check(fails, stream.snapshot()["packs"]["traffic"] == "retry_wait", "a timeout retries")
+	K.check(fails, failed == [["traffic", "timeout"]], "a 20s stall is cancelled")
+	K.check(fails, stream.snapshot()["packs"]["traffic"] == "retry_wait", "a stall retries")
+	stream.queue_free()
+
+
+## Steady progress is never cancelled (a slow link beats the clock), but even a creeping
+## transfer dies at the size-derived ceiling (manifest bytes=1 here, so 120s).
+func _test_progress_and_ceiling() -> void:
+	var clock := [0]
+	var stream := _make(["traffic"], clock, {"traffic": "hang"})
+	var loader := _loader_of(stream)
+	var failed: Array = []
+	loader.pack_failed.connect(
+		func(pack: String, reason: String) -> void: failed.append([pack, reason])
+	)
+	stream.activate()
+	await process_frame
+	K.check(fails, loader.starts == ["traffic"], "the slow pack is underway")
+	for step: int in range(3):
+		loader.downloaded += 1
+		clock[0] += 30000
+		await process_frame
+		K.check(
+			fails,
+			failed.is_empty(),
+			"steady progress is fine at t=+%ds (past the old 60s cap)" % (30 * (step + 1))
+		)
+	loader.downloaded += 1
+	clock[0] += 30000  # t=120s, the ceiling edge
+	await process_frame
+	K.check(fails, failed.is_empty(), "alive at the ceiling edge")
+	loader.downloaded += 1
+	clock[0] += 15000  # t=135s: within the stall window, past the ceiling
+	await process_frame
+	K.check(fails, failed == [["traffic", "timeout"]], "the ceiling fires past 120s")
 	stream.queue_free()
 
 

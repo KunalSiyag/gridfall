@@ -15,7 +15,6 @@ const MANIFEST_PATH := "res://web_manifest.json"
 const CACHE_DIR := "user://packs"
 ## Per-attempt ceiling for one pack download; the coordinator's watchdog enforces the policy,
 ## this is the transport-level backstop.
-const DOWNLOAD_TIMEOUT_S := 60.0
 
 var _manifest_state := "none"  # "none" (no file), "invalid" (unusable), "ok"
 
@@ -133,6 +132,21 @@ func active_pack() -> String:
 	return _active
 
 
+## Bytes fetched so far for the active transfer (0 while idle or before the first chunk).
+func downloaded_bytes() -> int:
+	if _http == null:
+		return 0
+	return _http.get_downloaded_bytes()
+
+
+## Declared size of a pack from the manifest (0 when unknown); feeds the attempt ceiling.
+func pack_bytes(pack: String) -> int:
+	var entry: Variant = _manifest.get("packs", {}).get(pack, {})
+	if not entry is Dictionary:
+		return 0
+	return int((entry as Dictionary).get("bytes", 0))
+
+
 ## True once the pack is mounted and its assets can be loaded.
 func mounted(pack: String) -> bool:
 	return _mounted.has(pack)
@@ -231,7 +245,9 @@ func _start(host: Node, pack: String) -> void:
 	_target = path
 	_http = HTTPRequest.new()
 	_http.name = "PackRequest"
-	_http.timeout = DOWNLOAD_TIMEOUT_S
+	# No transport-level timeout: a 30+ MB pack on a slow link takes minutes. The
+	# coordinator's stall watchdog owns transfer limits via downloaded_bytes().
+	_http.timeout = 0.0
 	host.add_child(_http)
 	_http.request_completed.connect(_on_download)
 	var url := _url_for(str(entry.get("file", "")))

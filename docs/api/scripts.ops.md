@@ -202,7 +202,6 @@ Streams the web build's background packs: the boot pack is the engine's own `.pc
 
 - `MANIFEST_PATH = "res://web_manifest.json"`
 - `CACHE_DIR = "user://packs"`
-- `DOWNLOAD_TIMEOUT_S = 60.0`: Per-attempt ceiling for one pack download; the coordinator's watchdog enforces the policy, this is the transport-level backstop.
 
 ### Functions
 
@@ -212,6 +211,8 @@ Streams the web build's background packs: the boot pack is the engine's own `.pc
 - `func pack_of(path: String) -> String`: The pack that holds the asset at a res:// path, or "" when it rides in the boot pack.
 - `func pack_names() -> PackedStringArray`: The packs the manifest declares (download order is the coordinator's business).
 - `func active_pack() -> String`: The pack currently downloading/mounting, or "".
+- `func downloaded_bytes() -> int`: Bytes fetched so far for the active transfer (0 while idle or before the first chunk).
+- `func pack_bytes(pack: String) -> int`: Declared size of a pack from the manifest (0 when unknown); feeds the attempt ceiling.
 - `func mounted(pack: String) -> bool`: True once the pack is mounted and its assets can be loaded.
 - `func pending(pack: String) -> bool`: True while the pack is on its way (queued, downloading or mounting).
 - `func needed_for(path: String) -> String`: The pack a path needs, or "" when it is already available (in the boot pack or mounted).
@@ -272,7 +273,9 @@ Background-pack streaming policy for the split web build (ops layer). Owns the o
 
 - `DEFAULT_ORDER = [ "midlod", "sky", "traffic", "people", "props", "wildlife", "posters", "audio" ]`: Default background order: midlod first (it ends runtime gather stalls), then the decorative packs. Packs absent from the manifest are skipped; unknown manifest packs queue last.
 - `RETRY_DELAYS_S = [2.0, 8.0]`: Automatic retry backoff after the first attempt: two retries, after 2 and 8 seconds.
-- `REQUEST_TIMEOUT_S = 60.0`: One download attempt may take at most this long before the watchdog cancels it.
+- `STALL_S = 20.0`: Cancel a transfer with no progress for this long. Progress resets the clock, so a slow but steady download is never touched: a 30+ MB pack on a 4-5 Mbps link takes minutes.
+- `MIN_ATTEMPT_S = 120.0`: Even steady progress has a bound: at least MIN_ATTEMPT_S, then 100 kB/s of the pack's declared size. A transfer past the ceiling is cancelled as stuck-in-name-only.
+- `MIN_RATE_BYTES_S = 100000.0`
 
 ### Properties
 
