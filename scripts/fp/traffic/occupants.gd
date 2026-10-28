@@ -12,6 +12,7 @@ const WS := preload("res://scripts/fp/world_scale.gd")
 const VH := preload("res://scripts/fp/traffic/vehicles.gd")
 const WK := preload("res://scripts/fp/traffic/walkers.gd")
 const PPL := preload("res://scripts/fp/traffic/people.gd")
+const POOL := preload("res://scripts/fp/traffic/people_pool.gd")
 const KIT := preload("res://scripts/fp/traffic/people_kit.gd")
 const CAP := 12
 const RANGE := 30.0 * WS.M
@@ -131,7 +132,7 @@ func clear() -> void:
 
 
 ## The seated body in car id (null when it has no driver drawn).
-func body_of(id: int) -> PPL.Body:
+func body_of(id: int) -> POOL.Body:
 	var e: Array = _by_car.get(id, [])
 	return (e[0] as WK.Walker).body if not e.is_empty() else null
 
@@ -174,7 +175,7 @@ func _seat_driver(c: VH.Car, residents: Variant) -> Array:
 
 ## Holds b still in the sit pose (mixers off, no shadow: the car casts one), or at the start of
 ## the ride loop with its shadow on; returns its Hips in CharacterRoot space.
-static func _pose_seated(b: PPL.Body, ride: bool = false) -> Vector3:
+static func _pose_seated(b: POOL.Body, ride: bool = false) -> Vector3:
 	b.tree.active = false
 	b.ap.active = true
 	b.ap.stop()
@@ -204,7 +205,7 @@ static func _pose_seated(b: PPL.Body, ride: bool = false) -> Vector3:
 ## at that point, then each leg bent so its toes are on its pedal and each arm so its wrist is on
 ## its grip, as the bodies differ from the one the clip was posed on.
 func _pedal(e: Array, c: VH.Car, th: float) -> void:
-	var b: PPL.Body = (e[0] as WK.Walker).body
+	var b: POOL.Body = (e[0] as WK.Walker).body
 	b.ap.active = true
 	b.ap.seek(fposmod(th / TAU, 1.0) * b.ap.get_animation(RIDE).length, true)
 	b.ap.active = false
@@ -315,7 +316,7 @@ static func driver_points(node: Node3D) -> Dictionary:
 
 ## How far the driver's hips must sink for the top of the head to clear the roof line (world u),
 ## measured on the body as it now stands (the sit pose is static, so this is worked out once).
-static func _measure_sink(b: PPL.Body, c: VH.Car, pts: Dictionary) -> float:
+static func _measure_sink(b: POOL.Body, c: VH.Car, pts: Dictionary) -> float:
 	if not pts.has("Cab_Roof"):
 		return 0.0
 	var sk := b.skel
@@ -335,7 +336,7 @@ static func _measure_sink(b: PPL.Body, c: VH.Car, pts: Dictionary) -> float:
 ## The driver's hands on the rim and feet on the footwell floor, bent to the car's own markers as
 ## the bodies differ from the one the sit clip was posed on (the bike's _pedal, held still).
 func _driver_limbs(e: Array, c: VH.Car) -> void:
-	var b: PPL.Body = (e[0] as WK.Walker).body
+	var b: POOL.Body = (e[0] as WK.Walker).body
 	var pts: Dictionary = e[3]
 	var bones: PackedInt32Array = e[4]
 	if bones.size() < 14:
@@ -359,7 +360,7 @@ func _driver_limbs(e: Array, c: VH.Car) -> void:
 ## the roof line and the limbs bent onto the markers.
 func _place(e: Array, c: VH.Car, seat: Vector3) -> void:
 	var w: WK.Walker = e[0]
-	var b: PPL.Body = w.body
+	var b: POOL.Body = w.body
 	var s := people.scale_of(w)
 	var basis := Basis(Vector3.UP, c.yaw + c.vis_yaw)
 	var hip := c.node.global_transform * seat

@@ -298,8 +298,8 @@ static func pose(sk: Skeleton3D, bone: int) -> Transform3D:
 
 # ------------------------------------------------------------------ body-scene loading
 #
-# The load cache itself lives on the people instance (_scenes, _pending, scene_loads); the
-# mechanics live here so people.gd stays under the 1000-line cap until the planned split.
+# The load cache itself lives on the people pool (people_pool.gd: _scenes, _pending,
+# scene_loads); only the mechanics live here, so people.gd stays under the 1000-line cap.
 
 const AP := preload("res://scripts/fp/asset_paths.gd")
 const WebSupport := preload("res://scripts/ops/web_support.gd")
@@ -341,18 +341,3 @@ static func finish_loads(pe: RefCounted) -> void:
 	for path: String in pe._pending.keys():
 		pe._scenes[path] = ResourceLoader.load_threaded_get(path) as PackedScene
 	pe._pending.clear()
-
-
-## Loads every ambient avatar's body scene up front: on no-threads builds (the web export)
-## this blocks at world build so play never hitches on a first seat or take; on threaded
-## builds tests call it directly (in-game, dress-time requests warm the same paths lazily).
-## One scene at a time: the headless dummy renderer's RID/material storage races when many
-## threaded loads finalize together, and a loading screen does not need the parallelism.
-static func prewarm_ambient(pe: RefCounted) -> void:
-	if not pe.ok:
-		return
-	for gw: Array in pe._amb_groups:
-		for ai: int in gw[1]:
-			scene(pe, (pe.avatars[ai] as RefCounted).get("path"))
-			finish_loads(pe)
-	finish_loads(pe)

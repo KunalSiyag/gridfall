@@ -628,6 +628,7 @@ Drivers seated in the moving vehicles nearest the camera. Only while a vehicle d
 - `VH = preload("res://scripts/fp/traffic/vehicles.gd")`
 - `WK = preload("res://scripts/fp/traffic/walkers.gd")`
 - `PPL = preload("res://scripts/fp/traffic/people.gd")`
+- `POOL = preload("res://scripts/fp/traffic/people_pool.gd")`
 - `KIT = preload("res://scripts/fp/traffic/people_kit.gd")`
 - `CAP = 12`
 - `RANGE = 30.0 * WS.M`
@@ -655,7 +656,7 @@ Drivers seated in the moving vehicles nearest the camera. Only while a vehicle d
 - `func setup(p_people: PPL) -> void`
 - `func sync(cars: Array, cam: Vector3, residents: Variant) -> void`
 - `func clear() -> void`: Releases every seated body.
-- `func body_of(id: int) -> PPL.Body`: The seated body in car id (null when it has no driver drawn).
+- `func body_of(id: int) -> POOL.Body`: The seated body in car id (null when it has no driver drawn).
 - `func driver_of(id: int) -> WK.Walker`: The driver drawn in car id (the stand-in walker carrying its avatar and stature), or null.
 - `func is_riding(id: int) -> bool`: True when the body drawn in car id is pedalling a bicycle.
 - `func seat_point(node: Node3D) -> Variant`: The seat marker's position in the full model's space, cached on the node (null without one).
@@ -665,7 +666,7 @@ Drivers seated in the moving vehicles nearest the camera. Only while a vehicle d
 
 extends `RefCounted`
 
-Animated people from HC's roster (docs/fp/slices/E-traffic.md deliverable 9, TPS_PLAN §1.10-1.11). Rocketbox bodies on Godot's humanoid skeleton, picked by job, gender and crc32(resident id) for residents and by HC's ambient weights for the crowd, each under a CharacterRoot scaled to a jittered stature, animated by the gender's shared library plus three clips layered here at load (walk_carry and carry_idle hold a box, walk_phone a phone at the ear), with the playback rate matched to the walking speed so feet do not slide. LOD tiers by camera distance, 10 % hysteresis: T0  <= 12 m, max 8   AnimationTree (state machine, 0.25 s crossfades), every frame, shadows T1  12-30 m           AnimationPlayer advanced by hand, 30 Hz to 20 m (shadows) else 15 Hz T2  30-60 m           the same at 10 Hz, no shadows T3  to VIS_PERSON     HC's static mid-stride <Name>_lod1 in one MultiMesh per avatar T1 and T2 share a cap of SKIN_CAP bodies on screen, and everything stays inside DRAW_CAP character draws. Off-screen bodies keep their pose with their mixer inactive (and go back to the pool after OFF_KEEP). Bodies are pooled per avatar and instanced at most NEW_PER_FRAME per frame. Body and lod1 scenes load on background threads when first needed (a first load takes 25-150 ms; loading every avatar up front costs ~100 MB of textures); a walker whose body is still loading waits at T3, undrawn while its lod1 loads too. Asset building lives in people_kit.gd.
+Animated people from HC's roster (docs/fp/slices/E-traffic.md deliverable 9, TPS_PLAN §1.10-1.11). Rocketbox bodies on Godot's humanoid skeleton, picked by job, gender and crc32(resident id) for residents and by HC's ambient weights for the crowd, each under a CharacterRoot scaled to a jittered stature, animated by the gender's shared library plus three clips layered here at load (walk_carry and carry_idle hold a box, walk_phone a phone at the ear), with the playback rate matched to the walking speed so feet do not slide. LOD tiers by camera distance, 10 % hysteresis: T0  <= 12 m, max 8   AnimationTree (state machine, 0.25 s crossfades), every frame, shadows T1  12-30 m           AnimationPlayer advanced by hand, 30 Hz to 20 m (shadows) else 15 Hz T2  30-60 m           the same at 10 Hz, no shadows T3  to VIS_PERSON     HC's static mid-stride <Name>_lod1 in one MultiMesh per avatar T1 and T2 share a cap of SKIN_CAP bodies on screen, and everything stays inside DRAW_CAP character draws. Off-screen bodies keep their pose with their mixer inactive (and go back to the pool after OFF_KEEP). Bodies are pooled per avatar and instanced at most NEW_PER_FRAME per frame. Body and lod1 scenes load on background threads when first needed (a first load takes 25-150 ms; loading every avatar up front costs ~100 MB of textures); a walker whose body is still loading waits at T3, undrawn while its lod1 loads too. Asset building lives in people_kit.gd; the body pool and the scene cache live in people_pool.gd (this class keeps the public API and delegates).
 
 ### Constants
 
@@ -673,6 +674,7 @@ Animated people from HC's roster (docs/fp/slices/E-traffic.md deliverable 9, TPS
 - `AP = preload("res://scripts/fp/asset_paths.gd")`
 - `WK = preload("res://scripts/fp/traffic/walkers.gd")`
 - `KIT = preload("res://scripts/fp/traffic/people_kit.gd")`
+- `POOL = preload("res://scripts/fp/traffic/people_pool.gd")`
 - `WebSupport = preload("res://scripts/ops/web_support.gd")`
 - `T0_R = 12.0 * WS.M`
 - `T0_CAP = 8`
@@ -703,13 +705,11 @@ Animated people from HC's roster (docs/fp/slices/E-traffic.md deliverable 9, TPS
 
 ### Properties
 
-- `blocking: bool`: Load body and lod1 scenes on the calling thread (deterministic tests), not in the background.
-- `scene_loads: int`: Body-scene load initiations; tests assert a dressed walker's seat/take adds none.
+- `ok: bool`: The instanced-body class lives in people_pool.gd (the pool owns the bodies' lifecycle).
 
 ### Inner classes
 
 - `Avatar`: One roster body (never a hero).
-- `Body`: One instanced body: CharacterRoot > the body scene (Armature/GeneralSkeleton/Body, Anim, Tree).
 
 ### Functions
 
@@ -729,9 +729,9 @@ Animated people from HC's roster (docs/fp/slices/E-traffic.md deliverable 9, TPS
 - `func on_screen(p: Vector3) -> bool`: True when a body at feet position p could be on screen.
 - `func add(w: WK.Walker, d: float, residents: Variant) -> void`: Queues walker w (eased already, d = camera distance) and advances its clip.
 - `func finish() -> void`: Assigns tiers, attaches, advances and releases bodies, and fills the T3 layers.
-- `func seat(w: WK.Walker) -> bool`: Gives dressed walker w a body outside the tiers (a seated driver, posed by occupants.gd); false while none is free. release(w) hands it back.
+- `func seat(w: WK.Walker) -> bool`: Gives dressed walker w a body outside the tiers (a seated driver, posed by occupants.gd); false while none is free. release(w) hands it back. The pool (people_pool.gd) does the work.
 - `func release(w: WK.Walker) -> void`: A walker leaves for good (removed): its body goes back to the pool.
-- `func finish_loads() -> void`: Waits for every background scene load still running and keeps the results.
+- `func finish_loads() -> void`
 - `func stats() -> Dictionary`: anim_stats() for G2's bench: tier counts on screen, microseconds advancing mixers this frame, character draws (skinned surfaces and boxes on screen plus two per T3 avatar layer).
 
 ## `scripts/fp/traffic/people_kit.gd`
@@ -768,7 +768,45 @@ Asset building for people.gd: the layered clips (a box held in both hands, a pho
 - `static func pose(sk: Skeleton3D, bone: int) -> Transform3D`: Bone pose in skeleton space from the local poses.
 - `static func scene(pe: RefCounted, path: String) -> PackedScene`: The PackedScene at path: loaded at once when pe.blocking, else from a background load (null while that runs, and for good when it fails or the file is missing).
 - `static func finish_loads(pe: RefCounted) -> void`: Waits for every background scene load still running and keeps the results.
-- `static func prewarm_ambient(pe: RefCounted) -> void`: Loads every ambient avatar's body scene up front: on no-threads builds (the web export) this blocks at world build so play never hitches on a first seat or take; on threaded builds tests call it directly (in-game, dress-time requests warm the same paths lazily). One scene at a time: the headless dummy renderer's RID/material storage races when many threaded loads finalize together, and a loading screen does not need the parallelism.
+
+## `scripts/fp/traffic/people_pool.gd`
+
+extends `RefCounted`
+
+The body pool and scene cache behind people.gd (split out so people.gd stays under the 1000-line cap; the public API stays on people, which delegates here). Owns the PackedScene cache (_scenes / _pending / scene_loads; the load mechanics are people_kit.gd's statics with this pool as their `pe`), the free Body instances per avatar, the bodies lent by seat(), and the take / attach / detach / release lifecycle. people.gd keeps the roster, the avatar pick (dress), and the per-frame tier pipeline; it reaches this pool through `_pool`, and this pool reaches back (avatars, _active, root, the roster-built libraries and box transforms, the _set_mode animation helper) through a WEAKREF so the pair does not leak at exit_fp.
+
+### Constants
+
+- `KIT = preload("res://scripts/fp/traffic/people_kit.gd")`
+- `AP = preload("res://scripts/fp/asset_paths.gd")`
+- `WK = preload("res://scripts/fp/traffic/walkers.gd")`
+- `NEW_PER_FRAME = 4`: Bodies are instanced at most this many per frame (the rest wait for a pooled one).
+
+### Properties
+
+- `blocking: bool`: Load body and lod1 scenes on the calling thread (deterministic tests), not in the background.
+- `scene_loads: int`: Body-scene load initiations; tests assert a dressed walker's seat/take adds none.
+
+### Inner classes
+
+- `Body`: One instanced body: CharacterRoot > the body scene (Armature/GeneralSkeleton/Body, Anim, Tree).
+
+### Functions
+
+- `func begin_frame() -> void`: New frame: the per-frame instancing budget resets (people.begin).
+- `func scene(path: String) -> PackedScene`: The PackedScene at path: loaded at once when blocking, else from a background load (null while that runs, and for good when it fails or the file is missing). A dumb loader: the callers own the policy (dress warms at pick time on threaded builds, reset pre-warms on no-threads ones). Mechanics in people_kit.
+- `func is_pending(path: String) -> bool`: True while a background load of path is still running (a finished or failed one reads false).
+- `func finish_loads() -> void`: Waits for every background scene load still running and keeps the results.
+- `func prewarm_ambient(groups: Array, avatars: Array) -> void`: Loads every ambient avatar's body scene up front: on no-threads builds (the web export) this blocks at world build so play never hitches on a first seat or take; on threaded builds tests call it directly (in-game, dress-time requests warm the same paths lazily). One scene at a time: the headless dummy renderer's RID/material storage races when many threaded loads finalize together, and a loading screen does not need the parallelism.
+- `func take(ai: int) -> Body`: A pooled body of avatar ai, or a new one within this frame's budget once its scene has loaded.
+- `func seat(w: WK.Walker) -> bool`: Seats walker w on a body lent out of the pool (drivers, riders): the body stays out of the per-frame pipeline until release. False when none is available yet.
+- `func attach(w: WK.Walker, tier: int, frame: int) -> bool`: Gives w a body (pooled, or new within this frame's budget), stamped with the people's frame. False when none is available.
+- `func detach(w: WK.Walker) -> void`: Returns w's body (if any) to its pool.
+- `func release_body(b: Body) -> void`
+- `func release(w: WK.Walker) -> void`: A walker leaves for good (removed): its body goes back to the pool.
+- `func clear() -> void`: Frees the pooled and the lent bodies (people.clear frees the active ones and the rest).
+- `func make(ai: int) -> Body`
+- `func ensure_box(b: Body, g: String) -> void`: A cardboard box held in front of the chest (carry poses), parented to UpperChest.
 
 ## `scripts/fp/traffic/reactions.gd`
 
@@ -1101,6 +1139,7 @@ Traffic and pedestrians on lanes (slice E, docs/fp/slices/E-traffic.md): one roa
 - `FLEETS = preload("res://scripts/fp/traffic/fleets.gd")`
 - `KIT = preload("res://scripts/fp/traffic/mesh_kit.gd")`
 - `PPL = preload("res://scripts/fp/traffic/people.gd")`
+- `POOL = preload("res://scripts/fp/traffic/people_pool.gd")`
 - `CS = preload("res://scripts/fp/traffic/contact_shadows.gd")`
 - `OCC = preload("res://scripts/fp/traffic/occupants.gd")`
 - `SHOVES = preload("res://scripts/fp/traffic/shoves.gd")`

@@ -243,6 +243,7 @@ Generated from the `##` doc comments in `scripts/`. Regenerate with `python3 too
 - [occupants.gd](scripts.fp.traffic.md#scriptsfptrafficoccupantsgd): Drivers seated in the moving vehicles nearest the camera
 - [people.gd](scripts.fp.traffic.md#scriptsfptrafficpeoplegd): Animated people from HC's roster (docs/fp/slices/E-traffic.md deliverable 9, TPS_PLAN §1.10-1.11)
 - [people_kit.gd](scripts.fp.traffic.md#scriptsfptrafficpeople_kitgd): Asset building for people.gd: the layered clips (a box held in both hands, a phone at the ear), the shared T0 AnimationTree, and HC's lod1 meshes as dither-fading T3 MultiMesh layers; the clips reactions.gd plays (blows, falls, running off) and how their time runs
+- [people_pool.gd](scripts.fp.traffic.md#scriptsfptrafficpeople_poolgd): The body pool and scene cache behind people.gd (split out so people.gd stays under the 1000-line cap; the public API stays on people, which delegates here)
 - [reactions.gd](scripts.fp.traffic.md#scriptsfptrafficreactionsgd): People hit in the street (docs/fp/ARCHITECTURE.md, Body actions): shoved or punched by the player, struck by the car they drive or dragged out of their own (carjack)
 - [render.gd](scripts.fp.traffic.md#scriptsfptrafficrendergd): Draws E's agents (docs/fp/slices/E-traffic.md §3 Draw calls)
 - [shoves.gd](scripts.fp.traffic.md#scriptsfptrafficshovesgd): Cars the player's car knocks (slice E): a hit car slides off with the momentum it was given and spins, braking on its tyres, and stops against walls and other cars

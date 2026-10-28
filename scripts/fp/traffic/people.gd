@@ -15,12 +15,14 @@ extends RefCounted
 ## pool after OFF_KEEP). Bodies are pooled per avatar and instanced at most NEW_PER_FRAME per frame.
 ## Body and lod1 scenes load on background threads when first needed (a first load takes 25-150 ms;
 ## loading every avatar up front costs ~100 MB of textures); a walker whose body is still loading
-## waits at T3, undrawn while its lod1 loads too. Asset building lives in people_kit.gd.
+## waits at T3, undrawn while its lod1 loads too. Asset building lives in people_kit.gd; the body
+## pool and the scene cache live in people_pool.gd (this class keeps the public API and delegates).
 
 const WS := preload("res://scripts/fp/world_scale.gd")
 const AP := preload("res://scripts/fp/asset_paths.gd")
 const WK := preload("res://scripts/fp/traffic/walkers.gd")
 const KIT := preload("res://scripts/fp/traffic/people_kit.gd")
+const POOL := preload("res://scripts/fp/traffic/people_pool.gd")
 const WebSupport := preload("res://scripts/ops/web_support.gd")
 const T0_R := 12.0 * WS.M
 const T0_CAP := 8
@@ -73,34 +75,9 @@ class Avatar:
 	var t3c: Array[Color] = []
 
 
-## One instanced body: CharacterRoot > the body scene (Armature/GeneralSkeleton/Body, Anim, Tree).
-class Body:
-	extends RefCounted
-	var av: int = -1
-	var root: Node3D = null
-	var scene: Node3D = null
-	var skel: Skeleton3D = null
-	var meshes: Array[GeometryInstance3D] = []
-	var ap: AnimationPlayer = null
-	var tree: AnimationTree = null
-	var playback: AnimationNodeStateMachinePlayback = null
-	var head: int = -1
-	var walker: Object = null
-	var mode: int = -1  # 0 tree, 1 player, -1 inactive (off screen or pooled)
-	var clip: StringName = &""
-	var acc: float = 0.0  # game seconds not yet advanced
-	var since: float = 0.0  # real seconds since the last advance
-	var shadow: int = -1
-	var box: Node3D = null
-	var look: LookAtModifier3D = null
-	var off_t: float = 0.0
-	var seen: int = -1
-
-
+## The instanced-body class lives in people_pool.gd (the pool owns the bodies' lifecycle).
 var ok: bool = false
 var why: String = ""
-## Load body and lod1 scenes on the calling thread (deterministic tests), not in the background.
-var blocking: bool = false
 var root: Node3D = null
 var roster: Dictionary = {}
 var avatars: Array = []
@@ -120,10 +97,6 @@ var _rng := RandomNumberGenerator.new()
 var _city_seed: int = 0
 var _height: Dictionary = {"target_m": 1.75, "female_factor": 0.95, "jitter": [0.97, 1.03]}
 var _amb_groups: Array = []  # [[weight, [avatar indices]], ...]
-var _scenes: Dictionary = {}  # path -> PackedScene (null: missing or failed)
-var _pending: Dictionary = {}  # paths with a background load running
-## Body-scene load initiations; tests assert a dressed walker's seat/take adds none.
-var scene_loads: int = 0
 var _lod_frame: int = -1
 # Frame state.
 var _frame: int = 0
@@ -133,8 +106,6 @@ var _cam_pos := Vector3.ZERO
 var _planes: Array[Plane] = []
 var _cands: Array = []  # [distance, walker, on screen]
 var _active: Array = []  # Body instances attached to walkers
-var _seated: Array = []  # bodies lent by seat()
-var _made_frame: int = 0
 var _looks: int = 0
 # Stats for anim_stats() (G2's bench) and the tests.
 var t_counts: Array[int] = [0, 0, 0, 0]
@@ -142,7 +113,34 @@ var anim_us: float = 0.0
 var people_us: float = 0.0
 var char_draws: int = 0
 var off_count: int = 0
-var bodies_made: int = 0
+
+## The body pool and scene cache (people_pool.gd). The loading members below stay readable and
+## writable here exactly as before the split (tests poke them), delegating to the pool.
+var _pool: POOL = null
+
+var blocking: bool:
+	get:
+		return _pool.blocking
+	set(v):
+		_pool.blocking = v
+
+var scene_loads: int:
+	get:
+		return _pool.scene_loads
+	set(v):
+		_pool.scene_loads = v
+
+var _scenes: Dictionary:
+	get:
+		return _pool._scenes
+var _pending: Dictionary:
+	get:
+		return _pool._pending
+
+
+func _init() -> void:
+	_pool = POOL.new(self)
+
 
 # ------------------------------------------------------------------ loading
 
@@ -263,30 +261,21 @@ func reset(p_root: Node3D, city_seed: int) -> void:
 ## Frees every body and LOD layer.
 func clear() -> void:
 	for a: Avatar in avatars:
-		for b: Body in a.pool:
-			if is_instance_valid(b.root):
-				b.root.queue_free()
-		a.pool.clear()
-		a.made = 0
 		if a.mmi != null and is_instance_valid(a.mmi):
 			a.mmi.queue_free()
 		a.mmi = null
 		a.t3.clear()
 		a.t3c.clear()
-	for b: Body in _active:
+	for b: POOL.Body in _active:
 		if b.walker != null:
 			b.walker.set("body", null)
 		if is_instance_valid(b.root):
 			b.root.queue_free()
 	_active.clear()
-	for b: Body in _seated:
-		b.walker.set("body", null)
-		b.root.queue_free()
-	_seated.clear()
+	_pool.clear()
 	if _look_target != null and is_instance_valid(_look_target):
 		_look_target.queue_free()
 	_look_target = null
-	bodies_made = 0
 
 
 ## Measures a gender's skeleton once (head height, where the box sits in carry poses) on a first
@@ -301,7 +290,7 @@ func _probe(g: String) -> void:
 		return
 	var was := blocking
 	blocking = true
-	var b := _make(ai)
+	var b := _pool.make(ai)
 	blocking = was
 	if b == null:
 		return
@@ -326,7 +315,7 @@ func _probe(g: String) -> void:
 	_box_size[g] = Vector3(w, 0.26, 0.3)
 	b.ap.stop()
 	b.ap.active = false
-	_release_body(b)
+	_pool.release_body(b)
 
 
 # ------------------------------------------------------------------ assignment
@@ -407,7 +396,7 @@ func dress(w: WK.Walker, residents: Variant) -> void:
 	# are no frames to keep smooth, and the dummy renderer's unlocked storages race threaded
 	# loads (mesh/RID "is null" noise) for zero benefit.
 	if w.av >= 0 and WebSupport.threads_supported() and DisplayServer.get_name() != "headless":
-		_scene((avatars[w.av] as Avatar).path)
+		_pool.scene((avatars[w.av] as Avatar).path)
 
 
 ## Avatar name of walker w ("" before it is dressed).
@@ -429,7 +418,7 @@ func authored_speed(w: WK.Walker, clip: StringName) -> float:
 
 ## World position of w's Head bone while a body draws it, else an estimate from its stature.
 func head_of(w: WK.Walker, base: Vector3) -> Vector3:
-	var b: Body = w.body
+	var b: POOL.Body = w.body
 	if b != null and is_instance_valid(b.skel) and b.skel.is_inside_tree() and b.head >= 0:
 		return (b.skel.global_transform * b.skel.get_bone_global_pose(b.head)).origin
 	if w.av < 0:
@@ -452,7 +441,7 @@ func begin(delta: float, adt: float, cam: Camera3D, cam_pos: Vector3, look_at: V
 		for pl: Plane in cam.get_frustum():
 			_planes.append(pl)
 	_cands.clear()
-	_made_frame = 0
+	_pool.begin_frame()
 	if _look_target != null:
 		_look_target.position = look_at
 
@@ -516,15 +505,15 @@ func finish() -> void:
 	_cap_draws(tiers)
 	var us := _apply(tiers)
 	# Bodies whose walker was not drawn this frame go back to their pools.
-	for b: Body in _active.duplicate():
+	for b: POOL.Body in _active.duplicate():
 		if b.seen != _frame and b.walker != null:
 			var w: WK.Walker = b.walker
 			w.tier = -1
-			_detach(w)
+			_pool.detach(w)
 	for a: Avatar in avatars:
 		_fill_t3(a)
 	char_draws = 0
-	for b: Body in _active:
+	for b: POOL.Body in _active:
 		var w: WK.Walker = b.walker
 		if w != null and w.tier >= 0 and w.tier <= 2:
 			char_draws += _surfaces(w)
@@ -612,10 +601,10 @@ func _apply(tiers: Array[int]) -> int:
 
 
 func _apply_one(w: WK.Walker, tier: int, d: float) -> int:
-	if tier >= 0 and tier <= 2 and w.body == null and not _attach(w, tier):
+	if tier >= 0 and tier <= 2 and w.body == null and not _pool.attach(w, tier, _frame):
 		tier = 3
 	if tier == 3 or tier == -1:
-		_detach(w)
+		_pool.detach(w)
 	w.tier = tier
 	if tier == 3:
 		_t3(w, d)
@@ -623,7 +612,7 @@ func _apply_one(w: WK.Walker, tier: int, d: float) -> int:
 		return 0
 	if tier < 0:
 		return 0
-	var b: Body = w.body
+	var b: POOL.Body = w.body
 	b.seen = _frame
 	if tier == 4:
 		_hold_off(b, w)
@@ -634,13 +623,13 @@ func _apply_one(w: WK.Walker, tier: int, d: float) -> int:
 
 
 ## An off-screen body keeps its pose with its mixer inactive; back to the pool after OFF_KEEP.
-func _hold_off(b: Body, w: WK.Walker) -> void:
+func _hold_off(b: POOL.Body, w: WK.Walker) -> void:
 	off_count += 1
 	b.off_t += _delta
 	if b.mode != -1:
 		_set_mode(b, w, -1)
 	if b.off_t > OFF_KEEP:
-		_detach(w)
+		_pool.detach(w)
 		w.tier = -1
 
 
@@ -649,7 +638,7 @@ func _surfaces(w: WK.Walker) -> int:
 
 
 ## Places, shades and animates w's body for tier; returns the microseconds spent advancing.
-func _drive(b: Body, w: WK.Walker, tier: int, d: float) -> int:
+func _drive(b: POOL.Body, w: WK.Walker, tier: int, d: float) -> int:
 	var s := scale_of(w)
 	b.root.transform = WK.body_xf(w, s, _feet(w))
 	_set_shadow(b, tier == 0 or (tier == 1 and d < T1_NEAR))
@@ -688,7 +677,7 @@ func _drive(b: Body, w: WK.Walker, tier: int, d: float) -> int:
 	return Time.get_ticks_usec() - t0
 
 
-func _set_shadow(b: Body, on: bool) -> void:
+func _set_shadow(b: POOL.Body, on: bool) -> void:
 	var sh := 1 if on else 0
 	if sh == b.shadow:
 		return
@@ -703,7 +692,7 @@ func _set_shadow(b: Body, on: bool) -> void:
 
 
 ## Switches b to the tree (0), the player (1) or neither (-1), carrying w's clip and time over.
-func _set_mode(b: Body, w: WK.Walker, mode: int) -> void:
+func _set_mode(b: POOL.Body, w: WK.Walker, mode: int) -> void:
 	# The clip time to carry over: the outgoing mixer's when it plays w's clip.
 	if b.mode == 0 and b.playback != null and b.playback.get_current_node() == w.anim_clip:
 		w.anim_t = b.playback.get_current_play_position()
@@ -736,7 +725,7 @@ func _set_mode(b: Body, w: WK.Walker, mode: int) -> void:
 
 
 ## Conversation partners at T0 turn their head toward the player (at most LOOK_CAP of them).
-func _look(b: Body, w: WK.Walker, tier: int) -> void:
+func _look(b: POOL.Body, w: WK.Walker, tier: int) -> void:
 	var want := (
 		w.hold and w.face_player and tier == 0 and _looks < LOOK_CAP and _look_target != null
 	)
@@ -768,162 +757,32 @@ func _feet(w: WK.Walker) -> Vector3:
 
 
 ## Gives dressed walker w a body outside the tiers (a seated driver, posed by occupants.gd); false
-## while none is free. release(w) hands it back.
+## while none is free. release(w) hands it back. The pool (people_pool.gd) does the work.
 func seat(w: WK.Walker) -> bool:
-	var b := _take(w.av)
-	if b == null:
-		return false
-	b.walker = w
-	w.body = b
-	b.root.visible = true
-	_seated.append(b)
-	return true
-
-
-## A pooled body of avatar ai, or a new one within this frame's budget once its scene has loaded.
-func _take(ai: int) -> Body:
-	var a: Avatar = avatars[ai]
-	if not a.pool.is_empty():
-		return a.pool.pop_back()
-	if _made_frame < NEW_PER_FRAME and _scene(a.path) != null:
-		_made_frame += 1
-		return _make(ai)
-	return null
-
-
-## Gives w a body (pooled, or new within this frame's budget). False when none is available.
-func _attach(w: WK.Walker, tier: int) -> bool:
-	var a: Avatar = avatars[w.av]
-	var b := _take(w.av)
-	if b == null:
-		return false
-	b.walker = w
-	w.body = b
-	b.off_t = 0.0
-	b.seen = _frame
-	b.shadow = -1
-	b.mode = -1
-	b.root.visible = true
-	if w.extra == 1:
-		_ensure_box(b, a.gender)
-	if b.box != null:
-		b.box.visible = false
-	_active.append(b)
-	_set_mode(b, w, 0 if tier == 0 else 1)
-	return true
-
-
-## Returns w's body (if any) to its pool.
-func _detach(w: WK.Walker) -> void:
-	var b: Body = w.body
-	if b == null:
-		return
-	if b.mode == 0 and b.playback != null and b.playback.get_current_node() == w.anim_clip:
-		w.anim_t = b.playback.get_current_play_position()
-	elif b.mode == 1 and b.ap.current_animation == String(w.anim_clip):
-		w.anim_t = b.ap.current_animation_position
-	w.body = null
-	_active.erase(b)
-	_seated.erase(b)
-	_release_body(b)
-
-
-func _release_body(b: Body) -> void:
-	b.walker = null
-	b.mode = -1
-	if is_instance_valid(b.tree):
-		b.tree.active = false
-	if is_instance_valid(b.ap):
-		b.ap.active = false
-	if b.look != null:
-		b.look.active = false
-	if is_instance_valid(b.root):
-		b.root.visible = false
-	(avatars[b.av] as Avatar).pool.append(b)
+	return _pool.seat(w)
 
 
 ## A walker leaves for good (removed): its body goes back to the pool.
 func release(w: WK.Walker) -> void:
-	_detach(w)
-	w.tier = -1
-
-
-## The PackedScene at path: loaded at once when blocking, else from a background load (null
-## while that runs, and for good when it fails or the file is missing). Body in people_kit.
-func _scene(path: String) -> PackedScene:
-	return KIT.scene(self, path)
+	_pool.release(w)
 
 
 ## Waits for every background scene load still running and keeps the results.
+## The scene loader, duck-reachable on the feature as before the split (tests call it).
+func _scene(path: String) -> Variant:
+	return _pool.scene(path)
+
+
 func finish_loads() -> void:
-	KIT.finish_loads(self)
+	_pool.finish_loads()
 
 
 ## Loads every ambient avatar's body scene up front (the no-threads web build calls this at
-## world build so a first seat or take never blocks a frame on a glb parse). Body in people_kit.
+## world build so a first seat or take never blocks a frame on a glb parse).
 func _prewarm_ambient() -> void:
-	KIT.prewarm_ambient(self)
-
-
-func _make(ai: int) -> Body:
-	var a: Avatar = avatars[ai]
-	var ps := _scene(a.path)
-	if ps == null:
-		return null
-	var b := Body.new()
-	b.av = ai
-	b.root = Node3D.new()
-	b.root.name = "CharacterRoot_%s_%d" % [a.name, a.made]
-	b.scene = ps.instantiate() as Node3D
-	b.root.add_child(b.scene)
-	root.add_child(b.root)
-	b.skel = b.scene.get_node_or_null("%GeneralSkeleton") as Skeleton3D
-	if b.skel == null:
-		b.root.queue_free()
-		return null
-	b.head = b.skel.find_bone("Head")
-	for n: Node in b.scene.find_children("*", "GeometryInstance3D", true, false):
-		b.meshes.append(n as GeometryInstance3D)
-	var lib: AnimationLibrary = _libs[a.gender]
-	b.ap = AnimationPlayer.new()
-	b.ap.name = "Anim"
-	b.scene.add_child(b.ap)
-	b.ap.add_animation_library("", lib)
-	b.ap.root_motion_track = NodePath(AP.CHAR_ROOT_MOTION_TRACK)
-	b.ap.callback_mode_process = AnimationMixer.ANIMATION_CALLBACK_MODE_PROCESS_MANUAL
-	b.ap.active = false
-	b.tree = AnimationTree.new()
-	b.tree.name = "Tree"
-	b.scene.add_child(b.tree)
-	b.tree.add_animation_library("", lib)
-	b.tree.root_motion_track = NodePath(AP.CHAR_ROOT_MOTION_TRACK)
-	b.tree.callback_mode_process = AnimationMixer.ANIMATION_CALLBACK_MODE_PROCESS_MANUAL
-	b.tree.tree_root = _tree_root
-	b.tree.active = false
-	b.playback = b.tree.get(&"parameters/sm/playback")
-	a.made += 1
-	bodies_made += 1
-	return b
-
-
-## A cardboard box held in front of the chest (carry poses), parented to UpperChest.
-func _ensure_box(b: Body, g: String) -> void:
-	if b.box != null or not _box_xf.has(g):
+	if not ok:
 		return
-	if not _box_mesh.has(g):
-		var bm := BoxMesh.new()
-		bm.size = _box_size[g]
-		bm.material = _box_mat
-		_box_mesh[g] = bm
-	var att := BoneAttachment3D.new()
-	att.name = "Box"
-	att.bone_name = "UpperChest"
-	b.skel.add_child(att)
-	var mi := MeshInstance3D.new()
-	mi.mesh = _box_mesh[g]
-	mi.transform = _box_xf[g]
-	att.add_child(mi)
-	b.box = att
+	_pool.prewarm_ambient(_amb_groups, avatars)
 
 
 # ------------------------------------------------------------------ T3
@@ -949,8 +808,8 @@ func _load_lod(a: Avatar) -> void:
 	if _lod_frame == _frame and not blocking:
 		return
 	var path := a.path.get_basename() + "_lod1.glb"
-	var ps := _scene(path)
-	if _pending.has(path):
+	var ps := _pool.scene(path)
+	if _pool.is_pending(path):
 		return
 	_lod_frame = _frame
 	a.lod_tried = true
@@ -985,6 +844,6 @@ func stats() -> Dictionary:
 		"anim_us": anim_us,
 		"char_draws": char_draws,
 		"off": off_count,
-		"bodies": bodies_made,
+		"bodies": _pool.bodies_made,
 		"people_us": people_us
 	}

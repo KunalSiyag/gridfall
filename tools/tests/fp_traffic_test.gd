@@ -22,6 +22,7 @@ const JN := preload("res://scripts/fp/traffic/junctions.gd")
 const IDM := preload("res://scripts/fp/traffic/idm.gd")
 const TRIPS := preload("res://scripts/fp/traffic/trips.gd")
 const PPL := preload("res://scripts/fp/traffic/people.gd")
+const POOL := preload("res://scripts/fp/traffic/people_pool.gd")
 const SHOVES := preload("res://scripts/fp/traffic/shoves.gd")
 const OBB := preload("res://scripts/fp/obb2d.gd")
 const RD := preload("res://scripts/fp/traffic/render.gd")
@@ -272,7 +273,7 @@ func _feet_sample(by: Dictionary, pp: PPL, w: WK.Walker) -> void:
 
 static func _lowest_foot(pp: PPL, w: WK.Walker) -> float:
 	var low := INF
-	var b: PPL.Body = w.body
+	var b: POOL.Body = w.body
 	if b != null and b.skel != null and b.root.visible:
 		var sk := b.skel
 		for bn: String in ["LeftToes", "RightToes"]:
@@ -333,7 +334,7 @@ func _check_drivers() -> void:
 		f.sync_visuals(DT)
 		missing += _unseated(occ)
 		for c: VH.Car in _vh().cars:
-			var b: PPL.Body = occ.body_of(c.id)
+			var b: POOL.Body = occ.body_of(c.id)
 			if b != null:
 				seated[c.id] = true
 				_driver_sample(bad, c, b)
@@ -379,7 +380,7 @@ func _look_at_car() -> void:
 	ctx.player.look_toward(near.pos + Vector3(0, 1.0 * WS.M, 0))
 
 
-func _driver_sample(bad: Array[String], c: VH.Car, b: PPL.Body) -> void:
+func _driver_sample(bad: Array[String], c: VH.Car, b: POOL.Body) -> void:
 	var sk := b.skel
 	var hips := (sk.global_transform * sk.get_bone_global_pose(sk.find_bone("Hips"))).origin
 	var head := (sk.global_transform * sk.get_bone_global_pose(sk.find_bone("Head"))).origin
@@ -2528,7 +2529,7 @@ func _check_conversation() -> void:
 			f.step(DT)
 			f.sync_visuals(DT)
 		head = f.anchor_of(rid)
-		var b: PPL.Body = w.body
+		var b: POOL.Body = w.body
 		var bone := Vector3(INF, INF, INF)
 		if b != null:
 			bone = (b.skel.global_transform * b.skel.get_bone_global_pose(b.head)).origin
@@ -2799,7 +2800,7 @@ func _check_people_tiers(pp: PPL) -> void:
 	for w: WK.Walker in crowd:
 		if w.tier == 3 and w.body != null:
 			t3_bodies += 1
-		var b: PPL.Body = w.body
+		var b: POOL.Body = w.body
 		if b == null:
 			continue
 		if w.tier == 4:
@@ -2952,7 +2953,7 @@ func _check_people_gait(pp: PPL) -> void:
 		for k in range(75):
 			f.step(DT)
 			f.sync_visuals(DT)
-			var b: PPL.Body = w.body
+			var b: POOL.Body = w.body
 			tiers[w.tier] = true
 			if b == null or k < 20:
 				continue

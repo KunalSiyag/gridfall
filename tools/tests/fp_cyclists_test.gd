@@ -11,6 +11,7 @@ const AP := preload("res://scripts/fp/asset_paths.gd")
 const LG := preload("res://scripts/fp/traffic/lane_graph.gd")
 const VH := preload("res://scripts/fp/traffic/vehicles.gd")
 const PPL := preload("res://scripts/fp/traffic/people.gd")
+const POOL := preload("res://scripts/fp/traffic/people_pool.gd")
 const AMB := preload("res://scripts/fp/traffic/ambient.gd")
 const OCC := preload("res://scripts/fp/traffic/occupants.gd")
 const RD := preload("res://scripts/fp/traffic/render.gd")
@@ -232,7 +233,7 @@ func _check_rider() -> void:
 	K.check(fails, occ.riding == 0, "rider: released with the bicycle")
 
 
-func _bone(b: PPL.Body, nm: String) -> Vector3:
+func _bone(b: POOL.Body, nm: String) -> Vector3:
 	var sk := b.skel
 	return (sk.global_transform * sk.get_bone_global_pose(sk.find_bone(nm))).origin
 

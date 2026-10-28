@@ -23,6 +23,7 @@ const TRIPS := preload("res://scripts/fp/traffic/trips.gd")
 const FLEETS := preload("res://scripts/fp/traffic/fleets.gd")
 const KIT := preload("res://scripts/fp/traffic/mesh_kit.gd")
 const PPL := preload("res://scripts/fp/traffic/people.gd")
+const POOL := preload("res://scripts/fp/traffic/people_pool.gd")
 const CS := preload("res://scripts/fp/traffic/contact_shadows.gd")
 const OCC := preload("res://scripts/fp/traffic/occupants.gd")
 const SHOVES := preload("res://scripts/fp/traffic/shoves.gd")
@@ -1561,7 +1562,7 @@ func walkers_by_id(ids: Array) -> Dictionary:
 ## The left hand of w's animated body, else where it hangs at the side of a body w's height
 ## standing at q.
 func _left_hand(w: WK.Walker, q: Vector3) -> Vector3:
-	var b: PPL.Body = w.body
+	var b: POOL.Body = w.body
 	if b != null and is_instance_valid(b.skel) and b.skel.is_inside_tree():
 		var k := b.skel.find_bone("LeftHand")
 		if k >= 0:
