@@ -5,15 +5,17 @@ extends SceneTree
 ## tail-up to feed under the surface and preen their feathers with a shake of their wings; the
 ## hero walking down to the bank close by sends the whole flock up together with a clatter of
 ## wings — they run along the water, climb away and wheel round over it — and once the hero is
-## off, they glide back down and land on the water; by night none comes out; the flag off takes
-## them away; self_test and teardown. Third person on a grown city; time runs through the
-## feature's tick(1/60) and traffic's step.
+## off, they glide back down and land on the water; the hero's car horn sends them up too, heard
+## a share wider over the open water, and in the rain finds nothing to flush; by night none comes
+## out; the flag off takes them away; self_test and teardown. Third person on a grown city; time
+## runs through the feature's tick(1/60) and traffic's step.
 
 const K := preload("res://tools/tests/fp_kit.gd")
 const FRESH := preload("res://tools/tests/fp_fresh_city.gd")
 const D := preload("res://scripts/sim/sim_defs.gd")
 const WS := preload("res://scripts/fp/world_scale.gd")
 const AF := preload("res://scripts/fp/animals/animals_feature.gd")
+const DRIVE := preload("res://scripts/fp/drive/drive_feature.gd")
 const WF := preload("res://scripts/fp/animals/waterfowl.gd")
 const FLOCK := preload("res://scripts/fp/animals/pigeon_flock.gd")
 const DT := 1.0 / 60.0
@@ -62,6 +64,8 @@ func _init() -> void:
 		_check_night()
 		_check_rain()
 		_check_flag()
+		_check_horn()
+		_check_horn_rain()
 	_check_teardown()
 	K.finish(self, "FP_WATERFOWL_TEST", fails)
 
@@ -257,6 +261,74 @@ func _check_flag() -> void:
 	FeatureFlags.set_override("waterfowl", true)
 	_step(AF.SCAN_S + 0.1)
 	K.check(fails, _flock() != null, "flag: on again, they come back")
+
+
+## The hero's car horn (horn_sounded): one at the flock's spot with the street's reach sends
+## every duck up; one past the street's reach but within the water's carry (HORN_CARRY wider)
+## still flushes them; one well out of earshot leaves them be.
+func _check_horn() -> void:
+	var fk := _flock()
+	if fk == null:
+		return
+	var home: Vector3 = spot["home"]
+	ctx.player.teleport(home + Vector3(20.0 * WS.M, 0.0, 0.0), 0.0)
+	if not _wait_down(fk):
+		return
+	ctx.bus.horn_sounded.emit(Vector2(home.x, home.z), DRIVE.HORN_STREET_R, false)
+	_step(0.5)
+	var near := _all_up(fk)
+	if not _wait_down(fk):
+		return
+	# Between the street's reach and the water's carry: a street flock would not hear it.
+	var side := home + Vector3(DRIVE.HORN_STREET_R * 1.2, 0.0, 0.0)
+	ctx.bus.horn_sounded.emit(Vector2(side.x, side.z), DRIVE.HORN_STREET_R, true)
+	_step(0.5)
+	var carried := _all_up(fk)
+	if not _wait_down(fk):
+		return
+	var far := home + Vector3(100.0 * WS.M, 0.0, 0.0)
+	ctx.bus.horn_sounded.emit(Vector2(far.x, far.z), DRIVE.HORN_STREET_R * WF.HORN_CARRY, false)
+	_step(0.5)
+	var untouched := fk.birds.all(func(b: FLOCK.Bird) -> bool: return not b.air)
+	K.check(fails, near, "horn: a horn at the flock sends the ducks up")
+	K.check(fails, carried, "horn: over the water it carries a share wider than the street's")
+	K.check(fails, untouched, "horn: one out of earshot leaves them be")
+
+
+## In the rain no flock is out (they shelter on the bank): a horn finds nothing to flush, and
+## brings nothing out either.
+func _check_horn_rain() -> void:
+	var home: Vector3 = spot["home"]
+	FRESH.force_weather(ctx, "rain")
+	_step(AF.SCAN_S + 0.2)
+	var sheltered := fl.flocks.is_empty()
+	ctx.bus.horn_sounded.emit(Vector2(home.x, home.z), DRIVE.HORN_STREET_R * WF.HORN_CARRY, true)
+	_step(1.0)
+	K.check(
+		fails, sheltered and fl.flocks.is_empty(), "horn: in the rain there is nothing to flush"
+	)
+	FRESH.force_weather(ctx, "clear")
+	_step(AF.SCAN_S + 0.2)
+
+
+## Waits until every duck is back on the water (LAND_S at most); false when they never settle.
+func _wait_down(fk: FLOCK.Flock) -> bool:
+	var t := 0.0
+	while t <= LAND_S:
+		var down := true
+		for b: FLOCK.Bird in fk.birds:
+			down = down and not b.air
+		if down:
+			return true
+		_step(0.25)
+		t += 0.25
+	K.check(fails, false, "horn: the flock settles back on the water")
+	return false
+
+
+## Every duck in the air.
+func _all_up(fk: FLOCK.Flock) -> bool:
+	return fk.birds.all(func(b: FLOCK.Bird) -> bool: return b.air)
 
 
 func _check_teardown() -> void:

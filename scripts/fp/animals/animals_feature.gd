@@ -182,7 +182,7 @@ func setup(p_ctx: FpContext) -> void:
 		for n: Node3D in [waterfowl, squirrels]:
 			link_signal(ctx.bus.car_impact, Callable(n, "on_crash"))
 			link_signal(ctx.bus.prop_knocked, Callable(n, "on_knock"))
-		for n: Node3D in [pigeons, perches]:
+		for n: Node3D in [pigeons, perches, waterfowl]:
 			link_signal(ctx.bus.horn_sounded, Callable(n, "on_horn"))
 	if ctx.view != null:
 		link_signal(ctx.view.tile_built, _on_tile_built)
