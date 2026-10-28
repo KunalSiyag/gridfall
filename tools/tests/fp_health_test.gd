@@ -762,6 +762,25 @@ func _check_fight_back() -> void:
 ## A guarded fighter turns a swung weapon aside and knocks it from the hero's hand
 ## (weapon_disarm): nothing of the blow counts (no weapon_hit), and it lies a metre ahead to be
 ## picked up again. With the flag off the swing is wasted but the weapon stays in hand.
+## fight_back's disarm roll (weapon_disarm): fixed to who the fighter is and their count of
+## turn-asides this scrap — never the shared roll. Mirrored here to seed the two cases.
+func _disarms(w: WK.Walker, turns: int) -> bool:
+	var x := float(absi(hash("%d|%s|%d" % [w.id, w.resident_id, turns]) % 1000)) / 1000.0
+	return x < 0.35  # fight_back's DISARM_ODDS
+
+
+## A stranger ahead whose first turn-aside rolls a disarm (true) or holds (false); id order in
+## the fixture makes the search deterministic, and the odds all but end it in a try or two.
+func _guard_with(disarming: bool) -> WK.Walker:
+	var people: WK = tr.get("walkers")
+	for _i in range(12):
+		var w := _stranger(1.0)
+		if _disarms(w, 1) == disarming:
+			return w
+		people.remove(w)
+	return null
+
+
 func _check_weapon_disarm() -> void:
 	_heal()
 	_quiet()
@@ -770,7 +789,8 @@ func _check_weapon_disarm() -> void:
 	react.set("fight_odds", {"punch": 1.0, "shove": 1.0})
 	react.set("guard_share", 1.0)
 	var p := ctx.player
-	var w := _stranger(1.0)
+	var w := _guard_with(true)
+	K.check(fails, w != null, "a guard whose first turn-aside knocks the weapon loose")
 	react.set("fight_temper", {w.id: 1})  # guard (fight_tempers): turns blows aside
 	m.call("from_dict", {"held": "bat"})
 	weapon_blows.clear()
@@ -787,14 +807,14 @@ func _check_weapon_disarm() -> void:
 	K.check(
 		fails,
 		str(m.get("held_kind")).is_empty(),
-		"a guarded swing is knocked out of the hero's hand"
+		"the turned-aside swing that rolls a disarm empties the hero's hand"
 	)
-	K.check(fails, int(m.get("disarmed")) == d0 + 1, "and counted apart from drops")
+	K.check(fails, int(m.get("disarmed")) == d0 + 1, "and is counted apart from drops")
 	var info: Dictionary = act.get("last_hit")
 	K.check(
 		fails,
-		bool(info.get("guarded", false)) and not bool(info.get("down", true)),
-		"the blow that never landed says so (%s)" % str(info.get("guarded"))
+		bool(info.get("guarded", false)) and bool(info.get("disarm", false)),
+		"the blow that never landed says so, and that it disarmed"
 	)
 	K.check(fails, weapon_blows.is_empty(), "no weapon_hit for a blow that never landed")
 	var loose := false
@@ -805,8 +825,24 @@ func _check_weapon_disarm() -> void:
 		):
 			loose = true
 	K.check(fails, loose, "it lies a metre or so ahead, to be won back")
-	FeatureFlags.set_override("weapon_disarm", false)
+	(tr.get("walkers") as WK).remove(w)
+	# A guard whose first turn-aside holds (the roll misses): the swing still never lands, but
+	# the bat stays.
+	var w2 := _guard_with(false)
+	K.check(fails, w2 != null, "a guard whose first turn-aside holds the weapon")
+	react.set("fight_temper", {w2.id: 1})
 	m.call("from_dict", {"held": "bat"})
+	act.call("strike")
+	_step(1.5)
+	weapon_blows.clear()
+	act.call("strike")
+	_step(1.0)
+	K.check(
+		fails,
+		str(m.get("held_kind")) == "bat" and weapon_blows.is_empty(),
+		"a turn-aside without the roll wastes the swing but the bat stays in hand"
+	)
+	FeatureFlags.set_override("weapon_disarm", false)
 	act.call("strike")
 	_step(1.0)
 	K.check(
@@ -815,7 +851,7 @@ func _check_weapon_disarm() -> void:
 		"with the flag off the swing is wasted but the bat stays in hand"
 	)
 	FeatureFlags.set_override("weapon_disarm", true)
-	(tr.get("walkers") as WK).remove(w)
+	(tr.get("walkers") as WK).remove(w2)
 	react.set("fight_temper", {})
 	react.set("guard_share", share0)
 	react.set("fight_odds", {"punch": 0.4, "shove": 0.3})

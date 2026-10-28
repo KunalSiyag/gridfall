@@ -61,6 +61,11 @@ const BOLT_S := 2.5
 const CHIP_HIT := 0.26
 const CHIP_K := 0.2
 const BREAK_S := 1.2
+## The share of turned-aside blows that knock a swung weapon out of the hero's hand
+## (weapon_disarm), so a guard costs you the bat now and then, not every other swing. Rolled on
+## who they are and their count of turn-asides this scrap (temper_of's way: a hash, never the
+## shared roll), so the same scrap always disarms on the same blow.
+const DISARM_ODDS := 0.35
 ## The brawl ring (brawl_ring): more than RING_SLOTS fighting the hero slot by arrival (slot_seq,
 ## taken as the scrap starts) — the first two engage as ever, the rest hold the ring at RING_R,
 ## facing in and punching nothing, until a slot ahead opens (one down or out of the fight) and
@@ -110,6 +115,11 @@ var punches_landed: int = 0
 var punches_parried: int = 0
 ## The next arrival's slot among the hero's fighters (brawl_ring).
 var _seq: int = 0
+## Whether the blow just turned aside would knock a swung weapon loose (weapon_disarm):
+## reactions.hit reads it into the res. And walker id -> their count of turn-asides this scrap
+## (the disarm roll's seed; reset as the scrap starts).
+var last_disarm := false
+var _turns: Dictionary = {}
 
 var wk: WK
 var collision: CollisionWorld
@@ -190,6 +200,12 @@ func turned_aside(r, cause: String, strength: float) -> bool:
 				r.chip = 0.0
 				r.broken = BREAK_S
 			return false
+	var turns := int(_turns.get(r.w.id, 0)) + 1
+	_turns[r.w.id] = turns
+	last_disarm = (
+		float(absi(hash("%d|%s|%d" % [r.w.id, r.w.resident_id, turns]) % 1000)) / 1000.0
+		< DISARM_ODDS
+	)
 	return true
 
 
@@ -324,6 +340,7 @@ func step_check(r, dt: float) -> bool:
 func begin(r) -> void:
 	r.slot_seq = _seq
 	_seq += 1
+	_turns[r.w.id] = 0
 	r.blow_t = -1.0
 	r.pause = FIGHT_FIRST
 	if FeatureFlags.enabled("fight_tempers") and r.temper == T_BRUISER:

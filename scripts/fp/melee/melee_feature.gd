@@ -8,8 +8,8 @@ extends FpFeature
 ## getting into a car or being knocked down drops it too. In hand it follows the right fist, and
 ## the actions feature swings it instead of punching (held(), landed()): weapon_hit on the bus
 ## reports every blow it lands, and a bottle breaks on the first one, in a spray of glass. A swing
-## a guarded fighter turns aside never lands: it knocks the weapon from the hero's hand instead,
-## to lie a metre off and be picked up again (weapon_disarm).
+## a guarded fighter turns aside never lands while weapon_disarm is on, and the odd turn-aside
+## (DISARM_ODDS) knocks the weapon from the hero's hand, to lie a metre off and be picked up again.
 
 const WS := preload("res://scripts/fp/world_scale.gd")
 const D := preload("res://scripts/sim/sim_defs.gd")
@@ -167,8 +167,9 @@ func drop() -> bool:
 	return _lose(DROP_AHEAD)
 
 
-## A swing a guarded fighter turned aside knocks the weapon from the hero's hand (weapon_disarm):
-## it lands DISARM_AHEAD (m) ahead and lies to be picked up again. False with nothing in hand.
+## A swing a guarded fighter turned aside, when the turn-aside rolls a disarm (weapon_disarm,
+## fight_back's DISARM_ODDS), knocks the weapon from the hero's hand: it lands DISARM_AHEAD (m)
+## ahead and lies to be picked up again. False with nothing in hand.
 func disarm() -> bool:
 	return _lose(DISARM_AHEAD, true)
 

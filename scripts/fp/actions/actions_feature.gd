@@ -9,7 +9,8 @@ extends FpFeature
 ## within reach. The traffic feature's hit_walker makes them reel or go down; people nearby react
 ## and the city hears of it. With a weapon in hand (the melee feature) the strike button swings it
 ## instead, further and harder, and the melee feature hears where it landed — a swing a guarded
-## fighter turns aside never lands, and knocks the weapon from the hero's hand (weapon_disarm).
+## fighter turns aside never lands, and the odd turn-aside knocks the weapon from the hero's
+## hand with it (weapon_disarm).
 ## With nobody there a
 ## kick or a weapon swing lands on the dog, cat or pigeon in front (the animals feature's strike;
 ## a fist goes over them), else the blow lands on the street prop in front (the props feature's
@@ -536,16 +537,18 @@ func _land_target() -> void:
 	last_hit = info
 	hits += 1
 	_kick_view()
-	# A swing a guarded fighter turns aside never lands; it knocks the weapon loose instead
-	# (weapon_disarm) — no weapon_hit, and a bottle stays whole.
+	# A swing a guarded fighter turns aside never lands while weapon_disarm is on: no weapon_hit,
+	# a bottle stays whole — and some turn-asides knock the weapon from the hero's hand with it
+	# (DISARM_ODDS).
 	if (
 		swing == "swing"
 		and bool(info.get("guarded", false))
 		and FeatureFlags.enabled("weapon_disarm")
 	):
 		var m := ctx.feature("melee")
-		if m != null and bool(m.call("disarm")):
-			return
+		if bool(info.get("disarm", false)) and m != null:
+			m.call("disarm")
+		return
 	_weapon_landed("person", who["pos"] as Vector3)
 
 

@@ -265,6 +265,7 @@ The scrap and the care for a body on the ground: fighting back, the tempers, cou
 - `CHIP_HIT = 0.26`: A guard's guard wears out (guard_chip): every blow turned aside chips it by CHIP_HIT plus CHIP_K times the blow's strength, and the one that takes it past 1 lands in full instead. Beaten, the guard drops for BREAK_S (guard_break): the fighter stands off balance, throwing nothing and turning nothing aside, until the guard knits back whole and can be chipped anew.
 - `CHIP_K = 0.2`
 - `BREAK_S = 1.2`
+- `DISARM_ODDS = 0.35`: The share of turned-aside blows that knock a swung weapon out of the hero's hand (weapon_disarm), so a guard costs you the bat now and then, not every other swing. Rolled on who they are and their count of turn-asides this scrap (temper_of's way: a hash, never the shared roll), so the same scrap always disarms on the same blow.
 - `RING_SLOTS = 2`: The brawl ring (brawl_ring): more than RING_SLOTS fighting the hero slot by arrival (slot_seq, taken as the scrap starts) — the first two engage as ever, the rest hold the ring at RING_R, facing in and punching nothing, until a slot ahead opens (one down or out of the fight) and they step in. The crowd round them jeers (crowd_reacts.gd's step). Off: every fighter piles in at once.
 - `RING_R = 2.2 * WS.M`
 - `CHECK_R = 6.0 * WS.M`: Downed awareness (downed_awareness): a blow that leaves someone down brings the nearest free onlooker within CHECK_R over to look — they come within CHECK_NEAR (feet to feet), lean in (rad, + forward) with a slow head shake for CHECK_S, then walk on; once for each knock-down. A fighter whose hero goes down stands over them a beat (STAND_OVER_S) before walking off. CHECK_CAP bounds the walk over.
@@ -285,6 +286,7 @@ The scrap and the care for a body on the ground: fighting back, the tempers, cou
 - `on_wind_up: Callable`: Who hears of a punch thrown at the hero as it starts: on_wind_up(walker id, fist, seconds until it lands); and who may counter it as it lands: on_hero_parry(walker id, fist) -> true when it is countered (it then misses).
 - `fight_odds: Dictionary`: The share who fight back, by cause (test hook), and the punches that landed on the hero or were countered.
 - `fight_temper: Dictionary`: Walker id -> their temper among TEMPERS (a test hook, overriding the identity hash), and the share of the hero's blows a guard turns aside (a test hook too).
+- `last_disarm`: Whether the blow just turned aside would knock a swung weapon loose (weapon_disarm): reactions.hit reads it into the res. And walker id -> their count of turn-asides this scrap (the disarm roll's seed; reset as the scrap starts).
 - `active: Dictionary`: reactions.gd's live state, shared at setup: walker id -> Reaction of everyone down or reacting, the spawner of a Reaction for a walker (_new), the "may start a reaction" test (_free) and the after-blow planner (_after, for a turned-aside blow's scrap going on).
 
 ### Functions
