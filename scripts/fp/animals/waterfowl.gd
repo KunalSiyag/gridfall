@@ -4,7 +4,9 @@ extends "res://scripts/fp/animals/bird_flocks.gd"
 ## duck_body.gd duck an instance and tint a bird). Every open water tile has a share of a flock
 ## of mallards on it, brought out within NEAR of the player by the scan, the nearest first, up to
 ## MAX_FLOCKS of them, and dropped again beyond FAR; by night they are gone (off to roost) and
-## the flag takes them away. Their take-offs at a fright go out on the bus (animal_called).
+## the flag takes them away. Their take-offs at a fright — the hero at the bank, a crash, the
+## car horn heard a share wider over the open water (HORN_CARRY) — go out on the bus
+## (animal_called).
 
 const DUCK := preload("res://scripts/fp/animals/duck_flock.gd")
 const DUCK_BODY := preload("res://scripts/fp/animals/duck_body.gd")
@@ -17,6 +19,9 @@ const MAX_FLOCKS := 2
 ## one (a drake or two among the hens).
 const WATER_SHARE := 0.5
 const DUCKS := Vector2i(3, 6)
+## How much wider than the street's reach the hero's car horn carries over the open water
+## (on_horn).
+const HORN_CARRY := 1.3
 ## A flock keeps within SPOT_R (u) of its spot; the spot sits ON_BANK (tile units) off the middle
 ## of its tile, toward the nearest land, so the ducks feed near a bank the hero can walk down to
 ## (the tile's middle where its neighbours are all water).
@@ -92,6 +97,13 @@ func on_crash(at: Vector3) -> void:
 
 func on_knock(at: Vector3) -> void:
 	startle(at, KNOCK_M)
+
+
+## The hero's car horn sounded at at: the flock flushes as at any fright, hearing it HORN_CARRY
+## wider than the street's reach — over the open water nothing swallows the sound
+## (bird_flocks.gd's on_horn). In the rain no flock is out, so there is nothing to flush.
+func on_horn(at: Vector2, radius: float, long: bool) -> void:
+	super.on_horn(at, radius * HORN_CARRY, long)
 
 
 ## Self-test line: how many ducks sit on the water in how many flocks.

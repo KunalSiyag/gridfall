@@ -1152,7 +1152,7 @@ Street-spot search shared by the animals feature's guaranteed spawns (pigeons.gd
 
 extends `"res://scripts/fp/animals/bird_flocks.gd"`
 
-The waterfowl node: the ducks on the city's water (the river, the ponds), as the pigeons' two nodes are (bird_flocks.gd's shared half driving a duck_flock.gd list, one MultiMesh of the duck_body.gd duck an instance and tint a bird). Every open water tile has a share of a flock of mallards on it, brought out within NEAR of the player by the scan, the nearest first, up to MAX_FLOCKS of them, and dropped again beyond FAR; by night they are gone (off to roost) and the flag takes them away. Their take-offs at a fright go out on the bus (animal_called).
+The waterfowl node: the ducks on the city's water (the river, the ponds), as the pigeons' two nodes are (bird_flocks.gd's shared half driving a duck_flock.gd list, one MultiMesh of the duck_body.gd duck an instance and tint a bird). Every open water tile has a share of a flock of mallards on it, brought out within NEAR of the player by the scan, the nearest first, up to MAX_FLOCKS of them, and dropped again beyond FAR; by night they are gone (off to roost) and the flag takes them away. Their take-offs at a fright — the hero at the bank, a crash, the car horn heard a share wider over the open water (HORN_CARRY) — go out on the bus (animal_called).
 
 ### Constants
 
@@ -1163,6 +1163,7 @@ The waterfowl node: the ducks on the city's water (the river, the ponds), as the
 - `MAX_FLOCKS = 2`
 - `WATER_SHARE = 0.5`: The share of the open water tiles that keep a flock (no bridge over them), and the ducks on one (a drake or two among the hens).
 - `DUCKS = Vector2i(3, 6)`
+- `HORN_CARRY = 1.3`: How much wider than the street's reach the hero's car horn carries over the open water (on_horn).
 - `SPOT_R = 0.3`: A flock keeps within SPOT_R (u) of its spot; the spot sits ON_BANK (tile units) off the middle of its tile, toward the nearest land, so the ducks feed near a bank the hero can walk down to (the tile's middle where its neighbours are all water).
 - `ON_BANK = 0.4`
 - `STARTLE = { "jab": 3.0, "cross": 3.0, "hook": 3.0, "kick": 4.0, "swing": 4.0, "shove": 3.0, "danc...`: The hero's swings, shove, shout, dance and parkour moves startle the ducks within these (m); someone hit those within SEEN_HIT, a crash those within CRASH_M, a prop knocked over those within KNOCK_M and a bark those within BARK_M.
@@ -1184,4 +1185,5 @@ The waterfowl node: the ducks on the city's water (the river, the ponds), as the
 - `func step(dt: float) -> void`: dt game seconds of the flocks while the flag is on; off takes them away.
 - `func on_crash(at: Vector3) -> void`: A car crashed into something at at, or a prop was knocked over there: the ducks near go up.
 - `func on_knock(at: Vector3) -> void`
+- `func on_horn(at: Vector2, radius: float, long: bool) -> void`: The hero's car horn sounded at at: the flock flushes as at any fright, hearing it HORN_CARRY wider than the street's reach — over the open water nothing swallows the sound (bird_flocks.gd's on_horn). In the rain no flock is out, so there is nothing to flush.
 - `func detail() -> String`: Self-test line: how many ducks sit on the water in how many flocks.
