@@ -7,7 +7,9 @@ extends Node3D
 ## the hero walking up to it or sprinting near, a dog close by or running, a cat pouncing at it
 ## (CAT_NEAR, squirrel_life.gd), a person stepping on it or a shout sends it chattering up its
 ## trunk, where it clings head-up until the trouble has gone and then comes back down to its
-## lawn. Its chatters go out on the bus (animal_called).
+## lawn. Two whose lawns touch now and then chase one another in spirals round a trunk,
+## chattering, a catch swapping who chases whom — a game that yields to any real fright. Its
+## chatters go out on the bus (animal_called).
 
 const D := preload("res://scripts/sim/sim_defs.gd")
 const WS := preload("res://scripts/fp/world_scale.gd")
