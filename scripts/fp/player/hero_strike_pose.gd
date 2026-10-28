@@ -160,6 +160,9 @@ func _init(
 		_curl.append_array(fist_joints(p_sk, s))
 	_mod = Mod.new(self)
 	_mod.name = "StrikePose"
+	# Runs on the idle frame, after the hand-advanced tree, not once per physics frame
+	# (the web build's catch-up steps would multiply that; people_pool.gd says more).
+	p_sk.modifier_callback_mode_process = Skeleton3D.MODIFIER_CALLBACK_MODE_PROCESS_IDLE
 	p_sk.add_child(_mod)
 	_mod.active = false
 

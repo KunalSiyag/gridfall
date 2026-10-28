@@ -212,6 +212,10 @@ func make(ai: int) -> Body:
 		b.root.queue_free()
 		return null
 	b.head = b.skel.find_bone("Head")
+	# Skeleton modifiers (the T0 head look) run on the idle frame with the hand-advanced
+	# mixers; the engine default PHYSICS mode would pay them once per physics frame,
+	# multiplied by the web build's catch-up steps on slow frames.
+	b.skel.modifier_callback_mode_process = Skeleton3D.MODIFIER_CALLBACK_MODE_PROCESS_IDLE
 	for n: Node in b.scene.find_children("*", "GeometryInstance3D", true, false):
 		b.meshes.append(n as GeometryInstance3D)
 	var lib: AnimationLibrary = ppl._libs[a.gender]

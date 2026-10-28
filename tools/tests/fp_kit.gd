@@ -426,6 +426,27 @@ static func check(fails: Array, ok: bool, what: String) -> void:
 		fails.append(what)
 
 
+## Every SkeletonModifier3D under root rides a skeleton in the IDLE modifier callback mode:
+## the engine default PHYSICS mode pays each modifier once per physics frame, multiplied by
+## the web build's catch-up steps on slow frames (the day-10 tick-frame attribution).
+static func check_modifier_modes(fails: Array, root: Node) -> void:
+	var mods := root.find_children("*", "SkeletonModifier3D", true, false)
+	var bad := 0
+	for m: Node in mods:
+		var sk := m.get_parent() as Skeleton3D
+		var idle := (
+			sk != null
+			and sk.modifier_callback_mode_process == Skeleton3D.MODIFIER_CALLBACK_MODE_PROCESS_IDLE
+		)
+		if not idle:
+			bad += 1
+	check(
+		fails,
+		bad == 0,
+		"every SkeletonModifier3D runs on the idle frame (%d of %d off)" % [bad, mods.size()]
+	)
+
+
 ## Input events for a feature's _unhandled_input: action a pressed.
 static func action_event(a: String) -> InputEventAction:
 	var e := InputEventAction.new()

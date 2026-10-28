@@ -263,6 +263,18 @@ func _check_lead() -> WK.Walker:
 		rigged and b.ap.has_animation(&"Gallop") and b.ap.has_animation(&"Attack"),
 		"lead: the dog is the rigged %s with its clips and a DogRig" % d.breed
 	)
+	K.check(
+		fails,
+		(
+			b.skel != null
+			and (
+				b.skel.modifier_callback_mode_process
+				== Skeleton3D.MODIFIER_CALLBACK_MODE_PROCESS_IDLE
+			)
+		),
+		"lead: the DogRig runs on the idle frame, not once per physics frame"
+	)
+	K.check_modifier_modes(fails, get_root())
 	var worst := 0.0
 	var left := 0.0
 	var n := 0
