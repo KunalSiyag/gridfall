@@ -1,17 +1,20 @@
-"""Seeded randomness in the determinism-critical code (AGENTS.md: "no randomness without the sim
-seed"). The sim and the AI layer must draw every random value from a RandomNumberGenerator seeded
-off the city seed, never from Godot's process-global stream.
+"""Seeded randomness across scripts/** (AGENTS.md: "no randomness without the sim seed").
+Any draw whose result can reach a saved field must come from a RandomNumberGenerator seeded off
+the city seed, never from Godot's process-global stream; that covers the sim and the AI layer
+directly and the UI/world/fp layers one careless call away.
 
 usage: python3 tools/checks/rng_seed.py [--update-baseline] [files...]
 
-Flags, under scripts/sim/** and scripts/ai/**: a bare `randf()` / `randi()` / `randf_range()` /
-`randi_range()` / `randfn()` / `randomize()` call, and any `.shuffle()` / `.pick_random()` (both
-draw from the global stream). Calls on a generator (`rng.randf()`, `sim.rng.randi_range(...)`) are
-fine, as is `RandomNumberGenerator.new()`. Comments and string literals are ignored.
+Flags, under scripts/**: a bare `randf()` / `randi()` / `randf_range()` / `randi_range()` /
+`randfn()` / `randomize()` call, and any `.shuffle()` / `.pick_random()` (both draw from the
+global stream). Calls on a generator (`rng.randf()`, `sim.rng.randi_range(...)`) are fine, as is
+`RandomNumberGenerator.new()`. Comments and string literals are ignored.
 
-A bare draw here means the same save can boot into a different city: that is exactly the class of
-bug the sim_determinism_test guards at runtime. Known-safe exceptions live in
-tools/checks/baselines/rng_seed.json, counted per (file, symbol).
+A bare draw that feeds a save means the same save can boot into a different city: that is exactly
+the class of bug the sim_determinism_test guards at runtime. The genuinely visual layer (ambient
+traffic, blinker phases, camera shake) keeps its existing draws in the allow-list at
+tools/checks/baselines/rng_seed.json, counted per (file, symbol); a new draw fails until it is
+seeded or deliberately allow-listed.
 """
 from __future__ import annotations
 
@@ -27,8 +30,9 @@ from tools.checks import common  # noqa: E402
 
 NAME = "rng_seed"
 BASELINE = "rng_seed.json"
-## The determinism-critical tree: the pure sim and the AI layer that drives it.
-SCOPE = ("scripts/sim", "scripts/ai")
+## The whole scripts tree: sim/ai draws must be seeded; the visual layer's existing draws sit in
+## the baseline as the allow-list, so a new bare draw anywhere fails review.
+SCOPE = ("scripts",)
 PATTERNS = ("*.gd",)
 EXCLUDE = ("tools/checks/baselines/**", "docs/api/**")
 ## Process-global helpers: a call not preceded by `.` or a name char is the global function.
@@ -66,7 +70,7 @@ def run(root: Path, files: list[str] | None = None, update: bool = False) -> com
     all_files = [f for f in common.list_files(root, PATTERNS, EXCLUDE) if f.startswith(SCOPE)]
     targets = sorted(set(files) & set(all_files)) if files is not None else all_files
     if not all_files:
-        res.skipped = "no scripts under scripts/sim or scripts/ai"
+        res.skipped = "no scripts under scripts/"
         return res
     items = scan(root, targets)
     bpath = common.baseline_path(root, BASELINE)
@@ -85,7 +89,11 @@ def run(root: Path, files: list[str] | None = None, update: bool = False) -> com
         k = key_of(i)
         seen[k] += 1
         if seen[k] > int(baseline.get(k, 0)):
-            res.new.append(label + " - seed a RandomNumberGenerator from the city seed instead")
+            res.new.append(
+                label
+                + " - seed a RandomNumberGenerator from the city seed, or --update-baseline"
+                + " only if the draw stays purely visual"
+            )
         else:
             res.known.append(label)
     res.stats = {

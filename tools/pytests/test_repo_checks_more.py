@@ -213,20 +213,22 @@ def test_rng_seed_scope_and_lexing(repo, tmp_path, capsys):
                 "\trandomize()\n"
             ),
             "scripts/ai/b.gd": "func g() -> void:\n\tvar v := sim.rng.randf()\n\tvar d := 1.0\n",
-            # Outside the scope: a bare draw is fine (visual layer).
+            # In scope too: the visual layer's bare draws fail until allow-listed.
             "scripts/world/w.gd": "func h() -> void:\n\tvar v := randf()\n",
             "scripts/fp/x.gd": "func i() -> void:\n\tvar v := randf()\n",
         }
     )
     res = rng_seed.run(root)
-    assert res.stats["files"] == 2
+    assert res.stats["files"] == 4
     assert [n.split(" uses")[0] for n in res.new] == [
+        "scripts/fp/x.gd:2",
         "scripts/sim/a.gd:2",
         "scripts/sim/a.gd:6",
         "scripts/sim/a.gd:7",
         "scripts/sim/a.gd:10",
+        "scripts/world/w.gd:2",
     ]
-    assert res.stats["by_symbol"] == {"pick_random": 1, "randf": 1, "randomize": 1, "shuffle": 1}
+    assert res.stats["by_symbol"] == {"pick_random": 1, "randf": 3, "randomize": 1, "shuffle": 1}
     assert rng_seed.main(["--root", str(root)]) == 1
     # Baselining the known hits clears them; a new call still fails.
     rng_seed.run(root, update=True)

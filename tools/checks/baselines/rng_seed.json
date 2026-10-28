@@ -1,0 +1,9 @@
+{
+ "scripts/main.gd::randi": 2,
+ "scripts/world/city_life.gd::randf": 3,
+ "scripts/world/city_life.gd::randf_range": 1,
+ "scripts/world/city_life.gd::randi": 5,
+ "scripts/world/city_view.gd::randf": 5,
+ "scripts/world/city_view.gd::randf_range": 4,
+ "scripts/world/city_view.gd::randi": 5
+}
