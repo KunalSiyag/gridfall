@@ -99,6 +99,10 @@ const HL_KICK := 0.07
 ## Camera shake (shake): trauma 0..1 drains at SHAKE_DECAY a second, and the view turns by up to
 ## SHAKE_MAX (pitch, yaw, roll; radians) times trauma squared, wobbling at about SHAKE_HZ.
 const SHAKE_DECAY := 1.6
+## The wobble's fastest line (SHAKE_HZ * 1.73) is capped at this many cycles a frame
+## (shake_wobble_clamp): past it the sampled shake jumps instead of oscillating at low frame
+## rates, so the clock slows instead. 60 fps never reaches the cap.
+const SHAKE_MAX_CPF := 0.27
 const SHAKE_MAX := Vector3(0.03, 0.025, 0.04)
 const SHAKE_HZ := 9.0
 ## Half way through a first-person roll (tumble_view) the eye is this high.
@@ -245,6 +249,8 @@ var _trauma: float = 0.0
 ## knock-down's fall, lie and get-up; down_view): the first-person eye goes with it.
 var down_w := 0.0
 var _shake_t: float = 0.0
+## Smoothed seconds a frame; paces the shake wobble's cap at low frame rates.
+var _frame_dt: float = 1.0 / 60.0
 var _shake: Vector3 = Vector3.ZERO
 ## Seconds into the first-person roll (tumble_view) and its length: over once the one reaches the
 ## other.
@@ -616,6 +622,7 @@ func update_view(delta: float) -> void:
 	if camera == null or ctx == null:
 		return
 	var dt := clampf(delta, 0.0, MAX_FRAME_DELTA)
+	_frame_dt = SM.damp(_frame_dt, dt, 0.35, dt)
 	var sp := speed()
 	_cam_dy = SM.damp(_cam_dy, 0.0, HL_FP_STEP, dt)
 	_kick *= pow(0.5, dt / HL_KICK)
@@ -736,7 +743,12 @@ func shake_amount() -> float:
 
 func _update_shake(dt: float) -> void:
 	_trauma = maxf(0.0, _trauma - SHAKE_DECAY * dt)
-	_shake_t += dt
+	# Past Nyquist the wobble jumps instead of oscillating (a 20-25 fps cap): keep its fastest
+	# line under SHAKE_MAX_CPF cycles a (smoothed) frame — the shake runs slower but coherent.
+	var rate := 1.0
+	if FeatureFlags.enabled("shake_wobble_clamp"):
+		rate = minf(1.0, SHAKE_MAX_CPF / maxf(_frame_dt, 1e-3) / (SHAKE_HZ * 1.73))
+	_shake_t += dt * rate
 	var s := _trauma * _trauma
 	_shake = Vector3(_wobble(0.0), _wobble(1.7), _wobble(3.1)) * SHAKE_MAX * s
 

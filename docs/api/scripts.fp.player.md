@@ -473,6 +473,7 @@ The on-foot player (slice A): feet at `position`, a kinematic controller against
 - `FP_PITCH_LIMIT = deg_to_rad(WS.PITCH_LIMIT_DEG)`
 - `HL_KICK = 0.07`: A view kick (kick_view) dies away with this halflife (s).
 - `SHAKE_DECAY = 1.6`: Camera shake (shake): trauma 0..1 drains at SHAKE_DECAY a second, and the view turns by up to SHAKE_MAX (pitch, yaw, roll; radians) times trauma squared, wobbling at about SHAKE_HZ.
+- `SHAKE_MAX_CPF = 0.27`: The wobble's fastest line (SHAKE_HZ * 1.73) is capped at this many cycles a frame (shake_wobble_clamp): past it the sampled shake jumps instead of oscillating at low frame rates, so the clock slows instead. 60 fps never reaches the cap.
 - `SHAKE_MAX = Vector3(0.03, 0.025, 0.04)`
 - `SHAKE_HZ = 9.0`
 - `TUMBLE_EYE = 0.5 * WS.M`: Half way through a first-person roll (tumble_view) the eye is this high.

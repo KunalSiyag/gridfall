@@ -56,6 +56,7 @@ func _init() -> void:
 	_check_throw()
 	_check_throw_off()
 	_check_trample()
+	_check_shake_coherence()
 	_check_teardown()
 	Engine.time_scale = 1.0
 	K.finish(self, "FP_HITFEEL_TEST", fails)
@@ -360,3 +361,30 @@ func _check_teardown() -> void:
 	var s0 := int(hf.get("stops"))
 	ctx.bus.person_hit.emit(ctx.player.position, "punch", {"strength": 1.0})
 	K.check(fails, int(hf.get("stops")) == s0, "and stops listening")
+
+
+## The wobble's fastest line (~15.6 Hz) is capped to under 4 samples a frame at low frame rates
+## (shake_wobble_clamp), paced by the smoothed frame time: at 20 fps the wobble clock slows so
+## the shake swings coherently instead of jumping past Nyquist; at 60 fps the cap never bites.
+func _check_shake_coherence() -> void:
+	var slow := _shake_rate(0.05)
+	var want := 0.27 / (0.05 * 9.0 * 1.73)
+	K.check(fails, absf(slow - want) < 0.02, "20 fps: the wobble clock slows (%.3f)" % slow)
+	K.check(fails, absf(_shake_rate(1.0 / 60.0) - 1.0) < 0.01, "60 fps: the cap never bites")
+	FeatureFlags.set_override("shake_wobble_clamp", false)
+	var raw := _shake_rate(0.05)
+	FeatureFlags.set_override("shake_wobble_clamp", true)
+	K.check(fails, absf(raw - 1.0) < 0.01, "flag off: the wobble runs full speed at 20 fps too")
+
+
+## The wobble clock's advance a frame at dt, the frame-time smoother settled (two seconds in).
+func _shake_rate(dt: float) -> float:
+	var p := ctx.player
+	for _k in range(ceili(2.0 / dt)):
+		p.shake(1.0)
+		p.update_view(dt)
+	p.shake(1.0)
+	var t0: float = p.get("_shake_t")
+	p.update_view(dt)
+	p.set("_trauma", 0.0)
+	return (p.get("_shake_t") - t0) / dt
