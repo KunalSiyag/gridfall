@@ -83,14 +83,11 @@ const DIE_RATE := 60.0
 
 
 ## One logical sound source; holds a pool player only while it is among the loudest.
-## The owning feature, for section profiling (fp_bench); null in unit tests.
-var prof: Object = null
+var prof: Object = null  # owning feature, for section profiling (fp_bench); null in unit tests
 
 
 func _psec(name: String, t0: int) -> int:
-	if prof == null:
-		return Time.get_ticks_usec()
-	return prof._section(name, t0)
+	return prof._section(name, t0) if prof != null else Time.get_ticks_usec()
 
 
 class Src extends RefCounted:
@@ -420,9 +417,7 @@ func step(dt: float) -> void:
 		_refresh(lis, wide)
 		_psec("refresh", tr)
 	if not _walkers.is_empty():
-		var tw := Time.get_ticks_usec()
 		_step_walkers(dt)
-		_psec("walkers", tw)
 	var lv := _listener_vel()
 	var ta := Time.get_ticks_usec()
 	var k_pitch := 1.0 - exp(-dt * 10.0)
@@ -492,7 +487,6 @@ func _refresh(lis: Vector3, wide: bool) -> void:
 	_update_agents(lis, wide)
 	t = _psec("refresh_agents", t)
 	_update_rivers(lis)
-	t = _psec("refresh_rivers", t)
 	if _static_dirty or lis.distance_to(_static_at) > 0.5:
 		_collect_static(lis)
 	t = _psec("refresh_static", t)

@@ -317,7 +317,9 @@ static func _pipeline_delta(now: PackedInt32Array, before: PackedInt32Array) -> 
 ## spent inside this idle frame: TIME_PHYSICS_PROCESS is per-frame on some platforms and cumulative
 ## on others (web), so the caller passes the delta between this frame's edges, falling back to the
 ## absolute reading when the monitor is per-frame (a negative delta).
-static func _hitch(dt: float, gpu: float, rcpu: float, pipes: Dictionary, physics: float) -> Dictionary:
+static func _hitch(
+	dt: float, gpu: float, rcpu: float, pipes: Dictionary, physics: float
+) -> Dictionary:
 	return {
 		"ms": snappedf(dt, 0.1),
 		"process_ms": snappedf(Performance.get_monitor(Performance.TIME_PROCESS) * 1000.0, 0.1),
