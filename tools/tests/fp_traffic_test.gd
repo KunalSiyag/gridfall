@@ -64,6 +64,7 @@ func _init() -> void:
 	_check_grounding()
 	_check_contact_shadows()
 	_check_drivers()
+	_check_driver_ik_memo()
 	_check_wait_crowd()
 	_check_ambient_spawns()
 	_check_posts_debounce()
@@ -350,6 +351,41 @@ func _check_drivers() -> void:
 	for id: int in ids:
 		left += 1 if occ.body_of(id) != null else 0
 	K.check(fails, occ.seated == 0 and left == 0, "drivers: clear() releases every seated body")
+
+
+## A seated driver's limb IK is a pure function of the car's basis (a static sit pose bent onto
+## car-space markers): syncs with the car held still re-run none of it, a turn of the car node
+## re-runs it.
+func _check_driver_ik_memo() -> void:
+	var occ = f.get("occupants")
+	var pp: PPL = f.get("people")
+	if occ == null or pp == null or not pp.ok:
+		return
+	# _look_at_car leaves the hero beside a moving car: restore the spot afterwards so the
+	# resident-driver check that follows meets the same world it does without this check.
+	var hero0 := ctx.player_position()
+	_look_at_car()
+	f.step(DT * 5.0)
+	f.sync_visuals(DT)
+	var cam: Vector3 = f.call("_camera_pos")
+	var car: VH.Car = null
+	for c: VH.Car in _vh().cars:
+		if c.kind != "bike" and c.node != null and occ.body_of(c.id) != null:
+			car = c
+			break
+	K.check(fails, car != null, "ik memo fixture: a seated car driver nearby")
+	if car == null:
+		return
+	occ.sync(_vh().cars, cam, ctx.residents)
+	var runs0 := int(occ.get("ik_runs"))
+	occ.sync(_vh().cars, cam, ctx.residents)
+	K.check(fails, int(occ.get("ik_runs")) == runs0, "ik memo: a held car re-runs no limb IK")
+	car.node.rotation.y += 0.05
+	occ.sync(_vh().cars, cam, ctx.residents)
+	K.check(fails, int(occ.get("ik_runs")) > runs0, "ik memo: a turned car re-runs the limb IK")
+	car.node.rotation.y -= 0.05
+	occ.clear()
+	ctx.player.teleport(hero0, 0.0, 0.0, false)
 
 
 ## Moving vehicles drawn in full within occ.RANGE of the camera, with a seat and no driver (all of

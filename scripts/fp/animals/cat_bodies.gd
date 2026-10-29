@@ -92,6 +92,8 @@ func _bind(b: DB.Body, scene: Node3D) -> void:
 	b.head = b.skel.find_bone("Head")
 	var rig := CAT_RIG.new()
 	rig.name = "CatRig"
+	# The rig runs on the idle frame, not once per physics frame (people_pool.gd says why).
+	b.skel.modifier_callback_mode_process = Skeleton3D.MODIFIER_CALLBACK_MODE_PROCESS_IDLE
 	b.skel.add_child(rig)
 	rig.bind(b.skel, scene, CAT_RIG.CAT_TAIL, "Neck")
 	b.rig = rig

@@ -141,6 +141,8 @@ func setup(p_ctx: FpContext) -> void:
 		hlod.setup(ctx.view, ctx.sim, _imp_root)
 		# Headless runs (tests) merge on the calling thread, so results are deterministic.
 		hlod.midlod.threaded = DisplayServer.get_name() != "headless"
+		# Split web builds: a baked-twin miss demands the midlod pack (bounded, idempotent).
+		hlod.midlod.pack_stream = ctx.pack_stream
 		occluders.setup(_occ_root)
 		ctx.view.tile_built.connect(_on_tile_built)
 		ctx.view.tile_cleared.connect(_on_tile_cleared)

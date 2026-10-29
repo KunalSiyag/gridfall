@@ -104,10 +104,19 @@ var sim: CitySim
 var camera: Camera3D
 ## Web background packs (split builds); null everywhere else. Read-only here: the view asks
 ## request_path() on an asset miss, Main owns the lifecycle.
-var pack_stream: WebPackStream = null
+var pack_stream: WebPackStream = null:
+	set(stream):
+		if pack_stream != null and pack_stream.pack_ready.is_connected(_on_pack_ready):
+			pack_stream.pack_ready.disconnect(_on_pack_ready)
+		pack_stream = stream
+		if pack_stream != null:
+			pack_stream.pack_ready.connect(_on_pack_ready)
 var overlay_mode: String = "none"
 
 var _scenes: Dictionary = {}
+## Scenes waiting on a background pack (pack -> paths). They are NOT in _scenes: a pending
+## download must never poison the cache with a null that outlives the pack's arrival.
+var _pack_waiting: Dictionary = {}
 var _tuned: Dictionary = {}
 const MATTE_PREFIXES := ["Roof", "Brick", "Concrete", "Plaster", "Stone", "Trim_Stone", "Sidewalk", "Curb", "Asphalt", "Dirt", "Grass", "Gravel", "Rock", "Turf", "Wood", "Deck", "Siding", "Court", "Track", "Coal", "Garbage"]
 const SHEET_METAL_PREFIXES := ["Metal_Corrugated", "Metal_Cladding", "Metal_Plate", "Metal_Rusty", "Shutter", "Container"]
@@ -190,6 +199,8 @@ var wetness: float = 0.0
 var _queue: Dictionary = {}
 ## Scene paths being loaded on a thread for the queue (path -> true).
 var _warming: Dictionary = {}
+## Paths whose warm-up already reported a blocking main-thread load (one line per path).
+var _sync_load_reported: Dictionary = {}
 var _flicker_lights: Array[OmniLight3D] = []
 var _street: STREET
 var _ground_chunks: Array[MeshInstance3D] = []
@@ -371,6 +382,9 @@ func _mk_root(n: String) -> Node3D:
 
 func _scene(path: String) -> PackedScene:
 	if not _scenes.has(path):
+		if _pack_gate(path):
+			# The pack holding this scene is still downloading; try again after pack_ready.
+			return null
 		var ps: PackedScene = null
 		if _warming.has(path):
 			# A threaded warm-up of this scene is running: wait for it instead of loading it twice.
@@ -382,6 +396,34 @@ func _scene(path: String) -> PackedScene:
 			_tune_materials(ps)
 		_scenes[path] = ps
 	return _scenes[path]
+
+
+## Split-web request gate: true when path rides in a background pack that has not arrived.
+## Demands the pack (the coordinator bounds retries) and records the wait; false everywhere
+## else, so desktop and unsplit builds keep their exact old behavior.
+func _pack_gate(path: String) -> bool:
+	if pack_stream == null:
+		return false
+	var pack := pack_stream.request_path(path)
+	if pack.is_empty():
+		return false
+	if not _pack_waiting.has(pack):
+		_pack_waiting[pack] = []
+	if not _pack_waiting[pack].has(path):
+		_pack_waiting[pack].append(path)
+	return true
+
+
+## A background pack mounted: retry exactly the paths that waited on it. Null entries from
+## before the gate existed are dropped; loaded scenes keep their tuned materials untouched.
+func _on_pack_ready(pack: String) -> void:
+	var paths: Array = _pack_waiting.get(pack, [])
+	_pack_waiting.erase(pack)
+	for path: String in paths:
+		if _scenes.has(path) and _scenes[path] == null:
+			_scenes.erase(path)
+	if not paths.is_empty():
+		warm_scenes(paths)
 
 
 ## The realistic GLBs pack ARM maps whose blue (metal) channel the importer reads as fully
@@ -966,6 +1008,10 @@ func _build_trees() -> void:
 	for tree_name in TREE_PROPS:
 		var path := R + "props/%s.glb" % tree_name
 		if not ResourceLoader.exists(path):
+			# Split web builds: trees ride in the props pack; demand it so the scenes are
+			# cached on arrival. Re-kitting the chunks on arrival is part of the
+			# feature-specific arrival coverage step.
+			_pack_gate(path)
 			continue
 		var inst := _inst(path)
 		if inst == null:
@@ -1535,18 +1581,38 @@ func warm_scenes(paths: Array) -> void:
 	if DisplayServer.get_name() == "headless":
 		return
 	for p: String in paths:
-		if not _scenes.has(p) and ResourceLoader.exists(p):
+		if _scenes.has(p):
+			continue
+		if _pack_gate(p):
+			# Still downloading; _on_pack_ready re-runs warm_scenes for the recorded paths.
+			continue
+		if ResourceLoader.exists(p):
 			_warm_one(p)
 
 
 ## Polls one threaded load; true once the scene is in the cache. Headless runs (the dummy renderer's
 ## texture storage is not thread-safe) load on the main thread instead.
+## The threaded warm-up fell back to a blocking main-thread load of path (65-100 ms for the
+## realistic GLBs — the pop-in spike when a tile's model first appears). Expected headless;
+## anywhere else it means the build lost thread support. Reported once per path.
+func _report_sync_load(path: String) -> void:
+	if _sync_load_reported.has(path):
+		return
+	_sync_load_reported[path] = true
+	if DisplayServer.get_name() != "headless":
+		push_warning("city_view: blocking model load, threaded warm-up unavailable: %s" % path)
+
+
 func _warm_one(path: String) -> bool:
 	if _scenes.has(path):
 		return true
+	if _pack_gate(path):
+		# Not here yet; report not-ready so callers yield their work instead of caching a miss.
+		return false
 	if not _warming.has(path):
 		if DisplayServer.get_name() == "headless" or not WebSupport.threads_supported() \
 				or ResourceLoader.load_threaded_request(path, "PackedScene") != OK:
+			_report_sync_load(path)
 			_scene(path)
 			return true
 		_warming[path] = true
@@ -1845,7 +1911,11 @@ func _build_tile(i: int, animate: bool) -> void:
 			_dust_puff(Vector3(x, 0.1, y))
 	if fp_mode and not holder.has_meta("colliders") and k == D.ROAD:
 		holder.set_meta("colliders", [])
+	# Timed apart from the build itself: handlers (traffic's lane rebuilds) can cost more than
+	# the tile, and one_tile lumps them together otherwise.
+	var te := Time.get_ticks_usec()
 	tile_built.emit(i, holder)
+	_section("tile_built_emit", te)
 
 
 ## Draws an open construction site: kit stage visuals sized to the building it will become.

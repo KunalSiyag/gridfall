@@ -24,6 +24,10 @@ var material: ShaderMaterial
 var threaded: bool = true
 ## false ignores BAKED_DIR and always merges at runtime (tests).
 var use_baked: bool = true
+## Web split builds: set by render_opt from FpContext. On a baked-twin miss we demand the
+## midlod pack once and fall back to a runtime merge; when the pack lands, fresh mesh_for
+## calls pick up the baked files. Completed runtime twins are never evicted.
+var pack_stream: WebPackStream = null
 var baked_loads: int = 0
 var _meshes: Dictionary = {}
 var _jobs: Dictionary = {}
@@ -47,6 +51,10 @@ func mesh_for(src: Mesh, path: String) -> ArrayMesh:
 		return _meshes[id]
 	if _jobs.has(id):
 		return null
+	if use_baked and pack_stream != null and not ResourceLoader.exists(baked_path(src, path)):
+		# Split build without the pack yet: ask for it (idempotent, bounded by the
+		# coordinator), then merge at runtime for now.
+		pack_stream.request_path(baked_path(src, path))
 	var baked := load_baked(src, path) if use_baked else null
 	if baked != null:
 		_meshes[id] = baked

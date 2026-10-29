@@ -63,6 +63,7 @@ func _init() -> void:
 	_check_thin_wall(ctx)
 	_check_stuck(ctx)
 	_check_cam_trunk(ctx)
+	_check_hero_modifier_mode(ctx)
 	K.finish(self, "FP_PLAYER_TEST", fails)
 
 
@@ -1486,3 +1487,20 @@ func _check_cam_trunk(ctx: FpContext) -> void:
 		"a trunk where the camera sat: inside it or looking through it on %d of 240 frames" % bad
 	)
 	K.check(fails, vaultable.is_empty(), "parkour's boxes_near still leaves the trunk out")
+
+
+## The hero's strike-pose and head-look modifiers run on the idle frame, after the
+## hand-advanced AnimationTree, not once per physics frame (the web build's catch-up steps
+## would multiply that).
+func _check_hero_modifier_mode(ctx: FpContext) -> void:
+	var rig: Variant = (ctx.player as PL).avatar.get("rig")
+	var sk := (rig.get("skeleton") if rig != null else null) as Skeleton3D
+	K.check(
+		fails,
+		(
+			sk != null
+			and sk.modifier_callback_mode_process == Skeleton3D.MODIFIER_CALLBACK_MODE_PROCESS_IDLE
+		),
+		"hero: the skeleton's modifiers run on the idle frame, not once per physics frame"
+	)
+	K.check_modifier_modes(fails, get_root())

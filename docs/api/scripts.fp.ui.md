@@ -522,6 +522,7 @@ Lean HUD widgets (slice B): owns the minimap tile model and the waypoint, binds 
 
 - `waypoint: Vector3`: The waypoint (world, y = 0) while has_waypoint.
 - `route: PackedVector2Array`: Road route from the player to the waypoint, world (x, z) corner points; empty without one.
+- `section_us_max: Dictionary`: Worst microseconds per timed section since reset_section_stats() (fp_bench's hitch rows).
 
 ### Functions
 
@@ -535,6 +536,7 @@ Lean HUD widgets (slice B): owns the minimap tile model and the waypoint, binds 
 - `func clear_waypoint() -> void`
 - `func reroute() -> void`: Recomputes the road route from the player to the waypoint (on set, on every tile the player enters, and after roads change).
 - `func self_test() -> Dictionary`: The minimap texture exists at 192 x 192, the chips are present, and no text B made is branded.
+- `func reset_section_stats() -> void`
 
 ## `scripts/fp/ui/map_screen.gd`
 

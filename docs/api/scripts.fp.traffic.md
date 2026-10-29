@@ -486,6 +486,7 @@ Junction control (docs/fp/slices/E-traffic.md §2): 4-way traffic lights on cros
 
 ### Properties
 
+- `vis_mult: float`: The quality preset's visibility scale (CityView.vis_mult), set by the traffic feature; the signal/sign GLBs are ranged with it at build time (street_dressing's _range convention).
 - `props: Dictionary`: tile -> {"node": Node3D, "groups": Array[MeshInstance3D] (axis * 3 + colour), "peds": Array[GeometryInstance3D] per (axis * 2 + walk), "poles": Array[Node3D], "state": int, "colliders": Array of holder-local solid entries (written into the view's holder meta)}
 - `holder_of: Callable`: The view's tile holder, so our posts can be written into its `colliders` meta (the channel CollisionWorld reads), and the collision refresh to call once they changed. traffic_feature wires both: only its ctx holds the view and the collision world.
 
@@ -651,6 +652,7 @@ Drivers seated in the moving vehicles nearest the camera. Only while a vehicle d
 ### Properties
 
 - `riding: int`: How many of the seated are riding bicycles.
+- `ik_runs: int`: IK limb re-poses (_driver_limbs, _pedal's legs and arms); tests assert a held pose adds none.
 
 ### Functions
 
@@ -1172,6 +1174,7 @@ Traffic and pedestrians on lanes (slice E, docs/fp/slices/E-traffic.md): one roa
 
 ### Properties
 
+- `section_us_max: Dictionary`: Worst microseconds per _tile_changed step since reset_section_stats() (fp_bench's hitch rows).
 - `people: PPL`: HC's animated people (deliverable 9); ok == false draws the legacy static people instead.
 - `shoves: SHOVES`: Cars the player's car knocked: their slides, stuns and the way back onto their lanes.
 - `hero_aboard: bool`: True while the hero is up on a moving car (an action hijack): not on foot in the street, so nobody stops or steps aside for them (set_hero_aboard).
@@ -1186,6 +1189,7 @@ Traffic and pedestrians on lanes (slice E, docs/fp/slices/E-traffic.md): one roa
 - `func setup(p_ctx: FpContext) -> void`
 - `func teardown() -> void`
 - `func on_world_rebuilt() -> void`
+- `func reset_section_stats() -> void`
 - `func site_machines() -> Dictionary`: The construction sites' parked machines (site id -> car id): the drive side's backhoe work loop (the backhoe_work flag) animates them. {} until built.
 - `func step(dt: float) -> void`: Advances everything by dt seconds of game-scaled time (test hook; _process calls it in steps of at most 1/30 s).
 - `func sync_visuals(delta: float) -> void`: Draws every agent (full models near, MultiMesh LOD far) and updates lamp states. Parked cars are redrawn only when the parked set changes or the camera moves a little.

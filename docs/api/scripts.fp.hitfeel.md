@@ -8,7 +8,7 @@
 
 extends `FpFeature`
 
-Hit feel (integration feature "hit_feel"; docs/fp/ARCHITECTURE.md, Hit feel): what a blow feels like. A blow of the hero's that lands (person_hit "punch" or "shove", and only the hero's — info "by") freezes the world for a few hundredths of a second (hit-stop: Engine.time_scale dips to STOP_SCALE for real seconds, longer for a harder blow and one that knocks them down) and shakes the camera (the player's shake). Someone the player's car knocks down, a blow on the hero (hero_hurt) and a crash in the car (car_impact) shake it too, the hardest of them with a shorter stop; a kick or a swing landing on an animal (animal_hit) stops and shakes less than one on a person, and someone slammed into a wall or a prop (hero_slammed) stops and shakes it most. The thrown body of a knock-down is traffic's (reactions.gd, under the same flag). Nothing stops in photo mode, while the game is paused or at sim speeds above 1.
+Hit feel (integration feature "hit_feel"; docs/fp/ARCHITECTURE.md, Hit feel): what a blow feels like. A blow of the hero's that lands (person_hit "punch" or "shove", and only the hero's — info "by") freezes the world for a few hundredths of a second (hit-stop: Engine.time_scale dips to STOP_SCALE for real seconds, longer for a harder blow and one that knocks them down, and never less than the frame it lands on plus one full one — at a 20-25 fps cap that frame could otherwise charge the whole stop before one frozen frame is drawn) and shakes the camera (the player's shake). Someone the player's car knocks down, a blow on the hero (hero_hurt) and a crash in the car (car_impact) shake it too, the hardest of them with a shorter stop; a kick or a swing landing on an animal (animal_hit) stops and shakes less than one on a person, and someone slammed into a wall or a prop (hero_slammed) stops and shakes it most. The thrown body of a knock-down is traffic's (reactions.gd, under the same flag). Nothing stops in photo mode, while the game is paused or at sim speeds above 1.
 
 ### Constants
 
@@ -39,7 +39,7 @@ Hit feel (integration feature "hit_feel"; docs/fp/ARCHITECTURE.md, Hit feel): wh
 - `func feature_id() -> String`
 - `func setup(p_ctx: FpContext) -> void`
 - `func teardown() -> void`
-- `func tick(real_dt: float) -> void`: Runs the stop under way on by real seconds; gives the time scale back once it is over.
+- `func tick(real_dt: float) -> void`: Runs the stop under way on by real seconds; gives the time scale back once it is over, never before the stop has spanned two frames (one frame's overdraft holds it open until then).
 - `func stopped() -> bool`: True while a hit-stop holds the world.
 - `func hit_stop(secs: float) -> void`: Freezes the world for secs real seconds (a longer one already under way stands).
 - `func shake(trauma: float) -> void`: Shakes the camera by trauma (0..1).

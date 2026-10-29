@@ -17,6 +17,8 @@ var route: PackedVector2Array = PackedVector2Array()
 var _painted_frame: int = -1
 var _dirty: bool = false
 var _route_dirty: bool = false
+## Worst microseconds per timed section since reset_section_stats() (fp_bench's hitch rows).
+var section_us_max: Dictionary = {}
 
 
 func feature_id() -> String:
@@ -110,19 +112,34 @@ func self_test() -> Dictionary:
 	return {"ok": true, "detail": "minimap 192x192, %d full repaints (%.1f ms last), chips %s" % [model.full_repaints, model.last_full_ms, hud.chips.text_of("pop")]}
 
 
+func reset_section_stats() -> void:
+	section_us_max.clear()
+
+
+func _section(name: String, t0: int) -> int:
+	var now := Time.get_ticks_usec()
+	section_us_max[name] = maxi(int(section_us_max.get(name, 0)), now - t0)
+	return now
+
+
 func _process(_delta: float) -> void:
+	var t := Time.get_ticks_usec()
 	if _dirty:
 		_dirty = false
 		model.flush()
+		t = _section("minimap_flush", t)
 	if _route_dirty:
 		reroute()
+		_section("gps_reroute", t)
 
 
 func _full_repaint() -> void:
 	if model == null or Engine.get_process_frames() == _painted_frame:
 		return
 	_painted_frame = Engine.get_process_frames()
+	var t := Time.get_ticks_usec()
 	model.full_repaint()
+	_section("full_repaint", t)
 
 
 func _on_world_ready() -> void:
@@ -130,7 +147,9 @@ func _on_world_ready() -> void:
 
 
 func _on_tiles_changed(indices: PackedInt32Array) -> void:
+	var t := Time.get_ticks_usec()
 	model.repaint(indices, false)
+	_section("repaint_tiles", t)
 	_dirty = true
 	_route_dirty = has_waypoint
 
@@ -141,5 +160,7 @@ func _on_player_tile(_x: int, _y: int) -> void:
 
 
 func _on_territory_changed(mi: int) -> void:
+	var t := Time.get_ticks_usec()
 	model.repaint_district(mi, false)
+	_section("repaint_district", t)
 	_dirty = true

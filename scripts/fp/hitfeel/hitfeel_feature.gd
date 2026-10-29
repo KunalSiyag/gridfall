@@ -3,7 +3,9 @@ extends FpFeature
 ## like. A blow of the hero's that lands (person_hit "punch" or "shove", and only the hero's —
 ## info "by") freezes the world for a few
 ## hundredths of a second (hit-stop: Engine.time_scale dips to STOP_SCALE for real seconds, longer
-## for a harder blow and one that knocks them down) and shakes the camera (the player's shake).
+## for a harder blow and one that knocks them down, and never less than the frame it lands on plus
+## one full one — at a 20-25 fps cap that frame could otherwise charge the whole stop before one
+## frozen frame is drawn) and shakes the camera (the player's shake).
 ## Someone the player's car knocks down, a blow on the hero (hero_hurt) and a crash in the car
 ## (car_impact) shake it too, the hardest of them with a shorter stop; a kick or a swing landing on
 ## an animal (animal_hit) stops and shakes less than one on a person, and someone slammed into a
@@ -45,6 +47,11 @@ var shakes: int = 0
 ## Real seconds the stop under way has left, and the time scale to give back.
 var _stop_left: float = 0.0
 var _base_scale: float = 1.0
+## Rendered frames (ticks) the stop under way has spanned: a stop never ends before its second,
+## so however short it is — or however coarse the frames (a 20-25 fps cap) — at least one whole
+## frozen frame is drawn. A single frame that outlasts the longest stop ends it as ever: the
+## frozen frame was up longer than any stop asks (a real hitch).
+var _stop_ticks: int = 0
 var _last_us: int = 0
 
 
@@ -76,13 +83,18 @@ func _process(_delta: float) -> void:
 	tick(real)
 
 
-## Runs the stop under way on by real seconds; gives the time scale back once it is over.
+## Runs the stop under way on by real seconds; gives the time scale back once it is over, never
+## before the stop has spanned two frames (one frame's overdraft holds it open until then).
 func tick(real_dt: float) -> void:
 	if _stop_left <= 0.0:
 		return
+	_stop_ticks += 1
 	_stop_left -= real_dt
 	if _stop_left <= 0.0:
-		_end_stop()
+		if _stop_ticks >= 2 or real_dt >= STOP_MAX:
+			_end_stop()
+		else:
+			_stop_left = 1e-4  # the second frame's hold; the next tick ends it
 
 
 ## True while a hit-stop holds the world.
@@ -98,6 +110,7 @@ func hit_stop(secs: float) -> void:
 		return
 	if _stop_left <= 0.0:
 		_base_scale = Engine.time_scale
+		_stop_ticks = 0
 	_stop_left = maxf(_stop_left, minf(secs, STOP_MAX))
 	Engine.time_scale = STOP_SCALE
 	stops += 1
@@ -115,6 +128,7 @@ func _end_stop() -> void:
 	if is_equal_approx(Engine.time_scale, STOP_SCALE):
 		Engine.time_scale = _base_scale
 	_stop_left = 0.0
+	_stop_ticks = 0
 
 
 func _open() -> bool:

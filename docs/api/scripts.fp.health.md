@@ -71,8 +71,9 @@ The hero's health (integration slice; docs/fp/ARCHITECTURE.md, Health): MAX_HP p
 - `BREAK_KICK = Vector2(-0.12, 0.05)`
 - `CAR_K = 100.0`: A car's blow costs CAR_K times its strength (0..1) and from CAR_DOWN on knocks the hero down.
 - `CAR_DOWN = 0.25`
-- `LIE_S = 1.4`: Knocked down: the body falls (the rig's knockback), lies LIE_S seconds and gets up (its get_up; GET_UP s without the rig). The push throws the body on along the ground, slowing at SLIDE_DECEL (u/s²; a tumble on the road), so a car at v throws the hero v² / (2 SLIDE_DECEL) on: further than it takes to stop at full braking.
+- `LIE_S = 1.4`: Knocked down: the body falls (the rig's knockback), lies LIE_S seconds and gets up (its get_up; GET_UP s without the rig) — and in first person the eye goes with it, sinking flat through the fall and tipping a little up to the sky through the lie (down_view). The push throws the body on along the ground, slowing at SLIDE_DECEL (u/s²; a tumble on the road), so a car at v throws the hero v² / (2 SLIDE_DECEL) on: further than it takes to stop at full braking.
 - `GET_UP = 1.6`
+- `FALL_S = 0.35`: The fall's length for the down-view when the rig gives no knockback length.
 - `SLIDE_DECEL = 7.0 * WS.M`
 - `KO_FADE = 2.2`: Knocked out: the fade to black (s), the black (the hero is moved half way through) and the fade back in.
 - `KO_HOLD = 1.0`
