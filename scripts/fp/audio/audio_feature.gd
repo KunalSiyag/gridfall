@@ -102,6 +102,7 @@ func setup(p_ctx: FpContext) -> void:
 	emitters.name = "Emitters"
 	add_child(emitters)
 	emitters.setup(ctx)
+	emitters.prof = self
 	ambience = AMBIENCE.new()
 	ambience.name = "Ambience"
 	add_child(ambience)
@@ -239,6 +240,23 @@ func self_test() -> Dictionary:
 	return {"ok": bad.is_empty(), "detail": detail}
 
 
+## Largest per-frame microsecond cost of each step section since the last reset (fp_bench reads
+## it and resets between measures).
+var section_us_max := {}
+
+
+func reset_section_stats() -> void:
+	section_us_max.clear()
+
+
+func _section(name: String, t0: int) -> int:
+	var now := Time.get_ticks_usec()
+	var us := now - t0
+	if us > int(section_us_max.get(name, -1)):
+		section_us_max[name] = us
+	return now
+
+
 func _process(delta: float) -> void:
 	step(delta)
 
@@ -247,18 +265,24 @@ func _process(delta: float) -> void:
 func step(dt: float) -> void:
 	_now += dt
 	emitters.night = ambience.night
+	var t := Time.get_ticks_usec()
 	while not _falls.is_empty() and float(_falls[0][0]) <= _now:
 		var fall: Array = _falls.pop_front()
 		emitters.shot("hit", fall[1], "body_fall", float(fall[2]), _rng.randf_range(0.92, 1.04))
+	t = _section("falls", t)
 	emitters.step(dt)
+	t = _section("emitters", t)
 	ambience.step(dt)
+	t = _section("ambience", t)
 	footsteps.poll(dt)
+	t = _section("footsteps", t)
 	if duck_db != _duck_target:
 		duck_db = move_toward(duck_db, _duck_target, DUCK_RATE_DB * dt)
 		_set_bus_db(BANK.BUS_AMBIENCE, _sfx_db + duck_db)
 	if sfx_reverb != null:
 		var wet := lerpf(REVERB_WET_OPEN, REVERB_WET_URBAN, ambience.urban)
 		sfx_reverb.wet = lerpf(sfx_reverb.wet, wet, minf(dt * 0.5, 1.0))
+	_section("duck_reverb", t)
 
 
 ## Plays a UI cue on the UI bus (chat blip, stinger).
@@ -589,7 +613,9 @@ func _on_site_finished(site: Dictionary) -> void:
 func _on_tile_built(i: int, holder: Node3D) -> void:
 	if ctx.view.in_setup:
 		return
+	var t := Time.get_ticks_usec()
 	emitters.scan_tile(i, holder)
+	_section("tile_built", t)
 
 
 func _apply_settings(s: Dictionary) -> void:
