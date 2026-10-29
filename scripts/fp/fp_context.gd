@@ -24,6 +24,7 @@ var hud: FpHud
 var collision: CollisionWorld
 var directory: CityDirectory
 var world_root: Node3D            # FpMode/World: put in-world FP nodes here, never under CityView
+var pack_stream: WebPackStream    # web split builds only; inert elsewhere. Request, never download.
 var features: Dictionary = {}     # feature_id -> FpFeature
 var settings: Dictionary = {}     # see FpMode.DEFAULT_SETTINGS; change only via mode.apply_settings()
 var ws: GDScript = WS             # convenience; prefer your own `const WS := preload(...)` for typing

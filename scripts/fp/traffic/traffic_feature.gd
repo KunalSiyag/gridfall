@@ -271,6 +271,7 @@ func on_world_rebuilt() -> void:
 	peds.rebuild_all()
 	junctions.setup(lanes, _props_root)
 	junctions.clock = clock
+	junctions.vis_mult = ctx.view.vis_mult if ctx.view != null else 1.0
 	# Junction posts are solid: junctions writes their colliders into the view's holder meta and
 	# calls collision back; only this ctx holds the view and the collision world.
 	junctions.holder_of = func(i: int) -> Node3D:

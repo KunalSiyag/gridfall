@@ -54,11 +54,15 @@ const BREAK_KICK := Vector2(-0.12, 0.05)
 const CAR_K := 100.0
 const CAR_DOWN := 0.25
 ## Knocked down: the body falls (the rig's knockback), lies LIE_S seconds and gets up (its get_up;
-## GET_UP s without the rig). The push throws the body on along the ground, slowing at SLIDE_DECEL
+## GET_UP s without the rig) — and in first person the eye goes with it, sinking flat through the
+## fall and tipping a little up to the sky through the lie (down_view). The push throws the body
+## on along the ground, slowing at SLIDE_DECEL
 ## (u/s²; a tumble on the road), so a car at v throws the hero v² / (2 SLIDE_DECEL) on: further
 ## than it takes to stop at full braking.
 const LIE_S := 1.4
 const GET_UP := 1.6
+## The fall's length for the down-view when the rig gives no knockback length.
+const FALL_S := 0.35
 const SLIDE_DECEL := 7.0 * WS.M
 ## Knocked out: the fade to black (s), the black (the hero is moved half way through) and the
 ## fade back in.
@@ -87,6 +91,8 @@ var woke_at: String = ""
 var _since: float = INF
 ## Seconds left on the ground (and getting up) while knocked down; < 0 when standing.
 var _down_t: float = -1.0
+## The current knock-down's phases (fall, lie, get-up): the down-view ramps over them.
+var _down_span := Vector3.ZERO
 ## Seconds since the knock-out while out; < 0 otherwise.
 var _ko_t: float = -1.0
 var _woke: bool = false
@@ -193,16 +199,13 @@ func hurt(
 
 
 ## First person only (hit_direction): the screen-edge arc toward where the blow came from, beside
-## the vignette's flash (health_screen's flash_from). push points the way the blow travelled; the
-## marker shows its source — angle 0 dead ahead, +PI/2 from the right. No push, no marker.
+## the vignette's flash (health_screen's flash_from), and the hurt's thump panning the same way
+## (hero_hit_dir, just before hero_hurt; the audio feature reads it). push points the way the
+## blow travelled; the marker shows its source — angle 0 dead ahead, +PI/2 from the right. No
+## push, no marker.
 func _flash_from(push: Vector3) -> void:
 	var p := ctx.player
-	if (
-		_screen == null
-		or p == null
-		or p.camera_mode != "first"
-		or not FeatureFlags.enabled("hit_direction")
-	):
+	if p == null or p.camera_mode != "first" or not FeatureFlags.enabled("hit_direction"):
 		return
 	var src := Vector2(-push.x, -push.z)
 	if src.length_squared() < 1e-10:
@@ -211,7 +214,11 @@ func _flash_from(push: Vector3) -> void:
 	# The body's right is (cos, -sin) and it faces (-sin, -cos) (see _flinch_body).
 	var side := src.dot(Vector2(cos(p.yaw), -sin(p.yaw)))
 	var front := src.dot(Vector2(-sin(p.yaw), -cos(p.yaw)))
-	_screen.call("flash_from", atan2(side, front))
+	var ang := atan2(side, front)
+	if ctx.bus != null:
+		ctx.bus.hero_hit_dir.emit(ang)
+	if _screen != null:
+		_screen.call("flash_from", ang)
 
 
 ## True while the hero is on the ground (knocked down or out) or coming round.
@@ -235,6 +242,8 @@ func tick(dt: float) -> void:
 		_down_t -= dt
 		if _down_t < 0.0:
 			_stand()
+		else:
+			_down_view()
 	elif hp < MAX_HP and _since >= REGEN_DELAY:
 		hp = minf(MAX_HP, hp + REGEN_RATE * dt)
 	if poise < 1.0 and _poise_since >= POISE_DELAY:
@@ -356,11 +365,32 @@ func _knock_down(push: Vector3, lie: float) -> void:
 	_push = Vector3(push.x, 0.0, push.z)
 	p.kick_view(KICK_DOWN.x, KICK_DOWN.y)
 	_down_t = lie + GET_UP
+	_down_span = Vector3(FALL_S, lie, GET_UP)
 	var rig := _rig()
 	if rig != null:
 		rig.call("play_action", "knockdown", lie)
 		var lens: Dictionary = rig.get("lengths")
-		_down_t = float(lens.get("knockback", 0.0)) + lie + float(lens.get("get_up", GET_UP))
+		_down_span = Vector3(
+			float(lens.get("knockback", 0.0)), lie, float(lens.get("get_up", GET_UP))
+		)
+		if _down_span.x <= 0.0:
+			_down_span.x = FALL_S
+		_down_t = _down_span.x + _down_span.y + _down_span.z
+
+
+## The down-view weight for the player's first-person eye (down_view): up through the fall, flat
+## through the lie, back to standing through the get-up.
+func _down_view() -> void:
+	var p := ctx.player
+	if p == null:
+		return
+	var e := (_down_span.x + _down_span.y + _down_span.z) - _down_t
+	var w := 1.0
+	if e < _down_span.x:
+		w = e / maxf(_down_span.x, 0.01)
+	elif e > _down_span.x + _down_span.y:
+		w = 1.0 - (e - _down_span.x - _down_span.y) / maxf(_down_span.z, 0.01)
+	p.down_w = clampf(w, 0.0, 1.0)
 
 
 ## Knocked out: out of the car the hero drives, down until the screen is black.
@@ -383,6 +413,7 @@ func _stand() -> void:
 	var p := ctx.player
 	if p == null:
 		return
+	p.down_w = 0.0
 	p.autopilot = {}
 	if _took_input:
 		p.input_enabled = true

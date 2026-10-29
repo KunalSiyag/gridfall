@@ -120,6 +120,8 @@ func _modifier(n: String, bone: String, yaw_lim: float, pitch_lim: float) -> Loo
 	m.transition_type = Tween.TRANS_SINE
 	m.ease_type = Tween.EASE_IN_OUT
 	m.origin_safe_margin = LOOK_SAFE_MARGIN
+	# Runs on the idle frame, not once per physics frame (people_pool.gd says why).
+	_skeleton.modifier_callback_mode_process = Skeleton3D.MODIFIER_CALLBACK_MODE_PROCESS_IDLE
 	_skeleton.add_child(m)
 	return m
 

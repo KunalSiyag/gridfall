@@ -72,6 +72,11 @@ func setup(main: Node3D) -> void:
 	ctx.bus = bus
 	ctx.directory = directory
 	ctx.settings = settings
+	# Web split builds: hand the stream to features before any of them set up, so a feature
+	# can request a missing pack during setup instead of caching a permanent miss.
+	ctx.pack_stream = main.get("pack_stream")
+	if ctx.pack_stream != null:
+		ctx.pack_stream.pack_ready.connect(_on_pack_ready)
 	collision = CollisionWorld.new()
 	collision.name = "Collision"
 	add_child(collision)
@@ -148,6 +153,8 @@ func teardown() -> void:
 			ctx.view.tile_cleared.disconnect(collision.on_tile_cleared)
 		if ctx.view.tile_built.is_connected(_on_tile_built):
 			ctx.view.tile_built.disconnect(_on_tile_built)
+	if ctx.pack_stream != null and ctx.pack_stream.pack_ready.is_connected(_on_pack_ready):
+		ctx.pack_stream.pack_ready.disconnect(_on_pack_ready)
 	if hud != null:
 		hud.queue_free()
 		hud = null
@@ -316,6 +323,13 @@ func unstick_player() -> bool:
 		p = spawn_point()["pos"]
 	player.teleport(p, rad_to_deg(player.yaw), rad_to_deg(player.pitch))
 	return true
+
+
+## Web split builds: forward pack arrivals onto the bus so features refresh pack-dependent
+## assets through one channel (and teardown can drop them all by disconnecting here).
+func _on_pack_ready(pack: String) -> void:
+	if bus != null:
+		bus.pack_ready.emit(pack)
 
 
 func _on_tile_built(i: int, _holder: Node3D) -> void:

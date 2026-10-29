@@ -544,6 +544,8 @@ func _check_hit_direction() -> void:
 	var wedge: Control = screen.get("wedge")
 	K.check(fails, wedge != null, "the health screen hosts the marker")
 	var right3 := Vector3(cos(p.yaw), 0.0, -sin(p.yaw))
+	var dirs: Array = []
+	ctx.bus.hero_hit_dir.connect(func(a: float) -> void: dirs.append(a))
 	_step(0.2)
 	var a0 := float(wedge.get("alpha"))
 	ctx.bus.hero_hit.emit(p.position, "punch", 0.5, -right3 * 0.07)
@@ -551,6 +553,7 @@ func _check_hit_direction() -> void:
 	K.check(
 		fails, float(wedge.get("alpha")) == a0, "no marker in third person (a blow from the right)"
 	)
+	K.check(fails, dirs.is_empty(), "and no hero_hit_dir for the thump to pan by")
 	p.set_camera_mode("first", false)
 	_heal()
 	ctx.bus.hero_hit.emit(p.position, "punch", 0.5, -right3 * 0.07)
@@ -569,6 +572,8 @@ func _check_hit_direction() -> void:
 	K.check(
 		fails, absf(absf(ang) - PI) < 0.01, "and the bottom edge for one from behind (%.2f)" % ang
 	)
+	var heard := absf(float(dirs[0]) - PI * 0.5) < 0.01 and absf(absf(float(dirs[1])) - PI) < 0.01
+	K.check(fails, dirs.size() == 2 and heard, "the bus hears both angles for the thump's pan")
 	_step(0.9)
 	K.check(
 		fails,
