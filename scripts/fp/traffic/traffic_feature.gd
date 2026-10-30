@@ -34,6 +34,8 @@ const BS := preload("res://scripts/fp/traffic/body_spheres.gd")
 const INCIDENTS := preload("res://scripts/fp/traffic/incidents.gd")
 const JACK := preload("res://scripts/fp/traffic/carjack.gd")
 const MAX_STEP := 1.0 / 30.0
+## Lazy tile_built handling rebuilds at most this many tiles per step (traffic_lazy_tilebuilt).
+const LAZY_TILES_PER_STEP := 2
 const CAR_PREFIXES := ["sedan", "hatch", "suv", "taxi", "van", "pickup", "coupe"]
 ## A jump of the player beyond this in one frame is a teleport: the street is refilled around them.
 const TELEPORT := 2.0
@@ -131,6 +133,8 @@ var _stops_sig: String = ""
 ## step, not once per tile of a growth tick (traffic_perf_probe: 0.24 ms native per call, and a
 ## day-1 city fires _tile_changed ~275 times).
 var _posts_dirty := false
+## Tiles whose lane rebuild waits for the next steps (traffic_lazy_tilebuilt), tile -> true.
+var _tile_dirty: Dictionary = {}
 var _built: bool = false
 ## Construction sites whose backhoe still needs parking (site_started fires inside the sim tick, so
 ## the lanes are touched on the next step), and finished sites whose machine is to clear.
@@ -189,6 +193,7 @@ func setup(p_ctx: FpContext) -> void:
 	if ctx.view != null:
 		ctx.view.tile_built.connect(_on_tile_built)
 		ctx.view.tile_cleared.connect(_on_tile_cleared)
+		ctx.view.rebuild_queue_flushed.connect(_on_rebuild_queue_flushed)
 	if ctx.bus != null:
 		ctx.bus.conversation_changed.connect(_on_conversation)
 		ctx.bus.hero_action.connect(_on_hero_action)
@@ -209,40 +214,36 @@ func teardown() -> void:
 	if ctx == null:
 		return
 	if ctx.view != null:
-		if ctx.view.tile_built.is_connected(_on_tile_built):
-			ctx.view.tile_built.disconnect(_on_tile_built)
-		if ctx.view.tile_cleared.is_connected(_on_tile_cleared):
-			ctx.view.tile_cleared.disconnect(_on_tile_cleared)
+		_disc(ctx.view.tile_built, _on_tile_built)
+		_disc(ctx.view.tile_cleared, _on_tile_cleared)
+		_disc(ctx.view.rebuild_queue_flushed, _on_rebuild_queue_flushed)
 		_attach(false)
-	if ctx.bus != null and ctx.bus.conversation_changed.is_connected(_on_conversation):
-		ctx.bus.conversation_changed.disconnect(_on_conversation)
-	if ctx.bus != null and ctx.bus.hero_action.is_connected(_on_hero_action):
-		ctx.bus.hero_action.disconnect(_on_hero_action)
-	if ctx.bus != null and ctx.bus.horn_sounded.is_connected(_on_horn):
-		ctx.bus.horn_sounded.disconnect(_on_horn)
+	if ctx.bus != null:
+		_disc(ctx.bus.conversation_changed, _on_conversation)
+		_disc(ctx.bus.hero_action, _on_hero_action)
+		_disc(ctx.bus.horn_sounded, _on_horn)
 	if ctx.residents != null:
-		if ctx.residents.trip_started.is_connected(_on_trip_started):
-			ctx.residents.trip_started.disconnect(_on_trip_started)
-		if ctx.residents.resident_departed.is_connected(_on_departed):
-			ctx.residents.resident_departed.disconnect(_on_departed)
+		_disc(ctx.residents.trip_started, _on_trip_started)
+		_disc(ctx.residents.resident_departed, _on_departed)
 	if ctx.sim != null:
-		if ctx.sim.event_started.is_connected(_on_event):
-			ctx.sim.event_started.disconnect(_on_event)
-		if ctx.sim.event_ended.is_connected(_on_event):
-			ctx.sim.event_ended.disconnect(_on_event)
-		if ctx.sim.day_started.is_connected(_on_day_started):
-			ctx.sim.day_started.disconnect(_on_day_started)
-		if ctx.sim.site_started.is_connected(_on_site_started):
-			ctx.sim.site_started.disconnect(_on_site_started)
-		if ctx.sim.site_finished.is_connected(_on_site_finished):
-			ctx.sim.site_finished.disconnect(_on_site_finished)
+		_disc(ctx.sim.event_started, _on_event)
+		_disc(ctx.sim.event_ended, _on_event)
+		_disc(ctx.sim.day_started, _on_day_started)
+		_disc(ctx.sim.site_started, _on_site_started)
+		_disc(ctx.sim.site_finished, _on_site_finished)
 	_site_queue.clear()
 	_site_clear.clear()
+	_tile_dirty.clear()
 	render.clear()
 	occupants.clear()
 	people.clear()
 	contact.clear()
 	_built = false
+
+
+func _disc(sig: Signal, cb: Callable) -> void:
+	if sig.is_connected(cb):
+		sig.disconnect(cb)
 
 
 # ------------------------------------------------------------------ world
@@ -368,11 +369,17 @@ func _attach(on: bool) -> void:
 func _on_tile_built(i: int, _holder: Node3D) -> void:
 	if ctx.view.in_setup or not _built:
 		return
+	if FeatureFlags.enabled("traffic_lazy_tilebuilt"):
+		_tile_dirty[i] = true
+		return
 	_tile_changed(i)
 
 
 func _on_tile_cleared(i: int) -> void:
 	if ctx.view.in_setup or not _built:
+		return
+	if FeatureFlags.enabled("traffic_lazy_tilebuilt"):
+		_tile_dirty[i] = true
 		return
 	_tile_changed(i)
 
@@ -385,6 +392,34 @@ func _section(name: String, t0: int) -> int:
 	var now := Time.get_ticks_usec()
 	section_us_max[name] = maxi(int(section_us_max.get(name, 0)), now - t0)
 	return now
+
+
+## The view flushed its rebuild queue (FP entry): the world is expected fully current now, so
+## the deferred lane rebuilds run immediately too, all of them, in tile order.
+func _on_rebuild_queue_flushed() -> void:
+	if not _built or _tile_dirty.is_empty():
+		return
+	var keys := _tile_dirty.keys()
+	keys.sort()
+	_tile_dirty.clear()
+	for k: int in keys:
+		_tile_changed(k)
+
+
+## Lazy tile_built/tile_cleared: changed tiles rebuild a few per step in tile order, so a burst
+## (day-end level-ups, the FP-entry flush) spreads its lane rebuilds over the steps that follow
+## instead of landing inside CityView's build frame. The final lane state matches the eager
+## path; repeated events for one tile coalesce into a single rebuild.
+func _drain_tile_changes() -> void:
+	var keys := _tile_dirty.keys()
+	keys.sort()
+	var n := 0
+	for k: int in keys:
+		_tile_dirty.erase(k)
+		_tile_changed(k)
+		n += 1
+		if n >= LAZY_TILES_PER_STEP:
+			return
 
 
 func _tile_changed(i: int) -> void:
@@ -537,6 +572,8 @@ func step(dt: float) -> void:
 		fleets.astar_left = FLEETS.ASTAR_PER_FRAME
 	_snap_frame = -1
 	clock += dt
+	if not _tile_dirty.is_empty():
+		_drain_tile_changes()
 	_drain_sites()
 	junctions.clock = clock
 	var pp := ctx.player_position()

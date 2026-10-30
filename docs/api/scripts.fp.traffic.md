@@ -1153,6 +1153,7 @@ Traffic and pedestrians on lanes (slice E, docs/fp/slices/E-traffic.md): one roa
 - `INCIDENTS = preload("res://scripts/fp/traffic/incidents.gd")`
 - `JACK = preload("res://scripts/fp/traffic/carjack.gd")`
 - `MAX_STEP = 1.0 / 30.0`
+- `LAZY_TILES_PER_STEP = 2`: Lazy tile_built handling rebuilds at most this many tiles per step (traffic_lazy_tilebuilt).
 - `CAR_PREFIXES = ["sedan", "hatch", "suv", "taxi", "van", "pickup", "coupe"]`
 - `TELEPORT = 2.0`: A jump of the player beyond this in one frame is a teleport: the street is refilled around them.
 - `WARM_SECONDS = 14.0`

@@ -578,6 +578,7 @@ func _check_lane_graph() -> void:
 		)
 	)
 	_check_rebuild(lg)
+	_check_lazy_tilebuilt(lg)
 
 
 ## A mask-5 tile: the lane heading -Z sits at x + LANE_OFFSET, and at PASS_OFFSET beside a parked car.
@@ -657,6 +658,7 @@ func _check_rebuild(lg: LG) -> void:
 		"sim.tiles_changed alone does not touch the lane graph"
 	)
 	view.tile_cleared.emit(end_tile)
+	_step(0.2)
 	var nt: LG.TileInfo = lg.info(nb)
 	K.check(
 		fails,
@@ -667,7 +669,51 @@ func _check_rebuild(lg: LG) -> void:
 	view.tile_built.emit(end_tile, view.tile_holder(end_tile))
 	if was:
 		sim.tiles_changed.connect(handler)
+	_step(0.2)
 	K.check(fails, lg.tiles.has(end_tile), "view.tile_built brings the lanes back")
+
+
+## traffic_lazy_tilebuilt defers the lane rebuild to the next steps and lands the same graph.
+func _check_lazy_tilebuilt(lg: LG) -> void:
+	var end_tile := -1
+	for i: int in lg.tiles.keys():
+		if (lg.tiles[i] as LG.TileInfo).piece == "end":
+			end_tile = i
+			break
+	if end_tile < 0:
+		K.check(fails, false, "fixture: a cul-de-sac end for the lazy tile_built check")
+		return
+	var dirty: Dictionary = f.get("_tile_dirty")
+	FeatureFlags.set_override("traffic_lazy_tilebuilt", true)
+	sim.kind[end_tile] = D.EMPTY
+	ctx.view.tile_cleared.emit(end_tile)
+	K.check(
+		fails,
+		lg.tiles.has(end_tile) and dirty.has(end_tile),
+		"lazy tile_cleared defers the lane rebuild"
+	)
+	_step(0.2)
+	K.check(
+		fails,
+		not lg.tiles.has(end_tile) and dirty.is_empty(),
+		"the lazy rebuild drains within a couple of steps"
+	)
+	sim.kind[end_tile] = D.ROAD
+	ctx.view.tile_built.emit(end_tile, ctx.view.tile_holder(end_tile))
+	_step(0.2)
+	var lazy_mask := (lg.info(end_tile) as LG.TileInfo).mask
+	FeatureFlags.set_override("traffic_lazy_tilebuilt", false)
+	sim.kind[end_tile] = D.EMPTY
+	ctx.view.tile_cleared.emit(end_tile)
+	K.check(fails, not lg.tiles.has(end_tile), "eager tile_cleared rebuilds in the signal")
+	sim.kind[end_tile] = D.ROAD
+	ctx.view.tile_built.emit(end_tile, ctx.view.tile_holder(end_tile))
+	K.check(
+		fails,
+		(lg.info(end_tile) as LG.TileInfo).mask == lazy_mask,
+		"lazy and eager land the same lane state"
+	)
+	FeatureFlags.set_override("traffic_lazy_tilebuilt", true)
 
 
 # ------------------------------------------------------------------ API compatibility

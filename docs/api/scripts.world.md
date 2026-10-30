@@ -71,6 +71,7 @@ Renders the CitySim grid in 3D: Kenney roads picked by neighbor mask, zone lots 
 - `tile_cleared(i: int)`: Tile i lost its holder and nothing replaced it (cleared to empty land or unburnt woods).
 - `world_rebuilt()`: setup() finished: every tile, CityLife and the avatars exist again.
 - `fp_mode_changed(on: bool)`: fp_mode changed value (set_fp_mode with a different value). Not emitted by the boot-time field set.
+- `rebuild_queue_flushed()`: flush_rebuild_queue ran: every queued tile is built and dependents should run the deferred work they spread out of the build frames (traffic's lazy tile_built lane rebuilds) now.
 
 ### Constants
 
