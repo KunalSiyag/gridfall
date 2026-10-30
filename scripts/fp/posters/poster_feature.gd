@@ -41,6 +41,9 @@ var base_tex: Dictionary = {}
 var composites: Dictionary = {}
 var _by_tile: Dictionary = {}
 var _requested: Dictionary = {}
+## Keys currently showing procedural stand-in art (key -> kind); a posters
+## pack arrival re-resolves only these against the prebaked manifest.
+var _procedural_keys: Dictionary = {}
 var _slot_comp: Dictionary = {}
 var _slot_cid: Dictionary = {}
 var _slot_mat: Dictionary = {}
@@ -88,6 +91,7 @@ func setup(p_ctx: FpContext) -> void:
 	if ctx.bus != null:
 		_link(ctx.bus.interact_requested, _on_interact)
 		_link(ctx.bus.world_ready, close_viewer)
+		_link(ctx.bus.pack_ready, _on_pack_ready)
 
 
 func _link(sig: Signal, c: Callable) -> void:
@@ -314,6 +318,10 @@ func _on_image_ready(key: String, tex: Texture2D, meta: Dictionary) -> void:
 		return
 	var changed: bool = base_tex.get(key, null) != tex
 	base_tex[key] = tex
+	if str(meta.get("source", "")) == "procedural":
+		_procedural_keys[key] = str(meta.get("kind", ""))
+	else:
+		_procedural_keys.erase(key)
 	if not changed:
 		return
 	for id: String in assigned.keys():
@@ -325,6 +333,21 @@ func _on_image_ready(key: String, tex: Texture2D, meta: Dictionary) -> void:
 		_apply(id)
 	if ctx.bus != null:
 		ctx.bus.poster_ready.emit({"key": key, "kind": str(meta.get("kind", "")), "texture": tex, "meta": meta})
+
+
+## Posters pack arrived on a split web build: the prebaked manifest may have
+## been read before its files existed. Re-read it and re-resolve only the
+## slots still showing procedural stand-ins — bounded, and never a GMI call
+## (fallback_texture is prebaked-or-procedural, never live).
+func _on_pack_ready(pack: String) -> void:
+	if pack != "posters" or image_client == null:
+		return
+	image_client.reset_pack_caches()
+	for key: String in _procedural_keys.keys():
+		var meta := {}
+		var t := image_client.fallback_texture(str(_procedural_keys[key]), key, meta)
+		if str(meta.get("source", "")) == "prebaked":
+			_on_image_ready(key, t, meta)
 
 
 # ------------------------------------------------------------------ materials

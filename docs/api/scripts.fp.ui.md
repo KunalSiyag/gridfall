@@ -203,6 +203,7 @@ The lean on-foot HUD (slice B): named slots the HUD, chat and other slices fill,
 - `Prompt = preload("res://scripts/fp/ui/hud_prompt.gd")`
 - `Caption = preload("res://scripts/fp/ui/hud_caption.gd")`
 - `PauseMenu = preload("res://scripts/fp/ui/pause_menu.gd")`
+- `PackStatus = preload("res://scripts/ui/pack_status.gd")`
 - `PlaceCard = preload("res://scripts/fp/ui/place_card.gd")`
 - `MapScreen = preload("res://scripts/fp/ui/map_screen.gd")`
 - `SLOTS = ["top_bar", "minimap_slot", "chat_slot", "center", "toasts", "overlay"]`

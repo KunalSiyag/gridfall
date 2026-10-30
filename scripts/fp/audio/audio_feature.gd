@@ -128,6 +128,7 @@ func setup(p_ctx: FpContext) -> void:
 		_link(bus.pause_changed, _on_pause_changed)
 		_link(bus.settings_changed, _apply_settings)
 		_link(bus.conversation_changed, _on_conversation_changed)
+		_link(bus.pack_ready, _on_pack_ready)
 		_link(bus.player_tile_changed, _on_player_tile_changed)
 		_link(bus.time_scale_changed, _on_time_scale_changed)
 		_link(bus.car_impact, _on_car_impact)
@@ -306,6 +307,19 @@ func _start_beds() -> void:
 ## A new chat line, while the panel is collapsed: the full blip for a reply to the player's own
 ## line, a soft one for alert and incident cards and for mayor and press posts, and one quiet blip
 ## per CHATTER_GAP for everything else (C drips a line every 1.5-3 s). At most one per BLIP_GAP.
+## Audio pack arrived on a split web build: purge the bank's cached misses
+## and re-point the sources and beds that were set up without it. Sounds that
+## were skipped while the pack was out are not replayed.
+func _on_pack_ready(pack: String) -> void:
+	if pack != "audio":
+		return
+	BANK.purge_missing()
+	if emitters != null:
+		emitters.refresh_streams()
+	if ambience != null:
+		ambience.refresh_streams()
+
+
 func _on_chat_posted(msg: Dictionary) -> void:
 	var role := str(msg.get("role", "resident"))
 	if role == "player":

@@ -50,6 +50,15 @@ func setup(p_ctx: FpContext) -> void:
 		levels[b] = 0.0
 
 
+## Audio pack arrived on a split web build: beds set up while it was missing
+## hold a null stream; re-resolve them (weights and levels are untouched).
+func refresh_streams() -> void:
+	for b in BED_NAMES:
+		var p: AudioStreamPlayer = players.get(b)
+		if p != null and p.stream == null:
+			p.stream = BANK.bed_stream(b)
+
+
 ## Recomputes the bed weights now (player_tile_changed, world rebuilt, every RECOMPUTE_S).
 func recompute() -> void:
 	_t = 0.0

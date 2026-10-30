@@ -35,7 +35,11 @@ var _orbit_speed: int = 1
 ## FpMode.to_dict() from the last exit_fp(), so Tab in orbit returns the hero to where they were.
 var _fp_saved: Dictionary = {}
 ## Web background packs (split builds). Always present; inert off the web / on unsplit builds.
-var pack_stream: WebPackStream = null
+var pack_stream: WebPackStream
+## 0 = nothing noticed, 1 = start notice sent, 2 = completion notice sent.
+var _pack_notice_state := 0
+## Held until a HUD exists (downloads can start before hud.setup).
+var _pack_pending_notice: Array = []
 ## Retained until the HUD exists, then shown once (never replayed per pack).
 var _pack_config_error := ""
 ## Autosaves (the first tick of each morning, quitting) are on only in normal play: tool runs,
@@ -86,8 +90,12 @@ func _ready() -> void:
 	view.setup(sim, camera)
 	view.pack_stream = pack_stream
 	hud.setup(sim, brain, client)
+	hud.setup_pack_stream(pack_stream)
 	if not _pack_config_error.is_empty():
 		notify(_pack_config_error)
+	if not _pack_pending_notice.is_empty():
+		notify(_pack_pending_notice[0], _pack_pending_notice[1])
+		_pack_pending_notice = []
 	sky = SkyDirector.new()
 	sky.name = "SkyDirector"
 	add_child(sky)
@@ -189,6 +197,8 @@ func _setup_pack_stream() -> void:
 		_pack_config_error = "this build needs web_split_packs enabled; play the unsplit release"
 	if not _pack_config_error.is_empty():
 		push_error("GridFall: " + _pack_config_error)
+	pack_stream.state_changed.connect(_on_pack_stream_state)
+	pack_stream.pack_ready.connect(_on_pack_stream_ready)
 
 
 func _start_new() -> void:
@@ -438,6 +448,46 @@ func focus(p: Vector3, dist: float, reason: String = "") -> void:
 		fp.bus.ping.emit(p, reason)
 		return
 	camera_rig.focus_world_point(p, dist, GridFallCamera.keeps_zoom(reason))
+
+
+## Split-build pack status: one start notice, one completion notice (per
+## round; a Retry starts a new round). The HUD widgets show the live status.
+func _on_pack_stream_state(snap: Dictionary) -> void:
+	var complete := bool(snap.get("complete", true))
+	var any_failed := false
+	for s: String in snap.get("packs", {}).values():
+		if s == "failed":
+			any_failed = true
+	if _pack_notice_state == 0 and not complete:
+		_pack_notice_state = 1
+		_pack_notify("Loading city detail in the background", "info")
+	elif _pack_notice_state == 1 and complete:
+		_pack_notice_state = 2
+		if any_failed:
+			_pack_notify("Some city detail is unavailable — Retry above to try again", "alert")
+		else:
+			_pack_notify("City detail finished loading", "success")
+	elif _pack_notice_state == 2 and not complete and not any_failed:
+		# A retry is running; announce its completion afresh.
+		_pack_notice_state = 1
+
+
+func _pack_notify(text: String, kind: String) -> void:
+	if hud != null or fp != null:
+		notify(text, kind)
+	else:
+		_pack_pending_notice = [text, kind]
+
+
+## Feature arrival hooks that Main owns (CityView handles its own packs).
+func _on_pack_stream_ready(pack: String) -> void:
+	match pack:
+		"sky":
+			if sky != null:
+				sky.refresh_pack_assets()
+		"audio":
+			if audio != null:
+				audio.refresh_pack_assets()
 
 
 ## Player-facing notice: CityHud toast in orbit, GameBus.toast in first person.

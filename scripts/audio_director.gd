@@ -51,14 +51,7 @@ func _ready() -> void:
 	_sfx_player.name = "SfxPlayer"
 	add_child(_sfx_player)
 
-	_nominal_player.stream = _looping_track(NOMINAL_TRACK_PATH)
-	_crisis_player.stream = _looping_track(CRISIS_TRACK_PATH)
-
-	_apply_volumes()
-	if _nominal_player.stream != null:
-		_nominal_player.play()
-	if _crisis_player.stream != null:
-		_crisis_player.play()
+	_init_stems()
 
 
 func _process(delta: float) -> void:
@@ -157,6 +150,31 @@ func _exit_tree() -> void:
 		if p != null:
 			p.stop()
 			p.stream = null
+
+
+## Assigns the music stems and starts them; safe to re-run (see
+## refresh_pack_assets). A stem that already has a stream is left playing.
+func _init_stems() -> void:
+	if _nominal_player.stream == null:
+		_nominal_player.stream = _looping_track(NOMINAL_TRACK_PATH)
+	if _crisis_player.stream == null:
+		_crisis_player.stream = _looping_track(CRISIS_TRACK_PATH)
+	_apply_volumes()
+	if _nominal_player.stream != null and not _nominal_player.playing:
+		_nominal_player.play()
+	if _crisis_player.stream != null and not _crisis_player.playing:
+		_crisis_player.play()
+
+
+## Audio pack arrived on a split web build: drop the paths that cached a miss
+## and re-init the stems. Mute, FP mix and crossfade state are untouched, and
+## one-shots heal on their next play_sfx call once the cache is purged.
+func refresh_pack_assets() -> void:
+	for path: String in _streams.keys():
+		if _streams[path] == null:
+			_streams.erase(path)
+	if _nominal_player != null:
+		_init_stems()
 
 
 func _stream(path: String) -> AudioStream:

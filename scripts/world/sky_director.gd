@@ -82,22 +82,34 @@ func setup(p_sim: CitySim, p_env: Environment, p_sun: DirectionalLight3D, p_view
 	if OS.has_environment("GRIDFALL_HOUR"):
 		fixed_hour = float(OS.get_environment("GRIDFALL_HOUR"))
 	apply_renderer_look(RenderingServer.get_current_rendering_method())
-	if env != null and ResourceLoader.exists(SKY_SHADER) and ResourceLoader.exists(DAY_HDRI):
-		_sky_mat = ShaderMaterial.new()
-		_sky_mat.shader = load(SKY_SHADER)
-		_sky_mat.set_shader_parameter("day_sky", load(DAY_HDRI))
-		_sky_mat.set_shader_parameter(
-			"dusk_sky", load(DUSK_HDRI) if ResourceLoader.exists(DUSK_HDRI) else load(DAY_HDRI)
-		)
-		var sky := Sky.new()
-		sky.sky_material = _sky_mat
-		sky.radiance_size = Sky.RADIANCE_SIZE_256
-		sky.process_mode = Sky.PROCESS_MODE_REALTIME
-		env.sky = sky
-		env.background_mode = Environment.BG_SKY
-		env.ambient_light_source = Environment.AMBIENT_SOURCE_SKY
-		env.reflected_light_source = Environment.REFLECTION_SOURCE_SKY
+	refresh_pack_assets()
 	hour = _target_hour()
+	_apply(1.0)
+
+
+## Builds the sky material once its assets are available. Called from setup()
+## and when the sky pack arrives on a split web build; idempotent — an
+## existing sky, the hour, the weather state and the sun are left untouched.
+func refresh_pack_assets() -> void:
+	if _sky_mat != null:
+		return
+	if env == null or not ResourceLoader.exists(SKY_SHADER) or not ResourceLoader.exists(DAY_HDRI):
+		return
+	_sky_mat = ShaderMaterial.new()
+	_sky_mat.shader = load(SKY_SHADER)
+	_sky_mat.set_shader_parameter("day_sky", load(DAY_HDRI))
+	_sky_mat.set_shader_parameter(
+		"dusk_sky", load(DUSK_HDRI) if ResourceLoader.exists(DUSK_HDRI) else load(DAY_HDRI)
+	)
+	var sky := Sky.new()
+	sky.sky_material = _sky_mat
+	sky.radiance_size = Sky.RADIANCE_SIZE_256
+	sky.process_mode = Sky.PROCESS_MODE_REALTIME
+	env.sky = sky
+	env.background_mode = Environment.BG_SKY
+	env.ambient_light_source = Environment.AMBIENT_SOURCE_SKY
+	env.reflected_light_source = Environment.REFLECTION_SOURCE_SKY
+	# Dress the new sky with the current hour/weather (dusk, night, tint, grey).
 	_apply(1.0)
 
 

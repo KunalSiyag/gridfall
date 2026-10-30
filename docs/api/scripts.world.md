@@ -321,5 +321,6 @@ Day/night cycle tied to the sim clock: tick 0 is morning, 3 is night. Moves the 
 - `static func renderer_look(method: String) -> Dictionary`: Exposure and saturation scales for a renderer method (RenderingServer's name for it): COMPAT_LOOK on gl_compatibility, neutral everywhere else.
 - `func apply_renderer_look(method: String) -> void`: Takes on method's look: the exposure scale every frame from here on, and the saturation scale on the shared Environment once (a meta remembers it, so a second setup does not stack it).
 - `func setup(p_sim: CitySim, p_env: Environment, p_sun: DirectionalLight3D, p_view: CityView) -> void`
+- `func refresh_pack_assets() -> void`: Builds the sky material once its assets are available. Called from setup() and when the sky pack arrives on a split web build; idempotent — an existing sky, the hour, the weather state and the sun are left untouched.
 - `func reset_weather() -> void`: Clear sky again: drops every weather hook and puts back the fog begin an override replaced.
 - `func clock_text() -> String`

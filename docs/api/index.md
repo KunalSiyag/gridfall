@@ -310,6 +310,7 @@ Generated from the `##` doc comments in `scripts/`. Regenerate with `python3 too
 
 - [city_hud.gd](scripts.ui.md#scriptsuicity_hudgd) (`CityHud`): SimCity-style HUD for GridFall: city vitals and RCI demand, time controls, player powers (overlays, disasters, decrees, grants, ordinance overrides), the five AI mayor cards, and panels for mayor minds, the Gazette, City Hall, the street inspector, the GMI call log and the city feed
 - [gridfall_hud.gd](scripts.ui.md#scriptsuigridfall_hudgd) (`GridFallHud`): SimCity-Style Civic & Multi-Agent Growth HUD for GridFall: - Top Civic Bar: City Day/Phase, Population, 5 SimCity Vital Bars (⚡ Power, 🚰 Sewage/Water, 🚗 Traffic, 🌿 Sanitation, 😊 Happiness), Playback controls, HY-Image 3.5 Lookbook button, and ACE-Step 1.5 status
+- [pack_status.gd](scripts.ui.md#scriptsuipack_statusgd) (`PackStatus`): Compact background-pack status line shared by the orbit and first-person HUDs
 
 ## [scripts/world/](scripts.world.md)
 
