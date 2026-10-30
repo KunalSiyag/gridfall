@@ -50,11 +50,15 @@ var smog_volumes: Dictionary = {}
 var _look: Dictionary = {"energy": 1.0, "exposure": 1.0, "grey": 0.0, "fog": -1.0, "shadow": 1.0}
 var _smog: float = 0.0
 var _smog_mat: FogMaterial
+## What the `wetness` global was last told (NAN: nothing yet). A settled sky repeats the same value
+## for minutes, and a repeated write still dirties that buffer in the renderer. setup() forgets it.
+var _told_global: float = NAN
 
 
 func setup(p_ctx: FpContext, p_preset: String) -> void:
 	ctx = p_ctx
 	preset = p_preset
+	_told_global = NAN
 	_build_rain(preset)
 	_build_splash(preset)
 	state = target_state()
@@ -111,11 +115,16 @@ func step(delta: float) -> void:
 		rain.emitting = state == "rain"
 		var cam := get_viewport().get_camera_3d() if is_inside_tree() else null
 		if cam != null:
-			rain.global_position = cam.global_position + Vector3(0, 0.35, 0)
+			# An emitter already there takes no write: a moved transform dirties its draw.
+			var at := cam.global_position + Vector3(0, 0.35, 0)
+			if rain.global_position != at:
+				rain.global_position = at
 	if splash != null:
 		splash.emitting = splashing()
 		if splash.emitting and ctx != null and ctx.player != null:
-			splash.global_position = ctx.player_position() + Vector3(0, 0.02 * WS.M, 0)
+			var at := ctx.player_position() + Vector3(0, 0.02 * WS.M, 0)
+			if splash.global_position != at:
+				splash.global_position = at
 
 
 ## Whether drops splash off the ground now: raining on wet streets, on a preset with splashes.
@@ -137,11 +146,20 @@ func _apply_hooks() -> void:
 		ctx.sky.fog_begin_override = fog
 		ctx.sky.weather_fog_tint = Color(0.62, 0.55, 0.36, clampf(_smog, 0.0, 0.85))
 	if ctx.view != null:
-		ctx.view.set_wetness(wet)
+		# set_wetness drops a repeated wet value but redoes a dry street on every call (hundreds
+		# of material and shader writes): ask it only while the streets are wet or still drying.
+		if wet != 0.0 or ctx.view.wetness != 0.0:
+			ctx.view.set_wetness(wet)
 		ctx.view.set_rain(1.0 if state == "rain" else 0.0)
 	LP.set_wet(ctx.env, preset, wet)
-	if push_global:
-		RenderingServer.global_shader_parameter_set(&"wetness", wet)
+	if push_global and wet != _told_global:
+		_told_global = wet
+		_write_global(wet)
+
+
+## The `wetness` global shader parameter (a method so a test can count the writes).
+func _write_global(v: float) -> void:
+	RenderingServer.global_shader_parameter_set(&"wetness", v)
 
 
 ## 1 inside a smog incident's radius around the player, fading to 0 three tiles beyond it.

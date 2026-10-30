@@ -447,6 +447,31 @@ static func check_modifier_modes(fails: Array, root: Node) -> void:
 	)
 
 
+## Counts the transform writes its node takes. A write of the transform a node already holds
+## notifies all the same (and dirties its subtree in the renderer), which is what the write guards
+## of the weather and the animals are pinned against.
+class XfProbe:
+	extends Node3D
+	var writes: int = 0
+
+	func _notification(what: int) -> void:
+		if what == NOTIFICATION_LOCAL_TRANSFORM_CHANGED:
+			writes += 1
+
+
+## Puts an XfProbe on n (a plain Node3D) and returns it.
+static func probe_writes(n: Node3D) -> XfProbe:
+	n.set_script(XfProbe)
+	n.set_notify_local_transform(true)
+	return n as XfProbe
+
+
+## Takes the XfProbe off n again.
+static func unprobe(n: Node3D) -> void:
+	n.set_notify_local_transform(false)
+	n.set_script(null)
+
+
 ## Input events for a feature's _unhandled_input: action a pressed.
 static func action_event(a: String) -> InputEventAction:
 	var e := InputEventAction.new()

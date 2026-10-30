@@ -313,7 +313,9 @@ func _draw() -> void:
 		mm.set_instance_transform(k, LIFE.xform(s, LIFE.lift(s)))
 		mm.set_instance_custom_data(k, LIFE.pose(s))
 		mm.set_instance_color(k, _tints[k] if k < _tints.size() else COATS[0])
-	mm.visible_instance_count = n
+	# The count changes with the membership only (and the draw above refreshed every slot then).
+	if force:
+		mm.visible_instance_count = n
 
 
 ## A squirrel called out at at (its chatter as it flees): on the bus, at a squirrel's size.

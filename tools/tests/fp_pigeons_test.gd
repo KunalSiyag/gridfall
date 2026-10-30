@@ -71,6 +71,7 @@ func _init() -> void:
 			_check_feed(fk)
 			_check_pause(fk)
 			_check_lod(fk)
+			_check_draw_gate(fk)
 		_check_far()
 		_check_rain()
 		_check_horn_rain()
@@ -536,6 +537,29 @@ func _check_lod(fk: FLOCK.Flock) -> void:
 	fl.startle(home, 0.3)
 	fl.step(0.05)
 	K.check(fails, fk.dirty, "lod: a fright steps a far flock at once")
+
+
+## The flock's MultiMesh is rewritten only after the flock stepped (the web per-frame budget): the
+## draws between a settled far flock's slow ticks leave it be. The crumbs drawn with it show which
+## it was (a moved crumb is drawn by a draw that ran, and stays moved when it did not).
+func _check_draw_gate(fk: FLOCK.Flock) -> void:
+	fk.crumbs_moved = true
+	fk.dirty = false
+	pg.call("_draw")
+	K.check(
+		fails, fk.crumbs_moved and not fk.dirty, "draw gate: a flock that did not step is left be"
+	)
+	fk.dirty = true
+	pg.call("_draw")
+	K.check(
+		fails,
+		not fk.crumbs_moved and not fk.dirty,
+		"draw gate: a flock that stepped is drawn, once"
+	)
+	fk.crumbs_moved = true
+	pg.call("_draw")
+	K.check(fails, fk.crumbs_moved, "draw gate: and not again before it steps")
+	fk.crumbs_moved = false
 
 
 ## The hero going beyond FAR takes the flock away (its MultiMesh freed); coming back brings it.
