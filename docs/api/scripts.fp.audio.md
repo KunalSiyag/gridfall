@@ -34,6 +34,7 @@ Area ambience (slice I): looping 2D beds on the Ambience bus (traffic hum, park 
 ### Functions
 
 - `func setup(p_ctx: FpContext) -> void`
+- `func refresh_streams() -> void`: Audio pack arrived on a split web build: beds set up while it was missing hold a null stream; re-resolve them (weights and levels are untouched).
 - `func recompute() -> void`: Recomputes the bed weights now (player_tile_changed, world rebuilt, every RECOMPUTE_S).
 - `func weather_state() -> String`: G1's weather state ("clear", "overcast", "rain"), read by name from the streetscape feature; "" when that feature is absent.
 - `func step(dt: float) -> void`: One frame: recompute every RECOMPUTE_S, move the levels toward the weights (a full fade takes CROSSFADE_S), start and stop beds under the MAX_PLAYING cap.
@@ -113,6 +114,7 @@ Slice I's sound assets (sounds/fp/, made by tools/audio/synth_fp_sfx.py): names,
 - `static func stream(name: String) -> AudioStream`: The stream sounds/fp/<name>.wav or .ogg, loaded once; null when the file is missing.
 - `static func path_of(name: String) -> String`
 - `static func is_wav(name: String) -> bool`
+- `static func purge_missing() -> void`: Audio pack arrived on a split web build: forget the names that cached a miss so the next stream()/bed_stream() call loads them for real.
 - `static func all_names() -> Array[String]`: Every asset name (loops, one-shots, footsteps).
 - `static func preload_all() -> void`: Loads every asset now (FP setup), so nothing touches the disk mid-game.
 - `static func step_name(surface: String, n: int) -> String`: footstep_<surface>_<n> (n in 1..STEP_VARIANTS).
@@ -275,7 +277,8 @@ Positional city sound (slice I): logical sources (engines, horns, sirens, constr
 
 - `func setup(p_ctx: FpContext) -> void`
 - `func request(key: String, type: String, pos: Vector3, opts: Dictionary = {}) -> Src`: Registers or updates a source. opts: stream (name), vel, pitch, trim_db, ttl, doppler, dynamic, one_shot, tag. Returns the Src.
-- `func release(key: String) -> void`: Fades a source out and forgets it (at once when it holds no player).
+- `func refresh_streams() -> void`: Fades a source out and forgets it (at once when it holds no player). Audio pack arrived: sources registered while it was missing hold a null stream; re-resolve from the type default and restart whoever got sound.
+- `func release(key: String) -> void`
 - `func has_source(key: String) -> bool`
 - `func source(key: String) -> Src`
 - `func sources() -> Array`

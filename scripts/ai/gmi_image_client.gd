@@ -700,6 +700,20 @@ func _lru_put(key: String, t: Texture2D) -> void:
 		_lru.erase(_lru_order.pop_front())
 
 
+## Posters pack arrived on a split web build: the manifest may have been read
+## before its files existed. Forget it (and the textures that cached a miss)
+## so the next lookup re-reads it.
+func reset_pack_caches() -> void:
+	_manifest_loaded = false
+	_by_key.clear()
+	_pools.clear()
+	_families.clear()
+	_entries.clear()
+	for f: String in _prebaked_tex.keys():
+		if _prebaked_tex[f] == null:
+			_prebaked_tex.erase(f)
+
+
 func _load_manifest() -> void:
 	if _manifest_loaded:
 		return

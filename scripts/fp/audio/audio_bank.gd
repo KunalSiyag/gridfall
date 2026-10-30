@@ -264,6 +264,15 @@ static func is_wav(name: String) -> bool:
 	return name in WAV_SOUNDS or name.begins_with("footstep_")
 
 
+## Audio pack arrived on a split web build: forget the names that cached a
+## miss so the next stream()/bed_stream() call loads them for real.
+static func purge_missing() -> void:
+	for n: String in _cache.keys():
+		if _cache[n] == null:
+			_cache.erase(n)
+	# A null _legacy_loop needs no purge: legacy_ambience_loop() retries it.
+
+
 ## Every asset name (loops, one-shots, footsteps).
 static func all_names() -> Array[String]:
 	var out: Array[String] = []

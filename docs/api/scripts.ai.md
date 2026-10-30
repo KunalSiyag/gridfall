@@ -272,6 +272,7 @@ Async poster image client for GMI's hy-image-v3.5-preview (slice D). request() r
 - `static func wants_vram_compress() -> bool`: VRAM compression only where a real device exists: on Compatibility GL and headless there is no main RenderingDevice, and the first S3TC compress spins Betsy up on the worker thread behind a half-initialised RenderingDevice singleton that the main thread's viewport configure then dereferences (engine bug, GL SIGSEGV, fault 0x8). Without a device the image stays RGB8 with mipmaps. Main thread only (RenderingServer is not worker-thread safe).
 - `static func wants_http_threads() -> bool`: Threaded (streaming) HTTPRequest downloads are not available on the web export: setting use_threads there freezes the browser, even on a threaded web build where threads_supported() answers true. Keep the worker-thread download to the desktop; every web build streams inline.
 - `static func http_threads_for(threads: bool, web: bool) -> bool`: Pure form of wants_http_threads() so the web branch is testable without a web build.
+- `func reset_pack_caches() -> void`: Posters pack arrived on a split web build: the manifest may have been read before its files existed. Forget it (and the textures that cached a miss) so the next lookup re-reads it.
 
 ## `scripts/ai/mayor_turns.gd`
 

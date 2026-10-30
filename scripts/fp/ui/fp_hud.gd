@@ -16,6 +16,7 @@ const MinimapView := preload("res://scripts/fp/ui/minimap_view.gd")
 const Prompt := preload("res://scripts/fp/ui/hud_prompt.gd")
 const Caption := preload("res://scripts/fp/ui/hud_caption.gd")
 const PauseMenu := preload("res://scripts/fp/ui/pause_menu.gd")
+const PackStatus := preload("res://scripts/ui/pack_status.gd")
 const PlaceCard := preload("res://scripts/fp/ui/place_card.gd")
 const MapScreen := preload("res://scripts/fp/ui/map_screen.gd")
 
@@ -45,6 +46,7 @@ var ctx: FpContext
 var root: Control
 var chips: Chips
 var toasts: Toasts
+var pack_status: PackStatus
 var compass: Compass
 var minimap: MinimapView
 var prompt: Prompt
@@ -113,6 +115,13 @@ func setup(p_ctx: FpContext) -> void:
 	pause_menu = PauseMenu.new()
 	slot("overlay").add_child(pause_menu)
 	pause_menu.setup(ctx, self)
+	if ctx.pack_stream != null and FeatureFlags.enabled("pack_status"):
+		pack_status = PackStatus.new()
+		pack_status.anchor_left = 0.5
+		pack_status.anchor_right = 0.5
+		pack_status.grow_horizontal = Control.GROW_DIRECTION_BOTH
+		slot("toasts").add_child(pack_status)
+		pack_status.setup(ctx.pack_stream)
 	if ctx.bus != null:
 		ctx.bus.toast.connect(show_toast)
 		ctx.bus.ping.connect(_on_ping)

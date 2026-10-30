@@ -18,6 +18,8 @@ signal mute_requested()
 signal resident_selected(id: String)
 
 const D := preload("res://scripts/sim/sim_defs.gd")
+# Preload, not the global name: the class cache is not guaranteed fresh in test worktrees.
+const PackStatus := preload("res://scripts/ui/pack_status.gd")
 const TITLE_FONT := preload("res://fonts/lilita_one_regular.ttf")
 const BG := Color(0.055, 0.07, 0.11, 0.93)
 const ACCENT := Color(0.0, 0.88, 1.0)
@@ -85,6 +87,7 @@ var _banner_label: Label
 var _banner_t: float = 0.0
 var _hover_label: Label
 var _toast_label: Label
+var _pack_status: PackStatus
 var _toast_t: float = 0.0
 var _refresh_t: float = 0.0
 var _log_dirty: bool = true
@@ -506,8 +509,23 @@ func _build_overlays_ui() -> void:
 	_toast_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_root.add_child(_toast_label)
 
+	_pack_status = PackStatus.new()
+	_pack_status.anchor_left = 0.5
+	_pack_status.anchor_right = 0.5
+	_pack_status.offset_top = 76
+	_pack_status.grow_horizontal = Control.GROW_DIRECTION_BOTH
+	_root.add_child(_pack_status)
+
 
 # ------------------------------------------------------------------ public API
+
+## Attaches the split-build pack status line (flag pack_status). Stays
+## invisible unless a background pack is still downloading or has failed.
+func setup_pack_stream(stream: WebPackStream) -> void:
+	if stream == null or not FeatureFlags.enabled("pack_status"):
+		return
+	_pack_status.setup(stream)
+
 
 func set_overlay(mode: String) -> void:
 	current_overlay = mode

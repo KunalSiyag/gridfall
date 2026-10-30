@@ -26,6 +26,7 @@ SimCity-style HUD for GridFall: city vitals and RCI demand, time controls, playe
 ### Constants
 
 - `D = preload("res://scripts/sim/sim_defs.gd")`
+- `PackStatus = preload("res://scripts/ui/pack_status.gd")`
 - `TITLE_FONT = preload("res://fonts/lilita_one_regular.ttf")`
 - `BG = Color(0.055, 0.07, 0.11, 0.93)`
 - `ACCENT = Color(0.0, 0.88, 1.0)`
@@ -40,6 +41,7 @@ SimCity-style HUD for GridFall: city vitals and RCI demand, time controls, playe
 ### Functions
 
 - `func setup(p_sim: CitySim, p_brain: CityBrain, p_client: GmiClient) -> void`
+- `func setup_pack_stream(stream: WebPackStream) -> void`: Attaches the split-build pack status line (flag pack_status). Stays invisible unless a background pack is still downloading or has failed.
 - `func set_overlay(mode: String) -> void`
 - `func show_tab(i: int) -> void`
 - `func set_speed_display(s: int) -> void`
@@ -78,3 +80,16 @@ SimCity-Style Civic & Multi-Agent Growth HUD for GridFall: - Top Civic Bar: City
 - `func show_custom_emergency_banner(headline: String, kind: String) -> void`
 - `func set_playing_state(playing: bool) -> void`
 - `func set_audio_status(status: String) -> void`
+
+## `scripts/ui/pack_status.gd`
+
+class_name `PackStatus` · extends `PanelContainer`
+
+Compact background-pack status line shared by the orbit and first-person HUDs. Stays invisible in the normal single-pack case; appears only while a split web build still has packs downloading (or after one failed), and hides again once every pack is mounted. "Retry" re-queues failed packs via WebPackStream.retry_failed(). Built only when the pack_status flag is on.
+
+### Functions
+
+- `func setup(stream: WebPackStream) -> void`: Connects to the stream and renders its current snapshot (so a HUD opened after downloads started, e.g. entering first person, resynchronises).
+- `func status_text() -> String`: Current status text (tests).
+- `func has_retry() -> bool`: Whether the Retry button is showing (tests).
+- `func press_retry() -> void`: Presses Retry (tests).

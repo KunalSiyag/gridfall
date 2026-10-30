@@ -186,6 +186,19 @@ func request(key: String, type: String, pos: Vector3, opts: Dictionary = {}) -> 
 
 
 ## Fades a source out and forgets it (at once when it holds no player).
+## Audio pack arrived: sources registered while it was missing hold a null
+## stream; re-resolve from the type default and restart whoever got sound.
+func refresh_streams() -> void:
+	for s: Src in _sources.values():
+		if s.stream != null or not TYPES.get(s.type, {}).has("stream"):
+			continue
+		var ns := BANK.stream(str(TYPES[s.type]["stream"]))
+		if ns != null:
+			s.stream = ns
+			if s.player != null:
+				_pool.restart(s)
+
+
 func release(key: String) -> void:
 	var s: Src = _sources.get(key, null)
 	if s == null:

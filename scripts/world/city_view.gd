@@ -424,6 +424,11 @@ func _on_pack_ready(pack: String) -> void:
 			_scenes.erase(path)
 	if not paths.is_empty():
 		warm_scenes(paths)
+	if pack == "props" and _trees_root != null:
+		for path: String in paths:
+			if path.begins_with(R + "props/tree_"):
+				_refresh_tree_kits()
+				break
 
 
 ## The realistic GLBs pack ARM maps whose blue (metal) channel the importer reads as fully
@@ -996,6 +1001,17 @@ func _make_icon_multimesh(col: Color) -> MultiMeshInstance3D:
 	mmi.multimesh = mm
 	add_child(mmi)
 	return mmi
+
+
+## The props pack arrived carrying the real tree models: rebuild the kits
+## (they fell back to procedural crowns while the pack was out) and every
+## chunk's multimeshes. Bounded: one pass over the chunks in range.
+func _refresh_tree_kits() -> void:
+	if _trees_root != null and is_instance_valid(_trees_root):
+		_trees_root.free()
+	_trees_root = null
+	_build_trees()
+	_refresh_trees()
 
 
 ## Trees are city-wide multimeshes, one per tree-model part, covering the wilderness ring around
