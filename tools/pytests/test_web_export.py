@@ -83,6 +83,9 @@ def test_ground_materials_get_their_own_cap():
     assert cap_limit("textures/real/grass_albedo.jpg.import") == 1024
     assert cap_limit("models/characters/bodies/tex/x.jpg.import") == 256
     assert cap_limit("models/real/props/x.jpg.import") == 256
+    # The sky HDRIs import lossless (~11 MB each); the sky pack quarters at 1024 px wide.
+    assert cap_limit("env/sky.hdr.import") == 1024
+    assert cap_limit("env/sky_dusk.hdr.import") == 1024
 
 
 def test_stage_changes_only_copied_web_assets(tmp_path, monkeypatch):
@@ -101,6 +104,9 @@ def test_stage_changes_only_copied_web_assets(tmp_path, monkeypatch):
     poster = root / "assets/posters/campaign_qwen.webp.import"
     poster.parent.mkdir(parents=True)
     poster.write_text(body.read_text())
+    sky = root / "env/sky.hdr.import"
+    sky.parent.mkdir(parents=True)
+    sky.write_text(body.read_text())
     wav = root / "sounds/music/track.wav"
     wav.parent.mkdir(parents=True)
     wav.write_bytes(b"wav sample")
@@ -112,7 +118,7 @@ def test_stage_changes_only_copied_web_assets(tmp_path, monkeypatch):
 
     monkeypatch.setattr("tools.web_export.subprocess.run", encode)
     report = stage_project(root, stage)
-    assert report["capped_imports"] == 2
+    assert report["capped_imports"] == 3
     assert report["kept_full_size"] == 1
     assert report["converted_wav"] == 1
     assert "size_limit=0" in body.read_text()
@@ -120,6 +126,9 @@ def test_stage_changes_only_copied_web_assets(tmp_path, monkeypatch):
     assert "size_limit=256" in (stage / body.relative_to(root)).read_text()
     # The tiling ground material keeps its own, larger cap.
     assert "size_limit=1024" in (stage / ground.relative_to(root)).read_text()
+    # So do the sky HDRIs.
+    assert "size_limit=1024" in (stage / sky.relative_to(root)).read_text()
+    assert "size_limit=0" in sky.read_text()
     assert (stage / poster.relative_to(root)).read_text() == poster.read_text()
     assert not (stage / wav.relative_to(root)).exists()
     assert "loop=true" in (stage / "sounds/music/track.ogg.import").read_text()
