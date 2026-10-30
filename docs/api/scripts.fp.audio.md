@@ -172,6 +172,26 @@ City sound on foot (slice I). Creates the Music, SFX, Ambience and UI buses the 
 - `func step(dt: float) -> void`: One frame of every part (tests call it with a fixed dt after set_process(false)).
 - `func play_ui(stream_name: String, volume_db: float, pitch: float = 1.0) -> void`: Plays a UI cue on the UI bus (chat blip, stinger).
 
+## `scripts/fp/audio/emitter_src.gd`
+
+extends `RefCounted`
+
+One logical sound source (see emitters.gd): a registered emitter that may hold a pooled AudioStreamPlayer3D while it is among the loudest at the listener.
+
+### Properties
+
+- `vel: Vector3`: u/s, for doppler and extrapolation
+- `db: float`: type level + trim
+- `gain_db: float`: smoothed dynamic gain (speed, night, fades)
+- `dynamic: bool`: refreshed from agents; dropped when not seen
+- `expire_at: float`: emitter clock time it fades out (one-shots, timed sirens)
+- `volatile: bool`: dynamic, one-shot, siren or river: not in the static set
+- `started: bool`: a one-shot played once already
+- `w_vol: float`: last volume_db written to the player (INF = unknown)
+- `w_pitch: float`: last pitch_scale written
+- `w_db: float`: db when max_db was last written
+- `tag: int`: tile or event id
+
 ## `scripts/fp/audio/emitters.gd`
 
 extends `Node3D`
@@ -216,16 +236,13 @@ Positional city sound (slice I): logical sources (engines, horns, sirens, constr
 - `FADE_IN_RATE = 36.0`
 - `FADE_RATE = 12.0`
 - `DIE_RATE = 60.0`
+- `Src = preload("res://scripts/fp/audio/emitter_src.gd")`: One logical sound source; in its own file to keep this one under the line cap.
 
 ### Properties
 
 - `prof: Object`: One logical sound source; holds a pool player only while it is among the loudest.
 - `agents_provider: Callable`: Agents provider for tests: Callable(p: Vector3, r: float) -> Array of E's agent dicts.
 - `night: float`: 0 day .. 1 night (SkyDirector.night); construction falls quiet at night.
-
-### Inner classes
-
-- `Src`
 
 ### Functions
 

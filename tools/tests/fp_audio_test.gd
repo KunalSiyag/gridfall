@@ -1,10 +1,7 @@
 extends SceneTree
-## Slice I audio (docs/fp/slices/I-audio.md, acceptance tests): the assets and their loop flags,
-## the AudioDirector's tick throttle and on-foot routing, the initial scan, emitter settings, the
-## 24-player cap and stealing, manual doppler, horns, sirens, footsteps by surface (polling and the
-## stepped signal), ambience beds, settings, the pause muffle, the talk duck, UI cues, crashes,
-## knocked props, car doors, blows, swings and rolls, weapons, dogs, pigeons, cats, the frame
-## budget, the kept buses and the bus scan. Headless runs the Dummy audio driver: node state.
+## Slice I audio (docs/fp/slices/I-audio.md, acceptance tests): assets and loop flags, the
+## AudioDirector's throttle and routing, the scan, emitter settings/cap/stealing/write-guard,
+## doppler, horns, sirens, footsteps, ambience, ducking, UI cues, impacts, animals, budget, buses.
 
 const K := preload("res://tools/tests/fp_kit.gd")
 const D := preload("res://scripts/sim/sim_defs.gd")
@@ -212,6 +209,14 @@ func _check_cap(_ctx: FpContext, f: FpFeature) -> void:
 	f.call("step", DT)
 	var far: EM.Src = em.source("t%d" % (EM.MAX_PLAYERS - 1))
 	K.check(fails, em.source("close").player != null and far.player == null and em.count_assigned() == EM.MAX_PLAYERS, "cap: a nearer request steals the farthest player")
+	_steps(f, 3.0)
+	var sc: EM.Src = em.source("close")
+	var v0: float = sc.player.volume_db
+	_steps(f, 0.5)
+	K.check(fails, is_equal_approx(sc.player.volume_db, v0), "cap: write guard idles loops")
+	em.release("close")
+	_steps(f, 0.3)
+	K.check(fails, sc.player == null or sc.player.volume_db < v0 - 0.5, "cap: guard fades out")
 	em.clear()
 	em.full_scan()
 	em.rebuild_banks()
@@ -360,8 +365,7 @@ func _check_sirens(ctx: FpContext, f: FpFeature) -> void:
 	K.check(fails, em.count_assigned("siren") == 0 and not em.has_source("evs:%d" % int(ev.get("id", -1))), "sirens: event_ended frees the siren (%.2f s)" % t)
 
 
-## A soft landing adds no step of its own (its stepped already played); a heavy one adds the
-## other foot.
+## A soft landing adds no step (its stepped already played); a heavy one adds the other foot.
 func _check_landings(fs: FS, p: Node3D) -> void:
 	var n := fs.steps_played
 	var h := fs.heavy_lands
@@ -690,8 +694,7 @@ func _check_doors(ctx: FpContext, f: FpFeature) -> void:
 
 
 ## person_hit thumps at the chest (a car louder and lower), someone knocked down lands
-## BODY_FALL_S later (body_fall), hero_action whooshes for a swing (a shove softer) but not for an
-## emote, and a landing roll's shoulder thuds ROLL_THUD_S after it starts, ROLL_DB under the fall.
+## BODY_FALL_S later, swings whoosh (a shove softer, an emote silent), a roll thuds ROLL_DB under.
 func _check_blows(ctx: FpContext, f: FpFeature) -> void:
 	var em := _em(f)
 	var at := em.listener() + Vector3(0.05, 0.0, 0.0)
@@ -742,8 +745,7 @@ func _check_blows(ctx: FpContext, f: FpFeature) -> void:
 
 
 ## weapon_hit plays the weapon's own sound at the chest of whoever it hit (a bat's knock, a pipe's
-## clang, a bottle's smash), lower and WEAPON_PROP_DB quieter on a street prop; an unknown weapon is
-## silent; the swing whooshes.
+## clang, a bottle's smash), WEAPON_PROP_DB quieter on a street prop; an unknown weapon is silent.
 func _check_weapons(ctx: FpContext, f: FpFeature) -> void:
 	var em := _em(f)
 	var at := em.listener() + Vector3(0.05, 0.0, 0.0)
@@ -766,10 +768,8 @@ func _check_weapons(ctx: FpContext, f: FpFeature) -> void:
 	K.check(fails, _is_shot(swing, "hit", "punch_whoosh"), "weapons: the swing whooshes")
 	_steps(f, 3.5)
 
-## animal_called plays the dog's call at its head (emitter type dog): a bark (one of BARK_VARIANTS,
-## a small dog's higher), a growl, a whine and a struck dog's yelp at DOG_DB on it; an unknown call
-## stays silent; a bite on the hero (hero_hurt "bite") snaps the jaws (dog_snap) SNAP_Y up, at the
-## knee.
+## animal_called plays the dog's call at its head: a bark (a small dog's higher), growl, whine
+## and yelp at DOG_DB; an unknown call stays silent; a bite snaps the jaws (dog_snap) at the knee.
 func _check_dogs(ctx: FpContext, f: FpFeature) -> void:
 	var em := _em(f)
 	var at := em.listener() + Vector3(0.05, 0.0, 0.0)
@@ -854,8 +854,8 @@ func _check_cats(ctx: FpContext, f: FpFeature) -> void:
 	_steps(f, 4.0)
 
 
-## A kick or a swing landing on an animal (animal_hit) thumps (punch_hit) ANIMAL_HIT_Y up its body,
-## ANIMAL_HIT_DB under a blow on a person of the same strength and higher (a pigeon's higher still).
+## A kick or swing landing on an animal thumps (punch_hit) ANIMAL_HIT_Y up its body,
+## ANIMAL_HIT_DB under a blow on a person of the same strength (a pigeon's higher still).
 func _check_animal_hits(ctx: FpContext, f: FpFeature) -> void:
 	var at := _em(f).listener() + Vector3(0.05, 0.0, 0.0)
 	var blow := {"strength": 0.75, "down": false}
