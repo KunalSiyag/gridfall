@@ -7,7 +7,10 @@
 #        GATE_TMP (lock, scratch dirs; default /tmp/claude-1000)   GATE_IMPORT_TIMEOUT (secs; default 900)
 #
 # A step that fails and then passes on a retry reports PASS(flaky), counts as a pass and is listed
-# in $GATE_LOG_DIR/flaky.txt. Every run writes $GATE_LOG_DIR/results.json (step, result, secs).
+# in $GATE_LOG_DIR/flaky.txt. Every run writes $GATE_LOG_DIR/results.json (step, result, rc, secs)
+# and $GATE_LOG_DIR/pressure.tsv (per-attempt MemAvailable/Committed_AS/load/PSI snapshot).
+# FAIL(no-token) -- a step that died without printing its verdict, the signature of a kill under
+# load -- always retries once, even with GATE_RETRIES=0.
 #
 # A step also fails when its log holds an engine ERROR:/USER ERROR: line that no entry in
 # tools/checks/baselines/engine_errors.txt covers (tools/checks/engine_errors.py does the scan);
@@ -67,6 +70,7 @@ RESULTS=()
 SECS=()
 LOGS=()
 TRIES=()
+RCS=()
 FAILED=0
 
 # Classifies a finished step from its exit code and log.
@@ -107,7 +111,7 @@ run_step() {
 		return 0
 	fi
 	local log="$GATE_LOG_DIR/$name.log"
-	local t0 rc res first="" attempt=0 xdg
+	local t0 rc res first="" attempt=0 xdg rcs=""
 	t0=$(date +%s)
 	while :; do
 		# Every attempt gets a fresh XDG_DATA_HOME, so a retry never sees the failed run's saves.
@@ -121,15 +125,33 @@ run_step() {
 			cmd=(flock -w 3600 "$LOCK" "${cmd[@]}")
 		fi
 		printf '%-28s ...\r' "$name" >&2
+		# Per-attempt pressure snapshot: when a step dies silently under load (the no-token
+		# mass deaths), this is the only record of what the box looked like at spawn time.
+		printf '%s\t%s\tattempt=%d\tMemAvailable=%s\tCommitted_AS=%s\tload1=%s\tpsi_mem=%s\n' \
+			"$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$name" "$((attempt + 1))" \
+			"$(awk '/^MemAvailable/{print $2}' /proc/meminfo)" \
+			"$(awk '/^Committed_AS/{print $2}' /proc/meminfo)" \
+			"$(cut -d' ' -f1 /proc/loadavg)" \
+			"$(awk '/^some/{print $2}' /proc/pressure/memory 2>/dev/null)" >>"$GATE_LOG_DIR/pressure.tsv" 2>/dev/null || true
 		"${cmd[@]}" >"$log" 2>&1
 		rc=$?
+		rcs="${rcs:+$rcs, }$rc"
 		res="$(classify "$rc" "$log" "$token")"
+		if [ "$res" = "FAIL(no-token)" ]; then
+			# Godot fully buffers stdout to a file: a killed or aborted step loses every
+			# buffered line, and a shell-level spawn failure never reaches the log at all.
+			printf 'gate: step died with rc=%s and no verdict (killed, aborted, or the spawn itself failed); see pressure.tsv\n' "$rc" >>"$log"
+		fi
 		attempt=$((attempt + 1))
 		[ "$res" = "PASS" ] && break
 		[ -z "$first" ] && first="$res"
-		[ "$attempt" -gt "$GATE_RETRIES" ] && break
+		# A no-token death is an environmental kill, not a verdict: always retry it once,
+		# even with GATE_RETRIES=0. A retried pass still lands in flaky.txt as PASS(flaky).
+		local max_tries="$GATE_RETRIES"
+		[ "$res" = "FAIL(no-token)" ] && [ "$max_tries" -lt 1 ] && max_tries=1
+		[ "$attempt" -gt "$max_tries" ] && break
 		mv -f "$log" "$GATE_LOG_DIR/$name.try$attempt.log"
-		printf '%-28s %s, retrying (%d/%d)\n' "$name" "$res" "$attempt" "$GATE_RETRIES" >&2
+		printf '%-28s %s, retrying (%d/%d)\n' "$name" "$res" "$attempt" "$max_tries" >&2
 	done
 	case "$res" in
 		"FAIL(engine-error)"|"FAIL(engine-check)") python3 tools/checks/engine_errors.py "$log" >&2 || true ;;
@@ -139,7 +161,7 @@ run_step() {
 		printf '%s\t%s\t%s\t%s\n' "$name" "$first" "$attempt" "$(date -u +%Y-%m-%dT%H:%M:%SZ)" >>"$GATE_LOG_DIR/flaky.txt"
 	fi
 	local secs=$(( $(date +%s) - t0 ))
-	NAMES+=("$name"); RESULTS+=("$res"); SECS+=("$secs"); LOGS+=("$log"); TRIES+=("$attempt")
+	NAMES+=("$name"); RESULTS+=("$res"); SECS+=("$secs"); LOGS+=("$log"); TRIES+=("$attempt"); RCS+=("${rcs:-$rc}")
 	is_pass "$res" || FAILED=$((FAILED + 1))
 	printf '%-28s %s (%ss)\n' "$name" "$res" "$secs" >&2
 	return 0
@@ -265,8 +287,8 @@ echo "logs: $GATE_LOG_DIR"
 	printf ' "retries": %s,\n "failed": %s,\n "result": "%s",\n "steps": [' "$GATE_RETRIES" "$FAILED" "$([ "$FAILED" -eq 0 ] && echo PASS || echo FAIL)"
 	sep=""
 	for i in "${!NAMES[@]}"; do
-		printf '%s\n  {"step": "%s", "result": "%s", "secs": %s, "attempts": %s, "log": "%s"}' \
-			"$sep" "${NAMES[$i]}" "${RESULTS[$i]}" "${SECS[$i]}" "${TRIES[$i]}" "${LOGS[$i]}"
+		printf '%s\n  {"step": "%s", "result": "%s", "rcs": [%s], "secs": %s, "attempts": %s, "log": "%s"}' \
+			"$sep" "${NAMES[$i]}" "${RESULTS[$i]}" "${RCS[$i]:--1}" "${SECS[$i]}" "${TRIES[$i]}" "${LOGS[$i]}"
 		sep=","
 	done
 	printf '\n ]\n}\n'
