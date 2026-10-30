@@ -84,6 +84,7 @@ Generated from the `##` doc comments in `scripts/`. Regenerate with `python3 too
 - [ambience.gd](scripts.fp.audio.md#scriptsfpaudioambiencegd): Area ambience (slice I): looping 2D beds on the Ambience bus (traffic hum, park birds, river, the quiet residential bed, night insects and rain), weighted by what lies around the player and by the weather, and cross-faded over CROSSFADE_S
 - [audio_bank.gd](scripts.fp.audio.md#scriptsfpaudioaudio_bankgd): Slice I's sound assets (sounds/fp/, made by tools/audio/synth_fp_sfx.py): names, a load-once stream cache and the mix
 - [audio_feature.gd](scripts.fp.audio.md#scriptsfpaudioaudio_featuregd): City sound on foot (slice I)
+- [emitter_pool.gd](scripts.fp.audio.md#scriptsfpaudioemitter_poolgd): The AudioStreamPlayer3D pool behind emitters.gd: at most MAX_PLAYERS players shared by every logical source (see emitter_src.gd)
 - [emitter_src.gd](scripts.fp.audio.md#scriptsfpaudioemitter_srcgd): One logical sound source (see emitters.gd): a registered emitter that may hold a pooled AudioStreamPlayer3D while it is among the loudest at the listener
 - [emitters.gd](scripts.fp.audio.md#scriptsfpaudioemittersgd): Positional city sound (slice I): logical sources (engines, horns, sirens, construction, fire, fountains, power plants, river banks, passers-by's footsteps, crashes, knocked props, car doors, blows and swings, dogs, pigeons, cats) share a pool of at most MAX_PLAYERS AudioStreamPlayer3D
 - [footsteps.gd](scripts.fp.audio.md#scriptsfpaudiofootstepsgd): The hero's footsteps (slice I)
