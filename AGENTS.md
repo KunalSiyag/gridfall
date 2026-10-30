@@ -12,6 +12,7 @@ Guidance for coding agents (and humans) working in GridFall, a Godot 4.7 city bu
   ```
 
 - First launch imports ~460 MB of assets into `.godot/` (several minutes). Never commit `.godot/`.
+- Pulled a commit that added a `class_name` and now headless runs fail with "Could not find type X in the current scope" (or hang)? The editor's class cache is stale: run `python tools/refresh_class_cache.py` — it regenerates `.godot/global_script_class_cache.cfg` from the actual declarations, no import needed. `tools/setup.sh` runs it automatically.
 - GMI calls need `GMI_API_KEY`. Without it (or with `GRIDFALL_OFFLINE=1`) the game uses the replay cache in `data/gmi_replay_cache.json`, then heuristics. Tests always run offline. Copy `.env.example` for the full list of environment switches.
 
 ## Test

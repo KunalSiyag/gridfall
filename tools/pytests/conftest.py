@@ -27,9 +27,13 @@ def repo(tmp_path):
         root.mkdir(exist_ok=True)
         write_tree(root, files)
         if git:
-            # Index only: no commits, so no identity is needed.
-            subprocess.run(["git", "init", "-q", str(root)], check=True)
-            subprocess.run(["git", "-C", str(root), "add", "-A"], check=True)
+            # Index only: no commits, so no identity is needed. Scrub the repo-locating vars
+            # (pre-push sets GIT_DIR/GIT_WORK_TREE): they would redirect these calls at the
+            # developer's real repository.
+            from tools.checks.common import git_env
+
+            subprocess.run(["git", "init", "-q", str(root)], check=True, env=git_env())
+            subprocess.run(["git", "-C", str(root), "add", "-A"], check=True, env=git_env())
         return root
 
     return build

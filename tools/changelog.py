@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import argparse
 import datetime
+import os
 import re
 import subprocess
 import sys
@@ -35,8 +36,18 @@ GROUPS = [
 TITLE = "# Changelog\n\nAll notable changes to GridFall. Generated from conventional commits by tools/changelog.py.\n"
 
 
+# Repo-locating env vars git hooks set; with them present they override -C and every git
+# call below would read the caller's repo instead of root. (Kept in sync with
+# tools/checks/common.py git_env; duplicated so this script stays standalone.)
+_GIT_ENV_DROP = {"GIT_DIR", "GIT_WORK_TREE", "GIT_INDEX_FILE", "GIT_COMMON_DIR",
+                 "GIT_OBJECT_DIRECTORY", "GIT_ALTERNATE_OBJECT_DIRECTORIES"}
+
+
 def git(*args: str, root: Path = ROOT) -> str:
-    return subprocess.run(["git", "-C", str(root), *args], capture_output=True, text=True, check=True).stdout
+    env = {k: v for k, v in os.environ.items() if k not in _GIT_ENV_DROP}
+    return subprocess.run(
+        ["git", "-C", str(root), *args], capture_output=True, text=True, check=True, env=env
+    ).stdout
 
 
 def latest_tag(root: Path = ROOT) -> str:
