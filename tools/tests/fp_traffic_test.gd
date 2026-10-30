@@ -71,6 +71,7 @@ func _init() -> void:
 	_check_density_caps()
 	_check_scooters()
 	_check_following()
+	_check_overtaking()
 	_check_parking_clearance()
 	_check_parked_shove()
 	_check_save_settles_parked()
@@ -1111,11 +1112,12 @@ func _check_scooters() -> void:
 # ------------------------------------------------------------------ car following
 
 
-## The longest run of N-S or E-W straights: [tiles in order, heading edge].
-func _straight_run() -> Array:
+## The longest run of N-S or E-W straights: [tiles in order, heading edge]. With
+## need_room, the longest run whose lanes never run at PASS_OFFSET past parked cars instead
+## (an overtaking pass needs the swing room).
+func _straight_run(need_room := false) -> Array:
 	var lg := _lg()
-	var best: Array[int] = []
-	var best_e := 0
+	var runs: Array = []
 	for i: int in lg.tiles.keys():
 		var t: LG.TileInfo = lg.tiles[i]
 		if t.piece != "straight" or t.bridge:
@@ -1144,10 +1146,25 @@ func _straight_run() -> Array:
 					break
 				run.append(nx)
 				cur = nx
-			if run.size() > best.size():
-				best = run
-				best_e = e
+			runs.append([run, e])
+	var best: Array[int] = []
+	var best_e := 0
+	for r: Array in runs:
+		if need_room and not _run_room(lg, r[0], int(r[1])):
+			continue
+		if (r[0] as Array).size() > best.size():
+			best = r[0]
+			best_e = r[1]
 	return [best, best_e]
+
+
+## True when no lane of the run runs at PASS_OFFSET past parked cars (a pass needs the swing room).
+func _run_room(lg: LG, tiles: Array, e: int) -> bool:
+	for l: LG.Lane in lg.lanes_along(tiles, LG.OPP[e], e):
+		for s: float in [0.2, 0.5, 0.8]:
+			if lg.pass_factor(l, s) >= 0.3:
+				return false
+	return true
 
 
 ## The web density caps (quality.gd, through ambient's caps_override hook): a present
@@ -1278,6 +1295,57 @@ func _check_following() -> void:
 	)
 	_vh().remove(leader)
 	_vh().remove(follower)
+
+
+## A fast car behind an inherently slow one (a crawler with its own low top speed, like a
+## backhoe or a bus) swings through the empty opposing lane and past it with the flag on, and
+## queues behind it with the flag off. On _quiet()'s empty streets, so the pass is never blocked.
+func _check_overtaking() -> void:
+	_quiet()
+	var run: Array = _straight_run(true)
+	var tiles: Array[int] = run[0]
+	var e: int = run[1]
+	K.check(
+		fails,
+		tiles.size() >= 6,
+		"overtaking fixture: a straight run of 6+ tiles with swing room (%d)" % tiles.size()
+	)
+	if tiles.size() < 6:
+		return
+	var lanes := _lg().lanes_along(tiles, LG.OPP[e], e)
+	var dir := Vector3(LG.DIRS[e].x, 0, LG.DIRS[e].y)
+	var was: bool = FeatureFlags.enabled("overtaking")
+	FeatureFlags.set_override("overtaking", true)
+	var leader := _car(lanes[3], 0.5, lanes.slice(4), 0.0)
+	leader.v0 = 3.0 * WS.M
+	var follower := _car(lanes[0], 0.5, lanes.slice(1), 0.0)
+	var ahead := false
+	for k in range(int(45.0 / DT)):
+		f.step(DT)
+		if (follower.pos - leader.pos).dot(dir) > leader.length:
+			ahead = true
+			break
+	K.check(fails, ahead, "overtaking: a fast car passes a crawler (11 km/h) within 45 s")
+	_vh().remove(leader)
+	_vh().remove(follower)
+	FeatureFlags.set_override("overtaking", false)
+	var l2 := _car(lanes[3], 0.5, lanes.slice(4), 0.0)
+	l2.v0 = 3.0 * WS.M
+	var f2 := _car(lanes[0], 0.5, lanes.slice(1), 0.0)
+	for k in range(int(20.0 / DT)):
+		f.step(DT)
+	var behind := (l2.pos - f2.pos).dot(dir)
+	K.check(
+		fails,
+		behind > 0.0 and f2.pass_off == 0.0,
+		(
+			"overtaking off: the follower queues, no swing (%.2f m behind, pass_off %.3f)"
+			% [behind / WS.M, f2.pass_off]
+		)
+	)
+	_vh().remove(l2)
+	_vh().remove(f2)
+	FeatureFlags.set_override("overtaking", was)
 
 
 # ------------------------------------------------------------------ parking clearance
