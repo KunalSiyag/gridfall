@@ -64,6 +64,15 @@ func _fp() -> bool:
 	return bool(view.get("fp_mode"))
 
 
+## The quality preset's street-level range scale (1.0 on desktop, tighter on the web tier). On
+## foot the site's parts range at the prop scale, like the props around them; orbit keeps its
+## no-range behaviour, so this only ever scales the street-level ends.
+func _vis() -> float:
+	if _fp() and view.get("vis_mult") != null:
+		return float(view.get("vis_mult"))
+	return 1.0
+
+
 ## The aerial coverage (render_opt): while the camera is over the city, every part of an open site
 ## draws to the horizon, so cranes, machines and hoardings stay visible from the sky. Each part's
 ## own end is kept in its "ck_aerial_far" meta and put back when the camera returns to the street.
@@ -217,7 +226,7 @@ func box(p: Node3D, size: Vector3, pos: Vector3, m: Variant, rot := Vector3.ZERO
 	mi.position = pos
 	mi.rotation = rot
 	mi.material_override = _material(m)
-	mi.visibility_range_end = FAR if _fp() else 0.0
+	mi.visibility_range_end = FAR * _vis() if _fp() else 0.0
 	if not shadow:
 		mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	p.add_child(mi)
@@ -241,7 +250,7 @@ func cyl(p: Node3D, r: float, h: float, pos: Vector3, m: Variant, rot := Vector3
 	mi.position = pos
 	mi.rotation = rot
 	mi.material_override = _material(m)
-	mi.visibility_range_end = FAR if _fp() else 0.0
+	mi.visibility_range_end = FAR * _vis() if _fp() else 0.0
 	p.add_child(mi)
 	return mi
 
@@ -260,7 +269,7 @@ func mound(p: Node3D, r: float, h: float, pos: Vector3, m: Variant) -> MeshInsta
 	mi.position = pos
 	mi.scale = Vector3(1.0, h / r, 1.0)
 	mi.material_override = _material(m)
-	mi.visibility_range_end = FAR if _fp() else 0.0
+	mi.visibility_range_end = FAR * _vis() if _fp() else 0.0
 	p.add_child(mi)
 	return mi
 
@@ -579,7 +588,7 @@ func tower_crane(parent: Node3D, pos: Vector3, h_m: float, yaw: float, phase := 
 	_anim(slew, "yaw", 0.0, 0.9, 0.12, phase)
 	_anim(trolley, "slide", 11.0, 6.0, 0.3, phase)
 	for part in root.find_children("*", "GeometryInstance3D", true, false):
-		(part as GeometryInstance3D).visibility_range_end = CRANE_FAR if _fp() else 0.0
+		(part as GeometryInstance3D).visibility_range_end = CRANE_FAR * _vis() if _fp() else 0.0
 	return root
 
 
@@ -720,8 +729,11 @@ func build_site(holder: Node3D, s: Dictionary, stage: String, f: float, ctx: Dic
 	# Big parts (frame floors, scaffold faces, the hoarding runs) carry as far as the crane.
 	for part in root.find_children("*", "MeshInstance3D", true, false):
 		var mi := part as MeshInstance3D
-		if mi.mesh != null and mi.visibility_range_end == FAR and (mi.mesh.get_aabb().size * mi.scale).length() > 0.25:
-			mi.visibility_range_end = CRANE_FAR
+		if mi.mesh == null:
+			continue
+		var part_len: float = (mi.mesh.get_aabb().size * mi.scale).length()
+		if is_equal_approx(mi.visibility_range_end, FAR * _vis()) and part_len > 0.25:
+			mi.visibility_range_end = CRANE_FAR * _vis()
 	_finish_site(root, f, a0)
 	return root
 
