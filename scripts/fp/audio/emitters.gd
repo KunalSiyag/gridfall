@@ -90,29 +90,8 @@ func _psec(name: String, t0: int) -> int:
 	return prof._section(name, t0) if prof != null else Time.get_ticks_usec()
 
 
-class Src extends RefCounted:
-	var key: String = ""
-	var type: String = ""
-	var pos: Vector3 = Vector3.ZERO
-	var vel: Vector3 = Vector3.ZERO       # u/s, for doppler and extrapolation
-	var stream: AudioStream
-	var db: float = 0.0                   # type level + trim
-	var gain_db: float = 0.0              # smoothed dynamic gain (speed, night, fades)
-	var gain_target: float = 0.0
-	var pitch_base: float = 1.0
-	var pitch: float = 1.0
-	var doppler: bool = false
-	var dynamic: bool = false             # refreshed from agents; dropped when not seen
-	var seen: bool = true
-	var one_shot: bool = false
-	var expire_at: float = INF            # emitter clock time it fades out (one-shots, timed sirens)
-	var volatile: bool = false            # dynamic, one-shot, siren or river: not in the static set
-	var dying: bool = false
-	var started: bool = false             # a one-shot played once already
-	var player: AudioStreamPlayer3D
-	var score: float = -INF
-	var dist: float = INF
-	var tag: int = -1                     # tile or event id
+## One logical sound source; in its own file to keep this one under the line cap.
+const Src := preload("res://scripts/fp/audio/emitter_src.gd")
 
 
 var ctx: FpContext
@@ -422,26 +401,42 @@ func step(dt: float) -> void:
 	var ta := Time.get_ticks_usec()
 	var k_pitch := 1.0 - exp(-dt * 10.0)
 	for s: Src in _assigned.keys():
-		if _now >= s.expire_at and not s.dying:
-			s.dying = true
-			s.gain_target = -60.0
-		var rate := DIE_RATE if s.dying else (FADE_IN_RATE if s.gain_db < s.gain_target else FADE_RATE)
-		s.gain_db = move_toward(s.gain_db, s.gain_target, rate * dt)
-		if s.dynamic and s.vel != Vector3.ZERO:
-			s.pos += s.vel * dt
-		if s.doppler:
-			s.pitch = lerpf(s.pitch, s.pitch_base * doppler_factor(s.pos, s.vel, lis, lv), k_pitch)
-		else:
-			s.pitch = lerpf(s.pitch, s.pitch_base, k_pitch)
-		if (s.dying and s.gain_db <= -50.0) or (s.one_shot and s.started and not s.player.playing):
-			_erase(s.key)
-			continue
-		var pl := s.player
-		pl.position = s.pos
-		pl.pitch_scale = clampf(s.pitch, 0.25, 4.0)
-		pl.volume_db = s.db + s.gain_db
-		pl.max_db = s.db + float(TYPES[s.type]["near"])
+		_step_assigned(s, dt, lis, lv, k_pitch)
 	_psec("assigned", ta)
+
+
+## One assigned source's per-frame update: fade, doppler, then only the player writes that moved.
+## Once a fade converges a steady source is written nothing, which matters on the web build where
+## every property write crosses to the audio worklet.
+func _step_assigned(s: Src, dt: float, lis: Vector3, lv: Vector3, k_pitch: float) -> void:
+	if _now >= s.expire_at and not s.dying:
+		s.dying = true
+		s.gain_target = -60.0
+	var rate := DIE_RATE if s.dying else (FADE_IN_RATE if s.gain_db < s.gain_target else FADE_RATE)
+	s.gain_db = move_toward(s.gain_db, s.gain_target, rate * dt)
+	if s.dynamic and s.vel != Vector3.ZERO:
+		s.pos += s.vel * dt
+	if s.doppler:
+		s.pitch = lerpf(s.pitch, s.pitch_base * doppler_factor(s.pos, s.vel, lis, lv), k_pitch)
+	else:
+		s.pitch = lerpf(s.pitch, s.pitch_base, k_pitch)
+	if (s.dying and s.gain_db <= -50.0) or (s.one_shot and s.started and not s.player.playing):
+		_erase(s.key)
+		return
+	var pl := s.player
+	if pl.position != s.pos:
+		pl.position = s.pos
+	var vol: float = s.db + s.gain_db
+	if absf(vol - s.w_vol) > 0.05:
+		s.w_vol = vol
+		pl.volume_db = vol
+	var pitch_c: float = clampf(s.pitch, 0.25, 4.0)
+	if absf(pitch_c - s.w_pitch) > 0.001:
+		s.w_pitch = pitch_c
+		pl.pitch_scale = pitch_c
+	if s.db != s.w_db:
+		s.w_db = s.db
+		pl.max_db = s.db + float(TYPES[s.type]["near"])
 
 
 ## The listener: the current camera (behind the hero in third person), else the player's feet.
@@ -936,6 +931,9 @@ func _bind(s: Src, pl: AudioStreamPlayer3D) -> void:
 	pl.pitch_scale = clampf(s.pitch, 0.25, 4.0)
 	pl.volume_db = s.db + s.gain_db
 	pl.max_db = s.db + float(TYPES[s.type]["near"])
+	s.w_vol = pl.volume_db
+	s.w_pitch = pl.pitch_scale
+	s.w_db = s.db
 
 
 func _restart(s: Src) -> void:
