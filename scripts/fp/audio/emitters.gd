@@ -196,7 +196,7 @@ func refresh_streams() -> void:
 		if ns != null:
 			s.stream = ns
 			if s.player != null:
-				_restart(s)
+				_pool.restart(s)
 
 
 func release(key: String) -> void:
