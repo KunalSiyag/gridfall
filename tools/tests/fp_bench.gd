@@ -97,6 +97,7 @@ func _measure(label: String, secs: float) -> Dictionary:
 	var t0 := Time.get_ticks_usec()
 	var last := t0
 	while float(Time.get_ticks_usec() - t0) < secs * 1e6:
+		var phys0 := Performance.get_monitor(Performance.TIME_PHYSICS_PROCESS)
 		await process_frame
 		var now := Time.get_ticks_usec()
 		var dt := float(now - last) / 1000.0
@@ -108,8 +109,10 @@ func _measure(label: String, secs: float) -> Dictionary:
 		cpu += c
 		n += 1
 		var p := _pipelines()
+		var phys1 := Performance.get_monitor(Performance.TIME_PHYSICS_PROCESS)
+		var phys_d: float = phys1 - phys0
 		if dt > HITCH_MS and hitches.size() < MAX_HITCHES:
-			var h := _hitch(dt, g, c, _pipeline_delta(p, pipes))
+			var h := _hitch(dt, g, c, _pipeline_delta(p, pipes), phys_d if phys_d >= 0.0 else phys1)
 			if harness != null:
 				h["nodes"] = harness.top(4)
 			h["added"] = _top_counts(added, 6)
@@ -147,7 +150,7 @@ func _reset_stats(sim: CitySim, ro: Object) -> void:
 	if ro != null and ro.has_method("reset_stats"):
 		ro.call("reset_stats")
 	main.view.reset_section_stats()
-	for id: String in ["hud_widgets", "traffic"]:
+	for id: String in ["hud_widgets", "traffic", "audio"]:
 		var f: Object = fp.ctx.feature(id)
 		if f != null and f.has_method("reset_section_stats"):
 			f.call("reset_section_stats")
@@ -205,7 +208,7 @@ func _breakdown(r: Dictionary, hitches: Array) -> void:
 	# Features that time their own hot spots the same way (hud_widgets' minimap flush and GPS
 	# reroute, traffic's per-tile rebuild steps).
 	var fsections := {}
-	for id: String in ["hud_widgets", "traffic"]:
+	for id: String in ["hud_widgets", "traffic", "audio"]:
 		var f: Object = fp.ctx.feature(id)
 		var m: Variant = f.get("section_us_max") if f != null else null
 		if typeof(m) != TYPE_DICTIONARY or (m as Dictionary).is_empty():
@@ -310,9 +313,13 @@ static func _pipeline_delta(now: PackedInt32Array, before: PackedInt32Array) -> 
 
 
 ## Where a slow frame went: scripts (_process and signals), physics, render CPU and GPU (as
-## measured, a frame or two late) and the pipelines it compiled.
-static func _hitch(dt: float, gpu: float, rcpu: float, pipes: Dictionary) -> Dictionary:
-	var physics := Performance.get_monitor(Performance.TIME_PHYSICS_PROCESS)
+## measured, a frame or two late) and the pipelines it compiled. physics_ms is the physics time
+## spent inside this idle frame: TIME_PHYSICS_PROCESS is per-frame on some platforms and cumulative
+## on others (web), so the caller passes the delta between this frame's edges, falling back to the
+## absolute reading when the monitor is per-frame (a negative delta).
+static func _hitch(
+	dt: float, gpu: float, rcpu: float, pipes: Dictionary, physics: float
+) -> Dictionary:
 	return {
 		"ms": snappedf(dt, 0.1),
 		"process_ms": snappedf(Performance.get_monitor(Performance.TIME_PROCESS) * 1000.0, 0.1),

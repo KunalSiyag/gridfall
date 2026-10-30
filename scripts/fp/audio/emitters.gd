@@ -83,6 +83,13 @@ const DIE_RATE := 60.0
 
 
 ## One logical sound source; holds a pool player only while it is among the loudest.
+var prof: Object = null  # owning feature, for section profiling (fp_bench); null in unit tests
+
+
+func _psec(name: String, t0: int) -> int:
+	return prof._section(name, t0) if prof != null else Time.get_ticks_usec()
+
+
 class Src extends RefCounted:
 	var key: String = ""
 	var type: String = ""
@@ -406,10 +413,13 @@ func step(dt: float) -> void:
 			_t_siren = 0.0
 		_force = false
 		_force_wide = false
+		var tr := Time.get_ticks_usec()
 		_refresh(lis, wide)
+		_psec("refresh", tr)
 	if not _walkers.is_empty():
 		_step_walkers(dt)
 	var lv := _listener_vel()
+	var ta := Time.get_ticks_usec()
 	var k_pitch := 1.0 - exp(-dt * 10.0)
 	for s: Src in _assigned.keys():
 		if _now >= s.expire_at and not s.dying:
@@ -431,6 +441,7 @@ func step(dt: float) -> void:
 		pl.pitch_scale = clampf(s.pitch, 0.25, 4.0)
 		pl.volume_db = s.db + s.gain_db
 		pl.max_db = s.db + float(TYPES[s.type]["near"])
+	_psec("assigned", ta)
 
 
 ## The listener: the current camera (behind the hero in third person), else the player's feet.
@@ -472,10 +483,13 @@ static func estimate_db(type: String, db: float, d: float) -> float:
 # ------------------------------------------------------------------ internals
 
 func _refresh(lis: Vector3, wide: bool) -> void:
+	var t := Time.get_ticks_usec()
 	_update_agents(lis, wide)
+	t = _psec("refresh_agents", t)
 	_update_rivers(lis)
 	if _static_dirty or lis.distance_to(_static_at) > 0.5:
 		_collect_static(lis)
+	t = _psec("refresh_static", t)
 	var cand: Array[Src] = []
 	var crew_heard := false
 	# Volatile housekeeping: agents not seen again fade out; silent sources that expired, died or
@@ -531,6 +545,7 @@ func _refresh(lis: Vector3, wide: bool) -> void:
 	for s: Src in _volatile.values():
 		if s.dynamic:
 			s.seen = false
+	_psec("refresh_score", t)
 
 
 func _collect_static(lis: Vector3) -> void:

@@ -157,6 +157,7 @@ City sound on foot (slice I). Creates the Music, SFX, Ambience and UI buses the 
 ### Properties
 
 - `last_blip: String`: The last blip's tier: "reply", "card", "post" or "chatter" (tests).
+- `section_us_max`: Largest per-frame microsecond cost of each step section since the last reset (fp_bench reads it and resets between measures).
 
 ### Functions
 
@@ -167,6 +168,7 @@ City sound on foot (slice I). Creates the Music, SFX, Ambience and UI buses the 
 - `func from_dict(_d: Dictionary) -> void`: Volumes live in the settings; a load re-registers the world's sources (initial scan).
 - `func teardown() -> void`
 - `func self_test() -> Dictionary`: Buses exist, beds are playing (at most AMBIENCE.MAX_PLAYING) and every emitter uses WS.AUDIO_UNIT_SIZE.
+- `func reset_section_stats() -> void`
 - `func step(dt: float) -> void`: One frame of every part (tests call it with a fixed dt after set_process(false)).
 - `func play_ui(stream_name: String, volume_db: float, pitch: float = 1.0) -> void`: Plays a UI cue on the UI bus (chat blip, stinger).
 
@@ -217,12 +219,13 @@ Positional city sound (slice I): logical sources (engines, horns, sirens, constr
 
 ### Properties
 
+- `prof: Object`: One logical sound source; holds a pool player only while it is among the loudest.
 - `agents_provider: Callable`: Agents provider for tests: Callable(p: Vector3, r: float) -> Array of E's agent dicts.
 - `night: float`: 0 day .. 1 night (SkyDirector.night); construction falls quiet at night.
 
 ### Inner classes
 
-- `Src`: One logical sound source; holds a pool player only while it is among the loudest.
+- `Src`
 
 ### Functions
 
