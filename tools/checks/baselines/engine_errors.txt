@@ -13,4 +13,5 @@ substr|Attempting to use an uninitialized RID|same dummy-renderer RID-owner race
 substr|Parameter "mem" is null.|same dummy-renderer RID-owner race (rid_owner initialize_rid) -- burn-down #4
 substr|Parameter "m" is null.|same race, read side: dummy mesh storage ops on a mesh whose RID init lost the race (mesh_set_blend_shape_count/mesh_add_surface) -- burn-down #4
 substr|Parameter "material" is null.|same race: dummy material storage gets nulls finalizing a raced threaded load (material_set_shader/next_pass) and at dummy shutdown -- burn-down #4
+substr|Parameter "shader" is null.|same race, shader side: dummy material storage shader_set_code on a material whose init lost it (hud_chips._process pulses a StyleBox beside threaded loads; fp_animals gate hit) -- burn-down #4
 substr|unimplemented base type encountered in renderer scene cull|downstream of the same race: instance_set_base on a mesh base whose storage init lost it (people._make after a raced body load), headless-only -- burn-down #4
