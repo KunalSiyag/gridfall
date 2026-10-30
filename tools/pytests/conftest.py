@@ -1,10 +1,16 @@
 """Fixtures for the tools/checks tests: throwaway repos built from a {path: content} map."""
 from __future__ import annotations
 
+import os
 import subprocess
 from pathlib import Path
 
 import pytest
+
+# Pre-commit exports GIT_DIR/GIT_WORK_TREE/GIT_INDEX_FILE while a push hook runs pytest;
+# left set, they redirect the fixtures' throwaway-repo git calls at the outer repository.
+for _git_key in ("GIT_DIR", "GIT_WORK_TREE", "GIT_INDEX_FILE"):
+    os.environ.pop(_git_key, None)
 
 
 def write_tree(root: Path, files: dict) -> Path:
