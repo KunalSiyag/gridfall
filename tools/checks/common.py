@@ -80,6 +80,7 @@ def list_files(root: Path, patterns: tuple[str, ...] = (), exclude: tuple[str, .
             ["git", "-C", str(root), "ls-files", "-z", "--cached", "--others", "--exclude-standard"],
             capture_output=True,
             check=True,
+            env=git_env(),
         ).stdout.decode("utf-8", "surrogateescape")
         if not (root / ".git").exists():
             raise FileNotFoundError(root)
@@ -161,11 +162,20 @@ def save_json(path: Path, data) -> None:
     path.write_text(json.dumps(data, indent=1, sort_keys=True) + "\n", encoding="utf-8")
 
 
+def git_env() -> dict:
+    """os.environ minus the repo-locating vars: with them set (git hooks set GIT_DIR) they
+    override -C and the command would read the caller's repo instead of root."""
+    drop = {"GIT_DIR", "GIT_WORK_TREE", "GIT_INDEX_FILE", "GIT_COMMON_DIR",
+            "GIT_OBJECT_DIRECTORY", "GIT_ALTERNATE_OBJECT_DIRECTORIES"}
+    return {k: v for k, v in os.environ.items() if k not in drop}
+
+
 def git(root: Path, *args: str) -> str:
     """stdout of a git command, or "" when it fails (not a repo, unknown ref)."""
     try:
         return subprocess.run(
-            ["git", "-C", str(root), *args], capture_output=True, text=True, check=True
+            ["git", "-C", str(root), *args], capture_output=True, text=True, check=True,
+            env=git_env(),
         ).stdout
     except (OSError, subprocess.CalledProcessError):
         return ""

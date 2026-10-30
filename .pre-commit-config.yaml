@@ -67,7 +67,7 @@ repos:
         name: pytest (tools/checks, tools/ops; coverage >= 80%)
         entry: python -m pytest
         language: python
-        additional_dependencies: [pytest==9.1.1, pytest-cov==7.1.0, PyYAML==6.0.3, gdtoolkit==4.5.0]
+        additional_dependencies: [pytest==9.1.1, pytest-cov==7.1.0, PyYAML==6.0.3, gdtoolkit==4.5.0, Pillow==12.2.0]
         pass_filenames: false
         stages: [pre-push]
         files: ^(tools/|pyproject\.toml$)

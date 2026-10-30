@@ -35,6 +35,11 @@ if command -v "$GODOT" >/dev/null 2>&1; then
 		env -u GMI_API_KEY GRIDFALL_OFFLINE=1 "$GODOT" --headless --path . --import || \
 			echo "setup: import reported errors; see docs/runbooks/asset-import.md" >&2
 	fi
+	# A stale .godot/global_script_class_cache.cfg makes headless runs fail to parse scripts that
+	# name a newly added class_name; sync it without a full import.
+	if [ -d .godot ]; then
+		"$VENV/bin/python" tools/refresh_class_cache.py
+	fi
 else
 	echo "setup: Godot not found; install $want and put it on PATH as 'godot' (or set GODOT)" >&2
 fi
