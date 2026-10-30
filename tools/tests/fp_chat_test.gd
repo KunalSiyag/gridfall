@@ -701,16 +701,44 @@ func _check_save() -> void:
 	K.check(fails, (panel.call("row_count") as int) == after.size(), "save: the panel rebuilt one row per restored message")
 
 
+## The row-append budget, the fp_tps_test §12 way: an absolute ms budget flakes under load
+## (0.968 vs 0.6 in a gate run), so the assert is on the ratio against a calibrator of the
+## same mix, over ROW_ROUNDS-round medians, with an absolute ceiling as the safety net.
+const ROW_ROUNDS := 5
+## post_now costs ~7 calibrator units; 20 keeps the old budget's 3x headroom on any box.
+const ROW_PER_CAL := 20.0
+## Far past any honest cost even loaded: catches a broken calibrator (rows explode, it does not).
+const ROW_CEIL_MS := 2.0
+
+
 func _check_panel() -> void:
 	var panel: Control = chat.get("panel")
 	K.check(fails, panel.get_parent() == ctx.hud.slot("chat_slot"), "panel: lives in chat_slot")
 	K.check(fails, (panel.call("row_count") as int) <= 120, "panel: never more than 120 rows (%d)" % panel.call("row_count"))
-	var t0 := Time.get_ticks_usec()
-	for k in range(40):
-		_feed().post_now(_feed().make("player", "You", "player", 0, "Perf line %d" % k, "player"))
-	var per := float(Time.get_ticks_usec() - t0) / 40.0 / 1000.0
-	print("  info append cost %.3f ms per row (panel closed)" % per)
-	K.check(fails, per < 0.6, "panel: appending a row stays cheap (%.3f ms, budget 0.3 ms in release builds)" % per)
+	# Warm-up: the first posts pay lazy setup the steady state never does.
+	for k in range(20):
+		_feed().post_now(_perf_msg(k))
+	var pers: Array = []
+	var cals: Array = []
+	for _r in range(ROW_ROUNDS):
+		var t0 := Time.get_ticks_usec()
+		for k in range(40):
+			_feed().post_now(_perf_msg(k))
+		pers.append(float(Time.get_ticks_usec() - t0) / 40.0 / 1000.0)
+		cals.append(_calib_row_ms())
+	var per := _median(pers)
+	var cal := _median(cals)
+	print("  info append %.3f ms/row (panel closed), %.2f cal units" % [per, per / cal])
+	K.check(
+		fails,
+		per < cal * ROW_PER_CAL,
+		"panel: row append cheap (%.2f cal units, budget %.1f)" % [per / cal, ROW_PER_CAL]
+	)
+	K.check(
+		fails,
+		per < ROW_CEIL_MS,
+		"panel: append under the absolute ceiling (%.3f ms, ceiling %.1f ms)" % [per, ROW_CEIL_MS]
+	)
 	panel.set("unread", 120)
 	panel.call("_update_tab")
 	var badge: Label = panel.get("_badge_label")
@@ -948,3 +976,25 @@ func _check_clean_text() -> void:
 		if s.contains("Chaos Director") or s.contains("GMI") or s.to_lower().contains(" model") or s.contains("AI mayors") or _coord_re.search(s) != null or _brand_re.search(s) != null:
 			bad.append(s)
 	K.check(fails, bad.is_empty(), "text: no brand, model, 'AI mayors', 'Chaos Director' or coordinates in any row %s" % str(bad.slice(0, 3)))
+
+
+## The calibrator for the append budget: the same message build, copy and display filter as
+## post_now into a local list; its cost inflates with the box's load, so the ratio stays honest.
+func _calib_row_ms() -> float:
+	var sink: Array = []
+	var t0 := Time.get_ticks_usec()
+	for k in range(40):
+		var e: Dictionary = _perf_msg(k).duplicate()
+		e["_norm"] = T.normalise(str(e.get("text", "")))
+		sink.append(e)
+	return float(Time.get_ticks_usec() - t0) / 40.0 / 1000.0
+
+
+func _perf_msg(k: int) -> Dictionary:
+	return _feed().make("player", "You", "player", 0, "Perf line %d" % k, "player")
+
+
+func _median(v: Array) -> float:
+	var a: Array = v.duplicate()
+	a.sort()
+	return float(a[a.size() / 2])
