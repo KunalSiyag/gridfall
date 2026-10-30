@@ -16,6 +16,9 @@ signal tile_cleared(i: int)
 signal world_rebuilt()
 ## fp_mode changed value (set_fp_mode with a different value). Not emitted by the boot-time field set.
 signal fp_mode_changed(on: bool)
+## flush_rebuild_queue ran: every queued tile is built and dependents should run the deferred
+## work they spread out of the build frames (traffic's lazy tile_built lane rebuilds) now.
+signal rebuild_queue_flushed()
 
 const D := preload("res://scripts/sim/sim_defs.gd")
 const WS := preload("res://scripts/fp/world_scale.gd")
@@ -1507,6 +1510,7 @@ func flush_rebuild_queue() -> void:
 		_build_tile(i, true)
 		_queue.erase(i)
 	_street.flush()
+	rebuild_queue_flushed.emit()
 
 
 func reset_section_stats() -> void:
