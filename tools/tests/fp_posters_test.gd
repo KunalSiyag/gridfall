@@ -188,6 +188,9 @@ func _test_live_flow() -> void:
 
 
 func _test_default_transport_offline() -> void:
+	# The checks name the offline guard: force the env, don't lean on the runner's.
+	var had := OS.get_environment("GRIDFALL_OFFLINE")
+	OS.set_environment("GRIDFALL_OFFLINE", "1")
 	var c := _gmi_client(true)
 	var ic := _image_client(c, null)
 	var got: Array = []
@@ -198,6 +201,7 @@ func _test_default_transport_offline() -> void:
 	check(not got.is_empty() and not got[0].get("provisional", true), "the offline request still gets a final texture")
 	ic.queue_free()
 	c.queue_free()
+	OS.set_environment("GRIDFALL_OFFLINE", had)
 
 
 func _test_breaker() -> void:
