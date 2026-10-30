@@ -172,6 +172,35 @@ City sound on foot (slice I). Creates the Music, SFX, Ambience and UI buses the 
 - `func step(dt: float) -> void`: One frame of every part (tests call it with a fixed dt after set_process(false)).
 - `func play_ui(stream_name: String, volume_db: float, pitch: float = 1.0) -> void`: Plays a UI cue on the UI bus (chat blip, stinger).
 
+## `scripts/fp/audio/emitter_pool.gd`
+
+extends `RefCounted`
+
+The AudioStreamPlayer3D pool behind emitters.gd: at most MAX_PLAYERS players shared by every logical source (see emitter_src.gd). A released loop keeps its stream loaded and paused so the next source with the same stream resumes it; at most one Ogg playback starts per refresh (each costs ~0.4 ms). Split out of emitters.gd (pure move) to keep both files under the line cap.
+
+### Constants
+
+- `WS = preload("res://scripts/fp/world_scale.gd")`
+- `BANK = preload("res://scripts/fp/audio/audio_bank.gd")`
+- `Src = preload("res://scripts/fp/audio/emitter_src.gd")`
+- `MAX_PLAYERS = 24`
+- `FILTER_DB = -10.0`: Distance filter: Godot dulls a source above the cutoff as its gain falls (air absorption).
+- `FILTER_HZ = 5000.0`
+- `FADE_IN_DB = 18.0`: A source that gets a player fades in from this far below its level (no pop when it steals one).
+
+### Properties
+
+- `assigned: Dictionary`: Src -> true while it holds a player
+- `fresh_ogg: int`: Ogg playbacks started this refresh
+
+### Functions
+
+- `func begin_refresh() -> void`: Resets the per-refresh Ogg-start budget (called by emitters' refresh).
+- `func stop_all() -> void`: Stops every player and forgets every assignment (load, New City, teardown).
+- `func assign(s: Src) -> void`: Gives s a player: a released one still holding s's stream resumes where it paused (no new playback); else a new one while fewer than MAX_PLAYERS exist; else the oldest released one. A loop fades in over FADE_IN_DB, so taking a player never pops.
+- `func restart(s: Src) -> void`
+- `func unassign(s: Src, full_stop: bool = false) -> void`: Takes s's player back. A looping stream stays loaded and paused, so the next source with the same stream resumes it without starting a new playback.
+
 ## `scripts/fp/audio/emitter_src.gd`
 
 extends `RefCounted`
@@ -204,7 +233,6 @@ Positional city sound (slice I): logical sources (engines, horns, sirens, constr
 - `WS = preload("res://scripts/fp/world_scale.gd")`
 - `BANK = preload("res://scripts/fp/audio/audio_bank.gd")`
 - `FS = preload("res://scripts/fp/audio/footsteps.gd")`
-- `MAX_PLAYERS = 24`
 - `TYPES = { "engine": {"max": 6.0, "db": -6.0, "near": 9.0, "stream": "engine_run"}, "horn": {"ma...`: Per type: max_distance (u), volume_db at unit_size (10 m), the near cap above that (max_db = db + near) and the stream played by default.
 - `WALKER_RADIUS = 6.0 * WS.M`: Residents on foot (E's "pedestrian" agents): positional footsteps for the WALKER_MAX nearest walkers within WALKER_RADIUS of the hero, one per stride of their travel (E has no foot-contact signal yet). Faster "pedestrians" are E's bikes and stay silent.
 - `WALKER_MAX = 4`
@@ -230,13 +258,12 @@ Positional city sound (slice I): logical sources (engines, horns, sirens, constr
 - `SPEED_OF_SOUND = 343.0`
 - `DOPPLER_MIN = 0.7`
 - `DOPPLER_MAX = 1.4`
-- `FILTER_DB = -10.0`: Distance filter: Godot dulls a source above the cutoff as its gain falls (air absorption).
-- `FILTER_HZ = 5000.0`
-- `FADE_IN_DB = 18.0`: A source that gets a player fades in from this far below its level (no pop when it steals one), at FADE_IN_RATE dB/s; levels fall at FADE_RATE dB/s and a dying source at DIE_RATE.
-- `FADE_IN_RATE = 36.0`
+- `FADE_IN_RATE = 36.0`: A source that gets a player fades in from below its level (no pop when it steals one), at FADE_IN_RATE dB/s; levels fall at FADE_RATE dB/s and a dying source at DIE_RATE. The fade-in offset and the player pool itself live in emitter_pool.gd.
 - `FADE_RATE = 12.0`
 - `DIE_RATE = 60.0`
 - `Src = preload("res://scripts/fp/audio/emitter_src.gd")`: One logical sound source; in its own file to keep this one under the line cap.
+- `Pool = preload("res://scripts/fp/audio/emitter_pool.gd")`: The AudioStreamPlayer3D pool (assign/unassign/bind/restart); same reason.
+- `MAX_PLAYERS = Pool.MAX_PLAYERS`: Kept here so callers keep reading EM.MAX_PLAYERS.
 
 ### Properties
 
@@ -252,7 +279,7 @@ Positional city sound (slice I): logical sources (engines, horns, sirens, constr
 - `func has_source(key: String) -> bool`
 - `func source(key: String) -> Src`
 - `func sources() -> Array`
-- `func players() -> Array[AudioStreamPlayer3D]`: Every pool player created so far (never more than MAX_PLAYERS).
+- `func players() -> Array[AudioStreamPlayer3D]`: Every pool player created so far (never more than Pool.MAX_PLAYERS).
 - `func assigned() -> Array[Src]`: Sources that hold a player right now.
 - `func count_assigned(type: String = "") -> int`
 - `func clear() -> void`: Drops every source and stops every player (load, New City, teardown).

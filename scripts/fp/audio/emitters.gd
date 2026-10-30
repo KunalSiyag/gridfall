@@ -14,7 +14,6 @@ const WS := preload("res://scripts/fp/world_scale.gd")
 const BANK := preload("res://scripts/fp/audio/audio_bank.gd")
 const FS := preload("res://scripts/fp/audio/footsteps.gd")
 
-const MAX_PLAYERS := 24
 ## Per type: max_distance (u), volume_db at unit_size (10 m), the near cap above that (max_db =
 ## db + near) and the stream played by default.
 const TYPES := {
@@ -71,12 +70,9 @@ const RIVER_SOURCES := 3
 const SPEED_OF_SOUND := 343.0
 const DOPPLER_MIN := 0.7
 const DOPPLER_MAX := 1.4
-## Distance filter: Godot dulls a source above the cutoff as its gain falls (air absorption).
-const FILTER_DB := -10.0
-const FILTER_HZ := 5000.0
-## A source that gets a player fades in from this far below its level (no pop when it steals one),
-## at FADE_IN_RATE dB/s; levels fall at FADE_RATE dB/s and a dying source at DIE_RATE.
-const FADE_IN_DB := 18.0
+## A source that gets a player fades in from below its level (no pop when it steals one), at
+## FADE_IN_RATE dB/s; levels fall at FADE_RATE dB/s and a dying source at DIE_RATE. The fade-in
+## offset and the player pool itself live in emitter_pool.gd.
 const FADE_IN_RATE := 36.0
 const FADE_RATE := 12.0
 const DIE_RATE := 60.0
@@ -92,6 +88,10 @@ func _psec(name: String, t0: int) -> int:
 
 ## One logical sound source; in its own file to keep this one under the line cap.
 const Src := preload("res://scripts/fp/audio/emitter_src.gd")
+## The AudioStreamPlayer3D pool (assign/unassign/bind/restart); same reason.
+const Pool := preload("res://scripts/fp/audio/emitter_pool.gd")
+## Kept here so callers keep reading EM.MAX_PLAYERS.
+const MAX_PLAYERS := Pool.MAX_PLAYERS
 
 
 var ctx: FpContext
@@ -107,10 +107,8 @@ var night: float = 0.0
 
 var _sources: Dictionary = {}          # key -> Src
 var _volatile: Dictionary = {}         # key -> Src, the volatile subset of _sources
-var _assigned: Dictionary = {}         # Src -> true while it holds a player
-var _players: Array[AudioStreamPlayer3D] = []
-var _free: Array[AudioStreamPlayer3D] = []
 var _rng := RandomNumberGenerator.new()
+var _pool: Pool
 var _t_refresh: float = 0.0
 var _t_siren: float = 0.0
 var _force: bool = true
@@ -126,11 +124,14 @@ var _static_near: Array[Src] = []
 var _static_dirty: bool = true
 var _static_at: Vector3 = Vector3(INF, INF, INF)
 var _crew_sirens: Dictionary = {}      # siren source keys refreshed by the wide scan
-var _fresh_ogg: int = 0                # Ogg playbacks started this refresh
 var _river_at: Vector3 = Vector3(INF, INF, INF)
 ## Walkers heard stepping: agent id -> {"pos", "vel", "travel" (u since the last step), "left"}.
 var _walkers: Dictionary = {}
 var _step_seq: int = 0
+
+
+func _init() -> void:
+	_pool = Pool.new(self, _rng, TYPES)
 
 
 func setup(p_ctx: FpContext) -> void:
@@ -164,7 +165,7 @@ func request(key: String, type: String, pos: Vector3, opts: Dictionary = {}) -> 
 			if ns != s.stream:
 				s.stream = ns
 				if s.player != null:
-					_restart(s)
+					_pool.restart(s)
 		if s.dynamic and pos.distance_to(s.pos) < 0.1:
 			s.pos = s.pos.lerp(pos, 0.6)
 		else:
@@ -208,22 +209,22 @@ func sources() -> Array:
 	return _sources.values()
 
 
-## Every pool player created so far (never more than MAX_PLAYERS).
+## Every pool player created so far (never more than Pool.MAX_PLAYERS).
 func players() -> Array[AudioStreamPlayer3D]:
-	return _players
+	return _pool.players
 
 
 ## Sources that hold a player right now.
 func assigned() -> Array[Src]:
 	var out: Array[Src] = []
-	for s: Src in _assigned.keys():
+	for s: Src in _pool.assigned.keys():
 		out.append(s)
 	return out
 
 
 func count_assigned(type: String = "") -> int:
 	var n := 0
-	for s: Src in _assigned.keys():
+	for s: Src in _pool.assigned.keys():
 		if type.is_empty() or s.type == type:
 			n += 1
 	return n
@@ -231,15 +232,9 @@ func count_assigned(type: String = "") -> int:
 
 ## Drops every source and stops every player (load, New City, teardown).
 func clear() -> void:
-	for s: Src in _sources.values():
-		_unassign(s, true)
+	_pool.stop_all()
 	_sources.clear()
 	_volatile.clear()
-	_assigned.clear()
-	for pl in _players:
-		pl.stop()
-		pl.stream = null
-		pl.stream_paused = false
 	_crew_sirens.clear()
 	_honked.clear()
 	_walkers.clear()
@@ -400,7 +395,7 @@ func step(dt: float) -> void:
 	var lv := _listener_vel()
 	var ta := Time.get_ticks_usec()
 	var k_pitch := 1.0 - exp(-dt * 10.0)
-	for s: Src in _assigned.keys():
+	for s: Src in _pool.assigned.keys():
 		_step_assigned(s, dt, lis, lv, k_pitch)
 	_psec("assigned", ta)
 
@@ -525,17 +520,17 @@ func _refresh(lis: Vector3, wide: bool) -> void:
 		cand.append(s)
 	cand.sort_custom(func(a: Src, b: Src) -> bool: return a.score > b.score)
 	var keep := {}
-	for k in range(mini(MAX_PLAYERS, cand.size())):
+	for k in range(mini(Pool.MAX_PLAYERS, cand.size())):
 		keep[cand[k]] = true
-	for s: Src in _assigned.keys():
+	for s: Src in _pool.assigned.keys():
 		if not keep.has(s):
-			_unassign(s)
+			_pool.unassign(s)
 			if s.one_shot or s.dying:
 				_erase(s.key)
-	_fresh_ogg = 0
+	_pool.begin_refresh()
 	for s: Src in keep.keys():
 		if s.player == null:
-			_assign(s)
+			_pool.assign(s)
 	# Dynamic sources must be seen again by the next refresh or they fade out.
 	for s: Src in _volatile.values():
 		if s.dynamic:
@@ -783,7 +778,7 @@ func _step_walkers(dt: float) -> void:
 
 ## One positional step of walker w on the surface under it; skipped when every player is busy.
 func _walker_step(w: Dictionary) -> void:
-	if _players.size() >= MAX_PLAYERS and _free.is_empty():
+	if _pool.players.size() >= Pool.MAX_PLAYERS and _pool.free.is_empty():
 		return
 	var p: Vector3 = w["pos"]
 	var ground := "sidewalk"
@@ -797,7 +792,7 @@ func _walker_step(w: Dictionary) -> void:
 	walker_steps += 1
 	var s := request("wstep:%d" % _step_seq, "step", p, {"stream": BANK.step_name(surf, pool[_rng.randi() % pool.size()]),
 		"one_shot": true, "pitch": _rng.randf_range(0.92, 1.08), "trim_db": _rng.randf_range(-3.0, 0.0), "ttl": 1.0})
-	_assign(s)
+	_pool.assign(s)
 
 
 ## A one-shot horn at p (tests call it directly).
@@ -881,98 +876,12 @@ func _listener_vel() -> Vector3:
 	return Vector3.ZERO
 
 
-## Gives s a player: a released one still holding s's stream resumes where it paused (no new
-## playback); else a new one while fewer than MAX_PLAYERS exist; else the oldest released one.
-## At most one Ogg playback starts per refresh (each costs ~0.4 ms); the rest wait a refresh.
-## A loop fades in over FADE_IN_DB, so taking a player never pops.
-func _assign(s: Src) -> void:
-	var pl: AudioStreamPlayer3D = null
-	for k in range(_free.size() - 1, -1, -1):
-		if _free[k].stream == s.stream and s.stream != null and not s.one_shot:
-			pl = _free[k]
-			_free.remove_at(k)
-			_bind(s, pl)
-			pl.stream_paused = false
-			if not pl.playing:
-				pl.play(_rng.randf() * maxf(s.stream.get_length() - 0.1, 0.0))
-			return
-	if s.stream is AudioStreamOggVorbis:
-		if _fresh_ogg >= 1:
-			return
-		_fresh_ogg += 1
-	if _players.size() < MAX_PLAYERS:
-		pl = AudioStreamPlayer3D.new()
-		pl.name = "Emitter%d" % _players.size()
-		pl.unit_size = WS.AUDIO_UNIT_SIZE
-		pl.attenuation_model = AudioStreamPlayer3D.ATTENUATION_INVERSE_DISTANCE
-		pl.doppler_tracking = AudioStreamPlayer3D.DOPPLER_TRACKING_DISABLED
-		pl.bus = BANK.BUS_SFX
-		pl.attenuation_filter_db = FILTER_DB
-		pl.attenuation_filter_cutoff_hz = FILTER_HZ
-		add_child(pl)
-		_players.append(pl)
-	elif not _free.is_empty():
-		pl = _free.pop_front()
-	if pl == null:
-		return
-	_bind(s, pl)
-	pl.stream = s.stream
-	_restart(s)
-
-
-## Hands player pl to s and sets it to s's place, pitch and (faded-in) level.
-func _bind(s: Src, pl: AudioStreamPlayer3D) -> void:
-	s.player = pl
-	_assigned[s] = true
-	if not s.one_shot and not s.dying:
-		s.gain_db = s.gain_target - FADE_IN_DB
-	pl.max_distance = float(TYPES[s.type]["max"])
-	pl.position = s.pos
-	pl.pitch_scale = clampf(s.pitch, 0.25, 4.0)
-	pl.volume_db = s.db + s.gain_db
-	pl.max_db = s.db + float(TYPES[s.type]["near"])
-	s.w_vol = pl.volume_db
-	s.w_pitch = pl.pitch_scale
-	s.w_db = s.db
-
-
-func _restart(s: Src) -> void:
-	var pl := s.player
-	pl.stream_paused = false
-	pl.stream = s.stream
-	if s.stream == null:
-		pl.stop()
-		return
-	if s.one_shot:
-		s.started = true
-		pl.play()
-	else:
-		pl.play(_rng.randf() * maxf(s.stream.get_length() - 0.1, 0.0))
-
-
-## Takes s's player back. A looping stream stays loaded and paused, so the next source with the
-## same stream resumes it without starting a new playback.
-func _unassign(s: Src, full_stop: bool = false) -> void:
-	var pl := s.player
-	_assigned.erase(s)
-	if pl == null:
-		return
-	s.player = null
-	pl.volume_db = -80.0
-	if s.one_shot or full_stop:
-		pl.stop()
-		pl.stream = null
-	else:
-		pl.stream_paused = true
-	_free.append(pl)
-
-
 ## Forgets source key: frees its player and drops it from every set.
 func _erase(key: String) -> void:
 	var s: Src = _sources.get(key, null)
 	if s == null:
 		return
-	_unassign(s)
+	_pool.unassign(s)
 	_sources.erase(key)
 	_volatile.erase(key)
 	if not s.volatile:
