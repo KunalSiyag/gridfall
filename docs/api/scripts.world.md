@@ -97,12 +97,18 @@ Renders the CitySim grid in 3D: Kenney roads picked by neighbor mask, zone lots 
 - `REAL_ROADS = {"straight": R + "roads/road_straight.glb", "lights": R + "roads/road_straight_lights.g...`
 - `LEAF_TEXTURE = R + "buildings/hospital_leafcluster_round.png"`
 - `TREE_PROPS = ["tree_oak", "tree_round", "tree_birch", "tree_poplar", "tree_conifer"]`
-- `TREE_CHUNK = 48`: Trees are batched in square chunks so far chunks can switch to low-poly stand-ins and a cleared forest only rebuilds its own chunk. TREE_RING tiles of woods surround the world. Orbit: one 48-tile chunk carries both layers. On foot: 8-tile chunks carry full trees to TREE_NEAR_FP, then one merged stand-in mesh (a single draw per chunk) to TREE_FAR_FP, where the depth fog takes over. Both layers of a chunk measure from one centre, so they are exact complements: no gap and no double tree at the switch.
+- `TREE_CHUNK = 48`: Trees are batched in square chunks so far chunks can switch to low-poly stand-ins and a cleared forest only rebuilds its own chunk. TREE_RING tiles of woods surround the world. Orbit: one 48-tile chunk carries both layers. On foot: 8-tile chunks carry full trees to TREE_NEAR_FP, then one merged stand-in mesh (a single draw per chunk) to TREE_FAR_FP, where the depth fog takes over. Both layers of a chunk sit at one centre, but the engine measures a range from the centre of each layer's own AABB: the switch is exact only to the offset of the two.
 - `TREE_RING = 12`
 - `TREE_NEAR = 120.0`
 - `TREE_CHUNK_FP = 8`
 - `TREE_NEAR_FP = 12.0`
 - `TREE_FAR_FP = 50.0`
+- `TREE_STREAM_HYSTERESIS = 4.0`: On foot the chunks are streamed: only those the camera can see exist. Past TREE_FAR_FP * vis_mult nothing draws, yet the old plant kept all 729 chunks (~8.7k MultiMeshInstance3D) in the tree from boot: heap, boot work and a node count the web build walks every frame (an idle node costs a frame little, tens of ns: docs/fp/slices/G1-streetscape.md). A chunk is planted once its centre is within the far end of its layers + their range margin + TREE_CHUNK_REACH + one hysteresis step of the camera (_tree_reach; world units, 1 u = 20 m), so while the camera walks a far tree's pop is its visibility range, never a missing chunk; after a jump the stand-ins beyond the near ring fill in over a few frames. A pass runs when the camera moved a hysteresis step. It plants the near ring in full, then chunks nearest first until tree_stream_budget_ms is spent (one at least, TREE_STREAM_CAP at most), and frees TREE_FREE_CAP of those that left the window. TREE_CHUNK_REACH: the engine measures a range from the centre of the layer's AABB, which lies within the chunk's tile box (the half-diagonal of 8 x 8 tiles) plus what the tree meshes add.
+- `TREE_STREAM_CAP = 16`
+- `TREE_FREE_CAP = 4`
+- `TREE_MARGIN_FP = 1.5`
+- `TREE_CHUNK_REACH = TREE_CHUNK_FP * 0.7072 + 0.5`
+- `TREE_STREAM_STALE = -2.0`
 - `ORBIT_PAD_Y = 0.006`: Orbit C/I pad height (the FP pad, when a fallback model needs one, sits at WS.PAD_TOP).
 - `REBUILD_DEFER_DIST = 1.5`: Rebuild queue (FP only): frame budget, how close a tile in view must be to wait until the player looks away, and the longest it may wait.
 - `REBUILD_DEFER_MAX_S = 5.0`
@@ -134,9 +140,10 @@ Renders the CitySim grid in 3D: Kenney roads picked by neighbor mask, zone lots 
 - `directory: CityDirectory`: Street names and the lot frontage rule, rebuilt by setup().
 - `priority_point: Vector3`: The player's position on foot, set every frame by the streetscape feature. The FP rebuild queue builds nearest-first to it; close-range FX (dust puffs) test against it.
 - `rebuild_budget_ms: float`: FP rebuild budget per frame in milliseconds, tile_built emissions included.
+- `tree_stream_budget_ms: float`: FP tree stream budget per pass in milliseconds: past the near ring (always planted in full) a pass plants chunks until it is spent, one at least (see _tree_plant_missing). How many chunks a frame plants thus depends on the clock: a test or harness that counts frames after a teleport or an aerial switch raises it (or waits for _tree_stream_done) to see whole passes.
 - `section_us_max: Dictionary`: Worst microseconds per _process section since reset_section_stats() (fp_bench's hitch rows).
 - `light_pole_source: Object`: Any object with light_pole(i: int, corner: int) -> Node3D (E's traffic feature). Cross tiles then mount their street-name blades on its NE pole instead of a G1 pole. Set by the streetscape feature.
-- `vis_mult: float`: Visibility multiplier for the props, decals and multimeshes G1 ranges itself (G2's vis_mult).
+- `vis_mult: float`: Visibility multiplier for the props, decals and multimeshes G1 ranges itself (G2's vis_mult). On foot a change re-ranges the planted tree layers and re-streams the window (set_vis_mult).
 - `aerial_trees: bool`: Aerial coverage (render_opt): while the camera is over the city, the far tree layers draw to the horizon instead of ending where the street fog would take over.
 - `wetness: float`: 0 dry .. 1 soaked; set by the streetscape weather through set_wetness().
 
@@ -144,7 +151,8 @@ Renders the CitySim grid in 3D: Kenney roads picked by neighbor mask, zone lots 
 
 - `func setup(p_sim: CitySim, p_camera: Camera3D) -> void`
 - `func set_fp_mode(on: bool) -> void`: Switches between the orbit and the street-level presentation. On a real change it also rebuilds the mode-specific geometry synchronously (tree chunks, every tile: lots, pads, furniture, FX), bypassing the rebuild queue, then emits world_rebuilt and fp_mode_changed. Setting the same value again does nothing; the boot path sets the field before the first setup() instead.
-- `func set_aerial(on: bool) -> void`: Aerial coverage (render_opt): while on, every far tree layer draws to the horizon, so woods and street trees stay visible from the sky. Only the street chunks change (the orbit far layers already have no end); chunks rebuilt later read the flag where they are built.
+- `func set_aerial(on: bool) -> void`: Aerial coverage (render_opt): while on, every far tree layer draws to the horizon, so woods and street trees stay visible from the sky. Only the street chunks change (the orbit far layers already have no end); chunks rebuilt later read the flag where they are built. Coverage to the horizon wants every chunk, so the window opens to the whole map (nearest first from the spot the camera looks at, as fast as the stream budget lets it: no hitch, a fill of some frames) and closes back onto the camera when the flag drops (TREE_FREE_CAP chunks a pass).
+- `func set_vis_mult(v: float) -> void`: Sets vis_mult. On foot the planted tree layers take the new ranges and the window re-streams now, so a quality change shows with the camera standing still.
 - `func track_material() -> Material`: The surface of unpaved road tiles (gravel, dirt track, grass trail): the ground shader in track mode, drawn on a quad over the whole tile (see _track). Its grass matches the street-level ground exactly; in orbit, where the ground is plain, the grass part is cut away.
 - `func track_material_for(mask: int, grade: int) -> Material`: The track material for one tile shape: a shared copy of track_material() carrying the road mask (0..15) and grade. A per-tile instance uniform would take a slot of Compatibility's 4096-slot instance buffer for every mesh using the ground shader.
 - `func lot_ground_material() -> Material`: Ground for a vacant lot on foot: the detail shader turned to patchy earth that fades back to grass at the lot's edges.
