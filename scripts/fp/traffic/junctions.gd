@@ -383,10 +383,10 @@ func _mi(mesh: Mesh, mat: Material, shadows: bool) -> MeshInstance3D:
 	mi.material_override = mat
 	mi.cast_shadow = (
 		GeometryInstance3D.SHADOW_CASTING_SETTING_ON
-		if shadows
+		if shadows and vis_mult >= 1.0
 		else GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	)
-	mi.visibility_range_end = WS.VIS_PROP
+	mi.visibility_range_end = WS.VIS_PROP * vis_mult
 	mi.visibility_range_end_margin = 0.5
 	mi.visibility_range_fade_mode = GeometryInstance3D.VISIBILITY_RANGE_FADE_SELF
 	return mi
@@ -483,10 +483,13 @@ func _ped_signal(kit: KIT, at: Vector2, face: Vector2, hand: KIT, man: KIT) -> v
 
 ## The signal and sign GLBs arrive unranged: without this every lamp lens and sign face in the
 ## city drew at every distance (790 of 2732 draws on the day-10 draw census). Range them like the
-## kit parts (_mi): VIS_PROP scaled by the quality preset, dithered out over half a metre.
+## kit parts (_mi): VIS_PROP scaled by the quality preset, dithered out over half a metre. On the
+## web tier they also leave the shadow pass: a lens or sign face casts nothing a walker reads.
 func _range_asset(inst: Node3D) -> void:
 	for n in inst.find_children("*", "GeometryInstance3D", true, false):
 		var gi := n as GeometryInstance3D
+		if vis_mult < 1.0:
+			gi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 		if gi.visibility_range_end != 0.0:
 			continue
 		gi.visibility_range_end = WS.VIS_PROP * vis_mult
