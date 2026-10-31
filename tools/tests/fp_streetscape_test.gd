@@ -849,12 +849,21 @@ func _check_sky_hooks(ctx: FpContext, f: FpFeature) -> void:
 	sky.reset_weather()
 	sky._apply(1.0)
 	K.check(fails, is_equal_approx(faint, base_opacity * 0.12) and is_equal_approx(ctx.sun.shadow_opacity, base_opacity), "cloud cover fades sun shadows and lets go (%.3f of %.3f)" % [faint, base_opacity])
+	sky.weather_wet = 0.7
+	sky.reset_weather()
+	K.check(fails, sky.weather_wet == 0.0, "reset_weather() dries the sky director's streets")
 	weather.call("force", "rain")
 	weather.call("step", 30.0)
 	K.check(fails, float(sky.weather_shadow_mult) < 0.5, "rain fades the sun shadows (%.2f)" % float(sky.weather_shadow_mult))
 	weather.call("clear_forced")
 	sky.reset_weather()
 	weather.set_process(true)
+
+
+## The weather hands the sky director the streets' wetness (the Compatibility night follows it).
+func _check_sky_wet(ctx: FpContext, want: float, what: String) -> void:
+	var wet := ctx.sky.weather_wet
+	K.check(fails, is_equal_approx(wet, want), "sky director's streets: %s (%.2f)" % [what, wet])
 
 
 func _check_weather(ctx: FpContext, f: FpFeature) -> void:
@@ -885,10 +894,13 @@ func _check_weather(ctx: FpContext, f: FpFeature) -> void:
 	var r: Array = results[0]
 	K.check(fails, float(r[0]) < 0.6 and float(r[1]) > 0.9 and results[0] == results[1], "rain wets the streets over 120 s at 1x, whatever the day length (%s)" % str(results))
 	K.check(fails, is_equal_approx(ctx.view.wetness, float(r[1])) and ctx.sky.weather_grey > 0.0, "wetness reaches the view and the sky turns grey")
+	_check_sky_wet(ctx, ctx.view.wetness, "rain wets")
 	f.call("clear_forced_weather")
 	K.check(fails, is_equal_approx(ctx.view.wetness, 0.0), "clearing the forced weather dries the streets")
+	_check_sky_wet(ctx, 0.0, "clearing dries")
 	f.call("force_rain_for_photo")
 	K.check(fails, is_equal_approx(ctx.view.wetness, 1.0) and str((f.call("to_dict") as Dictionary).get("weather")) == "rain", "force_rain_for_photo soaks the streets at once")
+	_check_sky_wet(ctx, 1.0, "the rain photo soaks")
 	_check_rain_look(ctx, f, weather)
 	# A smog incident: a FogVolume over its radius on High only, gone with the incident.
 	var ev := {"type": "smog", "x": 10, "y": 12, "radius": 3}

@@ -211,6 +211,20 @@ the flag on a split release and expect a complete city.
   (windowed play with audio). Headless runs do not reproduce it. The offline smoke's exit_fp
   phase and the FPS probe's exit/enter round trip guard the path from here on; until the fix
   ships, treat a freeze when leaving first person as this bug.
+- **Night matches Forward+'s brightness, not its picture** (`SkyDirector.COMPAT_LOOK`, night half).
+  Street-half mean luma against Forward+ at 23:00 in the frozen-city street poses: 1.00x clear,
+  0.97x on wet streets under a clear sky, 0.89x in soaked rain; the planner view at its default
+  zoom is 0.87x (0.81x at the end of dusk). This is darker than the build before it where the
+  player looks (street half -24%, planner -28 to -31% absolute luma; only the sky was too dark and
+  is now fixed): confirm a darker web night is wanted before shipping. Not matched: Compatibility
+  draws no `Decal`, so the warm pool under each street lamp, the puddles, cracks and wear marks are
+  missing; it has no screen-space reflections; its tonemap path crushes the dark end (near-black
+  pixels 27.8% of the street half against Forward+'s 15.8%, brighter highlights, bluer shadows);
+  tree crowns draw nearly black. A joint night retune (contrast 0.97, exposure 0.90, saturation
+  1.25) matched mean and distribution at clear 23:00 in review but was not checked in rain, wet,
+  planner, web tier or dusk: a follow-up. The sky's night
+  encode (`srgb_sky`, `SRGB_SKY_LIFT` in `sky_blend.gdshader`) is tied to 4.7.x's cheap sRGB
+  conversions: re-measure the night against Forward+ after an engine bump.
 
 ## Replace an instance: saving the template IS the cutover
 
