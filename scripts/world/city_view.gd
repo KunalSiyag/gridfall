@@ -198,6 +198,8 @@ var vis_mult: float = 1.0
 var aerial_trees: bool = false
 ## 0 dry .. 1 soaked; set by the streetscape weather through set_wetness().
 var wetness: float = 0.0
+## The rain last written to the water and road materials (NAN: none yet, or one made since).
+var _rain_told: float = NAN
 ## FP rebuild queue: tile index -> seconds it has waited deferred (near and in view).
 var _queue: Dictionary = {}
 ## Scene paths being loaded on a thread for the queue (path -> true).
@@ -539,6 +541,7 @@ func _build_ground() -> void:
 	_water_node.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	if ResourceLoader.exists("res://shaders/water.gdshader"):
 		_water_mat = ShaderMaterial.new()
+		_rain_told = NAN
 		_water_mat.shader = load("res://shaders/water.gdshader")
 		if ResourceLoader.exists(TEX + "water_normal.png"):
 			_water_mat.set_shader_parameter("normal_tex", load(TEX + "water_normal.png"))
@@ -811,6 +814,7 @@ func apron_material() -> Material:
 func road_fp_material() -> ShaderMaterial:
 	if _road_fp_mat == null and ResourceLoader.exists(ROAD_SHADER) and ResourceLoader.exists(TEX + "asphalt_albedo.jpg"):
 		_road_fp_mat = ShaderMaterial.new()
+		_rain_told = NAN
 		_road_fp_mat.shader = load(ROAD_SHADER)
 		for pair: Array in [["albedo_tex", "asphalt_albedo.jpg"], ["normal_tex", "asphalt_normal.jpg"], ["rough_tex", "asphalt_rough.jpg"], ["noise_tex", "decals/noise_fbm.png"]]:
 			if ResourceLoader.exists(TEX + str(pair[1])):
@@ -869,9 +873,15 @@ func set_wetness(w: float) -> void:
 		_street.set_wetness(w)
 
 
-## Rain falling now (0 none .. 1 full): rings on the river and on the puddles in the road.
+## Rain falling now (0 none .. 1 full): rings on the river and on the puddles in the road (on foot
+## only, off it they are 0). The weather asks every frame, so the materials are written only when
+## the value moved: _rain_told remembers what they hold, and a material made since (the water at
+## setup(), the road on first use) has none told.
 func set_rain(r: float) -> void:
 	var on := clampf(r, 0.0, 1.0) if fp_mode else 0.0
+	if on == _rain_told:
+		return
+	_rain_told = on
 	if _water_mat != null:
 		_water_mat.set_shader_parameter("rain", on)
 	if _road_fp_mat != null:

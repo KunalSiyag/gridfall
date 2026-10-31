@@ -103,6 +103,7 @@ func _run(c: LIFE.Cat) -> void:
 	_check_pounce_flock(c)
 	_check_pause(c)
 	_check_lod(c)
+	_check_xf_guard(c)
 	_check_wood_refuge(c)
 
 
@@ -147,6 +148,74 @@ func _check_lod(c: LIFE.Cat) -> void:
 	life.step(0.05)
 	K.check(fails, c.hz_t == 0.0, "lod: a hunt runs at full rate however far")
 	_reset(c)
+
+
+## The body root takes a transform only when the cat's pose moved it: a write of the transform it
+## already holds still dirties the whole body's subtree in the renderer (the web per-frame
+## budget). A resting cat writes nothing; one that moved, or a root moved behind its back, is
+## written (and put back); one up its refuge tree takes the pitched climb pose, and the flat one
+## again when down.
+func _check_xf_guard(c: LIFE.Cat) -> void:
+	_reset(c)
+	life.hero = c.pos + Vector3(SLOD.NEAR * 0.5, 0.0, 0.0)
+	life.hero_on_foot = false
+	life.hero_vel = Vector3.ZERO
+	life.dogs = []
+	life.cars = []
+	life.prey = []
+	life.passers = []
+	life.step(DT)
+	var body_root := c.body.root
+	var probe := K.probe_writes(body_root)
+	for _k in range(30):
+		life.step(DT)
+	K.check(
+		fails,
+		probe.writes == 0,
+		"xf guard: a resting cat takes no transform write (%d in 30 steps)" % probe.writes
+	)
+	c.pos += Vector3(0.002, 0.0, 0.0)
+	life.step(DT)
+	K.check(
+		fails,
+		probe.writes == 1 and body_root.position == c.pos,
+		"xf guard: a cat that moved takes its position, and only that (%d writes)" % probe.writes
+	)
+	body_root.position += Vector3(1.0, 0.0, 0.0)
+	probe.writes = 0
+	life.step(DT)
+	K.check(
+		fails,
+		probe.writes == 1 and body_root.position == c.pos,
+		"xf guard: a root moved behind its back is put back (%d writes)" % probe.writes
+	)
+	for act: String in ["climb", "hold", "down"]:
+		c.climb_y = 0.0
+		_reset(c)
+		life.step(DT)
+		probe.writes = 0
+		c.act = act
+		c.climb_y = 0.5 * WS.M
+		life.step(DT)
+		var pitched := is_equal_approx(body_root.rotation.x, LIFE.CLIMB_PITCH)
+		var lifted := body_root.position.is_equal_approx(c.pos + Vector3.UP * c.climb_y)
+		K.check(
+			fails,
+			probe.writes == 2 and pitched and lifted,
+			(
+				"xf guard: a cat %s its refuge tree takes the pitched climb pose (%d writes)"
+				% [act, probe.writes]
+			)
+		)
+	c.climb_y = 0.0
+	_reset(c)
+	life.step(DT)
+	K.check(
+		fails,
+		is_zero_approx(body_root.rotation.x) and body_root.position == c.pos,
+		"xf guard: down again it takes the flat pose"
+	)
+	K.unprobe(body_root)
 
 
 ## A cat cornered in the woods — the forest tiles carry no trunk colliders — bolts up one of

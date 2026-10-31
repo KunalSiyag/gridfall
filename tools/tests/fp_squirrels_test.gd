@@ -70,6 +70,7 @@ func _init() -> void:
 		_check_rain()
 		_check_flag()
 		_check_lod()
+		_check_draw_guards()
 	_check_capped_out()
 	_check_teardown()
 	K.finish(self, "FP_SQUIRRELS_TEST", fails)
@@ -551,6 +552,42 @@ func _check_lod() -> void:
 	s.dirty = false
 	life.step(0.05)
 	K.check(fails, s.dirty, "lod: an escape runs at full rate however far")
+
+
+## The MultiMesh's per-frame write of the instance count (the web per-frame budget). It changes
+## with the membership only, so a draw that just moves a squirrel leaves it be: a mark planted in
+## the count survives such a draw, a change of membership writes the count again.
+func _check_draw_guards() -> void:
+	life.hero = Vector3(INF, INF, INF)
+	life.hero_on_foot = false
+	_step(AF.SCAN_S + 0.1)
+	var s := _squirrel()
+	K.check(fails, s != null, "draw guards: the spot's squirrel")
+	if s == null:
+		return
+	var mm := (sq.get("_node") as MultiMeshInstance3D).multimesh
+	var bogus := 1 if life.squirrels.size() != 1 else 2
+	mm.visible_instance_count = bogus
+	s.dirty = true
+	sq.call("_draw")
+	K.check(
+		fails,
+		mm.visible_instance_count == bogus,
+		"draw guards: a squirrel that only moved leaves the instance count be"
+	)
+	sq.call("clear")
+	K.check(
+		fails, mm.visible_instance_count == 0, "draw guards: no squirrel left, the count is zero"
+	)
+	_step(AF.SCAN_S + 0.1)
+	K.check(
+		fails,
+		not life.squirrels.is_empty() and mm.visible_instance_count == life.squirrels.size(),
+		(
+			"draw guards: the squirrels back, the count is theirs (%d of %d)"
+			% [mm.visible_instance_count, life.squirrels.size()]
+		)
+	)
 
 
 ## The web tier's cap can give the squirrels nothing (cap_split()): none set up then — no

@@ -791,8 +791,13 @@ func _snap(d: Dog, p: Vector3) -> void:
 
 func _animate(d: Dog) -> void:
 	var b := d.body
-	b.root.position = d.pos
-	b.root.rotation = Vector3(0.0, d.yaw, 0.0)
+	# A settled dog's root does not move: a write of the transform it already holds still dirties
+	# the whole body's subtree in the renderer.
+	var rot := Vector3(0.0, d.yaw, 0.0)
+	if b.root.position != d.pos:
+		b.root.position = d.pos
+	if b.root.rotation != rot:
+		b.root.rotation = rot
 	var clip: StringName = ACT_CLIPS.get(d.act, &"")
 	var rate := LUNGE_RATE if d.act == "lunge" else 1.0
 	if d.act == "flinch":

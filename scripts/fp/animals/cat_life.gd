@@ -718,17 +718,25 @@ func _slide(c: Cat, motion: Vector3) -> void:
 
 func _animate(c: Cat) -> void:
 	var b := c.body
-	if c.act in ["climb", "hold", "down"]:
+	var climbing := c.act in ["climb", "hold", "down"]
+	# A settled cat's root does not move between its acts: a write of the transform it already
+	# holds still dirties the whole body's subtree in the renderer.
+	var pos := c.pos
+	var rot := Vector3(0.0, c.yaw, 0.0)
+	if climbing:
+		pos += Vector3.UP * c.climb_y
+		rot = Vector3(CLIMB_PITCH, c.yaw, 0.0)
+	if b.root.position != pos:
+		b.root.position = pos
+	if b.root.rotation != rot:
+		b.root.rotation = rot
+	if climbing:
 		# Up the refuge trunk: against the bark at its climb height, pitched up, scrambling (Run)
 		# or clinging (Crouch).
-		b.root.position = c.pos + Vector3.UP * c.climb_y
-		b.root.rotation = Vector3(CLIMB_PITCH, c.yaw, 0.0)
 		var up_clip := &"Crouch" if c.act == "hold" else &"Run"
 		DB.play(b, up_clip, (1.0 if c.act == "hold" else 1.3) * time_scale, c.restart)
 		c.restart = false
 		return
-	b.root.position = c.pos
-	b.root.rotation = Vector3(0.0, c.yaw, 0.0)
 	var clip: StringName = ONE_SHOTS.get(c.act, &"")
 	var rate := 1.0
 	var moving := c.speed > 0.03 * WS.M and c.act != "pounce" and c.act != "crouch"

@@ -118,6 +118,8 @@ var struck: int = 0
 var calls: Dictionary = {}
 var _root: Node3D
 var _scan_t: float = 0.0
+## The lead mesh is empty (no near leads last draw), so an empty frame skips the rebuild.
+var _leads_clear: bool = false
 var _homes_t: float = 0.0
 ## The dog households: [resident id, home lot], and their lots (lot -> true).
 var _homes: Array = []
@@ -632,6 +634,10 @@ func _draw_leads() -> void:
 	for l: Array in pack.leads():
 		if (l[1] as Vector3).distance_to(cam) < LEAD_VIS:
 			near.append(l)
+	# No leads in range twice running: the mesh is already empty, skip the rebuild.
+	if near.is_empty() and _leads_clear:
+		return
+	_leads_clear = near.is_empty()
 	leads.draw(near, cam)
 
 

@@ -90,6 +90,7 @@ func _init() -> void:
 		_check_pause(d)
 		_check_far(w, d)
 	_check_yard()
+	_check_write_guards()
 	_check_young_city()
 	_check_caps()
 	_check_teardown()
@@ -553,6 +554,152 @@ func _check_yard() -> void:
 		d.walker == -1 and d.mode == "yard" and d.lot == lot,
 		"yard: back to its yard when they go in"
 	)
+
+
+## The dogs' per-frame writes (the web per-frame budget). The body root takes a transform only
+## when the dog moved: a write of the transform it already holds still dirties the whole body's
+## subtree in the renderer. The leads' mesh is rebuilt only while a lead is in range: an empty one
+## is left be. The photo shot's two dogs stand still in their yard.
+func _check_write_guards() -> void:
+	f.on_world_rebuilt()
+	var shots := f.photo_shots()
+	if shots.is_empty():
+		K.check(fails, false, "write guards: the dogs shot")
+		return
+	ctx.player.teleport(shots[0]["pos"], float(shots[0]["yaw"]))
+	f.call(str(shots[0]["prepare"]))
+	var d := _dog_by_key("photo:0")
+	K.check(fails, d != null, "write guards: the photo's dog")
+	if d == null:
+		return
+	var body_root := d.body.root
+	var probe := K.probe_writes(body_root)
+	_step(0.3)
+	probe.writes = 0
+	_step(1.0)
+	K.check(
+		fails,
+		probe.writes == 0,
+		"write guards: a dog standing still takes no transform write (%d in 1 s)" % probe.writes
+	)
+	d.pos += Vector3(0.001, 0.0, 0.0)
+	_step(DT)
+	K.check(
+		fails,
+		probe.writes == 1 and body_root.position == d.pos,
+		(
+			"write guards: a dog that moved takes its position, and only that (%d writes)"
+			% probe.writes
+		)
+	)
+	probe.writes = 0
+	d.pos += Vector3(0.0, 0.05, 0.0)
+	_step(DT)
+	K.check(
+		fails,
+		probe.writes == 1 and body_root.position == d.pos,
+		"write guards: a dog that only changed height takes its position (%d writes)" % probe.writes
+	)
+	probe.writes = 0
+	d.yaw += 0.3
+	_step(DT)
+	K.check(
+		fails,
+		probe.writes == 1 and is_equal_approx(body_root.rotation.y, d.yaw),
+		(
+			"write guards: a dog that turned takes its rotation, and only that (%d writes)"
+			% probe.writes
+		)
+	)
+	probe.writes = 0
+	d.yaw += 0.00002
+	_step(DT)
+	K.check(
+		fails,
+		probe.writes == 1 and absf(body_root.rotation.y - d.yaw) < 0.000001,
+		"write guards: a dog that turned a hair takes its rotation too (%d writes)" % probe.writes
+	)
+	body_root.position += Vector3(1.0, 0.0, 0.0)
+	probe.writes = 0
+	_step(DT)
+	K.check(
+		fails,
+		probe.writes == 1 and body_root.position == d.pos,
+		"write guards: a root moved behind its back is put back (%d writes)" % probe.writes
+	)
+	K.unprobe(body_root)
+	_check_leads_guard(d)
+	f.call(str(shots[0]["restore"]))
+
+
+## An empty leads' mesh is left be: a mark planted in it survives the frames with no lead in
+## range, a lead in range is drawn over it (and again every frame) and, once gone, is cleared (and
+## the empty mesh is then left be again).
+func _check_leads_guard(d: PACK.Dog) -> void:
+	var im := (f.get("leads") as MeshInstance3D).mesh as ImmediateMesh
+	_step(0.1)
+	_plant_marks(im)
+	_step(DT)
+	K.check(
+		fails,
+		im.get_surface_count() == 2,
+		(
+			"write guards: no lead in range, the leads' mesh is left be (%d surfaces)"
+			% im.get_surface_count()
+		)
+	)
+	var wk: WK = traffic.get("walkers")
+	var w := wk.make("ambient")
+	w.extra = 0
+	wk.stand(w, d.pos + Vector3(0.02, 0.0, 0.0), 0.0)
+	pack.to_owner(d, w.id)
+	_step(0.1)
+	K.check(
+		fails,
+		_leads() == 1 and im.get_surface_count() == 1,
+		(
+			"write guards: a lead in range is drawn (%d, %d surfaces)"
+			% [_leads(), im.get_surface_count()]
+		)
+	)
+	_plant_marks(im)
+	_step(DT)
+	K.check(
+		fails,
+		_leads() == 1 and im.get_surface_count() == 1,
+		(
+			"write guards: and drawn again every frame, it moves with them (%d surfaces)"
+			% im.get_surface_count()
+		)
+	)
+	wk.remove(w)
+	_step(DT)
+	K.check(
+		fails,
+		_leads() == 0 and im.get_surface_count() == 0,
+		(
+			"write guards: the lead gone, the mesh is cleared (%d, %d surfaces)"
+			% [_leads(), im.get_surface_count()]
+		)
+	)
+	_plant_marks(im)
+	_step(DT)
+	K.check(
+		fails,
+		im.get_surface_count() == 2,
+		"write guards: and an empty mesh is left be again (%d surfaces)" % im.get_surface_count()
+	)
+	im.clear_surfaces()
+
+
+## Two surfaces in im (a lead's draw makes one, so the count tells a draw from a left-be mesh).
+func _plant_marks(im: ImmediateMesh) -> void:
+	for _k in range(2):
+		im.surface_begin(Mesh.PRIMITIVE_TRIANGLES)
+		im.surface_add_vertex(Vector3.ZERO)
+		im.surface_add_vertex(Vector3.RIGHT)
+		im.surface_add_vertex(Vector3.UP)
+		im.surface_end()
 
 
 ## A young city (no growth: only the founding roads and City Hall): half as many again of the
