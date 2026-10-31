@@ -2,7 +2,8 @@
 
 The web build is how people try GridFall without installing anything. `tools/export.sh web` runs
 `tools/web_export.py`, which builds an isolated staging copy of the project (never the source
-tree), caps the prop and character textures at 256 px, converts every WAV to Ogg, exports the
+tree), caps the prop and character textures at 256 px, converts every WAV to Ogg (it loops only the ones whose import says loop_mode Forward, Ping-Pong or
+Backward, 2-4: 1 is Disabled, which is what the one-shots use; the music dir always loops), exports the
 Godot 4 web build, aliases duplicate PCK payloads to one copy and publishes the result
 under a content-addressed `releases/<hash>/` directory. The `.pck` that ships is ~161 MB instead of
 ~654 MB, and one release directory is ~192 MB on disk. A first visit moves ~113 MB (Brotli; 113.4 MB

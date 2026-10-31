@@ -52,6 +52,16 @@ def cap_import(text: str, limit: int = CAP_LIMIT) -> str:
     return re.sub(r"^process/size_limit=.*$", f"process/size_limit={limit}", text, flags=re.M)
 
 
+# Godot's WAV importer: 0 Detect, 1 Disabled, 2 Forward, 3 Ping-Pong, 4 Backward. Only 2-4 loop.
+LOOP_MODES = {2, 3, 4}
+
+
+def wav_loops(import_text: str) -> bool:
+    """True when the WAV's .import asks for a loop (loop_mode Forward, Ping-Pong or Backward)."""
+    found = re.search(r"^edit/loop_mode=(\d+)$", import_text, re.M)
+    return bool(found) and int(found.group(1)) in LOOP_MODES
+
+
 def ogg_import(loop: bool) -> str:
     return (
         '[remap]\n\nimporter="oggvorbisstr"\ntype="AudioStreamOggVorbis"\n\n'
@@ -84,7 +94,7 @@ def stage_project(root: Path, stage: Path, ffmpeg: str = "ffmpeg") -> dict:
     for wav in sorted((stage / "sounds").rglob("*.wav")):
         metadata = Path(str(wav) + ".import")
         text = metadata.read_text() if metadata.exists() else ""
-        loop = "edit/loop_mode=1" in text or wav.parent.name == "music"
+        loop = wav_loops(text) or wav.parent.name == "music"
         ogg = wav.with_suffix(".ogg")
         subprocess.run(
             [ffmpeg, "-nostdin", "-v", "error", "-y", "-i", str(wav),

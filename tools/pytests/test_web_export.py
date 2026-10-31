@@ -12,6 +12,7 @@ from tools.web_export import (
     deduplicate_pack,
     is_uncapped,
     ogg_import,
+    wav_loops,
     pack_of,
     patch_loader_html,
     prune_releases,
@@ -132,6 +133,31 @@ def test_stage_changes_only_copied_web_assets(tmp_path, monkeypatch):
     assert (stage / poster.relative_to(root)).read_text() == poster.read_text()
     assert not (stage / wav.relative_to(root)).exists()
     assert "loop=true" in (stage / "sounds/music/track.ogg.import").read_text()
+
+
+def test_wav_loops_follows_godots_loop_mode_enum():
+    assert wav_loops("edit/loop_mode=2\n")  # Forward: engine_run, siren
+    assert wav_loops("edit/loop_mode=3\n") and wav_loops("edit/loop_mode=4\n")
+    assert not wav_loops("edit/loop_mode=1\n")  # Disabled: the one-shots (footsteps, horns)
+    assert not wav_loops("edit/loop_mode=0\n")  # Detect
+    assert not wav_loops("")
+
+
+def test_stage_project_loops_only_the_looping_wavs(tmp_path, monkeypatch):
+    root, stage = tmp_path / "src", tmp_path / "stage"
+    root.mkdir()
+    stage.mkdir()
+    (root / "project.godot").write_text("[application]\n")
+    (root / "export_presets.cfg").write_text("[preset.2.options]\n")
+    for name, mode in (("engine_run", 2), ("footstep", 1)):
+        wav = root / f"sounds/fp/{name}.wav"
+        wav.parent.mkdir(parents=True, exist_ok=True)
+        wav.write_bytes(b"wav sample")
+        Path(str(wav) + ".import").write_text(f"edit/loop_mode={mode}\n")
+    monkeypatch.setattr("tools.web_export.subprocess.run", lambda c, check: Path(c[-1]).write_bytes(b"OggS"))
+    stage_project(root, stage)
+    assert "loop=true" in (stage / "sounds/fp/engine_run.ogg.import").read_text()
+    assert "loop=false" in (stage / "sounds/fp/footstep.ogg.import").read_text()
 
 
 def test_pack_aliases_duplicates_without_changing_paths(tmp_path):
