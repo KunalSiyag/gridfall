@@ -140,6 +140,7 @@ func _apply_hooks() -> void:
 		ctx.sky.weather_exposure_mult = float(_look["exposure"])
 		ctx.sky.weather_shadow_mult = float(_look["shadow"])
 		ctx.sky.weather_grey = float(_look["grey"])
+		ctx.sky.weather_wet = wet
 		var fog := float(_look["fog"])
 		if _smog > 0.01:
 			fog = 5.0 if fog < 0.0 else minf(fog, 5.0)
