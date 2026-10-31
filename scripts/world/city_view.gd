@@ -65,14 +65,33 @@ const TREE_PROPS := ["tree_oak", "tree_round", "tree_birch", "tree_poplar", "tre
 ## cleared forest only rebuilds its own chunk. TREE_RING tiles of woods surround the world.
 ## Orbit: one 48-tile chunk carries both layers. On foot: 8-tile chunks carry full trees to
 ## TREE_NEAR_FP, then one merged stand-in mesh (a single draw per chunk) to TREE_FAR_FP, where the
-## depth fog takes over. Both layers of a chunk measure from one centre, so they are exact
-## complements: no gap and no double tree at the switch.
+## depth fog takes over. Both layers of a chunk sit at one centre, but the engine measures a range
+## from the centre of each layer's own AABB: the switch is exact only to the offset of the two.
 const TREE_CHUNK := 48
 const TREE_RING := 12
 const TREE_NEAR := 120.0
 const TREE_CHUNK_FP := 8
 const TREE_NEAR_FP := 12.0
 const TREE_FAR_FP := 50.0
+## On foot the chunks are streamed: only those the camera can see exist. Past TREE_FAR_FP *
+## vis_mult nothing draws, yet the old plant kept all 729 chunks (~8.7k MultiMeshInstance3D) in
+## the tree from boot: heap, boot work and a node count the web build walks every frame (an idle
+## node costs a frame little, tens of ns: docs/fp/slices/G1-streetscape.md). A chunk is planted
+## once its centre is within the far end of its layers + their range margin + TREE_CHUNK_REACH +
+## one hysteresis step of the camera (_tree_reach; world units, 1 u = 20 m), so while the camera
+## walks a far tree's pop is its visibility range, never a missing chunk; after a jump the
+## stand-ins beyond the near ring fill in over a few frames. A pass runs when the camera moved a
+## hysteresis step. It plants the near ring in full, then chunks nearest first until
+## tree_stream_budget_ms is spent (one at least, TREE_STREAM_CAP at most), and frees TREE_FREE_CAP
+## of those that left the window.
+## TREE_CHUNK_REACH: the engine measures a range from the centre of the layer's AABB, which lies
+## within the chunk's tile box (the half-diagonal of 8 x 8 tiles) plus what the tree meshes add.
+const TREE_STREAM_HYSTERESIS := 4.0
+const TREE_STREAM_CAP := 16
+const TREE_FREE_CAP := 4
+const TREE_MARGIN_FP := 1.5
+const TREE_CHUNK_REACH := TREE_CHUNK_FP * 0.7072 + 0.5
+const TREE_STREAM_STALE := -2.0
 ## Orbit C/I pad height (the FP pad, when a fallback model needs one, sits at WS.PAD_TOP).
 const ORBIT_PAD_Y := 0.006
 ## Rebuild queue (FP only): frame budget, how close a tile in view must be to wait until the
@@ -168,6 +187,24 @@ var _trees_root: Node3D
 ## Tree chunk (Vector2i) -> its MultiMeshInstance3D layers; dirty chunks rebuild next frame.
 var _tree_chunks: Dictionary = {}
 var _dirty_tree_chunks: Dictionary = {}
+## On foot: the window radius and the stream spot (x, z) of the last fresh stream pass (what the
+## lists were made for), and whether the passes since left nothing to plant or free
+## (see _stream_trees).
+var _tree_stream_win := TREE_STREAM_STALE
+var _tree_stream_at := Vector2.ZERO
+var _tree_stream_done := true
+## The lists of the last fresh pass, as sort keys nearest first: the chunks of the window still to
+## plant and the chunks past it still to free. Passes in between work off them (_stream_trees).
+var _tree_want := PackedInt64Array()
+var _tree_gone := PackedInt64Array()
+## Work the stream's scans have looked at since boot: map cells of the missing-chunk box and planted
+## chunks of the surplus scan. A cost counter the tests read: an idle frame must not move it.
+var _tree_scanned := 0
+## The process frame of the last pass: a pass left unfinished while _process does not run (the tree
+## is paused) carries on from _on_pre_draw.
+var _tree_pass_frame := -1
+## True while the pre-draw pass plants (see _on_pre_draw).
+var _tree_flush := false
 var _pool_mat: StandardMaterial3D
 var _territory_root: Node3D
 var kit: ConstructionKit
@@ -186,13 +223,20 @@ var directory: CityDirectory
 var priority_point: Vector3 = Vector3.ZERO
 ## FP rebuild budget per frame in milliseconds, tile_built emissions included.
 var rebuild_budget_ms: float = 3.0
+## FP tree stream budget per pass in milliseconds: past the near ring (always planted in full) a
+## pass plants chunks until it is spent, one at least (see _tree_plant_missing). How many chunks a
+## frame plants thus depends on the clock: a test or harness that counts frames after a teleport or
+## an aerial switch raises it (or waits for _tree_stream_done) to see whole passes.
+var tree_stream_budget_ms: float = 3.0
 ## Worst microseconds per _process section since reset_section_stats() (fp_bench's hitch rows).
 var section_us_max: Dictionary = {}
 ## Any object with light_pole(i: int, corner: int) -> Node3D (E's traffic feature). Cross tiles then
 ## mount their street-name blades on its NE pole instead of a G1 pole. Set by the streetscape feature.
 var light_pole_source: Object = null
 ## Visibility multiplier for the props, decals and multimeshes G1 ranges itself (G2's vis_mult).
-var vis_mult: float = 1.0
+## On foot a change re-ranges the planted tree layers and re-streams the window (set_vis_mult).
+var vis_mult: float = 1.0:
+	set = set_vis_mult
 ## Aerial coverage (render_opt): while the camera is over the city, the far tree layers draw to the
 ## horizon instead of ending where the street fog would take over.
 var aerial_trees: bool = false
@@ -295,6 +339,8 @@ func setup(p_sim: CitySim, p_camera: Camera3D) -> void:
 		)
 		sim.event_ended.connect(func(_ev: Dictionary) -> void: _sync_events())
 		sim.territory_changed.connect(_rebuild_territory)
+	if not RenderingServer.frame_pre_draw.is_connected(_on_pre_draw):
+		RenderingServer.frame_pre_draw.connect(_on_pre_draw)
 	_apply_fp_visibility()
 	in_setup = false
 	world_rebuilt.emit()
@@ -316,8 +362,10 @@ func set_fp_mode(on: bool) -> void:
 		_event_nodes.clear()
 		_apply_ground_mode()
 		_build_trees()
-		_refresh_trees()
+		# The world before the trees, as setup() orders it: rebuild_all marks every forest chunk
+		# dirty and the plant clears the marks; planted first, the next frame would replant them.
 		rebuild_all(false)
+		_refresh_trees()
 		_apply_night()
 	_apply_fp_visibility()
 	if changed:
@@ -328,19 +376,29 @@ func set_fp_mode(on: bool) -> void:
 
 ## Aerial coverage (render_opt): while on, every far tree layer draws to the horizon, so woods and
 ## street trees stay visible from the sky. Only the street chunks change (the orbit far layers
-## already have no end); chunks rebuilt later read the flag where they are built.
+## already have no end); chunks rebuilt later read the flag where they are built. Coverage to the
+## horizon wants every chunk, so the window opens to the whole map (nearest first from the spot the
+## camera looks at, as fast as the stream budget lets it: no hitch, a fill of some frames) and
+## closes back onto the camera when the flag drops (TREE_FREE_CAP chunks a pass).
 func set_aerial(on: bool) -> void:
 	if aerial_trees == on:
 		return
 	aerial_trees = on
 	if not fp_mode:
 		return
-	for n: Array in _tree_chunks.values():
-		for layer: Variant in n:
-			var mmi := layer as MultiMeshInstance3D
-			if mmi == null or not is_instance_valid(mmi) or mmi.visibility_range_begin <= 0.0:
-				continue
-			mmi.visibility_range_end = 0.0 if on else TREE_FAR_FP * vis_mult
+	_range_tree_layers()
+	_stream_trees()
+
+
+## Sets vis_mult. On foot the planted tree layers take the new ranges and the window re-streams now,
+## so a quality change shows with the camera standing still.
+func set_vis_mult(v: float) -> void:
+	if v == vis_mult:
+		return
+	vis_mult = v
+	if fp_mode and _trees_root != null:
+		_range_tree_layers()
+		_stream_trees()
 
 
 ## Shows or hides the orbit-only layers for fp_mode (S0 §15.1): labels, territory, overlays, icons,
@@ -1032,6 +1090,8 @@ func _refresh_tree_kits() -> void:
 func _build_trees() -> void:
 	_tree_chunks.clear()
 	_dirty_tree_chunks.clear()
+	_tree_stream_win = TREE_STREAM_STALE
+	_tree_stream_done = true
 	_trees_root = _mk_root("Trees")
 	var kits: Array = []
 	for tree_name in TREE_PROPS:
@@ -1198,7 +1258,13 @@ func _dirty_trees_at(x: int, y: int) -> void:
 
 
 ## Rebuilds every tree chunk: the forest tiles of the world plus a ring of woods beyond its edge.
+## On foot that is the chunks of the stream window around the camera, not the whole map. Callers
+## have just rebuilt the Trees root (_build_trees): nothing is planted yet, the window is stale.
 func _refresh_trees() -> void:
+	if fp_mode:
+		_dirty_tree_chunks.clear()
+		_stream_trees()
+		return
 	for layer in _tree_layers():
 		var lo := _tree_chunk_of(D.X0 - TREE_RING, D.Y0 - TREE_RING, layer)
 		var hi := _tree_chunk_of(D.X0 + D.W + TREE_RING - 1, D.Y0 + D.H + TREE_RING - 1, layer)
@@ -1208,7 +1274,237 @@ func _refresh_trees() -> void:
 	_dirty_tree_chunks.clear()
 
 
-func _refresh_tree_chunk(c: Vector3i) -> void:
+## Replants the chunks whose forest tiles changed, then keeps the on-foot window on the camera. A
+## dirty chunk that is not planted is dropped: it replants fresh from sim.kind when it streams in.
+func _update_trees() -> void:
+	if not _dirty_tree_chunks.is_empty():
+		var layers: Array = _tree_layers()
+		for c: Vector3i in _dirty_tree_chunks.keys():
+			if c.z in layers and (not fp_mode or _tree_chunks.has(c)):
+				_refresh_tree_chunk(c)
+		_dirty_tree_chunks.clear()
+	_stream_trees()
+
+
+## Frees one tree chunk's layers and forgets it. Nothing keeps a reference to a freed layer.
+func _free_tree_chunk(c: Vector3i) -> void:
+	for n: Node in _tree_chunks.get(c, []):
+		if is_instance_valid(n):
+			n.queue_free()
+	_tree_chunks.erase(c)
+
+
+## The ends of the on-foot tree layers: full trees to TREE_NEAR_FP * vis_mult, then the stand-ins
+## to TREE_FAR_FP * vis_mult, or to the horizon (end 0) under aerial coverage. (near, far).
+func _tree_ends() -> Vector2:
+	return Vector2(TREE_NEAR_FP * vis_mult, 0.0 if aerial_trees else TREE_FAR_FP * vis_mult)
+
+
+## Re-ranges every planted on-foot layer to _tree_ends (vis_mult and aerial changes); a chunk
+## planted afterwards reads the same ends.
+func _range_tree_layers() -> void:
+	var ends := _tree_ends()
+	for layers: Array in _tree_chunks.values():
+		for layer: Variant in layers:
+			var mmi := layer as MultiMeshInstance3D
+			if mmi == null or not is_instance_valid(mmi):
+				continue
+			if mmi.visibility_range_begin > 0.0:
+				mmi.visibility_range_begin = ends.x
+				mmi.visibility_range_end = ends.y
+				mmi.visibility_range_end_margin = TREE_MARGIN_FP if ends.y > 0.0 else 0.0
+			else:
+				mmi.visibility_range_end = ends.x
+
+
+## How far from the camera (its chunk's centre to the camera, along the ground) a chunk with layers
+## drawing until `end` must be planted: a layer draws until its end plus the fade margin, the centre
+## of its AABB (where the engine measures the range from) may lie TREE_CHUNK_REACH off the chunk's
+## centre, and the camera may drift a hysteresis step before the next pass.
+func _tree_reach(end: float) -> float:
+	return end + TREE_MARGIN_FP + TREE_CHUNK_REACH + TREE_STREAM_HYSTERESIS
+
+
+## The stream window on foot: chunks closer than this are planted. -1 means every chunk (aerial
+## coverage draws the far layers to the horizon).
+func _tree_window() -> float:
+	return -1.0 if aerial_trees else _tree_reach(_tree_ends().y)
+
+
+## The near ring: the chunks whose full-detail layers can draw. A pass plants these in full, so a
+## teleport never shows a bare street; only the stand-in fill-in beyond waits for later frames.
+func _tree_ring() -> float:
+	return _tree_reach(_tree_ends().x)
+
+
+## The ground spot (x, z) the stream follows: the camera's own. Under aerial coverage, where every
+## chunk is wanted and only the order of the fill matters, it is the spot the camera looks at (its
+## view ray meets the ground, at most half its far plane out), so the woods in view fill in before
+## those behind the camera; a camera that sees no ground (level, turned up) keeps its own spot. The
+## middle of the map when there is no camera in the tree.
+func _tree_stream_pos() -> Vector2:
+	if not is_instance_valid(camera) or not camera.is_inside_tree():
+		return Vector2(D.X0 + D.W * 0.5, D.Y0 + D.H * 0.5)
+	var eye := camera.global_position
+	var at := Vector2(eye.x, eye.z)
+	if aerial_trees:
+		var look := -camera.global_basis.z
+		if look.y < -0.05 and eye.y > 0.0:
+			at += Vector2(look.x, look.z) * minf(eye.y / -look.y, camera.far * 0.5)
+	return at
+
+
+## True when the stream spot `at` is a hysteresis step from the one the lists were made for. Under
+## aerial coverage the window is the whole map, so once it is planted the spot no longer matters;
+## while it still fills, a pass follows it (its near ring, the nearest-first order).
+func _tree_moved(at: Vector2) -> bool:
+	if aerial_trees and _tree_stream_done:
+		return false
+	return at.distance_to(_tree_stream_at) >= TREE_STREAM_HYSTERESIS
+
+
+## Just before a frame draws, after every node's _process: a camera that jumped since this frame's
+## pass (a teleport by a node processed after CityView, the respawn) has its near ring planted
+## before it shows, not a frame late; and a pass left unfinished carries on when no pass ran this
+## frame (the tree is paused, so _process does not: a quality change from the pause menu). A node
+## added now would still draw a frame late (its transform waits for the next frame's flush), so the
+## layers of this pass push theirs at once (_tree_flush). Idle frames pay one camera read; a pass
+## that runs here is timed apart from _process's ("trees_predraw", fp_bench's hitch rows).
+func _on_pre_draw() -> void:
+	if not fp_mode or _trees_root == null:
+		return
+	var carry_on := not _tree_stream_done and _tree_pass_frame != Engine.get_process_frames()
+	if carry_on or _tree_moved(_tree_stream_pos()):
+		var t := Time.get_ticks_usec()
+		_tree_flush = true
+		_stream_trees()
+		_tree_flush = false
+		_section("trees_predraw", t)
+
+
+## Ground distance from p to the centre of chunk c's tiles (tile (x, z) sits on whole
+## coordinates, so a chunk of n tiles is centred (n - 1) / 2 in from its first).
+func _tree_chunk_dist(c: Vector3i, p: Vector2) -> float:
+	var size := _tree_chunk_size(c.z)
+	var mid := (size - 1) * 0.5
+	var x := D.X0 - TREE_RING + c.x * size + mid
+	var y := D.Y0 - TREE_RING + c.y * size + mid
+	return p.distance_to(Vector2(x, y))
+
+
+## A sortable key for FP chunk c at distance d: the distance in 1/64 u over the cell, so a plain
+## sort orders chunks nearest first (ties by cell) without a comparator call per pair.
+func _tree_cell_key(c: Vector3i, d: float) -> int:
+	return (int(d * 64.0) << 16) | (c.y << 8) | c.x
+
+
+func _tree_cell(key: int) -> Vector3i:
+	return Vector3i(key & 255, (key >> 8) & 255, 1)
+
+
+## Sort keys of the planted chunks past the window plus a hysteresis step (none under aerial
+## coverage), nearest first.
+func _tree_surplus(at: Vector2, win: float) -> PackedInt64Array:
+	var out := PackedInt64Array()
+	if win < 0.0:
+		return out
+	_tree_scanned += _tree_chunks.size()
+	for c: Vector3i in _tree_chunks.keys():
+		var d := _tree_chunk_dist(c, at)
+		if d > win + TREE_STREAM_HYSTERESIS:
+			out.append(_tree_cell_key(c, d))
+	out.sort()
+	return out
+
+
+## Sort keys of the chunks inside the window that are not planted (all of them under aerial
+## coverage), nearest first.
+func _tree_missing(at: Vector2, win: float) -> PackedInt64Array:
+	var out := PackedInt64Array()
+	var x1 := D.X0 + D.W + TREE_RING - 1
+	var y1 := D.Y0 + D.H + TREE_RING - 1
+	var lo := _tree_chunk_of(D.X0 - TREE_RING, D.Y0 - TREE_RING, 1)
+	var hi := _tree_chunk_of(x1, y1, 1)
+	if win >= 0.0:
+		var x0 := maxi(floori(at.x - win), D.X0 - TREE_RING)
+		var y0 := maxi(floori(at.y - win), D.Y0 - TREE_RING)
+		lo = _tree_chunk_of(x0, y0, 1)
+		hi = _tree_chunk_of(mini(ceili(at.x + win), x1), mini(ceili(at.y + win), y1), 1)
+	_tree_scanned += maxi(hi.x - lo.x + 1, 0) * maxi(hi.y - lo.y + 1, 0)
+	for cy in range(lo.y, hi.y + 1):
+		for cx in range(lo.x, hi.x + 1):
+			var c := Vector3i(cx, cy, 1)
+			var d := _tree_chunk_dist(c, at)
+			if not _tree_chunks.has(c) and (win < 0.0 or d <= win):
+				out.append(_tree_cell_key(c, d))
+	out.sort()
+	return out
+
+
+## Keeps the planted on-foot chunks on the camera: plants the chunks of the window that are
+## missing, nearest first - the near ring in full, the rest while the pass has budget
+## (_tree_plant_missing) - and frees some of those past the window, farthest first
+## (_tree_free_surplus). A pass is fresh when the camera moved a hysteresis step or the window
+## changed (vis_mult, aerial, a new camera or world): it scans the map for what to plant and what
+## to free and keeps the two lists. The passes that carry an unfinished fill on work off those
+## lists, nothing is scanned twice, until the camera moves again. Chunks are planted from sim.kind
+## as it is now, so one that streams back in is exactly the chunk a full plant would make.
+## _process runs it; _on_pre_draw catches a camera that jumped after it and carries a pass on
+## while the tree is paused.
+func _stream_trees() -> void:
+	if not fp_mode or _trees_root == null:
+		return
+	var win := _tree_window()
+	var at := _tree_stream_pos()
+	var fresh := win != _tree_stream_win or _tree_moved(at)
+	if _tree_stream_done and not fresh:
+		return
+	var t0 := Time.get_ticks_usec()
+	_tree_pass_frame = Engine.get_process_frames()
+	if fresh:
+		_tree_stream_win = win
+		_tree_stream_at = at
+		_tree_gone = _tree_surplus(at, win)
+		_tree_want = _tree_missing(at, win)
+	_tree_free_surplus()
+	_tree_plant_missing(at, t0)
+	_tree_stream_done = _tree_want.is_empty() and _tree_gone.is_empty()
+
+
+## Frees the farthest TREE_FREE_CAP chunks of _tree_gone (sort keys, nearest first) and drops them
+## from it. Freeing costs about what planting does, the nodes go at the end of the frame (out of
+## the budget's sight) and nothing hurries a chunk that cannot draw.
+func _tree_free_surplus() -> void:
+	var n := mini(_tree_gone.size(), TREE_FREE_CAP)
+	for k in range(n):
+		_free_tree_chunk(_tree_cell(_tree_gone[_tree_gone.size() - 1 - k]))
+	_tree_gone.resize(_tree_gone.size() - n)
+
+
+## Plants the front of _tree_want (sort keys, nearest first) and drops those from it: every chunk of
+## the near ring, then more until the pass has spent tree_stream_budget_ms since t0 - one at least,
+## TREE_STREAM_CAP at most.
+func _tree_plant_missing(at: Vector2, t0: int) -> void:
+	var ring := _tree_ring()
+	var budget := int(tree_stream_budget_ms * 1000.0)
+	var beyond := 0
+	var planted := 0
+	for key: int in _tree_want:
+		var c := _tree_cell(key)
+		if _tree_chunk_dist(c, at) > ring:
+			var spent := Time.get_ticks_usec() - t0 >= budget
+			if beyond >= TREE_STREAM_CAP or (beyond > 0 and spent):
+				break
+			beyond += 1
+		_refresh_tree_chunk(c)
+		planted += 1
+	_tree_want = _tree_want.slice(planted)
+
+
+## The tree spots of chunk c, per kit: four trees on every forest tile of the world, and woods
+## thinning out across the ring around it. A pure function of sim.kind, so a chunk planted at any
+## time from the same world is the same chunk.
+func _tree_chunk_spots(c: Vector3i) -> Array:
 	var size := _tree_chunk_size(c.z)
 	var by_kit: Array = []
 	for _k in range(maxi(1, _tree_kits.size())):
@@ -1234,9 +1530,13 @@ func _refresh_tree_chunk(c: Vector3i) -> void:
 				var sc := 1.0 + float(hh % 7) * 0.1
 				var yaw := Basis(Vector3.UP, float(hh % 13) / 13.0 * TAU).scaled(Vector3.ONE * sc)
 				(by_kit[(hh >> 3) % by_kit.size()] as Array).append(Transform3D(yaw, Vector3(gx + ox * 0.85, 0.0, gz + oz * 0.85)))
-	for n: Node in _tree_chunks.get(c, []):
-		if is_instance_valid(n):
-			n.queue_free()
+	return by_kit
+
+
+## Plants chunk c from sim.kind as it is now, replacing its layers.
+func _refresh_tree_chunk(c: Vector3i) -> void:
+	var by_kit := _tree_chunk_spots(c)
+	_free_tree_chunk(c)
 	var layers: Array = []
 	var every: Array = []
 	for ki in range(_tree_kits.size()):
@@ -1248,9 +1548,10 @@ func _refresh_tree_chunk(c: Vector3i) -> void:
 	for t: Transform3D in every:
 		centre += t.origin
 	centre /= float(every.size())
-	var near_end := TREE_NEAR_FP * vis_mult if fp_mode else TREE_NEAR
-	var far_end := TREE_FAR_FP * vis_mult if fp_mode and not aerial_trees else 0.0
-	var margin := 1.5 if fp_mode else 6.0
+	var ends := _tree_ends()
+	var near_end := ends.x if fp_mode else TREE_NEAR
+	var far_end := ends.y if fp_mode else 0.0
+	var margin := TREE_MARGIN_FP if fp_mode else 6.0
 	for ki in range(_tree_kits.size()):
 		var spots: Array = by_kit[ki]
 		if spots.is_empty():
@@ -1262,9 +1563,10 @@ func _refresh_tree_chunk(c: Vector3i) -> void:
 	_tree_chunks[c] = layers
 
 
-## One part of one tree kit for a chunk. Every layer of a chunk sits at the same centre (the mean of
-## all its trees) so visibility range distances are measured per chunk and the layers complement.
-## Parts with "tint" get a hashed per-tree colour.
+## One part of one tree kit for a chunk. Every layer of a chunk sits at the same node centre (the
+## mean of all its trees); the engine measures a range from the centre of each layer's own AABB, so
+## the near/far switch is exact only to the offset of the two. Parts with "tint" get a hashed
+## per-tree colour.
 func _tree_layer(part: Dictionary, spots: Array, centre: Vector3, begin: float, end: float, margin: float) -> MultiMeshInstance3D:
 	var mm := MultiMesh.new()
 	mm.transform_format = MultiMesh.TRANSFORM_3D
@@ -1294,6 +1596,8 @@ func _tree_layer(part: Dictionary, spots: Array, centre: Vector3, begin: float, 
 	if begin > 0.0:
 		mmi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	_trees_root.add_child(mmi)
+	if _tree_flush and mmi.is_inside_tree():
+		mmi.force_update_transform()
 	return mmi
 
 func _build_district_borders() -> void:
@@ -2213,9 +2517,14 @@ func street_kit(kind: String) -> Dictionary:
 
 ## Camera used for picking, shake and avatar picking (orbit rig camera or the FP camera).
 func set_camera(c: Camera3D) -> void:
+	var swapped := c != camera
 	camera = c
 	if avatars != null:
 		avatars.camera = c
+	if swapped and fp_mode:
+		# Entering the street swaps the orbit rig for the hero: the window moves with it.
+		_tree_stream_win = TREE_STREAM_STALE
+		_stream_trees()
 
 ## Zone models for a density level: the hand-made defaults plus every GLB in models/zones/<r|c|i><level>/.
 func _zone_options(k: int, l: int) -> Array:
@@ -3010,11 +3319,7 @@ func _process(delta: float) -> void:
 		return
 	_time += delta
 	var t := Time.get_ticks_usec()
-	if not _dirty_tree_chunks.is_empty():
-		for c: Vector3i in _dirty_tree_chunks.keys():
-			if c.z in _tree_layers():
-				_refresh_tree_chunk(c)
-		_dirty_tree_chunks.clear()
+	_update_trees()
 	t = _section("trees", t)
 	if not _warming.is_empty():
 		_poll_warming()

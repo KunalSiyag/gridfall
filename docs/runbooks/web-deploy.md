@@ -134,6 +134,15 @@ orbit from the pause menu, then Tab back to the street) and exits 4 on any uncau
 or `invalid bus index` line: this headed run is the checklist's only surface with real audio
 buses, where that crash class reproduces, so the headless smoke cannot substitute for it.
 
+**Street trees are streamed** (docs/fp/slices/G1-streetscape.md, "On foot the chunks are
+streamed"): on the street `CityView/Trees` holds only the chunks around the camera, about 900
+MultiMeshInstance3D at the web tier (not the old 8.7k); the overview plants the whole map over some
+frames and drops it again on the way back (wasm keeps its heap high-water mark, so the memory saving
+lasts until the first overview). A frame-time gain is not demonstrated: microbenchmarks put an idle
+MMI at 15-120 ns a frame (desktop and a web export), 0.1-1 ms for the old 8.7k, against a few ms for
+a teleport, an overview or a shrink. Compare the probe's street fps and p95 with the previous deploy,
+same grown save, before crediting it, and check the `CityView/Trees` census reads about 900 MMIs.
+
 **Keyed (the player, once, with their own key):** open the site, paste the key, confirm a live
 mayor turn. This is the only check that exercises the real `api.gmi-serving.com` call and the only
 one that can prove it works under cross-origin isolation — the COOP/COEP headers isolate the page
