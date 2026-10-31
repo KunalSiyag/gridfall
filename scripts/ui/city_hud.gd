@@ -5,6 +5,8 @@ extends CanvasLayer
 ## panels for mayor minds, the Gazette, City Hall, the street inspector, the GMI call log and the city feed.
 
 signal speed_requested(s: int)
+## The web build's real-time pace check button (see Quality.set_real_time_pace).
+signal real_time_pace_toggled(on: bool)
 signal overlay_requested(mode: String)
 signal save_requested()
 signal load_requested()
@@ -68,6 +70,7 @@ var _util_labels: Dictionary = {}
 var _ai_label: Label
 var _speed_btns: Dictionary = {}
 var _live_btn: CheckButton
+var _pace_btn: CheckButton
 var _overlay_btns: Dictionary = {}
 var _armed_label: Label
 var _decree_edit: LineEdit
@@ -231,6 +234,17 @@ func _build_top_bar() -> void:
 		b.pressed.connect(func() -> void: speed_requested.emit(s))
 		speed_row.add_child(b)
 		_speed_btns[s] = b
+	if OS.has_feature("web"):
+		_pace_btn = CheckButton.new()
+		_pace_btn.text = "Real-time pace"
+		_pace_btn.add_theme_font_size_override("font_size", 11)
+		_pace_btn.tooltip_text = (
+			"On keeps the city at real-time speed when your browser runs below 30 fps "
+			+ "(more mayor activity per real minute). Off = slow motion on slow frames."
+		)
+		_pace_btn.set_pressed_no_signal(FeatureFlags.enabled("web_real_time_pace", false))
+		_pace_btn.toggled.connect(func(on: bool) -> void: real_time_pace_toggled.emit(on))
+		ai_box.add_child(_pace_btn)
 	_ai_label = _label("GMI idle", 11, Color(0.6, 1.0, 0.75))
 	_ai_label.custom_minimum_size = Vector2(250, 0)
 	ai_box.add_child(_ai_label)

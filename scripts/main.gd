@@ -116,6 +116,7 @@ func _ready() -> void:
 		sim.set_speed(s)
 		hud.set_speed_display(s)
 	)
+	hud.real_time_pace_toggled.connect(func(on: bool) -> void: Q.set_real_time_pace(on))
 	hud.overlay_requested.connect(func(mode: String) -> void: view.set_overlay(mode))
 	hud.focus_district_requested.connect(_focus_district)
 	hud.focus_tile_requested.connect(func(x: int, y: int) -> void: focus(Vector3(x, 0, y), 30.0, "tile"))

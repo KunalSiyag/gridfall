@@ -109,6 +109,10 @@ const WEB_DENSITY := {"traffic": 12, "crowd": 24, "animals": 6}
 ## work than the frame itself; at 2 the physics share of a hitch stays bounded and physics time
 ## dilates instead. Desktop keeps the engine default.
 const WEB_MAX_PHYSICS_STEPS := 2
+## With flag web_real_time_pace (off by default; the pause menu and the planner HUD flip it on the
+## web build) the cap is 4: the world keeps real time down to 15 fps and a frame's delta stays
+## near 83 ms. The price is more sim turns, chat drips and live GMI calls per real minute.
+const WEB_MAX_PHYSICS_STEPS_REAL_TIME := 4
 
 
 ## True in the browser export.
@@ -122,7 +126,26 @@ static func is_web() -> bool:
 ## cap in tests.
 static func cap_physics_steps(web: bool = false) -> void:
 	if web or is_web():
-		Engine.max_physics_steps_per_frame = WEB_MAX_PHYSICS_STEPS
+		Engine.max_physics_steps_per_frame = web_physics_steps()
+
+
+## The browser's catch-up cap now: WEB_MAX_PHYSICS_STEPS, or the real-time one with the flag on.
+static func web_physics_steps() -> int:
+	return WEB_MAX_PHYSICS_STEPS_REAL_TIME if real_time_pace() else WEB_MAX_PHYSICS_STEPS
+
+
+## Whether the player (or the flag file) asked for real-time pace on slow frames.
+static func real_time_pace() -> bool:
+	return FeatureFlags.enabled("web_real_time_pace", false)
+
+
+## Turns real-time pace on or off now (the cap changes this frame), and with persist keeps the
+## choice in the user flag file for the next boot. web forces the web path in tests.
+static func set_real_time_pace(on: bool, web: bool = false, persist: bool = true) -> void:
+	FeatureFlags.set_override("web_real_time_pace", on)
+	if persist:
+		FeatureFlags.save_user("web_real_time_pace", on)
+	cap_physics_steps(web)
 
 
 ## Set by park_physics_server; tests assert the web path parks and the desktop path does not.

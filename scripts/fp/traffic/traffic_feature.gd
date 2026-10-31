@@ -553,8 +553,9 @@ func _process(delta: float) -> void:
 	_last_player = p
 	if auto_step:
 		var dt := delta * float(ctx.sim.speed)
+		var step_len := Pacing.step_for(dt, MAX_STEP)
 		while dt > 0.0:
-			var h := minf(dt, MAX_STEP)
+			var h := minf(dt, step_len)
 			step(h)
 			dt -= h
 	sync_visuals(delta)

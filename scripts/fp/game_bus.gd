@@ -30,6 +30,8 @@ signal settings_changed(settings: Dictionary)
 signal pause_changed(paused: bool)
 ## The quality preset changed: "low", "medium" or "high".
 signal quality_changed(preset: String)
+## The player asked for real-time pace (web build) on or off; render_opt applies it.
+signal pace_requested(on: bool)
 ## Some modal UI opened (true) or the last one closed (false).
 signal modal_changed(active: bool)
 ## The world was rebuilt and every feature ran on_world_rebuilt().

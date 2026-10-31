@@ -21,6 +21,18 @@ static func enabled(flag: String, default: bool = true) -> bool:
 	return bool(_values.get(flag, default))
 
 
+## Saves one flag to the user override file (read back by load_layers on the next boot); returns
+## false when the file cannot be written. Does not change this process, see set_override.
+static func save_user(flag: String, on: bool, path: String = USER_PATH) -> bool:
+	var saved := read_user(path)
+	saved[flag] = on
+	var file := FileAccess.open(path, FileAccess.WRITE)
+	if file == null:
+		return false
+	file.store_string(JSON.stringify(saved, "\t"))
+	return true
+
+
 ## Re-reads every layer from the environment and disk.
 static func reload() -> void:
 	load_layers(OS.get_environment("GRIDFALL_FLAGS"), OS.get_environment("GRIDFALL_FLAGS_IGNORE_USER") != "1")

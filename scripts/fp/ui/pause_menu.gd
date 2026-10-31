@@ -40,12 +40,16 @@ const TABS := {
 		["fov", "First-person field of view", "slider", [60.0, 90.0, 1.0, "°"]],
 		["head_bob", "Head bob", "choice", [["Off", false], ["On", true]]],
 		["show_hud", "Show HUD", "choice", [["Off", false], ["On", true]]],
+		["real_time_pace", "Real-time pace", "choice", [["Off", false], ["On", true]]],
 	],
 	"Audio": [
 		["music_volume_db", "Music", "slider", [0.0, 100.0, 1.0, "%"]],
 		["sfx_volume_db", "Effects", "slider", [0.0, 100.0, 1.0, "%"]],
 	],
 }
+## The settings row that is not an FpMode setting: it reads and writes the web_real_time_pace
+## flag (through GameBus.pace_requested), which the planner HUD toggle shares.
+const PACE_KEY := "real_time_pace"
 const LEGEND := [
 	["person", "Population", "People living in the city"],
 	["face", "Mood", "How residents feel, 0 to 10 (tile happiness when residents are off)"],
@@ -386,6 +390,9 @@ func _build_settings() -> void:
 		v.add_child(page)
 		_tabs[tab] = page
 		for row: Array in TABS[tab]:
+			# Browser only: the desktop build never trims the world's time.
+			if str(row[0]) == PACE_KEY and not OS.has_feature("web"):
+				continue
 			page.add_child(_row(row))
 	if FeatureFlags.enabled("player_gmi_key"):
 		var gmi := GmiKeyPanel.new()
@@ -493,7 +500,10 @@ func _sync() -> void:
 			_show_value(key, s.value)
 		else:
 			for b: Button in c:
-				b.set_pressed_no_signal(_same(b.get_meta("value"), st.get(key, FpMode.DEFAULT_SETTINGS.get(key))))
+				var cur: Variant = st.get(key, FpMode.DEFAULT_SETTINGS.get(key))
+				if key == PACE_KEY:
+					cur = FeatureFlags.enabled("web_real_time_pace", false)
+				b.set_pressed_no_signal(_same(b.get_meta("value"), cur))
 
 
 func _on_slider(v: float, key: String) -> void:
@@ -512,6 +522,10 @@ func _on_choice(key: String, value: Variant) -> void:
 
 
 func _apply(key: String, value: Variant, persist: bool) -> void:
+	if key == PACE_KEY:
+		if ctx.bus != null:
+			ctx.bus.pace_requested.emit(bool(value))
+		return
 	if ctx.mode != null:
 		ctx.mode.apply_settings({key: value}, persist)
 

@@ -128,6 +128,7 @@ Feature flags. Defaults and descriptions live in res://data/feature_flags.json; 
 ### Functions
 
 - `static func enabled(flag: String, default: bool = true) -> bool`: Whether flag is on. default is used for a name no layer defines.
+- `static func save_user(flag: String, on: bool, path: String = USER_PATH) -> bool`: Saves one flag to the user override file (read back by load_layers on the next boot); returns false when the file cannot be written. Does not change this process, see set_override.
 - `static func reload() -> void`: Re-reads every layer from the environment and disk.
 - `static func load_layers(env_spec: String, use_user: bool) -> void`: Builds the flag table from the JSON defaults, the user file (when use_user) and env_spec.
 - `static func set_override(flag: String, on: bool) -> void`: Sets one flag for this process (tests, debug consoles).
@@ -186,6 +187,20 @@ Local JSON-lines files for the opt-in ops features (errors, analytics, alerts). 
 - `static func path_of(file_name: String) -> String`
 - `static func append(file_name: String, rec: Dictionary, max_bytes: int = MAX_BYTES) -> bool`: Appends rec as one scrubbed JSON line to dir/file_name. False when the file cannot be written.
 - `static func read_all(file_name: String) -> Array[Dictionary]`: Every parsed record of dir/file_name (the live file only), oldest first.
+
+## `scripts/ops/pacing.gd`
+
+class_name `Pacing` · extends `RefCounted`
+
+Step lengths for the per-frame catch-up loops (traffic, birds, animals): a long frame, or a high game speed, hands them a big delta that they work off in steps of at most MAX_STEP. Bounded to MAX_STEPS_PER_FRAME steps a frame, the loops cannot spiral on a slow browser frame.
+
+### Constants
+
+- `MAX_STEPS_PER_FRAME = 12`: Most steps one frame may run in a catch-up loop.
+
+### Functions
+
+- `static func step_for(dt: float, max_step: float) -> float`: The step length for working off dt in steps: max_step, or longer when dt would need more than MAX_STEPS_PER_FRAME of them. dt up to MAX_STEPS_PER_FRAME * max_step (1x speed at any frame rate above 3 fps) keeps the plain max_step.
 
 ## `scripts/ops/pack_loader.gd`
 

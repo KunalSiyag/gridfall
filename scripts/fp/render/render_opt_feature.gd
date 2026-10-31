@@ -149,6 +149,7 @@ func setup(p_ctx: FpContext) -> void:
 		ctx.view.fp_mode_changed.connect(_on_fp_mode_changed)
 	if ctx.bus != null:
 		ctx.bus.quality_changed.connect(_on_quality_changed)
+		ctx.bus.pace_requested.connect(_on_pace_requested)
 	apply_preset(str(ctx.settings.get("quality", Q.DEFAULT)))
 
 
@@ -169,6 +170,8 @@ func teardown() -> void:
 				(pair[0] as Signal).disconnect(pair[1])
 	if ctx.bus != null and ctx.bus.quality_changed.is_connected(_on_quality_changed):
 		ctx.bus.quality_changed.disconnect(_on_quality_changed)
+	if ctx.bus != null and ctx.bus.pace_requested.is_connected(_on_pace_requested):
+		ctx.bus.pace_requested.disconnect(_on_pace_requested)
 	_restore()
 	for r: Node3D in [_imp_root, _occ_root]:
 		if r != null and is_instance_valid(r):
@@ -603,6 +606,10 @@ func _on_fp_mode_changed(on: bool) -> void:
 
 func _on_quality_changed(p: String) -> void:
 	apply_preset(p)
+
+
+func _on_pace_requested(on: bool) -> void:
+	Q.set_real_time_pace(on)
 
 
 ## Re-passes the tiles that waited for a mid-LOD merge (some may wait again for another mesh).

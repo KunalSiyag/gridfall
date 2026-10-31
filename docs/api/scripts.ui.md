@@ -13,6 +13,7 @@ SimCity-style HUD for GridFall: city vitals and RCI demand, time controls, playe
 ### Signals
 
 - `speed_requested(s: int)`
+- `real_time_pace_toggled(on: bool)`: The web build's real-time pace check button (see Quality.set_real_time_pace).
 - `overlay_requested(mode: String)`
 - `save_requested()`
 - `load_requested()`

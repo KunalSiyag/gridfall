@@ -209,6 +209,15 @@ the flag on a split release and expect a complete city.
 
 ## Known limitations (web / gl_compatibility)
 
+- **Slow motion below 30 fps (flag `web_real_time_pace`, off by default).** The web build caps
+  the engine to 2 physics catch-up steps per frame, so a frame over 33 ms advances the world by
+  only 33.3 ms: about 80% speed at a grown city's 42 ms frames, 50% at 15 fps. Turning the flag
+  on raises the cap to 4 (real time down to 15 fps) and bounds the traffic and animal catch-up
+  loops to 12 steps a frame (`Pacing.step_for`). It costs more mayor turns, chat drips and live GMI
+  calls per real minute (about 1.3-2x on a grown city, keyed players only). Players switch it in
+  the pause menu (Settings > Display) or the planner HUD's "Real-time pace" check button, web
+  build only; the choice is saved in `user://feature_flags.json`. To default it on for everyone,
+  change `default` in `data/feature_flags.json` after checking the GMI spend.
 - **`WARNING: Occlusion culling is disabled at build-time.`** Logged once per boot on the web
   build: occlusion culling is compiled out of the Compatibility export. Cosmetic; no action.
 - **Fixed by round 3, verified live 2026-10-28 (`f762234`):** the `FSR2 3D scaling is only

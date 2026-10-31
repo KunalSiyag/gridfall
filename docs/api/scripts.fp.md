@@ -269,6 +269,7 @@ Signals that cross first-person slices. Emitters and listeners are listed in doc
 - `settings_changed(settings: Dictionary)`: The settings changed; settings is the full dict.
 - `pause_changed(paused: bool)`: The game was paused or resumed.
 - `quality_changed(preset: String)`: The quality preset changed: "low", "medium" or "high".
+- `pace_requested(on: bool)`: The player asked for real-time pace (web build) on or off; render_opt applies it.
 - `modal_changed(active: bool)`: Some modal UI opened (true) or the last one closed (false).
 - `world_ready`: The world was rebuilt and every feature ran on_world_rebuilt().
 - `card_action(action: String, tile: int)`: A button on a place card: action "ask_here" (C answers through brain.inspect_tile). Emitted by B.

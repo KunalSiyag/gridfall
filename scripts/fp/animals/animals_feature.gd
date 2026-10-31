@@ -378,8 +378,9 @@ func tick(delta: float) -> void:
 	if dt <= 0.0:
 		pack.step(0.0)
 	var left := dt
+	var step_len := Pacing.step_for(dt, MAX_STEP)
 	while left > 0.0:
-		var h := minf(left, MAX_STEP)
+		var h := minf(left, step_len)
 		pack.step(h)
 		left -= h
 	pigeons.step(dt)

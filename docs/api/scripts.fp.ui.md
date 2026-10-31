@@ -709,6 +709,7 @@ Pause menu (slice B), shown on pause_changed(true) over a frosted blur of the pa
 - `NEW_CITY_CONFIRM = "Press again to start over"`
 - `GMI_TAB = "GMI Cloud"`: The player's own GMI key page (gmi_key_panel.gd); shown only with the player_gmi_key flag.
 - `TABS = { "Camera": [ ["camera_mode", "View", "choice", [["Third person", "third"], ["First per...`: Settings rows per tab: [key, label, kind, args]. kind "slider": [min, max, step, unit]; "choice": [[label, value], ...].
+- `PACE_KEY = "real_time_pace"`: The settings row that is not an FpMode setting: it reads and writes the web_real_time_pace flag (through GameBus.pace_requested), which the planner HUD toggle shares.
 - `LEGEND = [ ["person", "Population", "People living in the city"], ["face", "Mood", "How resident...`
 - `KEYS = [ ["M", "Map"], ["Tab", "City overview"], ["V", "Camera view"], ["Q", "Shoulder"], ["E"...`
 
