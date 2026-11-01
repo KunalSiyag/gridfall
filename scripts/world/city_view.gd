@@ -150,6 +150,8 @@ var _fx_root: Node3D
 var _cars_root: Node3D
 var _peds_root: Node3D
 var _labels_root: Node3D
+## The data-view columns and the power and water icons: nobody sees them on foot, so they are built
+## on first use (_ensure_overlay, _ensure_icons) and are null until then.
 var _overlay_mm: MultiMeshInstance3D
 var _power_icons: MultiMeshInstance3D
 var _water_icons: MultiMeshInstance3D
@@ -278,6 +280,9 @@ func setup(p_sim: CitySim, p_camera: Camera3D) -> void:
 	camera = p_camera
 	for c in get_children():
 		c.queue_free()
+	_overlay_mm = null
+	_power_icons = null
+	_water_icons = null
 	_tile_nodes.clear()
 	_event_nodes.clear()
 	_cars.clear()
@@ -302,11 +307,6 @@ func setup(p_sim: CitySim, p_camera: Camera3D) -> void:
 	_build_ground()
 	_build_trees()
 	_build_district_borders()
-	_overlay_mm = _make_overlay_multimesh()
-	_overlay_mm.visible = false
-	add_child(_overlay_mm)
-	_power_icons = _make_icon_multimesh(Color(1.0, 0.25, 0.2))
-	_water_icons = _make_icon_multimesh(Color(0.25, 0.6, 1.0))
 	_build_cursor()
 	_build_avatars()
 	_spinners.clear()
@@ -413,8 +413,11 @@ func _apply_fp_visibility() -> void:
 	_labels_root.visible = orbit
 	if _territory_root != null:
 		_territory_root.visible = orbit
-	_power_icons.visible = orbit
-	_water_icons.visible = orbit
+	if orbit:
+		_ensure_icons()
+	if _power_icons != null:
+		_power_icons.visible = orbit
+		_water_icons.visible = orbit
 	if _cursor != null and fp_mode:
 		_cursor.visible = false
 	for av: Dictionary in _avatars:
@@ -1042,9 +1045,7 @@ func _make_overlay_multimesh() -> MultiMeshInstance3D:
 	mm.use_colors = true
 	mm.mesh = box
 	mm.instance_count = D.W * D.H
-	for i in range(D.W * D.H):
-		mm.set_instance_transform(i, _column(i, 0.0))
-		mm.set_instance_color(i, Color(0, 0, 0, 0))
+	mm.buffer = _flat_columns()
 	var mmi := MultiMeshInstance3D.new()
 	mmi.multimesh = mm
 	mmi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
@@ -1054,6 +1055,31 @@ func _make_overlay_multimesh() -> MultiMeshInstance3D:
 func _column(i: int, h: float) -> Transform3D:
 	var hh := maxf(h, 0.001)
 	return Transform3D(Basis().scaled(Vector3(1.0, hh, 1.0)), Vector3(D.tx(i), 0.06 + hh * 0.5, D.ty(i)))
+
+
+## The overlay's first buffer in MultiMesh order (a 3x4 transform of 12 floats, then the colour's
+## 4): every tile a flat, clear column, as _column(i, 0.0) and Color(0, 0, 0, 0) give it, written
+## in one go instead of two engine calls a tile. _column() is a pure scale, so only the diagonal
+## and the origin are written.
+func _flat_columns() -> PackedFloat32Array:
+	var flat := _column(0, 0.0)
+	var sx := flat.basis.x.x
+	var sy := flat.basis.y.y
+	var sz := flat.basis.z.z
+	var lift := flat.origin.y
+	var buf := PackedFloat32Array()
+	buf.resize(D.W * D.H * 16)
+	var o := 0
+	for y in range(D.H):
+		for x in range(D.W):
+			buf[o] = sx
+			buf[o + 3] = x + D.X0
+			buf[o + 5] = sy
+			buf[o + 7] = lift
+			buf[o + 10] = sz
+			buf[o + 11] = y + D.Y0
+			o += 16
+	return buf
 
 
 func _make_icon_multimesh(col: Color) -> MultiMeshInstance3D:
@@ -1072,6 +1098,18 @@ func _make_icon_multimesh(col: Color) -> MultiMeshInstance3D:
 	mmi.multimesh = mm
 	add_child(mmi)
 	return mmi
+
+
+func _ensure_overlay() -> void:
+	if _overlay_mm == null:
+		_overlay_mm = _make_overlay_multimesh()
+		add_child(_overlay_mm)
+
+
+func _ensure_icons() -> void:
+	if _power_icons == null:
+		_power_icons = _make_icon_multimesh(Color(1.0, 0.25, 0.2))
+		_water_icons = _make_icon_multimesh(Color(0.25, 0.6, 1.0))
 
 
 ## The props pack arrived carrying the real tree models: rebuild the kits
@@ -2912,6 +2950,7 @@ func _dust_puff(pos: Vector3) -> void:
 func _refresh_status() -> void:
 	if fp_mode:
 		return
+	_ensure_icons()
 	var pm := _power_icons.multimesh
 	var wm := _water_icons.multimesh
 	var pc := 0
@@ -2930,7 +2969,8 @@ func _refresh_status() -> void:
 			wc += 1
 	pm.visible_instance_count = pc
 	wm.visible_instance_count = wc
-	if overlay_mode != "none":
+	# A mode left over from before a setup() has no columns yet: the HUD sets it again.
+	if overlay_mode != "none" and _overlay_mm != null:
 		_refresh_overlay()
 
 
@@ -2938,7 +2978,10 @@ func set_overlay(mode: String) -> void:
 	if fp_mode and mode != "none":
 		return
 	overlay_mode = mode
-	_overlay_mm.visible = mode != "none"
+	if mode != "none":
+		_ensure_overlay()
+	if _overlay_mm != null:
+		_overlay_mm.visible = mode != "none"
 	# Data views hide the buildings so the value columns read clearly, like SimCity's info layers.
 	var data_view := mode != "none" and mode != "districts"
 	_tiles_root.visible = not data_view
@@ -3314,6 +3357,17 @@ func _update_population(delta: float) -> void:
 
 # ------------------------------------------------------------------ frame loop & input
 
+## The status icons breathe in orbit; on foot they are hidden and left alone.
+func _pulse_icons() -> void:
+	if fp_mode or _power_icons == null:
+		return
+	var pulse := 0.85 + 0.15 * sin(_time * 4.0)
+	_power_icons.scale = Vector3.ONE * pulse
+	_power_icons.position = Vector3((1.0 - pulse) * 15.5, 0, (1.0 - pulse) * 15.5)
+	_water_icons.scale = _power_icons.scale
+	_water_icons.position = _power_icons.position
+
+
 func _process(delta: float) -> void:
 	if sim == null:
 		return
@@ -3331,11 +3385,7 @@ func _process(delta: float) -> void:
 		_status_timer = 0.0
 		_refresh_status()
 	t = _section("status", t)
-	var pulse := 0.85 + 0.15 * sin(_time * 4.0)
-	_power_icons.scale = Vector3.ONE * pulse
-	_power_icons.position = Vector3((1.0 - pulse) * 15.5, 0, (1.0 - pulse) * 15.5)
-	_water_icons.scale = _power_icons.scale
-	_water_icons.position = _power_icons.position
+	_pulse_icons()
 	for av: Dictionary in _avatars:
 		var root: Node3D = av["root"]
 		var target: Vector3 = av["target"]

@@ -2,8 +2,9 @@ extends FpFeature
 ## Render performance (slice G2): applies the quality preset (FSR2 scaling, shadow atlas and filter,
 ## SSAO and SSIL quality, mesh LOD threshold, camera far plane) and restores every knob on teardown;
 ## on foot it ranges every tile holder's parts (hlod.gd), draws far buildings as merged chunk
-## impostors and culls with per-chunk occluders (occluders.gd). Tile post-passes queue on tile_built
-## and run under a per-frame budget (FRAME_BUDGET_USEC), followed by at most one chunk rebuild.
+## impostors and culls with per-chunk occluders (occluders.gd; not in the browser, see web). Tile
+## post-passes queue on tile_built and run under a per-frame budget (FRAME_BUDGET_USEC), followed
+## by at most one chunk rebuild.
 ## Aerial coverage: once the camera is AERIAL_MIN above the hero (the city overview lifts it, and so
 ## does a photo fly), roads, open construction sites, far trees, the fog end and the far plane widen
 ## so the city stays whole from the sky at every zoom. Every value is re-derived on exit, so a
@@ -75,6 +76,12 @@ const VIEWPORT_KEYS := [
 	"scaling_3d_mode", "scaling_3d_scale", "msaa_3d", "mesh_lod_threshold", "use_occlusion_culling"
 ]
 
+## The browser export: it compiles occlusion culling out, so nothing there reads an occluder. On the
+## web no occluders are built and the viewport's occlusion flag stays as it was (tests set it to run
+## that path on the desktop). The platform tag stands in for a capability the engine cannot be asked
+## about: after an engine bump re-check the web template (docs/runbooks/web-deploy.md, the occlusion
+## warning).
+var web: bool = Q.is_web()
 ## The applied preset: "low", "medium" or "high".
 var preset: String = Q.DEFAULT
 ## Aerial coverage on: the camera is over the city (the overview, a photo fly).
@@ -378,14 +385,14 @@ func self_test() -> Dictionary:
 		fails.append("preset %s not applied" % preset)
 	if not active:
 		fails.append("post-pass inactive")
-	elif _vp == null or not _vp.use_occlusion_culling:
+	elif not web and (_vp == null or not _vp.use_occlusion_culling):
 		fails.append("occlusion culling off")
 	var solid := 0
 	for e: Dictionary in hlod.tiles.values():
 		if bool(e["solid"]):
 			solid += 1
 	var boxes: int = occluders.box_count()
-	if boxes * 10 < solid:
+	if not web and boxes * 10 < solid:
 		fails.append("occluder boxes %d for %d solid tiles" % [boxes, solid])
 	var near := 0
 	var p := ctx.player_position()
@@ -522,8 +529,9 @@ func _activate() -> void:
 			hlod.post_pass(i, h)
 	for c: Vector2i in hlod.chunk_tiles.keys():
 		hlod.rebuild_chunk(c)
-		occluders.rebuild_chunk(c, hlod)
-	if _vp != null:
+		if not web:
+			occluders.rebuild_chunk(c, hlod)
+	if _vp != null and not web:
 		_vp.use_occlusion_culling = true
 	if aerial and ctx.view != null:
 		# The rebuild replaced the trees and the sites; the coverage goes back on.
@@ -643,7 +651,8 @@ func _rebuild_one() -> void:
 	_dirty.erase(c)
 	var t0: int = clock.call()
 	hlod.rebuild_chunk(c)
-	occluders.rebuild_chunk(c, hlod)
+	if not web:
+		occluders.rebuild_chunk(c, hlod)
 	rebuild_us_max = maxi(rebuild_us_max, int(clock.call()) - t0)
 
 

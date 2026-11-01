@@ -277,8 +277,9 @@ static func make_player(ctx: FpContext) -> FpPlayer:
 
 ## Instantiates a registered feature by id from fp_features.gd, adds it under the kit's
 ## "Features" Node3D (so it is inside the tree and its _process runs when the test yields frames),
-## sets ctx.features[id], then runs setup(ctx) and on_world_rebuilt().
-static func make_feature(ctx: FpContext, id: String) -> FpFeature:
+## sets ctx.features[id], then runs setup(ctx) and on_world_rebuilt(). props are members set first,
+## before setup (render_opt's {"web": true}).
+static func make_feature(ctx: FpContext, id: String, props: Dictionary = {}) -> FpFeature:
 	var path := ""
 	for e: Dictionary in REGISTRY.FEATURES:
 		if str(e["id"]) == id:
@@ -297,6 +298,8 @@ static func make_feature(ctx: FpContext, id: String) -> FpFeature:
 		printerr("fp_kit.make_feature: FAILED to instantiate %s" % path)
 		return null
 	f.name = id
+	for key: String in props:
+		f.set(key, props[key])
 	ctx.world_root.get_parent().get_node("Features").add_child(f)
 	ctx.features[id] = f
 	f.setup(ctx)

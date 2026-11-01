@@ -6,6 +6,11 @@
 // the engine boots (via a same-origin page), so the game continues a grown city instead of a
 // fresh day 1. The run fails if the "continuing the saved city" line never appears.
 //
+// GF_FPS_NO_OCCLUSION=1 exits 5 when the console shows any "occlusion" line (it is also counted in
+// result.json as occlusion_lines). Set it on a build where render_opt skips the occluders in the
+// browser: the engine's "Occlusion culling is disabled at build-time" warning must be gone there.
+// Older builds log it once per boot, so it is off by default.
+//
 // usage: DISPLAY=:1 NODE_PATH=<dir with playwright-core> node tools/web_fps_probe.js <url> <outdir>
 // See docs/runbooks/web-deploy.md (post-redeploy checklist) for when to run it and how
 // GF_FPS_SAVE seeds a grown-city save before boot.
@@ -15,6 +20,7 @@ const path = require("path");
 const URL_ = process.argv[2];
 const OUT = process.argv[3] || "/tmp/gf-web-fps";
 const SAVE = process.env.GF_FPS_SAVE || "";
+const NO_OCCLUSION = process.env.GF_FPS_NO_OCCLUSION === "1";
 // Emscripten IDBFS layout as used by the Godot web export (verified against a live boot's
 // IndexedDB dump on 2026-10-27; keep in sync if the engine's storage ever changes).
 const IDB_DIR = "/userfs/godot/app_userdata/GridFall \u2014 GMI Cloud Multi-Model Crisis Sim";
@@ -165,13 +171,15 @@ const log = [];
 	const exitFp = { exit_clean: exitBad.length === 0, enter_clean: enterBad.length === 0,
 		lines: exitBad.concat(enterBad).slice(0, 10) };
 	const bad = log.filter((l) => /Too many instances|FSR2|occlusion|SCRIPT ERROR|pageerror|^error/i.test(l));
+	const occlusion = log.filter((l) => /occlusion/i.test(l));
 	// Checked late: the "continuing" line lands after the GPU banner that ends the boot wait.
 	const continued = log.some((l) => /continuing the saved city/i.test(l));
 	const result = { url: URL_, renderer, gl_renderer_line: glRendererLine,
 		hardware: !/swiftshader|llvmpipe|software/i.test(renderer),
 		chrome_gpu_hw: webglHw, booted, boot_s: bootS,
 		save_seeded: SAVE ? saveSeeded : null, save_continued: SAVE ? continued : null,
-		street, sky, exit_fp: exitFp, warnings: bad.slice(0, 40), warning_count: bad.length };
+		street, sky, exit_fp: exitFp, warnings: bad.slice(0, 40), warning_count: bad.length,
+		occlusion_lines: occlusion.length };
 	fs.writeFileSync(path.join(OUT, "console.log"), log.join("\n"));
 	fs.writeFileSync(path.join(OUT, "result.json"), JSON.stringify(result, null, 2));
 	console.log("GF_FPS_RENDERER " + renderer);
@@ -179,4 +187,5 @@ const log = [];
 	await browser.close();
 	if (SAVE && (saveSeeded !== true || !continued)) process.exit(3);
 	if (!exitFp.exit_clean || !exitFp.enter_clean) process.exit(4);
+	if (NO_OCCLUSION && occlusion.length) process.exit(5);
 })().catch((e) => { console.error("GF_FPS_ERROR", e); process.exit(2); });
