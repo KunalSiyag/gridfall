@@ -9,6 +9,7 @@ const K := preload("res://tools/tests/fp_kit.gd")
 const D := preload("res://scripts/sim/sim_defs.gd")
 const Q := preload("res://scripts/fp/render/quality.gd")
 const HLOD := preload("res://scripts/fp/render/hlod.gd")
+const OVERVIEW := preload("res://scripts/fp/overview/overview_feature.gd")
 const LP := preload("res://scripts/fp/street/light_profile.gd")
 const WS := preload("res://scripts/fp/world_scale.gd")
 const EPS := 1e-5
@@ -69,6 +70,7 @@ func _check_aerial(ctx: FpContext, f: Node, hlod: RefCounted) -> void:
 	_check_aerial_midair(ctx, f, hlod)
 	_check_aerial_new_sites(ctx, f, site_ends)
 	_check_aerial_off(ctx, f, hlod, site_ends)
+	_check_aerial_normal_bias(ctx, f)
 	env.fog_depth_begin = WS.FOG_DEPTH_BEGIN
 	ctx.bus.quality_changed.emit("medium")
 	f.call("flush")
@@ -84,6 +86,91 @@ func _check_aerial_shadows(ctx: FpContext, hlod: RefCounted, preset: String) -> 
 	K.check(fails, reach, msg % [preset, sun.directional_shadow_max_distance, _split(sun, 0)])
 	var on := GeometryInstance3D.SHADOW_CASTING_SETTING_ON
 	K.check(fails, _chunks_cast(hlod, on), "aerial: the impostor chunks cast shadows")
+
+
+## The sun's normal bias over the city: on Compatibility the preset's larger one while the camera is
+## aerial or the overview is open, even zoomed in under the aerial height (at the street profile's,
+## the road and sidewalk pieces, which cast shadows, shade themselves in diagonal stripes); on
+## Forward+ the street's own. The street profile's value is back on the way down, and a value the
+## street profile writes mid-air (a preset switch) is the new street value, not ours. High's is
+## smaller than Medium's: the one that cleans Medium washed High's tree shadows out. A preset switch
+## with the overview open takes the new preset's value. The feature runs on the renderer that is
+## running (gate steps fp_aerial_test and fp_aerial_test_gl cover Forward+ and Compatibility); the
+## table's rule is also checked for both renderers through Q.aerial_normal_bias.
+func _check_aerial_normal_bias(ctx: FpContext, f: Node) -> void:
+	var sun := ctx.sun
+	var env := ctx.player.camera.environment
+	LP.apply(env, sun, "fp", "medium")
+	ctx.bus.quality_changed.emit("medium")
+	f.call("_process", 0.0)
+	var street := sun.shadow_normal_bias
+	var other := street + 0.15
+	var table: Dictionary = Q.COMPAT_AERIAL_NORMAL_BIAS
+	var fixture := "fixture: the aerial bias of %s (%.1f) is well above the street's %.1f"
+	for preset: String in Q.NAMES:
+		var v := float(table.get(preset, 0.0))
+		K.check(fails, v > 2.0 * street, fixture % [preset, v, street])
+		var gl := Q.aerial_normal_bias(preset, street, "gl_compatibility")
+		K.check(fails, is_equal_approx(gl, v), "Compatibility takes %s's table value" % preset)
+		var plus := Q.aerial_normal_bias(preset, street, "forward_plus")
+		K.check(fails, is_equal_approx(plus, street), "Forward+ keeps the street's (%s)" % preset)
+	var hi := float(table["high"])
+	var med := float(table["medium"])
+	K.check(fails, hi < med, "High's aerial bias (%.1f) is below Medium's (%.1f)" % [hi, med])
+	var named: bool = f.get("OVERVIEW_MODAL") == OVERVIEW.MODAL
+	K.check(fails, named, "render_opt names the modal the overview feature really pushes")
+	var method := RenderingServer.get_current_rendering_method()
+	var compat := Q.is_compat()
+	var big := med
+	_bias_is(f, sun, street, "%s on foot" % method)
+	ctx.push_modal(OVERVIEW.MODAL)
+	f.call("_process", 0.0)
+	var low := "%s overview open under the aerial height" % method
+	K.check(fails, not bool(f.get("aerial")), "fixture: not aerial, " + low)
+	_bias_is(f, sun, big if compat else street, low)
+	sun.shadow_normal_bias = other
+	_bias_is(f, sun, big if compat else other, "%s street value written mid-overview" % method)
+	ctx.pop_modal(OVERVIEW.MODAL)
+	_bias_is(f, sun, other, "%s overview closed: the street value written last" % method)
+	_aerial_up(ctx, f, true)
+	_bias_is(f, sun, big if compat else other, "%s aerial" % method)
+	_aerial_up(ctx, f, false)
+	_bias_is(f, sun, other, "%s back on the street" % method)
+	sun.shadow_normal_bias = street
+	_check_aerial_bias_presets(ctx, f)
+	LP.apply(env, sun, "fp", "medium")
+	ctx.bus.quality_changed.emit("medium")
+
+
+## With the overview open, each preset's own bias (the street's on Forward+), and a preset switch
+## made while it is open takes the new preset's value on the next frame.
+func _check_aerial_bias_presets(ctx: FpContext, f: Node) -> void:
+	var sun := ctx.sun
+	var street := sun.shadow_normal_bias
+	var method := RenderingServer.get_current_rendering_method()
+	var compat := Q.is_compat()
+	var table: Dictionary = Q.COMPAT_AERIAL_NORMAL_BIAS
+	ctx.push_modal(OVERVIEW.MODAL)
+	for preset: String in ["low", "medium", "high", "medium"]:
+		ctx.bus.quality_changed.emit(preset)
+		var want := float(table[preset]) if compat else street
+		_bias_is(f, sun, want, "%s %s, overview" % [method, preset])
+	ctx.pop_modal(OVERVIEW.MODAL)
+	_bias_is(f, sun, street, "%s overview closed after the preset switches" % method)
+
+
+## One frame on, the sun's normal bias is want.
+func _bias_is(f: Node, sun: DirectionalLight3D, want: float, what: String) -> void:
+	f.call("_process", 0.0)
+	var msg := "%s: normal bias %.2f (want %.2f)" % [what, sun.shadow_normal_bias, want]
+	K.check(fails, is_equal_approx(sun.shadow_normal_bias, want), msg)
+
+
+## Lifts the camera over the city (up) or drops it to the hero's eye, and lets the feature see it.
+func _aerial_up(ctx: FpContext, f: Node, up: bool) -> void:
+	ctx.player.camera.global_position = ctx.player.position + Vector3.UP * (3.5 if up else 1.0)
+	f.call("_process", 0.0)
+	f.call("flush")
 
 
 ## Cascade split k + 1 of the sun (0, 1, 2).

@@ -100,9 +100,10 @@ const WEB := {
 	"lod": 2.5,
 	"lights": 4,
 }
-## Density ceilings the web quality tier publishes for the traffic, crowd and animal owners to
-## clamp their budgets to; each owner tunes its own number with before/after FPS evidence.
-const WEB_DENSITY := {"traffic": 12, "crowd": 24, "animals": 6}
+## Density ceilings the web quality tier publishes for the traffic, crowd, animal and rain owners
+## to clamp their budgets to; each owner tunes its own number with before/after evidence (FPS for
+## the first three, streak pixels in screenshots for the rain emitter's particle count).
+const WEB_DENSITY := {"traffic": 12, "crowd": 24, "animals": 6, "rain": 600}
 
 ## Browser pacing: physics catch-up steps a frame may run, below the engine default of 8. The
 ## browser build pays 6-35 ms per physics step, so 8 catch-up steps after a slow frame add more
@@ -210,6 +211,30 @@ static func viewport_knobs(preset: String, method: String = "", web: bool = fals
 	return out
 
 
+## Whether the Environment's SSAO may stay on under a preset. Observed on Compatibility (Godot
+## 4.7.2): when the 3D view renders below native size, the plaza ground seen from the street shows
+## rows of dark horizontal lines fixed to the screen, continuous on High and dashed on Low. Only
+## that street view was measured: in the day city overview, SSAO on and off measured the same on a
+## lawn and a road (faint rows showed on a dark lawn in one dawn-rain overview shot, with no shot
+## with SSAO off to compare), so the overview loses its ambient occlusion with no measured gain.
+## Measured on the web build on a real GPU (ANGLE, AMD), 2026-11-01, as the rms of a high-passed
+## row profile of the plaza ground in 8-bit grey levels, in the street photo's left and right plaza
+## boxes: 12.2 / 10.2 / 13.1 (left) and 14.2 / 10.4 / 12.8 (right) at Low / Medium / High at the
+## web tier's 0.6 scale (rows about 5 px apart); 11.1 and 14.2 at Compatibility Low's 0.77 (about
+## 4.3 px apart); against 0.7 to 1.6 (left) and 1.3 to 3.0 (right) with SSAO off (zeroing
+## ssao_intensity does the same) or at native size (Medium and High, flag off). Why SSAO draws the
+## rows is not established; the rule rests on those measurements. So on Compatibility SSAO stays
+## off whenever the preset renders the 3D view below native size. render_opt applies it with the
+## scale, so the two stand or fall together. The price: no ambient occlusion in the web build's
+## first-person view at any preset, and none on desktop Compatibility Low (not measured on a
+## desktop run; the 0.77 result is from the web build with the flag off); Forward+ and native-size
+## Compatibility keep it. method and web override the running renderer and the web tier (tests).
+static func ssao_ok(preset: String, method: String = "", web: bool = false) -> bool:
+	if not is_compat(method):
+		return true
+	return float(viewport_knobs(preset, method, web)["scale"]) >= 1.0
+
+
 ## Multiplier on every WS.VIS_* range: 0.7 / 1.0 / 1.3 (0.55 in the web tier).
 static func vis_mult(preset: String, web: bool = false) -> float:
 	return float(knobs(preset, web)["vis"])
@@ -250,15 +275,20 @@ static func aerial_fog_end(preset: String) -> float:
 ## city keeps its shadows from the sky (the impostor chunks cast them then: one low-poly draw per
 ## chunk and cascade). On Compatibility every cascade redraws each shadowed mesh in the forward
 ## pass, and a full aerial reach there costs hundreds of draws, so its reach caps tighter. Low
-## drops the pass entirely: at the overview's 26 u altitude a sub-26 m frustum casts nothing
-## anyway (measured: reach 24 == shadows off, draw-for-draw), and the pass is ~660 draws plus
-## 1-2 ms of render CPU the 2-core web box cannot spare. Every nonzero cap sits clear of the
+## asks for the pass off (render_opt writes sun.shadow_enabled = false on entry): at the overview's
+## 26 u altitude a sub-26 m frustum casts nothing anyway (measured: reach 24 == shadows off,
+## draw-for-draw), and the pass is ~660 draws plus 1-2 ms of render CPU the 2-core web box cannot
+## spare. Known gap: SkyDirector rewrites sun.shadow_enabled every frame (_apply, energy > 0.02,
+## which holds at every hour), so the request is undone a frame later and the pass stays on; what
+## keeps Low clean at the default overview altitude is its 8 u street reach, not the pass being
+## off. Making the request real is a separate decision. Every nonzero cap sits clear of the
 ## street profile's 8/12/16 reaches, so render_opt's street-value snapshot never mistakes one for
 ## the other. The cascade splits stay fractions of the reach: the camera hangs over the roofs, so
 ## the nearest ground is far from the lens (split 1 is all a 2-split preset uses).
 const AERIAL_SHADOW_SPLITS := [0.4, 0.6, 0.8]
-## Aerial shadow reach per preset on Compatibility; 0 means the sun's shadow pass is off while
-## aerial (render_opt disables it and restores the street state on exit).
+## Aerial shadow reach per preset on Compatibility; 0 asks for the sun's shadow pass to be off while
+## aerial (render_opt disables it and restores the street state on exit; SkyDirector turns it back
+## on every frame, see AERIAL_SHADOW_SPLITS).
 const COMPAT_AERIAL_SHADOW := {"low": 0.0, "medium": 48.0, "high": 64.0}
 
 
@@ -266,6 +296,42 @@ static func aerial_shadow(preset: String, method: String = "") -> float:
 	if is_compat(method):
 		return float(COMPAT_AERIAL_SHADOW[normalize(preset)])
 	return aerial_far(preset)
+
+
+## The sun's shadow normal bias per preset while the camera is over the city or the overview is
+## open. On Compatibility the street profile's 0.6 (tuned for 8 cm kerbs) is too small for the wide
+## cascades that view needs: the road and sidewalk pieces cast shadows (the ground does not), so
+## they shade themselves in coherent diagonal stripes. They show at Medium and High from the default
+## overview altitude (Low's 8 u street reach sees no ground from there) and, zoomed in under
+## AERIAL_OFF, at Low too, as strong on the roads as at Medium. Low and Medium (two cascades) take
+## 3.0 and High (four, blended; finer texels, a guess not isolated) 2.0: the sweep below is the
+## evidence, a single value over-corrects High.
+## Measured on the web build on a real GPU (ANGLE, AMD) with a scratch metric that is not in the
+## repo (robust rms of the road's and sidewalk's high-passed luminance, grey levels, default
+## overview, sky hour pinned; the mask moves the absolute figures, so trust the order; clean floor
+## about 0.15 to 0.3). Medium at hour 15.5: 0.6 reads 2.05 / 1.61 (road / sidewalk) and 3.0 reads
+## 0.33 / 0.20; at hour 16.5: 1.35 / 1.10 and 0.53 / 0.48; an earlier sweep read 1.2 to 1.4 at 2.0
+## and about 0.6 at 2.5. High at hour 15.5: 0.6 reads 0.93 / 1.03, 1.5 reads 0.27 / 0.18, 2.0 reads
+## 0.22 / 0.15, 3.0 reads 0.18 / 0.16; at hour 16.5: 0.73 / 0.73, 0.40 / 0.35, 0.27 / 0.16 and 0.20
+## / 0.15 (1.5 leaves a faint residue at the lower sun, so High takes 2.0). The depth bias (0.1) and
+## 32-bit shadow depth changed nothing; a 4096 atlas cut it by a quarter, not enough. Roads and
+## sidewalks set to cast nothing also clean it (0.37) without thinning any shadow, but that reaches
+## the street view too and was not measured on foot.
+## The price is shadow strength: the bias lifts the lookup off every surface, so soft shadows fade
+## at their far ends. Share of the tree shadows' darkness on the lawn kept against 0.6, same pose:
+## Medium at 3.0, 0.87 (hour 15.5) and 1.0 (hour 16.5); High at 3.0, 0.53 and 0.70, at 2.0, 0.68 and
+## 0.80 (the 3.0 that cleans Medium washed the High tree shadows out). Thin casters lose theirs (the
+## lamp pole's, seen at Low zoomed in, is gone at 3.0; it was faint at Medium); 8.0 washes tree
+## shadows out at Medium too. Forward+ keeps the street value.
+const COMPAT_AERIAL_NORMAL_BIAS := {"low": 3.0, "medium": 3.0, "high": 2.0}
+
+
+## The sun's normal bias over the city: the preset's COMPAT_AERIAL_NORMAL_BIAS on Compatibility,
+## the street profile's own (street) on any other renderer.
+static func aerial_normal_bias(preset: String, street: float, method: String = "") -> float:
+	if is_compat(method):
+		return float(COMPAT_AERIAL_NORMAL_BIAS[normalize(preset)])
+	return street
 
 
 ## The street fog end for a preset (light_profile.fog_end's rule, for restoring it on exit).

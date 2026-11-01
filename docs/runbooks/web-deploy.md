@@ -297,6 +297,48 @@ the flag on a split release and expect a complete city.
 
 ## Known limitations (web / gl_compatibility)
 
+- **No ambient occlusion in the web build's first-person view (`Quality.ssao_ok`).** On
+  Compatibility (Godot 4.7.2), SSAO drew rows of dark horizontal lines on the plaza ground seen
+  from the street whenever the 3D view rendered below native size. Only that street view was
+  measured: in the day city overview, SSAO on and off measured the same on a lawn and a road, so
+  the overview loses its ambient occlusion with no measured gain. Measured on the web build
+  on a real GPU (ANGLE, AMD) on 2026-11-01, as the rms of a high-passed row profile of the plaza
+  ground in 8-bit grey levels, in the street photo's left and right plaza boxes (left / right):
+  12.2 / 14.2, 10.2 / 10.4 and 13.1 / 12.8 at Low / Medium / High in the web tier (3D scale 0.6,
+  rows about 5 px apart), 11.1 / 14.2 on web Low with `web_quality` off (scale 0.77), against 0.7
+  to 1.6 (left) and 1.3 to 3.0 (right) with SSAO off or at native size. `render_opt`, which owns
+  the 3D scale, switches SSAO off wherever Compatibility renders scaled, so the web build has no
+  ambient occlusion (less contact shading in creases and under objects) at any preset, and desktop
+  Compatibility Low has none either (that one was not measured on a desktop run; it rests on the
+  web result at the same 0.77 scale). `web_quality=off` does not bring it back on Low; Medium and
+  High with the flag off render at native size and keep it. With the `render_opt` flag off nothing
+  is scaled and SSAO stays as the orbit view has it; the `streetscape` flag does not matter. What
+  inside the engine produces the rows is not established.
+- **Rain streaks are capped in the web tier and off over the city (`Quality.WEB_DENSITY["rain"]`,
+  `Weather._step_rain`).** The browser build draws at most 600 rain streaks at every preset (Low,
+  Medium and High would draw 800, 1,600 and 3,000; `web_quality=off` lifts the cap) and the emitter
+  is off and hidden while the Tab overview is open or the camera is more than 10 m above the
+  player's feet, where it only drew streaks hanging before the lens. The overview counts whatever
+  the height: its camera sits over the ground, so a hero standing on a roof (wall climb allows it)
+  has the zoomed-in overview under 10 m over their feet. The planner view has no emitter: leaving
+  first person frees the weather. Both rules are the web tier's only: the desktop keeps its
+  800 / 1,600 / 3,000 streaks and its overview rain, because the overview result below comes from
+  the browser's renderer alone. The P photo fly keeps its rain at any height (its feet follow the
+  camera). `GRIDFALL_WEB_CAPS="rain=n"` moves the cap (at least 1, because an emitter takes no
+  fewer) wherever the tier is on and the engine sees the variable; only the tests set it, no
+  desktop run forces the tier, and whether the browser shell passes environment variables was not
+  checked.
+  Measured on the web build on a real GPU (ANGLE, AMD) on 2026-11-01 as the share of frame pixels
+  that are thin bright streaks (luma more than 20 grey levels above its 7 px horizontal opening, HUD
+  masked), fresh seed-7 city in its day-1 rain at 1280x720: the Tab overview went from 0.60 / 1.12 /
+  1.77% to 0.17 to 0.22% at Low / Medium / High (the same overview with no rain at all reads 0.17 to
+  0.34%), and the street's rain share, net of the same street with no rain, from 0.75 / 1.73 / 2.78%
+  to 0.40 / 0.56 / 0.40%. At High the street's net share was 0.08 / 0.27 / 0.40 / 0.60% at 200 / 400
+  / 600 / 800 streaks. All of that is the 06:00 plaza, where the streaks stand out against a dark
+  scene; no daytime frame was measured, and in the daytime frames looked at (06:45 to 07:00, grey
+  sky) 600 streaks are sparse and faint, only a few crossing the sky, with the splash beads on the
+  ground as the clearer rain cue. If daytime rain reads too thin, change `WEB_DENSITY["rain"]` and
+  re-measure: more streaks bring the lines back at night.
 - **Slow motion below 30 fps (flag `web_real_time_pace`, off by default).** The web build caps
   the engine to 2 physics catch-up steps per frame, so a frame over 33 ms advances the world by
   only 33.3 ms: about 80% speed at a grown city's 42 ms frames, 50% at 15 fps. Turning the flag

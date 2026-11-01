@@ -1,10 +1,11 @@
 extends FpFeature
 ## Render performance (slice G2): applies the quality preset (FSR2 scaling, shadow atlas and filter,
-## SSAO and SSIL quality, mesh LOD threshold, camera far plane) and restores every knob on teardown;
-## on foot it ranges every tile holder's parts (hlod.gd), draws far buildings as merged chunk
-## impostors and culls with per-chunk occluders (occluders.gd; not in the browser, see web). Tile
-## post-passes queue on tile_built and run under a per-frame budget (FRAME_BUDGET_USEC), followed
-## by at most one chunk rebuild.
+## SSAO and SSIL quality, mesh LOD threshold, camera far plane, and the Environment's SSAO switch,
+## off on Compatibility while the view renders below native size) and restores every knob on
+## teardown; on foot it ranges every tile holder's parts (hlod.gd), draws far buildings as merged
+## chunk impostors and culls with per-chunk occluders (occluders.gd; not in the browser, see web).
+## Tile post-passes queue on tile_built and run under a per-frame budget (FRAME_BUDGET_USEC),
+## followed by at most one chunk rebuild.
 ## Aerial coverage: once the camera is AERIAL_MIN above the hero (the city overview lifts it, and so
 ## does a photo fly), roads, open construction sites, far trees, the fog end and the far plane widen
 ## so the city stays whole from the sky at every zoom. Every value is re-derived on exit, so a
@@ -72,6 +73,9 @@ const SHADOW_KEYS := [
 	"directional_shadow_split_2",
 	"directional_shadow_split_3",
 ]
+## The modal owner the overview feature pushes while it is open (its MODAL); named here and not
+## imported, as weather.gd and the other features do.
+const OVERVIEW_MODAL := &"overview"
 const VIEWPORT_KEYS := [
 	"scaling_3d_mode", "scaling_3d_scale", "msaa_3d", "mesh_lod_threshold", "use_occlusion_culling"
 ]
@@ -107,6 +111,9 @@ var clock: Callable = Time.get_ticks_usec
 var _vp: Viewport
 var _vp_snap: Dictionary = {}
 var _rs_snap: Dictionary = {}
+## The Environment's SSAO switch as it was at setup (the orbit value): what apply_preset may leave
+## on, and what teardown puts back.
+var _env_ssao: bool = false
 var _cam_far: float = -1.0
 var _dirty: Dictionary = {}
 var _job: Array = []
@@ -123,6 +130,10 @@ var _street_shadow: Array = []
 var _shadow_set: float = -1.0
 var _shadow_off_held: bool = false
 var _street_shadow_enabled: bool = true
+## The sun's normal bias as _sun_bias last wrote it (NAN before the first), and the street
+## profile's own value, which is whatever the sun carried that was not ours.
+var _nb_set: float = NAN
+var _nb_street: float = 0.0
 ## Seconds since the last open-site re-scan while aerial.
 var _aerial_site_t: float = 0.0
 ## Tiles built since their last post-pass: tile index -> holder, in arrival order.
@@ -186,16 +197,21 @@ func teardown() -> void:
 
 
 ## Applies preset p (unknown names give Medium) to the viewport, the RenderingServer, the camera and
-## the visibility ranges; cached parts are re-ranged over the next frames.
-func apply_preset(p: String) -> void:
+## the visibility ranges; cached parts are re-ranged over the next frames. SSAO goes with the 3D
+## scale: on Compatibility it is off while the view renders below native size (Q.ssao_ok), and
+## never on over the orbit's own off. method and web override the running renderer and the web
+## tier for the viewport knobs and SSAO only (tests).
+func apply_preset(p: String, method: String = "", web: bool = false) -> void:
 	preset = Q.normalize(p)
 	var k := Q.knobs(preset)
 	if _vp != null:
-		var vk := Q.viewport_knobs(preset)
+		var vk := Q.viewport_knobs(preset, method, web)
 		_vp.scaling_3d_mode = int(vk["scaling_mode"]) as Viewport.Scaling3DMode
 		_vp.scaling_3d_scale = float(vk["scale"])
 		_vp.msaa_3d = int(vk["msaa"]) as Viewport.MSAA
 		_vp.mesh_lod_threshold = float(k["lod"])
+		if ctx.env != null:
+			ctx.env.ssao_enabled = _env_ssao and Q.ssao_ok(preset, method, web)
 	_rs("directional_shadow_atlas_set_size", [int(k["atlas"]), bool(k["atlas_16"])])
 	_rs("directional_soft_shadow_filter_set_quality", [int(k["soft"])])
 	_rs(
@@ -303,8 +319,9 @@ func _aerial_shadows(on: bool) -> void:
 			_street_shadow = keys.map(func(k: String) -> float: return float(sun.get(k)))
 		_shadow_set = Q.aerial_shadow(preset)
 		if _shadow_set <= 0.0:
-			# Compatibility Low: no aerial shadow pass at all (the reach that would cast from the
-			# overview's altitude is longer than the city is tall; see quality.gd).
+			# Compatibility Low: ask for no aerial shadow pass at all (the reach that would cast
+			# from the overview's altitude is longer than the city is tall; see quality.gd, where
+			# SkyDirector's per-frame shadow_enabled write is noted as undoing it).
 			if not _shadow_off_held:
 				_street_shadow_enabled = sun.shadow_enabled
 				_shadow_off_held = true
@@ -340,6 +357,24 @@ func _check_aerial() -> void:
 			set_aerial(false)
 	elif h > AERIAL_MIN:
 		set_aerial(true)
+
+
+## The sun's shadow normal bias: the street profile's, or on Compatibility the active preset's
+## Q.aerial_normal_bias while the camera is over the city or the overview is open (zoomed in or
+## tilted low it sits under AERIAL_OFF, over the same roads that shade themselves in stripes). A
+## value that is not the one written last is the street profile's (G1 re-applies it on a preset
+## switch): kept, and put back on the way down. A write only on change.
+func _sun_bias() -> void:
+	var sun := ctx.sun
+	if sun == null or not is_instance_valid(sun):
+		return
+	if not is_equal_approx(sun.shadow_normal_bias, _nb_set):
+		_nb_street = sun.shadow_normal_bias
+	_nb_set = _nb_street
+	if aerial or ctx.has_modal(OVERVIEW_MODAL):
+		_nb_set = Q.aerial_normal_bias(preset, _nb_street)
+	if not is_equal_approx(sun.shadow_normal_bias, _nb_set):
+		sun.shadow_normal_bias = _nb_set
 
 
 ## Ranges every open site's parts for the aerial coverage (construction_kit.gd snapshots and
@@ -481,6 +516,7 @@ func _process(delta: float) -> void:
 	var t0: int = clock.call()
 	_frame_work(t0 + FRAME_BUDGET_USEC)
 	_check_aerial()
+	_sun_bias()
 	if aerial:
 		# update_site raises frames and adds parts without a tile_built: re-range them now and then.
 		_aerial_site_t += delta
@@ -679,6 +715,8 @@ func _snapshot() -> void:
 	if _vp != null:
 		for key: String in VIEWPORT_KEYS:
 			_vp_snap[key] = _vp.get(key)
+	if ctx.env != null:
+		_env_ssao = ctx.env.ssao_enabled
 	for key: String in RS_SETTINGS:
 		_rs_snap[key] = ProjectSettings.get_setting(RS_SETTINGS[key], RS_DEFAULTS[key])
 
@@ -687,6 +725,8 @@ func _restore() -> void:
 	if _vp != null:
 		for key: String in _vp_snap:
 			_vp.set(key, _vp_snap[key])
+	if ctx.env != null:
+		ctx.env.ssao_enabled = _env_ssao
 	var s := _rs_snap
 	_rs("directional_shadow_atlas_set_size", [int(s["atlas"]), bool(s["atlas_16"])])
 	_rs("directional_soft_shadow_filter_set_quality", [int(s["soft"])])

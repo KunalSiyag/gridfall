@@ -18,8 +18,8 @@ const VH := preload("res://scripts/fp/traffic/vehicles.gd")
 const WK := preload("res://scripts/fp/traffic/walkers.gd")
 const MAX_CARS := 40
 const MAX_PEDS := 60
-## The web quality mode (its static density_caps(): {"traffic": n, "crowd": n, "animals": n};
-## empty off-web, so there the caps below stand).
+## The web quality mode (its static density_caps(): {"traffic": n, "crowd": n, "animals": n,
+## "rain": n}; empty off-web, so there the caps below stand).
 const QUALITY := preload("res://scripts/fp/render/quality.gd")
 ## Cars per road tile within the ring, before congestion and trip load.
 const CARS_PER_TILE := 0.3
