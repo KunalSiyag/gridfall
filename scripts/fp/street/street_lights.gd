@@ -102,6 +102,8 @@ func _assign(glow: float) -> void:
 					if d <= REACH:
 						near.append([d, bp])
 		near.sort_custom(func(a: Array, b: Array) -> bool: return float(a[0]) < float(b[0]))
+	if not near.is_empty() and not pool.is_empty() and not pool[0].visible:
+		FirstUse.mark("lamp_pool")
 	for k in range(pool.size()):
 		var l := pool[k]
 		if k < near.size():

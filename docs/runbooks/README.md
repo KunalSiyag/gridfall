@@ -12,6 +12,7 @@ Short, step-by-step fixes for things that go wrong while developing or playing G
 | [error-triage.md](error-triage.md) | Turning the local error log into GitHub issues |
 | [release-and-rollback.md](release-and-rollback.md) | Cutting a release, or pulling a bad one |
 | [web-deploy.md](web-deploy.md) | Building, shipping or verifying the web demo on GMI AgentBox |
+| [web-probe-kit.md](web-probe-kit.md) | Finding where a web-build hitch goes (shader links, uploads, readbacks), or measuring the web build at another viewport or pixel ratio |
 | [monitoring.md](monitoring.md) | Where to look: CI runs, releases, code scanning, quality report, alerts |
 
 When you fix something that is not covered here, add a runbook in the same format.

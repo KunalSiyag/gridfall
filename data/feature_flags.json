@@ -83,6 +83,7 @@
     "player_gmi_key": {"default": true, "description": "The pause menu's GMI Cloud page, where a player pastes their own GMI API key to run the mayors live (the web build's bring-your-own-key). The key lives in memory for the session and, on the web and only after they tick Remember on this device, in their browser's localStorage; it is never logged. Off: the page is hidden and no key can be entered in-game."},
     "analytics": {"default": false, "description": "Local product analytics to user://ops/analytics.jsonl (also GRIDFALL_ANALYTICS=1). Nothing is sent anywhere."},
     "error_tracking": {"default": false, "description": "Write contextual error records to user://ops/errors.jsonl (also GRIDFALL_ERROR_LOG=1). In-memory error counters are always on."},
+    "web_first_use_marks": {"default": false, "description": "Web only, local console: first-use marks and stopwatches for the probe kit (scripts/ops/first_use.gd). A FIRSTUSE console line and a User Timing mark at the first sight of the lamp pool, a headlight beam, the overview, the pause menu, a beacon, a construction site, a poster composite and rain, and a stopwatch around the first play() of each audio stream and the save's stringify and file write. Nothing leaves the browser. Off by default; a probe run turns it on through user://feature_flags.json (tools/web_fps_probe.js, GF_FPS_FLAGS)."},
     "ops_alerts": {"default": true, "description": "Evaluate data/alert_rules.json and print OPS_ALERT lines. Player toasts additionally need GRIDFALL_OPS_ALERTS_UI=1."}
   }
 }

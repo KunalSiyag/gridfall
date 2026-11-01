@@ -153,7 +153,9 @@ func step(dt: float) -> void:
 		if not p.playing:
 			if w >= MIN_WEIGHT and p.stream != null and _make_room(b):
 				lv = 0.0
+				var t0 := FirstUse.begin("play", p.stream)
 				p.play(_rng.randf() * maxf(p.stream.get_length() - 0.5, 0.0))
+				FirstUse.end("play", p.stream, t0)
 			else:
 				levels[b] = 0.0
 				continue

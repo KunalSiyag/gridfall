@@ -124,7 +124,9 @@ turn (`GF_SMOKE_OFFLINE=1` smoke above), which fails if a single request leaves 
 https://<public-host>/ <outdir>` in a headed Chrome. The probe fails on software WebGL
 (`hardware: false`), records the WebGL `UNMASKED_RENDERER` — label every measurement with the
 GPU that produced it — plus a shadow-piercing `chrome://gpu` dump, and reports rAF
-fps/p50/p95/max on the street and in sky view after a 30 s settle. To measure a **grown city**
+fps/p50/p95/max on the street, on foot, in sky view and in the Planner (orbit) view after a 30 s
+settle, with the main-thread busy ms, a WebGL call census and what slow frames were spent on
+(knobs, output and what each number decides: [web-probe-kit.md](web-probe-kit.md)). To measure a **grown city**
 (the scenario that used to trip the 4096 instance-variable cap), pass a save:
 `GF_FPS_SAVE=<path>/gridfall_save.json` seeds it into the browser's IndexedDB before the engine
 boots (Emscripten IDBFS v21 — the probe creates the `FILE_DATA` store with its `timestamp`
@@ -132,7 +134,8 @@ index; without the index the engine logs `IndexedDB not available` and runs on a
 in-memory filesystem), and the run fails unless the console prints `GRIDFALL: continuing the
 saved city`. After the measurements the probe drives the exit_fp/enter_fp round trip (Quit to
 orbit from the pause menu, then Tab back to the street) and exits 4 on any uncaught exception
-or `invalid bus index` line: this headed run is the checklist's only surface with real audio
+or `invalid bus index` line (the orbit view's seconds included), or when the game's marks are on and
+Quit to orbit was never logged: this headed run is the checklist's only surface with real audio
 buses, where that crash class reproduces, so the headless smoke cannot substitute for it.
 
 **Street trees are streamed** (docs/fp/slices/G1-streetscape.md, "On foot the chunks are

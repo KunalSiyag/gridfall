@@ -296,7 +296,9 @@ func play_ui(stream_name: String, volume_db: float, pitch: float = 1.0) -> void:
 	p.stream = s
 	p.volume_db = volume_db
 	p.pitch_scale = pitch
+	var t0 := FirstUse.begin("play", s)
 	p.play()
+	FirstUse.end("play", s, t0)
 
 
 func _start_beds() -> void:

@@ -108,11 +108,13 @@ func restart(s: Src) -> void:
 	if s.stream == null:
 		pl.stop()
 		return
+	var t0 := FirstUse.begin("play", s.stream)
 	if s.one_shot:
 		s.started = true
 		pl.play()
 	else:
 		pl.play(_rng.randf() * maxf(s.stream.get_length() - 0.1, 0.0))
+	FirstUse.end("play", s.stream, t0)
 
 
 ## Takes s's player back. A looping stream stays loaded and paused, so the next source with the

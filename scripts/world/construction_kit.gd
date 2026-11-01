@@ -597,6 +597,7 @@ func tower_crane(parent: Node3D, pos: Vector3, h_m: float, yaw: float, phase := 
 ## Builds one construction site under holder (tile-centred). ctx carries what the view knows:
 ## h (tile hash), height/foot (finished building size in tiles), target/old (models), axis/water.
 func build_site(holder: Node3D, s: Dictionary, stage: String, f: float, ctx: Dictionary) -> Node3D:
+	FirstUse.mark("site")
 	var root := Node3D.new()
 	root.name = "Site"
 	holder.add_child(root)

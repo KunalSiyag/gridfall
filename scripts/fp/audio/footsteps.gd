@@ -143,7 +143,9 @@ func play(surface: String, gain_db: float = 0.0) -> void:
 	p.stream = s
 	p.volume_db = vol
 	p.pitch_scale = 1.0 + _rng.randf_range(-BANK.STEP_PITCH_SPREAD, BANK.STEP_PITCH_SPREAD)
+	var t0 := FirstUse.begin("play", s)
 	p.play()
+	FirstUse.end("play", s, t0)
 	var wet := wetness()
 	if wet >= SPLASH_MIN_WET and surf in PAVED:
 		var sp := BANK.stream("footstep_splash_%d" % (1 + _rng.randi() % BANK.SPLASH_VARIANTS))
@@ -152,7 +154,9 @@ func play(surface: String, gain_db: float = 0.0) -> void:
 			_splash.stream = sp
 			_splash.volume_db = vol + BANK.SPLASH_DB + linear_to_db(wet)
 			_splash.pitch_scale = p.pitch_scale
+			var t1 := FirstUse.begin("play", sp)
 			_splash.play()
+			FirstUse.end("play", sp, t1)
 
 
 ## How wet the streets are, 0..1: G1's streetscape weather, read by name; 0 without it.

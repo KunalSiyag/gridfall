@@ -167,6 +167,7 @@ func _open() -> void:
 	_buttons[NEW_CITY].text = NEW_CITY
 	_buttons["Quit to orbit"].disabled = ctx.main == null
 	visible = true
+	FirstUse.mark("pause_menu")
 	_age = 0.0
 	modulate.a = 0.0
 	var r: Button = _buttons["Resume"]
@@ -218,6 +219,7 @@ func _on_button(text: String) -> void:
 			else:
 				open_settings("Camera")
 		"Quit to orbit":
+			FirstUse.mark("quit_to_orbit")
 			# exit_fp() frees this HUD; it cannot run inside the button's own pressed emission.
 			if ctx.main != null:
 				ctx.main.call_deferred("exit_fp")

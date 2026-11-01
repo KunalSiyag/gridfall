@@ -292,6 +292,7 @@ Generated from the `##` doc comments in `scripts/`. Regenerate with `python3 too
 - [circuit_breaker.gd](scripts.ops.md#scriptsopscircuit_breakergd) (`CircuitBreaker`): Consecutive-failure circuit breaker
 - [error_tracker.gd](scripts.ops.md#scriptsopserror_trackergd) (`ErrorTracker`): Contextual error tracking, registered with OS.add_logger()
 - [feature_flags.gd](scripts.ops.md#scriptsopsfeature_flagsgd) (`FeatureFlags`): Feature flags
+- [first_use.gd](scripts.ops.md#scriptsopsfirst_usegd) (`FirstUse`): First-use marks and stopwatches for the web build: the game half of the hitch-attribution kit (docs/runbooks/web-probe-kit.md)
 - [gpu_memory.gd](scripts.ops.md#scriptsopsgpu_memorygd) (`GpuMemory`): Low-GPU-memory mode
 - [ops_sink.gd](scripts.ops.md#scriptsopsops_sinkgd) (`OpsSink`): Local JSON-lines files for the opt-in ops features (errors, analytics, alerts)
 - [pacing.gd](scripts.ops.md#scriptsopspacinggd) (`Pacing`): Step lengths for the per-frame catch-up loops (traffic, birds, animals): a long frame, or a high game speed, hands them a big delta that they work off in steps of at most MAX_STEP

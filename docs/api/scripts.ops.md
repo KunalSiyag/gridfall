@@ -138,6 +138,34 @@ Feature flags. Defaults and descriptions live in res://data/feature_flags.json; 
 - `static func read_user(path: String) -> Dictionary`: {name: bool} from a user override file: {"name": bool|0|1} or {"flags": {...}}.
 - `static func parse_overrides(spec: String) -> Dictionary`: Parses "a=0,b=1,c,!d" into {"a": false, "b": true, "c": true, "d": false}; bad items are skipped.
 
+## `scripts/ops/first_use.gd`
+
+class_name `FirstUse` · extends `RefCounted`
+
+First-use marks and stopwatches for the web build: the game half of the hitch-attribution kit (docs/runbooks/web-probe-kit.md). Off unless this is the web build AND the web_first_use_marks flag is on (default off), so a shipped build carries a few untaken branches and nothing else. Everything stays in the player's own browser: one console line per event, FIRSTUSE {"tag":"play:rain.ogg","n":1,"ms":2.31,"len":30.0} and a User Timing mark "gf:<tag>" whose detail is the same record. tools/web_fps_probe.js reads both next to its WebGL census, which says which mark linked a shader or uploaded a texture. Tags are fixed literals, stream file names or, for a stream that has no path (the looping duplicate of the residential bed), its class and length: never player or model text.
+
+### Constants
+
+- `MAX_PER_TAG = 3`: Records logged per tag; a repeat past this is counted and not logged.
+- `CAPS = {"save": 100}`: Kinds that log more: a save every game day matters at day 10, not only the first three.
+- `PREFIX = "gf:"`: Prefix of the User Timing marks.
+- `MAX_LINES = 400`: Records kept in lines.
+
+### Properties
+
+- `force: bool`: Tests set this to run the web path on the desktop (JavaScriptBridge is then a no-op).
+- `lines: Array[String]`: Every record logged so far as JSON text, oldest first (tests read it).
+
+### Functions
+
+- `static func active() -> bool`: True on the web build with the web_first_use_marks flag on; decided once per process.
+- `static func reset() -> void`: Forgets the decision and every count (tests).
+- `static func mark(tag: String) -> void`: A point event: the thing is on screen for the first time (or again). Logs the first MAX_PER_TAG of a tag.
+- `static func begin(kind: String, what: Variant = "") -> int`: Starts a stopwatch on kind and what (a name, or a Resource: its file name, or class and length for a stream that has no path). Returns the stamp for end(), or -1 when nothing needs timing: off, or timed often enough already. A stream's first play() is the reading that matters, so the cap leaves the later ones out.
+- `static func end(kind: String, what: Variant, start_us: int) -> void`: Stops the stopwatch begin() started: logs the elapsed milliseconds (and the length in seconds when what is an AudioStream, so a reading can be put per second of audio). start_us -1 is a no-op.
+- `static func line_of(rec: Dictionary) -> String`: The console line of a record.
+- `static func mark_js(rec: Dictionary) -> String`: The JavaScript that records rec as the User Timing mark gf:<tag>, rec being its detail.
+
 ## `scripts/ops/gpu_memory.gd`
 
 class_name `GpuMemory` · extends `RefCounted`

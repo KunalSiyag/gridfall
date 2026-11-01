@@ -93,6 +93,7 @@ func _measure(label: String, secs: float) -> Dictionary:
 	var n := 0
 	var hitches: Array = []
 	var pipes := _pipelines()
+	var method := RenderingServer.get_current_rendering_method()
 	var drawn0 := Engine.get_frames_drawn()
 	var t0 := Time.get_ticks_usec()
 	var last := t0
@@ -112,7 +113,8 @@ func _measure(label: String, secs: float) -> Dictionary:
 		var phys1 := Performance.get_monitor(Performance.TIME_PHYSICS_PROCESS)
 		var phys_d: float = phys1 - phys0
 		if dt > HITCH_MS and hitches.size() < MAX_HITCHES:
-			var h := _hitch(dt, g, c, _pipeline_delta(p, pipes), phys_d if phys_d >= 0.0 else phys1)
+			var shown: Variant = pipelines_for(method, _pipeline_delta(p, pipes))
+			var h := _hitch(dt, g, c, shown, phys_d if phys_d >= 0.0 else phys1)
 			if harness != null:
 				h["nodes"] = harness.top(4)
 			h["added"] = _top_counts(added, 6)
@@ -131,6 +133,7 @@ func _measure(label: String, secs: float) -> Dictionary:
 		"nodes": Performance.get_monitor(Performance.OBJECT_NODE_COUNT),
 		"hitches_over_33ms": times.filter(func(t: float) -> bool: return t > 33.3).size(),
 		"viewport": "%dx%d" % [get_root().size.x, get_root().size.y],
+		"rendering_method": method,
 		"quality": str(fp.ctx.settings.get("quality", "medium")),
 		"camera": _camera_mode(),
 		"drawn": Engine.get_frames_drawn() - drawn0,
@@ -312,13 +315,23 @@ static func _pipeline_delta(now: PackedInt32Array, before: PackedInt32Array) -> 
 	return out
 
 
+## What a slow frame's row says about pipelines: the deltas, or a label where the counters mean
+## nothing. They are RenderingDevice counters (Forward+ and Mobile) and read 0 on gl_compatibility,
+## the web build's renderer, so there they neither support nor refute a shader-link explanation of
+## a first-measure hitch; tools/web_fps_probe.js counts the GL program links in the browser.
+static func pipelines_for(method: String, deltas: Dictionary) -> Variant:
+	if method == "gl_compatibility":
+		return "n/a (%s: RenderingDevice counters)" % method
+	return deltas
+
+
 ## Where a slow frame went: scripts (_process and signals), physics, render CPU and GPU (as
 ## measured, a frame or two late) and the pipelines it compiled. physics_ms is the physics time
 ## spent inside this idle frame: TIME_PHYSICS_PROCESS is per-frame on some platforms and cumulative
 ## on others (web), so the caller passes the delta between this frame's edges, falling back to the
 ## absolute reading when the monitor is per-frame (a negative delta).
 static func _hitch(
-	dt: float, gpu: float, rcpu: float, pipes: Dictionary, physics: float
+	dt: float, gpu: float, rcpu: float, pipes: Variant, physics: float
 ) -> Dictionary:
 	return {
 		"ms": snappedf(dt, 0.1),
