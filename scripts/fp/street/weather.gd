@@ -112,6 +112,10 @@ func step(delta: float) -> void:
 	_apply_hooks()
 	_update_smog_volumes()
 	if rain != null:
+		# The first draw of the drops, whichever way the sky got here (setup, a load and force() set
+		# state before the first step): the emitter is the thing that goes on screen.
+		if state == "rain" and not rain.emitting:
+			FirstUse.mark("rain")
 		rain.emitting = state == "rain"
 		var cam := get_viewport().get_camera_3d() if is_inside_tree() else null
 		if cam != null:

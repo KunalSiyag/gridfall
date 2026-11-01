@@ -12,10 +12,15 @@ static func write(path: String, data: Dictionary) -> Error:
 	var f := FileAccess.open(tmp, FileAccess.WRITE)
 	if f == null:
 		return FileAccess.get_open_error()
-	f.store_string(JSON.stringify(data))
+	var t0 := FirstUse.begin("save", "stringify")
+	var text := JSON.stringify(data)
+	FirstUse.end("save", "stringify", t0)
+	t0 = FirstUse.begin("save", "file_write")
+	f.store_string(text)
 	f.flush()
 	var err := f.get_error()
 	f.close()
+	FirstUse.end("save", "file_write", t0)
 	if err != OK:
 		DirAccess.remove_absolute(_abs(tmp))
 		return err

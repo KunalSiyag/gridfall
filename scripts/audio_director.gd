@@ -141,7 +141,9 @@ func play_sfx(path: String, volume_db: float = -6.0) -> void:
 		return
 	_sfx_player.stream = stream
 	_sfx_player.volume_db = volume_db
+	var t0 := FirstUse.begin("play", stream)
 	_sfx_player.play()
+	FirstUse.end("play", stream, t0)
 	sfx_played.emit(path, str(_sfx_player.bus))
 
 
@@ -161,9 +163,13 @@ func _init_stems() -> void:
 		_crisis_player.stream = _looping_track(CRISIS_TRACK_PATH)
 	_apply_volumes()
 	if _nominal_player.stream != null and not _nominal_player.playing:
+		var t0 := FirstUse.begin("play", _nominal_player.stream)
 		_nominal_player.play()
+		FirstUse.end("play", _nominal_player.stream, t0)
 	if _crisis_player.stream != null and not _crisis_player.playing:
+		var t1 := FirstUse.begin("play", _crisis_player.stream)
 		_crisis_player.play()
+		FirstUse.end("play", _crisis_player.stream, t1)
 
 
 ## Audio pack arrived on a split web build: drop the paths that cached a miss

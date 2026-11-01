@@ -160,6 +160,7 @@ func enter() -> bool:
 	_layer.visible = true
 	_you.visible = true
 	_refresh()
+	FirstUse.mark("overview")
 	Analytics.track("overview_open", {"sites": markers.size()})
 	return true
 

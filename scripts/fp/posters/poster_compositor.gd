@@ -110,6 +110,7 @@ func _exit_tree() -> void:
 
 
 func _run(job: Dictionary) -> void:
+	FirstUse.mark("poster_composite")
 	_busy = true
 	_current = str(job["id"])
 	for c in _root.get_children():

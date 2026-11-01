@@ -45,6 +45,7 @@ func place(key: String, pos: Vector3, col: Color, fresh: bool = true) -> void:
 		b = _make(col)
 		_beacons[key] = b
 		add_child(b["node"])
+		FirstUse.mark("beacon")
 	(b["node"] as Node3D).position = pos
 	b["pos"] = pos
 	b["color"] = col

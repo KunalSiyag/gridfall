@@ -726,6 +726,8 @@ func _place_beams() -> void:
 			n += 1
 	for k in range(n, _beams.size()):
 		_beams[k].visible = false
+	if n > 0 and beams_on == 0:
+		FirstUse.mark("beam")
 	beams_on = n
 	_place_hero()
 	_beam_cands.clear()
