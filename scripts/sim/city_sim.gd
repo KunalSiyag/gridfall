@@ -27,6 +27,7 @@ signal crew_job_finished(job: Dictionary)
 signal tick_progress(phase: String, fraction: float)
 
 const D := preload("res://scripts/sim/sim_defs.gd")
+const SaveShape := preload("res://scripts/sim/save_shape.gd")
 const N4 := [Vector2i(0, -1), Vector2i(1, 0), Vector2i(0, 1), Vector2i(-1, 0)]
 ## Sliced work is counted in units: one unit is a chunk of at most UNIT_WORK tile visits, one road
 ## search that misses the route cache, or one resident's turn. A pump starts no step once it has
@@ -4275,35 +4276,74 @@ func to_dict() -> Dictionary:
 	}
 
 
-## Replaces this city with the parsed save: true when it is a version this build restores.
-func from_dict(data: Dictionary) -> bool:
-	# Version 1 saves predate the 96x96 world and are not converted. Version 2 saves (96x96)
-	# are placed into the bigger world; the fresh wilds generated around them stay. Version 3
-	# saves may carry a mayor's derived pop/jobs/happiness (this build no longer writes them);
-	# whatever is there, the load's recompute rebuilds those three from the tiles.
-	var version := int(data.get("version", 0))
-	if version != 2 and version != 3:
-		return false
-	new_city(int(data.get("seed", 7)))
-	var n := D.W * D.H
-	var world: Dictionary = data.get("world", D.LEGACY_WORLD)
-	var src := {
-		"w": int(world.get("w", 96)),
-		"h": int(world.get("h", 96)),
-		"x0": int(world.get("x0", -32)),
-		"y0": int(world.get("y0", -32))
+## The world rectangle a save was written in ({w, h, x0, y0}), or {} when the save's own `world`
+## block is not a dictionary of numbers. A save with no block predates the 192x192 world
+## (D.LEGACY_WORLD).
+func _saved_world(data: Dictionary) -> Dictionary:
+	var world: Variant = data.get("world", D.LEGACY_WORLD)
+	if not SaveShape.records_ok([world], {"numbers": ["w", "h", "x0", "y0"]}):
+		return {}
+	var w: Dictionary = world
+	return {
+		"w": int(w.get("w", 96)),
+		"h": int(w.get("h", 96)),
+		"x0": int(w.get("x0", -32)),
+		"y0": int(w.get("y0", -32))
 	}
-	var same := (
+
+
+## True when src is this build's own world rectangle (the tile arrays then load as they are).
+func _same_world(src: Dictionary) -> bool:
+	return (
 		int(src["w"]) == D.W
 		and int(src["h"]) == D.H
 		and int(src["x0"]) == D.X0
 		and int(src["y0"]) == D.Y0
 	)
-	var k_arr: Array = data.get("kind", [])
-	var d_arr: Array = data.get("district", [])
-	var src_n := int(src["w"]) * int(src["h"])
-	if k_arr.size() != src_n or d_arr.size() != src_n:
+
+
+## True when data is a save this build restores: a version it accepts, a world rectangle with
+## tiles, kind and district arrays of exactly that many entries, level, terrain and burning that
+## are arrays too (a save from an older world layout may leave them short or out, the placement
+## fills the rest; in this build's own world they load as they are, so they need the full length),
+## and every other section the right kind of value (SaveShape). Reads only: from_dict runs it
+## before it touches anything, so a rejected save leaves the live city exactly as it was.
+func save_is_loadable(data: Dictionary) -> bool:
+	var version: Variant = data.get("version", 0)
+	if not SaveShape.is_number(version) or (int(version) != 2 and int(version) != 3):
 		return false
+	var src := _saved_world(data)
+	if src.is_empty() or int(src["w"]) <= 0 or int(src["h"]) <= 0:
+		return false
+	var src_n := int(src["w"]) * int(src["h"])
+	for key: String in ["kind", "district"]:
+		var arr: Variant = data.get(key)
+		if typeof(arr) != TYPE_ARRAY or (arr as Array).size() != src_n:
+			return false
+	var same := _same_world(src)
+	for key: String in ["level", "terrain", "burning"]:
+		var arr: Variant = data.get(key, [])
+		if typeof(arr) != TYPE_ARRAY or (same and (arr as Array).size() != src_n):
+			return false
+	return SaveShape.sim_ok(data, new_mayor(D.MAYORS[0]))
+
+
+## Replaces this city with the parsed save: true when it is a version this build restores. A save
+## it rejects changes nothing (save_is_loadable runs first), so a failed in-game Load keeps the
+## city the player is standing in.
+func from_dict(data: Dictionary) -> bool:
+	# Version 1 saves predate the 96x96 world and are not converted. Version 2 saves (96x96)
+	# are placed into the bigger world; the fresh wilds generated around them stay. Version 3
+	# saves may carry a mayor's derived pop/jobs/happiness (this build no longer writes them);
+	# whatever is there, the load's recompute rebuilds those three from the tiles.
+	if not save_is_loadable(data):
+		return false
+	new_city(int(data.get("seed", 7)))
+	var n := D.W * D.H
+	var src := _saved_world(data)
+	var same := _same_world(src)
+	var k_arr: Array = data["kind"]
+	var d_arr: Array = data["district"]
 	if same:
 		kind = PackedInt32Array(k_arr)
 		level = PackedInt32Array(data.get("level", []))
@@ -4317,8 +4357,6 @@ func from_dict(data: Dictionary) -> bool:
 		terrain = _place_tiles(data.get("terrain", []), terrain)
 		burning = _place_tiles(data.get("burning", []), burning)
 		district = _place_tiles(d_arr, district)
-	if district.size() != n:
-		return false
 	road_epoch += 1
 	_wet2 = PackedByteArray()
 	_rebuild_active()

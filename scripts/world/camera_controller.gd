@@ -7,6 +7,10 @@ const WORLD_CENTER := Vector3(15.5, 0.0, 13.5)
 const MIN_ZOOM := 7.0
 const MAX_ZOOM := 230.0
 const DEFAULT_ZOOM := 62.0
+## The Planner view's opening zoom over the hero. At 16:9 the ground in view is a trapezoid about
+## 30 tiles deep and 22 (near edge) to 38 (far edge) wide: the hero's neighbourhood and the blocks
+## around it. DEFAULT_ZOOM (62) frames the whole founding core, about 1.5 times as much.
+const HERO_ZOOM := 40.0
 const MIN_COORD := D.X0 * 1.0
 const MAX_COORD := (D.X0 + D.W - 1) * 1.0
 const PAN_SPEED := 14.0
@@ -40,6 +44,16 @@ func focus_world_point(
 	)
 	if not keep_zoom:
 		zoom = clampf(target_zoom, MIN_ZOOM, MAX_ZOOM)
+
+
+## Puts the rig over world_pos at target_zoom now, with no glide, inside the same pan and zoom
+## limits as focus_world_point: the Planner view opens on the hero instead of sweeping across the
+## city from wherever the rig was left.
+func snap_to(world_pos: Vector3, target_zoom: float = HERO_ZOOM) -> void:
+	focus_world_point(world_pos, target_zoom)
+	position = target_position
+	if camera != null:
+		camera.position = Vector3(0.0, 0.0, zoom)
 
 
 ## Focus reasons the user did not ask for (a sim event, the chaos director's disaster): the camera

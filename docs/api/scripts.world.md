@@ -17,6 +17,7 @@ Isometric camera rig for GridFall: WASD pan, mouse wheel zoom, drag pan, middle/
 - `MIN_ZOOM = 7.0`
 - `MAX_ZOOM = 230.0`
 - `DEFAULT_ZOOM = 62.0`
+- `HERO_ZOOM = 40.0`: The Planner view's opening zoom over the hero. At 16:9 the ground in view is a trapezoid about 30 tiles deep and 22 (near edge) to 38 (far edge) wide: the hero's neighbourhood and the blocks around it. DEFAULT_ZOOM (62) frames the whole founding core, about 1.5 times as much.
 - `MIN_COORD = D.X0 * 1.0`
 - `MAX_COORD = (D.X0 + D.W - 1) * 1.0`
 - `PAN_SPEED = 14.0`
@@ -24,6 +25,7 @@ Isometric camera rig for GridFall: WASD pan, mouse wheel zoom, drag pan, middle/
 ### Functions
 
 - `func focus_world_point(world_pos: Vector3, target_zoom: float = 24.0, keep_zoom: bool = false) -> void`: Pans to world_pos and zooms to target_zoom; with keep_zoom it only pans, so attention the user did not ask for never undoes the zoom they picked.
+- `func snap_to(world_pos: Vector3, target_zoom: float = HERO_ZOOM) -> void`: Puts the rig over world_pos at target_zoom now, with no glide, inside the same pan and zoom limits as focus_world_point: the Planner view opens on the hero instead of sweeping across the city from wherever the rig was left.
 - `static func keeps_zoom(reason: String) -> bool`: Focus reasons the user did not ask for (a sim event, the chaos director's disaster): the camera pans there at the user's own zoom.
 - `func reset_view() -> void`
 
@@ -134,6 +136,7 @@ Renders the CitySim grid in 3D: Kenney roads picked by neighbor mask, zone lots 
 ### Properties
 
 - `pack_stream: WebPackStream`: Web background packs (split builds); null everywhere else. Read-only here: the view asks request_path() on an asset miss, Main owns the lifecycle.
+- `hero_marker: Node3D`: The Planner view's "you are here": a ring on the hero's tile and a "You" label (null until first shown). Lives under the labels root, so it is drawn in orbit only.
 - `night: float`: 0 at noon, 1 at midnight; set by SkyDirector.
 - `in_setup: bool`: True while setup() runs (from its first line until just before world_rebuilt.emit()). tile_built listeners that do per-tile work skip it while in_setup and do one full pass on world_rebuilt.
 - `fp_mode: bool`: Street-level presentation: hides builder aids and the AI presentation layer, stops ambient traffic, picking and camera shake. Persists across setup().
@@ -163,6 +166,8 @@ Renders the CitySim grid in 3D: Kenney roads picked by neighbor mask, zone lots 
 - `func set_light_pole_source(src: Object) -> void`: Sets light_pole_source (E's traffic feature, or null) and, on a change while on foot, re-hangs the street-name blades of the cross tiles already built (they were built before the source).
 - `func set_wetness(w: float) -> void`: Wet streets: road and sidewalk materials darken and turn glossy, the ground shaders and the water follow, and puddles appear by the curbs. w is 0 (dry) .. 1 (soaked).
 - `func set_rain(r: float) -> void`: Rain falling now (0 none .. 1 full): rings on the river and on the puddles in the road (on foot only, off it they are 0). The weather asks every frame, so the materials are written only when the value moved: _rain_told remembers what they hold, and a material made since (the water at setup(), the road on first use) has none told.
+- `func show_hero_marker(world_pos: Vector3) -> void`: Planner view: marks where the hero stands at world_pos (the tile's x and z). Built on first use and moved afterwards; setup() drops it with the rest of the view.
+- `func hide_hero_marker() -> void`: Planner view: no "you are here" (the hero's spot is unknown, or there is none yet).
 - `func rebuild_all(animate: bool) -> void`
 - `func flush_rebuild_queue() -> void`: Builds every queued tile now (each emits tile_built), then the batched street props.
 - `func reset_section_stats() -> void`

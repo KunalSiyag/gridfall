@@ -14,6 +14,7 @@ Generated from the `##` doc comments in `scripts/`. Regenerate with `python3 too
 
 ## [scripts/ai/](scripts.ai.md)
 
+- [brain_calls.gd](scripts.ai.md#scriptsaibrain_callsgd): The GMI calls a CityBrain has in flight, and which city each was sent for (CityBrain extends this)
 - [brain_text.gd](scripts.ai.md#scriptsaibrain_textgd): Removes model brand names from CityBrain text: a Gazette page as it comes in, and state restored from saves written before the display names, whose text feeds the prompts and the HUDs
 - [chatter_minds.gd](scripts.ai.md#scriptsaichatter_mindsgd) (`ChatterMinds`): The voices of the global chat and of face-to-face talk (slice C §3)
 - [city_brain.gd](scripts.ai.md#scriptsaicity_braingd) (`CityBrain`): Puts GMI model inference on every layer of the city
@@ -307,6 +308,7 @@ Generated from the `##` doc comments in `scripts/`. Regenerate with `python3 too
 
 - [city_sim.gd](scripts.sim.md#scriptssimcity_simgd) (`CitySim`): Tile-based SimCity-style simulation: zoning + demand-driven growth, power/water/sewage networks with load shedding, service coverage, pollution/crime/land value/traffic maps, per-district budgets and taxes, city-wide ordinances, disasters, time speeds, save/load
 - [residents.gd](scripts.sim.md#scriptssimresidentsgd) (`Residents`): The people of GridFall: up to 100 named residents, each standing in for an equal share of the population
+- [save_shape.gd](scripts.sim.md#scriptssimsave_shapegd): The shape a save must have before a load replaces the live city with it
 - [sim_defs.gd](scripts.sim.md#scriptssimsim_defsgd) (`SimDefs`): Static rules, costs, and catalogs for the GridFall city simulation
 
 ## [scripts/ui/](scripts.ui.md)
