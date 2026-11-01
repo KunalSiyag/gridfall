@@ -226,6 +226,31 @@ the flag on a split release and expect a complete city.
   High with the flag off render at native size and keep it. With the `render_opt` flag off nothing
   is scaled and SSAO stays as the orbit view has it; the `streetscape` flag does not matter. What
   inside the engine produces the rows is not established.
+- **Rain streaks are capped in the web tier and off over the city (`Quality.WEB_DENSITY["rain"]`,
+  `Weather._step_rain`).** The browser build draws at most 600 rain streaks at every preset (Low,
+  Medium and High would draw 800, 1,600 and 3,000; `web_quality=off` lifts the cap) and the emitter
+  is off and hidden while the Tab overview is open or the camera is more than 10 m above the
+  player's feet, where it only drew streaks hanging before the lens. The overview counts whatever
+  the height: its camera sits over the ground, so a hero standing on a roof (wall climb allows it)
+  has the zoomed-in overview under 10 m over their feet. The planner view has no emitter: leaving
+  first person frees the weather. Both rules are the web tier's only: the desktop keeps its
+  800 / 1,600 / 3,000 streaks and its overview rain, because the overview result below comes from
+  the browser's renderer alone. The P photo fly keeps its rain at any height (its feet follow the
+  camera). `GRIDFALL_WEB_CAPS="rain=n"` moves the cap (at least 1, because an emitter takes no
+  fewer) wherever the tier is on and the engine sees the variable; only the tests set it, no
+  desktop run forces the tier, and whether the browser shell passes environment variables was not
+  checked.
+  Measured on the web build on a real GPU (ANGLE, AMD) on 2026-11-01 as the share of frame pixels
+  that are thin bright streaks (luma more than 20 grey levels above its 7 px horizontal opening, HUD
+  masked), fresh seed-7 city in its day-1 rain at 1280x720: the Tab overview went from 0.60 / 1.12 /
+  1.77% to 0.17 to 0.22% at Low / Medium / High (the same overview with no rain at all reads 0.17 to
+  0.34%), and the street's rain share, net of the same street with no rain, from 0.75 / 1.73 / 2.78%
+  to 0.40 / 0.56 / 0.40%. At High the street's net share was 0.08 / 0.27 / 0.40 / 0.60% at 200 / 400
+  / 600 / 800 streaks. All of that is the 06:00 plaza, where the streaks stand out against a dark
+  scene; no daytime frame was measured, and in the daytime frames looked at (06:45 to 07:00, grey
+  sky) 600 streaks are sparse and faint, only a few crossing the sky, with the splash beads on the
+  ground as the clearer rain cue. If daytime rain reads too thin, change `WEB_DENSITY["rain"]` and
+  re-measure: more streaks bring the lines back at night.
 - **Slow motion below 30 fps (flag `web_real_time_pace`, off by default).** The web build caps
   the engine to 2 physics catch-up steps per frame, so a frame over 33 ms advances the world by
   only 33.3 ms: about 80% speed at a grown city's 42 ms frames, 50% at 15 fps. Turning the flag

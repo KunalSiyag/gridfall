@@ -20,7 +20,7 @@ Ambient filler (docs/fp/slices/E-traffic.md §6): unnamed commuters (some of the
 - `WK = preload("res://scripts/fp/traffic/walkers.gd")`
 - `MAX_CARS = 40`
 - `MAX_PEDS = 60`
-- `QUALITY = preload("res://scripts/fp/render/quality.gd")`: The web quality mode (its static density_caps(): {"traffic": n, "crowd": n, "animals": n}; empty off-web, so there the caps below stand).
+- `QUALITY = preload("res://scripts/fp/render/quality.gd")`: The web quality mode (its static density_caps(): {"traffic": n, "crowd": n, "animals": n, "rain": n}; empty off-web, so there the caps below stand).
 - `CARS_PER_TILE = 0.3`: Cars per road tile within the ring, before congestion and trip load.
 - `PEDS_PER_TILE = 1.6`
 - `MIN_SPAWN = 6.0`

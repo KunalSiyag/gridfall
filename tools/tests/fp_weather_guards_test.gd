@@ -13,6 +13,7 @@ extends SceneTree
 const K := preload("res://tools/tests/fp_kit.gd")
 const WS := preload("res://scripts/fp/world_scale.gd")
 const WEATHER := preload("res://scripts/fp/street/weather.gd")
+const Q := preload("res://scripts/fp/render/quality.gd")
 
 var fails: Array[String] = []
 
@@ -65,6 +66,9 @@ func _check_weather_guards(ctx: FpContext, f: FpFeature) -> void:
 	_guard_load(ctx, f)
 	_guard_rain(ctx, f, weather)
 	_guard_emitters(ctx, f, weather)
+	_check_rain_street(ctx, f, weather)
+	_check_rain_photo_fly(ctx, f, weather)
+	_check_rain_perch(ctx, f, weather)
 	_guard_global(ctx, f)
 	_guard_rain_targets(ctx, f, weather)
 	ctx.sim.speed = speed
@@ -355,6 +359,228 @@ func _guard_emitters(ctx: FpContext, f: FpFeature, weather: Node) -> void:
 	for e: GPUParticles3D in [rain, splash]:
 		e.set_notify_local_transform(false)
 		e.set_script(null)
+
+
+## In the web tier the rain emitter belongs to a camera on the street: a camera lifted more than
+## RAIN_MAX_HEIGHT over the player's feet (the Tab overview) has it off and hidden and leaves it
+## where it was, just under the limit it still rains and follows, and back on the street it comes
+## back at the camera. A dry sky keeps it off at any height. Off the web tier the camera's height
+## changes nothing (the rule was looked at in the browser's renderer only), and the P photo fly,
+## where the feet follow the camera, keeps its rain at any height. The emitter's count is the
+## preset's own on the desktop and the web cap's with the web tier forced.
+func _check_rain_street(ctx: FpContext, f: FpFeature, weather: Node) -> void:
+	var rain := weather.get("rain") as GPUParticles3D
+	var cam := get_root().get_camera_3d()
+	K.check(fails, rain != null and cam != null, "rain street: the emitter and a camera")
+	if rain == null or cam == null:
+		return
+	var cam_at := cam.global_position
+	var feet := ctx.player_position()
+	f.call("force_rain_for_photo")
+	cam.global_position = feet + Vector3(0, WS.EYE, 0)
+	weather.call("step", 0.1)
+	K.check(
+		fails,
+		rain.emitting and rain.visible and _over(rain, cam),
+		"rain street: a camera at eye height has the rain on and over it"
+	)
+	cam.global_position = feet + Vector3(0, 25.0 * WS.M, 0)
+	weather.call("step", 0.1)
+	K.check(
+		fails,
+		rain.emitting and rain.visible and _over(rain, cam),
+		"rain street: off the web tier a camera 25 m up keeps the rain on and over it"
+	)
+	f.call("force_weather", "clear")
+	weather.call("step", 0.1)
+	K.check(
+		fails,
+		not rain.emitting and rain.visible,
+		"rain street: off the web tier a clear sky stops the emitter, not the streaks in flight"
+	)
+	f.call("force_rain_for_photo")
+	cam.global_position = feet + Vector3(0, WS.EYE, 0)
+	weather.call("step", 0.1)
+	weather.set("force_web", true)
+	var kept := rain.global_position
+	cam.global_position = feet + Vector3(0, 25.0 * WS.M, 0)
+	weather.call("step", 0.1)
+	K.check(
+		fails,
+		not rain.emitting and not rain.visible and rain.global_position == kept,
+		"rain street: web tier, a camera 25 m up (the overview): off, hidden, left where it was"
+	)
+	cam.global_position = feet + Vector3(0, WEATHER.RAIN_MAX_HEIGHT - 0.01, 0)
+	weather.call("step", 0.1)
+	K.check(
+		fails,
+		rain.emitting and rain.visible and _over(rain, cam),
+		"rain street: just under the height limit it still rains"
+	)
+	cam.global_position = feet + Vector3(0, WEATHER.RAIN_MAX_HEIGHT + 0.01, 0)
+	weather.call("step", 0.1)
+	K.check(
+		fails,
+		not rain.emitting and not rain.visible,
+		"rain street: just over the height limit it is off"
+	)
+	cam.global_position = feet + Vector3(0, WS.EYE, 0)
+	weather.call("step", 0.1)
+	K.check(
+		fails,
+		rain.emitting and rain.visible and _over(rain, cam),
+		"rain street: back on the street it comes back over the camera"
+	)
+	f.call("force_weather", "clear")
+	weather.call("step", 0.1)
+	var dry_street := not rain.emitting
+	var shown_dry := rain.visible
+	cam.global_position = feet + Vector3(0, 25.0 * WS.M, 0)
+	weather.call("step", 0.1)
+	K.check(
+		fails,
+		dry_street and not rain.emitting,
+		"rain street: a clear sky keeps it off on the street and in the air"
+	)
+	K.check(
+		fails,
+		shown_dry,
+		"rain street: web tier, a clear sky on the street leaves the emitter shown"
+	)
+	weather.set("force_web", false)
+	_check_rain_cap(weather, rain)
+	cam.global_position = cam_at
+	f.call("clear_forced_weather")
+
+
+## The emitter's count: the preset's own on the desktop, the web cap's with the web tier forced.
+func _check_rain_cap(weather: Node, rain: GPUParticles3D) -> void:
+	var preset0: String = weather.get("preset")
+	var amount := rain.amount
+	K.check(
+		fails,
+		amount == int(WEATHER.RAIN_AMOUNT[preset0]),
+		"rain street: the desktop emitter keeps its preset's streak count (%d)" % amount
+	)
+	weather.set("force_web", true)
+	var cap := int(Q.WEB_DENSITY["rain"])
+	var capped := true
+	for p: String in Q.NAMES:
+		weather.call("set_rain_amount", p)
+		capped = capped and rain.amount == mini(int(WEATHER.RAIN_AMOUNT[p]), cap)
+	K.check(
+		fails, capped, "rain street: with the web tier forced no preset's emitter passes the cap"
+	)
+	weather.set("force_web", false)
+	weather.call("set_rain_amount", preset0)
+
+
+## The P photo fly takes the feet along with the camera, so it is never a lifted camera: flown more
+## than 25 m up with the web tier forced, the rain still falls over it.
+func _check_rain_photo_fly(ctx: FpContext, f: FpFeature, weather: Node) -> void:
+	var rain := weather.get("rain") as GPUParticles3D
+	var player := ctx.player
+	if rain == null or player == null:
+		return
+	weather.set("force_web", true)
+	f.call("force_rain_for_photo")
+	var start_y := player.position.y
+	player.set_photo_mode(true)
+	for _k in range(10):
+		player.call("_photo_fly", Vector2.ZERO, true, false, true, 0.25)
+	player.update_view(0.0)
+	weather.call("step", 0.1)
+	var cam := get_root().get_camera_3d()
+	var up := (cam.global_position.y - start_y) / WS.M
+	var above_feet := cam.global_position.y - ctx.player_position().y
+	K.check(
+		fails,
+		up > 25.0 and above_feet < WEATHER.RAIN_MAX_HEIGHT,
+		"rain photo fly: flown %.0f m up, %.2f m over the feet" % [up, above_feet / WS.M]
+	)
+	K.check(
+		fails,
+		rain.emitting and rain.visible and _over(rain, cam),
+		"rain photo fly: web tier, the rain still falls over a camera flown high"
+	)
+	player.set_photo_mode(false)
+	player.update_view(0.0)
+	weather.set("force_web", false)
+	f.call("clear_forced_weather")
+
+
+## The Tab overview is lifted over the city whatever the hero's own height: its pivot is on the
+## ground (y 0) and its lowest pose is 25 m up, so a hero standing on a roof (wall climb) 15 m or
+## more up has the zoomed-in, low-tilt overview camera less than RAIN_MAX_HEIGHT over their feet.
+## The overview being open counts as lifted all the same: in the web tier the emitter is off and
+## hidden there, and it comes back at once with the hero's own camera when the overview closes.
+## Off the web tier the overview keeps its rain.
+func _check_rain_perch(ctx: FpContext, f: FpFeature, weather: Node) -> void:
+	var rain := weather.get("rain") as GPUParticles3D
+	var player := ctx.player
+	var ov := K.make_feature(ctx, "overview")
+	K.check(
+		fails, rain != null and player != null and ov != null, "rain perch: emitter, hero, overview"
+	)
+	if rain == null or player == null or ov == null:
+		return
+	ov.set_process(false)
+	var ground_y := player.position.y
+	weather.set("force_web", true)
+	f.call("force_rain_for_photo")
+	player.position.y = ground_y + 20.0 * WS.M
+	K.check(
+		fails, bool(ov.call("enter")), "rain perch: the overview opens over a hero on a 20 m roof"
+	)
+	ov.call("nudge", Vector2.ZERO, 0.0, -5.0, 0.0001)
+	_spin_overview(ctx, ov, weather, 3.0)
+	var cam := get_root().get_camera_3d()
+	var above_feet := cam.global_position.y - ctx.player_position().y
+	K.check(
+		fails,
+		above_feet < WEATHER.RAIN_MAX_HEIGHT and ctx.has_modal(&"overview"),
+		"rain perch: lowest overview pose %.1f m over a roof hero's feet" % (above_feet / WS.M)
+	)
+	K.check(
+		fails,
+		not rain.emitting and not rain.visible,
+		"rain perch: web tier, the open overview has the emitter off and hidden"
+	)
+	weather.set("force_web", false)
+	weather.call("step", 0.1)
+	K.check(
+		fails,
+		rain.emitting and rain.visible and _over(rain, cam),
+		"rain perch: off the web tier the open overview keeps its rain over the camera"
+	)
+	weather.set("force_web", true)
+	ov.call("exit", 0.0)
+	weather.call("step", 0.1)
+	K.check(
+		fails,
+		rain.emitting and rain.visible and _over(rain, get_root().get_camera_3d()),
+		"rain perch: closed, the hero's own camera has the rain back at once"
+	)
+	player.position.y = ground_y
+	weather.set("force_web", false)
+	f.call("clear_forced_weather")
+	ov.call("teardown")
+	ctx.features.erase("overview")
+	ov.queue_free()
+
+
+## Frames the open overview, the hero's camera and the weather for secs seconds at 60 fps.
+func _spin_overview(ctx: FpContext, ov: FpFeature, weather: Node, secs: float) -> void:
+	var dt := 1.0 / 60.0
+	for _k in range(ceili(secs / dt)):
+		ov.call("_process", dt)
+		ctx.player.update_view(dt)
+		weather.call("step", dt)
+
+
+## Whether the rain emitter is over the camera (where step() puts it).
+func _over(rain: Node3D, cam: Camera3D) -> bool:
+	return rain.global_position.is_equal_approx(cam.global_position + Vector3(0, 0.35, 0))
 
 
 ## Whether the rain emitter is over the camera and the splash emitter at the player's feet.

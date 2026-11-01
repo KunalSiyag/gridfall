@@ -100,9 +100,10 @@ const WEB := {
 	"lod": 2.5,
 	"lights": 4,
 }
-## Density ceilings the web quality tier publishes for the traffic, crowd and animal owners to
-## clamp their budgets to; each owner tunes its own number with before/after FPS evidence.
-const WEB_DENSITY := {"traffic": 12, "crowd": 24, "animals": 6}
+## Density ceilings the web quality tier publishes for the traffic, crowd, animal and rain owners
+## to clamp their budgets to; each owner tunes its own number with before/after evidence (FPS for
+## the first three, streak pixels in screenshots for the rain emitter's particle count).
+const WEB_DENSITY := {"traffic": 12, "crowd": 24, "animals": 6, "rain": 600}
 
 ## Browser pacing: physics catch-up steps a frame may run, below the engine default of 8. The
 ## browser build pays 6-35 ms per physics step, so 8 catch-up steps after a slow frame add more

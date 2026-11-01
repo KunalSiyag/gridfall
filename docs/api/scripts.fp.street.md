@@ -152,18 +152,21 @@ Street-level look on foot (slice G1). Applies the first-person light profile for
 
 extends `Node3D`
 
-Street weather (slice G1): a deterministic daily state (clear 60%, overcast 25%, rain 15%) from the city seed and day, forced by incidents (a flood brings rain, smog a brown haze), drives SkyDirector's weather hooks, CityView's wetness and rain, the street profile's reflections and the global `wetness` shader parameter, a rain-streak emitter that follows the camera and drops splashing off the ground round the player. Wetness rises 0 -> 1 over 120 real seconds of rain at 1x (scaled by sim.speed) and dries over 300.
+Street weather (slice G1): a deterministic daily state (clear 60%, overcast 25%, rain 15%) from the city seed and day, forced by incidents (a flood brings rain, smog a brown haze), drives SkyDirector's weather hooks, CityView's wetness and rain, the street profile's reflections and the global `wetness` shader parameter, a rain-streak emitter that follows the camera (off while the Tab overview is open or the camera is high over the player, in the web tier) and drops splashing off the ground round the player. Wetness rises 0 -> 1 over 120 real seconds of rain at 1x (scaled by sim.speed) and dries over 300.
 
 ### Constants
 
 - `WS = preload("res://scripts/fp/world_scale.gd")`
 - `D = preload("res://scripts/sim/sim_defs.gd")`
 - `LP = preload("res://scripts/fp/street/light_profile.gd")`
+- `Q = preload("res://scripts/fp/render/quality.gd")`
 - `STATES = ["clear", "overcast", "rain"]`
 - `WET_SECONDS = 120.0`
 - `DRY_SECONDS = 300.0`
 - `LOOK = { "clear": {"energy": 1.0, "exposure": 1.0, "grey": 0.0, "fog": -1.0, "shadow": 1.0}, "...`: Hook targets per state: sun energy and exposure multipliers, sky grey, fog-begin override and sun shadow opacity (cloud cover leaves only soft, faint shadows).
 - `RAIN_AMOUNT = {"low": 800, "medium": 1600, "high": 3000}`
+- `RAIN_MAX_HEIGHT = 10.0 * WS.M`: The rain emitter hangs in a 20 m box over the camera, so it belongs to a camera on the street: in the web tier, once the camera is more than this far above the player's feet (10 m; the Tab overview's lowest pose is 25 m up) the streaks would only hang in the air before the lens, a few metres away and over nothing, so the emitter is off and hidden. The Tab overview being open counts as lifted whatever the height (OVERVIEW_MODAL): its pivot is on the ground, so a hero on a roof 15 m or more up has its lowest pose under that limit over their feet. Off the web nothing changes: the rule was looked at in the browser's renderer only. The P photo fly never counts as lifted (its feet follow the camera, see FpPlayer.set_photo_mode), so a photo keeps its rain at any height.
+- `OVERVIEW_MODAL = &"overview"`: The modal owner the overview feature pushes while it is open (its MODAL); named here and not imported, as the other features' modals are (ctx.has_modal(&"chat")).
 - `SPLASH_AMOUNT = {"low": 0, "medium": 360, "high": 720}`: Drops splashing up off the ground round the player in the rain (none on low), once the streets are SPLASH_WET wet: SPLASH_BOX (u) either way of the feet, each a bead flung up SPLASH_MPS (m/s) that falls back within SPLASH_LIFE (s).
 - `SPLASH_WET = 0.3`
 - `SPLASH_BOX = 0.4`
@@ -176,6 +179,7 @@ Street weather (slice G1): a deterministic daily state (clear 60%, overcast 25%,
 - `forced: String`: A state forced by tests and photos ("" follows the day and incidents).
 - `push_global: bool`: Whether to write the `wetness` global shader parameter (the streetscape feature added it).
 - `baseline: String`: The state clear_forced() returns to: "" (the day's weather) in play; "clear" in tool runs (photo tour, fp_bench), so their baselines and timings do not depend on the day's weather.
+- `force_web: bool`: Forces the web tier's rain rules, the streak cap and the off-over-the-city rule (tests; set it before setup() for the emitter's first count); the browser build has them on through quality.gd.
 - `preset: String`: The quality preset: on "high" (the only preset with volumetric fog) a smog incident also gets a brown FogVolume box over its radius.
 - `smog_volumes: Dictionary`: Smog FogVolumes by event key ("x,y").
 
@@ -189,6 +193,7 @@ Street weather (slice G1): a deterministic daily state (clear 60%, overcast 25%,
 - `func force(s: String) -> void`: Forces a state ("clear", "overcast" or "rain"); "" goes back to the day's weather.
 - `func force_soaked() -> void`: Rain with the streets fully wet at once (the "rain" photo).
 - `func clear_forced() -> void`: Back to the baseline weather with dry streets and the hooks at their targets.
+- `static func rain_count(p_preset: String, web: bool = false) -> int`: The rain emitter's particle count for a preset: RAIN_AMOUNT, held to the web tier's "rain" density cap (quality.gd density_caps, flag web_quality) in the browser build, where the 3D view renders at 0.6 scale and Medium's 1,600 and High's 3,000 streaks read as lines over the street (docs/runbooks/web-deploy.md has the measurements). web forces the tier in tests. Never below 1: a particle emitter takes no fewer, so GRIDFALL_WEB_CAPS="rain=0" (or a value that is no number) leaves one streak, as near to none as the emitter goes.
 - `func set_rain_amount(p_preset: String) -> void`
 - `func to_dict() -> Dictionary`
 - `func from_dict(d: Dictionary) -> void`

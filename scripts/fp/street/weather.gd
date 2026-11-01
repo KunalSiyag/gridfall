@@ -2,13 +2,16 @@ extends Node3D
 ## Street weather (slice G1): a deterministic daily state (clear 60%, overcast 25%, rain 15%) from the
 ## city seed and day, forced by incidents (a flood brings rain, smog a brown haze), drives SkyDirector's
 ## weather hooks, CityView's wetness and rain, the street profile's reflections and the global
-## `wetness` shader parameter, a rain-streak emitter that follows the camera and drops splashing
-## off the ground round the player. Wetness rises 0 -> 1 over 120 real seconds of rain at 1x
-## (scaled by sim.speed) and dries over 300.
+## `wetness` shader parameter, a rain-streak emitter that follows the camera (off while the Tab
+## overview is open or the camera is high over the player, in the web tier) and drops splashing off
+## the ground round the player.
+## Wetness rises 0 -> 1 over 120 real seconds of rain at 1x (scaled by sim.speed) and dries over
+## 300.
 
 const WS := preload("res://scripts/fp/world_scale.gd")
 const D := preload("res://scripts/sim/sim_defs.gd")
 const LP := preload("res://scripts/fp/street/light_profile.gd")
+const Q := preload("res://scripts/fp/render/quality.gd")
 const STATES := ["clear", "overcast", "rain"]
 const WET_SECONDS := 120.0
 const DRY_SECONDS := 300.0
@@ -20,6 +23,19 @@ const LOOK := {
 	"rain": {"energy": 0.32, "exposure": 0.86, "grey": 1.0, "fog": 9.0, "shadow": 0.12},
 }
 const RAIN_AMOUNT := {"low": 800, "medium": 1600, "high": 3000}
+## The rain emitter hangs in a 20 m box over the camera, so it belongs to a camera on the street:
+## in the web tier, once the camera is more than this far above the player's feet (10 m; the Tab
+## overview's lowest pose is 25 m up) the streaks would only hang in the air before the lens, a few
+## metres away and over nothing, so the emitter is off and hidden. The Tab overview being open
+## counts as lifted whatever the height (OVERVIEW_MODAL): its pivot is on the ground, so a hero
+## on a roof 15 m or more up has its lowest pose under that limit over their feet. Off the web
+## nothing changes: the rule was looked at in the browser's renderer only. The P photo fly never
+## counts as lifted (its feet follow the camera, see FpPlayer.set_photo_mode), so a photo keeps its
+## rain at any height.
+const RAIN_MAX_HEIGHT := 10.0 * WS.M
+## The modal owner the overview feature pushes while it is open (its MODAL); named here and not
+## imported, as the other features' modals are (ctx.has_modal(&"chat")).
+const OVERVIEW_MODAL := &"overview"
 ## Drops splashing up off the ground round the player in the rain (none on low), once the streets
 ## are SPLASH_WET wet: SPLASH_BOX (u) either way of the feet, each a bead flung up SPLASH_MPS (m/s)
 ## that falls back within SPLASH_LIFE (s).
@@ -40,6 +56,9 @@ var push_global: bool = false
 ## The state clear_forced() returns to: "" (the day's weather) in play; "clear" in tool runs (photo
 ## tour, fp_bench), so their baselines and timings do not depend on the day's weather.
 var baseline: String = ""
+## Forces the web tier's rain rules, the streak cap and the off-over-the-city rule (tests; set it
+## before setup() for the emitter's first count); the browser build has them on through quality.gd.
+var force_web: bool = false
 var rain: GPUParticles3D
 var splash: GPUParticles3D
 ## The quality preset: on "high" (the only preset with volumetric fog) a smog incident also gets a
@@ -112,19 +131,40 @@ func step(delta: float) -> void:
 	_apply_hooks()
 	_update_smog_volumes()
 	if rain != null:
-		rain.emitting = state == "rain"
-		var cam := get_viewport().get_camera_3d() if is_inside_tree() else null
-		if cam != null:
-			# An emitter already there takes no write: a moved transform dirties its draw.
-			var at := cam.global_position + Vector3(0, 0.35, 0)
-			if rain.global_position != at:
-				rain.global_position = at
+		_step_rain()
 	if splash != null:
 		splash.emitting = splashing()
 		if splash.emitting and ctx != null and ctx.player != null:
 			var at := ctx.player_position() + Vector3(0, 0.02 * WS.M, 0)
 			if splash.global_position != at:
 				splash.global_position = at
+
+
+## The rain emitter's frame: on while it rains, over the camera. In the web tier a camera lifted
+## over the city has it off and hidden, left where it was; a clear sky only stops the emitter, so
+## the streaks in flight finish falling. A value already there takes no write (a moved transform
+## dirties the emitter's draw).
+func _step_rain() -> void:
+	var cam := get_viewport().get_camera_3d() if is_inside_tree() else null
+	var street := not (_camera_aerial(cam) and Q.web_mode(force_web))
+	if cam != null and street:
+		var at := cam.global_position + Vector3(0, 0.35, 0)
+		if rain.global_position != at:
+			rain.global_position = at
+	rain.emitting = state == "rain" and street
+	if rain.visible != street:
+		rain.visible = street
+
+
+## Whether the camera is lifted above the street: the Tab overview is open, or the camera is further
+## than RAIN_MAX_HEIGHT over the player's feet. False without a camera or a context, and in the P
+## photo fly, where the feet follow the camera.
+func _camera_aerial(cam: Camera3D) -> bool:
+	if cam == null or ctx == null:
+		return false
+	if ctx.has_modal(OVERVIEW_MODAL):
+		return true
+	return cam.global_position.y - ctx.player_position().y > RAIN_MAX_HEIGHT
 
 
 ## Whether drops splash off the ground now: raining on wet streets, on a preset with splashes.
@@ -201,10 +241,24 @@ func clear_forced() -> void:
 	_apply_hooks()
 
 
+## The rain emitter's particle count for a preset: RAIN_AMOUNT, held to the web tier's "rain"
+## density cap (quality.gd density_caps, flag web_quality) in the browser build, where the 3D view
+## renders at 0.6 scale and Medium's 1,600 and High's 3,000 streaks read as lines over the street
+## (docs/runbooks/web-deploy.md has the measurements). web forces the tier in tests. Never below 1:
+## a particle emitter takes no fewer, so GRIDFALL_WEB_CAPS="rain=0" (or a value that is no number)
+## leaves one streak, as near to none as the emitter goes.
+static func rain_count(p_preset: String, web: bool = false) -> int:
+	var n := int(RAIN_AMOUNT.get(p_preset, 1600))
+	var caps := Q.density_caps(web)
+	if caps.has("rain"):
+		n = mini(n, int(caps["rain"]))
+	return maxi(1, n)
+
+
 func set_rain_amount(p_preset: String) -> void:
 	preset = p_preset
 	if rain != null:
-		rain.amount = int(RAIN_AMOUNT.get(preset, 1600))
+		rain.amount = rain_count(preset, force_web)
 	if splash != null:
 		splash.amount = maxi(1, int(SPLASH_AMOUNT.get(preset, 0)))
 	LP.set_wet(ctx.env if ctx != null else null, preset, wet)
@@ -261,7 +315,7 @@ func from_dict(d: Dictionary) -> void:
 func _build_rain(p_preset: String) -> void:
 	rain = GPUParticles3D.new()
 	rain.name = "Rain"
-	rain.amount = int(RAIN_AMOUNT.get(p_preset, 1600))
+	rain.amount = rain_count(p_preset, force_web)
 	rain.lifetime = 1.3
 	rain.local_coords = false
 	rain.emitting = false
