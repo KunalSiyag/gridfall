@@ -73,6 +73,9 @@ const SHADOW_KEYS := [
 	"directional_shadow_split_2",
 	"directional_shadow_split_3",
 ]
+## The modal owner the overview feature pushes while it is open (its MODAL); named here and not
+## imported, as weather.gd and the other features do.
+const OVERVIEW_MODAL := &"overview"
 const VIEWPORT_KEYS := [
 	"scaling_3d_mode", "scaling_3d_scale", "msaa_3d", "mesh_lod_threshold", "use_occlusion_culling"
 ]
@@ -121,6 +124,10 @@ var _street_shadow: Array = []
 var _shadow_set: float = -1.0
 var _shadow_off_held: bool = false
 var _street_shadow_enabled: bool = true
+## The sun's normal bias as _sun_bias last wrote it (NAN before the first), and the street
+## profile's own value, which is whatever the sun carried that was not ours.
+var _nb_set: float = NAN
+var _nb_street: float = 0.0
 ## Seconds since the last open-site re-scan while aerial.
 var _aerial_site_t: float = 0.0
 ## Tiles built since their last post-pass: tile index -> holder, in arrival order.
@@ -306,8 +313,9 @@ func _aerial_shadows(on: bool) -> void:
 			_street_shadow = keys.map(func(k: String) -> float: return float(sun.get(k)))
 		_shadow_set = Q.aerial_shadow(preset)
 		if _shadow_set <= 0.0:
-			# Compatibility Low: no aerial shadow pass at all (the reach that would cast from the
-			# overview's altitude is longer than the city is tall; see quality.gd).
+			# Compatibility Low: ask for no aerial shadow pass at all (the reach that would cast
+			# from the overview's altitude is longer than the city is tall; see quality.gd, where
+			# SkyDirector's per-frame shadow_enabled write is noted as undoing it).
 			if not _shadow_off_held:
 				_street_shadow_enabled = sun.shadow_enabled
 				_shadow_off_held = true
@@ -343,6 +351,24 @@ func _check_aerial() -> void:
 			set_aerial(false)
 	elif h > AERIAL_MIN:
 		set_aerial(true)
+
+
+## The sun's shadow normal bias: the street profile's, or on Compatibility the active preset's
+## Q.aerial_normal_bias while the camera is over the city or the overview is open (zoomed in or
+## tilted low it sits under AERIAL_OFF, over the same roads that shade themselves in stripes). A
+## value that is not the one written last is the street profile's (G1 re-applies it on a preset
+## switch): kept, and put back on the way down. A write only on change.
+func _sun_bias() -> void:
+	var sun := ctx.sun
+	if sun == null or not is_instance_valid(sun):
+		return
+	if not is_equal_approx(sun.shadow_normal_bias, _nb_set):
+		_nb_street = sun.shadow_normal_bias
+	_nb_set = _nb_street
+	if aerial or ctx.has_modal(OVERVIEW_MODAL):
+		_nb_set = Q.aerial_normal_bias(preset, _nb_street)
+	if not is_equal_approx(sun.shadow_normal_bias, _nb_set):
+		sun.shadow_normal_bias = _nb_set
 
 
 ## Ranges every open site's parts for the aerial coverage (construction_kit.gd snapshots and
@@ -484,6 +510,7 @@ func _process(delta: float) -> void:
 	var t0: int = clock.call()
 	_frame_work(t0 + FRAME_BUDGET_USEC)
 	_check_aerial()
+	_sun_bias()
 	if aerial:
 		# update_site raises frames and adds parts without a tile_built: re-range them now and then.
 		_aerial_site_t += delta

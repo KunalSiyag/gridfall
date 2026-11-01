@@ -221,6 +221,8 @@ if [ "$MODE" = "quick" ] || [ "$MODE" = "full" ]; then
 	run_step fp_skylook_test_gl "FP_SKYLOOK_TEST: PASS" 300 0 -- -- --headless --path . --rendering-method gl_compatibility -s tools/tests/fp_skylook_test.gd
 	# The SSAO switch follows the 3D scale only on Compatibility (Forward+ keeps SSAO at every scale).
 	run_step fp_ssao_test_gl "FP_SSAO_TEST: PASS" 300 0 -- -- --headless --path . --rendering-method gl_compatibility -s tools/tests/fp_ssao_test.gd
+	# The aerial views' sun normal bias and shadow reach are Compatibility-only rules.
+	run_step fp_aerial_test_gl "FP_AERIAL_TEST: PASS" 300 0 -- -- --headless --path . --rendering-method gl_compatibility -s tools/tests/fp_aerial_test.gd
 fi
 
 if [ "$MODE" = "full" ]; then
