@@ -12,12 +12,19 @@ import subprocess
 import tempfile
 from pathlib import Path
 
+try:  # imported as tools.web_export (tests) or run as a script, where tools/ itself is on sys.path
+    from tools.optimize_imports import image_info
+except ImportError:
+    from optimize_imports import image_info
+
 CAP_TREES = (
     "models/characters/bodies/",
     "assets/posters/",
     "models/real/props/",
     "models/real/street/",
     "models/real/vehicles/",
+    "models/real/zones/",
+    "models/real/buildings/",
     "textures/real/",
     "env/",
 )
@@ -28,6 +35,24 @@ CAP_LIMIT = 256
 ## each in the sky pack); 1024 px wide keeps the horizon smooth (the sky shader never reads finer
 ## detail) and quarters them too.
 CAP_LIMITS = {"textures/real/": 1024, "env/": 1024}
+## The zone and building GLBs ship about 1,450 texture imports of 115 distinct images. Their normal
+## maps (RGTC, half the bytes) and ARM maps (roughness and metallic, read at mip 0 only within a few
+## metres of a wall) cap by kind; the diffuse maps stay at source resolution. The patterns are the
+## ones tools/optimize_imports.py uses to find normal maps (a test keeps them equal). Each rule is
+## (pattern, size_limit, smallest source side it applies to): the one 256 px ARM map, the glossy
+## solar-cell grid, keeps its resolution (a 128 cap would save about 33 KB and soften its glints).
+TYPED_TREES = ("models/real/zones/", "models/real/buildings/")
+NORMAL_MAP_RE = re.compile(r"(_nor_gl|_nor_dx|_normal)\.[a-z]+$", re.IGNORECASE)
+ARM_MAP_RE = re.compile(r"_arm\.[a-z]+$", re.IGNORECASE)
+TYPED_LIMITS = ((NORMAL_MAP_RE, 256, 0), (ARM_MAP_RE, 128, 512))
+## The roads stay at source resolution (the surface under the player's feet) and ship five normal
+## and five ARM images that the zone and building GLBs also use (asphalt, pavement, two concrete
+## walls, grass). The pack aliases identical payloads only, so capping those in the typed trees would
+## add a second, smaller copy beside the road's full-size one: they stay at source resolution too
+## (the street GLBs already ship a 256 px copy of some, so this only avoids a further split). If the
+## roads ever join CAP_TREES, drop SHARED_TREES: the exempt copies would then stay full size beside
+## capped road copies and split the dedupe the other way.
+SHARED_TREES = ("models/real/roads/",)
 UNCAPPED_TREES = ("assets/posters/",)
 UNCAPPED_NAMES = ("poster", "billboard")
 STAGE_TREES = (
@@ -35,7 +60,18 @@ STAGE_TREES = (
 )
 
 
-def cap_limit(relative: str) -> int:
+def cap_limit(relative: str, side: int = 0) -> int:
+    """The size_limit a texture import gets by tree and file name; 0 keeps the source resolution.
+
+    side is the longest side in pixels of the image behind it (0 when unknown) and only the typed
+    trees read it. stage_project screens out posters (is_uncapped) and the images shared with the
+    roads before it applies the limit."""
+    if relative.startswith(TYPED_TREES):
+        name = relative.removesuffix(".import")
+        for pattern, limit, smallest in TYPED_LIMITS:
+            if pattern.search(name):
+                return 0 if 0 < side < smallest else limit
+        return 0
     for prefix, limit in CAP_LIMITS.items():
         if relative.startswith(prefix):
             return limit
@@ -50,6 +86,23 @@ def is_uncapped(relative: str) -> bool:
 def cap_import(text: str, limit: int = CAP_LIMIT) -> str:
     """Keep the existing compression and mipmaps; cap only the imported dimensions."""
     return re.sub(r"^process/size_limit=.*$", f"process/size_limit={limit}", text, flags=re.M)
+
+
+def _source_digest(import_path: Path):
+    """sha1 of the image behind a texture .import, or None when the image is not there."""
+    source = import_path.with_suffix("")
+    return hashlib.sha1(source.read_bytes()).digest() if source.is_file() else None
+
+
+def _shared_digests(stage: Path) -> set:
+    """The images the SHARED_TREES texture imports ship, which the typed trees must not cap."""
+    found = set()
+    for prefix in SHARED_TREES:
+        for path in (stage / prefix).rglob("*.import"):
+            if 'importer="texture"' in path.read_text():
+                found.add(_source_digest(path))
+    found.discard(None)
+    return found
 
 
 # Godot's WAV importer: 0 Detect, 1 Disabled, 2 Forward, 3 Ping-Pong, 4 Backward. Only 2-4 loop.
@@ -78,6 +131,9 @@ def stage_project(root: Path, stage: Path, ffmpeg: str = "ffmpeg") -> dict:
             shutil.copy2(root / name, stage / name)
     capped = 0
     kept_full = 0
+    kept_typed = 0
+    kept_shared = 0
+    shared = _shared_digests(stage)
     for prefix in CAP_TREES:
         for path in (stage / prefix).rglob("*.import"):
             relative = path.relative_to(stage).as_posix()
@@ -87,7 +143,15 @@ def stage_project(root: Path, stage: Path, ffmpeg: str = "ffmpeg") -> dict:
             if is_uncapped(relative):
                 kept_full += 1
                 continue
-            path.write_text(cap_import(text, cap_limit(relative)))
+            typed = relative.startswith(TYPED_TREES)
+            limit = cap_limit(relative, max(image_info(str(path.with_suffix("")))[:2]) if typed else 0)
+            if limit == 0:
+                kept_typed += 1
+                continue
+            if typed and _source_digest(path) in shared:
+                kept_shared += 1
+                continue
+            path.write_text(cap_import(text, limit))
             capped += 1
     audio_before = audio_after = 0
     converted = 0
@@ -118,7 +182,8 @@ def stage_project(root: Path, stage: Path, ffmpeg: str = "ffmpeg") -> dict:
         'progressive_web_app/ensure_cross_origin_isolation_headers=false\n',
     )
     preset.write_text(text)
-    return {"capped_imports": capped, "kept_full_size": kept_full, "converted_wav": converted,
+    return {"capped_imports": capped, "kept_full_size": kept_full, "kept_typed_full_size": kept_typed,
+            "kept_shared_with_roads": kept_shared, "converted_wav": converted,
             "wav_bytes": audio_before, "ogg_bytes": audio_after}
 
 

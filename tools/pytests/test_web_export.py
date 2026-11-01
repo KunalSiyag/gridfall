@@ -8,7 +8,12 @@ from pathlib import Path
 
 import pytest
 
+from tools.optimize_imports import NORMAL_RE, image_info
 from tools.web_export import (
+    ARM_MAP_RE,
+    CAP_TREES,
+    NORMAL_MAP_RE,
+    TYPED_TREES,
     cap_import,
     cap_limit,
     deduplicate_pack,
@@ -102,6 +107,192 @@ def test_ground_materials_get_their_own_cap():
     # The sky HDRIs import lossless (~11 MB each); the sky pack quarters at 1024 px wide.
     assert cap_limit("env/sky.hdr.import") == 1024
     assert cap_limit("env/sky_dusk.hdr.import") == 1024
+
+
+def test_zone_and_building_textures_cap_by_kind():
+    assert all(tree in CAP_TREES for tree in TYPED_TREES)
+    assert "models/real/roads/" not in CAP_TREES
+    for tree in ("models/real/zones/r1/", "models/real/buildings/"):
+        for name in ("house_brick_wall_006_nor_gl.jpg", "house_x_nor_dx.png", "house_x_NORMAL.jpg"):
+            assert cap_limit(tree + name + ".import") == 256
+        assert cap_limit(tree + "house_brick_wall_006_arm.jpg.import") == 128
+        assert cap_limit(tree + "house_car_atlas_arm.png.import") == 128
+        # Diffuse, emission and the leaf-card alpha maps keep the source resolution (0 is no cap).
+        for name in ("house_brick_wall_006_diff.jpg", "house_car_atlas_emit.png", "house_leafcluster_round.png",
+                     "house_normalized_diff.jpg", "house_armrest_diff.jpg"):
+            assert cap_limit(tree + name + ".import") == 0
+    # Other trees keep their rules.
+    assert cap_limit("models/real/props/bin_nor_gl.jpg.import") == 256
+    assert cap_limit("models/real/street/bin_arm.jpg.import") == 256
+    assert cap_limit("models/real/zones/r1/house_X_ARM.PNG.import") == 128
+
+
+def test_arm_maps_below_512_px_keep_their_resolution_but_normals_do_not():
+    arm = "models/real/zones/r2/midrise_solar_cells_arm.jpg.import"
+    normal = "models/real/zones/r2/midrise_brick_nor_gl.jpg.import"
+    assert cap_limit(arm, 512) == 128 and cap_limit(arm, 1024) == 128
+    assert cap_limit(arm, 256) == 0 and cap_limit(arm, 128) == 0
+    # An unknown source size (side 0) takes the rule, and the smallest-source rule is for ARM only.
+    assert cap_limit(arm) == 128 and cap_limit(arm, 0) == 128
+    assert cap_limit(normal, 256) == 256 and cap_limit(normal, 512) == 256
+    # Only the typed trees read the size.
+    assert cap_limit("models/real/props/bin_arm.jpg.import", 128) == 256
+
+
+def test_typed_patterns_follow_the_optimizers_normal_map_rule():
+    assert NORMAL_MAP_RE.pattern == NORMAL_RE.pattern
+    assert NORMAL_MAP_RE.flags == NORMAL_RE.flags
+    assert not ARM_MAP_RE.search("house_x_nor_gl.jpg") and not NORMAL_MAP_RE.search("house_x_arm.jpg")
+
+
+def test_real_zone_and_building_imports_agree_with_the_typed_rule():
+    """The rule keys on file names; the importer settings and the images behind them must agree,
+    or a map would be capped as the wrong kind, and one image must get one rule in both trees (the
+    pack aliases identical payloads, and a split between trees would store the image twice)."""
+    kinds: dict = {}
+    seen = 0
+    for tree in TYPED_TREES:
+        for path in sorted((ROOT / tree).rglob("*.import")):
+            text = path.read_text()
+            if 'importer="texture"' not in text:
+                continue
+            relative = path.relative_to(ROOT).as_posix()
+            name = relative.removesuffix(".import")
+            normal = NORMAL_MAP_RE.search(name) is not None
+            arm = ARM_MAP_RE.search(name) is not None
+            assert not (normal and arm), relative
+            assert ("compress/normal_map=1" in text) == normal, relative
+            assert cap_limit(relative) == (256 if normal else 128 if arm else 0), relative
+            # The size rule needs the header of every image: a format image_info cannot read (WebP,
+            # TGA) would silently take the plain rule, so the day one appears this test says so.
+            side = max(image_info(str(path.with_suffix("")))[:2])
+            assert side > 0, relative
+            assert cap_limit(relative, side) == (256 if normal else 128 if arm and side >= 512 else 0), relative
+            digest = hashlib.sha1(path.with_suffix("").read_bytes()).digest()
+            assert kinds.setdefault(digest, (normal, arm)) == (normal, arm), relative
+            seen += 1
+    assert seen > 1000 and len(kinds) < seen
+
+
+def png(side: int, tag: bytes = b"", height: "int | None" = None) -> bytes:
+    """The header of a PNG, square unless height is given (all that image_info reads), then tag to
+    give it its own digest."""
+    return b"\x89PNG\r\n\x1a\n" + struct.pack(">I", 13) + b"IHDR" + struct.pack(
+        ">II", side, side if height is None else height) + bytes([8, 2, 0, 0, 0]) + tag
+
+
+class StagedTextures:
+    """A source project of texture imports (size_limit=0, as Godot writes them) and its staged copy."""
+
+    META = '[remap]\nimporter="texture"\n[params]\nprocess/size_limit=0\n'
+
+    def __init__(self, tmp_path: Path):
+        self.root = tmp_path / "source"
+        self.stage = tmp_path / "stage"
+        self.root.mkdir()
+        self.stage.mkdir()
+        (self.root / "project.godot").write_text("[application]\n")
+        (self.root / "export_presets.cfg").write_text("[preset.2.options]\n")
+
+    def image(self, relative: str, content: "bytes | None") -> Path:
+        """Add an import and its image; content None leaves the image out."""
+        path = self.root / relative
+        path.parent.mkdir(parents=True, exist_ok=True)
+        if content is not None:
+            path.write_bytes(content)
+        Path(str(path) + ".import").write_text(self.META)
+        return path
+
+    def run(self) -> dict:
+        return stage_project(self.root, self.stage, ffmpeg="unused")
+
+    def staged(self, path: Path) -> str:
+        return Path(str(self.stage / path.relative_to(self.root)) + ".import").read_text()
+
+    def limit(self, path: Path) -> str:
+        return re.search(r"^process/size_limit=(\d+)$", self.staged(path), re.M)[1]
+
+
+def test_stage_caps_normals_and_arm_but_not_diffuse_or_images_the_roads_share(tmp_path):
+    project = StagedTextures(tmp_path)
+    image = project.image
+    brick = [image("models/real/zones/r1/house_brick_nor_gl.jpg", b"brick normal"),
+             image("models/real/buildings/hall_brick_nor_gl.jpg", b"brick normal"),
+             image("models/real/zones/r1/house_brick_arm.jpg", b"brick arm"),
+             image("models/real/buildings/hall_brick_arm.jpg", b"brick arm")]
+    plain = [image("models/real/zones/r1/house_brick_diff.jpg", b"brick diffuse"),
+             image("models/real/buildings/hall_leafcluster_round.png", b"leaves")]
+    # The asphalt maps ride in the zones, the buildings and the (uncapped) roads.
+    asphalt = [image("models/real/zones/c1/shop_asphalt_nor_gl.jpg", b"asphalt normal"),
+               image("models/real/buildings/hall_asphalt_nor_gl.jpg", b"asphalt normal"),
+               image("models/real/zones/c1/shop_asphalt_arm.jpg", b"asphalt arm"),
+               image("models/real/roads/road_straight_asphalt_nor_gl.jpg", b"asphalt normal"),
+               image("models/real/roads/road_straight_asphalt_arm.jpg", b"asphalt arm")]
+
+    report = project.run()
+
+    assert [project.limit(p) for p in brick] == ["256", "256", "128", "128"]
+    assert [project.limit(p) for p in plain + asphalt] == ["0"] * 7
+    # Two trees, one image, one rule: the staged imports are byte-identical.
+    assert project.staged(brick[0]) == project.staged(brick[1])
+    assert project.staged(brick[2]) == project.staged(brick[3])
+    assert report["capped_imports"] == 4
+    # kept_full_size is still only the posters and billboards; the typed rule has its own counters.
+    assert report["kept_full_size"] == 0
+    assert report["kept_typed_full_size"] == 2
+    assert report["kept_shared_with_roads"] == 3
+    assert all("size_limit=0" in Path(str(p) + ".import").read_text() for p in brick + asphalt)
+
+
+def test_stage_typed_rule_edge_cases(tmp_path):
+    project = StagedTextures(tmp_path)
+    image = project.image
+    # The glossy solar-cell grid is a 256 px ARM map: below the rule's smallest source, it stays.
+    solar = [image("models/real/zones/r2/midrise_solar_cells_arm.jpg", png(256, b"solar")),
+             image("models/real/buildings/farm_solar_cells_arm.jpg", png(256, b"solar"))]
+    # The pattern ignores case, the size rule starts at 512 px, and normals have no smallest source.
+    capped = [image("models/real/zones/r2/midrise_brick_arm.jpg", png(512, b"brick")),
+              image("models/real/zones/r2/midrise_plaster_ARM.PNG", png(1024, b"plaster")),
+              image("models/real/zones/r2/midrise_plaster_nor_gl.png", png(256, b"small normal"))]
+    # A size that cannot be read (not a PNG or JPEG header, or no image at all) takes the plain rule,
+    # and an import with no image is never "shared" with a road import that has none either.
+    unknown = [image("models/real/zones/r2/midrise_mystery_arm.jpg", b"not an image"),
+               image("models/real/zones/r2/midrise_ghost_arm.jpg", None)]
+    image("models/real/roads/road_ghost_arm.jpg", None)
+    # Posters stay legible in every tree, even where the typed rule would cap their name.
+    poster = image("models/real/zones/r2/midrise_poster_nor_gl.jpg", png(512, b"poster"))
+    # The exemption is for the zone and building copies of an image the roads ship; the street GLBs
+    # keep their own cap on the same image.
+    shared = [image("models/real/roads/road_asphalt_nor_gl.jpg", png(512, b"asphalt")),
+              image("models/real/zones/c1/shop_asphalt_nor_gl.jpg", png(512, b"asphalt")),
+              image("models/real/street/street_asphalt_nor_gl.jpg", png(512, b"asphalt"))]
+    # Only the roads exempt a typed copy: an image a street GLB alone ships is capped in both places,
+    # so the zone copy (256 px, like the street's own) aliases it in the pack.
+    street_only = [image("models/real/street/street_hydrant_nor_gl.jpg", png(512, b"hydrant")),
+                   image("models/real/zones/c1/shop_hydrant_nor_gl.jpg", png(512, b"hydrant"))]
+    # The exemption is by image, not by kind: a diffuse map the roads ship is already left alone by
+    # the typed rule, so it counts there and not as an exemption.
+    shared_diffuse = [image("models/real/roads/road_asphalt_diff.jpg", png(512, b"asphalt diffuse")),
+                      image("models/real/zones/c1/shop_asphalt_diff.jpg", png(512, b"asphalt diffuse"))]
+    # The smallest-source rule reads the longest side: a 512 px long ARM map is capped whichever way
+    # round it is.
+    lopsided = [image("models/real/zones/r2/midrise_wide_arm.jpg", png(512, b"wide", height=128)),
+                image("models/real/zones/r2/midrise_tall_arm.jpg", png(128, b"tall", height=512))]
+
+    report = project.run()
+
+    assert [project.limit(p) for p in solar] == ["0", "0"]
+    assert [project.limit(p) for p in capped] == ["128", "128", "256"]
+    assert [project.limit(p) for p in unknown] == ["128", "128"]
+    assert project.limit(poster) == "0"
+    assert [project.limit(p) for p in shared] == ["0", "0", "256"]
+    assert [project.limit(p) for p in street_only] == ["256", "256"]
+    assert [project.limit(p) for p in shared_diffuse[1:]] == ["0"]
+    assert [project.limit(p) for p in lopsided] == ["128", "128"]
+    assert report["capped_imports"] == 10
+    assert report["kept_full_size"] == 1
+    assert report["kept_typed_full_size"] == 3
+    assert report["kept_shared_with_roads"] == 1
 
 
 def test_stage_changes_only_copied_web_assets(tmp_path, monkeypatch):
