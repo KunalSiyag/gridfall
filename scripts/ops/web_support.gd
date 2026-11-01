@@ -37,6 +37,33 @@ static func store_erase(name: String) -> void:
 	_eval("localStorage.removeItem(%s)" % JSON.stringify(name))
 
 
+## Adds "label" to the page's User Timing timeline (DevTools, performance.getEntriesByType("mark")).
+## No-op off the web. The expression returns nothing, so no JavaScriptObject wrapper is built.
+static func perf_mark(label: String) -> void:
+	_eval("void performance.mark(%s)" % JSON.stringify(label))
+
+
+## performance.now() in ms (the page's clock, not the engine's); -1 off the web or when the
+## browser errors (a page whose Content-Security-Policy forbids eval: BootClock then stops asking).
+static func perf_now() -> float:
+	var v: Variant = _eval("performance.now()")
+	return float(v) if v != null else -1.0
+
+
+## Tells the loader page the game is interactive so it can lift its boot veil (BootClock.finish):
+## window.gfBootDone(). It goes through the bridge's object interface, not eval, so a page whose
+## Content-Security-Policy forbids eval (no 'unsafe-eval') still gets the call instead of keeping
+## the veil for the whole page timeout. A page without the hook leaves nothing behind (its own
+## timeout releases the veil, 30 s after startGame() resolved), and so does a hook that throws.
+## No-op off the web.
+static func boot_done() -> void:
+	if not is_web():
+		return
+	var window: Variant = JavaScriptBridge.get_interface("window")
+	if window != null and window.gfBootDone != null:
+		window.gfBootDone()
+
+
 ## Evaluates js in the browser and returns its value; null off the web or when the browser errors.
 static func _eval(js: String) -> Variant:
 	if not is_web():

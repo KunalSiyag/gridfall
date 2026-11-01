@@ -12,12 +12,19 @@ import subprocess
 import tempfile
 from pathlib import Path
 
+try:  # imported as tools.web_export (tests) or run as a script, where tools/ itself is on sys.path
+    from tools.optimize_imports import image_info
+except ImportError:
+    from optimize_imports import image_info
+
 CAP_TREES = (
     "models/characters/bodies/",
     "assets/posters/",
     "models/real/props/",
     "models/real/street/",
     "models/real/vehicles/",
+    "models/real/zones/",
+    "models/real/buildings/",
     "textures/real/",
     "env/",
 )
@@ -28,6 +35,24 @@ CAP_LIMIT = 256
 ## each in the sky pack); 1024 px wide keeps the horizon smooth (the sky shader never reads finer
 ## detail) and quarters them too.
 CAP_LIMITS = {"textures/real/": 1024, "env/": 1024}
+## The zone and building GLBs ship about 1,450 texture imports of 115 distinct images. Their normal
+## maps (RGTC, half the bytes) and ARM maps (roughness and metallic, read at mip 0 only within a few
+## metres of a wall) cap by kind; the diffuse maps stay at source resolution. The patterns are the
+## ones tools/optimize_imports.py uses to find normal maps (a test keeps them equal). Each rule is
+## (pattern, size_limit, smallest source side it applies to): the one 256 px ARM map, the glossy
+## solar-cell grid, keeps its resolution (a 128 cap would save about 33 KB and soften its glints).
+TYPED_TREES = ("models/real/zones/", "models/real/buildings/")
+NORMAL_MAP_RE = re.compile(r"(_nor_gl|_nor_dx|_normal)\.[a-z]+$", re.IGNORECASE)
+ARM_MAP_RE = re.compile(r"_arm\.[a-z]+$", re.IGNORECASE)
+TYPED_LIMITS = ((NORMAL_MAP_RE, 256, 0), (ARM_MAP_RE, 128, 512))
+## The roads stay at source resolution (the surface under the player's feet) and ship five normal
+## and five ARM images that the zone and building GLBs also use (asphalt, pavement, two concrete
+## walls, grass). The pack aliases identical payloads only, so capping those in the typed trees would
+## add a second, smaller copy beside the road's full-size one: they stay at source resolution too
+## (the street GLBs already ship a 256 px copy of some, so this only avoids a further split). If the
+## roads ever join CAP_TREES, drop SHARED_TREES: the exempt copies would then stay full size beside
+## capped road copies and split the dedupe the other way.
+SHARED_TREES = ("models/real/roads/",)
 UNCAPPED_TREES = ("assets/posters/",)
 UNCAPPED_NAMES = ("poster", "billboard")
 STAGE_TREES = (
@@ -35,7 +60,18 @@ STAGE_TREES = (
 )
 
 
-def cap_limit(relative: str) -> int:
+def cap_limit(relative: str, side: int = 0) -> int:
+    """The size_limit a texture import gets by tree and file name; 0 keeps the source resolution.
+
+    side is the longest side in pixels of the image behind it (0 when unknown) and only the typed
+    trees read it. stage_project screens out posters (is_uncapped) and the images shared with the
+    roads before it applies the limit."""
+    if relative.startswith(TYPED_TREES):
+        name = relative.removesuffix(".import")
+        for pattern, limit, smallest in TYPED_LIMITS:
+            if pattern.search(name):
+                return 0 if 0 < side < smallest else limit
+        return 0
     for prefix, limit in CAP_LIMITS.items():
         if relative.startswith(prefix):
             return limit
@@ -50,6 +86,23 @@ def is_uncapped(relative: str) -> bool:
 def cap_import(text: str, limit: int = CAP_LIMIT) -> str:
     """Keep the existing compression and mipmaps; cap only the imported dimensions."""
     return re.sub(r"^process/size_limit=.*$", f"process/size_limit={limit}", text, flags=re.M)
+
+
+def _source_digest(import_path: Path):
+    """sha1 of the image behind a texture .import, or None when the image is not there."""
+    source = import_path.with_suffix("")
+    return hashlib.sha1(source.read_bytes()).digest() if source.is_file() else None
+
+
+def _shared_digests(stage: Path) -> set:
+    """The images the SHARED_TREES texture imports ship, which the typed trees must not cap."""
+    found = set()
+    for prefix in SHARED_TREES:
+        for path in (stage / prefix).rglob("*.import"):
+            if 'importer="texture"' in path.read_text():
+                found.add(_source_digest(path))
+    found.discard(None)
+    return found
 
 
 # Godot's WAV importer: 0 Detect, 1 Disabled, 2 Forward, 3 Ping-Pong, 4 Backward. Only 2-4 loop.
@@ -78,6 +131,9 @@ def stage_project(root: Path, stage: Path, ffmpeg: str = "ffmpeg") -> dict:
             shutil.copy2(root / name, stage / name)
     capped = 0
     kept_full = 0
+    kept_typed = 0
+    kept_shared = 0
+    shared = _shared_digests(stage)
     for prefix in CAP_TREES:
         for path in (stage / prefix).rglob("*.import"):
             relative = path.relative_to(stage).as_posix()
@@ -87,7 +143,15 @@ def stage_project(root: Path, stage: Path, ffmpeg: str = "ffmpeg") -> dict:
             if is_uncapped(relative):
                 kept_full += 1
                 continue
-            path.write_text(cap_import(text, cap_limit(relative)))
+            typed = relative.startswith(TYPED_TREES)
+            limit = cap_limit(relative, max(image_info(str(path.with_suffix("")))[:2]) if typed else 0)
+            if limit == 0:
+                kept_typed += 1
+                continue
+            if typed and _source_digest(path) in shared:
+                kept_shared += 1
+                continue
+            path.write_text(cap_import(text, limit))
             capped += 1
     audio_before = audio_after = 0
     converted = 0
@@ -118,7 +182,8 @@ def stage_project(root: Path, stage: Path, ffmpeg: str = "ffmpeg") -> dict:
         'progressive_web_app/ensure_cross_origin_isolation_headers=false\n',
     )
     preset.write_text(text)
-    return {"capped_imports": capped, "kept_full_size": kept_full, "converted_wav": converted,
+    return {"capped_imports": capped, "kept_full_size": kept_full, "kept_typed_full_size": kept_typed,
+            "kept_shared_with_roads": kept_shared, "converted_wav": converted,
             "wav_bytes": audio_before, "ogg_bytes": audio_after}
 
 
@@ -318,38 +383,203 @@ LOADER_CSS = """#status-progress { display: none !important; }
 #gf-bar { position: absolute; left: 0; right: 0; bottom: 9%; width: min(440px, 62%); margin: 0 auto; }
 #gf-track { height: 6px; border-radius: 3px; background: rgba(255, 255, 255, 0.16); overflow: hidden; }
 #gf-fill { height: 100%; width: 0%; background: #d6ff3f; transition: width 0.25s ease; }
-#gf-label { margin-top: 10px; text-align: center; font: 500 13px/1.4 system-ui, -apple-system,
+#gf-row { display: flex; align-items: center; justify-content: center; gap: 10px; margin-top: 10px; }
+#gf-label { text-align: center; font: 500 13px/1.4 system-ui, -apple-system,
 	"Segoe UI", Roboto, sans-serif; color: #e8ecf3; letter-spacing: 0.02em; }
+/* The spinner animates transform only (and the reduced-motion pulse opacity only), so a compositor
+   can keep it turning while the engine's boot holds the main thread. */
+#gf-spin { display: none; box-sizing: border-box; width: 14px; height: 14px; border-radius: 50%;
+	border: 2px solid rgba(255, 255, 255, 0.2); border-top-color: #d6ff3f; will-change: transform;
+	animation: gf-spin 0.9s linear infinite; }
+#gf-bar.gf-starting #gf-spin { display: block; }
+#gf-hint { display: none; margin-top: 6px; text-align: center; color: #aeb6c4;
+	font: 400 12px/1.4 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+#gf-bar.gf-stalled #gf-spin { display: none; }
+#gf-bar.gf-stalled #gf-hint { display: block; }
+@keyframes gf-spin { to { transform: rotate(360deg); } }
+@keyframes gf-pulse { 50% { opacity: 0.3; } }
+@media (prefers-reduced-motion: reduce) { #gf-spin { animation: gf-pulse 1.8s ease-in-out infinite; } }
+/* Forced colors (high contrast) make every border one colour, which hides the turning arc. */
+@media (forced-colors: active) { #gf-spin { border-color: GrayText; border-top-color: Highlight; } }
 """
 
 LOADER_BAR = """<div id="gf-bar"><div id="gf-track"><div id="gf-fill"></div></div>
-\t\t\t\t<div id="gf-label">Loading GridFall\u2026</div></div>"""
+\t\t\t\t<div id="gf-row"><span id="gf-spin"></span><span id="gf-label">Loading GridFall\u2026</span></div>
+\t\t\t\t<div id="gf-hint">Taking longer than expected. If nothing changes soon, reload the page.</div></div>"""
 
+## The engine boots the whole game inside startGame(): Godot's web main() runs the first main-loop
+## iteration inside callMain, so Main._ready and the first frame's draw are one long task, and
+## startGame() resolves right after it. The stock shell removed the overlay then, so it sat frozen
+## through the whole stall. Here the overlay outlives startGame() and the game lifts it with
+## window.gfBootDone() (BootClock.finish: three more frames). The timeout starts when startGame()
+## resolves, so neither that task nor a slow download can trip it, and only has to cover those
+## three frames (BootClock's table shows what they cost on a device). 30 s is a safety net for a
+## game that never calls the hook (a boot that stops before BootClock.finish()): the player waits
+## on the veil at most that long.
+## The ordering (resolve after the boot task) is a fact about Godot's C++ web main(), which no CI job
+## can see, so deploy/web/smoke.js checks it on every full run (gf:start_game_resolved must not come
+## before gf:first_frame). If a Godot update ever moved the boot task after the resolve, a timer that
+## comes due inside a long task can only fire once the task ends, so the veil would be lifted right
+## after the stall, before the three frames (what the stock shell did), never during it.
+## Before the engine starts, godot.js never rejects a wasm that fails to download or compile, so
+## startGame() just never settles; START_STALL_MS without a progress tick (or a first byte) shows a
+## hint instead of an endless bar or spinner (60 s: the wasm is compiled as it streams in, so this
+## is long past the end of a normal compile). The hint claims no work in progress, because the page
+## cannot tell a slow boot from a dead one. Progress or the engine starting takes the hint back.
 LOADER_HELPER = """
 \tconst progressFill = document.getElementById('gf-fill');
 \tconst progressLabel = document.getElementById('gf-label');
+\tconst progressBar = document.getElementById('gf-bar');
+\tconst BOOT_VEIL_TIMEOUT_MS = 30000;
+\tconst START_STALL_MS = 60000;
+\tlet veilStarting = false;
+\tlet veilReleased = false;
+\tlet veilTimer = 0;
+\tlet stallTimer = 0;
+\tlet stallOver = false;
+
+\tfunction timelineMark(name) {
+\t\ttry {
+\t\t\tperformance.mark('gf:' + name);
+\t\t} catch (err) {
+\t\t\t// User Timing is optional.
+\t\t}
+\t}
+
+\t// Rounded, but 100 only once the last byte is in (99.6% of the bytes is not "Starting").
 \tfunction setProgress(ratio) {
-\t\tconst pct = Math.max(0, Math.min(100, Math.round(ratio * 100)));
+\t\tconst pct = ratio >= 1 ? 100 : Math.max(0, Math.min(99, Math.round(ratio * 100)));
 \t\tif (progressFill) {
 \t\t\tprogressFill.style.width = pct + '%';
 \t\t}
-\t\tif (progressLabel) {
+\t\tif (progressLabel && !veilStarting) {
 \t\t\tprogressLabel.textContent = 'Loading GridFall ' + pct + '%';
 \t\t}
+\t\twatchStall();
+\t\tif (ratio >= 1) {
+\t\t\tshowStarting();
+\t\t}
 \t}
+
+\t// No progress tick (and nothing since the page loaded) for START_STALL_MS before the engine starts:
+\t// show the hint, stop the spinner.
+\tfunction watchStall() {
+\t\tif (stallOver) {
+\t\t\treturn;
+\t\t}
+\t\tclearTimeout(stallTimer);
+\t\tstallTimer = setTimeout(() => setStalled(true), START_STALL_MS);
+\t\tsetStalled(false);
+\t}
+
+\t// The engine started: from here the boot is the game's, and a last progress tick (rAF can run it
+\t// after this) must not arm the watch again, or it would fire over the end of a very long boot.
+\tfunction stopStall() {
+\t\tstallOver = true;
+\t\tclearTimeout(stallTimer);
+\t\tsetStalled(false);
+\t}
+
+\tfunction setStalled(on) {
+\t\ttry {
+\t\t\tprogressBar.classList.toggle('gf-stalled', on);
+\t\t} catch (err) {
+\t\t\tconsole.error(err);
+\t\t}
+\t}
+
+\t// The bytes are in: say what happens next and start the spinner.
+\tfunction showStarting() {
+\t\tif (veilStarting) {
+\t\t\treturn;
+\t\t}
+\t\tveilStarting = true;
+\t\ttry {
+\t\t\ttimelineMark('bytes_done');
+\t\t\t// Snap to full: a width transition needs the main thread, which the boot is about to take.
+\t\t\tprogressFill.style.transition = 'none';
+\t\t\tprogressFill.style.width = '100%';
+\t\t\tprogressLabel.textContent = 'Starting your city';
+\t\t\tprogressBar.classList.add('gf-starting');
+\t\t} catch (err) {
+\t\t\tconsole.error(err);
+\t\t}
+\t}
+
+\t// Two frame callbacks (about 33 ms at 60 Hz) before the engine starts: the second runs after the
+\t// first frame, with the starting state and the spinner, was committed, and from then on the
+\t// compositor keeps the spinner turning while the boot holds the main thread. A hidden tab makes no
+\t// frames, so a 250 ms timer lets the boot go ahead.
+\tfunction afterFrames() {
+\t\treturn new Promise((resolve) => {
+\t\t\tconst fallback = setTimeout(resolve, 250);
+\t\t\trequestAnimationFrame(() => requestAnimationFrame(() => {
+\t\t\t\tclearTimeout(fallback);
+\t\t\t\tresolve();
+\t\t\t}));
+\t\t});
+\t}
+
+\t// Idempotent: the first release wins, so gf:veil_released is when the overlay really went (smoke.js
+\t// compares it with the game's gf:veil_frames) and a late hook call after the timeout changes nothing.
+\tfunction releaseVeil() {
+\t\tif (veilReleased) {
+\t\t\treturn;
+\t\t}
+\t\tveilReleased = true;
+\t\tclearTimeout(veilTimer);
+\t\ttry {
+\t\t\tsetStatusMode('hidden');
+\t\t} catch (err) {
+\t\t\t// The timer is spent, so nothing else would lift it: hide the overlay directly.
+\t\t\tconsole.error(err);
+\t\t\tstatusOverlay.style.display = 'none';
+\t\t}
+\t\ttimelineMark('veil_released');
+\t}
+
+\t// startGame() resolved: the timeout is armed before anything that could throw.
+\tfunction engineStarted() {
+\t\tif (!veilReleased) {
+\t\t\tveilTimer = setTimeout(releaseVeil, BOOT_VEIL_TIMEOUT_MS);
+\t\t}
+\t\tshowStarting();
+\t\ttimelineMark('start_game_resolved');
+\t}
+
+\twindow.gfBootDone = releaseVeil;
+\tif (typeof engine !== 'undefined' && engine && typeof engine.start === 'function') {
+\t\tconst engineStart = engine.start;
+\t\tengine.start = function (...args) {
+\t\t\tshowStarting();
+\t\t\tstopStall();
+\t\t\treturn afterFrames().then(() => engineStart.apply(this, args));
+\t\t};
+\t}
+\t// Nothing may arrive at all (a download that hangs before its first byte never ticks, and fetch has
+\t// no timeout), so the watch starts with the page, not with the first progress tick.
+\twatchStall();
 """
 
 
 def patch_loader_html(html: str) -> str:
-    """Give the boot page a branded progress bar instead of Godot's bare <progress> element."""
+    """Give the boot page a branded progress bar instead of Godot's bare <progress> element, and
+    keep its overlay up until the game is interactive (window.gfBootDone, or a timeout)."""
     replacements = (
         ("</style>", LOADER_CSS + "\t\t</style>"),
         ("<progress id=\"status-progress\"></progress>",
          "<progress id=\"status-progress\"></progress>\n\t\t\t\t" + LOADER_BAR),
         ("\tconst statusNotice = document.getElementById('status-notice');",
          "\tconst statusNotice = document.getElementById('status-notice');\n" + LOADER_HELPER),
+        ("\t\tstatusNotice.style.display = mode === 'notice' ? 'block' : 'none';",
+         "\t\tstatusNotice.style.display = mode === 'notice' ? 'block' : 'none';\n"
+         "\t\tif (progressBar) {\n"
+         "\t\t\tprogressBar.style.display = mode === 'progress' ? 'block' : 'none';\n"
+         "\t\t}"),
         ("\t\t\t\t\tstatusProgress.max = total;",
          "\t\t\t\t\tstatusProgress.max = total;\n\t\t\t\t\tsetProgress(current / total);"),
+        ("\t\t}).then(() => {\n\t\t\tsetStatusMode('hidden');\n\t\t}, displayFailureNotice);",
+         "\t\t}).then(() => {\n\t\t\tengineStarted();\n\t\t}, displayFailureNotice);"),
     )
     for anchor, replacement in replacements:
         if anchor not in html:

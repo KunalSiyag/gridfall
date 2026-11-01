@@ -2,7 +2,8 @@
 
 The web build is how people try GridFall without installing anything. `tools/export.sh web` runs
 `tools/web_export.py`, which builds an isolated staging copy of the project (never the source
-tree), caps the prop and character textures at 256 px, converts every WAV to Ogg (it loops only the ones whose import says loop_mode Forward, Ping-Pong or
+tree), caps the prop, character and vehicle textures at 256 px (and the zone and building normal and
+ARM maps by kind, see "Textures look soft"), converts every WAV to Ogg (it loops only the ones whose import says loop_mode Forward, Ping-Pong or
 Backward, 2-4: 1 is Disabled, which is what the one-shots use; the music dir always loops), exports the
 Godot 4 web build, aliases duplicate PCK payloads to one copy and publishes the result
 under a content-addressed `releases/<hash>/` directory. The `.pck` that ships is ~161 MB instead of
@@ -15,7 +16,11 @@ cache, then heuristics). There is no server-side key by design.
 The source Web preset now enables Thread Support. The recorded live image (`f762234`, no-threads)
 predates the threaded rollout; merging the preset does not change a running deployment. See [the six-surface thread audit and A/B evidence](web-threads.md)
 before building or deploying the threaded variant. The size figures above describe the recorded
-Phase A deployment, not the later ground-texture-capped staging used in the A/B experiment.
+Phase A deployment, not the later ground-texture-capped staging used in the A/B experiment, and they
+predate the typed zone and building cap: that cap takes 12.4 MB of raw texture payload out of the
+boot pack (about 8 MB Brotli q11; computed from the importer's own `.ctex` sizes for the 115 distinct
+images, not from a fresh export), so re-measure the pack from `build-report.json` (`pack_after`) and
+the first load with `tools/web_measure.py` before quoting a new total.
 
 ## Build and ship a new image
 
@@ -76,6 +81,42 @@ Phase A deployment, not the later ground-texture-capped staging used in the A/B 
   compressed size of the `.pck` plus the `.wasm` and small files. Later visits come from the
   service worker cache; a new release has a new `releases/<hash>/` path and a new
   `CACHE_VERSION`, so a reload after a redeploy fetches the new build instead of the old one.
+- The loader overlay stays up until the game is interactive. Godot's web `main()` runs the first
+  main-loop iteration inside `callMain`, so `Main._ready` and the first frame's draw are one
+  main-thread task, and `startGame()` resolves only after it (the stock shell removed the overlay
+  then, frozen on whatever it had last painted). The page cannot paint or take input during that
+  task, so at 100% of bytes it switches to "Starting your city" with a transform-only spinner and
+  waits two frames before starting the engine, which leaves the spinner on the compositor when the
+  task begins. The game lifts the overlay with `window.gfBootDone()` (`BootClock.finish`: the first
+  interactive frame plus three rendered ones). The call goes through the bridge's object interface,
+  not `eval`, so a Content-Security-Policy without `'unsafe-eval'` still delivers it. If the hook
+  never comes (a boot that stops before `BootClock.finish`, or an old build), a 30 s timeout that
+  starts when `startGame()` resolves lifts the overlay: that is the most a game without the hook
+  costs the player on the veil. That timeout rests on the engine ordering above, which only a real
+  web build shows, so every full smoke run checks that `gf:start_game_resolved` does not come before
+  `gf:first_frame` (if a Godot update breaks it, re-measure the timeout; until then the worst case is
+  a veil lifted right after the boot task instead of three frames later). godot.js has no reject
+  path for a wasm that fails to download or compile, so `startGame()` then never settles; after 60 s
+  without a progress tick (counted from the page load until the first one) the page stops the
+  spinner and shows "Taking longer than expected. If nothing changes soon, reload the page."
+  `node tools/web_loader_check.js` checks the page side in headless Chrome with a stub engine (no
+  build needed; keep `TMPDIR` short, Chrome refuses a long socket path; its fake clock is paused, so
+  a busy machine does not change the result).
+- When the boot completes the game prints one `GF_BOOT {json}` line, then `GRIDFALL: boot complete`
+  (the browser console only; nothing leaves the machine). The line lists every boot stage with its
+  time in ms since the first mark, and the page's `performance.now()` at the first mark and at the
+  end; the same marks are `gf:<stage>` entries on the User Timing timeline. A stage marked twice (a
+  continued city restores every feature a second time) is `name#2`. The first frame is split in
+  two rows: `ready_end` to `pre_draw` is what its main-loop iteration still ran before drawing, and
+  `pre_draw` to `first_frame` is the draw itself, first-use shader work included (the rows do not
+  separate GL program links from the rest of the draw; a headless run draws nothing and has no
+  `pre_draw`). A page whose CSP forbids `eval` loses the `gf:` marks and the page times (-1), at the
+  cost of one console error, because those reads use `eval`; the hook and the two console lines do
+  not. smoke.js ends its boot wait at the `boot complete` line, so it needs a build that prints it:
+  against an image from before BootClock it sees the GPU banner without a `gf:ready_begin` mark and
+  fails the boot checks right away instead of waiting out its 10 minutes. Its boot checks read the
+  game's `gf:` marks, so a host whose CSP forbids `eval` fails them the same way (the failure text
+  names both causes); the Caddy image sets no CSP.
 - If those headers ever go missing (a proxy strips them, a wrong serving config), the player
   no longer gets a hung splash: an `html/head_include` script in the Web export preset checks
   `crossOriginIsolated` in the real document at parse time and shows a plain-language
@@ -192,6 +233,46 @@ the flag on a split release and expect a complete city.
   at 256 px on the web only (desktop keeps the source resolution). Posters, hoardings and billboard
   art are exempt and keep their source resolution because players read them up close. Raise the cap
   in `tools/web_export.py` (`CAP_LIMIT`) or add a tree to `UNCAPPED_TREES`/`UNCAPPED_NAMES`.
+  The zone and building GLBs cap by kind (`TYPED_LIMITS`): normal maps at 256 px, ARM maps at 128 px
+  (the one 256 px ARM map, the glossy solar-cell grid, keeps its size), diffuse, emission and leaf
+  cards untouched. The images the uncapped roads also ship (asphalt, pavement, two concrete walls,
+  grass) stay at source resolution so the pack gains no second, smaller copy of them beside the
+  road's (`kept_shared_with_roads` in the build report; the street GLBs already carry 256 px copies
+  of some, so the pack still holds both sizes of those). In the build report `kept_full_size` counts
+  the posters and billboards, as before, and `kept_typed_full_size` the zone and building images the
+  typed rule leaves alone (diffuse, including the ones the roads share, emission, leaf cards, small
+  ARM maps).
+  What the cap changes: engine renders of the real capped and uncapped images on flat quads
+  (headless Chrome on SwiftShader, the Compatibility renderer, 960x540, 72 degree FOV, tile repeats
+  2 to 4 m; not the game scene) differ on a wall seen face-on only within about 2 to 3.5 m. Brick has
+  SSIM 0.965 to 0.977 up to 1.8 m and 0.998 at 3.5 m (0.908 at 0.8 m under grazing sun, 0.999 from 5
+  m), plaster 0.92 to 0.93 at 0.8 to 1.8 m, clay tile 0.956 to 0.971. The nominal reach, where the
+  capped and uncapped chains first pick different mips, is about 3 to 6 m for the normal cap and about
+  twice that for the ARM cap: an outer bound, not what shows. Both distances grow in proportion to the
+  3D viewport height (540 px for a 900 px canvas at the web tier's 0.6 scale; about 1.8 times that at
+  a 960 px 3D viewport, a 1600 px canvas) and were measured at 72 degrees: the default third-person
+  camera is 60 degrees (about 1.3 times the distance) and conversation zoom 45 degrees (about 1.75
+  times), pinhole scaling that nobody has rendered. The ground differs far less: from a 1.7 m eye height at pitches from -12 to -90 degrees,
+  dry gravel renders at SSIM 0.995 or more and a lot's concrete floor slab at 0.999 or more, wet or
+  dry (the game never wets gravel, which is only in `MATTE_PREFIXES`).
+  One difference holds at any distance: Godot's importer leaves a capped normal map's red and green
+  0.4 to 2.7 levels of 255 below the uncapped map, a uniform tilt of its mean normal of 0.2 to 1.5
+  degrees (median 0.5; gravel and shutter metal the most; all 29 capped maps, measured with a headless
+  import and the shipped BC5 decoded), worth at most about 0.03 of N.L.
+  Soft brick, plaster or roof detail at arm's length on a facade: raise the normal limit in
+  `TYPED_LIMITS` first. The aggregate error hides the maps that carry real relief. An offline model
+  (Lambert lighting on the real maps, no engine frames) has brick, slate, roof-tile and gravel
+  normals shift their shading by more than 0.05 on a quarter to two thirds of their pixels at full
+  magnification, and flat plaster and bitumen on a few percent; ground never magnifies that far.
+  Nobody has compared the game's own frames, so before shipping a build with this cap look at it on a
+  real GPU, at the surfaces the cap does change: a brick or plaster facade at 0.5 to 2 m under a low
+  sun or a street lamp, a clay-tile or slate roof edge at 1 to 2 m, and a corrugated-metal or
+  container wall. Lot pavement (sidewalk, asphalt) and curbs are unchanged controls: the sidewalk,
+  asphalt, trim stone and grass maps are the road-shared images that stay full size, and the curbs
+  live in the road GLBs, which the cap never touches. Gravel underfoot is no test, it is the least
+  affected surface. A diffuse cap of 384 px would save about 2.3 MB raw more (30 images, modelled
+  from the importer's `.ctex` sizes: of the 39 diffuse maps, 2 are already under 384 px and 7 are
+  shared with the roads and stay at 512 under the same exemption) and has not been tried.
 - **`ERROR: Parameter "t" is null` at `texture_2d_initialize` (`dummy/storage/texture_storage`)
   in headless runs:** Godot's dummy renderer has no texture storage, so `godot --headless`
   (gates, tests) logs this once per texture. Benign — the underlying assets are valid and it

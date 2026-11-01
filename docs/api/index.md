@@ -289,6 +289,7 @@ Generated from the `##` doc comments in `scripts/`. Regenerate with `python3 too
 
 - [alerts.gd](scripts.ops.md#scriptsopsalertsgd) (`OpsAlerts`): Local alerting
 - [analytics.gd](scripts.ops.md#scriptsopsanalyticsgd) (`Analytics`): Local, opt-in product analytics: track(event, props) appends {event, props, session, seq, ts, build} to user://ops/analytics.jsonl (scrubbed, rotated)
+- [boot_clock.gd](scripts.ops.md#scriptsopsboot_clockgd) (`BootClock`): Boot stage stopwatch
 - [circuit_breaker.gd](scripts.ops.md#scriptsopscircuit_breakergd) (`CircuitBreaker`): Consecutive-failure circuit breaker
 - [error_tracker.gd](scripts.ops.md#scriptsopserror_trackergd) (`ErrorTracker`): Contextual error tracking, registered with OS.add_logger()
 - [feature_flags.gd](scripts.ops.md#scriptsopsfeature_flagsgd) (`FeatureFlags`): Feature flags
