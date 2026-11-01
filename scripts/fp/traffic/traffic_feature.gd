@@ -1676,6 +1676,8 @@ func hit_walker(
 		# A throw that meets a wall or a solid prop mid-flight: marked here, on the throw's one
 		# emission (a second person_hit would double-book incidents and double-startle the street).
 		info["impact"] = res["impact"]
+	if res.has("lands_in"):
+		info["lands_in"] = res["lands_in"]
 	if bool(res.get("guarded", false)):
 		# A guarded fighter turned the blow aside (fight_tempers): nothing of it counted. Marked
 		# here so the caller can answer — a swung weapon can be knocked loose (weapon_disarm).
@@ -1987,6 +1989,13 @@ func car_info(id: int) -> Dictionary:
 		return {}
 	var dims := {"length": c.length, "half_w": c.half_w, "height": c.height}
 	return dims.merged({"id": c.id, "pos": c.pos + c.vis_off, "yaw": c.yaw + c.vis_yaw})
+
+
+## True while walker id is in the street: not removed (despawned, gone indoors, a rebuilt city's).
+## What the camera shake and the fall thump of a throw ask as they come due (person_hit
+## "lands_in"), so the landing of someone no longer there stays silent.
+func walker_here(id: int) -> bool:
+	return _built and _walker_by_id(id) != null
 
 
 ## True while car id can be taken with someone at the wheel to pull out (carjack).

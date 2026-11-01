@@ -1,17 +1,17 @@
 extends FpFeature
 ## Hit feel (integration feature "hit_feel"; docs/fp/ARCHITECTURE.md, Hit feel): what a blow feels
-## like. A blow of the hero's that lands (person_hit "punch" or "shove", and only the hero's —
-## info "by") freezes the world for a few
-## hundredths of a second (hit-stop: Engine.time_scale dips to STOP_SCALE for real seconds, longer
-## for a harder blow and one that knocks them down, and never less than the frame it lands on plus
-## one full one — at a 20-25 fps cap that frame could otherwise charge the whole stop before one
-## frozen frame is drawn) and shakes the camera (the player's shake).
-## Someone the player's car knocks down, a blow on the hero (hero_hurt) and a crash in the car
-## (car_impact) shake it too, the hardest of them with a shorter stop; a kick or a swing landing on
-## an animal (animal_hit) stops and shakes less than one on a person, and someone slammed into a
-## wall or a prop (hero_slammed) stops and shakes it most. The thrown body of a
-## knock-down is traffic's (reactions.gd, under the same flag). Nothing stops in photo mode, while
-## the game is paused or at sim speeds above 1.
+## like. A blow of the hero's that lands (person_hit "punch" or "shove", and only the hero's — info
+## "by") freezes the world for a few hundredths of a second (hit-stop: Engine.time_scale dips to
+## STOP_SCALE for real seconds, longer for a harder blow and one that knocks them down, and never
+## less than the frame it lands on plus one full one — at a 20-25 fps cap that frame could otherwise
+## charge the whole stop before one frozen frame is drawn) and shakes the camera (the player's
+## shake). Someone the player's car knocks down, a blow on the hero (hero_hurt) and a crash in the
+## car (car_impact) shake it too, the hardest of them with a shorter stop; a kick or a swing landing
+## on an animal (animal_hit) stops and shakes less than one on a person, and someone slammed into a
+## wall or a prop (hero_slammed) stops and shakes it most. A carjack (person_hit "carjack": the hero
+## pulling the driver out) stops and shakes it at the yank and shakes it again as the driver lands
+## ("lands_in" seconds later). The thrown body of a knock-down is traffic's (reactions.gd, under the
+## same flag). Nothing stops in photo mode, while the game is paused or at sim speeds above 1.
 
 const WS := preload("res://scripts/fp/world_scale.gd")
 ## The world's time scale through a hit-stop.
@@ -38,6 +38,11 @@ const CRASH_SHAKE := Vector2(0.15, 0.85)
 ## Someone the hero holds slammed into something (hero_slammed): the stop and the trauma.
 const SLAM_STOP := 0.13
 const SLAM_SHAKE := 0.35
+## A carjack's yank: the stop and the trauma by strength; the driver's landing, "lands_in" seconds
+## on, shakes the camera by LAND_SHAKE.
+const JACK_STOP := 0.05
+const JACK_SHAKE := Vector2(0.2, 0.4)
+const LAND_SHAKE := Vector2(0.12, 0.3)
 ## The longest stop asked for at once (s).
 const STOP_MAX := 0.15
 
@@ -53,6 +58,9 @@ var _base_scale: float = 1.0
 ## frozen frame was up longer than any stop asks (a real hitch).
 var _stop_ticks: int = 0
 var _last_us: int = 0
+## The landings still to come: [seconds left, trauma, walker id] for each driver thrown and not yet
+## down.
+var _landings: Array = []
 
 
 func feature_id() -> String:
@@ -73,14 +81,26 @@ func setup(p_ctx: FpContext) -> void:
 
 func teardown() -> void:
 	unlink_signals()
+	_landings.clear()
 	_end_stop()
 
 
-func _process(_delta: float) -> void:
+## A rebuilt city (a load, New City) drops the reactions under way (traffic's), so the landings
+## they promised are not coming.
+func on_world_rebuilt() -> void:
+	_landings.clear()
+
+
+func from_dict(_d: Dictionary) -> void:
+	_landings.clear()
+
+
+func _process(delta: float) -> void:
 	var now := Time.get_ticks_usec()
 	var real := float(now - _last_us) / 1e6
 	_last_us = now
 	tick(real)
+	tick_landings(delta)
 
 
 ## Runs the stop under way on by real seconds; gives the time scale back once it is over, never
@@ -95,6 +115,20 @@ func tick(real_dt: float) -> void:
 			_end_stop()
 		else:
 			_stop_left = 1e-4  # the second frame's hold; the next tick ends it
+
+
+## Runs the drivers' landings on by dt game seconds (the engine's own delta, so a hit-stop slows
+## them as it slows the world): each shakes the camera as its body reaches the ground.
+func tick_landings(dt: float) -> void:
+	if _landings.is_empty() or not _open():
+		return
+	for i in range(_landings.size() - 1, -1, -1):
+		var e: Array = _landings[i]
+		e[0] = float(e[0]) - dt
+		if float(e[0]) <= 0.0:
+			if _still_there(int(e[2])):
+				shake(float(e[1]))
+			_landings.remove_at(i)
 
 
 ## True while a hit-stop holds the world.
@@ -150,6 +184,28 @@ func _on_person_hit(_at: Vector3, cause: String, info: Dictionary) -> void:
 			if down:
 				hit_stop(CAR_STOP)
 			shake(lerpf(CAR_SHAKE.x, CAR_SHAKE.y, s))
+		"carjack":
+			if FeatureFlags.enabled("carjack_throw"):
+				_on_yank(s, info)
+
+
+## The hero pulled a driver out (the carjack_throw flag): the yank stops and shakes, and the landing
+## the info promises shakes again when it comes.
+func _on_yank(strength: float, info: Dictionary) -> void:
+	hit_stop(JACK_STOP)
+	shake(lerpf(JACK_SHAKE.x, JACK_SHAKE.y, strength))
+	if info.has("lands_in") and _open():
+		var trauma := lerpf(LAND_SHAKE.x, LAND_SHAKE.y, strength)
+		_landings.append([float(info["lands_in"]), trauma, int(info.get("walker", -1))])
+
+
+## False when the street no longer has walker id (removed since the blow: nothing lands); true for
+## anyone it cannot say of (no id, no traffic feature to ask).
+func _still_there(id: int) -> bool:
+	var traffic: FpFeature = ctx.feature("traffic") if ctx != null else null
+	if id < 0 or traffic == null or not traffic.has_method("walker_here"):
+		return true
+	return bool(traffic.call("walker_here", id))
 
 
 func _on_hero_slammed(_at: Vector3, _what: String, _over: bool) -> void:

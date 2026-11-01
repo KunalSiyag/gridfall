@@ -135,7 +135,7 @@ The driver's door of a full car model (vehicles_v2) as a part of its own that sw
 
 extends `RefCounted`
 
-Taking a car with someone at the wheel (the carjack flag; docs/fp/ARCHITECTURE.md, Driving): a car stopped or crawling in traffic is the player's to take, an ambient driver's or a resident's, and its driver is dragged out first. They come out beside the driver's door and are knocked down away from the car by a blow of cause "carjack" (traffic_feature.gd hit_walker: reactions.gd has them lie a moment, get up, shout and run off; incidents.gd has them and those who saw it remember it, and calls the police). Drawn at the wheel, they are dragged out of the seat over the sill first (reactions.gd drag_out) and the blow throws them JACK_FLING clear of the door. They run for the sidewalk round the car's rear, not through it. A resident's trip goes on on foot from there (trips.gd on_carjacked); an ambient driver wanders on along the sidewalk. Either keeps the look they had at the wheel (occupants.gd).
+Taking a car with someone at the wheel (the carjack flag; docs/fp/ARCHITECTURE.md, Driving): a car stopped or crawling in traffic is the player's to take, an ambient driver's or a resident's, and its driver is dragged out first. They come out beside the driver's door and are knocked down away from the car by a blow of cause "carjack" (traffic_feature.gd hit_walker: reactions.gd has them lie a moment, get up, shout and run off; incidents.gd has them and those who saw it remember it, and calls the police). Drawn at the wheel, they are dragged out of the seat over the sill first (reactions.gd drag_out) and the blow throws them JACK_FLING clear of the door (the carjack_throw flag: hauled out head first, flung up on an arc and twisting, landing and skidding as jack_throw.gd has it, carried on at a moving car's pace; the line turned a few degrees to keep clear of the open door panel and the length cut to the room there is, by a car, a wall, a post or a bystander beside the door, jack_landing.gd: they come down in the gap, not through it). They run for the sidewalk round the car's rear, not through it. A resident's trip goes on on foot from there (trips.gd on_carjacked); an ambient driver wanders on along the sidewalk. Either keeps the look they had at the wheel (occupants.gd).
 
 ### Constants
 
@@ -145,10 +145,16 @@ Taking a car with someone at the wheel (the carjack flag; docs/fp/ARCHITECTURE.m
 - `SW = preload("res://scripts/fp/traffic/sidewalks.gd")`
 - `WK = preload("res://scripts/fp/traffic/walkers.gd")`
 - `TRIPS = preload("res://scripts/fp/traffic/trips.gd")`
+- `JL = preload("res://scripts/fp/traffic/jack_landing.gd")`
 - `OUT = 0.3 * WS.M`: The driver comes out OUT beyond the body side, level with the seat, and takes a blow of STRENGTH (hard enough to knock them down, reactions.gd DOWN) straight out from the car. Their way off the road passes CLEAR out from the car's rear corner on that side.
 - `STRENGTH = 0.85`
 - `CLEAR = 1.2 * WS.M`
 - `JACK_FLING = 1.8`
+- `CARRY_FROM = 1.0 * WS.M`: A car faster than CARRY_FROM (u/s) as its driver is pulled out carries them on at its pace.
+- `MIN_FLING = 0.5`: A car beside the door (its near flank within the fling and BODY_CLEAR metres of it) shortens the fling to the room there is, down to MIN_FLING metres, the body's root coming to rest BODY_CLEAR from the flank: the lying body's own reach (reactions.gd BODY_R and DOWN_REACH, 0.65 m, and a hand's breadth), within which the body is pressed back out of a car at touchdown. Cars within the door's reach along the road (half their length, SPAN_M metres and the seconds SWEEP_S of the moving car's own travel) count: they close on the place the body lands.
+- `BODY_CLEAR = 0.7`
+- `SPAN_M = 1.0`
+- `SWEEP_S = 1.5`
 
 ### Properties
 
@@ -450,6 +456,91 @@ Turn signals: which side a car's indicators blink on, and when a blinking lamp i
 - `static func side(c: VH.Car) -> int`: The side c signals now: NONE, LEFT, RIGHT or HAZARD.
 - `static func lit(t: float) -> bool`: Whether a blinking lamp is lit at time t (s).
 - `static func on(side_: int, s: int, t: float) -> bool`: Whether the left (s < 0) or right lamps of a car signalling side are lit at time t.
+
+## `scripts/fp/traffic/jack_landing.gd`
+
+extends `RefCounted`
+
+Where the driver the hero pulls out of a car comes down (the carjack_throw flag; jack_throw.gd has the motion, carjack.gd asks for the line): the body leaves the door along a line turned a few degrees off straight out, as far as there is room. The turn is the smallest that keeps the body's line, and so the arms it flings up as it twists past, DOOR_CLEAR from the open door panel (whose free end hangs out beside the line), and the line clear of what else is out there: a wall, a post or a prop (the collision world's static boxes and posts, which the flight itself meets, probed for the root and for the head the lying body reaches LIE_FAR past it; not the cars beside it, which carjack.gd's _fling weighs, nor the one the body comes out of) and anyone standing on the pavement. The length is the run before the body would meet any of them, down to carjack.gd's MIN_FLING when there is no room at all (a wall against the door cannot be thrown past). Pure over what it is given, nothing random: the same street gives the same throw. Lengths here are world units (WS.M a metre); the lines are in the car's frame (x out of the driver's side, z forward) except where a function says it takes the world's.
+
+### Constants
+
+- `WS = preload("res://scripts/fp/world_scale.gd")`
+- `RE = preload("res://scripts/fp/traffic/reactions.gd")`
+- `BS = preload("res://scripts/fp/traffic/body_spheres.gd")`
+- `WK = preload("res://scripts/fp/traffic/walkers.gd")`
+- `AIM_STEP = deg_to_rad(5.0)`: The turns tried off straight out, AIM_STEP apart up to AIM_MAX either way: towards the car's rear first (the way the driver runs off), the smallest turn that does the job wins.
+- `AIM_MAX = deg_to_rad(25.0)`
+- `DOOR_CLEAR = 0.75 * WS.M`: The open door panel keeps this far from the body's line: the reach of an arm flung up beside it (0.55 m measured on the rig) and a hand's breadth.
+- `TURN_WORTH = 0.05 * WS.M`: A turn is kept over a straighter line only when it buys this much more run.
+- `LIE_FAR = 0.95 * WS.M`: The lying body reaches this far past where its root rests, away from the car (the head, the hands beside it: 0.9 m measured on the rig), is LIE_R wide each side and LIE_H thick.
+- `LIE_R = 0.3 * WS.M`
+- `LIE_H = 0.3 * WS.M`
+- `ROOT_R = RE.BODY_R + RE.DOWN_REACH`: The flight's root is stopped by what is within BODY_R and DOWN_REACH of it (reactions.gd _slide); the head is probed with its own radius and a hand's breadth.
+- `HEAD_R = BS.HEAD_R + 0.1 * WS.M`
+- `PED_CLEAR = RE.BODY_R + LIE_R + 0.1 * WS.M`: Someone standing within this of the lying body's length is in its way (BODY_R, LIE_R, a margin).
+- `PROBE = 0.1 * WS.M`: The line is probed this far apart.
+
+### Functions
+
+- `static func throw_line(xf: Transform3D, start: Vector2, fling_m: float, door: Dictionary, collision: CollisionWorld, walkers: Array, skip: int) -> Dictionary`: The throw from start (in the car's frame, xf its world transform), fling_m long, along the line turned off straight out by the smallest turn that clears the door panel (door: the car's door_info, {} when its door is shut or it has none) and what stands in the way (collision, null for none; walkers: everyone about, skip the victim's id). {"push": the world's level unit direction, "fling": metres (the run before the body meets anything, at most fling_m), "angle": the turn (rad, + towards the rear)}.
+- `static func choose(start: Vector2, len_u: float, pan: Array, run_of: Callable) -> Vector2`: The turn (rad, + towards the rear) and the run (u) of the line from start for a throw len_u long: the first turn, smallest and rearward first, that has the line DOOR_CLEAR from the panel (pan, panel()'s) and the whole run clear (run_of: unit direction in the car frame -> free metres in u, at most len_u is used); else the clear-of-the-panel line with the most run, else the line with the most run. A turn replaces a straighter one only for TURN_WORTH more run.
+- `static func turn_at(k: int) -> float`: The k-th turn tried: 0, then one step towards the rear, one towards the front, two towards the rear, ... (rad, + towards the rear).
+- `static func dir_at(a: float) -> Vector2`: The unit direction (car frame: x, z) of a line turned a rad off straight out, + towards the rear.
+- `static func panel(door: Dictionary) -> Array`: The open door panel as [hinge, free end] in the car frame (x, z), from door_info's points: the door swung wide. [] for no door (or a shut one: the caller gives {}).
+- `static func door_gap(start: Vector2, dir: Vector2, len_u: float, pan: Array) -> float`: The least distance (u) between the throw's line, len_u long from start along dir, and panel pan.
+- `static func seg_gap(a: Vector2, b: Vector2, c: Vector2, d: Vector2) -> float`: The least distance between segment a-b and segment c-d.
+- `static func standing(walkers: Array, skip: int, origin: Vector3, reach: float) -> PackedVector2Array`: Where everyone about but the victim (skip) stands within reach of origin (world), as xz points: those on the street and not gone.
+- `static func free_run(xf: Transform3D, start: Vector2, dir: Vector2, len_u: float, collision: CollisionWorld, boxes: Array[AABB], near: PackedVector2Array) -> float`: The metres (u) the body's root can run from start along dir (car frame, unit) before the lying body would meet something, at most len_u: the root stopped by the world's boxes (boxes: the collision world's boxes_near with its posts, the walkable ground under it from collision) as the flight is (reactions.gd _slide), the head by what stands LIE_FAR past it, and either by one of near (standing()'s) too close to the body's length. No collision world, no static check.
+
+## `scripts/fp/traffic/jack_throw.gd`
+
+extends `RefCounted`
+
+How the driver the hero pulls out of a car goes, from the seat to the ground (the carjack_throw flag; docs/fp/ARCHITECTURE.md, Integration: driving and hit feel), as one sequence on the clips the walkers already have. reactions.gd starts it (_plan_down for the blow, drag_out for the haul) and runs its two hooks (haul, fly); this file holds the curves, each a pure function of time so a test can sample them. The haul (HAUL_S, in the sit pose): the body is jerked toward the door, then hauled out over the sill, speeding up, leaning out head first about the hips so the legs trail in the car (HEAD_OUT rad at the release) and turning to face the car, ending at the speed the flight carries on at (a short fling's is slower than the haul's own pace: the pull then peaks and eases off into the flight). The flight: the blow's strength sets how high (APEX_K metres per metre of the fling) and how long it is in the air, and how far it twists (SPIN rad, one way or the other by who they are, at most so far that the turning is never faster than SPIN_RATE); the lean eases out as the knockback clip, played slowed through the air so its own fall meets the ground at touchdown (0 to T_CONTACT, within a frame), flips the body back; the ground takes the rest as a skid. A car that is moving carries the body on at its own pace through the haul (the seat moves with it) and at up to CARRY_MAX of it through the flight (the car drives on from under it at the release), where it would otherwise be left hanging behind it. With no plan the haul is the plain one, the sit pose tipped back (PLAIN_S).
+
+### Constants
+
+- `WS = preload("res://scripts/fp/world_scale.gd")`
+- `G = 9.8`
+- `HAUL_S = 0.45`: The haul: seconds, the hips' lift over the sill, the lean toward the door at the release (rad) and the share of the haul over which the body turns to face the car.
+- `LIFT = 0.2 * WS.M`
+- `HEAD_OUT = 0.62`
+- `TURN = Vector2(0.15, 0.9)`
+- `APEX_K = Vector2(0.1, 0.19)`: The flight's apex per metre of the fling, from the weakest to the hardest blow, and the twist (rad) likewise. The skid takes SKID_M metres of the fling over SKID_S seconds, at most half.
+- `SPIN = Vector2(0.4, 1.3)`
+- `SPIN_RATE = 8.0`: The fastest the body turns (rad/s, at the middle of the flight): a short fling is a short hop and twists less, the angle scaled to the air time, not turned in a blink.
+- `SKID_M = 0.6`
+- `SKID_S = 0.45`
+- `T_CONTACT = 0.3`: The knockback clip's seconds when its back is on the ground (it starts at 0: a mixer starts a new clip from its beginning, people.gd) and the pace of a moving car the flight keeps (m/s, at most).
+- `CARRY_MAX = 5.0 * WS.M`
+- `PLAIN_S = 0.5`: The plain haul (no plan, reactions.gd drag_out): seconds, the hips' lift over the sill and the tip back (rad) at its middle.
+- `PLAIN_LIFT = 0.2 * WS.M`
+- `PLAIN_TILT = 0.5`
+
+### Inner classes
+
+- `Plan`: One throw's numbers: made when the blow is planned, read as the haul and the flight run.
+
+### Functions
+
+- `static func make(strength: float, fling_m: float, door: Vector3, flip: float) -> Plan`: The plan for a blow of strength (0..1) throwing fling metres along door (level, any length); flip is +1 or -1, the way it twists.
+- `static func landing(r, res: Dictionary) -> Dictionary`: hit()'s result res for reaction r, with "lands_in" (seconds from the blow to the body's touchdown, the haul if there is one and then the air: what the street hears the fall at) added to a carjack's throw.
+- `static func release_speed(p: Plan) -> float`: Metres a second the flight moves across the ground, along the door (level).
+- `static func pull(x: float, m1: float) -> float`: How far across (0..1) the haul has gone x (0..1) of the way: from rest, speeding up, ending at speed m1 (0..2.5, in whole-haul distances per haul) -- the flight's own pace, so the body is not stopped at the door and started again. Under 1 the pull peaks (the yank) and eases off into the flight, as a short fling's slow pace asks; 0 stops at the door.
+- `static func lift(x: float) -> float`: The hips' lift over the sill (u) at x (0..1) of the haul: up and level at the release, where the flight takes it on.
+- `static func turn(x: float) -> float`: The share (0..1) of the turn to face the car done at x of the haul.
+- `static func haul_lean(x: float, p: Plan) -> float`: The lean toward the door (rad) at x (0..1) of the haul: quick at the jerk, level at the release, where it is HEAD_OUT.
+- `static func fly_lean(tau: float, p: Plan) -> float`: The lean at tau (0..1) of the flight: held a moment past the release, gone by touchdown (the clip's own flip has the body by then).
+- `static func fly_lift(tau: float, p: Plan) -> float`: The haul's lift still left at tau of the flight (u): it falls away as the arc takes over.
+- `static func twist(tau: float, p: Plan) -> float`: The twist (rad) from the release facing at tau of the flight: none at either end.
+- `static func clip_at(tau: float) -> float`: The knockback clip's seconds at tau of the flight: the fall meets the ground at touchdown.
+- `static func tilt_roll(lean: float, door: Vector3, yaw: float) -> Vector2`: Tip and side roll (rad, as the walker's vis_tilt and vis_roll) of a body facing yaw that leans by lean toward door (level unit): leaning back when it faces away from it.
+- `static func plan_down(r, cause: String, strength: float, fling_m: float) -> Plan`: The blow's plan for reaction r (reactions.gd, a throw knocked down by cause): for a carjack (flag on) the arc, the air time and the skid are this plan's instead of the plain throw's, the knockdown's lie kept as long as it was beyond the slowed fall; null for anything else.
+- `static func begin(r) -> float`: drag_out has set the haul up (r.drag: from, to, the facing at either end): the plan learns of it and of the haul's end speed, and the body sits upright in the seat until the haul's first frame (the blow had put it in the release pose). Returns the haul's seconds (PLAIN_S with no plan).
+- `static func haul(r, dt: float) -> bool`: One frame of the haul (reactions.gd step): the body drawn on from the seat to beside the door along the pull, lifted over the sill, turning to face the car and leaning out. True once out. The lift is kept as the reaction's bump, so the flight that follows takes it off the feet again the way it takes off an arc's height (whether or not a floor puts them back on the ground). The car's pace is the whole of the haul's (the seat moves with the car). With no plan it is the plain haul.
+- `static func fly(r) -> void`: One frame of the flight (reactions.gd _throw, after the arc's height is in the drawn feet; none with no plan): the twist, the lean easing out, the haul's lift falling away and the fall clip on its slowed clock. From touchdown it leaves the body as the plain throw would.
+- `static func enter(r, clip: StringName) -> float`: A step of reaction r starts on clip (reactions.gd _next_step): the seconds into the clip it starts at, always 0 (a mixer starts a new clip from its beginning, and the walker's clip clock and the slowed pace through the air count from there). A carjack's fall starts in the release pose, which the change of step has otherwise just levelled for a frame. (Only the flight itself: a car that runs over the body where it lies starts the fall again with no arc, lift 0.)
 
 ## `scripts/fp/traffic/junctions.gd`
 
@@ -827,6 +918,7 @@ People hit in the street (docs/fp/ARCHITECTURE.md, Body actions): shoved or punc
 - `FB = preload("res://scripts/fp/traffic/fight_back.gd")`: The scrap and the care for a body on the ground, split out of this file: fighting back, the tempers, counter cues and downed awareness live there. This file keeps the Reaction records and the after-blow plans; the layer borrows them (its back-link is a weakref). The aliases further down keep the old RE.* names working for tests and benches.
 - `CR = preload("res://scripts/fp/traffic/crowd_reacts.gd")`: The crowd's answer to what the street sees and hears (the knock-down gasp, the horn startle), split out the same way; its constants stay under the old names via the alias below.
 - `TI = preload("res://scripts/fp/traffic/throw_impact.gd")`
+- `JT = preload("res://scripts/fp/traffic/jack_throw.gd")`
 - `LENGTHS = {&"knockback": 0.833, &"get_up": 1.54, &"hit_head": 0.417, &"hit_chest": 0.333}`: Clip lengths (s) in HC's libraries (the female clips match); setup() reads them again.
 - `ONCE = [&"knockback", &"get_up", &"hit_head", &"hit_chest"]`: Clips that play once: the walker does not turn while they run (it may be lying down).
 - `WITNESS_R = 8.0 * WS.M`
@@ -878,11 +970,8 @@ People hit in the street (docs/fp/ARCHITECTURE.md, Body actions): shoved or punc
 - `THROW_TILT = 0.7`
 - `THROW_SKID = 0.5`
 - `SKID_S = 0.35`
-- `DRAG_S = 0.5`: Dragged out of a car (drag_out): from the seat to beside the door over DRAG_S, in DRAG_CLIP held at DRAG_AT, lifted DRAG_LIFT over the sill and tipped back up to DRAG_TILT (rad).
-- `DRAG_CLIP = &"sit"`
+- `DRAG_CLIP = &"sit"`: Dragged out of a car (drag_out): drawn in DRAG_CLIP held at DRAG_AT (jack_throw.gd has the haul: its seconds, lift over the sill and tilt, PLAIN_* when the carjack_throw flag is off).
 - `DRAG_AT = 1.0`
-- `DRAG_LIFT = 0.2 * WS.M`
-- `DRAG_TILT = 0.5`
 
 ### Properties
 
@@ -904,7 +993,7 @@ People hit in the street (docs/fp/ARCHITECTURE.md, Body actions): shoved or punc
 
 - `func setup(p_wk: WK, p_collision: CollisionWorld, seed: int) -> void`
 - `func clear() -> void`
-- `func hit(w: WK.Walker, src: Vector3, push: Vector3, strength: float, cause: String, fling: float = 0.0) -> Dictionary`: w takes a blow from src (a world point) along push (xz, any length) of strength 0..1, cause "shove", "punch", "car" or "carjack"; fling (metres, NOT world units like the rest) > 0 throws a body it knocks down that far. Held (grab) and not knocked down, w reels and hangs on. A car that runs w over where it already lies (_trample) shoves it along and leaves it down but up sooner. A guarded fighter may turn a punch or a shove aside instead (fight_tempers). Returns {"down": bool, "clip": StringName}, or {} when w cannot take one now (hidden, in a conversation, in the air, or lying there for anything but a car).
+- `func hit(w: WK.Walker, src: Vector3, push: Vector3, strength: float, cause: String, fling: float = 0.0) -> Dictionary`: w takes a blow from src (a world point) along push (xz, any length) of strength 0..1, cause "shove", "punch", "car" or "carjack"; fling (metres, NOT world units like the rest) > 0 throws a body it knocks down that far. Held (grab) and not knocked down, w reels and hangs on. A car that runs w over where it already lies (_trample) shoves it along and leaves it down but up sooner. A guarded fighter may turn a punch or a shove aside instead (fight_tempers). Returns {"down": bool, "clip": StringName}, plus "lands_in" (s) for a carjack's throw, or {} when w cannot take one now (hidden, in a conversation, in the air, or lying down but for a car).
 - `func grab(w: WK.Walker, src: Vector3) -> bool`: The hero takes hold of w (src: the hero's feet): it hangs in the hero's hands, where hold_to puts it, until let go (release), knocked down or HOLD_S is up, then reacts as to a shove. False when w cannot be held now (as hit()).
 - `func hold_to(w: WK.Walker, p: Vector3, yaw: float) -> bool`: Where the hero's hands hold w now: its feet go to p (stopped by walls and posts), turned to yaw. False once w is no longer held.
 - `func release(w: WK.Walker) -> void`: The hero lets go of w: it reacts as to a shove from where it stands.
@@ -917,7 +1006,7 @@ People hit in the street (docs/fp/ARCHITECTURE.md, Body actions): shoved or punc
 - `func fighting(w: WK.Walker) -> bool`: True while w is fighting the hero (closing in or punching).
 - `static func throw_height(t: float, lift: float, fly: float = FLY_S) -> float`: How high a body thrown up to lift for fly seconds sits t seconds after the blow (0 once it has landed).
 - `func blocks() -> Array`: Lane blocks for vehicles.gd: the people hit, until they walk or run on, as circles at their drawn feet (on a sidewalk they are clear of every lane).
-- `func drag_out(w: WK.Walker, from: Vector3, from_yaw: float) -> void`: Car-jacked w (just knocked down by the carjack's blow) is dragged out of the car first: drawn from from (its feet in the driver's seat, facing from_yaw) out to where the blow found it over DRAG_S in the sit pose, then it falls.
+- `func drag_out(w: WK.Walker, from: Vector3, from_yaw: float) -> void`: Car-jacked w (just knocked down by the carjack's blow) is dragged out of the car first: drawn from from (its feet in the seat, facing from_yaw) out to where the blow found it in the sit pose over the haul's seconds (jack_throw.gd), then it falls.
 - `func is_down(w: WK.Walker) -> bool`: True once w has taken a knock-down, including its short stagger before falling.
 - `func count() -> int`
 - `func pose(w: WK.Walker, clip: StringName, t: float, secs: float = 60.0) -> void`: Stages w playing clip from t seconds in, for secs (photos, tests). The caller releases its body so the next one starts at t.
@@ -1248,6 +1337,7 @@ Traffic and pedestrians on lanes (slice E, docs/fp/slices/E-traffic.md): one roa
 - `func release_car(vel: Vector2) -> void`: The player lets go of the car they drive while it still moves (an action hijack): it rolls on at velocity vel (u/s, xz) with nobody at the wheel (shoves.gd coast) and stays where it stops.
 - `func driven_id() -> int`: Id of the car the player drives, -1 on foot.
 - `func car_info(id: int) -> Dictionary`: Car id's {"id", "pos", "yaw", "length", "half_w", "height"} as drawn, {} when it is gone.
+- `func walker_here(id: int) -> bool`: True while walker id is in the street: not removed (despawned, gone indoors, a rebuilt city's). What the camera shake and the fall thump of a throw ask as they come due (person_hit "lands_in"), so the landing of someone no longer there stays silent.
 - `func jackable(id: int) -> bool`: True while car id can be taken with someone at the wheel to pull out (carjack).
 - `func hold_car(id: int, on: bool) -> void`: Holds car id where it stands (on) while the hero walks to its door, or lets it drive on.
 - `func seat_offset() -> Variant`: The driver's hip point in the driven car's own frame (+Z forward), or null until its full model is drawn (the merged far LOD has no seat).

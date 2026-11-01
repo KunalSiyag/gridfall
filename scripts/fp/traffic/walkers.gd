@@ -120,6 +120,8 @@ class Walker:
 	var react_rate: float = 1.0  # pace react plays at (0 holds its pose)
 	var vis_tilt: float = 0.0  # drawn tip about the hips (rad, + forward): thrown or dragged
 	var vis_roll: float = 0.0  # drawn side lean about the hips (rad, + toward the body's right)
+	var carry := Vector3.ZERO  # a driver pulled out keeps this pace of the car's (u/s; the blow's)
+	var seated: bool = false  # drawn at the car's wheel as they are pulled out (the blow's)
 
 
 var sw: SW

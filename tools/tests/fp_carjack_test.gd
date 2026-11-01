@@ -18,6 +18,8 @@ const DOORS := preload("res://scripts/fp/traffic/car_doors.gd")
 const JACK := preload("res://scripts/fp/traffic/carjack.gd")
 const TRIPS := preload("res://scripts/fp/traffic/trips.gd")
 const RE := preload("res://scripts/fp/traffic/reactions.gd")
+const JT := preload("res://scripts/fp/traffic/jack_throw.gd")
+const JL := preload("res://scripts/fp/traffic/jack_landing.gd")
 const DT := 1.0 / 60.0
 const JACK_PHASES := ["walk", "align", "open", "jack", "step", "turn", "climb", "close"]
 ## What the one dragged out does: falls, gets up, shouts, runs.
@@ -48,8 +50,15 @@ var hits: Array = []
 var victim: WK.Walker = null
 var clips: Array = []
 var first_at: Vector3 = Vector3.INF
+## Where their drawn feet were as they began to get up.
+var rest_at: Vector3 = Vector3.INF
 ## How many of those pulled out were drawn at the wheel first.
 var drags: int = 0
+## Reading the fall clip's mixer as the thrown body lands: on, the body drawn through the flight,
+## the position at touchdown.
+var watch_mixer: bool = false
+var body_seen: bool = false
+var land_pos: float = NAN
 
 
 func _init() -> void:
@@ -61,6 +70,10 @@ func _init() -> void:
 			_check_ambient()
 			_check_resident()
 			K.check(fails, drags > 0, "someone drawn at the wheel is pulled out (%d)" % drags)
+			_check_fall_clip()
+			_check_arguments_taken()
+			_check_in_the_way()
+			_check_pop_back()
 			_check_turn_back()
 			_check_flag_off()
 	K.finish(self, "FP_CARJACK_TEST", fails)
@@ -82,6 +95,9 @@ func _setup() -> bool:
 	drive.set_process(false)
 	FeatureFlags.set_override("car_doors", true)
 	FeatureFlags.set_override("carjack", true)
+	# The throw's look is hit_feel's: the checks do not depend on the user's flags.
+	FeatureFlags.set_override("hit_feel", true)
+	FeatureFlags.set_override("carjack_throw", true)
 	ctx.bus.person_hit.connect(_on_hit)
 	return true
 
@@ -137,6 +153,7 @@ func _check_ambient() -> void:
 	var down := hits.size() == 1 and str(hits[0][1]) == "carjack" and bool(info.get("down", false))
 	K.check(fails, down, "person_hit carjack: the driver is knocked down (%s)" % str(hits))
 	K.check(fails, str(info.get("crew", "")) == "police", "and the police are called")
+	_check_lands_in(info)
 	if down:
 		_check_landing(c, hits[0][0])
 	_check_drag(c, "the driver")
@@ -149,6 +166,28 @@ func _check_ambient() -> void:
 	var driving := bool(drive.get("active")) and c.dead and mine != null and mine.driven
 	K.check(fails, driving and mine.role == VH.PLAYER, "the hero drives off in it, its own now")
 	_check_flight(c, "the driver")
+	_check_line(c)
+
+
+## The blow says when the body lands (the carjack_throw flag): the haul, if they were drawn at the
+## wheel and so hauled out first (their clip starts on the drag's), and then the air; nothing
+## without the flag. The clips come from the climb just run.
+func _check_lands_in(info: Dictionary) -> void:
+	var told := info.has("lands_in")
+	if not FeatureFlags.enabled("carjack_throw"):
+		K.check(fails, not told, "the blow says nothing of a landing without the flag")
+		return
+	var hauled: bool = not clips.is_empty() and clips[0] == RE.DRAG_CLIP
+	var air := JT.make(JACK.STRENGTH, JACK.JACK_FLING, Vector3.RIGHT, 1.0).air
+	var want := (JT.HAUL_S if hauled else 0.0) + air
+	K.check(
+		fails,
+		told and absf(float(info["lands_in"]) - want) < 1e-6,
+		(
+			"the blow says when they land: %s the air (%s s of %.3f)"
+			% ["the haul and" if hauled else "just", str(info.get("lands_in")), want]
+		)
+	)
 
 
 ## Where the driver came out (at, person_hit's point): beside car c's driver's door, level with
@@ -209,6 +248,12 @@ func _check_flight(c: VH.Car, who: String) -> void:
 		)
 	)
 	K.check(fails, through == 0, "%s runs round the car, not through it (%d)" % [who, through])
+	var out := (inv * rest_at).x - c.half_w if rest_at.is_finite() else NAN
+	K.check(
+		fails,
+		out >= 1.5 * WS.M,
+		"%s was flung clear of the car's side before getting up (%.2f m out)" % [who, out / WS.M]
+	)
 
 
 ## A resident driving to work: dragged out the same way, they remember it and their mood drops,
@@ -228,6 +273,7 @@ func _check_resident() -> void:
 	var info: Dictionary = hits[0][2] if hits.size() == 1 else {}
 	var named := str(info.get("resident_id", "")) == rid and bool(info.get("down", false))
 	K.check(fails, named, "person_hit names the resident, knocked down (%s)" % str(info))
+	_check_lands_in(info)
 	var mem: Array = r["memory"]
 	var last := str(mem.back()) if not mem.is_empty() else ""
 	K.check(fails, last.contains("was carjacked by a visitor"), "they remember it: %s" % last)
@@ -243,6 +289,221 @@ func _check_resident() -> void:
 	)
 	_check_drag(c, "the resident")
 	_check_flight(c, "the resident")
+
+
+## The fall clip's back is on the ground as the body lands: with the walker's own body drawn every
+## frame (as in play), the mixer's play position as the reaction's clock reaches touchdown is the
+## clip's contact time, not short of it (a clip started past its start, or at the wrong pace,
+## would hover there). A resident hauled out of the seat first, the body drawn since the pull.
+func _check_fall_clip() -> void:
+	if not FeatureFlags.enabled("carjack_throw"):
+		return
+	var trip := _drive_trip(ctx.residents.people[1 % ctx.residents.people.size()])
+	hits.clear()
+	watch_mixer = true
+	land_pos = NAN
+	body_seen = false
+	drive.call("board")
+	_jack_climb(trip.car, 16.0, 1)
+	watch_mixer = false
+	if not body_seen:
+		print("  note: the driver's body was not drawn through the flight (no mixer to read)")
+		return
+	K.check(
+		fails,
+		not is_nan(land_pos) and absf(land_pos - JT.T_CONTACT) < 0.03,
+		(
+			"the fall clip is at its contact time as the body lands (%.3f of %.2f s)"
+			% [land_pos, JT.T_CONTACT]
+		)
+	)
+
+
+## The play position (s) of body b's mixer, NAN when it has none.
+func _mixer_at(b: Object) -> float:
+	var mode := int(b.get("mode"))
+	if mode == 0 and b.get("playback") != null:
+		var playback: AnimationNodeStateMachinePlayback = b.get("playback")
+		return playback.get_current_play_position()
+	if mode == 1 and b.get("ap") != null:
+		return float((b.get("ap") as AnimationPlayer).current_animation_position)
+	return NAN
+
+
+## Pulled out of a car that is moving, with the flag on or off, the driver is left with none of the
+## blow's arguments (the car's pace and the seat they came from): the throw took them or they were
+## never needed, and nothing of them stays on the walker.
+func _check_arguments_taken() -> void:
+	for on: bool in [true, false]:
+		FeatureFlags.set_override("carjack_throw", on)
+		var c := _lane_car("ambient")
+		c.v = 4.0 * WS.M
+		hits.clear()
+		var jack: RefCounted = traffic.get("carjack")
+		var info: Dictionary = jack.call("eject", c, ctx.player.position)
+		var clean := victim != null and victim.carry == Vector3.ZERO and not victim.seated
+		K.check(
+			fails,
+			not info.is_empty() and clean,
+			"flag %s: the pulled driver keeps no carry or seat" % ("on" if on else "off")
+		)
+	FeatureFlags.set_override("carjack_throw", true)
+
+
+## The throw's line (jack_landing.gd, the carjack_throw flag): from where the driver came out to
+## where they got up it is turned a few degrees to the car's rear, and passes the open door panel
+## at DOOR_CLEAR (less a hand's breadth for the bounce at the end): the arms flung up as they twist
+## past the panel's free end do not meet it. Not checked without the flag (straight out).
+func _check_line(c: VH.Car) -> void:
+	if hits.is_empty() or not rest_at.is_finite() or not FeatureFlags.enabled("carjack_throw"):
+		return
+	var inv := Transform3D(Basis(Vector3.UP, c.yaw), c.pos).affine_inverse()
+	var a := inv * (hits[0][0] as Vector3)
+	var b := inv * rest_at
+	var pan := JL.panel(traffic.call("door_info", -1))
+	if pan.is_empty():
+		print("  note: the car's door has no panel to keep clear of")
+		return
+	var gap := JL.seg_gap(Vector2(a.x, a.z), Vector2(b.x, b.z), pan[0], pan[1])
+	var turned := rad_to_deg(atan2(a.z - b.z, b.x - a.x))
+	K.check(
+		fails,
+		gap >= JL.DOOR_CLEAR - 0.1 * WS.M and turned > 3.0 and turned <= 30.0,
+		(
+			"the flight is turned %.0f degrees to the rear and passes the open door panel at %.2f m"
+			% [turned, gap / WS.M]
+		)
+	)
+
+
+## Someone standing where the driver would land (jack_landing.gd, the carjack_throw flag): the
+## throw is cut short or turned and comes to rest clear of them; the plain throw (flag off) lands
+## on them as it always did; from a car moving on they are no obstacle (the body is carried down
+## the road, not out to them). Door shut, so the bystander alone decides the line. And traffic's
+## walker_here, which the landing's shake and thump ask: true for them, false once removed.
+func _check_in_the_way() -> void:
+	var on := _eject_beside(true, 0.0)
+	var off := _eject_beside(false, 0.0)
+	K.check(
+		fails,
+		not on.is_empty() and not off.is_empty(),
+		"someone stood 2.1 m out: the driver is thrown, flag on and off"
+	)
+	if on.is_empty() or off.is_empty():
+		return
+	K.check(
+		fails,
+		float(on["gap"]) >= JL.PED_CLEAR / WS.M - 0.1 and float(off["gap"]) < 0.3,
+		(
+			"the lying driver is %.2f m off them (the plain throw %.2f m)"
+			% [float(on["gap"]), float(off["gap"])]
+		)
+	)
+	var moving := _eject_beside(true, 4.0 * WS.M)
+	var want := JACK.OUT / WS.M + JACK.JACK_FLING  # straight out, the whole fling
+	K.check(
+		fails,
+		not moving.is_empty() and absf(float(moving["out"]) - want) < 0.05,
+		(
+			"from a car moving on they are not in the way: flung %.2f m clear of its side (%.2f)"
+			% [moving.get("out", NAN), want]
+		)
+	)
+
+
+## One carjack of an ambient car with a bystander standing 2.1 m out from its door, car speed v
+## (u/s): {"gap" (m, the lying body off them), "out" (m, where the driver rests off the car's
+## side)}, {} when nothing was thrown. Checks walker_here of the bystander on the way.
+func _eject_beside(flag: bool, v: float) -> Dictionary:
+	FeatureFlags.set_override("carjack_throw", flag)
+	var wk: WK = traffic.get("walkers")
+	var c := _lane_car("ambient")
+	c.v = v
+	K.quiet_walkers(traffic)
+	var xf := Transform3D(Basis(Vector3.UP, c.yaw), c.pos)
+	var door: Dictionary = traffic.call("door_info", c.id)
+	var seat: Vector3 = door.get("seat", Vector3.ZERO)
+	var by := wk.make("ambient")
+	var out := c.half_w + JACK.OUT + JACK.JACK_FLING * WS.M
+	var stood := xf * Vector3(out, 0.0, seat.z)
+	wk.stand(by, stood, 0.0)
+	var here := bool(traffic.call("walker_here", by.id))
+	K.check(
+		fails,
+		here and not bool(traffic.call("walker_here", -5)),
+		"walker_here: someone in the street is there, no one by a number nobody has is not"
+	)
+	hits.clear()
+	var jack: RefCounted = traffic.get("carjack")
+	var info: Dictionary = jack.call("eject", c, ctx.player.position)
+	var secs := 0.0
+	while not rest_at.is_finite() and secs < 8.0:
+		_tick(DT)
+		secs += DT
+	wk.remove(by)
+	K.check(fails, not bool(traffic.call("walker_here", by.id)), "walker_here: removed, not there")
+	FeatureFlags.set_override("carjack_throw", true)
+	if info.is_empty() or not rest_at.is_finite():
+		return {}
+	var lateral := (xf.affine_inverse() * rest_at).x - c.half_w
+	return {"gap": _lie_gap(first_at, rest_at, stood) / WS.M, "out": lateral / WS.M}
+
+
+## A car beside the door (carjack.gd _fling): the throw is cut so the driver comes down clear of
+## it by the lying body's own reach (BODY_CLEAR), and the pressing-out that keeps a body out of a
+## car does not shove them back at touchdown: the furthest the feet got out is where they rest, to
+## a hand's breadth (a car's flank 2.3 m out from the door: the root planned 0.7 m short of it).
+func _check_pop_back() -> void:
+	var react: RE = traffic.get("reactions")
+	var orig: Callable = react.cars_near
+	# A resident at the wheel: their body is the one drawn, hauled out of the seat.
+	var c := _drive_trip(ctx.residents.people[3 % ctx.residents.people.size()]).car
+	var xf := Transform3D(Basis(Vector3.UP, c.yaw), c.pos)
+	var other := _vh().make("car", "ambient", traffic.call("dims", door_model))
+	other.model = door_model
+	other.parked = true
+	other.slot_tile = -1
+	other.pos = xf * Vector3(c.half_w + 2.3 * WS.M + other.half_w, 0.0, 0.0)
+	other.yaw = c.yaw
+	var half := Vector2(other.half_w, 0.5 * other.length)
+	var box := [Vector2(other.pos.x, other.pos.z), other.yaw, half, 0.0, 1.5 * WS.M]
+	react.cars_near = func(p: Vector3, r: float) -> Array:
+		var near: Array = orig.call(p, r)
+		near.append(box)
+		return near
+	hits.clear()
+	traffic.call("sync_visuals", DT)
+	var jack: RefCounted = traffic.get("carjack")
+	var info: Dictionary = jack.call("eject", c, ctx.player.position)
+	var inv := xf.affine_inverse()
+	var furthest := 0.0
+	var secs := 0.0
+	while not rest_at.is_finite() and secs < 8.0:
+		_tick(DT)
+		traffic.call("sync_visuals", DT)  # the body drawn: its posed head is what is pressed out
+		secs += DT
+		furthest = maxf(furthest, (inv * (victim.pos + victim.vis_off)).x - c.half_w)
+	var rest := (inv * rest_at).x - c.half_w if rest_at.is_finite() else NAN
+	react.cars_near = orig
+	K.check(
+		fails,
+		not info.is_empty() and rest_at.is_finite() and furthest - rest < 0.08 * WS.M,
+		(
+			"a car's flank 2.3 m out: the driver went %.2f m out and rests at %.2f, not shoved back"
+			% [furthest / WS.M, rest / WS.M]
+		)
+	)
+
+
+## How far (u) the lying body, its feet at rest and its length along the way it was flung (from
+## from), is from the standing person at at: what jack_landing.gd keeps PED_CLEAR.
+func _lie_gap(from: Vector3, rest: Vector3, at: Vector3) -> float:
+	if not (from.is_finite() and rest.is_finite()):
+		return NAN
+	var way := Vector2(rest.x - from.x, rest.z - from.z).normalized()
+	var a := Vector2(rest.x, rest.z)
+	var q := Vector2(at.x, at.z)
+	return q.distance_to(Geometry2D.get_closest_point_to_segment(q, a, a + way * JL.LIE_FAR))
 
 
 ## F on the way to the door turns back: nobody is dragged out, the door stays shut and the car is
@@ -385,9 +646,9 @@ func _drive_trip(r: Dictionary) -> TRIPS.Trip:
 	return trip
 
 
-## Runs the climb in until it ends (or max_s) with traffic stepping too: the phases in order and
-## how far car c moved before anyone was hit.
-func _jack_climb(c: VH.Car, max_s: float) -> Dictionary:
+## Runs the climb in until it ends (or max_s) with traffic stepping too (the bodies drawn every
+## sync_every frames): the phases in order and how far car c moved before anyone was hit.
+func _jack_climb(c: VH.Car, max_s: float, sync_every: int = 4) -> Dictionary:
 	var entry: RefCounted = drive.get("entry")
 	var phases: Array = []
 	var start := c.pos
@@ -398,8 +659,8 @@ func _jack_climb(c: VH.Car, max_s: float) -> Dictionary:
 		drive.call("climb_step", DT)
 		ctx.player.update_view(DT)
 		_tick(DT)
-		if frame % 4 == 0:
-			traffic.call("sync_visuals", DT * 4.0)
+		if frame % sync_every == 0:
+			traffic.call("sync_visuals", DT * float(sync_every))
 		frame += 1
 		secs += DT
 		var ph := str(entry.get("phase"))
@@ -415,6 +676,7 @@ func _on_hit(at: Vector3, cause: String, info: Dictionary) -> void:
 	victim = traffic.call("_walker_by_id", int(info.get("walker", -1)))
 	clips.clear()
 	first_at = Vector3.INF
+	rest_at = Vector3.INF
 
 
 ## One traffic step of dt, noting each new reaction clip of the one last hit.
@@ -422,7 +684,16 @@ func _tick(dt: float) -> void:
 	traffic.call("step", dt)
 	if victim == null or victim.react == &"":
 		return
+	if watch_mixer and victim.body != null:
+		var active: Dictionary = (traffic.get("reactions") as RE).get("_active")
+		var r: RE.Reaction = active.get(victim.id)
+		if r != null and r.jack != null and r.fly_t > 0.0 and r.fly_t < r.air:
+			body_seen = true
+		if body_seen and r != null and r.fly_t >= r.air and is_nan(land_pos):
+			land_pos = _mixer_at(victim.body)
 	if not first_at.is_finite():
 		first_at = victim.pos + victim.vis_off
+	if victim.react == &"get_up" and not rest_at.is_finite():
+		rest_at = victim.pos + victim.vis_off
 	if clips.is_empty() or clips.back() != victim.react:
 		clips.append(victim.react)
