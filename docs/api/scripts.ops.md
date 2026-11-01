@@ -53,6 +53,33 @@ Local, opt-in product analytics: track(event, props) appends {event, props, sess
 - `static func track(event: String, props: Dictionary = {}) -> void`: Records one product event. Also leaves an error-tracker breadcrumb.
 - `static func uptime_s() -> float`: Seconds since the process started.
 
+## `scripts/ops/boot_clock.gd`
+
+class_name `BootClock` · extends `RefCounted`
+
+Boot stage stopwatch. mark(stage) closes a stage: it records Time.get_ticks_usec() and, in the browser, a performance.mark("gf:<stage>") for the DevTools timeline. finish() waits for the first interactive frame plus VEIL_FRAMES rendered ones, prints one `GF_BOOT {json}` line and `GRIDFALL: boot complete` (the console only, nothing leaves the machine), then tells the loader page to lift its veil (WebSupport.boot_done()). Harnesses wait for the boot-complete line. Off the web every call is a no-op unless GRIDFALL_BOOT_CLOCK=1 (tests, desktop captures), and once the boot has completed they are no-ops again, so marks inside code that runs on every rebuild cost nothing later in a session. A stage marked again gets #2, #3 (a continued city restores every feature a second time), so the report's names are unique.
+
+### Constants
+
+- `ENV = "GRIDFALL_BOOT_CLOCK"`
+- `VEIL_FRAMES = 3`: Frames rendered after the first interactive one before the veil lifts, so whatever one-off work the first frames do (shader compiles and links, first uploads) happens behind the loader. The report marks each of them (frame_2, frame_3, veil_frames) to show whether three are enough.
+- `COMPLETE_LINE = "GRIDFALL: boot complete"`
+- `REPORT_PREFIX = "GF_BOOT "`
+- `REPORT_VERSION = 1`
+- `MAX_MARKS = 512`: Marks kept at most (a boot makes about 115). A boot that stops before finish() (an error that aborts Main._ready) would otherwise keep recording FpMode's later rebuilds for the session.
+
+### Functions
+
+- `static func enabled() -> bool`: Whether marks are being recorded: the web build, or GRIDFALL_BOOT_CLOCK=1; false once finished.
+- `static func completed() -> bool`: True once finish() has printed the report.
+- `static func mark(stage: String) -> void`: Records that the stage called stage just ended.
+- `static func mark_for(stage: String, id: String) -> void`: mark("<stage>:<id>"), for the per-feature loops; the name is only built when marks are on.
+- `static func names() -> PackedStringArray`: The stage names recorded so far, in order.
+- `static func finish(tree: SceneTree) -> void`: Call once at the end of the main scene's _ready. Marks "ready_end", then follows the frames after it: "pre_draw" (the first frame's draw begins: the rest of that main-loop iteration lies between ready_end and here), "first_frame" (that draw is done, so the draw's own cost is the step from pre_draw), "frame_2" and "frame_3", and "veil_frames" (VEIL_FRAMES frames after the first one). Then it reports. A headless run draws nothing, so it counts process frames and has no pre_draw.
+- `static func report() -> Dictionary`: The report as a dictionary: format version, build facts, the engine's uptime at the first mark (what Main.setup and the first scene load cost before _ready), the page clock (performance.now(), -1 off the web) at the first mark and at the end, ms from the first mark to the last, and every mark as [stage, ms since the first mark]. The delta from one mark to the next is the cost of the stage the later one names.
+- `static func report_line() -> String`: The one console line finish() prints: REPORT_PREFIX plus report() as JSON, keys in the order report() builds them.
+- `static func reset() -> void`: Forgets every mark and re-reads GRIDFALL_BOOT_CLOCK (tests).
+
 ## `scripts/ops/circuit_breaker.gd`
 
 class_name `CircuitBreaker` · extends `RefCounted`
@@ -319,3 +346,6 @@ Platform glue for the web build. Desktop answers the thread questions with a pla
 - `static func store_get(name: String) -> String`: localStorage value under name ("" off the web, when missing, or when the browser blocks it).
 - `static func store_set(name: String, value: String) -> void`: Writes value under name (no-op off the web).
 - `static func store_erase(name: String) -> void`: Removes name from the store (no-op off the web).
+- `static func perf_mark(label: String) -> void`: Adds "label" to the page's User Timing timeline (DevTools, performance.getEntriesByType("mark")). No-op off the web. The expression returns nothing, so no JavaScriptObject wrapper is built.
+- `static func perf_now() -> float`: performance.now() in ms (the page's clock, not the engine's); -1 off the web or when the browser errors (a page whose Content-Security-Policy forbids eval: BootClock then stops asking).
+- `static func boot_done() -> void`: Tells the loader page the game is interactive so it can lift its boot veil (BootClock.finish): window.gfBootDone(). It goes through the bridge's object interface, not eval, so a page whose Content-Security-Policy forbids eval (no 'unsafe-eval') still gets the call instead of keeping the veil for the whole page timeout. A page without the hook leaves nothing behind (its own timeout releases the veil, 30 s after startGame() resolved), and so does a hook that throws. No-op off the web.

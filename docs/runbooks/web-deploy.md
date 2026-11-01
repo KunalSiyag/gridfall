@@ -76,6 +76,42 @@ Phase A deployment, not the later ground-texture-capped staging used in the A/B 
   compressed size of the `.pck` plus the `.wasm` and small files. Later visits come from the
   service worker cache; a new release has a new `releases/<hash>/` path and a new
   `CACHE_VERSION`, so a reload after a redeploy fetches the new build instead of the old one.
+- The loader overlay stays up until the game is interactive. Godot's web `main()` runs the first
+  main-loop iteration inside `callMain`, so `Main._ready` and the first frame's draw are one
+  main-thread task, and `startGame()` resolves only after it (the stock shell removed the overlay
+  then, frozen on whatever it had last painted). The page cannot paint or take input during that
+  task, so at 100% of bytes it switches to "Starting your city" with a transform-only spinner and
+  waits two frames before starting the engine, which leaves the spinner on the compositor when the
+  task begins. The game lifts the overlay with `window.gfBootDone()` (`BootClock.finish`: the first
+  interactive frame plus three rendered ones). The call goes through the bridge's object interface,
+  not `eval`, so a Content-Security-Policy without `'unsafe-eval'` still delivers it. If the hook
+  never comes (a boot that stops before `BootClock.finish`, or an old build), a 30 s timeout that
+  starts when `startGame()` resolves lifts the overlay: that is the most a game without the hook
+  costs the player on the veil. That timeout rests on the engine ordering above, which only a real
+  web build shows, so every full smoke run checks that `gf:start_game_resolved` does not come before
+  `gf:first_frame` (if a Godot update breaks it, re-measure the timeout; until then the worst case is
+  a veil lifted right after the boot task instead of three frames later). godot.js has no reject
+  path for a wasm that fails to download or compile, so `startGame()` then never settles; after 60 s
+  without a progress tick (counted from the page load until the first one) the page stops the
+  spinner and shows "Taking longer than expected. If nothing changes soon, reload the page."
+  `node tools/web_loader_check.js` checks the page side in headless Chrome with a stub engine (no
+  build needed; keep `TMPDIR` short, Chrome refuses a long socket path; its fake clock is paused, so
+  a busy machine does not change the result).
+- When the boot completes the game prints one `GF_BOOT {json}` line, then `GRIDFALL: boot complete`
+  (the browser console only; nothing leaves the machine). The line lists every boot stage with its
+  time in ms since the first mark, and the page's `performance.now()` at the first mark and at the
+  end; the same marks are `gf:<stage>` entries on the User Timing timeline. A stage marked twice (a
+  continued city restores every feature a second time) is `name#2`. The first frame is split in
+  two rows: `ready_end` to `pre_draw` is what its main-loop iteration still ran before drawing, and
+  `pre_draw` to `first_frame` is the draw itself, first-use shader work included (the rows do not
+  separate GL program links from the rest of the draw; a headless run draws nothing and has no
+  `pre_draw`). A page whose CSP forbids `eval` loses the `gf:` marks and the page times (-1), at the
+  cost of one console error, because those reads use `eval`; the hook and the two console lines do
+  not. smoke.js ends its boot wait at the `boot complete` line, so it needs a build that prints it:
+  against an image from before BootClock it sees the GPU banner without a `gf:ready_begin` mark and
+  fails the boot checks right away instead of waiting out its 10 minutes. Its boot checks read the
+  game's `gf:` marks, so a host whose CSP forbids `eval` fails them the same way (the failure text
+  names both causes); the Caddy image sets no CSP.
 - If those headers ever go missing (a proxy strips them, a wrong serving config), the player
   no longer gets a hung splash: an `html/head_include` script in the Web export preset checks
   `crossOriginIsolated` in the real document at parse time and shows a plain-language

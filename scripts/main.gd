@@ -51,12 +51,14 @@ var _autosave_due: bool = false
 
 
 func _ready() -> void:
+	BootClock.mark("ready_begin")
 	# Before the city is built, so the smaller shadow maps and buffers are the first allocated.
 	var gpu := GpuMemory.decide()
 	if bool(gpu["low"]):
 		GpuMemory.apply_to(get_viewport())
 	if bool(gpu["low"]) or DisplayServer.get_name() != "headless":
 		print(GpuMemory.describe(gpu))
+	BootClock.mark("gpu_banner")
 	# Browser only: a slow frame must not catch physics up 8 steps at once (6-35 ms a step there).
 	Q.cap_physics_steps()
 	# ...and with an empty physics space the server itself is parked (CollisionWorld is analytic).
@@ -69,6 +71,7 @@ func _ready() -> void:
 	start["low_vram"] = bool(gpu["low"])
 	Analytics.track("session_start", start)
 	_setup_pack_stream()
+	BootClock.mark("pack_stream")
 	sim.set_speed(0)
 	sim.road_grades = FeatureFlags.enabled("road_grades")
 	residents = Residents.new()
@@ -79,18 +82,23 @@ func _ready() -> void:
 	minds = ResidentMinds.new()
 	minds.name = "ResidentMinds"
 	add_child(minds)
+	BootClock.mark("await_frame")
 	await get_tree().process_frame
+	BootClock.mark("frame_resumed")
 	brain.setup(sim, client)
 	_setup_people()
 	minds.plans_done.connect(brain.residents_spoke)
 	sim.tick_done.connect(_on_tick_done)
 	# Loaded before the first view.setup, so the city is built once.
 	var resume := _resume_data()
+	BootClock.mark("resume_data")
 	view.fp_mode = wants_fp()
 	view.setup(sim, camera)
+	BootClock.mark("view_setup")
 	view.pack_stream = pack_stream
 	hud.setup(sim, brain, client)
 	hud.setup_pack_stream(pack_stream)
+	BootClock.mark("hud_setup")
 	if not _pack_config_error.is_empty():
 		notify(_pack_config_error)
 	if not _pack_pending_notice.is_empty():
@@ -100,6 +108,7 @@ func _ready() -> void:
 	sky.name = "SkyDirector"
 	add_child(sky)
 	sky.setup(sim, camera.environment, sun_light, view)
+	BootClock.mark("sky_setup")
 
 	hud.setup_people(residents, minds)
 	view.tile_clicked.connect(func(x: int, y: int) -> void: hud.handle_tile_click(x, y))
@@ -180,6 +189,7 @@ func _ready() -> void:
 		_start_new()
 	else:
 		_continue(resume)
+	BootClock.finish(get_tree())
 
 
 ## A fresh city at launch: day 1 starts and the clock runs at GRIDFALL_SPEED (default 1).
@@ -204,6 +214,7 @@ func _setup_pack_stream() -> void:
 
 func _start_new() -> void:
 	sim.start()
+	BootClock.mark("sim_start")
 	var start_speed := int(OS.get_environment("GRIDFALL_SPEED")) if OS.has_environment("GRIDFALL_SPEED") else 1
 	if fp != null:
 		fp.set_time_scale(start_speed)
@@ -406,6 +417,7 @@ func _continue(d: Dictionary) -> void:
 		_fp_saved = fd if typeof(fd) == TYPE_DICTIONARY else {}
 		sim.set_speed(1)
 		hud.set_speed_display(1)
+	BootClock.mark("continue_restore")
 	if sim.tick_in_day == 0:
 		sim.start()
 	_update_mood()
@@ -516,12 +528,14 @@ func enter_fp() -> void:
 	hud.visible = false
 	hud.process_mode = Node.PROCESS_MODE_DISABLED
 	view.set_fp_mode(true)
+	BootClock.mark("fp_view_mode")
 	_orbit_speed = sim.speed if sim.speed > 0 else 1
 	sim.set_day_seconds(WS.FP_DAY_SECONDS)
 	fp = FpMode.new()
 	fp.name = "FpMode"
 	add_child(fp)
 	fp.setup(self)
+	BootClock.mark("fp_setup")
 	view.set_camera(fp.player.camera)
 	if not _fp_saved.is_empty():
 		# The orbit clock ran on since; only the player and the features come back.

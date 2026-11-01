@@ -17,6 +17,15 @@
 // needs: a local Chrome/Chromium (CHROME path below), `npm i playwright-core` somewhere it can
 //        be resolved, and the container running: docker run -p 8080:8080 gridfall-web
 //
+// The boot wait ends at the "GRIDFALL: boot complete" line (BootClock.finish: the first interactive
+// frame plus three rendered ones, after the main-thread boot that follows the GPU banner), so the
+// build under test must print it: against an image from before BootClock the run notices the GPU
+// banner without BootClock's page marks and fails the boot checks at once instead of waiting out
+// the 10 minutes. The run also checks that the game lifted the loader overlay itself
+// (window.gfBootDone) instead of the page's 30 s timeout doing it, that startGame() resolved after
+// the game's first frame (the engine ordering that timeout rests on), and that one GF_BOOT report
+// line (stage timings, local console only) came with the boot.
+//
 // The run takes about 10 minutes (the ~186 MB .pck boots once, then reloads from the browser
 // cache) and exits non-zero when any check fails.
 
@@ -49,14 +58,42 @@ async function shot(page, name) {
 	}
 }
 
+// The game is interactive: BootClock.finish prints this after the boot task and the first frames.
+// The GPU banner and other GRIDFALL lines come before that task, so they are not a boot signal.
+const BOOT_DONE_RE = /^GRIDFALL: boot complete$/;
+const BOOT_REPORT_RE = /^GF_BOOT \{/;
+const BANNER_RE = /GridFall GPU:/;
+// How long to let a boot settle after its boot-complete line (audio beds, the first mayor turn).
+const BOOT_SETTLE_MS = 25000;
+
+// BootClock marks ready_begin (a gf:ready_begin entry on the page's timeline) before Main prints its
+// GPU banner, so a banner without that mark is a build from before BootClock, which never prints the
+// boot-complete line (or a page whose Content-Security-Policy blocks the marks).
+let noBootClock = false;
+async function bootClockMissing(page) {
+	try {
+		return !(await page.evaluate(() => performance.getEntriesByName("gf:ready_begin").length > 0));
+	} catch (e) {
+		return false;
+	}
+}
+
 async function waitEngine(page, timeoutMs, extraSettleMs, since = 0) {
-	// Boot signal: the engine logs to console (the GPU line, GRIDFALL lines or the loader).
 	const start = Date.now();
-	const bootRe = /(GridFall GPU:|GRIDFALL:)/;
+	let banner = false;
 	while (Date.now() - start < timeoutMs) {
-		if (consoleLines.slice(since).some((l) => bootRe.test(l.text))) {
+		const lines = consoleLines.slice(since);
+		if (lines.some((l) => BOOT_DONE_RE.test(l.text))) {
 			await sleep(extraSettleMs);
 			return true;
+		}
+		if (!banner && lines.some((l) => BANNER_RE.test(l.text))) {
+			banner = true;
+			if (await bootClockMissing(page)) {
+				noBootClock = true;
+				await sleep(extraSettleMs);
+				return false;
+			}
 		}
 		await sleep(1000);
 	}
@@ -123,9 +160,39 @@ const OFFLINE = process.env.GF_SMOKE_OFFLINE === "1";
 	await page.goto(BASE_URL, { waitUntil: "domcontentloaded", timeout: 60000 });
 	const canvas = await page.waitForSelector("canvas", { timeout: 60000 });
 	check("canvas present", canvas !== null);
-	const booted = await waitEngine(page, 600000, 25000);
+	const booted = await waitEngine(page, 600000, BOOT_SETTLE_MS);
 	check("engine booted (console activity)", booted,
-		`${((Date.now() - t0) / 1000).toFixed(0)}s to first log`);
+		booted ? `${((Date.now() - t0 - BOOT_SETTLE_MS) / 1000).toFixed(0)}s to "GRIDFALL: boot complete"`
+			: noBootClock ? "GPU banner without BootClock's gf:ready_begin mark: a build from before BootClock (or marks blocked by a CSP)"
+				: 'no "GRIDFALL: boot complete" line');
+	const reports = consoleLines.filter((l) => BOOT_REPORT_RE.test(l.text));
+	let boot = null;
+	try { boot = JSON.parse(reports[0].text.slice("GF_BOOT ".length)); } catch (e) {}
+	check("one GF_BOOT report line with the stage marks", reports.length === 1 && boot !== null
+		&& boot.v === 1 && Array.isArray(boot.marks) && boot.marks.length > 10,
+		boot ? `${boot.marks.length} marks, ${(boot.total_ms / 1000).toFixed(1)}s first mark to last` : `${reports.length} lines`);
+	// gf:veil_frames is BootClock's last mark, taken just before it calls the hook; gf:veil_released
+	// is the page lifting the overlay (the page marks only its first release, so a hook call after
+	// its timeout changes nothing). The hook's release lands right after the first (never before it);
+	// the page's timeout lands before it (the frames were slow) or about 30 s after startGame().
+	const veil = await page.evaluate(() => {
+		const at = (n) => { const e = performance.getEntriesByName(n); return e.length ? e[0].startTime : null; };
+		return {
+			overlay: document.getElementById("status") !== null, frames: at("gf:veil_frames"), released: at("gf:veil_released"),
+			first: at("gf:first_frame"), resolved: at("gf:start_game_resolved"),
+		};
+	});
+	check("the game lifted the loader overlay (window.gfBootDone), not the timeout",
+		!veil.overlay && veil.frames !== null && veil.released !== null
+			&& veil.released >= veil.frames && veil.released - veil.frames < 5000,
+		JSON.stringify(veil));
+	// The engine ordering the page's 30 s veil timeout rests on: Godot's web main() runs the first
+	// main-loop iteration (Main._ready and the first frame) inside callMain, so startGame() resolves
+	// after the game's first frame and the timeout only has to cover the three veil frames. That is a
+	// fact about the engine binary that no CI job can see (it needs a web build), so every full run
+	// checks it: if a Godot update moves the boot task after the resolve, re-measure the timeout.
+	check("startGame() resolved after the game's first frame (the premise of the page's veil timeout)",
+		veil.first !== null && veil.resolved !== null && veil.resolved >= veil.first, JSON.stringify(veil));
 	const coiCold = await page.evaluate(() => crossOriginIsolated);
 	check("cross-origin isolated after cold load (threads)", coiCold === true,
 		`crossOriginIsolated=${coiCold}`);
@@ -302,7 +369,7 @@ const OFFLINE = process.env.GF_SMOKE_OFFLINE === "1";
 
 	const reloadStart = consoleLines.length;
 	await page.reload({ waitUntil: "domcontentloaded" });
-	const reloaded = await waitEngine(page, 600000, 25000, reloadStart);
+	const reloaded = await waitEngine(page, 600000, BOOT_SETTLE_MS, reloadStart);
 	check("engine booted again after reload", reloaded);
 	const coiReload = await page.evaluate(() => crossOriginIsolated);
 	check("cross-origin isolated after reload (threads)", coiReload === true,
@@ -370,7 +437,7 @@ const OFFLINE = process.env.GF_SMOKE_OFFLINE === "1";
 		path.join(OUT, "console.log"),
 		consoleLines.map((l) => `[${l.type}] ${l.text}`).join("\n"));
 	fs.writeFileSync(path.join(OUT, "summary.json"),
-		JSON.stringify({ results, wireBytes, gmiCalls }, null, 2));
+		JSON.stringify({ results, wireBytes, gmiCalls, boot }, null, 2));
 	const bad = results.filter((r) => !r.ok).length;
 	console.log(`\nSMOKE: ${bad === 0 ? "PASS" : "FAIL"} (${results.length - bad}/${results.length} checks)`);
 	await browser.close();

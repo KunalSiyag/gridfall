@@ -1,7 +1,9 @@
 """Web staging and PCK aliasing never alter desktop source assets."""
 import hashlib
 import json
+import re
 import struct
+import zipfile
 from pathlib import Path
 
 import pytest
@@ -21,6 +23,19 @@ from tools.web_export import (
     stage_project,
     version_site,
 )
+
+
+ROOT = Path(__file__).resolve().parents[2]
+## The parts of Godot's godot.html (4.7) that patch_loader_html anchors on, verbatim.
+SHELL_SCRIPT = (
+    "<script>\n\tconst statusNotice = document.getElementById('status-notice');\n"
+    "\tfunction setStatusMode(mode) {\n"
+    "\t\tstatusNotice.style.display = mode === 'notice' ? 'block' : 'none';\n"
+    "\t}\n"
+    "\t\t\t\t\tstatusProgress.max = total;\n"
+    "\t\t}).then(() => {\n\t\t\tsetStatusMode('hidden');\n\t\t}, displayFailureNotice);\n</script>"
+)
+SHELL_STUB = "<style></style>" + '<progress id="status-progress"></progress>' + SHELL_SCRIPT
 
 
 def make_pack(path: Path, records: list[tuple[str, bytes]]) -> None:
@@ -196,10 +211,7 @@ def test_versioned_site_updates_loader_sizes_and_worker(tmp_path):
         '<link rel="manifest" href="index.manifest.json">'
         '<script src="index.js"></script>{"executable":"index","fileSizes":{"index.pck":4},'
         '"serviceWorker":"index.service.worker.js"}'
-        '<style></style>'
-        '<progress id="status-progress"></progress>'
-        "<script>\n\tconst statusNotice = document.getElementById('status-notice');\n"
-        "\t\t\t\t\tstatusProgress.max = total;\n</script>"
+        + SHELL_STUB
     )
     (raw / "index.service.worker.js").write_text(
         "const CACHE_VERSION = 'old';\nconst CACHED_FILES = ['index.html', 'index.js'];\n"
@@ -246,13 +258,7 @@ def test_prune_keeps_the_previous_release(tmp_path):
 
 
 def test_loader_page_gets_a_progress_bar():
-    html = (
-        "<style></style>"
-        '<progress id="status-progress"></progress>'
-        "<script>\n\tconst statusNotice = document.getElementById('status-notice');\n"
-        "\t\t\t\t\tstatusProgress.max = total;\n</script>"
-    )
-    patched = patch_loader_html(html)
+    patched = patch_loader_html(SHELL_STUB)
     assert 'id="gf-fill"' in patched and 'id="gf-label"' in patched
     assert "function setProgress(ratio)" in patched
     assert "setProgress(current / total);" in patched
@@ -260,6 +266,276 @@ def test_loader_page_gets_a_progress_bar():
     # A changed shell must fail loudly rather than ship an unpatched page.
     with pytest.raises(ValueError, match="HTML shell changed"):
         patch_loader_html("<style></style>")
+
+
+def test_loader_keeps_the_overlay_until_the_game_is_interactive():
+    patched = patch_loader_html(SHELL_STUB)
+    # startGame() resolving no longer removes the overlay; only the game's hook or the timeout does.
+    assert "}).then(() => {\n\t\t\tsetStatusMode('hidden');" not in patched
+    assert "}).then(() => {\n\t\t\tengineStarted();\n\t\t}, displayFailureNotice);" in patched
+    assert patched.count("setStatusMode('hidden')") == 1  # releaseVeil is the only caller
+    assert "window.gfBootDone = releaseVeil;" in patched
+    assert "const BOOT_VEIL_TIMEOUT_MS = 30000;" in patched
+    assert "veilTimer = setTimeout(releaseVeil, BOOT_VEIL_TIMEOUT_MS);" in patched
+    # A release that throws has already spent its timer, so it hides the overlay by hand.
+    assert "statusOverlay.style.display = 'none';" in patched
+    # The timeout is armed before anything that draws, so nothing after it can leave the veil up.
+    started = patched[patched.index("function engineStarted()"):]
+    assert started.index("setTimeout(releaseVeil") < started.index("showStarting()")
+    # The label changes at the last byte, or when the engine is about to start, whichever is first.
+    assert "Starting your city" in patched
+    assert "engine.start = function (...args) {\n\t\t\tshowStarting();" in patched
+    # A failure notice replaces the bar instead of sitting under it.
+    notice = patched.index("statusNotice.style.display = mode === 'notice'")
+    assert patched.index("progressBar.style.display", notice) > notice
+
+
+def _js_function(source: str, name: str) -> str:
+    """The body of `function name(...) { ... }` in source, nested braces included."""
+    first = source.index("{", source.index("function " + name + "("))
+    depth, i = 0, first
+    while True:
+        depth += {"{": 1, "}": -1}.get(source[i], 0)
+        i += 1
+        if depth == 0:
+            return source[first + 1:i - 1]
+
+
+def _engine_start_wrapper(patched: str) -> str:
+    """The body of the `engine.start = function (...args) { ... };` the loader installs."""
+    wrapper = patched[patched.index("engine.start = function"):]
+    return wrapper[:wrapper.index("\n\t\t};")]
+
+
+def test_loader_veil_timeout_starts_when_the_game_resolves_and_releases_once():
+    patched = patch_loader_html(SHELL_STUB)
+    started, released = _js_function(patched, "engineStarted"), _js_function(patched, "releaseVeil")
+    # The one timeout that lifts the veil is armed when startGame() resolves, after the boot task, so
+    # neither that task nor a slow download can trip it; none is armed at page load.
+    assert patched.count("setTimeout(releaseVeil") == 1 and "setTimeout(releaseVeil" in started
+    assert patched.count("BOOT_VEIL_TIMEOUT_MS") == 2  # the constant and that one use
+    # A hook call that came first has released the veil: nothing is armed afterwards.
+    assert "if (!veilReleased)" in started
+    # The first release wins, so gf:veil_released is when the overlay really went (smoke.js reads it)
+    # and the timeout and the hook cannot both mark it; the timer is cleared when the hook is first.
+    assert released.lstrip().startswith("if (veilReleased) {\n\t\t\treturn;\n\t\t}")
+    assert "clearTimeout(veilTimer);" in released
+
+
+def test_loader_arms_only_the_three_timers_it_documents():
+    from tools.web_export import LOADER_HELPER
+
+    # "No timer runs at page load" is what lets neither the boot task nor a slow download trip the
+    # veil. The helper arms exactly three timers, each inside the function that owns it, so a fourth
+    # (a veil timer armed early, however it is spelled) changes the count or the place.
+    assert LOADER_HELPER.count("setTimeout(") == 3 and "setInterval(" not in LOADER_HELPER
+    assert "setTimeout(resolve, 250)" in _js_function(LOADER_HELPER, "afterFrames")
+    assert "setTimeout(() => setStalled(true), START_STALL_MS)" in _js_function(LOADER_HELPER, "watchStall")
+    assert "setTimeout(releaseVeil, BOOT_VEIL_TIMEOUT_MS)" in _js_function(LOADER_HELPER, "engineStarted")
+
+
+def test_loader_starts_the_engine_two_frames_after_painting_the_starting_state():
+    patched = patch_loader_html(SHELL_STUB)
+    wrapper = _engine_start_wrapper(patched)
+    assert wrapper.index("showStarting()") < wrapper.index("afterFrames()")
+    assert "return afterFrames().then(() => engineStart.apply(this, args));" in wrapper
+    assert patched.count("engineStart.apply(") == 1  # no way to start the engine without the wait
+    frames = _js_function(patched, "afterFrames")
+    assert frames.count("requestAnimationFrame(") == 2
+    # A hidden tab draws no frames: a short timer lets the boot go ahead, and a frame cancels it.
+    assert "setTimeout(resolve, 250)" in frames and "clearTimeout(fallback)" in frames
+
+
+def test_loader_says_starting_only_when_the_last_byte_is_in():
+    patched = patch_loader_html(SHELL_STUB)
+    progress = _js_function(patched, "setProgress")
+    # 99.6% of the bytes rounds to 100 but is not done: the shown percentage stops at 99 until then.
+    assert "ratio >= 1 ? 100 : Math.max(0, Math.min(99, Math.round(ratio * 100)))" in progress
+    assert re.search(r"if \(ratio >= 1\) \{\s*showStarting\(\);", progress)
+    assert "pct >= 100" not in progress
+
+
+def test_loader_flags_a_stalled_start_but_never_a_running_boot():
+    from tools.web_export import LOADER_CSS
+
+    patched = patch_loader_html(SHELL_STUB)
+    assert "const START_STALL_MS = 60000;" in patched
+    assert "stallTimer = setTimeout(() => setStalled(true), START_STALL_MS);" in patched
+    # Every progress tick restarts the watch; the engine starting ends it for good.
+    assert "watchStall();" in _js_function(patched, "setProgress")
+    assert "stopStall();" in _engine_start_wrapper(patched)
+    stop, watch = _js_function(patched, "stopStall"), _js_function(patched, "watchStall")
+    assert "stallOver = true;" in stop and "clearTimeout(stallTimer);" in stop
+    # It also starts with the page: a download that hangs before its first byte never ticks.
+    after_hook = patched[patched.index("window.gfBootDone = releaseVeil;"):]
+    assert "\n\twatchStall();\n" in after_hook
+    # A progress tick (or the engine starting) takes a hint that is showing back.
+    assert "setStalled(false);" in watch and "setStalled(false);" in stop
+    # rAF can run one last progress tick after the engine start; it must not arm the watch again,
+    # or a very long boot would end in a hint.
+    assert watch.lstrip().startswith("if (stallOver) {\n\t\t\treturn;\n\t\t}")
+    # The hint replaces the spinner while stalled.
+    assert 'id="gf-hint"' in patched
+    assert "#gf-bar.gf-stalled #gf-hint { display: block; }" in LOADER_CSS
+    assert "#gf-bar.gf-stalled #gf-spin { display: none; }" in LOADER_CSS
+
+
+def test_loader_spinner_arc_survives_forced_colors():
+    from tools.web_export import LOADER_CSS
+
+    forced = LOADER_CSS[LOADER_CSS.index("@media (forced-colors: active)"):]
+    # High contrast makes every border one colour; system colours keep the arc apart from the ring.
+    assert "border-color: GrayText" in forced and "border-top-color: Highlight" in forced
+    assert forced.index("border-color: GrayText") < forced.index("border-top-color: Highlight")
+
+
+def _css_blocks(css: str, at_rule: str) -> list[str]:
+    """The bodies of every `@<at_rule> name { ... }` block, nested braces included."""
+    bodies = []
+    for found in re.finditer(r"@" + at_rule + r"\s+[\w-]+\s*\{", css):
+        depth, i = 1, found.end()
+        while depth:
+            depth += {"{": 1, "}": -1}.get(css[i], 0)
+            i += 1
+        bodies.append(css[found.end():i - 1])
+    return bodies
+
+
+def test_loader_spinner_animates_compositor_properties_only():
+    from tools.web_export import LOADER_CSS
+
+    frames = _css_blocks(LOADER_CSS, "keyframes")
+    assert len(frames) == 2  # the spin and the reduced-motion pulse
+    for body in frames:
+        # transform and opacity are the properties a compositor can animate off the main thread.
+        assert set(re.findall(r"([a-z-]+)\s*:", body)) <= {"transform", "opacity"}
+    assert "animation: gf-spin" in LOADER_CSS and "will-change: transform" in LOADER_CSS
+    assert "prefers-reduced-motion: reduce" in LOADER_CSS
+
+
+@pytest.mark.parametrize(
+    "anchor",
+    [
+        "</style>",
+        '<progress id="status-progress"></progress>',
+        "\tconst statusNotice = document.getElementById('status-notice');",
+        "\t\tstatusNotice.style.display = mode === 'notice' ? 'block' : 'none';",
+        "\t\t\t\t\tstatusProgress.max = total;",
+        "\t\t}).then(() => {\n\t\t\tsetStatusMode('hidden');\n\t\t}, displayFailureNotice);",
+    ],
+)
+def test_loader_patch_fails_loudly_when_an_anchor_moves(anchor):
+    assert anchor in SHELL_STUB
+    with pytest.raises(ValueError, match="HTML shell changed"):
+        patch_loader_html(SHELL_STUB.replace(anchor, ""))
+
+
+def _template_zip() -> Path:
+    version = (ROOT / ".godot-version").read_text().strip()
+    return Path.home() / ".local/share/godot/export_templates" / version / "web_release.zip"
+
+
+@pytest.mark.skipif(not _template_zip().exists(), reason="the Godot web export template is not installed")
+def test_loader_patch_fits_the_installed_godot_shell():
+    with zipfile.ZipFile(_template_zip()) as templates:
+        shell = templates.read("godot.html").decode()
+    patched = patch_loader_html(shell)
+    assert "engineStarted();" in patched and "window.gfBootDone" in patched
+    assert patched.count("setStatusMode('hidden')") == 1  # releaseVeil is the only caller left
+
+
+@pytest.mark.skipif(
+    not _template_zip().exists(),
+    reason="the Godot web export template is not installed (the engine ordering is then checked only by deploy/web/smoke.js)",
+)
+def test_installed_engine_starts_the_game_inside_callmain_then_resolves():
+    # The JS half of what the loader's engine.start wrapper and its timeout rely on: startGame() calls
+    # this.start(), and start() resolves only after callMain returns. It reads the installed template,
+    # so it runs on developer machines only (the CI jobs have no web template and skip it). The C++
+    # half, that the first main-loop iteration (Main._ready and the first frame) runs inside callMain,
+    # is not in godot.js at all: it was measured in a real export, and
+    # test_smoke_checks_the_engine_ordering_the_veil_timeout_rests_on pins the check that re-measures it.
+    with zipfile.ZipFile(_template_zip()) as templates:
+        engine = templates.read("godot.js").decode()
+    assert "return me.start.apply(me);" in engine
+    called = engine.index("me.rtenv['callMain'](me.config.args);")
+    assert 0 < engine.index("resolve();", called) - called < 200
+
+
+@pytest.mark.skipif(not _template_zip().exists(), reason="the Godot web export template is not installed")
+def test_installed_engine_never_rejects_a_wasm_that_fails_to_load():
+    # Why the loader watches for a stall: Engine.init() has no reject path, so a wasm that fails to
+    # download or compile leaves startGame() pending for ever, with no notice (the stock shell hangs
+    # the same way). If a Godot update adds one, the stall hint may be redundant.
+    with zipfile.ZipFile(_template_zip()) as templates:
+        engine = templates.read("godot.js").decode()
+    init = engine[engine.index("function doInit(promise) {"):]
+    init = init[:init.index("preloader.setProgressFunc")]
+    assert "reject(" not in init and ".catch(" not in init
+    assert "WebAssembly.instantiateStreaming(Promise.resolve(r), imports).then(done);" in engine
+
+
+def _gd_body(source: str, name: str) -> str:
+    """The indented body of `static func name(...)` in a GDScript file."""
+    lines = source.splitlines()
+    head = next(i for i, line in enumerate(lines) if line.startswith("static func " + name + "("))
+    body = []
+    for line in lines[head + 1:]:
+        if line and not line.startswith("\t"):
+            break
+        body.append(line)
+    return "\n".join(body)
+
+
+def test_game_page_and_smoke_agree_on_the_boot_contract():
+    patched = patch_loader_html(SHELL_STUB)
+    hook = re.search(r"window\.(\w+) = releaseVeil;", patched).group(1)
+    support = (ROOT / "scripts/ops/web_support.gd").read_text()
+    clock = (ROOT / "scripts/ops/boot_clock.gd").read_text()
+    main = (ROOT / "scripts/main.gd").read_text()
+    smoke = (ROOT / "deploy/web/smoke.js").read_text()
+    # The game calls the hook the page defines, and not through eval: a page whose Content-Security-
+    # Policy forbids eval would never get the call and would keep its veil for the whole timeout.
+    boot_done = _gd_body(support, "boot_done")
+    assert "." + hook in boot_done and 'get_interface("window")' in boot_done
+    assert "_eval(" not in boot_done and "JavaScriptBridge.eval" not in boot_done
+    # BootClock.finish reports first and then lifts the veil, and its last mark is the one smoke.js
+    # compares the page's release with.
+    finish = _gd_body(clock, "finish")
+    assert finish.index("print(COMPLETE_LINE)") < finish.index("WebSupport.boot_done()")
+    assert finish.index('mark("veil_frames")') < finish.index("WebSupport.boot_done()")
+    assert 'WebSupport.perf_mark("gf:" + label)' in clock
+    # The windowed frames: the first frame's iteration ends at pre_draw and its draw at first_frame,
+    # which splits the table's one big row in two (a headless run draws nothing and has no pre_draw,
+    # so only this text can pin the order).
+    windowed = finish[finish.index("await RenderingServer.frame_pre_draw"):]
+    assert windowed.index('mark("pre_draw")') < windowed.index("await RenderingServer.frame_post_draw")
+    assert windowed.index("await RenderingServer.frame_post_draw") < windowed.index('mark("first_frame")')
+    # The line the harness waits for and the marks it reads are what the game and the page produce.
+    line = re.search(r'const COMPLETE_LINE := "([^"]+)"', clock).group(1)
+    assert "BOOT_DONE_RE = /^" + line + "$/;" in smoke
+    assert '"gf:veil_frames"' in smoke and '"gf:veil_released"' in smoke
+    assert "timelineMark('veil_released')" in patched
+    # smoke.js tells a build from before BootClock by the first mark Main makes.
+    assert 'performance.getEntriesByName("gf:ready_begin")' in smoke
+    assert 'BootClock.mark("ready_begin")' in main
+
+
+def test_smoke_checks_the_engine_ordering_the_veil_timeout_rests_on():
+    # The page arms its 30 s veil timeout when startGame() resolves, which covers only the three veil
+    # frames because Godot's web main() runs the first main-loop iteration inside callMain, so the
+    # resolve comes after the game's first frame. No CI job can see that (it needs a web build and a
+    # browser), so every full smoke run must compare the two marks, and the marks must exist.
+    patched = patch_loader_html(SHELL_STUB)
+    smoke = (ROOT / "deploy/web/smoke.js").read_text()
+    clock = (ROOT / "scripts/ops/boot_clock.gd").read_text()
+    assert 'first: at("gf:first_frame")' in smoke and 'resolved: at("gf:start_game_resolved")' in smoke
+    check = smoke[smoke.index('check("startGame() resolved after the game\'s first frame'):]
+    check = check[:check.index("));") + 3]
+    assert "veil.resolved >= veil.first" in check
+    assert "veil.first !== null && veil.resolved !== null" in check  # a missing mark fails, never passes
+    assert "timelineMark('start_game_resolved')" in patched  # the page's mark
+    assert 'mark("first_frame")' in clock  # the game's mark
 
 
 @pytest.mark.parametrize("case", [str.lower, str.title, str.upper])

@@ -82,6 +82,7 @@ func setup(main: Node3D) -> void:
 	add_child(collision)
 	collision.setup(ctx)
 	ctx.collision = collision
+	BootClock.mark("fp_collision")
 	var world := Node3D.new()
 	world.name = "World"
 	# FpMode runs while paused; the world (agents, emitters, posters) must freeze with the tree.
@@ -94,11 +95,13 @@ func setup(main: Node3D) -> void:
 	add_child(player)
 	ctx.player = player
 	player.setup(ctx)
+	BootClock.mark("fp_player")
 	hud = FpHud.new()
 	hud.name = "FpHud"
 	add_child(hud)
 	ctx.hud = hud
 	hud.setup(ctx)
+	BootClock.mark("fp_hud")
 	_features_node = Node3D.new()
 	_features_node.name = "Features"
 	_features_node.process_mode = Node.PROCESS_MODE_PAUSABLE
@@ -117,8 +120,10 @@ func setup(main: Node3D) -> void:
 		_features_node.add_child(f)
 		ctx.features[id] = f
 		order.append(f)
+		BootClock.mark_for("load", id)
 	for f in order:
 		f.setup(ctx)
+		BootClock.mark_for("setup", f.name)
 	ctx.view.world_rebuilt.connect(_on_world_rebuilt)
 	ctx.view.tile_built.connect(collision.on_tile_built)
 	ctx.view.tile_cleared.connect(collision.on_tile_cleared)
@@ -126,7 +131,9 @@ func setup(main: Node3D) -> void:
 	bus.modal_changed.connect(func(_a: bool) -> void: _update_mouse_mode())
 	_set_up = true
 	_on_world_rebuilt()
+	BootClock.mark("fp_world_rebuilt")
 	from_dict({})
+	BootClock.mark("fp_from_dict")
 	_update_mouse_mode.call_deferred()
 	if auto_low_quality and not _low_vram_told:
 		_low_vram_told = true
@@ -196,6 +203,7 @@ func from_dict(d: Dictionary) -> void:
 	for f in _feature_list():
 		var fd: Variant = d.get(f.feature_id(), {})
 		f.from_dict(fd if typeof(fd) == TYPE_DICTIONARY else {})
+		BootClock.mark_for("dict", f.name)
 
 
 ## Settles every feature for a save (§6.4): Main._canonicalise_for_save() calls this once before
@@ -344,10 +352,13 @@ func _on_tile_built(i: int, _holder: Node3D) -> void:
 
 func _on_world_rebuilt() -> void:
 	collision.rebuild_all()
+	BootClock.mark("collision_rebuild")
 	directory.rebuild()
+	BootClock.mark("directory_rebuild")
 	player.snap_to_ground()
 	for f in _feature_list():
 		f.on_world_rebuilt()
+		BootClock.mark_for("world", f.name)
 	bus.world_ready.emit()
 
 
