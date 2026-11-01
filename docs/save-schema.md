@@ -26,6 +26,39 @@ settled state and moves nothing (docs/fp/S0-foundation.md §6.4).
 | 2 | accepted | 96x96 world (`world` rect recorded); the load places it into the current world and the fresh wilds generated around it stay |
 | 3 | current | 192x192 world; mayors no longer carry derived `pop/jobs/happiness` (recomputed on load) |
 
+`CitySim.from_dict` checks a save before it changes anything, and returns false (the live city is
+left exactly as it was, `sim_load_atomic_test.gd`) when the version is not 2 or 3, the `world`
+block is not a rectangle of numbers with tiles, `kind` or `district` are not arrays of `w * h`
+entries, or, in this build's own 192x192 world, `level`, `terrain` or `burning` are not arrays of
+that length (a version 2 save may leave those three short or out; the placement fills the rest).
+It refuses a save with any other section of the wrong kind of value too
+(`scripts/sim/save_shape.gd`): the counters (`seed`, `day`, `tick_in_day`, `event_seq`,
+`site_seq`, `crew_seq`) must be numbers, `ordinances` a dictionary, `disabled_until` and
+`broken_roads` dictionaries of numbers, `grid_priority` and `log` arrays, and `mayors`, `events`,
+`history`, `sites` and `crew_jobs` arrays of dictionaries whose numeric fields the load converts
+are numbers (every incident has a `type`, `x` and `y`; its `tiles` are numbers). A section a save
+leaves out is fine, the loader has a default for it; a section that is there with the wrong kind
+of value, null included, is refused. These are checks of shape, not of meaning: a tax rate of 1e9
+is still a number and loads.
+
+`Main._restore` runs the same kind of check on the other sections before it calls the sim
+(`SaveShape.document_ok`): `sim`, `brain`, `client`, `residents` and `minds` must be dictionaries,
+and the arrays and dictionaries inside them that their `from_dict` reads must be the kind it casts
+them to (the brain's own copy of the client's state, `brain.client`, is checked like the top-level
+`client` section, since the brain loads it with the client's `from_dict`). So a save that is wrong
+anywhere in these is refused as a whole and the sim, brain, people and minds all stay as they
+were. What is still not checked is the content of a record that is the
+right kind: a resident or mayor record with keys missing or odd values loads and can fail on first
+use (a `residents.people` of `[{}]` raises script errors every frame; a `brain.mayor_state` entry
+without `thoughts` fails at the first mayor turn). Saves the game wrote never look like that.
+
+A file the build refuses this way is skipped like an unreadable one: `SaveSlot.read(path, accept)`
+falls back to the backup, `Main._read_save` passes it `Main._restorable` (`SaveShape.document_ok`
+and `CitySim.save_is_loadable`), and both in-game Load and the launch that continues the city go on
+from the previous save instead of reporting an invalid save or starting a new city. Only when the
+slot and its backup are both refused does the launch start a new city (and the next autosave then
+moves the refused file to `.bak`, so it is kept for a bug report).
+
 ## Bump policy
 
 - Bump the version when the **meaning** of an existing field changes or a field's absence can no

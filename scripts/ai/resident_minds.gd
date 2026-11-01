@@ -47,6 +47,11 @@ var model_stats: Dictionary = {}
 var last_plan_day: int = 0
 var _plans_pending: int = 0
 var _reacts_pending: int = 0
+## Counts the cities these minds have served. setup() and from_dict() replace the city and zero
+## the two counters above, so a plan batch or a reaction still in flight belongs to a city that is
+## gone: it remembers the value it was sent under and, finding it changed, lands nowhere and
+## settles no counter (it was never counted in the new city's).
+var _generation: int = 0
 var _rot: int = 0
 var _asked: Dictionary = {}
 var _bad_models: Dictionary = {}
@@ -62,6 +67,7 @@ func setup(p_sim: CitySim, p_people: Residents, p_client: GmiClient, p_brain: No
 	people = p_people
 	client = p_client
 	brain = p_brain
+	_generation += 1
 	_rng.seed = sim.city_seed + 99
 	_asked.clear()
 	_plans_pending = 0
@@ -195,19 +201,16 @@ func _run_spread() -> void:
 
 
 func _plan_batch(batch: Array, day: int, model: String, ctx: Dictionary) -> void:
+	var gen := _generation
 	var cards: Array = []
 	for r: Dictionary in batch:
 		cards.append(people.card(r))
 	var user := JSON.stringify({"day": day, "city": ctx, "residents": cards})
 	var res: Dictionary = await client.live_json("residents", "plans", model, PLAN_SYSTEM, user, day, 3600, 55.0)
 	_note_model(model, res)
-	var got: Dictionary = {}
-	if bool(res["ok"]):
-		var arr: Variant = (res["data"] as Dictionary).get("residents", [])
-		if typeof(arr) == TYPE_ARRAY:
-			for v: Variant in arr:
-				if typeof(v) == TYPE_DICTIONARY:
-					got[str((v as Dictionary).get("id", ""))] = v
+	if gen != _generation:
+		return
+	var got := _by_id(res, "residents")
 	if str(res.get("error", "")) != "offline":
 		var bk := "batches_ok" if not got.is_empty() else "batches_failed"
 		stats[bk] = int(stats[bk]) + 1
@@ -234,6 +237,18 @@ func _plan_batch(batch: Array, day: int, model: String, ctx: Dictionary) -> void
 	if _plans_pending == 0:
 		people.rebuild_maps()
 		plans_done.emit(day)
+
+
+## The entries of a live call's answer by resident id: res["data"][key] is a list of {id, ...}.
+static func _by_id(res: Dictionary, key: String) -> Dictionary:
+	var got: Dictionary = {}
+	if bool(res["ok"]):
+		var arr: Variant = (res["data"] as Dictionary).get(key, [])
+		if typeof(arr) == TYPE_ARRAY:
+			for v: Variant in arr:
+				if typeof(v) == TYPE_DICTIONARY:
+					got[str((v as Dictionary).get("id", ""))] = v
+	return got
 
 
 func _city_context() -> Dictionary:
@@ -405,18 +420,15 @@ func _react(ev: Dictionary, wide: bool) -> void:
 		"hours_unfixed": (sim.global_tick() - int(ev.get("start_tick", sim.global_tick()))) * 6, "already_helping": helpers.slice(0, 6),
 	}
 	var model := _model(_rot + eid)
+	var gen := _generation
 	_reacts_pending += 1
 	busy_changed.emit(pending())
 	var user := JSON.stringify({"day": sim.day, "incident": incident, "residents": cards})
 	var res: Dictionary = await client.live_json("residents", "reactions", model, REACT_SYSTEM, user, sim.day, 2200, 40.0)
 	_note_model(model, res)
-	var got: Dictionary = {}
-	if bool(res["ok"]):
-		var arr: Variant = (res["data"] as Dictionary).get("responses", [])
-		if typeof(arr) == TYPE_ARRAY:
-			for v: Variant in arr:
-				if typeof(v) == TYPE_DICTIONARY:
-					got[str((v as Dictionary).get("id", ""))] = v
+	if gen != _generation:
+		return
+	var got := _by_id(res, "responses")
 	if _spread_ok():
 		# One responder per frame, ahead of anything already waiting; the sliced tick waits for them.
 		var st := {"out": [], "stop": false}
@@ -586,6 +598,7 @@ func from_dict(d: Dictionary) -> void:
 		stats[k] = s[k]
 	model_stats = d.get("model_stats", {})
 	_rot = int(d.get("rot", 0))
+	_generation += 1
 	_plans_pending = 0
 	_reacts_pending = 0
 	_spread.clear()

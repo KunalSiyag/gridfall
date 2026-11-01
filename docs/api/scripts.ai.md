@@ -4,6 +4,21 @@
 
 [Index](index.md)
 
+## `scripts/ai/brain_calls.gd`
+
+extends `Node`
+
+The GMI calls a CityBrain has in flight, and which city each was sent for (CityBrain extends this). setup() and from_dict() replace the city: _forget_calls() starts a new generation and clears the flags, so an answer for the old city is dropped when it lands (_ask) instead of being applied to the new one, and the new city plans at once.
+
+### Signals
+
+- `busy_changed(pending: int)`
+
+### Functions
+
+- `func pending_calls() -> int`
+- `func mayors_pending() -> int`
+
 ## `scripts/ai/brain_text.gd`
 
 extends `RefCounted`
@@ -104,7 +119,7 @@ The voices of the global chat and of face-to-face talk (slice C §3). Residents,
 
 ## `scripts/ai/city_brain.gd`
 
-class_name `CityBrain` · extends `Node`
+class_name `CityBrain` · extends `"res://scripts/ai/brain_calls.gd"`
 
 Puts GMI model inference on every layer of the city. Each in-game day it batches: - 5 AI mayors (different models) that read their district map and issue build/zone/tax actions - Citizen Voices: sampled residents describe their lives; complaints feed back to mayors - GridFall Gazette: a news editor writes the day's headline from real events - Chaos Director: picks disasters that probe the city's weaknesses - Grid Operator: sets load-shedding priority when power or water runs short - Council Speaker: rules on ordinance proposals using the mayors' votes plus an on-demand Street Inspector that role-plays whatever tile the player clicks. Live calls fall back to the recorded replay cache, then to local heuristics.
 
@@ -118,7 +133,6 @@ Puts GMI model inference on every layer of the city. Each in-game day it batches
 - `chaos_decided(decision: Dictionary)`
 - `operator_decided(decision: Dictionary)`
 - `inspector_answered(report: Dictionary)`
-- `busy_changed(pending: int)`
 
 ### Constants
 
@@ -135,8 +149,6 @@ Puts GMI model inference on every layer of the city. Each in-game day it batches
 ### Functions
 
 - `func setup(p_sim: CitySim, p_client: GmiClient) -> void`
-- `func pending_calls() -> int`
-- `func mayors_pending() -> int`
 - `func send_decree(text: String) -> void`
 - `func spread_pending() -> bool`: True while the day round still has pieces waiting for a frame (the sim's spread gate).
 - `func day_of_sim() -> int`

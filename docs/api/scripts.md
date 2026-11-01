@@ -98,6 +98,7 @@ GridFall: a SimCity-style city run by five autonomous GMI Cloud AI mayors. Wires
 - `SAVE_PATH = "user://gridfall_save.json"`
 - `TOOL_MODES = [ "GRIDFALL_CINEMATIC", "GRIDFALL_SMOKE_TEST", "GRIDFALL_PHOTO_DIR", "GRIDFALL_FP_SMOKE...`: Environment switches that make a run a tool run (trailer, smokes, photo tours).
 - `D = preload("res://scripts/sim/sim_defs.gd")`
+- `SaveShape = preload("res://scripts/sim/save_shape.gd")`
 - `WS = preload("res://scripts/fp/world_scale.gd")`
 - `Q = preload("res://scripts/fp/render/quality.gd")`
 
@@ -107,7 +108,7 @@ GridFall: a SimCity-style city run by five autonomous GMI Cloud AI mayors. Wires
 - `view_mode: String`: "orbit" or "fp"; tools and saves can read it.
 - `pack_stream: WebPackStream`: Web background packs (split builds). Always present; inert off the web / on unsplit builds.
 - `autosave_enabled: bool`: Autosaves (the first tick of each morning, quitting) are on only in normal play: tool runs, tests and the benchmark never touch the player's city.
-- `autosave_path: String`: Where autosaves go; tests point it away from the player's slot.
+- `autosave_path: String`: Where autosaves go, and where a normal launch continues from; tests point it away from the player's slot.
 
 ### Functions
 
@@ -118,6 +119,8 @@ GridFall: a SimCity-style city run by five autonomous GMI Cloud AI mayors. Wires
 - `func new_game() -> void`
 - `static func wants_fp() -> bool`: True when this run will play in first person: no legacy tool mode (cinematic, orbit smoke, orbit photo tour) is selected, and either an FP tool mode is or GRIDFALL_VIEW is not "orbit". Mirrors the boot ladder in _ready(), so the early view flag and enter_fp() always agree.
 - `func focus(p: Vector3, dist: float, reason: String = "") -> void`: Draws attention to a world point. Orbit: moves the camera rig (old behaviour). First person: never teleports; emits GameBus.ping(p, reason) for the HUD and minimap. reason: "event:<type>" | "resident:<id>" | "tile" | "auto:tile" | "district:<mi>" | "" .
+- `func frame_hero(fp_section: Dictionary) -> void`: Planner view: opens the orbit camera over the hero, the city the player lives in, instead of wherever the rig was left (the founding core at boot). fp_section is an FpMode.to_dict() section: the hero's position when leaving first person, as saved on boot into the Planner and on Load there. The rig snaps there at GridFallCamera.HERO_ZOOM, inside the pan limits, and the view marks the spot. Called once per arrival, so panning, zooming and focus() afterwards are the player's own. A section without a position (a fresh city) leaves the camera where it is and hides the marker of an earlier visit: it would point at a spot the hero is no longer at.
+- `static func saved_hero_position(fp_section: Dictionary) -> Variant`: The hero's feet position in an FpMode.to_dict() section ({"player": {"pos": [x, y, z]}}), or null when the section has none, or one that is not a finite point inside the world.
 - `func notify(text: String, kind: String = "info") -> v`: Player-facing notice: CityHud toast in orbit, GameBus.toast in first person. kind: "info" | "alert" | "success" | "system".
 - `func active_camera() -> Camera3D`: The camera the city view should use for picking and shake.
 - `func enter_fp() -> void`: Switches to first person (S0 §6.3). Safe to call twice.
@@ -128,11 +131,11 @@ GridFall: a SimCity-style city run by five autonomous GMI Cloud AI mayors. Wires
 
 class_name `SaveSlot` · extends `RefCounted`
 
-One saved city on disk, written so a crash or a full disk mid-save never costs the player their city: the new save goes to <path>.tmp first, the previous one moves to <path>.bak, and only then does the new file take the slot's name. read() falls back to the backup when the slot is missing or unreadable (a crash between the two renames, or a truncated file).
+One saved city on disk, written so a crash or a full disk mid-save never costs the player their city: the new save goes to <path>.tmp first, the previous one moves to <path>.bak, and only then does the new file take the slot's name. read() falls back to the backup when the slot is missing or unreadable (a crash between the two renames, or a truncated file), or when the caller's `accept` refuses it (a well-formed file the game would not load, which must not hide the good backup behind it).
 
 ### Functions
 
 - `static func write(path: String, data: Dictionary) -> Error`: Writes data as JSON to path. OK, or the error that stopped it (the slot is then unchanged).
-- `static func read(path: String) -> Dictionary`: The saved city at path (or its backup), or {} when neither holds one.
+- `static func read(path: String, accept: Callable = Callable()) -> Dictionary`: The saved city at path (or its backup), or {} when neither holds one. accept, when it is set, is called with each file that parsed and returns true for a save the caller will load: a file it refuses is skipped like an unreadable one.
 - `static func exists(path: String) -> bool`
 - `static func backup_path(path: String) -> String`

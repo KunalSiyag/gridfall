@@ -9,6 +9,7 @@ const TOOL_MODES := [
 	"GRIDFALL_FP_SMOKE", "GRIDFALL_FP_PHOTO_DIR",
 ]
 const D := preload("res://scripts/sim/sim_defs.gd")
+const SaveShape := preload("res://scripts/sim/save_shape.gd")
 
 @onready var sim: CitySim = $CitySim
 @onready var client: GmiClient = $GmiClient
@@ -45,7 +46,8 @@ var _pack_config_error := ""
 ## Autosaves (the first tick of each morning, quitting) are on only in normal play: tool runs,
 ## tests and the benchmark never touch the player's city.
 var autosave_enabled: bool = false
-## Where autosaves go; tests point it away from the player's slot.
+## Where autosaves go, and where a normal launch continues from; tests point it away from the
+## player's slot.
 var autosave_path: String = SAVE_PATH
 var _autosave_due: bool = false
 
@@ -339,7 +341,7 @@ func _write_save(path: String, reason: String) -> Error:
 
 
 func load_game(path: String = SAVE_PATH) -> bool:
-	var d := SaveSlot.read(path)
+	var d := _read_save(path)
 	if d.is_empty():
 		var why := "Save file is invalid" if SaveSlot.exists(path) else "No saved city yet (press Save first)"
 		notify(why, "alert")
@@ -355,6 +357,7 @@ func load_game(path: String = SAVE_PATH) -> bool:
 		fp.from_dict(fd if typeof(fd) == TYPE_DICTIONARY else {})
 	else:
 		_fp_saved = fd if typeof(fd) == TYPE_DICTIONARY else {}
+		frame_hero(_fp_saved)
 	# Mid-day saves already have today's mayor decisions applied; only a boundary save needs a fresh day.
 	if sim.tick_in_day == 0:
 		sim.start()
@@ -364,9 +367,24 @@ func load_game(path: String = SAVE_PATH) -> bool:
 	return true
 
 
-## Applies a save's data (sim, brain, client, people); false when the sim rejects it.
+## The saved city at path that this build restores, or {}: a file it would refuse (the wrong
+## version, tile arrays of the wrong size, a section of the wrong kind) is skipped like an
+## unreadable one, so the previous save, kept as the slot's backup, is offered instead of a new
+## city (and is not the file the next save deletes).
+func _read_save(path: String) -> Dictionary:
+	return SaveSlot.read(path, _restorable)
+
+
+## True when d is a save _restore takes. Reads only.
+func _restorable(d: Dictionary) -> bool:
+	return SaveShape.document_ok(d) and sim.save_is_loadable(d.get("sim", {}))
+
+
+## Applies a save's data (sim, brain, client, people); false when a section has the wrong shape or
+## the sim rejects it. Both are decided before anything changes (SaveShape, CitySim.from_dict), so
+## a false return leaves the city, the brain and the people exactly as they were.
 func _restore(d: Dictionary) -> bool:
-	if not sim.from_dict(d.get("sim", {})):
+	if not SaveShape.document_ok(d) or not sim.from_dict(d.get("sim", {})):
 		return false
 	brain.from_dict(d.get("brain", {}))
 	client.from_dict(d.get("client", {}))
@@ -390,16 +408,19 @@ func _plays_for_real() -> bool:
 
 
 ## The saved city a normal launch continues, already applied to the sim, or {} for a new city (no
-## save, GRIDFALL_NEW_CITY=1, or a save the sim rejects).
+## save, GRIDFALL_NEW_CITY=1, or a save, and a backup, that this build refuses). A slot this build
+## refuses does not hide its backup: the player goes on from the previous save.
 func _resume_data() -> Dictionary:
 	if not _plays_for_real() or OS.get_environment("GRIDFALL_NEW_CITY") == "1":
 		return {}
-	var d := SaveSlot.read(SAVE_PATH)
-	if d.is_empty():
+	var d := _read_save(autosave_path)
+	if d.is_empty() and SaveSlot.read(autosave_path).is_empty():
 		return {}
-	if _restore(d):
+	if not d.is_empty() and _restore(d):
 		return d
-	# from_dict can reject a save after applying part of it.
+	# Nothing in the slot restored: the slot and its backup are saves this build refuses, or a
+	# later section aborted the load half way. Either way start a new city, so the sim, brain and
+	# people agree.
 	push_warning("GridFall: the saved city did not load; starting a new one")
 	sim.new_city(randi() % 100000)
 	brain.setup(sim, client)
@@ -415,6 +436,7 @@ func _continue(d: Dictionary) -> void:
 		fp.set_time_scale(fp.time_scale)
 	else:
 		_fp_saved = fd if typeof(fd) == TYPE_DICTIONARY else {}
+		frame_hero(_fp_saved)
 		sim.set_speed(1)
 		hud.set_speed_display(1)
 	BootClock.mark("continue_restore")
@@ -433,6 +455,8 @@ func new_game() -> void:
 	view.setup(sim, active_camera())
 	hud.setup(sim, brain, client)
 	hud.setup_people(residents, minds)
+	# A new city has no hero yet: the Planner shows its core, not the old hero's spot.
+	camera_rig.snap_to(GridFallCamera.WORLD_CENTER, GridFallCamera.DEFAULT_ZOOM)
 	if fp != null:
 		fp.from_dict({})
 	_fp_saved = {}
@@ -461,6 +485,38 @@ func focus(p: Vector3, dist: float, reason: String = "") -> void:
 		fp.bus.ping.emit(p, reason)
 		return
 	camera_rig.focus_world_point(p, dist, GridFallCamera.keeps_zoom(reason))
+
+
+## Planner view: opens the orbit camera over the hero, the city the player lives in, instead of
+## wherever the rig was left (the founding core at boot). fp_section is an FpMode.to_dict()
+## section: the hero's position when leaving first person, as saved on boot into the Planner and
+## on Load there. The rig snaps there at GridFallCamera.HERO_ZOOM, inside the pan limits, and the
+## view marks the spot. Called once per arrival, so panning, zooming and focus() afterwards are the
+## player's own. A section without a position (a fresh city) leaves the camera where it is and
+## hides the marker of an earlier visit: it would point at a spot the hero is no longer at.
+func frame_hero(fp_section: Dictionary) -> void:
+	var pos: Variant = saved_hero_position(fp_section)
+	if pos == null:
+		view.hide_hero_marker()
+		return
+	camera_rig.snap_to(pos, GridFallCamera.HERO_ZOOM)
+	view.show_hero_marker(pos)
+
+
+## The hero's feet position in an FpMode.to_dict() section ({"player": {"pos": [x, y, z]}}), or
+## null when the section has none, or one that is not a finite point inside the world.
+static func saved_hero_position(fp_section: Dictionary) -> Variant:
+	var player: Variant = fp_section.get("player")
+	if typeof(player) != TYPE_DICTIONARY:
+		return null
+	var arr: Variant = (player as Dictionary).get("pos")
+	if typeof(arr) != TYPE_ARRAY or (arr as Array).size() < 3:
+		return null
+	for v: Variant in arr:
+		if typeof(v) not in [TYPE_INT, TYPE_FLOAT] or not is_finite(float(v)):
+			return null
+	var p := Vector3(float(arr[0]), float(arr[1]), float(arr[2]))
+	return p if D.in_bounds(roundi(p.x), roundi(p.z)) else null
 
 
 ## Split-build pack status: one start notice, one completion notice (per
@@ -570,6 +626,7 @@ func exit_fp() -> void:
 	get_tree().paused = false
 	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
 	view_mode = "orbit"
+	frame_hero(_fp_saved)
 	Analytics.track("exit_fp", {"day": sim.day})
 	hud.toast("Planner view. Press Tab to walk the streets again.")
 

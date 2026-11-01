@@ -1,5 +1,5 @@
 class_name CityBrain
-extends Node
+extends "res://scripts/ai/brain_calls.gd"
 ## Puts GMI model inference on every layer of the city. Each in-game day it batches:
 ##   - 5 AI mayors (different models) that read their district map and issue build/zone/tax actions
 ##   - Citizen Voices: sampled residents describe their lives; complaints feed back to mayors
@@ -18,7 +18,6 @@ signal council_ruled(ruling: Dictionary)
 signal chaos_decided(decision: Dictionary)
 signal operator_decided(decision: Dictionary)
 signal inspector_answered(report: Dictionary)
-signal busy_changed(pending: int)
 
 const D := preload("res://scripts/sim/sim_defs.gd")
 const MayorTurns := preload("res://scripts/ai/mayor_turns.gd")
@@ -27,7 +26,6 @@ const RoadPlans := preload("res://scripts/ai/road_plans.gd")
 const MAX_WAIT_MS := 75000
 
 var sim: CitySim
-var client: GmiClient
 var wait_for_ai: bool = true
 var mayor_state: Array[Dictionary] = []
 var proposals: Dictionary = {}
@@ -43,8 +41,6 @@ var day_feed: Array[String] = []
 var complaints: Array[Dictionary] = []
 var minds: ResidentMinds = null
 
-var _mayor_in_flight: Array[bool] = [false, false, false, false, false]
-var _support_in_flight: Dictionary = {}
 var _wait_started_ms: int = 0
 ## Street mode sets this: the mayors take the day's turns one by one through the day (turns), so
 ## a player on foot sees decisions land every few minutes. Off (orbit, tests): all at dawn.
@@ -57,6 +53,7 @@ var _queue_label: String = ""
 
 
 func setup(p_sim: CitySim, p_client: GmiClient) -> void:
+	_forget_calls()
 	sim = p_sim
 	client = p_client
 	mayor_state.clear()
@@ -89,22 +86,6 @@ func setup(p_sim: CitySim, p_client: GmiClient) -> void:
 		if category in ["council", "deal", "player", "response", "disaster"]:
 			day_feed.append(line)
 	)
-
-
-func pending_calls() -> int:
-	var n := 0
-	for b in _mayor_in_flight:
-		if b:
-			n += 1
-	return n + _support_in_flight.size()
-
-
-func mayors_pending() -> int:
-	var n := 0
-	for b in _mayor_in_flight:
-		if b:
-			n += 1
-	return n
 
 
 func _day_gate() -> bool:
@@ -255,9 +236,12 @@ func _on_day_ended(day: int) -> void:
 func _run_support(role: String, day: int, fn: Callable) -> void:
 	if _support_in_flight.has(role):
 		return
+	var gen := _generation
 	_support_in_flight[role] = true
 	busy_changed.emit(pending_calls())
 	await fn.call(day)
+	if gen != _generation:
+		return
 	_support_in_flight.erase(role)
 	busy_changed.emit(pending_calls())
 
@@ -350,7 +334,14 @@ func _run_mayor(mi: int, day: int) -> void:
 	mayor_thinking.emit(mi)
 	busy_changed.emit(pending_calls())
 	var m: Dictionary = D.MAYORS[mi]
-	var res: Dictionary = await client.chat_json("mayor", str(m["id"]), str(m["model"]), _mayor_system_prompt(mi), _mayor_user_prompt(mi, day), day, 1500, 70.0, _heuristic_mayor.bind(mi))
+	var res: Dictionary = await _ask("mayor", str(m["id"]), str(m["model"]), _mayor_system_prompt(mi), _mayor_user_prompt(mi, day), day, 1500, 70.0, _heuristic_mayor.bind(mi))
+	if not res.is_empty():
+		_land_mayor(mi, day, res)
+
+
+## A mayor's answer lands: its actions, the ordinance it proposed, its votes, thoughts and log.
+func _land_mayor(mi: int, day: int, res: Dictionary) -> void:
+	var m: Dictionary = D.MAYORS[mi]
 	var data: Dictionary = res["data"]
 	var results: Array[String] = []
 	var applied: Array[Dictionary] = []
@@ -603,7 +594,9 @@ func _run_citizens(day: int) -> void:
 	var agent: Dictionary = D.SUPPORT_AGENTS["citizens"]
 	var sys := "You voice the ordinary residents of GridFall, a SimCity-style city run by five AI mayors. For each resident given, write what they are thinking today in first person, grounded ONLY in their actual conditions (power, water, pollution, crime, commute traffic, taxes, nearby services). Be specific, human, sometimes funny. Reply ONLY JSON: {\"voices\":[{\"id\":\"...\",\"thought\":\"<=110 chars\",\"mood\":\"happy|ok|upset|angry\",\"complaint\":\"power|water|pollution|crime|traffic|taxes|jobs|fire|health|none\"}]}"
 	var user := "Day %d. City happiness %.2f, unemployment %.2f, demand %s.\nResidents: %s" % [day, float(sim.stats.get("happiness", 0)), float(sim.stats.get("unemployment", 0)), JSON.stringify(sim.city_summary()["demand"]), JSON.stringify(sample)]
-	var res: Dictionary = await client.chat_json("citizens", "voices", str(agent["model"]), sys, user, day, 1200, 40.0, _heuristic_citizens.bind(sample))
+	var res: Dictionary = await _ask("citizens", "voices", str(agent["model"]), sys, user, day, 1200, 40.0, _heuristic_citizens.bind(sample))
+	if res.is_empty():
+		return
 	var voices_in: Array = res["data"].get("voices", []) if typeof(res["data"].get("voices")) == TYPE_ARRAY else []
 	var by_id := {}
 	for s: Variant in sample:
@@ -705,7 +698,9 @@ func _run_news(day: int) -> void:
 	var mayors_line := ", ".join(PackedStringArray(D.MAYORS.map(func(mm: Dictionary) -> String: return "%s (%s)" % [mm["display"], mm["district"]])))
 	var sys := "You are the editor of the GridFall Gazette, the newspaper of a SimCity-style city governed by five elected mayors: " + mayors_line + ". Write today's front page from the REAL events given. Be punchy, a little satirical, factual. Reply ONLY JSON: {\"headline\":\"<=90 chars\",\"stories\":[{\"title\":\"<=60 chars\",\"body\":\"<=200 chars\"}],\"editorial\":\"<=160 chars\"} with 2-3 stories."
 	var user := "Day %d front page.\nRecent events and statements:\n%s\nCity trend (last days): %s\nCity now: %s" % [day, "\n".join(PackedStringArray(feed)) if not feed.is_empty() else "(quiet day)", JSON.stringify(hist), JSON.stringify(sim.city_summary())]
-	var res: Dictionary = await client.chat_json("news", "gazette", str(agent["model"]), sys, user, day, 1000, 40.0, _heuristic_news.bind(feed))
+	var res: Dictionary = await _ask("news", "gazette", str(agent["model"]), sys, user, day, 1000, 40.0, _heuristic_news.bind(feed))
+	if res.is_empty():
+		return
 	var paper: Dictionary = res["data"].duplicate(true)
 	BrainText.debrand_paper(paper)
 	paper["day"] = day
@@ -739,7 +734,9 @@ func _run_chaos(day: int) -> void:
 	var area := sim.owned_rect()
 	sys += " X and Y must lie inside the claimed city: x %d..%d, y %d..%d." % [area.position.x, area.end.x - 1, area.position.y, area.end.y - 1]
 	var user := "Day %d. Days since your last disaster: %d. City: %s\nDistricts: %s" % [day, day - chaos_last_day, JSON.stringify(sim.city_summary()), JSON.stringify(districts)]
-	var res: Dictionary = await client.chat_json("chaos", "director", str(agent["model"]), sys, user, day, 1200, 45.0, _heuristic_chaos)
+	var res: Dictionary = await _ask("chaos", "director", str(agent["model"]), sys, user, day, 1200, 45.0, _heuristic_chaos)
+	if res.is_empty():
+		return
 	var data: Dictionary = res["data"]
 	var decision := {"day": day, "trigger": bool(data.get("trigger", false)), "type": str(data.get("type", "")), "reason": str(data.get("reason", "")).left(160), "narration": str(data.get("narration", "")).left(160), "source": res["source"]}
 	if decision["trigger"] and D.DISASTERS.has(decision["type"]) and int(sim.stats.get("population", 0)) > 80:
@@ -780,7 +777,9 @@ func _run_operator(day: int) -> void:
 	var dl := ", ".join(PackedStringArray(range(D.MAYORS.size()).map(func(k: int) -> String: return "%d %s %s" % [k, D.MAYORS[k]["display"], where[k]])))
 	var sys := "You are the GridFall Grid Operator, an AI that runs the shared power and water network of a SimCity-style city with five AI-run districts (" + dl + "). When supply is short, load is shed from the LAST district in your priority list first. Prioritize hospitals, fire coverage, dense housing and fairness. Reply ONLY JSON: {\"priority\":[5 distinct district indices],\"note\":\"<=160 chars explaining the order\",\"advice\":\"<=140 chars capacity advice to the mayors\"}"
 	var user := "Day %d. Power %s. Water %s. Sewage %s. Current priority %s. Districts: %s" % [day, sim.city_summary()["power"], sim.city_summary()["water"], sim.city_summary()["sewage"], JSON.stringify(sim.grid_priority), JSON.stringify(per)]
-	var res: Dictionary = await client.chat_json("operator", "grid", str(agent["model"]), sys, user, day, 800, 35.0, _heuristic_operator)
+	var res: Dictionary = await _ask("operator", "grid", str(agent["model"]), sys, user, day, 800, 35.0, _heuristic_operator)
+	if res.is_empty():
+		return
 	var data: Dictionary = res["data"]
 	var pr: Array = []
 	if typeof(data.get("priority")) == TYPE_ARRAY:
@@ -816,7 +815,9 @@ func _run_council(day: int) -> void:
 		active.append({"key": key, "label": D.ORDINANCES[key]["label"], "since_day": sim.ordinances[key]})
 	var sys := "You are the Speaker of the GridFall City Council. Five elected mayors vote on ordinances; you rule on each proposal. Majority (3+ yes of 5) normally passes; with only 2 yes you may pass it only if city data strongly supports it. You may also repeal one active ordinance that no longer pays off. Reply ONLY JSON: {\"enact\":[keys],\"repeal\":[keys],\"statement\":\"<=220 chars ruling explained to citizens\"}"
 	var user := "Day %d. Proposals: %s\nActive: %s\nCity: %s" % [day, JSON.stringify(plist), JSON.stringify(active), JSON.stringify(sim.city_summary())]
-	var res: Dictionary = await client.chat_json("council", "speaker", str(agent["model"]), sys, user, day, 900, 40.0, _heuristic_council)
+	var res: Dictionary = await _ask("council", "speaker", str(agent["model"]), sys, user, day, 900, 40.0, _heuristic_council)
+	if res.is_empty():
+		return
 	var data: Dictionary = res["data"]
 	var enacted: Array = []
 	var repealed: Array = []
@@ -908,7 +909,9 @@ func inspect_tile(x: int, y: int) -> void:
 			nearby_events.append(ev["label"])
 	var user := "Day %d. Tile data: %s\nNearby events: %s\nDistrict mayor's latest post: %s" % [sim.day, JSON.stringify(rep), JSON.stringify(nearby_events), D.debrand(str(mayor_state[int(rep["district_index"])].get("post", "")))]
 	inspector_answered.emit({"x": x, "y": y, "pending": true, "report": rep})
-	var res: Dictionary = await client.chat_json("inspector", "street", str(agent["model"]), sys, user, sim.day, 700, 30.0, _heuristic_inspect.bind(rep))
+	var res: Dictionary = await _ask("inspector", "street", str(agent["model"]), sys, user, sim.day, 700, 30.0, _heuristic_inspect.bind(rep))
+	if res.is_empty():
+		return
 	var out: Dictionary = res["data"].duplicate()
 	out["x"] = x
 	out["y"] = y
@@ -949,6 +952,7 @@ func to_dict() -> Dictionary:
 
 
 func from_dict(d: Dictionary) -> void:
+	_forget_calls()
 	_queue.clear()
 	mayor_state.clear()
 	# Everything below is copied out of d: the brain owns its state, so loading the same parsed

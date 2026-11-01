@@ -132,6 +132,8 @@ func setup(p_sim: CitySim, p_brain: CityBrain, p_client: GmiClient) -> void:
 		client.call_logged.connect(func(_r: Dictionary) -> void: _log_dirty = true)
 	_mayor_entries = [{}, {}, {}, {}, {}]
 	_mayor_thinking = [false, false, false, false, false]
+	# The tile the player asked about was in the city that is being replaced.
+	_last_inspect = {}
 	_live_btn.set_pressed_no_signal(client.live_enabled)
 	_rebuild_ordinances()
 	_render_all()

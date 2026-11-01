@@ -7,6 +7,7 @@ extends RefCounted
 
 const D := preload("res://scripts/sim/sim_defs.gd")
 const K := preload("res://tools/tests/fp_kit.gd")
+const SAVE_SHAPE := preload("res://scripts/sim/save_shape.gd")
 
 
 ## A CitySim(seed) + GmiClient(offline) + Residents + ResidentMinds + CityBrain under root, wired
@@ -38,14 +39,15 @@ static func document(w: Dictionary) -> Dictionary:
 	}
 
 
-## Applies d to w (a world from make_world). Returns true when the sim accepted the save.
+## Applies d to w (a world from make_world), as Main._restore does. Returns true when the save has
+## the shape its loaders read (SaveShape) and the sim accepted it.
 static func apply(w: Dictionary, d: Dictionary) -> bool:
 	var sim: CitySim = w["sim"]
 	var brain: CityBrain = w["brain"]
 	var client: GmiClient = w["client"]
 	var people: Residents = w["people"]
 	var minds: ResidentMinds = w["minds"]
-	if not sim.from_dict(d.get("sim", {})):
+	if not SAVE_SHAPE.document_ok(d) or not sim.from_dict(d.get("sim", {})):
 		return false
 	brain.from_dict(d.get("brain", {}))
 	client.from_dict(d.get("client", {}))

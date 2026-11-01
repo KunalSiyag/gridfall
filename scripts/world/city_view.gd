@@ -156,6 +156,9 @@ var _overlay_mm: MultiMeshInstance3D
 var _power_icons: MultiMeshInstance3D
 var _water_icons: MultiMeshInstance3D
 var _cursor: MeshInstance3D
+## The Planner view's "you are here": a ring on the hero's tile and a "You" label (null until
+## first shown). Lives under the labels root, so it is drawn in orbit only.
+var hero_marker: Node3D
 var _cars: Array[Dictionary] = []
 var _peds: Array[Dictionary] = []
 var _bubbles: Array[Dictionary] = []
@@ -292,6 +295,7 @@ func setup(p_sim: CitySim, p_camera: Camera3D) -> void:
 	_queue.clear()
 	_flicker_lights.clear()
 	_territory_root = null
+	hero_marker = null
 	directory = CityDirectory.new()
 	directory.setup(sim)
 	_street = STREET.new(self)
@@ -1767,6 +1771,46 @@ func _build_cursor() -> void:
 	_cursor.material_override = _mat("cursor", Color(1, 1, 1), 2.0, 0.85)
 	_cursor.visible = false
 	add_child(_cursor)
+
+
+## Planner view: marks where the hero stands at world_pos (the tile's x and z). Built on first use
+## and moved afterwards; setup() drops it with the rest of the view.
+func show_hero_marker(world_pos: Vector3) -> void:
+	if _labels_root == null:
+		return
+	if hero_marker == null or not is_instance_valid(hero_marker):
+		hero_marker = _build_hero_marker()
+		_labels_root.add_child(hero_marker)
+	hero_marker.position = Vector3(world_pos.x, 0.0, world_pos.z)
+	hero_marker.visible = true
+
+
+## Planner view: no "you are here" (the hero's spot is unknown, or there is none yet).
+func hide_hero_marker() -> void:
+	if hero_marker != null and is_instance_valid(hero_marker):
+		hero_marker.visible = false
+
+
+func _build_hero_marker() -> Node3D:
+	var col := Color(0.35, 0.92, 1.0)
+	var root := Node3D.new()
+	root.name = "HeroMarker"
+	var ring := MeshInstance3D.new()
+	var t := TorusMesh.new()
+	t.inner_radius = 0.72
+	t.outer_radius = 0.9
+	t.ring_segments = 6
+	t.rings = 24
+	ring.mesh = t
+	ring.scale = Vector3(1.0, 0.25, 1.0)
+	ring.position.y = 0.08
+	ring.material_override = _mat("hero_ring", col, 2.5)
+	root.add_child(ring)
+	var lbl := _label("You", 72, col.lightened(0.35))
+	lbl.pixel_size = 0.012
+	lbl.position = Vector3(0.0, 1.9, 0.0)
+	root.add_child(lbl)
+	return root
 
 
 func _build_avatars() -> void:
