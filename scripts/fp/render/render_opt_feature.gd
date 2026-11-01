@@ -1,9 +1,11 @@
 extends FpFeature
 ## Render performance (slice G2): applies the quality preset (FSR2 scaling, shadow atlas and filter,
-## SSAO and SSIL quality, mesh LOD threshold, camera far plane) and restores every knob on teardown;
-## on foot it ranges every tile holder's parts (hlod.gd), draws far buildings as merged chunk
-## impostors and culls with per-chunk occluders (occluders.gd). Tile post-passes queue on tile_built
-## and run under a per-frame budget (FRAME_BUDGET_USEC), followed by at most one chunk rebuild.
+## SSAO and SSIL quality, mesh LOD threshold, camera far plane, and the Environment's SSAO switch,
+## off on Compatibility while the view renders below native size) and restores every knob on
+## teardown; on foot it ranges every tile holder's parts (hlod.gd), draws far buildings as merged
+## chunk impostors and culls with per-chunk occluders (occluders.gd). Tile post-passes queue on
+## tile_built and run under a per-frame budget (FRAME_BUDGET_USEC), followed by at most one chunk
+## rebuild.
 ## Aerial coverage: once the camera is AERIAL_MIN above the hero (the city overview lifts it, and so
 ## does a photo fly), roads, open construction sites, far trees, the fog end and the far plane widen
 ## so the city stays whole from the sky at every zoom. Every value is re-derived on exit, so a
@@ -100,6 +102,9 @@ var clock: Callable = Time.get_ticks_usec
 var _vp: Viewport
 var _vp_snap: Dictionary = {}
 var _rs_snap: Dictionary = {}
+## The Environment's SSAO switch as it was at setup (the orbit value): what apply_preset may leave
+## on, and what teardown puts back.
+var _env_ssao: bool = false
 var _cam_far: float = -1.0
 var _dirty: Dictionary = {}
 var _job: Array = []
@@ -179,16 +184,21 @@ func teardown() -> void:
 
 
 ## Applies preset p (unknown names give Medium) to the viewport, the RenderingServer, the camera and
-## the visibility ranges; cached parts are re-ranged over the next frames.
-func apply_preset(p: String) -> void:
+## the visibility ranges; cached parts are re-ranged over the next frames. SSAO goes with the 3D
+## scale: on Compatibility it is off while the view renders below native size (Q.ssao_ok), and
+## never on over the orbit's own off. method and web override the running renderer and the web
+## tier for the viewport knobs and SSAO only (tests).
+func apply_preset(p: String, method: String = "", web: bool = false) -> void:
 	preset = Q.normalize(p)
 	var k := Q.knobs(preset)
 	if _vp != null:
-		var vk := Q.viewport_knobs(preset)
+		var vk := Q.viewport_knobs(preset, method, web)
 		_vp.scaling_3d_mode = int(vk["scaling_mode"]) as Viewport.Scaling3DMode
 		_vp.scaling_3d_scale = float(vk["scale"])
 		_vp.msaa_3d = int(vk["msaa"]) as Viewport.MSAA
 		_vp.mesh_lod_threshold = float(k["lod"])
+		if ctx.env != null:
+			ctx.env.ssao_enabled = _env_ssao and Q.ssao_ok(preset, method, web)
 	_rs("directional_shadow_atlas_set_size", [int(k["atlas"]), bool(k["atlas_16"])])
 	_rs("directional_soft_shadow_filter_set_quality", [int(k["soft"])])
 	_rs(
@@ -670,6 +680,8 @@ func _snapshot() -> void:
 	if _vp != null:
 		for key: String in VIEWPORT_KEYS:
 			_vp_snap[key] = _vp.get(key)
+	if ctx.env != null:
+		_env_ssao = ctx.env.ssao_enabled
 	for key: String in RS_SETTINGS:
 		_rs_snap[key] = ProjectSettings.get_setting(RS_SETTINGS[key], RS_DEFAULTS[key])
 
@@ -678,6 +690,8 @@ func _restore() -> void:
 	if _vp != null:
 		for key: String in _vp_snap:
 			_vp.set(key, _vp_snap[key])
+	if ctx.env != null:
+		ctx.env.ssao_enabled = _env_ssao
 	var s := _rs_snap
 	_rs("directional_shadow_atlas_set_size", [int(s["atlas"]), bool(s["atlas_16"])])
 	_rs("directional_soft_shadow_filter_set_quality", [int(s["soft"])])

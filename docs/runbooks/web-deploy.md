@@ -209,6 +209,23 @@ the flag on a split release and expect a complete city.
 
 ## Known limitations (web / gl_compatibility)
 
+- **No ambient occlusion in the web build's first-person view (`Quality.ssao_ok`).** On
+  Compatibility (Godot 4.7.2), SSAO drew rows of dark horizontal lines on the plaza ground seen
+  from the street whenever the 3D view rendered below native size. Only that street view was
+  measured: in the day city overview, SSAO on and off measured the same on a lawn and a road, so
+  the overview loses its ambient occlusion with no measured gain. Measured on the web build
+  on a real GPU (ANGLE, AMD) on 2026-11-01, as the rms of a high-passed row profile of the plaza
+  ground in 8-bit grey levels, in the street photo's left and right plaza boxes (left / right):
+  12.2 / 14.2, 10.2 / 10.4 and 13.1 / 12.8 at Low / Medium / High in the web tier (3D scale 0.6,
+  rows about 5 px apart), 11.1 / 14.2 on web Low with `web_quality` off (scale 0.77), against 0.7
+  to 1.6 (left) and 1.3 to 3.0 (right) with SSAO off or at native size. `render_opt`, which owns
+  the 3D scale, switches SSAO off wherever Compatibility renders scaled, so the web build has no
+  ambient occlusion (less contact shading in creases and under objects) at any preset, and desktop
+  Compatibility Low has none either (that one was not measured on a desktop run; it rests on the
+  web result at the same 0.77 scale). `web_quality=off` does not bring it back on Low; Medium and
+  High with the flag off render at native size and keep it. With the `render_opt` flag off nothing
+  is scaled and SSAO stays as the orbit view has it; the `streetscape` flag does not matter. What
+  inside the engine produces the rows is not established.
 - **Slow motion below 30 fps (flag `web_real_time_pace`, off by default).** The web build caps
   the engine to 2 physics catch-up steps per frame, so a frame over 33 ms advances the world by
   only 33.3 ms: about 80% speed at a grown city's 42 ms frames, 50% at 15 fps. Turning the flag

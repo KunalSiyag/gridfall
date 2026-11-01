@@ -210,6 +210,30 @@ static func viewport_knobs(preset: String, method: String = "", web: bool = fals
 	return out
 
 
+## Whether the Environment's SSAO may stay on under a preset. Observed on Compatibility (Godot
+## 4.7.2): when the 3D view renders below native size, the plaza ground seen from the street shows
+## rows of dark horizontal lines fixed to the screen, continuous on High and dashed on Low. Only
+## that street view was measured: in the day city overview, SSAO on and off measured the same on a
+## lawn and a road (faint rows showed on a dark lawn in one dawn-rain overview shot, with no shot
+## with SSAO off to compare), so the overview loses its ambient occlusion with no measured gain.
+## Measured on the web build on a real GPU (ANGLE, AMD), 2026-11-01, as the rms of a high-passed
+## row profile of the plaza ground in 8-bit grey levels, in the street photo's left and right plaza
+## boxes: 12.2 / 10.2 / 13.1 (left) and 14.2 / 10.4 / 12.8 (right) at Low / Medium / High at the
+## web tier's 0.6 scale (rows about 5 px apart); 11.1 and 14.2 at Compatibility Low's 0.77 (about
+## 4.3 px apart); against 0.7 to 1.6 (left) and 1.3 to 3.0 (right) with SSAO off (zeroing
+## ssao_intensity does the same) or at native size (Medium and High, flag off). Why SSAO draws the
+## rows is not established; the rule rests on those measurements. So on Compatibility SSAO stays
+## off whenever the preset renders the 3D view below native size. render_opt applies it with the
+## scale, so the two stand or fall together. The price: no ambient occlusion in the web build's
+## first-person view at any preset, and none on desktop Compatibility Low (not measured on a
+## desktop run; the 0.77 result is from the web build with the flag off); Forward+ and native-size
+## Compatibility keep it. method and web override the running renderer and the web tier (tests).
+static func ssao_ok(preset: String, method: String = "", web: bool = false) -> bool:
+	if not is_compat(method):
+		return true
+	return float(viewport_knobs(preset, method, web)["scale"]) >= 1.0
+
+
 ## Multiplier on every WS.VIS_* range: 0.7 / 1.0 / 1.3 (0.55 in the web tier).
 static func vis_mult(preset: String, web: bool = false) -> float:
 	return float(knobs(preset, web)["vis"])

@@ -18,7 +18,7 @@
 #
 # quick:  parse_all, the unit tests (sim, buildings, residents, expansion, construction, saves,
 #          migration, determinism, image client, web), every tools/tests/fp_*_test.gd, and the sky
-#          look test once more on Compatibility
+#          look and SSAO tests once more on Compatibility
 # full:   quick + the two-seed soak (sim_soak_test) + orbit smoke + FP smoke (headless, heavy)
 # render: FP photo tour + fp_bench (windowed, heavy); perf numbers are report-only
 #
@@ -219,6 +219,8 @@ if [ "$MODE" = "quick" ] || [ "$MODE" = "full" ]; then
 	# SkyDirector.setup() takes the look of the renderer that is running, which only a run on that
 	# renderer can tell: the sky look test once more on Compatibility (the web build's renderer).
 	run_step fp_skylook_test_gl "FP_SKYLOOK_TEST: PASS" 300 0 -- -- --headless --path . --rendering-method gl_compatibility -s tools/tests/fp_skylook_test.gd
+	# The SSAO switch follows the 3D scale only on Compatibility (Forward+ keeps SSAO at every scale).
+	run_step fp_ssao_test_gl "FP_SSAO_TEST: PASS" 300 0 -- -- --headless --path . --rendering-method gl_compatibility -s tools/tests/fp_ssao_test.gd
 fi
 
 if [ "$MODE" = "full" ]; then

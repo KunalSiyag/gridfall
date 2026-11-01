@@ -2,7 +2,9 @@ extends SceneTree
 ## The web quality tier (flag web_quality): Quality.density_caps() is the single read point
 ## for the traffic, crowd and animal owners — empty off the web (no cap, current budgets), the
 ## WEB_DENSITY numbers on it, single values overridable from GRIDFALL_WEB_CAPS for profiling
-## bisects — and the WEB render-knob overlay rides knobs() so every feature picks it up.
+## bisects — and the WEB render-knob overlay rides knobs() so every feature picks it up. Also the
+## SSAO rule that goes with the tier's 3D scale: Compatibility's SSAO prints rows of dark horizontal
+## lines below native size, so Quality.ssao_ok says off there (render_opt applies it).
 
 const Q := preload("res://scripts/fp/render/quality.gd")
 
@@ -74,9 +76,27 @@ func _init() -> void:
 		),
 		"web tier reaches the helper readers (far, vis, lights)"
 	)
+	_check_ssao()
 	if _fail == 0:
 		print("FP_WEBCAPS_TEST: PASS")
 		quit(0)
 	else:
 		print("FP_WEBCAPS_TEST: FAIL (", _fail, ")")
 		quit(1)
+
+
+## Q.ssao_ok: off on Compatibility whenever the preset renders scaled (the web tier at every preset,
+## desktop Compatibility Low), on at native size and on Forward+. render_opt applies it to the
+## Environment with the scale (fp_ssao_test).
+func _check_ssao() -> void:
+	var fwd := true
+	var web_off := true
+	for p: String in Q.NAMES:
+		fwd = fwd and Q.ssao_ok(p, "forward_plus") and Q.ssao_ok(p, "forward_plus", true)
+		web_off = web_off and not Q.ssao_ok(p, "gl_compatibility", true)
+	_check(fwd, "Forward+: SSAO stays on at every preset, web tier or not")
+	_check(web_off, "Compatibility web tier: SSAO off at every preset (3D scale 0.6)")
+	_check(
+		not Q.ssao_ok("low", "gl_compatibility") and Q.ssao_ok("medium", "gl_compatibility"),
+		"Compatibility desktop: Low (0.77) off, Medium (native, MSAA) on"
+	)
