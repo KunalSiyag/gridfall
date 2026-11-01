@@ -175,6 +175,10 @@ saved city`. After the measurements the probe drives the exit_fp/enter_fp round 
 orbit from the pause menu, then Tab back to the street) and exits 4 on any uncaught exception
 or `invalid bus index` line: this headed run is the checklist's only surface with real audio
 buses, where that crash class reproduces, so the headless smoke cannot substitute for it.
+`GF_FPS_NO_OCCLUSION=1` makes it exit 5 when the console shows any `occlusion` line: set it on a
+build with the web dead-work change (render_opt builds no occluders there, so the engine's
+`Occlusion culling is disabled at build-time` warning must be gone); older builds log it once per
+boot, so it is off by default.
 
 **Street trees are streamed** (docs/fp/slices/G1-streetscape.md, "On foot the chunks are
 streamed"): on the street `CityView/Trees` holds only the chunks around the camera, about 900
@@ -299,8 +303,18 @@ the flag on a split release and expect a complete city.
   the pause menu (Settings > Display) or the planner HUD's "Real-time pace" check button, web
   build only; the choice is saved in `user://feature_flags.json`. To default it on for everyone,
   change `default` in `data/feature_flags.json` after checking the GMI spend.
-- **`WARNING: Occlusion culling is disabled at build-time.`** Logged once per boot on the web
-  build: occlusion culling is compiled out of the Compatibility export. Cosmetic; no action.
+- **`WARNING: Occlusion culling is disabled at build-time.`** Occlusion culling is compiled out
+  of the web export, and the engine prints this once, the first time anything touches it:
+  creating an `ArrayOccluder3D`, or turning the viewport's `use_occlusion_culling` on (each alone
+  prints it in a bare 4.7.2 web export). Only render_opt does either in this project, and older web
+  builds logged it once per boot. render_opt now builds no occluders and leaves the flag alone on
+  the web, so a build with that change should not log it (checked in the bare export, not yet on
+  a live boot of the game; if it still shows, something else builds an occluder). Cosmetic either
+  way; no action. The skip follows the platform tag, not a capability (the engine cannot be asked),
+  so after an engine bump (`.godot-version`) count the occlusion backend in the web template:
+  `python3 -I -c "import zipfile,sys; print(zipfile.ZipFile(sys.argv[1]).read('godot.wasm').count(b'RaycastOcclusionCull'))" <template>/web_release.zip`
+  is 0 for 4.7.2 (the linux and windows release templates give 12). If it is no longer 0, drop the
+  `web` skip in `render_opt_feature.gd`.
 - **Fixed by round 3, verified live 2026-10-28 (`f762234`):** the `FSR2 3D scaling is only
   available when using the Forward+ renderer` warning and the `Too many instances using shader
   instance variables, max 4096` error are gone. A day-2, 35-site grown city that logged the

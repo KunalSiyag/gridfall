@@ -214,7 +214,7 @@ First-person quality presets (slice G2): the knobs each preset sets, and the sta
 
 extends `FpFeature`
 
-Render performance (slice G2): applies the quality preset (FSR2 scaling, shadow atlas and filter, SSAO and SSIL quality, mesh LOD threshold, camera far plane) and restores every knob on teardown; on foot it ranges every tile holder's parts (hlod.gd), draws far buildings as merged chunk impostors and culls with per-chunk occluders (occluders.gd). Tile post-passes queue on tile_built and run under a per-frame budget (FRAME_BUDGET_USEC), followed by at most one chunk rebuild. Aerial coverage: once the camera is AERIAL_MIN above the hero (the city overview lifts it, and so does a photo fly), roads, open construction sites, far trees, the fog end and the far plane widen so the city stays whole from the sky at every zoom. Every value is re-derived on exit, so a preset or weather change mid-air never leaves a stale value behind.
+Render performance (slice G2): applies the quality preset (FSR2 scaling, shadow atlas and filter, SSAO and SSIL quality, mesh LOD threshold, camera far plane) and restores every knob on teardown; on foot it ranges every tile holder's parts (hlod.gd), draws far buildings as merged chunk impostors and culls with per-chunk occluders (occluders.gd; not in the browser, see web). Tile post-passes queue on tile_built and run under a per-frame budget (FRAME_BUDGET_USEC), followed by at most one chunk rebuild. Aerial coverage: once the camera is AERIAL_MIN above the hero (the city overview lifts it, and so does a photo fly), roads, open construction sites, far trees, the fog end and the far plane widen so the city stays whole from the sky at every zoom. Every value is re-derived on exit, so a preset or weather change mid-air never leaves a stale value behind.
 
 ### Constants
 
@@ -236,6 +236,7 @@ Render performance (slice G2): applies the quality preset (FSR2 scaling, shadow 
 
 ### Properties
 
+- `web: bool`: The browser export: it compiles occlusion culling out, so nothing there reads an occluder. On the web no occluders are built and the viewport's occlusion flag stays as it was (tests set it to run that path on the desktop). The platform tag stands in for a capability the engine cannot be asked about: after an engine bump re-check the web template (docs/runbooks/web-deploy.md, the occlusion warning).
 - `preset: String`: The applied preset: "low", "medium" or "high".
 - `aerial: bool`: Aerial coverage on: the camera is over the city (the overview, a photo fly).
 - `rs_calls: Dictionary`: Last arguments of every RenderingServer setter this feature called (headless has no getters).
