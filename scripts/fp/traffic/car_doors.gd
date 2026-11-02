@@ -77,6 +77,8 @@ class Door:
 	## The body without the door (same surfaces, same order) and the door, hinge at its origin.
 	var body_mesh: ArrayMesh = null
 	var door_mesh: ArrayMesh = null
+	## The convex hull in plan (x, z about the hinge) of every vertex of door_mesh, made on demand.
+	var plan_hull := PackedVector2Array()
 	var door_tris: int = 0
 	var cut_tris: int = 0
 
@@ -242,6 +244,30 @@ static func points(d: Door) -> Dictionary:
 		"rear": xf * rear,
 		"open_rear": xf * open,
 	}
+
+
+## The door's outline in plan as it hangs swung by amount (0 shut .. 1 wide open): the convex hull
+## of every vertex of its mesh (the skin, the card behind it, the glass and its frame, not just
+## the line of its skin), as points (x, z) in the model's own space. What has to keep off the
+## panel keeps off this. Empty for a model with no door that opens.
+static func outline(d: Door, amount: float = 1.0) -> PackedVector2Array:
+	var out := PackedVector2Array()
+	if d == null or not d.ok or d.door_mesh == null:
+		return out
+	if d.plan_hull.is_empty():
+		var pts := PackedVector2Array()
+		for s in range(d.door_mesh.get_surface_count()):
+			for v: Vector3 in d.door_mesh.surface_get_arrays(s)[Mesh.ARRAY_VERTEX]:
+				pts.append(Vector2(v.x, v.z))
+		var hull := Geometry2D.convex_hull(pts)
+		if hull.size() > 1:
+			hull.remove_at(hull.size() - 1)  # the hull is closed: its last point is its first
+		d.plan_hull = hull
+	var turn := Basis(Vector3.UP, -OPEN_ANGLE * clampf(amount, 0.0, 1.0))
+	for p: Vector2 in d.plan_hull:
+		var q := d.body_xf * (d.hinge + turn * Vector3(p.x, 0.0, p.y))
+		out.append(Vector2(q.x, q.z))
+	return out
 
 
 static func _attach(node: Node3D, d: Door) -> Node3D:

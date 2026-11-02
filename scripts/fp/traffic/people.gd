@@ -416,11 +416,18 @@ func authored_speed(w: WK.Walker, clip: StringName) -> float:
 	return float((_speed[a.gender] as Dictionary).get(clip, 0.0)) * a.hip_m * scale_of(w)
 
 
-## World position of w's Head bone while a body draws it, else an estimate from its stature.
+## World position of w's Head bone while a body draws it (carried along with the feet when it is
+## held off screen), else an estimate from its stature.
 func head_of(w: WK.Walker, base: Vector3) -> Vector3:
 	var b: POOL.Body = w.body
 	if b != null and is_instance_valid(b.skel) and b.skel.is_inside_tree() and b.head >= 0:
-		return (b.skel.global_transform * b.skel.get_bone_global_pose(b.head)).origin
+		var head := (b.skel.global_transform * b.skel.get_bone_global_pose(b.head)).origin
+		# An off-screen body (tier 4) stays where it was last drawn, in the pose it had: its head
+		# goes where the feet do, not left behind (a press-out would find it still in the car it
+		# pressed the feet out of, and press them out again every step).
+		if w.tier == 4 and b.feet.is_finite():
+			head += base - b.feet
+		return head
 	if w.av < 0:
 		return base + Vector3(0, 1.59 * WS.M, 0)
 	var a: Avatar = avatars[w.av]
@@ -640,7 +647,8 @@ func _surfaces(w: WK.Walker) -> int:
 ## Places, shades and animates w's body for tier; returns the microseconds spent advancing.
 func _drive(b: POOL.Body, w: WK.Walker, tier: int, d: float) -> int:
 	var s := scale_of(w)
-	b.root.transform = WK.body_xf(w, s, _feet(w))
+	b.feet = _feet(w)
+	b.root.transform = WK.body_xf(w, s, b.feet)
 	_set_shadow(b, tier == 0 or (tier == 1 and d < T1_NEAR))
 	if b.box != null:
 		b.box.visible = w.extra == 1 and w.anim_clip in [&"walk_carry", &"carry_idle"]

@@ -84,6 +84,9 @@ var _sfx_db: float = 0.0
 var _talking: Dictionary = {}
 var _last_knock: float = -INF
 var _falls: Array = []  # [due on _now, feet, dB] of bodies hitting the ground
+## Carjacked drivers in the air (walker id -> true): their fall sounds as their body lands
+## (person_landed), not on a timer.
+var _flying: Dictionary = {}
 var _rng := RandomNumberGenerator.new()
 var _links: Array = []  # [Signal, Callable]
 var _muffle: Tween
@@ -135,6 +138,7 @@ func setup(p_ctx: FpContext) -> void:
 		_link(bus.prop_knocked, _on_prop_knocked)
 		_link(bus.car_door, _on_car_door)
 		_link(bus.person_hit, _on_person_hit)
+		_link(bus.person_landed, _on_person_landed)
 		_link(bus.hero_action, _on_hero_action)
 		_link(bus.hero_slammed, _on_hero_slammed)
 		_link(bus.weapon_hit, _on_weapon_hit)
@@ -170,6 +174,7 @@ func to_dict() -> Dictionary:
 func from_dict(_d: Dictionary) -> void:
 	emitters.full_scan()
 	_falls.clear()
+	_flying.clear()
 	_talking.clear()
 	_duck_target = 0.0
 	_player_seq = -1
@@ -189,6 +194,7 @@ func teardown() -> void:
 	if ctx != null and ctx.audio != null and is_instance_valid(ctx.audio):
 		ctx.audio.set_fp(false)
 	_falls.clear()
+	_flying.clear()
 	if emitters != null:
 		emitters.clear()
 	if ambience != null:
@@ -467,7 +473,9 @@ func _on_weapon_hit(at: Vector3, kind: String, what: String, _broke: bool) -> vo
 
 
 ## Someone hit in the street (person_hit): the blow's thump at their chest by its strength (a
-## shove's duller, a car's lower and louder); someone knocked down lands BANK.BODY_FALL_S later.
+## shove's duller, a car's lower and louder); someone knocked down lands BANK.BODY_FALL_S later,
+## or when their body does (person_landed) for a carjack's throw ("lands_in": hauled out and in the
+## air first).
 func _on_person_hit(at: Vector3, cause: String, info: Dictionary) -> void:
 	var car := cause == "car"
 	var trim := _impact_db(float(info.get("strength", 0.5)) / BANK.HIT_FULL)
@@ -477,7 +485,16 @@ func _on_person_hit(at: Vector3, cause: String, info: Dictionary) -> void:
 		pitch = _rng.randf_range(0.72, 0.8)
 	emitters.shot("hit", at + Vector3(0.0, 1.3 * WS.M, 0.0), "punch_hit", trim, pitch)
 	if bool(info.get("down", false)):
-		_queue_fall(BANK.BODY_FALL_S, at, BANK.BODY_FALL_DB)
+		if info.has("lands_in"):
+			_flying[int(info.get("walker", -1))] = true
+		else:
+			_queue_fall(BANK.BODY_FALL_S, at, BANK.BODY_FALL_DB)
+
+
+## A carjacked driver's body came down at at: the fall sounds there, then.
+func _on_person_landed(at: Vector3, id: int) -> void:
+	if _flying.erase(id):
+		emitters.shot("hit", at, "body_fall", BANK.BODY_FALL_DB, _rng.randf_range(0.92, 1.04))
 
 
 ## Someone the hero holds slammed into something (hero_slammed): a heavy thump at the contact;

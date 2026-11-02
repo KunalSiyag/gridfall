@@ -12,6 +12,10 @@ const K := preload("res://tools/tests/fp_kit.gd")
 const WS := preload("res://scripts/fp/world_scale.gd")
 const LG := preload("res://scripts/fp/traffic/lane_graph.gd")
 const VH := preload("res://scripts/fp/traffic/vehicles.gd")
+const WK := preload("res://scripts/fp/traffic/walkers.gd")
+const JT := preload("res://scripts/fp/traffic/jack_throw.gd")
+const JACK := preload("res://scripts/fp/traffic/carjack.gd")
+const RE := preload("res://scripts/fp/traffic/reactions.gd")
 const DOORS := preload("res://scripts/fp/traffic/car_doors.gd")
 const HIJACK := preload("res://scripts/fp/drive/hijack.gd")
 const DT := 1.0 / 60.0
@@ -28,9 +32,17 @@ var hijack: HIJACK
 var lane: LG.Lane = null
 ## A car model whose driver's door opens (the window the hero reaches).
 var model_id: int = -1
+## The driver last dragged out, the seconds since, when the blow's info says their slide is over,
+## and where their drawn feet were then.
+var driver: WK.Walker = null
+var driver_t: float = 0.0
+var driver_done: float = INF
+var rest_at: Vector3 = Vector3.INF
 ## [at, cause, info] of every person_hit, and every hero_action.
 var hits: Array = []
 var actions: Array = []
+## Frames run by _step: the bodies are drawn every fourth, as they are in play.
+var steps: int = 0
 
 
 func _init() -> void:
@@ -38,6 +50,7 @@ func _init() -> void:
 	if _setup() and _fixtures():
 		_check_target()
 		_check_hijack()
+		_check_aftermath()
 		_check_refusals()
 		_check_gone()
 	K.finish(self, "FP_HIJACK_TEST", fails)
@@ -57,7 +70,8 @@ func _setup() -> bool:
 	traffic.set("ambient_enabled", false)
 	drive.set_process(false)
 	hijack = drive.get("hijack")
-	for f: String in ["car_doors", "carjack", "action_hijack"]:
+	# The throw's look is hit_feel's: the checks do not depend on the user's flags.
+	for f: String in ["car_doors", "carjack", "action_hijack", "hit_feel", "carjack_throw"]:
 		FeatureFlags.set_override(f, true)
 	ctx.bus.person_hit.connect(_on_hit)
 	ctx.bus.hero_action.connect(func(a: String, _at: Vector3) -> void: actions.append(a))
@@ -153,6 +167,98 @@ func _check_hijack() -> void:
 		"it drives on at the car's speed (%.1f m/s, it was at %.1f)" % [v / WS.M, r["v"] / WS.M]
 	)
 	_check_coast(a, float(r["a_v"]))
+	_check_carried(b, float(r["v"]))
+
+
+## The driver dragged out of a car moving at v is carried on at its pace (the carjack_throw flag):
+## not left hanging where the car was. By the time the blow's info says their slide is over they are
+## down the road by the car's pace times the haul (if drawn at the wheel: all of it) and by at most
+## CARRY_MAX times the flight. The car left alongside shortens the fling to the room in the gap.
+func _check_carried(b: VH.Car, v: float) -> void:
+	if not FeatureFlags.enabled("carjack_throw"):
+		return
+	var at: Vector3 = hits[0][0]
+	var heading := Vector3(sin(b.yaw + b.vis_yaw), 0.0, cos(b.yaw + b.vis_yaw))
+	var fling := clampf(APART - JACK.OUT / WS.M - JACK.BODY_CLEAR, JACK.MIN_FLING, JACK.JACK_FLING)
+	var plan := JT.make(JACK.STRENGTH, fling, heading, 1.0)
+	var lands := float((hits[0][2] as Dictionary).get("lands_in", 0.0))
+	var want := v * (lands - plan.air) + minf(v, JT.CARRY_MAX) * plan.air / (1.0 - plan.skid)
+	var moved := (rest_at - at).dot(heading) if rest_at.is_finite() else NAN
+	print(
+		(
+			"  note: the driver is %.2f m down the road as the slide ends (%.2f expected)"
+			% [moved / WS.M, want / WS.M]
+		)
+	)
+	K.check(
+		fails,
+		moved >= 0.7 * want,
+		(
+			"the driver is carried on at the car's pace (%.1f m down the road, %.1f m expected)"
+			% [moved / WS.M, want / WS.M]
+		)
+	)
+
+
+## What follows the pull, with the player driving off and the car left coasting on: the driver is
+## hauled out of the seat in the moving car's own frame (not hanging behind it), comes down in the
+## gap between the cars (not in the car left's path), and is not pushed down the road by it: they
+## lie where they came down, get up and run off.
+func _check_aftermath() -> void:
+	var b := _side_by_side()
+	var a := _driven()
+	var left_id := a.id
+	var seat: Variant = (traffic.call("door_info", b.id) as Dictionary).get("seat")
+	var seat_z: float = (seat as Vector3).z if seat != null else 0.0
+	hits.clear()
+	drive.call("_input", K.action_event("vehicle_enter"))
+	var r := _run_hijack(b)
+	var mine: VH.Car = _vh().by_id.get(int(drive.get("car_id")))
+	var haul_lag := 0.0
+	var hauled := 0
+	var in_path := 0
+	var pushed := 0.0  # how far from where the slide ended to where they set off
+	var ran_off := false
+	for k in range(900):
+		drive.call("drive_step", 0.0, 0.0, 0.0, 0.0, DT)
+		_tick()
+		if k % 4 == 0:
+			traffic.call("sync_visuals", DT * 4.0)
+		if driver == null or mine == null:
+			continue
+		var feet := driver.pos + driver.vis_off
+		if driver.react == RE.DRAG_CLIP:
+			var q := _frame_of(mine).affine_inverse() * feet
+			haul_lag = maxf(haul_lag, absf(q.z - seat_z))
+			hauled += 1
+		var left: VH.Car = _vh().by_id.get(left_id)
+		if left != null and driver.react in [&"knockback", &"get_up"]:
+			var ql := _frame_of(left).affine_inverse() * feet
+			in_path += 1 if absf(ql.x) < left.half_w else 0
+		if driver.react == &"run" and rest_at.is_finite() and not ran_off:
+			pushed = Vector2(feet.x - rest_at.x, feet.z - rest_at.z).length()
+			ran_off = true
+	K.check(
+		fails,
+		hauled > 0 and haul_lag < 0.5 * WS.M,
+		(
+			"hauled out in the moving car's own frame, %.1f m/s (%.2f m off the seat, %d frames)"
+			% [float(r["v"]) / WS.M, haul_lag / WS.M, hauled]
+		)
+	)
+	K.check(
+		fails,
+		ran_off and in_path == 0,
+		"they come down in the gap, never in the car left's path (%d frames in it)" % in_path
+	)
+	K.check(
+		fails,
+		pushed < 1.5 * WS.M,
+		(
+			"and lie where they came down: not pushed along by it (%.1f m by the time they run)"
+			% (pushed / WS.M)
+		)
+	)
 
 
 ## The car left (at a_v as the hijack ended) slows by about 0.6 m/s^2 plus 0.12 per m/s, as a
@@ -241,8 +347,15 @@ func _side_by_side() -> VH.Car:
 	var model: RefCounted = drive.get("model")
 	model.set("vel", model.call("heading") * SPEED * WS.M)
 	drive.call("drive_step", 0.0, 0.0, 0.0, 0.0, DT)
-	traffic.call("sync_visuals", DT)
+	# The driver at b's wheel is drawn after a few syncs: pulled out of the seat, not from nowhere.
+	for _i in range(4):
+		traffic.call("sync_visuals", DT)
 	return b
+
+
+## Car c's frame: its place and facing, the drawn ones.
+func _frame_of(c: VH.Car) -> Transform3D:
+	return Transform3D(Basis(Vector3.UP, c.yaw + c.vis_yaw), c.pos + c.vis_off)
 
 
 func _driven() -> VH.Car:
@@ -308,13 +421,23 @@ func _outside(a_id: int, b: VH.Car) -> float:
 
 func _on_hit(at: Vector3, cause: String, info: Dictionary) -> void:
 	hits.append([at, cause, info])
+	driver = traffic.call("_walker_by_id", int(info.get("walker", -1)))
+	driver_t = 0.0
+	driver_done = float(info.get("lands_in", INF)) + JT.SKID_S
+	rest_at = Vector3.INF
 
 
 func _step() -> void:
 	drive.call("_hijack_step", DT)
 	ctx.player.update_view(DT)
 	_tick()
+	steps += 1
+	if steps % 4 == 0:
+		traffic.call("sync_visuals", DT * 4.0)
 
 
 func _tick() -> void:
 	traffic.call("step", DT)
+	driver_t += DT
+	if driver != null and driver_t >= driver_done and not rest_at.is_finite():
+		rest_at = driver.pos + driver.vis_off
