@@ -410,6 +410,39 @@ So the order is verify-then-pin, never pin-then-verify:
 4. The player's keyed check remains a separate manual step. Record the URL, the instance Task ID,
    the image digest and the checklist numbers in the deployment record below.
 
+### Console change observed 2026-11-03: a second instance, not a replacement
+
+The paragraph above records what the console did on 2026-10-27. On 2026-11-03 it behaved differently, and
+the runbook's step order is now simpler and safer:
+
+- **Editing the template no longer replaces a running instance.** Changing the existing template's Image URL
+  to `docker.io/kunalsiyag1/gridfall-web@sha256:<digest>` and saving left the running instance untouched (it
+  keeps the image it was created with).
+- **`+ Instance` on that template launches an additional Container instance** from the template's current image
+  (Container tier, $0.0475/hr, 2 core / 4 GiB, region IOWA IDC-1), with a new public URL and the old instance
+  still serving. Verify the new URL, then terminate the old instance only when satisfied. Rollback is
+  re-pinning the previous digest and launching again.
+- **Do not use the Register Template form for a web host any more.** A new template now only offers
+  "Sandbox" specs (Small $0.0911/hr): an SDK-driven sandbox whose URL answers `401 unauthorized access` without a
+  GMI access token, so it cannot serve the game. The Compute > Containers product is a different service (Elastic
+  IP, no HTTPS gateway) and was not used.
+
+### Verified deployment, 2026-11-03 (second instance)
+
+- **URL:** https://ct-b22afc4d-cbdb-45e4-b3da-e209d09593fa-web.caas-us1.gmicloud.ai, instance `gridfall-83fe2e8`, image
+  `docker.io/kunalsiyag1/gridfall-web@sha256:ec1443e645ea15df6c2e71570b4b220676a956a3327eb699ff166659acd2806f`
+  (tag `:83fe2e8`, release `a5dcd6fb920dfffb`, threaded build, pack 123,035,484 B). The previous instance
+  `gridfall-web-0a6855f-d` (image `sha256:ca8c3c5cde4d8f9aca1a220f794bef060aeb2992988774ef21804dd17c138ce3`) was left running for
+  comparison.
+- `/healthz` 200; COOP `same-origin` and COEP `require-corp`; `.pck` Brotli 87,776,017 B and `.wasm` Brotli
+  6,890,455 B, immutable cache.
+- Offline smoke through the gateway (`GF_SMOKE_OFFLINE=1`, headless software WebGL): **15/15 PASS**: boot complete
+  in 29 s, loader lifted by `gfBootDone`, cross-origin isolated after cold load and reload, first load **94.8 MB**
+  on the wire (113.43 MB on the 2026-10-28 build), 0 requests to `api.gmi-serving.com`, no key stored, reload
+  continues the saved city, quit to orbit and back clean, no console errors.
+- **Still manual:** the owner opens the URL with their own key and confirms a live mayor turn. No browser frame-rate
+  measurement of this build exists yet.
+
 ### Verified deployment, 2026-10-28
 
 - **Current URL:** https://ct-acf8ab8c-2e82-4cf9-885b-4feb693ef0ac-web.caas-us1.gmicloud.ai
