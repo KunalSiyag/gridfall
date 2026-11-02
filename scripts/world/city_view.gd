@@ -1645,7 +1645,7 @@ func _tree_layer(part: Dictionary, spots: Array, centre: Vector3, begin: float, 
 func _build_district_borders() -> void:
 	for d in range(D.MAYORS.size()):
 		var lbl := Label3D.new()
-		lbl.text = "%s\n%s" % [D.MAYORS[d]["name"], D.MAYORS[d]["district"]]
+		lbl.text = "%s\n%s" % [D.MAYORS[d]["display"], D.MAYORS[d]["district"]]
 		lbl.font_size = 64
 		lbl.outline_size = 14
 		lbl.pixel_size = 0.006
@@ -1837,7 +1837,7 @@ func _build_avatars() -> void:
 		ring.position.y = 0.03
 		ring.material_override = _mat("ring", col, 2.5)
 		root.add_child(ring)
-		var name_lbl := _label("%s" % D.MAYORS[d]["name"], 34, col.lightened(0.3))
+		var name_lbl := _label("%s" % D.MAYORS[d]["display"], 34, col.lightened(0.3))
 		name_lbl.position = Vector3(0, 1.05, 0)
 		root.add_child(name_lbl)
 		var bubble := _label("", 28, Color(1, 1, 1))

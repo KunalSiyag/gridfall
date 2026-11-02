@@ -366,7 +366,7 @@ func _build_tools_panel() -> void:
 	_grant_pick = OptionButton.new()
 	_grant_pick.add_theme_font_size_override("font_size", 12)
 	for m: Dictionary in D.MAYORS:
-		_grant_pick.add_item("%s (%s)" % [m["name"], m["district"]])
+		_grant_pick.add_item("%s (%s)" % [m["display"], m["district"]])
 	pw.add_child(_grant_pick)
 	var grant_row := HBoxContainer.new()
 	pw.add_child(grant_row)
@@ -375,7 +375,7 @@ func _build_tools_panel() -> void:
 		gb.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 		gb.pressed.connect(func() -> void:
 			sim.gift_funds(_grant_pick.selected, amt)
-			toast("Granted $%s to %s" % [_fmt(amt), D.MAYORS[_grant_pick.selected]["name"]])
+			toast("Granted $%s to %s" % [_fmt(amt), D.MAYORS[_grant_pick.selected]["display"]])
 		)
 		grant_row.add_child(gb)
 	pw.add_child(HSeparator.new())
@@ -445,7 +445,8 @@ func _build_dock() -> void:
 		card.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 		card.mouse_filter = Control.MOUSE_FILTER_STOP
 		card.mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
-		# Logs, the Gazette and posts name mayors by display name; the card keeps the model brand.
+		# Logs, the Gazette, posts and the street all name a mayor by the person, so the card leads with
+		# the same name; the model brand sits in its sub-line.
 		card.tooltip_text = "Mayor %s · %s" % [m["display"], m["district"]]
 		card.gui_input.connect(func(ev: InputEvent) -> void:
 			if ev is InputEventMouseButton and (ev as InputEventMouseButton).pressed and (ev as InputEventMouseButton).button_index == MOUSE_BUTTON_LEFT:
@@ -460,14 +461,14 @@ func _build_dock() -> void:
 		var head := HBoxContainer.new()
 		head.mouse_filter = Control.MOUSE_FILTER_IGNORE
 		v.add_child(head)
-		var name_l := _label(str(m["name"]), 17, col)
+		var name_l := _label(str(m["display"]), 17, col)
 		name_l.add_theme_font_override("font", TITLE_FONT)
 		head.add_child(name_l)
 		var status := _label("", 11, Color(0.7, 0.8, 0.9))
 		status.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 		status.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
 		head.add_child(status)
-		v.add_child(_label("%s · %s" % [m["district"], str(m["model"]).get_file()], 10, Color(0.6, 0.68, 0.8)))
+		v.add_child(_label("%s · %s" % [m["district"], m["name"]], 10, Color(0.6, 0.68, 0.8)))
 		var stats := _label("", 12, Color(0.9, 0.94, 1.0))
 		v.add_child(stats)
 		var post := _label("", 11, Color(0.82, 0.86, 0.92))
@@ -891,8 +892,8 @@ func _render_mayor() -> void:
 	var m: Dictionary = D.MAYORS[mi]
 	var sm: Dictionary = sim.mayors[mi]
 	var e: Dictionary = _mayor_entries[mi]
-	var t := "[font_size=20][color=%s][b]%s[/b][/color][/font_size]\n" % [m["color"], m["name"]]
-	t += "[color=#9AB]Mayor %s · %s · %s\nModel: %s[/color]\n" % [m["display"], m["district"], m["style"], m["model"]]
+	var t := "[font_size=20][color=%s][b]%s[/b][/color][/font_size]\n" % [m["color"], m["display"]]
+	t += "[color=#9AB]Mayor of %s · %s\nModel: %s (%s)[/color]\n" % [m["district"], m["style"], m["name"], m["model"]]
 	t += "Treasury [b]$%s[/b]  ·  income $%d  ·  upkeep $%d\n" % [_fmt(int(sm["treasury"])), int(sm["last_income"]), int(sm["last_upkeep"])]
 	t += "Taxes R%d C%d I%d  ·  pop %s  ·  jobs %s\n" % [int(sm["tax_r"]), int(sm["tax_c"]), int(sm["tax_i"]), _fmt(int(sm["pop"])), _fmt(int(sm["jobs"]))]
 	t += "Actions accepted %d · rejected %d\n\n" % [int(sm["actions_ok"]), int(sm["actions_rejected"])]
@@ -972,7 +973,7 @@ func _render_council() -> void:
 	t += "\n[b][color=#9CFF8F]Grid Operator[/color][/b] [color=#9AB](%s)[/color]\n" % D.SUPPORT_AGENTS["operator"]["model"]
 	var names: Array[String] = []
 	for d: Variant in sim.grid_priority:
-		names.append(str(D.MAYORS[int(d)]["name"]))
+		names.append(str(D.MAYORS[int(d)]["display"]))
 	t += "Load-shed order (last loses power first): %s\n" % " > ".join(names)
 	if not op.is_empty():
 		t += "%s\n[i]%s[/i]\n" % [_esc(str(op.get("note", ""))), _esc(str(op.get("advice", "")))]
@@ -990,7 +991,7 @@ func _render_council() -> void:
 		if typeof(v) == TYPE_DICTIONARY:
 			var mood := str(v.get("mood", "ok"))
 			var col := "#9FE" if mood == "happy" else ("#FD8" if mood in ["ok", "upset"] else "#F87")
-			t += "[color=%s]%s[/color] (%s, %s): \"%s\"\n" % [col, v.get("name", "?"), D.MAYORS[int(v.get("district", 0))]["name"], mood, _esc(str(v.get("thought", "")))]
+			t += "[color=%s]%s[/color] (%s, %s): \"%s\"\n" % [col, v.get("name", "?"), D.MAYORS[int(v.get("district", 0))]["display"], mood, _esc(str(v.get("thought", "")))]
 	_council_rt.text = t
 
 
@@ -1102,7 +1103,7 @@ func _render_people() -> void:
 	t += "\n[b]Districts[/b]\n"
 	for d in range(D.MAYORS.size()):
 		var dm := people.district_mood(d)
-		t += "[color=%s]%s[/color]: %d people · mood [color=%s]%.1f[/color] · approval %.1f · %d may leave · %d protested\n" % [D.MAYORS[d]["color"], D.MAYORS[d]["name"], int(dm["residents"]), _mood_col(float(dm["avg_mood"])), float(dm["avg_mood"]), float(dm["approval"]), int(dm["thinking_of_leaving"]), int(dm["protested_yesterday"])]
+		t += "[color=%s]%s[/color]: %d people · mood [color=%s]%.1f[/color] · approval %.1f · %d may leave · %d protested\n" % [D.MAYORS[d]["color"], D.MAYORS[d]["display"], int(dm["residents"]), _mood_col(float(dm["avg_mood"])), float(dm["avg_mood"]), float(dm["approval"]), int(dm["thinking_of_leaving"]), int(dm["protested_yesterday"])]
 	var helping: Array[String] = []
 	for r in people.people:
 		if int(r["helping"]) >= 0:
@@ -1141,7 +1142,7 @@ func _resident_detail(r: Dictionary) -> String:
 		work = "retired"
 	elif w >= 0:
 		work = "works at (%d,%d), %s" % [D.tx(w), D.ty(w), str(D.KIND_NAMES[sim.kind[w]]).replace("_", " ")]
-	t += "Lives at (%d,%d) in [color=%s]%s[/color]'s district · %s\n" % [D.tx(h), D.ty(h), D.MAYORS[sim.district[h]]["color"], D.MAYORS[sim.district[h]]["name"], work]
+	t += "Lives at (%d,%d) in [color=%s]%s[/color]'s district · %s\n" % [D.tx(h), D.ty(h), D.MAYORS[sim.district[h]]["color"], D.MAYORS[sim.district[h]]["display"], work]
 	t += "Right now: [b]%s[/b]\n" % _esc(str(r["state"]))
 	var m := float(r["mood"])
 	t += "Mood [color=%s][b]%.1f/10[/b][/color] %s · plans to [b]%s[/b] · recommends GridFall %.0f/10 · approves of mayor %.0f/10\n" % [_mood_col(m), m, ("(" + _esc(str(r["mood_reason"])) + ")") if not str(r["mood_reason"]).is_empty() else "", str(r["intent"]).replace("_", " "), float(r["recommend"]), float(r["approve"])]
