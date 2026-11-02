@@ -83,8 +83,10 @@ var _duck_target: float = 0.0
 var _sfx_db: float = 0.0
 var _talking: Dictionary = {}
 var _last_knock: float = -INF
-## Bodies hitting the ground: [due on _now, feet, dB, walker id (-1 for any: sounds regardless)].
-var _falls: Array = []
+var _falls: Array = []  # [due on _now, feet, dB] of bodies hitting the ground
+## Carjacked drivers in the air (walker id -> true): their fall sounds as their body lands
+## (person_landed), not on a timer.
+var _flying: Dictionary = {}
 var _rng := RandomNumberGenerator.new()
 var _links: Array = []  # [Signal, Callable]
 var _muffle: Tween
@@ -136,6 +138,7 @@ func setup(p_ctx: FpContext) -> void:
 		_link(bus.prop_knocked, _on_prop_knocked)
 		_link(bus.car_door, _on_car_door)
 		_link(bus.person_hit, _on_person_hit)
+		_link(bus.person_landed, _on_person_landed)
 		_link(bus.hero_action, _on_hero_action)
 		_link(bus.hero_slammed, _on_hero_slammed)
 		_link(bus.weapon_hit, _on_weapon_hit)
@@ -171,6 +174,7 @@ func to_dict() -> Dictionary:
 func from_dict(_d: Dictionary) -> void:
 	emitters.full_scan()
 	_falls.clear()
+	_flying.clear()
 	_talking.clear()
 	_duck_target = 0.0
 	_player_seq = -1
@@ -190,6 +194,7 @@ func teardown() -> void:
 	if ctx != null and ctx.audio != null and is_instance_valid(ctx.audio):
 		ctx.audio.set_fp(false)
 	_falls.clear()
+	_flying.clear()
 	if emitters != null:
 		emitters.clear()
 	if ambience != null:
@@ -270,8 +275,7 @@ func step(dt: float) -> void:
 	var t := Time.get_ticks_usec()
 	while not _falls.is_empty() and float(_falls[0][0]) <= _now:
 		var fall: Array = _falls.pop_front()
-		if int(fall[3]) < 0 or _still_there(int(fall[3])):
-			emitters.shot("hit", fall[1], "body_fall", float(fall[2]), _rng.randf_range(0.92, 1.04))
+		emitters.shot("hit", fall[1], "body_fall", float(fall[2]), _rng.randf_range(0.92, 1.04))
 	t = _section("falls", t)
 	emitters.step(dt)
 	t = _section("emitters", t)
@@ -468,7 +472,8 @@ func _on_weapon_hit(at: Vector3, kind: String, what: String, _broke: bool) -> vo
 
 ## Someone hit in the street (person_hit): the blow's thump at their chest by its strength (a
 ## shove's duller, a car's lower and louder); someone knocked down lands BANK.BODY_FALL_S later,
-## or when the info says they do ("lands_in": a carjack's throw, hauled out and in the air first).
+## or when their body does (person_landed) for a carjack's throw ("lands_in": hauled out and in the
+## air first).
 func _on_person_hit(at: Vector3, cause: String, info: Dictionary) -> void:
 	var car := cause == "car"
 	var trim := _impact_db(float(info.get("strength", 0.5)) / BANK.HIT_FULL)
@@ -479,10 +484,15 @@ func _on_person_hit(at: Vector3, cause: String, info: Dictionary) -> void:
 	emitters.shot("hit", at + Vector3(0.0, 1.3 * WS.M, 0.0), "punch_hit", trim, pitch)
 	if bool(info.get("down", false)):
 		if info.has("lands_in"):
-			var wid := int(info.get("walker", -1))
-			_queue_fall(float(info["lands_in"]), at, BANK.BODY_FALL_DB, wid)
+			_flying[int(info.get("walker", -1))] = true
 		else:
 			_queue_fall(BANK.BODY_FALL_S, at, BANK.BODY_FALL_DB)
+
+
+## A carjacked driver's body came down at at: the fall sounds there, then.
+func _on_person_landed(at: Vector3, id: int) -> void:
+	if _flying.erase(id):
+		emitters.shot("hit", at, "body_fall", BANK.BODY_FALL_DB, _rng.randf_range(0.92, 1.04))
 
 
 ## Someone the hero holds slammed into something (hero_slammed): a heavy thump at the contact;
@@ -569,23 +579,13 @@ func _on_animal_hit(at: Vector3, kind: String, strength: float) -> void:
 	emitters.shot("hit", p, "punch_hit", trim, pitch)
 
 
-## A body_fall at at, delay seconds from now at db, in the queue by when it is due. With walker id
-## wid (a throw's: its landing is told) it sounds only if the street still has them then.
-func _queue_fall(delay: float, at: Vector3, db: float, wid: int = -1) -> void:
+## A body_fall at at, delay seconds from now at db, in the queue by when it is due.
+func _queue_fall(delay: float, at: Vector3, db: float) -> void:
 	var due := _now + delay
 	var i := _falls.size()
 	while i > 0 and float(_falls[i - 1][0]) > due:
 		i -= 1
-	_falls.insert(i, [due, at, db, wid])
-
-
-## False when the street no longer has walker id (traffic's walker_here); true for anyone it cannot
-## say of (no traffic feature to ask).
-func _still_there(id: int) -> bool:
-	var traffic: FpFeature = ctx.feature("traffic") if ctx != null else null
-	if traffic == null or not traffic.has_method("walker_here"):
-		return true
-	return bool(traffic.call("walker_here", id))
+	_falls.insert(i, [due, at, db])
 
 
 ## The stream for the hero's own horn action (the class_audio flag; drive names the action by

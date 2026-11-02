@@ -159,7 +159,9 @@ class Reaction:
 	var tip_s: float = 0.0  # how long the tip takes to play out (s)
 	var lean := Vector2(-1.0, 0.0)  # forward tip and side roll in the victim's own frame
 	var stagger_left: float = 0.0  # seconds before a heavy melee blow's fall starts
-	var drag: Array = []  # dragged out of a car: [from, to, yaw from, yaw to]
+	## Dragged out of a car: [from, to, yaw from, yaw to, shift], shift (a world offset, u) how far
+	## down the car's side the body is let go from straight out of the seat (drag_out: five).
+	var drag: Array = []
 	var jack: JT.Plan = null  # a carjack's throw (jack_throw.gd; the carjack_throw flag)
 	var was: String = ""  # walker state to give back ("" until the first step starts)
 	var speed: float = 0.0  # pace to give back after a run
@@ -241,6 +243,9 @@ var body_extent: Callable
 ## y bottom, y top]; set by the traffic feature. Without it a body thrown or slid into a real
 ## car lies inside the drawn vehicle: the static world the press-out reads holds no cars.
 var cars_near: Callable
+## Told (the walker) as a carjacked driver's throw touches the ground, once (jack_throw.gd); set by
+## the traffic feature, which tells the bus.
+var on_landed: Callable
 ## The share who fight back, by cause (test hook), and the punches that landed on the hero or
 ## were countered.
 var fight_odds: Dictionary:
@@ -881,7 +886,7 @@ func _throw(r: Reaction, dt: float) -> void:
 	r.w.vis_off.y += h
 	r.bump = h
 	r.w.vis_tilt = -r.tilt * sin(PI * r.fly_t / r.fly_s) if r.fly_t < r.fly_s else 0.0
-	JT.fly(r)
+	JT.fly(r, on_landed)
 	if h == 0.0 and r.fly_t > r.fly_s:
 		r.lift = 0.0
 
@@ -943,13 +948,14 @@ func blocks() -> Array:
 
 ## Car-jacked w (just knocked down by the carjack's blow) is dragged out of the car first: drawn
 ## from from (its feet in the seat, facing from_yaw) out to where the blow found it in the sit
-## pose over the haul's seconds (jack_throw.gd), then it falls.
-func drag_out(w: WK.Walker, from: Vector3, from_yaw: float) -> void:
+## pose over the haul's seconds (jack_throw.gd), then it falls. Where the blow found it is shift
+## (u) further down the car's side than straight out of the seat, which the haul drifts over late.
+func drag_out(w: WK.Walker, from: Vector3, from_yaw: float, shift := Vector3.ZERO) -> void:
 	var r: Reaction = _active.get(w.id)
 	if r == null or r.mode != "place" or not r.down:
 		return
 	r.steps.push_front(["place", w.react, r.left])
-	r.drag = [from, w.pos + w.vis_off, from_yaw, w.yaw]
+	r.drag = [from, w.pos + w.vis_off, from_yaw, w.yaw, shift]
 	r.mode = "drag"
 	r.left = JT.begin(r)
 	w.react = DRAG_CLIP

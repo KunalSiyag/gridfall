@@ -304,6 +304,8 @@ func on_world_rebuilt() -> void:
 	reactions.on_hero_hit = _on_hero_punched
 	reactions.on_wind_up = _on_wind_up
 	reactions.on_hero_parry = _on_hero_parry
+	reactions.on_landed = func(w: WK.Walker) -> void:
+		ctx.bus.person_landed.emit(w.pos + w.vis_off, w.id)
 	incidents.setup(self)
 	carjack.setup(self)
 	walkers.hc = people.ok
@@ -1991,13 +1993,6 @@ func car_info(id: int) -> Dictionary:
 	return dims.merged({"id": c.id, "pos": c.pos + c.vis_off, "yaw": c.yaw + c.vis_yaw})
 
 
-## True while walker id is in the street: not removed (despawned, gone indoors, a rebuilt city's).
-## What the camera shake and the fall thump of a throw ask as they come due (person_hit
-## "lands_in"), so the landing of someone no longer there stays silent.
-func walker_here(id: int) -> bool:
-	return _built and _walker_by_id(id) != null
-
-
 ## True while car id can be taken with someone at the wheel to pull out (carjack).
 func jackable(id: int) -> bool:
 	var c: VH.Car = vehicles.by_id.get(id) if _built else null
@@ -2038,6 +2033,22 @@ func door_info(id: int = -1) -> Dictionary:
 	var pts := DOORS.points(d)
 	for k: String in pts:
 		out[k] = m.offset * (pts[k] as Vector3)
+	return out
+
+
+## The driver's door of car id (the driven car's when id < 0) as it hangs swung by amount (0 shut ..
+## 1 wide open): its outline in plan in the car's frame (x, z; world units), the real panel with its
+## thickness and glass, for what has to keep off it (jack_landing.gd); empty when the model has no
+## door that opens.
+func door_outline(id: int = -1, amount: float = 1.0) -> PackedVector2Array:
+	var c: VH.Car = _driven if id < 0 else vehicles.by_id.get(id)
+	var m: RD.Model = render.model(c.model) if c != null and c.model >= 0 else null
+	var out := PackedVector2Array()
+	if m == null or m.scene == null:
+		return out
+	for p: Vector2 in DOORS.outline(DOORS.of(m.key, m.scene), amount):
+		var q: Vector3 = m.offset * Vector3(p.x, 0.0, p.y)
+		out.append(Vector2(q.x, q.z))
 	return out
 
 

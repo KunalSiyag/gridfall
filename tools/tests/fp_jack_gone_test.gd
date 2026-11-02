@@ -1,159 +1,121 @@
 extends SceneTree
-## The landing of a carjack's throw (person_hit "lands_in") is told ahead and happens later, so the
-## camera shake (hit_feel) and the fall thump (audio) wait on a timer; if the driver is no longer in
-## the street by then (traffic's walker_here: removed, gone indoors) neither comes. Someone the
-## street still has lands as ever, and a blow that names nobody (or a street that cannot say) still
-## shakes and thumps. The traffic feature is a stub that says who is gone; the real one's
-## walker_here is fp_carjack_test's.
+## The landing of a carjack's throw (person_landed: reactions.gd tells it as the body touches the
+## ground) is what shakes the camera (hit_feel) and sounds the fall (audio), so a driver who is no
+## longer in the street by then (removed, gone indoors, a rebuilt city's) lands for nobody: neither
+## comes. Someone who stays lands as ever, once. The reactions are the real ones, stepped by hand
+## over bare walkers; the whole flow through a grown city is fp_carjack_test's.
 
 const K := preload("res://tools/tests/fp_kit.gd")
-const BANK := preload("res://scripts/fp/audio/audio_bank.gd")
+const WS := preload("res://scripts/fp/world_scale.gd")
+const WK := preload("res://scripts/fp/traffic/walkers.gd")
+const RE := preload("res://scripts/fp/traffic/reactions.gd")
+const CJ := preload("res://scripts/fp/traffic/carjack.gd")
 const DT := 1.0 / 60.0
-const STRENGTH := 0.85
-const LANDS := 0.95
+const SEED := 12
+const STRENGTH := CJ.STRENGTH
+const HALF_W := 0.9 * WS.M
 
 var fails: Array[String] = []
 var ran: Array[String] = []
-
-
-## Traffic as the two features see it: who is in the street.
-class TrafficStub:
-	extends FpFeature
-	var gone := {}
-
-	func feature_id() -> String:
-		return "traffic"
-
-	func walker_here(id: int) -> bool:
-		return not gone.has(id)
 
 
 func _init() -> void:
 	await process_frame
 	FeatureFlags.set_override("hit_feel", true)
 	FeatureFlags.set_override("carjack_throw", true)
-	_check_shake()
-	_check_thump()
+	_check_gone()
 	Engine.time_scale = 1.0
 	FeatureFlags.reload()
-	K.check(fails, ran.size() == 2, "every section ran to its end (%s)" % str(ran))
+	K.check(fails, ran.size() == 1, "every section ran to its end (%s)" % str(ran))
 	K.finish(self, "FP_JACK_GONE_TEST", fails)
 
 
-## The camera: the landing shake comes for a driver still there, not for one gone before it, and
-## comes for a blow that names nobody.
-func _check_shake() -> void:
-	var ctx := K.make_ctx(get_root(), {"camera_mode": "third"})
+## One carjack thrown through the real reactions with the camera and the audio listening: stayed
+## (lands: one shake, one fall), removed from the street (in the haul, in the air: nothing), the
+## world rebuilt under it (the reactions dropped: nothing).
+func _check_gone() -> void:
+	var ctx := K.make_ctx(get_root(), {"audio": true, "camera_mode": "third"})
 	var hf := K.make_feature(ctx, "hit_feel")
-	if hf == null:
-		K.check(fails, false, "the hit_feel feature is registered")
+	var af := K.make_feature(ctx, "audio")
+	if hf == null or af == null:
+		K.check(fails, false, "hit_feel and audio are registered")
 		return
 	hf.set_process(false)
-	var traffic := TrafficStub.new()
-	ctx.features["traffic"] = traffic
-	var info := {"strength": STRENGTH, "down": true, "by": -1, "lands_in": LANDS, "walker": 5}
-	var s0 := int(hf.get("shakes"))
-	ctx.bus.person_hit.emit(Vector3.ZERO, "carjack", info)
-	_settle(hf)
-	hf.call("tick_landings", LANDS + 0.1)
-	K.check(
-		fails,
-		int(hf.get("shakes")) == s0 + 2,
-		"a driver still in the street: the yank shakes and so does the landing"
-	)
-	info["walker"] = 6
-	ctx.bus.person_hit.emit(Vector3.ZERO, "carjack", info)
-	_settle(hf)
-	var after_yank := int(hf.get("shakes"))
-	traffic.gone[6] = true
-	hf.call("tick_landings", 0.5)
-	hf.call("tick_landings", LANDS)
-	K.check(
-		fails,
-		int(hf.get("shakes")) == after_yank,
-		"one gone from the street before they land: no landing shake"
-	)
-	hf.call("tick_landings", 5.0)
-	K.check(fails, int(hf.get("shakes")) == after_yank, "and none later, the entry spent")
-	info.erase("walker")
-	ctx.bus.person_hit.emit(Vector3.ZERO, "carjack", info)
-	_settle(hf)
-	var named_none := int(hf.get("shakes"))
-	hf.call("tick_landings", LANDS + 0.1)
-	K.check(fails, int(hf.get("shakes")) == named_none + 1, "a blow that names nobody still lands")
-	ctx.features.erase("traffic")
-	info["walker"] = 6
-	ctx.bus.person_hit.emit(Vector3.ZERO, "carjack", info)
-	_settle(hf)
-	var blind := int(hf.get("shakes"))
-	hf.call("tick_landings", LANDS + 0.1)
-	K.check(
-		fails,
-		int(hf.get("shakes")) == blind + 1,
-		"with no traffic to ask, the landing comes as ever"
-	)
-	hf.call("teardown")
-	traffic.free()
-	ran.append("shake")
-
-
-## The fall thump: sounds at the landing for a driver still there, not for one gone; a throw
-## the info tells no landing of (a punch's, a brawl's) is the plain BODY_FALL_S one as before.
-func _check_thump() -> void:
-	var actx := K.make_ctx(get_root(), {"audio": true})
-	var f: FpFeature = K.make_feature(actx, "audio")
-	if f == null:
-		K.check(fails, false, "the audio feature is registered")
-		return
-	f.set_process(false)
-	var traffic := TrafficStub.new()
-	actx.features["traffic"] = traffic
-	var em: Node = f.get("emitters")
-	var at: Vector3 = em.call("listener") + Vector3(0.05, 0.0, 0.0)
+	af.set_process(false)
+	var em: Node = af.get("emitters")
+	var origin: Vector3 = em.call("listener")
 	for row: Array in [
-		["there", 5, false, 1], ["gone", 6, true, 0], ["no walker named", -1, true, 1]
+		["stays", -1.0, 1], ["removed in the haul", 0.3, 0], ["removed in the air", 0.7, 0]
 	]:
-		var info := {"strength": STRENGTH, "down": true, "lands_in": LANDS}
-		if int(row[1]) >= 0:
-			info["walker"] = int(row[1])
-		var n := int(em.get("shots_played"))
-		actx.bus.person_hit.emit(at, "carjack", info)
-		var thump := int(em.get("shots_played")) - n
-		if bool(row[2]) and int(row[1]) >= 0:
-			traffic.gone[int(row[1])] = true
-		_play(f, LANDS + 0.2)
-		var fall := int(em.get("shots_played")) - n - thump
+		var s := _throw(ctx, origin)
+		var wk: WK = s["wk"]
+		var w: WK.Walker = s["w"]
+		var re: RE = s["re"]
+		var shots := int(em.get("shots_played"))  # with the yank's thump
+		_settle(hf)
+		var shakes := int(hf.get("shakes"))  # and its shake
+		var t := 0.0
+		while re.count() > 0 and t < 6.0:
+			if float(row[1]) >= 0.0 and t >= float(row[1]) and not w.dead:
+				wk.remove(w)
+			re.step(DT)
+			t += DT
+		var shook := int(hf.get("shakes")) - shakes
+		var sounded := int(em.get("shots_played")) - shots
 		K.check(
 			fails,
-			thump == 1 and fall == int(row[3]),
+			shook == int(row[2]) and sounded == int(row[2]),
 			(
-				"%s: the thump at the yank, %d fall sound at the landing (%d, %d)"
-				% [row[0], row[3], thump, fall]
+				"%s: %d shake and %d fall sound after the yank (%d, %d)"
+				% [row[0], row[2], row[2], shook, sounded]
 			)
 		)
-		_play(f, 2.0)
-	var n2 := int(em.get("shots_played"))
-	actx.bus.person_hit.emit(at, "punch", {"strength": STRENGTH, "down": true, "walker": 6})
-	traffic.gone[6] = true
-	_play(f, BANK.BODY_FALL_S + 0.2)
+	# A city rebuilt while they are in the air drops the reactions: the landings never come.
+	var s2 := _throw(ctx, origin)
+	var re2: RE = s2["re"]
+	_settle(hf)
+	var shakes2 := int(hf.get("shakes"))
+	var shots2 := int(em.get("shots_played"))
+	re2.step(0.3)
+	re2.clear()
+	hf.call("on_world_rebuilt")
+	af.call("from_dict", {})
+	for _k in range(120):
+		re2.step(DT)
 	K.check(
 		fails,
-		int(em.get("shots_played")) - n2 == 2,
-		"a blow with no landing time told: the thump and the plain fall, as before"
+		int(hf.get("shakes")) == shakes2 and int(em.get("shots_played")) == shots2,
+		"a rebuilt city, the reactions dropped mid-air: no landing shake and no fall"
 	)
-	actx.features.erase("traffic")
-	f.call("teardown")
-	traffic.free()
-	ran.append("thump")
+	hf.call("teardown")
+	af.call("teardown")
+	ran.append("gone")
+
+
+## A driver drawn at the wheel thrown by a carjack beside origin: the stage (the walkers, the
+## reactions told of the landing as traffic tells the bus) and the blow's yank on the bus.
+func _throw(ctx: FpContext, origin: Vector3) -> Dictionary:
+	var wk := WK.new()
+	wk.setup(null, null, null, null, SEED)
+	var w := wk.make("ambient")
+	wk.stand(w, origin + Vector3(HALF_W + CJ.OUT, 0.0, 0.0), 0.0)
+	w.state = "walk"
+	w.seated = true
+	var re := RE.new()
+	re.setup(wk, null, SEED)
+	re.on_landed = func(who: WK.Walker) -> void:
+		ctx.bus.person_landed.emit(who.pos + who.vis_off, who.id)
+	var src := origin + Vector3(HALF_W + WS.M, 0.0, 0.5 * WS.M)
+	var res := re.hit(w, src, Vector3.RIGHT, STRENGTH, "carjack", CJ.JACK_FLING)
+	re.drag_out(w, origin + Vector3(0.45 * WS.M, 0.15 * WS.M, 0.0), 0.0)
+	var info := {
+		"strength": STRENGTH, "down": true, "by": -1, "lands_in": res["lands_in"], "walker": w.id
+	}
+	ctx.bus.person_hit.emit(origin, "carjack", info)
+	return {"wk": wk, "w": w, "re": re}
 
 
 ## The yank's hit-stop run out.
 func _settle(hf: FpFeature) -> void:
 	for _k in range(8):
 		hf.call("tick", DT)
-
-
-## Steps the audio feature seconds on.
-func _play(f: FpFeature, seconds: float) -> void:
-	for _k in range(roundi(seconds / DT)):
-		f.call("step", DT)

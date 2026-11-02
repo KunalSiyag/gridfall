@@ -38,6 +38,9 @@ class Body:
 	var look: LookAtModifier3D = null
 	var off_t: float = 0.0
 	var seen: int = -1
+	## Where the feet were when the body was last placed (people.gd _drive): an off-screen body's
+	## pose stays there, whatever its walker does after.
+	var feet := Vector3(NAN, NAN, NAN)
 
 
 ## Load body and lod1 scenes on the calling thread (deterministic tests), not in the background.

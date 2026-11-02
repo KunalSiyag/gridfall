@@ -5,11 +5,14 @@ extends SceneTree
 ## through reactions.gd comes out over the sill in HAUL_S, flies the plan's arc with the knockback
 ## clip's back meeting the ground at touchdown, lands beyond the door and clear of the car body,
 ## then gets up and the reaction ends as it did before; the same twice; the blow's strength sets
-## the height, the air time and the twist; a moving car carries the body on at its pace (the haul
-## all of it, the flight at most CARRY_MAX); a car beside the door shortens the fling; the flag off
-## is the old drag and throw; a carjack stops and shakes the camera at the yank and again at the
-## landing (hit_feel). The bodies are bare walkers with no collision world, stepped by hand; the
-## whole flow through a grown city is fp_carjack_test's.
+## the height, the air time and the twist (its direction the door's when there is one); the turn to
+## face the car is never faster than TURN_RATE and the whole facing stays within SPIN_RATE; a moving
+## car carries the body on at its pace (the haul all of it, easing down over its last CARRY_EASE_S
+## to the flight's, at most CARRY_MAX); either flag off (carjack_throw, hit_feel) is the old drag
+## and throw. The bodies are bare walkers with no
+## collision world, stepped by hand; the whole flow through a grown city is fp_carjack_test's, the
+## room beside the door fp_jack_room_test's, the landing's shake and sound fp_jack_touchdown_test's,
+## the haul let go down the car's side and the easing of a fast car's pace fp_jack_haul_test's.
 
 const K := preload("res://tools/tests/fp_kit.gd")
 const WS := preload("res://scripts/fp/world_scale.gd")
@@ -56,16 +59,11 @@ func _init() -> void:
 	_check_no_haul()
 	_check_strength()
 	_check_carry()
-	_check_room()
+	_check_turn_rate()
+	_check_flip()
 	_check_flag_off()
 	FeatureFlags.reload()
-	FeatureFlags.set_override("hit_feel", true)
-	FeatureFlags.set_override("carjack_throw", true)
-	_check_hit_feel()
-	_check_fall_sound()
-	Engine.time_scale = 1.0
-	FeatureFlags.reload()
-	K.check(fails, ran.size() == 11, "every section ran to its end (%s)" % str(ran))
+	K.check(fails, ran.size() == 10, "every section ran to its end (%s)" % str(ran))
 	K.finish(self, "FP_CARJACK_THROW_TEST", fails)
 
 
@@ -94,6 +92,7 @@ func _check_curves() -> void:
 	var p := JT.make(STRENGTH, FLING, Vector3(1.0, 0.0, 0.0), 1.0)
 	p.haul = true
 	p.lean = JT.HEAD_OUT
+	p.turn_t = Vector2(JT.TURN.x * JT.HAUL_S, (JT.TURN.y - JT.TURN.x) * JT.HAUL_S)
 	for m1: float in [1.0, 1.32, 2.0, 2.5]:
 		var ok := _monotone(func(x: float) -> float: return JT.pull(x, m1), true, 0.0, 1.0)
 		K.check(
@@ -111,7 +110,7 @@ func _check_curves() -> void:
 	)
 	K.check(
 		fails,
-		_monotone(func(x: float) -> float: return JT.turn(x), true, 0.0, 1.0),
+		_monotone(func(x: float) -> float: return JT.turn_at(x * JT.HAUL_S, p), true, 0.0, 1.0),
 		"the body turns to face the car through the haul, once"
 	)
 	K.check(
@@ -151,7 +150,11 @@ func _check_curves() -> void:
 	for k in range(0, 401):
 		var u := -0.2 + 1.4 * float(k) / 400.0
 		for v: float in [
-			JT.pull(u, 1.5), JT.lift(u), JT.turn(u), JT.haul_lean(u, p), JT.fly_lean(u, p)
+			JT.pull(u, 1.5),
+			JT.lift(u),
+			JT.turn_at(u * JT.HAUL_S, p),
+			JT.haul_lean(u, p),
+			JT.fly_lean(u, p)
 		]:
 			bad += 0 if _finite(v) else 1
 		for v: float in [JT.fly_lift(u, p), JT.twist(u, p), JT.clip_at(u)]:
@@ -199,6 +202,13 @@ func _check_make() -> void:
 		JT.make(STRENGTH, FLING, Vector3.RIGHT, -1.0).spin < 0.0,
 		"the flip sign turns the twist the other way"
 	)
+	var base := JT.make(STRENGTH, FLING, Vector3.RIGHT, 1.0)
+	var faced := JT.make(STRENGTH, FLING, Vector3.RIGHT, 1.0, 0.3)
+	K.check(
+		fails,
+		absf(angle_difference(base.yaw_f, faced.yaw_f) - 0.3) < 1e-9 and faced.door == base.door,
+		"the facing at the release can be turned off facing the way they came from, the line kept"
+	)
 	var zero := JT.make(0.0, 0.0, Vector3.RIGHT, 1.0)
 	K.check(
 		fails,
@@ -213,11 +223,11 @@ func _check_make() -> void:
 
 ## A walker at the door of the car, a reaction layer with no collision world, and the car's
 ## seat: the stage for one throw.
-func _stage() -> Dictionary:
+func _stage(origin: Vector3 = Vector3.ZERO) -> Dictionary:
 	var wk := WK.new()
 	wk.setup(null, null, null, null, SEED)
 	var w := wk.make("ambient")
-	var at := Vector3(HALF_W + CJ.OUT, 0.0, SEAT_Z)
+	var at := origin + Vector3(HALF_W + CJ.OUT, 0.0, SEAT_Z)
 	wk.stand(w, at, 0.0)
 	w.state = "walk"
 	var re := RE.new()
@@ -695,21 +705,36 @@ func _check_carry() -> void:
 	ran.append("carry")
 
 
-## A car at 20 m/s (past CARRY_MAX): the haul stays level with the seat the whole way, the car's
-## own pace (the seat moves with it); the flight keeps CARRY_MAX of it, no more.
+## A car at 20 m/s (past CARRY_MAX): the haul stays level with the seat, the car's own pace (the
+## seat moves with it), until the last CARRY_EASE_S, when it eases down to the pace the flight
+## keeps; the flight keeps CARRY_MAX of it, no more.
 func _check_carry_fast(v: float) -> void:
 	var a := _throw(STRENGTH, Vector3(0.0, 0.0, v))
 	var p: JT.Plan = a["plan"]
 	var at: Vector3 = a["at"]
-	var drift := _haul_drift(a, v)
+	var from := JT.HAUL_S - JT.CARRY_EASE_S
+	var drift := _haul_drift(a, v, from)
 	K.check(
 		fails,
 		drift < 0.02 * WS.M,
-		"at %.0f m/s the haul still keeps the seat's pace (%.3f m drift)" % [v / WS.M, drift / WS.M]
+		(
+			"at %.0f m/s the haul keeps the seat's pace until it eases down (%.3f m drift)"
+			% [v / WS.M, drift / WS.M]
+		)
+	)
+	var slip := (v - JT.CARRY_MAX) * JT.CARRY_EASE_S * 0.5
+	var ends := _haul_drift(a, v, JT.HAUL_S)
+	K.check(
+		fails,
+		ends > 0.8 * slip and ends < slip + 0.03 * WS.M,
+		(
+			"and falls back %.2f m of it by the release (%.2f m when it is done)"
+			% [ends / WS.M, slip / WS.M]
+		)
 	)
 	var rest := _rest_of(a)
 	var along := (rest.z - at.z) / WS.M
-	var want := 20.0 * JT.HAUL_S + 5.0 * p.air / (1.0 - p.skid)
+	var want := 20.0 * JT.HAUL_S - slip / WS.M + 5.0 * p.air / (1.0 - p.skid)
 	K.check(
 		fails,
 		is_equal_approx(p.carry.length(), JT.CARRY_MAX) and absf(along - want) < 0.05,
@@ -717,13 +742,16 @@ func _check_carry_fast(v: float) -> void:
 	)
 
 
-## How far (u) the hauled body strays, along +Z, from the seat of a car going v u/s along it.
-func _haul_drift(a: Dictionary, v: float) -> float:
+## How far (u) the hauled body strays, along +Z, from the seat of a car going v u/s along it, up to
+## t seconds into the haul.
+func _haul_drift(a: Dictionary, v: float, t: float = 1e9) -> float:
 	var frames: Array = a["frames"]
 	var at: Vector3 = a["at"]
 	var drift := 0.0
 	for i in range(0, _first(a, &"knockback")):
 		var f: Array = frames[i]
+		if float(f[0]) > t + 1e-6:
+			break
 		drift = maxf(drift, absf((f[1] as Vector3).z - at.z - v * float(f[0])))
 	return drift
 
@@ -744,250 +772,171 @@ func _car(v: float) -> VH.Car:
 	return c
 
 
-## What carjack.gd's _fling reads of the traffic feature: its vehicles.
-class VehStub:
-	extends RefCounted
-	var cars: Array = []
+## The turn to face the car is never faster than TURN_RATE, whatever the car's pace: a moving car
+## carries the release facing round far past the stopped car's 90 degrees (155 at 8 m/s, which the
+## haul's own window would do at 12 rad/s), so it takes longer, on into the flight; the facing at
+## touchdown is the same, and the whole sequence, twist and all, stays within SPIN_RATE.
+func _check_turn_rate() -> void:
+	var worst_haul := 0.0
+	var worst_all := 0.0
+	for v_ms: float in [0.0, 4.0, 8.3, 14.0, 20.0]:
+		var a := _throw(STRENGTH, Vector3(0.0, 0.0, v_ms * WS.M))
+		var p: JT.Plan = a["plan"]
+		var frames: Array = a["frames"]
+		var down := _first(a, &"knockback")
+		var peak_haul := 0.0
+		var peak_all := 0.0
+		var prev := 0.0  # the seat's facing, which drag_out is given
+		for i in range(frames.size()):
+			var f: Array = frames[i]
+			if float(f[8]) > p.air + DT or i > down + 80:
+				break
+			var rate := absf(angle_difference(prev, float(f[4]))) / DT
+			prev = float(f[4])
+			peak_all = maxf(peak_all, rate)
+			if i < down:
+				peak_haul = maxf(peak_haul, rate)
+		var turned := absf(angle_difference(0.0, p.yaw_f))
+		var in_haul := absf(angle_difference(0.0, float((frames[maxi(down - 1, 0)] as Array)[4])))
+		var msg := (
+			"a car at %.1f m/s: to face the car it turns %.0f degrees, "
+			% [v_ms, rad_to_deg(turned)]
+		)
+		msg += "%.0f of them in the haul, " % rad_to_deg(in_haul)
+		msg += "at %.1f rad/s at most there (%.1f)" % [peak_haul, JT.TURN_RATE]
+		K.check(fails, peak_haul <= JT.TURN_RATE + 1e-6, msg)
+		K.check(
+			fails,
+			peak_all <= JT.SPIN_RATE + 1e-6,
+			(
+				"and the whole sequence, twist and all, at %.2f rad/s at most (%.1f)"
+				% [peak_all, JT.SPIN_RATE]
+			)
+		)
+		var at_touch := float(frames[mini(down + roundi(p.air / DT) + 1, frames.size() - 1)][4])
+		K.check(
+			fails,
+			absf(angle_difference(at_touch, p.yaw_f)) < 0.05,
+			(
+				"it comes down facing as the plan says, tail first (%.3f rad off)"
+				% angle_difference(at_touch, p.yaw_f)
+			)
+		)
+		if v_ms == 8.3:
+			K.check(
+				fails,
+				turned > 2.4,
+				"the moving car's turn is the big one (%.0f degrees)" % rad_to_deg(turned)
+			)
+		worst_haul = maxf(worst_haul, peak_haul)
+		worst_all = maxf(worst_all, peak_all)
+	print("  turn rates: haul peak %.2f rad/s, whole sequence %.2f rad/s" % [worst_haul, worst_all])
+	ran.append("turn_rate")
 
 
-class FeatureStub:
-	extends RefCounted
-	var vehicles := VehStub.new()
-
-
-## A car beside the door shortens the fling to the room there is (down to MIN_FLING), so the
-## driver comes down in the gap and not through it or in its path; with the flag off, or nothing
-## in reach, it is JACK_FLING.
-func _check_room() -> void:
-	var cj := CJ.new()
-	var fs := FeatureStub.new()
-	cj.f = fs
-	var car := VH.Car.new()
-	car.half_w = HALF_W
-	car.length = 4.5 * WS.M
-	var xf := Transform3D.IDENTITY
-	var cars: Array = fs.vehicles.cars
-	cars.append(car)
-	var free := cj._fling(car, xf, 0.0)
-	K.check(fails, is_equal_approx(free, CJ.JACK_FLING), "no car near: the whole JACK_FLING")
-	var gap := func(g: float, z: float, yaw: float = 0.0) -> VH.Car:
-		var o := VH.Car.new()
-		o.half_w = HALF_W
-		o.length = 4.5 * WS.M
-		o.yaw = yaw
-		var reach := 0.5 * o.length * absf(sin(yaw)) + HALF_W * absf(cos(yaw))
-		o.pos = Vector3(HALF_W + g * WS.M + reach, 0.0, z * WS.M)
-		return o
-	var near: VH.Car = gap.call(2.0, 0.0)
-	cars.append(near)
-	var room := cj._fling(car, xf, 0.0)
-	var want := 2.0 - CJ.OUT / WS.M - CJ.BODY_CLEAR
-	K.check(
-		fails,
-		absf(room - want) < 1e-6,
-		"a car 2 m off the door: the room less the clearance (%.2f of %.2f m)" % [room, want]
-	)
-	near.pos.x = HALF_W + 0.8 * WS.M + HALF_W
-	var tight := cj._fling(car, xf, 0.0)
-	K.check(
-		fails,
-		is_equal_approx(tight, CJ.MIN_FLING),
-		"a car almost against it: no less than MIN_FLING (%.2f m)" % tight
-	)
-	near.dead = true
-	K.check(
-		fails, is_equal_approx(cj._fling(car, xf, 0.0), CJ.JACK_FLING), "a dead car is no obstacle"
-	)
-	near.dead = false
-	near.pos.x = -near.pos.x
-	K.check(
-		fails,
-		is_equal_approx(cj._fling(car, xf, 0.0), CJ.JACK_FLING),
-		"nor is one off the other side"
-	)
-	near.pos = (gap.call(2.0, 8.0) as VH.Car).pos
-	K.check(
-		fails,
-		is_equal_approx(cj._fling(car, xf, 0.0), CJ.JACK_FLING),
-		"nor one up the road from a car that stands still"
-	)
-	car.v = 8.0 * WS.M
-	var coming := cj._fling(car, xf, 0.0)
-	K.check(
-		fails,
-		absf(coming - want) < 1e-6,
-		"but a car moving on closes on the landing, the same 2 m (%.2f m)" % coming
-	)
-	car.v = 0.0
-	cars.erase(near)
-	var cross: VH.Car = gap.call(1.9, 0.0, 0.5 * PI)
-	cars.append(cross)
-	var side := cj._fling(car, xf, 0.0)
-	var want_cross := 1.9 - CJ.OUT / WS.M - CJ.BODY_CLEAR
-	K.check(
-		fails,
-		absf(side - want_cross) < 1e-6,
-		"a car across the road counts by its length (%.2f of %.2f m)" % [side, want_cross]
-	)
-	cars.erase(cross)
-	cars.append(near)
-	near.pos = (gap.call(1.0, 0.0) as VH.Car).pos
-	FeatureFlags.set_override("carjack_throw", false)
-	K.check(
-		fails,
-		is_equal_approx(cj._fling(car, xf, 0.0), CJ.JACK_FLING),
-		"flag off: JACK_FLING whatever is beside the door"
-	)
-	FeatureFlags.set_override("carjack_throw", true)
-	ran.append("room")
+## The twist's direction is the blow's own when carjack.gd says one (jack_flip: away from the open
+## door), who they are (the walker's id) when it does not.
+func _check_flip() -> void:
+	for jf: float in [-1.0, 1.0, 0.0]:
+		for id_odd: int in [0, 1]:
+			var s := _stage()
+			var w: WK.Walker = s["w"]
+			w.id = (w.id & ~1) | id_odd
+			w.jack_flip = jf
+			var re: RE = s["re"]
+			re.hit(
+				w,
+				Vector3(HALF_W + 1.0 * WS.M, 0.0, 0.5 * WS.M),
+				Vector3.RIGHT,
+				STRENGTH,
+				"carjack",
+				FLING
+			)
+			var r: RE.Reaction = (re.get("_active") as Dictionary).get(w.id)
+			var want := jf if jf != 0.0 else 1.0 - 2.0 * float(id_odd)
+			K.check(
+				fails,
+				r != null and r.jack != null and signf(r.jack.spin) == want,
+				(
+					"jack_flip %+.0f, id %s: the twist goes %+.0f"
+					% [jf, "odd" if id_odd == 1 else "even", want]
+				)
+			)
+	# The facing at the release: turned by jack_face off facing the way they came from, stopped and
+	# in a moving car (whose release facing is against the way it travels), 0 with none given.
+	for carry: Vector3 in [Vector3.ZERO, Vector3(0.0, 0.0, 8.0 * WS.M)]:
+		var plain_yaw := 0.0
+		for face: float in [0.0, 0.35, -0.35]:
+			var s := _stage()
+			var w: WK.Walker = s["w"]
+			w.jack_face = face
+			w.carry = carry
+			var re: RE = s["re"]
+			re.hit(
+				w,
+				Vector3(HALF_W + 1.0 * WS.M, 0.0, 0.5 * WS.M),
+				Vector3.RIGHT,
+				STRENGTH,
+				"carjack",
+				FLING
+			)
+			var r: RE.Reaction = (re.get("_active") as Dictionary).get(w.id)
+			var yaw := r.jack.yaw_f if r != null and r.jack != null else NAN
+			if face == 0.0:
+				plain_yaw = yaw
+			K.check(
+				fails,
+				absf(angle_difference(plain_yaw, yaw) - face) < 1e-9,
+				(
+					"jack_face %+.2f turns the facing at the release by it (%.0f m/s car)"
+					% [face, carry.length() / WS.M]
+				)
+			)
+	ran.append("flip")
 
 
 ## The flag off: the old drag (0.5 s, the sit pose tipped back) and the old throw, no plan, nothing
 ## said about when they land.
 func _check_flag_off() -> void:
-	FeatureFlags.set_override("carjack_throw", false)
-	var a := _throw(STRENGTH)
-	var res: Dictionary = a["res"]
-	var down := _first(a, &"knockback")
-	K.check(
-		fails,
-		a["plan"] == null and not res.has("lands_in") and bool(res.get("down", false)),
-		"flag off: no plan and no landing time, still knocked down"
-	)
-	K.check(
-		fails,
-		absf(float(down) * DT - JT.PLAIN_S) <= 2.0 * DT,
-		"and the haul is the plain PLAIN_S (%.2f s)" % (float(down) * DT)
-	)
-	var tilt := 0.0
-	for i in range(0, down):
-		tilt = maxf(tilt, absf(float((a["frames"] as Array)[i][2])))
-	K.check(
-		fails,
-		(
-			absf(tilt - JT.PLAIN_TILT) < 0.01
-			and is_zero_approx(float((a["frames"] as Array)[down][3]))
-		),
-		"tipped back PLAIN_TILT as it comes (%.2f), no roll" % tilt
-	)
-	K.check(fails, a["reaction_ended"], "and it ends as ever")
-	var on_p: JT.Plan = on_run["plan"]
-	var longer := float(on_run["left0"]) - float(a["left0"])
-	var extra := on_p.air - JT.T_CONTACT
-	K.check(
-		fails,
-		extra > 0.0 and absf(longer - extra) < 1e-6,
-		(
-			"with the flag the knockdown's lie keeps the slowed fall's extra time (%.3f of %.3f s)"
-			% [longer, extra]
-		)
-	)
-	FeatureFlags.set_override("carjack_throw", true)
-	ran.append("flag_off")
-
-
-# ------------------------------------------------------------------ the camera
-
-
-## hit_feel: a carjack's yank stops the world a moment and shakes the camera, and the landing the
-## blow's info promises shakes it again when it comes; nothing without the info, nothing with the
-## flag off, nothing from someone else's blow.
-func _check_hit_feel() -> void:
-	ctx = K.make_ctx(get_root(), {"camera_mode": "third"})
-	hf = K.make_feature(ctx, "hit_feel")
-	if hf == null:
-		K.check(fails, false, "the hit_feel feature is registered")
-		return
-	hf.set_process(false)
-	var info := {"strength": STRENGTH, "down": true, "by": -1, "lands_in": 0.95}
-	var s0 := int(hf.get("shakes"))
-	var t0 := int(hf.get("stops"))
-	ctx.bus.person_hit.emit(Vector3.ZERO, "carjack", info)
-	K.check(
-		fails,
-		int(hf.get("shakes")) == s0 + 1 and int(hf.get("stops")) == t0 + 1,
-		"the yank shakes the camera and stops the world a moment"
-	)
-	for _k in range(8):
-		hf.call("tick", DT)
-	K.check(fails, is_equal_approx(Engine.time_scale, 1.0), "the stop runs out")
-	hf.call("tick_landings", 0.5)
-	K.check(fails, int(hf.get("shakes")) == s0 + 1, "no landing shake before the body is down")
-	hf.call("tick_landings", 0.5)
-	K.check(fails, int(hf.get("shakes")) == s0 + 2, "one as it lands (0.95 s after the yank)")
-	hf.call("tick_landings", 5.0)
-	K.check(fails, int(hf.get("shakes")) == s0 + 2, "and only the one")
-	ctx.bus.person_hit.emit(Vector3.ZERO, "carjack", {"strength": STRENGTH, "down": true})
-	hf.call("tick_landings", 5.0)
-	K.check(fails, int(hf.get("shakes")) == s0 + 3, "with no landing time given, the yank alone")
-	for _k in range(8):
-		hf.call("tick", DT)
-	FeatureFlags.set_override("carjack_throw", false)
-	ctx.bus.person_hit.emit(Vector3.ZERO, "carjack", info)
-	hf.call("tick_landings", 5.0)
-	K.check(fails, int(hf.get("shakes")) == s0 + 3, "flag off: a carjack shakes nothing, as before")
-	FeatureFlags.set_override("carjack_throw", true)
-	for drop: String in ["from_dict", "on_world_rebuilt"]:
-		ctx.bus.person_hit.emit(Vector3.ZERO, "carjack", info)
-		var shook := int(hf.get("shakes"))
-		if drop == "from_dict":
-			hf.call("from_dict", {})
-		else:
-			hf.call("on_world_rebuilt")
-		hf.call("tick_landings", 5.0)
+	# The look is the carjack_throw flag's and hit_feel's both: either off is the old throw.
+	for off: String in ["carjack_throw", "hit_feel"]:
+		FeatureFlags.set_override(off, false)
+		var a := _throw(STRENGTH)
+		var res: Dictionary = a["res"]
+		var down := _first(a, &"knockback")
 		K.check(
 			fails,
-			int(hf.get("shakes")) == shook,
-			"a load or a rebuilt city drops the landing still to come (%s)" % drop
-		)
-		for _k in range(8):
-			hf.call("tick", DT)
-	hf.call("teardown")
-	Engine.time_scale = 1.0
-	ran.append("hit_feel")
-
-
-## The audio feature: a carjack's body lands (body_fall) when the info says it does, "lands_in"
-## seconds on, not BODY_FALL_S after the yank; with no landing time it is BODY_FALL_S as before.
-func _check_fall_sound() -> void:
-	var actx := K.make_ctx(get_root(), {"audio": true})
-	var f: FpFeature = K.make_feature(actx, "audio")
-	if f == null:
-		K.check(fails, false, "the audio feature is registered")
-		return
-	f.set_process(false)
-	var em: Node = f.get("emitters")
-	var at: Vector3 = em.call("listener") + Vector3(0.05, 0.0, 0.0)
-	for lands: float in [0.9, -1.0]:
-		var info := {"strength": STRENGTH, "down": true}
-		if lands > 0.0:
-			info["lands_in"] = lands
-		var due := lands if lands > 0.0 else BANK.BODY_FALL_S
-		var n := int(em.get("shots_played"))
-		actx.bus.person_hit.emit(at, "carjack", info)
-		var thump := int(em.get("shots_played")) - n
-		_play(f, due - 0.1)
-		var early := int(em.get("shots_played")) - n - thump
-		_play(f, 0.2)
-		var fall := int(em.get("shots_played")) - n - thump
-		var src: Variant = em.call("source", "shot:%d" % int(em.get("shots_played")))
-		var named: bool = (
-			src != null and (src as RefCounted).get("stream") == BANK.stream("body_fall")
+			a["plan"] == null and not res.has("lands_in") and bool(res.get("down", false)),
+			"%s off: no plan and no landing time, still knocked down" % off
 		)
 		K.check(
 			fails,
-			thump == 1 and early == 0 and fall == 1 and named,
+			absf(float(down) * DT - JT.PLAIN_S) <= 2.0 * DT,
+			"and the haul is the plain PLAIN_S (%.2f s)" % (float(down) * DT)
+		)
+		var tilt := 0.0
+		for i in range(0, down):
+			tilt = maxf(tilt, absf(float((a["frames"] as Array)[i][2])))
+		K.check(
+			fails,
 			(
-				"the thump at the yank, the fall at %.2f s and not before (%d, %d, %d)"
-				% [due, thump, early, fall]
-			)
+				absf(tilt - JT.PLAIN_TILT) < 0.01
+				and is_zero_approx(float((a["frames"] as Array)[down][3]))
+			),
+			"tipped back PLAIN_TILT as it comes (%.2f), no roll" % tilt
 		)
-		_play(f, 2.0)
-	f.call("teardown")
-	ran.append("fall_sound")
-
-
-## Steps the audio feature seconds on.
-func _play(f: FpFeature, seconds: float) -> void:
-	for _k in range(roundi(seconds / DT)):
-		f.call("step", DT)
+		K.check(fails, a["reaction_ended"], "and it ends as ever")
+		if off == "carjack_throw":
+			var on_p: JT.Plan = on_run["plan"]
+			var longer := float(on_run["left0"]) - float(a["left0"])
+			var extra := on_p.air - JT.T_CONTACT
+			K.check(
+				fails,
+				extra > 0.0 and absf(longer - extra) < 1e-6,
+				(
+					"the knockdown's lie keeps the slowed fall's extra time (%.3f of %.3f s)"
+					% [longer, extra]
+				)
+			)
+		FeatureFlags.set_override(off, true)
+	ran.append("flag_off")

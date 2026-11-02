@@ -1,12 +1,14 @@
 extends SceneTree
 ## The line a carjacked driver is thrown along (jack_landing.gd, the carjack_throw flag): turned off
-## straight out by the smallest turn that keeps the open door panel clear of the flung arms and the
-## body's run clear of what stands out there (the collision world's static boxes and posts, probed
-## for the root and the head, and anyone on the pavement), the fling cut to that run. The choice is
-## a pure function of the geometry (choose, with the run given as a function), checked first;
-## then the probe over a real collision world and bare walkers; then the whole throw_line the way
-## carjack.gd asks for it, with the numbers of the real car and door the city test (fp_carjack_test)
-## and its probes use (metres, in the car's frame: x out of the driver's side, z forward).
+## straight out by the smallest turn that keeps the flung arms clear of the open door (its outline
+## in plan, the real panel with its thickness and glass, with the reach of the arms allowed for) and
+## the body's run clear of what stands out there (the collision world's static boxes and posts,
+## probed for the root and the head, and anyone on the pavement), the fling cut to that run. The
+## choice is a pure function of the geometry (choose, with the run given as a function), checked
+## first; then the probe over a real collision world and bare walkers; then the whole throw_line
+## the way carjack.gd asks for it, with the numbers of the real car and door the city test
+## (fp_carjack_test) and its probes use (metres, in the car's frame: x out of the driver's side,
+## z forward). The real doors of every model against the real skeleton are fp_jack_doors_test's.
 
 const K := preload("res://tools/tests/fp_kit.gd")
 const WS := preload("res://scripts/fp/world_scale.gd")
@@ -14,10 +16,29 @@ const WK := preload("res://scripts/fp/traffic/walkers.gd")
 const JL := preload("res://scripts/fp/traffic/jack_landing.gd")
 const CJ := preload("res://scripts/fp/traffic/carjack.gd")
 const HALF_W := 1.154
-const HINGE := Vector2(0.927, 0.930)
-const FREE := Vector2(2.375, 0.323)
 const SEAT_Z := -0.2
 const LEN := 1.8 * WS.M
+## The open driver's door in plan (car_doors.gd outline, metres) of the first model, a coupe, whose
+## long door hangs closest of any to the line out and needs the driver let go a little down the
+## side, and of a van, whose door hangs close to the seat (no turn clears it: its driver is let go
+## down the side). Half a dozen points of each hull, the real numbers.
+const COUPE := [
+	Vector2(0.90, 0.865),
+	Vector2(1.63, 0.42),
+	Vector2(2.31, 0.17),
+	Vector2(2.38, 0.34),
+	Vector2(1.39, 0.99),
+	Vector2(0.93, 0.93),
+]
+## A door that hangs this much further up the car than the coupe's (m): a turn just clears it.
+const FAR := 0.2
+const VAN := [
+	Vector2(0.96, 1.18),
+	Vector2(1.15, 1.08),
+	Vector2(1.83, 0.83),
+	Vector2(1.87, 0.93),
+	Vector2(1.0, 1.28),
+]
 
 var fails: Array[String] = []
 var ran: Array[String] = []
@@ -30,6 +51,7 @@ func _init() -> void:
 	_check_turns()
 	_check_geometry()
 	_check_choose()
+	_check_unreachable()
 	ctx = K.make_ctx(get_root(), {"player": false, "hud": false})
 	spot = _free_spot()
 	K.check(fails, spot.is_finite(), "a bare piece of ground to throw across (%s)" % str(spot))
@@ -37,7 +59,7 @@ func _init() -> void:
 		_check_free_run()
 		_check_people()
 		_check_throw_line()
-	K.check(fails, ran.size() == 6, "every section ran to its end (%s)" % str(ran))
+	K.check(fails, ran.size() == 7, "every section ran to its end (%s)" % str(ran))
 	K.finish(self, "FP_JACK_LANDING_TEST", fails)
 
 
@@ -81,26 +103,44 @@ func _check_turns() -> void:
 	ran.append("turns")
 
 
-## The distance between two segments: across, along an end, crossing, parallel.
+## The distance from a point to the outline (negative inside) and what a line leaves clear of it
+## once the arms' reach (REACH_0, and REACH_K more for each unit flown) is allowed for.
 func _check_geometry() -> void:
-	var gap := JL.seg_gap(Vector2(0, 0), Vector2(2, 0), Vector2(0, 1), Vector2(2, 1))
-	K.check(fails, is_equal_approx(gap, 1.0), "parallel segments a unit apart")
-	gap = JL.seg_gap(Vector2(0, 0), Vector2(2, 0), Vector2(3, 0), Vector2(5, 3))
-	K.check(fails, is_equal_approx(gap, 1.0), "past an end: the end's distance (%.3f)" % gap)
-	gap = JL.seg_gap(Vector2(0, 0), Vector2(2, 2), Vector2(0, 2), Vector2(2, 0))
-	K.check(fails, gap == 0.0, "crossing segments touch")
-	gap = JL.seg_gap(Vector2(2, 0), Vector2(2, 0), Vector2(1, 1), Vector2(3, 1))
-	K.check(fails, is_equal_approx(gap, 1.0), "a point against a segment")
-	K.check(fails, JL.panel({}).is_empty(), "a car with no door (or a shut one, {}) has no panel")
-	var pan := JL.panel(_door())
+	var sq := _poly([Vector2(2, 1), Vector2(3, 1), Vector2(3, 2), Vector2(2, 2)])
 	K.check(
 		fails,
+		is_equal_approx(JL.outline_dist(Vector2(2.5, 0.0) * WS.M, sq), 1.0 * WS.M),
+		"a point a unit off a side of the outline"
+	)
+	K.check(
+		fails,
+		is_equal_approx(JL.outline_dist(Vector2(0.0, 0.0), sq), sqrt(5.0) * WS.M),
+		"past a corner: the corner's distance"
+	)
+	K.check(
+		fails,
+		is_equal_approx(JL.outline_dist(Vector2(2.4, 1.5) * WS.M, sq), -0.4 * WS.M),
+		"inside it: negative, the way out"
+	)
+	# A line along +x two units long at z = 0 passes the square (1 unit off it from x = 2): the
+	# least of (distance - reach) is where the reach, which grows as it flies, is largest while the
+	# square is nearest: at its end, u = 2.
+	var gap := JL.door_gap(Vector2.ZERO, Vector2(1.0, 0.0), 2.0 * WS.M, sq)
+	var want := 1.0 * WS.M - (JL.REACH_0 + JL.REACH_K * 2.0 * WS.M)
+	K.check(
+		fails,
+		absf(gap - want) < 1e-4,
 		(
-			pan.size() == 2
-			and (pan[0] as Vector2).is_equal_approx(HINGE * WS.M)
-			and (pan[1] as Vector2).is_equal_approx(FREE * WS.M)
-		),
-		"the open panel runs from the hinge to the door's free end"
+			"a line's gap is its distance less the reach there (%.3f of %.3f m)"
+			% [gap / WS.M, want / WS.M]
+		)
+	)
+	var turned := JL.door_gap(Vector2.ZERO, JL.dir_at(deg_to_rad(20.0)), 2.0 * WS.M, sq)
+	K.check(fails, turned > gap, "turned away from it (to the rear, -z) the gap is more")
+	K.check(
+		fails,
+		JL.door_gap(Vector2(2.5, 1.5) * WS.M, Vector2(1.0, 0.0), 0.5 * WS.M, sq) < 0.0,
+		"a line through the outline leaves nothing: negative"
 	)
 	ran.append("geometry")
 
@@ -109,14 +149,14 @@ func _check_geometry() -> void:
 ## the whole run, a turn only for what it buys, the door ahead of the run.
 func _check_choose() -> void:
 	var start := _start()
-	var pan := JL.panel(_door())
+	var pan := _far()
 	var full := func(_d: Vector2) -> float: return LEN
 	K.check(
 		fails,
-		JL.door_gap(start, JL.dir_at(0.0), LEN, pan) < JL.DOOR_CLEAR,
+		JL.door_gap(start, JL.dir_at(0.0), LEN, pan) < JL.DOOR_MARGIN,
 		(
-			"straight out, the arms' line passes the door's end at %.2f m (a clearance of %.2f)"
-			% [JL.door_gap(start, JL.dir_at(0.0), LEN, pan) / WS.M, JL.DOOR_CLEAR / WS.M]
+			"straight out, the arms' reach meets the door's end: %.2f m clear (of %.2f)"
+			% [JL.door_gap(start, JL.dir_at(0.0), LEN, pan) / WS.M, JL.DOOR_MARGIN / WS.M]
 		)
 	)
 	var pick := JL.choose(start, LEN, pan, full)
@@ -126,15 +166,15 @@ func _check_choose() -> void:
 	var shown := "turned %.0f degrees to the rear, the least that clears it" % rad_to_deg(a)
 	K.check(
 		fails,
-		a > 0.0 and a <= JL.AIM_MAX and g >= JL.DOOR_CLEAR and g_less < JL.DOOR_CLEAR,
+		a > 0.0 and a <= JL.AIM_MAX + 1e-9 and g >= JL.DOOR_MARGIN and g_less < JL.DOOR_MARGIN,
 		"an open door: %s (%.2f m, %.2f less)" % [shown, g / WS.M, g_less / WS.M]
 	)
 	K.check(fails, is_equal_approx(pick.y, LEN), "with the whole run")
-	var plain := JL.choose(start, LEN, [], full)
+	var plain := JL.choose(start, LEN, PackedVector2Array(), full)
 	K.check(fails, plain.x == 0.0 and is_equal_approx(plain.y, LEN), "no door: straight out")
 	var wall := func(d: Vector2) -> float:
 		return 0.3 * WS.M if absf(atan2(-d.y, d.x)) < deg_to_rad(7.0) else LEN
-	pick = JL.choose(start, LEN, [], wall)
+	pick = JL.choose(start, LEN, PackedVector2Array(), wall)
 	K.check(
 		fails,
 		is_equal_approx(pick.x, 2.0 * JL.AIM_STEP) and is_equal_approx(pick.y, LEN),
@@ -146,14 +186,14 @@ func _check_choose() -> void:
 	var better := func(d: Vector2) -> float:
 		var a_d := atan2(-d.y, d.x)
 		return 0.9 * LEN if is_equal_approx(a_d, -2.0 * JL.AIM_STEP) else 0.5 * LEN
-	pick = JL.choose(start, LEN, [], better)
+	pick = JL.choose(start, LEN, PackedVector2Array(), better)
 	K.check(
 		fails,
 		is_equal_approx(pick.x, -2.0 * JL.AIM_STEP) and is_equal_approx(pick.y, 0.9 * LEN),
 		"no turn clear, the one with the most run (%.0f degrees)" % rad_to_deg(pick.x)
 	)
 	var meh := func(d: Vector2) -> float: return 0.5 * WS.M + (0.02 * WS.M if d.y != 0.0 else 0.0)
-	pick = JL.choose(start, LEN, [], meh)
+	pick = JL.choose(start, LEN, PackedVector2Array(), meh)
 	K.check(fails, pick.x == 0.0, "a turn that buys under TURN_WORTH is not taken")
 	var late := func(d: Vector2) -> float:
 		var turned := atan2(-d.y, d.x)
@@ -163,20 +203,148 @@ func _check_choose() -> void:
 		fails,
 		(
 			pick.x >= JL.turn_at(1)
-			and JL.door_gap(start, JL.dir_at(pick.x), LEN, pan) >= JL.DOOR_CLEAR
+			and JL.door_gap(start, JL.dir_at(pick.x), LEN, pan) >= JL.DOOR_MARGIN
 		),
 		(
 			"the door first: a line clear of the panel even where the run is short (%.2f m)"
 			% (pick.y / WS.M)
 		)
 	)
-	var stuck := JL.choose(start, LEN, [Vector2(0.5, 0.0) * WS.M, Vector2(3.0, 0.0) * WS.M], full)
+	var ring := PackedVector2Array()
+	for i in range(64):
+		ring.append(start + Vector2.from_angle(TAU * float(i) / 64.0) * 3.0 * WS.M)
+	var stuck := JL.choose(start, LEN, ring, full)
 	K.check(
-		fails, stuck.x == 0.0 and is_equal_approx(stuck.y, LEN), "a panel no turn clears: no worse"
+		fails,
+		stuck.x == 0.0 and is_equal_approx(stuck.y, LEN),
+		"a door all round them, no turn clears: no worse than straight out"
 	)
 	var again := JL.choose(start, LEN, pan, full)
 	K.check(fails, again == JL.choose(start, LEN, pan, full), "the same twice")
 	ran.append("choose")
+
+
+## A door that hangs too close to the seat for any turn to keep the arms clear of it (a van's: the
+## numbers measured on the real model, as the doors test has them all): the turn that gets furthest
+## from it, not the one with the most run (which, all alike, was straight out); the point the body
+## is let go at moved down the car's side by the least that gets the best turn SHIFT_MARGIN clear,
+## never past SHIFT_MAX, none where there is no need; the twist turned away from the door.
+func _check_unreachable() -> void:
+	var van_pan := _poly(VAN)
+	var van_start := Vector2(1.225 + 0.3, 0.67) * WS.M
+	var top := JL.best_gap(van_start, LEN, van_pan)
+	var straight_gap := JL.door_gap(van_start, JL.dir_at(0.0), LEN, van_pan)
+	K.check(
+		fails,
+		top < JL.DOOR_MARGIN and top > straight_gap,
+		(
+			"a van's door: no turn clears it (%.2f m at best, %.2f m straight out, of %.2f)"
+			% [top / WS.M, straight_gap / WS.M, JL.DOOR_MARGIN / WS.M]
+		)
+	)
+	var full := func(_d: Vector2) -> float: return LEN
+	var pick := JL.choose(van_start, LEN, van_pan, full)
+	K.check(
+		fails,
+		pick.x > 0.0 and pick.z >= top - JL.GAP_TIE - 1e-9 and is_equal_approx(pick.y, LEN),
+		(
+			"the turn that keeps furthest from it: %.0f degrees to the rear, %.2f m (best %.2f)"
+			% [rad_to_deg(pick.x), pick.z / WS.M, top / WS.M]
+		)
+	)
+	# The most run is at the straight line; the door's gap there is the worst: the gap wins.
+	var straight := func(d: Vector2) -> float: return LEN if d.y == 0.0 else 0.5 * LEN
+	pick = JL.choose(van_start, LEN, van_pan, straight)
+	K.check(
+		fails,
+		pick.x > 0.0 and pick.z >= top - JL.GAP_TIE - 1e-9,
+		(
+			"even where straight out has all the run, the clearance counts first (%.0f degrees)"
+			% rad_to_deg(pick.x)
+		)
+	)
+	# Of the lines as far from the door as the best, the one with the run.
+	var rear := func(d: Vector2) -> float:
+		return LEN if absf(atan2(-d.y, d.x) - JL.AIM_MAX) < 1e-6 else 0.5 * LEN
+	pick = JL.choose(van_start, LEN, van_pan, rear)
+	K.check(
+		fails,
+		is_equal_approx(pick.x, JL.AIM_MAX) and is_equal_approx(pick.y, LEN),
+		"of the lines as far off it, the one with the room: %.0f degrees" % rad_to_deg(pick.x)
+	)
+	var shift := JL.exit_shift(van_start, LEN, van_pan)
+	var moved := Vector2(van_start.x, van_start.y - shift)
+	K.check(
+		fails,
+		shift > 0.0 and shift <= JL.SHIFT_MAX and JL.best_gap(moved, LEN, van_pan) > top,
+		(
+			"the van's driver is let go %.2f m down the side: best line %.2f m clear (was %.2f)"
+			% [shift / WS.M, JL.best_gap(moved, LEN, van_pan) / WS.M, top / WS.M]
+		)
+	)
+	var less := Vector2(van_start.x, van_start.y - (shift - JL.SHIFT_STEP))
+	K.check(
+		fails,
+		shift >= JL.SHIFT_MAX - 1e-9 or JL.best_gap(less, LEN, van_pan) < JL.SHIFT_MARGIN,
+		"and by the least it takes: a step less is short of SHIFT_MARGIN"
+	)
+	var mid := Vector2(van_start.x, van_start.y - 0.5 * JL.SHIFT_MAX)
+	var easy := _poly(
+		[
+			Vector2(0.96, 1.18 + 0.3 * JL.SHIFT_MAX / WS.M),
+			Vector2(1.15, 1.08 + 0.3 * JL.SHIFT_MAX / WS.M),
+			Vector2(1.87, 0.93 + 0.3 * JL.SHIFT_MAX / WS.M),
+			Vector2(1.0, 1.28 + 0.3 * JL.SHIFT_MAX / WS.M),
+		]
+	)
+	var easy_shift := JL.exit_shift(van_start, LEN, easy)
+	K.check(
+		fails,
+		(
+			easy_shift > 0.0
+			and easy_shift < shift
+			and (
+				JL.best_gap(Vector2(van_start.x, van_start.y - easy_shift), LEN, easy)
+				>= JL.SHIFT_MARGIN
+			)
+		),
+		"a door further off needs a smaller shift (%.2f m)" % (easy_shift / WS.M)
+	)
+	var coupe_shift := JL.exit_shift(_start(), LEN, _poly(COUPE))
+	K.check(
+		fails,
+		coupe_shift > 0.0 and coupe_shift <= 3.0 * JL.SHIFT_STEP,
+		"a coupe's driver is let go a little down the side (%.2f m)" % (coupe_shift / WS.M)
+	)
+	K.check(
+		fails,
+		JL.exit_shift(_start(), LEN, _far()) == 0.0,
+		(
+			"a door further off than that needs none (its best line is %.2f m clear)"
+			% (JL.best_gap(_start(), LEN, _far()) / WS.M)
+		)
+	)
+	K.check(fails, JL.exit_shift(van_start, LEN, PackedVector2Array()) == 0.0, "no door, no shift")
+	var hug := _poly([Vector2(1.0, -1.0), Vector2(3.0, -1.0), Vector2(3.0, 1.2), Vector2(1.0, 1.2)])
+	K.check(
+		fails,
+		is_equal_approx(JL.exit_shift(van_start, LEN, hug), JL.SHIFT_MAX) and mid.is_finite(),
+		"a door that no shift gets clear of: the most, SHIFT_MAX"
+	)
+	var behind := PackedVector2Array()
+	for p: Vector2 in van_pan:
+		behind.append(Vector2(p.x, -p.y))
+	K.check(
+		fails,
+		(
+			JL.spin_away(van_start, JL.dir_at(0.0), van_pan) == -1.0
+			and JL.spin_away(van_start, JL.dir_at(JL.AIM_MAX), van_pan) == -1.0
+			and JL.spin_away(van_start, JL.dir_at(0.0), behind) == 1.0
+			and JL.spin_away(van_start, JL.dir_at(0.0), PackedVector2Array()) == 0.0
+		),
+		"the twist turns away from a door ahead of the line (-1), behind it (+1), none for no door"
+	)
+	ran.append("unreachable")
 
 
 # ------------------------------------------------------------------ the world
@@ -308,7 +476,7 @@ func _check_people() -> void:
 func _check_throw_line() -> void:
 	var xf := Transform3D(Basis(Vector3.UP, 0.7), spot)
 	var start := _start()
-	var door := _door()
+	var door := _far()
 	var col := ctx.collision
 	var clear := JL.throw_line(xf, start, 1.8, door, col, [], -1)
 	var a: float = clear["angle"]
@@ -326,10 +494,10 @@ func _check_throw_line() -> void:
 	)
 	K.check(
 		fails,
-		a > 0.0 and a <= JL.AIM_MAX and is_equal_approx(float(clear["fling"]), 1.8),
+		a > 0.0 and a <= JL.AIM_MAX + 1e-9 and is_equal_approx(float(clear["fling"]), 1.8),
 		"open ground, open door: turned %.0f degrees to the rear, the whole 1.8 m" % rad_to_deg(a)
 	)
-	var shut := JL.throw_line(xf, start, 1.8, {}, col, [], -1)
+	var shut := JL.throw_line(xf, start, 1.8, PackedVector2Array(), col, [], -1)
 	K.check(
 		fails,
 		float(shut["angle"]) == 0.0 and is_equal_approx(float(shut["fling"]), 1.8),
@@ -383,12 +551,20 @@ func _check_throw_line() -> void:
 # ------------------------------------------------------------------ the fixtures
 
 
-## The car's driver's door as door_info reports it (world units, the car's frame).
-func _door() -> Dictionary:
-	return {
-		"hinge": Vector3(HINGE.x, 0.58, HINGE.y) * WS.M,
-		"open_rear": Vector3(FREE.x, 0.9, FREE.y) * WS.M,
-	}
+## The coupe's door hung FAR m further up the car: a turn clears it, a shift is not needed.
+func _far() -> PackedVector2Array:
+	var out := PackedVector2Array()
+	for p: Vector2 in COUPE:
+		out.append((p + Vector2(0.0, FAR)) * WS.M)
+	return out
+
+
+## A door outline given in metres (the car's frame) as the world units the planner takes.
+func _poly(pts: Array) -> PackedVector2Array:
+	var out := PackedVector2Array()
+	for p: Vector2 in pts:
+		out.append(p * WS.M)
+	return out
 
 
 ## Where the driver comes out: OUT past the body side, level with the seat (car frame x, z).

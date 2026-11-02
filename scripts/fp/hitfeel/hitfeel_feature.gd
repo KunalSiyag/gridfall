@@ -10,8 +10,9 @@ extends FpFeature
 ## on an animal (animal_hit) stops and shakes less than one on a person, and someone slammed into a
 ## wall or a prop (hero_slammed) stops and shakes it most. A carjack (person_hit "carjack": the hero
 ## pulling the driver out) stops and shakes it at the yank and shakes it again as the driver lands
-## ("lands_in" seconds later). The thrown body of a knock-down is traffic's (reactions.gd, under the
-## same flag). Nothing stops in photo mode, while the game is paused or at sim speeds above 1.
+## (person_landed: the touchdown itself, at any sim speed). The thrown body of a knock-down is
+## traffic's (reactions.gd, under the same flag). Nothing stops in photo mode, while the game is
+## paused or at sim speeds above 1.
 
 const WS := preload("res://scripts/fp/world_scale.gd")
 ## The world's time scale through a hit-stop.
@@ -38,8 +39,8 @@ const CRASH_SHAKE := Vector2(0.15, 0.85)
 ## Someone the hero holds slammed into something (hero_slammed): the stop and the trauma.
 const SLAM_STOP := 0.13
 const SLAM_SHAKE := 0.35
-## A carjack's yank: the stop and the trauma by strength; the driver's landing, "lands_in" seconds
-## on, shakes the camera by LAND_SHAKE.
+## A carjack's yank: the stop and the trauma by strength; the driver's landing, as their body
+## touches the ground (person_landed), shakes the camera by LAND_SHAKE.
 const JACK_STOP := 0.05
 const JACK_SHAKE := Vector2(0.2, 0.4)
 const LAND_SHAKE := Vector2(0.12, 0.3)
@@ -58,9 +59,8 @@ var _base_scale: float = 1.0
 ## frozen frame was up longer than any stop asks (a real hitch).
 var _stop_ticks: int = 0
 var _last_us: int = 0
-## The landings still to come: [seconds left, trauma, walker id] for each driver thrown and not yet
-## down.
-var _landings: Array = []
+## The landings still to come: walker id -> trauma, for each driver thrown and not yet down.
+var _landings: Dictionary = {}
 
 
 func feature_id() -> String:
@@ -73,6 +73,7 @@ func setup(p_ctx: FpContext) -> void:
 	_last_us = Time.get_ticks_usec()
 	if ctx.bus != null:
 		link_signal(ctx.bus.person_hit, _on_person_hit)
+		link_signal(ctx.bus.person_landed, _on_person_landed)
 		link_signal(ctx.bus.hero_hurt, _on_hero_hurt)
 		link_signal(ctx.bus.car_impact, _on_car_impact)
 		link_signal(ctx.bus.animal_hit, _on_animal_hit)
@@ -95,12 +96,11 @@ func from_dict(_d: Dictionary) -> void:
 	_landings.clear()
 
 
-func _process(delta: float) -> void:
+func _process(_delta: float) -> void:
 	var now := Time.get_ticks_usec()
 	var real := float(now - _last_us) / 1e6
 	_last_us = now
 	tick(real)
-	tick_landings(delta)
 
 
 ## Runs the stop under way on by real seconds; gives the time scale back once it is over, never
@@ -115,20 +115,6 @@ func tick(real_dt: float) -> void:
 			_end_stop()
 		else:
 			_stop_left = 1e-4  # the second frame's hold; the next tick ends it
-
-
-## Runs the drivers' landings on by dt game seconds (the engine's own delta, so a hit-stop slows
-## them as it slows the world): each shakes the camera as its body reaches the ground.
-func tick_landings(dt: float) -> void:
-	if _landings.is_empty() or not _open():
-		return
-	for i in range(_landings.size() - 1, -1, -1):
-		var e: Array = _landings[i]
-		e[0] = float(e[0]) - dt
-		if float(e[0]) <= 0.0:
-			if _still_there(int(e[2])):
-				shake(float(e[1]))
-			_landings.remove_at(i)
 
 
 ## True while a hit-stop holds the world.
@@ -190,22 +176,20 @@ func _on_person_hit(_at: Vector3, cause: String, info: Dictionary) -> void:
 
 
 ## The hero pulled a driver out (the carjack_throw flag): the yank stops and shakes, and the landing
-## the info promises shakes again when it comes.
+## the info promises shakes again as the driver's body touches the ground (person_landed).
 func _on_yank(strength: float, info: Dictionary) -> void:
 	hit_stop(JACK_STOP)
 	shake(lerpf(JACK_SHAKE.x, JACK_SHAKE.y, strength))
 	if info.has("lands_in") and _open():
-		var trauma := lerpf(LAND_SHAKE.x, LAND_SHAKE.y, strength)
-		_landings.append([float(info["lands_in"]), trauma, int(info.get("walker", -1))])
+		_landings[int(info.get("walker", -1))] = lerpf(LAND_SHAKE.x, LAND_SHAKE.y, strength)
 
 
-## False when the street no longer has walker id (removed since the blow: nothing lands); true for
-## anyone it cannot say of (no id, no traffic feature to ask).
-func _still_there(id: int) -> bool:
-	var traffic: FpFeature = ctx.feature("traffic") if ctx != null else null
-	if id < 0 or traffic == null or not traffic.has_method("walker_here"):
-		return true
-	return bool(traffic.call("walker_here", id))
+## A driver thrown by a carjack came down: the camera shakes if the yank said it would.
+func _on_person_landed(_at: Vector3, id: int) -> void:
+	var trauma: Variant = _landings.get(id)
+	_landings.erase(id)
+	if trauma != null and _open():
+		shake(float(trauma))
 
 
 func _on_hero_slammed(_at: Vector3, _what: String, _over: bool) -> void:
