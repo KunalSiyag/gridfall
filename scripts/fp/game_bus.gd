@@ -128,3 +128,6 @@ signal animal_called(at: Vector3, call: String, size: float)
 ## meshes, textures and sounds can now be loaded. FpMode forwards Main's WebPackStream arrivals
 ## here; features refresh pack-dependent assets through it, never their own HTTPRequests.
 signal pack_ready(pack: String)
+## The player asked all five mayors a question with the chat command "/ask <question>" (empty: show
+## the last answers again). Emitted by the chat feature; the arena feature opens the panel.
+signal ask_requested(question: String)

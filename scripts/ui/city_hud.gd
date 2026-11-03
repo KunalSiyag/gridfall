@@ -22,6 +22,7 @@ signal resident_selected(id: String)
 const D := preload("res://scripts/sim/sim_defs.gd")
 # Preload, not the global name: the class cache is not guaranteed fresh in test worktrees.
 const PackStatus := preload("res://scripts/ui/pack_status.gd")
+const ARENA := preload("res://scripts/fp/arena/arena_panel.gd")
 const TITLE_FONT := preload("res://fonts/lilita_one_regular.ttf")
 const BG := Color(0.055, 0.07, 0.11, 0.93)
 const ACCENT := Color(0.0, 0.88, 1.0)
@@ -74,6 +75,7 @@ var _pace_btn: CheckButton
 var _overlay_btns: Dictionary = {}
 var _armed_label: Label
 var _decree_edit: LineEdit
+var _arena: Control
 var _grant_pick: OptionButton
 var _ord_box: VBoxContainer
 var _ord_checks: Dictionary = {}
@@ -361,6 +363,11 @@ func _build_tools_panel() -> void:
 	var send := _button("Send decree", 0)
 	send.pressed.connect(_send_decree)
 	pw.add_child(send)
+	if FeatureFlags.enabled("arena_ask"):
+		var ask := _button("Ask the five (what-if)", 0)
+		ask.tooltip_text = "All five models answer one question; nothing is applied."
+		ask.pressed.connect(_open_arena)
+		pw.add_child(ask)
 	pw.add_child(HSeparator.new())
 	pw.add_child(_label("Grant city funds", 13, ACCENT))
 	_grant_pick = OptionButton.new()
@@ -676,6 +683,17 @@ func _send_decree() -> void:
 	_decree_edit.text = ""
 	_decree_edit.release_focus()
 	toast("Decree sent. Mayors read it in their next GMI call.")
+
+
+## Opens the Ask-the-five panel over the HUD (the same panel the street modal uses).
+func _open_arena() -> void:
+	if _arena == null:
+		_arena = ARENA.new()
+		_arena.setup(brain)
+		_arena.close_requested.connect(func() -> void: _arena.set_open(false))
+		_root.add_child(_arena)
+	_arena.brain = brain
+	_arena.set_open(true)
 
 
 func _random_disaster() -> void:

@@ -293,6 +293,7 @@ Signals that cross first-person slices. Emitters and listeners are listed in doc
 - `hero_hit_dir(angle: float)`: The blow behind a hero_hurt came from angle on the screen (hit_direction, first person with a push only): 0 dead ahead, +PI/2 from the right, +-PI from behind — health's _flash_from emits it just before hero_hurt; the health screen's arc and the audio thump's pan both read it.
 - `animal_called(at: Vector3, call: String, size: float)`: An animal called out at a point (its head): a dog's "bark", "growl" or "whine", a pigeon's "coo", a lone pigeon's "flap" or a flock's "takeoff", a cat's "meow", "purr", "hiss" or "chatter" (at a bird it stalks); size is its height at the shoulder (m), so a small dog yaps higher. Emitted by the animals feature.
 - `pack_ready(pack: String)`: A web background pack finished downloading and mounting (split builds only): its scenes, meshes, textures and sounds can now be loaded. FpMode forwards Main's WebPackStream arrivals here; features refresh pack-dependent assets through it, never their own HTTPRequests.
+- `ask_requested(question: String)`: The player asked all five mayors a question with the chat command "/ask <question>" (empty: show the last answers again). Emitted by the chat feature; the arena feature opens the panel.
 
 ## `scripts/fp/obb2d.gd`
 
