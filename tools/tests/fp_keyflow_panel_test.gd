@@ -104,8 +104,9 @@ func _check_panel() -> void:
 	)
 	await _check_panel_busy(panel, c)
 	_check_panel_saved()
-	_check_panel_typed(panel, c)
+	await _check_panel_typed(panel, c)
 	_check_panel_words(panel)
+	_check_panel_key_text(panel, c)
 	await _check_panel_saving(panel, c)
 	await _check_panel_stale(panel, c)
 	panel.free()
@@ -246,6 +247,89 @@ func _check_panel_saved() -> void:
 			and PANEL.status_line(true, false, false).contains("off")
 		),
 		"the live state still reads as before"
+	)
+
+
+## The pasted key is tidied and checked before it is used, and the status never says "saved" for a
+## key other than the one in use.
+func _check_panel_key_text(panel: GmiKeyPanel, c: KIT.FakeKeyNet) -> void:
+	K.check(
+		fails,
+		(
+			PANEL.tidy_key("\u00a0 gmi_abc123\u200b \n") == "gmi_abc123"
+			and PANEL.tidy_key("  gmi_abc123\r\n") == "gmi_abc123"
+			and PANEL.tidy_key("\u00a0\ufeff") == ""
+			and PANEL.tidy_key("gmi_a b") == "gmi_a b"
+		),
+		"tidy_key drops spaces, no-break spaces, zero-width marks and a BOM at the ends only"
+	)
+	K.check(
+		fails,
+		(
+			PANEL.key_problem("gmi_abc-123.XYZ_~").is_empty()
+			and not PANEL.key_problem("gmi_a b").is_empty()
+			and not PANEL.key_problem("gmi_a\nb").is_empty()
+			and not PANEL.key_problem("gmi_a\u200bb").is_empty()
+			and not PANEL.key_problem("gmi_ä").is_empty()
+		),
+		"key_problem takes printable ASCII, refuses a space, newline or non-ASCII character"
+	)
+	panel.forget_key()
+	c.api_key = ""
+	c.posts = 0
+	panel.input.text = "gmi_with space_0123456789"
+	panel.apply_key()
+	K.check(
+		fails,
+		(
+			not c.has_key()
+			and panel.status.text.contains("space or an odd character")
+			and not panel.status.text.contains("0123456789")
+		),
+		(
+			"Apply refuses a key with a space inside and says so without echoing it (%s)"
+			% panel.status.text
+		)
+	)
+	panel.input.text = "gmi_zero\u200bwidth_0123456789"
+	await panel.run_test()
+	K.check(
+		fails,
+		c.posts == 0 and not c.has_key() and panel.status.text.contains("odd character"),
+		"Test refuses it too and sends nothing"
+	)
+	panel.input.text = "\u00a0gmi_nbsp_0123456789\u00a0"
+	panel.apply_key()
+	K.check(
+		fails,
+		c.api_key == "gmi_nbsp_0123456789",
+		"a key wrapped in no-break spaces is put in use without them"
+	)
+	c.saved = "gmi_other_saved_9876543210"
+	panel.refresh()
+	K.check(
+		fails,
+		(
+			panel.status.text.contains("A different key is saved")
+			and not panel.status.text.contains("Key saved on this device")
+		),
+		"a saved copy of another key is not reported as this key's copy (%s)" % panel.status.text
+	)
+	c.saved = c.api_key
+	panel.refresh()
+	K.check(
+		fails,
+		panel.status.text.contains("Key saved on this device"),
+		"the saved copy of the key in use reads 'Key saved on this device'"
+	)
+	c.saved = ""
+	panel.forget_key()
+	K.check(
+		fails,
+		PANEL.status_line(true, true, false, true).ends_with(
+			"A different key is saved on this device."
+		),
+		"status_line names a saved copy of another key"
 	)
 
 

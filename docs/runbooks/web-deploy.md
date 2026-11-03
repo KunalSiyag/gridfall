@@ -145,7 +145,7 @@ the first load with `tools/web_measure.py` before quoting a new total.
   `cross-origin-embedder-policy: require-corp`: the threaded source preset refuses to boot
   without them, and they are harmless on the recorded single-threaded live build.
 - Esc -> Settings -> **GMI Cloud**: a pasted key (up to 512 characters) is sent only to
-  `api.gmi-serving.com`; **Test** makes one tiny live call and says in plain words whether the key
+  GMI Cloud (`api.gmi-serving.com`, and on desktop the poster queue at `console.gmicloud.ai`); **Test** makes one tiny live call and says in plain words whether the key
   works (and prints one `GMI_TEST <status> http=<code>` console line, never the key); a failed live
   call prints a `GMI_FAIL` line; **Remember on this device** keeps the key in the browser's
   `localStorage` (`gridfall.gmi_key`), Forget erases it.
@@ -265,7 +265,7 @@ were the defaults on 2026-11-03 (edit `DEFAULT_INSTANCES` in the script when the
      without saying so.
    - `warn  build: could not read ...` (verdict `INCOMPLETE`) or `not read (DEMO_CHECK_BUILD=0)`
      (verdict `NO BUILD CHECK`): the build is not verified; run it again with the network up and a
-     longer `DEMO_CHECK_BUILD_TIMEOUT` (the pack is 88-123 MB, so below about 3 Mbit/s the default
+     longer `DEMO_CHECK_BUILD_TIMEOUT` (the pack is 88-106 MB on the wire, so below about 3.5 Mbit/s the default
      240 s is not enough) before trusting the image.
    - any other `FAIL`: the line names the check (healthz, COOP/COEP, Brotli, immutable cache, a
      file the page needs that does not answer 200); fix the deployment and rerun.
@@ -274,7 +274,7 @@ were the defaults on 2026-11-03 (edit `DEFAULT_INSTANCES` in the script when the
    no pause menu appears press Esc once more), Settings, **GMI Cloud**, paste the key, press **Test**
    and read the line under the buttons (F12, Console, shows `GMI_TEST <status> http=<code>` too). If
    the page has no Test button, this is an old image: go back to step 1. Then:
-   - "Key works (answered in N s)": the whole path works from that origin (CORS, key, model). Go on.
+   - "Key works (answered in N s)": the chat-completions call works from that origin (CORS and key, one model). It does not cover the other models (`tools/ops/model_check.py`) or the poster host. Go on.
    - "Key rejected (401)" or "(403)": GMI refused the key; paste another.
    - "Rate limited, try again in a minute": GMI is throttling the key; wait and press Test again.
    - "No answer from GMI in 12 s, try again": the call left and nothing came back in time. Press Test
@@ -552,7 +552,7 @@ the runbook's step order is now simpler and safer:
   continues the saved city, quit to orbit and back clean, no console errors.
 - The older instance `gridfall-web-0a6855f-d` (the 2026-10-28 build, image `sha256:ca8c3c5c...`) is at
   https://ct-1ff7949c-bd38-4939-b13c-4a0638d82bec-web.caas-us1.gmicloud.ai (healthz 200 on 2026-10-30, per the
-  owner's notes). The URL recorded for it in the 2026-10-28 section below (`ct-acf8ab8c...`) answered 404 on
+  owner's notes). The URL recorded in the 2026-10-28 section below (`ct-acf8ab8c...`) is a different, earlier instance (`gridfall-web-f762234`) and answered 404 on
   2026-10-30; `tools/demo_check.sh` defaults to this URL and the new one.
 - **Still manual:** the owner opens the URL with their own key and confirms a live mayor turn (see "Verify the
   key path"; nothing verified the keyed browser path before 2026-11-03 and nothing has since: no real

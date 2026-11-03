@@ -140,10 +140,12 @@ func remember_player_key(key: String) -> void:
 	WebSupport.store_set(WEB_KEY_STORE, key.strip_edges())
 
 
-## True when this device holds a remembered key the player asked for (web build only).
-func has_remembered_key() -> bool:
+## True when this device holds a remembered key the player asked for (web build only). With key
+## given, true only when the saved copy is that very key (a copy of another key does not count).
+func has_remembered_key(key: String = "") -> bool:
 	var consent := WebSupport.store_get(WEB_KEY_CONSENT) == "1"
-	return consent and not WebSupport.store_get(WEB_KEY_STORE).is_empty()
+	var saved := WebSupport.store_get(WEB_KEY_STORE)
+	return consent and not saved.is_empty() and (key.is_empty() or saved == key)
 
 
 ## Drops the Remember tick and the stored key from this device (web build only). The key set with

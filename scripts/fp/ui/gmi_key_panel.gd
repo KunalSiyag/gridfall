@@ -3,7 +3,8 @@ extends VBoxContainer
 ## The "GMI Cloud" page of the pause menu settings (slice B): the opt-in "bring your own key"
 ## field. Without a key the mayors run on the recorded replay cache and the offline planners;
 ## pasting one routes every mayor, resident and agent call live, from the player's own browser
-## straight to api.gmi-serving.com, still only through GmiClient. GMI's CORS preflight lists only
+## straight to GMI Cloud (api.gmi-serving.com; the poster client also uses console.gmicloud.ai),
+## still only through GmiClient. GMI's CORS preflight lists only
 ## some request headers, so the web build sends just Authorization and Content-Type (see
 ## GmiClient.request_headers); the Test button makes one real call to show whether a key works here.
 ## The key itself is never logged (Redact owns it) and never written to a Godot file; "Remember
@@ -17,6 +18,9 @@ const ROW_H := 44.0
 ## Longest key the field takes. A longer paste used to be cut off silently (a truncated key is a
 ## rejected key), so the cap sits well above any key GMI is likely to issue.
 const FIELD_MAX := 512
+## Characters Godot's strip_edges leaves at the ends of a pasted key (no-break space, zero-width
+## marks, byte-order mark); a copy from a web page or chat often carries one.
+const EDGE_JUNK := "\u00a0\u200b\u200c\u200d\u2060\ufeff"
 ## Owner tag for the whole settings page. Slice B's no-branding rule scans texts it owns
 ## (S.OWNER_META == S.OWNER); this page is the pause menu's one place that names the service it
 ## configures, like C's chat panel it is left out of that scan (the widgets are re-tagged in
@@ -46,7 +50,7 @@ func setup(p_ctx: FpContext) -> void:
 		(
 			"Mayors run on GMI Cloud. Without a key the city runs on recorded days and offline "
 			+ "planners. Paste your own GMI API key to play it live: it is sent only to "
-			+ "api.gmi-serving.com, from this browser, and never logged."
+			+ "GMI Cloud, from this browser, and never logged."
 		),
 		14,
 		S.TEXT_DIM,
@@ -151,8 +155,16 @@ func refresh() -> void:
 	if client == null:
 		status.text = "GMI client not available."
 		return
+	var current := (
+		client.has_key()
+		and not client.player_key.is_empty()
+		and client.has_remembered_key(client.player_key)
+	)
 	status.text = status_line(
-		client.has_key(), client.live_enabled, client.has_key() and client.has_remembered_key()
+		client.has_key(),
+		client.live_enabled,
+		current,
+		client.has_key() and client.has_remembered_key() and not current
 	)
 	if not remember.is_empty():
 		var on := client.has_remembered_key()
@@ -161,12 +173,39 @@ func refresh() -> void:
 
 
 ## The page's status line: whether a key is in use, whether live play is on, and, only when a key
-## is in use and this device keeps a copy of it, "Key saved on this device".
-static func status_line(has_key: bool, live: bool, saved: bool) -> String:
+## is in use and this device keeps a copy of that very key, "Key saved on this device" (when the
+## device keeps a copy of some other key, it says so instead).
+static func status_line(
+	has_key: bool, live: bool, saved: bool, other_saved: bool = false
+) -> String:
 	if not has_key:
 		return "No key: recorded days and offline planners."
 	var line := "Key in use. Live mayors: %s." % ("on" if live else "off (offline switch or flag)")
-	return line + " Key saved on this device." if saved else line
+	if saved:
+		return line + " Key saved on this device."
+	if other_saved:
+		return line + " A different key is saved on this device."
+	return line
+
+
+## A pasted key without the stray characters at its ends that strip_edges leaves (see EDGE_JUNK).
+static func tidy_key(raw: String) -> String:
+	var s := raw.strip_edges()
+	while not s.is_empty() and EDGE_JUNK.contains(s.left(1)):
+		s = s.substr(1).strip_edges()
+	while not s.is_empty() and EDGE_JUNK.contains(s.right(1)):
+		s = s.left(s.length() - 1).strip_edges()
+	return s
+
+
+## "" when key is plain printable ASCII (what an Authorization header can carry), else a plain-words
+## line that says what to fix. Never holds the key.
+static func key_problem(key: String) -> String:
+	for i in range(key.length()):
+		var c := key.unicode_at(i)
+		if c < 0x21 or c > 0x7e:
+			return "The key has a space or an odd character in it. Paste only the key."
+	return ""
 
 
 ## Plain words for a GmiClient.test_key() result. Never holds the key: only the status, an HTTP
@@ -203,7 +242,11 @@ func run_test() -> void:
 	var client: GmiClient = ctx.client if ctx != null else null
 	if client == null or _testing:
 		return
-	var typed := input.text.strip_edges()
+	var typed := tidy_key(input.text)
+	var problem := key_problem(typed)
+	if not problem.is_empty():
+		status.text = problem
+		return
 	if not typed.is_empty() and typed != client.player_key:
 		client.set_player_key(typed)
 		_unsaved_key = typed
@@ -239,7 +282,11 @@ func apply_key() -> void:
 	var client: GmiClient = ctx.client if ctx != null else null
 	if client == null:
 		return
-	var key := input.text.strip_edges()
+	var key := tidy_key(input.text)
+	var problem := key_problem(key)
+	if not problem.is_empty():
+		status.text = problem
+		return
 	client.set_player_key(key)
 	_unsaved_key = ""
 	_persist(client, key)

@@ -204,7 +204,7 @@ Async GMI Cloud chat client with JSON extraction, a recorded replay cache, and h
 - `func has_key() -> bool`
 - `func set_player_key(key: String) -> bool`: A key the player typed in the settings ("bring your own key"): replaces the boot key in memory and is registered with the redactor so it can never reach a log. The key stays in this session only (remember_player_key() is what, on the web and only after the player ticks Remember, saves it on their own device). An empty key puts the boot key back in use. Returns has_key().
 - `func remember_player_key(key: String) -> void`: Saves this key on the player's own device (web build, after they tick Remember): written straight to the browser's localStorage, never through Godot's files or logs. No-op elsewhere.
-- `func has_remembered_key() -> bool`: True when this device holds a remembered key the player asked for (web build only).
+- `func has_remembered_key(key: String = "") -> bool`: True when this device holds a remembered key the player asked for (web build only). With key given, true only when the saved copy is that very key (a copy of another key does not count).
 - `func forget_remembered_key() -> void`: Drops the Remember tick and the stored key from this device (web build only). The key set with set_player_key stays in memory until cleared or the page closes.
 - `func set_live(enabled: bool) -> void`
 - `func breaker_state() -> String`: "closed", "open" or "half_open" (an open breaker past its cool-down reads half_open).

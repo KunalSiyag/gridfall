@@ -14,9 +14,14 @@ class FakeKeyNet:
 	var reply: Dictionary = {}
 	var delay_frames: int = 0
 	var remembered: Array[String] = []
+	## The copy this device "keeps" (the browser store, which a desktop run has no copy of).
+	var saved := ""
 
 	func remember_player_key(key: String) -> void:
 		remembered.append(key)
+
+	func has_remembered_key(key: String = "") -> bool:
+		return not saved.is_empty() and (key.is_empty() or saved == key)
 
 	func _post(
 		model: String, _system: String, _user: String, max_tokens: int, timeout_s: float

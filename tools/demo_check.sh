@@ -7,8 +7,8 @@
 #                             on its last line
 #        DEMO_CHECK_BUILD_MARKER   the text only a build with the browser-header fix holds
 #                             (default gmi_web_safe_headers; change it if that flag is ever removed)
-#        DEMO_CHECK_BUILD_TIMEOUT  seconds for the .pck download (default 240; the .pck is 88-123 MB, so
-#                             below about 3 Mbit/s raise it or the build stays unverified)
+#        DEMO_CHECK_BUILD_TIMEOUT  seconds for the .pck download (default 240; the .pck is 88-106 MB on
+#                             the wire, so below about 3.5 Mbit/s raise it or the build stays unverified)
 #        GATE_TMP             where tools/gate.sh keeps its logs (default /tmp/claude-1000)
 #        GMI_PREFLIGHT_URL    test hook: the URL the CORS preflight goes to (default GMI's chat URL)
 #
@@ -65,6 +65,11 @@ UNVERIFIED=0
 SKIPPED=0
 
 usage() {
+	# -h/--help exits 0 and prints to stdout; a bad argument exits 2 and prints to stderr.
+	if [ "${1:-2}" -eq 0 ]; then
+		sed -n '2p;4,13p' "$0" | sed 's/^# \{0,1\}//'
+		exit 0
+	fi
 	sed -n '2p;4,13p' "$0" | sed 's/^# \{0,1\}//' >&2
 	exit 2
 }
@@ -214,7 +219,7 @@ check_assets() {
 	if [ "$unknown" -gt 0 ]; then
 		warn "$unknown file(s) gave no content-length: the total is a lower bound"
 	fi
-	ok "first load, compressed (Brotli): $(mb "$total") MB in $files files (2026-11-03 build: 94.8 MB)"
+	ok "first load, compressed (Brotli): $(mb "$total") MB in $files files"
 }
 
 # check_build <base>: does the deployed pack hold the browser-header fix? The .pck is streamed through
@@ -362,7 +367,7 @@ main() {
 	local arg
 	for arg in "$@"; do
 		case "$arg" in
-			-h | --help) usage ;;
+			-h | --help) usage 0 ;;
 			http://* | https://*) : ;;
 			*) printf 'demo_check: not a URL: %s\n' "$arg" >&2; usage ;;
 		esac
@@ -397,7 +402,7 @@ main() {
 	elif [ "$SKIPPED" -gt 0 ]; then
 		printf 'DEMO_CHECK: NO BUILD CHECK (skipped on request with DEMO_CHECK_BUILD=0; every other check passed, but whether the image sends the browser-safe headers is not verified)\n'
 	else
-		printf 'DEMO_CHECK: PASS\n'
+		printf 'DEMO_CHECK: PASS (static checks only: the keyed call is verified by the in-game Test button)\n'
 	fi
 }
 

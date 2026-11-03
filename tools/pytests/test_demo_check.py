@@ -437,12 +437,12 @@ def test_the_marker_in_the_shipped_flags_is_what_the_check_looks_for():
     assert '"gmi_web_safe_headers"' in flags, "a build exported from this tree carries the marker"
 
 
-def test_bad_arguments_exit_two_and_help_prints_usage(site, tmp_path):
+def test_bad_arguments_exit_two_and_help_exits_zero_with_usage(site, tmp_path):
     srv, _ = site
     rc, out, err = run(srv, args=["not-a-url"], tmp_path=tmp_path)
     assert rc == 2 and "not a URL" in err and "usage:" in err
     rc, out, err = run(srv, args=["--help"], tmp_path=tmp_path)
-    assert rc == 2 and "usage:" in err
+    assert rc == 0 and "usage:" in out and not err
 
 
 def test_the_script_is_read_only_and_keyless():
