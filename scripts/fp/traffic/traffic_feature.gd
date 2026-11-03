@@ -2036,6 +2036,18 @@ func door_info(id: int = -1) -> Dictionary:
 	return out
 
 
+## True when a driver is pulled out by the collar rather than dragged and knocked down (carjack.gd
+## pulls): the hero's part in it (car_entry.gd) is then the grip and the pull, not the shove.
+func jack_pulls() -> bool:
+	return carjack.pulls()
+
+
+## The world point of the collar of the driver the hero has (carjack.gd collar): car id's, drawn
+## at the wheel, or (id < 0) the one pulled out last; NAN with no body drawn.
+func jack_collar(id: int = -1) -> Vector3:
+	return carjack.collar(id)
+
+
 ## The driver's door of car id (the driven car's when id < 0) as it hangs swung by amount (0 shut ..
 ## 1 wide open): its outline in plan in the car's frame (x, z; world units), the real panel with its
 ## thickness and glass, for what has to keep off it (jack_landing.gd); empty when the model has no

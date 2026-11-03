@@ -1,15 +1,15 @@
 extends SceneTree
-## The haul of a carjack's throw (jack_throw.gd, the carjack_throw flag) through reactions.gd, bare
-## walkers stepped by hand: let go down the car's side where the open door asks (carjack.gd's
+## The haul of a carjack's pull-out (jack_pull.gd, the carjack_throw flag) through reactions.gd,
+## bare walkers stepped by hand: let go down the car's side where the open door asks (carjack.gd's
 ## shift), the body goes straight out over the sill from the seat first, as with no shift, and
 ## drifts rearward only over the last of the haul to the place it is let go; and a fast car's pace,
-## which the haul keeps whole, eases down over the last CARRY_EASE_S of it to the pace the flight
+## which the haul keeps whole, eases down over the last CARRY_EASE_S of it to the pace the slide
 ## keeps, so the body is not stopped dead from one frame to the next at the release (it was, by the
 ## difference of the two paces, for a car faster than CARRY_MAX).
 
 const WS := preload("res://scripts/fp/world_scale.gd")
 const CJ := preload("res://scripts/fp/traffic/carjack.gd")
-const JT := preload("res://scripts/fp/traffic/jack_throw.gd")
+const JP := preload("res://scripts/fp/traffic/jack_pull.gd")
 const RE := preload("res://scripts/fp/traffic/reactions.gd")
 const WK := preload("res://scripts/fp/traffic/walkers.gd")
 const K := preload("res://tools/tests/fp_kit.gd")
@@ -22,7 +22,7 @@ const SEAT_X := 0.45 * WS.M
 const SEAT_Y := 0.15 * WS.M
 const SEAT_Z := -0.2 * WS.M
 const STRENGTH := CJ.STRENGTH
-const FLING := CJ.JACK_FLING
+const DROP := CJ.DROP_M
 
 var fails: Array[String] = []
 var ran: Array[String] = []
@@ -42,8 +42,8 @@ func _init() -> void:
 
 ## One carjack through reactions.gd with the driver drawn at the wheel, stepped by hand to the
 ## fall: the plan, where they are let go (shift off the straight out place, u: carjack.gd's, down
-## the car's side) and the drawn feet frame by frame ([time, feet]) until they are down and a few
-## frames into the flight ("down": the index of the first frame of it).
+## the car's side) and the drawn feet frame by frame ([time, feet]) until the fall has begun and a
+## few frames into it ("down": the index of the first frame of it).
 func _haul(carry: Vector3, shift: Vector3) -> Dictionary:
 	var wk := WK.new()
 	wk.setup(null, null, null, null, SEED)
@@ -55,7 +55,7 @@ func _haul(carry: Vector3, shift: Vector3) -> Dictionary:
 	w.seated = true
 	var re := RE.new()
 	re.setup(wk, null, SEED)
-	re.hit(w, Vector3(HALF_W + WS.M, 0.0, 0.5 * WS.M), Vector3.RIGHT, STRENGTH, "carjack", FLING)
+	re.hit(w, Vector3(HALF_W + WS.M, 0.0, 0.5 * WS.M), Vector3.RIGHT, STRENGTH, "carjack", DROP)
 	var r: RE.Reaction = (re.get("_active") as Dictionary).get(w.id)
 	re.drag_out(w, Vector3(SEAT_X, SEAT_Y, SEAT_Z), 0.0, shift)
 	var frames: Array = []
@@ -65,7 +65,7 @@ func _haul(carry: Vector3, shift: Vector3) -> Dictionary:
 		re.step(DT)
 		t += DT
 		frames.append([t, w.pos + w.vis_off])
-		if down < 0 and w.react == &"knockback" and r.mode != "drag":
+		if down < 0 and r.mode == "place":
 			down = frames.size() - 1
 		if down >= 0 and frames.size() > down + 6:
 			break
@@ -73,13 +73,15 @@ func _haul(carry: Vector3, shift: Vector3) -> Dictionary:
 
 
 ## Let go down the car's side: the haul goes straight out over the sill from the seat first, as it
-## would with no shift, and drifts rearward only over the last of it (from SHIFT_AT of the way
-## across, smoothly) to the place they are let go. The body's place at every frame of the haul
-## against the line from the seat out to where they would have been let go with no shift.
+## would with no shift, and drifts rearward only after the first SHIFT_AT of the way across
+## (smoothly, their feet pointing at the door) to the place they are let go. The body's place at
+## every frame of the haul against the line from the seat out to where they would have been let go
+## with no shift.
 func _check_haul_shift() -> void:
+	var share := JP.SHIFT_AT
 	var back := 0.3 * WS.M
 	var a := _haul(Vector3.ZERO, Vector3(0.0, 0.0, -back))
-	var p: JT.Plan = a["plan"]
+	var p: JP.Plan = a["plan"]
 	var at: Vector3 = a["at"]
 	var straight := at + Vector3(0.0, 0.0, back)
 	var from := Vector3(SEAT_X, SEAT_Y, SEAT_Z)
@@ -90,18 +92,18 @@ func _check_haul_shift() -> void:
 	var last := 0.0
 	for i in range(0, int(a["down"])):
 		var f: Array = frames[i]
-		var x := float(f[0]) / JT.HAUL_S
-		var k := JT.pull(x, p.m1)
-		var feet := (f[1] as Vector3) - Vector3.UP * JT.lift(x)
+		var x := float(f[0]) / JP.HAUL_S
+		var k := JP.pull(x, p.m1)
+		var feet := f[1] as Vector3
 		var drift := feet.z - from.lerp(straight, k).z
-		if k <= JT.SHIFT_AT:
+		if k <= share:
 			off_line = maxf(off_line, absf(drift))
 		else:
 			steady = steady and drift <= last + 1e-6
 			late = minf(late, drift)
 		last = drift
 	var msg := "straight out over the sill first: on the line to the straight-out place until "
-	msg += "%.0f%% of the way (%.3f m off)" % [100.0 * JT.SHIFT_AT, off_line / WS.M]
+	msg += "%.0f%% of the way (%.3f m off)" % [100.0 * share, off_line / WS.M]
 	K.check(fails, off_line < 0.01 * WS.M, msg)
 	K.check(
 		fails,
@@ -133,9 +135,9 @@ func _check_haul_shift() -> void:
 
 
 ## A moving car's pace is not stepped at the release: the body's pace along the road (per frame,
-## from the drawn feet) changes smoothly from the haul's through the hand-off into the flight, at
+## from the drawn feet) changes smoothly from the haul's through the hand-off into the slide, at
 ## most about what the ease over CARRY_EASE_S asks (smoothstep: 1.5 times the average) a frame, for
-## cars from just over CARRY_MAX to 30 m/s, and the flight leaves at about CARRY_MAX of it. Without
+## cars from just over CARRY_MAX to 30 m/s, and the slide leaves at about CARRY_MAX of it. Without
 ## the ease the step was (v - CARRY_MAX) in one frame.
 func _check_ease() -> void:
 	var worst := 0.0
@@ -153,7 +155,7 @@ func _check_ease() -> void:
 			if not is_nan(last):
 				step = maxf(step, absf(pace - last))
 			last = pace
-		var bound := 1.6 * (v - JT.CARRY_MAX) / (JT.CARRY_EASE_S / DT)
+		var bound := 1.6 * (v - JP.CARRY_MAX) / (JP.CARRY_EASE_S / DT)
 		var msg := "a car at %.1f m/s: the body's pace changes by at most " % v_ms
 		msg += "%.2f m/s a frame to the release (%.2f)" % [step / WS.M, bound / WS.M]
 		K.check(fails, step <= bound + 0.05 * WS.M, msg)
@@ -166,9 +168,9 @@ func _check_ease() -> void:
 		)
 		K.check(
 			fails,
-			absf(leaves - JT.CARRY_MAX) < 0.1 * v,
+			absf(leaves - JP.CARRY_MAX) < 0.1 * v,
 			(
-				"and the haul reaches the release at about the flight's pace (%.1f m/s)"
+				"and the haul reaches the release at about the slide's pace (%.1f m/s)"
 				% (leaves / WS.M)
 			)
 		)
@@ -185,17 +187,17 @@ func _check_drag_entries() -> void:
 	var w := wk.make("ambient")
 	var r := RE.Reaction.new()
 	r.w = w
-	r.jack = JT.make(STRENGTH, FLING, Vector3.RIGHT, 1.0)
+	r.jack = JP.plan_down(r, Vector3.RIGHT, DROP, 1.0, 1.5)
 	var from := Vector3(SEAT_X, SEAT_Y, SEAT_Z)
 	r.drag = [from, Vector3(HALF_W + CJ.OUT, 0.0, SEAT_Z), 0.0, 0.5 * PI]
-	var haul := JT.begin(r)
+	var haul := JP.begin(r)
 	K.check(
 		fails,
-		is_equal_approx(haul, JT.HAUL_S) and r.jack.haul and r.jack.shift == Vector3.ZERO,
+		is_equal_approx(haul, JP.HAUL_S) and r.jack.haul and r.jack.shift == Vector3.ZERO,
 		"a drag of four entries begins the haul with no shift (%.2f s)" % haul
 	)
 	r.drag.append(Vector3(0.0, 0.0, -0.3 * WS.M))
-	JT.begin(r)
+	JP.begin(r)
 	K.check(
 		fails,
 		r.jack.shift.is_equal_approx(Vector3(0.0, 0.0, -0.3 * WS.M)),

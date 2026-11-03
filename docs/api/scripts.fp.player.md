@@ -342,6 +342,11 @@ The hero's strike pose layer (hero_rig.gd, like hero_look.gd and hero_limbs.gd):
 - `GRIP_SPREAD = 0.19`
 - `GRIP_ELBOW_HEIGHT = 1.0`
 - `GRIP_ELBOW_SPREAD = 0.34`
+- `PULL_LEAN = deg_to_rad(18.0)`: Pulling someone out of a car (set_pull; car_entry.gd): both hands on their collar, wherever that is (a seated person's, low), the elbows down and out, the hands closed on it and the spine leaning back by up to PULL_LEAN as the pull comes on. The hands never rise above the collar they hold: no clip's own keys (the shove's swing the arms up overhead) play any part in it. Let go, the hold eases out over PULL_EASE s (or the longer the caller asks for: a grip that slipped), the hands staying where they were.
+- `PULL_EASE = 0.15`
+- `PULL_ELBOW_FORWARD = 0.0`
+- `PULL_ELBOW_HEIGHT = 0.98`
+- `PULL_ELBOW_SPREAD = 0.4`
 - `FINGERS = ["Index", "Middle", "Ring", "Little"]`: A fist: the bend (rad) at each finger's three joints, all four fingers, about the knuckle line.
 - `KNUCKLES = ["Proximal", "Intermediate", "Distal"]`
 - `FIST_BEND = [1.35, 1.5, 1.0]`
@@ -370,6 +375,7 @@ The hero's strike pose layer (hero_rig.gd, like hero_look.gd and hero_limbs.gd):
 - `func note(a: String) -> void`: Notes the action clip the rig's tree was asked for: a strike clip starts the layer on it, anything else ends it (the tree resets its transition request, so the layer keeps the record).
 - `func start(a: String) -> void`: Starts the layer on strike clip a.
 - `func set_guard(on: bool) -> void`: Requests the procedural fighting guard; a playing action takes precedence over its pose.
+- `func set_pull(w: float, hands: PackedVector3Array = PackedVector3Array(), lean: float = 0.0, ease_s: float = 0.0) -> void`: The hero has someone by the collar (car_entry.gd's pull-out): both hands reach for hands (world points, left then right) at weight w (0..1: the arms' influence is lifted to it at once), closed on it, the spine leaning back lean (0..1 of PULL_LEAN). w 0 lets go: the arms ease out over ease_s (PULL_EASE with none given; tick), the hands where they last were; the hands given with it are not used then.
 - `func set_hold(on: bool, at: Vector3 = Vector3.ZERO) -> void`: Holding someone (on) whose feet stand at at (world): while the guard is up the hands grip them there instead of rising to the chin.
 - `func guard_weight() -> float`: The eased guard weight, for the rig's tests.
 - `func push_weight() -> float`: The forward-hand weight at the shove's contact, for the rig's tests.

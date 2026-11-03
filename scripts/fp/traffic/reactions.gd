@@ -34,7 +34,7 @@ const FB := preload("res://scripts/fp/traffic/fight_back.gd")
 ## split out the same way; its constants stay under the old names via the alias below.
 const CR := preload("res://scripts/fp/traffic/crowd_reacts.gd")
 const TI := preload("res://scripts/fp/traffic/throw_impact.gd")
-const JT := preload("res://scripts/fp/traffic/jack_throw.gd")
+const JP := preload("res://scripts/fp/traffic/jack_pull.gd")
 ## Clip lengths (s) in HC's libraries (the female clips match); setup() reads them again.
 const LENGTHS := {&"knockback": 0.833, &"get_up": 1.54, &"hit_head": 0.417, &"hit_chest": 0.333}
 ## Clips that play once: the walker does not turn while they run (it may be lying down).
@@ -125,10 +125,8 @@ const G := 9.8
 const THROW_TILT := 0.7
 const THROW_SKID := 0.5
 const SKID_S := 0.35
-## Dragged out of a car (drag_out): drawn in DRAG_CLIP held at DRAG_AT (jack_throw.gd has the haul:
-## its seconds, lift over the sill and tilt, PLAIN_* when the carjack_throw flag is off).
-const DRAG_CLIP := &"sit"
-const DRAG_AT := 1.0
+## Dragged out of a car (drag_out): drawn in the clip jack_pull.gd names (it has the haul too).
+const DRAG_CLIP := JP.DRAG_CLIP
 
 
 ## One person reacting: the steps still to come, [mode, clip, seconds] with mode "place" (stand
@@ -162,7 +160,7 @@ class Reaction:
 	## Dragged out of a car: [from, to, yaw from, yaw to, shift], shift (a world offset, u) how far
 	## down the car's side the body is let go from straight out of the seat (drag_out: five).
 	var drag: Array = []
-	var jack: JT.Plan = null  # a carjack's throw (jack_throw.gd; the carjack_throw flag)
+	var jack: JP.Plan = null  # a carjack's pull-out (jack_pull.gd; the carjack_throw flag)
 	var was: String = ""  # walker state to give back ("" until the first step starts)
 	var speed: float = 0.0  # pace to give back after a run
 	var victim: bool = false
@@ -243,8 +241,8 @@ var body_extent: Callable
 ## y bottom, y top]; set by the traffic feature. Without it a body thrown or slid into a real
 ## car lies inside the drawn vehicle: the static world the press-out reads holds no cars.
 var cars_near: Callable
-## Told (the walker) as a carjacked driver's throw touches the ground, once (jack_throw.gd); set by
-## the traffic feature, which tells the bus.
+## Told (the walker) as a carjacked driver's body touches the road, once (jack_pull.gd); set by the
+## traffic feature, which tells the bus.
 var on_landed: Callable
 ## The share who fight back, by cause (test hook), and the punches that landed on the hero or
 ## were countered.
@@ -312,10 +310,11 @@ func clear() -> void:
 
 ## w takes a blow from src (a world point) along push (xz, any length) of strength 0..1, cause
 ## "shove", "punch", "car" or "carjack"; fling (metres, NOT world units like the rest) > 0 throws
-## a body it knocks down that far. Held (grab) and not knocked down, w reels and hangs on. A car
-## that runs w over where it already lies (_trample) shoves it along and leaves it down but up
-## sooner. A guarded fighter may turn a punch or a shove aside instead (fight_tempers). Returns
-## {"down": bool, "clip": StringName}, plus "lands_in" (s) for a carjack's throw, or {} when w
+## a body it knocks down that far (a carjack's: how far beyond the door the carjack_throw flag drops
+## them). Held (grab) and not knocked down, w reels and hangs on. A car that runs w over where it
+## already lies (_trample) shoves it along and leaves it down but up sooner. A guarded fighter may
+## turn a punch or a shove aside instead (fight_tempers). Returns
+## {"down": bool, "clip": StringName}, plus "lands_in" (s) for a carjack's pull-out, or {} when w
 ## cannot take one now (hidden, in a conversation, in the air, or lying down but for a car).
 func hit(
 	w: WK.Walker, src: Vector3, push: Vector3, strength: float, cause: String, fling: float = 0.0
@@ -358,8 +357,8 @@ func hit(
 	r.fly_t = 0.0
 	_next_step(r)
 	if r.impact.is_empty():
-		return JT.landing(r, {"down": r.down, "clip": clip})
-	return JT.landing(r, {"down": r.down, "clip": clip, "impact": r.impact})
+		return JP.landing(r, {"down": r.down, "clip": clip})
+	return JP.landing(r, {"down": r.down, "clip": clip, "impact": r.impact})
 
 
 ## Tip and roll away from the blow in the unchanged body's frame. Finishers get a short reel
@@ -526,6 +525,11 @@ func _plan_down(
 	r.air = 0.0
 	r.tilt = 0.0
 	r.tip = 0.0
+	r.jack = null
+	if cause == "carjack":
+		r.jack = JP.plan_down(r, d, fling, lie, float(lengths[&"get_up"]))
+	if r.jack != null:
+		return &"knockback"
 	if not FeatureFlags.enabled("hit_feel"):
 		r.lift = 0.0
 	elif fling > 0.0:
@@ -537,7 +541,6 @@ func _plan_down(
 		r.skid = clampf(THROW_SKID / fling, 0.0, 0.5)
 		r.slide_s = r.air + SKID_S
 		r.tilt = THROW_TILT
-		r.jack = JT.plan_down(r, cause, strength, fling)
 		r.impact = TI.impact_ahead(
 			collision,
 			r.w.pos + r.w.vis_off,
@@ -716,9 +719,9 @@ func _next_step(r: Reaction) -> void:
 		return
 	w.state = "react"
 	w.react = st[1]
-	if w.react == &"knockback" and not r.slide.is_zero_approx():
+	if w.react == &"knockback" and r.jack == null and not r.slide.is_zero_approx():
 		w.yaw = atan2(-r.slide.x, -r.slide.z)
-	w.react_t = HOLD_AT if r.mode == "held" else JT.enter(r, w.react)
+	w.react_t = HOLD_AT if r.mode == "held" else 0.0
 	w.react_rate = 0.0 if r.mode == "held" else 1.0
 	w.v = 0.0
 	w.vel = Vector3.ZERO
@@ -731,6 +734,7 @@ func _finish(r: Reaction) -> void:
 	_drop(r)
 	w.vis_tilt = 0.0
 	w.vis_roll = 0.0
+	w.vis_pivot = 0.0
 	_active.erase(w.id)
 	w.react = &""
 	w.react_rate = 1.0
@@ -769,7 +773,7 @@ func step(dt: float) -> void:
 			"place":
 				over = _place(r, dt)
 			"drag":
-				over = JT.haul(r, dt)
+				over = JP.haul(r, dt)
 			"back":
 				over = _back(r, dt)
 			"fight":
@@ -788,6 +792,7 @@ func step(dt: float) -> void:
 				cars_near.call(w.pos + w.vis_off, 2.5 * WS.M) if cars_near.is_valid() else []
 			)
 			BS.press_out(w, body_extent, collision, cars)
+		JP.fall(r, dt, on_landed)
 
 
 ## Stands and plays the step's clip (turning to face src once a one-shot is over); true when done.
@@ -798,7 +803,7 @@ func _place(r: Reaction, dt: float) -> bool:
 	w.react_t += dt
 	w.vis_v = 0.0
 	w.gait = move_toward(w.gait, 0.0, dt * 4.0)
-	if w.react not in ONCE:
+	if w.react not in ONCE and r.jack == null:
 		var d := r.src - (w.pos + w.vis_off)
 		if Vector2(d.x, d.z).length_squared() > 1e-10:
 			w.yaw = lerp_angle(w.yaw, atan2(d.x, d.z), minf(1.0, dt * 5.0))
@@ -886,7 +891,6 @@ func _throw(r: Reaction, dt: float) -> void:
 	r.w.vis_off.y += h
 	r.bump = h
 	r.w.vis_tilt = -r.tilt * sin(PI * r.fly_t / r.fly_s) if r.fly_t < r.fly_s else 0.0
-	JT.fly(r, on_landed)
 	if h == 0.0 and r.fly_t > r.fly_s:
 		r.lift = 0.0
 
@@ -946,29 +950,18 @@ func blocks() -> Array:
 	return out
 
 
-## Car-jacked w (just knocked down by the carjack's blow) is dragged out of the car first: drawn
-## from from (its feet in the seat, facing from_yaw) out to where the blow found it in the sit
-## pose over the haul's seconds (jack_throw.gd), then it falls. Where the blow found it is shift
-## (u) further down the car's side than straight out of the seat, which the haul drifts over late.
+## Car-jacked w (just knocked down by the carjack's blow) is dragged out of the car first, from
+## from (its feet in the seat, facing from_yaw) to where the blow found it, shift (u) further down
+## the car's side than straight out of the seat; then it falls (jack_pull.gd drag_out).
 func drag_out(w: WK.Walker, from: Vector3, from_yaw: float, shift := Vector3.ZERO) -> void:
-	var r: Reaction = _active.get(w.id)
-	if r == null or r.mode != "place" or not r.down:
-		return
-	r.steps.push_front(["place", w.react, r.left])
-	r.drag = [from, w.pos + w.vis_off, from_yaw, w.yaw, shift]
-	r.mode = "drag"
-	r.left = JT.begin(r)
-	w.react = DRAG_CLIP
-	w.react_t = DRAG_AT
-	w.react_rate = 0.0
-	w.yaw = from_yaw
-	w.vis_off = from - w.pos
+	JP.drag_out(_active.get(w.id), from, from_yaw, shift)
 
 
-## True once w has taken a knock-down, including its short stagger before falling.
+## True once w has taken a knock-down, including its short stagger before falling (jack_pull.gd
+## has the pulled out driver's haul and sit-down that come first).
 func is_down(w: WK.Walker) -> bool:
 	var r: Reaction = _active.get(w.id)
-	return r != null and r.down and (r.stagger_left > 0.0 or r.w.react in [&"knockback", &"get_up"])
+	return r != null and r.down and JP.is_down(r)
 
 
 func count() -> int:

@@ -8,7 +8,7 @@
 
 extends `FpFeature`
 
-Hit feel (integration feature "hit_feel"; docs/fp/ARCHITECTURE.md, Hit feel): what a blow feels like. A blow of the hero's that lands (person_hit "punch" or "shove", and only the hero's — info "by") freezes the world for a few hundredths of a second (hit-stop: Engine.time_scale dips to STOP_SCALE for real seconds, longer for a harder blow and one that knocks them down, and never less than the frame it lands on plus one full one — at a 20-25 fps cap that frame could otherwise charge the whole stop before one frozen frame is drawn) and shakes the camera (the player's shake). Someone the player's car knocks down, a blow on the hero (hero_hurt) and a crash in the car (car_impact) shake it too, the hardest of them with a shorter stop; a kick or a swing landing on an animal (animal_hit) stops and shakes less than one on a person, and someone slammed into a wall or a prop (hero_slammed) stops and shakes it most. A carjack (person_hit "carjack": the hero pulling the driver out) stops and shakes it at the yank and shakes it again as the driver lands (person_landed: the touchdown itself, at any sim speed). The thrown body of a knock-down is traffic's (reactions.gd, under the same flag). Nothing stops in photo mode, while the game is paused or at sim speeds above 1.
+Hit feel (integration feature "hit_feel"; docs/fp/ARCHITECTURE.md, Hit feel): what a blow feels like. A blow of the hero's that lands (person_hit "punch" or "shove", and only the hero's — info "by") freezes the world for a few hundredths of a second (hit-stop: Engine.time_scale dips to STOP_SCALE for real seconds, longer for a harder blow and one that knocks them down, and never less than the frame it lands on plus one full one — at a 20-25 fps cap that frame could otherwise charge the whole stop before one frozen frame is drawn) and shakes the camera (the player's shake). Someone the player's car knocks down, a blow on the hero (hero_hurt) and a crash in the car (car_impact) shake it too, the hardest of them with a shorter stop; a kick or a swing landing on an animal (animal_hit) stops and shakes less than one on a person, and someone slammed into a wall or a prop (hero_slammed) stops and shakes it most. A carjack (person_hit "carjack": the hero pulling the driver out) stops and shakes it at the yank and shakes it again as the driver lands (person_landed: the touchdown itself, at any sim speed). The pull-out's fall and the thrown body of a knock-down are traffic's (jack_pull.gd and reactions.gd, under the same flag). Nothing stops in photo mode, while the game is paused or at sim speeds above 1.
 
 ### Constants
 
@@ -28,9 +28,9 @@ Hit feel (integration feature "hit_feel"; docs/fp/ARCHITECTURE.md, Hit feel): wh
 - `CRASH_SHAKE = Vector2(0.15, 0.85)`
 - `SLAM_STOP = 0.13`: Someone the hero holds slammed into something (hero_slammed): the stop and the trauma.
 - `SLAM_SHAKE = 0.35`
-- `JACK_STOP = 0.05`: A carjack's yank: the stop and the trauma by strength; the driver's landing, as their body touches the ground (person_landed), shakes the camera by LAND_SHAKE.
+- `JACK_STOP = 0.05`: A carjack's yank: the stop and the trauma by strength; the driver's landing, as their hips touch the road (person_landed), shakes the camera by LAND_SHAKE: small, a fall from the seat.
 - `JACK_SHAKE = Vector2(0.2, 0.4)`
-- `LAND_SHAKE = Vector2(0.12, 0.3)`
+- `LAND_SHAKE = Vector2(0.06, 0.15)`
 - `STOP_MAX = 0.15`: The longest stop asked for at once (s).
 
 ### Properties

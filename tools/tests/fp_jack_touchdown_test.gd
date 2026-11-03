@@ -1,7 +1,7 @@
 extends SceneTree
-## The landing of a carjack's throw (jack_throw.gd, the carjack_throw flag with hit_feel): the
+## The landing of a carjack's pull-out (jack_pull.gd, the carjack_throw flag with hit_feel): the
 ## camera shakes at the yank and again as the driver's body comes down, and the fall sounds there
-## (person_landed: reactions.gd tells it on the frame the throw touches the ground), not on a timer
+## (person_landed: reactions.gd tells it on the frame the hips touch the road), not on a timer
 ## after the yank: at 1x, 4x and 8x sim speed alike (the body runs on sim seconds), once, for the
 ## driver the blow promised only, dropped by a load or a rebuilt city. The bus events are sent by
 ## hand first, then the whole chain over real reactions stepped by hand (a driver no longer in
@@ -19,7 +19,11 @@ const SEED := 12
 const HALF_W := 0.9 * WS.M
 const SEAT := Vector3(0.45 * WS.M, 0.15 * WS.M, -0.2 * WS.M)
 const STRENGTH := CJ.STRENGTH
-const FLING := CJ.JACK_FLING
+const DROP := CJ.DROP_M
+## The camera shake (trauma) the driver's landing adds for a blow of STRENGTH, literal so a change
+## to hitfeel_feature.gd's LAND_SHAKE cannot move it: 0.06 up to 0.15 by strength, a fall from the
+## seat, well under the yank's (0.2 up to 0.4).
+const LAND_TRAUMA := 0.06 + 0.09 * STRENGTH
 
 var fails: Array[String] = []
 var ran: Array[String] = []
@@ -54,7 +58,9 @@ func _check_hit_feel() -> void:
 	var info := {"strength": STRENGTH, "down": true, "by": -1, "lands_in": 0.95, "walker": 7}
 	var s0 := int(hf.get("shakes"))
 	var t0 := int(hf.get("stops"))
+	ctx.player.set("_trauma", 0.0)
 	ctx.bus.person_hit.emit(Vector3.ZERO, "carjack", info)
+	var yank := ctx.player.shake_amount()
 	K.check(
 		fails,
 		int(hf.get("shakes")) == s0 + 1 and int(hf.get("stops")) == t0 + 1,
@@ -64,8 +70,15 @@ func _check_hit_feel() -> void:
 	K.check(fails, is_equal_approx(Engine.time_scale, 1.0), "the stop runs out")
 	ctx.bus.person_landed.emit(Vector3.ZERO, 3)
 	K.check(fails, int(hf.get("shakes")) == s0 + 1, "someone else landing shakes nothing")
+	var before := ctx.player.shake_amount()
 	ctx.bus.person_landed.emit(Vector3.ZERO, 7)
+	var land := ctx.player.shake_amount() - before
 	K.check(fails, int(hf.get("shakes")) == s0 + 2, "one as the driver's body comes down")
+	K.check(
+		fails,
+		absf(land - LAND_TRAUMA) < 1e-4 and land < 0.5 * yank,
+		"of %.3f trauma (%.3f for the blow), under half the yank's %.3f" % [land, LAND_TRAUMA, yank]
+	)
 	ctx.bus.person_landed.emit(Vector3.ZERO, 7)
 	K.check(fails, int(hf.get("shakes")) == s0 + 2, "and only the one")
 	ctx.bus.person_hit.emit(Vector3.ZERO, "carjack", {"strength": STRENGTH, "down": true})
@@ -150,7 +163,7 @@ func _check_fall_sound() -> void:
 		"%s (%d %d %d)" % [plain, thump, early, fall]
 	)
 	_play(f, 2.0)
-	# Gone before it lands: the throw never lands, nothing sounds; a load drops what was waiting.
+	# Gone before it lands: the fall never lands, nothing sounds; a load drops what was waiting.
 	var m := int(em.get("shots_played"))
 	info["walker"] = 11
 	actx.bus.person_hit.emit(at, "carjack", info)
@@ -163,8 +176,8 @@ func _check_fall_sound() -> void:
 
 
 ## The landing follows the body, not the clock: with the whole chain (reactions' touchdown, the
-## bus, hit_feel and audio) the camera shakes and the fall sounds on the frame the throw touches the
-## ground, whatever the sim's pace (1x, 4x, 8x: the body runs on sim seconds) and not before.
+## bus, hit_feel and audio) the camera shakes and the fall sounds on the frame the body touches the
+## road, whatever the sim's pace (1x, 4x, 8x: the body runs on sim seconds) and not before.
 func _check_landing_speed() -> void:
 	var lctx := K.make_ctx(get_root(), {"audio": true, "camera_mode": "third"})
 	var hfx: FpFeature = K.make_feature(lctx, "hit_feel")
@@ -193,7 +206,7 @@ func _check_landing_speed() -> void:
 			Vector3.RIGHT,
 			STRENGTH,
 			"carjack",
-			FLING
+			DROP
 		)
 		var r: RE.Reaction = (re.get("_active") as Dictionary).get(w.id)
 		re.drag_out(w, origin + SEAT, 0.0)
@@ -218,7 +231,7 @@ func _check_landing_speed() -> void:
 		while re.count() > 0 and t < 6.0:
 			re.step(dt)
 			t += dt
-			if down_at < 0.0 and r.fly_t >= r.air and r.air > 0.0 and r.jack.landed:
+			if down_at < 0.0 and r.jack.landed:
 				down_at = t
 			var shook := int(hfx.get("shakes")) > shakes
 			var sounded := int(em.get("shots_played")) > shots
@@ -237,7 +250,7 @@ func _check_landing_speed() -> void:
 			fails,
 			down_at > 0.0 and absf(landed_at - down_at) < 1e-9 and early == 0,
 			(
-				"at %.0fx both come as the body touches the ground (%.3f; body down at %.3f sim s)"
+				"at %.0fx both come as the body touches the road (%.3f; body down at %.3f sim s)"
 				% [speed, landed_at, down_at]
 			)
 		)

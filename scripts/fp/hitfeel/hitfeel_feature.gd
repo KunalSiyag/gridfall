@@ -10,9 +10,9 @@ extends FpFeature
 ## on an animal (animal_hit) stops and shakes less than one on a person, and someone slammed into a
 ## wall or a prop (hero_slammed) stops and shakes it most. A carjack (person_hit "carjack": the hero
 ## pulling the driver out) stops and shakes it at the yank and shakes it again as the driver lands
-## (person_landed: the touchdown itself, at any sim speed). The thrown body of a knock-down is
-## traffic's (reactions.gd, under the same flag). Nothing stops in photo mode, while the game is
-## paused or at sim speeds above 1.
+## (person_landed: the touchdown itself, at any sim speed). The pull-out's fall and the thrown body
+## of a knock-down are traffic's (jack_pull.gd and reactions.gd, under the same flag). Nothing stops
+## in photo mode, while the game is paused or at sim speeds above 1.
 
 const WS := preload("res://scripts/fp/world_scale.gd")
 ## The world's time scale through a hit-stop.
@@ -39,11 +39,11 @@ const CRASH_SHAKE := Vector2(0.15, 0.85)
 ## Someone the hero holds slammed into something (hero_slammed): the stop and the trauma.
 const SLAM_STOP := 0.13
 const SLAM_SHAKE := 0.35
-## A carjack's yank: the stop and the trauma by strength; the driver's landing, as their body
-## touches the ground (person_landed), shakes the camera by LAND_SHAKE.
+## A carjack's yank: the stop and the trauma by strength; the driver's landing, as their hips
+## touch the road (person_landed), shakes the camera by LAND_SHAKE: small, a fall from the seat.
 const JACK_STOP := 0.05
 const JACK_SHAKE := Vector2(0.2, 0.4)
-const LAND_SHAKE := Vector2(0.12, 0.3)
+const LAND_SHAKE := Vector2(0.06, 0.15)
 ## The longest stop asked for at once (s).
 const STOP_MAX := 0.15
 
@@ -59,7 +59,7 @@ var _base_scale: float = 1.0
 ## frozen frame was up longer than any stop asks (a real hitch).
 var _stop_ticks: int = 0
 var _last_us: int = 0
-## The landings still to come: walker id -> trauma, for each driver thrown and not yet down.
+## The landings still to come: walker id -> trauma, for each driver pulled out and not yet down.
 var _landings: Dictionary = {}
 
 
@@ -176,7 +176,7 @@ func _on_person_hit(_at: Vector3, cause: String, info: Dictionary) -> void:
 
 
 ## The hero pulled a driver out (the carjack_throw flag): the yank stops and shakes, and the landing
-## the info promises shakes again as the driver's body touches the ground (person_landed).
+## the info promises shakes again as the driver's hips touch the road (person_landed).
 func _on_yank(strength: float, info: Dictionary) -> void:
 	hit_stop(JACK_STOP)
 	shake(lerpf(JACK_SHAKE.x, JACK_SHAKE.y, strength))
@@ -184,7 +184,7 @@ func _on_yank(strength: float, info: Dictionary) -> void:
 		_landings[int(info.get("walker", -1))] = lerpf(LAND_SHAKE.x, LAND_SHAKE.y, strength)
 
 
-## A driver thrown by a carjack came down: the camera shakes if the yank said it would.
+## A driver pulled out by a carjack came down: the camera shakes if the yank said it would.
 func _on_person_landed(_at: Vector3, id: int) -> void:
 	var trauma: Variant = _landings.get(id)
 	_landings.erase(id)

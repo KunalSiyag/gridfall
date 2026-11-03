@@ -94,7 +94,7 @@ The player's car as a rigid box on the ground plane. Each step it moves by the h
 
 extends `RefCounted`
 
-Getting into the player's car and out of it on foot, for drive_feature.gd (car_doors flag). In: the hero walks round the car to the driver's door (jogging while it is far), reaches for the handle (door_try), pulls the door open and swings it wide; with someone at the wheel (jack) it reaches in, drags them out and shoves them clear (push). It steps into the opening beside the seat, faces forward and climbs in (car_in: a hand on the roof, the near leg over the sill, the head ducked under the roof, the body sliding onto the seat along the clip's root travel and the other leg following it in, ending with its hands on the wheel), and the door shuts. Out: the door opens, the hero climbs out (car_out, the same backwards) onto its feet beside the seat, steps clear of the door and it shuts. From the reach on, a camera beside the door watches and blends to and from the drive camera. The points come from the traffic feature's door_info, in the car's frame (+Z forward, +X the driver's side); the car stands still throughout. The hero's rig is reached by duck typing (the player folder is another slice): travel, sit, play_gesture, stop_gesture, play_action, state and bone_world.
+Getting into the player's car and out of it on foot, for drive_feature.gd (car_doors flag). In: the hero walks round the car to the driver's door (jogging while it is far), reaches for the handle (door_try), pulls the door open and swings it wide; with someone at the wheel (jack) it reaches in, takes them by the collar and pulls them out (the carjack_throw flag; with it off, it drags them out and shoves them clear as it always did). It steps into the opening beside the seat, faces forward and climbs in (car_in: a hand on the roof, the near leg over the sill, the head ducked under the roof, the body sliding onto the seat along the clip's root travel and the other leg following it in, ending with its hands on the wheel), and the door shuts. Out: the door opens, the hero climbs out (car_out, the same backwards) onto its feet beside the seat, steps clear of the door and it shuts. From the reach on, a camera beside the door watches and blends to and from the drive camera. The points come from the traffic feature's door_info, in the car's frame (+Z forward, +X the driver's side); the car stands still throughout. The hero's rig is reached by duck typing (the player folder is another slice): travel, sit, play_gesture, stop_gesture, play_action, state, bone_world and strike_pose.
 
 ### Constants
 
@@ -111,10 +111,11 @@ Getting into the player's car and out of it on foot, for drive_feature.gd (car_d
 - `JOG_FROM = 3.0 * WS.M`
 - `ROUTE_STEP = 0.25 * WS.M`
 - `ROUTE_REACH = 3.0 * WS.M`: How far round the car other cars can block the walk (drive_feature asks traffic for them).
-- `WALK_MAX = 8.0`: The walk gives up after WALK_MAX s, or STUCK_T s without getting STUCK_GAIN closer; the step into the opening (at STEP_PACE of a walk) after STEP_MAX s.
+- `WALK_MAX = 8.0`: The walk gives up after WALK_MAX s, or STUCK_T s without getting STUCK_GAIN closer; the step into the opening (at STEP_PACE of a walk, or after a driver was pulled out, pull_out, at STEP_PACE_JACK of one and jogging: the seat is wanted before they are up) after STEP_MAX s.
 - `STUCK_T = 1.0`
 - `STUCK_GAIN = 0.05 * WS.M`
 - `STEP_PACE = 0.55`
+- `STEP_PACE_JACK = 1.0`
 - `STEP_MAX = 1.5`
 - `TURN_RATE = 5.0`: Lining up on a spot: turning at TURN_RATE (rad/s), sliding at ALIGN_SPEED, for at least ALIGN_MIN s.
 - `ALIGN_SPEED = 0.6 * WS.M`
@@ -123,10 +124,21 @@ Getting into the player's car and out of it on foot, for drive_feature.gd (car_d
 - `PULL_END = 1.2`
 - `PULL_OPEN = 0.3`
 - `DOOR_WIDE = 0.45`
-- `GRAB_AT = 0.55`: Someone at the wheel (jack): the hero turns to the seat and reaches in (interact), drags them out GRAB_AT s in, turns away over TURN_OUT s and shoves them clear (push, for SHOVE_T s), and steps into the opening at JACK_T.
+- `GRAB_AT = 0.4`: Someone at the wheel (jack), pull_out: the hero steps in to REACH_PLAN of their collar (at least GRAB_OUT_MIN out from the car's side) and reaches in with both hands, low, by GRAB_AT s; there it has them (step returns "pull") and, over PULL_T s, leans back and steps BACK_M back along the car as they come out, the hands staying on the collar for the first HOLD_T s of it (the driver is out of reach by then), then lets go (the pose layer eases the hands out); it steps into the opening at JACK_T. The hands are HAND_SPREAD either side of the collar and never rise above it.
+- `PULL_T = 0.4`
+- `HOLD_T = 0.28`
+- `JACK_T = GRAB_AT + PULL_T`
+- `REACH_PLAN = 0.42 * WS.M`
+- `GRAB_OUT_MIN = 0.12 * WS.M`
+- `BACK_M = 0.5 * WS.M`
+- `HAND_SPREAD = 0.1 * WS.M`
+- `COLLAR_UP = 0.6 * WS.M`: With nobody's collar to be found (no body drawn) it is this far above the seat marker.
+- `SLIP_V = 10.0 * WS.M`: The grip slips, the hands letting go for good, when the collar gets away from them faster than SLIP_V (u/s; the pull at the normal pace takes it at 6 to 9.5 m/s at most, a van's at the end of the hold): the hero acts on real time and the driver on the sim's, so above 1x the driver is out of the seat and down on the road long before the hold is over, and the hands would chase a collar that is already on the ground, a frame's step of up to 0.8 m at 8x.
+- `SLIP_EASE = 0.3`: A slipped grip lets go over SLIP_EASE s (the pose layer's own is shorter: the hands were reaching further out, so it moved them 0.21 m in a frame at 4x).
+- `GRAB_AT_PLAIN = 0.55`: Someone at the wheel with pull_out off (the plain drag and knock-down): the hero turns to the seat and reaches in (interact), drags them out GRAB_AT_PLAIN s in, turns away over TURN_OUT s and shoves them clear (push, for SHOVE_T s), and steps into the opening at JACK_T_PLAIN.
 - `TURN_OUT = 0.25`
 - `SHOVE_T = 0.6`
-- `JACK_T = 1.3`
+- `JACK_T_PLAIN = 1.3`
 - `STEP_OUT = 0.3 * WS.M`: The climb in starts STEP_OUT out from the body side level with the seat, facing forward (the seat on the hero's right); the climb in or out takes at most CLIMB_MAX s, the view turns to the drive camera CLIMB_CAM s into the climb in, and the door shuts over CLOSE_T s.
 - `CLIMB_MAX = 2.0`
 - `CLIMB_CAM = 0.9`
@@ -155,6 +167,8 @@ Getting into the player's car and out of it on foot, for drive_feature.gd (car_d
 - `t: float`: Seconds into the phase.
 - `door: float`: The driver's door: 0 shut .. 1 open.
 - `clearance: Callable`: How far the door may swing past the people round it, (from, to) -> the amount it gets to (drive_feature sets traffic's door_clear_of_people for the car); unset, it swings freely.
+- `collar: Callable`: The world point of the collar of the driver being pulled out (drive_feature sets traffic's jack_collar for the car); NAN, or unset, with none drawn.
+- `pull_out: bool`: The driver is pulled out by the collar (drive_feature sets traffic's jack_pulls: the carjack_throw flag, with hit_feel); off, the hero drags them out and shoves them clear as before.
 - `hold: String`: A phase to wait at, hold_at s into it (the photo tour holds the climb in half way); "" for none.
 - `jack: bool`: Someone is at the wheel, to be dragged out once the door is open (begin_in's p_jack).
 - `seat_drop: float`: How far the seat the climb ends at (and the climb out starts from) sits below the seat marker: the hips' sink (drive_feature.gd's _sink, set for the climb out; 0 on the way in).

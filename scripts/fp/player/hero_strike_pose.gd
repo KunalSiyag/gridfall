@@ -83,6 +83,17 @@ const GRIP_BACK := 0.18
 const GRIP_SPREAD := 0.19
 const GRIP_ELBOW_HEIGHT := 1.0
 const GRIP_ELBOW_SPREAD := 0.34
+## Pulling someone out of a car (set_pull; car_entry.gd): both hands on their collar, wherever that
+## is (a seated person's, low), the elbows down and out, the hands closed on it and the spine
+## leaning back by up to PULL_LEAN as the pull comes on. The hands never rise above the collar they
+## hold: no clip's own keys (the shove's swing the arms up overhead) play any part in it. Let go,
+## the hold eases out over PULL_EASE s (or the longer the caller asks for: a grip that slipped),
+## the hands staying where they were.
+const PULL_LEAN := deg_to_rad(18.0)
+const PULL_EASE := 0.15
+const PULL_ELBOW_FORWARD := 0.0
+const PULL_ELBOW_HEIGHT := 0.98
+const PULL_ELBOW_SPREAD := 0.4
 ## A fist: the bend (rad) at each finger's three joints, all four fingers, about the knuckle line.
 const FINGERS := ["Index", "Middle", "Ring", "Little"]
 const KNUCKLES := ["Proximal", "Intermediate", "Distal"]
@@ -131,6 +142,13 @@ var _hold_at := Vector3.ZERO
 ## [bone, axis in the bone's own frame, bend] for each finger joint a fist closes.
 var _curl: Array = []
 var _hands_claimed: bool = false
+## Pulling someone out (set_pull): the hold's weight and the weight it is heading for, the two hand
+## points (world: left, right) and the lean back (0..1 of PULL_LEAN).
+var _pull: float = 0.0
+var _pull_goal: float = 0.0
+var _pull_ease: float = PULL_EASE
+var _pull_hands := PackedVector3Array()
+var _pull_lean: float = 0.0
 var _feet_claimed: bool = false
 ## The last target and pole each limb was sent (hands 0-1, feet 2-3): a release re-sends them at
 ## weight 0, so the limb layer eases the hold out from where it lies rather than yanking the
@@ -240,6 +258,27 @@ func set_guard(on: bool) -> void:
 		_mod.active = on or not clip.is_empty() or _guard > 0.001
 
 
+## The hero has someone by the collar (car_entry.gd's pull-out): both hands reach for hands (world
+## points, left then right) at weight w (0..1: the arms' influence is lifted to it at once), closed
+## on it, the spine leaning back lean (0..1 of PULL_LEAN). w 0 lets go: the arms ease out over
+## ease_s (PULL_EASE with none given; tick), the hands where they last were; the hands given with it
+## are not used then.
+func set_pull(
+	w: float,
+	hands: PackedVector3Array = PackedVector3Array(),
+	lean: float = 0.0,
+	ease_s: float = 0.0
+) -> void:
+	_pull_ease = ease_s if ease_s > 0.0 else PULL_EASE
+	_pull_goal = clampf(w, 0.0, 1.0) if hands.size() >= 2 else 0.0
+	if _pull_goal > 0.0:
+		_pull_hands = hands
+		_pull = maxf(_pull, _pull_goal)
+	_pull_lean = clampf(lean, 0.0, 1.0)
+	if _mod != null:
+		_mod.active = _pull > 0.0 or _pull_lean > 0.0 or not clip.is_empty() or _guard > 0.001
+
+
 ## Holding someone (on) whose feet stand at at (world): while the guard is up the hands grip
 ## them there instead of rising to the chin.
 func set_hold(on: bool, at: Vector3 = Vector3.ZERO) -> void:
@@ -287,10 +326,12 @@ func tick(dt: float) -> void:
 				end()
 	var goal := _guard_goal if clip.is_empty() else 0.0
 	_guard = goal if dt <= 0.0 else SM.damp(_guard, goal, GUARD_HALFLIFE, dt)
+	if dt > 0.0:
+		_pull = move_toward(_pull, _pull_goal, dt / _pull_ease)
 	if _guard < 0.001 and goal <= 0.0:
 		_guard = 0.0
 	if _mod != null:
-		_mod.active = not clip.is_empty() or _guard > 0.0 or goal > 0.0
+		_mod.active = not clip.is_empty() or _guard > 0.0 or goal > 0.0 or _pull_lean > 0.0
 	_update_hand_goals()
 
 
@@ -322,6 +363,8 @@ func apply(sk: Skeleton3D) -> void:
 		_apply_guard(sk, _guard)
 		_close_fists(sk, _guard)
 		LOOK.clamp_head(sk, _body.global_basis, LOOK.COMBAT_YAW, LOOK.COMBAT_PITCH)
+	if _pull_lean > 0.0:
+		_apply_pull(sk)
 	if clip.is_empty():
 		return
 	var w := envelope(_t, _c, _recover)
@@ -351,6 +394,9 @@ func _update_hand_goals() -> void:
 	if clip == "kick":
 		_kick_goals(_body.global_transform)
 		return
+	if _pull > 0.0:
+		_pull_goals(_body.global_transform)
+		return
 	var push := push_weight()
 	var guard := _guard if clip.is_empty() and _guard_goal > 0.0 else 0.0
 	# A hold grips at once, straight on from the reach that took hold, never sagging between.
@@ -366,6 +412,40 @@ func _update_hand_goals() -> void:
 	else:
 		_release_hands()
 		_release_feet()
+
+
+## The pull's hand goals: the hands on the collar, the elbows down and out beside the body at xf.
+func _pull_goals(xf: Transform3D) -> void:
+	var fwd := xf.basis.z.normalized()
+	var right := -xf.basis.x.normalized()
+	var scale := maxf(xf.basis.x.length(), 1e-4)
+	for i in 2:
+		var s := -1.0 if i == 0 else 1.0
+		var pole := _at(
+			xf.origin,
+			fwd,
+			right,
+			scale,
+			PULL_ELBOW_FORWARD,
+			PULL_ELBOW_HEIGHT,
+			s * PULL_ELBOW_SPREAD
+		)
+		_set_goal(i, _pull_hands[i], pole, _pull)
+	_take_arms(_pull)
+	_release_feet()
+
+
+## The spine leans back by the pull's share of PULL_LEAN, and the hands close on what they hold.
+func _apply_pull(sk: Skeleton3D) -> void:
+	for pair: Array in BONES:
+		var b := sk.find_bone(str(pair[0]))
+		if b < 0:
+			continue
+		var pose := sk.get_bone_pose(b)
+		var q := Quaternion(Vector3.RIGHT, -PULL_LEAN * _pull_lean * float(pair[1]))
+		pose.basis = Basis(q) * pose.basis
+		sk.set_bone_pose(b, pose)
+	_close_fists(sk, _pull)
 
 
 ## A planted left foot takes the weight as the right knee chambers, kicks and folds back.
