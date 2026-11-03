@@ -2,7 +2,7 @@ extends "res://tools/tests/fp_police_base.gd"
 ## The police at the scene (traffic's police_response.gd and police_bust.gd, the police_response
 ## flag). A crew called for a carjack or an assault drives from the nearest station (or from out of
 ## town with none) and at the scene posts "Police arrived on <street>" and puts two officers (the
-## roster's police bodies) out beside the car; a hero on foot within 30 m gets one walking up,
+## roster's police bodies) out beside the car; a hero on foot within 60 m gets one walking up,
 ## "Stop right there!" from 12 m; 3 m from an officer for 2 s after the shout (whoever is near
 ## shouts first), or in a stopped car beside the police car, is an arrest (a fine by the offence,
 ## the fade, the hero out of any car and outside the nearest station, the officers back in the car
@@ -19,6 +19,8 @@ func _init() -> void:
 		_build_station()
 		_check_arrival()
 		_check_arrival_far()
+		_check_held_near_scene()
+		_check_far_approach()
 		_check_approach_and_arrest()
 		_check_warning_first()
 		_check_real_seconds()
@@ -176,22 +178,87 @@ func _check_arrival_far() -> void:
 	_reset()
 
 
-## Thresholds of the approach (a hero on foot within 30 m of the car, one officer), the shout from
+## Thresholds of the approach (a hero on foot, or in a stopped car, within 60 m of the car, one
+## officer), the shout from
 ## 12 m, then the natural arrest and what follows it.
+func _walking(c: VH.Car) -> int:
+	return _modes(c).filter(func(m: String) -> bool: return m == "approach" or m == "warn").size()
+
+
+## The review's gaps: a hero 35 to 58 m off was ignored (the approach stopped at 30 m while one
+## at 61 m was hunted), and a hero sitting in a stopped car 9 to 35 m off was never walked up to.
+func _check_far_approach() -> void:
+	var c := _quick("carjack")
+	if c == null:
+		K.check(fails, false, "fixture: a police car at the scene")
+		return
+	_step(3.0)
+	for m: float in [35.0, 48.0, 58.0]:
+		_hero_at(_along(c, m))
+		_step(0.5)
+		K.check(
+			fails,
+			_walking(c) == 1,
+			"a hero on foot %.0f m off gets one officer walking up (%s)" % [m, str(_modes(c))]
+		)
+		_reset()
+		c = _quick("carjack")
+		if c == null:
+			return
+		_step(3.0)
+	_drive(_along(c, 20.0), 0.0)
+	_hero_at(_along(c, 20.0))
+	_step(1.0)
+	K.check(
+		fails,
+		_walking(c) == 1,
+		"a hero sitting in a stopped car 20 m off gets one officer walking up (%s)" % str(_modes(c))
+	)
+	tr._driven = null
+	_reset()
+
+
+## A police car held still near its scene (the hero standing in the roadway keeps it short of its
+## stop) counts as arrived after SCENE_HELD_S, not before, not far off and not while it moves.
+func _check_held_near_scene() -> void:
+	var fl: RefCounted = tr.fleets
+	var scene := Vector2(40.0, 40.0)
+	var c := VH.Car.new()
+	c.pos = Vector3(scene.x + 8.0 * WS.M, 0.0, scene.y)
+	var o := {"kind": "police", "stay": 40.0, "scene": scene}
+	var held := false
+	for _i in range(5):
+		held = fl._held_near_scene(c, o, 1.0)
+	K.check(fails, not held, "a car held 5 s near its scene is not yet there")
+	held = fl._held_near_scene(c, o, 1.5)
+	K.check(fails, held, "a car held 6.5 s within 25 m of its scene counts as arrived")
+	var moving := {"kind": "police", "stay": 40.0, "scene": scene}
+	c.v = 3.0 * WS.M
+	for _i in range(10):
+		held = fl._held_near_scene(c, moving, 1.0)
+	K.check(fails, not held, "a car that keeps moving never counts, however long it takes")
+	c.v = 0.0
+	c.pos = Vector3(scene.x + 200.0 * WS.M, 0.0, scene.y)
+	var far := {"kind": "police", "stay": 40.0, "scene": scene}
+	for _i in range(10):
+		held = fl._held_near_scene(c, far, 1.0)
+	K.check(fails, not held, "a car stood far from its scene does not count")
+	var engine := {"kind": "ambulance", "stay": 40.0, "scene": scene}
+	c.pos = Vector3(scene.x, 0.0, scene.y)
+	for _i in range(10):
+		held = fl._held_near_scene(c, engine, 1.0)
+	K.check(fails, not held, "only police cars are treated so")
+
+
 func _check_approach_and_arrest() -> void:
 	var c := _quick("carjack")
 	K.check(fails, c != null and _phase(c) == "at_scene", "fixture: a police car at the scene")
 	if c == null:
 		return
 	K.check(fails, _modes(c).size() == 2, "officers are out (%s)" % str(_modes(c)))
-	# A hero beyond 30 m is looked at, not walked up to.
-	_hero_at(_along(c, 35.0))
+	# Settle the officers with the hero far off (at the scene itself they would shout at once).
+	_hero_at(_along(c, 58.0))
 	_step(3.0)
-	var calm := _modes(c).all(func(m: String) -> bool: return m == "post")
-	K.check(fails, calm, "a hero 35 m off gets nobody walking up (%s)" % str(_modes(c)))
-	_hero_at(_along(c, 31.0))
-	_step(0.5)
-	K.check(fails, _modes(c).has("approach") == false, "nor one 31 m off (%s)" % str(_modes(c)))
 	# In a car under way they are not approached either.
 	_drive(_along(c, 20.0), 5.0)
 	_hero_at(_along(c, 20.0))

@@ -1,13 +1,14 @@
 # Police response: a stuck fade, stuck officers or a chase that goes nowhere
 
-The police answer the hero's offences in first person (`scripts/fp/traffic/police_response.gd` and `police_bust.gd`, the `police_response` flag, on by default). A called police car posts "Police arrived on <street>" and puts two officers out; a hero held within 3 m of one for 2 s after the shout, or in a stopped car beside the police car, is busted (fade to black, out of any car, put outside the nearest station); a hero who runs or drives off is chased for 30 s (up to 60 s against one who has stopped while the car closes in, or while it is within 40 m of them), or is "No sign of the suspect" when over 500 m away. A car that gets as near as the roads go, or stands 5 s in the traffic, within 60 m of the hero puts its officers out again from there.
+The police answer the hero's offences in first person (`scripts/fp/traffic/police_response.gd` and `police_bust.gd`, the `police_response` flag, on by default). A called police car posts "Police arrived on <street>" and puts two officers out; a hero held within 3 m of one for 2 s after the shout, or in a stopped car (an officer walks up to one from as far as 60 m), is busted (fade to black, out of any car, put outside the nearest station); a hero who runs or drives off is chased for 30 s (up to 60 s against one who has stopped while the car closes in, or while it is within 40 m of them), or is "No sign of the suspect" when over 500 m away. A car that gets as near as the roads go, or stands 5 s in the traffic, within 60 m of the hero puts its officers out again from there.
 
 **Symptoms**
 
 - The screen stays black or the hero cannot move after "Busted: fined ...".
 - Officers stand beside a parked police car for minutes, or a police car keeps "pursuing".
 - "The police do nothing": no officers, only a parked car with its siren.
-- Officers stay at the car's flank and never walk up to a hero 10 to 30 m off.
+- Officers stay at the car's flank and never walk up to a hero within 60 m: they only do so for a hero on foot or in a *stopped* car (a moving car is chased, not approached). Run the flag-off check below, then look at `Resp.officers` modes.
+- No "Police arrived" toast although a car sits near the scene: the car was held short of its stop (someone standing in the road). After 6 s still within 25 m of the scene it counts as arrived (`fleets.gd` `_held_near_scene`).
 
 **Confirm**
 

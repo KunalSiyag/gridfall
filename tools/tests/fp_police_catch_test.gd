@@ -166,8 +166,9 @@ func _check_flee_radius() -> void:
 	_reset()
 
 
-## After a chase an officer walks up to a hero from as far as the flee radius (the car could get no
-## nearer than the road): 45 m is out of the first response's reach and within a chase's.
+## An officer walks up to a hero from as far as the flee radius, in the first response as after a
+## chase (the car could get no nearer than the road, and one at 45 m was ignored while one at 61 m
+## was hunted).
 func _check_reach_after_chase() -> void:
 	var c := _quick("carjack")
 	if c == null:
@@ -177,13 +178,7 @@ func _check_reach_after_chase() -> void:
 	_hero_at(_along(c, 45.0))
 	_step(0.3)
 	var plain := _modes(c).filter(func(m: String) -> bool: return m == "approach" or m == "warn")
-	K.check(fails, plain.is_empty(), "a hero 45 m off is out of the first response's reach")
-	_pol()._resp[c.id].chases = 1
-	_step(0.3)
-	var chased := _modes(c).filter(func(m: String) -> bool: return m == "approach" or m == "warn")
-	K.check(
-		fails, chased.size() == 1, "but within a chase's: an officer walks up (%s)" % str(_modes(c))
-	)
+	K.check(fails, plain.size() == 1, "a hero 45 m off is walked up to (%s)" % str(_modes(c)))
 	_reset()
 
 
