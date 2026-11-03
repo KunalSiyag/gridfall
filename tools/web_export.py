@@ -381,6 +381,13 @@ def split_packs(path: Path, out_dir: Path) -> dict:
 
 LOADER_CSS = """#status-progress { display: none !important; }
 #gf-bar { position: absolute; left: 0; right: 0; bottom: 9%; width: min(440px, 62%); margin: 0 auto; }
+/* What the game is and how to play it: static text, so it is on screen from the first paint and
+   through the boot stall. Wider than the bar (negative side margins up to 640px or 92vw). */
+#gf-explain { margin: 0 calc(50% - min(320px, 46vw)) 18px; text-align: center; }
+#gf-pitch { margin: 0; font: 600 18px/1.4 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+	color: #f4f6fa; letter-spacing: 0.01em; text-wrap: balance; }
+#gf-keys { margin: 8px 0 0; font: 400 13px/1.5 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+	color: #aeb6c4; text-wrap: balance; }
 #gf-track { height: 6px; border-radius: 3px; background: rgba(255, 255, 255, 0.16); overflow: hidden; }
 #gf-fill { height: 100%; width: 0%; background: #d6ff3f; transition: width 0.25s ease; }
 #gf-row { display: flex; align-items: center; justify-content: center; gap: 10px; margin-top: 10px; }
@@ -403,9 +410,21 @@ LOADER_CSS = """#status-progress { display: none !important; }
 @media (forced-colors: active) { #gf-spin { border-color: GrayText; border-top-color: Highlight; } }
 """
 
-LOADER_BAR = """<div id="gf-bar"><div id="gf-track"><div id="gf-fill"></div></div>
-\t\t\t\t<div id="gf-row"><span id="gf-spin"></span><span id="gf-label">Loading GridFall\u2026</span></div>
-\t\t\t\t<div id="gf-hint">Taking longer than expected. If nothing changes soon, reload the page.</div></div>"""
+## What the game is and how to play it, in the loader before the engine starts (plain text, so it
+## survives the boot stall). tools/pytests/test_web_export.py reads these two lines;
+## tools/web_loader_check.js, the browser check of the loader, does not.
+LOADER_PITCH = "Five AI mayors, five different models on GMI Cloud, one city you can walk in"
+LOADER_KEYS = "WASD walk - Tab planner - J AI feed - Esc menu - click to capture the mouse"
+
+LOADER_BAR = (
+    '<div id="gf-bar"><div id="gf-explain"><p id="gf-pitch">' + LOADER_PITCH + '</p>'
+    '<p id="gf-keys">' + LOADER_KEYS + '</p></div>\n'
+    '\t\t\t\t<div id="gf-track"><div id="gf-fill"></div></div>\n'
+    '\t\t\t\t<div id="gf-row"><span id="gf-spin"></span>'
+    '<span id="gf-label">Loading GridFall\u2026</span></div>\n'
+    '\t\t\t\t<div id="gf-hint">Taking longer than expected. '
+    'If nothing changes soon, reload the page.</div></div>'
+)
 
 ## The engine boots the whole game inside startGame(): Godot's web main() runs the first main-loop
 ## iteration inside callMain, so Main._ready and the first frame's draw are one long task, and

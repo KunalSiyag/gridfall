@@ -666,6 +666,13 @@ func set_tick_phase(p: float) -> void:
 	_job_from_accum = false
 
 
+## Opens the day that has just begun p of the way through it (the first-day opening: 0..1 of the
+## day, before its first growth tick). Deterministic: it is the tick phase, which saves carry.
+func start_at_progress(p: float) -> void:
+	if tick_in_day == 0:
+		set_tick_phase(p * float(D.GROWTH_TICKS_PER_DAY))
+
+
 ## Runs the rest of today's growth ticks synchronously so the next day starts at dawn
 ## (FP "skip to morning"). Stops early if the day gate holds the boundary. Returns true when
 ## the new day has started. In sliced mode it first completes the job in flight.

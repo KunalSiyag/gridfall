@@ -13,7 +13,7 @@ A calm, glanceable, AAA-lean HUD (think GTA V or Watch Dogs: the world first, a 
 - **Street-name label**, for example `Maple Street & Delgado Avenue`, shown under the minimap.
 - **Toasts and an alert banner.**
 - **Interact prompt.** In third person (the default, D13) there is **no crosshair** (at most a 4 px dot, off by default) and the prompt floats **over the target** itself; in first person a small centre crosshair and a prompt under it.
-- **Pause menu on Esc:** Resume, Save, Load, Settings, Quit to orbit, Quit. Settings has sliders for mouse sensitivity and FOV, toggles for invert Y, head bob and show HUD, a quality preset (Low/Medium/High), music and SFX volume, and a **Camera** group: view (third / first person, also on V), third-person FOV, camera distance, shoulder (right / left, also on Q), auto shoulder swap, and the hero (male / female).
+- **Pause menu on Esc:** Resume, Save, Load, Settings, Planner view (once "Quit to orbit"), Quit. Settings has sliders for mouse sensitivity and FOV, toggles for invert Y, head bob and show HUD, a quality preset (Low/Medium/High), music and SFX volume, and a **Camera** group: view (third / first person, also on V), third-person FOV, camera distance, shoulder (right / left, also on Q), auto shoulder swap, and the hero (male / female).
 - **Place cards** for buildings and vehicles when the player presses E.
 - A small time-speed indicator.
 
@@ -90,7 +90,7 @@ A calm, glanceable, AAA-lean HUD (think GTA V or Watch Dogs: the world first, a 
     - Resume calls `mode.set_paused(false)`.
     - Save and Load call `main.save_game()` / `load_game()`. They already notify through `bus.toast` (S0 §6.2), so B adds no toast of its own.
     - Settings writes through `mode.apply_settings()`, including the Camera group (`camera_mode`, `tps_fov` 50–75°, `tps_distance_m` 1.6–5.0, `shoulder` ±1, `auto_shoulder`, `hero` `"m"` / `"f"`). A applies them on `settings_changed`.
-    - "Quit to orbit" calls `ctx.main.call_deferred("exit_fp")`: `exit_fp()` frees FpHud, which Godot refuses inside the button's own `pressed` emission. "Quit" calls `get_tree().quit()`.
+    - "Planner view" (once "Quit to orbit") calls `ctx.main.call_deferred("exit_fp")`: `exit_fp()` frees FpHud, which Godot refuses inside the button's own `pressed` emission. "Quit" calls `get_tree().quit()`.
     - It is keyboard navigable. Esc closes the menu and is consumed.
 11. **After a load or New City** (S0 §7.2): on `bus.world_ready` and in `hud_widgets.from_dict()`, close the card and the full map, pop `&"card"` and `&"map"` if pushed, and repaint.
 12. **`hud_widgets_feature.gd`.** Wires the minimap model, the waypoint state and saves the waypoint in `to_dict` (`{"waypoint": [x, z]}`).

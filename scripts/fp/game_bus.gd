@@ -128,3 +128,8 @@ signal animal_called(at: Vector3, call: String, size: float)
 ## meshes, textures and sounds can now be loaded. FpMode forwards Main's WebPackStream arrivals
 ## here; features refresh pack-dependent assets through it, never their own HTTPRequests.
 signal pack_ready(pack: String)
+## Something asks the coach card (feature coach_card) to show: topic "welcome" (Main, a fresh city).
+signal coach_requested(topic: String)
+## A new AI decision landed in the feed (fresh, not restored from a save): agent is the mayor's
+## index or the support role. Emitted by the activity feature; the coach's first hint follows it.
+signal ai_decision_shown(agent: String)

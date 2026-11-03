@@ -6,6 +6,7 @@ extends Node3D
 const D := preload("res://scripts/sim/sim_defs.gd")
 const WS := preload("res://scripts/fp/world_scale.gd")
 const REGISTRY := preload("res://scripts/fp/fp_features.gd")
+const FIRST_DAY := preload("res://scripts/fp/first_day.gd")
 const SETTINGS_PATH := "user://gridfall_fp_settings.json"
 ## camera_mode is "third" (over-the-shoulder, the default for play, D13) or "first"; "fov" is the
 ## first-person FOV and "tps_fov" the third-person one; shoulder is 1 (right) or -1 (left); hero
@@ -14,7 +15,7 @@ const DEFAULT_SETTINGS := {
 	"mouse_sensitivity": 0.0022, "invert_y": false, "fov": 72.0, "head_bob": true,
 	"quality": "medium", "show_hud": true, "music_volume_db": 0.0, "sfx_volume_db": 0.0,
 	"camera_mode": "third", "tps_fov": 60.0, "tps_distance_m": 3.2, "shoulder": 1,
-	"auto_shoulder": false, "hero": "m",
+	"auto_shoulder": false, "hero": "m", "coach_seen": false, "coach_hints": "",
 }
 ## Save keys FpMode owns; a feature id must not use them.
 const RESERVED_KEYS := ["version", "player", "time_scale", "day_phase"]
@@ -138,8 +139,16 @@ func setup(main: Node3D) -> void:
 	if auto_low_quality and not _low_vram_told:
 		_low_vram_told = true
 		var why := str(GpuMemory.decide()["reason"])
-		var note := "Low GPU memory (%s): quality set to Low. Esc > Display changes it." % why
+		var note := low_quality_note(why)
 		bus.toast.emit.call_deferred(note, "system")
+
+
+## The toast that says quality was set to Low for reason (GpuMemory.decide()["reason"]): the
+## browser build gets the short one, which fits a toast in one line.
+static func low_quality_note(reason: String) -> String:
+	if reason == "web browser":
+		return "Web quality: Low. Esc > Display"
+	return "Low GPU memory (%s): quality set to Low. Esc > Display changes it." % reason
 
 
 ## Tears down the features (reverse order) and the HUD, releases the mouse, unpauses.
@@ -192,6 +201,8 @@ func to_dict() -> Dictionary:
 ## Restores the save section. {} means a fresh city: player at spawn_point(), features reset,
 ## and the tick phase at 0 (also for saves without day_phase).
 func from_dict(d: Dictionary) -> void:
+	if ctx != null:
+		ctx.first_day_opening = false
 	if ctx != null and ctx.sim != null:
 		var ph: Variant = d.get("day_phase", 0.0)
 		ctx.sim.set_tick_phase(float(ph) if typeof(ph) in [TYPE_INT, TYPE_FLOAT] else 0.0)
@@ -275,6 +286,8 @@ func apply_settings(patch: Dictionary, persist: bool = true) -> void:
 	var old_quality := str(ctx.settings.get("quality", ""))
 	for k: Variant in patch.keys():
 		ctx.settings[k] = patch[k]
+	if persist and patch.has("quality"):
+		auto_low_quality = false  # a chosen preset is the player's from here on
 	if _set_up and persist:
 		_save_settings()
 	if bus != null:
@@ -302,6 +315,8 @@ func spawn_point() -> Dictionary:
 		var dir := Vector3(D.tx(hall) - D.tx(r), 0.0, D.ty(hall) - D.ty(r))
 		pos = Vector3(D.tx(r), 0.0, D.ty(r)) + dir * WS.SIDEWALK_CENTER
 		yaw = rad_to_deg(atan2(-dir.x, -dir.z))
+		if ctx.first_day_opening and sim.day == 1:
+			yaw = FIRST_DAY.avenue_yaw(sim, r, dir)
 	else:
 		var best := -1
 		var best_d := INF
@@ -461,7 +476,13 @@ func _save_settings() -> void:
 	var f := FileAccess.open(SETTINGS_PATH, FileAccess.WRITE)
 	if f == null:
 		return
-	f.store_string(JSON.stringify(ctx.settings))
+	var out: Dictionary = ctx.settings
+	if auto_low_quality:
+		# The automatic Low preset is not a saved choice: another setting (the coach's, say) must
+		# not pin it, or the next launch would skip the GPU check and its toast for good.
+		out = ctx.settings.duplicate()
+		out.erase("quality")
+	f.store_string(JSON.stringify(out))
 	f.close()
 
 

@@ -66,10 +66,10 @@ exception (a `pageerror`, `SCRIPT ERROR` or invalid bus index, the orbit row's s
 game's marks on, never logged `quit_to_orbit` (the blind navigation missed the button); 5 the WebGL census was
 asked for and saw no draws (`kit_ok: false`); 6 `GF_FPS_NO_OCCLUSION` was set and an `occlusion` line showed.
 
-The run ends with the exit_fp / enter_fp round trip (Quit to orbit, Tab back), as before. The web game
-always boots into first person; the `orbit` row is the Planner view reached through Quit to orbit, and
+The run ends with the exit_fp / enter_fp round trip (Planner view, Tab back), as before. The web game
+always boots into first person; the `orbit` row is the Planner view reached through the pause menu's Planner view button (once "Quit to orbit"), and
 `sky` is the Tab overview. (The overview swallows the first Esc, so the probe leaves it with Tab before
-it opens the pause menu; the probe before the kit pressed Esc there and never reached Quit to orbit.)
+it opens the pause menu; the probe before the kit pressed Esc there and never reached Planner view.)
 
 Two runs' call censuses compare with `node tools/web_probe_kit.js compare <a>/result.json
 <b>/result.json [tolerance [street|walk|sky|orbit|all]]`. It exits 0 when, in every row both results hold,

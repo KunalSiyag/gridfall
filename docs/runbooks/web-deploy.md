@@ -209,7 +209,7 @@ in-memory filesystem), and the run fails unless the console prints `GRIDFALL: co
 saved city`. After the measurements the probe drives the exit_fp/enter_fp round trip (Quit to
 orbit from the pause menu, then Tab back to the street) and exits 4 on any uncaught exception
 or `invalid bus index` line (the orbit view's seconds included), or when the game's marks are on and
-Quit to orbit was never logged: this headed run is the checklist's only surface with real audio
+the `quit_to_orbit` mark was never logged: this headed run is the checklist's only surface with real audio
 buses, where that crash class reproduces, so the headless smoke cannot substitute for it.
 `GF_FPS_NO_OCCLUSION=1` makes it exit 6 when the console shows any `occlusion` line: set it on a
 build with the web dead-work change (render_opt builds no occluders there, so the engine's
@@ -289,7 +289,7 @@ were the defaults on 2026-11-03 (edit `DEFAULT_INSTANCES` in the script when the
    - "GMI answered an error (HTTP n)": the key reached GMI and the test call failed. Typically 402 is
      credit and 400 or 404 a model not enabled for that key (run `tools/ops/model_check.py`).
      "Could not reach GMI": the request could not be started at all.
-3. Confirm live mayors. In the pause menu choose **Quit to orbit**: the overview shows the mayor
+3. Confirm live mayors. In the pause menu choose **Planner view** (this button was called "Quit to orbit" before): the overview shows the mayor
    cards (the top bar's **Live GMI** button should be on); at 1x speed a game day is 12 s there (20
    minutes on the street, `WorldScale.FP_DAY_SECONDS`), so give it a minute or two and read each card's source: it should say
    live, not cache or heuristic (a day waits up to 75 s for the mayors' answers before it advances, see
@@ -585,7 +585,7 @@ the runbook's step order is now simpler and safer:
   street 16.1 fps, a 13.7 s worst stall and 69 `Too many instances` errors; the new build has
   **zero** instance-cap errors and zero FSR2 warnings. Day-1 fresh city measured 79.1 fps street
   on a calm box (36.4 fps under load ~30; label every measurement with its load average).
-- The FPS probe's exit_fp/enter_fp round trip (Quit to orbit, then Tab back) ran clean on this
+- The FPS probe's exit_fp/enter_fp round trip (Planner view, then Tab back) ran clean on this
   build for a day-1 city; the audio bus-index crash class found in profiling needs conditions a
   fresh city does not hit and is tracked separately (see Known limitations).
 - **Still manual:** the owner opens the new URL with their own key and confirms a live mayor

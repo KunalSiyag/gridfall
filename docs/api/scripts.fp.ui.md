@@ -331,6 +331,8 @@ Top-centre indicator chips (slice B): population, mood and treasury on the left 
 - `func teardown() -> void`: Disconnects from the sim (the HUD outlives nothing, but a reload keeps the same sim).
 - `func refresh() -> void`: Re-reads every value from the sim, residents, sky and mode. Sets a label only when its text changed, so a 4 Hz refresh relayouts nothing in the steady state.
 - `func mood_value() -> float`: Mood on the 0..10 scale: the residents' sentiment when they are active, else tile happiness.
+- `static func mood_of(sim: CitySim, residents: Residents) -> float`: The mood function the street chip and the Planner HUD both read (one number, one scale).
+- `static func mood_text(mood: float) -> String`: A mood as the HUDs print it: "5.5".
 - `func state_of(id: String) -> String`: State of a chip: "ok", "good", "warn" or "fail" (tests and the legend read it).
 - `func text_of(id: String) -> String`: The value text of a chip ("1,168", "6.1", "−$3,222", "82%", "10:30", "2").
 - `func chip(id: String) -> Control`: The chip's panel (tests check visibility and layout).
@@ -498,7 +500,9 @@ Toasts and the alert banner (slice B), laid out by hand in the "toasts" slot so 
 - `FADE = 0.2`
 - `SLIDE_PX = 10.0`
 - `GAP = 6.0`
-- `MAX_TEXT_W = 560.0`: Widest toast or banner text before it ends in an ellipsis.
+- `MAX_TEXT_W = 560.0`: Widest toast or banner text: a longer toast wraps, up to MAX_LINES lines (the banner still ends in an ellipsis).
+- `MAX_LINES = 2`
+- `TOAST_SIZE = 16`
 - `BANNER_LIFE = 6.5`
 - `BANNER_BLINK = 0.8`
 - `TOP = 34.0`: The slot starts at y 76; the compass and its distance labels end at y 106.
@@ -698,7 +702,7 @@ The rotating circular minimap (slice B) in minimap_slot: the model's 192 x 192 t
 
 extends `Control`
 
-Pause menu (slice B), shown on pause_changed(true) over a frosted blur of the paused world: Resume, Save, Load, New city (press twice), Settings, Quit to orbit, Quit (saves first), a legend of the HUD icons, and tabbed settings (Camera, Controls, Display, Audio) written through mode.apply_settings(). FpMode owns the &"pause" modal; B never pushes or pops it. Keyboard navigable; Esc leaves the settings page, else resumes, and is consumed.
+Pause menu (slice B), shown on pause_changed(true) over a frosted blur of the paused world: Resume, Save, Load, New city (press twice), Settings, Planner view, Quit (saves first), a legend of the HUD icons, and tabbed settings (Camera, Controls, Display, Audio) written through mode.apply_settings(). FpMode owns the &"pause" modal; B never pushes or pops it. Keyboard navigable; Esc leaves the settings page, else resumes, and is consumed.
 
 ### Constants
 
@@ -712,12 +716,13 @@ Pause menu (slice B), shown on pause_changed(true) over a frosted blur of the pa
 - `ROW_H = 44.0`
 - `BASE_SENS = 0.0022`
 - `NEW_CITY = "New city"`
+- `PLANNER = "Planner view"`: The button that leaves the street for the top-down city builder (once "Quit to orbit"): the same name the overview's button and the legend use.
 - `NEW_CITY_CONFIRM = "Press again to start over"`
 - `GMI_TAB = "GMI Cloud"`: The player's own GMI key page (gmi_key_panel.gd); shown only with the player_gmi_key flag.
 - `TABS = { "Camera": [ ["camera_mode", "View", "choice", [["Third person", "third"], ["First per...`: Settings rows per tab: [key, label, kind, args]. kind "slider": [min, max, step, unit]; "choice": [[label, value], ...].
 - `PACE_KEY = "real_time_pace"`: The settings row that is not an FpMode setting: it reads and writes the web_real_time_pace flag (through GameBus.pace_requested), which the planner HUD toggle shares.
 - `LEGEND = [ ["person", "Population", "People living in the city"], ["face", "Mood", "How resident...`
-- `KEYS = [ ["M", "Map"], ["Tab", "City overview"], ["V", "Camera view"], ["Q", "Shoulder"], ["E"...`
+- `KEYS = [ ["M", "Map"], ["Tab", "City overview (Planner view)"], ["V", "Camera view"], ["Q", "S...`
 
 ### Properties
 

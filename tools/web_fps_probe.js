@@ -29,7 +29,7 @@
 //                         once per boot, so it is off by default.
 //
 // Unknown GF_FPS_* names, bad values and contradictions (GF_FPS_AB without the hook) stop the run with exit 2.
-// Exit codes: 0 done, 2 bad knob or crash, 3 the GF_FPS_SAVE city was not continued, 4 the Quit to orbit / Tab round
+// Exit codes: 0 done, 2 bad knob or crash, 3 the GF_FPS_SAVE city was not continued, 4 the Planner view / Tab round
 // trip logged an exception or never reached the orbit view, 5 the WebGL census was asked for and saw no draws, 6 GF_FPS_NO_OCCLUSION was set and an occlusion line showed.
 //
 // usage: DISPLAY=:1 NODE_PATH=<dir with playwright-core> node tools/web_fps_probe.js <url> <outdir>
@@ -322,7 +322,7 @@ let cleanup = async () => {};
 		await page.keyboard.press("Tab");
 		await sleep(2000);
 	}
-	// exit_fp / enter_fp round trip: Quit to orbit from the pause menu, then Tab back down.
+	// exit_fp / enter_fp round trip: Planner view from the pause menu, then Tab back down.
 	// exit_fp once halted the web build on "invalid bus index -1" (audio teardown); it only
 	// reproduces with real audio buses, which this headed run has and headless smoke does not.
 	const crashRe = /bus index|SCRIPT ERROR|unreachable|uncaught/i;
@@ -332,7 +332,7 @@ let cleanup = async () => {};
 	await page.keyboard.press("Escape"); // pause menu (focus starts on Resume)
 	await sleep(2000);
 	for (let i = 0; i < 5; i++) {
-		await page.keyboard.press("ArrowDown"); // Resume -> ... -> Quit to orbit
+		await page.keyboard.press("ArrowDown"); // Resume -> ... -> Planner view
 		await sleep(200);
 	}
 	await page.keyboard.press("Enter");
@@ -357,7 +357,7 @@ let cleanup = async () => {};
 	const enterBad = log.slice(enterStart).filter((l) => crashRe.test(l) || (l.startsWith("pageerror") && !artifactRe.test(l)));
 	await seg("to_street");
 	const firstuse = kit.parseFirstUse(log);
-	// With the game's marks on, Quit to orbit logs one: its absence means the blind ArrowDown x5 + Enter did not
+	// With the game's marks on, Planner view logs one: its absence means the blind ArrowDown x5 + Enter did not
 	// land on that button (the pause menu's order changed) and the orbit view was never reached. null: no marks.
 	const quitMarked = firstuse.length === 0 ? null : firstuse.some((r) => r.tag === "quit_to_orbit");
 	const exitFp = { exit_clean: exitBad.length === 0, enter_clean: enterBad.length === 0,

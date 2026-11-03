@@ -313,6 +313,7 @@ Staggered mayor turns (CityBrain.stagger_mayors, on in street mode). Instead of 
 
 - `due: Array[int]`: Mayors still to take the day's turn, in turn order.
 - `day: int`: The day the waiting turns belong to.
+- `opening: bool`: Armed by Main for a fresh street city (flag first_day_opening): day 1's turns use the compressed founding schedule (SimDefs.FIRST_DAY_START and FIRST_DAY_SPAN) instead of spreading over SPAN of the whole day. Not saved: a loaded city runs the ordinary schedule. clear() disarms it.
 
 ### Functions
 
@@ -324,6 +325,7 @@ Staggered mayor turns (CityBrain.stagger_mayors, on in street mode). Instead of 
 - `func to_dict() -> Dictionary`
 - `func from_dict(d: Variant) -> void`: Restores a saved queue; unknown or repeated mayor indices are dropped.
 - `static func order(p_day: int) -> Array[int]`: The order of p_day's turns, rotated daily so nobody always goes first.
+- `func turn_at(k: int) -> float`: The day fraction at which the k-th turn of the queue now running starts: the compressed founding schedule on an opening day 1, else at(k).
 - `static func at(k: int) -> float`: The day fraction at which the k-th turn starts.
 - `static func sim_idle(sim: Object) -> bool`: True while sim has no sliced job or spread work in flight (always for a synchronous sim). A staggered turn starts only then: its actions come from outside any job, and a mutator from outside finishes the job in flight, and the spread work it waits for, in that one frame.
 

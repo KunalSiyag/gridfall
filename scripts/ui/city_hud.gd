@@ -20,6 +20,7 @@ signal mute_requested()
 signal resident_selected(id: String)
 
 const D := preload("res://scripts/sim/sim_defs.gd")
+const HudChips := preload("res://scripts/fp/ui/hud_chips.gd")
 # Preload, not the global name: the class cache is not guaranteed fresh in test worktrees.
 const PackStatus := preload("res://scripts/ui/pack_status.gd")
 const TITLE_FONT := preload("res://fonts/lilita_one_regular.ttf")
@@ -30,6 +31,8 @@ const OVERLAYS := [
 	["crime", "Crime"], ["land_value", "Land value"], ["traffic", "Traffic"], ["happiness", "Happiness"],
 	["services", "Service coverage"], ["districts", "Districts"],
 ]
+## Minimum width of one top-bar stat (px); the top bar is sized by it.
+const STAT_W := 96
 const SPEEDS := [[0, "||"], [1, "1x"], [2, "2x"], [4, "4x"], [8, "8x"]]
 const SOURCE_COLORS := {"live": "#5CFF9D", "cache": "#FFD27F", "heuristic": "#FF8A7A"}
 
@@ -184,13 +187,15 @@ func _build_top_bar() -> void:
 	day_box.add_child(_day_bar)
 
 	var stats_grid := GridContainer.new()
-	stats_grid.columns = 3
-	stats_grid.add_theme_constant_override("h_separation", 16)
+	stats_grid.columns = 4
+	stats_grid.add_theme_constant_override("h_separation", 10)
 	stats_grid.add_theme_constant_override("v_separation", 0)
 	row.add_child(stats_grid)
-	for key: String in ["pop", "jobs", "funds", "happy", "unemp", "events"]:
+	for key: String in ["pop", "jobs", "funds", "mood", "happy", "unemp", "events"]:
 		var l := _label("-", 13, Color(0.85, 0.92, 1.0))
-		l.custom_minimum_size = Vector2(118, 0)
+		# 4 columns of 96 keep the bar inside the 1600 px base with the Mood stat (3 of 118 did
+		# before it); fp_orbit_names_test measures the widest texts against that.
+		l.custom_minimum_size = Vector2(STAT_W, 0)
 		stats_grid.add_child(l)
 		_stat_labels[key] = l
 
@@ -820,7 +825,10 @@ func _refresh_top() -> void:
 	_stat_labels["pop"].text = "Pop %s" % _fmt(int(s.get("population", 0)))
 	_stat_labels["jobs"].text = "Jobs %s" % _fmt(int(s.get("jobs", 0)))
 	_stat_labels["funds"].text = "Funds $%s" % _fmt(sim.total_funds())
-	_stat_labels["happy"].text = "Happy %d%%" % int(round(float(s.get("happiness", 0.0)) * 100.0))
+	# The same mood the street shows (HudChips.mood_of); the tiles' own happiness keeps its name.
+	_stat_labels["mood"].text = "Mood %s" % HudChips.mood_text(HudChips.mood_of(sim, people))
+	var tiles := int(round(float(s.get("happiness", 0.0)) * 100.0))
+	_stat_labels["happy"].text = "Tiles happy %d%%" % tiles
 	_stat_labels["unemp"].text = "Jobless %d%%" % int(round(float(s.get("unemployment", 0.0)) * 100.0))
 	var ev_n := sim.events.size()
 	var ev_l: Label = _stat_labels["events"]

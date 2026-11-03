@@ -278,11 +278,11 @@ func _check_pause(ctx: FpContext) -> void:
 		menu.is_open() and _tags() == ["pause_menu"],
 		"pause menu: marked as it opens (%s)" % str(_tags())
 	)
-	menu.call("_on_button", "Quit to orbit")
+	menu.call("_on_button", "Planner view")
 	K.check(
 		fails,
 		_tags() == ["pause_menu", "quit_to_orbit"],
-		"pause menu: Quit to orbit is marked (%s)" % str(_tags())
+		"pause menu: Planner view is marked (%s)" % str(_tags())
 	)
 	ctx.mode.set_paused(false)
 	await process_frame

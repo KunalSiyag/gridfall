@@ -127,6 +127,25 @@ Human place names for the city: streets for road runs, addresses for lots, busin
 - `func street_at(p: Vector3) -> String`: Street label for a world point: road -> intersection_name; lot -> its frontage street; else the nearest road within 2 tiles; else district_name.
 - `func planned_name(i: int, target_kind: int, target_level: int) -> String`: The name tile i will carry once a construction site finishes as (target_kind, target_level): the same rules as landmark_name / business_name / place_name, computed for the target instead of the current kind. "" when the target has no name (roads, R1 houses, demolition).
 
+## `scripts/fp/first_day.gd`
+
+extends `RefCounted`
+
+The first-day opening (flag first_day_opening): what a fresh street city does differently on its day 1, so the first minute shows a bright morning, a view down the avenue and a mayor turn soon. Main calls arm() before sim.start() and begin() after it, for a fresh interactive city only (not a loaded save, tools or tests); each undoes itself when the flag is off. - the sky is clear all day (Weather.daily_state, via FpContext.first_day_opening); - the clock opens at 07:30 (CitySim.start_at_progress; tools keep 06:00); - the five founding mayor turns land within about 3.5 minutes at 1x (MayorTurns.opening); - the hero faces down the avenue with City Hall at 45 degrees (FpMode.spawn_point). Nothing here is saved: a save carries the clock through the tick phase, and a loaded city (FpMode.from_dict) runs every day as before.
+
+### Constants
+
+- `D = preload("res://scripts/sim/sim_defs.gd")`
+- `SCAN = 12`: How far along a road the avenue is measured for the side with more of it (tiles).
+
+### Functions
+
+- `static func enabled() -> bool`: Whether the opening is on (the flag).
+- `static func arm(brain: CityBrain, on: bool) -> void`: Before sim.start() of a fresh street city: day 1's mayor turns follow the compressed founding schedule when on, the ordinary one when not (always set, so a New city after a played one is right too).
+- `static func begin(mode: FpMode) -> bool`: After sim.start(): opens the clock at FIRST_DAY_START and turns the hero to face down the avenue. mode must be set up (FpMode); returns false (and changes nothing) when it is not.
+- `static func resume(mode: FpMode) -> void`: Back from the Planner view (Main.enter_fp builds a new FpMode, whose from_dict cleared the opening): while it is still day 1 the sky is the opening's clear one again. The clock, the mayors and the hero's place are the city's own and carry on as they were.
+- `static func avenue_yaw(sim: CitySim, road: int, dir: Vector3) -> float`: The hero's yaw (deg) on the sidewalk in front of City Hall: along the avenue (the road the hall fronts), towards the side with more road, with the hall 45 degrees off to one side. road is the frontage road tile and dir the unit vector from it to the hall (as FpMode.spawn_point has them).
+
 ## `scripts/fp/forest_trees.gd`
 
 extends `RefCounted`
@@ -167,6 +186,7 @@ Service locator for first-person slices. FpMode fills it once in setup(); fields
 - `pack_stream: WebPackStream`: web split builds only; inert elsewhere. Request, never download.
 - `features: Dictionary`: feature_id -> FpFeature
 - `settings: Dictionary`: see FpMode.DEFAULT_SETTINGS; change only via mode.apply_settings()
+- `first_day_opening: bool`: a fresh city on its first day (FirstDay.begin); never saved
 - `ws: GDScript`: convenience; prefer your own `const WS := preload(...)` for typing
 
 ### Functions
@@ -222,6 +242,7 @@ First-person composition root: builds the context, bus, player, collision, HUD a
 - `D = preload("res://scripts/sim/sim_defs.gd")`
 - `WS = preload("res://scripts/fp/world_scale.gd")`
 - `REGISTRY = preload("res://scripts/fp/fp_features.gd")`
+- `FIRST_DAY = preload("res://scripts/fp/first_day.gd")`
 - `SETTINGS_PATH = "user://gridfall_fp_settings.json"`
 - `DEFAULT_SETTINGS = { "mouse_sensitivity": 0.0022, "invert_y": false, "fov": 72.0, "head_bob": true, "quali...`: camera_mode is "third" (over-the-shoulder, the default for play, D13) or "first"; "fov" is the first-person FOV and "tps_fov" the third-person one; shoulder is 1 (right) or -1 (left); hero is "m" or "f". fp_kit.make_ctx overrides camera_mode to "first" unless a test asks otherwise.
 - `RESERVED_KEYS = ["version", "player", "time_scale", "day_phase"]`: Save keys FpMode owns; a feature id must not use them.
@@ -236,6 +257,7 @@ First-person composition root: builds the context, bus, player, collision, HUD a
 ### Functions
 
 - `func setup(main: Node3D) -> void`: Builds everything. main is the Main node (main.gd); reads its sim, residents, minds, brain, client, view, sky, audio, camera and sun_light fields.
+- `static func low_quality_note(reason: String) -> String`: The toast that says quality was set to Low for reason (GpuMemory.decide()["reason"]): the browser build gets the short one, which fits a toast in one line.
 - `func teardown() -> void`: Tears down the features (reverse order) and the HUD, releases the mouse, unpauses.
 - `func to_dict() -> Dictionary`: Save section, see S0 §6.4. day_phase is how far the current 300 s growth tick has run (0..1): the sim saves only whole ticks, which would rewind the FP clock by up to 6 game hours.
 - `func from_dict(d: Dictionary) -> void`: Restores the save section. {} means a fresh city: player at spawn_point(), features reset, and the tick phase at 0 (also for saves without day_phase).
@@ -293,6 +315,8 @@ Signals that cross first-person slices. Emitters and listeners are listed in doc
 - `hero_hit_dir(angle: float)`: The blow behind a hero_hurt came from angle on the screen (hit_direction, first person with a push only): 0 dead ahead, +PI/2 from the right, +-PI from behind — health's _flash_from emits it just before hero_hurt; the health screen's arc and the audio thump's pan both read it.
 - `animal_called(at: Vector3, call: String, size: float)`: An animal called out at a point (its head): a dog's "bark", "growl" or "whine", a pigeon's "coo", a lone pigeon's "flap" or a flock's "takeoff", a cat's "meow", "purr", "hiss" or "chatter" (at a bird it stalks); size is its height at the shoulder (m), so a small dog yaps higher. Emitted by the animals feature.
 - `pack_ready(pack: String)`: A web background pack finished downloading and mounting (split builds only): its scenes, meshes, textures and sounds can now be loaded. FpMode forwards Main's WebPackStream arrivals here; features refresh pack-dependent assets through it, never their own HTTPRequests.
+- `coach_requested(topic: String)`: Something asks the coach card (feature coach_card) to show: topic "welcome" (Main, a fresh city).
+- `ai_decision_shown(agent: String)`: A new AI decision landed in the feed (fresh, not restored from a save): agent is the mayor's index or the support role. Emitted by the activity feature; the coach's first hint follows it.
 
 ## `scripts/fp/obb2d.gd`
 

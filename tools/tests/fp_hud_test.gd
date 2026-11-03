@@ -12,6 +12,10 @@ const S := preload("res://scripts/fp/ui/hud_style.gd")
 const MinimapModel := preload("res://scripts/fp/ui/minimap_model.gd")
 const MinimapView := preload("res://scripts/fp/ui/minimap_view.gd")
 const Caption := preload("res://scripts/fp/ui/hud_caption.gd")
+const Toasts := preload("res://scripts/fp/ui/hud_toasts.gd")
+const HudChips := preload("res://scripts/fp/ui/hud_chips.gd")
+const PauseMenu := preload("res://scripts/fp/ui/pause_menu.gd")
+const MAIN := preload("res://scripts/main.gd")
 ## A GmiClient that counts every call (B must make none).
 const STUB_CLIENT := """extends GmiClient
 var calls: int = 0
@@ -80,6 +84,8 @@ func _init() -> void:
 	await _check_street(ctx)
 	_check_pings(ctx)
 	await _check_toasts(ctx)
+	await _check_boot_toasts(ctx)
+	_check_vocabulary(ctx)
 	await _check_wheel_first(ctx)
 	await _check_agents(ctx)
 	await _check_card(ctx, client)
@@ -249,6 +255,163 @@ func _check_toasts(ctx: FpContext) -> void:
 	shown = t.texts()
 	K.check(fails, shown.size() == 1 and shown[0].contains("×2") and bravo <= 1, "identical consecutive toasts collapse (%s)" % str(shown))
 	t.clear()
+
+
+## Every toast a boot shows must read whole: no text wider than the toast width on one line, and a
+## longer one wraps onto at most two lines instead of ending in an ellipsis.
+func _check_boot_toasts(ctx: FpContext) -> void:
+	var t := ctx.hud.toasts
+	var font := S.font()
+	var low_web := FpMode.low_quality_note("web browser")
+	K.check(
+		fails,
+		low_web == "Web quality: Low. Esc > Display",
+		"the web Low-GPU toast is short (%s)" % low_web
+	)
+	K.check(
+		fails,
+		FpMode.low_quality_note("integrated GPU").contains("integrated GPU"),
+		"other cards keep the longer note"
+	)
+	var boot: Array[String] = [
+		MAIN.WELCOME_TOAST,
+		MAIN.WELCOME_BACK % 12,
+		low_web,
+		FpMode.low_quality_note("integrated GPU"),
+		"Moved you clear of new construction.",
+		"Skipping to morning...",
+	]
+	var heights := {}
+	var long_text := "A very long notice " + "that keeps going and going ".repeat(14)
+	boot.append(long_text)
+	for text: String in boot:
+		t.clear()
+		ctx.bus.toast.emit(text, "system")
+		await _frames(2)
+		var label: Label = (
+			t.get_node("Toast").get_node("HBoxContainer/Text")
+			if t.has_node("Toast/HBoxContainer/Text")
+			else _toast_label(t)
+		)
+		heights[text] = (label.get_parent().get_parent() as Control).size.y
+		var one_line := (
+			font.get_string_size(text, HORIZONTAL_ALIGNMENT_LEFT, -1, Toasts.TOAST_SIZE).x
+		)
+		K.check(
+			fails,
+			label.size.x <= Toasts.MAX_TEXT_W + 0.5,
+			(
+				"toast is no wider than %d px (%.0f): %s"
+				% [int(Toasts.MAX_TEXT_W), label.size.x, text.left(40)]
+			)
+		)
+		K.check(
+			fails,
+			label.get_visible_line_count() <= Toasts.MAX_LINES,
+			(
+				"at most %d lines show (%d): %s"
+				% [Toasts.MAX_LINES, label.get_visible_line_count(), text.left(40)]
+			)
+		)
+		var whole := label.get_visible_line_count() >= label.get_line_count()
+		if text != long_text:
+			K.check(
+				fails,
+				whole and (one_line <= Toasts.MAX_TEXT_W or label.get_line_count() >= 2),
+				"nothing is cut off: %s" % text.left(40)
+			)
+		else:
+			K.check(
+				fails,
+				(
+					label.get_line_count() >= 2
+					and label.text_overrun_behavior == TextServer.OVERRUN_TRIM_ELLIPSIS
+				),
+				"a text beyond two lines still ends in an ellipsis"
+			)
+	K.check(
+		fails,
+		float(heights[MAIN.WELCOME_TOAST]) > float(heights[low_web]) + 12.0,
+		(
+			"a wrapped toast's panel grows to its second line (%.0f vs %.0f px)"
+			% [heights[MAIN.WELCOME_TOAST], heights[low_web]]
+		)
+	)
+	K.check(
+		fails,
+		(
+			MAIN.WELCOME_TOAST.length() > 100
+			and (
+				(
+					font
+					. get_string_size(
+						MAIN.WELCOME_TOAST, HORIZONTAL_ALIGNMENT_LEFT, -1, Toasts.TOAST_SIZE
+					)
+					. x
+				)
+				> Toasts.MAX_TEXT_W
+			)
+		),
+		"fixture: the welcome toast is wider than one line, so it must wrap"
+	)
+	K.check(
+		fails,
+		font.get_string_size(low_web, HORIZONTAL_ALIGNMENT_LEFT, -1, Toasts.TOAST_SIZE).x < 320.0,
+		"the web Low-GPU toast fits in one short line"
+	)
+	t.clear()
+
+
+func _toast_label(t: Node) -> Label:
+	for n: Node in t.find_children("Text", "Label", true, false):
+		return n as Label
+	return null
+
+
+## One mood, one word: the street chip and the Planner HUD read HudChips.mood_of; the pause menu
+## and its legend name the Planner view the way the overview does.
+func _check_vocabulary(ctx: FpContext) -> void:
+	var chips := ctx.hud.chips
+	var mood := HudChips.mood_of(ctx.sim, ctx.residents)
+	K.check(
+		fails,
+		is_equal_approx(chips.mood_value(), mood),
+		"the street's mood_value() is the shared mood function (%.2f)" % mood
+	)
+	K.check(
+		fails,
+		chips.text_of("mood") == HudChips.mood_text(mood),
+		"the chip prints it as %s" % HudChips.mood_text(mood)
+	)
+	K.check(
+		fails,
+		is_equal_approx(
+			HudChips.mood_of(ctx.sim, null), float(ctx.sim.stats.get("happiness", 0.0)) * 10.0
+		),
+		"residents off: tile happiness on the same 0-10 scale"
+	)
+	var menu := ctx.hud.pause_menu
+	K.check(
+		fails,
+		(
+			PauseMenu.PLANNER == "Planner view"
+			and menu._buttons.has("Planner view")
+			and not menu._buttons.has("Quit to orbit")
+		),
+		"the pause button is Planner view"
+	)
+	K.check(
+		fails,
+		PauseMenu.KEYS.has(["Tab", "City overview (Planner view)"]),
+		"the legend row names Tab: City overview (Planner view)"
+	)
+	var street := PackedStringArray()
+	for text: String in S.owned_texts(menu):
+		if S.branded(text):
+			street.append(text)
+	K.check(
+		fails, street.is_empty(), "and the pause menu stays free of brand words %s" % str(street)
+	)
 
 
 func _check_wheel_first(ctx: FpContext) -> void:

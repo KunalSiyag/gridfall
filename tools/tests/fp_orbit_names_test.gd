@@ -8,6 +8,7 @@ extends SceneTree
 
 const K := preload("res://tools/tests/fp_kit.gd")
 const D := preload("res://scripts/sim/sim_defs.gd")
+const HudChips := preload("res://scripts/fp/ui/hud_chips.gd")
 const TOKEN := "FP_ORBIT_NAMES_TEST"
 
 var fails: Array[String] = []
@@ -30,8 +31,11 @@ func _init() -> void:
 	check(main.view_mode == "orbit", "fixture: main boots in orbit")
 	main.sim.set_speed(0)
 	_check_dock()
+	_check_vocabulary()
+	_check_top_bar_width()
 	_check_mayor_tab()
 	_check_council_and_people()
+	_check_mood_source()
 	_check_world_labels()
 	_check_grant_picker()
 	main.audio._exit_tree()
@@ -59,6 +63,85 @@ func _any_has(texts: Array[String], needle: String) -> bool:
 		if t.contains(needle):
 			return true
 	return false
+
+
+## One mood, one word: the Planner's "Mood" is the street's mood function, tile happiness has its
+## own name, and nothing there still says "Happy NN%".
+func _check_vocabulary() -> void:
+	main.hud.call("_refresh_top")
+	var shown: String = main.hud._stat_labels["mood"].text
+	var street := HudChips.mood_text(HudChips.mood_of(main.sim, main.residents))
+	check(
+		shown == "Mood " + street,
+		"planner: Mood reads the street's mood function (%s vs %s)" % [shown, street]
+	)
+	var tiles: String = main.hud._stat_labels["happy"].text
+	check(
+		tiles.begins_with("Tiles happy ") and tiles.ends_with("%"),
+		"planner: tile happiness is named as such (%s)" % tiles
+	)
+	check(not _any_has(_texts(main.hud), "Happy "), "planner: no bare Happy NN% left in the HUD")
+	# Before anybody lives here the street falls back to tile happiness, so the Planner does too.
+	check(not main.residents.is_active(), "fixture: no residents yet")
+	main.sim.stats["happiness"] = 0.31
+	main.hud.call("_refresh_top")
+	check(
+		str(main.hud._stat_labels["mood"].text) == "Mood 3.1",
+		(
+			"planner: without residents Mood is tile happiness (%s)"
+			% main.hud._stat_labels["mood"].text
+		)
+	)
+
+
+## With residents active the Planner's Mood follows their sentiment (as the street chip does),
+## not the tiles' happiness: a path of its own for the Planner would show Mood 7.7 here.
+func _check_mood_source() -> void:
+	check(main.residents.is_active(), "fixture: residents are active")
+	main.residents.sentiment["mood"] = 0.31
+	main.sim.stats["happiness"] = 0.77
+	main.hud.call("_refresh_top")
+	check(
+		str(main.hud._stat_labels["mood"].text) == "Mood 3.1",
+		(
+			"planner: with residents Mood follows their sentiment (%s)"
+			% main.hud._stat_labels["mood"].text
+		)
+	)
+	check(
+		str(main.hud._stat_labels["happy"].text) == "Tiles happy 77%",
+		(
+			"planner: Tiles happy stays the tiles' own number (%s)"
+			% main.hud._stat_labels["happy"].text
+		)
+	)
+	var street := HudChips.mood_text(HudChips.mood_of(main.sim, main.residents))
+	check(street == "3.1", "planner: the street's mood function agrees (%s)" % street)
+
+
+## The Planner top bar fits the 1600 px base viewport (8 px margin each side) with the widest
+## plausible stat texts: a 16:9 or 16:10 page gets no more width than that, and a wider bar pushed
+## the New and Mute buttons off the right edge when Mood was added.
+func _check_top_bar_width() -> void:
+	var worst := {
+		"pop": "Pop 999,999",
+		"jobs": "Jobs 999,999",
+		"funds": "Funds $99,999,999",
+		"mood": "Mood 10.0",
+		"happy": "Tiles happy 100%",
+		"unemp": "Jobless 100%",
+		"events": "Events 12",
+	}
+	for k: String in worst:
+		main.hud._stat_labels[k].text = worst[k]
+	var panel: Control = main.hud._stat_labels["pop"].get_parent().get_parent().get_parent()
+	var base_w: float = ProjectSettings.get_setting("display/window/size/viewport_width")
+	var need := panel.get_combined_minimum_size().x
+	check(
+		need <= base_w - 16.0,
+		"planner top bar: minimum width %.0f fits the %.0f px base viewport" % [need, base_w - 16.0]
+	)
+	main.hud.call("_refresh_top")
 
 
 func _check_dock() -> void:

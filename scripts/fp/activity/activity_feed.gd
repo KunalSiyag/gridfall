@@ -26,7 +26,10 @@ const OPEN_BG := Color(0.03, 0.04, 0.07, 0.74)
 const FOLDED_BG := Color(0.03, 0.04, 0.07, 0.52)
 const TAG_COLORS := {"LIVE": S.GOOD, "REPLAY": S.ACCENT, "FALLBACK": S.RED, "OFFLINE": S.AMBER}
 const STATES := {
-	"live": ["Live", S.GOOD], "down": ["Reconnecting", S.RED], "offline": ["Offline", S.AMBER]
+	"live": ["Live", S.GOOD],
+	"down": ["Reconnecting", S.RED],
+	"replay": ["Replay", S.ACCENT],
+	"offline": ["Offline", S.AMBER],
 }
 
 var mode: String = "full"
@@ -93,7 +96,8 @@ func _header() -> HBoxContainer:
 
 
 ## Whether the city's agents answer from live model calls: "live", "down" (live calls are
-## failing, so fallbacks answer) or "offline".
+## failing, so fallbacks answer), "replay" (no live calls; recorded answers play, which is the
+## normal state without a key, not a fault) or "offline" (nothing recorded either).
 func set_state(state: String) -> void:
 	if state == _state or not STATES.has(state):
 		return

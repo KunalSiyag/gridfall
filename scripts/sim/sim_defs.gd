@@ -20,6 +20,12 @@ const SURVEY_RANGE := 2
 const LEGACY_WORLD := {"w": 96, "h": 96, "x0": -32, "y0": -32}
 const GROWTH_TICKS_PER_DAY := 4
 const BASE_DAY_SECONDS := 12.0
+## The first-day opening (flag first_day_opening): a fresh street city opens this far into day 1
+## (a share of the day; 0.0625 is 07:30 on the street clock, which runs from 06:00), and the five
+## founding mayor turns are spread over the next FIRST_DAY_SPAN of the day (the last lands about
+## 3.5 minutes after the start at 1x, before the first growth tick at 0.25).
+const FIRST_DAY_START := 0.0625
+const FIRST_DAY_SPAN := 0.19
 const START_FUNDS := 12000
 
 # Tile kinds

@@ -46,4 +46,8 @@ const FEATURES := [
 	},
 	{"id": "melee", "slice": "integration", "path": "res://scripts/fp/melee/melee_feature.gd"},
 	{"id": "brawl", "slice": "integration", "path": "res://scripts/fp/brawl/brawl_feature.gd"},
+	{
+		"id": "coach_card", "slice": "integration",
+		"path": "res://scripts/fp/coach/coach_feature.gd",
+	},
 ]

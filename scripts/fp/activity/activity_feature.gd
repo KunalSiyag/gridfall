@@ -338,6 +338,8 @@ func _add(it: Dictionary, fresh: bool = true, ping: bool = true) -> void:
 			beacons.place(str(it["key"]), pos, it["color"], fresh)
 		if fresh and ping and ctx.bus != null:
 			ctx.bus.ping.emit(Vector3(pos.x, 0.0, pos.z), "ai:" + str(it["agent"]))
+	if fresh and ctx.bus != null:
+		ctx.bus.ai_decision_shown.emit(str(it["agent"]))
 	_refresh()
 
 
@@ -368,13 +370,16 @@ func _refresh() -> void:
 	feed.refresh(where_of, _clock)
 
 
-## "live", "down" (live calls are failing, fallbacks answer) or "offline". The failure ratio only
+## "live", "down" (live calls are failing, fallbacks answer), "replay" (no live calls, recorded
+## answers play: calm, not a fault) or "offline" (no recording either). The failure ratio only
 ## counts once GmiClient.LIVE_BADGE_MIN_OUTCOMES live outcomes are in, so one failed call (a 401,
 ## a stray timeout, the first call after boot) keeps the neutral "live" state.
 func _live_state() -> String:
 	var c := ctx.client
-	if c == null or not c.live_enabled:
+	if c == null:
 		return "offline"
+	if not c.live_enabled:
+		return "replay" if not c.replay_cache.is_empty() else "offline"
 	if c.breaker_state() != "closed" or c.live_failure_ratio() > 0.5:
 		return "down"
 	return "live"
