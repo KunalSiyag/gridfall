@@ -46,6 +46,8 @@ const FAR_SPEED := 0.9
 const PLAYER := "player"
 ## A car the player's car hit brakes this hard while stunned (its driver stands on the brakes).
 const STUN_BRAKE := 6.0 * WS.M
+## A car held with its driver on the brakes (slam: the hero has landed on it, an action hijack).
+const SLAM_BRAKE := 6.0 * WS.M
 ## Running the hero down (player_hittable): from HIT_MIN (u/s) on; the car that does brakes as
 ## hard as it can, kept off the hero's body, and waits HIT_STUN s before it drives on; another hit
 ## may come HIT_COOL s later.
@@ -108,6 +110,7 @@ class Car extends RefCounted:
 	## nearest thing in its path (blocked_horns: it honks at them well before the long jam draw).
 	var hero_block_s: float = 0.0
 	var hold: bool = false          # conversation: stop and wait
+	var slam: bool = false          # with hold: a driver standing on the brakes (an action hijack)
 	var stun_t: float = 0.0         # s it stays braking after the player's car hit it (shoves.gd)
 	## s of urgency left after the player's horn reached it (honk_nudge): a held or stunned car
 	## shakes it off and gets going while this runs.
@@ -869,6 +872,8 @@ func _hold_brake(c: Car) -> float:
 		return 0.0
 	if c.stun_t > 0.0:
 		return IDM.B_MAX if c.id == _hit_id else STUN_BRAKE
+	if c.hold and c.slam:
+		return SLAM_BRAKE
 	return IDM.B * 1.5 if c.hold else 0.0
 
 

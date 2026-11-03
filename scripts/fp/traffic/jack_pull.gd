@@ -12,6 +12,10 @@ extends RefCounted
 ## straight out of the seat: they go straight out over the sill first and drift there as they go.
 ## The drawn hips come down with the tip as they come out (haul_drop), so they are not sat on the
 ## air for long.
+## Out of a body with no door that opens (a bus, a truck, a bicycle, a scooter: jack_cab.gd) the
+## hips are lifted over its solid side (Plan.lift, u) while the body is across it (Plan.wall_k, the
+## share of the way across where the side is), and come down only once past it, so the driver is
+## never drawn through the bodywork or dropped from the cab through the wall.
 ## The fall (FALL_S, still in the sit pose): they are let go beside the door, slide out a little
 ## further on the road, sit down on it and fall back, the body tipped back about the hips as far as
 ## FALL_BACK while its drawn hips are lowered so that its lowest part is on the road (drop_at): it
@@ -43,6 +47,18 @@ const SHIFT_AT := 0.25
 ## over the first DROP_AT of the way across, so that it is on the road by the time it is past the
 ## sill, never above it.
 const DROP_AT := 0.5
+## Over a solid side (Plan.wall_k) the body is lifted until WALL_PAST of the way across beyond it,
+## which takes the haul CAB_HAUL_S and ends no faster than CAB_M1 (the haul's end speed, see pull):
+## the way down the outside of a cab is long, and it is not to be a drop.
+const WALL_PAST := 0.22
+const CAB_HAUL_S := 1.0
+const CAB_M1 := 0.6
+## Over a solid side at the body's edge (a cab's skin, wall_k at least WARP_MIN: the way down its
+## outside is long) the haul runs its way across fast and eases out (the time is warped by
+## 1 - (1 - x)^CAB_WARP), and the body is let down over the rest of the haul, from where it is past
+## the side (cab_x_past) to the end: it is lowered, not dumped in a tenth of a second.
+const CAB_WARP := 2.2
+const WARP_MIN := 0.3
 ## The fall: seconds, the tip back (rad) the body lies at, the tip at which its hips are on the road
 ## and the walker's crossfade to the lying pose (people.gd XFADE), over which the tip comes out.
 const FALL_S := 0.4
@@ -90,6 +106,9 @@ class Plan:
 	var haul_carry := Vector3.ZERO  # the car's whole pace, which the haul keeps (u/s, level)
 	var m1: float = 1.0  # the speed the haul's pull ends at (see pull)
 	var shift := Vector3.ZERO  # where the body is let go, further down the car's side (u)
+	var lift: float = 0.0  # hips raised over the body's solid side at its crossing (u; 0 for none)
+	var haul_s: float = HAUL_S  # the haul's seconds (CAB_HAUL_S over a solid side)
+	var wall_k: float = 0.0  # share of the way across at which the side is (with lift)
 	var roll0: float = 0.0  # the roll toward the door they were leaning at as the haul began
 	var tip0: float = 0.0  # the tip back they were already at (a sit-up is negative)
 	var fall_t: float = 0.0  # seconds since the fall began
@@ -146,7 +165,7 @@ static func plan_down(r, door: Vector3, drop_m: float, lie: float, up_s: float) 
 ## landing at) added to a carjack's pull-out.
 static func landing(r, res: Dictionary) -> Dictionary:
 	if r.jack != null:
-		res["lands_in"] = (HAUL_S + contact_s(r.jack)) if r.jack.seated else STAND_CONTACT
+		res["lands_in"] = (r.jack.haul_s + contact_s(r.jack)) if r.jack.seated else STAND_CONTACT
 	return res
 
 
@@ -157,6 +176,34 @@ static func landing(r, res: Dictionary) -> Dictionary:
 static func pull(x: float, m1: float) -> float:
 	var u := clampf(x, 0.0, 1.0)
 	return (3.0 - m1) * u * u + (m1 - 2.0) * u * u * u
+
+
+## The share (0..1) of the lift over a solid side at k (0..1) of the way across when the side is at
+## wall_k: eased up from the start to just before it, held across it, and taken down as the body is
+## let down (down, 0..1: cab_x_past on), so that it is 0 again as the haul ends.
+static func hump(k: float, wall_k: float, down: float) -> float:
+	return smoothstep(0.0, maxf(wall_k - 0.1, 0.15), k) * (1.0 - down)
+
+
+## How far across (0..1) the haul has gone x (0..1) of the way over a solid side: the plain haul's
+## curve, with the time warped (CAB_WARP) over a side at the body's edge.
+static func cab_pull(x: float, m1: float, wall_k: float) -> float:
+	var u := clampf(x, 0.0, 1.0)
+	return pull(1.0 - pow(1.0 - u, CAB_WARP) if wall_k >= WARP_MIN else u, m1)
+
+
+## The share (0..1) of the haul's time at which the body is past the solid side at wall_k (the
+## thighs trail WALL_PAST of the way beyond it) and may be let down.
+static func cab_x_past(wall_k: float, m1: float) -> float:
+	var lo := 0.0
+	var hi := 1.0
+	for _i in range(18):
+		var mid := 0.5 * (lo + hi)
+		if cab_pull(mid, m1, wall_k) < wall_k + WALL_PAST:
+			lo = mid
+		else:
+			hi = mid
+	return hi
 
 
 ## The roll toward the door (rad) at x (0..1) of the haul: quick at the jerk, level at the release,
@@ -224,8 +271,8 @@ static func blend_drop(k: float) -> float:
 ## the haul: the whole pace, over the last CARRY_EASE_S of it easing (smoothstep) down to the pace
 ## the slide keeps.
 static func carried(p: Plan, t: float) -> Vector3:
-	var ease_s := minf(CARRY_EASE_S, HAUL_S)
-	var from := HAUL_S - ease_s
+	var ease_s := minf(CARRY_EASE_S, p.haul_s)
+	var from := p.haul_s - ease_s
 	var d := p.haul_carry * t
 	if t > from:
 		var k := clampf((t - from) / ease_s, 0.0, 1.0)
@@ -243,9 +290,11 @@ static func roll_to(lean: float, door: Vector3, yaw: float) -> float:
 
 ## Sets the haul of reaction r up (reactions.gd drag_out; nothing for one not knocked down and
 ## standing): the driver drawn in the sit pose from from (the seat, facing from_yaw) to where the
-## blow found them, shift (a world offset, u) further down the car's side, then the fall.
+## blow found them, shift (a world offset, u) further down the car's side, then the fall. lean0:
+## the roll to the door and the sit-up they were at (x, y; rad), then the lift over a solid side
+## (u) and the share of the way across where it is (z, w; both 0 for a door that opens).
 static func drag_out(
-	r, from: Vector3, from_yaw: float, shift: Vector3, lean0 := Vector2.ZERO
+	r, from: Vector3, from_yaw: float, shift: Vector3, lean0 := Vector4.ZERO
 ) -> void:
 	if r == null or r.mode != "place" or not r.down:
 		return
@@ -253,6 +302,9 @@ static func drag_out(
 	if r.jack != null:
 		r.jack.roll0 = lean0.x
 		r.jack.tip0 = -lean0.y
+		r.jack.lift = lean0.z
+		r.jack.wall_k = lean0.w
+		r.jack.haul_s = CAB_HAUL_S if lean0.w > 0.0 else HAUL_S
 	r.steps.push_front(["place", w.react, r.left])
 	r.drag = [from, w.pos + w.vis_off, from_yaw, from_yaw if r.jack != null else w.yaw, shift]
 	r.mode = "drag"
@@ -279,10 +331,12 @@ static func begin(r) -> float:
 	var span := Vector2(to.x - from.x, to.z - from.z).length() / WS.M
 	var slide := Vector2(r.slide.x, r.slide.z) - Vector2(p.carry.x, p.carry.z) * (0.5 * SLIDE_S)
 	var pace := 2.0 * slide.length() / WS.M / SLIDE_S
-	p.m1 = clampf(pace * HAUL_S / maxf(span, 0.1), 0.0, 2.5)
+	p.m1 = clampf(pace * p.haul_s / maxf(span, 0.1), 0.0, 2.5)
+	if p.wall_k > 0.0:
+		p.m1 = minf(p.m1, CAB_M1)
 	r.w.vis_tilt = 0.0
 	r.w.vis_roll = 0.0
-	return HAUL_S
+	return p.haul_s
 
 
 ## One frame of the haul (reactions.gd step): the body drawn on from the seat to beside the door
@@ -295,21 +349,29 @@ static func haul(r, dt: float) -> bool:
 	if p == null:
 		return _plain(r, dt)
 	r.left -= dt
-	var x := clampf(1.0 - r.left / HAUL_S, 0.0, 1.0)
-	var k := pull(x, p.m1)
+	var x := clampf(1.0 - r.left / p.haul_s, 0.0, 1.0)
+	var k := cab_pull(x, p.m1, p.wall_k)
 	var at: Vector3 = (
 		(r.drag[0] as Vector3).lerp(r.drag[1], k) - p.shift * (k - smoothstep(SHIFT_AT, 1.0, k))
 	)
-	if (r.drag[0] as Vector3).y > (r.drag[1] as Vector3).y:
+	var up := 0.0
+	if p.wall_k > 0.0:
+		var y0 := (r.drag[0] as Vector3).y
+		var down := smoothstep(cab_x_past(p.wall_k, p.m1), 1.0, x)
+		up = hump(k, p.wall_k, down)
+		at.y = lerpf(y0, (r.drag[1] as Vector3).y, down)
+		at.y += p.lift * up
+	elif (r.drag[0] as Vector3).y > (r.drag[1] as Vector3).y:
 		at.y = lerpf(
 			(r.drag[0] as Vector3).y, (r.drag[1] as Vector3).y, smoothstep(0.0, DROP_AT, k)
 		)
-	at += carried(p, HAUL_S * x)
+	at += carried(p, p.haul_s * x)
 	w.vis_off = at - w.pos
 	w.yaw = float(r.drag[2])
 	var tip := haul_tip(x, p)
 	var depth := maxf((r.drag[1] as Vector3).y - at.y, 0.0) * REF_H / (WS.M * float(w.h_m))
-	_pose(r, tip, haul_drop(tip, depth), roll_to(haul_lean(x, p), p.door, w.yaw))
+	# Lifted over a side the hips are not lowered by the tip too: that comes as they come down.
+	_pose(r, tip, haul_drop(tip, depth) * (1.0 - up), roll_to(haul_lean(x, p), p.door, w.yaw))
 	w.vis_v = 0.0
 	# Ends on the frame the clock reaches HAUL_S, not on the float residue left of it (which held
 	# the body still for a frame at the hand-off).

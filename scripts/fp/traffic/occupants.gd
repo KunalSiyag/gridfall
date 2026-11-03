@@ -58,8 +58,6 @@ var cap: int = CAP
 ## from its driver), and each one's resisting lean: id -> [roll to the door (rad, positive toward
 ## the car's +X, its driver's side), sit-up (rad, the hips' hinge, positive leaning forward)].
 var _pinned: Dictionary = {}
-## Car ids whose driver has been pulled out: no body is drawn at their wheel again (vacate).
-var _vacated: Dictionary = {}
 var _resist: Dictionary = {}
 ## Where each seated body's root is without the resisting lean (car id -> world point): what a pull
 ## out of the seat starts from (the lean is the walker's own after it).
@@ -104,7 +102,7 @@ func _candidates(cars: Array, cam: Vector3) -> Array:
 		if d > (BIKE_RANGE if _small(c) else RANGE):
 			continue
 		var seat: Variant = seat_point(c.node)
-		if seat != null and not _vacated.has(c.id):
+		if seat != null:
 			cands.append([d, c, seat])
 	cands.sort_custom(func(a: Array, b: Array) -> bool: return float(a[0]) < float(b[0]))
 	return cands
@@ -150,7 +148,6 @@ func clear() -> void:
 			people.release(e[0])
 	_by_car.clear()
 	_pinned.clear()
-	_vacated.clear()
 	_resist.clear()
 	seated = 0
 	riding = 0
@@ -160,7 +157,7 @@ func clear() -> void:
 ## taking the car: sync keeps placing it) until unpin. False while that cannot be: c shows no full
 ## model, or the driver's avatar scene is still loading (asked again each frame, it comes).
 func ensure(c: VH.Car, residents: Variant) -> bool:
-	if c == null or c.dead or _vacated.has(c.id):
+	if c == null or c.dead:
 		return false
 	_pinned[c.id] = true
 	if _by_car.has(c.id):
@@ -183,31 +180,6 @@ func ensure(c: VH.Car, residents: Variant) -> bool:
 func unpin(id: int) -> void:
 	_pinned.erase(id)
 	_resist.erase(id)
-
-
-## Car id's driver has been pulled out of it (the hijack: the car is not taken until the haul is
-## over): the body drawn at its wheel goes now, the same person is on the road, and no other is
-## drawn there. unvacate (the car is taken) forgets it.
-func vacate(id: int) -> void:
-	_vacated[id] = true
-	_pinned.erase(id)
-	_resist.erase(id)
-	_rest.erase(id)
-	var e: Array = _by_car.get(id, [])
-	if not e.is_empty():
-		people.release(e[0])
-		_by_car.erase(id)
-		seated = _by_car.size()
-
-
-## True when car id's driver has been pulled out of it.
-func vacated(id: int) -> bool:
-	return _vacated.has(id)
-
-
-## Car id is taken (or gone): forgets that its driver was pulled out.
-func unvacate(id: int) -> void:
-	_vacated.erase(id)
 
 
 ## The driver of car id leans away from the hero's hands (a roll toward the car's driver's side and

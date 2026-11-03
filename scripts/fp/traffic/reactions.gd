@@ -956,9 +956,9 @@ func blocks() -> Array:
 ## Car-jacked w (just knocked down by the carjack's blow) is dragged out of the car first, from
 ## from (its feet in the seat, facing yaw) to where the blow found it, shift (u) further down the
 ## car's side than straight out of the seat, lean (the roll to the door and the sit-up it was
-## already at, rad); then it falls (jack_pull.gd drag_out).
+## already at, rad, and what jack_pull.gd drag_out says); then it falls.
 func drag_out(
-	w: WK.Walker, from: Vector3, yaw: float, shift := Vector3.ZERO, lean := Vector2.ZERO
+	w: WK.Walker, from: Vector3, yaw: float, shift := Vector3.ZERO, lean := Vector4.ZERO
 ) -> void:
 	JP.drag_out(_active.get(w.id), from, yaw, shift, lean)
 

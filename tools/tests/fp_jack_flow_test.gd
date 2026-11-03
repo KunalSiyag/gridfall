@@ -186,11 +186,7 @@ func _flow_step() -> void:
 		ctx.player.carry(feet, c.yaw + c.vis_yaw + PI, Vector3.ZERO, true)
 		if float(_st["sim_t"]) >= 1.2:
 			_st["claimed"] = true
-			var hj: RefCounted = drive.get("hijack")
-			hj.set("to_id", c.id)
-			hj.set("phase", "jack")
-			drive.call("_hijack_in", traffic, feet)
-			hj.call("cancel")
+			_claim_moving(c, feet)
 	elif drive.call("_climbing"):
 		drive.call("climb_step", DT)
 	elif bool(drive.get("active")):
@@ -199,6 +195,21 @@ func _flow_step() -> void:
 	_st["sim_t"] = float(_st["sim_t"]) + DT
 	traffic.call("step", DT * float(_st["scale"]))
 	traffic.call("sync_visuals", DT)
+
+
+## The moving car claimed the way the traffic feature's claim_car(id, src, true) hands it over (the
+## hijack no longer does this: it stops the car first, hijack.gd): its driver pulled out at the
+## car's pace, the hero at its wheel at its speed.
+func _claim_moving(c: VH.Car, feet: Vector3) -> void:
+	traffic.call("set_hero_aboard", false)
+	var info: Dictionary = traffic.call("claim_car", c.id, feet, true)
+	var mode: Variant = drive.get("_prev_mode")
+	ctx.player.release(true)
+	drive.call("_adopt", info)
+	drive.set("_prev_mode", mode)
+	var model: RefCounted = drive.get("model")
+	model.set("vel", (model.call("heading") as Vector2) * float(info.get("v", 0.0)))
+	drive.call("_take_wheel")
 
 
 ## What one frame (after the skeletons updated) adds to the record; true when the flow is done.
