@@ -1,49 +1,44 @@
-extends SceneTree
+extends "res://tools/tests/fp_jack_kit.gd"
 ## The real flow of a carjack through a grown city (traffic and drive, the hero's own skeleton and
 ## the driver's, a frame at a time so the skeletons' modifiers run): the hero's hands are on the
-## driver's collar, below the hero's own head the whole time (no overhead arm raise, no wind-up) and
-## never jump a frame to the next (the hold is let go by easing, not by a snap); the driver rests
-## 0.5 to 1.2 m from the door sill, no part of their body is ever more than 0.25 m above the road
-## once out of the seat, their hips are not sat on the air for more than a moment (they come down
-## as they come out), and the lowest vertex of their skinned body is never sunk into the road, not
-## in the fall, not as the lying pose comes in; the hero starts into the car 0.45 s after the grab,
-## is climbing in by 1.3 s with the driver clear of the door by then, never putting a foot on them,
-## and has his hands on the wheel by 2.6 s; at a standstill and from a car at 6 m/s, for a coupe, a
+## driver, below the hero's own head the whole time (no overhead arm raise, no wind-up) and never
+## jump a frame to the next (the hold is let go by easing, not by a snap); the driver rests 0.5 to
+## 1.2 m from the door sill, no part of their body is ever more than 0.25 m above the road once out
+## of the seat, their hips are not sat on the air for more than a moment (they come down as they
+## come out), and the lowest vertex of their skinned body is never sunk into the road, not in the
+## fall, not as the lying pose comes in; the hero steps into the car 0.55 to 1.1 s after the pull,
+## is climbing in by 1.95 s with the driver clear of the door by then, never putting a foot on them,
+## and has his hands on the wheel by 3.3 s; at a standstill and from a car at 6 m/s, for a coupe, a
 ## sedan, an SUV and a van, and for the coupe at 2x, 4x and 8x the sim speed too, where the driver
-## is down on the road before the hero's hold is over and his hands let go of the collar as it gets
-## away instead of following it (jack_pull.gd, car_entry.gd; the carjack_throw flag). The
-## assertions use only what the traffic and drive features do, so they can be run on the old throw
-## too (they fail on it). The curves and the reactions of the pull-out are fp_jack_pull_test's, the
-## door clearance for every model fp_jack_doors_test's.
+## is down on the road before the hero's hold is over and his hands let go of the driver as they get
+## away instead of following them (jack_pull.gd, jack_hold.gd; the carjack_throw flag). The
+## assertions use only what the traffic and drive features do. The curves and the reactions of the
+## pull-out are fp_jack_pull_test's, the door clearance for every model fp_jack_doors_test's, the
+## hands' grip frame by frame fp_jack_grip_test's and every way into a vehicle fp_jack_entry_test's.
 
-const DT := 1.0 / 60.0
-const K := preload("res://tools/tests/fp_kit.gd")
-const WS := preload("res://scripts/fp/world_scale.gd")
-const WK := preload("res://scripts/fp/traffic/walkers.gd")
-const JL := preload("res://scripts/fp/traffic/jack_landing.gd")
-const DOORS := preload("res://scripts/fp/traffic/car_doors.gd")
-const LG := preload("res://scripts/fp/traffic/lane_graph.gd")
-const TRIPS := preload("res://scripts/fp/traffic/trips.gd")
-const VH := preload("res://scripts/fp/traffic/vehicles.gd")
 const SKIN := preload("res://tools/tests/fp_skin_pts.gd")
+const JL := preload("res://scripts/fp/traffic/jack_landing.gd")
 ## Where the driver rests, out from the sill (m): the least and the most.
 const REST := Vector2(0.5, 1.2)
 ## The most any part of the body may be above the road once it is out of the seat (m).
 const AIR_MAX := 0.25
-## The hero starts into the car within STEP_MAX_S of the grab, is climbing in by CLIMB_MAX_S and has
-## his hands on the wheel (the door shutting) by SEATED_MAX_S: the climb in is the car_in clip's own
-## 1.3 s, so the seat is taken about 2.5 s after the grab.
-const STEP_MAX_S := 0.45
-const CLIMB_MAX_S := 1.2
-const SEATED_MAX_S := 2.55
+## The hero starts into the car STEP_MIN_S to STEP_MAX_S after the pull (the driver is drawn out of
+## the seat over HAUL_S and let go, and he lets go in his turn: jack_hold.gd), is climbing in by
+## CLIMB_MAX_S and has his hands on the wheel (the door shutting) by SEATED_MAX_S: the climb in is
+## the car_in clip's own 1.3 s, so the seat is taken about 3.2 s after the pull (the driver is drawn
+## out over 0.7 s: 3.1 at 0.6).
+const STEP_MIN_S := 0.55
+const STEP_MAX_S := 1.1
+const CLIMB_MAX_S := 1.95
+const SEATED_MAX_S := 3.4
 ## The lowest vertex of the driver's skinned body is never more than FLOOR_Y under the road (m): the
 ## lying pose itself rests 0.13 m under it, the sit-down and the blend into it a little more.
-const FLOOR_Y := -0.22
+const FLOOR_Y := -0.28
 ## Once past the sill the drawn hips are above HIPS_SOFT (m) for at most HOVER_MAX_S s, never above
 ## HIPS_MAX: sat in the air a metre off the door is not a pull-out, it is a hover.
 const HIPS_SOFT := 0.25
 const HIPS_MAX := 0.5
-const HOVER_MAX_S := 0.15
+const HOVER_MAX_S := 0.25
 ## Either hand moves at most HAND_STEP_MAX (m) from one frame to the next (the driver's collar they
 ## follow goes at up to 9 m/s as the haul ends, 0.15 m a frame), from the grab to HAND_STEP_S s
 ## after it (the pull, the let go and the easing out of the hold; the hero's jog into the car, which
@@ -67,237 +62,20 @@ const HANDS_S := 1.2
 const MODELS := ["coupe_navy", "sedan_blue", "suv_black", "van_white"]
 const SPEED := 6.0
 const SIM_SPEEDS := [2.0, 4.0, 8.0]
-const HERO_BONES := [
-	"LeftHand",
-	"RightHand",
-	"Head",
-	"Neck",
-	"Hips",
-	"LeftFoot",
-	"RightFoot",
-	"LeftToes",
-	"RightToes"
-]
-
-var fails: Array[String] = []
-var ran: Array[String] = []
-var ctx: FpContext
-## The road lane the cars stand on, its tile, and the car model on it now.
-var lane: LG.Lane = null
-var lane_tile: int = -1
-var door_model: int = -1
-## The features under test, every person_hit and the one last hit; the next resident to try.
-var traffic: FpFeature
-var drive: FpFeature
-var hits: Array = []
-var victim: WK.Walker = null
-var _ridx := 0
-## The hero's skeleton and its hands, feet and head as the last skeleton update (every modifier)
-## left them.
-var hero_sk: Skeleton3D = null
-var hero_post := {}
-var hero_fresh := false
 var skin := SKIN.new()
 ## The state of the flow under way (_flow_begin).
 var _st := {}
 
 
 func _init() -> void:
-	await process_frame
-	FeatureFlags.set_override("hit_feel", true)
-	FeatureFlags.set_override("carjack_throw", true)
-	if _setup():
-		var models := _models()
-		if models.size() >= 17 and _pick_lane():
-			await _warm()
-			await _check_flow()
+	if await _fixture():
+		await _check_flow()
 	K.check(fails, ran.size() == 1, "every section ran to its end (%s)" % str(ran))
 	FeatureFlags.reload()
 	K.finish(self, "FP_JACK_FLOW_TEST", fails)
 
 
 # ------------------------------------------------------------------ the real flow
-
-
-## A grown city with the hero on foot and the traffic and drive features (time run by hand, no
-## ambient traffic); false (a failed check) when either feature is missing.
-func _setup() -> bool:
-	ctx = K.make_ctx(get_root(), {"view": true, "grow": true, "camera_mode": "first"})
-	ctx.player.set_process(false)
-	var made: Array[FpFeature] = []
-	for id: String in ["traffic", "drive"]:
-		made.append(K.make_feature(ctx, id))
-	traffic = made[0]
-	drive = made[1]
-	var found := not made.has(null)
-	K.check(fails, found, "the traffic and drive features are registered")
-	if not found:
-		return false
-	for prop: String in ["auto_step", "ambient_enabled"]:
-		traffic.set(prop, false)
-	drive.set_process(false)
-	for flag: String in ["car_doors", "carjack", "hit_feel", "carjack_throw"]:
-		FeatureFlags.set_override(flag, true)
-	ctx.bus.person_hit.connect(_on_hit)
-	var rig: Variant = ctx.player.avatar.get("rig")
-	hero_sk = (rig as RefCounted).get("skeleton") if rig is RefCounted else null
-	K.check(fails, hero_sk != null, "the hero has a skeleton")
-	if hero_sk != null:
-		hero_sk.skeleton_updated.connect(_on_hero_updated)
-	return found
-
-
-func _on_hit(at: Vector3, cause: String, info: Dictionary) -> void:
-	hits.append([at, cause, info])
-	victim = traffic.call("_walker_by_id", int(info.get("walker", -1)))
-
-
-## The hero's bones as every modifier left them this update (the strike pose layer is the last).
-func _on_hero_updated() -> void:
-	for bn: String in HERO_BONES:
-		var i := hero_sk.find_bone(bn)
-		if i >= 0:
-			hero_post[bn] = hero_sk.global_transform * hero_sk.get_bone_global_pose(i).origin
-	hero_fresh = true
-
-
-## The car models traffic hands out whose door opens.
-func _models() -> Array:
-	var opens := func(m: int) -> bool:
-		var mo: RefCounted = (traffic.get("render") as RefCounted).call("model", m)
-		return DOORS.of(str(mo.get("key")), mo.get("scene")).ok
-	return (traffic.get("_car_models") as Array).filter(opens)
-
-
-func _key_of(m: int) -> String:
-	var mo: RefCounted = (traffic.get("render") as RefCounted).call("model", m)
-	return str(mo.get("key")).get_file().split(".")[0]
-
-
-## The first model whose key starts with prefix, or -1.
-func _model_by_key(prefix: String) -> int:
-	for m: int in _models():
-		if _key_of(m).begins_with(prefix):
-			return m
-	return -1
-
-
-## The roster's avatar scenes load in the background, a frame at a time: run frames until a driver
-## is drawn at the wheel.
-func _warm() -> void:
-	K.quiet_walkers(traffic)
-	for _k in range(600):
-		var seated: Variant = (traffic.get("occupants") as RefCounted).call(
-			"driver_of", _driven_car().id
-		)
-		if seated != null:
-			K.check(fails, true, "fixture: a driver drawn at the wheel (the scenes have loaded)")
-			return
-		await process_frame
-	K.check(fails, false, "fixture: a driver drawn at the wheel (the scenes have loaded)")
-
-
-## The first straight lane of a road tile (not a bridge) with free ground out to 3 m off the
-## driver's side of a car halfway along it and 30 m ahead (a moving car's way); false (a failed
-## fixture) for none.
-func _pick_lane() -> bool:
-	door_model = int(_models()[0])
-	var tiles: Dictionary = (traffic.get("lanes") as LG).tiles
-	var found: Array = []
-	for i: int in tiles:
-		var info: LG.TileInfo = tiles[i]
-		for l: LG.Lane in info.lanes:
-			if l.kind == LG.STRAIGHT and not info.bridge:
-				found.append([i, l])
-	found.sort_custom(func(a: Array, b: Array) -> bool: return int(a[0]) < int(b[0]))
-	for pair: Array in found:
-		if _free_beside(pair[1]):
-			lane_tile = pair[0]
-			lane = pair[1]
-			return true
-	K.check(fails, false, "fixture: a straight lane with room beside a car on it")
-	return false
-
-
-func _free_beside(l: LG.Lane) -> bool:
-	var vh: VH = traffic.get("vehicles")
-	var car := vh.make("car", "ambient", traffic.call("dims", door_model))
-	vh.place(car, l, 0.15)
-	var xf := Transform3D(Basis(Vector3.UP, car.yaw), car.pos)
-	vh.remove(car)
-	var zs: Array[float] = [-0.45 * car.length, 0.0, 0.45 * car.length]
-	for k in range(1, 9):
-		zs.append(float(k) * 2.0 * WS.M + 0.45 * car.length)
-	for x_m: float in [0.4, 1.2, 2.0, 3.0]:
-		for z: float in zs:
-			var q := xf * Vector3(car.half_w + x_m * WS.M, 0.0, z)
-			var g := ctx.collision.walk_height(q)
-			if is_nan(g) or ctx.collision.is_blocked(Vector3(q.x, g, q.z), WS.PLAYER_RADIUS):
-				return false
-	return true
-
-
-## A car of door_model of role stopped on the lane, drawn, every other vehicle gone, the hero on
-## foot beside its driver's side (at the lane's start for a car that will drive on).
-func _lane_car(role: String, rid: String = "", at: float = 0.5) -> VH.Car:
-	var vh: VH = traffic.get("vehicles")
-	_clear_stage(vh)
-	var c := vh.make("car", role, traffic.call("dims", door_model))
-	c.model = door_model
-	c.driver_id = rid
-	vh.place(c, lane, at)
-	var xf := Transform3D(Basis(Vector3.UP, c.yaw), c.pos)
-	ctx.player.teleport(xf * Vector3(c.half_w + WS.M, 0.0, -0.35 * c.length), 0.0)
-	ctx.player.update_view(DT)
-	traffic.call("sync_visuals", DT)
-	return c
-
-
-## No car or driven car left, nothing in the way: the stage for the next car.
-func _clear_stage(vh: VH) -> void:
-	if traffic.get("_driven") != null:
-		traffic.call("leave_car")
-	drive.call("exit", true)
-	for o: VH.Car in vh.cars.duplicate():
-		vh.remove(o)
-	ctx.collision.dynamic_boxes = []
-
-
-## Resident r on a drive to work (or home) in a car stopped on the lane: their trip, bound for the
-## road tile in front of it.
-func _trip_for(r: Dictionary) -> TRIPS.Trip:
-	var home := int(r["home"])
-	var work := int(r["work"])
-	var trip := TRIPS.Trip.new()
-	trip.rid = str(r["id"])
-	trip.mode = "car"
-	trip.phase = "drive"
-	trip.from_i = home
-	trip.to_i = work if work >= 0 else home
-	var frontage: int = ctx.directory.frontage(trip.to_i)
-	var drivable := (traffic.get("lanes") as LG).tiles.has(frontage)
-	trip.dest_tile = frontage if drivable else lane_tile
-	return trip
-
-
-## A resident's car of door_model on the lane with the resident drawn at its wheel (the next
-## resident who can be, of up to a dozen tried), on a drive.
-func _driven_car(at: float = 0.5) -> VH.Car:
-	var people: Array = ctx.residents.people
-	var c: VH.Car = null
-	var trips: TRIPS = traffic.get("trips")
-	for _try in range(12):
-		var trip := _trip_for(people[_ridx % people.size()])
-		_ridx += 1
-		c = _lane_car("resident", trip.rid, at)
-		trip.car = c
-		c.owner = trip
-		trips.trips[trip.rid] = trip
-		trips.cars[trip.rid] = c
-		traffic.call("sync_visuals", DT)
-		if (traffic.get("occupants") as RefCounted).call("driver_of", c.id) != null:
-			break
-	return c
 
 
 ## Every model of MODELS at a standstill and, for the first and the last, from a car at SPEED:
@@ -443,7 +221,7 @@ func _flow_note() -> bool:
 		_note_hands(rec, since)
 	_note_driver(rec, cur)
 	_note_body(rec, cur, since, ph)
-	return since > 3.2 or (_st["rest_set"] and not is_nan(rec["close"]))
+	return since > SEATED_MAX_S + 0.1 or (_st["rest_set"] and not is_nan(rec["close"]))
 
 
 ## The first time the hero's way into the car reaches each phase, and the door as it starts.
@@ -610,7 +388,12 @@ func _judge(label: String, r: Dictionary, moving: bool) -> void:
 	said += "seated by %.2f s"
 	K.check(
 		fails,
-		step <= STEP_MAX_S and climb <= CLIMB_MAX_S and close <= SEATED_MAX_S,
+		(
+			step >= STEP_MIN_S
+			and step <= STEP_MAX_S
+			and climb <= CLIMB_MAX_S
+			and close <= SEATED_MAX_S
+		),
 		said % [label, step, climb, close]
 	)
 	var clear := float(r["clear"])

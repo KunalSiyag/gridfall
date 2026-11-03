@@ -89,6 +89,8 @@ var junctions: JN
 var vehicles: VH
 var walkers: WK
 var render: RD
+## The id of the car the hero is taking from its driver (hold_car), -1 for none.
+var _taking: int = -1
 ## Worst microseconds per _tile_changed step since reset_section_stats() (fp_bench's hitch rows).
 var section_us_max: Dictionary = {}
 ## HC's animated people (deliverable 9); ok == false draws the legacy static people instead.
@@ -266,6 +268,7 @@ func on_world_rebuilt() -> void:
 	police.reset()
 	render.clear()
 	occupants.clear()
+	carjack.forget()
 	people.clear()
 	for c in _agents_root.get_children():
 		c.queue_free()
@@ -1151,7 +1154,8 @@ func outdoor_spot(lot: int, rid: String) -> Array:
 	return [p, atan2(face.x, face.z)]
 
 
-## A spot for a fleet vehicle at tile `start` (or anywhere fitting the spawn rules): [lane, s] or [].
+## A spot for a fleet vehicle at tile `start` (or anywhere fitting the spawn rules): [lane, s] or
+## [].
 func spawn_spot_near(start: Vector2i, length: float) -> Array:
 	var p := ctx.player_position()
 	if D.in_bounds(start.x, start.y):
@@ -1563,7 +1567,9 @@ func blockers_near(p: Vector3, r: float, skip: int = -1) -> Array:
 	if not _built:
 		return out
 	for c: VH.Car in vehicles.cars:
-		if c.dead or c.far or c.driven or c.id == skip or (c.parked and c.slot_tile < 0):
+		if c.dead or c.far or c.driven or c.id == skip or c.id == _taking:
+			continue
+		if c.parked and c.slot_tile < 0:
 			continue
 		if c.v > 0.1 * WS.M or c.pos.distance_to(p) > r + 0.3:
 			continue
@@ -1907,8 +1913,17 @@ func claim_car(id: int, src: Vector3 = Vector3.INF, moving: bool = false) -> Dic
 	if c == null or _driven != null or not _claimable(c, moving):
 		return {}
 	var v := c.v if moving else 0.0
-	if _jacks(c):
-		carjack.eject(c, src if src.is_finite() else c.pos)
+	var pulled := carjack.consume_done(c.id)
+	occupants.unvacate(c.id)
+	if _jacks(c) and not pulled:
+		occupants.ensure(c, ctx.residents)
+		var shown := occupants.driver_of(c.id) != null
+		var hit := carjack.eject(c, src if src.is_finite() else c.pos)
+		# A driver drawn at the wheel that could not be put anywhere stays where they are: the car
+		# is not taken from under them.
+		if hit.is_empty() and shown:
+			return {}
+	occupants.unpin(c.id)
 	if c.role != VH.PLAYER:
 		c = _take_over(c)
 	c.driven = true
@@ -2023,6 +2038,9 @@ func hold_car(id: int, on: bool) -> void:
 	var c: VH.Car = vehicles.by_id.get(id) if _built else null
 	if c != null and c.role != VH.PLAYER:
 		c.hold = on
+		# The car the hero is taking is no wall to him (he leans in at its door; the player's own
+		# poll of blockers_near would push him out of its box).
+		_taking = id if on else (-1 if _taking == id else _taking)
 
 
 ## The driver's hip point in the driven car's own frame (+Z forward), or null until its full model
@@ -2047,12 +2065,30 @@ func door_info(id: int = -1) -> Dictionary:
 		return {}
 	var d: DOORS.Door = DOORS.of(m.key, m.scene)
 	if not d.ok:
-		return {}
+		return _doorless(c, m) if id >= 0 else {}
 	var out := {}
 	var pts := DOORS.points(d)
 	for k: String in pts:
 		out[k] = m.offset * (pts[k] as Vector3)
 	return out
+
+
+## The "door" of car c's model m when it has none that opens (a bus, a truck, a bicycle or scooter),
+## for the hero to reach its driver by (car_entry.gd: it does no door work, takes hold of the driver
+## from the side and the car is taken without a climb in): the seat marker's point, and the handle
+## and hinge beside it at the body's side. {} when the model shows no seat marker.
+func _doorless(c: VH.Car, m: RD.Model) -> Dictionary:
+	if c.node == null or not c.node.is_inside_tree():
+		return {}
+	var s: Variant = occupants.seat_point(c.node)
+	if s == null:
+		return {}
+	var seat: Vector3 = m.offset * (s as Vector3)
+	var at := Vector3(maxf(c.half_w, seat.x), seat.y, seat.z)
+	var rear := at + Vector3(0.0, 0.0, -0.1 * WS.M)
+	return {
+		"hinge": at, "handle": at, "seat": seat, "rear": rear, "open_rear": rear, "doorless": true
+	}
 
 
 ## True when a driver is pulled out by the collar rather than dragged and knocked down (carjack.gd
@@ -2061,10 +2097,50 @@ func jack_pulls() -> bool:
 	return carjack.pulls()
 
 
-## The world point of the collar of the driver the hero has (carjack.gd collar): car id's, drawn
-## at the wheel, or (id < 0) the one pulled out last; NAN with no body drawn.
-func jack_collar(id: int = -1) -> Vector3:
-	return carjack.collar(id)
+## The two points the hero's hands take hold of on the driver (carjack.gd grips): car id's, drawn at
+## the wheel, or (id < 0) the one pulled out last, seen from toward, none above top; NAN with no
+## body.
+func jack_grips(id: int, toward: Vector3, top: float = INF, side: String = "") -> Dictionary:
+	return carjack.grips(id, toward, top, side)
+
+
+## Pulls car id's driver out now, the hero's hands on them (src), without taking the car (an action
+## hijack holds the grip while they come out and takes it then: claim_car does not pull them again).
+## False when it cannot be: the car is gone or not to be taken, or the driver could not be put down.
+func jack_eject(id: int, src: Vector3) -> bool:
+	var c: VH.Car = vehicles.by_id.get(id) if _built else null
+	if c == null or c.dead or _driven != null or not _claimable(c, true) or not _jacks(c):
+		return false
+	if carjack.eject(c, src).is_empty():
+		return false
+	# The driver is out: the one drawn at the wheel goes (they are the one hauled out through the
+	# window), and the car has none, whatever becomes of the hijack from here.
+	carjack.mark_done(c.id)
+	occupants.vacate(c.id)
+	return true
+
+
+## True once the driver pulled out last is out of the seat and let go (carjack.gd hauled).
+func jack_hauled() -> bool:
+	return carjack.hauled()
+
+
+## Car id's driver is drawn at the wheel now, so the hero has someone to take hold of: drawn at once
+## if it can be, whatever the cap and the range (occupants.gd ensure); false while it cannot.
+func jack_ready(id: int) -> bool:
+	var c: VH.Car = vehicles.by_id.get(id) if _built else null
+	return c != null and occupants.ensure(c, ctx.residents)
+
+
+## Car id's driver leans away from the hero's grip (occupants.gd resist; 0, 0 for none).
+func jack_resist(id: int, roll: float, sit_up: float) -> void:
+	occupants.resist(id, roll, sit_up)
+
+
+## The hero lets go of car id's driver (he turned back, or the car is gone): back to the cap and the
+## range, the resisting lean off.
+func jack_free(id: int) -> void:
+	occupants.unpin(id)
 
 
 ## The driver's door of car id (the driven car's when id < 0) as it hangs swung by amount (0 shut ..
@@ -2229,7 +2305,8 @@ func _claimable(c: VH.Car, moving: bool = false) -> bool:
 		return false
 	if c.parked:
 		return c.slot_tile >= 0
-	var who := c.role == "ambient" or (c.role == "resident" and _jacks(c))
+	var vacant := occupants.vacated(c.id)
+	var who := c.role == "ambient" or (c.role == "resident" and (_jacks(c) or vacant))
 	return who and (moving or c.v < CLAIM_SPEED)
 
 
@@ -2290,7 +2367,7 @@ static func _body_name(c: VH.Car) -> String:
 
 ## True when taking c means dragging its driver out first (carjack).
 func _jacks(c: VH.Car) -> bool:
-	return JACK.occupied(c) and FeatureFlags.enabled("carjack")
+	return JACK.occupied(c) and FeatureFlags.enabled("carjack") and not occupants.vacated(c.id)
 
 
 func _take_over(o: VH.Car) -> VH.Car:

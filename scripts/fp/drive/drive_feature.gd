@@ -27,6 +27,7 @@ const HUD := preload("res://scripts/fp/drive/drive_hud.gd")
 const BODY := preload("res://scripts/fp/drive/car_body.gd")
 const ENTRY := preload("res://scripts/fp/drive/car_entry.gd")
 const HIJACK := preload("res://scripts/fp/drive/hijack.gd")
+const HJG := preload("res://scripts/fp/drive/hijack_grip.gd")
 const SEAT := preload("res://scripts/fp/drive/seat_pose.gd")
 const ARM := preload("res://scripts/fp/drive/backhoe.gd")
 const INPUT := preload("res://scripts/fp/drive/drive_input.gd")
@@ -118,6 +119,8 @@ var _stop_t: float = -1.0
 var _photo_input: bool = true
 ## The car being taken from its driver (carjack) until they are dragged out, else -1.
 var _jack_id: int = -1
+## How many times the walk to the door of the car being taken started again from where he stood.
+var _jack_tries: int = 0
 ## The leap across to a moving car (action hijack).
 var hijack := HIJACK.new()
 ## The car alongside to jump to, as the prompt last looked (hijack_target).
@@ -277,9 +280,13 @@ func climb_step(dt: float) -> void:
 	if entry.kind == "out" and entry.phase != "open":
 		_limbs_off()
 	var done := entry.step(dt)
-	# A walk to someone else's car that cannot reach its door takes it at once.
-	var pull := done == "pull" or (done == "fail" and _jack_id >= 0)
-	if pull and not _pull_out():
+	if done == "pull" and not _pull_out():
+		return
+	# A walk to someone else's car that cannot reach its door (or a driver that is not to be seen at
+	# the wheel) never takes it: no grab, no seat. It starts again from where he stands, once, else
+	# the car is let go and the driver stays.
+	if done == "fail" and _jack_id >= 0:
+		_jack_walk_failed()
 		return
 	traffic.call("set_door", entry.door, _jack_id)
 	if done == "seated" or done == "fail":
@@ -344,7 +351,13 @@ func _climb_in(info: Dictionary, id: int = -1) -> bool:
 	_block_others(id)
 	var boxes: Array = traffic.call("blockers_near", _pos, _dims.z + ENTRY.ROUTE_REACH, id)
 	entry.clearance = _door_clearance(id)
-	entry.collar = func() -> Vector3: return traffic.call("jack_collar", _jack_id)
+	entry.grips = func(toward: Vector3, top: float, side: String) -> Dictionary:
+		return traffic.call("jack_grips", _jack_id, toward, top, side)
+	entry.hauled = func() -> bool: return bool(traffic.call("jack_hauled"))
+	entry.resist = func(roll: float, sit_up: float) -> void:
+		if _jack_id >= 0:
+			traffic.call("jack_resist", _jack_id, roll, sit_up)
+	entry.ready = func() -> bool: return bool(traffic.call("jack_ready", _jack_id))
 	entry.pull_out = bool(traffic.call("jack_pulls"))
 	if not entry.begin_in(ctx, info, traffic.call("door_info", id), boxes, id >= 0):
 		return false
@@ -363,8 +376,11 @@ func _door_clearance(id: int) -> Callable:
 
 
 ## Starts taking car id from its driver: it waits while the hero walks round to its door and opens
-## it, then the driver is dragged out (climb_step's "pull") and the hero climbs in. With no way to
-## the door the driver is pulled out at once and the hero takes the wheel. False when it is gone.
+## it, then he takes hold of the driver, the driver is pulled out (climb_step's "pull") and the hero
+## climbs in. The driver is drawn at the wheel first, at once if it can be (traffic's jack_ready:
+## the hero waits for the door at most READY_WAIT s for it). There is no taking the car without that
+## grab: with no way to the door (none free to stand at, or nowhere to walk) the car is let go, the
+## driver stays and the hero says so. False when it is gone or let go.
 func _jack_in(id: int) -> bool:
 	var traffic := _traffic()
 	var info: Dictionary = traffic.call("car_info", id) if traffic != null else {}
@@ -372,13 +388,32 @@ func _jack_in(id: int) -> bool:
 		return false
 	_adopt(info)
 	_jack_id = id
+	_jack_tries = 0
+	traffic.call("jack_ready", id)
 	if _climb_in(info, id):
 		traffic.call("hold_car", id, true)
 		return true
-	if not _pull_out():
-		return false
-	_take_wheel()
-	return true
+	_jack_release()
+	return false
+
+
+## The walk to the door of the car being taken cannot go on: from where the hero stands once, then
+## the car is let go.
+func _jack_walk_failed() -> void:
+	var info: Dictionary = _traffic().call("car_info", _jack_id)
+	if _jack_tries < 1 and not info.is_empty():
+		_jack_tries += 1
+		if _climb_in(info, _jack_id):
+			return
+	_jack_release()
+
+
+## The car being taken from its driver is let go (its door shuts and it drives on, the driver still
+## at the wheel) and the hero is back on foot: nothing was taken without the grab.
+func _jack_release() -> void:
+	entry.cancel()
+	_toast("Can't get to the door")
+	_on_foot(Vector3(NAN, NAN, NAN), EXIT_BLEND)
 
 
 ## The pull: traffic drags the driver out (knocked down beside the door) and hands the car over.
@@ -469,6 +504,7 @@ func _on_foot(spot: Vector3, blend: float) -> void:
 			# Turned back before the pull: the door shuts and the car drives on.
 			traffic.call("set_door", 0.0, _jack_id)
 			traffic.call("hold_car", _jack_id, false)
+			traffic.call("jack_free", _jack_id)
 	_jack_id = -1
 	active = false
 	car_id = -1
@@ -704,7 +740,10 @@ func jump_across() -> bool:
 	var seat: Vector3 = door.get("seat", Vector3.ZERO)
 	var p := ctx.player
 	var here := Transform3D(Basis(Vector3.UP, model.yaw), _pos)
-	hijack.begin(car_id, int(t["id"]), float(t["side"]), here.affine_inverse() * p.position, seat.z)
+	hijack.begin(
+		car_id, int(t["id"]), float(t["side"]), here.affine_inverse() * p.position, seat.z, seat.x
+	)
+	traffic.call("jack_ready", int(t["id"]))
 	traffic.call("release_car", model.vel)
 	traffic.call("set_hero_aboard", true)
 	active = false
@@ -728,14 +767,27 @@ func _hijack_step(dt: float) -> void:
 	var traffic := _traffic()
 	var a: Dictionary = traffic.call("car_info", hijack.from_id) if traffic != null else {}
 	var b: Dictionary = traffic.call("car_info", hijack.to_id) if traffic != null else {}
-	if b.is_empty() or (a.is_empty() and hijack.phase != "jack"):
+	if b.is_empty() or (a.is_empty() and hijack.phase not in ["jack", "haul", "in"]):
 		_fall_off()
 		return
 	var was := ctx.player.position
-	var said := hijack.step(dt)
-	if said == "pull":
+	# The driver is drawn at the wheel for the hold (the hold waits while the avatar loads).
+	var hold := hijack.phase in ["out", "leap", "jack"]
+	var said := hijack.step(dt, not hold or bool(traffic.call("jack_ready", hijack.to_id)))
+	if said == "fail":
+		_fall_off()
+		return
+	# The hold is over: the driver is pulled out (the car is not his yet), the hands stay on them.
+	if said == "pull" and not bool(traffic.call("jack_eject", hijack.to_id, was)):
+		_fall_off()
+		return
+	if said == "take":
 		_hijack_in(traffic, was)
 		return
+	# The driver is out and let go: the hands let go, he swings in through the window.
+	if HJG.out(traffic, hijack):
+		hijack.go_in()
+		HJG.release(ctx)
 	var feet := hijack.feet(a, b)
 	if said == "leap" and ctx.bus != null:
 		ctx.bus.hero_action.emit("hijack", was)
@@ -743,7 +795,10 @@ func _hijack_step(dt: float) -> void:
 	model.yaw = float(ride["yaw"])
 	# The body faces along the car it rides, moving with it (no walk or run clip from its speed).
 	var rise := (feet.y - was.y) / dt if hijack.airborne() else 0.0
-	ctx.player.carry(feet, model.yaw + PI, Vector3(0.0, rise, 0.0), not hijack.airborne())
+	ctx.player.carry(
+		feet, HJG.yaw(hijack, model.yaw), Vector3(0.0, rise, 0.0), not hijack.airborne()
+	)
+	HJG.hold(ctx, traffic, hijack)
 	_pos = feet
 	_look(dt)
 	ctx.player.set_view_override(camera_xform(true), _fov())
@@ -753,7 +808,10 @@ func _hijack_step(dt: float) -> void:
 ## its wheel.
 func _hijack_in(traffic: FpFeature, src: Vector3) -> void:
 	traffic.call("set_hero_aboard", false)
-	var info: Dictionary = traffic.call("claim_car", hijack.to_id, src, true)
+	var to_id := hijack.to_id
+	hijack.cancel()
+	HJG.release(ctx)
+	var info: Dictionary = traffic.call("claim_car", to_id, src, true)
 	if info.is_empty():
 		_fall_off()
 		return
@@ -767,11 +825,16 @@ func _hijack_in(traffic: FpFeature, src: Vector3) -> void:
 
 ## The hijack ends half way: the hero drops from where it is to the road, on foot.
 func _fall_off() -> void:
+	var to_id := hijack.to_id
 	hijack.cancel()
+	HJG.release(ctx)
 	_limbs_off()
 	var traffic := _traffic()
 	if traffic != null:
 		traffic.call("set_hero_aboard", false)
+		# Let go of the driver (back to the cap and the range): none is hauled out here, or they
+		# were and the car has none (traffic's vacate).
+		traffic.call("jack_free", to_id)
 	var p := ctx.player
 	if p != null and is_instance_valid(p) and p.carried:
 		p.release(false)

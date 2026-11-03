@@ -15,6 +15,8 @@ extends RefCounted
 ## travel, sit, play_gesture, stop_gesture, play_action, state, bone_world and strike_pose.
 
 const WS := preload("res://scripts/fp/world_scale.gd")
+const HOLD := preload("res://scripts/fp/drive/jack_hold.gd")
+const CAMERA := preload("res://scripts/fp/drive/door_camera.gd")
 
 ## The reach: the hero stands STAND_OUT out from the body side with the handle REACH_FWD ahead
 ## and REACH_SIDE to its right (door_try's hand at the grip), and clears the swinging door's edge
@@ -56,31 +58,21 @@ const REACH_AT := 0.75
 const PULL_END := 1.2
 const PULL_OPEN := 0.3
 const DOOR_WIDE := 0.45
-## Someone at the wheel (jack), pull_out: the hero steps in to REACH_PLAN of their collar (at least
-## GRAB_OUT_MIN out from the car's side) and reaches in with both hands, low, by GRAB_AT s; there
-## it has them (step returns "pull") and, over PULL_T s, leans back and steps BACK_M back along the
-## car as they come out, the hands staying on the collar for the first HOLD_T s of it (the driver is
-## out of reach by then), then lets go (the pose layer eases the hands out); it steps into the
-## opening at JACK_T. The hands are HAND_SPREAD either side of the collar and never rise above it.
-const GRAB_AT := 0.4
-const PULL_T := 0.4
-const HOLD_T := 0.28
-const JACK_T := GRAB_AT + PULL_T
-const REACH_PLAN := 0.42 * WS.M
-const GRAB_OUT_MIN := 0.12 * WS.M
-const BACK_M := 0.5 * WS.M
-const HAND_SPREAD := 0.1 * WS.M
-## With nobody's collar to be found (no body drawn) it is this far above the seat marker.
-const COLLAR_UP := 0.6 * WS.M
-## The grip slips, the hands letting go for good, when the collar gets away from them faster than
-## SLIP_V (u/s; the pull at the normal pace takes it at 6 to 9.5 m/s at most, a van's at the end of
-## the hold): the hero acts on real time and the driver on the sim's, so above 1x the driver is out
-## of the seat and down on the road long before the hold is over, and the hands would chase a collar
-## that is already on the ground, a frame's step of up to 0.8 m at 8x.
-const SLIP_V := 10.0 * WS.M
-## A slipped grip lets go over SLIP_EASE s (the pose layer's own is shorter: the hands were reaching
-## further out, so it moved them 0.21 m in a frame at 4x).
-const SLIP_EASE := 0.3
+## Someone at the wheel (jack), pull_out: the hero takes hold of them with both hands and pulls them
+## out as jack_hold.gd has it (reach, struggle, pull, release: 1.8 s or a little over from the first
+## reach to the step into the opening; step returns "pull" once, GRAB_AT s in at the earliest, as
+## the driver is to be pulled out), then steps into the opening. The door camera waits READY_WAIT s
+## for the driver to be drawn at the wheel, else the walk gives up ("fail"). Each walk to the door
+## may start from other spots along the car when the first is not free: SPOT_ALTS metres along it,
+## in turn.
+const GRAB_AT := HOLD.REACH_S + HOLD.STRUGGLE_S
+const READY_WAIT := 1.5
+const SPOT_ALTS := [-0.4, 0.4, -0.8, 0.8, -1.2]
+## A door the model has none of (a bus, a truck, a bicycle, a scooter: traffic's door_info says
+## "doorless"): the hero does no door work, waits DOORLESS_S at the stand spot and reaches in from
+## the side; once the driver is out he steps in beside the seat (the step and the turn of the climb
+## in, no climb: there is no door to climb through) and takes the wheel.
+const DOORLESS_S := 0.25
 ## Someone at the wheel with pull_out off (the plain drag and knock-down): the hero turns to the
 ## seat and reaches in (interact), drags them out GRAB_AT_PLAIN s in, turns away over TURN_OUT s and
 ## shoves them clear (push, for SHOVE_T s), and steps into the opening at JACK_T_PLAIN.
@@ -109,16 +101,13 @@ const SWEEP_POINTS := 6
 ## A door that rested against someone swings on at most DOOR_RATE (of its swing per s) once they
 ## make room, rather than jumping to where its ramp has got to.
 const DOOR_RATE := 4.0
-## The door camera looks along CAM_DIR (car frame: from behind the door, mirrored ahead of it when
-## that has more room) at a point just outside the door from CAM_DIST (CAM_MIN at least, after the
-## pull-in in front of walls). The view eases onto it over FRAME_BLEND s and between it and the
-## drive camera over CAM_BLEND s.
-const CAM_DIR := Vector3(0.72, 0.3, -0.62)
-const CAM_DIST := 3.2 * WS.M
-const CAM_MIN := 1.6 * WS.M
-const CAM_RADIUS := 0.25 * WS.M
+## The view eases onto the door camera (door_camera.gd) over FRAME_BLEND s and between it and the
+## drive camera over CAM_BLEND s; it pushes in over PUSH_IN s during the pull and eases out over
+## PUSH_OUT.
 const FRAME_BLEND := 0.6
 const CAM_BLEND := 1.0
+const PUSH_IN := 0.9
+const PUSH_OUT := 0.7
 ## Getting out waits for the car to stop: below STOP_V (u/s), or after BRAKE_MAX s of braking.
 const STOP_V := 0.15 * WS.M
 const BRAKE_MAX := 2.5
@@ -135,9 +124,15 @@ var door: float = 0.0
 ## How far the door may swing past the people round it, (from, to) -> the amount it gets to
 ## (drive_feature sets traffic's door_clear_of_people for the car); unset, it swings freely.
 var clearance: Callable = Callable()
-## The world point of the collar of the driver being pulled out (drive_feature sets traffic's
-## jack_collar for the car); NAN, or unset, with none drawn.
-var collar: Callable = Callable()
+## The driver's grips (drive_feature sets traffic's jack_grips for the car): Callable(toward, top,
+## side) -> {"collar", "arm"} (world points, NAN with no body drawn); whether the driver pulled out
+## is out of the seat and let go (jack_hauled); how they lean against the pull (jack_resist:
+## Callable(roll, sit_up)); and whether they are drawn at the wheel (jack_ready: the hero waits
+## READY_WAIT s for it).
+var grips: Callable = Callable()
+var hauled: Callable = Callable()
+var resist: Callable = Callable()
+var ready: Callable = Callable()
 ## The driver is pulled out by the collar (drive_feature sets traffic's jack_pulls: the
 ## carjack_throw flag, with hit_feel); off, the hero drags them out and shoves them clear as before.
 var pull_out: bool = false
@@ -165,11 +160,9 @@ var _sill := Vector3.ZERO
 var _route := PackedVector3Array()
 var _wp: int = 0
 var _yaw_reach: float = 0.0
-var _back := Vector3.ZERO
 var _yaw_out: float = 0.0
-## The collar as the last frame of the pull had it, and whether the grip has slipped (SLIP_V).
-var _collar_was := Vector3.ZERO
-var _slipped: bool = false
+## The hero's hold on the driver being pulled out (jack_hold.gd).
+var _hold: HOLD = HOLD.new()
 var _yaw_seat: float = 0.0
 var _from := Vector3.ZERO
 var _from_yaw: float = 0.0
@@ -187,6 +180,11 @@ var _curve: String = "smooth"
 ## The door is behind its ramp, held by someone in its way (catching up at DOOR_RATE).
 var _held: bool = false
 var _cam := Transform3D.IDENTITY
+var _cam_f: Dictionary = {}
+## The camera's push-in (0 .. 1) and the one it is heading for.
+var _push: float = 0.0
+## No door that opens (traffic's door_info "doorless"): see DOORLESS_S.
+var _doorless: bool = false
 ## The drive camera's share of the view (0 the door camera .. 1) and where it is heading.
 var _cam_w: float = 0.0
 var _cam_goal: float = 0.0
@@ -208,6 +206,7 @@ func begin_in(
 	_start_walk()
 	_cam_w = 0.0
 	_cam_goal = 0.0
+	_push = 0.0
 	door = 0.0
 	_ramp_v = Vector4.ZERO
 	_held = false
@@ -247,6 +246,7 @@ func step(dt: float) -> String:
 	t += dt
 	_step_door(dt)
 	_cam_w = move_toward(_cam_w, _cam_goal, dt / CAM_BLEND)
+	_push = _step_push(dt)
 	var was := phase
 	var done := _step_in() if kind == "in" else _step_out()
 	if phase == was:
@@ -257,14 +257,22 @@ func step(dt: float) -> String:
 	return done
 
 
+## The camera's push-in one step on: in over PUSH_IN s through the reach, the struggle and the pull,
+## out over PUSH_OUT s from the release on and whatever follows.
+func _step_push(dt: float) -> float:
+	var in_hold := kind == "in" and phase == "jack" and _hold.beat in ["reach", "struggle", "pull"]
+	return move_toward(_push, 1.0 if in_hold else 0.0, dt / (PUSH_IN if in_hold else PUSH_OUT))
+
+
 ## Stops where it is: the door is shut and a gesture fades out.
 func cancel() -> void:
 	if kind.is_empty():
 		return
 	if kind == "in" and (phase == "open" or phase == "jack"):
 		_rig_call("stop_gesture", [])
-		if pull_out:
-			_grip(0.0, Vector3.ZERO, 0.0, 0.0)
+		if _hold.running():
+			_ctx.player.release(true)
+		_hold.cancel()
 	door = 0.0
 	_ramp_v = Vector4.ZERO
 	_held = false
@@ -291,6 +299,7 @@ func aboard() -> bool:
 
 ## The camera now: the door camera, blended toward drive (the drive camera).
 func camera(drive: Transform3D) -> Transform3D:
+	_cam = CAMERA.at(_cam_f, smoothstep(0.0, 1.0, _push))
 	return _cam.interpolate_with(drive, smoothstep(0.0, 1.0, _cam_w))
 
 
@@ -316,13 +325,15 @@ func _setup(ctx: FpContext, car: Dictionary, pts: Dictionary) -> bool:
 	_height = float(car["height"])
 	var handle: Vector3 = pts["handle"]
 	_side = maxf(float(car["half_w"]), handle.x)
-	_stand = _stand_spot(handle, pts["hinge"])
+	_stand = _free_spot(_stand_spot(handle, pts["hinge"]))
 	_sill = Vector3(_side + STEP_OUT, 0.0, (pts["seat"] as Vector3).z)
 	_yaw_seat = wrapf(yaw + PI, -PI, PI)
 	_yaw_out = _yaw_of(_car.basis.x)
 	var grip := atan2(REACH_SIDE, REACH_FWD)
 	_yaw_reach = wrapf(_yaw_of(_car * handle - _car * _stand) + grip, -PI, PI)
-	_cam = _door_camera()
+	_doorless = pts.has("doorless")
+	_cam_f = CAMERA.frame(ctx, _car, pts, _side, _height)
+	_cam = CAMERA.at(_cam_f, _push)
 	return not _blocked(_car * _sill) and not _door_blocked()
 
 
@@ -337,6 +348,18 @@ func _stand_spot(handle: Vector3, hinge: Vector3) -> Vector3:
 	if hx < swing:
 		z = minf(z, hinge.z - sqrt(swing * swing - hx * hx))
 	return Vector3(x, 0.0, z)
+
+
+## The stand spot s, or the nearest of the other spots along the car (SPOT_ALTS) the hero can stand
+## at when it is not free (the first, if none is).
+func _free_spot(spot: Vector3) -> Vector3:
+	if not _blocked(_car * spot):
+		return spot
+	for dz: float in SPOT_ALTS:
+		var alt := spot + Vector3(0.0, 0.0, dz * WS.M)
+		if not _blocked(_car * alt):
+			return alt
+	return spot
 
 
 ## The walk from `from` (car frame xz) to the stand spot: out of the car's footprint grown by
@@ -419,30 +442,6 @@ static func _out_of(p: Vector2, ex: float, ez: float) -> Vector2:
 	return Vector2(p.x, ez if p.y >= 0.0 else -ez)
 
 
-## A camera beside the door looking at a point just outside it: from behind it, or from ahead of
-## it when that has more room; pulled in front of walls.
-func _door_camera() -> Transform3D:
-	var hinge: Vector3 = _pts["hinge"]
-	var rear: Vector3 = _pts["rear"]
-	var mid := (hinge.z + rear.z) * 0.5 - 0.2 * WS.M
-	var focus := _car * Vector3(_side + 0.35 * WS.M, _height * 0.6, mid)
-	var best := Transform3D.IDENTITY
-	var bd := -INF
-	for s: float in [1.0, -1.0]:
-		var dir := (_car.basis * Vector3(CAM_DIR.x, CAM_DIR.y, CAM_DIR.z * s)).normalized()
-		var dist := CAM_DIST
-		if _ctx.collision != null:
-			var hit := _ctx.collision.sweep_sphere(focus, dir, CAM_DIST, CAM_RADIUS)
-			dist = minf(CAM_DIST, hit - CAM_RADIUS)
-		if dist > bd + 0.05 * WS.M:
-			bd = dist
-			var eye := focus + dir * maxf(dist, 0.3 * WS.M)
-			best = Transform3D(Basis.looking_at(focus - eye, Vector3.UP), eye)
-		if bd >= CAM_MIN:
-			break
-	return best
-
-
 # ------------------------------------------------------------------ getting in
 
 
@@ -452,8 +451,11 @@ func _step_in() -> String:
 			return _walk()
 		"align", "turn":
 			_align()
+			# No door to climb through: stepped in beside the seat and turned to it, he sits.
+			if _doorless and phase == "climb":
+				return "seated"
 		"open":
-			_open_in()
+			return _open_in()
 		"jack":
 			return _jack()
 		"climb":
@@ -528,65 +530,62 @@ func _align() -> void:
 
 
 ## door_try: the hand meets the handle, the pull opens the door a little, then it swings wide and
-## the hero steps into the opening (dragging out whoever is at the wheel first).
-func _open_in() -> void:
+## the hero steps into the opening (dragging out whoever is at the wheel first, once they are drawn
+## there). A door the model has none of (_doorless) is no work: he waits DOORLESS_S and reaches in.
+func _open_in() -> String:
+	if _doorless:
+		if t >= DOORLESS_S:
+			_go("jack" if jack else "step")
+		return ""
 	if _fresh:
 		_rig_call("play_gesture", ["door_try"])
 	if t - _dt < REACH_AT and t >= REACH_AT:
 		_ramp(PULL_OPEN, PULL_END - REACH_AT, "smooth")
 		_sound(true)
-	if t >= PULL_END:
+	if t < PULL_END:
+		return ""
+	if _ramp_v.y < 1.0:
 		_rig_call("stop_gesture", [])
 		_ramp(1.0, DOOR_WIDE, "out")
-		if jack:
-			_go("jack")
-		else:
-			_to_sill()
+	if not jack:
+		_to_sill()
+	elif not ready.is_valid() or bool(ready.call()):
+		_go("jack")
+	elif t >= PULL_END + READY_WAIT:
+		return "fail"
+	return ""
 
 
 ## Someone at the wheel: pull_out, the hero takes them by the collar and pulls them out; else it
-## drags them out and shoves them clear, as it always did. Then it steps into the opening.
+## drags them out and shoves them clear, as it always did. Then it steps into the opening (a door
+## the model has none of: he steps in beside the seat and takes the wheel, no climb, "seated").
 func _jack() -> String:
-	return _jack_pull() if pull_out else _jack_shove()
-
-
-## The hero steps in and reaches in for the collar with both hands, pulls the driver out (step
-## returns "pull") leaning back and stepping back along the car, lets go, then steps into the
-## opening. No clip plays: the hands go where the collar is (strike_pose.set_pull).
-func _jack_pull() -> String:
-	var p := _ctx.player
-	var at := _collar()
-	if _fresh:
-		_from = p.position
-		_from_yaw = p.yaw
-		var away := _flat(_from - at)
-		var spot := at + _lift(away.normalized() * minf(away.length(), REACH_PLAN))
-		var local := _car.affine_inverse() * spot
-		local.x = maxf(local.x, _side + GRAB_OUT_MIN)
-		_to = _ground(_car * local)
-		_to_yaw = _yaw_of(at - _to)
-		_back = _step_back(at)
-		_slipped = false
-	var tt := t - GRAB_AT
-	var pos := _from.lerp(_to, smoothstep(0.0, GRAB_AT, t))
-	var yaw := lerp_angle(_from_yaw, _to_yaw, smoothstep(0.0, GRAB_AT, t))
-	if tt >= 0.0:
-		pos = _to + _back * smoothstep(0.0, PULL_T, tt)
-		yaw = _yaw_of(at - pos)
-	_ride(_ground(pos), yaw)
-	var hold := smoothstep(0.0, 0.85 * GRAB_AT, t) if tt < HOLD_T else 0.0
-	_slipped = _slipped or (tt >= 0.0 and (at - _collar_was).length() > SLIP_V * _dt)
-	_collar_was = at
-	if _slipped:
-		hold = 0.0
-	var lean := smoothstep(0.0, 0.7 * PULL_T, tt) * (1.0 - smoothstep(0.6 * PULL_T, PULL_T, tt))
-	_grip(hold, at, yaw, lean, SLIP_EASE if _slipped else 0.0)
-	if t - _dt < GRAB_AT and t >= GRAB_AT:
-		return "pull"
-	if t >= JACK_T:
-		_grip(0.0, at, yaw, 0.0)
+	var said := _jack_pull() if pull_out else _jack_shove()
+	if said == "done":
+		_ctx.player.release(true)
 		_to_sill()
-	return ""
+		return ""
+	return said
+
+
+## The hero reaches in, takes hold of the driver with both hands, pulls them out (step returns
+## "pull") leaning back and stepping back along the car, lets go (jack_hold.gd), then "done". No
+## clip plays: the hands go where the driver's collar and arm are (strike_pose.set_pull).
+func _jack_pull() -> String:
+	if _fresh:
+		_hold.grips = grips
+		_hold.hauled = hauled
+		_hold.resist = resist
+		_hold.begin(
+			_ctx,
+			_car,
+			_pts,
+			_side,
+			Callable(self, "_carry"),
+			Callable(self, "_ground"),
+			Callable(self, "_blocked")
+		)
+	return _hold.step(_dt)
 
 
 ## The plain look (pull_out off): the hero turns to the seat and reaches in, drags them out (step
@@ -606,44 +605,8 @@ func _jack_shove() -> String:
 		_rig_call("play_action", ["push", SHOVE_T])
 		return "pull"
 	if t >= JACK_T_PLAIN:
-		_to_sill()
+		return "done"
 	return ""
-
-
-## The collar of the driver now (world): from the traffic feature's body, else just above the seat.
-func _collar() -> Vector3:
-	var c := Vector3(NAN, NAN, NAN)
-	if collar.is_valid():
-		c = collar.call()
-	if is_nan(c.x):
-		var s: Vector3 = _pts["seat"]
-		c = _car * Vector3(s.x, s.y + COLLAR_UP, s.z)
-	return c
-
-
-## The hero's step back from the grab spot _to: BACK_M along the car toward its rear and a little
-## away from it, shortened until there is room to stand (world).
-func _step_back(at: Vector3) -> Vector3:
-	var away := _flat(_to - at).normalized()
-	var rear := -_flat(_car.basis.z).normalized()
-	var d := (away * 0.35 + rear * 0.94).normalized()
-	for i in range(5):
-		var back := _lift(d * BACK_M * (1.0 - 0.2 * float(i)))
-		if not _blocked(_to + back):
-			return back
-	return Vector3.ZERO
-
-
-## Both hands to the collar at (world) at weight hold, the body facing yaw, leaning back by lean
-## (0..1 of the pose layer's lean); let go over ease s (0: the pose layer's own).
-func _grip(hold: float, at: Vector3, yaw: float, lean: float, ease_s: float = 0.0) -> void:
-	var rig := _rig()
-	var pose: Variant = rig.get("strike_pose") if rig != null else null
-	if pose == null:
-		return
-	var right := Vector3(cos(yaw), 0.0, -sin(yaw)) * HAND_SPREAD
-	var hands := PackedVector3Array([at - right, at + right])
-	(pose as RefCounted).call("set_pull", hold, hands, lean, ease_s)
 
 
 ## On into the door's opening, to the spot the climb in starts from.
@@ -806,6 +769,12 @@ func _toward_seat(ground: Vector3, k: float) -> void:
 
 func _ride(pos: Vector3, yaw: float) -> void:
 	_ctx.player.ride(pos, yaw, yaw)
+
+
+## The hero put at pos facing yaw and left there (carried: the body's own collision against the
+## people round it, the driver's included, does not push him out of the reach).
+func _carry(pos: Vector3, yaw: float) -> void:
+	_ctx.player.carry(pos, yaw, Vector3.ZERO, true)
 
 
 func _seat_world() -> Vector3:

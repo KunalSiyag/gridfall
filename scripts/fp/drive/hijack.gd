@@ -1,27 +1,42 @@
 extends RefCounted
 ## The action hijack's moves (the drive feature's action_hijack flag): the hero, at the wheel of a
 ## car moving alongside another with someone at its wheel, climbs out through the window onto the
-## roof on that car's side ("out"), leaps across onto the other car's roof ("leap") and swings
-## down to its driver's window ("jack"), where the driver is dragged out and the hero takes the
-## wheel (drive_feature.gd). The hero rides each car's frame (+Z forward, +X its left and the
-## driver's side, y up from the road; world units) while on it, and the leap blends from one
-## moving car to the other, so both keep their own speed and line throughout.
+## roof on that car's side ("out"), leaps across onto the other car's roof ("leap") and swings down
+## to its driver's window ("jack"), where he takes hold of the driver and drags them out through it
+## ("haul": hijack_grip.gd), swings in through the window to the seat ("in") and takes the wheel
+## (drive_feature.gd). The hero rides each car's frame
+## (+Z forward, +X its left and the driver's side, y up from the road; world units) while on it, and
+## the leap blends from one moving car to the other, so both keep their own speed and line
+## throughout.
 
 const WS := preload("res://scripts/fp/world_scale.gd")
 
-## Seconds for each move: out of the window onto the roof, across, and down to the window.
+## Seconds for each move: out of the window onto the roof, across, and down to the window (SWING_S,
+## the swing down, then HOLD_S with both hands on the driver before they are pulled: JACK_S in all).
 const OUT_S := 0.6
 const LEAP_S := 0.55
-const JACK_S := 0.6
+const SWING_S := 0.5
+const HOLD_S := 0.4
+const JACK_S := SWING_S + HOLD_S
+## The haul: the driver is drawn out through the window with the hero's hands on them for HAUL_MIN s
+## at least and HAUL_MAX s at most (hijack_grip.gd), then the car is his.
+const HAUL_MIN := 0.3
+const HAUL_MAX := 0.9
+## He swings in through the window to the seat over IN_S, then it is his.
+const IN_S := 0.3
+## The hold at the window waits for the driver to be drawn (their avatar still loading) READY_WAIT
+## s at the most; then the hijack is given up ("fail"): no one is pulled out they cannot be taken
+## hold of.
+const READY_WAIT := 1.5
 ## The leap rises this high above the straight line between the roofs.
 const ARC := 0.6 * WS.M
 ## Feet on a roof stand this far in from its edge.
 const ROOF_IN := 0.3 * WS.M
 ## At the driver's window the hero hangs this far out from the body, feet this far below the roof.
-const HANG_OUT := 0.3 * WS.M
-const HANG_DOWN := 1.0 * WS.M
+const HANG_OUT := -0.2 * WS.M
+const HANG_DOWN := 1.25 * WS.M
 
-## "out", "leap", "jack", or "" when no hijack runs.
+## "out", "leap", "jack", "haul", "in", or "" when no hijack runs.
 var phase: String = ""
 ## Seconds into the phase.
 var t: float = 0.0
@@ -30,22 +45,29 @@ var from_id: int = -1
 var to_id: int = -1
 ## 1 when the car to take is on the left of the one left, -1 on its right.
 var side: float = 0.0
+## Seconds the hold has waited for the driver to be drawn.
+var _waited: float = 0.0
 ## The hero's feet as it set off, in the frame of the car it leaves.
 var _start := Vector3.ZERO
-## Along the car to take, its driver's seat (u).
+## Along the car to take, its driver's seat (u), and across it (the swing in).
 var _seat_z: float = 0.0
+var _seat_x: float = 0.0
 
 
 ## Starts a hijack from car p_from (feet at start in its frame) to car p_to on side p_side, whose
-## driver's seat is seat_z along it.
-func begin(p_from: int, p_to: int, p_side: float, start: Vector3, seat_z: float) -> void:
+## driver's seat is seat_z along it (and seat_x across it, for the swing in; 0 for none).
+func begin(
+	p_from: int, p_to: int, p_side: float, start: Vector3, seat_z: float, seat_x: float = 0.0
+) -> void:
 	from_id = p_from
 	to_id = p_to
 	side = signf(p_side) if p_side != 0.0 else 1.0
 	_start = start
 	_seat_z = seat_z
+	_seat_x = seat_x
 	phase = "out"
 	t = 0.0
+	_waited = 0.0
 
 
 func running() -> bool:
@@ -57,9 +79,11 @@ func cancel() -> void:
 	t = 0.0
 
 
-## Moves on by dt: "pull" once, as the hero reaches the driver's window (the hijack is over), else
-## "" (and "leap" once as the hero jumps).
-func step(dt: float) -> String:
+## Moves on by dt: "pull" once, as the hold at the driver's window ends (the driver is to be pulled
+## out), "take" once he has swung in (the car is his: the hijack is over), else "" (and "leap" once
+## as the hero jumps). ready: the driver is drawn at the wheel, so there is someone to take hold of:
+## the hold waits at its end while it is not, "fail" once it has waited READY_WAIT s.
+func step(dt: float, ready: bool = true) -> String:
 	if phase.is_empty():
 		return ""
 	t += dt
@@ -71,9 +95,26 @@ func step(dt: float) -> String:
 		phase = "jack"
 		t -= LEAP_S
 	elif phase == "jack" and t >= JACK_S:
-		cancel()
+		if not ready:
+			t = JACK_S
+			_waited += dt
+			return "fail" if _waited >= READY_WAIT else ""
+		phase = "haul"
+		t = 0.0
 		return "pull"
+	elif phase == "haul" and t >= HAUL_MAX:
+		go_in()
+	elif phase == "in" and t >= IN_S:
+		cancel()
+		return "take"
 	return ""
+
+
+## The driver is out and let go: he swings in to the seat.
+func go_in() -> void:
+	if phase == "haul":
+		phase = "in"
+		t = 0.0
 
 
 ## The car whose frame the hero rides now: the one it leaves until the leap is half way.
@@ -94,8 +135,13 @@ func feet(a: Dictionary, b: Dictionary) -> Vector3:
 			var to := _xf(b) * _roof_b(b)
 			return from.lerp(to, smoothstep(0.0, 1.0, k)) + Vector3.UP * ARC * sin(PI * k)
 		"jack":
-			var k := smoothstep(0.0, 1.0, t / JACK_S)
+			var k := smoothstep(0.0, 1.0, t / SWING_S)
 			return _xf(b) * _roof_b(b).lerp(_window(b), k)
+		"haul":
+			return _xf(b) * _window(b)
+		"in":
+			var k := smoothstep(0.0, 1.0, t / IN_S)
+			return _xf(b) * _window(b).lerp(Vector3(_seat_x, 0.05 * WS.M, _seat_z), k)
 	return Vector3(NAN, NAN, NAN)
 
 

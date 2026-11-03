@@ -941,22 +941,26 @@ func _set_feet(w: WK.Walker, q: Vector3) -> void:
 	fight.set_feet(w, q)
 
 
-## Lane blocks for vehicles.gd: the people hit, until they walk or run on, as circles at their
-## drawn feet (on a sidewalk they are clear of every lane).
+## Lane blocks for vehicles.gd: the people hit, until they walk or run on (not while they are being
+## hauled out of a car: it is the hero's), as circles at their drawn feet (on a sidewalk they are
+## clear of every lane).
 func blocks() -> Array:
 	var out: Array = []
 	for r: Reaction in _active.values():
-		if r.victim and r.mode != "run" and not r.w.dead:
+		if r.victim and r.mode != "run" and r.mode != "drag" and not r.w.dead:
 			var q := r.w.pos + r.w.vis_off
 			out.append([Vector2(q.x, q.z), Vector2.ZERO, -1.0, 0.0, Vector2.ZERO])
 	return out
 
 
 ## Car-jacked w (just knocked down by the carjack's blow) is dragged out of the car first, from
-## from (its feet in the seat, facing from_yaw) to where the blow found it, shift (u) further down
-## the car's side than straight out of the seat; then it falls (jack_pull.gd drag_out).
-func drag_out(w: WK.Walker, from: Vector3, from_yaw: float, shift := Vector3.ZERO) -> void:
-	JP.drag_out(_active.get(w.id), from, from_yaw, shift)
+## from (its feet in the seat, facing yaw) to where the blow found it, shift (u) further down the
+## car's side than straight out of the seat, lean (the roll to the door and the sit-up it was
+## already at, rad); then it falls (jack_pull.gd drag_out).
+func drag_out(
+	w: WK.Walker, from: Vector3, yaw: float, shift := Vector3.ZERO, lean := Vector2.ZERO
+) -> void:
+	JP.drag_out(_active.get(w.id), from, yaw, shift, lean)
 
 
 ## True once w has taken a knock-down, including its short stagger before falling (jack_pull.gd
@@ -964,6 +968,12 @@ func drag_out(w: WK.Walker, from: Vector3, from_yaw: float, shift := Vector3.ZER
 func is_down(w: WK.Walker) -> bool:
 	var r: Reaction = _active.get(w.id)
 	return r != null and r.down and JP.is_down(r)
+
+
+## True while w is being hauled out of a seat (jack_pull.gd haul), not yet let go beside the door.
+func hauling(w: WK.Walker) -> bool:
+	var r: Reaction = _active.get(w.id)
+	return r != null and r.mode == "drag"
 
 
 func count() -> int:

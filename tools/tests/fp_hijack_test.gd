@@ -42,6 +42,9 @@ var rest_at: Vector3 = Vector3.INF
 var hits: Array = []
 var actions: Array = []
 ## Frames run by _step: the bodies are drawn every fourth, as they are in play.
+var haul_seat_z: float = 0.0
+var haul_lag: float = 0.0
+var hauled: int = 0
 var steps: int = 0
 
 
@@ -53,6 +56,7 @@ func _init() -> void:
 		_check_aftermath()
 		_check_refusals()
 		_check_gone()
+		_check_wait()
 	K.finish(self, "FP_HIJACK_TEST", fails)
 
 
@@ -144,8 +148,8 @@ func _check_hijack() -> void:
 	var r := _run_hijack(b)
 	K.check(
 		fails,
-		r["phases"] == ["out", "leap", "jack"],
-		"out onto the roof, across, down to the window: %s" % str(r["phases"])
+		r["phases"] == ["out", "leap", "jack", "haul", "in"],
+		"out onto the roof, across, down to the window, in through it: %s" % str(r["phases"])
 	)
 	K.check(fails, actions == ["hijack"], "hero_action hijack as it leaps (%s)" % str(actions))
 	K.check(
@@ -217,10 +221,15 @@ func _check_aftermath() -> void:
 	var seat_z: float = (seat as Vector3).z if seat != null else 0.0
 	hits.clear()
 	drive.call("_input", K.action_event("vehicle_enter"))
+	haul_seat_z = seat_z
+	haul_lag = 0.0
+	hauled = 0
 	var r := _run_hijack(b)
+	# The body keeps the car's whole pace through the haul and falls behind only by what the last
+	# CARRY_EASE_S s of it, easing down to CARRY_MAX, leave it (half the pace above it over that
+	# time) and 0.3 m: 0.5 m in all for a car at 7 m/s.
+	var lag_max := 0.5 * maxf(float(r["v"]) - JP.CARRY_MAX, 0.0) * JP.CARRY_EASE_S + 0.3 * WS.M
 	var mine: VH.Car = _vh().by_id.get(int(drive.get("car_id")))
-	var haul_lag := 0.0
-	var hauled := 0
 	var in_path := 0
 	var pushed := 0.0  # how far from where the slide ended to where they set off
 	var ran_off := false
@@ -234,10 +243,6 @@ func _check_aftermath() -> void:
 		var feet := driver.pos + driver.vis_off
 		var rx: RE.Reaction = (traffic.get("reactions") as RE).get("_active").get(driver.id)
 		var mode: String = rx.mode if rx != null else ""
-		if mode == "drag":
-			var q := _frame_of(mine).affine_inverse() * feet
-			haul_lag = maxf(haul_lag, absf(q.z - seat_z))
-			hauled += 1
 		var left: VH.Car = _vh().by_id.get(left_id)
 		if left != null and mode == "place":
 			var ql := _frame_of(left).affine_inverse() * feet
@@ -247,7 +252,7 @@ func _check_aftermath() -> void:
 			ran_off = true
 	K.check(
 		fails,
-		hauled > 0 and haul_lag < 0.5 * WS.M,
+		hauled > 0 and haul_lag < lag_max,
 		(
 			"hauled out in the moving car's own frame, %.1f m/s (%.2f m off the seat, %d frames)"
 			% [float(r["v"]) / WS.M, haul_lag / WS.M, hauled]
@@ -322,6 +327,49 @@ func _check_gone() -> void:
 	var p := ctx.player
 	var fell := not hijack.running() and not bool(drive.get("active")) and p.input_enabled
 	K.check(fails, fell and not p.carried, "the car to take gone half way: the hero drops off")
+
+
+## The hold at the driver's window waits for the driver to be drawn (the avatar still loading): it
+## holds at its end while it is not, and after READY_WAIT s gives the hijack up ("fail", the hero
+## drops); drawn, it goes on to the haul at once.
+func _check_wait() -> void:
+	var hj := HIJACK.new()
+	hj.begin(1, 2, 1.0, Vector3.ZERO, 0.0)
+	hj.phase = "jack"
+	hj.t = 0.0
+	var said := ""
+	var waited := 0.0
+	while waited < HIJACK.READY_WAIT + 1.0 and said != "fail":
+		said = hj.step(DT, false)
+		waited += DT
+		if hj.phase != "jack":
+			break
+	K.check(
+		fails,
+		(
+			said == "fail"
+			and hj.phase == "jack"
+			and absf(waited - HIJACK.JACK_S - HIJACK.READY_WAIT) < 2.0 * DT
+		),
+		(
+			"a driver never drawn: the hold (%.1f s) waits %.1f s more, then it is given up (%s)"
+			% [HIJACK.JACK_S, waited - HIJACK.JACK_S, said]
+		)
+	)
+	hj.begin(1, 2, 1.0, Vector3.ZERO, 0.0)
+	hj.phase = "jack"
+	hj.t = 0.0
+	var pulled := ""
+	for _k in range(roundi((HIJACK.JACK_S + 0.5) / DT)):
+		var r := hj.step(DT, _k * DT >= 0.7)
+		if r == "pull":
+			pulled = r
+			break
+	K.check(
+		fails,
+		pulled == "pull" and hj.phase == "haul",
+		"a driver drawn while it waits: the hold goes on to the pull (%s, %s)" % [pulled, hj.phase]
+	)
 
 
 # ------------------------------------------------------------------ helpers
@@ -438,9 +486,24 @@ func _step() -> void:
 	drive.call("_hijack_step", DT)
 	ctx.player.update_view(DT)
 	_tick()
+	_note_haul()
 	steps += 1
 	if steps % 4 == 0:
 		traffic.call("sync_visuals", DT * 4.0)
+
+
+## While the driver is hauled out (the hijack's haul phase: the hero's hands on them, the car not
+## his yet): how far along the moving car they are from its seat, and the frames it takes.
+func _note_haul() -> void:
+	if driver == null or not hijack.running():
+		return
+	var rx: RE.Reaction = (traffic.get("reactions") as RE).get("_active").get(driver.id)
+	var car: VH.Car = _vh().by_id.get(hijack.to_id)
+	if rx == null or rx.mode != "drag" or car == null or car.dead:
+		return
+	var q := _frame_of(car).affine_inverse() * (driver.pos + driver.vis_off)
+	haul_lag = maxf(haul_lag, absf(q.z - haul_seat_z))
+	hauled += 1
 
 
 func _tick() -> void:

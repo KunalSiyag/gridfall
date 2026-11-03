@@ -148,6 +148,7 @@ Taking a car with someone at the wheel (the carjack flag; docs/fp/ARCHITECTURE.m
 - `TRIPS = preload("res://scripts/fp/traffic/trips.gd")`
 - `JL = preload("res://scripts/fp/traffic/jack_landing.gd")`
 - `JP = preload("res://scripts/fp/traffic/jack_pull.gd")`
+- `JG = preload("res://scripts/fp/traffic/jack_grip.gd")`
 - `OUT = 0.55 * WS.M`: The driver comes out OUT beyond the body side, level with the seat, and sits down DROP_M beyond that (their root comes to rest OUT + DROP_M from the sill: 1.15 m, never more than 1.2) by a blow of STRENGTH (hard enough to knock them down, reactions.gd DOWN), straight out from the car. Their way off the road passes CLEAR out from the car's rear corner on that side. With the carjack_throw flag off they come out PLAIN_OUT beyond the body side and the blow knocks them PLAIN_SLIDE metres clear instead, as it always did.
 - `PLAIN_OUT = 0.3 * WS.M`
 - `STRENGTH = 0.85`
@@ -159,6 +160,7 @@ Taking a car with someone at the wheel (the carjack flag; docs/fp/ARCHITECTURE.m
 - `BODY_CLEAR = 0.7`
 - `SPAN_M = 1.0`
 - `SWEEP_S = 1.5`
+- `NEAR_TILES = 3`: A driver with no sidewalk on their tile makes for the nearest one within NEAR_TILES tiles.
 
 ### Properties
 
@@ -170,8 +172,12 @@ Taking a car with someone at the wheel (the carjack flag; docs/fp/ARCHITECTURE.m
 - `func setup(p_f: Object) -> void`
 - `static func occupied(c: VH.Car) -> bool`: True when c is a car on the road with someone at the wheel: an ambient driver or a resident.
 - `func eject(c: VH.Car, src: Vector3) -> Dictionary`: Drags car c's driver out, the hero standing at src: they come out beside the driver's door, down on the road there, and set off on foot once they are up. c is left for the caller to take (its trip let go). Returns the person_hit info, {} when nobody could be put there.
+- `func mark_done(id: int) -> void`: Notes that car id's driver has been pulled out already.
+- `func forget() -> void`: Forgets every mark (the world is rebuilt: car ids start over).
+- `func consume_done(id: int) -> bool`: True once (and forgets it) when car id's driver was pulled out ahead of its being taken.
 - `static func pulls() -> bool`: True when a driver is pulled out the way jack_pull.gd has it (its on(): the carjack_throw flag with hit_feel), so the hero's part (car_entry.gd) goes with it.
-- `func collar(id: int = -1) -> Vector3`: The world point of the collar of the driver the hero has by the collar: car id's, drawn at the wheel, or (id < 0) the one pulled out last, wherever they are now; NAN with no body drawn (far off or loading). The hero's hands go there (car_entry.gd, through the drive feature).
+- `func grips(id: int, toward: Vector3, top: float = INF, side: String = "") -> Dictionary`: The two points the hero's hands take hold of on the driver he has (jack_grip.gd points: "collar" and "arm", world, NAN with no body drawn: far off or loading) seen from toward, none above top: car id's driver drawn at the wheel, or (id < 0) the one pulled out last, wherever they are now.
+- `func hauled() -> bool`: True once the driver pulled out last is out of the seat: the haul is over and they are let go beside the door (the hero lets go of them then). True too when there is none to hold.
 
 ## `scripts/fp/traffic/contact_shadows.gd`
 
@@ -472,6 +478,26 @@ Turn signals: which side a car's indicators blink on, and when a blinking lamp i
 - `static func lit(t: float) -> bool`: Whether a blinking lamp is lit at time t (s).
 - `static func on(side_: int, s: int, t: float) -> bool`: Whether the left (s < 0) or right lamps of a car signalling side are lit at time t.
 
+## `scripts/fp/traffic/jack_grip.gd`
+
+extends `RefCounted`
+
+Where the hero's two hands take hold of the driver he pulls out of a car (carjack.gd grips, the hero's part in car_entry.gd): read per frame from the driver's own skeleton, so they follow the body as it leans, is drawn out of the seat and lands. The left hand goes for the collar (the surface of the upper chest below the neck, on the side toward the hero) and the right for the near upper arm, whichever of the two is on the hero's right taking the right hand; a driver sat so high that the collar is out of the hero's reach (a bus or truck cab) is held lower down the chest instead, never above what the hero can reach without raising his hands over his head.
+
+### Constants
+
+- `WS = preload("res://scripts/fp/world_scale.gd")`
+- `CHEST_OUT = 0.18`: The surface stands out from the bones' line by these shares of the hips-to-neck length (a body about 0.6 m long from the hips to the neck: 0.11 m at the chest, 0.05 m at the arm).
+- `ARM_OUT = 0.08`
+- `COLLAR_DOWN = 0.1`: The collar rests this share of the way down from the neck bone to the upper chest's; the arm grip this share of the way down the upper arm.
+- `ARM_DOWN = 0.15`
+- `KEEP_BONES = [ "Head", "Neck", "UpperChest", "Spine", "Hips", "LeftShoulder", "RightShoulder", "Left...`: The bones whose points the hero keeps off (the "keep" of the result): the trunk, the arms and the legs, not the hands and the feet.
+
+### Functions
+
+- `static func points(sk: Skeleton3D, toward: Vector3, top: float = INF, side: String = "") -> Dictionary`: The two grip points {"collar", "arm"} (world; NAN each with no skeleton or no such bone) on the skeleton sk of the driver, for a hero standing at toward (world; only its direction in plan counts), neither above the height top (world y; INF for none). The arm is the one on `side` ("Left" or "Right"), the one nearer the hero when none is asked for; "side" in the result says which it was (the hold keeps to it: the nearer arm changes as the body turns over). "keep" is the points of the driver's trunk, arms and legs (KEEP_BONES): what the hero stands clear of.
+- `static func hands(grips: Dictionary, right: Vector3) -> PackedVector3Array`: The hand each of the two grips goes to given the hero's right (a level unit vector): the one that is on his right goes to his right hand. [left hand's point, right hand's point].
+
 ## `scripts/fp/traffic/jack_landing.gd`
 
 extends `RefCounted`
@@ -517,10 +543,11 @@ How the driver the hero pulls out of a car goes, from the seat to the road (the 
 ### Constants
 
 - `WS = preload("res://scripts/fp/world_scale.gd")`
-- `HAUL_S = 0.4`: The haul: seconds, the roll toward the road (rad) and the tip back (rad) at the release.
+- `HAUL_S = 0.7`: The haul: seconds, the roll toward the road (rad) and the tip back (rad) at the release. It takes HAUL_S so that a pull reads as one (the hero's hands are on the driver the whole way out: 0.7 s, about 1.3 m/s on average and 2.4 m/s at most, the last moment).
 - `HAUL_ROLL = 0.3`
 - `HAUL_TIP = 0.6`
 - `SHIFT_AT = 0.25`: Where the body is let go further down the car's side than straight out of the seat (carjack.gd, to clear the open door), it goes straight out over the sill first and drifts there only after the share SHIFT_AT of the way across.
+- `DROP_AT = 0.5`: A driver sat above the road (a cab: the root begins higher than where it is let go) comes down over the first DROP_AT of the way across, so that it is on the road by the time it is past the sill, never above it.
 - `FALL_S = 0.4`: The fall: seconds, the tip back (rad) the body lies at, the tip at which its hips are on the road and the walker's crossfade to the lying pose (people.gd XFADE), over which the tip comes out.
 - `FALL_BACK = deg_to_rad(80.0)`
 - `SEAT_CONTACT = deg_to_rad(55.0)`
@@ -560,7 +587,7 @@ How the driver the hero pulls out of a car goes, from the seat to the road (the 
 - `static func blend_drop(k: float) -> float`: The lowering (body metres) it still has at the same moment. The lying pose's own hips are low (the clip's first pose rests them about 0.07 m up), so as it crossfades in the sit pose's hips come down by themselves and the lowering that held the lowest bone on the road would sink the body into it: it goes out with the cube of the way, faster than the tip does (fitted on the skinned body: fp_jack_flow_test reads the lowest vertex of it over every frame).
 - `static func carried(p: Plan, t: float) -> Vector3`: How far (u, along the car's heading) the car's pace has carried the hauled body t seconds into the haul: the whole pace, over the last CARRY_EASE_S of it easing (smoothstep) down to the pace the slide keeps.
 - `static func roll_to(lean: float, door: Vector3, yaw: float) -> float`: Roll (rad, as the walker's vis_roll) of a body facing yaw that leans by lean toward door (level unit): positive toward the body's right.
-- `static func drag_out(r, from: Vector3, from_yaw: float, shift: Vector3) -> void`: Sets the haul of reaction r up (reactions.gd drag_out; nothing for one not knocked down and standing): the driver drawn in the sit pose from from (the seat, facing from_yaw) to where the blow found them, shift (a world offset, u) further down the car's side, then the fall.
+- `static func drag_out(r, from: Vector3, from_yaw: float, shift: Vector3, lean0 := Vector2.ZERO) -> void`: Sets the haul of reaction r up (reactions.gd drag_out; nothing for one not knocked down and standing): the driver drawn in the sit pose from from (the seat, facing from_yaw) to where the blow found them, shift (a world offset, u) further down the car's side, then the fall.
 - `static func begin(r) -> float`: The plan learns of the haul (r.drag: from, to, the facing at either end and the shift) and of its end speed, and the body sits upright in the seat until the haul's first frame (the blow had put it in the release pose). Returns the haul's seconds (PLAIN_S with no plan).
 - `static func haul(r, dt: float) -> bool`: One frame of the haul (reactions.gd step): the body drawn on from the seat to beside the door along the pull, leaning out and back, the hips coming down once over the sill. True once out. The car's pace is the whole of the haul's (the seat moves with the car) until it eases down to the slide's (carried). With no plan it is the plain haul.
 - `static func fall(r, dt: float, on_landed: Callable = Callable()) -> void`: One frame of the fall (reactions.gd step, at the end of the frame, in a plan's steps; the standing one has only the touchdown): a seated driver's sit-down and lying back, then the lying pose held for the lie and the tip coming out over BLEND_S. Tells on_landed (the walker) the once as the hips touch the road.
@@ -765,6 +792,7 @@ Drivers seated in the moving vehicles nearest the camera. Only while a vehicle d
 
 ### Properties
 
+- `cap: int`: How many drivers sync seats at most (CAP; a test lowers it to have the one it asks for undrawn).
 - `riding: int`: How many of the seated are riding bicycles.
 - `ik_runs: int`: IK limb re-poses (_driver_limbs, _pedal's legs and arms); tests assert a held pose adds none.
 
@@ -773,6 +801,14 @@ Drivers seated in the moving vehicles nearest the camera. Only while a vehicle d
 - `func setup(p_people: PPL) -> void`
 - `func sync(cars: Array, cam: Vector3, residents: Variant) -> void`
 - `func clear() -> void`: Releases every seated body.
+- `func ensure(c: VH.Car, residents: Variant) -> bool`: Draws car c's driver now, whatever the cap and the range say, and keeps it drawn (the hero is taking the car: sync keeps placing it) until unpin. False while that cannot be: c shows no full model, or the driver's avatar scene is still loading (asked again each frame, it comes).
+- `func unpin(id: int) -> void`: Lets car id's driver go back to the cap and the range, the resisting lean off.
+- `func vacate(id: int) -> void`: Car id's driver has been pulled out of it (the hijack: the car is not taken until the haul is over): the body drawn at its wheel goes now, the same person is on the road, and no other is drawn there. unvacate (the car is taken) forgets it.
+- `func vacated(id: int) -> bool`: True when car id's driver has been pulled out of it.
+- `func unvacate(id: int) -> void`: Car id is taken (or gone): forgets that its driver was pulled out.
+- `func resist(id: int, roll: float, sit_up: float) -> void`: The driver of car id leans away from the hero's hands (a roll toward the car's driver's side and a sit-up, rad); drawn on the next sync.
+- `func rest_of(id: int) -> Vector3`: The world point of car id's seated body's root without the resisting lean (NAN: none drawn).
+- `func resist_of(id: int) -> Vector2`: The lean car id's driver is at now: (roll to the door, sit-up), rad.
 - `func body_of(id: int) -> POOL.Body`: The seated body in car id (null when it has no driver drawn).
 - `func driver_of(id: int) -> WK.Walker`: The driver drawn in car id (the stand-in walker carrying its avatar and stature), or null.
 - `func is_riding(id: int) -> bool`: True when the body drawn in car id is pedalling a bicycle.
@@ -1141,9 +1177,10 @@ People hit in the street (docs/fp/ARCHITECTURE.md, Body actions): shoved or punc
 - `func step(dt: float) -> void`
 - `func fighting(w: WK.Walker) -> bool`: True while w is fighting the hero (closing in or punching).
 - `static func throw_height(t: float, lift: float, fly: float = FLY_S) -> float`: How high a body thrown up to lift for fly seconds sits t seconds after the blow (0 once it has landed).
-- `func blocks() -> Array`: Lane blocks for vehicles.gd: the people hit, until they walk or run on, as circles at their drawn feet (on a sidewalk they are clear of every lane).
-- `func drag_out(w: WK.Walker, from: Vector3, from_yaw: float, shift := Vector3.ZERO) -> void`: Car-jacked w (just knocked down by the carjack's blow) is dragged out of the car first, from from (its feet in the seat, facing from_yaw) to where the blow found it, shift (u) further down the car's side than straight out of the seat; then it falls (jack_pull.gd drag_out).
+- `func blocks() -> Array`: Lane blocks for vehicles.gd: the people hit, until they walk or run on (not while they are being hauled out of a car: it is the hero's), as circles at their drawn feet (on a sidewalk they are clear of every lane).
+- `func drag_out(w: WK.Walker, from: Vector3, yaw: float, shift := Vector3.ZERO, lean := Vector2.ZERO) -> void`: Car-jacked w (just knocked down by the carjack's blow) is dragged out of the car first, from from (its feet in the seat, facing yaw) to where the blow found it, shift (u) further down the car's side than straight out of the seat, lean (the roll to the door and the sit-up it was already at, rad); then it falls (jack_pull.gd drag_out).
 - `func is_down(w: WK.Walker) -> bool`: True once w has taken a knock-down, including its short stagger before falling (jack_pull.gd has the pulled out driver's haul and sit-down that come first).
+- `func hauling(w: WK.Walker) -> bool`: True while w is being hauled out of a seat (jack_pull.gd haul), not yet let go beside the door.
 - `func count() -> int`
 - `func pose(w: WK.Walker, clip: StringName, t: float, secs: float = 60.0) -> void`: Stages w playing clip from t seconds in, for secs (photos, tests). The caller releases its body so the next one starts at t.
 
@@ -1481,7 +1518,12 @@ Traffic and pedestrians on lanes (slice E, docs/fp/slices/E-traffic.md): one roa
 - `func seat_offset() -> Variant`: The driver's hip point in the driven car's own frame (+Z forward), or null until its full model is drawn (the merged far LOD has no seat).
 - `func door_info(id: int = -1) -> Dictionary`: The driver's door of car id (the car the player drives when id < 0), in the car's frame (+Z forward, +X its left and the driver's side, y up from the ground; world units): {"hinge", "handle", "seat" (the hip point), "rear" (the rear edge at the belt line), "open_rear" (that edge with the door wide open)}, or {} when its model has no door that opens (car_doors.gd).
 - `func jack_pulls() -> bool`: True when a driver is pulled out by the collar rather than dragged and knocked down (carjack.gd pulls): the hero's part in it (car_entry.gd) is then the grip and the pull, not the shove.
-- `func jack_collar(id: int = -1) -> Vector3`: The world point of the collar of the driver the hero has (carjack.gd collar): car id's, drawn at the wheel, or (id < 0) the one pulled out last; NAN with no body drawn.
+- `func jack_grips(id: int, toward: Vector3, top: float = INF, side: String = "") -> Dictionary`: The two points the hero's hands take hold of on the driver (carjack.gd grips): car id's, drawn at the wheel, or (id < 0) the one pulled out last, seen from toward, none above top; NAN with no body.
+- `func jack_eject(id: int, src: Vector3) -> bool`: Pulls car id's driver out now, the hero's hands on them (src), without taking the car (an action hijack holds the grip while they come out and takes it then: claim_car does not pull them again). False when it cannot be: the car is gone or not to be taken, or the driver could not be put down.
+- `func jack_hauled() -> bool`: True once the driver pulled out last is out of the seat and let go (carjack.gd hauled).
+- `func jack_ready(id: int) -> bool`: Car id's driver is drawn at the wheel now, so the hero has someone to take hold of: drawn at once if it can be, whatever the cap and the range (occupants.gd ensure); false while it cannot.
+- `func jack_resist(id: int, roll: float, sit_up: float) -> void`: Car id's driver leans away from the hero's grip (occupants.gd resist; 0, 0 for none).
+- `func jack_free(id: int) -> void`: The hero lets go of car id's driver (he turned back, or the car is gone): back to the cap and the range, the resisting lean off.
 - `func door_outline(id: int = -1, amount: float = 1.0) -> PackedVector2Array`: The driver's door of car id (the driven car's when id < 0) as it hangs swung by amount (0 shut .. 1 wide open): its outline in plan in the car's frame (x, z; world units), the real panel with its thickness and glass, for what has to keep off it (jack_landing.gd); empty when the model has no door that opens.
 - `func set_door(amount: float, id: int = -1) -> void`: Opens the driver's door by amount (0 shut .. 1 open): of the car the player drives, or of car id (one they are taking from its driver). Drawn on its full model.
 - `func door_clear_of_people(id: int, amount: float, from: float = 0.0) -> float`: How far the driver's door of car id (the driven car's when id < 0) swings from `from` toward `amount` (0 shut .. 1 open) before its panel runs into someone on foot: amount itself when the way is clear, else the last amount clear of everyone (the arc of the swing each body blocks, from body_spheres.of round people.head_of). A door already resting against someone may still swing away from them; one they stand in the way of stays put rather than push into them.

@@ -29,14 +29,20 @@ extends RefCounted
 ## clip, and told landed STAND_CONTACT s in.
 
 const WS := preload("res://scripts/fp/world_scale.gd")
-## The haul: seconds, the roll toward the road (rad) and the tip back (rad) at the release.
-const HAUL_S := 0.4
+## The haul: seconds, the roll toward the road (rad) and the tip back (rad) at the release. It takes
+## HAUL_S so that a pull reads as one (the hero's hands are on the driver the whole way out: 0.7 s,
+## about 1.3 m/s on average and 2.4 m/s at most, the last moment).
+const HAUL_S := 0.7
 const HAUL_ROLL := 0.3
 const HAUL_TIP := 0.6
 ## Where the body is let go further down the car's side than straight out of the seat (carjack.gd,
 ## to clear the open door), it goes straight out over the sill first and drifts there only after
 ## the share SHIFT_AT of the way across.
 const SHIFT_AT := 0.25
+## A driver sat above the road (a cab: the root begins higher than where it is let go) comes down
+## over the first DROP_AT of the way across, so that it is on the road by the time it is past the
+## sill, never above it.
+const DROP_AT := 0.5
 ## The fall: seconds, the tip back (rad) the body lies at, the tip at which its hips are on the road
 ## and the walker's crossfade to the lying pose (people.gd XFADE), over which the tip comes out.
 const FALL_S := 0.4
@@ -84,6 +90,8 @@ class Plan:
 	var haul_carry := Vector3.ZERO  # the car's whole pace, which the haul keeps (u/s, level)
 	var m1: float = 1.0  # the speed the haul's pull ends at (see pull)
 	var shift := Vector3.ZERO  # where the body is let go, further down the car's side (u)
+	var roll0: float = 0.0  # the roll toward the door they were leaning at as the haul began
+	var tip0: float = 0.0  # the tip back they were already at (a sit-up is negative)
 	var fall_t: float = 0.0  # seconds since the fall began
 	var lie_s: float = 0.0  # seconds it lies in the lying pose before the get-up plays
 	var lie_t: float = 0.0  # seconds since the lying step began
@@ -155,13 +163,13 @@ static func pull(x: float, m1: float) -> float:
 ## where it is the plan's lean.
 static func haul_lean(x: float, p: Plan) -> float:
 	var u := 1.0 - clampf(x, 0.0, 1.0)
-	return p.lean * (1.0 - u * u)
+	return lerpf(p.roll0, p.lean, 1.0 - u * u)
 
 
 ## The tip back (rad) at x (0..1) of the haul: the same curve to the plan's tip.
 static func haul_tip(x: float, p: Plan) -> float:
 	var u := 1.0 - clampf(x, 0.0, 1.0)
-	return p.tip * (1.0 - u * u)
+	return lerpf(p.tip0, p.tip, 1.0 - u * u)
 
 
 ## The tip back (rad) t seconds into the fall: from where the haul left it to FALL_BACK, speeding up
@@ -236,10 +244,15 @@ static func roll_to(lean: float, door: Vector3, yaw: float) -> float:
 ## Sets the haul of reaction r up (reactions.gd drag_out; nothing for one not knocked down and
 ## standing): the driver drawn in the sit pose from from (the seat, facing from_yaw) to where the
 ## blow found them, shift (a world offset, u) further down the car's side, then the fall.
-static func drag_out(r, from: Vector3, from_yaw: float, shift: Vector3) -> void:
+static func drag_out(
+	r, from: Vector3, from_yaw: float, shift: Vector3, lean0 := Vector2.ZERO
+) -> void:
 	if r == null or r.mode != "place" or not r.down:
 		return
 	var w = r.w
+	if r.jack != null:
+		r.jack.roll0 = lean0.x
+		r.jack.tip0 = -lean0.y
 	r.steps.push_front(["place", w.react, r.left])
 	r.drag = [from, w.pos + w.vis_off, from_yaw, from_yaw if r.jack != null else w.yaw, shift]
 	r.mode = "drag"
@@ -287,6 +300,10 @@ static func haul(r, dt: float) -> bool:
 	var at: Vector3 = (
 		(r.drag[0] as Vector3).lerp(r.drag[1], k) - p.shift * (k - smoothstep(SHIFT_AT, 1.0, k))
 	)
+	if (r.drag[0] as Vector3).y > (r.drag[1] as Vector3).y:
+		at.y = lerpf(
+			(r.drag[0] as Vector3).y, (r.drag[1] as Vector3).y, smoothstep(0.0, DROP_AT, k)
+		)
 	at += carried(p, HAUL_S * x)
 	w.vis_off = at - w.pos
 	w.yaw = float(r.drag[2])

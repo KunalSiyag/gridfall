@@ -7,6 +7,7 @@ extends RefCounted
 ## modifiers. It also supplies a planted fighting guard and guides both hands forward as a shove
 ## lands; the rig owns the clock (tick) and the tree the clock gates on.
 
+const PALMS := preload("res://scripts/fp/player/hero_palms.gd")
 const SM := preload("res://scripts/fp/player/spring_math.gd")
 const LOOK := preload("res://scripts/fp/player/hero_look.gd")
 const KICK := preload("res://scripts/fp/player/hero_kick_pose.gd")
@@ -90,6 +91,14 @@ const GRIP_ELBOW_SPREAD := 0.34
 ## the hold eases out over PULL_EASE s (or the longer the caller asks for: a grip that slipped),
 ## the hands staying where they were.
 const PULL_LEAN := deg_to_rad(18.0)
+## Leaning in to reach (negative lean: forward) goes as far as PULL_FORWARD. The lean is applied by
+## a modifier ahead of the hand IK (the pre-IK Mod: index 0 among the skeleton's modifiers), so the
+## hands still reach their goals after it.
+const PULL_FORWARD := deg_to_rad(38.0)
+## The hips drop by up to PULL_CROUCH (skeleton metres) with the lean, the feet planted in a
+## staggered stance (the guard's) so the knees bend: a puller gets his shoulders down to what he
+## holds.
+const PULL_CROUCH := 0.32
 const PULL_EASE := 0.15
 const PULL_ELBOW_FORWARD := 0.0
 const PULL_ELBOW_HEIGHT := 0.98
@@ -125,6 +134,11 @@ var _wait: int = 0
 ## The action clip the rig was last asked for (strike clips included), for the same end.
 var _asked: String = ""
 var _mod: Mod = null
+## The modifier that leans the spine for a pull, ahead of the hand IK.
+var _lean_mod: Mod = null
+## The two hands' palm axes (hero_palms.gd), and the directions their palms face while pulling.
+var _palms: Array = []
+var _pull_palms := PackedVector3Array()
 ## "clip|within" -> contact (s, as the clip plays) and clip -> the hand it drives, measured once.
 var _times: Dictionary = {}
 var _hands: Dictionary = {}
@@ -176,6 +190,10 @@ func _init(
 	_fwd = p_fk.call("forward_of", root)
 	for s: String in ["Left", "Right"]:
 		_curl.append_array(fist_joints(p_sk, s))
+	for s: String in ["Left", "Right"]:
+		_palms.append(PALMS.axis(p_sk, s))
+	_lean_mod = Mod.new(self, 0)
+	_lean_mod.name = "PullLean"
 	_mod = Mod.new(self)
 	_mod.name = "StrikePose"
 	# Runs on the idle frame, after the hand-advanced tree, not once per physics frame
@@ -183,6 +201,9 @@ func _init(
 	p_sk.modifier_callback_mode_process = Skeleton3D.MODIFIER_CALLBACK_MODE_PROCESS_IDLE
 	p_sk.add_child(_mod)
 	_mod.active = false
+	p_sk.add_child(_lean_mod)
+	p_sk.move_child(_lean_mod, 0)
+	_lean_mod.active = false
 
 
 ## When clip's fists (or palms) first reach furthest out in front within its first WITHIN seconds:
@@ -260,23 +281,27 @@ func set_guard(on: bool) -> void:
 
 ## The hero has someone by the collar (car_entry.gd's pull-out): both hands reach for hands (world
 ## points, left then right) at weight w (0..1: the arms' influence is lifted to it at once), closed
-## on it, the spine leaning back lean (0..1 of PULL_LEAN). w 0 lets go: the arms ease out over
-## ease_s (PULL_EASE with none given; tick), the hands where they last were; the hands given with it
-## are not used then.
+## on it, the palms facing palms (world directions, for the left then the right hand; none to leave
+## them as the clip has them), the spine leaning back lean (0..1 of PULL_LEAN; negative: forward, to
+## PULL_FORWARD). w 0 lets go: the arms ease out over ease_s (PULL_EASE with none given; tick), the
+## hands where they last were; the hands given with it are not used then.
 func set_pull(
 	w: float,
 	hands: PackedVector3Array = PackedVector3Array(),
 	lean: float = 0.0,
-	ease_s: float = 0.0
+	ease_s: float = 0.0,
+	palms: PackedVector3Array = PackedVector3Array()
 ) -> void:
 	_pull_ease = ease_s if ease_s > 0.0 else PULL_EASE
 	_pull_goal = clampf(w, 0.0, 1.0) if hands.size() >= 2 else 0.0
 	if _pull_goal > 0.0:
 		_pull_hands = hands
+		_pull_palms = palms
 		_pull = maxf(_pull, _pull_goal)
-	_pull_lean = clampf(lean, 0.0, 1.0)
+	_pull_lean = clampf(lean, -1.0, 1.0)
 	if _mod != null:
-		_mod.active = _pull > 0.0 or _pull_lean > 0.0 or not clip.is_empty() or _guard > 0.001
+		_mod.active = _pull > 0.0 or _pull_lean != 0.0 or not clip.is_empty() or _guard > 0.001
+		_lean_mod.active = _pull_lean != 0.0
 
 
 ## Holding someone (on) whose feet stand at at (world): while the guard is up the hands grip
@@ -331,7 +356,10 @@ func tick(dt: float) -> void:
 	if _guard < 0.001 and goal <= 0.0:
 		_guard = 0.0
 	if _mod != null:
-		_mod.active = not clip.is_empty() or _guard > 0.0 or goal > 0.0 or _pull_lean > 0.0
+		_mod.active = (
+			not clip.is_empty() or _guard > 0.0 or goal > 0.0 or _pull_lean != 0.0 or _pull > 0.0
+		)
+		_lean_mod.active = _pull_lean != 0.0
 	_update_hand_goals()
 
 
@@ -363,8 +391,10 @@ func apply(sk: Skeleton3D) -> void:
 		_apply_guard(sk, _guard)
 		_close_fists(sk, _guard)
 		LOOK.clamp_head(sk, _body.global_basis, LOOK.COMBAT_YAW, LOOK.COMBAT_PITCH)
-	if _pull_lean > 0.0:
-		_apply_pull(sk)
+	if _pull > 0.0:
+		_close_fists(sk, _pull)
+		for i in range(mini(_palms.size(), _pull_palms.size())):
+			PALMS.face(sk, _palms[i], _pull_palms[i])
 	if clip.is_empty():
 		return
 	var w := envelope(_t, _c, _recover)
@@ -432,20 +462,30 @@ func _pull_goals(xf: Transform3D) -> void:
 		)
 		_set_goal(i, _pull_hands[i], pole, _pull)
 	_take_arms(_pull)
-	_release_feet()
+	if _pull_lean != 0.0:
+		_set_stance_feet(xf.origin, fwd, right, scale, _pull)
+		_feet_claimed = true
+	else:
+		_release_feet()
 
 
-## The spine leans back by the pull's share of PULL_LEAN, and the hands close on what they hold.
-func _apply_pull(sk: Skeleton3D) -> void:
+## The spine leans back by the pull's share of PULL_LEAN (forward by PULL_FORWARD's for a negative
+## lean): the pre-IK modifier's work, so that the hand IK that follows reaches its goals leaned.
+func apply_lean(sk: Skeleton3D) -> void:
+	if sk == null or _pull_lean == 0.0:
+		return
+	var hips := sk.find_bone("Hips")
+	if hips >= 0:
+		var low := Vector3(0.0, PULL_CROUCH * absf(_pull_lean), 0.0)
+		sk.set_bone_pose_position(hips, sk.get_bone_pose_position(hips) - low)
+	var angle := PULL_LEAN * _pull_lean if _pull_lean > 0.0 else PULL_FORWARD * _pull_lean
 	for pair: Array in BONES:
 		var b := sk.find_bone(str(pair[0]))
 		if b < 0:
 			continue
 		var pose := sk.get_bone_pose(b)
-		var q := Quaternion(Vector3.RIGHT, -PULL_LEAN * _pull_lean * float(pair[1]))
-		pose.basis = Basis(q) * pose.basis
+		pose.basis = Basis(Quaternion(Vector3.RIGHT, -angle * float(pair[1]))) * pose.basis
 		sk.set_bone_pose(b, pose)
-	_close_fists(sk, _pull)
 
 
 ## A planted left foot takes the weight as the right knee chambers, kicks and folds back.
@@ -674,11 +714,14 @@ static func push_envelope(t: float, c: float) -> float:
 class Mod:
 	extends SkeletonModifier3D
 
-	## The layer whose strike is playing.
+	## The layer whose strike is playing, and which of its two passes this one is: 1 the layer's own
+	## (last), 0 the spine's lean for a pull (first, ahead of the hand IK).
 	var layer: RefCounted
+	var stage: int = 1
 
-	func _init(p_layer: RefCounted) -> void:
+	func _init(p_layer: RefCounted, p_stage: int = 1) -> void:
 		layer = p_layer
+		stage = p_stage
 
 	func _process_modification() -> void:
-		(layer as RefCounted).call("apply", get_skeleton())
+		(layer as RefCounted).call("apply" if stage == 1 else "apply_lean", get_skeleton())

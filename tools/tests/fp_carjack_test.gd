@@ -31,6 +31,9 @@ const OLD_REST := 2.1
 const PLAIN_GRAB_S := 0.55
 const PLAIN_STEP_S := 1.3
 const CLOCK_SLACK := 0.026
+## The hero steps into the opening this long after the driver is pulled out: the pull, until they
+## are let go beside the door, and the release (jack_hold.gd).
+const STEP_AFTER_GRAB := Vector2(0.55, 1.1)
 ## The bystander of the in-the-way checks stands this far out from the door's side (m): beside where
 ## the driver lies, in the way of the plain throw's rest.
 const BY_OUT := 1.45
@@ -45,8 +48,12 @@ const WHEELS := [
 	["car", "ambient", false, true],
 	["car", "resident", false, true],
 	["car", "ambient", true, false],
-	["bike", "resident", false, false],
-	["bus", "bus", false, false],
+	["bike", "resident", false, true],
+	["bus", "bus", false, true],
+	["truck", "garbage", false, true],
+	["scooter", "ambient", false, true],
+	["bike", "ambient", true, false],
+	["bike", "player", false, false],
 	["car", "player", false, false],
 ]
 
@@ -121,8 +128,9 @@ func _setup() -> bool:
 	return true
 
 
-## Someone sits at the wheel of an ambient or a resident car on the road; not of a parked one, a
-## bike, a bus or the player's own.
+## Someone sits at the wheel of an ambient or a resident car on the road, in a bus or a truck or
+## on a bicycle or scooter (no door of their own: pulled out the same way); not in a parked one or
+## the player's own.
 func _check_occupied() -> void:
 	var wrong: Array = []
 	for spec: Array in WHEELS:
@@ -132,11 +140,8 @@ func _check_occupied() -> void:
 		c.parked = spec[2]
 		if JACK.occupied(c) != bool(spec[3]):
 			wrong.append(spec)
-	K.check(
-		fails,
-		wrong.is_empty(),
-		"someone at the wheel of ambient and resident cars on the road only %s" % str(wrong)
-	)
+	var said := "someone at the wheel of cars, buses, trucks, bikes, scooters on the road only %s"
+	K.check(fails, wrong.is_empty(), said % str(wrong))
 
 
 # ------------------------------------------------------------------ carjacks
@@ -624,25 +629,42 @@ func _check_flag_off() -> void:
 
 
 ## The hero's part, flag on and off (car_entry.gd, jack_pulls): with the carjack_throw flag the hero
-## takes the collar with both hands (the strike pose's pull) and no clip plays, the driver is out
-## ENTRY.GRAB_AT s into the jack phase and he steps into the opening at ENTRY.JACK_T; with it off
-## he is as he always was: the push clip (the arm swung up), no hold on a collar, the driver
-## dragged out at 0.55 s and the step at 1.3 s.
+## takes the collar and the arm with both hands (the strike pose's pull) and no clip plays, the
+## driver is pulled out ENTRY.GRAB_AT s into the jack phase at the earliest (the reach waits for the
+## hands, at most JACK.REACH_MAX) and he steps into the opening when they are out and let go, within
+## STEP_AFTER_GRAB s of the pull; with it off he is as he always was: the push clip (the arm swung
+## up), no hold on a collar, the driver dragged out at 0.55 s and the step at 1.3 s.
 func _check_hero_part() -> void:
 	var on := _hero_part(true)
 	var off := _hero_part(false)
-	var said := "carjack_throw on: the hero grabs at %.2f s (%.2f) and steps in at %.2f s (%.2f), "
-	said += "his hands on the collar (%.2f) and no push clip (%s)"
+	var grab := float(on["grab"])
+	var lag := float(on["step"]) - grab
+	var said := "carjack_throw on: the hero grabs at %.2f s (%.2f to %.2f) and steps in %.2f s "
+	said += "after the pull (%.2f to %.2f), his hands on the driver (%.2f) and no push clip (%s)"
 	K.check(
 		fails,
 		(
 			bool(on["pull_out"])
-			and absf(float(on["grab"]) - ENTRY.GRAB_AT) <= CLOCK_SLACK
-			and absf(float(on["step"]) - ENTRY.JACK_T) <= CLOCK_SLACK
+			and grab >= ENTRY.GRAB_AT - CLOCK_SLACK
+			and grab <= ENTRY.GRAB_AT + 0.2 + CLOCK_SLACK
+			and lag >= STEP_AFTER_GRAB.x
+			and lag <= STEP_AFTER_GRAB.y
 			and float(on["pull"]) > 0.5
 			and not bool(on["push"])
 		),
-		said % [on["grab"], ENTRY.GRAB_AT, on["step"], ENTRY.JACK_T, on["pull"], on["push"]]
+		(
+			said
+			% [
+				grab,
+				ENTRY.GRAB_AT,
+				ENTRY.GRAB_AT + 0.2,
+				lag,
+				STEP_AFTER_GRAB.x,
+				STEP_AFTER_GRAB.y,
+				on["pull"],
+				on["push"]
+			]
+		)
 	)
 	said = "carjack_throw off: the hero is as before, grabbing at %.2f s (%.2f) and stepping in at "
 	said += "%.2f s (%.2f), no hold on a collar (%.2f), the push clip played (%s)"
