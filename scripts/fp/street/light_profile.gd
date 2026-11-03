@@ -44,9 +44,25 @@ const SSR_DEPTH := 1.5 * WS.M
 const FAR_FALLBACK := {"low": 45.0, "medium": WS.CAMERA_FAR, "high": 75.0}
 
 
+const FALLBACK_DEPTH_BIAS := 0.02
+const FALLBACK_NORMAL_BIAS := 0.6
+
+
+## The sun's street bias from G2's quality.gd (renderer aware), or the Forward+ value before it
+## exists.
+static func street_bias(getter: String, fallback: float, method: String = "") -> float:
+	var q := quality_script()
+	if q != null and q.has_method(getter):
+		return float(q.call(getter, method))
+	return fallback
+
+
 ## Applies the street-level profile (mode "fp") for preset low|medium|high, or restores the orbit
-## values snapshotted on the first fp apply (mode "orbit"). Either env or sun may be null.
-static func apply(env: Environment, sun: DirectionalLight3D, mode: String, preset: String) -> void:
+## values snapshotted on the first fp apply (mode "orbit"). Either env or sun may be null. method
+## overrides the running renderer's name for the sun bias (tests).
+static func apply(
+	env: Environment, sun: DirectionalLight3D, mode: String, preset: String, method: String = ""
+) -> void:
 	if mode == "orbit":
 		_restore(env, ENV_KEYS)
 		_restore(sun, SUN_KEYS)
@@ -97,8 +113,9 @@ static func apply(env: Environment, sun: DirectionalLight3D, mode: String, prese
 		sun.directional_shadow_split_3 = float(s[2])
 		sun.directional_shadow_blend_splits = bool(p["blend"])
 		# Tuned for 8 cm street details: tight enough for kerbs and bollards, no acne on the ground.
-		sun.shadow_bias = 0.02
-		sun.shadow_normal_bias = 0.6
+		# Compatibility (the web build) needs a larger normal bias against stripes on the roads.
+		sun.shadow_bias = street_bias("street_depth_bias", FALLBACK_DEPTH_BIAS, method)
+		sun.shadow_normal_bias = street_bias("street_normal_bias", FALLBACK_NORMAL_BIAS, method)
 
 
 ## Whether the preset reflects in screen space with the streets this wet (0..1).

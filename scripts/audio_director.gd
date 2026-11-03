@@ -15,6 +15,8 @@ const SFX_TICK_PATH := "res://sounds/placement-a.ogg"
 const SFX_ALERT_PATH := "res://sounds/gridlock_alert.wav"
 const SFX_RECOVERY_PATH := "res://sounds/upgrade_chime.wav"
 const SFX_DAY_BELL_PATH := "res://sounds/day_bell.wav"
+## A boot that never finishes (BootClock) must not leave the city without its music.
+const STEM_HOLD_MAX_S := 10.0
 ## Shortest gap between two blackout ticks, in seconds of director time.
 const TICK_MIN_GAP := 10.0
 ## On foot: music offset under the street sound, the buses used and the UI cue trim.
@@ -36,6 +38,10 @@ var _streams: Dictionary = {}            # path -> AudioStream (null when missin
 var _clock: float = 0.0
 var _last_tick: float = -INF
 var _last_phase: String = ""
+## True while a stem has a stream and has not been started: during the web boot the stems wait for
+## the loader veil to lift and then start one per frame (a long stream's first play() costs
+## 75-190 ms in the browser, and it used to sit inside the boot task).
+var _stems_pending: bool = false
 
 
 func _ready() -> void:
@@ -56,6 +62,8 @@ func _ready() -> void:
 
 func _process(delta: float) -> void:
 	_clock += delta
+	if _stems_pending and (not BootClock.enabled() or _clock >= STEM_HOLD_MAX_S):
+		_start_next_stem()
 	_current_mix = lerpf(_current_mix, _target_blackout, minf(delta * 2.5, 1.0))
 	_apply_volumes()
 
@@ -162,14 +170,22 @@ func _init_stems() -> void:
 	if _crisis_player.stream == null:
 		_crisis_player.stream = _looping_track(CRISIS_TRACK_PATH)
 	_apply_volumes()
-	if _nominal_player.stream != null and not _nominal_player.playing:
-		var t0 := FirstUse.begin("play", _nominal_player.stream)
-		_nominal_player.play()
-		FirstUse.end("play", _nominal_player.stream, t0)
-	if _crisis_player.stream != null and not _crisis_player.playing:
-		var t1 := FirstUse.begin("play", _crisis_player.stream)
-		_crisis_player.play()
-		FirstUse.end("play", _crisis_player.stream, t1)
+	_stems_pending = true
+	if not BootClock.enabled():
+		for _i in range(2):
+			_start_next_stem()
+
+
+## Starts the first stem that has a stream and is not playing; clears _stems_pending when no
+## stem is left to start.
+func _start_next_stem() -> void:
+	for p: AudioStreamPlayer in [_nominal_player, _crisis_player]:
+		if p.stream != null and not p.playing:
+			var t0 := FirstUse.begin("play", p.stream)
+			p.play()
+			FirstUse.end("play", p.stream, t0)
+			return
+	_stems_pending = false
 
 
 ## Audio pack arrived on a split web build: drop the paths that cached a miss

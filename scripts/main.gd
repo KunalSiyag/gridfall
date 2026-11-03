@@ -57,6 +57,13 @@ var autosave_enabled: bool = false
 ## player's slot.
 var autosave_path: String = SAVE_PATH
 var _autosave_due: bool = false
+## A morning autosave closer than this to the last autosave (wall clock) is skipped: the Planner's
+## game day is 12 s and a save costs 100 ms or more of stringify at day 10, an avoidable stall every
+## day. Quit and manual saves always go through.
+const AUTOSAVE_MIN_GAP_S := 60.0
+## Wall clock in ms for the autosave gap; tests swap in a fake one.
+var autosave_clock: Callable = Time.get_ticks_msec
+var _last_autosave_ms: int = -1
 
 
 func _ready() -> void:
@@ -277,7 +284,14 @@ func _process(delta: float) -> void:
 		sky.crisis = lerpf(sky.crisis, _crisis, minf(1.0, delta * 2.0))
 	# After the morning's first tick has committed: today's mayor plans are in, and a load resumes
 	# mid-day instead of starting the day over.
-	if _autosave_due and sim.tick_in_day >= 1 and not sim.job_pending():
+	# A morning save inside the gap of the last one is deferred, not dropped: on the web a closing
+	# tab never reaches the "quit" autosave, so the morning save is the only persistence there.
+	if (
+		_autosave_due
+		and sim.tick_in_day >= 1
+		and not sim.job_pending()
+		and autosave_wait_s() <= 0.0
+	):
 		_autosave_due = false
 		autosave("morning")
 
@@ -320,18 +334,32 @@ func save_game(path: String = SAVE_PATH) -> bool:
 	return true
 
 
-## Saves the city to autosave_path while autosave_enabled. reason: "morning" (a small toast) or
-## "quit" (silent: the window is closing).
+## Saves the city to autosave_path while autosave_enabled. reason: "morning" (a small toast; skipped
+## when the last autosave is under AUTOSAVE_MIN_GAP_S old; _process retries it once the gap has
+## passed) or "quit" (silent: the window closes).
 func autosave(reason: String) -> bool:
 	if not autosave_enabled:
+		return false
+	var now_ms := int(autosave_clock.call())
+	if reason == "morning" and autosave_wait_s() > 0.0:
 		return false
 	var err := _write_save(autosave_path, reason)
 	if err != OK:
 		notify("Autosave failed (%s)" % error_string(err), "alert")
 		return false
+	_last_autosave_ms = now_ms
 	if reason == "morning":
 		notify("Autosaved: Day %d" % sim.day, "system")
 	return true
+
+
+## Seconds until a morning autosave may run again (0 when it may run now): the rest of the
+## AUTOSAVE_MIN_GAP_S since the last autosave, on autosave_clock.
+func autosave_wait_s() -> float:
+	if _last_autosave_ms < 0:
+		return 0.0
+	var gap_s := float(int(autosave_clock.call()) - _last_autosave_ms) / 1000.0
+	return maxf(0.0, AUTOSAVE_MIN_GAP_S - gap_s)
 
 
 ## The pause menu's Quit: saves the city, then quits.

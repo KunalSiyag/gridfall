@@ -1623,7 +1623,7 @@ test("parseKnobs() refuses what it would otherwise ignore: unknown names, unknow
 	assert.deepEqual(kit.parseKnobs({ HOME: "/x", GF_OTHER: "1", GF_FPS: "1" }).rows, ["street", "walk", "sky", "orbit"], "other variables are not ours");
 	const blanks = Object.fromEntries(kit.KNOB_NAMES.map((n) => [n, ""]));
 	assert.doesNotThrow(() => kit.parseKnobs(blanks), "every documented knob is accepted, blank");
-	assert.equal(kit.KNOB_NAMES.length, 17);
+	assert.equal(kit.KNOB_NAMES.length, 19);
 	assert.equal(kit.parseKnobs({}).noOcclusion, false, "the occlusion check is off by default");
 	assert.equal(kit.parseKnobs({ GF_FPS_NO_OCCLUSION: "1" }).noOcclusion, true);
 	const known = ["web_first_use_marks", "web_real_time_pace", "streetscape"];
@@ -1712,4 +1712,104 @@ test("the CLI exits 2, not 1, for a bad tolerance, a bad row or a file it cannot
 	} finally {
 		fs.rmSync(dir, { recursive: true, force: true });
 	}
+});
+
+// ---- audio sections and the stripe metric ----------------------------------------------------------
+
+test("parseAudioSections() keeps the slowest reading of each section over every AUDIOSEC line", () => {
+	const r = kit.parseAudioSections([
+		'log AUDIOSEC {"ms":{"emitters":0.4,"ambience":2.1}}',
+		"unrelated",
+		'AUDIOSEC {"ms":{"emitters":1.9,"falls":0.01}}',
+		'AUDIOSEC {"ms":{"emitters":',
+		"AUDIOSEC not json",
+	]);
+	assert.equal(r.lines, 2);
+	assert.deepEqual(r.max, { emitters: 1.9, ambience: 2.1, falls: 0.01 });
+	assert.deepEqual(r.worst, { section: "ambience", ms: 2.1 });
+	assert.deepEqual(kit.parseAudioSections([]), { lines: 0, max: {}, worst: null });
+});
+
+function stripes(w, h, period, amp, tilt) {
+	const a = new Float64Array(w * h);
+	for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) a[y * w + x] = 100 + amp * Math.sin((2 * Math.PI * (y + tilt * x)) / period);
+	return a;
+}
+
+test("dogRms(): a flat field reads zero and a slow gradient reads (almost) nothing", () => {
+	const w = 90, h = 70;
+	assert.ok(kit.dogRms(new Float64Array(w * h).fill(120), w, h) < 1e-9);
+	const grad = new Float64Array(w * h);
+	for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) grad[y * w + x] = 50 + 0.4 * x + 0.2 * y;
+	assert.ok(kit.dogRms(grad, w, h) < 0.05, "a lighting ramp is not a stripe");
+});
+
+test("dogRms(): fine stripes read, tilted ones too (the row profile cannot see those), coarse ones do not", () => {
+	const w = 120, h = 90;
+	const flat = kit.dogRms(stripes(w, h, 8, 0, 0), w, h);
+	const fine = kit.dogRms(stripes(w, h, 8, 3, 0), w, h);
+	const tilted = kit.dogRms(stripes(w, h, 8, 3, 0.7), w, h);
+	const coarse = kit.dogRms(stripes(w, h, 60, 3, 0), w, h);
+	assert.ok(fine > 0.8 && tilted > 0.5 && flat < 1e-9, `${flat} ${fine} ${tilted}`);
+	assert.ok(coarse < fine / 4, `a 60 px swell (${coarse}) is not an 8 px stripe (${fine})`);
+	// More amplitude, more energy.
+	assert.ok(kit.dogRms(stripes(w, h, 8, 6, 0.7), w, h) > 1.8 * tilted);
+});
+
+test("dogRms(): the margin is scored far less than the interior, and a crop smaller than it is refused", () => {
+	const w = 70, h = 70;
+	const inMargin = new Float64Array(w * h).fill(100);
+	const inside = new Float64Array(w * h).fill(100);
+	for (let x = 0; x < w; x++) { inMargin[x] = 255; inside[(h >> 1) * w + x] = 255; }
+	assert.ok(kit.dogRms(inMargin, w, h, 12) < kit.dogRms(inside, w, h, 12) / 20, "a bright first row sits in the margin");
+	assert.throws(() => kit.dogRms(new Float64Array(20 * 20), 20, 20, 12), /smaller than its margins/);
+});
+
+test("rowProfileRms(): horizontal stripes read near amp/sqrt(2), a flat field, a ramp and a broad swell do not", () => {
+	const w = 80, h = 130;
+	const flat = kit.rowProfileRms(new Float64Array(w * h).fill(120), w, h);
+	const fine = kit.rowProfileRms(stripes(w, h, 8, 3, 0), w, h);
+	const coarse = kit.rowProfileRms(stripes(w, h, 80, 3, 0), w, h);
+	const ramp = new Float64Array(w * h);
+	for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) ramp[y * w + x] = 50 + 0.5 * y + 0.2 * x;
+	assert.ok(flat < 1e-9);
+	assert.ok(Math.abs(fine - 3 / Math.SQRT2) < 0.3, `an 8-row stripe of amplitude 3 reads ${fine}`);
+	assert.ok(coarse < fine / 3, `an 80-row swell (${coarse}) is not a stripe (${fine})`);
+	assert.ok(kit.rowProfileRms(ramp, w, h) < 0.05, "a lighting ramp is not a stripe");
+	assert.ok(kit.rowProfileRms(stripes(w, h, 8, 6, 0), w, h) > 1.8 * fine, "more amplitude, more energy");
+});
+
+test("rowProfileRms(): stripes tilted across the crop average out (use dogRms for those), a short crop is refused", () => {
+	const w = 120, h = 130;
+	const tilted = kit.rowProfileRms(stripes(w, h, 8, 3, 0.7), w, h);
+	assert.ok(tilted < kit.rowProfileRms(stripes(w, h, 8, 3, 0), w, h) / 5, `tilted ${tilted}`);
+	assert.throws(() => kit.rowProfileRms(new Float64Array(80 * 50), 80, 50), /smaller than its margins/);
+});
+
+test("stripeVerdict(): over the limit fails, at or under passes, no number fails", () => {
+	assert.deepEqual(kit.stripeVerdict(1.9), { rms: 1.9, max: kit.STRIPE_MAX, ok: true });
+	assert.equal(kit.stripeVerdict(kit.STRIPE_MAX).ok, true);
+	for (const old of [2.75, 2.89, 2.99]) assert.equal(kit.stripeVerdict(old).ok, false, `${old}: the measured old normal bias (0.6) must fail`);
+	for (const fixed of [0.71, 1.15, 1.19]) assert.equal(kit.stripeVerdict(fixed).ok, true, `${fixed}: the measured fixed bias (1.5) must pass`);
+	assert.equal(kit.stripeVerdict(NaN).ok, false);
+	assert.equal(kit.stripeVerdict(null).ok, false);
+});
+
+test("STRIPE_BAND lies below the horizon and inside the frame, clear of the HUD bar", () => {
+	const b = kit.STRIPE_BAND;
+	assert.ok(b.x0 >= 0 && b.x1 <= 1 && b.x0 < b.x1 && b.y0 > 0.5 && b.y1 <= 0.85 && b.y0 < b.y1);
+});
+
+test("GF_FPS_STRIPES is a knob: on by default, 0 turns the pose off, a typo is refused", () => {
+	assert.equal(kit.parseKnobs({}).stripes, true);
+	assert.equal(kit.parseKnobs({ GF_FPS_STRIPES: "0" }).stripes, false);
+	assert.throws(() => kit.parseKnobs({ GF_FPS_STRIPES: "lots" }), /GF_FPS_STRIPES/);
+	assert.ok(kit.KNOB_NAMES.includes("GF_FPS_STRIPES"));
+});
+
+test("GF_FPS_AUDIBLE is a knob: off by default, a switch, and a typo is refused", () => {
+	assert.equal(kit.parseKnobs({}).audible, false);
+	assert.equal(kit.parseKnobs({ GF_FPS_AUDIBLE: "1" }).audible, true);
+	assert.throws(() => kit.parseKnobs({ GF_FPS_AUDIBLE: "loud" }), /GF_FPS_AUDIBLE/);
+	assert.ok(kit.KNOB_NAMES.includes("GF_FPS_AUDIBLE"));
 });

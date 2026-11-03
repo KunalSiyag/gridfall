@@ -23,10 +23,13 @@ First-person light profile (slice G1): shadow distance and cascades, SSAO and SS
 - `WET_SSR = 0.15`
 - `SSR_DEPTH = 1.5 * WS.M`
 - `FAR_FALLBACK = {"low": 45.0, "medium": WS.CAMERA_FAR, "high": 75.0}`: Camera far plane per preset until G2's quality.gd provides camera_far().
+- `FALLBACK_DEPTH_BIAS = 0.02`
+- `FALLBACK_NORMAL_BIAS = 0.6`
 
 ### Functions
 
-- `static func apply(env: Environment, sun: DirectionalLight3D, mode: String, preset: String) -> void`: Applies the street-level profile (mode "fp") for preset low|medium|high, or restores the orbit values snapshotted on the first fp apply (mode "orbit"). Either env or sun may be null.
+- `static func street_bias(getter: String, fallback: float, method: String = "") -> float`: The sun's street bias from G2's quality.gd (renderer aware), or the Forward+ value before it exists.
+- `static func apply(env: Environment, sun: DirectionalLight3D, mode: String, preset: String, method: String = "") -> void`: Applies the street-level profile (mode "fp") for preset low|medium|high, or restores the orbit values snapshotted on the first fp apply (mode "orbit"). Either env or sun may be null. method overrides the running renderer's name for the sun bias (tests).
 - `static func reflections(preset: String, wet: float) -> bool`: Whether the preset reflects in screen space with the streets this wet (0..1).
 - `static func set_wet(env: Environment, preset: String, wet: float) -> void`: The weather's hook: reflections on or off for how wet the streets are, once the street profile is applied (the orbit view keeps its own).
 - `static func fog_end(preset: String) -> float`: Depth-fog end for a preset: WS.FOG_DEPTH_END, inside 95% of that preset's far plane.

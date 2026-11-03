@@ -17,6 +17,12 @@ const AREA_R := 4
 const WATER_R := 3
 ## Rain bed level while it rains (G1's streetscape weather); birds and insects shelter meanwhile.
 const RAIN_WEIGHT := 0.85
+## A bed's first play() decodes and registers its whole stream (75-190 ms each in the browser,
+## measured), so at most this many beds start per step, and none while the web boot runs (the loader
+## veil is still up: BootClock.enabled()), unless that has lasted HOLD_MAX_S (a boot that never
+## finishes must not leave the city without its beds).
+const MAX_STARTS_PER_STEP := 1
+const HOLD_MAX_S := 10.0
 
 var ctx: FpContext
 ## bed -> target weight 0..1 and current smoothed level 0..1.
@@ -32,6 +38,7 @@ var enabled: bool = true
 ## Most beds ever playing at once (tests).
 var max_seen_playing: int = 0
 var _t: float = 0.0
+var _held_s: float = 0.0
 var _rng := RandomNumberGenerator.new()
 
 
@@ -146,12 +153,16 @@ func step(dt: float) -> void:
 	if _t >= RECOMPUTE_S:
 		recompute()
 	var rate := dt / CROSSFADE_S
+	var may_start := _may_start(dt)
+	var started := 0
 	for b in BED_NAMES:
 		var p: AudioStreamPlayer = players[b]
 		var w: float = weights[b]
 		var lv: float = levels[b]
 		if not p.playing:
-			if w >= MIN_WEIGHT and p.stream != null and _make_room(b):
+			var wants := w >= MIN_WEIGHT and p.stream != null
+			if may_start and started < MAX_STARTS_PER_STEP and wants and _make_room(b):
+				started += 1
 				lv = 0.0
 				var t0 := FirstUse.begin("play", p.stream)
 				p.play(_rng.randf() * maxf(p.stream.get_length() - 0.5, 0.0))
@@ -167,6 +178,14 @@ func step(dt: float) -> void:
 			continue
 		p.volume_db = float(BANK.BEDS[b][1]) + linear_to_db(maxf(lv, 0.001))
 	max_seen_playing = maxi(max_seen_playing, playing_count())
+
+
+## False while the web boot is still behind the loader veil (see MAX_STARTS_PER_STEP).
+func _may_start(dt: float) -> bool:
+	if not BootClock.enabled():
+		return true
+	_held_s += dt
+	return _held_s >= HOLD_MAX_S
 
 
 func playing_count() -> int:

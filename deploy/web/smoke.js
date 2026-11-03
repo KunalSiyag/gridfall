@@ -380,8 +380,24 @@ const OFFLINE = process.env.GF_SMOKE_OFFLINE === "1";
 	await sleep(1000);
 	await page.keyboard.press("ArrowDown"); // Resume -> Save
 	await page.keyboard.press("Enter");
-	// Godot syncs user:// to IndexedDB asynchronously after the file closes.
-	await sleep(6000);
+	// Godot syncs user:// to IndexedDB asynchronously after the file closes, and under the container's software
+	// GL the game runs at about 2 fps, where the file took 17 to 22 s to appear after Enter (0.25 s at 60 fps,
+	// measured on one export): wait for the file itself, not for a fixed time, up to 60 s.
+	const saveFileSeen = () => page.evaluate(() => new Promise((res) => {
+		const r = indexedDB.open("/userfs");
+		r.onerror = () => res(false);
+		r.onsuccess = () => {
+			try {
+				const g = r.result.transaction("FILE_DATA", "readonly").objectStore("FILE_DATA").getAllKeys();
+				g.onsuccess = () => { res(g.result.some((k) => /gridfall_save\.json$/.test(String(k)))); r.result.close(); };
+				g.onerror = () => res(false);
+			} catch (e) { res(false); }
+		};
+	})).catch(() => false);
+	const saveDeadline = Date.now() + 60000;
+	let saveSeen = false;
+	while (Date.now() < saveDeadline && !(saveSeen = await saveFileSeen())) await sleep(500);
+	await sleep(1000);
 	await shot(page, "12-saved.png");
 	const lsBeforeReload = await page.evaluate(() => localStorage.getItem("gridfall.gmi_key"));
 

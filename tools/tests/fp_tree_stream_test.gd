@@ -18,7 +18,7 @@ const Q := preload("res://scripts/fp/render/quality.gd")
 const G := preload("res://tools/tests/fp_tree_geom.gd")
 ## A pass budget no pass spends (ms): whole passes, so the checks do not depend on the clock.
 const UNMETERED := 1.0e9
-## Preset name -> web tier on (the web tier overlays vis_mult 0.55 whatever the preset).
+## Preset name -> web tier on (the "web" row is web Low: vis_mult 0.55, the default tier).
 const PRESETS := {"web": true, "low": false, "medium": false, "high": false}
 
 var fails: Array[String] = []
@@ -247,7 +247,7 @@ func _check_radii() -> void:
 	var probe := CityView.new()
 	probe.fp_mode = true
 	for p: String in PRESETS.keys():
-		var v := Q.vis_mult(p, bool(PRESETS[p]))
+		var v := Q.vis_mult(_preset_of(p), bool(PRESETS[p]))
 		probe.vis_mult = v
 		var win: float = probe._tree_window()
 		var ring: float = probe._tree_ring()
@@ -296,13 +296,18 @@ func _check_boot() -> void:
 	_info("web boot: %d chunks, %d MMIs, %d nodes" % [got.size(), _mmis(view), _nodes(view)])
 
 
+## The preset a row stands for: "web" is the default web tier, web Low (web tiers are per preset).
+func _preset_of(row: String) -> String:
+	return "low" if row == "web" else row
+
+
 ## Every preset: the planted set is the window (a superset up to the hysteresis step after a
 ## shrink), the MMI count follows it, and a vis_mult change re-streams a camera standing still.
 func _check_presets() -> void:
 	var at: Vector2 = view._tree_stream_at
 	var sizes := {}
 	for p: String in ["low", "medium", "high", "web"]:
-		var v := Q.vis_mult(p, bool(PRESETS[p]))
+		var v := Q.vis_mult(_preset_of(p), bool(PRESETS[p]))
 		view.vis_mult = v
 		_finish()
 		await process_frame

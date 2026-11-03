@@ -29,7 +29,7 @@ func _init() -> void:
 	var caps := Q.density_caps(true)
 	_check(
 		(
-			int(caps.get("traffic", -1)) == 12
+			int(caps.get("traffic", -1)) == 8
 			and int(caps.get("crowd", -1)) == 24
 			and int(caps.get("animals", -1)) == 6
 			and int(caps.get("rain", -1)) == 600
@@ -37,12 +37,12 @@ func _init() -> void:
 		),
 		"web tier: caps for traffic, crowd, animals and rain (%s)" % str(caps)
 	)
-	OS.set_environment("GRIDFALL_WEB_CAPS", "traffic=8,bogus=99")
+	OS.set_environment("GRIDFALL_WEB_CAPS", "traffic=5,bogus=99")
 	var tuned := Q.density_caps(true)
 	OS.set_environment("GRIDFALL_WEB_CAPS", "")
 	_check(
 		(
-			int(tuned.get("traffic", -1)) == 8
+			int(tuned.get("traffic", -1)) == 5
 			and int(tuned.get("crowd", -1)) == 24
 			and not tuned.has("bogus")
 		),

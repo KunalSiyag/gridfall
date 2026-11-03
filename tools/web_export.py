@@ -55,6 +55,7 @@ TYPED_LIMITS = ((NORMAL_MAP_RE, 256, 0), (ARM_MAP_RE, 128, 512))
 SHARED_TREES = ("models/real/roads/",)
 UNCAPPED_TREES = ("assets/posters/",)
 UNCAPPED_NAMES = ("poster", "billboard")
+BUS_LAYOUT = "default_bus_layout.tres"
 STAGE_TREES = (
     "assets", "data", "env", "fonts", "models", "scenes", "scripts", "shaders", "sounds", "textures", "ui",
 )
@@ -126,7 +127,11 @@ def stage_project(root: Path, stage: Path, ffmpeg: str = "ffmpeg") -> dict:
     for name in STAGE_TREES:
         if (root / name).exists():
             shutil.copytree(root / name, stage / name)
-    for name in ("project.godot", "export_presets.cfg", "icon.png", "icon.png.import"):
+    # default_bus_layout.tres: the audio buses the game routes into (project setting
+    # audio/buses/default_bus_layout, whose default value is this very path, so project.binary does not
+    # carry it and only the file in the pack makes the buses exist). Without it the web build adds
+    # its buses at runtime and plays silently.
+    for name in ("project.godot", "export_presets.cfg", "icon.png", "icon.png.import", BUS_LAYOUT):
         if (root / name).exists():
             shutil.copy2(root / name, stage / name)
     capped = 0
@@ -403,6 +408,10 @@ LOADER_CSS = """#status-progress { display: none !important; }
 	font: 400 12px/1.4 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
 #gf-bar.gf-stalled #gf-spin { display: none; }
 #gf-bar.gf-stalled #gf-hint { display: block; }
+#gf-sound { display: none; position: fixed; left: 50%; top: 92px; transform: translateX(-50%); z-index: 50;
+	padding: 8px 14px; border-radius: 6px; background: rgba(20, 24, 32, 0.9); color: #f4f6fa; pointer-events: none;
+	font: 500 13px/1.4 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; letter-spacing: 0.01em; }
+#gf-sound.gf-on { display: block; }
 @keyframes gf-spin { to { transform: rotate(360deg); } }
 @keyframes gf-pulse { 50% { opacity: 0.3; } }
 @media (prefers-reduced-motion: reduce) { #gf-spin { animation: gf-pulse 1.8s ease-in-out infinite; } }
@@ -581,6 +590,82 @@ LOADER_HELPER = """
 """
 
 
+## The sound watch. A browser starts a page's Web Audio context suspended until the page has had a
+## gesture, and the game has no click-to-start gate (it boots straight into the street), so a
+## player whose context never runs hears nothing and sees nothing wrong. The watch subclasses
+## AudioContext before the engine creates its context, keeps the instance, and once the veil is up
+## no more and AUDIO_GRACE_MS have passed, shows "Sound is off - click or press any key" while the
+## context is not running. A pointer, key or touch event resumes it and the banner follows the
+## context's statechange. It only reads the context's state; it adds no node to the audio graph.
+## window.gfAudioState() is for probes (tools/web_audio_probe.js). Never throws into the page.
+LOADER_AUDIO_TEXT = "Sound is off - click or press any key"
+LOADER_AUDIO = """
+\t// Sound watch (see tools/web_export.py LOADER_AUDIO).
+\tconst AUDIO_GRACE_MS = 3000;
+\tlet audioCtx = null;
+\tlet audioBorn = 0;
+\tlet audioTimer = 0;
+\tlet audioBanner = null;
+
+\tfunction setAudioBanner(on) {
+\t\ttry {
+\t\t\tif (!audioBanner && on && document.body) {
+\t\t\t\taudioBanner = document.createElement('div');
+\t\t\t\taudioBanner.id = 'gf-sound';
+\t\t\t\taudioBanner.setAttribute('role', 'status');
+\t\t\t\taudioBanner.textContent = '""" + LOADER_AUDIO_TEXT + """';
+\t\t\t\tdocument.body.appendChild(audioBanner);
+\t\t\t}
+\t\t\tif (audioBanner) {
+\t\t\t\taudioBanner.classList.toggle('gf-on', on);
+\t\t\t}
+\t\t} catch (err) {
+\t\t\tconsole.error(err);
+\t\t}
+\t}
+
+\t// Not due until the veil is gone and the grace has passed: until then check again in half a second.
+\tfunction evalAudio() {
+\t\tif (audioCtx === null) {
+\t\t\treturn;
+\t\t}
+\t\tclearTimeout(audioTimer);
+\t\tif (!veilReleased || Date.now() - audioBorn < AUDIO_GRACE_MS) {
+\t\t\taudioTimer = setTimeout(evalAudio, 500);
+\t\t\treturn;
+\t\t}
+\t\tsetAudioBanner(audioCtx.state !== 'running');
+\t}
+
+\tfunction resumeAudio() {
+\t\tif (audioCtx !== null && audioCtx.state !== 'running') {
+\t\t\taudioCtx.resume().catch(() => {});
+\t\t}
+\t}
+
+\ttry {
+\t\tconst NativeAudioContext = window.AudioContext || window.webkitAudioContext;
+\t\tif (NativeAudioContext) {
+\t\t\twindow.AudioContext = class extends NativeAudioContext {
+\t\t\t\tconstructor(...args) {
+\t\t\t\t\tsuper(...args);
+\t\t\t\t\taudioCtx = this;
+\t\t\t\t\taudioBorn = Date.now();
+\t\t\t\t\tthis.addEventListener('statechange', evalAudio);
+\t\t\t\t\tevalAudio();
+\t\t\t\t}
+\t\t\t};
+\t\t}
+\t\tfor (const type of ['pointerdown', 'keydown', 'touchstart']) {
+\t\t\twindow.addEventListener(type, resumeAudio, true);
+\t\t}
+\t} catch (err) {
+\t\tconsole.error(err);
+\t}
+\twindow.gfAudioState = () => (audioCtx === null ? 'none' : audioCtx.state);
+"""
+
+
 def patch_loader_html(html: str) -> str:
     """Give the boot page a branded progress bar instead of Godot's bare <progress> element, and
     keep its overlay up until the game is interactive (window.gfBootDone, or a timeout)."""
@@ -589,7 +674,7 @@ def patch_loader_html(html: str) -> str:
         ("<progress id=\"status-progress\"></progress>",
          "<progress id=\"status-progress\"></progress>\n\t\t\t\t" + LOADER_BAR),
         ("\tconst statusNotice = document.getElementById('status-notice');",
-         "\tconst statusNotice = document.getElementById('status-notice');\n" + LOADER_HELPER),
+         "\tconst statusNotice = document.getElementById('status-notice');\n" + LOADER_HELPER + LOADER_AUDIO),
         ("\t\tstatusNotice.style.display = mode === 'notice' ? 'block' : 'none';",
          "\t\tstatusNotice.style.display = mode === 'notice' ? 'block' : 'none';\n"
          "\t\tif (progressBar) {\n"

@@ -216,6 +216,15 @@ build with the web dead-work change (render_opt builds no occluders there, so th
 `Occlusion culling is disabled at build-time` warning must be gone); older builds log it once per
 boot, so it is off by default.
 
+**Audible check (every redeploy, a real browser or the probe).** Every earlier check ran with the autoplay
+policy off (`--autoplay-policy=no-user-gesture-required`), muted (`--mute-audio`, which the headless probe adds)
+or with the `AudioContext` console lines filtered, so none of them could hear that the build was silent for every
+player (see "Web audio"). Run `NODE_PATH=<dir with playwright-core> node tools/web_audio_probe.js
+https://<public-host>/ <outdir> --gpu`: policy ON, output NOT muted, it must end `AUDIO_PROBE PASS` (destination
+peak over 0.01 within 20 s of boot, context running), and `--suspend` must end `PASS` too (banner and gesture
+resume). Then listen once on the demo laptop: click the game, Esc, Settings, Audio at 100%. A first-person
+frame-pacing run that should be audible takes `GF_FPS_AUDIBLE=1`.
+
 **Street trees are streamed** (docs/fp/slices/G1-streetscape.md, "On foot the chunks are
 streamed"): on the street `CityView/Trees` holds only the chunks around the camera, about 900
 MultiMeshInstance3D at the web tier (not the old 8.7k); the overview plants the whole map over some
@@ -401,6 +410,166 @@ the flag on a split release and expect a complete city.
   non-null. The web build never had a rendering device, so its images stay uncompressed either way;
   no action needed.
 
+## Web audio
+
+**The web build was silent for every player until the default bus layout** (found 2026-11-03: "I don't hear
+sound on web"). Files, import, volumes and the web gating were all fine (120 `.oggvorbisstr` in the pack, real
+amplitude in the decoded buffers, 0 dB defaults). Cause, measured with an instrumented `AudioContext`
+(`tools/web_audio_probe.js`): `audio_feature._make_buses()` called `AudioServer.add_bus` at runtime, and in the
+web's default **Sample** playback mode each added bus makes the engine's JS rewire the graph: it disconnects the
+Master output node from the context's destination and connects it to a bus (Master, SFX, Music ended in a
+cycle with no edge to the destination). The context was `running`, 40 to 46 buffer sources started with real
+audio, and the destination peak was 0.0 from boot to +62 s. Disconnecting Master and reconnecting it to
+the destination made the peak jump to 0.2 to 0.7 at once. (Which C++ call passes the wrong send index is
+inferred, not read from the engine source.) The earlier `invalid bus index -1 in sample_set_volumes_linear` crash
+(#83) was the same runtime bus graph.
+
+**The fix:** `default_bus_layout.tres` (project root, named by `[audio] buses/default_bus_layout`) declares
+Music, SFX, Ambience and UI, each sending to Master, with the low-pass on Music and the reverb and hard
+limiter on SFX that `_make_buses()` adopts; it adds only a bus that is missing (and warns on the web). No bus is
+created while the game runs. Two traps found on the way: the setting's **default value is that very path**, so
+`project.binary` does not list it and only the file in the pack makes the buses exist, and
+`tools/web_export.py` stages named trees plus a few root files, so the layout had to be added to that list
+(`BUS_LAYOUT`; `tools/pytests/test_web_audio.py` reads the pack and fails when it is missing).
+
+**Measured on a local export of the fix** (headless Chrome with a GPU, policy `document-user-activation-required`,
+no `--mute-audio`, one click, then W held): context `running`, destination peak 0.49 before any gesture, 0.56
+at the end, first sound 0.1 s after `GRIDFALL: boot complete`; the same probe on the previous image: peak 0.0000
+in all 456 samples, exit 1. The layout alone made it audible, with its effects inside (Sample mode ignores
+effects, so the pause low-pass and the street reverb do nothing in the browser; unmeasured, from Godot's
+documented sample limitation). **Stream playback** (`audio/general/default_playback_type.web=0`, which
+mixes in the worklet and makes the effects work) was therefore not needed and not shipped: it moves mixing onto
+a cost that is unmeasured on the street (main thread bound at 15 ms), the layout fix costs nothing.
+
+**If the game is silent again**, in this order: run `tools/web_audio_probe.js` (exit 1 and `peak=0.0000`
+is this bug class: look for `audio bus ... is not in the default layout` in the console and a bus
+created at runtime); the console shows `Sound is off - click or press any key` on screen when the browser
+holds the context suspended (the loader's sound watch, `LOADER_AUDIO` in `tools/web_export.py`: it
+resumes the context on a click, key or touch and hides the banner; it reads the state and adds no node to the
+graph). Owner-side checks once the probe passes: the tab's speaker icon (right-click, Unmute site), the OS
+output device, Esc, Settings, Audio at 100%, and `new AudioContext().state` printing `running` in DevTools.
+
+**Sound and boot.** The long beds (six area loops) and the two music stems used to start inside the boot task,
+75 to 190 ms each for the first `play()`. They now wait for the loader veil (`BootClock` finished) and start one
+per frame (`Ambience.MAX_STARTS_PER_STEP`, `AudioDirector._start_next_stem`); a boot that never finishes
+releases them after 10 s. Measured in `GF_BOOT` on local exports, same machine: the `setup:audio` stage fell
+from 626 ms (previous image) to 37 to 47 ms (three boots). **The cost moved, it did not vanish:** the first
+`AUDIOSEC` window of a run read `ambience` 200 ms for its slowest frame (a bed's first `play()` right after the
+veil lifts), so the first second of play can hitch once per bed started; a 0.5 s spacing between starts would
+spread it if that is seen in play. The audio feature prints an `AUDIOSEC` line every 10 s (flag
+`web_first_use_marks`) with the slowest frame of each section, which the FPS probe collects as
+`audio_sections` (web-probe-kit.md): the audio-off ablation had cut frames over 34 ms from 4.5% to 0.5%, and
+that line says which section holds them. **Where the slow audio frames come from** (day-10 grown city, GPU
+Chrome, `AUDIOSEC` next to the `FIRSTUSE play:` stopwatches of the same run): the **first `play()` of each long
+stream**, which decodes and registers all of it in Sample mode: 187 ms (the 63 s residential loop), 125 ms
+`park_birds`, 113 ms `traffic_hum`, 81 ms `night_insects`, 74 to 78 ms for each music stem, then 46 ms
+`construction_loop`, 12 ms `fountain_loop`, 10 ms `plant_hum` and `siren_two_tone` (the positional emitters:
+they surface as the `emitters` section, `refresh_score` up to 47 ms, in the refresh that assigns a player to a
+source for the first time). Later plays of the same stream read 7 to 29 ms. Only the beds and stems are moved
+here (above); the emitters' loops would need the same treatment (play them once, silent, behind the veil) and
+that was not done: the cost is the stream's length, so a per-refresh limit would only spread it.
+
+**What sound costs the street.** With the graph connected the browser now renders the mix (a disconnected graph
+is not pulled, so the old build skipped it). Street frames on the day-10 save, `GF_FPS_AUDIBLE=1`, same box, busy
+ms p50 (main thread): previous image 15.3 / 15.7 / 15.4, the fix 16.4 / 15.4 (a third run died on the WebGL2 start
+failure described in web-probe-kit.md); draws 2,079 to 2,057 against 2,058 (traffic 12 to 8). No difference
+beyond the run-to-run spread (the first run of the fix read +1.1 ms and its repeat did not): the audio thread's
+work is not on the main thread. Re-check on a 2-core box before the demo.
+
+## Planner stalls, autosave and the web quality tiers
+
+**Planner (orbit) stalls.** On a day-10 grown city the Planner showed three CPU-only stalls of 540 to 670 ms
+in every 12 s window (`gl_ms` about 1 ms, no shader builds; the kit's hitch frames carried the `day_bell` and
+`save` marks). Two causes, both fixed: (1) `SimPerfFeature.teardown()` set `CitySim.sliced = false` when
+leaving first person, so the Planner ran whole `step_tick()`s; on the web it now **keeps `sliced` on** at a 4 ms
+budget (`ORBIT_BUDGET_MS`, whatever preset the street ran at; the desktop still turns it off). (2)
+`Main` autosaved at every morning tick, and the Planner's game day is 12 s: `save:stringify` alone was 95 ms
+at day 10. A **morning autosave inside 60 s of wall clock of the last one is deferred, not dropped**
+(`Main.AUTOSAVE_MIN_GAP_S`, `Main.autosave_wait_s()`): the due flag stays set and the save runs on the first frame
+after the gap, because on the web a closing tab never reaches the quit autosave and the morning save is the only
+persistence there (at most about a minute of play can be lost, not whole days). The quit save and manual saves always
+go through. `fp_orbit_slicing_test` covers both, with a fake clock (`Main.autosave_clock`) and with the production
+`Time.get_ticks_msec`.
+
+**Measured** (`tools/web_fps_probe.js`, rows street and orbit, headless Chrome on an AMD GPU through ANGLE, the
+day-10 grown save, a 15 s Planner window, the previous image against the fix, same commit otherwise, one run
+each): frame intervals in the Planner, previous image: p99 517 ms, stalls of 650, 517 and 450 ms besides the
+1,383 ms entry frame; with the fix: p99 100 ms, the worst frames after the entry 133 and 100 ms, entry frame
+1,333 ms (the first-use shader builds of the Planner's first frames, not the sim: another unit's). 18.3 fps became
+19.8, still vertex-bound (21,900 draws). The save's 94 ms `save:stringify` showed once in the previous run's
+window and not in the fix's (its first morning save did not fall inside the window): the 60 s gap is
+exercised by the unit test, not by this run. The exit_fp / enter_fp round trip stayed clean (exit 0).
+
+**Web quality tiers.** `Quality.WEB` used to be merged over every preset, so Low, Medium and High looked
+the same in the browser (measured: street cb 15.1 / 15.3 / 16.1 ms, identical Planner GPU) and the pause
+menu's Display tab did nothing there. The overlay is now per tier (`Quality.WEB_TIERS`), and the browser starts
+on Low (`GpuMemory`: "web browser"), so **Low is exactly what shipped** (scale 0.6, atlas 1024, vis 0.55, far 35,
+lod 2.5, 4 street lights):
+
+| tier | scale | shadow atlas | vis | far | lod | street lights |
+| --- | --- | --- | --- | --- | --- | --- |
+| Low (default) | 0.6 | 1024 | 0.55 | 35 | 2.5 | 4 |
+| Medium | 0.7 | 1024 | 0.70 | 40 | 2.0 | 5 |
+| High | 0.8 | 2048 | 0.85 | 45 | 1.5 | 6 |
+
+Medium and High are for a good GPU and are a "sharper pixels" knob, not a speed-up. Measured on the day-10 save
+(`tools/web_fps_probe.js`, one run per tier, AMD GPU through ANGLE): the street's busy p50 was 16.1 ms at Medium and
+17.4 ms at High (about 1 ms over Low), with 2,066 draws at Low and 3,284 at High (+59%, fps 51.8 to 49.7); the **Planner is unchanged
+by the tier** (busy p50 44.6 / 41.4 / 42.2 ms, 22.2k draws at each): it is vertex-bound, and nothing in the tiers
+touches its geometry. A player who saved High or Medium before the tiers were real (those presets were no-ops in the
+browser) now gets what they chose, about +1 ms on this GPU and more on a 2-core box (inferred); the pause menu's
+Display tab puts them back on Low. A 0.5 "escape hatch" tier for weak
+GPUs is not in the table because the default had to stay at today's look: add a fourth name rather than moving
+Low. `WEB_DENSITY["traffic"]` is 8 (was 12; the whole traffic feature measured 2.5 ms of a 15 ms street frame
+at day 10); crowd 24, animals 6 and rain 600 are unchanged.
+
+## Shadow stripes on roads and sidewalks (the lines on the ground)
+
+**Symptom** ("what are these lines on the ground?"): fine horizontal and arc-shaped stripes on the road and
+the sidewalk seen from the street, **clear sky only** (overcast light casts no sun shadow). They are sun
+shadow-map acne on Compatibility: the road and sidewalk pieces cast shadows and shade themselves. Measured
+before the fix with the street's sun at normal bias 0.6 and depth bias 0.02, atlas 1024, scale 0.6, SSAO off.
+Removed by a larger normal bias (and by depth bias 0.2, shadow reach 0.05, roads not casting, sun off); unchanged
+by a 4096 atlas, MSAA, anisotropy, glow, fog, the quality preset or 3D scale 1.0; worse at bias 0. The earlier
+lines fix covered the overview camera only (`COMPAT_AERIAL_NORMAL_BIAS`) and its probes stood on the plaza or on a
+grey day.
+
+**The fix:** `Quality.COMPAT_STREET_NORMAL_BIAS = 1.5` (`Quality.street_normal_bias()`), applied where the street
+light profile sets the sun (`LightProfile.apply`); Forward+ keeps 0.6, depth bias stays 0.02 on both
+(`fp_street_bias_test`). Free: no frame cost.
+
+**Why 1.5, the smallest that clears.** Clear-sky street poses of the grown bank save (a junction with the hero,
+and the road from first person), the same camera at each value, canvas screenshots on a local export (headless
+Chrome, ANGLE AMD GPU, Compatibility), looked at side by side:
+
+| sun (street clock) | 0.6 (before) | 1.0 | 1.5 | 2.0 |
+| --- | --- | --- | --- | --- |
+| 07:30 (the first-day start) | strong stripes on road and sidewalk | faint stripes remain on both | clean | clean |
+| 10:45 | strong arcs on sidewalk, stripes on road | clean | clean | clean |
+| 13:00 | stripes | clean | clean | clean |
+| 16:48 | strong stripes | faint stripes remain | clean | clean |
+
+1.0 clears the 10:45 pose the investigators measured but leaves residue at the low sun of the morning (07:30,
+what every new player sees first) and the evening, so 1.5; 2.0 looked the same as 1.5. Band-pass energy
+(`web_probe_kit.js` `dogRms`, grey levels, rms of luminance blurred at 1.5 px minus 5 px, in boxes on the road and
+the sidewalk) at 0.6 / 1.0 / 1.5 / 2.0, first-person road pose: 07:30 sidewalk 3.76 / 2.14 / 1.01 / 0.95 (sun-off
+floor 0.97), road 3.28 / 3.23 / 3.21 / 3.20 and 4.46 / 4.29 / 4.18 / 4.16; 10:45 road 3.14 / 2.39 / 2.39 / 2.39
+and 3.63 / 2.81 / 2.81 / 2.81; 13:00 road 3.27 / 2.51 / 2.51 / 2.51. The metric includes the asphalt's own
+texture, so on roads it moves by a fraction of the total (it is a comparison between values on one pose, not an
+absolute floor), and at 16:48 long building shadows dominate it: the screenshots decided, the numbers back them.
+Run-to-run noise from traffic and pedestrians in the box is about 0.15.
+
+**What it costs:** the bias lifts the lookup off every surface, so very thin or low casters lose a little
+shadow strength. Looked at on the junction pose: the hero's shadow on the road, the bollard's, the lamp pole's
+and the shadow under the cars are all still there at 1.5; the stepped edge of the curb's shadow (hard shadow
+resolution, not acne) is the same at 0.6 and at 3.0.
+
+**Check it** with the probe: `result.json` `stripes` (web-probe-kit.md, "Stripes") is the clear-sky stripe pose of a
+fresh profile (day 1 is clear by construction, so a grey day cannot hide the acne); the probe exits 7 when its
+row-profile reading passes 2.0. Three runs on the fix read 0.71 to 1.19, three on a build with the old bias (0.6) read
+2.75 to 2.99. It is skipped under `GF_FPS_SAVE` (the sky is then the save's weather), so a seeded run never checks it:
+run the default run once per release too.
+
 ## Known limitations (web / gl_compatibility)
 
 - **No ambient occlusion in the web build's first-person view (`Quality.ssao_ok`).** On
@@ -475,9 +644,10 @@ the flag on a split release and expect a complete city.
   with `invalid bus index "-1"` in `sample_set_volumes_linear` when real audio buses were up
   (windowed play with audio). The audio buses now stay up across exit and enter, and the audio
   director falls back to Master when a bus is missing; `fp_audio_test` asserts the routing.
-  Headless runs never reproduced the crash, so the real-audio exit/enter has not been run against
-  the current image: the FPS probe's exit/enter round trip (headed Chrome, above) is the check that
-  can. A freeze when leaving first person on a build before 3fccc38 is this bug.
+  Headless runs never reproduced the crash: the FPS probe's exit/enter round trip is the check that can,
+  and it needs the real buses, which the default bus layout now provides from boot (see "Web audio"; the
+  round trip, `GF_FPS_AUDIBLE=1`, ran clean on the layout build: exit 0). A freeze when leaving first person on a build before
+  3fccc38 is this bug.
 - **Night matches Forward+'s brightness, not its picture** (`SkyDirector.COMPAT_LOOK`, night half).
   Street-half mean luma against Forward+ at 23:00 in the frozen-city street poses: 1.00x clear,
   0.97x on wet streets under a clear sky, 0.89x in soaked rain; the planner view at its default
