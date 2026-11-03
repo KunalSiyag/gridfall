@@ -1,9 +1,9 @@
 extends FpFeature
-## City sound on foot (slice I). Creates the Music, SFX, Ambience and UI buses the first time the
-## hero goes on foot and keeps them for the rest of the session: a bus is never removed while the
-## game runs, so no player can be left pointing at a bus that is gone (on the web build a sample
-## on a missing bus throws in the mixer). Puts the AudioDirector's music under the street (set_fp)
-## and runs three parts: positional emitters
+## City sound on foot (slice I). Uses the Music, SFX, Ambience and UI buses of the project's default
+## bus layout (it adds any that is missing, and adopts the effects on them) and keeps them for the
+## rest of the session: a bus is never removed while the game runs, so no player can be left
+## pointing at a bus that is gone (on the web build a sample on a missing bus throws in the mixer).
+## Puts the AudioDirector's music under the street (set_fp) and runs three parts: positional emitters
 ## (engines, horns, sirens, construction, fire, fountains, plants, the river, passers-by's steps,
 ## the player's car crashing, the street props it knocks over and its doors, people hit in the
 ## street, the hero's swings, rolls and the blows they take (a blow's thump panning toward where
@@ -256,6 +256,34 @@ func reset_section_stats() -> void:
 	section_us_max.clear()
 
 
+## Seconds between the AUDIOSEC console lines (web with web_first_use_marks on, see FirstUse).
+const SECTION_LOG_S := 10.0
+var _sec_log_t := 0.0
+## Printed lines, newest last (tests).
+var sections_logged: Array[String] = []
+
+
+## Every SECTION_LOG_S the slowest frame of each section since the last line, in ms, as one console
+## line `AUDIOSEC {"ms":{"falls":..,"emitters":..,"ambience":..}}`, then the maxima restart. Only
+## numbers and fixed section names. tools/web_fps_probe.js reads it next to the frame log, to say
+## which section holds a slow audio frame.
+func _log_sections(dt: float) -> void:
+	if not FirstUse.active():
+		return
+	_sec_log_t += dt
+	if _sec_log_t < SECTION_LOG_S:
+		return
+	_sec_log_t = 0.0
+	var ms := {}
+	for k: String in section_us_max:
+		ms[k] = snappedf(float(section_us_max[k]) / 1000.0, 0.01)
+	var line := "AUDIOSEC " + JSON.stringify({"ms": ms})
+	if sections_logged.size() < 16:
+		sections_logged.append(line)
+	print(line)
+	section_us_max.clear()
+
+
 func _section(name: String, t0: int) -> int:
 	var now := Time.get_ticks_usec()
 	var us := now - t0
@@ -290,6 +318,7 @@ func step(dt: float) -> void:
 		var wet := lerpf(REVERB_WET_OPEN, REVERB_WET_URBAN, ambience.urban)
 		sfx_reverb.wet = lerpf(sfx_reverb.wet, wet, minf(dt * 0.5, 1.0))
 	_section("duck_reverb", t)
+	_log_sections(dt)
 
 
 ## Plays a UI cue on the UI bus (chat blip, stinger).
@@ -670,10 +699,17 @@ func _link(sig: Signal, c: Callable) -> void:
 		_links.append([sig, c])
 
 
+## The four buses come from the project's default bus layout (default_bus_layout.tres: Music, SFX,
+## Ambience and UI sending to Master, with the low-pass, reverb and limiter this adopts): on the web
+## build a bus added at runtime leaves the Master output disconnected from the AudioContext and the
+## game plays silently (docs/runbooks/web-deploy.md, "Web audio"). Anything missing is still added,
+## so a project without the layout keeps working on the desktop.
 func _make_buses() -> void:
 	for b in BUSES:
 		if AudioServer.get_bus_index(b) >= 0:
 			continue
+		if WebSupport.is_web():
+			push_warning("GRIDFALL: audio bus %s is not in the default layout (silent on the web)" % b)
 		AudioServer.add_bus()
 		var i := AudioServer.bus_count - 1
 		AudioServer.set_bus_name(i, b)

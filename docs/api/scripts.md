@@ -22,6 +22,7 @@ Dynamic ACE-Step 1.5 soundtrack crossfader & crisis SFX director. Crossfades bet
 - `SFX_ALERT_PATH = "res://sounds/gridlock_alert.wav"`
 - `SFX_RECOVERY_PATH = "res://sounds/upgrade_chime.wav"`
 - `SFX_DAY_BELL_PATH = "res://sounds/day_bell.wav"`
+- `STEM_HOLD_MAX_S = 10.0`: A boot that never finishes (BootClock) must not leave the city without its music.
 - `TICK_MIN_GAP = 10.0`: Shortest gap between two blackout ticks, in seconds of director time.
 - `FP_MUSIC_OFFSET_DB = -8.0`: On foot: music offset under the street sound, the buses used and the UI cue trim.
 - `FP_MUSIC_BUS = &"Music"`
@@ -104,6 +105,7 @@ GridFall: a SimCity-style city run by five autonomous GMI Cloud AI mayors. Wires
 - `FirstDay = preload("res://scripts/fp/first_day.gd")`
 - `WELCOME_TOAST = "Welcome to GridFall. WASD to walk, Tab for the city overview, Enter to chat, M for the...`: The street's boot toasts that main.gd owns (fp_hud_test measures them against the toast width).
 - `WELCOME_BACK = "Welcome back: Day %d. New city in the pause menu starts over."`
+- `AUTOSAVE_MIN_GAP_S = 60.0`: A morning autosave closer than this to the last autosave (wall clock) is skipped: the Planner's game day is 12 s and a save costs 100 ms or more of stringify at day 10, an avoidable stall every day. Quit and manual saves always go through.
 
 ### Properties
 
@@ -112,11 +114,13 @@ GridFall: a SimCity-style city run by five autonomous GMI Cloud AI mayors. Wires
 - `pack_stream: WebPackStream`: Web background packs (split builds). Always present; inert off the web / on unsplit builds.
 - `autosave_enabled: bool`: Autosaves (the first tick of each morning, quitting) are on only in normal play: tool runs, tests and the benchmark never touch the player's city.
 - `autosave_path: String`: Where autosaves go, and where a normal launch continues from; tests point it away from the player's slot.
+- `autosave_clock: Callable`: Wall clock in ms for the autosave gap; tests swap in a fake one.
 
 ### Functions
 
 - `func save_game(path: String = SAVE_PATH) -> bool`
-- `func autosave(reason: String) -> bool`: Saves the city to autosave_path while autosave_enabled. reason: "morning" (a small toast) or "quit" (silent: the window is closing).
+- `func autosave(reason: String) -> bool`: Saves the city to autosave_path while autosave_enabled. reason: "morning" (a small toast; skipped when the last autosave is under AUTOSAVE_MIN_GAP_S old; _process retries it once the gap has passed) or "quit" (silent: the window closes).
+- `func autosave_wait_s() -> float`: Seconds until a morning autosave may run again (0 when it may run now): the rest of the AUTOSAVE_MIN_GAP_S since the last autosave, on autosave_clock.
 - `func quit_game() -> void`: The pause menu's Quit: saves the city, then quits.
 - `func load_game(path: String = SAVE_PATH) -> bool`
 - `func new_game() -> void`

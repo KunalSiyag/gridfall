@@ -5,9 +5,13 @@ extends FpFeature
 
 ## Sliced sim work per frame (ms) by quality preset.
 const BUDGET_MS := {"low": 3.0, "medium": 4.0, "high": 5.0}
+## Sliced work per frame (ms) in the Planner on the web, whatever preset the street ran at.
+const ORBIT_BUDGET_MS := 4.0
 ## D11: no frame may stall longer than this because of the sim, residents or minds.
 const STALL_LIMIT_MS := 50.0
 
+## Tests set this to run the web path on the desktop.
+var force_web: bool = false
 var _sim: CitySim
 
 
@@ -30,8 +34,18 @@ func teardown() -> void:
 	if ctx != null and ctx.bus != null and ctx.bus.quality_changed.is_connected(_apply_quality):
 		ctx.bus.quality_changed.disconnect(_apply_quality)
 	if _sim != null and is_instance_valid(_sim):
+		if keeps_slicing():
+			# The Planner on the web keeps the slices: whole ticks there stalled the page for
+			# 540-670 ms (three per 12 s day, measured at day 10).
+			_sim.slice_budget_ms = ORBIT_BUDGET_MS
+			return
 		# The setter finishes a tick in flight, so the orbit view never inherits half a tick.
 		_sim.sliced = false
+
+
+## Whether the orbit view keeps CitySim.sliced on after teardown: the browser build does.
+func keeps_slicing() -> bool:
+	return force_web or WebSupport.is_web()
 
 
 ## The sim's per-pump timings (CitySim.slice_stats()), for G2's bench and the HUD.

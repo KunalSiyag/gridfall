@@ -74,8 +74,13 @@ static func normalize(preset: String) -> String:
 static func knobs(preset: String, web: bool = false) -> Dictionary:
 	var k: Dictionary = PRESETS[normalize(preset)].duplicate()
 	if web_mode(web):
-		k.merge(WEB, true)
+		k.merge(web_knobs(preset), true)
 	return k
+
+
+## The web tier's overlay for a preset (unknown names give the default preset's).
+static func web_knobs(preset: String) -> Dictionary:
+	return WEB_TIERS[normalize(preset)]
 
 
 ## The Compatibility renderer (the web build) has no FSR2: on the desktop GL driver setting it
@@ -88,10 +93,13 @@ const COMPAT := {
 	"high": {"scale": 1.0, "msaa": Viewport.MSAA_4X},
 }
 
-## The web tier's render knobs (flag web_quality), below Low: the browser build auto-selects
-## Low (fp_mode's GpuMemory probe) and this overlay cheapens it further — the 2-core web box
-## cannot feed Low's scaling, shadow atlas and ranges at a steady frame rate. Merged over the
-## preset inside knobs() when web_mode() is on; desktop runs never see it.
+## The web tier's render knobs (flag web_quality), per preset. The browser build starts on Low
+## (GpuMemory: "web browser"), so Low is the tier every web player has been seeing and stays exactly
+## what it was: the 2-core web box cannot feed more at a steady frame rate. Medium and High spend
+## the headroom a good GPU has for sharper pixels and longer ranges (measured: 1080p over 900p costs
+## the street only about +0.8 ms GPU and +1.0 ms CPU); the player picks them in the pause menu.
+## Merged over the preset inside knobs() when web_mode() is on; desktop runs never see it. Every
+## knob rises from Low to High (fp_quality_tiers_test).
 const WEB := {
 	"scale": 0.6,
 	"atlas": 1024,
@@ -100,10 +108,27 @@ const WEB := {
 	"lod": 2.5,
 	"lights": 4,
 }
+const WEB_MEDIUM := {
+	"scale": 0.7,
+	"atlas": 1024,
+	"vis": 0.7,
+	"far": 40.0,
+	"lod": 2.0,
+	"lights": 5,
+}
+const WEB_HIGH := {
+	"scale": 0.8,
+	"atlas": 2048,
+	"vis": 0.85,
+	"far": 45.0,
+	"lod": 1.5,
+	"lights": 6,
+}
+const WEB_TIERS := {"low": WEB, "medium": WEB_MEDIUM, "high": WEB_HIGH}
 ## Density ceilings the web quality tier publishes for the traffic, crowd, animal and rain owners
 ## to clamp their budgets to; each owner tunes its own number with before/after evidence (FPS for
 ## the first three, streak pixels in screenshots for the rain emitter's particle count).
-const WEB_DENSITY := {"traffic": 12, "crowd": 24, "animals": 6, "rain": 600}
+const WEB_DENSITY := {"traffic": 8, "crowd": 24, "animals": 6, "rain": 600}
 
 ## Browser pacing: physics catch-up steps a frame may run, below the engine default of 8. The
 ## browser build pays 6-35 ms per physics step, so 8 catch-up steps after a slow frame add more
@@ -206,7 +231,7 @@ static func viewport_knobs(preset: String, method: String = "", web: bool = fals
 	if web_mode(web):
 		# The web tier scales below COMPAT Low; the bilinear pass has no TAA to hide aliasing,
 		# but MSAA costs more than it earns at 0.6 scale on the 2-core web box.
-		out["scale"] = float(WEB["scale"])
+		out["scale"] = float(web_knobs(preset)["scale"])
 		out["msaa"] = Viewport.MSAA_DISABLED
 	return out
 
@@ -235,18 +260,18 @@ static func ssao_ok(preset: String, method: String = "", web: bool = false) -> b
 	return float(viewport_knobs(preset, method, web)["scale"]) >= 1.0
 
 
-## Multiplier on every WS.VIS_* range: 0.7 / 1.0 / 1.3 (0.55 in the web tier).
+## Multiplier on every WS.VIS_* range: 0.7 / 1.0 / 1.3 (0.55 / 0.7 / 0.85 in the web tiers).
 static func vis_mult(preset: String, web: bool = false) -> float:
 	return float(knobs(preset, web)["vis"])
 
 
-## Street lights G1 keeps lit around the player: 6 / 12 / 16 (4 in the web tier).
+## Street lights G1 keeps lit around the player: 6 / 12 / 16 (4 / 5 / 6 in the web tiers).
 static func max_street_lights(preset: String, web: bool = false) -> int:
 	return int(knobs(preset, web)["lights"])
 
 
-## First-person camera far plane in world units: 45 / WS.CAMERA_FAR (60) / 75 (35 in the web
-## tier).
+## First-person camera far plane in world units: 45 / WS.CAMERA_FAR (60) / 75 (35 / 40 / 45 in the
+## web tiers).
 static func camera_far(preset: String, web: bool = false) -> float:
 	return float(knobs(preset, web)["far"])
 
@@ -332,6 +357,29 @@ static func aerial_normal_bias(preset: String, street: float, method: String = "
 	if is_compat(method):
 		return float(COMPAT_AERIAL_NORMAL_BIAS[normalize(preset)])
 	return street
+
+
+## The sun's shadow normal and depth bias at street level. Forward+ keeps the street profile's own
+## (0.6 and 0.02, tuned for 8 cm kerbs). On Compatibility (the web build) the road and sidewalk
+## pieces cast shadows and shade themselves in fine, tilted stripes and arcs from the street (the
+## lines the owner saw on the ground, clear sky only: overcast light has no sun shadow): shadow-map
+## acne, removed by a larger normal bias. The sweep, the band-pass numbers and the price in
+## contact shadows are in docs/runbooks/web-deploy.md ("Shadow stripes on roads"). The value is
+## the same for every preset. The sweep (0.6 to 2.0) ran at the web Low tier (atlas 1024, scale
+## 0.6); a larger atlas needs less bias, not more, so 1.5 clears Medium and High as well, but their
+## contact shadows were not looked at (the browser starts on Low).
+const STREET_NORMAL_BIAS := 0.6
+const STREET_DEPTH_BIAS := 0.02
+const COMPAT_STREET_NORMAL_BIAS := 1.5
+const COMPAT_STREET_DEPTH_BIAS := 0.02
+
+
+static func street_normal_bias(method: String = "") -> float:
+	return COMPAT_STREET_NORMAL_BIAS if is_compat(method) else STREET_NORMAL_BIAS
+
+
+static func street_depth_bias(method: String = "") -> float:
+	return COMPAT_STREET_DEPTH_BIAS if is_compat(method) else STREET_DEPTH_BIAS
 
 
 ## The street fog end for a preset (light_profile.fog_end's rule, for restoring it on exit).

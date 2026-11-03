@@ -59,6 +59,7 @@ the run with exit 2 and a message: none is ignored.
 | `GF_FPS_SAVE=<path>` | seeds a `gridfall_save.json` first, to measure a grown city (see web-deploy.md) |
 | `GF_FPS_MEMORY=0` | skip process RSS and `measureUserAgentSpecificMemory` |
 | `GF_FPS_RAW=1` | keep every window's raw frames and events in `<outdir>/gl-raw-*.json` |
+| `GF_FPS_AUDIBLE=1` | autoplay policy on and output unmuted, as a player has it (default: policy off, `--mute-audio`); see "Audio" below |
 | `GF_FPS_NO_OCCLUSION=1` | exit 6 when the console shows an `occlusion` line (see web-deploy.md); also counted as `occlusion_lines` |
 
 Exit codes: 0 done; 2 bad knob or crash; 3 the `GF_FPS_SAVE` city was not continued; 4 the round trip below logged an
@@ -293,3 +294,82 @@ millisecond saved, so judge a change by the p50 and `busy_ms`, not by a mean fps
 - `MEMORY_STATIC` and `OBJECT_ORPHAN_NODE_COUNT` read 0 on release web templates, and the bench's
   `PIPELINE_COMPILATIONS_*` counters read 0 on gl_compatibility (they belong to the RenderingDevice), so the
   bench labels them `n/a` there. Count links with this kit instead.
+
+## One tab, bounded waits (the hang)
+
+The probe used to open a second tab for `chrome://gpu` and a third to seed IndexedDB. With another tab in
+front, Chrome stops the game tab's `requestAnimationFrame`: the display-rate sampler and every fps window then
+waited for frames that never came, and the run hung without an error. Now the whole run uses **one tab**
+(`chrome://gpu`, the seed, the Hz sample and the game load one after another in it) and calls `bringToFront()`
+before the rows. The Hz sample (30 s), the boot wait (15 min, then exit 2 with the console in `console.log`) and
+every fps window (its length plus 60 s) are bounded and reject instead of waiting. A run that dies still
+writes `console.log`, and one `GF_FPS_STEP <time> <phase>` line per phase goes to stderr (browser up,
+`chrome://gpu`, seeding, display rate, loading the game, booted, each row, the round trip), so a run that
+stalls says where; `result.json` itself is only written at the end.
+
+A third way to hang is closed. A page whose WebGL2 context cannot be created prints `The following features
+required to run Godot projects on the Web are missing: WebGL2 - Check web browser configuration and hardware
+support` and sits there, and the boot wait looked for a line that would never come (15 minutes, silently). It is
+**intermittent** on this shared machine (2026-11-03: 4 of 9 headless runs with a real GPU, with and without
+`--disable-gpu-vsync --disable-frame-rate-limit`, so those flags are not the cause; a busy GPU process is the
+likely one, not established). The probe now **reloads the page up to twice** when the engine reports it, then
+fails at once (exit 2, the line in the message) instead of waiting out the watchdog. It also no longer creates a
+WebGL context of its own before the engine starts (it did, on a throwaway canvas, to read the renderer string;
+whether that ever contributed is not established): the renderer is read from the game's own canvas after the boot.
+
+With a **reused profile** (`GF_FPS_USER_DATA_DIR`) remember that the orbit round trip at the end autosaves the
+city: the next run on that profile *continues* that city (a later day, other weather, a different density)
+instead of starting day 1. Use a fresh profile for comparable numbers, or seed the same save each time.
+
+## Audio
+
+`tools/web_fps_probe.js` runs with the autoplay policy off and (headless) muted, and the smoke filters
+`AudioContext` console lines: none of them can tell a silent game from a playing one, and the web build
+shipped silent for every player because of it (web-deploy.md, "Web audio"). Two additions:
+
+- `GF_FPS_AUDIBLE=1` runs the probe with the policy on and the output unmuted. It still does not measure sound.
+- **`tools/web_audio_probe.js`** is the audio check. An init script wraps `AudioContext`, routes its destination
+  through a pass-through gain with an `AnalyserNode` and samples the peak every 30 ms. It boots the game with
+  `--autoplay-policy=document-user-activation-required` and **no** `--mute-audio`, clicks once, walks, and exits
+  1 when the destination peak stays under 0.01 for the 20 s after boot or the context is not running (0
+  pass, 2 the game never booted, 3 `--suspend` mode failed). `--suspend` holds the context suspended until a
+  real gesture to prove the "Sound is off - click or press any key" banner and the gesture resume, a case a
+  headless Chrome never hits by itself. One tab, `--gpu` for a real GPU, screenshots (`banner.png`) and
+  `audio-result.json` in the output directory. `node --test tools/tests/web_audio_probe.test.js` covers the
+  verdict and the tap offline; `python -m pytest tools/pytests/test_web_audio.py` reads the export's `.pck`
+  (`GF_WEB_PACK=<index.pck>`, else the newest under `build/web`).
+
+```bash
+NODE_PATH=<dir with playwright-core> GF_AUDIO_CHROME=/opt/google/chrome/chrome \
+  node tools/web_audio_probe.js http://127.0.0.1:8080/ <outdir> --gpu            # sound check
+  ... node tools/web_audio_probe.js http://127.0.0.1:8080/ <outdir> --gpu --suspend  # banner check
+```
+
+`AUDIOSEC {"ms":{...}}` console lines (the game, with flag `web_first_use_marks` on, every 10 s) carry the slowest
+frame of each audio section (`falls`, `emitters` and its `refresh*` and `assigned` parts, `ambience`,
+`footsteps`, `duck_reverb`); the probe's `result.json` has them as `audio_sections` (`max` per section, `worst`).
+
+## Stripes (shadow-map acne on the roads)
+
+`result.json` `stripes` is the **clear-sky stripe pose** (`stripePose` in `web_fps_probe.js`). A fresh profile's day 1
+is clear all day (flag `first_day_opening`), so the sky cannot hide the acne of the street sun, which is how it went
+unseen before (overcast light casts no sun shadow). Straight after boot (about 07:30: the sun is lowest, the pedestrians
+and the HUD cards have not come, the hero has not moved) the probe presses V for the first-person camera, moves the
+mouse down 174 px so the plaza's sidewalk fills the lower frame, screenshots it (`stripes.png`), and puts the camera
+back. Nothing is placed by a hook: only keys and the mouse. It scores the band `STRIPE_BAND` (66 to 84% of the width,
+55 to 72% of the height: the sidewalk right of the fountain, clear of the HUD, the trees and the hero's shadow) with
+`rowProfileRms`: the rms, in grey levels, of the row-mean luminance minus its own smoothing (10 rows). The verdict is
+`stripeVerdict`: `ok` while the reading is at most `STRIPE_MAX` (2.0), and the probe exits **7** when it is not.
+
+Measured through the probe on local exports, three runs of each: **0.71, 1.15 and 1.19** with the fixed street sun
+(normal bias 1.5), **2.75, 2.89 and 2.99** with the bias put back to 0.6 (a build made for that comparison and
+discarded). Both frames were looked at: the old bias shows the owner's horizontal bands across the whole sidewalk
+and paving, the fix is clean. The pose is a fixed early moment on purpose: a later frame (08:00, pedestrians and a
+card in the band) read the old bias at 1.49, below the limit, so do not move the pose to a later time. Skipped, with
+`stripes: {skipped}`, under `GF_FPS_SAVE` (the sky is the save's weather) and with `GF_FPS_STRIPES=0`.
+
+The older band-pass metric `dogRms` (luminance blurred at 1.5 px minus 5 px) stays in `web_probe_kit.js` for stripes
+that tilt or curve (a road seen at an angle), which a row profile averages away. It reads the texture of whatever
+lies in its box: on this plaza pose it did not tell the fix from the old bias (4.77 against 4.87), so the probe does
+not judge with it. Use it only to compare two builds on one pose, never against zero.
+

@@ -699,7 +699,7 @@ function parseRows(spec, fallback) {
 
 const KNOB_NAMES = [
 	"VIEWPORT", "DPR", "KIT", "GLHOOK", "HEADLESS", "CHROME", "CHROME_ARGS", "USER_DATA_DIR", "SETTLE_S",
-	"WINDOW_S", "AB", "MEMORY", "RAW", "ROWS", "FLAGS", "SAVE", "NO_OCCLUSION",
+	"WINDOW_S", "AB", "MEMORY", "RAW", "ROWS", "FLAGS", "SAVE", "NO_OCCLUSION", "AUDIBLE", "STRIPES",
 ].map((n) => "GF_FPS_" + n);
 
 // env: process.env (or a test's table). knownFlags: the flag names of data/feature_flags.json, or null. Every
@@ -731,6 +731,9 @@ function parseKnobs(env, knownFlags) {
 		flags: parseFlags(env.GF_FPS_FLAGS, knownFlags),
 		save: blank(env.GF_FPS_SAVE) ? "" : String(env.GF_FPS_SAVE),
 		noOcclusion: parseBool(env.GF_FPS_NO_OCCLUSION, false, "GF_FPS_NO_OCCLUSION"),
+		audible: parseBool(env.GF_FPS_AUDIBLE, false, "GF_FPS_AUDIBLE"),
+		// The clear-sky stripe pose (stripePose in web_fps_probe.js): on by default, off with GF_FPS_STRIPES=0.
+		stripes: parseBool(env.GF_FPS_STRIPES, true, "GF_FPS_STRIPES"),
 	};
 	if (knobs.abS > 0 && (!knobs.kit || !knobs.glHook)) {
 		throw new Error("GF_FPS_AB compares the WebGL hook on and off: it needs GF_FPS_KIT and GF_FPS_GLHOOK left on");
@@ -997,6 +1000,131 @@ function parseFirstUse(lines) {
 		}
 	}
 	return out;
+}
+
+// The game's console lines (scripts/fp/audio/audio_feature.gd): AUDIOSEC {"ms":{"emitters":0.4,...}}, one every
+// 10 s with the slowest frame of each audio section in ms since the last line (flag web_first_use_marks on).
+// Returns { lines, max: {section: ms}, worst: {section, ms} | null }.
+function parseAudioSections(lines) {
+	const max = {};
+	let n = 0;
+	for (const line of lines) {
+		const m = /AUDIOSEC (\{.*\})\s*$/.exec(String(line));
+		if (!m) continue;
+		try {
+			const rec = JSON.parse(m[1]);
+			if (!rec || typeof rec.ms !== "object" || rec.ms === null) continue;
+			n++;
+			for (const [k, v] of Object.entries(rec.ms)) {
+				if (typeof v === "number" && (!(k in max) || v > max[k])) max[k] = v;
+			}
+		} catch (err) {
+			// a truncated console line is not a record
+		}
+	}
+	let worst = null;
+	for (const [k, v] of Object.entries(max)) if (worst === null || v > worst.ms) worst = { section: k, ms: v };
+	return { lines: n, max, worst };
+}
+
+// ---------------------------------------------------------------------------------------------
+// Stripe metrics. Shadow-map acne on the roads and sidewalks of a clear-sky street (the lines the owner saw) is
+// fine bands that run along the ground. Two metrics, for two different surfaces:
+//   rowProfileRms: for a pose whose stripes run straight across the frame (the plaza's sidewalk, the pose
+//     web_fps_probe.js stripePose looks at): the rms of the row-mean luminance minus its own smoothing.
+//     Measured through the probe (stripePose, three runs of each build): 0.71, 1.15 and 1.19 on the fixed street
+//     sun (normal bias 1.5), 2.75, 2.89 and 2.99 on the old bias (0.6). The pose is taken at one fixed early moment (day 1,
+//     about 07:30): a frame at 08:00 with pedestrians and HUD cards in the band read the old bias at 1.49, below the limit.
+//   dogRms: for stripes that tilt or curve (a road seen at an angle), which a row profile averages away
+//     (it read 0.34 on a striped road and on a clean one): the rms of (gaussian 1.5 px minus gaussian 5 px)
+//     luminance over a region, in 8-bit grey levels. It reads the texture of whatever lies in the region
+//     too, and on the plaza paving it did NOT tell the fix from the old bias (4.77 against 4.87), so it
+//     is a same-pose comparison aid and the probe does not judge with it.
+// ---------------------------------------------------------------------------------------------
+
+function gaussKernel(sigma) {
+	const r = Math.max(1, Math.ceil(3 * sigma));
+	const k = new Float64Array(2 * r + 1);
+	let sum = 0;
+	for (let i = -r; i <= r; i++) { k[i + r] = Math.exp(-(i * i) / (2 * sigma * sigma)); sum += k[i + r]; }
+	for (let i = 0; i < k.length; i++) k[i] /= sum;
+	return k;
+}
+
+// Separable blur with the image edge replicated.
+function blurLuma(a, w, h, sigma) {
+	const k = gaussKernel(sigma);
+	const r = (k.length - 1) / 2;
+	const tmp = new Float64Array(w * h);
+	const out = new Float64Array(w * h);
+	for (let y = 0; y < h; y++) {
+		for (let x = 0; x < w; x++) {
+			let acc = 0;
+			for (let i = -r; i <= r; i++) acc += k[i + r] * a[y * w + Math.min(w - 1, Math.max(0, x + i))];
+			tmp[y * w + x] = acc;
+		}
+	}
+	for (let y = 0; y < h; y++) {
+		for (let x = 0; x < w; x++) {
+			let acc = 0;
+			for (let i = -r; i <= r; i++) acc += k[i + r] * tmp[Math.min(h - 1, Math.max(0, y + i)) * w + x];
+			out[y * w + x] = acc;
+		}
+	}
+	return out;
+}
+
+// lum: w*h luminance (0..255) of a crop that already carries `pad` px of margin on every side (the blur's
+// reach); the rms is taken over the interior only.
+function dogRms(lum, w, h, pad = 12, fine = 1.5, coarse = 5.0) {
+	if (w <= 2 * pad || h <= 2 * pad) throw new Error("dogRms: the crop is smaller than its margins");
+	const a = blurLuma(lum, w, h, fine);
+	const b = blurLuma(lum, w, h, coarse);
+	let n = 0, sum = 0, sum2 = 0;
+	for (let y = pad; y < h - pad; y++) {
+		for (let x = pad; x < w - pad; x++) {
+			const d = a[y * w + x] - b[y * w + x];
+			n++; sum += d; sum2 += d * d;
+		}
+	}
+	const mean = sum / n;
+	return Math.sqrt(Math.max(0, sum2 / n - mean * mean));
+}
+
+// lum: w*h luminance of a crop that carries padY rows of margin above and below (the smoothing's reach). The
+// rms, in grey levels, of each row's mean minus that profile smoothed along y (gaussian `sigma` rows): a
+// ramp or a broad shadow edge is smoothed away, a band a few rows wide is not.
+function rowProfileRms(lum, w, h, padY = 30, sigma = 10) {
+	if (h <= 2 * padY) throw new Error("rowProfileRms: the crop is smaller than its margins");
+	const prof = new Float64Array(h);
+	for (let y = 0; y < h; y++) {
+		let acc = 0;
+		for (let x = 0; x < w; x++) acc += lum[y * w + x];
+		prof[y] = acc / w;
+	}
+	const k = gaussKernel(sigma);
+	const r = (k.length - 1) / 2;
+	let n = 0, sum = 0, sum2 = 0;
+	for (let y = padY; y < h - padY; y++) {
+		let sm = 0;
+		for (let i = -r; i <= r; i++) sm += k[i + r] * prof[Math.min(h - 1, Math.max(0, y + i))];
+		const d = prof[y] - sm;
+		n++; sum += d; sum2 += d * d;
+	}
+	const mean = sum / n;
+	return Math.sqrt(Math.max(0, sum2 / n - mean * mean));
+}
+
+// The stripe pose (web_fps_probe.js stripePose: a fresh profile's clear day 1, first-person camera looking down
+// at the sidewalk and plaza paving of the spawn) and where its acne shows: fractions of the frame, the
+// sidewalk to the right of the fountain, below the horizon and clear of the HUD, the trees and the hero's shadow.
+// STRIPE_MAX sits between the two measurements on this pose (docs/runbooks/web-probe-kit.md, "Stripes").
+const STRIPE_BAND = { x0: 0.66, x1: 0.84, y0: 0.55, y1: 0.72 };
+const STRIPE_MAX = 2.0;
+
+function stripeVerdict(rms, max = STRIPE_MAX) {
+	if (typeof rms !== "number" || !Number.isFinite(rms)) return { rms: null, max, ok: false };
+	return { rms: Math.round(rms * 100) / 100, max, ok: rms <= max };
 }
 
 // Streams this long are the beds and loops that item 15's rule is about.
@@ -1351,7 +1479,7 @@ function rssOfTree(procs, profile) {
 
 module.exports = {
 	KIT_VERSION, installProbe, installSource, hzSampler, parseViewport, parseDpr, parseBool, parseNumber,
-	parseRows, parseFlags, DEFAULT_FLAGS, parseFirstUse, summarizeFirstUse, parseKnobs, KNOB_NAMES, ROWS, percentile, stats, displayHz, passTable, attributeHitches, summarizeWindow,
+	parseRows, parseFlags, DEFAULT_FLAGS, parseFirstUse, parseAudioSections, dogRms, blurLuma, rowProfileRms, stripeVerdict, STRIPE_BAND, STRIPE_MAX, summarizeFirstUse, parseKnobs, KNOB_NAMES, ROWS, percentile, stats, displayHz, passTable, attributeHitches, summarizeWindow,
 	rollupBuilds, rollupDropped, attributeMarks, rollupMarks, leanings, isSoftwareRenderer, coldCache, summarizeOverhead, compareCensus, compareLinks, parsePs, rssOfTree,
 };
 

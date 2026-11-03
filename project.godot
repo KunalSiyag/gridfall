@@ -21,6 +21,10 @@ config/features=PackedStringArray("4.7", "Forward Plus")
 boot_splash/bg_color=Color(0.075, 0.09, 0.133, 1)
 config/icon="res://icon.png"
 
+[audio]
+
+buses/default_bus_layout="res://default_bus_layout.tres"
+
 [display]
 
 window/size/viewport_width=1600

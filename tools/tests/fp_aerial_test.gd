@@ -106,10 +106,13 @@ func _check_aerial_normal_bias(ctx: FpContext, f: Node) -> void:
 	var street := sun.shadow_normal_bias
 	var other := street + 0.15
 	var table: Dictionary = Q.COMPAT_AERIAL_NORMAL_BIAS
-	var fixture := "fixture: the aerial bias of %s (%.1f) is well above the street's %.1f"
+	# The street's own value on Compatibility is the raised one (Q.COMPAT_STREET_NORMAL_BIAS), so
+	# the aerial table is held against the Forward+ street value, and never below the street's.
+	var fixture := "fixture: the aerial bias of %s (%.1f) is well above the Forward+ street's %.1f"
 	for preset: String in Q.NAMES:
 		var v := float(table.get(preset, 0.0))
-		K.check(fails, v > 2.0 * street, fixture % [preset, v, street])
+		var well_above := v > 2.0 * Q.STREET_NORMAL_BIAS and v >= Q.COMPAT_STREET_NORMAL_BIAS
+		K.check(fails, well_above, fixture % [preset, v, Q.STREET_NORMAL_BIAS])
 		var gl := Q.aerial_normal_bias(preset, street, "gl_compatibility")
 		K.check(fails, is_equal_approx(gl, v), "Compatibility takes %s's table value" % preset)
 		var plus := Q.aerial_normal_bias(preset, street, "forward_plus")

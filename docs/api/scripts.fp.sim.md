@@ -13,12 +13,18 @@ Time-sliced sim ticks for first person (slice F). Turns CitySim.sliced on, so gr
 ### Constants
 
 - `BUDGET_MS = {"low": 3.0, "medium": 4.0, "high": 5.0}`: Sliced sim work per frame (ms) by quality preset.
+- `ORBIT_BUDGET_MS = 4.0`: Sliced work per frame (ms) in the Planner on the web, whatever preset the street ran at.
 - `STALL_LIMIT_MS = 50.0`: D11: no frame may stall longer than this because of the sim, residents or minds.
+
+### Properties
+
+- `force_web: bool`: Tests set this to run the web path on the desktop.
 
 ### Functions
 
 - `func feature_id() -> String`
 - `func setup(p_ctx: FpContext) -> void`
 - `func teardown() -> void`
+- `func keeps_slicing() -> bool`: Whether the orbit view keeps CitySim.sliced on after teardown: the browser build does.
 - `func slice_stats() -> Dictionary`: The sim's per-pump timings (CitySim.slice_stats()), for G2's bench and the HUD.
 - `func self_test() -> Dictionary`
