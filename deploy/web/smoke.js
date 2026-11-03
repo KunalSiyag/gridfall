@@ -1,7 +1,8 @@
 // GridFall web build smoke test: a real headless Chromium (SwiftShader WebGL2) against the
 // dockerised Caddy serving build/web (docs/runbooks/web-deploy.md). Verifies: boot, the
 // first-person city, the GMI Cloud key page (apply / remember / forget via localStorage), a
-// bogus key actually being used for live calls (GMI_FAIL console lines, redacted), Save +
+// bogus key actually being used for live calls (GMI_FAIL console lines, redacted; against a MOCK:
+// it says nothing about CORS, see the NOTE in the ctx.route handler below), Save +
 // reload keeping the IndexedDB save ("GRIDFALL: continuing the saved city"), quitting first
 // person to the orbit overview and dropping back down without an uncaught exception
 // (exit_fp once halted the web build on "invalid bus index -1"), and screenshots
@@ -148,6 +149,19 @@ const OFFLINE = process.env.GF_SMOKE_OFFLINE === "1";
 		const auth = (await req.allHeaders())["authorization"] || "";
 		gmiCalls.push({ method: req.method(), path: new URL(req.url()).pathname,
 			hasAuth: auth.length > 0, playerKey: auth === `Bearer ${KEY}` });
+		// NOTE: this allow-list is probably decorative, and nothing here has been observed to enforce it.
+		// Read in playwright-core 1.64.0 (lib/coreBundle.js, the isInterceptedOptionsPreflight branch; the
+		// same code is in 1.63.0 and 1.64.1, and in 1.57.0 it is lib/server/chromium/crNetworkManager.js;
+		// which version this script resolves on the machine that runs it is not recorded, and no run was
+		// made to check): Playwright answers an
+		// intercepted CORS preflight itself and echoes whatever Access-Control-Request-Headers asked
+		// for, so the OPTIONS branch below would never run and a header GMI does not allow would never be
+		// refused. If so this smoke proves nothing about CORS: it would pass while the client sent
+		// User-Agent, X-Request-ID and X-Trace-ID, which GMI's real preflight does not list (measured
+		// 2026-11-03). The recorded smokes (2026-10-28, 2026-11-03) ran with GF_SMOKE_OFFLINE=1, where
+		// no route is installed at all. Check the preflight and the deployed build with
+		// tools/demo_check.sh and the key path with the in-game Test button (docs/runbooks/web-deploy.md,
+		// "Verify the key path").
 		const cors = { "access-control-allow-origin": "*",
 			"access-control-allow-headers": "authorization, content-type" };
 		if (req.method() === "OPTIONS") return route.fulfill({ status: 204, headers: cors });

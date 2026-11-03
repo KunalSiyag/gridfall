@@ -315,7 +315,7 @@ Masks secrets and personal data in text bound for logs and the local ops files: 
 
 class_name `Trace` · extends `RefCounted`
 
-Request and trace ids. A trace groups the calls of one unit of work (the brain's day round): set it with begin() before the calls start and end() after; GmiClient stamps every request with its own request id plus the current trace id (X-Request-ID / X-Trace-ID headers, log records).
+Request and trace ids. A trace groups the calls of one unit of work (the brain's day round): set it with begin() before the calls start and end() after; GmiClient stamps every request with its own request id plus the current trace id (log records, and on desktop the X-Request-ID / X-Trace-ID headers; the web build keeps them local because GMI's CORS preflight does not allow those headers, see GmiClient.request_headers).
 
 ### Functions
 

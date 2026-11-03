@@ -46,8 +46,11 @@ The shell refuses to run when SharedArrayBuffer/isolation is missing; check `Eng
 and do not mask this with a service-worker workaround on this controlled server.
 
 All page resources and worker scripts are same-origin. GMI HTTPRequest uses CORS; COEP does not
-replace CORS or authorize missing API headers. User-key live mayor turn remains a manual user
-check; the operator verifies the keyless replay path and never handles a key.
+replace CORS or authorize missing API headers: GMI's preflight (measured 2026-11-03) allows only
+`Content-Type, Authorization, X-Requested-With, x-gmi-request-id`, so the web build sends just
+`Authorization` and `Content-Type` (`GmiClient.request_headers`). User-key live mayor turn remains a
+manual user check (the in-game **Test** button); the operator verifies the keyless replay path and
+the preflight with `tools/demo_check.sh` and never handles a key.
 
 ## Same-content A/B measurements
 

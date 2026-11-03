@@ -368,7 +368,9 @@ func _refresh() -> void:
 	feed.refresh(where_of, _clock)
 
 
-## "live", "down" (live calls are failing, fallbacks answer) or "offline".
+## "live", "down" (live calls are failing, fallbacks answer) or "offline". The failure ratio only
+## counts once GmiClient.LIVE_BADGE_MIN_OUTCOMES live outcomes are in, so one failed call (a 401,
+## a stray timeout, the first call after boot) keeps the neutral "live" state.
 func _live_state() -> String:
 	var c := ctx.client
 	if c == null or not c.live_enabled:

@@ -236,21 +236,24 @@ The lean on-foot HUD (slice B): named slots the HUD, chat and other slices fill,
 
 class_name `GmiKeyPanel` · extends `VBoxContainer`
 
-The "GMI Cloud" page of the pause menu settings (slice B): the opt-in "bring your own key" field. Without a key the mayors run on the recorded replay cache and the offline planners; pasting one routes every mayor, resident and agent call live, from the player's own browser straight to api.gmi-serving.com (CORS allows it), still only through GmiClient. The key itself is never logged (Redact owns it) and never written to a Godot file; "Remember on this device" (shown in the web build only) saves it in the player's own localStorage, and unchecking it erases that copy again. Esc leaves the field, not the settings page.
+The "GMI Cloud" page of the pause menu settings (slice B): the opt-in "bring your own key" field. Without a key the mayors run on the recorded replay cache and the offline planners; pasting one routes every mayor, resident and agent call live, from the player's own browser straight to api.gmi-serving.com, still only through GmiClient. GMI's CORS preflight lists only some request headers, so the web build sends just Authorization and Content-Type (see GmiClient.request_headers); the Test button makes one real call to show whether a key works here. The key itself is never logged (Redact owns it) and never written to a Godot file; "Remember on this device" (shown in the web build only) saves it in the player's own localStorage, and unchecking it erases that copy again. Esc leaves the field, not the settings page.
 
 ### Constants
 
 - `S = preload("res://scripts/fp/ui/hud_style.gd")`
 - `WebSupport = preload("res://scripts/ops/web_support.gd")`
 - `ROW_H = 44.0`
-- `FIELD_MAX = 128`
+- `FIELD_MAX = 512`: Longest key the field takes. A longer paste used to be cut off silently (a truncated key is a rejected key), so the cap sits well above any key GMI is likely to issue.
 - `OWNER = "gmi_key"`: Owner tag for the whole settings page. Slice B's no-branding rule scans texts it owns (S.OWNER_META == S.OWNER); this page is the pause menu's one place that names the service it configures, like C's chat panel it is left out of that scan (the widgets are re-tagged in setup()).
 
 ### Functions
 
 - `func setup(p_ctx: FpContext) -> void`
 - `func refresh() -> void`: Re-reads the client state (status line and the Remember switch). No key text is ever shown.
-- `func apply_key() -> void`: Puts the field's key into the client (empty clears it) and, on the web, honours the Remember switch: checked saves it on this device, unchecked erases the saved copy.
+- `static func status_line(has_key: bool, live: bool, saved: bool) -> String`: The page's status line: whether a key is in use, whether live play is on, and, only when a key is in use and this device keeps a copy of it, "Key saved on this device".
+- `static func test_line(result: Dictionary) -> String`: Plain words for a GmiClient.test_key() result. Never holds the key: only the status, an HTTP code, the seconds and (for a refused test) the reason.
+- `func run_test() -> void`: The Test button: puts a key typed but not yet applied into use, asks GMI once whether the key works and says so in plain words. One test at a time. A typed key is saved on this device (the Remember switch) only once it has passed: a typo that GMI rejects is not remembered.
+- `func apply_key() -> void`: Puts the field's key into the client (empty clears it) and honours the Remember switch (see _persist): checked saves it on this device, unchecked erases the saved copy.
 - `func forget_key() -> void`: Drops the key from this session and the remembered copy from this device.
 
 ## `scripts/fp/ui/gps_route.gd`

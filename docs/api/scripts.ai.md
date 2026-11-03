@@ -175,6 +175,7 @@ Async GMI Cloud chat client with JSON extraction, a recorded replay cache, and h
 - `BACKOFF_BASE_MS = 500`
 - `BACKOFF_CAP_MS = 4000`
 - `LIVE_WINDOW = 20`: Live outcomes kept for the failure-ratio alert.
+- `LIVE_BADGE_MIN_OUTCOMES = 3`: Fewest live outcomes in the window before live_failure_ratio() reports anything. The street badge turns red ("Reconnecting") above 0.5, and one failed call out of one is 1.0: a single stray timeout, one 401 or the first call after boot must not say the link is down. Three is the least that lets "most of them failed" mean something while an outage still shows within a few calls. The ops alert (data/alert_rules.json, gmi_live_failures, min_calls 6) waits for more on purpose: it interrupts the player, the badge only informs.
 - `RETRY_RESULTS = [HTTPRequest.RESULT_CANT_CONNECT, HTTPRequest.RESULT_CANT_RESOLVE, HTTPRequest.RESULT_C...`: Network results worth another attempt; TLS, redirect, body-size and file errors are not.
 - `RETRY_HTTP = [408, 429, 500, 502, 503, 504]`
 - `REPLAY_CACHE_PATH = "res://data/gmi_replay_cache.json"`
@@ -184,6 +185,10 @@ Async GMI Cloud chat client with JSON extraction, a recorded replay cache, and h
 - `MAX_LOG = 300`
 - `MODEL_EXTRAS = { "deepseek-ai/": {"thinking": {"type": "disabled"}}, "moonshotai/": {"thinking": {"typ...`: Hybrid reasoning models spend the whole token budget thinking unless told not to. Keys are model-id prefixes; values are merged into the request body.
 - `TEMPERATURE = 0.7`: Sampling temperature of every call, unless the model refused it (temperature_of).
+- `KEY_TEST_SYSTEM = "Reply with the single word ok."`: The key test (test_key): a tiny prompt, KEY_TEST_TOKENS tokens, one attempt, and a timeout generous enough for a cold model without leaving the player staring at "Testing".
+- `KEY_TEST_USER = "ping"`
+- `KEY_TEST_TOKENS = 8`
+- `KEY_TEST_TIMEOUT_S = 12.0`
 
 ### Properties
 
@@ -191,6 +196,7 @@ Async GMI Cloud chat client with JSON extraction, a recorded replay cache, and h
 - `breaker`: Opens after 4 consecutive service failures; while open, chat_json goes straight to the cache or heuristic and live_json fails fast with "circuit open".
 - `live_outcomes: Array[bool]`: The last LIVE_WINDOW live outcomes (true = ok), oldest first.
 - `temperature_of: Dictionary`: Models that refused TEMPERATURE (an HTTP 400 naming the temperature) and get 1.0 instead.
+- `web_build: bool`: True in the browser export (_detect_web). An instance variable (not a call in _post) so a test can stand in for the web build; nothing else sets it.
 - `sleep_ms`: Test-only hook for the retry backoff's sleep, in milliseconds. Empty in the game, where the retry loop waits on a SceneTree timer; a test assigns a recorder so the backoff contract is checked exactly instead of through frame-timer timing (a SceneTree timer burns frame deltas, so on a loaded runner one stalled frame can end the wait long before its wall-clock delay). Not wired to any flag or environment switch: nothing outside a test ever sets it.
 
 ### Functions
@@ -202,12 +208,18 @@ Async GMI Cloud chat client with JSON extraction, a recorded replay cache, and h
 - `func forget_remembered_key() -> void`: Drops the Remember tick and the stored key from this device (web build only). The key set with set_player_key stays in memory until cleared or the page closes.
 - `func set_live(enabled: bool) -> void`
 - `func breaker_state() -> String`: "closed", "open" or "half_open" (an open breaker past its cool-down reads half_open).
-- `func live_failure_ratio() -> float`: Share of failed live calls among the last LIVE_WINDOW (0 when none).
+- `func live_failure_ratio() -> float`: Share of failed live calls among the last LIVE_WINDOW. 0 while fewer than LIVE_BADGE_MIN_OUTCOMES calls have been seen: too few to call it a trend.
 - `static func is_retryable(result_code: int, http_code: int) -> bool`: True for failures another attempt may fix: transient network results, 408, 429 and 500/502/503/504.
 - `static func is_service_failure(result_code: int, http_code: int) -> bool`: True when the failure says the service (not the request or the reply) is unhealthy; these count toward opening the breaker.
 - `static func backoff_ms(attempt: int, jitter01: float) -> int`: Delay before retry number attempt (0-based): exponential from BACKOFF_BASE_MS, capped at BACKOFF_CAP_MS, with "equal jitter" (jitter01 in 0..1 picks a point in the upper half).
+- `static func request_headers(key: String, request_id: String, trace_id: String, web: bool) -> PackedStringArray`: The HTTP headers of one chat request. Desktop sends all five. In a browser every header beyond Authorization and Content-Type is a non-safelisted header the preflight must allow, and GMI's CORS answer (measured 2026-11-03: OPTIONS /v1/chat/completions allows Content-Type, Authorization, X-Requested-With and x-gmi-request-id) does not list User-Agent, X-Request-ID or X-Trace-ID, so with them the browser blocks every live call before it leaves. web = true therefore sends only what the preflight allows and needs. The request and trace ids still label the call in the local GMI Log and trace; the web build just cannot put them on the wire.
+- `static func web_headers_active(is_web: bool) -> bool`: True when requests must use the web-safe header set: the browser build with the gmi_web_safe_headers flag on (turn it off if GMI's CORS list ever admits the tracing headers).
+- `static func key_test_model(models: Array) -> String`: The model the key test asks: among models, the one that looks cheapest by its name (a "lite" id, then a "flash" id, then the first). Offline, names are all there is: no price list is read.
+- `static func classify_key_reply(live: Dictionary) -> Dictionary`: The key test's verdict for a _post reply: {"status": "ok" | "rejected" | "rate_limited" | "blocked" | "error", "http": int, "timed_out": bool}. ok is HTTP 200 whatever the body (the key was accepted; the model need not have produced JSON), rejected 401/403, rate_limited 429, blocked a network-level failure with no HTTP answer (in a browser a CORS block and being offline look the same) and error anything else (other HTTP codes, a request that could not be built). timed_out marks the blocked case where the wait ran out instead of the connection failing: a slow or stalled answer is not a CORS block and the panel says so.
 - `func chat_json(role: String, agent_id: String, model: String, system_prompt: String, user_prompt: String, day: int, max_tokens: int, timeout_s: float, heuristic: Callable) -> Dictionary`: Returns {ok, data, source, latency_ms, model, error, raw}. Never fails: falls back to the replay cache (same role/agent, nearest day) and then to the heuristic callable.
 - `func live_json(role: String, agent_id: String, model: String, system_prompt: String, user_prompt: String, day: int, max_tokens: int, timeout_s: float) -> Dictionary`: Live-only call for callers that cache per item themselves (resident batches). Never touches the role-level cache; on failure returns ok=false so the caller can fall back.
+- `func test_refusal() -> String`: Why a key test cannot go out right now: "" when it can, else "no_key", "offline" (GRIDFALL_OFFLINE=1, whose whole meaning is that nothing calls GMI: the same switch _refresh_live honours) or "switched_off" (the gmi_live kill switch).
+- `func test_key() -> Dictionary`: One tiny live call that says whether the key in use works: KEY_TEST_TOKENS tokens to the model key_test_model() picks from ResidentMinds.MODELS, through the same _post (so the same headers). It is the player's own explicit request, so it deliberately ignores the Live toggle and an open breaker, and it leaves no trace in the game: not the breaker, live_outcomes, stats, the log, session_cache or the replay cache. Refused (see test_refusal) without a key, under GRIDFALL_OFFLINE=1 or with the gmi_live kill switch off: nothing is sent and "refused" says why. Returns {"status": "ok" | "rejected" | "rate_limited" | "blocked" | "error", "seconds": float, "http": int, "timed_out": bool, "refused": String} (see classify_key_reply); the key never appears in it.
 - `func remember(key: String, day: int, data: Dictionary) -> void`
 - `func lookup(key: String, day: int) -> Dictionary`
 - `func count_source(source: String, n: int = 1) -> void`

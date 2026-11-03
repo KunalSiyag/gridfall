@@ -3,7 +3,9 @@ extends VBoxContainer
 ## The "GMI Cloud" page of the pause menu settings (slice B): the opt-in "bring your own key"
 ## field. Without a key the mayors run on the recorded replay cache and the offline planners;
 ## pasting one routes every mayor, resident and agent call live, from the player's own browser
-## straight to api.gmi-serving.com (CORS allows it), still only through GmiClient.
+## straight to api.gmi-serving.com, still only through GmiClient. GMI's CORS preflight lists only
+## some request headers, so the web build sends just Authorization and Content-Type (see
+## GmiClient.request_headers); the Test button makes one real call to show whether a key works here.
 ## The key itself is never logged (Redact owns it) and never written to a Godot file; "Remember
 ## on this device" (shown in the web build only) saves it in the player's own localStorage, and
 ## unchecking it erases that copy again. Esc leaves the field, not the settings page.
@@ -12,7 +14,9 @@ const S := preload("res://scripts/fp/ui/hud_style.gd")
 const WebSupport := preload("res://scripts/ops/web_support.gd")
 
 const ROW_H := 44.0
-const FIELD_MAX := 128
+## Longest key the field takes. A longer paste used to be cut off silently (a truncated key is a
+## rejected key), so the cap sits well above any key GMI is likely to issue.
+const FIELD_MAX := 512
 ## Owner tag for the whole settings page. Slice B's no-branding rule scans texts it owns
 ## (S.OWNER_META == S.OWNER); this page is the pause menu's one place that names the service it
 ## configures, like C's chat panel it is left out of that scan (the widgets are re-tagged in
@@ -23,9 +27,13 @@ var ctx: FpContext
 var input: LineEdit
 var apply: Button
 var forget: Button
+var test_button: Button
 var status: Label
 var remember: Array[Button] = []
 var _remember_group := ButtonGroup.new()
+var _testing := false
+## A key Test put into use that has not passed yet (so is not saved on this device); "" otherwise.
+var _unsaved_key := ""
 
 
 func setup(p_ctx: FpContext) -> void:
@@ -71,6 +79,7 @@ func setup(p_ctx: FpContext) -> void:
 	input.custom_minimum_size = Vector2(230, 34)
 	_style_edit(input)
 	input.text_submitted.connect(func(_t: String) -> void: apply_key())
+	input.text_change_rejected.connect(_on_text_rejected)
 	field.add_child(input)
 	apply = S.pill_button("Apply", 14)
 	apply.custom_minimum_size = Vector2(88, 32)
@@ -87,6 +96,11 @@ func setup(p_ctx: FpContext) -> void:
 	forget.custom_minimum_size = Vector2(88, 32)
 	forget.pressed.connect(forget_key)
 	tools.add_child(forget)
+	test_button = S.pill_button("Test", 14)
+	test_button.name = "TestKey"
+	test_button.custom_minimum_size = Vector2(88, 32)
+	test_button.pressed.connect(run_test)
+	tools.add_child(test_button)
 	if WebSupport.is_web():
 		# Desktop builds have nothing to remember across runs (the boot key comes from the
 		# environment or ~/.factory/settings.json), so the switch only exists in the browser.
@@ -137,38 +151,112 @@ func refresh() -> void:
 	if client == null:
 		status.text = "GMI client not available."
 		return
-	if client.has_key():
-		status.text = (
-			"Key in use. Live mayors: %s."
-			% ("on" if client.live_enabled else "off (offline switch or flag)")
-		)
-	else:
-		status.text = "No key: recorded days and offline planners."
+	status.text = status_line(
+		client.has_key(), client.live_enabled, client.has_key() and client.has_remembered_key()
+	)
 	if not remember.is_empty():
 		var on := client.has_remembered_key()
 		for b: Button in remember:
 			b.set_pressed_no_signal(bool(b.get_meta("value")) == on)
 
 
-## Puts the field's key into the client (empty clears it) and, on the web, honours the Remember
-## switch: checked saves it on this device, unchecked erases the saved copy.
+## The page's status line: whether a key is in use, whether live play is on, and, only when a key
+## is in use and this device keeps a copy of it, "Key saved on this device".
+static func status_line(has_key: bool, live: bool, saved: bool) -> String:
+	if not has_key:
+		return "No key: recorded days and offline planners."
+	var line := "Key in use. Live mayors: %s." % ("on" if live else "off (offline switch or flag)")
+	return line + " Key saved on this device." if saved else line
+
+
+## Plain words for a GmiClient.test_key() result. Never holds the key: only the status, an HTTP
+## code, the seconds and (for a refused test) the reason.
+static func test_line(result: Dictionary) -> String:
+	var http := int(result.get("http", 0))
+	match str(result.get("status", "")):
+		"ok":
+			return "Key works (answered in %.1f s)" % float(result.get("seconds", 0.0))
+		"rejected":
+			return "Key rejected (%d)" % http
+		"rate_limited":
+			return "Rate limited, try again in a minute"
+		"blocked":
+			if bool(result.get("timed_out", false)):
+				return "No answer from GMI in %.0f s, try again" % float(result.get("seconds", 0.0))
+			return "Blocked by the browser or offline"
+	match str(result.get("refused", "")):
+		"no_key":
+			return "Paste a key first."
+		"offline":
+			return "The offline switch is on, so nothing calls GMI."
+		"switched_off":
+			return "Live calls are switched off in this build."
+	if http > 0:
+		return "GMI answered an error (HTTP %d)" % http
+	return "Could not reach GMI"
+
+
+## The Test button: puts a key typed but not yet applied into use, asks GMI once whether the key
+## works and says so in plain words. One test at a time. A typed key is saved on this device (the
+## Remember switch) only once it has passed: a typo that GMI rejects is not remembered.
+func run_test() -> void:
+	var client: GmiClient = ctx.client if ctx != null else null
+	if client == null or _testing:
+		return
+	var typed := input.text.strip_edges()
+	if not typed.is_empty() and typed != client.player_key:
+		client.set_player_key(typed)
+		_unsaved_key = typed
+	var refusal := client.test_refusal()
+	if not refusal.is_empty():
+		status.text = test_line({"refused": refusal})
+		return
+	_testing = true
+	test_button.disabled = true
+	status.text = "Testing the key…"
+	var tested_key := client.api_key
+	var result: Dictionary = await client.test_key()
+	_testing = false
+	if not is_instance_valid(self):
+		return
+	test_button.disabled = false
+	if client.api_key != tested_key:
+		# Apply or Forget changed the key while the call was out (only the Test button is off, not
+		# Apply): the answer is about a key no longer in use, so it must not read as the new
+		# key's status.
+		refresh()
+		return
+	status.text = test_line(result)
+	var passed := str(result.get("status", "")) == "ok"
+	if passed and not typed.is_empty() and _unsaved_key == typed and client.player_key == typed:
+		_unsaved_key = ""
+		_persist(client, typed)
+
+
+## Puts the field's key into the client (empty clears it) and honours the Remember switch (see
+## _persist): checked saves it on this device, unchecked erases the saved copy.
 func apply_key() -> void:
 	var client: GmiClient = ctx.client if ctx != null else null
 	if client == null:
 		return
 	var key := input.text.strip_edges()
-	if not WebSupport.is_web():
-		client.set_player_key(key)
-	else:
-		client.set_player_key(key)
-		if _remember_on():
-			if key.is_empty():
-				client.forget_remembered_key()
-			else:
-				client.remember_player_key(key)
-		else:
-			client.forget_remembered_key()
+	client.set_player_key(key)
+	_unsaved_key = ""
+	_persist(client, key)
 	refresh()
+
+
+## The Remember switch applied to key: On saves it in the player's own localStorage (an empty key
+## erases the saved copy), Off erases the saved copy. Off the web there is no switch and the
+## store is a no-op, so nothing happens.
+func _persist(client: GmiClient, key: String) -> void:
+	if _remember_on():
+		if key.is_empty():
+			client.forget_remembered_key()
+		else:
+			client.remember_player_key(key)
+	else:
+		client.forget_remembered_key()
 
 
 ## Drops the key from this session and the remembered copy from this device.
@@ -178,6 +266,7 @@ func forget_key() -> void:
 		return
 	client.forget_remembered_key()
 	client.set_player_key("")
+	_unsaved_key = ""
 	input.text = ""
 	refresh()
 
@@ -195,6 +284,14 @@ func _on_remember(on: bool) -> void:
 	if client != null and not on:
 		client.forget_remembered_key()
 		refresh()
+
+
+## A paste longer than FIELD_MAX: say so instead of silently keeping the first part (a cut key is
+## a rejected key).
+func _on_text_rejected(_rejected: String) -> void:
+	status.text = (
+		"That is longer than %d characters, so the end was cut off. Check the key." % FIELD_MAX
+	)
 
 
 ## A focused LineEdit swallows Esc before the pause menu's _unhandled_input; leave the field, not

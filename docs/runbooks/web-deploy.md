@@ -10,8 +10,25 @@ under a content-addressed `releases/<hash>/` directory. The `.pck` that ships is
 ~654 MB, and one release directory is ~192 MB on disk. A first visit moves ~113 MB (Brotli; 113.4 MB
 measured against the live deployment on 2026-10-28). `deploy/web/` serves
 it from Caddy, a static file server only — players' browsers call `api.gmi-serving.com` themselves
-with each player's own GMI key (CORS allows it), and without a key the game runs offline (replay
-cache, then heuristics). There is no server-side key by design.
+with each player's own GMI key, and without a key the game runs offline (replay cache, then
+heuristics). There is no server-side key by design.
+
+**What is and is not verified about that browser call (2026-11-03).** Before 2026-11-03 the keyed
+browser path had not been verified by anything: the docs said CORS allowed it, and the only test
+(`deploy/web/smoke.js`) used a mock that cannot show it (see the NOTE in its `ctx.route` handler). The first real
+measurement, a key-free preflight (`OPTIONS https://api.gmi-serving.com/v1/chat/completions`),
+answers 204 with `access-control-allow-origin: *` and `access-control-allow-headers: Content-Type,
+Authorization, X-Requested-With, x-gmi-request-id`. The client used to send `User-Agent`,
+`X-Request-ID` and `X-Trace-ID` as well, none of them in that list, so a browser would have
+blocked every live call, the breaker would have opened after four failures, and the game would
+have run on the replay cache while the player believed it was live. The web build now sends only
+`Authorization` and `Content-Type` (`GmiClient.request_headers`, flag `gmi_web_safe_headers`), which
+the preflight allows. The images deployed before that change (the 2026-11-03 instance
+`gridfall-83fe2e8` and the older one) still send the three blocked headers; `tools/demo_check.sh`
+reads a deployed `.pck` and fails an image that lacks the fix, because GMI's preflight answer
+is the same for every request and so cannot tell an old image from a new one. What has still
+**not** been seen: a real browser completing a keyed call from the deployed origin. That needs a
+real key; see "Verify the key path" below.
 
 The source Web preset now enables Thread Support. The recorded live image (`f762234`, no-threads)
 predates the threaded rollout; merging the preset does not change a running deployment. See [the six-surface thread audit and A/B evidence](web-threads.md)
@@ -127,12 +144,22 @@ the first load with `tools/web_measure.py` before quoting a new total.
 - The response headers include `cross-origin-opener-policy: same-origin` and
   `cross-origin-embedder-policy: require-corp`: the threaded source preset refuses to boot
   without them, and they are harmless on the recorded single-threaded live build.
-- Esc -> Settings -> **GMI Cloud**: a pasted key is sent only to `api.gmi-serving.com`
-  (`GMI_FAIL` console lines show rejected keys working the retry path), **Remember on this device**
-  keeps it in the browser's `localStorage` (`gridfall.gmi_key`), Forget erases it.
-- Save (Esc -> Save) then reload the tab: the console prints
-  `GRIDFALL: continuing the saved city, day N tick M` — the save lives in the browser's IndexedDB,
-  not on the container. Replacing the image never touches player saves.
+- Esc -> Settings -> **GMI Cloud**: a pasted key (up to 512 characters) is sent only to
+  `api.gmi-serving.com`; **Test** makes one tiny live call and says in plain words whether the key
+  works (and prints one `GMI_TEST <status> http=<code>` console line, never the key); a failed live
+  call prints a `GMI_FAIL` line; **Remember on this device** keeps the key in the browser's
+  `localStorage` (`gridfall.gmi_key`), Forget erases it.
+- Save with the pause menu (Esc -> **Save**; **Load** brings it back), then reload the tab: the
+  console prints `GRIDFALL: continuing the saved city, day N tick M` — the save lives in the
+  browser's IndexedDB, not on the container. Replacing the image never touches player saves. Tell a
+  web player to use the pause menu rather than F5 and F9 (the quick-save and quick-load keys; the
+  actions are bound in every build, the browser build included, and the pause menu's Controls list
+  shows them there too; the game also saves every morning). Whether F5 saves or reloads the page in the browser build has
+  **not been tried in a real browser**: the Godot web template's `godot.js` (4.7.2, read, not run)
+  calls `preventDefault()` on every key press while the canvas has focus, which should stop the
+  browser's own reload, so F5 probably reaches the game there, but a reload with the focus
+  elsewhere would still throw the session away. Treat the pause menu as the safe route until
+  someone has pressed F5 in Chrome.
 - Serve any built image locally with the exact production headers:
   `docker run --rm -p 8080:8080 <registry>/gridfall-web:<sha>`, then http://127.0.0.1:8080/.
   Without a built image, the same Caddy config serves a raw export:
@@ -142,7 +169,11 @@ the first load with `tools/web_measure.py` before quoting a new total.
   `docker run -p 8080:8080 <image>` (needs Chrome; see the script header, ~10 minutes under
   software WebGL). It routes `api.gmi-serving.com` to a local mock that answers 401, so it proves
   a mayor call leaves with the player's key in the Authorization header (checked as a boolean,
-  never printed) and that the game falls back, without sending anything to GMI.
+  never printed) and that the game falls back, without sending anything to GMI. It does **not**
+  prove CORS: Playwright answers an intercepted preflight itself (read in playwright-core's
+  source, not observed in a run) so the mock's allow-list is never consulted, and the smoke has no
+  way to notice a header GMI would not allow. The preflight is checked against GMI itself by
+  `tools/demo_check.sh`.
 - Against a live deployment use the offline mode instead:
   `GF_SMOKE_OFFLINE=1 node deploy/web/smoke.js https://<public-host>/` — no mock, nothing typed
   into the key page, nothing stored, and the run fails if a single request reaches
@@ -153,7 +184,9 @@ the first load with `tools/web_measure.py` before quoting a new total.
 
 Verification splits by who holds a GMI key, because the deployment never does.
 
-**Keyless (the operator, every redeploy):** `/healthz`; `python tools/web_measure.py
+**Keyless (the operator, every redeploy):** first `tools/demo_check.sh https://<public-host>/` (see
+"Verify the key path": `/healthz`, headers, Brotli, the pack's header fix and GMI's CORS preflight in one
+read-only run; it must end `DEMO_CHECK: PASS`); then `/healthz`; `python tools/web_measure.py
 https://<public-host>/` for the per-file encodings and headers (Brotli through the gateway,
 `immutable` on the hashed payloads, `no-cache` on the loader, COOP/COEP) plus the first-load wire
 bytes and time to first frame; boot to the first-person city in a normal browser; scan the console
@@ -192,12 +225,82 @@ MMI at 15-120 ns a frame (desktop and a web export), 0.1-1 ms for the old 8.7k, 
 a teleport, an overview or a shrink. Compare the probe's street fps and p95 with the previous deploy,
 same grown save, before crediting it, and check the `CityView/Trees` census reads about 900 MMIs.
 
-**Keyed (the player, once, with their own key):** open the site, paste the key, confirm a live
-mayor turn. This is the only check that exercises the real `api.gmi-serving.com` call and the only
-one that can prove it works under cross-origin isolation — the COOP/COEP headers isolate the page
-on the recorded single-threaded live build too, and no offline smoke reaches the API. The operator never asks for,
-types or sees the key: ask the player to run this step and report whether the turn went live
-(`GMI_OK` console lines) or fell back (`GMI_FAIL`).
+**Keyed (the player, once, with their own key):** open the site, paste the key, press **Test** and
+confirm a live mayor turn. This is the only check that exercises the real `api.gmi-serving.com`
+call and the only one that can prove it works under cross-origin isolation — the COOP/COEP headers
+isolate the page on the recorded single-threaded live build too, and no offline smoke reaches the
+API. The operator never asks for, types or sees the key: ask the player to run this step and report
+the Test line and whether the mayor cards say live. A successful mayor call prints no console line
+(nothing prints `GMI_OK`; older notes that promised it were wrong): the proof is the Test line ("Key
+works (answered in 1.1 s)") with its `GMI_TEST ok` console line, and a mayor card whose source reads
+live. A failed live call prints `GMI_FAIL <role>/<agent> on <model>: <error>`.
+
+### Verify the key path
+
+Run these in order after every deploy and before every demo. Every template change or **+ Instance**
+gets a new URL, so pass the new one: a bare `tools/demo_check.sh` checks only the two instances that
+were the defaults on 2026-11-03 (edit `DEFAULT_INSTANCES` in the script when they change).
+
+1. From your shell, no key: `tools/demo_check.sh https://<the new instance URL>`. It is read-only
+   (GET, HEAD and one key-free OPTIONS) and reads the whole `.pck` once (about a first load, 95 MB
+   Brotli; `DEMO_CHECK_BUILD=0` skips that and then the build is *not verified*). Expect
+   `DEMO_CHECK: PASS` and, in it, `ok    build: the pack holds 'gmi_web_safe_headers'` and
+   `ok    CORS preflight OK`. The last line is the verdict: `PASS`; `FAIL (n check(s))`;
+   `INCOMPLETE (the build was not verified ...)` (exit 1: the pack could not be read, usually a slow
+   link, so the one image this tool exists to catch would have passed; raise
+   `DEMO_CHECK_BUILD_TIMEOUT` and rerun); or `NO BUILD CHECK (skipped on request ...)` (exit 0, only
+   with `DEMO_CHECK_BUILD=0`: every other check passed and the build is not verified). What to do about
+   each failure:
+   - `FAIL  build: the pack has no 'gmi_web_safe_headers'`: the image predates the browser-header
+     fix and every browser call from it is blocked (the CORS line below it can still say OK: that
+     line is GMI's side only). Rebuild from a commit that has the fix, push, launch a new instance
+     and run this step on it. Do not go on to step 2 on this image: it is older than the Test button
+     too (the button and the header fix came in the same change; `git show
+     83fe2e8:scripts/fp/ui/gmi_key_panel.gd` has Apply and Forget only, and the older image is older
+     still), so its GMI Cloud page has nothing to press. A GMI Cloud page without a **Test** button
+     means an old image: rebuild. (If the flag is ever removed from `data/feature_flags.json`, set
+     `DEMO_CHECK_BUILD_MARKER` to another string only a fixed build holds.)
+   - `FAIL  CORS preflight BLOCKED`: GMI's allow-list changed. Change `GmiClient.request_headers`
+     and `WEB_REQUEST_HEADERS` in the script to match it, or the game runs on its replay cache
+     without saying so.
+   - `warn  build: could not read ...` (verdict `INCOMPLETE`) or `not read (DEMO_CHECK_BUILD=0)`
+     (verdict `NO BUILD CHECK`): the build is not verified; run it again with the network up and a
+     longer `DEMO_CHECK_BUILD_TIMEOUT` (the pack is 88-123 MB, so below about 3 Mbit/s the default
+     240 s is not enough) before trusting the image.
+   - any other `FAIL`: the line names the check (healthz, COOP/COEP, Brotli, immutable cache, a
+     file the page needs that does not answer 200); fix the deployment and rerun.
+2. In the browser, with a real key (the operator never types or sees it; ask the key's owner):
+   open that URL, press Esc (a browser reserves Esc for releasing the mouse pointer from the page, so if
+   no pause menu appears press Esc once more), Settings, **GMI Cloud**, paste the key, press **Test**
+   and read the line under the buttons (F12, Console, shows `GMI_TEST <status> http=<code>` too). If
+   the page has no Test button, this is an old image: go back to step 1. Then:
+   - "Key works (answered in N s)": the whole path works from that origin (CORS, key, model). Go on.
+   - "Key rejected (401)" or "(403)": GMI refused the key; paste another.
+   - "Rate limited, try again in a minute": GMI is throttling the key; wait and press Test again.
+   - "No answer from GMI in 12 s, try again": the call left and nothing came back in time. Press Test
+     again; if it repeats, look at GMI's status page, then F12, Network.
+   - "Blocked by the browser or offline": a CORS block or no connection (the browser does not say
+     which). Check the connection, then F12, Network for a failed `OPTIONS` to `api.gmi-serving.com`.
+     An image with the Test button has the header fix, so its step 1 `build` line is `ok` and does not
+     explain this. What remains: a CORS refusal beyond the one preflight `demo_check.sh` sends (read the
+     Console's CORS error, which names the header), being offline, or `gmi_web_safe_headers` switched
+     off by a `user://feature_flags.json` entry kept in that browser's data (then the three extra
+     headers are sent again).
+   - "GMI answered an error (HTTP n)": the key reached GMI and the test call failed. Typically 402 is
+     credit and 400 or 404 a model not enabled for that key (run `tools/ops/model_check.py`).
+     "Could not reach GMI": the request could not be started at all.
+3. Confirm live mayors. In the pause menu choose **Quit to orbit**: the overview shows the mayor
+   cards (the top bar's **Live GMI** button should be on); at 1x speed a game day is 12 s there (20
+   minutes on the street, `WorldScale.FP_DAY_SECONDS`), so give it a minute or two and read each card's source: it should say
+   live, not cache or heuristic (a day waits up to 75 s for the mayors' answers before it advances, see
+   [gmi-outage.md](gmi-outage.md)). Tab returns to the street, where the activity badge in the corner
+   should read Live; it turns red (Reconnecting) only after at least three live calls have been seen
+   and most failed, so a quiet badge is not proof, and the Test line in step 2 is.
+
+`python tools/ops/model_check.py` (key in `GMI_API_KEY`, or the variable named by `--key-env`; never in
+the browser) checks the other half: that every model the game is configured with is still served to
+that key. Exit 1 lists the missing ones, 2 means the check itself failed (it refuses a key with a
+space or line break in it, and never follows a redirect with the key).
 
 ## Symptoms and fixes
 
@@ -230,10 +333,13 @@ the flag on a split release and expect a complete city.
 - **`releases/<old-hash>/...` 404 after a redeploy:** the export keeps only the current and the
   previous release directory; a tab that loaded the build before that will 404 until reloaded.
   Reload the page to pick up the new release.
-- **Mayors never go live although the player pasted a key:** check the browser console for
-  `GMI_FAIL` lines (bad key) and that the player's account works against `api.gmi-serving.com`
-  directly. The game-side breaker trips after a few failures and falls back to offline planners;
-  it recovers on its own.
+- **Mayors never go live although the player pasted a key:** press **Test** on the GMI Cloud page
+  first (see "Verify the key path"): it separates a rejected key from a CORS block or a dead
+  connection. Then check the browser console for `GMI_FAIL` lines and that the player's account
+  works against `api.gmi-serving.com` directly. The game-side breaker trips after four failures
+  and falls back to offline planners; it recovers on its own. The street badge only says
+  Reconnecting after three live calls have been seen and most of them failed, so one stray
+  failure does not show it.
 - **Instance will not start:** confirm the port mapping (443 -> 8080) and `/healthz`, and that the
   image entrypoint is the stock Caddy one (`deploy/web/Dockerfile` has no custom entrypoint).
 - **Textures look soft on the web build:** expected — props, characters and legacy vehicles import
@@ -365,11 +471,13 @@ the flag on a split release and expect a complete city.
   instance variables, max 4096` error are gone. A day-2, 35-site grown city that logged the
   instance-cap error 69 times on the previous build now runs with zero occurrences (street
   22.7 fps vs 16.1, worst frame stall 3.0 s vs 13.7 s, same save, same box).
-- **Known issue, fix in flight:** quitting first person to the orbit overview can halt the game
-  with `invalid bus index "-1"` in `sample_set_volumes_linear` when real audio buses are up
-  (windowed play with audio). Headless runs do not reproduce it. The offline smoke's exit_fp
-  phase and the FPS probe's exit/enter round trip guard the path from here on; until the fix
-  ships, treat a freeze when leaving first person as this bug.
+- **Fixed in 3fccc38 (#83):** quitting first person to the orbit overview used to halt the game
+  with `invalid bus index "-1"` in `sample_set_volumes_linear` when real audio buses were up
+  (windowed play with audio). The audio buses now stay up across exit and enter, and the audio
+  director falls back to Master when a bus is missing; `fp_audio_test` asserts the routing.
+  Headless runs never reproduced the crash, so the real-audio exit/enter has not been run against
+  the current image: the FPS probe's exit/enter round trip (headed Chrome, above) is the check that
+  can. A freeze when leaving first person on a build before 3fccc38 is this bug.
 - **Night matches Forward+'s brightness, not its picture** (`SkyDirector.COMPAT_LOOK`, night half).
   Street-half mean luma against Forward+ at 23:00 in the frozen-city street poses: 1.00x clear,
   0.97x on wet streets under a clear sky, 0.89x in soaked rain; the planner view at its default
@@ -404,9 +512,11 @@ So the order is verify-then-pin, never pin-then-verify:
    existing private template, pin its Image URL to `<repository>@sha256:<digest>`, and save.
    Keep region and port mapping unchanged. Expect the replacement within ~4 minutes; its public
    URL is **new** — tell the owner.
-3. Run the complete keyless post-redeploy checklist against the new URL. If it fails, roll back
+3. Run the complete keyless post-redeploy checklist against the new URL, starting with
+   `tools/demo_check.sh <the new URL>`, which must end `DEMO_CHECK: PASS`. If it fails, roll back
    by re-pinning the previous digest (another replacement, another new URL), not by terminating
-   anything.
+   anything. Put the new URL in `DEFAULT_INSTANCES` in `tools/demo_check.sh` (and drop a retired one),
+   or a bare run keeps checking the old images and exits 1.
 4. The player's keyed check remains a separate manual step. Record the URL, the instance Task ID,
    the image digest and the checklist numbers in the deployment record below.
 
@@ -440,12 +550,22 @@ the runbook's step order is now simpler and safer:
   in 29 s, loader lifted by `gfBootDone`, cross-origin isolated after cold load and reload, first load **94.8 MB**
   on the wire (113.43 MB on the 2026-10-28 build), 0 requests to `api.gmi-serving.com`, no key stored, reload
   continues the saved city, quit to orbit and back clean, no console errors.
-- **Still manual:** the owner opens the URL with their own key and confirms a live mayor turn. No browser frame-rate
-  measurement of this build exists yet.
+- The older instance `gridfall-web-0a6855f-d` (the 2026-10-28 build, image `sha256:ca8c3c5c...`) is at
+  https://ct-1ff7949c-bd38-4939-b13c-4a0638d82bec-web.caas-us1.gmicloud.ai (healthz 200 on 2026-10-30, per the
+  owner's notes). The URL recorded for it in the 2026-10-28 section below (`ct-acf8ab8c...`) answered 404 on
+  2026-10-30; `tools/demo_check.sh` defaults to this URL and the new one.
+- **Still manual:** the owner opens the URL with their own key and confirms a live mayor turn (see "Verify the
+  key path"; nothing verified the keyed browser path before 2026-11-03 and nothing has since: no real
+  browser has completed a keyed call). This image predates the web-safe header
+  change, so it still sends `User-Agent`, `X-Request-ID` and `X-Trace-ID`, which GMI's preflight does not allow:
+  from a browser its keyed calls are expected to be blocked (inferred from the preflight, not observed in a
+  browser). Redeploy before the keyed check. No browser frame-rate measurement of this build exists yet.
 
 ### Verified deployment, 2026-10-28
 
-- **Current URL:** https://ct-acf8ab8c-2e82-4cf9-885b-4feb693ef0ac-web.caas-us1.gmicloud.ai
+- **URL as recorded on 2026-10-28 (not live):** https://ct-acf8ab8c-2e82-4cf9-885b-4feb693ef0ac-web.caas-us1.gmicloud.ai
+  (`/healthz` answered 404 when checked on 2026-10-30 and again on 2026-11-03; treat it as retired and use the
+  instance URLs in the 2026-11-03 record above)
 - Instance `gridfall-web-f762234` (Task ID `c8a0b95e-6011-4399-8490-ecb201d25ec0`); image tags
   `:main` and `:f762234` resolve to
   `sha256:a12de813ec6b54c93cd459af3e53dfa13d710d9331b0c5a279e2daeb1fc7558f`; web release
