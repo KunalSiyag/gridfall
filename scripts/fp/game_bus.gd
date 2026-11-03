@@ -65,6 +65,11 @@ signal person_hit(at: Vector3, cause: String, info: Dictionary)
 ## no longer there. What shakes and sounds at the landing follows this, not a timer. Emitted by
 ## traffic.
 signal person_landed(at: Vector3, id: int)
+## The police took the hero (the police_response flag): fined `fine` for why, the worst thing they
+## did since the police were called ("carjack", "punch" -- assault -- or "officer", a blow at an
+## officer), at the point they stood (their feet). The hero's fade and move to the nearest police
+## station follow it (traffic's police_bust.gd). Emitted by traffic.
+signal hero_busted(fine: int, why: String, at: Vector3)
 ## The hero swung, gestured or got over something: action "jab", "cross", "hook", "shove",
 ## "kick", "swing" (a weapon in hand), "counter" (a hook countering a punch), "throw" or "slam"
 ## (someone held), "grapple" (taking hold of someone), an emote ("wave", "yes", "no", "shout",

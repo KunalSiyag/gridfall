@@ -673,9 +673,11 @@ func startle(src: Vector3, radius: float, long: bool) -> Array:
 	return crowd.startle(src, radius, long)
 
 
-## True when o can start a reaction: drawn near, not talking to the player, not reacting.
+## True when o can start a reaction: drawn near, not talking to the player, not reacting, not an
+## officer (police_response.gd's: it answers to its own response).
 func _free(o: WK.Walker) -> bool:
-	return not (o.dead or o.far or o.state == "hidden" or o.hold or _active.has(o.id))
+	var off: bool = o.role == "officer"
+	return not (o.dead or o.far or off or o.state == "hidden" or o.hold or _active.has(o.id))
 
 
 func _new(w: WK.Walker) -> Reaction:

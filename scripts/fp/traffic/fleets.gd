@@ -3,6 +3,8 @@ extends RefCounted
 ## closed lines through the bus stops (they pull in at each shelter, people board and alight),
 ## delivery and garbage trucks, and emergency crews that run to incidents with sirens (through red
 ## lights at walking pace once the box is clear), wait at the scene, and drive back to the station.
+## A police car called to the hero's offence (stay > 0) is the police_response flag's to run once
+## it is there (police_response.gd: officers, an arrest, a chase), through recall() and redirect().
 ## CityLife asks for vehicles through spawn_fleet / dispatch_crew; drivers are residents with the
 ## matching job when one is free, else "city crew".
 
@@ -40,8 +42,8 @@ var lines: Array = []
 var stop_sides: Dictionary = {}       # tile -> side index of its shelter
 ## Why the last crew build sent nobody ("" when it sent a crew); for tests and logs.
 var last_dispatch_fail: String = ""
-## Crew requests waiting for an A* slot: [kind, station, target, stay]; crews waiting to route
-## home.
+## Crew requests waiting for an A* slot: [kind, station, target, stay, brief]; crews waiting to
+## route home.
 var pending: Array = []
 var homing: Array = []
 ## A* builds left this frame.
@@ -333,11 +335,15 @@ func _next_leg(c: VH.Car, line: Line, k: int) -> void:
 
 ## Queues a crew (CityLife.external.dispatch_crew); it leaves when an A* slot is free. A crew
 ## called with stay > 0 answers a call, not a sim event: it stays that many seconds at the scene.
-func dispatch_crew(kind: String, station: Vector2i, target: Vector2i, stay: float = 0.0) -> void:
+## brief says what for ({"why": the offence (incidents.gd's cause), "at": the scene}); the
+## crew's owner keeps it.
+func dispatch_crew(
+	kind: String, station: Vector2i, target: Vector2i, stay: float = 0.0, brief: Dictionary = {}
+) -> void:
 	for q: Array in pending:
 		if str(q[0]) == kind and q[2] == target:
 			return
-	pending.append([kind, station, target, stay])
+	pending.append([kind, station, target, stay, brief])
 	_drain()
 
 
@@ -351,10 +357,12 @@ func _drain() -> void:
 	while astar_left > 0 and not pending.is_empty():
 		var q: Array = pending.pop_front()
 		astar_left -= 1
-		_send_crew(str(q[0]), q[1], q[2], float(q[3]))
+		_send_crew(str(q[0]), q[1], q[2], float(q[3]), q[4])
 
 
-func _send_crew(kind: String, station: Vector2i, target: Vector2i, stay: float) -> void:
+func _send_crew(
+	kind: String, station: Vector2i, target: Vector2i, stay: float, brief: Dictionary
+) -> void:
 	last_dispatch_fail = ""
 	if count("crew") >= MAX_CREWS:
 		last_dispatch_fail = "cap"
@@ -388,6 +396,7 @@ func _send_crew(kind: String, station: Vector2i, target: Vector2i, stay: float) 
 	if stay > 0.0:
 		c.owner["event_id"] = -1
 		c.owner["stay"] = stay
+		c.owner.merge(brief, true)
 	var s := clampf(start.length * 0.5 + c.length * 0.5, c.length, start.length)
 	if f.is_far(Vector3(D.tx(start.tile), 0, D.ty(start.tile))) or not vh.fits(start, s, c.length):
 		c.lane = start
@@ -516,6 +525,8 @@ func _step_crew(c: VH.Car, dt: float, live: Dictionary) -> void:
 			elif c.arrived:
 				o["phase"] = "at_scene"
 				c.state = "at the scene"
+				if o.has("stay") and str(o.get("kind", "")) == "police":
+					f.police.on_arrived(c)
 		"at_scene":
 			if o.has("stay"):
 				o["stay"] = float(o["stay"]) - dt
@@ -524,6 +535,39 @@ func _step_crew(c: VH.Car, dt: float, live: Dictionary) -> void:
 		"leaving":
 			if (c.arrived or float(o["t"]) > 240.0) and not f.on_screen(c.pos):
 				vh.remove(c)
+
+
+## Sends crew car c home now, its siren off, as when its stay ends (police_response.gd: an arrest,
+## a chase given up, a response that is over). Nothing for a car already leaving or gone.
+func recall(c: VH.Car) -> void:
+	if c.dead or not c.owner is Dictionary:
+		return
+	var o: Dictionary = c.owner
+	if str(o.get("phase", "")) != "leaving":
+		_go_home(c, o)
+
+
+## Points crew car c at road tile `tile` (a chase: it drives there at its own pace, siren on) and
+## gives it state `label`. False when no lane lies there, there is no way, or this frame's A*
+## budget is spent (the caller asks again).
+func redirect(c: VH.Car, tile: int, label: String) -> bool:
+	if c.dead or c.lane == null or astar_left <= 0:
+		return false
+	var goals := _goals_at(tile)
+	if goals.is_empty():
+		return false
+	astar_left -= 1
+	var path := lg.astar(c.lane, goals, 8000, true)
+	if path.is_empty() and not goals.has(c.lane.id):
+		return false
+	c.path = path
+	var last: LG.Lane = path[path.size() - 1] if not path.is_empty() else c.lane
+	c.goal_lane = last
+	c.goal_s = clampf(last.length * 0.5 + c.length * 0.5, c.length * 0.5, last.length)
+	c.arrived = false
+	c.state = label
+	c.dest_label = f.street_label(tile)
+	return true
 
 
 func _go_home(c: VH.Car, o: Dictionary) -> void:

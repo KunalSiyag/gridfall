@@ -32,6 +32,7 @@ const DOORS := preload("res://scripts/fp/traffic/car_doors.gd")
 const REACT := preload("res://scripts/fp/traffic/reactions.gd")
 const BS := preload("res://scripts/fp/traffic/body_spheres.gd")
 const INCIDENTS := preload("res://scripts/fp/traffic/incidents.gd")
+const POLICE := preload("res://scripts/fp/traffic/police_response.gd")
 const JACK := preload("res://scripts/fp/traffic/carjack.gd")
 const MAX_STEP := 1.0 / 30.0
 ## Lazy tile_built handling rebuilds at most this many tiles per step (traffic_lazy_tilebuilt).
@@ -105,6 +106,10 @@ var hero_aboard: bool = false
 ## People hit in the street (reel, fall, get up, run off) and what that means for the city.
 var reactions: REACT
 var incidents: INCIDENTS
+## The police a called car puts out at the scene (police_response.gd, the police_response flag).
+var police: POLICE
+## True while a teleport's warm-up runs the street (_refill): the police's clocks sit it out.
+var warming: bool = false
 ## Drivers dragged out of the cars the player takes (the carjack flag).
 var carjack: JACK
 var clock: float = 0.0
@@ -183,6 +188,7 @@ func setup(p_ctx: FpContext) -> void:
 	shoves = SHOVES.new()
 	reactions = REACT.new()
 	incidents = INCIDENTS.new()
+	police = POLICE.new()
 	carjack = JACK.new()
 	trips.jitter_enabled = jitter_enabled
 	render.setup(_agents_root)
@@ -234,6 +240,7 @@ func teardown() -> void:
 	_site_queue.clear()
 	_site_clear.clear()
 	_tile_dirty.clear()
+	police.reset()
 	render.clear()
 	occupants.clear()
 	people.clear()
@@ -256,6 +263,7 @@ func on_world_rebuilt() -> void:
 	_built = false
 	_driven = null
 	_rng.seed = sim.city_seed * 31337 + 1
+	police.reset()
 	render.clear()
 	occupants.clear()
 	people.clear()
@@ -307,6 +315,7 @@ func on_world_rebuilt() -> void:
 	reactions.on_landed = func(w: WK.Walker) -> void:
 		ctx.bus.person_landed.emit(w.pos + w.vis_off, w.id)
 	incidents.setup(self)
+	police.setup(self)
 	carjack.setup(self)
 	walkers.hc = people.ok
 	walkers.on_removed = func(w: WK.Walker) -> void:
@@ -561,6 +570,7 @@ func _process(delta: float) -> void:
 			step(h)
 			dt -= h
 	sync_visuals(delta)
+	police.bust.tick(delta)
 
 
 ## Advances everything by dt seconds of game-scaled time (test hook; _process calls it in steps
@@ -596,6 +606,7 @@ func step(dt: float) -> void:
 	reactions.step(dt)
 	trips.step(dt)
 	fleets.step(dt)
+	police.step(dt)
 	if _posts_dirty:
 		_posts_dirty = false
 		var tw := Time.get_ticks_usec()
@@ -689,8 +700,10 @@ func _refill(warm: bool) -> void:
 			junctions.clock = clock
 			_photo_stage = {}
 		var saved := clock
+		warming = true
 		for _k in range(int(WARM_SECONDS / 0.1)):
 			step(0.1)
+		warming = false
 		clock = saved + WARM_SECONDS
 		junctions.clock = clock
 
@@ -1489,8 +1502,8 @@ func _walker_target(w: WK.Walker, t: float) -> Dictionary:
 		"id": "p%d" % w.id,
 		"tile": tile,
 		"dist": t,
-		"label": "a pedestrian",
-		"data": {}
+		"label": "a police officer" if w.role == POLICE.ROLE else "a pedestrian",
+		"data": {"officer": true} if w.role == POLICE.ROLE else {}
 	}
 
 
@@ -1667,6 +1680,11 @@ func hit_walker(
 	var w := _walker_by_id(id) if _built else null
 	if w == null:
 		return {}
+	if w.role == POLICE.ROLE:
+		# A blow at an officer is no scene (they never reel, fall or run): the hero's is resisting.
+		if by == BY_HERO:
+			police.struck(w)
+		return {}
 	var res := reactions.hit(w, src, push, clampf(strength, 0.0, 1.0), cause, fling)
 	if res.is_empty():
 		return {}
@@ -1694,7 +1712,7 @@ func hit_walker(
 ## when they cannot be held now.
 func grab_walker(id: int, src: Vector3) -> bool:
 	var w := _walker_by_id(id) if _built else null
-	return w != null and reactions.grab(w, src)
+	return w != null and w.role != POLICE.ROLE and reactions.grab(w, src)
 
 
 ## Person id, held, goes where the hero's hands are: feet at p, turned to yaw. False once they are
@@ -1799,8 +1817,9 @@ func _walker_by_id(id: int) -> WK.Walker:
 
 ## Calls a crew ("police" or "ambulance") to world point at, from the road beside the nearest
 ## police station or hospital (a road some way off when the city has none), to stay that many
-## seconds once there (fleets.gd). False when no road is near at.
-func call_crew(kind: String, at: Vector3, stay: float) -> bool:
+## seconds once there (fleets.gd); why is what the hero did (incidents.gd's cause), which the
+## police's fine follows. False when no road is near at.
+func call_crew(kind: String, at: Vector3, stay: float, why: String = "") -> bool:
 	if not _built:
 		return false
 	var target := _road_near(Vector2i(roundi(at.x), roundi(at.z)))
@@ -1809,7 +1828,7 @@ func call_crew(kind: String, at: Vector3, stay: float) -> bool:
 	var station := _station_road(D.POLICE if kind == "police" else D.HOSPITAL, target)
 	if station.x < 0:
 		return false
-	fleets.dispatch_crew(kind, station, target, stay)
+	fleets.dispatch_crew(kind, station, target, stay, {"why": why, "at": at})
 	return true
 
 

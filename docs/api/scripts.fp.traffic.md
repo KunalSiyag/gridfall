@@ -338,7 +338,7 @@ The scrap and the care for a body on the ground: fighting back, the tempers, cou
 
 extends `RefCounted`
 
-City fleets on lanes in first person (docs/fp/slices/E-traffic.md §5): buses on 2-4 seeded closed lines through the bus stops (they pull in at each shelter, people board and alight), delivery and garbage trucks, and emergency crews that run to incidents with sirens (through red lights at walking pace once the box is clear), wait at the scene, and drive back to the station. CityLife asks for vehicles through spawn_fleet / dispatch_crew; drivers are residents with the matching job when one is free, else "city crew".
+City fleets on lanes in first person (docs/fp/slices/E-traffic.md §5): buses on 2-4 seeded closed lines through the bus stops (they pull in at each shelter, people board and alight), delivery and garbage trucks, and emergency crews that run to incidents with sirens (through red lights at walking pace once the box is clear), wait at the scene, and drive back to the station. A police car called to the hero's offence (stay > 0) is the police_response flag's to run once it is there (police_response.gd: officers, an arrest, a chase), through recall() and redirect(). CityLife asks for vehicles through spawn_fleet / dispatch_crew; drivers are residents with the matching job when one is free, else "city crew".
 
 ### Constants
 
@@ -357,7 +357,7 @@ City fleets on lanes in first person (docs/fp/slices/E-traffic.md §5): buses on
 
 - `stop_sides: Dictionary`: tile -> side index of its shelter
 - `last_dispatch_fail: String`: Why the last crew build sent nobody ("" when it sent a crew); for tests and logs.
-- `pending: Array`: Crew requests waiting for an A* slot: [kind, station, target, stay]; crews waiting to route home.
+- `pending: Array`: Crew requests waiting for an A* slot: [kind, station, target, stay, brief]; crews waiting to route home.
 - `astar_left: int`: A* builds left this frame.
 - `retry_t: float`: Seconds before stale lines may be rebuilt again, and the current wait (it doubles while the rebuild keeps failing: a failed A* is the expensive case).
 
@@ -377,8 +377,10 @@ City fleets on lanes in first person (docs/fp/slices/E-traffic.md §5): buses on
 - `func count(role: String) -> int`
 - `func fleet_size(kind: String) -> int`: Fleet size for CityLife's census (kind as CityLife names it).
 - `func spawn_fleet(kind: String, start: Vector2i) -> void`: Adds one vehicle of a fleet (CityLife.external.spawn_fleet).
-- `func dispatch_crew(kind: String, station: Vector2i, target: Vector2i, stay: float = 0.0) -> void`: Queues a crew (CityLife.external.dispatch_crew); it leaves when an A* slot is free. A crew called with stay > 0 answers a call, not a sim event: it stays that many seconds at the scene.
+- `func dispatch_crew(kind: String, station: Vector2i, target: Vector2i, stay: float = 0.0, brief: Dictionary = {}) -> void`: Queues a crew (CityLife.external.dispatch_crew); it leaves when an A* slot is free. A crew called with stay > 0 answers a call, not a sim event: it stays that many seconds at the scene. brief says what for ({"why": the offence (incidents.gd's cause), "at": the scene}); the crew's owner keeps it.
 - `func step(dt: float) -> void`
+- `func recall(c: VH.Car) -> void`: Sends crew car c home now, its siren off, as when its stay ends (police_response.gd: an arrest, a chase given up, a response that is over). Nothing for a car already leaving or gone.
+- `func redirect(c: VH.Car, tile: int, label: String) -> bool`: Points crew car c at road tile `tile` (a chase: it drives there at its own pace, siren on) and gives it state `label`. False when no lane lies there, there is no way, or this frame's A* budget is spent (the caller asks again).
 
 ## `scripts/fp/traffic/heap.gd`
 
@@ -418,15 +420,18 @@ Intelligent Driver Model (Treiber 2000) in world units (docs/fp/slices/E-traffic
 
 extends `RefCounted`
 
-What a blow in the street means for the city (traffic_feature.gd hit_walker): a resident who was hit remembers it and their mood drops (a shove least, a car or a carjack most, more when knocked down), and residents who saw it remember it too. A punch that knocks someone down, the ASSAULT-th punch within ASSAULT_S or a carjack calls the police; someone a car knocks down, an ambulance (a crew from the nearest station that stays at the scene a while, fleets.gd), each kind at most once per CREW_COOL.
+What a blow in the street means for the city (traffic_feature.gd hit_walker): a resident who was hit remembers it and their mood drops (a shove least, a car or a carjack most, more when knocked down), and residents who saw it remember it too. A punch that knocks someone down, the ASSAULT-th punch within ASSAULT_S or a carjack calls the police; someone a car knocks down, an ambulance (a crew from the nearest station that stays at the scene a while, fleets.gd), each kind at most once per CREW_COOL. A police car that gets there is the police_response flag's to run (police_response.gd); what the hero did sets the fine, and an arrest is the street's relief (arrested()).
 
 ### Constants
 
 - `D = preload("res://scripts/sim/sim_defs.gd")`
+- `WS = preload("res://scripts/fp/world_scale.gd")`
 - `WK = preload("res://scripts/fp/traffic/walkers.gd")`
 - `MOOD = {"shove": -0.5, "punch": -1.0, "car": -2.0, "carjack": -2.0}`
 - `DOWN_MOOD = 1.5`
 - `SAW_MOOD = -0.3`
+- `ARREST_MOOD = 0.3`: Those who see the hero arrested within ARREST_SEEN of them are a little easier.
+- `ARREST_SEEN = 25.0 * WS.M`
 - `ASSAULT = 3`
 - `ASSAULT_S = 60.0`
 - `CREW_COOL = 90.0`
@@ -438,6 +443,7 @@ What a blow in the street means for the city (traffic_feature.gd hit_walker): a 
 
 - `func setup(p_f: Object) -> void`
 - `func report(w: WK.Walker, at: Vector3, strength: float, cause: String, res: Dictionary, seen: Array, by: int = -1) -> Dictionary`: The person_hit info for walker w hit by cause at world point at (res: reactions.gd hit()'s result, seen: the walkers who saw it, by: who struck — -1 the hero, else a walker's id): {"walker", "resident_id", "name", "down", "street", "strength", "by", "witnesses" (their resident ids), "crew" ("police", "ambulance" or "")}. A crew answers the hero's violence only: a blow by someone else never counts toward the assault streak nor dispatches one.
+- `func arrested(at: Vector3, street: String) -> int`: The police took the hero away at at (on street, "" in the open): residents on foot who saw it (within ARREST_SEEN) remember it and are a little easier. Returns how many did.
 
 ## `scripts/fp/traffic/indicators.gd`
 
@@ -829,7 +835,7 @@ Animated people from HC's roster (docs/fp/slices/E-traffic.md deliverable 9, TPS
 - `func resident_gender(rid: String, full_name: String) -> String`: Gender of a resident: HC's name_gender for the first name, else crc32(id) & 1 (1 = f).
 - `func resident_avatar(rid: String, full_name: String, job: String) -> int`: Avatar index for a resident: the job's pool for the gender, else the gender's casual pool, indexed by crc32(id). -1 when nothing fits.
 - `func stature(g: String, u: float) -> float`: Stature (m) for a gender and a 0..1 jitter value.
-- `func dress(w: WK.Walker, residents: Variant) -> void`: Gives w its avatar and stature (once): residents by their id, ambient walkers from the city seed.
+- `func dress(w: WK.Walker, residents: Variant, group: String = "", pick: int = 0) -> void`: Gives w its avatar and stature (once): residents by their id, ambient walkers from the city seed. With group (a roster group, the police's say) it is that group's pick-th member, wrapping, at a stature picked by pick too; a group with no body loaded leaves w to the rest.
 - `func avatar_name(w: WK.Walker) -> String`: Avatar name of walker w ("" before it is dressed).
 - `func scale_of(w: WK.Walker) -> float`: CharacterRoot scale of w: WS.M * h_target / rest_height_m.
 - `func authored_speed(w: WK.Walker, clip: StringName) -> float`: Ground speed (u/s) clip covers at playback rate 1 on w's body.
@@ -916,6 +922,120 @@ The body pool and scene cache behind people.gd (split out so people.gd stays und
 - `func clear() -> void`: Frees the pooled and the lent bodies (people.clear frees the active ones and the rest).
 - `func make(ai: int) -> Body`
 - `func ensure_box(b: Body, g: String) -> void`: A cardboard box held in front of the chest (carry poses), parented to UpperChest.
+
+## `scripts/fp/traffic/police_bust.gd`
+
+extends `RefCounted`
+
+The hero taken by the police (police_response.gd, the police_response flag). A toast says what they were fined and for what ("Busted: fined $500 for carjacking": the game has no wallet for the hero, so the fine is the message and the street's relief, incidents.gd arrested()), the screen fades to black over FADE_OUT, the hero is put out of any car and outside the nearest police station (where they stand when the city has none) as it goes black, and the picture comes back over FADE_IN (with "Released outside <station>", on the screen once it can be seen), input held through all of it. hero_busted goes out on the bus for anyone listening. The fade runs on real seconds (tick, from the traffic feature's _process), not the sim's. The input is held by taking it again whenever something else hands it back during the fade (the health feature's stagger does at its end), and given back only if it was the arrest that took it: an arrest in the middle of someone else's hold leaves that hold's end to them.
+
+### Constants
+
+- `D = preload("res://scripts/sim/sim_defs.gd")`
+- `WS = preload("res://scripts/fp/world_scale.gd")`
+- `FADE_OUT = 0.5`
+- `HOLD = 0.3`
+- `FADE_IN = 0.8`
+- `FOR = {"carjack": "carjacking", "punch": "assault", "officer": "assaulting an officer"}`: What each offence (incidents.gd's cause; "officer" a blow at one) is called in the fine.
+
+### Properties
+
+- `busted: int`: Arrests so far, and the dollars fined (a test hook and a tally).
+
+### Functions
+
+- `func setup(p_f: Object) -> void`
+- `func clear() -> void`: Drops the fade (a world rebuild or teardown) and gives the hero back their input.
+- `func begin(fine: int, why: String, at: Vector3, street: String) -> void`: The hero is busted at at (on street): fined fine for why. Nothing while an arrest is under way.
+- `func active() -> bool`: True from the arrest until the picture is back.
+- `func tick(delta: float) -> void`: One frame of the fade, delta real seconds.
+- `func station_spot(from: Vector3) -> Dictionary`: The sidewalk outside the police station nearest from, facing the street ({"pos", "yaw" (deg), "name"}); {} when the city has none.
+
+## `scripts/fp/traffic/police_response.gd`
+
+extends `RefCounted`
+
+The police answering the hero's offence (the police_response flag; docs/fp/ARCHITECTURE.md, E Traffic & pedestrians). A car incidents.gd called (a carjack, a knock-down, the third punch: fleets.gd keeps its reason) that reaches the scene posts "Police arrived on <street>", and when the hero is within ENGAGE_R of it two officers get out (walkers of the roster's police bodies, role ROLE, driven here: reactions.gd leaves them out of every scene), stand by the car on the curb side and look for the hero. A hero on foot within APPROACH_R gets one of them walking up; at WARN_R the officer shouts "Stop right there!" and goes on until HOLD_R. A hero within ARREST_R of an officer for ARREST_S (or in a car stopped beside the police car that long), once they have been shouted at and the shout is over (WARN_S: it comes first, whoever is near), is busted (police_bust.gd: a fine by what they did, the fade, out of the car and outside the nearest station), the officers go back to the car and the crew leaves early. A hero who gets further than FLEE_R, or drives off, has the officers back in the car and the car after them: it drives to the hero's road tile again every REPATH_S for PURSUE_S ("Police are after you", said once it is up to speed: the first leg is often a slow U-turn), siren on. It gives up with "Police lost you" ("gave up the chase" within NEAR_R of the hero). It has caught up with a hero who has slowed down (or is stopped and near them, or has stood STUCK_S in the traffic, or has come as near as the roads go to a hero off them) when it stops where it is, never braked to a halt across a U-turn arc or a junction, and its officers get out again from up to FLEE_R. Against a hero who has stopped it keeps on up to PURSUE_MAX while it is still closing on them, and while it is within NEAR_R of one, however they move, so a hero who runs about near the scene is not given up on at 30 s. A hero beyond ENGAGE_R but within LOSE_R when the car arrives is hunted at once; beyond LOSE_R it is "No sign of the suspect". The officers keep the stay up while they are after the hero for at most BUSY_MAX seconds. Every move of the car goes through fleets.gd (recall, redirect: its lanes, its speed), so nothing is placed and nothing blocks the hero. The officers and the arrest run on real seconds (the hero is real-time: 4x or 8x leaves them the same time to act; the hero's pace is the path over PACE_S real seconds, whatever the frame structure), the car on the sim's. Flag off: none of this runs and a called car is as it was (it sits at the scene with its siren for its stay).
+
+### Constants
+
+- `D = preload("res://scripts/sim/sim_defs.gd")`
+- `WS = preload("res://scripts/fp/world_scale.gd")`
+- `LG = preload("res://scripts/fp/traffic/lane_graph.gd")`
+- `VH = preload("res://scripts/fp/traffic/vehicles.gd")`
+- `WK = preload("res://scripts/fp/traffic/walkers.gd")`
+- `BUST = preload("res://scripts/fp/traffic/police_bust.gd")`
+- `ROLE = "officer"`: An officer's walker role; walker ids of officers count up from FIRST_ID (clear of the street's own and of occupants.gd's PROXY_ID).
+- `FIRST_ID = 1 << 25`
+- `OFFICERS = 2`
+- `FINES = {"carjack": 500, "punch": 200, "officer": 300}`: What the hero did, in dollars of fine (incidents.gd's causes; "officer" is a blow at one).
+- `DEFAULT_FINE = 200`
+- `ENGAGE_R = 50.0 * WS.M`: Officers come out when the hero is this close to the car; a hero this far is running away.
+- `FLEE_R = 60.0 * WS.M`
+- `APPROACH_R = 30.0 * WS.M`: One officer walks up to a hero on foot within APPROACH_R of the car (and gives up past 1.5 times that), shouts at WARN_R and closes to HOLD_R; one who has stood at the hero HELD_S without an arrest (they are out of reach: on a roof) gives up too.
+- `WARN_R = 12.0 * WS.M`
+- `HOLD_R = 2.0 * WS.M`
+- `HELD_S = 4.0`
+- `ARRIVE_EPS = 0.02 * WS.M`: A walk is over when within ARRIVE_EPS of its stop radius: float32 positions cannot close the last hair (the step falls below the spacing of the coordinates), so an exact stop is never reached.
+- `PACE_S = 0.25`: The hero's pace is the path they covered over PACE_S real seconds (hops of more than HOP_MAX in one step are a teleport, not a stride).
+- `HOP_MAX = 15.0 * WS.M`
+- `ARREST_R = 3.0 * WS.M`: The hero is held when within ARREST_R of an officer (feet within ARREST_UP of theirs), or in a car stopped (CAR_STOPPED, u/s) within CAR_ARREST_R of the police car, for ARREST_S seconds (the count falls back at the same rate while they are clear).
+- `ARREST_UP = 2.0 * WS.M`
+- `CAR_ARREST_R = 8.0 * WS.M`
+- `CAR_STOPPED = 1.0 * WS.M`
+- `ARREST_S = 2.0`
+- `DRIVE_OFF_R = 25.0 * WS.M`: A car under way at more than DRIVE_OFF_V (u/s) beyond DRIVE_OFF_R of the police car has driven off.
+- `DRIVE_OFF_V = 3.0 * WS.M`
+- `WALK = 2.0 * WS.M`: Officers' pace out, up to the hero and back to the car when the hero is running.
+- `RUN = 4.0 * WS.M`
+- `WARN_S = 1.5`: Seconds the warning shout takes, an officer who stalls (a wall in the way) this long gives up for GIVE_UP_S, and the officers have RECALL_S to get back in the car.
+- `STALL_S = 2.5`
+- `GIVE_UP_S = 15.0`
+- `RECALL_S = 8.0`
+- `WRAP_S = 8.0`: The stay left (s) at which the officers go back to the car to leave with it, and how much of it the car keeps while they are busy with the hero.
+- `BUSY_MAX = 45.0`: The officers keep the stay up while they are after the hero for at most BUSY_MAX real seconds in all (a hero running rings round the car is not chased for ever).
+- `PURSUE_S = 30.0`: The chase: PURSUE_S seconds at most against a hero who keeps moving (PURSUE_MAX against one who has stopped, while the car closed on them by PROGRESS_M over the last PROGRESS_S: the first leg of a chase is often a slow U-turn), the road tile of the hero asked for again every REPATH_S, given up at once beyond LOSE_R, at most MAX_CHASES times in a response. Close (CATCH_R) to a hero walking pace or slower (CATCH_HERO, u/s) the car, at CATCH_CAR u/s or less, brakes where it is (CATCH_BRAKE, u/s^2) and once stopped (STOPPED_V, u/s) its officers get out again for CATCH_STAY seconds.
+- `PURSUE_MAX = 60.0`
+- `NEAR_R = 40.0 * WS.M`: A car within NEAR_R of the hero keeps after them to PURSUE_MAX; one given up on within it "gave up the chase", beyond it "lost" them. "Police are after you" is said once the car is up to TOLD_V (u/s) or TOLD_S seconds into the chase (the first leg is often a slow U-turn).
+- `TOLD_V = 5.0 * WS.M`
+- `TOLD_S = 12.0`
+- `PROGRESS_S = 10.0`
+- `PROGRESS_M = 5.0 * WS.M`
+- `REPATH_S = 1.5`
+- `LOSE_R = 500.0 * WS.M`
+- `MAX_CHASES = 2`
+- `CATCH_R = 20.0 * WS.M`
+- `CATCH_HERO = 2.5 * WS.M`
+- `CATCH_CAR = 3.0 * WS.M`
+- `CATCH_BRAKE = 3.0 * WS.M`
+- `STOPPED_V = 0.5 * WS.M`
+- `CATCH_STAY = 25.0`
+- `STUCK_S = 5.0`: A car that has stood STUCK_S seconds in a chase (held by the lights or the traffic, or by the hero) with the hero within the flee radius is as near as it gets: caught, whatever their pace.
+- `DOOR_OUT = 0.45 * WS.M`: Officers get out this far beside the car's flank (its door), and stand this far (the curb).
+- `POST_OUT = 1.6 * WS.M`
+- `BUST_COOL = 20.0`: No second arrest within this many seconds of one.
+
+### Properties
+
+- `bust: BUST`: The arrest and what follows it.
+
+### Inner classes
+
+- `Officer`: One officer on foot: k 0 the front door, 1 the rear; mode "out" (to their post), "post", "approach", "warn" (the shout), "back" (to the car) or "in" (gone into it).
+- `Resp`: The response of one police car; phase "scene", "recall" (officers back to the car, then after: "leave" or "chase") or "chase".
+
+### Functions
+
+- `func setup(p_f: Object) -> void`
+- `func reset() -> void`: Everything gone (a world rebuild, teardown): officers freed, responses forgotten, an arrest's fade dropped and the hero given their input back.
+- `func clear(recall: bool = false) -> void`: Frees every officer and forgets every response; with recall, a car mid-response goes home (the flag went off) instead of waiting on a response that is gone.
+- `func on() -> bool`
+- `func officers_of(id: int) -> Array`: The walkers out beside police car id (a test hook).
+- `func phase_of(id: int) -> String`: Police car id's phase ("scene", "recall", "chase"), "" when it is not being run (a test hook).
+- `func note_offence(cause: String) -> void`: The hero did cause (incidents.gd): a response under way, or one still on its way, fines for it.
+- `func struck(w: WK.Walker) -> void`: The hero struck officer w: that is resisting, and the arrest is at once.
+- `func on_arrived(c: VH.Car) -> void`: Police car c (a crew called for the hero's offence) is at the scene: tell the player, and put the officers out or send it after a hero who is not there.
+- `func step(dt: float) -> void`
 
 ## `scripts/fp/traffic/reactions.gd`
 
@@ -1255,6 +1375,7 @@ Traffic and pedestrians on lanes (slice E, docs/fp/slices/E-traffic.md): one roa
 - `REACT = preload("res://scripts/fp/traffic/reactions.gd")`
 - `BS = preload("res://scripts/fp/traffic/body_spheres.gd")`
 - `INCIDENTS = preload("res://scripts/fp/traffic/incidents.gd")`
+- `POLICE = preload("res://scripts/fp/traffic/police_response.gd")`
 - `JACK = preload("res://scripts/fp/traffic/carjack.gd")`
 - `MAX_STEP = 1.0 / 30.0`
 - `LAZY_TILES_PER_STEP = 2`: Lazy tile_built handling rebuilds at most this many tiles per step (traffic_lazy_tilebuilt).
@@ -1284,6 +1405,8 @@ Traffic and pedestrians on lanes (slice E, docs/fp/slices/E-traffic.md): one roa
 - `shoves: SHOVES`: Cars the player's car knocked: their slides, stuns and the way back onto their lanes.
 - `hero_aboard: bool`: True while the hero is up on a moving car (an action hijack): not on foot in the street, so nobody stops or steps aside for them (set_hero_aboard).
 - `reactions: REACT`: People hit in the street (reel, fall, get up, run off) and what that means for the city.
+- `police: POLICE`: The police a called car puts out at the scene (police_response.gd, the police_response flag).
+- `warming: bool`: True while a teleport's warm-up runs the street (_refill): the police's clocks sit it out.
 - `carjack: JACK`: Drivers dragged out of the cars the player takes (the carjack flag).
 - `jitter_enabled: bool`: Test hooks: departure jitter on or off; auto_step false keeps _process from advancing time.
 - `ambient_enabled: bool`: Test hook: false stops the ambient filler (no spawns, no removals).
@@ -1342,7 +1465,7 @@ Traffic and pedestrians on lanes (slice E, docs/fp/slices/E-traffic.md): one roa
 - `func release_walker(id: int) -> void`: The hero lets go of person id.
 - `func answer_emote(p: Vector3, fwd: Vector3, emote: String) -> int`: The hero's emote ("wave", "yes", "no", "shout", "dance") at p facing fwd: the people who answer it (reactions.gd answer_emote). Returns how many do.
 - `func pose_walker(id: int, clip: StringName, t: float) -> bool`: Photo and test hook: person id plays reaction clip from t seconds in (held, sim paused or not).
-- `func call_crew(kind: String, at: Vector3, stay: float) -> bool`: Calls a crew ("police" or "ambulance") to world point at, from the road beside the nearest police station or hospital (a road some way off when the city has none), to stay that many seconds once there (fleets.gd). False when no road is near at.
+- `func call_crew(kind: String, at: Vector3, stay: float, why: String = "") -> bool`: Calls a crew ("police" or "ambulance") to world point at, from the road beside the nearest police station or hospital (a road some way off when the city has none), to stay that many seconds once there (fleets.gd); why is what the hero did (incidents.gd's cause), which the police's fine follows. False when no road is near at.
 - `func enter_target(p: Vector3, r: float, occupied: bool = true) -> Dictionary`: The car the player could get into from p: the nearest one they may take whose body is within r of p (with occupied false, none with someone at the wheel), as {"id", "label", "pos", "dist", "jack" (someone at the wheel is pulled out first: carjack)}; {} when none (or while they drive).
 - `func claim_car(id: int, src: Vector3 = Vector3.INF, moving: bool = false) -> Dictionary`: Hands car id to the player: an ambient, decor or resident car is swapped for a player car of the same model where it stands (its owner's trip carries on without it). With someone at the wheel (carjack) the driver is dragged out first by the hero standing at src (carjack.gd). moving: a car in traffic at any speed (an action hijack), which keeps its speed ("v", u/s). Returns the car's {"id", "pos", "yaw", "length", "half_w", "height", "v"}, or {} when it cannot be taken.
 - `func drive_car(pos: Vector3, yaw: float, v: float, a: float) -> void`: Poses the driven car (speed v signed, acceleration a) and its model at once, so the car and the seated hero move in the same frame.
