@@ -290,11 +290,13 @@ const OFFLINE = process.env.GF_SMOKE_OFFLINE === "1";
 	await page.keyboard.type(KEY, { delay: 20 });
 	await page.keyboard.press("Tab"); // input -> Apply
 	await page.keyboard.press("Tab"); // Apply -> Forget
-	await page.keyboard.press("Tab"); // Forget -> Remember Off
+	await page.keyboard.press("Tab"); // Forget -> Test
+	await page.keyboard.press("Tab"); // Test -> Remember Off
 	await page.keyboard.press("Tab"); // Off -> On
 	await page.keyboard.press("Enter"); // toggle On
 	await page.keyboard.press("Shift+Tab"); // On -> Off
-	await page.keyboard.press("Shift+Tab"); // Off -> Forget
+	await page.keyboard.press("Shift+Tab"); // Off -> Test
+	await page.keyboard.press("Shift+Tab"); // Test -> Forget
 	await page.keyboard.press("Shift+Tab"); // Forget -> Apply
 	await page.keyboard.press("Enter"); // Apply (Remember on)
 	await sleep(1200);
@@ -324,12 +326,14 @@ const OFFLINE = process.env.GF_SMOKE_OFFLINE === "1";
 	await page.keyboard.type(KEY, { delay: 20 });
 	await page.keyboard.press("Tab"); // input -> Apply
 	await page.keyboard.press("Tab"); // -> Forget
+	await page.keyboard.press("Tab"); // -> Test
 	await page.keyboard.press("Tab"); // -> Off
 	await page.keyboard.press("Tab"); // -> On
 	await page.keyboard.press("Enter"); // On
 	await page.keyboard.press("Shift+Tab");
 	await page.keyboard.press("Shift+Tab");
-	await page.keyboard.press("Shift+Tab"); // back to Apply
+	await page.keyboard.press("Shift+Tab");
+	await page.keyboard.press("Shift+Tab"); // back to Apply (On -> Off -> Test -> Forget -> Apply)
 	await page.keyboard.press("Enter"); // Apply (remembered)
 	await sleep(800);
 	const lsFinal = await page.evaluate(() => localStorage.getItem("gridfall.gmi_key"));

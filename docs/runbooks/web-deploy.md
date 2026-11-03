@@ -537,6 +537,19 @@ the runbook's step order is now simpler and safer:
   GMI access token, so it cannot serve the game. The Compute > Containers product is a different service (Elastic
   IP, no HTTPS gateway) and was not used.
 
+### Verified deployment, 2026-11-03 (third instance: the key path fix)
+
+- **URL:** https://ct-688045aa-4105-487b-ac5f-cd92cdb2ed92-web.caas-us1.gmicloud.ai, instance `gridfall-web-0528316`, image
+  `docker.io/kunalsiyag1/gridfall-web@sha256:8813ccdb937ade9005cb483cf790914d3fb7b92162398b526408741cbb3068fd`
+  (tag `:0528316`, release `7588ac5d7c80bf51`, threaded, pack 87,814,798 B on the wire, first load 94.8 MB), Container tier $0.0475/hr.
+  Built from web/wave0 0528316 (key-path fix, carjack pull-out, police response); `gate quick` PASS on that tip.
+- **Measured:** `/healthz` 200; `tools/demo_check.sh` PASS (headers, Brotli, the pack holds `gmi_web_safe_headers`, GMI's
+  preflight allows Authorization + Content-Type); in headless Chrome against the same image the one live POST carried only
+  `authorization` and `content-type` as custom headers (`deploy/web/smoke.js`, 21/21 checks, against a mock API).
+- **Not verified:** a real keyed call from a browser. The owner presses **Test** on this URL with a real key (see "Verify
+  the key path"). The older instances `gridfall-83fe2e8` and `gridfall-web-0a6855f-d` still send the blocked headers.
+- `deploy/web/smoke.js` key-page keystrokes now include the Test button's Tab stop (Forget, Test, Remember Off, On).
+
 ### Verified deployment, 2026-11-03 (second instance)
 
 - **URL:** https://ct-b22afc4d-cbdb-45e4-b3da-e209d09593fa-web.caas-us1.gmicloud.ai, instance `gridfall-83fe2e8`, image
