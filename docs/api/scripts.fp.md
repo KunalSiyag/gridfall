@@ -245,6 +245,7 @@ First-person composition root: builds the context, bus, player, collision, HUD a
 - `FIRST_DAY = preload("res://scripts/fp/first_day.gd")`
 - `SETTINGS_PATH = "user://gridfall_fp_settings.json"`
 - `DEFAULT_SETTINGS = { "mouse_sensitivity": 0.0022, "invert_y": false, "fov": 72.0, "head_bob": true, "quali...`: camera_mode is "third" (over-the-shoulder, the default for play, D13) or "first"; "fov" is the first-person FOV and "tps_fov" the third-person one; shoulder is 1 (right) or -1 (left); hero is "m" or "f". fp_kit.make_ctx overrides camera_mode to "first" unless a test asks otherwise.
+- `WEB_TIER_VERSION = 1`: Stamped into the settings (key quality_web_v) when the player picks a quality preset. The web tiers became real in this build (Quality.WEB_TIERS): a Medium or High saved by an older build, when those presets did nothing in the browser, is not a choice for what they cost now.
 - `RESERVED_KEYS = ["version", "player", "time_scale", "day_phase"]`: Save keys FpMode owns; a feature id must not use them.
 - `SAVE_VERSION = 1`
 
@@ -253,6 +254,8 @@ First-person composition root: builds the context, bus, player, collision, HUD a
 - `settings_log: Array[Dictionary]`: Every patch passed to apply_settings, in order (tests read it; also filled when not set up).
 - `capture_mouse: bool`: False keeps the pointer free (scripted tours and benchmarks; GRIDFALL_FP_PHOTO_DIR or GRIDFALL_MOUSE=free), so a windowed test run never grabs the desktop pointer.
 - `auto_low_quality: bool`: The quality preset came from GpuMemory's low mode, not from the player's saved settings.
+- `force_web: bool`: Tests set this to run the web settings migration on the desktop.
+- `settings_path: String`: Where the settings are read and written; tests point it at a scratch file so they never touch the player's own.
 
 ### Functions
 
@@ -269,6 +272,7 @@ First-person composition root: builds the context, bus, player, collision, HUD a
 - `func apply_settings(patch: Dictionary, persist: bool = true) -> void`: Appends patch to settings_log, merges it into ctx.settings, saves SETTINGS_PATH (skipped when setup() never ran, as in fp_kit's stub mode, or when persist is false, as for the photo tour's and fp_bench's camera override), emits bus.settings_changed(settings) and, if "quality" changed, bus.quality_changed(preset).
 - `func spawn_point() -> Dictionary`: Feet position and yaw for a fresh player: the sidewalk in front of City Hall (S0 §7.3). {"pos": Vector3, "yaw": float (deg)}.
 - `func unstick_player() -> bool`: Moves the player out of any building or site box they stand in (one can appear on the lot they stand on) to the nearest free point, else to the spawn point. True if the player was moved.
+- `static func web_quality_migrates(saved: Dictionary, web: bool) -> bool`: True when saved settings carry a Medium or High preset that the player never picked in a build with real web tiers: on the web it is dropped for Low (with the Low toast) until they choose it again, because the tiers cost 0 to 3 ms a frame on a grown street and buy no Planner speed.
 
 ## `scripts/fp/game_bus.gd`
 

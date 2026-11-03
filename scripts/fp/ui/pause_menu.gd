@@ -53,6 +53,10 @@ const TABS := {
 ## The settings row that is not an FpMode setting: it reads and writes the web_real_time_pace
 ## flag (through GameBus.pace_requested), which the planner HUD toggle shares.
 const PACE_KEY := "real_time_pace"
+## The Quality row's label in the browser build: Medium and High are sharper pixels and longer
+## ranges, not a speed-up, and Low is the default. They cost 0 to 3 ms a frame and 6 to 11% of the
+## fps on a grown street (runs read both ways), so the label says "cost" and not a made-up number.
+const WEB_QUALITY_LABEL := "Quality (web: Medium/High cost fps)"
 const LEGEND := [
 	["person", "Population", "People living in the city"],
 	["face", "Mood", "How residents feel, 0 to 10 (tile happiness when residents are off)"],
@@ -416,6 +420,11 @@ func _build_settings() -> void:
 	_settings.visible = false
 
 
+## The label of a settings row: the Quality row states its cost in the browser build.
+static func row_label(key: String, label: String, web: bool) -> String:
+	return WEB_QUALITY_LABEL if web and key == "quality" else label
+
+
 func _row(row: Array) -> Control:
 	var key := str(row[0])
 	var h := HBoxContainer.new()
@@ -423,7 +432,7 @@ func _row(row: Array) -> Control:
 	h.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	h.custom_minimum_size = Vector2(0, ROW_H)
 	h.add_theme_constant_override("separation", 12)
-	var l := S.plain(str(row[1]), 16, S.TEXT, S.font())
+	var l := S.plain(row_label(key, str(row[1]), WebSupport.is_web()), 16, S.TEXT, S.font())
 	l.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	l.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
 	h.add_child(l)

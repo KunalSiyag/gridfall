@@ -57,15 +57,22 @@ the run with exit 2 and a message: none is ignored.
 | `GF_FPS_GLHOOK=0` | frame log and observers without the WebGL wrappers |
 | `GF_FPS_FLAGS="a=1,b=0"` | feature flags written to `user://feature_flags.json` before the engine boots (the web build reads no environment); names are checked against `data/feature_flags.json`. Default `web_first_use_marks=1`; `none` writes an empty `{}`, so a reused profile loses the flags an earlier run left in it |
 | `GF_FPS_SAVE=<path>` | seeds a `gridfall_save.json` first, to measure a grown city (see web-deploy.md) |
+| `GF_FPS_SETTINGS='{"quality":"low"}'` | seeds the game's settings file (`user://gridfall_fp_settings.json`) before boot, e.g. to measure the Medium or High tier. A Medium or High seed must carry `"quality_web_v":1`, as a pick made in the game does: the web build loads an unstamped one as Low (it is an older build's save), so the knob refuses it |
+| `GF_FPS_CLICK=x,y` | one mouse click (CSS pixels) in the Planner view before its row, e.g. a speed button (4x about `1147,25`, 8x about `1228,25` at 1600x900) |
+| `GF_FPS_SHOTS=1` | crops the HUD clock (700x90) at the start and end of the Planner row (`hud-start.png`, `hud-end.png`) and logs their wall times in `clock.txt`: the only way to read game days per window |
+| `GF_FPS_DENSE=1` | the same crop every 1.5 s during the Planner row (`d00.png`...): shows a clock parked at a day start |
 | `GF_FPS_MEMORY=0` | skip process RSS and `measureUserAgentSpecificMemory` |
 | `GF_FPS_RAW=1` | keep every window's raw frames and events in `<outdir>/gl-raw-*.json` |
 | `GF_FPS_AUDIBLE=1` | autoplay policy on and output unmuted, as a player has it (default: policy off, `--mute-audio`); see "Audio" below |
 | `GF_FPS_NO_OCCLUSION=1` | exit 6 when the console shows an `occlusion` line (see web-deploy.md); also counted as `occlusion_lines` |
 
-Exit codes: 0 done; 2 bad knob or crash; 3 the `GF_FPS_SAVE` city was not continued; 4 the round trip below logged an
+Exit codes: 0 done; 2 bad knob or crash, which includes a page that never got a WebGL2 context (the probe reloads
+it twice, then fails with "the page could not start": a busy GPU process on a shared machine, so rerun) and a boot that
+never printed its line; 3 the `GF_FPS_SAVE` city was not continued; 4 the round trip below logged an
 exception (a `pageerror`, `SCRIPT ERROR` or invalid bus index, the orbit row's seconds included) or, with the
 game's marks on, never logged `quit_to_orbit` (the blind navigation missed the button); 5 the WebGL census was
-asked for and saw no draws (`kit_ok: false`); 6 `GF_FPS_NO_OCCLUSION` was set and an `occlusion` line showed.
+asked for and saw no draws (`kit_ok: false`); 6 `GF_FPS_NO_OCCLUSION` was set and an `occlusion` line showed;
+7 the clear-sky stripe pose read over `STRIPE_MAX` (see "Stripes": a weak guard, look at `stripes.png`).
 
 The run ends with the exit_fp / enter_fp round trip (Planner view, Tab back), as before. The web game
 always boots into first person; the `orbit` row is the Planner view reached through the pause menu's Planner view button (once "Quit to orbit"), and
@@ -361,12 +368,22 @@ back. Nothing is placed by a hook: only keys and the mouse. It scores the band `
 `rowProfileRms`: the rms, in grey levels, of the row-mean luminance minus its own smoothing (10 rows). The verdict is
 `stripeVerdict`: `ok` while the reading is at most `STRIPE_MAX` (2.0), and the probe exits **7** when it is not.
 
-Measured through the probe on local exports, three runs of each: **0.71, 1.15 and 1.19** with the fixed street sun
-(normal bias 1.5), **2.75, 2.89 and 2.99** with the bias put back to 0.6 (a build made for that comparison and
-discarded). Both frames were looked at: the old bias shows the owner's horizontal bands across the whole sidewalk
-and paving, the fix is clean. The pose is a fixed early moment on purpose: a later frame (08:00, pedestrians and a
-card in the band) read the old bias at 1.49, below the limit, so do not move the pose to a later time. Skipped, with
-`stripes: {skipped}`, under `GF_FPS_SAVE` (the sky is the save's weather) and with `GF_FPS_STRIPES=0`.
+Measured through the probe on local exports (the first three runs of each, then the reviewers' repeats): the fixed
+street sun (normal bias 1.5) read **0.71, 1.15 and 1.19**, then **1.41, 0.92 and 0.50** in a later round and up to
+**1.43** in another: **0.5 to 1.43** in all, so the run-to-run spread is about a factor of three on one build, and
+Low sat 0.6 under the limit once. The old bias (0.6, a build made for that comparison and discarded) read **2.75,
+2.89 and 2.99** at the same early pose, but **2.39 and 1.49** when the pose was taken 8 s or 30 s later (the sun, the
+pedestrians and the HUD cards move). Both frames were looked at: the old bias shows the owner's horizontal bands
+across the whole sidewalk and paving, the fix is clean.
+
+**This probe is a weak guard.** The limit of 2.0 sits in a gap that holds only for the early pose and an idle box: a
+noisy run on a busy machine can trip exit 7 with no regression, and any boot-time jitter that moves the pose later can
+let a revert pass (the 1.49 and 2.39 readings above are that case). Nothing in CI runs it (it needs an export and a
+browser). The proof is the screenshots: open `stripes.png` and look for the bands. The regression guard that does
+catch a revert is `tools/tests/fp_street_bias_test.gd`. The pose is a fixed early moment on purpose: a later frame
+(08:00, pedestrians and a card in the band) read the old bias at 1.49, below the limit, so do not move the pose to a
+later time. Skipped, with `stripes: {skipped}`, under `GF_FPS_SAVE` (the sky is the save's weather) and with
+`GF_FPS_STRIPES=0`.
 
 The older band-pass metric `dogRms` (luminance blurred at 1.5 px minus 5 px) stays in `web_probe_kit.js` for stripes
 that tilt or curve (a road seen at an angle), which a row profile averages away. It reads the texture of whatever

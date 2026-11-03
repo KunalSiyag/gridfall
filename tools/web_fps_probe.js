@@ -30,6 +30,7 @@
 //
 //   GF_FPS_AUDIBLE=1      autoplay policy ON and the output NOT muted (a player's audio setup; the default lane is muted and
 //                         gesture-free and cannot hear a silent game: tools/web_audio_probe.js is the audio check)
+//   GF_FPS_CLICK=x,y (one click in the Planner view: a speed button)  GF_FPS_SHOTS=1 / GF_FPS_DENSE=1 (HUD clock crops)  GF_FPS_SETTINGS='{"quality":"low"}' (Medium/High need quality_web_v:1)
 //
 // The run uses ONE tab (chrome://gpu, the seed and the display-rate sample happen in it one after another) and brings it
 // to the front: with another tab in front Chrome stops the game tab's requestAnimationFrame and the probe used to hang.
@@ -192,6 +193,7 @@ let cleanup = async () => {};
 	}
 	// Always written, "{}" for GF_FPS_FLAGS=none: a reused profile otherwise keeps what an earlier run seeded.
 	seedFiles.push({ key: IDB_DIR + "/feature_flags.json", b64: Buffer.from(JSON.stringify(K.flags)).toString("base64") });
+	if (K.settings) seedFiles.push({ key: IDB_DIR + "/gridfall_fp_settings.json", b64: Buffer.from(JSON.stringify(K.settings)).toString("base64") });
 	let seeded = null;
 	if (seedFiles.length > 0) {
 		const origin = new URL(URL_).origin;
@@ -469,7 +471,27 @@ let cleanup = async () => {};
 	// The orbit (Planner) view: on the web the game always boots into first person, so this is the
 	// only way into it. Its first seconds are the transition segment above.
 	if (want("orbit")) {
+		// HUD crops for the game clock (GF_FPS_SHOTS / GF_FPS_DENSE) and one click (GF_FPS_CLICK), e.g. a speed button.
+		const shot = async (name) => {
+			await page.screenshot({ path: path.join(OUT, name), clip: { x: 0, y: 0, width: 700, height: 90 } }).catch(() => {});
+			fs.appendFileSync(path.join(OUT, "clock.txt"), name + " " + Date.now() + "\n");
+		};
+		if (K.click) {
+			await page.mouse.click(K.click.x, K.click.y);
+			await sleep(500);
+		}
+		if (K.shots) await shot("hud-start.png");
+		let denseStop = false;
+		const dense = K.dense ? (async () => {
+			for (let i = 0; !denseStop && i < 60; i++) {
+				await shot("d" + String(i).padStart(2, "0") + ".png");
+				await sleep(1500);
+			}
+		})() : null;
 		await row("orbit", K.windowS);
+		denseStop = true;
+		if (dense) await dense;
+		if (K.shots) await shot("hud-end.png");
 		await page.screenshot({ path: path.join(OUT, "orbit.png") }).catch(() => {});
 	}
 	// The exit's console lines run to here, the orbit dwell included: an exception raised while the orbit view

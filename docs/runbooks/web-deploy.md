@@ -433,8 +433,9 @@ created while the game runs. Two traps found on the way: the setting's **default
 (`BUS_LAYOUT`; `tools/pytests/test_web_audio.py` reads the pack and fails when it is missing).
 
 **Measured on a local export of the fix** (headless Chrome with a GPU, policy `document-user-activation-required`,
-no `--mute-audio`, one click, then W held): context `running`, destination peak 0.49 before any gesture, 0.56
-at the end, first sound 0.1 s after `GRIDFALL: boot complete`; the same probe on the previous image: peak 0.0000
+no `--mute-audio`, one click, then W held; the clean export, not the earlier one with a scratch hook): context
+`running`, destination peak 0.49 before any gesture, 0.76 at the end (0.75 in a second run), first sound 0.2 s
+to 1.9 s after `GRIDFALL: boot complete` (two runs); the same probe on the previous image: peak 0.0000
 in all 456 samples, exit 1. The layout alone made it audible, with its effects inside (Sample mode ignores
 effects, so the pause low-pass and the street reverb do nothing in the browser; unmeasured, from Godot's
 documented sample limitation). **Stream playback** (`audio/general/default_playback_type.web=0`, which
@@ -470,26 +471,37 @@ here (above); the emitters' loops would need the same treatment (play them once,
 that was not done: the cost is the stream's length, so a per-refresh limit would only spread it.
 
 **What sound costs the street.** With the graph connected the browser now renders the mix (a disconnected graph
-is not pulled, so the old build skipped it). Street frames on the day-10 save, `GF_FPS_AUDIBLE=1`, same box, busy
-ms p50 (main thread): previous image 15.3 / 15.7 / 15.4, the fix 16.4 / 15.4 (a third run died on the WebGL2 start
-failure described in web-probe-kit.md); draws 2,079 to 2,057 against 2,058 (traffic 12 to 8). No difference
-beyond the run-to-run spread (the first run of the fix read +1.1 ms and its repeat did not): the audio thread's
-work is not on the main thread. Re-check on a 2-core box before the demo.
+is not pulled, so the old build skipped it), and that **costs a little main-thread time**. First look (day-10 save,
+`GF_FPS_AUDIBLE=1`, same box, busy ms p50): previous image 15.3 / 15.7 / 15.4, the fix 16.4 / 15.4, which read as
+"no difference beyond the spread". The A/B that followed pulled and did not pull the graph on one page, three rounds
+each: p50 18.1 / 16.7 / 16.7 connected against 16.7 / 16.7 / 16.7 pulled off, p95 23.2 / 20.8 / 18.1 against
+19.3 / 16.7 / 16.7, and frames over 34 ms 4 / 8 / 4 against 2 / 3 / 2: the same direction in all three pairs. So
+count on **about +1.4 ms at p50, +2 to 4 ms at p95 and about twice as many frames over 34 ms** on the street, with
+large uncertainty on a shared box (1 to 2 ms is the safe reading): it is the price of the game being audible, small
+and accepted, and it does not show on the Planner's vertex-bound frame. Draws 2,079 to 2,057 against 2,058
+(traffic 12 to 8). The audio thread's own work is off the main thread, but the engine's per-frame mixing
+bookkeeping and the JS graph are not. Beds already start one per frame behind the veil; nothing cheaper was found.
+Re-check on a 2-core box before the demo.
 
 ## Planner stalls, autosave and the web quality tiers
 
 **Planner (orbit) stalls.** On a day-10 grown city the Planner showed three CPU-only stalls of 540 to 670 ms
 in every 12 s window (`gl_ms` about 1 ms, no shader builds; the kit's hitch frames carried the `day_bell` and
 `save` marks). Two causes, both fixed: (1) `SimPerfFeature.teardown()` set `CitySim.sliced = false` when
-leaving first person, so the Planner ran whole `step_tick()`s; on the web it now **keeps `sliced` on** at a 4 ms
-budget (`ORBIT_BUDGET_MS`, whatever preset the street ran at; the desktop still turns it off). (2)
+leaving first person, so the Planner ran whole `step_tick()`s; on the web it now **keeps `sliced` on** (flag
+`web_sliced_planner`, default on; off gives whole ticks on the web too), at a budget that **follows the speed
+buttons**: 4 ms a frame at 1x (`ORBIT_BUDGET_MS`, whatever preset the street ran at), 6.7 at 2x, 9.3 at 4x and 12 at 8x
+(`ORBIT_BUDGET_CAP_MS`, `CitySim.scaled_budget_ms`: linear in log2 of the speed; the street never scales). The desktop
+still turns slicing off. (2)
 `Main` autosaved at every morning tick, and the Planner's game day is 12 s: `save:stringify` alone was 95 ms
 at day 10. A **morning autosave inside 60 s of wall clock of the last one is deferred, not dropped**
-(`Main.AUTOSAVE_MIN_GAP_S`, `Main.autosave_wait_s()`): the due flag stays set and the save runs on the first frame
+(`Main.AUTOSAVE_MIN_GAP_S`, `Main.autosave_wait_s()`, flag `autosave_gap`, default on; off autosaves every morning as
+before): the due flag stays set and the save runs on the first frame
 after the gap, because on the web a closing tab never reaches the quit autosave and the morning save is the only
-persistence there (at most about a minute of play can be lost, not whole days). The quit save and manual saves always
+persistence there (at most about a minute of wall-clock play can be lost, not whole days; at 8x that minute is
+several game days, a few at the paces measured below, more if 8x ever reaches its promised pace). The quit save and manual saves always
 go through. `fp_orbit_slicing_test` covers both, with a fake clock (`Main.autosave_clock`) and with the production
-`Time.get_ticks_msec`.
+`Time.get_ticks_msec`, pins the speed-to-budget table, and checks that each flag off restores the old behaviour.
 
 **Measured** (`tools/web_fps_probe.js`, rows street and orbit, headless Chrome on an AMD GPU through ANGLE, the
 day-10 grown save, a 15 s Planner window, the previous image against the fix, same commit otherwise, one run
@@ -499,6 +511,66 @@ each): frame intervals in the Planner, previous image: p99 517 ms, stalls of 650
 19.8, still vertex-bound (21,900 draws). The save's 94 ms `save:stringify` showed once in the previous run's
 window and not in the fix's (its first morning save did not fall inside the window): the 60 s gap is
 exercised by the unit test, not by this run. The exit_fp / enter_fp round trip stayed clean (exit 0).
+
+**Planner speed buttons (the cost of the stall fix).** A fixed 4 ms slice capped a grown city's clock whatever
+button was pressed: a whole day-10 tick is 200 to 500 ms of work, so a tick took 100 to 150 frames and the Planner
+managed about one tick every 5 to 6 s. Two changes, both pacing only (the ticks and their order are the same;
+`fp_orbit_slicing_test` compares the city after the same ticks with and without them): the budget follows the speed
+(above: 4 ms at 1x, 6.7 at 2x, 9.3 at 4x, `ORBIT_BUDGET_CAP_MS` = 12 at 8x), and a frame with a raised budget
+**chains pumps** (`CitySim._pump_chain`), because one pump stops at `UNITS_PER_PUMP` work units however much time
+is left, so a bigger budget alone went unused (natively 12 ms bought 2.6 days where chained pumps bought 3.8).
+
+**The promised pace is not met, and the buttons buy a fraction of it.** 8x promises 14.4 game days in 20 s and 4x
+7.2; a grown city cannot deliver that without the 200 to 600 ms stalls this change removed. What the change buys,
+measured:
+
+*Native model* (`headless godot`, the day-10 grown save, the real `CitySim` with the brain and the minds, a frame
+modelled as 45 ms of rendering plus the sim's own time of the previous frame, 20 s of modelled wall time; game days
+in 20 s, repeats agree to 0.05 days for whole and 4 ms, and read 3.0 to 4.0 at 8x for the 16 ms cap):
+
+| game days in 20 s | 1x | 2x | 4x | 8x | frame p99 at 8x |
+| --- | --- | --- | --- | --- | --- |
+| whole ticks (before slicing) | 1.67 | 3.34 | 6.71 | 13.4 | 500 ms (6 fps) |
+| 4 ms slices (previous fix) | 1.3 | 1.5 | 1.5 | 1.5 to 1.75 | 49 ms |
+| scaled to 12 ms (shipped) | 1.3 | 2.0 | 2.6 to 2.7 | 3.25 | 57 to 58 ms |
+| scaled to 16 ms | 1.3 | 2.2 to 2.4 | 3.0 to 3.25 | 3.0 to 4.0 | 62 ms |
+| scaled to 24 ms | 1.3 | 2.6 | 4.0 | 4.25 to 4.5 | 70 ms |
+
+*Browser, 8x* (`tools/web_fps_probe.js` with `GF_FPS_CLICK=1228,25 GF_FPS_SHOTS=1`, headless Chrome on an AMD GPU
+through ANGLE, the same grown save, the game clock read in screenshots at the start and end of a 21.7 s window; three
+runs per build, builds differing only in the cap, run in rotation on a shared box):
+
+| 8x, three runs | HUD game days per 21.7 s | fps | busy p50 | frame p99 | frame max |
+| --- | --- | --- | --- | --- | --- |
+| 4 ms slices (previous fix, cap 4) | 0.63, 0.66, 0.66 | 18.6 to 18.8 | 51 to 52 ms | 83 to 100 ms | 133 to 150 ms |
+| scaled to 12 ms (shipped) | 1.57, 2.59, 2.94 | 14.9 to 16.0 | 59 to 61 ms | 150 to 267 ms | 267 to 300 ms |
+| scaled to 16 ms | 2.04, 2.06, 2.83 | 13.2 to 14.4 | 65 to 69 ms | 200 to 233 ms | 283 ms |
+
+So at 8x the scaled sim runs about **3.5 times the 4 ms slices (mean 2.4 days against 0.65)** at a Planner frame
+about 8 ms longer for the 12 ms cap (3 to 4 fps), and the 16 ms cap buys no more pace (2.3 days against 2.4) for another 7 ms of
+frame time and about 1.7 fps: that is why the cap is 12. 2.4 days is **about 17% of the promised 14.4**. Whole ticks (flag off) read about 5 days in
+the same window on the earlier single run, at 11 fps and 683 ms p99. An earlier round of single runs read the 4 ms
+build at 1.2 to 1.75 days and the 16 ms build at 2.4 to 3.4: the clock is a noisy meter (below), and which build
+reads what moves between rounds, but the order did not.
+
+*Browser, 4x* (two runs per build, same probe, `GF_FPS_CLICK=1187,25`): 4 ms slices 0.58 and 0.74 days, scaled to
+12 ms 0.54 and 1.70, scaled to 16 ms 0.24 and 1.17. **4x does not separate**: the runs that read low are windows that
+ended inside a day-start stall (one 12 ms run has a 1,583 ms frame, one 4 ms run 867 ms), and two runs per cell cannot
+tell a budget from a stall. 2x was not rerun (an earlier round read 0.33 to 1.5 days for the scaled build against 0.76
+to 0.95 for the 4 ms one, for the same reason).
+
+**The day-start stall.** Every game day starts with a real-time stall at 06:00 that does not depend on the speed or
+the budget: the brain's day round and the residents' plan batches are spread one piece per frame (about 50 frames
+in the browser, so 2.5 to 8 s of wall clock; seen as the HUD sitting on "06:00" in the dense runs, `GF_FPS_DENSE=1`,
+for 2 to 15 s). In the native model the sim waits on that spread for 2.6 to 3.4 s of 20 s at 4x and 8x
+(`spread_wall_s`: 13 to 17% of the window, 0.8 s with the 4 ms slices), so it costs the sliced sim up to about a fifth
+of its pace there, and more in the browser's longer frames. Whole ticks run the round inline and do not have it. A
+follow-up, not done here (`city_brain.gd` is at the 1,000-line cap): drain pieces per frame within a time budget when
+the speed is 4x or more. Not measured: the browser at 24 ms, or how much of the browser stall the drain would remove.
+`ORBIT_BUDGET_CAP_MS` is the one knob for pace against frame time; **1x is not exactly real time either on a grown
+city**: sliced, the clock ran at 1.3 of 1.67 days in the model and the web read 0.8 against 0.96 for whole ticks; the
+HUD's "Real-time pace" label is a separate setting, not the achieved speed (`CitySim.effective_speed` is, and nothing
+shows it yet).
 
 **Web quality tiers.** `Quality.WEB` used to be merged over every preset, so Low, Medium and High looked
 the same in the browser (measured: street cb 15.1 / 15.3 / 16.1 ms, identical Planner GPU) and the pause
@@ -512,13 +584,28 @@ lod 2.5, 4 street lights):
 | Medium | 0.7 | 1024 | 0.70 | 40 | 2.0 | 5 |
 | High | 0.8 | 2048 | 0.85 | 45 | 1.5 | 6 |
 
-Medium and High are for a good GPU and are a "sharper pixels" knob, not a speed-up. Measured on the day-10 save
-(`tools/web_fps_probe.js`, one run per tier, AMD GPU through ANGLE): the street's busy p50 was 16.1 ms at Medium and
-17.4 ms at High (about 1 ms over Low), with 2,066 draws at Low and 3,284 at High (+59%, fps 51.8 to 49.7); the **Planner is unchanged
-by the tier** (busy p50 44.6 / 41.4 / 42.2 ms, 22.2k draws at each): it is vertex-bound, and nothing in the tiers
-touches its geometry. A player who saved High or Medium before the tiers were real (those presets were no-ops in the
-browser) now gets what they chose, about +1 ms on this GPU and more on a 2-core box (inferred); the pause menu's
-Display tab puts them back on Low. A 0.5 "escape hatch" tier for weak
+Medium and High are **opt-in** for a good GPU: a "sharper pixels" knob that costs frame time and buys no speed. The
+default stays Low (`GpuMemory`: "web browser" starts every browser session on Low), and the pause menu's Quality row
+says so in the browser build (`PauseMenu.WEB_QUALITY_LABEL`: "Quality (web: Medium/High cost fps)": it names the
+cost and no number, because the number moves between runs). Measured on the day-10 save (`tools/web_fps_probe.js`,
+street row, AMD GPU through ANGLE, a shared box, one 20 s window per run; busy p50 in ms and fps): Low 16.9 ms and 50.0
+fps (a first Low run read 27.0 ms and 30.8 fps with other work on the machine: contaminated; another read 16.1 ms),
+Medium 18.7 ms and 44.4 fps, then 16.2 ms and 53.0 fps, High 19.1 ms and 44.3 fps, then 18.2 ms and 46.8 fps. The runs
+**read both ways**: Medium cost 1.8 ms and 11% of the fps once and nothing the second time, High cost 1.3 to 2.2 ms and 6
+to 11%, so the honest reading is **0 to about 3 ms and up to about 10% of the fps** on this GPU, with the draws as the
+steady number: 2,058 at Low, 2,483 to 2,491 at Medium (+21%), 3,254 to 3,276 at High (+59%). Count on more on a
+2-core box (inferred). The **Planner is unchanged by the tier** (busy p50
+44.6 / 41.4 / 42.2 ms, 22.2k draws at each): it is vertex-bound, and nothing in the tiers touches its geometry.
+
+**Saved presets are migrated.** Before the tiers were real, Medium and High did nothing in the browser, so a saved
+`"quality": "medium"` or `"high"` was never a choice about their cost. `FpMode._load_settings` now drops such a preset
+to Low on the web (`FpMode.web_quality_migrates`, with the usual "Web quality: Low. Esc > Display" toast) unless the
+settings file carries `quality_web_v` of at least `FpMode.WEB_TIER_VERSION` (1), which `apply_settings` stamps whenever
+the player picks a preset in this build. The migrated Low is not written back as a choice, and nothing changes on the
+desktop. (A probe that seeds `GF_FPS_SETTINGS='{"quality":"medium"}'` must add `"quality_web_v":1`, or it measures Low;
+`parseKnobs` refuses the unstamped seed.)
+
+A 0.5 "escape hatch" tier for weak
 GPUs is not in the table because the default had to stay at today's look: add a fourth name rather than moving
 Low. `WEB_DENSITY["traffic"]` is 8 (was 12; the whole traffic feature measured 2.5 ms of a 15 ms street frame
 at day 10); crowd 24, animals 6 and rain 600 are unchanged.

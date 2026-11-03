@@ -43,6 +43,7 @@ Tile-based SimCity-style simulation: zoning + demand-driven growth, power/water/
 ### Properties
 
 - `sliced: bool`: Time-sliced ticking for first person. false (default): _process runs step_tick() synchronously, exactly as today. true: a due tick runs as a resumable job, at most slice_budget_ms per frame. Switching finishes any job in flight first, so teardown's `sliced = false` never abandons a tick.
+- `slice_budget_cap_ms: float`: The Planner on the web: above slice_budget_ms, the per-frame budget grows with the game speed from slice_budget_ms at 1x to this cap at 8x and above (see scaled_budget_ms), so the speed buttons still speed a grown city up while no frame carries more than the cap. 0 (the street, the desktop): slice_budget_ms at every speed.
 - `spread_gate: Callable`: Set by ResidentMinds: true while it spreads the day's plan batches over frames. begin_tick() waits for it, and _finish_job_now() drains it through spread_finish.
 - `road_epoch: int`: Bumped whenever a tile turns into a road or stops being one (route caches key on it).
 - `day_seconds: float`: Real seconds per game day at speed 1. Orbit and tests keep SimDefs.BASE_DAY_SECONDS (12); first person sets WS.FP_DAY_SECONDS (1200). Not saved: the view mode sets it at boot. Change it through set_day_seconds() while a day is running, so the time of day stays put.
@@ -70,6 +71,7 @@ Tile-based SimCity-style simulation: zoning + demand-driven growth, power/water/
 - `func annexable_plots(mi: int) -> Array`: Plots that are entirely unclaimed and share an edge with land district mi already owns.
 - `func road_density_cap(i: int) -> int`: The highest density a zoned lot at i may grow to for its roads: max_density of the best-graded road within 2 tiles (D.ROAD_GRADES; 3 with a paved one, 1 with none).
 - `func set_speed(s: int) -> void`
+- `static func scaled_budget_ms(base_ms: float, cap_ms: float, spd: int) -> float`: The sliced work (ms) one frame may spend at game speed spd: base_ms at 1x and below, cap_ms at 8x and above, linear in log2(speed) between (2x about a third of the way, 4x two thirds). A cap at or under the base turns the scaling off. Only wall-clock pacing: the ticks do not change.
 - `func day_progress() -> float`
 - `func tick_seconds() -> float`: Real seconds per growth tick at speed 1.
 - `func set_day_seconds(s: float) -> void`: Changes the day length and rescales the time already accumulated toward the next tick, so day_progress() and tick_phase() are unchanged (a raw switch from a 1200 s to a 12 s day would leave up to a whole 300 s tick pending and run dozens of ticks at once).

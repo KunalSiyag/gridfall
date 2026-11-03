@@ -16,7 +16,12 @@ const DEFAULT_SETTINGS := {
 	"quality": "medium", "show_hud": true, "music_volume_db": 0.0, "sfx_volume_db": 0.0,
 	"camera_mode": "third", "tps_fov": 60.0, "tps_distance_m": 3.2, "shoulder": 1,
 	"auto_shoulder": false, "hero": "m", "coach_seen": false, "coach_hints": "",
+	"quality_web_v": 0,
 }
+## Stamped into the settings (key quality_web_v) when the player picks a quality preset. The web
+## tiers became real in this build (Quality.WEB_TIERS): a Medium or High saved by an older build,
+## when those presets did nothing in the browser, is not a choice for what they cost now.
+const WEB_TIER_VERSION := 1
 ## Save keys FpMode owns; a feature id must not use them.
 const RESERVED_KEYS := ["version", "player", "time_scale", "day_phase"]
 const SAVE_VERSION := 1
@@ -36,6 +41,11 @@ var settings_log: Array[Dictionary] = []
 var capture_mouse: bool = true
 ## The quality preset came from GpuMemory's low mode, not from the player's saved settings.
 var auto_low_quality: bool = false
+## Tests set this to run the web settings migration on the desktop.
+var force_web: bool = false
+## Where the settings are read and written; tests point it at a scratch file so they never touch the
+## player's own.
+var settings_path: String = SETTINGS_PATH
 ## The low-GPU-memory toast shows once per process, not on every return to the street.
 static var _low_vram_told: bool = false
 var _set_up: bool = false
@@ -288,6 +298,7 @@ func apply_settings(patch: Dictionary, persist: bool = true) -> void:
 		ctx.settings[k] = patch[k]
 	if persist and patch.has("quality"):
 		auto_low_quality = false  # a chosen preset is the player's from here on
+		ctx.settings["quality_web_v"] = WEB_TIER_VERSION
 	if _set_up and persist:
 		_save_settings()
 	if bus != null:
@@ -452,11 +463,12 @@ func _feature_list() -> Array[FpFeature]:
 func _load_settings() -> Dictionary:
 	var s := DEFAULT_SETTINGS.duplicate(true)
 	var saved := _read_settings_file()
-	auto_low_quality = GpuMemory.low() and not saved.has("quality")
+	var migrated := web_quality_migrates(saved, force_web or WebSupport.is_web())
+	auto_low_quality = (GpuMemory.low() and not saved.has("quality")) or migrated
 	if auto_low_quality:
 		s["quality"] = "low"
 	for k: Variant in saved.keys():
-		if not s.has(k):
+		if not s.has(k) or (migrated and k == "quality"):
 			continue
 		var v: Variant = saved[k]
 		var numeric := typeof(v) in [TYPE_INT, TYPE_FLOAT] and typeof(s[k]) in [TYPE_INT, TYPE_FLOAT]
@@ -465,15 +477,26 @@ func _load_settings() -> Dictionary:
 	return s
 
 
+## True when saved settings carry a Medium or High preset that the player never picked in a build
+## with real web tiers: on the web it is dropped for Low (with the Low toast) until they choose it
+## again, because the tiers cost 0 to 3 ms a frame on a grown street and buy no Planner speed.
+static func web_quality_migrates(saved: Dictionary, web: bool) -> bool:
+	return (
+		web
+		and str(saved.get("quality", "")) in ["medium", "high"]
+		and int(saved.get("quality_web_v", 0)) < WEB_TIER_VERSION
+	)
+
+
 func _read_settings_file() -> Dictionary:
-	if not FileAccess.file_exists(SETTINGS_PATH):
+	if not FileAccess.file_exists(settings_path):
 		return {}
-	var parsed: Variant = JSON.parse_string(FileAccess.get_file_as_string(SETTINGS_PATH))
+	var parsed: Variant = JSON.parse_string(FileAccess.get_file_as_string(settings_path))
 	return parsed if typeof(parsed) == TYPE_DICTIONARY else {}
 
 
 func _save_settings() -> void:
-	var f := FileAccess.open(SETTINGS_PATH, FileAccess.WRITE)
+	var f := FileAccess.open(settings_path, FileAccess.WRITE)
 	if f == null:
 		return
 	var out: Dictionary = ctx.settings

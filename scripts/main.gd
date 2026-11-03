@@ -59,7 +59,8 @@ var autosave_path: String = SAVE_PATH
 var _autosave_due: bool = false
 ## A morning autosave closer than this to the last autosave (wall clock) is skipped: the Planner's
 ## game day is 12 s and a save costs 100 ms or more of stringify at day 10, an avoidable stall every
-## day. Quit and manual saves always go through.
+## day. Quit and manual saves always go through. Flag autosave_gap (default on); off: every morning
+## autosaves, as before the gap.
 const AUTOSAVE_MIN_GAP_S := 60.0
 ## Wall clock in ms for the autosave gap; tests swap in a fake one.
 var autosave_clock: Callable = Time.get_ticks_msec
@@ -356,7 +357,7 @@ func autosave(reason: String) -> bool:
 ## Seconds until a morning autosave may run again (0 when it may run now): the rest of the
 ## AUTOSAVE_MIN_GAP_S since the last autosave, on autosave_clock.
 func autosave_wait_s() -> float:
-	if _last_autosave_ms < 0:
+	if _last_autosave_ms < 0 or not FeatureFlags.enabled("autosave_gap", true):
 		return 0.0
 	var gap_s := float(int(autosave_clock.call()) - _last_autosave_ms) / 1000.0
 	return maxf(0.0, AUTOSAVE_MIN_GAP_S - gap_s)
