@@ -22,6 +22,8 @@ const RIGHT_VARIANTS: Array[int] = [2, 4, 6]
 ## Surfaces that hold a film of water when wet, and the wetness below which no splash plays.
 const PAVED: Array[String] = ["asphalt", "sidewalk", "lot", "bridge"]
 const SPLASH_MIN_WET := 0.2
+## Water shallower than this (m) is the bank's wet mud, not a splash.
+const WADE_MIN_M := 0.03
 ## Landings faster than this (m/s down, FpPlayer's heavy landing) add the other foot, louder.
 const HEAVY_LAND_MPS := 4.0
 const HEAVY_LAND_DB := 3.0
@@ -43,6 +45,8 @@ var _bound: Node3D
 var _last_pos: Vector3 = Vector3(NAN, NAN, NAN)
 var _travel: float = 0.0
 var _last_surface: String = "sidewalk"
+## True from the first splashing step until a step on dry ground (the entry splash: once a wade).
+var _wet_feet: bool = false
 
 
 func setup(p_ctx: FpContext) -> void:
@@ -114,7 +118,7 @@ static func stride_length(speed_mps: float) -> float:
 
 
 ## Plays one step on surface (CollisionWorld.surface_at names; unknown ones sound like sidewalk).
-func play(surface: String, gain_db: float = 0.0) -> void:
+func play(surface: String, gain_db: float = 0.0, pitch: float = 1.0) -> void:
 	if not enabled:
 		return
 	var surf := BANK.step_surface(surface)
@@ -142,7 +146,8 @@ func play(surface: String, gain_db: float = 0.0) -> void:
 		vol += BANK.STEP_CROUCH_DB
 	p.stream = s
 	p.volume_db = vol
-	p.pitch_scale = 1.0 + _rng.randf_range(-BANK.STEP_PITCH_SPREAD, BANK.STEP_PITCH_SPREAD)
+	var spread := BANK.STEP_PITCH_SPREAD
+	p.pitch_scale = pitch * (1.0 + _rng.randf_range(-spread, spread))
 	var t0 := FirstUse.begin("play", s)
 	p.play()
 	FirstUse.end("play", s, t0)
@@ -176,9 +181,35 @@ static func is_left_variant(n: String) -> bool:
 	return int(n.get_slice("_", n.get_slice_count("_") - 1)) % 2 == 1
 
 
-func _on_stepped(surface: String, _pos: Vector3) -> void:
+func _on_stepped(surface: String, pos: Vector3) -> void:
 	_last_surface = surface
+	if surface == "water" and ctx != null and ctx.collision != null:
+		play_wade(ctx.collision.water_depth(pos) / WS.M)
+		return
+	_wet_feet = false
 	play(surface)
+
+
+## A step of the wading hero in `depth_m` metres of water: the dry shelf of a bank is wet mud
+## (dirt); in the water the step is a splash, louder and lower the deeper it is, and the first
+## one after dry ground gets a second, heavier splash over it.
+func play_wade(depth_m: float) -> void:
+	if depth_m < WADE_MIN_M:
+		_wet_feet = false
+		play("dirt")
+		return
+	var k := clampf(depth_m * WS.M / WS.WADE_MAX, 0.0, 1.0)
+	var gain := BANK.WADE_STEP_DB + BANK.WADE_DEEP_DB * k
+	play("water", gain, lerpf(1.0, BANK.WADE_DEEP_PITCH, k))
+	if not _wet_feet:
+		_wet_feet = true
+		var sp := BANK.stream("footstep_splash_%d" % (1 + 2 * (_rng.randi() % 2)))
+		if sp != null:
+			splashes_played += 1
+			_splash.stream = sp
+			_splash.volume_db = BANK.STEP_DB + gain + BANK.WADE_ENTRY_DB
+			_splash.pitch_scale = lerpf(1.0, BANK.WADE_DEEP_PITCH, k)
+			_splash.play()
 
 
 ## The landing's own contact already played (stepped comes first); a heavy one lands on both feet,

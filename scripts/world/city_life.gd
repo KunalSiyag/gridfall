@@ -465,6 +465,37 @@ func _spawn_boat() -> void:
 	_boats.append(b)
 
 
+## The boats within reach (u) of p, as world boxes: each hull's mesh bounds (measured once, in the
+## boat's own frame) carried by its transform and enclosed in an AABB. The wading hero (FpPlayer)
+## meets them as solid, so he is not walked through a hull: boats keep to the tile centres, 10 m
+## from a bank, but a 14 m hull pointing at the bank reaches into the shallows.
+func boat_boxes_near(p: Vector3, reach: float) -> Array[AABB]:
+	var out: Array[AABB] = []
+	for b: Dictionary in _boats:
+		var node: Node3D = b["node"]
+		if not is_instance_valid(node) or not node.is_inside_tree():
+			continue
+		if Vector2(node.global_position.x - p.x, node.global_position.z - p.z).length() > reach:
+			continue
+		if not b.has("box"):
+			b["box"] = _hull_box(node)
+		out.append(node.global_transform * (b["box"] as AABB))
+	return out
+
+
+## The bounds of every mesh under boat node, in the node's own frame.
+func _hull_box(node: Node3D) -> AABB:
+	var inv := node.global_transform.affine_inverse()
+	var box := AABB()
+	var first := true
+	for m: Node in node.find_children("*", "MeshInstance3D", true, false):
+		var mi := m as MeshInstance3D
+		var local: AABB = inv * mi.global_transform * mi.get_aabb()
+		box = local if first else box.merge(local)
+		first = false
+	return box
+
+
 ## Water a boat can sail: no bridge over it (a road is the only thing built on water).
 func _open_water(i: int) -> bool:
 	return sim.terrain[i] == D.WATER and sim.kind[i] != D.ROAD

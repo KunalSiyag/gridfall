@@ -54,4 +54,5 @@ const FEATURES := [
 		"id": "arena_ask", "slice": "integration",
 		"path": "res://scripts/fp/arena/arena_feature.gd",
 	},
+	{"id": "hero_wade", "slice": "water", "path": "res://scripts/fp/water/wade_feature.gd"},
 ]

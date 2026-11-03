@@ -193,6 +193,7 @@ Generated from the `##` doc comments in `scripts/`. Regenerate with `python3 too
 - [player_avatar.gd](scripts.fp.player.md#scriptsfpplayerplayer_avatargd): The player's visible body (slice A)
 - [spring_math.gd](scripts.fp.player.md#scriptsfpplayerspring_mathgd) (`SpringMath`): Frame-rate independent dampers and springs for the player and the third-person camera
 - [tps_rig.gd](scripts.fp.player.md#scriptsfpplayertps_riggd) (`TpsRig`): Over-the-shoulder follow camera (D13; docs/fp/slices/A-player.md 6.5-6.6): an analytic spring arm root -> shoulder -> hand -> camera, swept against CollisionWorld boxes (no physics, D2)
+- [wade.gd](scripts.fp.player.md#scriptsfpplayerwadegd): The hero in water (flag hero_wade): the numbers FpPlayer reads while wading, written once and const-only so tests can pin them
 
 ## [scripts/fp/posters/](scripts.fp.posters.md)
 
@@ -300,9 +301,14 @@ Generated from the `##` doc comments in `scripts/`. Regenerate with `python3 too
 - [pause_menu.gd](scripts.fp.ui.md#scriptsfpuipause_menugd): Pause menu (slice B), shown on pause_changed(true) over a frosted blur of the paused world: Resume, Save, Load, New city (press twice), Settings, Planner view, Quit (saves first), a legend of the HUD icons, and tabbed settings (Camera, Controls, Display, Audio) written through mode.apply_settings()
 - [place_card.gd](scripts.fp.ui.md#scriptsfpuiplace_cardgd): Place card (slice B) on interact_requested for kinds building, vehicle and pedestrian (a named resident is C's conversation, never a card)
 
+## [scripts/fp/water/](scripts.fp.water.md)
+
+- [wade_feature.gd](scripts.fp.water.md#scriptsfpwaterwade_featuregd): The hero wading (feature "hero_wade", the flag of the same name; its movement half lives in FpPlayer and CollisionWorld)
+
 ## [scripts/fp/world/](scripts.fp.world.md)
 
 - [collision_world.gd](scripts.fp.world.md#scriptsfpworldcollision_worldgd) (`CollisionWorld`): Analytic on-foot collision (slice A; no physics engine, D2): walkable ground height per point, blocking boxes and prop cylinders per tile, water
+- [riverbed.gd](scripts.fp.world.md#scriptsfpworldriverbedgd): The river-bed height, written once
 
 ## [scripts/ops/](scripts.ops.md)
 
@@ -343,4 +349,6 @@ Generated from the `##` doc comments in `scripts/`. Regenerate with `python3 too
 - [construction_kit.gd](scripts.world.md#scriptsworldconstruction_kitgd) (`ConstructionKit`): Procedural construction sites and machines: staged ground works, rising concrete frames, scaffolding, and animated excavators, backhoe loaders, dump trucks, cement mixers, tower cranes, bulldozers and road rollers
 - [gridfall_world.gd](scripts.world.md#scriptsworldgridfall_worldgd) (`GridFallWorld`): Living SimCity-style 3D establishment for GridFall: - 19x19 city grid + 3-tile forested border with real Kenney asphalt roads, intersections, streetlights, fountains, parks, and intersection planters
 - [resident_avatars.gd](scripts.world.md#scriptsworldresident_avatarsgd) (`ResidentAvatars`): Draws every AI resident as the person (or car) actually making their trip: they walk or drive the road route their mind chose, go inside at home/work/shops, gather around incidents they are fixing, and speak their lines
+- [shore.gd](scripts.world.md#scriptsworldshoregd): The shore band (CityView, on foot): sand and wet mud along every bank, with no new texture and no finer mesh
 - [sky_director.gd](scripts.world.md#scriptsworldsky_directorgd) (`SkyDirector`): Day/night cycle tied to the sim clock: tick 0 is morning, 3 is night
+- [water_surface.gd](scripts.world.md#scriptsworldwater_surfacegd): The water surface mesh and the hero's ripples, kept out of CityView (a file near its line cap)

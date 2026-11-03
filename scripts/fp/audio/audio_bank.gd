@@ -10,7 +10,8 @@ const DIR := "res://sounds/fp/"
 ## out downtown). Imported with loop=false, which is not slice I's to change, so it plays as a
 ## looping duplicate.
 const LEGACY_AMBIENCE := "res://sounds/ambience.ogg"
-const SURFACES: Array[String] = ["asphalt", "sidewalk", "lot", "grass", "dirt", "bridge"]
+## "water" has no recordings of its own: its steps are the footstep_splash_<n> set (step_name).
+const SURFACES: Array[String] = ["asphalt", "sidewalk", "lot", "grass", "dirt", "bridge", "water"]
 ## Surfaces without their own steps: unpaved road grades borrow the nearest recorded one.
 const STEP_ALIASES := {"gravel": "dirt", "trail": "grass"}
 const STEP_VARIANTS := 6
@@ -169,6 +170,15 @@ const STEP_CROUCH_DB := -6.0
 const STEP_PITCH_SPREAD := 0.08
 ## The splash layer at full wetness, relative to the step.
 const SPLASH_DB := -2.0
+## The hero wading (hero_wade): a step's level goes from WADE_STEP_DB at the ankle to
+## WADE_STEP_DB + WADE_DEEP_DB at the limit, its pitch from 1 down to WADE_DEEP_PITCH; entering the
+## water adds a second, heavier splash WADE_ENTRY_DB over the step. The river bed gets up to
+## WADE_RIVER_DB louder at half a metre of water.
+const WADE_STEP_DB := -3.0
+const WADE_DEEP_DB := 6.0
+const WADE_DEEP_PITCH := 0.8
+const WADE_ENTRY_DB := 4.0
+const WADE_RIVER_DB := 3.0
 ## UI cues on the UI bus.
 const BLIP_DB := -16.0
 const BLIP_SOFT_DB := -19.0
@@ -280,9 +290,12 @@ static func all_names() -> Array[String]:
 	out.append_array(ONE_SHOTS)
 	for s in SURFACES:
 		for n in range(1, STEP_VARIANTS + 1):
-			out.append(step_name(s, n))
+			var sn := step_name(s, n)
+			if not out.has(sn):
+				out.append(sn)
 	for n in range(1, SPLASH_VARIANTS + 1):
-		out.append("footstep_splash_%d" % n)
+		if not out.has("footstep_splash_%d" % n):
+			out.append("footstep_splash_%d" % n)
 	return out
 
 
@@ -293,8 +306,11 @@ static func preload_all() -> void:
 	legacy_ambience_loop()
 
 
-## footstep_<surface>_<n> (n in 1..STEP_VARIANTS).
+## footstep_<surface>_<n> (n in 1..STEP_VARIANTS); water's steps are footstep_splash_<n> (the odd
+## variants stay the left foot's, the even the right's).
 static func step_name(surface: String, n: int) -> String:
+	if surface == "water":
+		return "footstep_splash_%d" % (1 + (n - 1) % SPLASH_VARIANTS)
 	return "footstep_%s_%d" % [surface, n]
 
 

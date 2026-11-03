@@ -37,6 +37,10 @@ uniform float track_grade = 0.0;
 varying vec3 wpos;
 varying vec2 luv;
 varying vec2 tile_lp;
+// The shore band (scripts/world/shore.gd), from the vertex colour of the meshes that carry it: alpha 0.5
+// marks a land tile coded with which of its eight neighbours are water, alpha 0.25 a river-bed vertex
+// carrying sand and wet itself. Any other alpha (a plain mesh is white) means no shore.
+varying vec4 shore_v;
 
 float hash12(vec2 p) {
 	vec3 p3 = fract(vec3(p.xyx) * 0.1031);
@@ -151,6 +155,7 @@ void vertex() {
 	wpos = (MODEL_MATRIX * vec4(VERTEX, 1.0)).xyz;
 	luv = UV;
 	tile_lp = VERTEX.xz;
+	shore_v = COLOR;
 }
 void fragment() {
 	vec2 p = wpos.xz * detail_scale;
@@ -194,6 +199,52 @@ void fragment() {
 	vec3 alb = mix(g, da * vec3(0.95, 0.9, 0.85), earth);
 	vec3 nrm = mix(gn, dn, earth);
 	float rough = mix(gr, 0.95, earth);
+	vec2 shore = vec2(0.0);
+	vec2 away = vec2(0.0);
+	if (abs(shore_v.a - 0.5) < 0.05) {
+		// A land tile at the water: the distance to the water, per pixel, from the neighbour code
+		// (as RiverBed.land_distance), and the direction away from it.
+		int edges = int(shore_v.r * 15.0 + 0.5);
+		int corners = int(shore_v.g * 15.0 + 0.5);
+		vec2 t = fract(wpos.xz + 0.5);
+		float dist = 2.0;
+		for (int k = 0; k < 4; k++) {
+			bool on_e = ((edges >> k) & 1) != 0;
+			float de = k == 0 ? t.y : (k == 1 ? 1.0 - t.x : (k == 2 ? 1.0 - t.y : t.x));
+			if (on_e && de < dist) {
+				dist = de;
+				away = k == 0 ? vec2(0.0, 1.0) : (k == 1 ? vec2(-1.0, 0.0) : (k == 2 ? vec2(0.0, -1.0) : vec2(1.0, 0.0)));
+			}
+			bool on_c = ((corners >> k) & 1) != 0;
+			vec2 cc = k == 0 ? t : (k == 1 ? t - vec2(1.0, 0.0) : (k == 2 ? t - vec2(1.0, 1.0) : t - vec2(0.0, 1.0)));
+			float dc = length(cc);
+			if (on_c && dc < dist) {
+				dist = dc;
+				away = cc / max(dc, 1e-5);
+			}
+		}
+		shore = vec2(1.0 - smoothstep(0.0, 0.15, dist), 1.0 - smoothstep(0.0, 0.05, dist));
+	} else if (abs(shore_v.a - 0.25) < 0.05) {
+		shore = shore_v.rg;
+	}
+	if (shore.x > 0.004) {
+		// Shore band: grass gives way to pale warm sand rippled parallel to the waterline (crests
+		// every 25 cm, warped), darker and glossier where it is wet.
+		float sx = shore.x;
+		float lum = dot(da, vec3(0.3, 0.59, 0.11));
+		vec3 sand = vec3(lum) * vec3(2.2, 1.9, 1.4) * (0.9 + 0.2 * fbm(p * 0.45 + 2.0));
+		float cover = smoothstep(0.12, 0.55, sx + (fbm(p * 0.28 + 8.0) - 0.5) * 0.5);
+		float crest = sin((sx * 12.0 + (fbm(p * 0.3 + 4.0) - 0.5) * 6.0) * 6.2831853);
+		float ripple_fade = 1.0 - smoothstep(0.3, 0.8, (length(dx) + length(dy)) * 10.0);
+		vec3 sn = vec3(0.5 + away * crest * 0.16 * ripple_fade, 1.0);
+		sand *= 1.0 + crest * 0.04 * ripple_fade;
+		alb = mix(alb, sand, cover);
+		nrm = mix(nrm, sn, cover);
+		rough = mix(rough, 0.82, cover);
+		float wet = shore.y * cover;
+		alb *= mix(1.0, 0.58, wet);
+		rough = mix(rough, 0.2, wet);
+	}
 	float puddle = 0.0;
 	if (track) {
 		int m = int(track_mask + 0.5);
