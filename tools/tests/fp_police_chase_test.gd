@@ -381,6 +381,7 @@ func _check_guards() -> void:
 	# The stay running low: the officers go back by themselves.
 	c = _quick("carjack")
 	_to_posts(c)
+	_freeze(c)
 	_hero_at(_along(c, 35.0))
 	(c.owner as Dictionary)["stay"] = 8.5
 	_step(1.0)
@@ -416,13 +417,11 @@ func _check_guards() -> void:
 		K.check(
 			fails, walker.held == 0.0, "an officer on the way to the hero has not been 'at' them"
 		)
-	# Officers called off a hero who got more than 45 m from the car (short of the 60 m flee).
+	# A hero 46 m off, in reach of the flee radius, is still walked up to.
 	_hero_at(_along(c, 46.0))
 	_step(0.3)
 	var walking := _modes(c).filter(func(m: String) -> bool: return m == "approach" or m == "warn")
-	K.check(
-		fails, walking.is_empty(), "an officer is called off a hero 46 m away (%s)" % str(_modes(c))
-	)
+	K.check(fails, not walking.is_empty(), "an officer keeps after a hero 46 m away")
 	# The stay held while the officers walk back, however slowly.
 	c = _quick("carjack")
 	_to_posts(c)

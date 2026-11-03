@@ -4,9 +4,10 @@ extends RefCounted
 ## fleets.gd keeps its reason) that reaches the scene posts "Police arrived on <street>", and when
 ## the hero is within ENGAGE_R of it two officers get out (walkers of the roster's police bodies,
 ## role ROLE, driven here: reactions.gd leaves them out of every scene), stand by the car on the
-## curb side and look for the hero. A hero on foot within APPROACH_R gets one of them walking up; at
-## WARN_R the officer shouts "Stop right there!" and goes on until HOLD_R. A hero within ARREST_R of
-## an officer for ARREST_S (or in a car stopped beside the police car that long), once they have
+## curb side and look for the hero. A hero on foot (or in a stopped car) within FLEE_R gets one of
+## them walking up; at WARN_R the officer shouts "Stop right there!" and goes on until HOLD_R. A
+## hero within ARREST_R of an officer for ARREST_S (or in a car stopped beside the police car that
+## long), once they have
 ## been shouted at and the shout is over (WARN_S: it comes first, whoever is near), is busted
 ## (police_bust.gd: a fine by what they did, the fade, out of the car and outside the nearest
 ## station), the officers go back to the car and the crew leaves early. A hero who gets further than
@@ -46,10 +47,9 @@ const DEFAULT_FINE := 200
 ## Officers come out when the hero is this close to the car; a hero this far is running away.
 const ENGAGE_R := 50.0 * WS.M
 const FLEE_R := 60.0 * WS.M
-## One officer walks up to a hero on foot within APPROACH_R of the car (and gives up past 1.5 times
-## that), shouts at WARN_R and closes to HOLD_R; one who has stood at the hero HELD_S without an
-## arrest (they are out of reach: on a roof) gives up too.
-const APPROACH_R := 30.0 * WS.M
+## One officer walks up to a hero on foot, or in a stopped car, within FLEE_R of the car (and gives
+## up past 1.5 times that), shouts at WARN_R and closes to HOLD_R; one who has stood at the hero
+## HELD_S without an arrest (they are out of reach: on a roof) gives up too.
 const WARN_R := 12.0 * WS.M
 const HOLD_R := 2.0 * WS.M
 const HELD_S := 4.0
@@ -379,8 +379,11 @@ func _scene(r: Resp, o: Dictionary, dt: float) -> void:
 ## Sends one officer up to a hero on foot near the car, and calls an officer off one who is out of
 ## reach.
 func _send_up(r: Resp, hero: Vector3, d: float, drv: VH.Car) -> void:
+	# On foot, or sitting in a stopped car: either is walked up to (a hero who steals a car and
+	# waits is the simplest demo, and a car 9 to 35 m off was never reached).
 	var on_foot: bool = drv == null and not f.hero_aboard
-	var reach := _reach(r, APPROACH_R)
+	on_foot = on_foot or (drv != null and drv.v <= CAR_STOPPED)
+	var reach := FLEE_R
 	var up: Officer = null
 	for off: Officer in r.officers:
 		if off.mode == "approach" or off.mode == "warn":

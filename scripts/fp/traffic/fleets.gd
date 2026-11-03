@@ -20,6 +20,9 @@ const ASTAR_PER_FRAME := 4
 const CURB_LAT := 0.055
 ## A crew answering a call (stay > 0) gives up after this long (s) from setting off.
 const CALL_MAX := 240.0
+## A called police car held still this long, this near its scene, counts as arrived.
+const SCENE_HELD_S := 6.0
+const SCENE_HELD_R := 25.0 * WS.M
 const JOBS := {"bus": "bus driver", "truck": "truck driver", "garbage_truck": "sanitation worker",
 	"firetruck": "firefighter", "ambulance": "paramedic", "police": "police officer"}
 
@@ -396,6 +399,7 @@ func _send_crew(
 	if stay > 0.0:
 		c.owner["event_id"] = -1
 		c.owner["stay"] = stay
+		c.owner["scene"] = Vector2(target.x, target.y)
 		c.owner.merge(brief, true)
 	var s := clampf(start.length * 0.5 + c.length * 0.5, c.length, start.length)
 	if f.is_far(Vector3(D.tx(start.tile), 0, D.ty(start.tile))) or not vh.fits(start, s, c.length):
@@ -522,7 +526,7 @@ func _step_crew(c: VH.Car, dt: float, live: Dictionary) -> void:
 		"to_scene":
 			if not ev_live and float(o["t"]) > 5.0:
 				_go_home(c, o)
-			elif c.arrived:
+			elif c.arrived or _held_near_scene(c, o, dt):
 				o["phase"] = "at_scene"
 				c.state = "at the scene"
 				if o.has("stay") and str(o.get("kind", "")) == "police":
@@ -535,6 +539,21 @@ func _step_crew(c: VH.Car, dt: float, live: Dictionary) -> void:
 		"leaving":
 			if (c.arrived or float(o["t"]) > 240.0) and not f.on_screen(c.pos):
 				vh.remove(c)
+
+
+## A called crew car that has stood still SCENE_HELD_S seconds within SCENE_HELD_R of its scene
+## counts as there. Someone standing in the roadway (the hero at the driver's door of a car taken
+## in the lane) keeps it 7 to 14 m short of its stop, and without this its response never began
+## and it went home at CALL_MAX with no word.
+func _held_near_scene(c: VH.Car, o: Dictionary, dt: float) -> bool:
+	if not o.has("scene") or str(o.get("kind", "")) != "police":
+		return false
+	o["still"] = float(o.get("still", 0.0)) + dt if c.v < 0.4 * WS.M else 0.0
+	var sc: Vector2 = o["scene"]
+	return (
+		float(o["still"]) >= SCENE_HELD_S
+		and Vector2(c.pos.x - sc.x, c.pos.z - sc.y).length() <= SCENE_HELD_R
+	)
 
 
 ## Sends crew car c home now, its siren off, as when its stay ends (police_response.gd: an arrest,
