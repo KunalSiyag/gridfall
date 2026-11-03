@@ -4,13 +4,19 @@ extends RefCounted
 ## knocked down), and residents who saw it remember it too. A punch that knocks someone down, the
 ## ASSAULT-th punch within ASSAULT_S or a carjack calls the police; someone a car knocks down, an
 ## ambulance (a crew from the nearest station that stays at the scene a while, fleets.gd), each
-## kind at most once per CREW_COOL.
+## kind at most once per CREW_COOL. A police car that gets there is the police_response flag's to
+## run (police_response.gd); what the hero did sets the fine, and an arrest is the street's relief
+## (arrested()).
 
 const D := preload("res://scripts/sim/sim_defs.gd")
+const WS := preload("res://scripts/fp/world_scale.gd")
 const WK := preload("res://scripts/fp/traffic/walkers.gd")
 const MOOD := {"shove": -0.5, "punch": -1.0, "car": -2.0, "carjack": -2.0}
 const DOWN_MOOD := 1.5
 const SAW_MOOD := -0.3
+## Those who see the hero arrested within ARREST_SEEN of them are a little easier.
+const ARREST_MOOD := 0.3
+const ARREST_SEEN := 25.0 * WS.M
 const ASSAULT := 3
 const ASSAULT_S := 60.0
 const CREW_COOL := 90.0
@@ -84,6 +90,7 @@ func report(
 		(info["witnesses"] as Array).append(o.resident_id)
 	if by < 0:
 		info["crew"] = _crew(cause, down, at)
+		f.police.note_offence(cause)
 	return info
 
 
@@ -117,9 +124,28 @@ func _crew(cause: String, down: bool, at: Vector3) -> String:
 		kind = "police"
 	if kind.is_empty() or now - float(_called.get(kind, -INF)) < CREW_COOL:
 		return ""
-	if not f.call_crew(kind, at, float(STAY[kind])):
+	if not f.call_crew(kind, at, float(STAY[kind]), cause):
 		return ""
 	_called[kind] = now
 	if kind == "police":
 		_punches.clear()
 	return kind
+
+
+## The police took the hero away at at (on street, "" in the open): residents on foot who saw it
+## (within ARREST_SEEN) remember it and are a little easier. Returns how many did.
+func arrested(at: Vector3, street: String) -> int:
+	var where := ("on " + street) if not street.is_empty() else "in the street"
+	var n := 0
+	for w: WK.Walker in f.walkers.walkers:
+		if w.dead or w.resident_id.is_empty():
+			continue
+		if Vector2(w.pos.x - at.x, w.pos.z - at.z).length() > ARREST_SEEN:
+			continue
+		var r := _resident(w.resident_id)
+		if r.is_empty():
+			continue
+		f.ctx.residents.remember(r, "saw the police arrest a visitor %s" % where)
+		f.ctx.residents.nudge_mood(r, ARREST_MOOD)
+		n += 1
+	return n

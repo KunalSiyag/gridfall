@@ -363,10 +363,21 @@ func stature(g: String, u: float) -> float:
 
 
 ## Gives w its avatar and stature (once): residents by their id, ambient walkers from the city seed.
-func dress(w: WK.Walker, residents: Variant) -> void:
+## With group (a roster group, the police's say) it is that group's pick-th member, wrapping, at a
+## stature picked by pick too; a group with no body loaded leaves w to the rest.
+func dress(w: WK.Walker, residents: Variant, group: String = "", pick: int = 0) -> void:
 	if w.av >= 0 or not ok:
 		return
-	if not w.resident_id.is_empty():
+	if not group.is_empty():
+		var members: Array[int] = []
+		for n: String in (roster.get("groups", {}) as Dictionary).get(group, []):
+			if _by_name.has(n):
+				members.append(_by_name[n])
+		if not members.is_empty():
+			w.av = members[absi(pick) % members.size()]
+			var u := fposmod(float(absi(pick)) * 0.37, 1.0)
+			w.h_m = stature((avatars[w.av] as Avatar).gender, u)
+	if w.av < 0 and not w.resident_id.is_empty():
 		var r: Dictionary = residents.find(w.resident_id) if residents != null else {}
 		var ai := resident_avatar(
 			w.resident_id, str(r.get("name", "")), str(r.get("job_title", ""))

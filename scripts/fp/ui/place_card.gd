@@ -219,7 +219,8 @@ func _build_vehicle(t: Dictionary) -> void:
 func _build_pedestrian(t: Dictionary) -> void:
 	var title := D.debrand(str(t.get("label", "a pedestrian")))
 	_title(title.substr(0, 1).to_upper() + title.substr(1), "")
-	_line("Out and about on the street", S.TEXT_DIM)
+	var on_duty: bool = bool((t.get("data", {}) as Dictionary).get("officer", false))
+	_line("On duty at the scene" if on_duty else "Out and about on the street", S.TEXT_DIM)
 
 
 func _use_of(i: int) -> String:
