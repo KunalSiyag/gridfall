@@ -1,13 +1,12 @@
 extends SceneTree
-## The room a carjack's throw has beside the door (carjack.gd _fling and _room, the carjack_throw
-## flag with hit_feel): a car beside the door shortens the fling to the room there is, down to
-## MIN_FLING, so the driver comes down in the gap and not through the next car or in its path; a
-## car ahead of or behind in the same lane does not, whatever the distance or the offset (it once
-## did, from 0.02 m off the axis), stopped or moving; and one beside the door counts from as far up
-## or down the road as the turned line (up to 25 degrees) can take the landing to it, TURN_M, not
-## only from the door's own reach (its nose 1.0 to 1.7 m behind the seat was ignored, and the body
-## came down in it); the plain JACK_FLING with either flag off. The cars are bare vehicles in a
-## stub of the traffic feature.
+## The room a carjack's pull-out has beside the door (carjack.gd _drop and _room, the carjack_throw
+## flag with hit_feel): a car beside the door shortens the drop to the room there is, down to
+## MIN_DROP, so the driver comes down in the gap and not through the next car or in its path; a car
+## ahead of or behind in the same lane does not, whatever the distance or the offset (it once did,
+## from 0.02 m off the axis), stopped or moving; and one beside the door counts from as far up or
+## down the road as the door's own reach (half its length and SPAN_M), no further. The flags are
+## eject's (fp_carjack_test: the plain slide with either off). The cars are bare vehicles in a stub
+## of the traffic feature.
 
 const K := preload("res://tools/tests/fp_kit.gd")
 const WS := preload("res://scripts/fp/world_scale.gd")
@@ -28,13 +27,12 @@ func _init() -> void:
 	FeatureFlags.set_override("carjack_throw", true)
 	_check_room()
 	_check_room_lane()
-	_check_room_turn()
 	FeatureFlags.reload()
-	K.check(fails, ran.size() == 3, "every section ran to its end (%s)" % str(ran))
+	K.check(fails, ran.size() == 2, "every section ran to its end (%s)" % str(ran))
 	K.finish(self, "FP_JACK_ROOM_TEST", fails)
 
 
-## What carjack.gd's _fling reads of the traffic feature: its vehicles.
+## What carjack.gd's _drop reads of the traffic feature: its vehicles.
 class VehStub:
 	extends RefCounted
 	var cars: Array = []
@@ -45,9 +43,9 @@ class FeatureStub:
 	var vehicles := VehStub.new()
 
 
-## A car beside the door shortens the fling to the room there is (down to MIN_FLING), so the
-## driver comes down in the gap and not through it or in its path; with the flag off, or nothing
-## in reach, it is JACK_FLING.
+## A car beside the door shortens the drop to the room there is (down to MIN_DROP), so the
+## driver comes down in the gap and not through it or in its path; with nothing in reach it is
+## DROP_M.
 func _check_room() -> void:
 	var cj := CJ.new()
 	var fs := FeatureStub.new()
@@ -58,8 +56,8 @@ func _check_room() -> void:
 	var xf := Transform3D.IDENTITY
 	var cars: Array = fs.vehicles.cars
 	cars.append(car)
-	var free := cj._fling(car, xf, 0.0)
-	K.check(fails, is_equal_approx(free, CJ.JACK_FLING), "no car near: the whole JACK_FLING")
+	var free := cj._drop(car, xf, 0.0)
+	K.check(fails, is_equal_approx(free, CJ.DROP_M), "no car near: the whole DROP_M")
 	var gap := func(g: float, z: float, yaw: float = 0.0) -> VH.Car:
 		var o := VH.Car.new()
 		o.half_w = HALF_W
@@ -68,52 +66,48 @@ func _check_room() -> void:
 		var reach := 0.5 * o.length * absf(sin(yaw)) + HALF_W * absf(cos(yaw))
 		o.pos = Vector3(HALF_W + g * WS.M + reach, 0.0, z * WS.M)
 		return o
-	var near: VH.Car = gap.call(2.0, 0.0)
+	var near: VH.Car = gap.call(1.5, 0.0)
 	cars.append(near)
-	var room := cj._fling(car, xf, 0.0)
-	var want := 2.0 - CJ.OUT / WS.M - CJ.BODY_CLEAR
+	var room := cj._drop(car, xf, 0.0)
+	var want := 1.5 - CJ.OUT / WS.M - CJ.BODY_CLEAR
 	K.check(
 		fails,
 		absf(room - want) < 1e-6,
-		"a car 2 m off the door: the room less the clearance (%.2f of %.2f m)" % [room, want]
+		"a car 1.5 m off the door: the room less the clearance (%.2f of %.2f m)" % [room, want]
 	)
 	near.pos.x = HALF_W + 0.8 * WS.M + HALF_W
-	var tight := cj._fling(car, xf, 0.0)
+	var tight := cj._drop(car, xf, 0.0)
 	K.check(
 		fails,
-		is_equal_approx(tight, CJ.MIN_FLING),
-		"a car almost against it: no less than MIN_FLING (%.2f m)" % tight
+		is_equal_approx(tight, CJ.MIN_DROP),
+		"a car almost against it: no less than MIN_DROP (%.2f m)" % tight
 	)
 	near.dead = true
-	K.check(
-		fails, is_equal_approx(cj._fling(car, xf, 0.0), CJ.JACK_FLING), "a dead car is no obstacle"
-	)
+	K.check(fails, is_equal_approx(cj._drop(car, xf, 0.0), CJ.DROP_M), "a dead car is no obstacle")
 	near.dead = false
 	near.pos.x = -near.pos.x
 	K.check(
-		fails,
-		is_equal_approx(cj._fling(car, xf, 0.0), CJ.JACK_FLING),
-		"nor is one off the other side"
+		fails, is_equal_approx(cj._drop(car, xf, 0.0), CJ.DROP_M), "nor is one off the other side"
 	)
-	near.pos = (gap.call(2.0, 8.0) as VH.Car).pos
+	near.pos = (gap.call(1.5, 8.0) as VH.Car).pos
 	K.check(
 		fails,
-		is_equal_approx(cj._fling(car, xf, 0.0), CJ.JACK_FLING),
+		is_equal_approx(cj._drop(car, xf, 0.0), CJ.DROP_M),
 		"nor one up the road from a car that stands still"
 	)
 	car.v = 8.0 * WS.M
-	var coming := cj._fling(car, xf, 0.0)
+	var coming := cj._drop(car, xf, 0.0)
 	K.check(
 		fails,
 		absf(coming - want) < 1e-6,
-		"but a car moving on closes on the landing, the same 2 m (%.2f m)" % coming
+		"but a car moving on closes on the landing, the same 1.5 m (%.2f m)" % coming
 	)
 	car.v = 0.0
 	cars.erase(near)
-	var cross: VH.Car = gap.call(1.9, 0.0, 0.5 * PI)
+	var cross: VH.Car = gap.call(1.6, 0.0, 0.5 * PI)
 	cars.append(cross)
-	var side := cj._fling(car, xf, 0.0)
-	var want_cross := 1.9 - CJ.OUT / WS.M - CJ.BODY_CLEAR
+	var side := cj._drop(car, xf, 0.0)
+	var want_cross := 1.6 - CJ.OUT / WS.M - CJ.BODY_CLEAR
 	K.check(
 		fails,
 		absf(side - want_cross) < 1e-6,
@@ -122,20 +116,12 @@ func _check_room() -> void:
 	cars.erase(cross)
 	cars.append(near)
 	near.pos = (gap.call(1.0, 0.0) as VH.Car).pos
-	for off: String in ["carjack_throw", "hit_feel"]:
-		FeatureFlags.set_override(off, false)
-		K.check(
-			fails,
-			is_equal_approx(cj._fling(car, xf, 0.0), CJ.JACK_FLING),
-			"%s off: JACK_FLING whatever is beside the door" % off
-		)
-		FeatureFlags.set_override(off, true)
 	ran.append("room")
 
 
 ## A car ahead of or behind in the same lane is not beside the door, however it sits across the
-## lane: it must not cut the fling (a lead car 0.02 m off the axis read as a neighbour and cut it
-## to MIN_FLING, so the driver landed in 0.72 s instead of 0.96). Stopped and moving (a moving
+## lane: it must not cut the drop (a lead car 0.02 m off the axis read as a neighbour and cut it
+## to the least, so the driver landed sooner than planned). Stopped and moving (a moving
 ## car's reach is long: 1.5 s of its travel), either side of the axis, level or turned, from bumper
 ## to bumper to a dozen metres; and one genuinely beside the door still cuts it, at every place
 ## along the road within the door's reach, and not beyond it.
@@ -163,10 +149,10 @@ func _check_room_lane() -> void:
 						o.yaw = yaw
 						o.pos = Vector3(off_m * WS.M, 0.0, dir * (car.length + gap_m * WS.M))
 						cars.append(o)
-						var got := cj._fling(car, xf, SEAT_Z)
+						var got := cj._drop(car, xf, SEAT_Z)
 						cars.erase(o)
 						tried += 1
-						if not is_equal_approx(got, CJ.JACK_FLING):
+						if not is_equal_approx(got, CJ.DROP_M):
 							cut.append(
 								(
 									"v %.1f %s %.1f m behind/ahead, %.2f m across, yaw %.1f: %.2f m"
@@ -184,12 +170,12 @@ func _check_room_lane() -> void:
 		fails,
 		cut.is_empty(),
 		(
-			"%d cars ahead or behind in the lane: none cuts the fling (%d did: %s)"
+			"%d cars ahead or behind in the lane: none cuts the drop (%d did: %s)"
 			% [tried, cut.size(), str(cut.slice(0, 3))]
 		)
 	)
-	# One beside the door, a flank-to-side gap of 2 m, along the road from far behind to far ahead.
-	var want := 2.0 - CJ.OUT / WS.M - CJ.BODY_CLEAR
+	# One beside the door, a flank-to-side gap of 1.5 m, along the road from far behind to ahead.
+	var want := 1.5 - CJ.OUT / WS.M - CJ.BODY_CLEAR
 	var miss: Array[String] = []
 	for v_ms: float in [0.0, 8.3]:
 		car.v = v_ms * WS.M
@@ -197,36 +183,36 @@ func _check_room_lane() -> void:
 			var o := VH.Car.new()
 			o.half_w = HALF_W
 			o.length = 4.5 * WS.M
-			o.pos = Vector3(HALF_W + 2.0 * WS.M + HALF_W, 0.0, z_m * WS.M + SEAT_Z)
+			o.pos = Vector3(HALF_W + 1.5 * WS.M + HALF_W, 0.0, z_m * WS.M + SEAT_Z)
 			cars.append(o)
-			var got := cj._fling(car, xf, SEAT_Z)
+			var got := cj._drop(car, xf, SEAT_Z)
 			cars.erase(o)
 			if absf(got - want) > 1e-6:
 				miss.append("v %.1f z %.1f: %.2f of %.2f m" % [v_ms, z_m, got, want])
 	K.check(
 		fails,
 		miss.is_empty(),
-		"a car beside the door, 2 m off it, anywhere along it: the fling is cut (%s)" % str(miss)
+		"a car beside the door, 1.5 m off it, anywhere along it: the drop is cut (%s)" % str(miss)
 	)
 	# A car turned across the road is as long along the road as it is wide, half its width either
 	# side of its middle (the footprint as it lies in the car's frame, not half its length either
-	# way): its flank is 2 m off the door, it is beside it up to a car's half width, the 1 m span
-	# and the turn's TURN_M up the road, and 3 m up the road is out of reach; it once counted by
-	# half its length (3.25 m).
+	# way): its flank is 1.5 m off the door, it is beside it up to a car's half width and the 1 m
+	# span up the road, and 3 m up the road is out of reach; it once counted by half its length
+	# (3.25 m).
 	car.v = 0.0
 	var turned: Array[String] = []
-	var edge := HALF_W / WS.M + CJ.SPAN_M + CJ.TURN_M
+	var edge := HALF_W / WS.M + CJ.SPAN_M
 	for z_m: float in [-3.0, -2.6, -1.5, 0.0, 1.5, 2.6, 3.0]:
 		var o := VH.Car.new()
 		o.half_w = HALF_W
 		o.length = 4.5 * WS.M
 		o.yaw = 0.5 * PI
-		o.pos = Vector3(HALF_W + 2.0 * WS.M + 0.5 * o.length, 0.0, z_m * WS.M + SEAT_Z)
+		o.pos = Vector3(HALF_W + 1.5 * WS.M + 0.5 * o.length, 0.0, z_m * WS.M + SEAT_Z)
 		cars.append(o)
-		var got := cj._fling(car, xf, SEAT_Z)
+		var got := cj._drop(car, xf, SEAT_Z)
 		cars.erase(o)
 		var beside := absf(z_m) < edge
-		if absf(got - (want if beside else CJ.JACK_FLING)) > 1e-6:
+		if absf(got - (want if beside else CJ.DROP_M)) > 1e-6:
 			turned.append("z %.1f: %.2f m" % [z_m, got])
 	K.check(
 		fails,
@@ -237,11 +223,11 @@ func _check_room_lane() -> void:
 	var far := VH.Car.new()
 	far.half_w = HALF_W
 	far.length = 4.5 * WS.M
-	far.pos = Vector3(HALF_W + 2.0 * WS.M + HALF_W, 0.0, 6.0 * WS.M + SEAT_Z)
+	far.pos = Vector3(HALF_W + 1.5 * WS.M + HALF_W, 0.0, 6.0 * WS.M + SEAT_Z)
 	cars.append(far)
 	K.check(
 		fails,
-		is_equal_approx(cj._fling(car, xf, SEAT_Z), CJ.JACK_FLING),
+		is_equal_approx(cj._drop(car, xf, SEAT_Z), CJ.DROP_M),
 		"beside the next lane but 6 m up the road from a stopped car: out of its reach, no cut"
 	)
 	# The same lane car that also has a neighbour beside the door: the neighbour decides.
@@ -250,55 +236,10 @@ func _check_room_lane() -> void:
 	lead.length = 4.5 * WS.M
 	lead.pos = Vector3(0.0, 0.0, 6.0 * WS.M)
 	cars.append(lead)
-	far.pos = Vector3(HALF_W + 2.0 * WS.M + HALF_W, 0.0, SEAT_Z)
+	far.pos = Vector3(HALF_W + 1.5 * WS.M + HALF_W, 0.0, SEAT_Z)
 	K.check(
 		fails,
-		absf(cj._fling(car, xf, SEAT_Z) - want) < 1e-6,
+		absf(cj._drop(car, xf, SEAT_Z) - want) < 1e-6,
 		"with a lead car as well as a neighbour beside the door, the neighbour's room decides"
 	)
 	ran.append("room_lane")
-
-
-## The line is turned up to 25 degrees off straight out (jack_landing.gd, after the cut is made), so
-## the body can come down TURN_M up or down the car's side from where it is let go: a car beside
-## the door whose nose or tail is that much further along than the door's own reach (its half
-## length and SPAN_M) counts as well, and not beyond that. A 4.5 m car 2 m off the door, its middle
-## from 4.2 m behind to 4.2 m ahead of the place they are let go, either side.
-func _check_room_turn() -> void:
-	var cj := CJ.new()
-	var fs := FeatureStub.new()
-	cj.f = fs
-	var car := VH.Car.new()
-	car.half_w = HALF_W
-	car.length = 4.5 * WS.M
-	var cars: Array = fs.vehicles.cars
-	cars.append(car)
-	var run := sin(deg_to_rad(25.0)) * CJ.JACK_FLING
-	K.check(
-		fails,
-		absf(CJ.TURN_M - run) < 1e-6,
-		"TURN_M is what the line's turn takes the landing along the side (%.2f m)" % CJ.TURN_M
-	)
-	var want := 2.0 - CJ.OUT / WS.M - CJ.BODY_CLEAR
-	var edge := 0.5 * car.length / WS.M + CJ.SPAN_M + CJ.TURN_M
-	var wrong: Array[String] = []
-	var counted := 0
-	for k in range(-17, 18):
-		var z_m := 0.25 * float(k)
-		var o := VH.Car.new()
-		o.half_w = HALF_W
-		o.length = 4.5 * WS.M
-		o.pos = Vector3(HALF_W + 2.0 * WS.M + HALF_W, 0.0, z_m * WS.M + SEAT_Z)
-		cars.append(o)
-		var got := cj._fling(car, Transform3D.IDENTITY, SEAT_Z)
-		cars.erase(o)
-		var beside := absf(z_m) < edge
-		counted += 1 if beside else 0
-		if absf(got - (want if beside else CJ.JACK_FLING)) > 1e-6:
-			wrong.append("%.2f m along: %.2f m" % [z_m, got])
-	var msg := (
-		"a car beside the door counts up to %.2f m up or down the road from where they " % edge
-	)
-	msg += "are let go, no further (%d places counted): %s" % [counted, str(wrong.slice(0, 4))]
-	K.check(fails, wrong.is_empty() and counted > 25 and counted < 35, msg)
-	ran.append("room_turn")

@@ -1,8 +1,8 @@
 extends SceneTree
-## A thrown carjack driver beside another car too close to land between the two (a gap of a metre
-## or less, flank to side: the body comes down in the next car, as it must, and the press-out has
-## to shove it back out), and a body held off screen (people.gd tier 4, its mixer stopped and its
-## pose frozen where it was last drawn). The head of such a body follows its feet (people.gd
+## A pulled-out carjack driver beside another car too close to land between the two (a gap of a
+## metre or less, flank to side: the body comes down in the next car, as it must, and the press-out
+## has to shove it back out), and a body held off screen (people.gd tier 4, its mixer stopped and
+## its pose frozen where it was last drawn). The head of such a body follows its feet (people.gd
 ## head_of): left behind in the car the feet were pressed out of, it was found inside it every
 ## step, and every step shoved the whole body on (0.6 m a step: 4 to 5 m through the hero's own
 ## car, in 0.1 s, with the car's tail 0.5 to 1 m behind the seat; the plain throw: 1 m).
@@ -19,6 +19,10 @@ const DOORS := preload("res://scripts/fp/traffic/car_doors.gd")
 ## shove ran to 4 to 5 m.
 const MOST_M := 2.0
 const SPAN_S := 4.0
+## The view stands this far (m) beyond the hero, away from the victim, and looks at them for LOOK_S
+## s before it turns away.
+const FAR_M := 3.0
+const LOOK_S := 1.5
 
 var ctx: FpContext
 var traffic: FpFeature
@@ -205,8 +209,9 @@ func _check_head() -> void:
 
 
 ## A car 0.6 m or 1 m off the driver's side (flank to side), its tail 0.5 to 1 m behind the seat,
-## held still: the real flow, the haul and the throw, the victim off screen as the hero is in the
-## seat. The victim's drawn feet stay within MOST_M of where they were let go at every frame.
+## held still: the real flow, the haul and the fall, the victim off screen (the view turned away
+## from them) as the hero is in the seat. The victim's drawn feet stay within MOST_M of where they
+## were let go at every frame.
 func _check_tight() -> void:
 	var worst := 0.0
 	var off_screen := 0
@@ -240,7 +245,18 @@ func _check_tight() -> void:
 			continue
 		var seen := 0
 		var run_worst := 0.0
+		var eye := ctx.player.position + Vector3(0.0, 1.6 * WS.M, 0.0)
 		for _k in range(roundi(SPAN_S / DT)):
+			# The view stands FAR_M beyond the hero (the lying body is a metre off him: the
+			# frustum's cull radius keeps what is that close behind a camera on screen). It looks at
+			# them for LOOK_S s, so that they are drawn in a body, then straight away from where
+			# they are.
+			var away := eye - (victim.pos + victim.vis_off)
+			away.y = 0.0
+			away = away.normalized()
+			var facing := -away if float(_k) * DT < LOOK_S else away
+			var look := Transform3D(Basis.looking_at(facing, Vector3.UP), eye + away * FAR_M * WS.M)
+			ctx.player.set_view_override(look, 50.0)
 			_frame()
 			var off := Vector2(victim.vis_off.x, victim.vis_off.z).length()
 			run_worst = maxf(run_worst, off)
@@ -258,7 +274,7 @@ func _check_tight() -> void:
 		)
 		msg += "the body is moved %.2f m at the most (of %.1f)" % [run_worst / WS.M, MOST_M]
 		K.check(fails, run_worst <= MOST_M * WS.M, msg)
-	var tail := "fixture: the victim was off screen (tier 4) in the throws with a tail behind"
+	var tail := "fixture: the victim was off screen (tier 4) in the pulls with a tail behind"
 	K.check(fails, off_screen >= 3 and runs == 4, tail)
 	print("  most any victim was moved off where they were let go: %.2f m" % (worst / WS.M))
 	ran.append("tight")

@@ -344,6 +344,8 @@ func _climb_in(info: Dictionary, id: int = -1) -> bool:
 	_block_others(id)
 	var boxes: Array = traffic.call("blockers_near", _pos, _dims.z + ENTRY.ROUTE_REACH, id)
 	entry.clearance = _door_clearance(id)
+	entry.collar = func() -> Vector3: return traffic.call("jack_collar", _jack_id)
+	entry.pull_out = bool(traffic.call("jack_pulls"))
 	if not entry.begin_in(ctx, info, traffic.call("door_info", id), boxes, id >= 0):
 		return false
 	ctx.player.set_camera_mode("third", true)

@@ -1,6 +1,6 @@
 extends SceneTree
-## The landing of a carjack's throw (person_landed: reactions.gd tells it as the body touches the
-## ground) is what shakes the camera (hit_feel) and sounds the fall (audio), so a driver who is no
+## The landing of a carjack's pull-out (person_landed: reactions.gd tells it as the body touches the
+## road) is what shakes the camera (hit_feel) and sounds the fall (audio), so a driver who is no
 ## longer in the street by then (removed, gone indoors, a rebuilt city's) lands for nobody: neither
 ## comes. Someone who stays lands as ever, once. The reactions are the real ones, stepped by hand
 ## over bare walkers; the whole flow through a grown city is fp_carjack_test's.
@@ -30,8 +30,8 @@ func _init() -> void:
 	K.finish(self, "FP_JACK_GONE_TEST", fails)
 
 
-## One carjack thrown through the real reactions with the camera and the audio listening: stayed
-## (lands: one shake, one fall), removed from the street (in the haul, in the air: nothing), the
+## One carjack pulled out through the real reactions with the camera and the audio listening: stayed
+## (lands: one shake, one fall), removed from the street (in the haul, in the fall: nothing), the
 ## world rebuilt under it (the reactions dropped: nothing).
 func _check_gone() -> void:
 	var ctx := K.make_ctx(get_root(), {"audio": true, "camera_mode": "third"})
@@ -45,9 +45,9 @@ func _check_gone() -> void:
 	var em: Node = af.get("emitters")
 	var origin: Vector3 = em.call("listener")
 	for row: Array in [
-		["stays", -1.0, 1], ["removed in the haul", 0.3, 0], ["removed in the air", 0.7, 0]
+		["stays", -1.0, 1], ["removed in the haul", 0.3, 0], ["removed in the fall", 0.55, 0]
 	]:
-		var s := _throw(ctx, origin)
+		var s := _pull(ctx, origin)
 		var wk: WK = s["wk"]
 		var w: WK.Walker = s["w"]
 		var re: RE = s["re"]
@@ -70,8 +70,8 @@ func _check_gone() -> void:
 				% [row[0], row[2], row[2], shook, sounded]
 			)
 		)
-	# A city rebuilt while they are in the air drops the reactions: the landings never come.
-	var s2 := _throw(ctx, origin)
+	# A city rebuilt while they are going down drops the reactions: the landings never come.
+	var s2 := _pull(ctx, origin)
 	var re2: RE = s2["re"]
 	_settle(hf)
 	var shakes2 := int(hf.get("shakes"))
@@ -85,16 +85,16 @@ func _check_gone() -> void:
 	K.check(
 		fails,
 		int(hf.get("shakes")) == shakes2 and int(em.get("shots_played")) == shots2,
-		"a rebuilt city, the reactions dropped mid-air: no landing shake and no fall"
+		"a rebuilt city, the reactions dropped mid-fall: no landing shake and no fall"
 	)
 	hf.call("teardown")
 	af.call("teardown")
 	ran.append("gone")
 
 
-## A driver drawn at the wheel thrown by a carjack beside origin: the stage (the walkers, the
+## A driver drawn at the wheel pulled out by a carjack beside origin: the stage (the walkers, the
 ## reactions told of the landing as traffic tells the bus) and the blow's yank on the bus.
-func _throw(ctx: FpContext, origin: Vector3) -> Dictionary:
+func _pull(ctx: FpContext, origin: Vector3) -> Dictionary:
 	var wk := WK.new()
 	wk.setup(null, null, null, null, SEED)
 	var w := wk.make("ambient")
@@ -106,7 +106,7 @@ func _throw(ctx: FpContext, origin: Vector3) -> Dictionary:
 	re.on_landed = func(who: WK.Walker) -> void:
 		ctx.bus.person_landed.emit(who.pos + who.vis_off, who.id)
 	var src := origin + Vector3(HALF_W + WS.M, 0.0, 0.5 * WS.M)
-	var res := re.hit(w, src, Vector3.RIGHT, STRENGTH, "carjack", CJ.JACK_FLING)
+	var res := re.hit(w, src, Vector3.RIGHT, STRENGTH, "carjack", CJ.DROP_M)
 	re.drag_out(w, origin + Vector3(0.45 * WS.M, 0.15 * WS.M, 0.0), 0.0)
 	var info := {
 		"strength": STRENGTH, "down": true, "by": -1, "lands_in": res["lands_in"], "walker": w.id

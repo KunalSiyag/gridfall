@@ -55,14 +55,15 @@ signal prop_knocked(at: Vector3, kind: String, speed: float)
 ## takes); info is traffic_feature.gd hit_walker()'s {"walker", "resident_id", "name", "down",
 ## "street", "strength", "by" (BY_HERO the hero, else the attacker walker's id), "witnesses",
 ## "crew"}, a throw that meets a wall or a solid prop mid-flight adding "impact" {"at", "in"}
-## (throw_impact — marked on this one emission, never a second person_hit), a carjack's throw
-## adding "lands_in" (seconds until the body is on the ground, as planned: jack_throw.gd; the
-## touchdown itself is person_landed), a blow a guarded fighter turns aside adding "guarded", and
-## "disarm" when the turn-aside rolls one (weapon_disarm). Emitted by traffic.
+## (throw_impact — marked on this one emission, never a second person_hit), a carjack's pull-out
+## adding "lands_in" (seconds until the driver's hips are on the road, as planned: jack_pull.gd;
+## the touchdown itself is person_landed), a blow a guarded fighter turns aside adding "guarded",
+## and "disarm" when the turn-aside rolls one (weapon_disarm). Emitted by traffic.
 signal person_hit(at: Vector3, cause: String, info: Dictionary)
 ## A carjacked driver's body comes down at a point (their feet), walker id: once, on the frame its
-## throw touches the ground (jack_throw.gd), however fast the sim runs; never for someone no longer
-## there. What shakes and sounds at the landing follows this, not a timer. Emitted by traffic.
+## hips touch the road in the pull-out (jack_pull.gd), however fast the sim runs; never for someone
+## no longer there. What shakes and sounds at the landing follows this, not a timer. Emitted by
+## traffic.
 signal person_landed(at: Vector3, id: int)
 ## The hero swung, gestured or got over something: action "jab", "cross", "hook", "shove",
 ## "kick", "swing" (a weapon in hand), "counter" (a hook countering a punch), "throw" or "slam"

@@ -13,7 +13,7 @@ const WS := preload("res://scripts/fp/world_scale.gd")
 const LG := preload("res://scripts/fp/traffic/lane_graph.gd")
 const VH := preload("res://scripts/fp/traffic/vehicles.gd")
 const WK := preload("res://scripts/fp/traffic/walkers.gd")
-const JT := preload("res://scripts/fp/traffic/jack_throw.gd")
+const JP := preload("res://scripts/fp/traffic/jack_pull.gd")
 const JACK := preload("res://scripts/fp/traffic/carjack.gd")
 const RE := preload("res://scripts/fp/traffic/reactions.gd")
 const DOORS := preload("res://scripts/fp/traffic/car_doors.gd")
@@ -70,7 +70,7 @@ func _setup() -> bool:
 	traffic.set("ambient_enabled", false)
 	drive.set_process(false)
 	hijack = drive.get("hijack")
-	# The throw's look is hit_feel's: the checks do not depend on the user's flags.
+	# The pull-out's look is hit_feel's: the checks do not depend on the user's flags.
 	for f: String in ["car_doors", "carjack", "action_hijack", "hit_feel", "carjack_throw"]:
 		FeatureFlags.set_override(f, true)
 	ctx.bus.person_hit.connect(_on_hit)
@@ -172,17 +172,22 @@ func _check_hijack() -> void:
 
 ## The driver dragged out of a car moving at v is carried on at its pace (the carjack_throw flag):
 ## not left hanging where the car was. By the time the blow's info says their slide is over they are
-## down the road by the car's pace times the haul (if drawn at the wheel: all of it) and by at most
-## CARRY_MAX times the flight. The car left alongside shortens the fling to the room in the gap.
+## down the road by what the haul carried (if drawn at the wheel: the car's whole pace, easing to
+## CARRY_MAX) and the slide's share of at most CARRY_MAX.
 func _check_carried(b: VH.Car, v: float) -> void:
 	if not FeatureFlags.enabled("carjack_throw"):
 		return
 	var at: Vector3 = hits[0][0]
 	var heading := Vector3(sin(b.yaw + b.vis_yaw), 0.0, cos(b.yaw + b.vis_yaw))
-	var fling := clampf(APART - JACK.OUT / WS.M - JACK.BODY_CLEAR, JACK.MIN_FLING, JACK.JACK_FLING)
-	var plan := JT.make(JACK.STRENGTH, fling, heading, 1.0)
+	var plan := JP.Plan.new()
+	plan.haul_carry = heading * v
+	plan.carry = heading * minf(v, JP.CARRY_MAX)
 	var lands := float((hits[0][2] as Dictionary).get("lands_in", 0.0))
-	var want := v * (lands - plan.air) + minf(v, JT.CARRY_MAX) * plan.air / (1.0 - plan.skid)
+	var hauled := lands > JP.STAND_CONTACT + 0.1
+	var want := (
+		((JP.carried(plan, JP.HAUL_S) if hauled else Vector3.ZERO) + plan.carry * 0.5 * JP.SLIDE_S)
+		. dot(heading)
+	)
 	var moved := (rest_at - at).dot(heading) if rest_at.is_finite() else NAN
 	print(
 		(
@@ -227,12 +232,14 @@ func _check_aftermath() -> void:
 		if driver == null or mine == null:
 			continue
 		var feet := driver.pos + driver.vis_off
-		if driver.react == RE.DRAG_CLIP:
+		var rx: RE.Reaction = (traffic.get("reactions") as RE).get("_active").get(driver.id)
+		var mode: String = rx.mode if rx != null else ""
+		if mode == "drag":
 			var q := _frame_of(mine).affine_inverse() * feet
 			haul_lag = maxf(haul_lag, absf(q.z - seat_z))
 			hauled += 1
 		var left: VH.Car = _vh().by_id.get(left_id)
-		if left != null and driver.react in [&"knockback", &"get_up"]:
+		if left != null and mode == "place":
 			var ql := _frame_of(left).affine_inverse() * feet
 			in_path += 1 if absf(ql.x) < left.half_w else 0
 		if driver.react == &"run" and rest_at.is_finite() and not ran_off:
@@ -423,7 +430,7 @@ func _on_hit(at: Vector3, cause: String, info: Dictionary) -> void:
 	hits.append([at, cause, info])
 	driver = traffic.call("_walker_by_id", int(info.get("walker", -1)))
 	driver_t = 0.0
-	driver_done = float(info.get("lands_in", INF)) + JT.SKID_S
+	driver_done = float(info.get("lands_in", INF)) + JP.SLIDE_S
 	rest_at = Vector3.INF
 
 
