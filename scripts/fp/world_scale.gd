@@ -149,3 +149,11 @@ const VIS_BUILDING_NEAR := 4.0          # 80 m: textured buildings; merged one-d
 
 # --- I audio (owned by I)
 # end I
+
+
+# --- W water (owned by the water unit)
+const WADE_MAX := 0.8 * M                # deepest water the hero wades (flag hero_wade)
+const WADE_SLOW := 0.45                  # top speed factor at WADE_MAX (1 at the ankle)
+const WADE_SLOW_FROM := 0.1 * M          # depth where wading starts to slow the hero
+const WADE_NO_SPRINT := 0.3 * M          # deeper than this no run past RUN builds up
+# end W

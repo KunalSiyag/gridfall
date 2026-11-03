@@ -274,6 +274,29 @@ are the steps of a percentile or of one busy time. A mean over frames that sprea
 (the day-10 street's p50 and p95 are 21 ms apart, more than a 60 Hz period) moves smoothly with every
 millisecond saved, so judge a change by the p50 and `busy_ms`, not by a mean fps.
 
+## Water look check
+
+`tools/web_water_shots.js` boots a web build with a seeded save, puts the hero at a pose, hides the HUD and
+saves the canvas, then prints the mean colour, luminance spread and distinct colours of a patch (the lower
+half by default). The river rendered as a pale slab on the web because the water shader read depth with the
+Forward+ formula under gl_compatibility; its spread was 2.4 of 255 over 900x300 px, real water is above 15
+(`--min-std 8` fails a flat one). Pass the poses on the command line, for example the bank, a wade and a
+dusk shot (tick 2 with `--settle-ms 1500`). The sky is not part of a pose: the game recomputes the weather
+from the seed and the sim day on load, so pick it with `--day N` (for the seed-31767 save used here, day 11 is
+clear, 9 rain, 10 overcast; `Weather.daily_state(seed, day)` gives it for any other save):
+
+```bash
+NODE_PATH=<dir with playwright-core> node tools/web_water_shots.js http://127.0.0.1:8080/ out save.json \
+  --min-std 8 bank:27.44,7,-90,-4,first,1 wade:27.625,7,-90,-10,third,1
+```
+
+Cost: the on-foot water shader reads 7 textures per pixel (5 normal, 1 noise, 1 depth) against 3 before, plus
+the finer shore quads and the ground shader's shore terms. At 1280x720 the frame is CPU or vsync bound and shows
+no difference (about 100 fps either way), so that run says nothing about shader cost. With the frame limiter off
+at 2560x1440, water filling the view, on an integrated AMD Renoir the new build measured about +1.3 ms a frame
+(14.6 to 16.0 ms, about 9%) in a review; the split between water, shore and ground was not measured and no GPU
+timer was used. Weaker web GPUs in water-heavy views should expect at least that.
+
 ## Limits
 
 - Only a real GPU run decides the millisecond rules. Software WebGL (SwiftShader) is a JIT rasterizer, not a

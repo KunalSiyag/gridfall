@@ -339,9 +339,13 @@ func spawn_point() -> Dictionary:
 ## Moves the player out of any building or site box they stand in (one can appear on the lot they
 ## stand on) to the nearest free point, else to the spawn point. True if the player was moved.
 func unstick_player() -> bool:
-	if player == null or collision == null or not collision.is_blocked(player.position, WS.PLAYER_RADIUS):
+	if player == null or collision == null:
 		return false
-	var p := collision.nearest_free(player.position, WS.PLAYER_RADIUS, 2.0)
+	# A hero who may wade (flag hero_wade) is not stuck in the shallows.
+	var wade: float = player.wade_limit()
+	if not collision.is_blocked(player.position, WS.PLAYER_RADIUS, wade):
+		return false
+	var p := collision.nearest_free(player.position, WS.PLAYER_RADIUS, 2.0, wade)
 	if is_nan(p.x):
 		p = spawn_point()["pos"]
 	player.teleport(p, rad_to_deg(player.yaw), rad_to_deg(player.pitch))

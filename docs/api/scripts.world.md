@@ -54,6 +54,7 @@ Moving city life layered on top of CityView: buses that stop at bus stops, deliv
 
 - `func setup(p_sim: CitySim, p_view: Node3D) -> void`
 - `func redispatch_events() -> void`: Sends crews for every live event again (the traffic feature attaches after setup() already dispatched them to CityLife's own agents).
+- `func boat_boxes_near(p: Vector3, reach: float) -> Array[AABB]`: The boats within reach (u) of p, as world boxes: each hull's mesh bounds (measured once, in the boat's own frame) carried by its transform and enclosed in an AABB. The wading hero (FpPlayer) meets them as solid, so he is not walked through a hull: boats keep to the tile centres, 10 m from a bank, but a 14 m hull pointing at the bank reaches into the shallows.
 - `func vehicle_counts() -> Dictionary`
 - `func boat_count() -> int`
 - `func aircraft_count() -> int`
@@ -80,6 +81,9 @@ Renders the CitySim grid in 3D: Kenney roads picked by neighbor mask, zone lots 
 - `D = preload("res://scripts/sim/sim_defs.gd")`
 - `WS = preload("res://scripts/fp/world_scale.gd")`
 - `AP = preload("res://scripts/fp/asset_paths.gd")`
+- `RB = preload("res://scripts/fp/world/riverbed.gd")`
+- `WATER = preload("res://scripts/world/water_surface.gd")`
+- `SHORE = preload("res://scripts/world/shore.gd")`
 - `STREET = preload("res://scripts/fp/street/street_dressing.gd")`
 - `WebSupport = preload("res://scripts/ops/web_support.gd")`
 - `M = "res://models/"`
@@ -114,9 +118,8 @@ Renders the CitySim grid in 3D: Kenney roads picked by neighbor mask, zone lots 
 - `ORBIT_PAD_Y = 0.006`: Orbit C/I pad height (the FP pad, when a fallback model needs one, sits at WS.PAD_TOP).
 - `REBUILD_DEFER_DIST = 1.5`: Rebuild queue (FP only): frame budget, how close a tile in view must be to wait until the player looks away, and the longest it may wait.
 - `REBUILD_DEFER_MAX_S = 5.0`
-- `GROUND_CHUNK = 64`: Ground: merged land quads per GROUND_CHUNK x GROUND_CHUNK tiles (water tiles excluded), out to GROUND_MARGIN tiles past the world edge. Water tiles get a riverbed whose banks slope from the ground down to WS.RIVERBED_Y over BANK_W.
+- `GROUND_CHUNK = 64`: Ground: merged land quads per GROUND_CHUNK x GROUND_CHUNK tiles (water tiles excluded), out to GROUND_MARGIN tiles past the world edge. Water tiles get a riverbed whose banks slope from the ground down to WS.RIVERBED_Y over RB.BANK_W (riverbed.gd, which the hero's wading shares).
 - `GROUND_MARGIN = 30`
-- `BANK_W = 0.1`
 - `GROUND_SHADER = "res://shaders/ground_detail.gdshader"`
 - `WINDOW_SHADER = "res://shaders/window_fp.gdshader"`
 - `ROAD_SHADER = "res://shaders/road_fp.gdshader"`
@@ -138,6 +141,7 @@ Renders the CitySim grid in 3D: Kenney roads picked by neighbor mask, zone lots 
 - `pack_stream: WebPackStream`: Web background packs (split builds); null everywhere else. Read-only here: the view asks request_path() on an asset miss, Main owns the lifecycle.
 - `hero_marker: Node3D`: The Planner view's "you are here": a ring on the hero's tile and a "You" label (null until first shown). Lives under the labels root, so it is drawn in orbit only.
 - `night: float`: 0 at noon, 1 at midnight; set by SkyDirector.
+- `render_method_override`: Tests only: pretend the renderer is this method ("gl_compatibility" is the web build's).
 - `in_setup: bool`: True while setup() runs (from its first line until just before world_rebuilt.emit()). tile_built listeners that do per-tile work skip it while in_setup and do one full pass on world_rebuilt.
 - `fp_mode: bool`: Street-level presentation: hides builder aids and the AI presentation layer, stops ambient traffic, picking and camera shake. Persists across setup().
 - `directory: CityDirectory`: Street names and the lot frontage rule, rebuilt by setup().
@@ -156,6 +160,8 @@ Renders the CitySim grid in 3D: Kenney roads picked by neighbor mask, zone lots 
 - `func set_fp_mode(on: bool) -> void`: Switches between the orbit and the street-level presentation. On a real change it also rebuilds the mode-specific geometry synchronously (tree chunks, every tile: lots, pads, furniture, FX), bypassing the rebuild queue, then emits world_rebuilt and fp_mode_changed. Setting the same value again does nothing; the boot path sets the field before the first setup() instead.
 - `func set_aerial(on: bool) -> void`: Aerial coverage (render_opt): while on, every far tree layer draws to the horizon, so woods and street trees stay visible from the sky. Only the street chunks change (the orbit far layers already have no end); chunks rebuilt later read the flag where they are built. Coverage to the horizon wants every chunk, so the window opens to the whole map (nearest first from the spot the camera looks at, as fast as the stream budget lets it: no hitch, a fill of some frames) and closes back onto the camera when the flag drops (TREE_FREE_CAP chunks a pass).
 - `func set_vis_mult(v: float) -> void`: Sets vis_mult. On foot the planted tree layers take the new ranges and the window re-streams now, so a quality change shows with the camera standing still.
+- `func water_ripple(p: Vector3, amp: float) -> void`: A ring spreads over the water from world point p (a footfall in the shallows), amp 0..1.
+- `func water_rippling() -> bool`: True while a ripple is alive or the shader still shows one.
 - `func track_material() -> Material`: The surface of unpaved road tiles (gravel, dirt track, grass trail): the ground shader in track mode, drawn on a quad over the whole tile (see _track). Its grass matches the street-level ground exactly; in orbit, where the ground is plain, the grass part is cut away.
 - `func track_material_for(mask: int, grade: int) -> Material`: The track material for one tile shape: a shared copy of track_material() carrying the road mask (0..15) and grade. A per-tile instance uniform would take a slot of Compatibility's 4096-slot instance buffer for every mesh using the ground shader.
 - `func lot_ground_material() -> Material`: Ground for a vacant lot on foot: the detail shader turned to patchy earth that fades back to grass at the lot's edges.
@@ -305,6 +311,33 @@ Draws every AI resident as the person (or car) actually making their trip: they 
 - `func select(id: String) -> void`
 - `func visible_count() -> Dictionary`
 
+## `scripts/world/shore.gd`
+
+extends `RefCounted`
+
+The shore band (CityView, on foot): sand and wet mud along every bank, with no new texture and no finer mesh. Every land tile that touches water is its own flat quad whose vertex colour codes which of its eight neighbours are water (COLOR.r = N, E, S, W bits / 15, COLOR.g = NW, NE, SE, SW bits / 15, COLOR.a = TILE_MARK); shaders/ground_detail.gdshader rebuilds the distance to the water per pixel from the tile-local position, exactly as RiverBed.land_distance does, and turns it into sand (SHORE_W wide) and wet sand (a third of that). So the band is exact at any distance and costs two triangles a tile. The river bed carries the two numbers itself, from its height (COLOR.rg = sand, wet, COLOR.a = BED_MARK). Any other mesh has no such alpha (white, or a model's own colours) and the shader reads no shore there: lots, lawns and tracks stay as they were. Preload as SHORE.
+
+### Constants
+
+- `D = preload("res://scripts/sim/sim_defs.gd")`
+- `WS = preload("res://scripts/fp/world_scale.gd")`
+- `RB = preload("res://scripts/fp/world/riverbed.gd")`
+- `SHORE_W = 0.15`: Width of the sand band on the land, in tile units (3 m), and of the wet strip (1 m).
+- `WET_W = SHORE_W / 3.0`
+- `TILE_MARK = 0.5`: COLOR.a of a shore tile (neighbours coded in r, g) and of a bed vertex (sand and wet in r, g).
+- `BED_MARK = 0.25`
+- `NONE = Color(1.0, 1.0, 1.0, 1.0)`: Colour of a vertex outside the band (and of every vertex of a mesh that has no band).
+
+### Functions
+
+- `static func mask(sim: CitySim) -> PackedByteArray`: One byte per tile (D.idx order): 1 for a land tile that touches water on a side or a corner. Walks the water tiles only (a few thousand of 37 000), not every tile's eight neighbours.
+- `static func water_flags(sim: CitySim, x: int, y: int) -> Array[bool]`: The water neighbours of land tile (x, y) in RB.land_flags order (N, E, S, W, NW, NE, SE, SW).
+- `static func encode(water: Array[bool]) -> Color`: The vertex colour that codes eight water flags (the shader decodes it).
+- `static func decode(c: Color) -> Array[bool]`: The eight water flags a tile colour codes (encode()'s inverse, as the shader reads it).
+- `static func band(dist: float) -> Vector2`: Sand and wet (0..1) at distance dist (tile units) from the water: Vector2(sand, wet).
+- `static func bed_color(h: float) -> Color`: The band colour of a bed vertex at height h (u): the bank above the waterline is sand, darkest and wettest at the waterline, and the sand thins out into silt below it.
+- `static func add_tile(st: SurfaceTool, sim: CitySim, x: int, y: int, y_top: float) -> void`: Adds land tile (x, y) at height y_top to st as one quad coded with its water neighbours (normal up, uv = world xz, as the plain ground quads).
+
 ## `scripts/world/sky_director.gd`
 
 class_name `SkyDirector` · extends `Node`
@@ -341,3 +374,26 @@ Day/night cycle tied to the sim clock: tick 0 is morning, 3 is night. Moves the 
 - `func refresh_pack_assets() -> void`: Builds the sky material once its assets are available. Called from setup() and when the sky pack arrives on a split web build; idempotent — an existing sky, the hour, the weather state and the sun are left untouched.
 - `func reset_weather() -> void`: Clear sky again: drops every weather hook and puts back the fog begin an override replaced.
 - `func clock_text() -> String`
+
+## `scripts/world/water_surface.gd`
+
+extends `RefCounted`
+
+The water surface mesh and the hero's ripples, kept out of CityView (a file near its line cap). Preload as WATER. mesh(): one flat quad per open-water tile at height y, with a vertex colour that carries the current for shaders/water.gdshader: COLOR.rg = flow * 0.5 + 0.5 (0.5 = still), COLOR.b = 0. A tile's current runs along the axis it continues in (east-west when its east and west neighbours are water, north-south for the north and south ones; a lake tile, with both, is still) and is averaged over the four tiles round each corner, so the current turns smoothly at a bend. The sign is the same everywhere (towards +x and +z), so neighbours always agree. Ripples is the shader's footfall array: up to SLOTS rings, each (x, z, age, amplitude).
+
+### Constants
+
+- `D = preload("res://scripts/sim/sim_defs.gd")`
+- `SLOTS = 4`: Rings alive at once; the same number as `uniform vec4 ripples[4]` in the shader.
+- `LIFE = 1.6`: Seconds a ring lives (the shader fades it over 1.6 s).
+
+### Inner classes
+
+- `Ripples`: The footfall rings: add() on a step, tick() once a frame while alive. Pure state; CityView owns one and copies array() into the material.
+
+### Functions
+
+- `static func is_compat(rendering_method: String) -> bool`: True when the renderer is the web build's gl_compatibility (the string RenderingServer.get_current_rendering_method() returns), whose depth buffer the water shader must unproject with the remapped screen uv.
+- `static func tile_flow(sim: CitySim, x: int, y: int) -> Vector2`: The current of open-water tile (x, y): +x, +z, or the diagonal at a bend; zero in a lake and on land.
+- `static func corner_flow(sim: CitySim, cx: int, cy: int) -> Vector2`: The current at the tile corner (cx, cy) (its north-west corner is (x - 0.5, y - 0.5) of tile (x, y), so corner (cx, cy) touches tiles cx - 1..cx, cy - 1..cy): the mean over the water tiles round it, zero with none.
+- `static func mesh(sim: CitySim, y: float) -> ArrayMesh`: The surface at height y: a quad per open-water tile, UV = world xz, a flat up normal, the current in the vertex colour.

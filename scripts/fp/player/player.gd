@@ -26,6 +26,7 @@ const D := preload("res://scripts/sim/sim_defs.gd")
 const WS := preload("res://scripts/fp/world_scale.gd")
 const SM := preload("res://scripts/fp/player/spring_math.gd")
 const AVATAR := preload("res://scripts/fp/player/player_avatar.gd")
+const WADE := preload("res://scripts/fp/player/wade.gd")
 ## Gaps above this between a loaded position and the ground snap to the ground.
 const GROUND_SNAP := 0.05
 ## Longest frame _process hands to simulate(), in seconds. A sim tick stall can freeze a frame for
@@ -133,6 +134,8 @@ const CONV_FREE_MIN := 0.7
 const REVERSE_GAP := 2.5
 # --- Traffic (E, optional): stopped cars block the walker; the arm pulls in out of car boxes
 const TRAFFIC_POLL := 0.1
+## Boats this near (u) are solid to a wading hero (their hulls reach 7 m from the origin).
+const BOAT_REACH := 0.6
 const BLOCKER_REACH := 2.0 * WS.M
 const AGENT_REACH := 8.0 * WS.M
 ## People on foot (E's walkers_near) become the soft circles CollisionWorld pushes the hero out
@@ -184,6 +187,11 @@ var _air_t: float = 0.0
 var _pivot_t: float = 0.0
 ## The "momentum" flag, read at setup (tests may set it).
 var momentum: bool = true
+## Flag hero_wade: the hero may stand in water up to WS.WADE_MAX deep (CollisionWorld wade_max);
+## off, the river is the wall it was. wade_depth is the water over the bed under the feet (u).
+var wade_on: bool = true
+var wade_depth: float = 0.0
+var _deep_t: float = 0.0
 ## The "free_running" flag, read at setup (tests may set it).
 var free_running: bool = true
 ## Seconds the sprint has built up (sprinting() from SPRINT_BUILD).
@@ -266,6 +274,7 @@ func setup(p_ctx: FpContext) -> void:
 	ctx = p_ctx
 	momentum = FeatureFlags.enabled("momentum")
 	free_running = FeatureFlags.enabled("free_running")
+	wade_on = FeatureFlags.enabled("hero_wade")
 	rig = TpsRig.new()
 	camera = Camera3D.new()
 	camera.name = "Camera"
@@ -431,9 +440,15 @@ func tile() -> int:
 func snap_to_ground() -> void:
 	if ctx == null or ctx.collision == null:
 		return
-	var g := ctx.collision.walk_height(position)
+	var g := ctx.collision.walk_height(position, wade_limit())
 	if not is_nan(g):
 		position.y = g
+
+
+## The deepest water (u) the hero may stand in: WS.WADE_MAX, or 0 with flag hero_wade off. The
+## CollisionWorld queries take it as wade_max; everyone else keeps water as a wall.
+func wade_limit() -> float:
+	return WS.WADE_MAX if wade_on else 0.0
 
 
 ## A short, grounded combat step (at most 0.18 m), with the same world collision and ground
@@ -444,8 +459,10 @@ func combat_step(motion: Vector3) -> Vector3:
 		return Vector3.ZERO
 	var col := ctx.collision
 	var move := Vector3(motion.x, 0.0, motion.z).limit_length(0.18 * WS.M)
-	var at := col.move_body(position, move, WS.PLAYER_RADIUS, WS.PLAYER_HEIGHT, WS.STEP_HEIGHT)
-	var ground := col.walk_height(at)
+	var at := col.move_body(
+		position, move, WS.PLAYER_RADIUS, WS.PLAYER_HEIGHT, WS.STEP_HEIGHT, wade_limit()
+	)
+	var ground := col.walk_height(at, wade_limit())
 	if is_nan(ground) or absf(ground - position.y) > WS.STEP_HEIGHT:
 		return Vector3.ZERO
 	_refresh_people()
@@ -506,6 +523,7 @@ func simulate(
 		return
 	_set_crouch(crouch)
 	_resolve_stuck()
+	_wade_tick(delta)
 	_refresh_people()
 	_eye_h = SM.damp(_eye_h, WS.CROUCH_EYE if crouched else WS.EYE, HL_EYE, delta)
 	_build_sprint(wish, sprint, delta)
@@ -514,6 +532,7 @@ func simulate(
 	_target_speed = top_speed * wish.length()
 	var flat := Vector2(velocity.x, velocity.z)
 	var goal := _wish_goal(wish, top_speed)
+	_wade_notice(wish)
 	_start_pivot(flat, goal)
 	# The spring can overshoot its goal a little while turning; 1.25 keeps each step under the radius.
 	var top := maxf(
@@ -542,7 +561,25 @@ func simulate(
 ## Top speed on foot (u/s): a crouch-walk, a walk, a run or a built-up sprint; speed_cap at most.
 func _top_speed(sprint: bool) -> float:
 	var run_top := WS.SPRINT if sprinting() else WS.RUN
-	return minf(WS.CROUCH_WALK if crouched else (run_top if sprint else WS.WALK), speed_cap)
+	if WADE.caps_sprint(wade_depth):
+		run_top = minf(run_top, WS.RUN)
+	var top := minf(WS.CROUCH_WALK if crouched else (run_top if sprint else WS.WALK), speed_cap)
+	return top * WADE.speed_factor(wade_depth)
+
+
+## Reads the water over the bed under the feet (wade_depth, 0 on land or with the flag off).
+func _wade_tick(delta: float) -> void:
+	_deep_t = maxf(0.0, _deep_t - delta)
+	wade_depth = ctx.collision.water_depth(position) if wade_on else 0.0
+
+
+## The polite limit: walking on into water past WS.WADE_MAX says so once in a while.
+func _wade_notice(wish: Vector2) -> void:
+	if _deep_t > 0.0 or wish == Vector2.ZERO or ctx.bus == null or wade_depth <= 0.0:
+		return
+	if WADE.too_deep_ahead(ctx.collision, position, _wish_dir, wade_depth):
+		_deep_t = WADE.TOO_DEEP_EVERY
+		ctx.bus.toast.emit(WADE.TOO_DEEP_TEXT, "info")
 
 
 ## True once a sprint has built up to the free-running pace (WS.SPRINT).
@@ -562,7 +599,7 @@ func leap() -> bool:
 ## Builds the sprint up (free running): on, at pace and on line with the wish it builds; off the
 ## ground it holds while sprint stays held; otherwise it starts over.
 func _build_sprint(wish: Vector2, sprint: bool, delta: float) -> void:
-	if not free_running or not sprint or crouched or carried:
+	if not free_running or not sprint or crouched or carried or WADE.caps_sprint(wade_depth):
 		_sprint_t = 0.0
 		return
 	if not grounded:
@@ -948,7 +985,9 @@ func from_dict(d: Dictionary) -> void:
 			false
 		)
 		var g := (
-			ctx.collision.walk_height(position) if ctx != null and ctx.collision != null else NAN
+			ctx.collision.walk_height(position, wade_limit())
+			if ctx != null and ctx.collision != null
+			else NAN
 		)
 		if not is_nan(g) and absf(g - position.y) > GROUND_SNAP:
 			position.y = g
@@ -1086,7 +1125,8 @@ func _step(goal: Vector2, h: float) -> void:
 		Vector3(disp.x, 0.0, disp.y),
 		WS.PLAYER_RADIUS,
 		height,
-		WS.STEP_HEIGHT if grounded else 0.0
+		WS.STEP_HEIGHT if grounded else 0.0,
+		wade_limit()
 	)
 	var rad := WS.PLAYER_RADIUS
 	var blocked := p != full
@@ -1135,7 +1175,7 @@ func _step(goal: Vector2, h: float) -> void:
 func _vertical(h: float, height: float) -> void:
 	var col := ctx.collision
 	var sup := col.support_height(
-		position, WS.PLAYER_RADIUS, position.y, WS.STEP_HEIGHT if grounded else 0.0
+		position, WS.PLAYER_RADIUS, position.y, WS.STEP_HEIGHT if grounded else 0.0, wade_limit()
 	)
 	if is_nan(sup):
 		sup = position.y
@@ -1160,7 +1200,10 @@ func _vertical(h: float, height: float) -> void:
 	var vy0 := velocity.y
 	velocity.y -= WS.GRAVITY * h
 	position.y += (vy0 + velocity.y) * 0.5 * h
-	if velocity.y > 0.0 and col.body_blocked(position, WS.PLAYER_RADIUS * 0.99, height):
+	if (
+		velocity.y > 0.0
+		and col.body_blocked(position, WS.PLAYER_RADIUS * 0.99, height, wade_limit())
+	):
 		position.y = y0
 		velocity.y = 0.0
 	if position.y <= sup and velocity.y <= 0.0:
@@ -1239,7 +1282,7 @@ func _hero_steps() -> void:
 
 
 func _jump() -> void:
-	velocity.y = WS.JUMP_SPEED
+	velocity.y = WS.JUMP_SPEED * WADE.jump_factor(wade_depth)
 	grounded = false
 	_coyote = 0.0
 	_jump_buffer = 0.0
@@ -1314,12 +1357,21 @@ func _body_yaw_step(h: float) -> void:
 	rotation.y = yaw
 
 
+## The boats near the hero as world boxes (CityLife.boat_boxes_near) while he may wade; else none.
+func _boat_boxes() -> Array[AABB]:
+	var out: Array[AABB] = []
+	var life: Variant = ctx.view.get("life") if ctx != null and ctx.view != null else null
+	if wade_on and life != null and life.has_method("boat_boxes_near"):
+		out.assign(life.call("boat_boxes_near", position, BOAT_REACH))
+	return out
+
+
 ## A body left inside a blocker (a teleport or a load put it half inside a building or a car box)
 ## steps straight out to the nearest free side (CollisionWorld.resolve_out); the walk-out rule of
 ## move_body only helps once it moves.
 func _resolve_stuck() -> void:
 	var height := WS.CROUCH_HEIGHT if crouched else WS.PLAYER_HEIGHT
-	var q := ctx.collision.resolve_out(position, WS.PLAYER_RADIUS, height)
+	var q := ctx.collision.resolve_out(position, WS.PLAYER_RADIUS, height, wade_limit())
 	if q != position:
 		position.x = q.x
 		position.z = q.z
@@ -1332,7 +1384,7 @@ func _resolve_stuck() -> void:
 func _people_slide(
 	col: CollisionWorld, p: Vector3, rad: float, height: float, nv: Vector2, na: Vector2
 ) -> Array:
-	var q := col.soft_people_move(p, rad, height)
+	var q := col.soft_people_move(p, rad, height, wade_limit())
 	if q == p:
 		return [p, nv, na]
 	var push := Vector2(q.x - p.x, q.z - p.z)
@@ -1389,6 +1441,7 @@ func _poll_traffic(dt: float) -> void:
 		for b: Variant in traffic.call("blockers_near", position, BLOCKER_REACH):
 			if typeof(b) == TYPE_AABB:
 				list.append(b)
+		list.append_array(_boat_boxes())
 		ctx.collision.dynamic_boxes = list
 	if camera_mode == "third" and traffic.has_method("agents_near"):
 		var boxes: Array[AABB] = []
@@ -1593,6 +1646,7 @@ func _fp_local() -> Transform3D:
 	if FeatureFlags.enabled("down_view"):
 		dw = SM.smooth01(clampf(down_w, 0.0, 1.0))
 	var eye := Vector3(bl, lerpf(_eye_h + _cam_dy + bv - tb.y, DOWN_EYE, dw), 0.0)
+	eye.y = maxf(eye.y, WADE.eye_floor(position.y, wade_depth))
 	var e := Vector3(cam_pitch + tb.x + DOWN_PITCH * dw, 0.0, 0.0)
 	return Transform3D(Basis.from_euler(e), eye) * _kick_xform()
 

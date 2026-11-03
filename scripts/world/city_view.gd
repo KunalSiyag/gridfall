@@ -23,6 +23,9 @@ signal rebuild_queue_flushed()
 const D := preload("res://scripts/sim/sim_defs.gd")
 const WS := preload("res://scripts/fp/world_scale.gd")
 const AP := preload("res://scripts/fp/asset_paths.gd")
+const RB := preload("res://scripts/fp/world/riverbed.gd")
+const WATER := preload("res://scripts/world/water_surface.gd")
+const SHORE := preload("res://scripts/world/shore.gd")
 const STREET := preload("res://scripts/fp/street/street_dressing.gd")
 const WebSupport := preload("res://scripts/ops/web_support.gd")
 const M := "res://models/"
@@ -100,10 +103,9 @@ const REBUILD_DEFER_DIST := 1.5
 const REBUILD_DEFER_MAX_S := 5.0
 ## Ground: merged land quads per GROUND_CHUNK x GROUND_CHUNK tiles (water tiles excluded), out to
 ## GROUND_MARGIN tiles past the world edge. Water tiles get a riverbed whose banks slope from the
-## ground down to WS.RIVERBED_Y over BANK_W.
+## ground down to WS.RIVERBED_Y over RB.BANK_W (riverbed.gd, which the hero's wading shares).
 const GROUND_CHUNK := 64
 const GROUND_MARGIN := 30
-const BANK_W := 0.1
 const GROUND_SHADER := "res://shaders/ground_detail.gdshader"
 const WINDOW_SHADER := "res://shaders/window_fp.gdshader"
 const ROAD_SHADER := "res://shaders/road_fp.gdshader"
@@ -183,6 +185,13 @@ var _window_mats: Array[StandardMaterial3D] = []
 var _window_fp_mat: ShaderMaterial
 var _lamp_mat: StandardMaterial3D
 var _water_mat: ShaderMaterial
+## Tests only: pretend the renderer is this method ("gl_compatibility" is the web build's).
+var render_method_override := ""
+## Land tiles that touch water (shore.gd), set by _build_ground.
+var _shore_mask := PackedByteArray()
+## The hero's footfall rings on the water (water_ripple), and whether the shader has them lit.
+var _ripples := WATER.Ripples.new()
+var _ripples_lit := false
 var _tex_mats: Dictionary = {}
 var _real_roads: bool = false
 ## Tree models, one Array of mesh parts per kit, plus a low-poly stand-in for distant chunks.
@@ -581,6 +590,7 @@ func _mat(key: String, col: Color, emissive: float = 0.0, alpha: float = 1.0) ->
 ## sloped banks under every water tile, and the water surface at WS.WATER_Y.
 func _build_ground() -> void:
 	_ground_chunks.clear()
+	_shore_mask = SHORE.mask(sim)
 	var lo := Vector2i(D.X0 - GROUND_MARGIN, D.Y0 - GROUND_MARGIN)
 	var hi := Vector2i(D.X0 + D.W + GROUND_MARGIN, D.Y0 + D.H + GROUND_MARGIN)
 	for cy in range(lo.y, hi.y, GROUND_CHUNK):
@@ -594,7 +604,6 @@ func _build_ground() -> void:
 			g.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 			add_child(g)
 			_ground_chunks.append(g)
-	var is_water := func(i: int) -> bool: return sim.terrain[i] == D.WATER
 	_bed_node = MeshInstance3D.new()
 	_bed_node.name = "RiverBed"
 	_bed_node.mesh = _river_bed_mesh()
@@ -602,20 +611,59 @@ func _build_ground() -> void:
 	add_child(_bed_node)
 	_water_node = MeshInstance3D.new()
 	_water_node.name = "Water"
-	_water_node.mesh = _tiles_mesh(is_water, WS.WATER_Y, 1.0)
+	_water_node.mesh = WATER.mesh(sim, WS.WATER_Y)
 	_water_node.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-	if ResourceLoader.exists("res://shaders/water.gdshader"):
-		_water_mat = ShaderMaterial.new()
-		_rain_told = NAN
-		_water_mat.shader = load("res://shaders/water.gdshader")
-		if ResourceLoader.exists(TEX + "water_normal.png"):
-			_water_mat.set_shader_parameter("normal_tex", load(TEX + "water_normal.png"))
-		_water_mat.set_shader_parameter("night", night)
+	_water_mat = _new_water_material()
+	if _water_mat != null:
 		_water_node.material_override = _water_mat
 	else:
 		_water_node.material_override = _mat("water_glow", Color(0.2, 0.45, 0.6), 0.0, 0.8)
 	add_child(_water_node)
 	_apply_ground_mode()
+
+
+## The river's shader material (null without the shader). `compat` follows the renderer: the web
+## build renders with gl_compatibility, whose depth read the shader must unproject differently.
+func _new_water_material() -> ShaderMaterial:
+	if not ResourceLoader.exists("res://shaders/water.gdshader"):
+		return null
+	_rain_told = NAN
+	var m := ShaderMaterial.new()
+	m.shader = load("res://shaders/water.gdshader")
+	if ResourceLoader.exists(TEX + "water_normal.png"):
+		m.set_shader_parameter("normal_tex", load(TEX + "water_normal.png"))
+	m.set_shader_parameter("night", night)
+	var method := render_method_override if render_method_override != "" else RenderingServer.get_current_rendering_method()
+	m.set_shader_parameter("compat", WATER.is_compat(method))
+	if ResourceLoader.exists(TEX + "decals/noise_fbm.png"):
+		m.set_shader_parameter("noise_tex", load(TEX + "decals/noise_fbm.png"))
+	return m
+
+
+## A ring spreads over the water from world point p (a footfall in the shallows), amp 0..1.
+func water_ripple(p: Vector3, amp: float) -> void:
+	_ripples.add(p.x, p.z, amp)
+
+
+## True while a ripple is alive or the shader still shows one.
+func water_rippling() -> bool:
+	return _ripples_lit or _ripples.alive()
+
+
+## Ages the rings and hands them to the water shader; idle, it is one bool test per frame.
+func _tick_ripples(delta: float) -> void:
+	if _water_mat == null or not water_rippling():
+		return
+	var live := _ripples.tick(delta)
+	_water_mat.set_shader_parameter("ripples", _ripples.array())
+	if live != _ripples_lit:
+		_ripples_lit = live
+		_water_mat.set_shader_parameter("ripple_on", 1.0 if live else 0.0)
+
+
+## True for a land tile that touches water (it gets the finer shore mesh).
+func _is_shore(x: int, y: int) -> bool:
+	return D.in_bounds(x, y) and _shore_mask[D.idx(x, y)] != 0
 
 
 func _is_water_at(x: int, y: int) -> bool:
@@ -634,8 +682,13 @@ func _ground_chunk_mesh(x0: int, y0: int, x1: int, y1: int) -> ArrayMesh:
 			if _is_water_at(x, y):
 				x += 1
 				continue
+			if _is_shore(x, y):
+				SHORE.add_tile(st, sim, x, y, WS.GROUND_Y)
+				any = true
+				x += 1
+				continue
 			var xe := x
-			while xe + 1 < x1 and not _is_water_at(xe + 1, y):
+			while xe + 1 < x1 and not _is_water_at(xe + 1, y) and not _is_shore(xe + 1, y):
 				xe += 1
 			var a := Vector3(x - 0.5, WS.GROUND_Y, y - 0.5)
 			var b := Vector3(xe + 0.5, WS.GROUND_Y, y - 0.5)
@@ -643,6 +696,7 @@ func _ground_chunk_mesh(x0: int, y0: int, x1: int, y1: int) -> ArrayMesh:
 			var d := Vector3(x - 0.5, WS.GROUND_Y, y + 0.5)
 			for v: Vector3 in [a, b, c, a, c, d]:
 				st.set_normal(Vector3.UP)
+				st.set_color(SHORE.NONE)
 				st.set_uv(Vector2(v.x, v.z))
 				st.add_vertex(v)
 			any = true
@@ -653,12 +707,11 @@ func _ground_chunk_mesh(x0: int, y0: int, x1: int, y1: int) -> ArrayMesh:
 	return st.commit()
 
 
-## Riverbed under the water tiles at RIVERBED_Y, rising to GROUND_Y over BANK_W at every edge or
+## Riverbed under the water tiles at RIVERBED_Y, rising to GROUND_Y over RB.BANK_W at every edge or
 ## corner that touches land, so the water sits below its banks instead of level with the lots.
 func _river_bed_mesh() -> ArrayMesh:
 	var st := SurfaceTool.new()
 	st.begin(Mesh.PRIMITIVE_TRIANGLES)
-	var g := [0.0, BANK_W, 1.0 - BANK_W, 1.0]
 	var any := false
 	for i in range(D.W * D.H):
 		if sim.terrain[i] != D.WATER:
@@ -666,29 +719,12 @@ func _river_bed_mesh() -> ArrayMesh:
 		any = true
 		var x := D.tx(i)
 		var y := D.ty(i)
-		var land := [
-			not _is_water_at(x, y - 1), not _is_water_at(x + 1, y), not _is_water_at(x, y + 1), not _is_water_at(x - 1, y),
-			not _is_water_at(x - 1, y - 1), not _is_water_at(x + 1, y - 1), not _is_water_at(x + 1, y + 1), not _is_water_at(x - 1, y + 1),
-		]
+		var land := RB.land_flags(sim, x, y)
 		var pts := []
-		for gy: float in g:
+		for gy: float in RB.NODES:
 			var row := []
-			for gx: float in g:
-				var dist := 2.0
-				if land[0]:
-					dist = minf(dist, gy)
-				if land[1]:
-					dist = minf(dist, 1.0 - gx)
-				if land[2]:
-					dist = minf(dist, 1.0 - gy)
-				if land[3]:
-					dist = minf(dist, gx)
-				var corners := [Vector2(0, 0), Vector2(1, 0), Vector2(1, 1), Vector2(0, 1)]
-				for k in range(4):
-					if land[4 + k]:
-						dist = minf(dist, Vector2(gx, gy).distance_to(corners[k]))
-				var h := lerpf(WS.GROUND_Y, WS.RIVERBED_Y, smoothstep(0.0, BANK_W, dist))
-				row.append(Vector3(x - 0.5 + gx, h, y - 0.5 + gy))
+			for gx: float in RB.NODES:
+				row.append(Vector3(x - 0.5 + gx, RB.node_height(land, gx, gy), y - 0.5 + gy))
 			pts.append(row)
 		for r in range(3):
 			for c in range(3):
@@ -697,6 +733,7 @@ func _river_bed_mesh() -> ArrayMesh:
 				var cc: Vector3 = pts[r + 1][c + 1]
 				var d: Vector3 = pts[r + 1][c]
 				for v: Vector3 in [a, b, cc, a, cc, d]:
+					st.set_color(SHORE.bed_color(v.y))
 					st.set_uv(Vector2(v.x, v.z))
 					st.add_vertex(v)
 	if not any:
@@ -720,13 +757,13 @@ func _apply_ground_mode() -> void:
 		_bed_node.material_override = _bank_material() if fp_mode else _pbr("dirt", Color(0.22, 0.2, 0.17), 0.6)
 	if _water_mat != null:
 		# On foot a darker, greener city river; the sky's reflection supplies the blue.
-		_water_mat.set_shader_parameter("deep_color", Color(0.03, 0.075, 0.075) if fp_mode else Color(0.10, 0.30, 0.38))
-		_water_mat.set_shader_parameter("shallow_color", Color(0.09, 0.15, 0.13) if fp_mode else Color(0.22, 0.48, 0.52))
+		_water_mat.set_shader_parameter("deep_color", Color(0.02, 0.12, 0.14) if fp_mode else Color(0.10, 0.30, 0.38))
+		_water_mat.set_shader_parameter("shallow_color", Color(0.07, 0.30, 0.28) if fp_mode else Color(0.22, 0.48, 0.52))
 		# Normal-map repeats: one per 8 m on foot; the depth read fades the shallows and foams the banks.
 		_water_mat.set_shader_parameter("tiling", 1.0 / (8.0 * WS.M) if fp_mode else 0.35)
 		_water_mat.set_shader_parameter("speed", 0.05 if fp_mode else 0.03)
 		_water_mat.set_shader_parameter("depth_fade", 0.045 if fp_mode else 0.0)
-		_water_mat.set_shader_parameter("foam_width", 0.006)
+		_water_mat.set_shader_parameter("foam_width", 0.007)
 
 
 func _ground_material() -> Material:
@@ -963,30 +1000,6 @@ func _wet_material(m: BaseMaterial3D, w: float) -> void:
 	m.albedo_color = Color(c.r * k, c.g * k, c.b * k, c.a)
 	m.roughness = lerpf(float(dry[1]), float(dry[1]) * 0.8 if damp else 0.16, w)
 	m.metallic_specular = lerpf(float(dry[2]), 0.4 if damp else 0.65, w)
-
-
-## One merged quad mesh over every tile the predicate accepts, so water costs a single draw call.
-func _tiles_mesh(pred: Callable, y: float, size: float) -> ArrayMesh:
-	var st := SurfaceTool.new()
-	st.begin(Mesh.PRIMITIVE_TRIANGLES)
-	st.set_normal(Vector3.UP)
-	var hs := size * 0.5
-	var any := false
-	for i in range(D.W * D.H):
-		if not bool(pred.call(i)):
-			continue
-		any = true
-		var c := Vector3(D.tx(i), y, D.ty(i))
-		var a := c + Vector3(-hs, 0, -hs)
-		var b := c + Vector3(hs, 0, -hs)
-		var d := c + Vector3(hs, 0, hs)
-		var e := c + Vector3(-hs, 0, hs)
-		for v: Vector3 in [a, b, d, a, d, e]:
-			st.set_uv(Vector2(v.x, v.z))
-			st.add_vertex(v)
-	if not any:
-		return ArrayMesh.new()
-	return st.commit()
 
 
 ## One flat quad per tile rect (rects in tile coordinates, edges on tile borders).
@@ -3483,6 +3496,7 @@ func _process(delta: float) -> void:
 	if fp_mode and not _queue.is_empty():
 		_process_queue(delta)
 	_section("queue", t)
+	_tick_ripples(delta)
 	if not fp_mode:
 		if _shake > 0.0 and camera != null:
 			_shake = maxf(0.0, _shake - delta)

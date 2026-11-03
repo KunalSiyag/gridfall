@@ -12,6 +12,7 @@ const D := preload("res://scripts/sim/sim_defs.gd")
 const WS := preload("res://scripts/fp/world_scale.gd")
 const AP := preload("res://scripts/fp/asset_paths.gd")
 const BS := preload("res://scripts/fp/player/body_shapes.gd")
+const RB := preload("res://scripts/fp/world/riverbed.gd")
 const TABLE := preload("res://scripts/fp/player/body_table.gd")
 ## Interim soft step (A deliverable 1; remove once G1 raises WS.GROUND_Y): next to a tile whose
 ## surface is at GROUND_Y, a higher tile at most SOFT_STEP above it ramps down over its outer
@@ -177,11 +178,36 @@ func ground_height(p: Vector3) -> float:
 	return WS.LOT_TOP
 
 
+## The bed height under p where the hero may wade (open water, not a bridge, at most wade_max
+## deep), else NAN. Only the hero asks: ground_height() stays NAN over water, so NPCs, cars,
+## animals and thrown bodies treat the river as the wall it always was.
+func wade_height(p: Vector3, wade_max: float) -> float:
+	if wade_max <= 0.0:
+		return NAN
+	var i := tile_at(p)
+	if i < 0 or ctx.sim.terrain[i] != D.WATER or ctx.sim.kind[i] == D.ROAD:
+		return NAN
+	var bed := RB.bed_height(ctx.sim, p.x, p.z)
+	return bed if WS.WATER_Y - bed <= wade_max + 1e-6 else NAN
+
+
+## How deep the open water is over the bed at p, in world units; 0 on land, on a bridge and on the
+## dry part of a bank.
+func water_depth(p: Vector3) -> float:
+	var i := tile_at(p)
+	if i < 0 or ctx.sim.terrain[i] != D.WATER or ctx.sim.kind[i] == D.ROAD:
+		return 0.0
+	return RB.depth_at(ctx.sim, p.x, p.z)
+
+
 ## The height the feet stand at: ground_height() with the interim soft step (SOFT_STEP ramps
-## over SOFT_BAND toward a GROUND_Y neighbour). NAN where ground_height is NAN.
-func walk_height(p: Vector3) -> float:
+## over SOFT_BAND toward a GROUND_Y neighbour). NAN where ground_height is NAN, except for a
+## wader (wade_max > 0): over open water no deeper than wade_max it is the riverbed.
+func walk_height(p: Vector3, wade_max: float = 0.0) -> float:
 	var g := ground_height(p)
-	if is_nan(g) or g <= WS.GROUND_Y + 1e-6 or g > WS.GROUND_Y + SOFT_STEP + 1e-6:
+	if is_nan(g):
+		return wade_height(p, wade_max)
+	if g <= WS.GROUND_Y + 1e-6 or g > WS.GROUND_Y + SOFT_STEP + 1e-6:
 		return g
 	var cx := float(roundi(p.x))
 	var cz := float(roundi(p.z))
@@ -206,9 +232,11 @@ func walk_height(p: Vector3) -> float:
 
 ## What the feet of a walker at feet_y stand on at p: walk_height(), or the top of a box under
 ## the circle that is at most max_rise above the feet (a low wall it stepped or jumped onto).
-## NAN over water.
-func support_height(p: Vector3, radius: float, feet_y: float, max_rise: float) -> float:
-	var g := walk_height(p)
+## NAN over water, except the shallows for a wader (wade_max, see walk_height).
+func support_height(
+	p: Vector3, radius: float, feet_y: float, max_rise: float, wade_max: float = 0.0
+) -> float:
+	var g := walk_height(p, wade_max)
 	if is_nan(g):
 		return g
 	var limit := feet_y + max_rise + 1e-6
@@ -279,16 +307,16 @@ func surface_at(p: Vector3) -> String:
 ## True if a circle of `radius` at p (feet) is blocked: unwalkable ground under p, or a box or a
 ## prop cylinder of the 3x3 tiles around p whose top is above p.y. Boxes are grown by radius in
 ## xz (a square, so it agrees with tests that grow AABBs).
-func is_blocked(p: Vector3, radius: float) -> bool:
-	if is_nan(ground_height(p)):
+func is_blocked(p: Vector3, radius: float, wade_max: float = 0.0) -> bool:
+	if is_nan(ground_height(p)) and is_nan(wade_height(p, wade_max)):
 		return true
 	return _hits(p, radius, INF)
 
 
 ## is_blocked() for a body `height` tall: boxes and cylinders entirely above p.y + height (an
 ## awning, a ceiling) let it pass.
-func body_blocked(p: Vector3, radius: float, height: float) -> bool:
-	if is_nan(ground_height(p)):
+func body_blocked(p: Vector3, radius: float, height: float, wade_max: float = 0.0) -> bool:
+	if is_nan(ground_height(p)) and is_nan(wade_height(p, wade_max)):
 		return true
 	return _hits(p, radius, height)
 
@@ -303,12 +331,18 @@ func move_and_slide(from: Vector3, motion: Vector3, radius: float) -> Vector3:
 ## The walker's move: like move_and_slide() for a body `height` tall that can rise at most
 ## max_rise onto higher walkable ground (STEP_HEIGHT on foot, 0 in the air). A blocked move first
 ## slides along the contact (a pole's tangent, a wall's face), then along x or z alone. Returns
-## the new feet position with y unchanged (the caller follows walk_height()).
+## the new feet position with y unchanged (the caller follows walk_height()). A wader (the hero,
+## wade_max > 0) may also stand in water up to wade_max deep.
 func move_body(
-	from: Vector3, motion: Vector3, radius: float, height: float, max_rise: float
+	from: Vector3,
+	motion: Vector3,
+	radius: float,
+	height: float,
+	max_rise: float,
+	wade_max: float = 0.0
 ) -> Vector3:
 	var full := Vector3(from.x + motion.x, from.y, from.z + motion.z)
-	if _can_stand(from, full, radius, height, max_rise):
+	if _can_stand(from, full, radius, height, max_rise, wade_max):
 		return full
 	var m := Vector2(motion.x, motion.z)
 	var contact := _push_normal(full, radius, height)
@@ -324,14 +358,17 @@ func move_body(
 			)
 			t = side * ROUND_SLIDE * m.length()
 		var slid := Vector3(from.x + t.x, from.y, from.z + t.y)
-		if t.length_squared() > 1e-14 and _can_stand(from, slid, radius, height, max_rise):
+		if (
+			t.length_squared() > 1e-14
+			and _can_stand(from, slid, radius, height, max_rise, wade_max)
+		):
 			return slid
 	var xo := Vector3(from.x + motion.x, from.y, from.z)
 	var zo := Vector3(from.x, from.y, from.z + motion.z)
 	var first := xo if absf(motion.x) >= absf(motion.z) else zo
 	var second := zo if absf(motion.x) >= absf(motion.z) else xo
 	for c: Vector3 in [first, second]:
-		if c != from and _can_stand(from, c, radius, height, max_rise):
+		if c != from and _can_stand(from, c, radius, height, max_rise, wade_max):
 			return c
 	# Walk-out: from already overlaps something (a building or a site appeared underfoot). A move
 	# is allowed when it goes no deeper into what it overlaps and enters nothing new (S0), or when
@@ -346,7 +383,7 @@ func move_body(
 	for c: Vector3 in [full, first, second]:
 		if c == from:
 			continue
-		var g := walk_height(c)
+		var g := walk_height(c, wade_max)
 		if is_nan(g) or g - from.y > max_rise + 1e-6:
 			continue
 		var d1 := _overlaps(Vector3(c.x, maxf(from.y, g), c.z), radius, height)
@@ -373,7 +410,7 @@ func move_body(
 ## (SOFT_RATE of each overlap): the point eased clear of everyone standing near, never through a
 ## hard blocker and never onto ground it could not stand on. Returns p unchanged when nobody
 ## overlaps. The walkers give way as well (walkers.gd), so a sidewalk keeps flowing.
-func soft_people_move(p: Vector3, radius: float, height: float) -> Vector3:
+func soft_people_move(p: Vector3, radius: float, height: float, wade_max: float = 0.0) -> Vector3:
 	var out := p
 	for k in range(0, people_circles.size(), 4):
 		if absf(p.y - people_circles[k + 1]) > SOFT_Y:
@@ -389,7 +426,7 @@ func soft_people_move(p: Vector3, radius: float, height: float) -> Vector3:
 			p.y,
 			out.z + n.y * ((want - dist) * SOFT_RATE)
 		)
-		if _can_stand(p, q, radius, height, WS.STEP_HEIGHT):
+		if _can_stand(p, q, radius, height, WS.STEP_HEIGHT, wade_max):
 			out = q
 	return out
 
@@ -400,7 +437,7 @@ func soft_people_move(p: Vector3, radius: float, height: float) -> Vector3:
 ## RESOLVE_PASSES passes, and it stops the moment a pass makes things no shallower, so a body
 ## deep inside works its way out over a few steps instead of being flung through walls. Returns
 ## the pushed point (y unchanged); p itself when nothing overlaps or there was no way out.
-func resolve_out(p: Vector3, radius: float, height: float) -> Vector3:
+func resolve_out(p: Vector3, radius: float, height: float, wade_max: float = 0.0) -> Vector3:
 	var out := p
 	for _pass in RESOLVE_PASSES:
 		var contact := _push_normal(out, radius, height)
@@ -418,7 +455,7 @@ func resolve_out(p: Vector3, radius: float, height: float) -> Vector3:
 			out.y,
 			out.z + n.y * minf(depth + 1e-4, RESOLVE_STEP)
 		)
-		if is_nan(walk_height(q)):
+		if is_nan(walk_height(q, wade_max)):
 			return out
 		var after := _overlaps(q, radius, height)
 		var depth1 := 0.0
@@ -432,8 +469,8 @@ func resolve_out(p: Vector3, radius: float, height: float) -> Vector3:
 
 ## The closest point to p (xz, y on the ground) where a circle of `radius` is not blocked, searched
 ## on rings 1 m apart out to max_dist; Vector3(NAN, NAN, NAN) when there is none.
-func nearest_free(p: Vector3, radius: float, max_dist: float) -> Vector3:
-	if not is_blocked(p, radius):
+func nearest_free(p: Vector3, radius: float, max_dist: float, wade_max: float = 0.0) -> Vector3:
+	if not is_blocked(p, radius, wade_max):
 		return p
 	var step := 1.0 * WS.M
 	var rings := ceili(max_dist / step)
@@ -445,9 +482,11 @@ func nearest_free(p: Vector3, radius: float, max_dist: float) -> Vector3:
 			var q := Vector3(p.x + cos(a) * r, p.y, p.z + sin(a) * r)
 			var g := ground_height(q)
 			if is_nan(g):
+				g = wade_height(q, wade_max)
+			if is_nan(g):
 				continue
 			q.y = g
-			if not is_blocked(q, radius):
+			if not is_blocked(q, radius, wade_max):
 				return q
 	return Vector3(NAN, NAN, NAN)
 
@@ -773,8 +812,10 @@ func _hits(p: Vector3, radius: float, height: float) -> bool:
 	return false
 
 
-func _can_stand(from: Vector3, c: Vector3, radius: float, height: float, max_rise: float) -> bool:
-	var g := support_height(c, radius, from.y, max_rise)
+func _can_stand(
+	from: Vector3, c: Vector3, radius: float, height: float, max_rise: float, wade_max: float = 0.0
+) -> bool:
+	var g := support_height(c, radius, from.y, max_rise, wade_max)
 	if is_nan(g) or g - from.y > max_rise + 1e-6:
 		return false
 	return not _hits(Vector3(c.x, maxf(from.y, g), c.z), radius, height)

@@ -6,6 +6,7 @@ extends Node
 
 const D := preload("res://scripts/sim/sim_defs.gd")
 const BANK := preload("res://scripts/fp/audio/audio_bank.gd")
+const WS := preload("res://scripts/fp/world_scale.gd")
 
 const BED_NAMES: Array[String] = ["traffic_hum", "park_birds", "river", "residential_quiet", "night_insects", "rain"]
 const MAX_PLAYING := 4
@@ -176,7 +177,7 @@ func step(dt: float) -> void:
 			p.stop()
 			levels[b] = 0.0
 			continue
-		p.volume_db = float(BANK.BEDS[b][1]) + linear_to_db(maxf(lv, 0.001))
+		p.volume_db = float(BANK.BEDS[b][1]) + linear_to_db(maxf(lv, 0.001)) + _wade_boost_db(b)
 	max_seen_playing = maxi(max_seen_playing, playing_count())
 
 
@@ -186,6 +187,14 @@ func _may_start(dt: float) -> bool:
 		return true
 	_held_s += dt
 	return _held_s >= HOLD_MAX_S
+
+
+## The river bed a little louder while the hero wades (hero_wade): up to WADE_RIVER_DB at half a
+## metre of water; 0 for every other bed and on land.
+func _wade_boost_db(bed: String) -> float:
+	if bed != "river" or ctx == null or ctx.player == null:
+		return 0.0
+	return BANK.WADE_RIVER_DB * clampf(ctx.player.wade_depth / (0.5 * WS.M), 0.0, 1.0)
 
 
 func playing_count() -> int:

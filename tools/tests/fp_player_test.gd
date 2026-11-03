@@ -628,6 +628,8 @@ func _check_water(ctx: FpContext) -> void:
 	var p := ctx.player
 	var sim := ctx.sim
 	var col := ctx.collision
+	# With hero_wade off the river is the wall it was (the wading hero is fp_water_test's).
+	p.wade_on = false
 	for i in sim.active:
 		if sim.terrain[i] != D.WATER or sim.kind[i] == D.ROAD:
 			continue
@@ -659,12 +661,14 @@ func _check_water(ctx: FpContext) -> void:
 					fails,
 					not wet and edge > 0.45,
 					(
-						"walking toward the river stops at the edge (%.3f from the bank tile centre), never over water"
+						"with hero_wade off, walking toward the river stops at the edge (%.3f from the bank tile centre), never over water"
 						% edge
 					)
 				)
 			)
+			p.wade_on = true
 			return
+	p.wade_on = true
 	K.check(fails, false, "fixture: a river bank")
 
 

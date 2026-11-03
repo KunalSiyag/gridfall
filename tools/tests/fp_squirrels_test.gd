@@ -84,16 +84,16 @@ class BlockedCol:
 	var block_at := Vector3.ZERO
 	var block_r: float = 0.0
 
-	func walk_height(p: Vector3) -> float:
+	func walk_height(p: Vector3, wade_max: float = 0.0) -> float:
 		if Vector2(p.x - block_at.x, p.z - block_at.z).length() < block_r:
 			return NAN
-		return real.walk_height(p)
+		return real.walk_height(p, wade_max)
 
 	func surface_at(p: Vector3) -> String:
 		return real.surface_at(p)
 
-	func is_blocked(p: Vector3, radius: float) -> bool:
-		return real.is_blocked(p, radius)
+	func is_blocked(p: Vector3, radius: float, wade_max: float = 0.0) -> bool:
+		return real.is_blocked(p, radius, wade_max)
 
 
 # ------------------------------------------------------------------ helpers

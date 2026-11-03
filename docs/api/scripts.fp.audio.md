@@ -14,6 +14,7 @@ Area ambience (slice I): looping 2D beds on the Ambience bus (traffic hum, park 
 
 - `D = preload("res://scripts/sim/sim_defs.gd")`
 - `BANK = preload("res://scripts/fp/audio/audio_bank.gd")`
+- `WS = preload("res://scripts/fp/world_scale.gd")`
 - `BED_NAMES = ["traffic_hum", "park_birds", "river", "residential_quiet", "night_insects", "rain"]`
 - `MAX_PLAYING = 4`
 - `MIN_WEIGHT = 0.02`
@@ -54,7 +55,7 @@ Slice I's sound assets (sounds/fp/, made by tools/audio/synth_fp_sfx.py): names,
 
 - `DIR = "res://sounds/fp/"`
 - `LEGACY_AMBIENCE = "res://sounds/ambience.ogg"`: Wind, distant rumble and garden birds: reused as the residential bed (its birdsong rules it out downtown). Imported with loop=false, which is not slice I's to change, so it plays as a looping duplicate.
-- `SURFACES = ["asphalt", "sidewalk", "lot", "grass", "dirt", "bridge"]`
+- `SURFACES = ["asphalt", "sidewalk", "lot", "grass", "dirt", "bridge", "water"]`: "water" has no recordings of its own: its steps are the footstep_splash_<n> set (step_name).
 - `STEP_ALIASES = {"gravel": "dirt", "trail": "grass"}`: Surfaces without their own steps: unpaved road grades borrow the nearest recorded one.
 - `STEP_VARIANTS = 6`
 - `SPLASH_VARIANTS = 4`: The wet layer played over a step on soaked paving: footstep_splash_<n>.
@@ -72,6 +73,11 @@ Slice I's sound assets (sounds/fp/, made by tools/audio/synth_fp_sfx.py): names,
 - `STEP_CROUCH_DB = -6.0`
 - `STEP_PITCH_SPREAD = 0.08`
 - `SPLASH_DB = -2.0`: The splash layer at full wetness, relative to the step.
+- `WADE_STEP_DB = -3.0`: The hero wading (hero_wade): a step's level goes from WADE_STEP_DB at the ankle to WADE_STEP_DB + WADE_DEEP_DB at the limit, its pitch from 1 down to WADE_DEEP_PITCH; entering the water adds a second, heavier splash WADE_ENTRY_DB over the step. The river bed gets up to WADE_RIVER_DB louder at half a metre of water.
+- `WADE_DEEP_DB = 6.0`
+- `WADE_DEEP_PITCH = 0.8`
+- `WADE_ENTRY_DB = 4.0`
+- `WADE_RIVER_DB = 3.0`
 - `BLIP_DB = -16.0`: UI cues on the UI bus.
 - `BLIP_SOFT_DB = -19.0`
 - `BLIP_CHATTER_DB = -24.0`
@@ -119,7 +125,7 @@ Slice I's sound assets (sounds/fp/, made by tools/audio/synth_fp_sfx.py): names,
 - `static func purge_missing() -> void`: Audio pack arrived on a split web build: forget the names that cached a miss so the next stream()/bed_stream() call loads them for real.
 - `static func all_names() -> Array[String]`: Every asset name (loops, one-shots, footsteps).
 - `static func preload_all() -> void`: Loads every asset now (FP setup), so nothing touches the disk mid-game.
-- `static func step_name(surface: String, n: int) -> String`: footstep_<surface>_<n> (n in 1..STEP_VARIANTS).
+- `static func step_name(surface: String, n: int) -> String`: footstep_<surface>_<n> (n in 1..STEP_VARIANTS); water's steps are footstep_splash_<n> (the odd variants stay the left foot's, the even the right's).
 - `static func step_surface(surface: String) -> String`: The SURFACES entry whose steps play on surface (CollisionWorld.surface_at names): itself, its STEP_ALIASES stand-in, or sidewalk for anything else.
 - `static func legacy_ambience_loop() -> AudioStream`: A looping duplicate of LEGACY_AMBIENCE (the imported resource keeps loop=false), or null.
 - `static func bed_stream(bed: String) -> AudioStream`: The stream a bed plays.
@@ -326,6 +332,7 @@ The hero's footsteps (slice I). With FpPlayer's `stepped(surface, pos)` signal (
 - `RIGHT_VARIANTS = [2, 4, 6]`
 - `PAVED = ["asphalt", "sidewalk", "lot", "bridge"]`: Surfaces that hold a film of water when wet, and the wetness below which no splash plays.
 - `SPLASH_MIN_WET = 0.2`
+- `WADE_MIN_M = 0.03`: Water shallower than this (m) is the bank's wet mud, not a splash.
 - `HEAVY_LAND_MPS = 4.0`: Landings faster than this (m/s down, FpPlayer's heavy landing) add the other foot, louder.
 - `HEAVY_LAND_DB = 3.0`
 
@@ -340,6 +347,7 @@ The hero's footsteps (slice I). With FpPlayer's `stepped(surface, pos)` signal (
 - `func unbind() -> void`
 - `func poll(_dt: float) -> void`: The polling fallback; does nothing while the player has the stepped signal.
 - `static func stride_length(speed_mps: float) -> float`: Stride (m) for a speed in m/s.
-- `func play(surface: String, gain_db: float = 0.0) -> void`: Plays one step on surface (CollisionWorld.surface_at names; unknown ones sound like sidewalk).
+- `func play(surface: String, gain_db: float = 0.0, pitch: float = 1.0) -> void`: Plays one step on surface (CollisionWorld.surface_at names; unknown ones sound like sidewalk).
 - `func wetness() -> float`: How wet the streets are, 0..1: G1's streetscape weather, read by name; 0 without it.
 - `static func is_left_variant(n: String) -> bool`: True when stream name n is a left-foot variant.
+- `func play_wade(depth_m: float) -> void`: A step of the wading hero in `depth_m` metres of water: the dry shelf of a bank is wet mud (dirt); in the water the step is a splash, louder and lower the deeper it is, and the first one after dry ground gets a second, heavier splash over it.

@@ -446,6 +446,7 @@ The on-foot player (slice A): feet at `position`, a kinematic controller against
 - `WS = preload("res://scripts/fp/world_scale.gd")`
 - `SM = preload("res://scripts/fp/player/spring_math.gd")`
 - `AVATAR = preload("res://scripts/fp/player/player_avatar.gd")`
+- `WADE = preload("res://scripts/fp/player/wade.gd")`
 - `GROUND_SNAP = 0.05`: Gaps above this between a loaded position and the ground snap to the ground.
 - `MAX_FRAME_DELTA = 0.1`: Longest frame _process hands to simulate(), in seconds. A sim tick stall can freeze a frame for 0.7-2.7 s; the player then moves one 10 fps frame's worth instead of lurching ahead.
 - `MAX_SUBSTEPS = 4096`: Upper bound on collision sub-steps per simulate() call (each moves at most PLAYER_RADIUS).
@@ -519,6 +520,7 @@ The on-foot player (slice A): feet at `position`, a kinematic controller against
 - `CONV_FREE_MIN = 0.7`
 - `REVERSE_GAP = 2.5`
 - `TRAFFIC_POLL = 0.1`
+- `BOAT_REACH = 0.6`: Boats this near (u) are solid to a wading hero (their hulls reach 7 m from the origin).
 - `BLOCKER_REACH = 2.0 * WS.M`
 - `AGENT_REACH = 8.0 * WS.M`
 - `PEOPLE_REACH = 2.5 * WS.M`: People on foot (E's walkers_near) become the soft circles CollisionWorld pushes the hero out of: everyone within this reach of the feet is listed, once a frame (a sprint covers 0.65 m in one TRAFFIC_POLL, more than a person is wide, so the circles cannot be that stale).
@@ -535,6 +537,7 @@ The on-foot player (slice A): feet at `position`, a kinematic controller against
 - `cam_yaw: float`: View angles (radians). Movement input is rotated by cam_yaw; forward() looks along them.
 - `camera_mode: String`: "third" (over the shoulder) or "first" (eye height).
 - `momentum: bool`: The "momentum" flag, read at setup (tests may set it).
+- `wade_on: bool`: Flag hero_wade: the hero may stand in water up to WS.WADE_MAX deep (CollisionWorld wade_max); off, the river is the wall it was. wade_depth is the water over the bed under the feet (u).
 - `free_running: bool`: The "free_running" flag, read at setup (tests may set it).
 - `view_override: bool`: True while another owner (the city overview) places the camera through set_view_override().
 - `aim_yaw: float`: Third person: while not NAN the body turns toward this yaw instead of its travel (the actions feature: the guard faces where the camera looks, a blow faces its target).
@@ -561,6 +564,7 @@ The on-foot player (slice A): feet at `position`, a kinematic controller against
 - `func body_forward() -> Vector3`: Unit horizontal direction the body faces.
 - `func tile() -> int`: Tile index under the feet or -1.
 - `func snap_to_ground() -> void`: Puts the feet on the walkable ground under them (no change over unwalkable ground).
+- `func wade_limit() -> float`: The deepest water (u) the hero may stand in: WS.WADE_MAX, or 0 with flag hero_wade off. The CollisionWorld queries take it as wade_max; everyone else keeps water as a wall.
 - `func combat_step(motion: Vector3) -> Vector3`: A short, grounded combat step (at most 0.18 m), with the same world collision and ground following as walking. It never enters another person's circle or changes running strength. Returns the actual displacement; an unsafe destination leaves the hero where they stood.
 - `func speed() -> float`: Horizontal speed in u/s.
 - `func simulate(wish: Vector2, sprint: bool, delta: float, crouch: bool = false, jump: bool = false) -> void`: One deterministic movement step; _process calls it with the held input, tests call it directly. wish: x = strafe right, y = forward, each -1..1, relative to the view (cam_yaw). While ctx.is_modal(), simulate itself zeroes wish and jump (gravity and ground snap still run). crouch and jump are held states (a jump fires on the press, buffered JUMP_BUFFER s). In photo mode it flies the camera instead (jump up, crouch down). Any delta is safe: the step is split so that no collision sub-step moves farther than PLAYER_RADIUS (a 0.008 u hoarding grown by the radius is only 0.038 u thick), and a velocity component whose move was blocked drops to zero.
@@ -772,3 +776,27 @@ Over-the-shoulder follow camera (D13; docs/fp/slices/A-player.md 6.5-6.6): an an
 - `func current_arm() -> float`: The arm length in use (collision-limited), in units.
 - `func free_arm() -> float`: The unobstructed arm for the current zoom and pitch (no run extension).
 - `func pivot() -> Vector3`: The damped pivot (neck) the arm hangs from.
+
+## `scripts/fp/player/wade.gd`
+
+extends `RefCounted`
+
+The hero in water (flag hero_wade): the numbers FpPlayer reads while wading, written once and const-only so tests can pin them. Depths are world units over the riverbed (CollisionWorld. water_depth); the hero wades to WS.WADE_MAX, slower the deeper it gets, and cannot swim (the clip set has no swim or tread). Preload as WADE.
+
+### Constants
+
+- `WS = preload("res://scripts/fp/world_scale.gd")`
+- `JUMP_FROM = 0.2 * WS.M`: Deeper than this a jump loses its spring: the water holds the legs.
+- `JUMP_FACTOR = 0.6`
+- `LOOK_AHEAD = 0.7 * WS.M`: The hero looks this far ahead (m) for water past WADE_MAX before the "too deep" notice.
+- `TOO_DEEP_EVERY = 20.0`: Seconds between two "too deep" notices.
+- `TOO_DEEP_TEXT = "Too deep to wade."`
+- `EYE_CLEAR = 0.1 * WS.M`: The first-person eye never sinks closer than this to the water surface (a hero knocked down while wading would otherwise look up from under the plane, which is drawn from above only).
+
+### Functions
+
+- `static func speed_factor(depth: float) -> float`: Top-speed factor in water of this depth: 1 up to WADE_SLOW_FROM, WADE_SLOW at WADE_MAX, an eased fall in between.
+- `static func eye_floor(feet_y: float, depth: float) -> float`: The lowest eye height (relative to the feet at world height feet_y) of a hero standing in water: EYE_CLEAR above the surface. A hero on dry ground has no floor (-INF).
+- `static func jump_factor(depth: float) -> float`: The jump speed factor: 1 in the shallows, JUMP_FACTOR from JUMP_FROM on.
+- `static func caps_sprint(depth: float) -> bool`: True while a sprint cannot build: past the ankles the pace tops out at a run.
+- `static func too_deep_ahead(col: CollisionWorld, pos: Vector3, dir: Vector2, depth: float) -> bool`: True when the hero standing in `depth` of water, heading `dir` (unit xz), is about to meet a bed deeper than WADE_MAX: the notice's trigger. Deep ahead and already past half of WADE_MAX.

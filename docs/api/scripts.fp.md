@@ -479,3 +479,7 @@ First-person world scale. One unit is one tile is 20 m; physical quantities are 
 - `TIME_SCALES = [1, 2, 4, 8]`: allowed first-person speeds (D4)
 - `SPRINT = 6.5 * M`: 6.5 m/s sprint (flag free_running)
 - `VIS_BUILDING_NEAR = 4.0`: 80 m: textured buildings; merged one-draw twins to VIS_BUILDING
+- `WADE_MAX = 0.8 * M`: deepest water the hero wades (flag hero_wade)
+- `WADE_SLOW = 0.45`: top speed factor at WADE_MAX (1 at the ankle)
+- `WADE_SLOW_FROM = 0.1 * M`: depth where wading starts to slow the hero
+- `WADE_NO_SPRINT = 0.3 * M`: deeper than this no run past RUN builds up
