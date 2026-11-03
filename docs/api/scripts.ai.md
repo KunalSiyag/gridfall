@@ -4,6 +4,57 @@
 
 [Index](index.md)
 
+## `scripts/ai/arena_ask.gd`
+
+class_name `ArenaAsk` · extends `RefCounted`
+
+"Ask the five": the overseer asks one question and the five mayors' models answer it in parallel, each from the same city state it would plan a normal turn from (CityBrain's own mayor prompts) with the question appended as "OVERSEER QUESTION". The answers are only SHOWN: apply_action is never called, nothing lands in a mayor's log, thoughts or posts, the proposals and day feed stay as they were, and the sim is read, never written (ai_ask_all_test.gd compares sim.to_dict() before and after). The calls go through GmiClient.live_json under the isolated role "arena" (GmiClient. ISOLATED_ROLES): no role cache, session cache, replay cache or save is written, and the breaker and live_outcomes are left alone, so five parallel questions that meet a 429 cannot turn the city to replay. Without a key, offline, or with the breaker open, each column is that mayor's last RECORDED turn nearest today (source "recorded": it did not hear the question) or, with none, the scripted planner (source "offline"). A mayor whose live call failed shows the same fallback plus the (scrubbed) error. Budget like the chat's decree: one ask per COOLDOWN_MS and PER_DAY asks per game day; a refused ask returns {"ok": false, "code", "reason"} (the reason is a sentence for the player). The budget (and the count of calls still in flight) lives on the GmiClient, which outlives the city, so New City and Load do not reset it. A call still unanswered after `timeout_s` lands as a failed column (fallback plus "timed out"); its late reply is ignored. Each answer is a result: {mi, who, model (badge), thought, post, proposal, actions (proposed, copied, with any non-numeric number dropped), flags ([{i, code, text}]), extra_actions, elapsed_s, finish_rank (1 = first LIVE answer; 0 for a recorded or offline column, which did not race), source ("live" | "recorded" | "offline"), error}.
+
+### Signals
+
+- `started(run: Dictionary)`
+- `answered(result: Dictionary)`
+- `finished(run: Dictionary)`
+
+### Constants
+
+- `D = preload("res://scripts/sim/sim_defs.gd")`
+- `ROLE = "arena"`
+- `COOLDOWN_MS = 60000`
+- `PER_DAY = 5`
+- `MAX_QUESTION = 300`
+- `MAX_TOKENS = 1500`
+- `TIMEOUT_S = 45.0`: One call's time budget in seconds; the panel's bar fills against it (see timeout_s).
+- `THOUGHT_MAX = 260`: Longest thought and post kept, in characters (a longer text ends in an ellipsis).
+- `POST_MAX = 200`
+- `NUMBER_KEYS = ["x", "y", "x2", "y2", "w", "h", "amount", "r", "c", "i"]`: The numbers an order may carry; a model's null, list or word there is dropped, not trusted.
+- `LEDGER_META = "arena_budget"`: The key of the GmiClient meta that holds the budget ledger (see _ledger).
+- `MODES = ["own", "neutral"]`
+- `NEUTRAL_PERSONA = ("You are a mayor of GridFall with no personal style: weigh the situation plainly" + " ...`: The one persona line every mayor gets in neutral mode, in place of their own.
+- `QUESTION_HEAD = "OVERSEER QUESTION"`
+- `QUESTION_NOTE = ("This is a what-if: nothing you answer is carried out. Reply in the same JSON format:"...`
+- `REFUSALS = { "empty": "Type a question for the five mayors.", "off": "Asking the five is switched ...`
+- `FLAG_TEXT = { "outside": "outside the district", "unaffordable": "the treasury cannot cover it", "u...`
+
+### Properties
+
+- `brain: Node`: The CityBrain (typed Node: it extends the class that builds this one).
+- `run: Dictionary`: The newest run (open or finished); {} before the first ask.
+- `clock: Callable`: Milliseconds clock; a test swaps it.
+- `timeout_s: float`: Seconds a call may take before its column lands as failed; a test shortens it.
+
+### Functions
+
+- `func busy() -> bool`: Whether a run is still waiting for an answer.
+- `func elapsed_s(r: Dictionary = {}) -> float`: Seconds since the run began (the bar's clock); 0 with no run.
+- `func ask(question: String, persona_mode: String = "own") -> Dictiona`: Asks all five mayors question (persona_mode "own" or "neutral"). Returns {"ok": true, "run": id} at once (answers arrive through `answered`, then `finished`), or {"ok": false, "code", "reason"} when the budget, the flag or the city says no.
+- `func live_possible() -> bool`: True when a question can go out live: a client with a key, live on and the breaker not open.
+- `func prompts_for(mi: int, question: String, mode: String, day: int) -> Dictionary`: The system and user prompt mayor mi would get for question: their normal turn prompts, the question appended, and in neutral mode one shared persona line in place of their own.
+- `static func plausibility(sim: CitySim, mi: int, actions: Array) -> Array[Dictionary]`: Plausibility flags for a mayor's proposed actions, read off the sim without changing it: [{"i": index, "code": key of FLAG_TEXT, "text": words}]. Costs run in order against the district's treasury the way the sim spends them (an order it cannot afford costs nothing).
+- `static func clean_action(a: Dictionary) -> Dictionary`: A copy of an order whose number fields hold numbers: a null, list or word under one of NUMBER_KEYS is dropped (so the order reads as missing that number, as plausibility() does).
+- `static func clip(text: String, n: int) -> String`: The text cut to at most n characters, ending in an ellipsis when something was cut.
+- `static func ordinal(n: int) -> String`: "1st", "2nd" ... for a finish rank ("" for 0 or less).
+
 ## `scripts/ai/brain_calls.gd`
 
 extends `Node`
@@ -14,8 +65,13 @@ The GMI calls a CityBrain has in flight, and which city each was sent for (CityB
 
 - `busy_changed(pending: int)`
 
+### Properties
+
+- `arena: ArenaAsk`: The "Ask the five" engine (flag arena_ask), built on first use and dropped with the city.
+
 ### Functions
 
+- `func arena_asker() -> ArenaAsk`: The Ask-the-five engine for this city: one per city, so the budget is shared by every view.
 - `func pending_calls() -> int`
 - `func mayors_pending() -> int`
 
@@ -185,6 +241,7 @@ Async GMI Cloud chat client with JSON extraction, a recorded replay cache, and h
 - `MAX_LOG = 300`
 - `MODEL_EXTRAS = { "deepseek-ai/": {"thinking": {"type": "disabled"}}, "moonshotai/": {"thinking": {"typ...`: Hybrid reasoning models spend the whole token budget thinking unless told not to. Keys are model-id prefixes; values are merged into the request body.
 - `TEMPERATURE = 0.7`: Sampling temperature of every call, unless the model refused it (temperature_of).
+- `ISOLATED_ROLES = ["arena"]`: Roles whose live calls are a side question, not the city's own business (the "Ask the five" panel): they leave the breaker, the live_outcomes window and the live_ok/live_fail counts alone, so five parallel questions that meet a 429 cannot turn the whole city to replay.
 - `KEY_TEST_SYSTEM = "Reply with the single word ok."`: The key test (test_key): a tiny prompt, KEY_TEST_TOKENS tokens, one attempt, and a timeout generous enough for a cold model without leaving the player staring at "Testing".
 - `KEY_TEST_USER = "ping"`
 - `KEY_TEST_TOKENS = 8`

@@ -68,6 +68,11 @@
    "why": "slice D owns gmi_image_client.gd (ARCHITECTURE.md §5); the worker and art helpers are D's"
   },
   {
+   "from": "scripts/fp/arena/**",
+   "to": "scripts/fp/activity/activity_words.gd",
+   "why": "the Ask panel words a mayor's proposed orders exactly as the activity feed words a decided turn"
+  },
+  {
    "from": "scripts/main.gd",
    "to": "tools/tests/fp_smoke.gd",
    "why": "loaded only when GRIDFALL_FP_SMOKE=1 (gate full); release builds never set it"

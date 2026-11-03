@@ -17,7 +17,7 @@
 # Godot prints those without failing the run, which hid real bugs (#67/#72).
 #
 # quick:  parse_all, the unit tests (sim, buildings, residents, expansion, construction, saves,
-#          migration, atomic load, determinism, stale brain answers, image client, web, boot clock),
+#          migration, atomic load, determinism, stale brain answers, ask the five, image client, web, boot clock),
 #          every tools/tests/fp_*_test.gd, and the sky look and SSAO tests once more on
 #          Compatibility
 # full:   quick + the two-seed soak (sim_soak_test) + orbit smoke + FP smoke (headless, heavy)
@@ -208,7 +208,7 @@ fi
 
 if [ "$MODE" = "quick" ] || [ "$MODE" = "full" ]; then
 	run_step parse_all "PARSE_ALL: PASS" 180 0 -- -- --headless --path . -s tools/tests/parse_all.gd
-	for t in sim_test buildings_test residents_test expansion_test construction_test save_test save_migration_test save_versions_test sim_load_atomic_test sim_determinism_test sim_tick_budget_test brain_stale_answer_test ai_image_client_test web_test web_pacing_test pack_loader_test web_pack_stream_test boot_clock_test; do
+	for t in sim_test buildings_test residents_test expansion_test construction_test save_test save_migration_test save_versions_test sim_load_atomic_test sim_determinism_test sim_tick_budget_test brain_stale_answer_test ai_ask_all_test ai_image_client_test web_test web_pacing_test pack_loader_test web_pack_stream_test boot_clock_test; do
 		tok="$(echo "$t" | tr '[:lower:]' '[:upper:]'): PASS"
 		run_step "$t" "$tok" 300 0 -- -- --headless --path . -s "tools/tests/$t.gd"
 	done

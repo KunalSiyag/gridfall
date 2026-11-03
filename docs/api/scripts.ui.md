@@ -29,6 +29,7 @@ SimCity-style HUD for GridFall: city vitals and RCI demand, time controls, playe
 - `D = preload("res://scripts/sim/sim_defs.gd")`
 - `HudChips = preload("res://scripts/fp/ui/hud_chips.gd")`
 - `PackStatus = preload("res://scripts/ui/pack_status.gd")`
+- `ARENA = preload("res://scripts/fp/arena/arena_panel.gd")`
 - `TITLE_FONT = preload("res://fonts/lilita_one_regular.ttf")`
 - `BG = Color(0.055, 0.07, 0.11, 0.93)`
 - `ACCENT = Color(0.0, 0.88, 1.0)`

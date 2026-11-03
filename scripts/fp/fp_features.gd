@@ -50,4 +50,8 @@ const FEATURES := [
 		"id": "coach_card", "slice": "integration",
 		"path": "res://scripts/fp/coach/coach_feature.gd",
 	},
+	{
+		"id": "arena_ask", "slice": "integration",
+		"path": "res://scripts/fp/arena/arena_feature.gd",
+	},
 ]

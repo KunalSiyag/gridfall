@@ -317,6 +317,7 @@ Signals that cross first-person slices. Emitters and listeners are listed in doc
 - `pack_ready(pack: String)`: A web background pack finished downloading and mounting (split builds only): its scenes, meshes, textures and sounds can now be loaded. FpMode forwards Main's WebPackStream arrivals here; features refresh pack-dependent assets through it, never their own HTTPRequests.
 - `coach_requested(topic: String)`: Something asks the coach card (feature coach_card) to show: topic "welcome" (Main, a fresh city).
 - `ai_decision_shown(agent: String)`: A new AI decision landed in the feed (fresh, not restored from a save): agent is the mayor's index or the support role. Emitted by the activity feature; the coach's first hint follows it.
+- `ask_requested(question: String)`: The player asked all five mayors a question with the chat command "/ask <question>" (empty: show the last answers again). Emitted by the chat feature; the arena feature opens the panel.
 
 ## `scripts/fp/obb2d.gd`
 

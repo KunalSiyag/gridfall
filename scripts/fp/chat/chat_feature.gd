@@ -16,6 +16,7 @@ const T := preload("res://scripts/fp/chat/chat_text.gd")
 const PANEL := preload("res://scripts/fp/ui/chat_panel.gd")
 const TALK := preload("res://scripts/fp/chat/talk_dialog.gd")
 const STREET := preload("res://scripts/fp/chat/street_lines.gd")
+const ASK := preload("res://scripts/fp/chat/chat_ask.gd")
 
 const ROUND_MS := 60000
 const PLAYER_DEBOUNCE_MS := 3000
@@ -245,7 +246,7 @@ func is_typing() -> bool:
 ## one coalesced reply call. "/mayor <text>" also goes to every mayor (once a game day).
 func player_say(text: String) -> void:
 	var t := text.strip_edges().left(PANEL.INPUT_MAX)
-	if t.is_empty():
+	if t.is_empty() or ASK.take(t, ctx, panel):
 		return
 	var body := t
 	if t.to_lower().begins_with("/mayor ") or t.to_lower() == "/mayor":

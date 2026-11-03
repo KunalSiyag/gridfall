@@ -133,3 +133,6 @@ signal coach_requested(topic: String)
 ## A new AI decision landed in the feed (fresh, not restored from a save): agent is the mayor's
 ## index or the support role. Emitted by the activity feature; the coach's first hint follows it.
 signal ai_decision_shown(agent: String)
+## The player asked all five mayors a question with the chat command "/ask <question>" (empty: show
+## the last answers again). Emitted by the chat feature; the arena feature opens the panel.
+signal ask_requested(question: String)

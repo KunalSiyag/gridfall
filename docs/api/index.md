@@ -14,6 +14,7 @@ Generated from the `##` doc comments in `scripts/`. Regenerate with `python3 too
 
 ## [scripts/ai/](scripts.ai.md)
 
+- [arena_ask.gd](scripts.ai.md#scriptsaiarena_askgd) (`ArenaAsk`): "Ask the five": the overseer asks one question and the five mayors' models answer it in parallel, each from the same city state it would plan a normal turn from (CityBrain's own mayor prompts) with the question appended as "OVERSEER QUESTION"
 - [brain_calls.gd](scripts.ai.md#scriptsaibrain_callsgd): The GMI calls a CityBrain has in flight, and which city each was sent for (CityBrain extends this)
 - [brain_text.gd](scripts.ai.md#scriptsaibrain_textgd): Removes model brand names from CityBrain text: a Gazette page as it comes in, and state restored from saves written before the display names, whose text feeds the prompts and the HUDs
 - [chatter_minds.gd](scripts.ai.md#scriptsaichatter_mindsgd) (`ChatterMinds`): The voices of the global chat and of face-to-face talk (slice C §3)
@@ -81,6 +82,12 @@ Generated from the `##` doc comments in `scripts/`. Regenerate with `python3 too
 - [street_spots.gd](scripts.fp.animals.md#scriptsfpanimalsstreet_spotsgd): Street-spot search shared by the animals feature's guaranteed spawns (pigeons.gd's ambient flock, cats.gd's ambient stray): the spot of the nearest straight road tile to someone, through each caller's own per-tile builder
 - [waterfowl.gd](scripts.fp.animals.md#scriptsfpanimalswaterfowlgd): The waterfowl node: the ducks on the city's water (the river, the ponds), as the pigeons' two nodes are (bird_flocks.gd's shared half driving a duck_flock.gd list, one MultiMesh of the duck_body.gd duck an instance and tint a bird)
 
+## [scripts/fp/arena/](scripts.fp.arena.md)
+
+- [arena_column.gd](scripts.fp.arena.md#scriptsfparenaarena_columngd): One mayor's column in the Ask-the-five panel: the mayor's person name in their colour with the model's badge and the source tag in the sub-line, a bar that fills while the answer is awaited (and the seconds it took), the finish order ("1st".."5th" for live answers only), the orders it would give in plain words with the plausibility flags, the public post, the thought, and, for a recorded or offline column, the note that it did not hear the question
+- [arena_feature.gd](scripts.fp.arena.md#scriptsfparenaarena_featuregd): Ask the five (integration feature "arena_ask"; docs/fp/ARCHITECTURE.md, Arena)
+- [arena_panel.gd](scripts.fp.arena.md#scriptsfparenaarena_panelgd): The Ask-the-five panel (feature "arena_ask"): the overseer's question and five side-by-side columns, one per mayor, filling as their models answer (ArenaColumn): who finished first, what each thought, said and would do, and where each answer came from
+
 ## [scripts/fp/audio/](scripts.fp.audio.md)
 
 - [ambience.gd](scripts.fp.audio.md#scriptsfpaudioambiencegd): Area ambience (slice I): looping 2D beds on the Ambience bus (traffic hum, park birds, river, the quiet residential bed, night insects and rain), weighted by what lies around the player and by the weather, and cross-faded over CROSSFADE_S
@@ -97,6 +104,7 @@ Generated from the `##` doc comments in `scripts/`. Regenerate with `python3 too
 
 ## [scripts/fp/chat/](scripts.fp.chat.md)
 
+- [chat_ask.gd](scripts.fp.chat.md#scriptsfpchatchat_askgd): The chat command "/ask <question>" (feature "arena_ask"): the question goes to all five mayors' models at once and the answers are only shown, never applied (ArenaAsk)
 - [chat_facts.gd](scripts.fp.chat.md#scriptsfpchatchat_factsgd): What is really going on in the city, for chat answers (slice C): what the district's mayor did on their last turn in spoken words, their latest post, the Gazette headline, the council's last ruling, incidents and sites being built, and the district's numbers
 - [chat_feature.gd](scripts.fp.chat.md#scriptsfpchatchat_featuregd): Global chat and face-to-face conversations (slice C)
 - [chat_feed.gd](scripts.fp.chat.md#scriptsfpchatchat_feedgd) (`ChatFeed`): The global chat's message store and drip queue (slice C §1)
