@@ -52,6 +52,18 @@ var people: PPL
 ## limbs were last bent for]; riders add [seat, limb bones, a pedal memo {th, legs, arms}].
 var _by_car: Dictionary = {}
 var seated: int = 0
+## How many drivers sync seats at most (CAP; a test lowers it to have the one it asks for undrawn).
+var cap: int = CAP
+## Car ids whose driver is kept drawn whatever the cap and the range say (the car the hero is taking
+## from its driver), and each one's resisting lean: id -> [roll to the door (rad, positive toward
+## the car's +X, its driver's side), sit-up (rad, the hips' hinge, positive leaning forward)].
+var _pinned: Dictionary = {}
+## Car ids whose driver has been pulled out: no body is drawn at their wheel again (vacate).
+var _vacated: Dictionary = {}
+var _resist: Dictionary = {}
+## Where each seated body's root is without the resisting lean (car id -> world point): what a pull
+## out of the seat starts from (the lean is the walker's own after it).
+var _rest: Dictionary = {}
 ## How many of the seated are riding bicycles.
 var riding: int = 0
 ## IK limb re-poses (_driver_limbs, _pedal's legs and arms); tests assert a held pose adds none.
@@ -61,6 +73,10 @@ var ik_runs: int = 0
 func setup(p_people: PPL) -> void:
 	people = p_people
 	_by_car.clear()
+	_pinned.clear()
+	_resist.clear()
+	_rest.clear()
+	_rest.clear()
 	seated = 0
 	riding = 0
 
@@ -88,7 +104,7 @@ func _candidates(cars: Array, cam: Vector3) -> Array:
 		if d > (BIKE_RANGE if _small(c) else RANGE):
 			continue
 		var seat: Variant = seat_point(c.node)
-		if seat != null:
+		if seat != null and not _vacated.has(c.id):
 			cands.append([d, c, seat])
 	cands.sort_custom(func(a: Array, b: Array) -> bool: return float(a[0]) < float(b[0]))
 	return cands
@@ -97,7 +113,7 @@ func _candidates(cars: Array, cam: Vector3) -> Array:
 func sync(cars: Array, cam: Vector3, residents: Variant) -> void:
 	var cands := _candidates(cars, cam)
 	var keep := {}
-	var left := {false: CAP, true: BIKE_CAP}
+	var left := {false: cap, true: BIKE_CAP}
 	for cand: Array in cands:
 		var c: VH.Car = cand[1]
 		var small := _small(c)
@@ -115,10 +131,13 @@ func sync(cars: Array, cam: Vector3, residents: Variant) -> void:
 			_pedal(e, c, float(c.node.get_meta("crank_th", 0.0)))
 		keep[c.id] = true
 	riding = 0
+	_keep_pinned(cars, keep)
 	for id: int in _by_car.keys():
 		if not keep.has(id):
 			people.release((_by_car[id] as Array)[0])
 			_by_car.erase(id)
+			_resist.erase(id)
+			_rest.erase(id)
 		elif (_by_car[id] as Array)[2]:
 			riding += 1
 	seated = _by_car.size()
@@ -130,8 +149,85 @@ func clear() -> void:
 		for e: Array in _by_car.values():
 			people.release(e[0])
 	_by_car.clear()
+	_pinned.clear()
+	_vacated.clear()
+	_resist.clear()
 	seated = 0
 	riding = 0
+
+
+## Draws car c's driver now, whatever the cap and the range say, and keeps it drawn (the hero is
+## taking the car: sync keeps placing it) until unpin. False while that cannot be: c shows no full
+## model, or the driver's avatar scene is still loading (asked again each frame, it comes).
+func ensure(c: VH.Car, residents: Variant) -> bool:
+	if c == null or c.dead or _vacated.has(c.id):
+		return false
+	_pinned[c.id] = true
+	if _by_car.has(c.id):
+		return true
+	if c.node == null or not c.node.is_inside_tree():
+		return false
+	var seat: Variant = seat_point(c.node)
+	if seat == null:
+		return false
+	var e := _seat_driver(c, residents)
+	if e.is_empty():
+		return false
+	_by_car[c.id] = e
+	_place(e, c, seat)
+	seated = _by_car.size()
+	return true
+
+
+## Lets car id's driver go back to the cap and the range, the resisting lean off.
+func unpin(id: int) -> void:
+	_pinned.erase(id)
+	_resist.erase(id)
+
+
+## Car id's driver has been pulled out of it (the hijack: the car is not taken until the haul is
+## over): the body drawn at its wheel goes now, the same person is on the road, and no other is
+## drawn there. unvacate (the car is taken) forgets it.
+func vacate(id: int) -> void:
+	_vacated[id] = true
+	_pinned.erase(id)
+	_resist.erase(id)
+	_rest.erase(id)
+	var e: Array = _by_car.get(id, [])
+	if not e.is_empty():
+		people.release(e[0])
+		_by_car.erase(id)
+		seated = _by_car.size()
+
+
+## True when car id's driver has been pulled out of it.
+func vacated(id: int) -> bool:
+	return _vacated.has(id)
+
+
+## Car id is taken (or gone): forgets that its driver was pulled out.
+func unvacate(id: int) -> void:
+	_vacated.erase(id)
+
+
+## The driver of car id leans away from the hero's hands (a roll toward the car's driver's side and
+## a sit-up, rad); drawn on the next sync.
+func resist(id: int, roll: float, sit_up: float) -> void:
+	if roll == 0.0 and sit_up == 0.0:
+		_resist.erase(id)
+	else:
+		_resist[id] = [roll, sit_up]
+
+
+## The world point of car id's seated body's root without the resisting lean (NAN: none drawn).
+func rest_of(id: int) -> Vector3:
+	return _rest.get(id, Vector3(NAN, NAN, NAN))
+
+
+## The lean car id's driver is at now: (roll to the door, sit-up), rad.
+func resist_of(id: int) -> Vector2:
+	var r: Array = _resist.get(id, [])
+	return Vector2(float(r[0]), float(r[1])) if not r.is_empty() else Vector2.ZERO
 
 
 ## The seated body in car id (null when it has no driver drawn).
@@ -150,6 +246,21 @@ func driver_of(id: int) -> WK.Walker:
 func is_riding(id: int) -> bool:
 	var e: Array = _by_car.get(id, [])
 	return not e.is_empty() and bool(e[2])
+
+
+## The pinned drivers sync did not seat itself stay drawn and placed (keep gets their ids).
+func _keep_pinned(cars: Array, keep: Dictionary) -> void:
+	if _pinned.is_empty():
+		return
+	for c: VH.Car in cars:
+		if not _pinned.has(c.id) or keep.has(c.id) or not _by_car.has(c.id):
+			continue
+		if c.dead or c.node == null or not c.node.is_inside_tree():
+			continue
+		var seat: Variant = seat_point(c.node)
+		if seat != null:
+			_place(_by_car[c.id], c, seat)
+			keep[c.id] = true
 
 
 func _seat_driver(c: VH.Car, residents: Variant) -> Array:
@@ -392,13 +503,15 @@ func _place(e: Array, c: VH.Car, seat: Vector3) -> void:
 	var xf := Transform3D(
 		basis * s, hip - basis * ((e[1] as Vector3) * s) - Vector3(0.0, sink, 0.0)
 	)
-	b.root.global_transform = xf
+	b.root.global_transform = _resisting(xf, c, hip - Vector3(0.0, sink, 0.0))
+	_rest[c.id] = xf.origin
 	if e.size() >= 6 and not bool(e[2]):
 		if float(e[5]) < 0.0:
 			sink = _measure_sink(b, c, e[3] as Dictionary)
 			e[5] = sink
 			xf.origin -= Vector3(0.0, sink, 0.0)
-			b.root.global_transform = xf
+			b.root.global_transform = _resisting(xf, c, hip - Vector3(0.0, sink, 0.0))
+			_rest[c.id] = xf.origin
 		# The sit pose is static and the markers are car-space, so in the skeleton's frame the
 		# limb goals move only with the car's basis (a grade, a turn while vis_yaw catches up):
 		# re-bend the limbs once at seating and when that basis moves, not every frame.
@@ -409,3 +522,14 @@ func _place(e: Array, c: VH.Car, seat: Vector3) -> void:
 			e[6] = cb
 			ik_runs += 1
 			_driver_limbs(e, c)
+
+
+## xf (the body seated) tipped about the hips at `hip` by car c's resisting lean: rolled toward the
+## car's driver's side and hinged forward, none when the driver is not resisting.
+func _resisting(xf: Transform3D, c: VH.Car, hip: Vector3) -> Transform3D:
+	var r: Array = _resist.get(c.id, [])
+	if r.is_empty():
+		return xf
+	var car := Basis(Vector3.UP, c.yaw + c.vis_yaw)
+	var turn := Basis(car * Vector3.BACK, -float(r[0])) * Basis(car * Vector3.RIGHT, float(r[1]))
+	return Transform3D(turn * xf.basis, hip + turn * (xf.origin - hip))

@@ -175,6 +175,17 @@ The hero's head look (A-player.md 6.9; hero_rig.gd): LookAtModifier3Ds on Neck a
 - `static func bounded_direction(dir: Vector3, torso: Basis, yaw_max: float, pitch_max: float) -> Vector3`: A direction bounded in the torso's frame. The frame is orthonormalized so stature never changes the limits.
 - `static func clamp_head(sk: Skeleton3D, torso: Basis, yaw_max: float, pitch_max: float) -> void`: Corrects the complete head after the neck, look-at and clip rotations have accumulated. The combat pose calls this again after adding the spine's turn and lean.
 
+## `scripts/fp/player/hero_palms.gd`
+
+extends `RefCounted`
+
+Turning the hero's hands about the wrist so that their palms face a given direction (hero_strike_pose.gd, pulling someone out of a car: the fists wrap the collar and the arm, they do not float at them). The hand IK puts a wrist at its goal and leaves the hand turned as the clip had it.
+
+### Functions
+
+- `static func axis(sk: Skeleton3D, side: String) -> Array`: [hand bone, the palm's outward normal in the bone's own frame] for the hand of sk's side ("Left" or "Right"): the side the fingers curl toward, from the rest pose's knuckle line. Empty without finger bones.
+- `static func face(sk: Skeleton3D, axis: Array, dir: Vector3) -> void`: Turns the hand of `axis` (axis()'s) about its own wrist, in skeleton sk, so that its palm faces dir (world; need not be a unit vector).
+
 ## `scripts/fp/player/hero_rig.gd`
 
 extends `RefCounted`
@@ -305,6 +316,7 @@ The hero's strike pose layer (hero_rig.gd, like hero_look.gd and hero_limbs.gd):
 
 ### Constants
 
+- `PALMS = preload("res://scripts/fp/player/hero_palms.gd")`
 - `SM = preload("res://scripts/fp/player/spring_math.gd")`
 - `LOOK = preload("res://scripts/fp/player/hero_look.gd")`
 - `KICK = preload("res://scripts/fp/player/hero_kick_pose.gd")`
@@ -343,6 +355,8 @@ The hero's strike pose layer (hero_rig.gd, like hero_look.gd and hero_limbs.gd):
 - `GRIP_ELBOW_HEIGHT = 1.0`
 - `GRIP_ELBOW_SPREAD = 0.34`
 - `PULL_LEAN = deg_to_rad(18.0)`: Pulling someone out of a car (set_pull; car_entry.gd): both hands on their collar, wherever that is (a seated person's, low), the elbows down and out, the hands closed on it and the spine leaning back by up to PULL_LEAN as the pull comes on. The hands never rise above the collar they hold: no clip's own keys (the shove's swing the arms up overhead) play any part in it. Let go, the hold eases out over PULL_EASE s (or the longer the caller asks for: a grip that slipped), the hands staying where they were.
+- `PULL_FORWARD = deg_to_rad(38.0)`: Leaning in to reach (negative lean: forward) goes as far as PULL_FORWARD. The lean is applied by a modifier ahead of the hand IK (the pre-IK Mod: index 0 among the skeleton's modifiers), so the hands still reach their goals after it.
+- `PULL_CROUCH = 0.32`: The hips drop by up to PULL_CROUCH (skeleton metres) with the lean, the feet planted in a staggered stance (the guard's) so the knees bend: a puller gets his shoulders down to what he holds.
 - `PULL_EASE = 0.15`
 - `PULL_ELBOW_FORWARD = 0.0`
 - `PULL_ELBOW_HEIGHT = 0.98`
@@ -375,7 +389,7 @@ The hero's strike pose layer (hero_rig.gd, like hero_look.gd and hero_limbs.gd):
 - `func note(a: String) -> void`: Notes the action clip the rig's tree was asked for: a strike clip starts the layer on it, anything else ends it (the tree resets its transition request, so the layer keeps the record).
 - `func start(a: String) -> void`: Starts the layer on strike clip a.
 - `func set_guard(on: bool) -> void`: Requests the procedural fighting guard; a playing action takes precedence over its pose.
-- `func set_pull(w: float, hands: PackedVector3Array = PackedVector3Array(), lean: float = 0.0, ease_s: float = 0.0) -> void`: The hero has someone by the collar (car_entry.gd's pull-out): both hands reach for hands (world points, left then right) at weight w (0..1: the arms' influence is lifted to it at once), closed on it, the spine leaning back lean (0..1 of PULL_LEAN). w 0 lets go: the arms ease out over ease_s (PULL_EASE with none given; tick), the hands where they last were; the hands given with it are not used then.
+- `func set_pull(w: float, hands: PackedVector3Array = PackedVector3Array(), lean: float = 0.0, ease_s: float = 0.0, palms: PackedVector3Array = PackedVector3Array()) -> void`: The hero has someone by the collar (car_entry.gd's pull-out): both hands reach for hands (world points, left then right) at weight w (0..1: the arms' influence is lifted to it at once), closed on it, the palms facing palms (world directions, for the left then the right hand; none to leave them as the clip has them), the spine leaning back lean (0..1 of PULL_LEAN; negative: forward, to PULL_FORWARD). w 0 lets go: the arms ease out over ease_s (PULL_EASE with none given; tick), the hands where they last were; the hands given with it are not used then.
 - `func set_hold(on: bool, at: Vector3 = Vector3.ZERO) -> void`: Holding someone (on) whose feet stand at at (world): while the guard is up the hands grip them there instead of rising to the chin.
 - `func guard_weight() -> float`: The eased guard weight, for the rig's tests.
 - `func push_weight() -> float`: The forward-hand weight at the shove's contact, for the rig's tests.
@@ -385,6 +399,7 @@ The hero's strike pose layer (hero_rig.gd, like hero_look.gd and hero_limbs.gd):
 - `static func paced(a: AnimationNodeAnimation, clip: String) -> AnimationNode`: Clip's AnimationNode played at its SPEED (a clip SPEED does not name unchanged), through a time scale, so the tree and measure() agree on when its blow lands.
 - `func weight() -> float`: The layer's envelope now (0 with no strike under way), for tests.
 - `func apply(sk: Skeleton3D) -> void`: Applies the layer to sk (the modifier's callback): the spine and chest turned and leaned into the blow by the envelope, on top of the tree's own pose.
+- `func apply_lean(sk: Skeleton3D) -> void`: The spine leans back by the pull's share of PULL_LEAN (forward by PULL_FORWARD's for a negative lean): the pre-IK modifier's work, so that the hand IK that follows reaches its goals leaned.
 - `static func fist_joints(sk: Skeleton3D, side: String) -> Array`: The joints sk's side ("Left" or "Right") hand closes into a fist: [bone, axis, bend] each, the axis the knuckle line in the bone's own frame turned so the fingers fold toward the palm (the side the thumb's base sits on). Empty when the hand has no finger bones.
 - `static func envelope(t: float, c: float, recover: float = RECOVER) -> float`: The envelope t seconds into a strike whose blow lands at c: a coil back through the windup (none once the windup is too short to read), the full turn into the blow at the contact, eased back to nothing RECOVER after it.
 - `static func push_envelope(t: float, c: float) -> float`: Shove hand IK: in over PUSH_IN from the start, held through the contact, then released.
