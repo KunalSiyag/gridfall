@@ -95,7 +95,12 @@ func _check_ratio(c: GmiClient) -> void:
 
 func _check_badge(c: GmiClient, f: FpFeature) -> void:
 	c.live_enabled = false
-	K.check(fails, _state(f) == "offline", "no live play reads Offline")
+	K.check(fails, not c.replay_cache.is_empty(), "the test client has the recorded replay")
+	K.check(fails, _state(f) == "replay", "no live play with recorded answers reads Replay")
+	var recorded := c.replay_cache
+	c.replay_cache = {}
+	K.check(fails, _state(f) == "offline", "no live play and nothing recorded reads Offline")
+	c.replay_cache = recorded
 	c.live_enabled = true
 	_set_outcomes(c, [])
 	K.check(fails, _state(f) == "live", "no calls yet is the neutral Live state")

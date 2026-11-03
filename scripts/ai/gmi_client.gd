@@ -44,6 +44,10 @@ const MODEL_EXTRAS := {
 }
 ## Sampling temperature of every call, unless the model refused it (temperature_of).
 const TEMPERATURE := 0.7
+## Roles whose live calls are a side question, not the city's own business (the "Ask the five"
+## panel): they leave the breaker, the live_outcomes window and the live_ok/live_fail counts alone,
+## so five parallel questions that meet a 429 cannot turn the whole city to replay.
+const ISOLATED_ROLES := ["arena"]
 ## The key test (test_key): a tiny prompt, KEY_TEST_TOKENS tokens, one attempt, and a timeout
 ## generous enough for a cold model without leaving the player staring at "Testing".
 const KEY_TEST_SYSTEM := "Reply with the single word ok."
@@ -353,7 +357,8 @@ func live_json(role: String, agent_id: String, model: String, system_prompt: Str
 	if not live_enabled:
 		result["error"] = "offline"
 		return result
-	if not _breaker_allows():
+	var isolated := role in ISOLATED_ROLES
+	if not isolated and not _breaker_allows():
 		result["error"] = "circuit open"
 		result["source"] = "failed"
 		return result
@@ -367,13 +372,15 @@ func live_json(role: String, agent_id: String, model: String, system_prompt: Str
 		result["ok"] = true
 		result["data"] = live["data"]
 		result["source"] = "live"
-		stats["live_ok"] = int(stats["live_ok"]) + 1
-		stats["latency_ms_sum"] = int(stats["latency_ms_sum"]) + int(result["latency_ms"])
+		if not isolated:
+			stats["live_ok"] = int(stats["live_ok"]) + 1
+			stats["latency_ms_sum"] = int(stats["latency_ms_sum"]) + int(result["latency_ms"])
 	else:
 		result["error"] = str(live.get("error", "unknown error"))
 		result["source"] = "failed"
-		stats["live_fail"] = int(stats["live_fail"]) + 1
-		_report_failure(result)
+		if not isolated:
+			stats["live_fail"] = int(stats["live_fail"]) + 1
+			_report_failure(result)
 	_log(result)
 	return result
 
@@ -484,6 +491,8 @@ func _post_with_retry(model: String, system_prompt: String, user_prompt: String,
 			await get_tree().create_timer(float(wait_ms) / 1000.0, true, false, true).timeout
 	result["attempts"] = attempt
 	var ok := bool(live.get("ok", false))
+	if str(result.get("role", "")) in ISOLATED_ROLES:
+		return live
 	if ok or not bool(live.get("service_fail", true)):
 		breaker.record_success()
 	else:

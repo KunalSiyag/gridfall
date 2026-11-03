@@ -92,12 +92,12 @@ The AI activity feed (feature "activity"), top right under the compass: a header
 - `OPEN_BG = Color(0.03, 0.04, 0.07, 0.74)`
 - `FOLDED_BG = Color(0.03, 0.04, 0.07, 0.52)`
 - `TAG_COLORS = {"LIVE": S.GOOD, "REPLAY": S.ACCENT, "FALLBACK": S.RED, "OFFLINE": S.AMBER}`
-- `STATES = { "live": ["Live", S.GOOD], "down": ["Reconnecting", S.RED], "offline": ["Offline", S.A...`
+- `STATES = { "live": ["Live", S.GOOD], "down": ["Reconnecting", S.RED], "replay": ["Replay", S.ACC...`
 
 ### Functions
 
 - `func setup() -> void`
-- `func set_state(state: String) -> void`: Whether the city's agents answer from live model calls: "live", "down" (live calls are failing, so fallbacks answer) or "offline".
+- `func set_state(state: String) -> void`: Whether the city's agents answer from live model calls: "live", "down" (live calls are failing, so fallbacks answer), "replay" (no live calls; recorded answers play, which is the normal state without a key, not a fault) or "offline" (nothing recorded either).
 - `func state() -> String`
 - `func set_line(t: String, pulse: bool) -> void`: The line under the header: who is deciding now (pulse) or who goes next; "" hides it.
 - `func line_text() -> String`

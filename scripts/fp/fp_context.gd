@@ -27,6 +27,7 @@ var world_root: Node3D            # FpMode/World: put in-world FP nodes here, ne
 var pack_stream: WebPackStream    # web split builds only; inert elsewhere. Request, never download.
 var features: Dictionary = {}     # feature_id -> FpFeature
 var settings: Dictionary = {}     # see FpMode.DEFAULT_SETTINGS; change only via mode.apply_settings()
+var first_day_opening: bool = false  # a fresh city on its first day (FirstDay.begin); never saved
 var ws: GDScript = WS             # convenience; prefer your own `const WS := preload(...)` for typing
 var _modal: Dictionary = {}       # owner StringName -> true
 

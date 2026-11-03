@@ -27,7 +27,7 @@ const FADE_IN := 0.2
 const INPUT_MAX := 140
 ## Width rows are first shaped for (the list width with the always-on scroll bar).
 const ROW_W := PANEL_W - 8.0
-const HELP := "Enter sends, Esc closes.\nType @ and the start of a name, then Tab, to call a neighbour within 10 blocks.\nStart a line with /mayor to write to every mayor (once a day)."
+const HELP := "Enter sends, Esc closes.\nType @ and the start of a name, then Tab, to call a neighbour within 10 blocks.\nStart a line with /mayor to write to every mayor (once a day).\n/ask and a question shows what all five mayors would do."
 ## Residents within this many tiles of the player can be @-mentioned.
 const MENTION_TILES := 10.0
 

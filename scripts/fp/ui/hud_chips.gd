@@ -89,7 +89,7 @@ func refresh() -> void:
 	var mood_state := (
 		"good" if mood >= 6.5 else ("ok" if mood >= 4.5 else ("warn" if mood >= 3.0 else "fail"))
 	)
-	_put("mood", "%.1f" % mood, mood_state)
+	_put("mood", mood_text(mood), mood_state)
 	(_chips["mood"]["icon"] as HudIcon).mood = clampf(mood / 10.0, 0.0, 1.0)
 	var funds := sim.total_funds()
 	_put("money", S.money(funds), "warn" if funds < 0 else "ok")
@@ -126,9 +126,19 @@ func refresh() -> void:
 
 ## Mood on the 0..10 scale: the residents' sentiment when they are active, else tile happiness.
 func mood_value() -> float:
-	if ctx.residents != null and ctx.residents.is_active():
-		return float(ctx.residents.sentiment.get("mood", 0.0)) * 10.0
-	return float(ctx.sim.stats.get("happiness", 0.0)) * 10.0
+	return mood_of(ctx.sim, ctx.residents)
+
+
+## The mood function the street chip and the Planner HUD both read (one number, one scale).
+static func mood_of(sim: CitySim, residents: Residents) -> float:
+	if residents != null and residents.is_active():
+		return float(residents.sentiment.get("mood", 0.0)) * 10.0
+	return float(sim.stats.get("happiness", 0.0)) * 10.0
+
+
+## A mood as the HUDs print it: "5.5".
+static func mood_text(mood: float) -> String:
+	return "%.1f" % mood
 
 
 ## State of a chip: "ok", "good", "warn" or "fail" (tests and the legend read it).

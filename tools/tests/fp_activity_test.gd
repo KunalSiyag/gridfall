@@ -17,6 +17,7 @@ const LEAK_RE := "(?i)(Argon|DeepSeek|Kimi|Qwen|Grok|GMI|gemini|MiniMax|latency|
 
 var fails: Array[String] = []
 var decided: Array[int] = []
+var announced: Array[String] = []  # bus.ai_decision_shown, in order
 
 
 func _init() -> void:
@@ -31,6 +32,7 @@ func _init() -> void:
 		return
 	f.set_process(false)
 	ctx.brain.mayor_decided.connect(func(mi: int, _e: Dictionary) -> void: decided.append(mi))
+	ctx.bus.ai_decision_shown.connect(func(a: String) -> void: announced.append(a))
 	_check_words()
 	_check_setup(ctx, f)
 	_check_turns(ctx, f)
@@ -189,7 +191,14 @@ func _check_mayor_card(ctx: FpContext, f: FpFeature) -> void:
 		"proposal": "curfew",
 		"votes": {"clean_air_act": "no"},
 	}
+	var told_before := announced.size()
 	f.call("_on_mayor_decided", mi, entry)
+	# The coach's "J reads it" hint rides on this: one signal per fresh card, naming the agent.
+	K.check(
+		fails,
+		announced.size() == told_before + 1 and announced[-1] == str(mi),
+		"a fresh decision announces itself on the bus once (%s)" % str(announced)
+	)
 	var card: Control = feed.call("open_card")
 	var head := _text(card, "Headline")
 	K.check(
@@ -446,7 +455,18 @@ func _check_live_state(ctx: FpContext, f: FpFeature) -> void:
 	var feed: Control = f.get("feed")
 	var c := ctx.client
 	f.call("_refresh")
-	K.check(fails, str(feed.call("state")) == "offline", "offline play says Offline")
+	K.check(
+		fails,
+		str(feed.call("state")) == "replay",
+		"play without a key says Replay (recorded answers)"
+	)
+	var recorded := c.replay_cache
+	c.replay_cache = {}
+	f.call("_refresh")
+	K.check(
+		fails, str(feed.call("state")) == "offline", "with nothing recorded either it says Offline"
+	)
+	c.replay_cache = recorded
 	c.live_enabled = true
 	f.call("_refresh")
 	K.check(fails, str(feed.call("state")) == "live", "live calls say Live")
@@ -469,7 +489,13 @@ func _check_save(ctx: FpContext, f: FpFeature) -> void:
 	var heads: PackedStringArray = feed.call("headlines")
 	((saved["items"] as Array)[-1] as Dictionary)["detail"] = "Grok-4.5 was here"
 	ctx.hud.pings.clear()
+	var told_n := announced.size()
 	f.from_dict(saved)
+	K.check(
+		fails,
+		announced.size() == told_n,
+		"cards restored from a save do not announce themselves (no J hint for old news)"
+	)
 	var items: Array = f.get("items")
 	var back := items.size() == n and str(feed.get("mode")) == "brief"
 	K.check(fails, back, "a load restores %d decisions and the feed mode" % n)

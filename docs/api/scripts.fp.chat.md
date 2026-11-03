@@ -4,6 +4,22 @@
 
 [Index](index.md)
 
+## `scripts/fp/chat/chat_ask.gd`
+
+extends `RefCounted`
+
+The chat command "/ask <question>" (feature "arena_ask"): the question goes to all five mayors' models at once and the answers are only shown, never applied (ArenaAsk). The chat feature calls take() first on every line the player sends; a bare "/ask" asks the panel to show its last answers again. Nothing here posts to the feed, so no resident answers an /ask.
+
+### Constants
+
+- `COMMAND = "/ask"`
+
+### Functions
+
+- `static func is_ask(text: String) -> bool`: True when text is the /ask command ("/ask", or "/ask" and a space then anything).
+- `static func question_of(text: String) -> String`: The question after the command, "" for a bare "/ask".
+- `static func take(text: String, ctx: FpContext, drawer: Object) -> bool`: Handles an /ask line: closes the chat drawer (the panel is a modal of its own) and sends the question over the bus. False when text is not an /ask line or the feature is switched off.
+
 ## `scripts/fp/chat/chat_facts.gd`
 
 extends `RefCounted`
@@ -46,6 +62,7 @@ Global chat and face-to-face conversations (slice C). Normalises every city sour
 - `PANEL = preload("res://scripts/fp/ui/chat_panel.gd")`
 - `TALK = preload("res://scripts/fp/chat/talk_dialog.gd")`
 - `STREET = preload("res://scripts/fp/chat/street_lines.gd")`
+- `ASK = preload("res://scripts/fp/chat/chat_ask.gd")`
 - `ROUND_MS = 60000`
 - `PLAYER_DEBOUNCE_MS = 3000`
 - `PLAYER_COALESCE_MS = 10000`

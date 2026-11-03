@@ -12,6 +12,15 @@ var _mayor_in_flight: Array[bool] = [false, false, false, false, false]
 var _support_in_flight: Dictionary = {}
 ## Counts the cities this brain has served. A call remembers the value it was sent under.
 var _generation: int = 0
+## The "Ask the five" engine (flag arena_ask), built on first use and dropped with the city.
+var arena: ArenaAsk = null
+
+
+## The Ask-the-five engine for this city: one per city, so the budget is shared by every view.
+func arena_asker() -> ArenaAsk:
+	if arena == null:
+		arena = ArenaAsk.new(self)
+	return arena
 
 
 func pending_calls() -> int:
@@ -25,6 +34,7 @@ func mayors_pending() -> int:
 ## The city is being replaced (New City, Load): calls still in flight belong to the old one.
 func _forget_calls() -> void:
 	_generation += 1
+	arena = null
 	_mayor_in_flight.fill(false)
 	_support_in_flight.clear()
 	busy_changed.emit(pending_calls())

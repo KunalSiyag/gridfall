@@ -14,6 +14,7 @@ Generated from the `##` doc comments in `scripts/`. Regenerate with `python3 too
 
 ## [scripts/ai/](scripts.ai.md)
 
+- [arena_ask.gd](scripts.ai.md#scriptsaiarena_askgd) (`ArenaAsk`): "Ask the five": the overseer asks one question and the five mayors' models answer it in parallel, each from the same city state it would plan a normal turn from (CityBrain's own mayor prompts) with the question appended as "OVERSEER QUESTION"
 - [brain_calls.gd](scripts.ai.md#scriptsaibrain_callsgd): The GMI calls a CityBrain has in flight, and which city each was sent for (CityBrain extends this)
 - [brain_text.gd](scripts.ai.md#scriptsaibrain_textgd): Removes model brand names from CityBrain text: a Gazette page as it comes in, and state restored from saves written before the display names, whose text feeds the prompts and the HUDs
 - [chatter_minds.gd](scripts.ai.md#scriptsaichatter_mindsgd) (`ChatterMinds`): The voices of the global chat and of face-to-face talk (slice C §3)
@@ -29,6 +30,7 @@ Generated from the `##` doc comments in `scripts/`. Regenerate with `python3 too
 - [asset_paths.gd](scripts.fp.md#scriptsfpasset_pathsgd): First-person asset paths
 - [body_contacts.gd](scripts.fp.md#scriptsfpbody_contactsgd): Contacts of a box body on the ground plane (a car) with the walker's world: CollisionWorld's boxes and cylinders that reach above the body's step and start below its roof, and ground it cannot drive onto (water and the bridge parapets, where walk_height is NAN, or a rise above WS.STEP_HEIGHT)
 - [city_directory.gd](scripts.fp.md#scriptsfpcity_directorygd) (`CityDirectory`): Human place names for the city: streets for road runs, addresses for lots, business and landmark names, district names
+- [first_day.gd](scripts.fp.md#scriptsfpfirst_daygd): The first-day opening (flag first_day_opening): what a fresh street city does differently on its day 1, so the first minute shows a bright morning, a view down the avenue and a mayor turn soon
 - [forest_trees.gd](scripts.fp.md#scriptsfpforest_treesgd): The woods' synthetic trees
 - [fp_context.gd](scripts.fp.md#scriptsfpfp_contextgd) (`FpContext`): Service locator for first-person slices
 - [fp_feature.gd](scripts.fp.md#scriptsfpfp_featuregd) (`FpFeature`): A first-person feature module owned by one slice
@@ -80,6 +82,12 @@ Generated from the `##` doc comments in `scripts/`. Regenerate with `python3 too
 - [street_spots.gd](scripts.fp.animals.md#scriptsfpanimalsstreet_spotsgd): Street-spot search shared by the animals feature's guaranteed spawns (pigeons.gd's ambient flock, cats.gd's ambient stray): the spot of the nearest straight road tile to someone, through each caller's own per-tile builder
 - [waterfowl.gd](scripts.fp.animals.md#scriptsfpanimalswaterfowlgd): The waterfowl node: the ducks on the city's water (the river, the ponds), as the pigeons' two nodes are (bird_flocks.gd's shared half driving a duck_flock.gd list, one MultiMesh of the duck_body.gd duck an instance and tint a bird)
 
+## [scripts/fp/arena/](scripts.fp.arena.md)
+
+- [arena_column.gd](scripts.fp.arena.md#scriptsfparenaarena_columngd): One mayor's column in the Ask-the-five panel: the mayor's person name in their colour with the model's badge and the source tag in the sub-line, a bar that fills while the answer is awaited (and the seconds it took), the finish order ("1st".."5th" for live answers only), the orders it would give in plain words with the plausibility flags, the public post, the thought, and, for a recorded or offline column, the note that it did not hear the question
+- [arena_feature.gd](scripts.fp.arena.md#scriptsfparenaarena_featuregd): Ask the five (integration feature "arena_ask"; docs/fp/ARCHITECTURE.md, Arena)
+- [arena_panel.gd](scripts.fp.arena.md#scriptsfparenaarena_panelgd): The Ask-the-five panel (feature "arena_ask"): the overseer's question and five side-by-side columns, one per mayor, filling as their models answer (ArenaColumn): who finished first, what each thought, said and would do, and where each answer came from
+
 ## [scripts/fp/audio/](scripts.fp.audio.md)
 
 - [ambience.gd](scripts.fp.audio.md#scriptsfpaudioambiencegd): Area ambience (slice I): looping 2D beds on the Ambience bus (traffic hum, park birds, river, the quiet residential bed, night insects and rain), weighted by what lies around the player and by the weather, and cross-faded over CROSSFADE_S
@@ -96,12 +104,18 @@ Generated from the `##` doc comments in `scripts/`. Regenerate with `python3 too
 
 ## [scripts/fp/chat/](scripts.fp.chat.md)
 
+- [chat_ask.gd](scripts.fp.chat.md#scriptsfpchatchat_askgd): The chat command "/ask <question>" (feature "arena_ask"): the question goes to all five mayors' models at once and the answers are only shown, never applied (ArenaAsk)
 - [chat_facts.gd](scripts.fp.chat.md#scriptsfpchatchat_factsgd): What is really going on in the city, for chat answers (slice C): what the district's mayor did on their last turn in spoken words, their latest post, the Gazette headline, the council's last ruling, incidents and sites being built, and the district's numbers
 - [chat_feature.gd](scripts.fp.chat.md#scriptsfpchatchat_featuregd): Global chat and face-to-face conversations (slice C)
 - [chat_feed.gd](scripts.fp.chat.md#scriptsfpchatchat_feedgd) (`ChatFeed`): The global chat's message store and drip queue (slice C §1)
 - [chat_text.gd](scripts.fp.chat.md#scriptsfpchatchat_textgd): Text helpers for the global chat and conversations (slice C): the display filter every line passes before it is shown or put into a prompt, dedupe normalisation, the checks the reply validators use (URLs, model names, sentence count), trimming, relative times and initials
 - [street_lines.gd](scripts.fp.chat.md#scriptsfpchatstreet_linesgd): What the chat hears when the visitor hits someone in the street (game bus person_hit; see docs/fp/ARCHITECTURE.md, Body actions): the one who was hit says so (a shove, a punch, being knocked down, a car, being dragged out of their car) and one of the residents who saw it adds a line, and a crew called to the scene (incidents.gd: police after an assault or a carjack, an ambulance for someone a car knocked down) posts a City Alert card
 - [talk_dialog.gd](scripts.fp.chat.md#scriptsfpchattalk_dialoggd): Face-to-face conversation with a resident (slice C §4), and the "Ask someone here" answer
+
+## [scripts/fp/coach/](scripts.fp.coach.md)
+
+- [coach_feature.gd](scripts.fp.coach.md#scriptsfpcoachcoach_featuregd): The coach card (integration feature "coach_card", flag coach_card): the first minute's guidance
+- [coach_logic.gd](scripts.fp.coach.md#scriptsfpcoachcoach_logicgd): The coach card's pure rules (feature "coach_card"): what the welcome card says, what the context hints say and when each shows
 
 ## [scripts/fp/crews/](scripts.fp.crews.md)
 
@@ -283,7 +297,7 @@ Generated from the `##` doc comments in `scripts/`. Regenerate with `python3 too
 - [map_screen.gd](scripts.fp.ui.md#scriptsfpuimap_screengd): Full-screen map (slice B) on M: the minimap's tile images at large size, north up, with district names, street names (from the directory) at 6 px per tile and closer, incidents, pings, the waypoint and the player
 - [minimap_model.gd](scripts.fp.ui.md#scriptsfpuiminimap_modelgd): The minimap's tile images (slice B), one pixel per tile of the 192 x 192 world: `image` holds the display colour, `data` the shape class, level and district the map shader draws from (roads joined to their neighbours, inset buildings, smooth shores), and `survey` one texel per 16 x 16 plot (unsurveyed land is hazed)
 - [minimap_view.gd](scripts.fp.ui.md#scriptsfpuiminimap_viewgd): The rotating circular minimap (slice B) in minimap_slot: the model's 192 x 192 tile images drawn by ui/fp/map.gdshader in a 200 px circle (soft edge, thin ring, no square frame), rotated every frame so the view heading points up, with markers drawn on top at 12 Hz (player arrow, waypoint, pings, incidents, nearby residents and E's agents) and the street label under it
-- [pause_menu.gd](scripts.fp.ui.md#scriptsfpuipause_menugd): Pause menu (slice B), shown on pause_changed(true) over a frosted blur of the paused world: Resume, Save, Load, New city (press twice), Settings, Quit to orbit, Quit (saves first), a legend of the HUD icons, and tabbed settings (Camera, Controls, Display, Audio) written through mode.apply_settings()
+- [pause_menu.gd](scripts.fp.ui.md#scriptsfpuipause_menugd): Pause menu (slice B), shown on pause_changed(true) over a frosted blur of the paused world: Resume, Save, Load, New city (press twice), Settings, Planner view, Quit (saves first), a legend of the HUD icons, and tabbed settings (Camera, Controls, Display, Audio) written through mode.apply_settings()
 - [place_card.gd](scripts.fp.ui.md#scriptsfpuiplace_cardgd): Place card (slice B) on interact_requested for kinds building, vehicle and pedestrian (a named resident is C's conversation, never a card)
 
 ## [scripts/fp/world/](scripts.fp.world.md)

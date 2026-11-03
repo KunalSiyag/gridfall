@@ -27,8 +27,15 @@ var minds: ResidentMinds
 var sky: SkyDirector
 const WS := preload("res://scripts/fp/world_scale.gd")
 const Q := preload("res://scripts/fp/render/quality.gd")
+const FirstDay := preload("res://scripts/fp/first_day.gd")
+## The street's boot toasts that main.gd owns (fp_hud_test measures them against the toast width).
+const WELCOME_TOAST := "Welcome to GridFall. WASD to walk, Tab for the city overview, Enter to chat, M for the map, Esc to pause."
+const WELCOME_BACK := "Welcome back: Day %d. New city in the pause menu starts over."
 ## First-person composition (null in orbit mode). Built by enter_fp(), freed by exit_fp().
 var fp: FpMode = null
+## The first-day opening was armed for this city (FirstDay): a Planner view round trip on day 1
+## hands it to the street mode that comes back. Cleared by a loaded save.
+var _opening_day1: bool = false
 ## "orbit" or "fp"; tools and saves can read it.
 var view_mode: String = "orbit"
 ## Orbit sim speed to restore on exit_fp() (1 when first person was entered before the sim ran).
@@ -214,13 +221,34 @@ func _setup_pack_stream() -> void:
 	pack_stream.pack_ready.connect(_on_pack_stream_ready)
 
 
+## Arms the first-day opening (scripts/fp/first_day.gd) for a fresh city a player is about to
+## start on foot; returns whether it is on. Call before sim.start(), then FirstDay.begin(fp).
+func _arm_opening() -> bool:
+	var on := fp != null and _plays_for_real() and FirstDay.enabled()
+	FirstDay.arm(brain, on)
+	_opening_day1 = on
+	return on
+
+
+## The welcome of a fresh city on foot: the coach card (scripts/fp/coach) when that feature is on
+## (it shows the keys, once), else the one-line toast.
+func _welcome() -> void:
+	if fp.ctx.feature("coach_card") != null:
+		fp.bus.coach_requested.emit("welcome")
+	else:
+		notify(WELCOME_TOAST)
+
+
 func _start_new() -> void:
+	var opening := _arm_opening()
 	sim.start()
 	BootClock.mark("sim_start")
 	var start_speed := int(OS.get_environment("GRIDFALL_SPEED")) if OS.has_environment("GRIDFALL_SPEED") else 1
 	if fp != null:
 		fp.set_time_scale(start_speed)
-		notify("Welcome to GridFall. WASD to walk, Tab for the city overview, Enter to chat, M for the map, Esc to pause.")
+		if opening:
+			FirstDay.begin(fp)
+		_welcome()
 	else:
 		sim.set_speed(start_speed)
 		hud.set_speed_display(start_speed)
@@ -386,7 +414,8 @@ func _restorable(d: Dictionary) -> bool:
 func _restore(d: Dictionary) -> bool:
 	if not SaveShape.document_ok(d) or not sim.from_dict(d.get("sim", {})):
 		return false
-	brain.from_dict(d.get("brain", {}))
+	brain.from_dict(d.get("brain", {}))  # also disarms the first-day schedule (MayorTurns.clear)
+	_opening_day1 = false
 	client.from_dict(d.get("client", {}))
 	_setup_people()
 	residents.from_dict(d.get("residents", {}))
@@ -445,7 +474,7 @@ func _continue(d: Dictionary) -> void:
 	_update_mood()
 	Analytics.track("continue", {"day": sim.day, "view": view_mode})
 	print("GRIDFALL: continuing the saved city, day %d tick %d" % [sim.day, sim.tick_in_day])
-	notify("Welcome back: Day %d. New city in the pause menu starts over." % sim.day, "success")
+	notify(WELCOME_BACK % sim.day, "success")
 
 
 func new_game() -> void:
@@ -460,7 +489,10 @@ func new_game() -> void:
 	if fp != null:
 		fp.from_dict({})
 	_fp_saved = {}
+	var opening := _arm_opening()
 	sim.start()
+	if opening:
+		FirstDay.begin(fp)
 	_update_mood()
 	Analytics.track("new_city", {"seed": sim.city_seed})
 	notify("A new GridFall has been founded", "success")
@@ -599,10 +631,12 @@ func enter_fp() -> void:
 		back.erase("day_phase")
 		_fp_saved = {}
 		fp.from_dict(back)
+		if _opening_day1:
+			FirstDay.resume(fp)
 	Analytics.track("enter_fp", {"day": sim.day, "features": fp.ctx.features.size()})
 
 
-## Back to the orbit view and CityHud (used by B's "Quit to orbit"). Safe to call twice.
+## Back to the orbit view and CityHud (used by B's "Planner view"). Safe to call twice.
 ## It frees FpHud, so a caller inside an FP node's signal (a Button's pressed) must use
 ## ctx.main.call_deferred("exit_fp"); a locked object cannot be freed mid-emit.
 func exit_fp() -> void:

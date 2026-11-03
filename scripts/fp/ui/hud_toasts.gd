@@ -13,8 +13,11 @@ const LIFE := 4.0
 const FADE := 0.2
 const SLIDE_PX := 10.0
 const GAP := 6.0
-## Widest toast or banner text before it ends in an ellipsis.
+## Widest toast or banner text: a longer toast wraps, up to MAX_LINES lines (the banner still ends
+## in an ellipsis).
 const MAX_TEXT_W := 560.0
+const MAX_LINES := 2
+const TOAST_SIZE := 16
 const BANNER_LIFE := 6.5
 const BANNER_BLINK := 0.8
 ## The slot starts at y 76; the compass and its distance labels end at y 106.
@@ -73,10 +76,7 @@ func show_toast(text: String, kind: String = "info") -> void:
 			last["life"] = LIFE
 			var ll: Label = last["label"]
 			ll.text = "%s  ×%d" % [t, int(last["count"])]
-			ll.custom_minimum_size.x = minf(
-				ceilf(S.font().get_string_size(ll.text, HORIZONTAL_ALIGNMENT_LEFT, -1, 16).x) + 2.0,
-				MAX_TEXT_W
-			)
+			_fit(ll)
 			(last["panel"] as Control).reset_size()
 			return
 	while _items.size() >= MAX_TOASTS:
@@ -97,12 +97,7 @@ func show_toast(text: String, kind: String = "info") -> void:
 	h.add_child(ic)
 	var l := S.label(t, 16, S.TEXT, S.font(), 2)
 	l.name = "Text"
-	l.autowrap_mode = TextServer.AUTOWRAP_OFF
-	# An ellipsis label has no minimum width of its own: size it to the text, capped.
-	l.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
-	l.custom_minimum_size.x = minf(
-		ceilf(S.font().get_string_size(t, HORIZONTAL_ALIGNMENT_LEFT, -1, 16).x) + 2.0, MAX_TEXT_W
-	)
+	_fit(l)
 	h.add_child(l)
 	add_child(p)
 	p.reset_size()
@@ -118,6 +113,18 @@ func show_toast(text: String, kind: String = "info") -> void:
 			"y": _stack_end() - SLIDE_PX
 		}
 	)
+
+
+## Sizes a toast's label to its text, at most MAX_TEXT_W wide: a text wider than that wraps at
+## words onto up to MAX_LINES lines (only what still does not fit ends in an ellipsis).
+func _fit(l: Label) -> void:
+	var w := ceilf(S.font().get_string_size(l.text, HORIZONTAL_ALIGNMENT_LEFT, -1, TOAST_SIZE).x)
+	l.max_lines_visible = MAX_LINES
+	l.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
+	l.autowrap_mode = (
+		TextServer.AUTOWRAP_WORD_SMART if w + 2.0 > MAX_TEXT_W else TextServer.AUTOWRAP_OFF
+	)
+	l.custom_minimum_size.x = minf(w + 2.0, MAX_TEXT_W)
 
 
 ## Shows the red alert banner (replacing any current one); it blinks twice, then holds.

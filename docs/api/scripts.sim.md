@@ -74,6 +74,7 @@ Tile-based SimCity-style simulation: zoning + demand-driven growth, power/water/
 - `func tick_seconds() -> float`: Real seconds per growth tick at speed 1.
 - `func set_day_seconds(s: float) -> void`: Changes the day length and rescales the time already accumulated toward the next tick, so day_progress() and tick_phase() are unchanged (a raw switch from a 1200 s to a 12 s day would leave up to a whole 300 s tick pending and run dozens of ticks at once).
 - `func set_tick_phase(p: float) -> void`: Sets how far the current growth tick has run (0..1), e.g. when a save restores the time of day. A sliced tick in flight then commits without taking its time back out of the accumulator.
+- `func start_at_progress(p: float) -> void`: Opens the day that has just begun p of the way through it (the first-day opening: 0..1 of the day, before its first growth tick). Deterministic: it is the tick phase, which saves carry.
 - `func skip_to_next_day() -> bool`: Runs the rest of today's growth ticks synchronously so the next day starts at dawn (FP "skip to morning"). Stops early if the day gate holds the boundary. Returns true when the new day has started. In sliced mode it first completes the job in flight.
 - `func step_tick() -> void`
 - `func start() -> void`: Emits day_started for the very first day (call once after wiring listeners).
@@ -275,6 +276,8 @@ Static rules, costs, and catalogs for the GridFall city simulation.
 - `LEGACY_WORLD = {"w": 96, "h": 96, "x0": -32, "y0": -32}`: Layout of saves written before the world grew to 192x192.
 - `GROWTH_TICKS_PER_DAY = 4`
 - `BASE_DAY_SECONDS = 12.0`
+- `FIRST_DAY_START = 0.0625`: The first-day opening (flag first_day_opening): a fresh street city opens this far into day 1 (a share of the day; 0.0625 is 07:30 on the street clock, which runs from 06:00), and the five founding mayor turns are spread over the next FIRST_DAY_SPAN of the day (the last lands about 3.5 minutes after the start at 1x, before the first growth tick at 0.25).
+- `FIRST_DAY_SPAN = 0.19`
 - `START_FUNDS = 12000`
 - `EMPTY = 0`
 - `ROAD = 1`

@@ -435,7 +435,7 @@ func active_camera() -> Camera3D:
 
 ## Switches to first person (see §6.3). Safe to call twice.
 func enter_fp() -> void
-## Back to the orbit view and CityHud (used by B's "Quit to orbit"). Safe to call twice.
+## Back to the orbit view and CityHud (used by B's "Planner view", once "Quit to orbit"). Safe to call twice.
 ## It frees FpHud, so a caller inside an FP node's signal (a Button's pressed) must use
 ## ctx.main.call_deferred("exit_fp"); a locked object cannot be freed mid-emit.
 func exit_fp() -> void

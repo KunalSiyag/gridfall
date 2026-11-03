@@ -1,6 +1,6 @@
 extends Control
 ## Pause menu (slice B), shown on pause_changed(true) over a frosted blur of the paused world:
-## Resume, Save, Load, New city (press twice), Settings, Quit to orbit, Quit (saves first), a
+## Resume, Save, Load, New city (press twice), Settings, Planner view, Quit (saves first), a
 ## legend of the HUD icons, and tabbed
 ## settings (Camera, Controls, Display, Audio) written through mode.apply_settings(). FpMode owns
 ## the &"pause" modal; B never pushes or pops it. Keyboard navigable; Esc leaves the settings
@@ -17,6 +17,9 @@ const PANEL_W := 600.0
 const ROW_H := 44.0
 const BASE_SENS := 0.0022
 const NEW_CITY := "New city"
+## The button that leaves the street for the top-down city builder (once "Quit to orbit"): the same
+## name the overview's button and the legend use.
+const PLANNER := "Planner view"
 const NEW_CITY_CONFIRM := "Press again to start over"
 ## The player's own GMI key page (gmi_key_panel.gd); shown only with the player_gmi_key flag.
 const GMI_TAB := "GMI Cloud"
@@ -60,7 +63,7 @@ const LEGEND := [
 	["alert", "Incidents", "How many are active, and the newest"],
 ]
 const KEYS := [
-	["M", "Map"], ["Tab", "City overview"], ["V", "Camera view"], ["Q", "Shoulder"], ["E", "Interact"], ["F", "Get in / out of a car, jump across"], ["B", "Build phone"],
+	["M", "Map"], ["Tab", "City overview (Planner view)"], ["V", "Camera view"], ["Q", "Shoulder"], ["E", "Interact"], ["F", "Get in / out of a car, jump across"], ["B", "Build phone"],
 	["Shift", "Run / sprint"], ["Space", "Jump / vault / climb walls"],
 	["Click", "Punch"], ["Right-click", "Guard"],
 	["R", "Shove / throw / slam"], ["X", "Kick"], ["H", "Grab / let go"], ["Z", "Drop weapon"],
@@ -165,7 +168,7 @@ func _open() -> void:
 	_buttons["Load"].disabled = ctx.main == null
 	_buttons[NEW_CITY].disabled = ctx.main == null
 	_buttons[NEW_CITY].text = NEW_CITY
-	_buttons["Quit to orbit"].disabled = ctx.main == null
+	_buttons[PLANNER].disabled = ctx.main == null
 	visible = true
 	FirstUse.mark("pause_menu")
 	_age = 0.0
@@ -218,7 +221,7 @@ func _on_button(text: String) -> void:
 				close_settings()
 			else:
 				open_settings("Camera")
-		"Quit to orbit":
+		PLANNER:
 			FirstUse.mark("quit_to_orbit")
 			# exit_fp() frees this HUD; it cannot run inside the button's own pressed emission.
 			if ctx.main != null:
@@ -266,8 +269,8 @@ func _build_left() -> void:
 	gap.custom_minimum_size = Vector2(0, 26)
 	gap.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_left.add_child(gap)
-	for t: String in ["Resume", "Save", "Load", NEW_CITY, "Settings", "Quit to orbit", "Quit"]:
-		if t == "Quit to orbit":
+	for t: String in ["Resume", "Save", "Load", NEW_CITY, "Settings", PLANNER, "Quit"]:
+		if t == PLANNER:
 			var sep := Control.new()
 			sep.custom_minimum_size = Vector2(0, 14)
 			sep.mouse_filter = Control.MOUSE_FILTER_IGNORE

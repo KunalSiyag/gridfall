@@ -12,6 +12,11 @@ const SPAN := 0.9
 var due: Array[int] = []
 ## The day the waiting turns belong to.
 var day: int = -1
+## Armed by Main for a fresh street city (flag first_day_opening): day 1's turns use the compressed
+## founding schedule (SimDefs.FIRST_DAY_START and FIRST_DAY_SPAN) instead of spreading over SPAN of
+## the whole day. Not saved: a loaded city runs the ordinary schedule. clear() disarms it.
+var opening: bool = false
+var _compressed: bool = false
 
 
 ## Starts p_day: queues every mayor's turn when staggered. Returns staggered; false leaves the
@@ -19,6 +24,7 @@ var day: int = -1
 func start(p_day: int, staggered: bool) -> bool:
 	due.clear()
 	day = p_day
+	_compressed = opening and p_day == 1
 	if staggered:
 		due.assign(order(p_day))
 	return staggered
@@ -28,7 +34,7 @@ func start(p_day: int, staggered: bool) -> bool:
 ## Not staggered (street mode left mid-day), the next waiting mayor goes at once. A mayor still
 ## deciding (busy[mi], e.g. a live call from the day before) keeps the turn and holds the queue.
 func take_due(progress: float, staggered: bool, busy: Array = []) -> int:
-	if due.is_empty() or (staggered and progress < at(D.MAYORS.size() - due.size())):
+	if due.is_empty() or (staggered and progress < turn_at(D.MAYORS.size() - due.size())):
 		return -1
 	if _busy(busy, due[0]):
 		return -1
@@ -51,12 +57,14 @@ func take_all(busy: Array = []) -> Array[int]:
 func next_turn() -> Dictionary:
 	if due.is_empty():
 		return {}
-	return {"mi": due[0], "at": at(D.MAYORS.size() - due.size())}
+	return {"mi": due[0], "at": turn_at(D.MAYORS.size() - due.size())}
 
 
 func clear() -> void:
 	due.clear()
 	day = -1
+	opening = false
+	_compressed = false
 
 
 func to_dict() -> Dictionary:
@@ -84,6 +92,15 @@ static func order(p_day: int) -> Array[int]:
 	for k in range(D.MAYORS.size()):
 		out.append(posmod(p_day + k, D.MAYORS.size()))
 	return out
+
+
+## The day fraction at which the k-th turn of the queue now running starts: the compressed founding
+## schedule on an opening day 1, else at(k).
+func turn_at(k: int) -> float:
+	if _compressed:
+		var n := float(D.MAYORS.size())
+		return D.FIRST_DAY_START + D.FIRST_DAY_SPAN * (float(k) + 0.5) / n
+	return at(k)
 
 
 ## The day fraction at which the k-th turn starts.

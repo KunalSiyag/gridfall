@@ -101,6 +101,9 @@ GridFall: a SimCity-style city run by five autonomous GMI Cloud AI mayors. Wires
 - `SaveShape = preload("res://scripts/sim/save_shape.gd")`
 - `WS = preload("res://scripts/fp/world_scale.gd")`
 - `Q = preload("res://scripts/fp/render/quality.gd")`
+- `FirstDay = preload("res://scripts/fp/first_day.gd")`
+- `WELCOME_TOAST = "Welcome to GridFall. WASD to walk, Tab for the city overview, Enter to chat, M for the...`: The street's boot toasts that main.gd owns (fp_hud_test measures them against the toast width).
+- `WELCOME_BACK = "Welcome back: Day %d. New city in the pause menu starts over."`
 
 ### Properties
 
@@ -124,7 +127,7 @@ GridFall: a SimCity-style city run by five autonomous GMI Cloud AI mayors. Wires
 - `func notify(text: String, kind: String = "info") -> v`: Player-facing notice: CityHud toast in orbit, GameBus.toast in first person. kind: "info" | "alert" | "success" | "system".
 - `func active_camera() -> Camera3D`: The camera the city view should use for picking and shake.
 - `func enter_fp() -> void`: Switches to first person (S0 §6.3). Safe to call twice.
-- `func exit_fp() -> void`: Back to the orbit view and CityHud (used by B's "Quit to orbit"). Safe to call twice. It frees FpHud, so a caller inside an FP node's signal (a Button's pressed) must use ctx.main.call_deferred("exit_fp"); a locked object cannot be freed mid-emit.
+- `func exit_fp() -> void`: Back to the orbit view and CityHud (used by B's "Planner view"). Safe to call twice. It frees FpHud, so a caller inside an FP node's signal (a Button's pressed) must use ctx.main.call_deferred("exit_fp"); a locked object cannot be freed mid-emit.
 - `func grow_offline(days: int, cap_ms: int) -> void`: Grows the city offline at full speed with the legacy 12 s day, for tests and tours, then restores the current day length and speed 0. The caller must have called sim.start(). Returns when sim.day >= days or after cap_ms of wall clock time.
 
 ## `scripts/save_slot.gd`

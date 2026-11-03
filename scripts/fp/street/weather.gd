@@ -80,13 +80,22 @@ func setup(p_ctx: FpContext, p_preset: String) -> void:
 	_told_global = NAN
 	_build_rain(preset)
 	_build_splash(preset)
+	resync()
+
+
+## Takes the sky the day calls for at once, with no easing from the last one (setup; the first-day
+## opening, which changes the day's weather after the world is up).
+func resync() -> void:
 	state = target_state()
 	_look = (LOOK[state] as Dictionary).duplicate()
 	_apply_hooks()
 
 
 ## The weather for a city seed and day, the same on every run: clear 60%, overcast 25%, rain 15%.
-static func daily_state(seed: int, day: int) -> String:
+## opening (the first-day opening, day 1 of a fresh city) makes day 1 clear.
+static func daily_state(seed: int, day: int, opening: bool = false) -> String:
+	if opening and day == 1:
+		return "clear"
 	var r := posmod(hash([seed, day, "gridfall-weather"]), 100)
 	if r < 60:
 		return "clear"
@@ -107,7 +116,7 @@ func target_state() -> String:
 			return "rain"
 		if t == "smog":
 			return "overcast"
-	return daily_state(ctx.sim.city_seed, ctx.sim.day)
+	return daily_state(ctx.sim.city_seed, ctx.sim.day, ctx.first_day_opening)
 
 
 func _process(delta: float) -> void:

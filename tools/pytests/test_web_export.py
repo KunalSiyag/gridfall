@@ -459,6 +459,29 @@ def test_loader_page_gets_a_progress_bar():
         patch_loader_html("<style></style>")
 
 
+def test_loader_explains_the_game_before_the_engine_starts():
+    from tools.web_export import LOADER_CSS, LOADER_KEYS, LOADER_PITCH
+
+    plain = SHELL_STUB
+    patched = patch_loader_html(plain)
+    assert LOADER_PITCH == "Five AI mayors, five different models on GMI Cloud, one city you can walk in"
+    assert LOADER_KEYS == "WASD walk - Tab planner - J AI feed - Esc menu - click to capture the mouse"
+    assert patched.count(LOADER_PITCH) == 1 and patched.count(LOADER_KEYS) == 1
+    # Static markup in the bar, above the track: it is in the first paint and in the boot stall,
+    # and it goes with the bar (the veil's own logic hides and lifts the whole bar).
+    bar = patched.index('<div id="gf-bar">')
+    assert bar < patched.index(LOADER_PITCH) < patched.index(LOADER_KEYS) < patched.index('id="gf-track"')
+    assert "#gf-explain" in LOADER_CSS and "#gf-pitch" in LOADER_CSS and "#gf-keys" in LOADER_CSS
+    # No script touches the text, so it cannot depend on the boot clock or the engine.
+    script = patched[patched.index("<script"):]
+    assert "gf-pitch" not in script and "gf-keys" not in script and "gf-explain" not in script
+    # The page grows by the text and its few rules only.
+    from tools.web_export import LOADER_BAR
+
+    rules = LOADER_CSS[LOADER_CSS.index("/* What the game is"):LOADER_CSS.index("#gf-track")]
+    assert len(rules) < 900 and len(LOADER_BAR) < 1_200, (len(rules), len(LOADER_BAR))
+
+
 def test_loader_keeps_the_overlay_until_the_game_is_interactive():
     patched = patch_loader_html(SHELL_STUB)
     # startGame() resolving no longer removes the overlay; only the game's hook or the timeout does.

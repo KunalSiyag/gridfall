@@ -186,7 +186,8 @@ Street weather (slice G1): a deterministic daily state (clear 60%, overcast 25%,
 ### Functions
 
 - `func setup(p_ctx: FpContext, p_preset: String) -> void`
-- `static func daily_state(seed: int, day: int) -> String`: The weather for a city seed and day, the same on every run: clear 60%, overcast 25%, rain 15%.
+- `func resync() -> void`: Takes the sky the day calls for at once, with no easing from the last one (setup; the first-day opening, which changes the day's weather after the world is up).
+- `static func daily_state(seed: int, day: int, opening: bool = false) -> String`: The weather for a city seed and day, the same on every run: clear 60%, overcast 25%, rain 15%. opening (the first-day opening, day 1 of a fresh city) makes day 1 clear.
 - `func target_state() -> String`: What the weather should be now: forced, else an incident's (flood rain, smog overcast), else the day's.
 - `func step(delta: float) -> void`: One weather update over delta real seconds (tests call it directly).
 - `func splashing() -> bool`: Whether drops splash off the ground now: raining on wet streets, on a preset with splashes.

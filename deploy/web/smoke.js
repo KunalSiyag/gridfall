@@ -416,7 +416,7 @@ const OFFLINE = process.env.GF_SMOKE_OFFLINE === "1";
 	// --- phase 9: quit to orbit and back (exit_fp / enter_fp must not throw) ----------
 	// exit_fp() teardown once crashed the web build ("invalid bus index -1" in
 	// sample_set_volumes_linear) and halted the game, so keep the round trip under test.
-	// Pause menu order is Resume, Save, Load, New city, Settings, Quit to orbit, Quit.
+	// Pause menu order is Resume, Save, Load, New city, Settings, Planner view, Quit.
 	// The pointer-lock NotAllowedError is an automation artifact: real keyboards count as
 	// user gestures, but CDP-injected keys may not re-lock the pointer in headless Chrome.
 	const crashRe = /bus index|SCRIPT ERROR|unreachable|uncaught/i;
@@ -425,7 +425,7 @@ const OFFLINE = process.env.GF_SMOKE_OFFLINE === "1";
 	await page.keyboard.press("Escape"); // pause menu (focus starts on Resume)
 	await sleep(1200);
 	for (let i = 0; i < 5; i++) {
-		await page.keyboard.press("ArrowDown"); // Resume -> ... -> Quit to orbit
+		await page.keyboard.press("ArrowDown"); // Resume -> ... -> Planner view
 		await sleep(150);
 	}
 	await page.keyboard.press("Enter");

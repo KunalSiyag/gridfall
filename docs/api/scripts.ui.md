@@ -27,11 +27,14 @@ SimCity-style HUD for GridFall: city vitals and RCI demand, time controls, playe
 ### Constants
 
 - `D = preload("res://scripts/sim/sim_defs.gd")`
+- `HudChips = preload("res://scripts/fp/ui/hud_chips.gd")`
 - `PackStatus = preload("res://scripts/ui/pack_status.gd")`
+- `ARENA = preload("res://scripts/fp/arena/arena_panel.gd")`
 - `TITLE_FONT = preload("res://fonts/lilita_one_regular.ttf")`
 - `BG = Color(0.055, 0.07, 0.11, 0.93)`
 - `ACCENT = Color(0.0, 0.88, 1.0)`
 - `OVERLAYS = [ ["none", "Normal view"], ["power", "Power grid"], ["water", "Water"], ["pollution", "...`
+- `STAT_W = 96`: Minimum width of one top-bar stat (px); the top bar is sized by it.
 - `SPEEDS = [[0, "||"], [1, "1x"], [2, "2x"], [4, "4x"], [8, "8x"]]`
 - `SOURCE_COLORS = {"live": "#5CFF9D", "cache": "#FFD27F", "heuristic": "#FF8A7A"}`
 
