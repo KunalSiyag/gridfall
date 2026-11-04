@@ -829,6 +829,7 @@ func _update_traffic_beacons() -> void:
 
 
 func _process(delta: float) -> void:
+	delta = Pacing.frame_dt(delta)
 	_time += delta
 	_blackout_intensity = move_toward(_blackout_intensity, _target_blackout, delta * 0.85)
 	if _road_shader_mat:

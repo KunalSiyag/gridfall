@@ -1642,4 +1642,6 @@ static func _pick(v: String, options: Array, fallback: String) -> String:
 static func _as_bool(v: Variant) -> bool:
 	if typeof(v) == TYPE_STRING:
 		return str(v).to_lower() in ["true", "yes", "1"]
+	if typeof(v) == TYPE_ARRAY or typeof(v) == TYPE_DICTIONARY:
+		return true  # not a yes or a no: the default every caller passes (go to work)
 	return bool(v)

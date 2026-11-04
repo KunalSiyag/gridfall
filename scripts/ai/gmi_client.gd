@@ -4,10 +4,16 @@ extends Node
 ## heuristic fallback. Every call is logged with its source (live / cache / heuristic).
 
 signal call_logged(record: Dictionary)
-## The circuit breaker moved to state ("closed" / "open" / "half_open").
+## The circuit breakers' aggregate moved to state ("closed" / "open" / "half_open"): one group
+## opening while another is already open does not repeat it.
 signal breaker_changed(state: String)
 
 const CHAT_URL := "https://api.gmi-serving.com/v1/chat/completions"
+## The model list the readiness check reads (GET, once per key; see GmiPreflight).
+const MODELS_URL := "https://api.gmi-serving.com/v1/models"
+const PREFLIGHT_TIMEOUT_S := 12.0
+## The model list is read for its ids only: a body past this is cut off by the HTTPRequest.
+const PREFLIGHT_MAX_BODY := 1 << 20
 ## Retries after the first attempt, for transient failures only (see is_retryable()).
 const MAX_RETRIES := 2
 const BACKOFF_BASE_MS := 500
@@ -65,15 +71,26 @@ var replay_cache: Dictionary = {}
 var session_cache: Dictionary = {}
 var log_records: Array[Dictionary] = []
 var stats: Dictionary = {"live_ok": 0, "live_fail": 0, "cache": 0, "heuristic": 0, "latency_ms_sum": 0, "in_flight": 0,
-	"retries": 0, "breaker_open": 0, "breaker_skip": 0}
-## Opens after 4 consecutive service failures; while open, chat_json goes straight to the cache or
-## heuristic and live_json fails fast with "circuit open".
+	"retries": 0, "breaker_open": 0, "breaker_skip": 0, "side_retries": 0}
+## The default group's breaker (the street chatter, the talk and any role not named in
+## GmiBreakers.GROUPS): it opens after 4 consecutive service failures; while open, chat_json goes
+## straight to the cache or heuristic and live_json fails fast with "circuit open". The mayors, the
+## support agents and the residents each have their own in `breakers` (see breakers.breaker_for),
+## so a failing group cannot open the circuit for the others; breaker_state() is the aggregate.
 var breaker := CircuitBreaker.new(4, 30000)
+var breakers := GmiBreakers.new(breaker)
+## Live calls out now, the mayors first (flag gmi_inflight_cap; see GmiAdmission).
+var admission := GmiAdmission.new()
+## The readiness check of the key in use (one GET of the model list per key, GmiPreflight). It
+## starts by itself when a key is set, but only where the game runs (preflight.enabled, which Main
+## sets): a test client never reaches for the network.
+var preflight := GmiPreflight.new()
 ## The last LIVE_WINDOW live outcomes (true = ok), oldest first.
 var live_outcomes: Array[bool] = []
 ## Models that refused TEMPERATURE (an HTTP 400 naming the temperature) and get 1.0 instead.
 var temperature_of: Dictionary = {}
 var _last_failure: String = ""
+var _last_aggregate: String = CircuitBreaker.CLOSED
 var _seq: int = 0
 ## Retry-backoff jitter. Its own generator on purpose: jitter should vary between processes, but a
 ## draw must never come from the shared global RNG stream, whose state the sim's boot determinism
@@ -93,7 +110,7 @@ var sleep_ms := Callable()
 
 
 func _init() -> void:
-	breaker.state_changed.connect(_on_breaker_changed)
+	breakers.changed.connect(_on_breaker_changed)
 
 
 func _ready() -> void:
@@ -134,6 +151,7 @@ func set_player_key(key: String) -> bool:
 	if not api_key.is_empty():
 		Redact.add_secret(api_key)
 	_refresh_live()
+	preflight.key_changed(self)
 	return has_key()
 
 
@@ -163,9 +181,11 @@ func set_live(enabled: bool) -> void:
 	live_enabled = enabled and has_key() and FeatureFlags.enabled("gmi_live")
 
 
-## "closed", "open" or "half_open" (an open breaker past its cool-down reads half_open).
+## The aggregate of the breakers: "open" when any group's is open, else "half_open" when one is
+## probing (an open breaker past its cool-down reads half_open), else "closed". The alerts and the
+## alerts read this one (the street badge and Ask the five read breakers.mayor_state()).
 func breaker_state() -> String:
-	return breaker.peek_state()
+	return breakers.state()
 
 
 ## Share of failed live calls among the last LIVE_WINDOW. 0 while fewer than
@@ -231,9 +251,13 @@ static func web_headers_active(is_web: bool) -> bool:
 	return is_web and FeatureFlags.enabled("gmi_web_safe_headers")
 
 
-## The headers _post puts on the wire for this call (request_headers for this build and flag).
-func _wire_headers(request_id: String, trace_id: String) -> PackedStringArray:
-	return request_headers(api_key, request_id, trace_id, web_headers_active(web_build))
+## The headers a request puts on the wire (request_headers for this build and flag). web_safe true
+## forces the two-header set whatever the build: the model-list check sends only Authorization and
+## Content-Type everywhere.
+func _wire_headers(
+	request_id: String, trace_id: String, web_safe: bool = false
+) -> PackedStringArray:
+	return request_headers(api_key, request_id, trace_id, web_safe or web_headers_active(web_build))
 
 
 ## The model the key test asks: among models, the one that looks cheapest by its name (a "lite" id,
@@ -312,15 +336,12 @@ func chat_json(role: String, agent_id: String, model: String, system_prompt: Str
 		day: int, max_tokens: int, timeout_s: float, heuristic: Callable) -> Dictionary:
 	var key := "%s|%s" % [role, agent_id]
 	var result := _new_result(role, agent_id, model, day)
-	if live_enabled and not _breaker_allows():
+	if live_enabled and not _breaker_allows(role):
 		result["error"] = "circuit open"
 	elif live_enabled:
-		stats["in_flight"] = int(stats["in_flight"]) + 1
-		var t0 := Time.get_ticks_msec()
-		var live := await _post_with_retry(model, system_prompt, user_prompt, max_tokens, timeout_s, result)
-		stats["in_flight"] = int(stats["in_flight"]) - 1
-		result["latency_ms"] = Time.get_ticks_msec() - t0
-		result["raw"] = str(live.get("raw", "")).left(600)
+		var live := await _call_live(
+			model, system_prompt, user_prompt, max_tokens, timeout_s, result
+		)
 		if bool(live.get("ok", false)):
 			result["ok"] = true
 			result["data"] = live["data"]
@@ -358,16 +379,23 @@ func live_json(role: String, agent_id: String, model: String, system_prompt: Str
 		result["error"] = "offline"
 		return result
 	var isolated := role in ISOLATED_ROLES
-	if not isolated and not _breaker_allows():
+	if not isolated and breakers.breaker_for(role).peek_state() == CircuitBreaker.OPEN:
+		_count_skip()
 		result["error"] = "circuit open"
 		result["source"] = "failed"
 		return result
-	stats["in_flight"] = int(stats["in_flight"]) + 1
-	var t0 := Time.get_ticks_msec()
-	var live := await _post_with_retry(model, system_prompt, user_prompt, max_tokens, timeout_s, result)
-	stats["in_flight"] = int(stats["in_flight"]) - 1
-	result["latency_ms"] = Time.get_ticks_msec() - t0
-	result["raw"] = str(live.get("raw", "")).left(600)
+	# The slot is waited for BEFORE the breaker is asked: a half-open breaker hands out its single
+	# probe to whoever asks first, and a call that then gave up waiting would never report it, so
+	# the group would stay half-open for good.
+	if not await _wait_for_slot(role, timeout_s):
+		result["error"] = "no free slot"
+		result["source"] = "failed"
+		return result
+	if not isolated and not _breaker_allows(role):
+		result["error"] = "circuit open"
+		result["source"] = "failed"
+		return result
+	var live := await _call_live(model, system_prompt, user_prompt, max_tokens, timeout_s, result)
 	if bool(live.get("ok", false)):
 		result["ok"] = true
 		result["data"] = live["data"]
@@ -383,6 +411,24 @@ func live_json(role: String, agent_id: String, model: String, system_prompt: Str
 			_report_failure(result)
 	_log(result)
 	return result
+
+
+## One live call with its bookkeeping: counted as in flight (stats, admission) while it is out, and
+## result gets its latency_ms and raw. Returns what _post_with_retry returned.
+func _call_live(
+	model: String, system_prompt: String, user_prompt: String, max_tokens: int, timeout_s: float,
+	result: Dictionary
+) -> Dictionary:
+	var role := str(result["role"])
+	stats["in_flight"] = int(stats["in_flight"]) + 1
+	admission.enter(role)
+	var t0 := Time.get_ticks_msec()
+	var live := await _post_with_retry(model, system_prompt, user_prompt, max_tokens, timeout_s, result)
+	admission.leave(role)
+	stats["in_flight"] = int(stats["in_flight"]) - 1
+	result["latency_ms"] = Time.get_ticks_msec() - t0
+	result["raw"] = str(live.get("raw", "")).left(600)
+	return live
 
 
 ## Why a key test cannot go out right now: "" when it can, else "no_key", "offline"
@@ -435,6 +481,23 @@ func _key_test_line(verdict: Dictionary) -> String:
 	return Redact.scrub(line, PackedStringArray([api_key]))
 
 
+## The one place the model list request leaves the process: an HTTPRequest GET to MODELS_URL with
+## exactly these headers. Split out so a test can stand in for the network. Returns what
+## _round_trip returns ({"start_error": int}, or {"result", "http", "headers", "body"}).
+func _models_trip(headers: PackedStringArray, timeout_s: float) -> Dictionary:
+	var http := HTTPRequest.new()
+	http.timeout = timeout_s
+	http.body_size_limit = PREFLIGHT_MAX_BODY
+	add_child(http)
+	var err := http.request(MODELS_URL, headers, HTTPClient.METHOD_GET)
+	if err != OK:
+		http.queue_free()
+		return {"start_error": err}
+	var res: Array = await http.request_completed
+	http.queue_free()
+	return {"result": res[0], "http": res[1], "headers": res[2], "body": res[3]}
+
+
 func remember(key: String, day: int, data: Dictionary) -> void:
 	_remember(key, day, data)
 
@@ -455,15 +518,33 @@ func _new_result(role: String, agent_id: String, model: String, day: int) -> Dic
 		"agent": agent_id, "day": day, "seq": _seq, "request_id": Trace.new_id(), "trace_id": Trace.current(), "attempts": 0}
 
 
-func _breaker_allows() -> bool:
-	if breaker.allow():
+func _breaker_allows(role: String) -> bool:
+	if breakers.breaker_for(role).allow():
 		return true
-	stats["breaker_skip"] = int(stats["breaker_skip"]) + 1
+	_count_skip()
 	return false
 
 
+func _count_skip() -> void:
+	stats["breaker_skip"] = int(stats["breaker_skip"]) + 1
+
+
+## Waits for a free in-flight slot when the cap is on (flag gmi_inflight_cap) and the role is a
+## background one: true when the call may go out, false when the wait outlasted timeout_s (the
+## caller treats that as a failed call). Priority roles and a switched-off cap never wait.
+func _wait_for_slot(role: String, timeout_s: float) -> bool:
+	if admission.can_enter(role) or not FeatureFlags.enabled("gmi_inflight_cap", false):
+		return true
+	var deadline := Time.get_ticks_msec() + int(timeout_s * 1000.0)
+	while not admission.can_enter(role):
+		if Time.get_ticks_msec() >= deadline or not is_inside_tree():
+			return false
+		await get_tree().process_frame
+	return true
+
+
 ## _post with up to MAX_RETRIES retries for transient failures (exponential backoff with jitter,
-## honouring Retry-After), all within a budget of 2 x timeout_s. Reports the outcome to the
+## honouring Retry-After), all within a budget of 2 x timeout_s. Reports the outcome to the role's
 ## breaker and live_outcomes; sets result["attempts"].
 func _post_with_retry(model: String, system_prompt: String, user_prompt: String, max_tokens: int, timeout_s: float,
 		result: Dictionary) -> Dictionary:
@@ -484,7 +565,10 @@ func _post_with_retry(model: String, system_prompt: String, user_prompt: String,
 		var wait_ms := maxi(backoff_ms(attempt - 1, _jitter.randf()), int(live.get("retry_after_ms", 0)))
 		if Time.get_ticks_msec() + wait_ms + 1000 >= deadline:
 			break
-		stats["retries"] = int(stats["retries"]) + 1
+		# An isolated role's retries are its own: the city's retry count stays the city's.
+		var side := str(result.get("role", "")) in ISOLATED_ROLES
+		var retry_stat := "side_retries" if side else "retries"
+		stats[retry_stat] = int(stats[retry_stat]) + 1
 		if sleep_ms.is_valid():
 			await sleep_ms.call(wait_ms)
 		else:
@@ -493,10 +577,11 @@ func _post_with_retry(model: String, system_prompt: String, user_prompt: String,
 	var ok := bool(live.get("ok", false))
 	if str(result.get("role", "")) in ISOLATED_ROLES:
 		return live
+	var group_breaker := breakers.breaker_for(str(result.get("role", "")))
 	if ok or not bool(live.get("service_fail", true)):
-		breaker.record_success()
+		group_breaker.record_success()
 	else:
-		breaker.record_failure()
+		group_breaker.record_failure()
 	live_outcomes.append(ok)
 	if live_outcomes.size() > LIVE_WINDOW:
 		live_outcomes.pop_front()
@@ -535,11 +620,14 @@ func _failure_line(result: Dictionary) -> String:
 	return Redact.scrub(line, secrets)
 
 
-func _on_breaker_changed(_from: String, to: String) -> void:
+func _on_breaker_changed(group: String, _from: String, to: String) -> void:
 	if to == CircuitBreaker.OPEN:
 		stats["breaker_open"] = int(stats["breaker_open"]) + 1
-	ErrorTracker.breadcrumb("gmi breaker " + to)
-	breaker_changed.emit(to)
+	ErrorTracker.breadcrumb("gmi breaker %s %s" % [group, to])
+	var aggregate := breakers.state()
+	if aggregate != _last_aggregate:
+		_last_aggregate = aggregate
+		breaker_changed.emit(aggregate)
 
 
 func _post(model: String, system_prompt: String, user_prompt: String, max_tokens: int, timeout_s: float) -> Dictionary:
@@ -573,16 +661,15 @@ func _post(model: String, system_prompt: String, user_prompt: String, max_tokens
 	var parsed: Variant = JSON.parse_string(text)
 	if typeof(parsed) != TYPE_DICTIONARY:
 		return {"ok": false, "error": "bad response body", "service_fail": false, "http": 200}
-	var choices: Array = (parsed as Dictionary).get("choices", [])
+	# "choices": null (or a word) is not a list: no choices, not a script error.
+	var raw_choices: Variant = (parsed as Dictionary).get("choices")
+	var choices: Array = raw_choices as Array if typeof(raw_choices) == TYPE_ARRAY else []
 	if choices.is_empty():
 		return {"ok": false, "error": "no choices", "service_fail": false, "http": 200}
-	var msg: Dictionary = (choices[0] as Dictionary).get("message", {})
-	var content: String = str(msg.get("content", "")) if msg.get("content") != null else ""
-	if content.strip_edges().is_empty() and msg.get("reasoning_content") != null:
-		content = str(msg.get("reasoning_content", ""))
-	var data := extract_json(content)
+	var content := GmiParse.message_text(GmiParse.message_of(choices[0]))
+	var data := GmiParse.extract_json(content)
 	if data.is_empty():
-		data = salvage_array(content)
+		data = GmiParse.salvage_array(content)
 	if data.is_empty():
 		return {"ok": false, "error": "no JSON in reply", "raw": content, "service_fail": false,
 			"http": 200}
@@ -637,66 +724,14 @@ static func _retry_after_ms(headers: PackedStringArray) -> int:
 	return 0
 
 
-## Recovers the complete objects of a truncated {"key":[{...},{...},{... reply.
+## Recovers the complete objects of a truncated {"key":[{...},{...},{... reply (GmiParse).
 static func salvage_array(content: String) -> Dictionary:
-	var lb := content.find("[")
-	if lb < 0:
-		return {}
-	var q2 := content.rfind("\"", lb)
-	var q1 := content.rfind("\"", q2 - 1) if q2 > 0 else -1
-	if q1 < 0:
-		return {}
-	var key := content.substr(q1 + 1, q2 - q1 - 1)
-	var items: Array = []
-	var depth := 0
-	var in_str := false
-	var esc := false
-	var start := -1
-	for i in range(lb + 1, content.length()):
-		var ch := content[i]
-		if in_str:
-			if esc:
-				esc = false
-			elif ch == "\\":
-				esc = true
-			elif ch == "\"":
-				in_str = false
-			continue
-		if ch == "\"":
-			in_str = true
-		elif ch == "{":
-			if depth == 0:
-				start = i
-			depth += 1
-		elif ch == "}":
-			depth -= 1
-			if depth == 0 and start >= 0:
-				var parsed: Variant = JSON.parse_string(content.substr(start, i - start + 1))
-				if typeof(parsed) == TYPE_DICTIONARY:
-					items.append(parsed)
-				start = -1
-		elif ch == "]" and depth == 0:
-			break
-	return {key: items} if not items.is_empty() else {}
+	return GmiParse.salvage_array(content)
 
+
+## The JSON object in a model's reply: the largest valid one, whatever surrounds it (GmiParse).
 static func extract_json(content: String) -> Dictionary:
-	var cleaned := content
-	var think := RegEx.create_from_string("(?s)<think>.*?</think>")
-	cleaned = think.sub(cleaned, "", true)
-	cleaned = cleaned.replace("```json", "").replace("```", "")
-	var start := cleaned.find("{")
-	var stop := cleaned.rfind("}")
-	if start < 0 or stop <= start:
-		return {}
-	var candidate := cleaned.substr(start, stop - start + 1)
-	var parsed: Variant = JSON.parse_string(candidate)
-	if typeof(parsed) == TYPE_DICTIONARY:
-		return parsed as Dictionary
-	var trailing := RegEx.create_from_string(",\\s*([}\\]])")
-	parsed = JSON.parse_string(trailing.sub(candidate, "$1", true))
-	if typeof(parsed) == TYPE_DICTIONARY:
-		return parsed as Dictionary
-	return {}
+	return GmiParse.extract_json(content)
 
 
 func _remember(key: String, day: int, data: Dictionary) -> void:
@@ -705,23 +740,13 @@ func _remember(key: String, day: int, data: Dictionary) -> void:
 	(session_cache[key] as Array).append({"day": day, "data": data})
 
 
+## The cached answer for key on day: this session's nearest entry, else the replay cache's nearest
+## one, but only up to the last day recorded for its key (flag replay_horizon, see GmiCache): a
+## day-14 city must not replay day 12 forever, the scripted planner takes over instead.
 func _cache_lookup(key: String, day: int) -> Dictionary:
-	for source: Dictionary in [session_cache, replay_cache]:
-		if not source.has(key):
-			continue
-		var entries: Array = source[key]
-		if entries.is_empty():
-			continue
-		var best: Dictionary = entries[0]
-		var best_d := 1 << 30
-		for e: Variant in entries:
-			var ed: Dictionary = e
-			var dd := absi(int(ed.get("day", 0)) - day)
-			if dd < best_d:
-				best_d = dd
-				best = ed
-		return best.get("data", {})
-	return {}
+	return GmiCache.lookup(
+		session_cache, replay_cache, key, day, FeatureFlags.enabled("replay_horizon", true)
+	)
 
 
 ## Writes the recorded live responses so offline runs can replay real model output. Outside record
@@ -732,26 +757,10 @@ func flush_cache() -> void:
 	if not record_mode:
 		if session_cache.is_empty():
 			return
-		var entries := 0
-		for key: String in session_cache.keys():
-			entries += (session_cache[key] as Array).size()
-		var sig := [session_cache.size(), entries]
+		var sig := [session_cache.size(), GmiCache.entry_count(session_cache)]
 		if has_meta("flush_sig") and get_meta("flush_sig") == sig and is_same(get_meta("flush_of"), session_cache):
 			return
-		var pruned := {}
-		for key: String in session_cache.keys():
-			var days: Array = []
-			for e: Variant in session_cache[key]:
-				var dd := int((e as Dictionary).get("day", 0))
-				if not days.has(dd):
-					days.append(dd)
-			days.sort()
-			var recent: Array = days.slice(maxi(0, days.size() - 3))
-			var keep: Array = []
-			for e: Variant in session_cache[key]:
-				if recent.has(int((e as Dictionary).get("day", 0))):
-					keep.append(e)
-			pruned[key] = keep
+		var pruned := GmiCache.pruned(session_cache)
 		var pf := FileAccess.open(SESSION_CACHE_PATH, FileAccess.WRITE)
 		if pf != null:
 			pf.store_string(JSON.stringify(pruned))
@@ -793,7 +802,10 @@ func _log(rec: Dictionary) -> void:
 	call_logged.emit(slim)
 
 
-func _summarize(data: Dictionary) -> String:
+func _summarize(data_v: Variant) -> String:
+	if typeof(data_v) != TYPE_DICTIONARY:
+		return JSON.stringify(data_v).left(140)
+	var data: Dictionary = data_v
 	for k in ["thought", "headline", "statement", "says", "reason", "note"]:
 		if data.has(k):
 			return str(data[k]).left(140)
@@ -806,8 +818,13 @@ func _summarize(data: Dictionary) -> String:
 	return JSON.stringify(data).left(140)
 
 
+## The client's part of a save. The saved session cache keeps each key's last GmiCache.
+## SAVE_KEEP_DAYS days (a lookup reads the nearest day, so older entries are never the answer once
+## newer ones exist) and, while recording, everything: the in-memory cache is never pruned. The
+## brain saves the same dictionary under its own "client" key.
 func to_dict() -> Dictionary:
-	return {"session_cache": session_cache, "stats": stats.duplicate()}
+	var cache := session_cache if record_mode else GmiCache.pruned(session_cache)
+	return {"session_cache": cache, "stats": stats.duplicate()}
 
 
 func from_dict(d: Dictionary) -> void:

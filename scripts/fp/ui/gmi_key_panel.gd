@@ -33,6 +33,9 @@ var apply: Button
 var forget: Button
 var test_button: Button
 var status: Label
+## The readiness line under the status ("13 of 14 models available; ..."): empty until the check of
+## the key in use has finished (GmiPreflight).
+var models: Label
 var remember: Array[Button] = []
 var _remember_group := ButtonGroup.new()
 var _testing := false
@@ -135,6 +138,18 @@ func setup(p_ctx: FpContext) -> void:
 	status.custom_minimum_size = Vector2(0, 34)
 	status.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	add_child(status)
+	models = S.plain("", 14, S.TEXT_DIM, S.font())
+	models.name = "Models"
+	models.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	models.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	models.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	add_child(models)
+	if (
+		ctx != null
+		and ctx.client != null
+		and not ctx.client.preflight.changed.is_connected(_on_readiness)
+	):
+		ctx.client.preflight.changed.connect(_on_readiness)
 	_reown(self)
 	refresh()
 
@@ -166,10 +181,16 @@ func refresh() -> void:
 		current,
 		client.has_key() and client.has_remembered_key() and not current
 	)
+	models.text = client.preflight.line()
 	if not remember.is_empty():
 		var on := client.has_remembered_key()
 		for b: Button in remember:
 			b.set_pressed_no_signal(bool(b.get_meta("value")) == on)
+
+
+func _on_readiness(_report: Dictionary) -> void:
+	if is_instance_valid(models):
+		refresh()
 
 
 ## The page's status line: whether a key is in use, whether live play is on, and, only when a key

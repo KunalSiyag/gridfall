@@ -655,6 +655,7 @@ func _update_flyers(delta: float) -> void:
 func _process(delta: float) -> void:
 	if sim == null or _road_root == null:
 		return
+	delta = Pacing.frame_dt(delta)
 	_time += delta
 	_census_t -= delta
 	if _census_t <= 0.0:

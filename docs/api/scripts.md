@@ -119,7 +119,7 @@ GridFall: a SimCity-style city run by five autonomous GMI Cloud AI mayors. Wires
 ### Functions
 
 - `func save_game(path: String = SAVE_PATH) -> bool`
-- `func autosave(reason: String) -> bool`: Saves the city to autosave_path while autosave_enabled. reason: "morning" (a small toast; skipped when the last autosave is under AUTOSAVE_MIN_GAP_S old; _process retries it once the gap has passed) or "quit" (silent: the window closes).
+- `func autosave(reason: String) -> bool`: Saves the city to autosave_path while autosave_enabled. reason: "morning" (a small toast; skipped when the last autosave is under AUTOSAVE_MIN_GAP_S old; _process retries it once the gap has passed), "hidden" (the browser tab went to the background: silent, same gap, not retried) or "quit" (silent: the window closes).
 - `func autosave_wait_s() -> float`: Seconds until a morning autosave may run again (0 when it may run now): the rest of the AUTOSAVE_MIN_GAP_S since the last autosave, on autosave_clock.
 - `func quit_game() -> void`: The pause menu's Quit: saves the city, then quits.
 - `func load_game(path: String = SAVE_PATH) -> bool`

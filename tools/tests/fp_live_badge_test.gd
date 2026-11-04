@@ -127,18 +127,31 @@ func _check_badge(c: GmiClient, f: FpFeature) -> void:
 	_set_outcomes(c, mixed)
 	K.check(fails, _state(f) == "live", "one stray failure among many successes stays Live")
 	_set_outcomes(c, [])
-	c.breaker.record_failure()
-	c.breaker.record_failure()
-	c.breaker.record_failure()
-	c.breaker.record_failure()
+	var mayors := c.breakers.group("mayor")
+	for _i in range(4):
+		mayors.record_failure()
 	K.check(
 		fails,
 		_state(f) == "down",
-		"an open breaker still reads Reconnecting with no samples at all"
+		"an open mayor breaker still reads Reconnecting with no samples at all"
 	)
-	c.breaker.reset()
+	mayors.reset()
 	c.live_outcomes.clear()
 	K.check(fails, _state(f) == "live", "and it clears when the breaker closes")
+	# The residents or the chatter failing says nothing about the mayors: the badge stays Live.
+	for group: String in ["residents", "chat"]:
+		for _i in range(4):
+			c.breakers.group(group).record_failure()
+	K.check(
+		fails,
+		(
+			c.breaker_state() == "open"
+			and c.breakers.mayor_state() == "closed"
+			and _state(f) == "live"
+		),
+		"an open residents or chatter breaker leaves the badge on Live (the mayors are fine)"
+	)
+	c.breakers.reset()
 
 
 ## The same, driven by real calls through the client (live_json), not by writing the outcomes.

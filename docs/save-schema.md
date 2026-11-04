@@ -7,7 +7,7 @@ the previous save kept as `.bak`). Sections:
 |---|---|---|
 | `sim` | `CitySim.to_dict()` | the city; versioned (below) |
 | `brain` | `CityBrain.to_dict()` | mayor state; a round in progress is dropped, not saved |
-| `client` | `GmiClient.to_dict()` | replay-cache metadata, never prompts or keys |
+| `client` | `GmiClient.to_dict()` | this session's cached answers (`session_cache`, pruned for the save, see below) and the call counters; never prompts or keys |
 | `residents` | `Residents.to_dict()` | people and their day |
 | `minds` | `ResidentMinds.to_dict()` | per-resident AI state |
 | `fp` | `FpMode.to_dict()` | first/third-person section; own version, absent in orbit saves |
@@ -17,6 +17,22 @@ Before any section serialises, `Main._canonicalise_for_save()` settles the live 
 the view's deferred rebuild queue, runs each FP feature's `canonicalise_for_save()`), and the
 sim's `to_dict()` finishes any in-flight sliced job. Every `to_dict()` is pure: it photographs
 settled state and moves nothing (docs/fp/S0-foundation.md §6.4).
+
+## The client section and its size
+
+`client.session_cache` is `{key: [{day, data}, ...]}`: every live answer of the session, so that
+a key that fails later, or a resumed game, can fall back to the nearest answer it remembers. A save
+keeps each key's **last 3 distinct days** (`GmiCache.SAVE_KEEP_DAYS`; `GmiClient.to_dict()` builds
+the pruned copy, the in-memory cache is never pruned), and the brain's own `brain.client` copy is the
+same pruned dictionary. Before the diet the section grew by about 105 KB a game day (the real day-10
+save was 2.38 MB, 72% of it these two copies); a lookup reads the nearest day, so older entries are
+never the answer once newer ones exist, and the saved size now stops growing (a synthetic 60-day
+cache with twice the recorded keys saves in well under 1.5 MB, asserted by
+`tools/tests/fp_gmi_cache_test.gd`). While recording (`GRIDFALL_RECORD=1`) the whole cache is saved,
+because it is what gets merged into the replay file. Loading a pruned save and saving again gives the
+same bytes. `Main.new_game()` clears the cache and zeroes the counters (`GmiCache.clear_session(client)`),
+so a New City never replays the last city's answers. Older saves with the whole cache load as they
+always did.
 
 ## Sim section versions
 

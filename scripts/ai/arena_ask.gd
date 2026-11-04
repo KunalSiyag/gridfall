@@ -41,7 +41,8 @@ const TIMEOUT_S := 45.0
 ## Longest thought and post kept, in characters (a longer text ends in an ellipsis).
 const THOUGHT_MAX := 260
 const POST_MAX := 200
-## The numbers an order may carry; a model's null, list or word there is dropped, not trusted.
+## The numbers an order may carry; a model's null, list or word there is dropped, not trusted, and a
+## number outside its range is held to it (ActionClean).
 const NUMBER_KEYS := ["x", "y", "x2", "y2", "w", "h", "amount", "r", "c", "i"]
 ## The key of the GmiClient meta that holds the budget ledger (see _ledger).
 const LEDGER_META := "arena_budget"
@@ -184,10 +185,12 @@ func _refusal(q: String) -> Dictionary:
 	return _refuse(code, reason, secs)
 
 
-## True when a question can go out live: a client with a key, live on and the breaker not open.
+## True when a question can go out live: a client with a key, live on and the mayors' breaker not
+## open (the arena calls never touch a breaker, and a failing resident or chatter group says
+## nothing about the mayors).
 func live_possible() -> bool:
 	var c: GmiClient = brain.client if brain != null else null
-	return c != null and c.live_enabled and c.breaker_state() != CircuitBreaker.OPEN
+	return c != null and c.live_enabled and c.breakers.mayor_state() != CircuitBreaker.OPEN
 
 
 ## The system and user prompt mayor mi would get for question: their normal turn prompts, the
@@ -283,37 +286,27 @@ static func _check_action(sim: CitySim, mi: int, rect: Rect2i, a: Dictionary) ->
 	return {"cost": cost, "codes": codes}
 
 
-## The integer a model put under key of an order, or fallback when it is missing or not a number
-## (null, a list, a word): a model's loose JSON must not stop the checks of its other orders.
+## The integer a model put under key of an order, or fallback when it is missing or not a finite
+## number (null, a list, a word, NaN): a model's loose JSON must not stop the checks of its other
+## orders. A number beyond the range of its key is held to the nearest bound before it becomes an
+## int (a float of 1e30 has no int), so the costs worked out from it stay sane.
 static func _num(a: Dictionary, key: String, fallback: int) -> int:
-	var v: Variant = a.get(key, fallback)
-	match typeof(v):
-		TYPE_INT:
-			return int(v)
-		TYPE_FLOAT:
-			return int(v) if is_finite(v) else fallback
-		TYPE_STRING:
-			var t := (v as String).strip_edges()
-			return (
-				int(t) if t.is_valid_int() else (int(float(t)) if t.is_valid_float() else fallback)
-			)
-	return fallback
+	if not a.has(key):
+		return fallback
+	var n: Variant = ActionClean.number(a[key])
+	if n == null:
+		return fallback
+	var span := ActionClean.COORD_LIMIT
+	var bounds: Array = ActionClean.RANGES.get(key, [-span, span])
+	return int(clampf(float(n), float(bounds[0]), float(bounds[1])))
 
 
-## A copy of an order whose number fields hold numbers: a null, list or word under one of
-## NUMBER_KEYS is dropped (so the order reads as missing that number, as plausibility() does).
+## A copy of an order whose number fields hold finite numbers inside their ranges: a null, list or
+## word under one of NUMBER_KEYS is dropped (so the order reads as missing that number, as
+## plausibility() does) and a negative, huge or tax-rate-less-than-zero value is held to its range
+## (ActionClean.clean).
 static func clean_action(a: Dictionary) -> Dictionary:
-	var out := a.duplicate(true)
-	for k: String in NUMBER_KEYS:
-		if not out.has(k):
-			continue
-		var v: Variant = out[k]
-		var ok := typeof(v) == TYPE_INT or (typeof(v) == TYPE_FLOAT and is_finite(v))
-		if typeof(v) == TYPE_STRING:
-			ok = (v as String).strip_edges().is_valid_float()
-		if not ok:
-			out.erase(k)
-	return out
+	return ActionClean.clean(a)
 
 
 ## The text cut to at most n characters, ending in an ellipsis when something was cut.
@@ -452,7 +445,7 @@ func _land(mi: int, mine: Dictionary, data: Dictionary, source: String, err: Str
 				acts.append(clean_action(v))
 	var extra := maxi(0, acts.size() - D.MAX_ACTIONS_PER_DAY)
 	acts = acts.slice(0, D.MAX_ACTIONS_PER_DAY)
-	var prop := str(data.get("propose_ordinance", "")).strip_edges().to_lower()
+	var prop := ActionClean.text_of(data.get("propose_ordinance")).strip_edges().to_lower()
 	mine["landed"] = int(mine["landed"]) + 1
 	var rank := 0
 	if source == "live":
@@ -462,8 +455,8 @@ func _land(mi: int, mine: Dictionary, data: Dictionary, source: String, err: Str
 		"mi": mi,
 		"who": str(m["display"]),
 		"model": str(m["name"]),
-		"thought": clip(D.debrand(str(data.get("thought", ""))), THOUGHT_MAX),
-		"post": clip(D.debrand(str(data.get("public_post", ""))), POST_MAX),
+		"thought": clip(D.debrand(ActionClean.text_of(data.get("thought"))), THOUGHT_MAX),
+		"post": clip(D.debrand(ActionClean.text_of(data.get("public_post"))), POST_MAX),
 		"proposal": str(D.ORDINANCES[prop]["label"]) if D.ORDINANCES.has(prop) else "",
 		"actions": acts,
 		"flags": plausibility(brain.sim, mi, acts),

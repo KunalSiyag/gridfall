@@ -28,6 +28,8 @@ var tile_events: int = 0
 var world_ready: int = 0
 ## A player's own save may sit in the slot (runs outside the gate share user://).
 var _started := int(Time.get_unix_time_from_system())
+## The fake wall clock of _check_autosave (a lambda copies its locals, so the clock is a member).
+var _clock_ms: int = 0
 
 
 ## 11c. Autosave writes main's slot on a window close request and once the morning's first tick has
@@ -43,10 +45,16 @@ func _check_autosave(sim: CitySim) -> void:
 	sim.set_speed(0)
 	while sim.job_pending():
 		await get_tree().process_frame
+	# The morning autosave keeps a minimum gap from the last autosave (Main.AUTOSAVE_MIN_GAP_S, flag
+	# autosave_gap), and the close request just saved: a fake clock lets the gap pass.
+	var real_clock: Callable = main.autosave_clock
+	_clock_ms = Time.get_ticks_msec()
+	main.autosave_clock = func() -> int: return _clock_ms
 	main.autosave_enabled = true
 	main.notification(NOTIFICATION_WM_CLOSE_REQUEST)
 	check(SaveSlot.read(slot).has("fp"), "a window close request saves the city")
 	_remove_slot(slot)
+	_clock_ms += int((main.AUTOSAVE_MIN_GAP_S + 1.0) * 1000.0)
 	var tick := sim.tick_in_day
 	sim.tick_in_day = 0
 	sim.tick_done.emit(0)
@@ -58,6 +66,7 @@ func _check_autosave(sim: CitySim) -> void:
 	var saved := SaveSlot.read(slot).has("fp")
 	check(not early and saved, "the morning autosave waits for the first tick, then saves")
 	sim.tick_in_day = tick
+	main.autosave_clock = real_clock
 	main.autosave_enabled = false
 	main.autosave_path = real
 	_remove_slot(slot)

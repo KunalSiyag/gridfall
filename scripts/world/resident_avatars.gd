@@ -250,6 +250,7 @@ func _on_departed(r: Dictionary, _reason: String) -> void:
 func _process(delta: float) -> void:
 	if people == null:
 		return
+	delta = Pacing.frame_dt(delta)
 	_time += delta
 	_bubbles = 0
 	if external != null:

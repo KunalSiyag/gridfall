@@ -355,7 +355,7 @@ func photo_restore() -> void:
 
 
 func _process(delta: float) -> void:
-	tick(delta)
+	tick(Pacing.frame_dt(delta))
 
 
 ## One frame of delta real seconds (_process; tests call it with processing off).

@@ -37,6 +37,16 @@ jobs:
           GATE_TMP: ${{ runner.temp }}/gridfall
           GATE_IMPORT_TIMEOUT: "2700"
         run: tools/gate.sh full
+      - name: Soak (40 game days at 8x against a scripted client; not part of the gate)
+        if: success() || failure()
+        env:
+          GRIDFALL_SOAK_DAYS: "40"
+          GRIDFALL_SOAK_SECS: "1500"
+        run: |
+          mkdir -p gate-logs
+          export XDG_DATA_HOME="$RUNNER_TEMP/soak-data"
+          timeout -s KILL 1800 "$GODOT" --headless --path . -s tools/tests/fp_soak.gd 2>&1 | tee gate-logs/fp_soak.log
+          grep -q '^FP_SOAK: PASS' gate-logs/fp_soak.log
       - name: Timing and flaky summary
         if: success() || failure()
         run: |
@@ -65,6 +75,13 @@ jobs:
               failed = r.steps.filter((s) => !String(s.result).startsWith('PASS')).map((s) => `- \`${s.step}\`: ${s.result}`);
             } catch (e) {
               failed = ['- the gate did not write results.json (setup or import failed)'];
+            }
+            try {
+              if (!fs.readFileSync('gate-logs/fp_soak.log', 'utf8').includes('FP_SOAK: PASS')) {
+                failed.push('- `fp_soak` (40 game days at 8x): see gate-logs/fp_soak.log');
+              }
+            } catch (e) {
+              failed.push('- `fp_soak` did not run');
             }
             const body = [`The nightly \`tools/gate.sh full\` failed on ${context.sha.slice(0, 7)}.`, '', ...failed, '', `Run and logs: ${runUrl}`].join('\n');
             const open = await github.paginate(github.rest.issues.listForRepo, { owner, repo, state: 'open', labels: 'ci-failure', per_page: 100 });

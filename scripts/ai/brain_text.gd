@@ -10,6 +10,8 @@ static func debrand_paper(paper: Dictionary) -> void:
 	for key: String in ["headline", "editorial"]:
 		if paper.has(key):
 			paper[key] = D.debrand(str(paper[key]))
+	if paper.has("stories") and typeof(paper["stories"]) != TYPE_ARRAY:
+		paper.erase("stories")  # a number there would be looped over that many times
 	if typeof(paper.get("stories")) == TYPE_ARRAY:
 		for st: Variant in paper["stories"]:
 			if typeof(st) == TYPE_DICTIONARY:

@@ -110,7 +110,7 @@ The orbit view (`GRIDFALL_VIEW=orbit`):
 Each call falls back in this order:
 
 1. Live GMI response.
-2. Replay cache: real responses recorded before the file was committed on 2026-10-17 (the recording date itself is not stored) in `data/gmi_replay_cache.json`, nearest day for the same agent. It covers game days 1 to 13 only (681 recorded answers under 122 agents), and unevenly: the five mayors days 1 to 12 (a few days missing for individual mayors), the Gazette six days (2, 4, 5, 10, 11, 12), the council six (3, 5, 6, 7, 9, 11), the Chaos Director five (4, 6, 8, 10, 12), Citizen Voices only day 3, the Grid Operator only day 10, 112 residents days 3 to 12, 57 reaction sets days 5 to 13, and the Street Inspector nothing. The lookup has no upper day limit, so past day 12 an agent replays its last recorded answer (the Gazette headline and the Chaos Director's pick repeat) instead of falling through to the heuristic; a live key avoids this.
+2. Replay cache: real responses recorded before the file was committed on 2026-10-17 (the recording date itself is not stored) in `data/gmi_replay_cache.json`, nearest day for the same agent. It covers game days 1 to 13 only (681 recorded answers under 122 agents), and unevenly: the five mayors days 1 to 12 (a few days missing for individual mayors), the Gazette six days (2, 4, 5, 10, 11, 12), the council six (3, 5, 6, 7, 9, 11), the Chaos Director five (4, 6, 8, 10, 12), Citizen Voices only day 3, the Grid Operator only day 10, 112 residents days 3 to 12, 57 reaction sets days 5 to 13, and the Street Inspector nothing. The lookup stops at each key's last recorded day (flag `replay_horizon`, default on): a call for a later day falls through to the scripted planner (source `heuristic`) instead of replaying day 12 for ever, so the Gazette and the Chaos Director no longer repeat their day-12 answers; a key that was only recorded on a few days (Citizen Voices day 3, the Grid Operator day 10) stops answering after them. A session's own live answers have no horizon. Switch the flag off to get the old nearest-day replay back.
 3. Heuristic fallback for that role.
 
 The source of every call (live, cache or heuristic) is shown on the mayor cards and in the GMI Log.
@@ -208,7 +208,7 @@ Export needs the Godot export templates for the version in `.godot-version` (Edi
 - `scripts/sim/city_sim.gd`: tile simulation, actions, annexation, construction sites, disasters and incidents, summaries for the AI, save/load.
 - `scripts/sim/residents.gd`: the resident population, their days, jobs, money, incident help and construction crews.
 - `scripts/ai/resident_minds.gd`: batched GMI minds for residents.
-- `scripts/ai/gmi_client.gd`: GMI HTTP client, JSON extraction, replay cache, call log.
+- `scripts/ai/gmi_client.gd`: GMI HTTP client, replay cache, call log, per-group circuit breakers, readiness check. Its helpers: `gmi_parse.gd` (reads a model's reply), `gmi_cache.gd` (cache lookup with the replay horizon, the save diet), `gmi_breakers.gd`, `gmi_admission.gd` (the optional in-flight cap), `gmi_readiness.gd` (the 14-model check), `action_clean.gd` (a model's orders and texts made safe).
 - `scripts/ai/city_brain.gd`: prompts and the daily schedule for all GMI agents.
 - `scripts/world/city_view.gd`: 3D renderer (roads chosen by neighbor mask, buildings by density, services, props, bus stops, cars, pedestrians, effects, overlays, click to inspect).
 - `scripts/world/city_life.gd`: buses, trucks, emergency crews, boats and aircraft.

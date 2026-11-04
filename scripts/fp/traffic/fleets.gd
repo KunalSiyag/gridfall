@@ -504,14 +504,20 @@ func _step_bus(c: VH.Car, dt: float) -> void:
 		return
 	if not c.arrived:
 		return
+	var k := int(o.get("next", 0))
+	if k < 0 or k >= line.stops.size():
+		# The lines were rebuilt (a stop came or went) with fewer stops than this bus's next one:
+		# start the line over, or every frame raises an out-of-bounds error for this bus.
+		k = 0
+		o["next"] = 0
 	var dw := float(o.get("dwell", 0.0))
 	if dw == 0.0:
-		f.bus_at(c, line.id, line.stops[int(o.get("next", 0))])
+		f.bus_at(c, line.id, line.stops[k])
 	dw += dt
 	o["dwell"] = dw
 	if dw >= DWELL:
 		o["dwell"] = 0.0
-		_next_leg(c, line, int(o.get("next", 0)))
+		_next_leg(c, line, k)
 
 
 func _step_crew(c: VH.Car, dt: float, live: Dictionary) -> void:

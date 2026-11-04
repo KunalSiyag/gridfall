@@ -362,7 +362,7 @@ func _land_mayor(mi: int, day: int, res: Dictionary) -> void:
 				break
 		if typeof(acts[k]) != TYPE_DICTIONARY:
 			continue
-		var a: Dictionary = acts[k]
+		var a: Dictionary = ActionClean.clean(acts[k])  # a model's 1e12 must not reach the sim
 		var r: Dictionary = sim.apply_action(mi, a)
 		var ok := bool(r.get("ok", false))
 		results.append("%s %s: %s" % ["OK" if ok else "REJECTED", str(a.get("type", "?")), r.get("reason", "")])
@@ -384,14 +384,14 @@ func _land_mayor(mi: int, day: int, res: Dictionary) -> void:
 				cast[ks] = str((votes as Dictionary)[key]).to_lower()
 				(proposals[ks]["votes"] as Dictionary)[str(m["id"])] = cast[ks]
 	var ms: Dictionary = mayor_state[mi]
-	var thought := D.debrand(str(data.get("thought", ""))).left(260)
-	var post := D.debrand(str(data.get("public_post", ""))).left(200)
+	var thought := D.debrand(ActionClean.text_of(data.get("thought"))).left(260)
+	var post := D.debrand(ActionClean.text_of(data.get("public_post"))).left(200)
 	(ms["thoughts"] as Array).append("Day %d: %s" % [day, thought])
 	if (ms["thoughts"] as Array).size() > 6:
 		(ms["thoughts"] as Array).pop_front()
 	ms["results"] = results
 	ms["post"] = post
-	ms["mood"] = str(data.get("mood", "focused")).left(20)
+	ms["mood"] = ActionClean.text_or(data.get("mood"), "focused").left(20)
 	ms["source"] = res["source"]
 	ms["latency_ms"] = res["latency_ms"]
 	ms["day"] = day
@@ -738,9 +738,9 @@ func _run_chaos(day: int) -> void:
 	if res.is_empty():
 		return
 	var data: Dictionary = res["data"]
-	var decision := {"day": day, "trigger": bool(data.get("trigger", false)), "type": str(data.get("type", "")), "reason": str(data.get("reason", "")).left(160), "narration": str(data.get("narration", "")).left(160), "source": res["source"]}
+	var decision := {"day": day, "trigger": ActionClean.truthy(data.get("trigger")), "type": str(data.get("type", "")), "reason": ActionClean.text_of(data.get("reason")).left(160), "narration": ActionClean.text_of(data.get("narration")).left(160), "source": res["source"]}
 	if decision["trigger"] and D.DISASTERS.has(decision["type"]) and int(sim.stats.get("population", 0)) > 80:
-		var ev := sim.trigger_disaster(str(decision["type"]), int(data.get("x", 16)), int(data.get("y", 16)), "Chaos Director", str(decision["reason"]))
+		var ev := sim.trigger_disaster(str(decision["type"]), ActionClean.int_of(data.get("x"), 16), ActionClean.int_of(data.get("y"), 16), "Chaos Director", str(decision["reason"]))
 		decision["x"] = ev.get("x", 0)
 		decision["y"] = ev.get("y", 0)
 		chaos_last_day = day
@@ -784,14 +784,15 @@ func _run_operator(day: int) -> void:
 	var pr: Array = []
 	if typeof(data.get("priority")) == TYPE_ARRAY:
 		for v: Variant in data["priority"]:
-			var d := int(v)
+			var n: Variant = ActionClean.number(v)
+			var d := int(n) if n != null and absf(float(n)) < 100.0 else -1
 			if d >= 0 and d < 5 and not pr.has(d):
 				pr.append(d)
 	for d in range(5):
 		if not pr.has(d):
 			pr.append(d)
 	sim.grid_priority = pr
-	var decision := {"day": day, "priority": pr, "note": str(data.get("note", "")).left(180), "advice": str(data.get("advice", "")).left(160), "source": res["source"]}
+	var decision := {"day": day, "priority": pr, "note": ActionClean.text_of(data.get("note")).left(180), "advice": ActionClean.text_of(data.get("advice")).left(160), "source": res["source"]}
 	last_operator = decision
 	day_feed.append("Grid Operator set priority %s: %s" % [JSON.stringify(pr), decision["note"]])
 	operator_decided.emit(decision)
@@ -836,7 +837,7 @@ func _run_council(day: int) -> void:
 			rejected.append(key)
 	for key in enacted + rejected:
 		proposals.erase(key)
-	var ruling := {"day": day, "enacted": enacted, "repealed": repealed, "rejected": rejected, "statement": D.debrand(str(data.get("statement", ""))).left(240), "source": res["source"]}
+	var ruling := {"day": day, "enacted": enacted, "repealed": repealed, "rejected": rejected, "statement": D.debrand(ActionClean.text_of(data.get("statement"))).left(240), "source": res["source"]}
 	last_council = ruling
 	council_ruled.emit(ruling)
 

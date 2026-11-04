@@ -140,18 +140,18 @@ func show_result(r: Dictionary) -> void:
 	time_label.text = ("%.1f s" % float(r.get("elapsed_s", 0.0))) if live else ""
 	_set_sub_source(str(r.get("source", "")))
 	_reset_body()
-	var err := str(r.get("error", ""))
+	var err := ActionClean.text_of(r.get("error"))
 	if not err.is_empty():
 		body.add_child(_note("Live call failed: " + err, S.RED))
 	if NOTES.has(str(r.get("source", ""))):
 		body.add_child(_note(str(NOTES[str(r["source"])]), S.AMBER))
 	# The orders come first: they are what the page compares, and the thoughts run long.
 	_orders(r)
-	var prop := str(r.get("proposal", ""))
+	var prop := ActionClean.text_of(r.get("proposal"))
 	if not prop.is_empty():
 		_section("Would propose", prop, S.TEXT)
-	_section("Public post", str(r.get("post", "")), S.TEXT)
-	_section("Thought", str(r.get("thought", "")), S.TEXT)
+	_section("Public post", ActionClean.text_of(r.get("post")), S.TEXT)
+	_section("Thought", ActionClean.text_of(r.get("thought")), S.TEXT)
 	reown(body)
 
 

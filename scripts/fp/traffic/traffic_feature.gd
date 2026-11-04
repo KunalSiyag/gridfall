@@ -561,6 +561,7 @@ func _on_vehicle_removed(c: VH.Car) -> void:
 func _process(delta: float) -> void:
 	if ctx == null or ctx.sim == null or not _built:
 		return
+	delta = Pacing.frame_dt(delta)
 	var p := ctx.player_position()
 	if _force_refill or (_last_player.x < INF and p.distance_to(_last_player) > TELEPORT):
 		_force_refill = false

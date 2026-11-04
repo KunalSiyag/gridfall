@@ -3433,6 +3433,34 @@ func _check_people_fallback() -> void:
 # ------------------------------------------------------------------ buses
 
 
+## A bus whose next stop index is past the end of its line (the lines were rebuilt with fewer
+## stops) starts the line over. Before the guard every step raised an out-of-bounds script error
+## (which the gate reads as a failed step) for that bus, every frame.
+func _check_bus_stale_next(bus: VH.Car) -> void:
+	var o: Dictionary = bus.owner
+	var fleets = f.get("fleets")
+	var line = fleets.line(int(o.get("line", -1)))
+	K.check(fails, line != null, "buses: the bus under test has a line to rebuild")
+	if line == null:
+		return
+	var saved := {"next": o.get("next", 0), "dwell": o.get("dwell", 0.0), "arrived": bus.arrived}
+	o["next"] = line.stops.size() + 5
+	o["dwell"] = 0.0
+	bus.arrived = true
+	f.step(DT)
+	K.check(
+		fails,
+		int(o["next"]) < line.stops.size(),
+		(
+			"buses: a next stop past the end of a rebuilt line starts it over (next %d of %d stops)"
+			% [int(o["next"]), line.stops.size()]
+		)
+	)
+	o["next"] = saved["next"]
+	o["dwell"] = saved["dwell"]
+	bus.arrived = saved["arrived"]
+
+
 ## Two stops on straights 4+ tiles apart make a line; a bus runs it, pulls in to the curb at a
 ## shelter for its dwell and leaves again.
 func _check_buses() -> void:
@@ -3499,6 +3527,7 @@ func _check_buses() -> void:
 	K.check(fails, bus != null, 'buses: spawn_fleet("bus") puts a bus on a line')
 	if bus == null:
 		return
+	_check_bus_stale_next(bus)
 	var stop_lanes: Array = []
 	for line: Variant in fleets.lines:
 		stop_lanes.append_array(line.stop_lanes)
