@@ -64,6 +64,29 @@ static func boot_done() -> void:
 		window.gfBootDone()
 
 
+## Shows text in the loader's status line while the game prepares behind the veil
+## (window.gfBootStatus, set by the export's loader page; "" puts the page's own wording back). Same
+## route as boot_done(): the bridge's object interface, no eval. No-op off the web, and on a page
+## without the hook.
+static func boot_status(text: String) -> void:
+	if not is_web():
+		return
+	var window: Variant = JavaScriptBridge.get_interface("window")
+	if window != null and window.gfBootStatus != null:
+		window.gfBootStatus(text)
+
+
+## True while the loader's veil is still up (window.gfVeilUp, defined by the export's loader page).
+## Off the web and on a page without the hook it is true: nothing says the veil is gone.
+static func veil_up() -> bool:
+	if not is_web():
+		return true
+	var window: Variant = JavaScriptBridge.get_interface("window")
+	if window == null or window.gfVeilUp == null:
+		return true
+	return bool(window.gfVeilUp())
+
+
 ## Evaluates js in the browser and returns its value; null off the web or when the browser errors.
 static func _eval(js: String) -> Variant:
 	if not is_web():

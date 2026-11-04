@@ -55,6 +55,7 @@ City overview: Tab lifts the camera off the hero into an aerial view of the city
 
 - `func feature_id() -> String`
 - `func setup(p_ctx: FpContext) -> void`
+- `func warm_prototypes() -> Array[Node3D]`: The site and pick markers' material, drawn once behind the loader veil (the web shader warm-up).
 - `func on_world_rebuilt() -> void`
 - `func from_dict(_d: Dictionary) -> void`
 - `func teardown() -> void`

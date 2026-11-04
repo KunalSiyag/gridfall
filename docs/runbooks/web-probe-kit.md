@@ -12,7 +12,9 @@ their numbers before anything is built. It changes no gameplay.
 | --- | --- |
 | Driver: boots the page in Chrome, drives street, walk, sky and orbit rows, writes `result.json` | `tools/web_fps_probe.js` |
 | In-page WebGL wrappers, frame log, observers, and the pure maths (`node --test tools/tests/web_probe_kit.test.js`) | `tools/web_probe_kit.js` |
+| The first-minute hitch probe: boots, waits for the veil, plays a fixed 90 s script and counts frames over 100 ms with the programs built in each (and, with `GF_HP_ORBIT=1`, the Planner's draws, vertices, GPU time and view changes) | `tools/web_hitch_probe.js` |
 | The game's first-use marks and stopwatches, web only and off by default (flag `web_first_use_marks`) | `scripts/ops/first_use.gd` |
+| The shader warm-up behind the loader veil (flag `web_shader_warmup`, default on) and its console aids (`RENDERINFO`, `NEWMAT` with the marks flag) | `scripts/fp/warmup/` |
 | The droid's budget table in busy ms and display Hz, and its day-10 lanes against the vsync steps | `python tools/web_measure.py --budget`, `--lanes` |
 | The bench's pipeline column, labelled n/a on GL | `tools/tests/fp_bench.gd` (`pipelines_for`) |
 
@@ -65,7 +67,8 @@ the run with exit 2 and a message: none is ignored.
 Exit codes: 0 done; 2 bad knob or crash; 3 the `GF_FPS_SAVE` city was not continued; 4 the round trip below logged an
 exception (a `pageerror`, `SCRIPT ERROR` or invalid bus index, the orbit row's seconds included) or, with the
 game's marks on, never logged `quit_to_orbit` (the blind navigation missed the button); 5 the WebGL census was
-asked for and saw no draws (`kit_ok: false`); 6 `GF_FPS_NO_OCCLUSION` was set and an `occlusion` line showed.
+asked for and saw no draws (`kit_ok: false`); 6 `GF_FPS_NO_OCCLUSION` was set and an `occlusion` line showed; 7 the stripe pose read over `STRIPE_MAX` (see
+"Stripes" below); 2 also covers a page that did not start (no WebGL2 context after two reloads: a busy GPU process on a shared machine).
 
 The run ends with the exit_fp / enter_fp round trip (Planner view, Tab back), as before. The web game
 always boots into first person; the `orbit` row is the Planner view reached through the pause menu's Planner view button (once "Quit to orbit"), and
@@ -297,6 +300,108 @@ at 2560x1440, water filling the view, on an integrated AMD Renoir the new build 
 (14.6 to 16.0 ms, about 9%) in a review; the split between water, shore and ground was not measured and no GPU
 timer was used. Weaker web GPUs in water-heavy views should expect at least that.
 
+## Shader warm-up and the first minute (`web_hitch_probe.js`, `web_shader_warmup`)
+
+**What stalls.** The web build links every shader program the first time something is drawn with it, on the main
+thread (no `KHR_parallel_shader_compile` in the 4.7.2 template): a median of 37 ms, up to 213 ms a program. A fresh
+day 1 on the AMD iGPU (headless Chrome 151, ANGLE) linked 198 programs (11.4 s) in the boot's first draw and
+**another 83 to 84 (4.2 s) in the first 90 s of a scripted minute and a half of play**: walk, look around, Tab
+overview and back, the pause menu, sprint. What the programs are, from the probe's census (`programs.json`: the
+defines and a hash of each program's GLSL):
+
+- A material seen for the first time costs **six or seven programs, 0.35 to 0.45 s, in one frame**: two big ones
+  (the base pass and its MultiMesh twin, 130 to 175 ms each, `APPLY_TONEMAPPING` with no `DISABLE_*` define), the
+  depth variants (15 to 30 ms, three of them), and the sun's extra shadow pass (35 to 65 ms, `LIGHT_USE_PSSM2` +
+  `USE_ADDITIVE_LIGHTING`). A second material with the same generated GLSL linked in 2 to 7 ms in these runs (the
+  driver caches by source: inferred), which is why a stand-in with the same material flags warms the real thing.
+- **The sun without a shadow is another set**: one base pass per material, 21 to 22 programs (0.8 s) in the first
+  overview of the three baseline runs counted. The Tab overview, dusk and dawn (SkyDirector turns the sun's shadow off below 0.02
+  energy) draw it. A run without the Tab has none (0 programs); the viewport, environment and fog state that
+  `RENDERINFO` reports in the overview is the street's, so the shadow is what differs; holding it off for a few warm-up
+  frames leaves 1 to 5 of them to the first Tab (measured, below).
+- **The Planner is a third set**: 87 to 100 programs, 3.9 to 4.4 s, on the first frames after Planner view (four shadow
+  splits instead of two, exponential fog instead of depth fog, orbit-only materials), a 3.9 to 4.5 s frame.
+- What first shows mid-play is people's cut-out (alpha, two-sided) materials, the construction beacon and its lease
+  boards, a new building's leaves (alpha cut-out with edge antialiasing), the dog, the far-tree layers the overview
+  plants. `NEWMAT t=<page ms> ...` console lines (marks flag on) name each material that came into the scene and when.
+
+**What the warm-up does** (`scripts/fp/warmup/`, flag `web_shader_warmup`, default on, web only). `BootClock.finish`
+awaits `ShaderWarmup.run` right after the first frame, so the loader veil stays up until it is done: the loader's
+status line reads `Preparing graphics N%` (`window.gfBootStatus`, defined by the loader helper in `tools/web_export.py`).
+`WarmCollector` lists the distinct materials the scene uses (a recipe per material and use: plain mesh or MultiMesh,
+shadow casting or not; 190 on a fresh day 1, 1,575 on the day-10 city), `data/warm_prototypes.json`,
+`FpFeature.warm_prototypes()` and `CityView.warm_prototypes()` add things that are not in the scene yet (people's cut-out
+materials, a building with leaves, the beacon, the overview's markers, the far-tree layers), and `WarmStage` parks one
+tiny copy of each in front of the camera (real sun, fog and environment, so the programs are the real ones), a few per
+frame: the batch is sized to about 300 ms from the last frame's cost per copy, at most twelve, and shrinks near the end of
+the budget. Each batch is drawn in the street's state and again with the sun's shadow held off (`WarmShadowHold`), so a
+material has all its programs before the next begins; the prototypes come first, then the scene's materials, the most
+used first. **It stops starting batches at 3,000 ms** (`ShaderWarmup.DEFAULT_BUDGET_MS`): what is left links lazily as
+before. The loader's percentage is the larger of the work done and the budget spent, so it reaches 100% as the veil
+lifts (`ShaderWarmup.progress_pct`; it used to stop near 29% when the budget cut the work). **It does not run on a grown
+city**: a scene with more than 600 distinct materials (`LARGE_SCENE_RECIPES`; a new city has 190, the day-10 save 1,575)
+is skipped after the 0.15 s it takes to count them (the report says `"skipped": "large_scene"`), because there the
+budget is gone on the prototypes and the first frame of the shadow-off pass (which re-draws every real object, 1.9 s)
+and it removed no hitch (day-10 save, two runs each: 9 and 9 frames over 100 ms with it and without) for 0.8 to 2.1 s of
+boot. **It also stops when the loader's veil is gone** (`window.gfVeilUp()`, `WebSupport.veil_up()`: the 30 s timeout, or a
+hidden tab that stalled it), so it never draws in front of a player; the veil timer starts when `startGame()` resolves,
+which is right as the warm-up begins (`gf:start_game_resolved` is 48 ms after `gf:first_frame` in the probe's marks), so on
+a normal boot it has 30 s and uses 3 to 7. A batch can overshoot (one material is up to seven programs, 0.4 s). Nothing is left behind: the stage, its two
+near-zero lamps and the copies are freed and the sun's flags restored (`fp_warmup_test`). The sim keeps running (a few game
+seconds pass behind the veil). `user://warmup_tuning.json` (`{"budget_ms": 3000, "states": ["prototypes",
+"unlit+noshadow"]}`, seeded by `GF_HP_TUNING`) is the probe's and the tests' knob; `states` also take `orbit` (the
+Planner's splits and fog), `overview` (the real Tab feature held open for six frames), `lit` and the single passes.
+
+**Measured**, `tools/web_hitch_probe.js`, fresh day 1, flag off against flag on, 1600x900, a cold Chrome profile, Mesa's
+shader cache off, runs one after another on a shared machine (`other` below is slow frames with no link in them: the
+machine, not the game):
+
+| | veil drops (page time) | programs after the veil, 90 s | frames over 100 ms (link / other) | over 250 ms |
+| --- | --- | --- | --- | --- |
+| flag off, 5 runs | 18.5, 19.0, 18.9, 18.1, 18.1 s | 84, 84, 83, 83, 83 (4.2 s of linking) | 16, 14 (11 / 3), 14 (11 / 3), 13 (11 / 2), 14 (11 / 3) | 9, 8, 8, 8, 8 |
+| flag on, 3 s budget, 3 runs | 22.1, 21.6, 21.3 s (+2.8 to +3.6 s) | 55, 51, 55 (2.8 to 3.0 s) | 11 (8 / 3), 13 (7 / 6), 12 (8 / 4) | 6, 8, 6 |
+| final build, flag off, 3 alternating runs | 23.4, 19.2, 19.7 s | 83, 84, 83 | 15 (11 / 4), 15 (11 / 4), 15 (11 / 4) | 10, 10, 8 |
+| final build, flag on, 3 s budget, 3 alternating runs | 23.8, 21.5, 22.9 s (the warm-up ran 3.02 to 3.03 s) | 55, 61, 60 | 12 (8 / 4), 12 (8 / 4), 14 (8 / 6) | 5, 6, 6 |
+| flag on, budget 6 s (ran 7.0 s) | 27.0 s (+8.5 s) | 33 (1.5 s) | 7 (4 / 3) | 3 |
+| flag on, no budget (ran 6.8 s) | 24.8 s (+6.3 s) | 33 (1.4 s) | 7 (4 / 3) | 3 |
+
+**The target was not met at the 3 s the brief allowed.** At 3 s the frames over 100 ms fell by about 15% (14.2 to 12.0 on
+average; 15 to 12.7 and 28% in the later sets) and the ones caused by a link by about 27 to 30% (11 to 8 or 7.7); the first Tab's sun-without-shadow base set no longer links 21 to 22 programs (1 to 5
+instead in the flag-on runs counted; the whole Tab window, 24 to 29 s after the veil, went from 57 programs and 2.7 to 2.8 s
+to 27 to 29 and 1.4 to 1.6 s, and still holds a 550 to 616 ms frame of 7 programs where a first beacon, a new building and
+a new people shader arrive together) and the sun-shadow switch of dusk and dawn is warmed with it. Halving the
+link-caused hitches (11 to 4) takes the whole warm-up, 6.8 s on this machine, because the first minute shows a dozen
+material kinds the scene does not hold yet and each costs 0.4 s wherever it is paid. **The biggest remaining hitch** is one
+frame of 0.4 to 0.7 s: six programs of a new material (a person in a cut-out material at 16 to 20 s, the first
+construction site's beacon and boards at 24 to 26 s, the leaves of the first new building at 43 s, a dog or a new power
+plant after 75 s). The budget is one constant; the trade (boot time against first-minute smoothness) is the owner's.
+On the day-10 city the 3 s was gone after the prototypes (1.2 to 2.9 s) and the first no-shadow frame, which re-draws every
+real object in the other state and alone costs 1.9 to 2.5 s (1,575 recipes, 33 to 34 prototype copies and 0 or 1 recipe drawn),
+and the run only added 0.8 to 2.1 s of boot (frames over 100 ms 9 and 9 against 9 and 9, the first Tab frame 2.1 and 1.3 s
+against 2.4 and 1.2 s): so `ShaderWarmup.LARGE_SCENE_RECIPES` (600) skips the run on a scene that large. A day-1 city has 190
+recipes, so that is where it applies.
+The warm-up does not reach the Planner's first frames: with an 18 s warm-up on the day-10 city that included the `orbit` state
+Planner view still linked 76 programs (a 2.8 s frame), against 87 to 100 and 3.9 to 4.5 s otherwise; the Planner builds
+materials the street never has (ground and texture materials), which nothing here draws. Chrome's own program cache makes
+a second visit's first draw 6.96 s instead of 11.5 s (the earlier perf investigation), so the first visit is what this is for.
+Not measured: Windows ANGLE/D3D11, Intel and Apple drivers, where a program may cost several times what it does here
+(the budget bounds the warm-up between batches, so the overshoot is a batch of more expensive materials).
+
+**Probe.** `NODE_PATH=<dir with playwright-core> node tools/web_hitch_probe.js http://127.0.0.1:<port>/ <outdir>`
+(headless, real GPU: `--enable-gpu --use-angle=default`; `GF_HP_ARGS` adds more). Knobs: `GF_HP_FLAGS="a=1,b=0"`
+(default `web_first_use_marks=1`; `web_shader_warmup=0` is the control), `GF_HP_SAVE=<gridfall_save.json>`,
+`GF_HP_SECS=90`, `GF_HP_TAB_S=10` (0 = no Tab), `GF_HP_ORBIT=1` (then the Planner for 10 s, 20 s of frames, ten wheel steps
+in and 10 s more, Tab back: `orbit`, `orbit_zoom`, `to_orbit`, `to_street` with draws, vertices, callback ms, GPU ms, the
+longest frame and the programs linked), `GF_HP_TUNING=<json>`. `result.json` has `boot`, `warmup` (the game's `WARMUP`
+line: recipes, per-state drawn / frames / ms, whether the budget cut it, the renderer state it drew in), `programs`
+(before the veil, warmed in the stage, after the veil, with their link ms and defines), `frames`, `hitches` (counts over 34,
+50, 100, 250 and 500 ms, `gt100_compile` / `gt100_other` by whether program links filled half the interval, and each frame
+over 100 ms with its programs), `programs.json` (every program with its page time, hashes and defines) and
+`console.log`. The game's side with the marks flag on: `FIRSTUSE {"tag":"warm:<state>","ms":...}` per state, `WARMUP {...}`,
+`RENDERINFO {...}` every 3 s (objects, primitives and draw calls of the last frame for the visible and the shadow
+passes, the sun and camera state) and `NEWMAT` lines. Frames are the page's requestAnimationFrame intervals, so on a
+60 Hz display a hitch is a multiple of 16.7 ms.
+
 ## Limits
 
 - Only a real GPU run decides the millisecond rules. Software WebGL (SwiftShader) is a JIT rasterizer, not a
@@ -385,7 +490,8 @@ back. Nothing is placed by a hook: only keys and the mouse. It scores the band `
 `stripeVerdict`: `ok` while the reading is at most `STRIPE_MAX` (2.0), and the probe exits **7** when it is not.
 
 Measured through the probe on local exports, three runs of each: **0.71, 1.15 and 1.19** with the fixed street sun
-(normal bias 1.5), **2.75, 2.89 and 2.99** with the bias put back to 0.6 (a build made for that comparison and
+(normal bias 1.5; a reviewer's three runs of the fix at the three web tiers read 1.41 at Low, 0.92 at Medium and 0.50
+at High, so a run on a busy box can sit 0.6 under the limit and the reading's spread is about 0.5 to 1.4), **2.75, 2.89 and 2.99** with the bias put back to 0.6 (a build made for that comparison and
 discarded). Both frames were looked at: the old bias shows the owner's horizontal bands across the whole sidewalk
 and paving, the fix is clean. The pose is a fixed early moment on purpose: a later frame (08:00, pedestrians and a
 card in the band) read the old bias at 1.49, below the limit, so do not move the pose to a later time. Skipped, with

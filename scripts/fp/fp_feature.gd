@@ -52,6 +52,14 @@ func pick(_origin: Vector3, _dir: Vector3, _max_dist: float) -> Dictionary:
 	return {}
 
 
+## Things this feature only builds later (a beacon when a site opens, a person kind when it spawns)
+## whose materials the web shader warm-up should draw once behind the loader veil: nodes built the
+## way the feature builds them, not in the tree; ShaderWarmup copies their draws and frees them.
+## Default none.
+func warm_prototypes() -> Array[Node3D]:
+	return []
+
+
 ## Called by the FP smoke after the world is up. {"ok": bool, "detail": String}.
 func self_test() -> Dictionary:
 	return {"ok": true, "detail": "stub"}

@@ -306,6 +306,14 @@ Generated from the `##` doc comments in `scripts/`. Regenerate with `python3 too
 - [pause_menu.gd](scripts.fp.ui.md#scriptsfpuipause_menugd): Pause menu (slice B), shown on pause_changed(true) over a frosted blur of the paused world: Resume, Save, Load, New city (press twice), Settings, Planner view, Quit (saves first), a legend of the HUD icons, and tabbed settings (Camera, Controls, Display, Audio) written through mode.apply_settings()
 - [place_card.gd](scripts.fp.ui.md#scriptsfpuiplace_cardgd): Place card (slice B) on interact_requested for kinds building, vehicle and pedestrian (a named resident is C's conversation, never a card)
 
+## [scripts/fp/warmup/](scripts.fp.warmup.md)
+
+- [render_info.gd](scripts.fp.warmup.md#scriptsfpwarmuprender_infogd) (`RenderInfo`): Web probe aid (flag web_first_use_marks, web only): every SECONDS prints one console line with what the renderer drew in the last frame of the main viewport, so a Planner or street change shows its effect in objects, primitives and draw calls, separately for the visible pass and the shadow passes
+- [shader_warmup.gd](scripts.fp.warmup.md#scriptsfpwarmupshader_warmupgd) (`ShaderWarmup`): Shader warm-up for the web build
+- [shadow_hold.gd](scripts.fp.warmup.md#scriptsfpwarmupshadow_holdgd) (`WarmShadowHold`): Holds the sun and the fog in another state for the frames of one warm-up state, then puts them back
+- [warm_collector.gd](scripts.fp.warmup.md#scriptsfpwarmupwarm_collectorgd) (`WarmCollector`): Finds the draws the scene will make, as a list of recipes, one per distinct material: a material on a plain mesh, on a MultiMesh (with or without per-instance colours and custom data), casting shadows or not, is one recipe, whatever meshes carry it
+- [warm_stage.gd](scripts.fp.warmup.md#scriptsfpwarmupwarm_stagegd) (`WarmStage`): The warm-up's stage: a Node3D parked a few metres in front of the active camera that holds one tiny copy of each recipe (WarmCollector) for a frame
+
 ## [scripts/fp/water/](scripts.fp.water.md)
 
 - [wade_feature.gd](scripts.fp.water.md#scriptsfpwaterwade_featuregd): The hero wading (feature "hero_wade", the flag of the same name; its movement half lives in FpPlayer and CollisionWorld)
@@ -353,6 +361,7 @@ Generated from the `##` doc comments in `scripts/`. Regenerate with `python3 too
 - [city_view.gd](scripts.world.md#scriptsworldcity_viewgd) (`CityView`): Renders the CitySim grid in 3D: Kenney roads picked by neighbor mask, zone lots and density-based buildings, Blender service models, fires and disaster VFX, data overlays, autonomous cars and pedestrians, AI mayor avatars, and GMI speech bubbles
 - [construction_kit.gd](scripts.world.md#scriptsworldconstruction_kitgd) (`ConstructionKit`): Procedural construction sites and machines: staged ground works, rising concrete frames, scaffolding, and animated excavators, backhoe loaders, dump trucks, cement mixers, tower cranes, bulldozers and road rollers
 - [gridfall_world.gd](scripts.world.md#scriptsworldgridfall_worldgd) (`GridFallWorld`): Living SimCity-style 3D establishment for GridFall: - 19x19 city grid + 3-tile forested border with real Kenney asphalt roads, intersections, streetlights, fountains, parks, and intersection planters
+- [orbit_tree_lod.gd](scripts.world.md#scriptsworldorbit_tree_lodgd) (`OrbitTreeLod`): The Planner's tree level of detail, decided per LOD cell and not per culling chunk
 - [resident_avatars.gd](scripts.world.md#scriptsworldresident_avatarsgd) (`ResidentAvatars`): Draws every AI resident as the person (or car) actually making their trip: they walk or drive the road route their mind chose, go inside at home/work/shops, gather around incidents they are fixing, and speak their lines
 - [shore.gd](scripts.world.md#scriptsworldshoregd): The shore band (CityView, on foot): sand and wet mud along every bank, with no new texture and no finer mesh
 - [sky_director.gd](scripts.world.md#scriptsworldsky_directorgd) (`SkyDirector`): Day/night cycle tied to the sim clock: tick 0 is morning, 3 is night

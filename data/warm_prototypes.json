@@ -1,0 +1,9 @@
+{
+  "_doc": "Things the web shader warm-up (scripts/fp/warmup/) draws once behind the loader veil although they are not in the scene yet: they come into play in the first minutes and each linked its shader programs mid-play (a 0.2 to 0.4 s stall). Measured with tools/web_hitch_probe.js on a fresh day 1: the people's opacity materials (alpha cut-out, two-sided), the leaf materials of a new building (alpha cut-out with edge antialiasing), the construction beacon (the features add their own through FpFeature.warm_prototypes). 'materials' are material resources, 'scenes' are models whose materials count. A path that is not there (a split web build whose pack has not arrived) is skipped.",
+  "materials": [
+    "res://models/characters/bodies/mat/Male_Adult_04_opacity.tres"
+  ],
+  "scenes": [
+    "res://models/real/buildings/water_pump.glb"
+  ]
+}

@@ -71,6 +71,13 @@ const TREE_PROPS := ["tree_oak", "tree_round", "tree_birch", "tree_poplar", "tre
 ## depth fog takes over. Both layers of a chunk sit at one centre, but the engine measures a range
 ## from the centre of each layer's own AABB: the switch is exact only to the offset of the two.
 const TREE_CHUNK := 48
+## Orbit chunks with the flag orbit_tree_chunks: a chunk draws all its trees whenever any part of
+## its box is in view, so the 48-tile chunks (25 for the map and its woods) drew every tree of the
+## chunks the view touched (about 266k trees, 24 M vertices on a grown city, again in each shadow
+## cascade) at any zoom. 16-tile chunks (196 of them) cull to what the view reaches. The full-tree /
+## stand-in switch stays at the old grain, one decision per 48-tile cell (OrbitTreeLod): a range on
+## each small layer would have moved it to a finer grain and changed how the forest looks mid zoom.
+const TREE_CHUNK_ORBIT := 16
 const TREE_RING := 12
 const TREE_NEAR := 120.0
 const TREE_CHUNK_FP := 8
@@ -197,6 +204,10 @@ var _real_roads: bool = false
 ## Tree models, one Array of mesh parts per kit, plus a low-poly stand-in for distant chunks.
 var _tree_kits: Array = []
 var _far_tree_parts: Array = []
+## Orbit tree chunks are the small ones (flag orbit_tree_chunks, read when trees are built).
+var _orbit_chunks: bool = true
+## The Planner's near/far tree switch per 48-tile LOD cell (OrbitTreeLod), with the small chunks.
+var _orbit_lod: OrbitTreeLod = null
 var _trees_root: Node3D
 ## Tree chunk (Vector2i) -> its MultiMeshInstance3D layers; dirty chunks rebuild next frame.
 var _tree_chunks: Dictionary = {}
@@ -1143,6 +1154,10 @@ func _refresh_tree_kits() -> void:
 ## Trees are city-wide multimeshes, one per tree-model part, covering the wilderness ring around
 ## the map and every forest tile. Real Blender tree props are preferred over procedural crowns.
 func _build_trees() -> void:
+	_orbit_chunks = FeatureFlags.enabled("orbit_tree_chunks", true)
+	_orbit_lod = OrbitTreeLod.new() if _orbit_chunks and not fp_mode else null
+	if _orbit_lod != null:
+		_orbit_lod.near_end = TREE_NEAR
 	_tree_chunks.clear()
 	_dirty_tree_chunks.clear()
 	_tree_stream_win = TREE_STREAM_STALE
@@ -1217,6 +1232,24 @@ func _procedural_tree_parts() -> Array:
 		{"mesh": crown, "xform": Transform3D(Basis(), Vector3(0, 0.36, 0))},
 		{"mesh": shell, "xform": Transform3D(Basis(), Vector3(0, 0.36, 0))},
 	]
+
+
+## One unplanted instance of each far-tree layer (the stand-ins the overview and the Planner draw
+## to the horizon), for the web shader warm-up: the street plants them only once the camera is high.
+func warm_prototypes() -> Array[Node3D]:
+	var out: Array[Node3D] = []
+	for p: Dictionary in _far_tree_parts:
+		var mm := MultiMesh.new()
+		mm.transform_format = MultiMesh.TRANSFORM_3D
+		mm.use_colors = bool(p.get("tint", false))
+		mm.mesh = p["mesh"]
+		mm.instance_count = 1
+		var mmi := MultiMeshInstance3D.new()
+		mmi.multimesh = mm
+		if p.get("mat") != null:
+			mmi.material_override = p["mat"]
+		out.append(mmi)
+	return out
 
 
 ## Cheap trees for chunks far from the camera: a few-sided trunk and crown, no shadows.
@@ -1298,7 +1331,9 @@ func _tree_chunk_of(x: int, y: int, layer: int = 0) -> Vector3i:
 
 
 func _tree_chunk_size(layer: int) -> int:
-	return TREE_CHUNK if layer == 0 else TREE_CHUNK_FP
+	if layer == 0:
+		return TREE_CHUNK_ORBIT if _orbit_chunks else TREE_CHUNK
+	return TREE_CHUNK_FP
 
 
 ## The chunk set in use: 48-tile chunks in orbit, 8-tile chunks on foot.
@@ -1327,6 +1362,7 @@ func _refresh_trees() -> void:
 			for cx in range(lo.x, hi.x + 1):
 				_refresh_tree_chunk(Vector3i(cx, cy, layer))
 	_dirty_tree_chunks.clear()
+	_update_orbit_lod()
 
 
 ## Replants the chunks whose forest tiles changed, then keeps the on-foot window on the camera. A
@@ -1338,11 +1374,25 @@ func _update_trees() -> void:
 			if c.z in layers and (not fp_mode or _tree_chunks.has(c)):
 				_refresh_tree_chunk(c)
 		_dirty_tree_chunks.clear()
+	_update_orbit_lod()
 	_stream_trees()
+
+
+## Puts the Planner's tree cells in near or far for the camera where it is: the viewport's current
+## camera, the one the engine measured a range from (`camera` can still be the street's after a
+## return to the Planner).
+func _update_orbit_lod() -> void:
+	if _orbit_lod == null or not is_inside_tree():
+		return
+	var cam := get_viewport().get_camera_3d()
+	if cam != null:
+		_orbit_lod.update(cam.global_position)
 
 
 ## Frees one tree chunk's layers and forgets it. Nothing keeps a reference to a freed layer.
 func _free_tree_chunk(c: Vector3i) -> void:
+	if _orbit_lod != null:
+		_orbit_lod.drop_chunk(c)
 	for n: Node in _tree_chunks.get(c, []):
 		if is_instance_valid(n):
 			n.queue_free()
@@ -1604,18 +1654,50 @@ func _refresh_tree_chunk(c: Vector3i) -> void:
 		centre += t.origin
 	centre /= float(every.size())
 	var ends := _tree_ends()
-	var near_end := ends.x if fp_mode else TREE_NEAR
+	# The Planner's small chunks take no range of their own: OrbitTreeLod switches them per cell.
+	var lod := _orbit_lod != null and c.z == 0
+	var near_end := ends.x if fp_mode else (0.0 if lod else TREE_NEAR)
 	var far_end := ends.y if fp_mode else 0.0
-	var margin := TREE_MARGIN_FP if fp_mode else 6.0
+	var margin := TREE_MARGIN_FP if fp_mode else (0.0 if lod else 6.0)
+	var near_layers: Array = []
+	var far_layers: Array = []
 	for ki in range(_tree_kits.size()):
 		var spots: Array = by_kit[ki]
 		if spots.is_empty():
 			continue
 		for p: Dictionary in _tree_kits[ki]:
-			layers.append(_tree_layer(p, spots, centre, 0.0, near_end, margin))
+			near_layers.append(_tree_layer(p, spots, centre, 0.0, near_end, margin))
 	for p: Dictionary in _far_tree_parts:
-		layers.append(_tree_layer(p, every, centre, near_end, far_end, margin))
+		far_layers.append(_tree_layer(p, every, centre, near_end, far_end, margin))
+	layers.append_array(near_layers)
+	layers.append_array(far_layers)
 	_tree_chunks[c] = layers
+	if lod:
+		for l: MultiMeshInstance3D in far_layers:
+			l.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		var box := _tree_box(every)
+		_orbit_lod.set_chunk(
+			c, _tree_chunk_size(0), near_layers, far_layers, every.size(), box[0], box[1]
+		)
+
+
+## The box the trees at these spots fill, as [lo, hi]: their origins and what a tree model adds on
+## top (the height of the tallest kit part, a mean scale of 1.3), the box the engine's range centre
+## is measured from.
+func _tree_box(spots: Array) -> Array[Vector3]:
+	var top := 0.0
+	for kit: Array in _tree_kits:
+		for p: Dictionary in kit:
+			var box := (p["xform"] as Transform3D) * (p["mesh"] as Mesh).get_aabb()
+			top = maxf(top, box.end.y)
+	var lo := Vector3(INF, 0.0, INF)
+	var hi := Vector3(-INF, top * 1.3, -INF)
+	for t: Transform3D in spots:
+		lo.x = minf(lo.x, t.origin.x)
+		lo.z = minf(lo.z, t.origin.z)
+		hi.x = maxf(hi.x, t.origin.x)
+		hi.z = maxf(hi.z, t.origin.z)
+	return [lo, hi]
 
 
 ## One part of one tree kit for a chunk. Every layer of a chunk sits at the same node centre (the

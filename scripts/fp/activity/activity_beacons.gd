@@ -107,6 +107,11 @@ func _style(b: Dictionary) -> void:
 	(b["ring_node"] as Node3D).scale = Vector3(s, 1.0, s)
 
 
+## A beacon nobody placed (same meshes, same materials), for the web shader warm-up to draw once.
+func warm_prototype() -> Node3D:
+	return _make(Color.WHITE)["node"]
+
+
 func _make(col: Color) -> Dictionary:
 	var root := Node3D.new()
 	root.name = "Beacon"

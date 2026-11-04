@@ -205,7 +205,7 @@ func _ready() -> void:
 		_start_new()
 	else:
 		_continue(resume)
-	BootClock.finish(get_tree())
+	BootClock.finish(get_tree(), ShaderWarmup.run.bind(self))
 
 
 ## A fresh city at launch: day 1 starts and the clock runs at GRIDFALL_SPEED (default 1).

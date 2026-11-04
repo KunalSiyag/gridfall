@@ -576,6 +576,22 @@ LOADER_HELPER = """
 \t}
 
 \twindow.gfBootDone = releaseVeil;
+\t// True while the overlay is up: the shader warm-up stops when it is not (the player is playing, or a
+\t// hidden tab let the timeout lift it) and must not draw in front of them.
+\twindow.gfVeilUp = function () {
+\t\treturn !veilReleased;
+\t};
+\t// The game's own words for the status line while it prepares behind the veil (the shader warm-up,
+\t// WebSupport.boot_status): "" puts the page's wording back. Never throws into the engine.
+\twindow.gfBootStatus = function (text) {
+\t\ttry {
+\t\t\tif (!veilReleased && progressLabel) {
+\t\t\t\tprogressLabel.textContent = text ? String(text).slice(0, 80) : 'Starting your city';
+\t\t\t}
+\t\t} catch (err) {
+\t\t\tconsole.error(err);
+\t\t}
+\t};
 \tif (typeof engine !== 'undefined' && engine && typeof engine.start === 'function') {
 \t\tconst engineStart = engine.start;
 \t\tengine.start = function (...args) {

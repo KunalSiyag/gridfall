@@ -7,7 +7,7 @@ extends SceneTree
 ## bound against the lone-tile layouts that push it); a teleport never leaves the near ring bare;
 ## a chunk streamed back in is the chunk a full plant makes (after a rebuild too, reading sim.kind
 ## as it is then); near and far layers keep one centre; aerial plants every chunk and the pool
-## shrinks back; vis_mult or a new camera re-streams; orbit keeps its 25 chunks; nothing leaks.
+## shrinks back; vis_mult or a new camera re-streams; orbit keeps its 196 chunks; nothing leaks.
 ## How the work is spread over frames (budget, caps, pre-draw net) is fp_tree_cost_test.gd's; what
 ## the pool holds against oracles outside the plant code (tree counts, random poses, the map's
 ## edges, where the aerial fill starts) is fp_tree_pool_test.gd's.
@@ -835,7 +835,7 @@ func _far_ends_are(end: float) -> bool:
 # ------------------------------------------------------------------ cameras and modes
 
 
-## Orbit plants its 25 chunks of 48 tiles and streams nothing; going back on foot rebuilds the
+## Orbit plants its 196 chunks of 16 tiles and streams nothing; going back on foot rebuilds the
 ## window; neither switch leaks a node or frees one twice.
 func _check_mode_switch() -> void:
 	var v := Q.vis_mult("low", true)
@@ -857,8 +857,8 @@ func _check_mode_switch() -> void:
 				far_ok = far_ok and n.visibility_range_end == 0.0
 	K.check(
 		fails,
-		orbit and view._tree_chunks.size() == 25,
-		"orbit: the 25 chunks of 48 tiles (%d)" % view._tree_chunks.size()
+		orbit and view._tree_chunks.size() == G.ORBIT,
+		"orbit: the %d chunks of 16 tiles (%d)" % [G.ORBIT, view._tree_chunks.size()]
 	)
 	K.check(
 		fails, _tidy(view), "orbit: every MMI belongs to a chunk, none left over (%d)" % _mmis(view)
