@@ -44,7 +44,8 @@ def bank_names(text: str) -> list:
     surfaces = array("SURFACES")
     steps = int(re.search(r"const STEP_VARIANTS := (\d+)", text).group(1))
     splashes = int(re.search(r"const SPLASH_VARIANTS := (\d+)", text).group(1))
-    names += [f"footstep_{s}_{n}" for s in surfaces for n in range(1, steps + 1)]
+    # water has no recordings of its own: its steps are the footstep_splash_<n> set (step_name)
+    names += [f"footstep_{s}_{n}" for s in surfaces if s != "water" for n in range(1, steps + 1)]
     names += [f"footstep_splash_{n}" for n in range(1, splashes + 1)]
     return names
 
