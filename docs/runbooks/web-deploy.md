@@ -1170,3 +1170,27 @@ the runbook's step order is now simpler and safer:
   auto-replaced by the platform on the f762234 template pin.
 
 </details>
+
+## Candidate for 12 November (what changed since the third instance, 0528316)
+
+The third instance (`gridfall-web-0528316`) carries the key-path header fix, the carjack pull-out and the police
+response. This candidate adds, in order: sound on the web (the default bus layout; the web build was silent
+before), no shadow stripes on roads, the Planner no longer stalls (sliced simulation, speed-scaled budget), the
+shader warm-up behind the loader and a "Preparing the Planner" overlay, wading into water and a water shader that
+works on the Compatibility renderer, a grab-and-pull car entry (never seated without a pull), the hero's feet
+fitted to the ground and one shared height profile, surface-aware footsteps and speed, new grass, asphalt,
+concrete and sand looks (about 9 MB of unused textures removed), the replay horizon, a smaller save, tolerant JSON
+reading and a guard for tabs resumed after being hidden, Ask the five, the first-minute coach, the model ledger
+(League columns and the Arena tab) and the council vote board. `mayor_context_v2` and `mayor_voice_calls` are
+off. Things that stay imperfect: entering the Planner still freezes for about 3 s (now with an overlay), 8x in
+the Planner reaches about half of whole-tick speed on a grown city, and nothing here has been run with a real
+GMI key in a real browser.
+
+Steps (the owner decides the push and the instance; nothing here pushes by itself):
+
+1. `tools/export.sh web` (several minutes the first time after a merge: Godot re-imports).
+2. `docker build -t kunalsiyag1/gridfall-web:<short-rev> -f deploy/web/Dockerfile .`
+3. `docker run --rm -p 8080:8080 kunalsiyag1/gridfall-web:<short-rev>`, open http://127.0.0.1:8080/, press Tab, walk,
+   check sound, open the key panel and press Test with a real key.
+4. Push the image and add a `+ Instance` to the `gridfall` template in the GMI console (a new instance is about
+   $0.0475 an hour; editing the template does not replace running instances), then `tools/demo_check.sh <url>`.

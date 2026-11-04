@@ -4,9 +4,9 @@
 
 **[Watch the trailer](https://x.com/kunal_twts/status/2111453764465160532)** · **[Website](https://kunalsiyag.github.io/gridfall/)** · **[Download v0.1.0](https://github.com/KunalSiyag/gridfall/releases/latest)** · **[Write-up on DEV](https://dev.to/kunalsiyag/why-every-roof-in-my-ai-run-city-was-a-mirror-and-two-other-fixes-2l8a)**
 
-**GridFall** is a 3D SimCity-style city builder made with **Godot 4.7 (Forward+)**, **Blender**, **GMI Cloud** inference and **ACE-Step 1.5** audio. You don't build the city. Five autonomous AI mayors do, each running on a different GMI Cloud model. Every other layer of the city also has a GMI model behind it. You watch, inspect and intervene.
+**GridFall** is a 3D SimCity-style city builder made with **Godot 4.7** (Forward+ on desktop, Compatibility in the browser), **Blender**, **GMI Cloud** inference (14 chat models and the `hy-image-v3.5-preview` image model) and **ACE-Step 1.5** audio. You don't build the city. Five autonomous AI mayors do, each running on a different GMI Cloud model. Every other layer of the city also has a GMI model behind it. You watch, inspect and intervene.
 
-GridFall was built with [Factory](https://factory.ai)'s Droid coding agent, which wrote the Godot code, the Blender asset pipeline and the tests. Every mayor, resident and city agent runs on [GMI Cloud](https://www.gmicloud.ai) inference.
+GridFall was built with [Factory](https://factory.ai)'s Droid coding agent, which wrote the Godot code, the Blender asset pipeline and the tests. Every mayor, resident and city agent runs on [GMI Cloud](https://www.gmicloud.ai) inference. The character and building art direction (the four concept sheets in `concepts/`, and the Blender avatars and landmarks built from them by `tools/blender/make_gridfall_assets.py`) comes from `hy-image-v3.5-preview` on GMI Cloud, which also prints the campaign posters you see on the walls (`tools/gmi/generate_posters.py`, and live in the game when a key is set). The browser build is hosted on GMI Cloud (AgentBox).
 
 ## The AI city
 
@@ -25,6 +25,16 @@ GridFall was built with [Factory](https://factory.ai)'s Droid coding agent, whic
 | Street Inspector | `MiniMaxAI/MiniMax-M3` | Click any tile; whoever is standing there tells you what's wrong |
 
 Once per in-game day, each mayor gets an ASCII map of its district, district and city stats, open lots, its open construction sites, land it can annex, yesterday's results, other mayors' posts, letters from its residents, the Gazette headline, open proposals and any player decree. It replies with JSON: a private thought, a public post, a mood, up to 7 actions (road, zone, build, bulldoze, taxes, emergency, grant, annex), an ordinance proposal and votes. The simulation checks every action and rejects invalid ones with a reason.
+
+## Making the models visible
+
+The point of GridFall is to watch different models act in the same live, non-deterministic city, so every model's behaviour is shown, not hidden:
+
+- **Ask the five:** one question, five models answer side by side, nothing applied (`docs/runbooks/ask-the-five.md`).
+- **Model ledger, League and Arena:** every call and every mayor turn is counted per model: how long it took to answer, how many of its orders the sim accepted, repairs, tokens, failures, and a health light. The street League has Orders and Speed columns and a "Services & minds" page (Tab); the orbit view has an Arena tab (`docs/runbooks/model-ledger.md`).
+- **Council vote board:** City Hall shows a five-seat row per proposal (who voted how) and the Speaker's record, including when the Speaker ruled against the count (flag `mayor_context_v2` adds the council, operator and league to the mayors' prompts and lets mayors leave each other notes; it is off until it has been tried with a live key: `docs/runbooks/mayor-context-v2.md`).
+- **Who said it:** mayor chat lines say whether the press office or the mayor's own model wrote them; a live campaign poster adds a card with the image model's badge.
+- **LIVE, REPLAY or FALLBACK** on every card, so a keyless visitor always knows what they are looking at.
 
 ## Simulation
 
@@ -187,6 +197,19 @@ python -m pytest                     # Python tooling tests (coverage gate, >= 8
 ```
 
 Requires Godot 4.7.x (`.godot-version`) and Python 3.10+. Run the Python tools from the venv `tools/setup.sh` creates (`. ~/.venvs/gridfall-tools/bin/activate`). A dev container with both is in `.devcontainer/`. See `AGENTS.md` and `CONTRIBUTING.md` for rules and workflow, and `docs/runbooks/` when something breaks.
+
+## Web build (GMI AgentBox)
+
+The browser build is the Godot Web export (threaded WebAssembly, Compatibility renderer) behind a small Caddy image with the cross-origin isolation headers, Brotli and a `/healthz` endpoint. It runs the same game; what differs is rendering (Low tier by default, Medium and High are opt-in), a sliced simulation in the Planner view, a shader warm-up behind the loader, and the key panel (a visitor pastes their own GMI key; it is sent only to GMI Cloud and from the browser only `Authorization` and `Content-Type` headers are sent).
+
+```bash
+tools/export.sh web                                   # build/web/ (index.html, .wasm, .pck, release folder)
+docker build -t <registry>/gridfall-web:<tag> -f deploy/web/Dockerfile .
+docker run --rm -p 8080:8080 <registry>/gridfall-web:<tag>   # http://127.0.0.1:8080/ and /healthz
+tools/demo_check.sh https://<public-host>             # read-only check of a deployed instance
+```
+
+Pushing the image and adding a container instance in the GMI console are manual steps; the full procedure, measurements and troubleshooting are in `docs/runbooks/web-deploy.md`, the probe kit in `docs/runbooks/web-probe-kit.md`. For the presenter's machine there is also a native Linux package (`docs/runbooks/linux-standalone.md`).
 
 ## Build and export
 
