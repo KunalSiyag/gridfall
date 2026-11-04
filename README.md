@@ -194,7 +194,11 @@ Requires Godot 4.7.x (`.godot-version`) and Python 3.10+. Run the Python tools f
 tools/export.sh linux                # build/linux/gridfall.x86_64 (+ .pck)
 tools/export.sh windows              # build/windows/gridfall.exe (+ .pck)
 tools/export.sh all                  # both presets in export_presets.cfg
+tools/package_linux.sh               # build/gridfall-linux-x86_64-<version>-<rev>.tar.gz (+ .sha256) with a launcher
+tools/bench_linux.sh                 # on your desktop: Forward+ vs Compatibility frame times (opens a window)
 ```
+
+The standalone Linux build for a presenter machine is described in `docs/runbooks/linux-standalone.md`.
 
 Export needs the Godot export templates for the version in `.godot-version` (Editor > Manage Export Templates, or `tools/export.sh` prints the download commands when they are missing). Releases are cut with `tools/release.sh <version>` (for example `tools/release.sh 0.2.0`), which updates `VERSION` and `CHANGELOG.md`, commits and tags; pushing the tag runs the `release` workflow, which runs the gate, exports both platforms and publishes a GitHub Release with zips, checksums and generated notes. Each zip also carries the player guide `tools/release/PLAYING.md` (which heads the release notes) and a `play-orbit` launcher for the orbit view.
 
