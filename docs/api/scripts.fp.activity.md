@@ -53,11 +53,11 @@ AI activity (integration feature "activity"): the city's AI decisions, visible f
 - `REFRESH = 0.25`
 - `HERE = 0.75`: Within this many tiles the place line reads "here" instead of a distance.
 - `TICKER_H = 240.0`: Height of the chat ticker strip at the bottom of chat_slot (the last lines while it is closed).
-- `SAVED_TEXT = [ "key", "agent", "who", "model", "source", "headline", "short", "detail", "extra" ]`
+- `SAVED_TEXT = [ "key", "agent", "who", "model", "source", "headline", "short", "detail", "extra", "st...`
 
 ### Properties
 
-- `items: Array[Dictionary]`: Oldest first: {"key" ("mayor:<mi>" or the support role), "agent" ("<mi>" or the role), "who", "model", "source" (live|cache|heuristic), "failed" (a live call was tried and failed), "headline", "short" (its first phrase), "detail" (why), "extra" (votes or a refusal), "color": Color, "tile": Vector2i (D.NO_TILE without a place), "placed": bool, "day", "clock" (feature seconds when it landed; -1 once restored from a save)}.
+- `items: Array[Dictionary]`: Oldest first: {"key" ("mayor:<mi>" or the support role), "agent" ("<mi>" or the role), "who", "model", "source" (live|cache|heuristic), "failed" (a live call was tried and failed), "headline", "short" (its first phrase), "detail" (why), "extra" (votes or a refusal), "style" ("say" for a mayor's note to another mayor, drawn as a speech bubble; "" otherwise), "color": Color, "tile": Vector2i (D.NO_TILE without a place), "placed": bool, "day", "clock" (feature seconds when it landed; -1 once restored from a save)}.
 
 ### Functions
 
@@ -88,6 +88,7 @@ The AI activity feed (feature "activity"), top right under the compass: a header
 - `SAFE = 24.0`
 - `TOP = 118.0`: Under the compass strip (it ends at y 106 in the 1600x900 base).
 - `MAX_CARDS = 4`
+- `BUBBLE_RADIUS = 9`: A mayor's note to another mayor is a rounded bubble outlined in the speaker's colour.
 - `FADE = 0.25`
 - `FLASH = 1.6`
 - `AGO_W = 44.0`: Room kept at the end of a card's top row for its age ("12 min").
@@ -166,11 +167,13 @@ Plain words for the AI activity layer: what a mayor's turn did ("Zoned 6 homes �
 ### Constants
 
 - `D = preload("res://scripts/sim/sim_defs.gd")`
+- `CouncilLog = preload("res://scripts/ai/council_log.gd")`
 - `ZONE_WORDS = { "R": ["home", "homes"], "C": ["shop lot", "shop lots"], "I": ["factory lot", "factory...`
 - `DIRS = ["N", "NE", "E", "SE", "S", "SW", "W", "NW"]`
 - `SOURCE_TAGS = {"live": "LIVE", "cache": "REPLAY"}`
 - `MAX_PARTS = 2`: Most action phrases one summary lists before "+N more".
 - `DETAIL_CHARS = 150`
+- `HEAD_CHARS = 72`: What a council headline may hold: the card's headline shows two lines (about 80 characters).
 
 ### Functions
 
@@ -181,7 +184,9 @@ Plain words for the AI activity layer: what a mayor's turn did ("Zoned 6 homes �
 - `static func first_refusal(applied: Array) -> String`: The first refusal reason in an applied list ("cannot afford road ($120)"), or "".
 - `static func action_words(a: Variant) -> String`: A short phrase for one mayor action ({"type": "zone", "zone": "R", "w": 3, "h": 2} -> "Zoned 6 homes"), or "" for an unknown one.
 - `static func politics(entry: Dictionary) -> String`: Proposals and votes from a decision entry ("Proposed the Curfew ordinance · Voted no on Clean Air Act"), or "".
-- `static func council_words(r: Dictionary) -> String`: What a council ruling did ("Passed Curfew · Repealed Clean Air Act").
+- `static func council_words(r: Dictionary) -> String`: What a council ruling did ("Passed Curfew 3-2 · Repealed Clean Air Act"). A ruling that carries its tally (CouncilLog) shows the count, says so when the Speaker went against it ("Passed Curfew with 2 yes (override)") and lists a proposal held over ("Held Recycling Program 2-1").
+- `static func council_votes(r: Dictionary) -> String`: Who voted how in a ruling, in person names ("Curfew: yes Ada, Viktor, Mei · no Rosa"), starting with a proposal the Speaker went against ("The Speaker went against the vote. ..."); "" when the ruling has no tally.
+- `static func say_words(kind: String, m: Dictionary) -> Dictionary`: A note or request from one mayor to another (mayor context v2) as a speech-bubble card: {"headline", "detail", "extra"} in person names. kind is "message_to" or "request"; m is the entry's {"to", "text"} or {"from", "amount", "reason"}.
 - `static func chaos_words(d: Dictionary) -> String`: What the Chaos Director chose ("Set off a building fire" or "Kept the city calm").
 - `static func operator_words(d: Dictionary) -> String`: Which district the Grid Operator powers first ("Power goes first to Central Plaza").
 - `static func detail(t: String) -> String`: Free text for a card: de-branded, one line, at most DETAIL_CHARS with an ellipsis.

@@ -24,6 +24,7 @@ const HudChips := preload("res://scripts/fp/ui/hud_chips.gd")
 # Preload, not the global name: the class cache is not guaranteed fresh in test worktrees.
 const PackStatus := preload("res://scripts/ui/pack_status.gd")
 const ArenaText := preload("res://scripts/ui/arena_text.gd")
+const CouncilBoard := preload("res://scripts/ui/council_board.gd")
 const ARENA := preload("res://scripts/fp/arena/arena_panel.gd")
 const TITLE_FONT := preload("res://fonts/lilita_one_regular.ttf")
 const BG := Color(0.055, 0.07, 0.11, 0.93)
@@ -756,6 +757,7 @@ func _on_mayor_decided(mi: int, entry: Dictionary) -> void:
 	_mayor_entries[mi] = entry
 	_mayor_thinking[mi] = false
 	_refresh_cards()
+	_render_council()  # the vote board shows each vote as it is cast
 	if mi == selected_mayor:
 		_render_mayor()
 
@@ -992,19 +994,7 @@ func _render_council() -> void:
 		t += "[i]none[/i]\n"
 	for k: String in sim.ordinances.keys():
 		t += "- %s [color=#9AB](%s)[/color]\n" % [D.ORDINANCES[k]["label"], D.ORDINANCES[k]["desc"]]
-	t += "\n[b]Proposals on the floor[/b]\n"
-	if brain.proposals.is_empty():
-		t += "[i]none[/i]\n"
-	for k: String in brain.proposals.keys():
-		var pr: Dictionary = brain.proposals[k]
-		var yes := 0
-		var no := 0
-		for v: Variant in (pr["votes"] as Dictionary).values():
-			if str(v).begins_with("y"):
-				yes += 1
-			else:
-				no += 1
-		t += "- %s by %s  [color=#5CFF9D]%d yes[/color] [color=#FF7A6A]%d no[/color]\n" % [D.ORDINANCES.get(k, {}).get("label", k), pr.get("by", "?"), yes, no]
+	t += CouncilBoard.proposals_text(brain) + CouncilBoard.history_text(brain) + CouncilBoard.notes_text(brain)
 	var op: Dictionary = brain.last_operator
 	t += "\n[b][color=#9CFF8F]Grid Operator[/color][/b] [color=#9AB](%s)[/color]\n" % D.SUPPORT_AGENTS["operator"]["model"]
 	var names: Array[String] = []

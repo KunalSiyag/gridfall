@@ -4,6 +4,7 @@ extends RefCounted
 ## came from (live, replay or offline), "4 min" ages and compass directions. No nodes.
 
 const D := preload("res://scripts/sim/sim_defs.gd")
+const CouncilLog := preload("res://scripts/ai/council_log.gd")
 
 const ZONE_WORDS := {
 	"R": ["home", "homes"], "C": ["shop lot", "shop lots"], "I": ["factory lot", "factory lots"]
@@ -13,6 +14,8 @@ const SOURCE_TAGS := {"live": "LIVE", "cache": "REPLAY"}
 ## Most action phrases one summary lists before "+N more".
 const MAX_PARTS := 2
 const DETAIL_CHARS := 150
+## What a council headline may hold: the card's headline shows two lines (about 80 characters).
+const HEAD_CHARS := 72
 
 
 ## The model a mayor runs on, as its badge reads ("DeepSeek-V4").
@@ -121,13 +124,27 @@ static func politics(entry: Dictionary) -> String:
 		for key: Variant in (votes as Dictionary).keys():
 			var o: Dictionary = D.ORDINANCES.get(str(key), {})
 			if not o.is_empty() and str(key) != prop:
-				parts.append("Voted %s on %s" % [str(votes[key]), str(o["label"])])
+				parts.append(
+					"Voted %s on %s%s" % [str(votes[key]), str(o["label"]), _why(entry, str(key))]
+				)
 	return " · ".join(PackedStringArray(parts.slice(0, 2)))
 
 
-## What a council ruling did ("Passed Curfew · Repealed Clean Air Act").
+## The reason a mayor gave for a vote (mayor context v2), as " (too costly)", or "".
+static func _why(entry: Dictionary, key: String) -> String:
+	var notes: Variant = entry.get("vote_notes", {})
+	if typeof(notes) != TYPE_DICTIONARY or not (notes as Dictionary).has(key):
+		return ""
+	return " (%s)" % D.debrand(str((notes as Dictionary)[key]))
+
+
+## What a council ruling did ("Passed Curfew 3-2 · Repealed Clean Air Act"). A ruling that carries
+## its tally (CouncilLog) shows the count, says so when the Speaker went against it ("Passed
+## Curfew with 2 yes (override)") and lists a proposal held over ("Held Recycling Program 2-1").
 static func council_words(r: Dictionary) -> String:
-	var parts: Array[String] = []
+	var hot: Array[String] = []
+	var rest: Array[String] = []
+	var tally := _tally_of(r)
 	for pair: Array in [["enacted", "Passed"], ["repealed", "Repealed"], ["rejected", "Rejected"]]:
 		var arr: Variant = r.get(pair[0], [])
 		if typeof(arr) != TYPE_ARRAY:
@@ -135,10 +152,101 @@ static func council_words(r: Dictionary) -> String:
 		for k: Variant in arr:
 			var o: Dictionary = D.ORDINANCES.get(str(k), {})
 			if not o.is_empty():
-				parts.append("%s %s" % [pair[1], str(o["label"])])
+				var e: Dictionary = tally.get(str(k), {})
+				var part := "%s %s%s" % [pair[1], str(o["label"]), _count(e)]
+				(hot if bool(e.get("override", false)) else rest).append(part)
+	for k: String in tally.keys():
+		var e: Dictionary = tally[k]
+		var o: Dictionary = D.ORDINANCES.get(k, {})
+		if str(e.get("outcome", "")) == "deferred" and not o.is_empty():
+			(hot if bool(e.get("override", false)) else rest).append(
+				"Held %s%s" % [str(o["label"]), _count(e)]
+			)
+	var parts := hot + rest
 	if parts.is_empty():
 		return "No ordinance changed"
-	return " · ".join(PackedStringArray(parts.slice(0, MAX_PARTS + 1)))
+	return _fit(parts)
+
+
+## The parts joined with " · " as far as HEAD_CHARS allows (the first always), then "+N more" for
+## the ones left out, so a busy ruling is never cut off in the middle of a word on the card.
+static func _fit(parts: Array[String]) -> String:
+	var shown: Array[String] = parts.duplicate()
+	while true:
+		var left := parts.size() - shown.size()
+		var line := " · ".join(PackedStringArray(shown))
+		if left > 0:
+			line += " · +%d more" % left
+		if line.length() <= HEAD_CHARS or shown.size() <= 1:
+			return line
+		shown.pop_back()
+	return ""
+
+
+## Who voted how in a ruling, in person names ("Curfew: yes Ada, Viktor, Mei · no Rosa"), starting
+## with a proposal the Speaker went against ("The Speaker went against the vote. ..."); "" when
+## the ruling has no tally.
+static func council_votes(r: Dictionary) -> String:
+	var tally := _tally_of(r)
+	var pick: Dictionary = {}
+	for k: String in tally.keys():
+		if (
+			pick.is_empty()
+			or (bool(tally[k].get("override", false)) and not bool(pick.get("override", false)))
+		):
+			pick = tally[k]
+	if pick.is_empty():
+		return ""
+	var seats := CouncilLog.seats(pick)
+	var label := str(D.ORDINANCES.get(str(pick.get("key", "")), {}).get("label", "Vote"))
+	var out := "%s: yes %s" % [label, _names(seats["yes"])]
+	if not (seats["no"] as Array).is_empty():
+		out += " · no " + _names(seats["no"])
+	if bool(pick.get("override", false)):
+		out = "The Speaker went against the vote. " + out
+	return detail(out)
+
+
+## The ruling's tally keyed by proposal key ({} without one).
+static func _tally_of(r: Dictionary) -> Dictionary:
+	var out := {}
+	var raw: Variant = r.get("tally", [])
+	if typeof(raw) == TYPE_ARRAY:
+		for e: Variant in raw:
+			if typeof(e) == TYPE_DICTIONARY and (e as Dictionary).has("key"):
+				out[str((e as Dictionary)["key"])] = e
+	return out
+
+
+## " 3-2" after a proposal's name, " with 2 yes (override)" when the Speaker went against the count;
+## nothing for a replayed ruling that disagrees with the count (see CouncilLog.quiet).
+static func _count(e: Dictionary) -> String:
+	if e.is_empty() or CouncilLog.score(e).is_empty() or CouncilLog.quiet(e):
+		return ""
+	if not bool(e.get("override", false)):
+		return " " + CouncilLog.score(e)
+	if str(e.get("outcome", "")) == "enacted":
+		return " with %d yes (override)" % int(e.get("yes", 0))
+	return " despite %d yes (override)" % int(e.get("yes", 0))
+
+
+static func _names(a: Array) -> String:
+	return ", ".join(PackedStringArray(a)) if not a.is_empty() else "nobody"
+
+
+## A note or request from one mayor to another (mayor context v2) as a speech-bubble card:
+## {"headline", "detail", "extra"} in person names. kind is "message_to" or "request"; m is the
+## entry's {"to", "text"} or {"from", "amount", "reason"}.
+static func say_words(kind: String, m: Dictionary) -> Dictionary:
+	if kind == "request":
+		var asked := D.mayor_display(D.mayor_index(str(m.get("from", ""))))
+		return {
+			"headline": "Asked %s for $%d" % [asked, int(m.get("amount", 0))],
+			"detail": detail(str(m.get("reason", ""))),
+			"extra": "",
+		}
+	var to := D.mayor_display(D.mayor_index(str(m.get("to", ""))))
+	return {"headline": "Told %s" % to, "detail": detail(str(m.get("text", ""))), "extra": ""}
 
 
 ## What the Chaos Director chose ("Set off a building fire" or "Kept the city calm").

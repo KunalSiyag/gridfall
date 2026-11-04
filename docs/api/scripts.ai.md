@@ -223,10 +223,14 @@ Puts GMI model inference on every layer of the city. Each in-game day it batches
 - `MayorTurns = preload("res://scripts/ai/mayor_turns.gd")`
 - `BrainText = preload("res://scripts/ai/brain_text.gd")`
 - `RoadPlans = preload("res://scripts/ai/road_plans.gd")`
+- `MayorPrompts = preload("res://scripts/ai/mayor_prompts.gd")`
+- `MayorContext = preload("res://scripts/ai/mayor_context.gd")`
+- `CouncilLog = preload("res://scripts/ai/council_log.gd")`
 - `MAX_WAIT_MS = 75000`
 
 ### Properties
 
+- `council_history: Array[Dictionary]`: The council's last CouncilLog.KEEP rulings, newest last, and the notes mayors left each other (mayor id -> [{from, day, kind, text, amount, seen}]; MayorContext, flag mayor_context_v2).
 - `stagger_mayors: bool`: Street mode sets this: the mayors take the day's turns one by one through the day (turns), so a player on foot sees decisions land every few minutes. Off (orbit, tests): all at dawn.
 
 ### Functions
@@ -239,6 +243,35 @@ Puts GMI model inference on every layer of the city. Each in-game day it batches
 - `func inspect_tile(x: int, y: int) -> void`
 - `func to_dict() -> Dictionary`
 - `func from_dict(d: Dictionary) -> void`
+
+## `scripts/ai/council_log.gd`
+
+extends `RefCounted`
+
+The council vote board's data: what the Speaker did with each proposal and how the five mayors had voted. CityBrain._run_council takes a tally of the proposals on the floor before the ruled ones leave it (tally), puts it on the ruling it emits and appends one record per proposal (and per repeal) to brain.council_history (record), the newest KEEP rulings. The Speaker is free to overrule the count (the system prompt lets it pass a proposal with only 2 yes, and nothing forces it to pass one with 3), so every record says whether the outcome matches the vote: "override" is true for an enactment with fewer than MAJORITY yes and for a proposal that stayed out (deferred or rejected) with MAJORITY yes or more. verdict() and score() put that in words for the HUDs ("passed 3-2", "OVERRIDE: passed with 2"). Only a LIVE Speaker is held to the count: a recorded (replay) Speaker did not read today's votes, so its ruling that disagrees with them is not an override (the record says "against" and the words drop the count). Pure data and text, no nodes.
+
+### Constants
+
+- `D = preload("res://scripts/sim/sim_defs.gd")`
+- `KEEP = 20`: Rulings kept in the history and in a save.
+- `MAJORITY = 3`: Yes votes (of five) that make a majority.
+- `OUTCOMES = ["enacted", "rejected", "deferred", "repealed"]`
+- `PASSIVE = { "enacted": "passed", "rejected": "rejected", "deferred": "deferred", "repealed": "rep...`
+
+### Functions
+
+- `static func tally(proposals: Dictionary, enacted: Array, rejected: Array, source: String = "live") -> Array[Dictiona`: The proposals on the floor with their votes, each classed by what the Speaker did: [{"key", "by" (display name), "by_id", "votes" {mayor id: "yes"|"no"}, "notes" {mayor id: reason}, "yes", "no", "outcome" (enacted|rejected|deferred), "override"}]. Call it before the ruled proposals are erased from proposals.
+- `static func goes_against(outcome: String, yes: int) -> bool`: Whether an outcome disagrees with a count of yes votes, whoever ruled.
+- `static func is_override(outcome: String, yes: int, source: String = "live") -> b`: Whether the Speaker went against the count: it disagrees AND the Speaker is a live model that read today's votes (source "live"); a replayed or scripted ruling is never an override.
+- `static func record(brain: CityBrain, ruling: Dictionary) -> void`: Appends the ruling's records to brain.council_history (newest last, KEEP at most) and, with mayor context v2 on, tells the Gazette's feed when the Speaker went against the vote.
+- `static func score(e: Dictionary) -> String`: "3-2" (yes-no) for a record, "" for one with no votes (a repeal).
+- `static func verdict(e: Variant) -> String`: What the Speaker did, against the count: "passed 3-2", "deferred 2-1", "OVERRIDE: passed with 2", "OVERRIDE: deferred with 4 yes", "repealed".
+- `static func quiet(e: Dictionary) -> bool`: Whether a record's ruling disagrees with its count without being an override (a replayed Speaker): its words leave the count out rather than set a ruling beside votes it never saw.
+- `static func seats(e: Dictionary) -> Dictionary`: Mayors' first names split by how they voted: {"yes": [..], "no": [..], "none": [..]} in seat order, for a record (or any dictionary with "votes").
+- `static func first_name(display: String) -> String`
+- `static func last_for(history: Array, key: String) -> Dictionary`: The newest record for a proposal key, or {}.
+- `static func restore(raw: Variant) -> Array[Dictionary]`: A saved history made safe to load: dictionaries only, known outcomes, votes and notes cut to the five mayors, text de-branded and cut again, the newest KEEP.
+- `static func cut(t: String, n: int) -> String`: t cut to at most n characters at a word boundary, with "..." where something was left out (plain dots: web builds have no system fonts, so a missing glyph would show as a box).
 
 ## `scripts/ai/gmi_admission.gd`
 
@@ -555,6 +588,76 @@ Reads one chat-completion body into what the game keeps of it: the answer object
 - `static func read(body: Dictionary) -> Dictionary`: body: the parsed JSON of a 200 reply. Returns {"error": "" | "no choices", "data": {} (empty when the text held no object), "raw": the answer text, "repairs": Array of KINDS names (only when an object was found), "tokens_in", "tokens_out" (-1 when the API sent no usage), "finish_reason" ("" when absent)}.
 - `static func classify(content: String, from_reasoning: bool, salvaged: bool) -> Array`: Which repairs reading content took (KINDS names, in KINDS order). from_reasoning: the text came from the reasoning field; salvaged: the object was recovered from a cut-off reply. Every reply passes through here, so a clean one costs a few native string searches and one regex scan, not a script loop (the loop in GmiParse.repair only runs when the regex saw a candidate).
 - `static func usage_of(body: Dictionary, choice: Variant) -> Dictionary`: {"tokens_in", "tokens_out", "finish_reason"} from a reply body and its first choice: the usage counts (-1 when missing or not a number) and the reason the model stopped ("length" = it hit max_tokens).
+
+## `scripts/ai/mayor_context.gd`
+
+extends `RefCounted`
+
+Mayor context v2 (flag mayor_context_v2, default off until it has been tried live): what lets the five models answer EACH OTHER instead of five separate cities. A mayor's turn prompt gains the council's last ruling, the Grid Operator's order, the Chaos Director's strike, the league rank and the notes and requests other mayors left; its reply may carry vote_notes (why it voted so), message_to (one note a day to one mayor) and request (ask a mayor for money, answered by the existing grant action). Everything a model is asked to answer with is an id (argon ...): the prompt carries a table from the display names the other lines use to the ids, and a reply naming a mayor by display name or surname is understood too. With the flag off nothing here changes a prompt, a reply or a save. Offline planners and the replay cache never write notes, so notes exist only when a live model wrote them. Pure text and plain dictionaries: no nodes, no randomness, nothing new in the sim (a request is answered by the sim's own grant rule).
+
+### Constants
+
+- `D = preload("res://scripts/sim/sim_defs.gd")`
+- `CouncilLog = preload("res://scripts/ai/council_log.gd")`
+- `FLAG = "mayor_context_v2"`
+- `VOTE_NOTE_CHARS = 60`
+- `NOTE_CHARS = 120`
+- `REASON_CHARS = 80`
+- `REQUEST_MAX = 3000`: The most a request may ask for; the asked mayor's own treasury still limits the grant.
+- `NOTES_PER_MAYOR = 4`: Notes kept per mayor, the days an unseen note stays worth showing, and the days a note is kept.
+- `SHOW_DAYS = 3`
+- `KEEP_DAYS = 8`
+- `COUNCIL_DAYS = 4`: How long the last ruling, order and strike stay in a prompt (game days).
+- `OPERATOR_DAYS = 6`
+- `CHAOS_DAYS = 5`
+- `CATEGORY = 25.0`: The league score of the street's table (ReporterDesk.CATEGORY): 25 points per category.
+- `IDS = "argon|deepseek|kimi|qwen|grok"`
+- `EXTRA_RULES = ("""    - A grant is sensible when a mayor asks, the need is real and you can still kee...`
+- `ROSTER_HEAD = ('MAYOR IDS (answer fields such as grant "to", message_to "mayor" and ' + 'request "fro...`
+- `REQUEST_LINE = 'REQUEST FROM %s (day %d): asks you for $%d - "%s". '`
+- `REQUEST_PAY = ('To agree, add {"type":"grant","to":"%s","amount":%d} to your actions; you hold $%d an...`
+- `REQUEST_SHORT = ('You hold $%d, less than they ask: you could grant at most that, {"type":"grant","to":...`
+- `REQUEST_BROKE = "You have no funds to give, so you can only decline."`
+- `SCHEMA_OLD = '"votes":{"ordinance_key":"yes or no"}}'`
+- `SCHEMA_NEW = ('"votes":{"ordinance_key":"yes or no"},"vote_notes":{"ordinance_key":"<=60 chars"},' +...`
+- `SPACES = [ "\n", "\r", "\t", "\u000b", "\u000c", "\u0085", "\u2028", "\u2029", "\u200b", "\u200c...`: What must not survive in a note: line and paragraph breaks, tabs and invisible spaces.
+- `ORDINALS = ["1st", "2nd", "3rd", "4th", "5th"]`
+
+### Functions
+
+- `static func enabled() -> bool`
+- `static func extend_system(text: String) -> String`: The system prompt with the optional fields and the grant guidance (unchanged with the flag off).
+- `static func mayor_id(v: Variant) -> String`: The id (argon ...) of the mayor a model named by id, display name ("Viktor Han"), first name, surname or brand, with or without "Mayor"; "" when it names none.
+- `static func display_of(mayor: String) -> String`: The display name of mayor id ("" for an unknown id).
+- `static func clean_text(t: String, n: int) -> String`: Free text a model wrote, safe to show and to feed back into a prompt: no brand names (the display name stands in for a brand, whole-word ids included), one plain line (every kind of line break, tab and invisible space becomes a space, double quotes become single ones so the text cannot close the quotes the prompt wraps it in) and at most n characters, cut at a word.
+- `static func fix_order(a: Dictionary) -> Dictionary`: An order with a grant's "to" turned into an id when the model wrote a name (flag on only).
+- `static func roster_line() -> String`
+- `static func user_lines(brain: CityBrain, mi: int, day: int) -> Array[String]`: The lines mayor mi's user prompt gains (empty with the flag off). Each appears only when the state it reports exists; all text about other agents is de-branded.
+- `static func league_rows(sim: CitySim) -> Array[Dictionary]`: The street's league (people, jobs, approval, funds against the best mayor), best first: rows of {"mi", "pop", "jobs", "funds", "approval", "score"}. The same rule as ReporterDesk.standings, kept here because scripts/ai may not import the street's code.
+- `static func league_line(sim: CitySim, mi: int) -> String`: "LEAGUE: you are 3rd of 5 (gaps to Duke Granger in 1st: people -120, ...)" for mayor mi; "" while nobody lives in the city yet. The leader sees the gap to the runner-up instead.
+- `static func note_lines(brain: CityBrain, mi: int, day: int) -> Array[String]`: The notes and requests mayor mi has not read yet (and that are recent), as prompt lines.
+- `static func unseen(brain: CityBrain, mayor: String, day: int) -> Array[Dictionary]`: Recipient's notes that were never shown and are at most SHOW_DAYS old, oldest first.
+- `static func mark_seen(shown: Array[Dictionary], source: String) -> void`: Marks the notes a prompt showed (what unseen() returned when it was built) as read, but only when a model really answered that prompt (source "live"): if the call failed and the offline planner answered, nobody read them and they are shown again next turn. The builder itself changes nothing, so "Ask the five" can reuse it.
+- `static func absorb(brain: CityBrain, mi: int, day: int, data: Dictionary, entry: Dictionary) -> void`: What a live reply adds to the world: vote_notes, one message_to and one request. entry is the turn's log entry (its "votes" are the votes that counted); stored fields land on it so the HUDs and the street feed can show them. Nothing here touches the sim: a request is answered, if at all, by the asked mayor's own grant order on a later turn.
+- `static func prune(notes: Dictionary, day: int) -> void`: Drops notes older than KEEP_DAYS in place.
+- `static func restore(raw: Variant) -> Dictionary`: A saved notes dictionary made safe to load: known mayors only, at most NOTES_PER_MAYOR each, text de-branded and cut again (a save is a file anyone can edit).
+
+## `scripts/ai/mayor_prompts.gd`
+
+extends `RefCounted`
+
+The mayors' turn prompts, moved out of CityBrain (which keeps thin wrappers). system() is the rules and the reply schema, user() the day's state for one mayor. With the mayor_context_v2 flag off the text is exactly what CityBrain built before the move (a golden test pins it); with it on, MayorContext adds the council, operator, chaos and league lines, the notes between mayors and the extra reply fields. Pure reads: nothing here changes the brain or the sim.
+
+### Constants
+
+- `D = preload("res://scripts/sim/sim_defs.gd")`
+- `MayorContext = preload("res://scripts/ai/mayor_context.gd")`
+- `ANNEX_HEAD = ("LAND YOU CAN ANNEX (top-left x,y of each 16x16 plot, " + "price, open/forest/water ti...`
+
+### Functions
+
+- `static func system(mi: int) -> String`: The system prompt for mayor mi: persona, rules, actions and the reply schema.
+- `static func user(brain: CityBrain, mi: int, day: int) -> String`: The user prompt for mayor mi on day: their district, the city, what the others said and decided.
 
 ## `scripts/ai/mayor_turns.gd`
 

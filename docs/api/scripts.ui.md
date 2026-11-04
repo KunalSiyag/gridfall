@@ -67,6 +67,7 @@ SimCity-style HUD for GridFall: city vitals and RCI demand, time controls, playe
 - `HudChips = preload("res://scripts/fp/ui/hud_chips.gd")`
 - `PackStatus = preload("res://scripts/ui/pack_status.gd")`
 - `ArenaText = preload("res://scripts/ui/arena_text.gd")`
+- `CouncilBoard = preload("res://scripts/ui/council_board.gd")`
 - `ARENA = preload("res://scripts/fp/arena/arena_panel.gd")`
 - `TITLE_FONT = preload("res://fonts/lilita_one_regular.ttf")`
 - `BG = Color(0.055, 0.07, 0.11, 0.93)`
@@ -96,6 +97,30 @@ SimCity-style HUD for GridFall: city vitals and RCI demand, time controls, playe
 - `func banner(msg: String, color: Color = Color(1.0, 0.35, 0.35)) -> void`
 - `func setup_people(p_people: Residents, p_minds: ResidentMinds) -> void`
 - `func show_resident(id: String) -> void`
+
+## `scripts/ui/council_board.gd`
+
+extends `RefCounted`
+
+The City Hall tab's vote board (orbit): each proposal on the floor as a five-seat row (mayor colour, Y / N / - for how that mayor voted, a star on the proposer's seat) with the tally and, for one the Speaker already looked at, what it did; then the record of the last rulings with a loud OVERRIDE where the Speaker went against the count; then the notes and requests the mayors left each other (only when a live model wrote some). Orbit text keeps model names, as the rest of the tab does. Returns BBCode for a RichTextLabel; model-written text is escaped. No nodes.
+
+### Constants
+
+- `D = preload("res://scripts/sim/sim_defs.gd")`
+- `CouncilLog = preload("res://scripts/ai/council_log.gd")`
+- `YES = "#5CFF9D"`
+- `NO = "#FF7A6A"`
+- `NONE = "#7C8A99"`
+- `WARN = "#FFB800"`
+- `DIM = "#9AB"`
+- `SHOWN = 6`: Rulings the record lists.
+
+### Functions
+
+- `static func proposals_text(brain: CityBrain) -> String`: "Proposals on the floor" with a seat row each.
+- `static func seat_row(e: Dictionary, proposer_id: String) -> String`: One row of five seats for a record or proposal ({"votes"}): "Ada *Y  Viktor Y  Mei -  Rosa N Duke -", each name in its mayor's colour and each vote in green, red or grey.
+- `static func history_text(brain: CityBrain) -> String`: "Council record": the newest SHOWN rulings, newest first, one headline and one seat row each.
+- `static func notes_text(brain: CityBrain) -> String`: "Notes between mayors": what the live models said to each other, newest first (empty until one did).
 
 ## `scripts/ui/gridfall_hud.gd`
 
