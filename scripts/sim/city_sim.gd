@@ -63,8 +63,17 @@ var slice_budget_cap_ms: float = 0.0
 ## waits for it, and _finish_job_now() drains it through spread_finish.
 var spread_gate: Callable = Callable()
 var spread_finish: Callable = Callable()
-## Other spread sources (add_spread_source): [gate, finish] pairs, checked after ResidentMinds.
+## ResidentMinds' one-piece step (what the drain scheduler, SpreadDrain, calls).
+var spread_step: Callable = Callable()
+## Other spread sources (add_spread_source): [gate, finish, step] triples (step optional), checked
+## after ResidentMinds.
 var _spread_sources: Array = []
+## Wall ms per frame the drain scheduler may spend on extra day-start pieces at 4x and above
+## (SpreadDrain); 0 turns it off. Pacing only.
+var drain_budget_ms: float = 0.0
+## The budget the last sliced frame gave its pump after the drain's share (tests, the probe).
+var last_pump_budget_ms: float = 0.0
+var _drain_stats: Dictionary = {}
 ## Bumped whenever a tile turns into a road or stops being one (route caches key on it).
 var road_epoch: int = 0
 
@@ -625,6 +634,12 @@ func _note_speed(delta: float, gain: float, dropped: float) -> void:
 ## even at speed 0, so a tick never freezes half done. Returns the game seconds the backlog clamp
 ## dropped.
 func _process_sliced(delta: float) -> float:
+	var full := scaled_budget_ms(slice_budget_ms, slice_budget_cap_ms, speed)
+	var drained_ms := 0.0
+	if SpreadDrain.active_at(speed, drain_budget_ms) and _spread_pending():
+		var d0 := Time.get_ticks_usec()
+		SpreadDrain.run(_drain_sources(), minf(drain_budget_ms, full), _drain_stats)
+		drained_ms = float(Time.get_ticks_usec() - d0) / 1000.0
 	if speed > 0 and not waiting_for_ai:
 		_time_accum += delta * float(speed)
 	if _job.is_empty() and speed > 0:
@@ -637,8 +652,11 @@ func _process_sliced(delta: float) -> float:
 		elif _time_accum >= tick_seconds() and begin_tick():
 			_job_from_accum = true
 	if not _job.is_empty():
-		var budget := scaled_budget_ms(slice_budget_ms, slice_budget_cap_ms, speed)
-		if budget > slice_budget_ms:
+		# What the drain spent comes out of the pump's share: a frame costs the budget, not the
+		# budget and the drain (the pump still does one step whatever is left).
+		var budget := maxf(full - drained_ms, minf(full, 1.0))
+		last_pump_budget_ms = budget
+		if full > slice_budget_ms:
 			_pump_chain(budget)
 		else:
 			pump(budget)
@@ -987,9 +1005,26 @@ func spread_pending() -> bool:
 ## sliced day job, which holds Residents' day work until the gate closes); other emissions only
 ## while spread_allowed() is true. Each deferred piece, and each piece finish() runs, goes through
 ## run_in_phase(). Registering the same gate again replaces its finish.
-func add_spread_source(gate: Callable, finish: Callable) -> void:
+func add_spread_source(gate: Callable, finish: Callable, step: Callable = Callable()) -> void:
 	remove_spread_source(gate)
-	_spread_sources.append([gate, finish])
+	_spread_sources.append([gate, finish, step])
+
+
+## The sources the drain scheduler can step ([gate, step] pairs, ResidentMinds first: the order a
+## frame runs them in); those without a step are left to their own per-frame path.
+func _drain_sources() -> Array:
+	var out: Array = []
+	if spread_gate.is_valid() and spread_step.is_valid():
+		out.append([spread_gate, spread_step])
+	for src: Array in _spread_sources:
+		if src.size() > 2 and (src[2] as Callable).is_valid():
+			out.append([src[0], src[2]])
+	return out
+
+
+## What the drain scheduler has done: {"pieces", "frames", "ema_ms"}.
+func drain_stats() -> Dictionary:
+	return _drain_stats.duplicate()
 
 
 func remove_spread_source(gate: Callable) -> void:

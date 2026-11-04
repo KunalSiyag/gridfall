@@ -10,6 +10,7 @@ extends SceneTree
 ## frames, and Main passes ShaderWarmup.run. Headless, offline. Prints FP_WARMUP_TEST: PASS|FAIL.
 
 const K := preload("res://tools/tests/fp_kit.gd")
+const WK := preload("res://tools/tests/warm_kit.gd")
 const BEACONS := preload("res://scripts/fp/activity/activity_beacons.gd")
 const TOKEN := "FP_WARMUP_TEST"
 const TUNING := "user://warmup_tuning.json"
@@ -45,7 +46,11 @@ class FakeFeature:
 		var n := Node3D.new()
 		var mi := MeshInstance3D.new()
 		mi.mesh = BoxMesh.new()
-		mi.material_override = StandardMaterial3D.new()
+		# A signature no scene material has, so the variant dedupe keeps it.
+		var mat := StandardMaterial3D.new()
+		mat.refraction_enabled = true
+		mat.grow = true
+		mi.material_override = mat
 		n.add_child(mi)
 		made.append(n)
 		return [n]
@@ -63,16 +68,6 @@ class FakeCtx:
 class FakeFp:
 	extends RefCounted
 	var ctx := FakeCtx.new()
-
-
-class FakeMain:
-	extends Node3D
-	var cam: Camera3D
-	var fp: Variant = null
-	var sun_light: DirectionalLight3D
-
-	func active_camera() -> Camera3D:
-		return cam
 
 
 ## Collects every printed line (a Logger sees print()).
@@ -114,68 +109,27 @@ func _init() -> void:
 
 
 func _clear_tuning() -> void:
-	if FileAccess.file_exists(TUNING):
-		DirAccess.remove_absolute(ProjectSettings.globalize_path(TUNING))
+	WK.clear_tuning()
 
 
 func _write_tuning(d: Dictionary) -> void:
-	var f := FileAccess.open(TUNING, FileAccess.WRITE)
-	f.store_string(JSON.stringify(d))
-	f.close()
+	WK.write_tuning(d)
 
 
-func _mat(color: Color) -> StandardMaterial3D:
-	var m := StandardMaterial3D.new()
-	m.albedo_color = color
-	return m
+func _mat(color: Color, kind: int = 0) -> StandardMaterial3D:
+	return WK.mat(color, kind)
 
 
 func _mesh_inst(mesh: Mesh, pos: Vector3, mat: Material = null) -> MeshInstance3D:
-	var mi := MeshInstance3D.new()
-	mi.mesh = mesh
-	mi.position = pos
-	if mat != null:
-		mi.material_override = mat
-	return mi
+	return WK.mesh_inst(mesh, pos, mat)
 
 
-## A scene with known recipes: a shared material on a small and a big box (one recipe, the small
-## mesh wins), the same material on a MultiMesh (its own recipe), a second material, a skinned mesh
-## and an empty node (no recipe).
 func _scene() -> Dictionary:
-	var root := Node3D.new()
-	var red := _mat(Color.RED)
-	var blue := _mat(Color.BLUE)
-	var small := BoxMesh.new()
-	small.size = Vector3.ONE
-	small.material = red
-	var big := SphereMesh.new()
-	big.material = red
-	var a := _mesh_inst(small, Vector3(10, 0, 0))
-	var b := _mesh_inst(big, Vector3(2, 0, 0))
-	var c := _mesh_inst(BoxMesh.new(), Vector3(30, 0, 0), blue)
-	var skinned := _mesh_inst(BoxMesh.new(), Vector3.ZERO, _mat(Color.GREEN))
-	skinned.skin = Skin.new()
-	var mm := MultiMesh.new()
-	mm.transform_format = MultiMesh.TRANSFORM_3D
-	mm.mesh = small
-	mm.instance_count = 3
-	var mmi := MultiMeshInstance3D.new()
-	mmi.multimesh = mm
-	mmi.position = Vector3(5, 0, 0)
-	for n: Node in [a, b, c, skinned, mmi, Node3D.new(), MeshInstance3D.new()]:
-		root.add_child(n)
-	return {
-		"root": root,
-		"a": a,
-		"b": b,
-		"c": c,
-		"mmi": mmi,
-		"red": red,
-		"blue": blue,
-		"small": small,
-		"big": big
-	}
+	return WK.scene()
+
+
+func _fake_main(with_cam: bool = true) -> WK.FakeMain:
+	return WK.fake_main(get_root(), with_cam)
 
 
 func _check_flag() -> void:
@@ -293,18 +247,6 @@ func _check_stage() -> void:
 	root.free()
 
 
-func _fake_main(with_cam: bool = true) -> FakeMain:
-	var m := FakeMain.new()
-	m.name = "FakeMain"
-	get_root().add_child(m)
-	var s := _scene()
-	m.add_child(s["root"] as Node)
-	if with_cam:
-		m.cam = Camera3D.new()
-		m.add_child(m.cam)
-	return m
-
-
 func _check_run() -> void:
 	ShaderWarmup.force = true
 	FeatureFlags.set_override(ShaderWarmup.FLAG, true)
@@ -371,9 +313,17 @@ func _check_run() -> void:
 	m.free()
 	_clear_tuning()
 	check(
-		ShaderWarmup.tuning()["states"] == ["prototypes", "unlit+noshadow"],
-		"the default states: the prototypes, then the street pass and the no-shadow one"
+		ShaderWarmup.tuning()["states"] == ["prototypes", "overview", "noshadow", "unlit"],
+		"default states: prototypes, the Tab itself, no-shadow (dusk), the street pass"
 	)
+	# Flag warmup_orbit_variants off: the states of the warm-up before it (prototypes, one list of
+	# the unlit and no-shadow passes).
+	FeatureFlags.set_override("warmup_orbit_variants", false)
+	check(
+		ShaderWarmup.tuning()["states"] == ["prototypes", "unlit+noshadow"],
+		"flag off: the default states are the ones before the variants"
+	)
+	FeatureFlags.set_override("warmup_orbit_variants", true)
 
 
 func _check_prototypes() -> void:
@@ -392,7 +342,10 @@ func _check_prototypes() -> void:
 	var node := Node3D.new()
 	var mi := MeshInstance3D.new()
 	mi.mesh = BoxMesh.new()
-	mi.material_override = StandardMaterial3D.new()
+	var proto_mat := StandardMaterial3D.new()
+	proto_mat.refraction_enabled = true  # a signature none of the listed models has
+	proto_mat.grow = true
+	mi.material_override = proto_mat
 	node.add_child(mi)
 	var extra: Array[Node3D] = [node]
 	var with_extra := WarmCollector.prototypes(extra)
@@ -548,7 +501,7 @@ func _check_flag_off() -> void:
 	check(ShaderWarmup.report.is_empty(), "off the web: no report")
 	m.free()
 	ShaderWarmup.force = true
-	var bare := FakeMain.new()
+	var bare := WK.FakeMain.new()
 	get_root().add_child(bare)
 	await ShaderWarmup.run(bare)
 	check(ShaderWarmup.report.is_empty(), "no camera: it returns at once")
@@ -665,21 +618,32 @@ func _check_large_scene() -> void:
 
 func _check_progress() -> void:
 	var f := ShaderWarmup.progress_pct
-	check(f.call(3, 10, 0.0, 3000.0) == 30, "the share of the work done")
-	check(f.call(3, 10, 3000.0, 3000.0) == 100, "a spent budget is 100% whatever was done")
-	check(f.call(3, 10, 1500.0, 3000.0) == 50, "or the share of it, if that is further on")
-	check(f.call(10, 10, 100.0, 3000.0) == 100, "all the work is 100%")
+	check(f.call(3, 10, 3000.0, 0.0) == 30, "the share of the work done")
+	check(f.call(3, 10, 0.0, 100.0) == 100, "a spent budget plans no more work: 100%")
+	check(f.call(3, 10, 200.0, 100.0) == 60, "the budget pays for two more items: 3 of 5")
+	check(f.call(3, 10, 5000.0, 100.0) == 30, "a budget that pays for all of it: 3 of 10")
+	check(f.call(10, 10, 100.0, 50.0) == 100, "all the work is 100%")
 	check(
-		f.call(0, 0, 0.0, 0.0) == 0 and f.call(5, 1, 9.0e9, 1.0) == 100,
+		f.call(0, 0, 0.0, 0.0) == 0 and f.call(5, 1, 0.0, 1.0) == 100,
 		"clamped and never divides by 0"
 	)
+	# Honest: idle time moves nothing, only work does.
+	check(f.call(0, 40, 3000.0, 0.0) == 0, "no work done is 0% however long it has been")
 	var last := 0
 	var mono := true
 	for k in range(0, 31):
-		var p: int = f.call(k, 40, float(k) * 100.0, 3000.0)
+		var p: int = f.call(k, 40, 3000.0 - float(k) * 100.0, 100.0)
 		mono = mono and p >= last
 		last = p
-	check(mono and last == 100, "it never goes back and ends at 100")
+	check(mono and last >= 99, "with a steady cost per item it never goes back and ends near 100")
+	check(
+		ShaderWarmup.plan_total(["prototypes", "unlit+noshadow"], 10, 3, 0) == 13,
+		"the plan: prototypes once, each other state the recipes"
+	)
+	check(
+		ShaderWarmup.plan_total(["unlit", "orbit"], 10, 3, 2) == 22,
+		"an orbit state adds the Planner's own recipes"
+	)
 
 
 func _check_boot_hook() -> void:

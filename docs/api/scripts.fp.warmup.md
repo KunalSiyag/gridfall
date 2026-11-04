@@ -4,6 +4,41 @@
 
 [Index](index.md)
 
+## `scripts/fp/warmup/planner_prep.gd`
+
+class_name `PlannerPrep` · extends `RefCounted`
+
+"Preparing the Planner view": the honest way through the two moves that freeze the web page. Going up to the Planner the first time, the browser links about a hundred shader programs (the Planner draws every material with four shadow splits and exponential fog, and has materials of its own) and the view rebuilds the world; coming back down rebuilds the whole street. Each used to be one frozen frame of 3 to 5 seconds. Here, with the flag planner_prepare_overlay on (web only), Main hands the move to take(), which 1. shows the page's overlay (WebSupport.prepare_show: HTML, so its spinner keeps turning while the game blocks) and waits two frames, so it is painted BEFORE anything heavy runs; 2. (opt-in: tuning key planner_warm, see warm_wanted) going up for the first time, draws the Planner's materials in the Planner's state a few at a time (ShaderWarmup.warm_orbit) with the overlay's bar following the work, so the links the move would do in one frame happen here in frames of a few hundred ms. Measured on the day-10 city it did not pay (see docs/runbooks/web-deploy.md), so by default there is no step 2: a spinner over the move; 3. makes the move itself (Main.exit_fp(true) / Main._back_to_street()) under the overlay, and keeps it up until the frames settle (SETTLE_CALM frames in a row under SETTLE_FRAME_MS, at most SETTLE_CAP_MS): the first frames after the move still freeze (the programs the new view links as it first draws, the chunks it builds), measured at 0.6 to 1.3 s each, and with the overlay down after two frames they were bare freezes. The wait is not shorter, it is honest: the player sees the card until the picture moves. What is still frozen is the move's own rebuild (the world and the street are built in one frame) and any program the warm-up did not cover: the overlay says so, not a frozen picture. Off the web, with the flag off, take() does nothing and the move is as it was.
+
+### Constants
+
+- `FLAG = "planner_prepare_overlay"`
+- `PAINT_FRAMES = 2`: Frames waited after showing the overlay so the page has painted.
+- `SETTLE_CALM = 5`: After the move the overlay stays until this many frames in a row took under SETTLE_FRAME_MS (a smooth web frame is 17 to 33 ms), or SETTLE_CAP_MS has passed (a slow machine is not held for ever: what is left freezes bare, as it did).
+- `SETTLE_FRAME_MS = 50.0`
+- `SETTLE_CAP_MS = 6000.0`
+- `TITLE_UP = "Preparing the Planner view"`
+- `NOTE_UP = "The first time the screen may stand still for a few seconds."`
+- `NOTE_UP_WARM = "The first time takes a few seconds while the browser readies the city view."`
+- `WARM_KEY = "planner_warm"`: The key in user://warmup_tuning.json that turns step 2 on (default false).
+- `TITLE_DOWN = "Back to the street"`
+- `NOTE_DOWN = "Rebuilding the street. The screen may stand still for a moment."`
+
+### Properties
+
+- `force: bool`: Tests set this to run the move on the desktop.
+- `busy: bool`: True while a move is in progress; a second request in that time is swallowed.
+- `warmed: bool`: True once the Planner's variants have been drawn this session (a second visit links nothing new).
+- `clock_hook: Callable`: Tests: a Callable returning the clock in ms (default: Time.get_ticks_usec), so settling is deterministic.
+- `show_hook: Callable`: Tests: called as show_hook(title, ratio, note) and hide_hook() instead of the page's overlay.
+- `report: Dictionary`: The last move's report ({"to_orbit", "warm", "ms", "frames"}).
+
+### Functions
+
+- `static func warm_wanted() -> bool`: Whether the move up draws the Planner's materials behind the overlay first (the tuning key planner_warm, with the flag warmup_orbit_variants on).
+- `static func active() -> bool`
+- `static func take(main: Node, to_orbit: bool) -> bool`: Takes over a move between the street and the Planner when the overlay is on: returns true (the caller returns at once, the move finishes later), false when the caller should move as before. to_orbit: leaving the street for the Planner; false: Tab down from the Planner to the street.
+
 ## `scripts/fp/warmup/render_info.gd`
 
 class_name `RenderInfo` · extends `Node`
@@ -30,6 +65,9 @@ Shader warm-up for the web build. The Compatibility renderer links each shader p
 ### Constants
 
 - `FLAG = "web_shader_warmup"`
+- `VARIANT_FLAG = "warmup_orbit_variants"`: Groups the scene's materials by shader variant (WarmSignature) and knows the Planner's own materials (data/warm_orbit_variants.json); off, the warm-up is as it was (a recipe per material, a grown city skipped, no Planner state).
+- `STATES = ["prototypes", "overview", "noshadow", "unlit"]`: The states a run draws by default: with warmup_orbit_variants on, the prototypes, the Tab overview and the no-shadow and street passes as separate lists; off, as before it, the prototypes and one two-pass list.
+- `LEGACY_STATES = ["prototypes", "unlit+noshadow"]`
 - `TUNING_PATH = "user://warmup_tuning.json"`
 - `REPORT_PREFIX = "WARMUP "`
 - `REPORT_VERSION = 1`
@@ -40,6 +78,7 @@ Shader warm-up for the web build. The Compatibility renderer links each shader p
 - `OVERVIEW_FRAMES = 6`: Frames the overview is held open for the warm-up (its camera eases up over the first few).
 - `SLOW_FRAME_MS = 100.0`: A frame over this (ms) is counted in the report as a hitch behind the veil.
 - `LARGE_SCENE_RECIPES = 600`: A scene with more recipes than this is not warmed (a grown city: 1,575 against a new city's 190). Every frame of the stage also draws the whole real scene, and the first frame of the shadow-off pass draws all of it again in a new state (1.9 s on a day-10 city): the budget is gone before the pass has warmed anything, so the warm-up only added 0.8 to 2.1 s of boot and removed no hitch (frames over 100 ms 9 and 9, against 9 and 9 without it).
+- `ORBIT_PREP_BUDGET_MS = 15000.0`: The most the Planner's own warm-up (warm_orbit, behind the "Preparing the Planner" overlay) spends drawing before it gives up and lets the rest link lazily (ms); a Planner state is 84 or so recipes, a few seconds, so this is a ceiling for a weak GPU, not what a run takes.
 
 ### Properties
 
@@ -50,10 +89,12 @@ Shader warm-up for the web build. The Compatibility renderer links each shader p
 ### Functions
 
 - `static func active() -> bool`: True on the web build (or force) with the flag on.
-- `static func tuning() -> Dictionary`: The tunables: defaults, overridden by user://warmup_tuning.json (a probe and test knob: {"budget_ms", "states": ["prototypes", "unlit+noshadow", "orbit", "overview", "lit", "unlit"], "max_recipes", "large_scene_recipes"}).
+- `static func tuning() -> Dictionary`: The tunables: defaults, overridden by user://warmup_tuning.json (a probe and test knob: {"budget_ms", "states": ["prototypes", "unlit+noshadow", "orbit", "orbitlit", "overview", "lit", "unlit"], "max_recipes", "large_scene_recipes", "planner_warm"}). "planner_warm" (default false) turns on the Planner's own warm-up behind the overlay (PlannerPrep).
 - `static func run(main: Node) -> void`: Runs the warm-up for the scene under main (needs main.active_camera()). Awaitable; returns when done. Safe to call when inactive: it returns at once.
 - `static func render_state(cam: Camera3D, with_lights: bool = true) -> Dictionary`: What the renderer is told about the view the warm-up draws in (which shader families it needs follow from it): the viewport's scaling, the environment's effects and fog mode, the sun, the lights.
-- `static func progress_pct(done: int, total: int, elapsed_ms: float, budget_ms: float) -> int`: The loader's percentage: the share of the work done or the share of the budget spent, whichever is further along, so a run that ends on its budget (most of them: a scene has more recipes than 3 s can draw) reaches 100% as the veil lifts, not the share of recipes it got to.
+- `static func progress_pct(done: int, total: int, left_ms: float, ms_per_item: float) -> int`: The loader's percentage: the share of the work done against the work the run expects to finish, which is all of it, or, when the time budget will cut it, what the budget pays for at the cost per item so far. Work only: a run that stops on its budget reaches 100% because its plan was what the budget allows, not because the clock ran out (the old reading was the larger of the work share and the time share, so the bar crept on while nothing was drawn).
+- `static func plan_total(states: Array, recipes: int, protos: int, orbit: int) -> int`: The work a run plans: every state's list once (the overview state counts as one item per recipe, as it did), the prototypes only in their own state.
+- `static func warm_orbit(main: Node, progress: Callable) -> Dictionary`: The Planner's own warm-up, run when the player asks for the Planner view and behind its "Preparing the Planner" overlay (PlannerPrep): the street scene's materials and the Planner's own (the catalogue) drawn in the Planner's four shadow splits and exponential fog, with the lamps as they are now (on or off), a few at a time, the overlay's bar following the work. progress(pct, done, total) is called before each frame. Returns the report ({} when there is nothing to draw).
 
 ## `scripts/fp/warmup/shadow_hold.gd`
 
@@ -76,11 +117,34 @@ Finds the draws the scene will make, as a list of recipes, one per distinct mate
 ### Constants
 
 - `PROTOTYPES_PATH = "res://data/warm_prototypes.json"`: Where the list of things to warm that are not in the scene yet lives.
+- `ORBIT_PATH = "res://data/warm_orbit_variants.json"`: The shader variants only the Planner view holds, written by tools/warm_variants.gd.
+
+### Properties
+
+- `by_variant: bool`: True (the default): one recipe per shader variant, the materials grouped by WarmSignature, so a grown city's fifteen hundred materials are a hundred or so draws. false: one recipe per material instance, as before (a test and probe knob).
 
 ### Functions
 
 - `static func collect(root: Node, near: Vector3 = Vector3.ZERO, cap: int = 2000, skip: Array = []) -> Array[Dictionary]`: Recipes under root, nearest to near first (the order the warm-up draws them), at most cap. Nodes named in skip (and everything below them) are left out: the warm-up's own stage.
 - `static func prototypes(extra: Array[Node3D] = []) -> Array[Dictionary]`: Recipes for the materials and models named in data/warm_prototypes.json (a path that is not there is skipped), then for the nodes in extra (prototypes the features build; freed here).
+- `static func orbit_catalogue() -> Array[Dictionary]`: Recipes with stand-in materials for the variants only the Planner view holds (its materials are made when it first opens: data/warm_orbit_variants.json, by tools/warm_variants.gd), biggest user first. A missing or unreadable file, or an entry that cannot be rebuilt, is skipped.
+
+## `scripts/fp/warmup/warm_signature.gd`
+
+class_name `WarmSignature` · extends `RefCounted`
+
+What decides which shader programs a material needs, as a short string: two materials with the same signature link the same programs (the browser's driver caches by generated source), so the warm-up draws one of them, not all fifteen hundred a grown city holds. A StandardMaterial3D / ORMMaterial3D generates its shader from its flags and enums (shading, transparency, blend, cull, billboard, triplanar, texture channels...) and from which texture slots are filled, never from the colour, roughness or texture content, so the signature is every bool and enum property plus "slot filled" for each object property. A ShaderMaterial's program follows its shader. Anything else falls back to its class and instance. The signature is deliberately finer than Godot's own key (it also separates properties the key ignores): a finer split only costs a second copy, a coarser one would leave a program to link in play. describe() / build() turn a material into a small dictionary and back (tools/warm_variants.gd writes data/warm_orbit_variants.json with them): the Planner's materials are made when the Planner first opens, so the warm-up rebuilds a stand-in with the same signature from the catalogue.
+
+### Constants
+
+- `SKIP = { "resource_local_to_scene": true, "resource_name": true, "resource_path": true, "rende...`: Properties that never reach the generated shader (or that this class handles itself).
+
+### Functions
+
+- `static func clear_cache() -> void`: Forgets the per-material cache (a collect pass calls it before and after).
+- `static func of(mat: Material) -> String`
+- `static func describe(mat: Material) -> Variant`: A small dictionary a stand-in can be rebuilt from: {"t": "std", "class", "props": {name: value}, "slots": [names of the filled texture slots]} or {"t": "shader", "shader": path}. Null for a material this cannot rebuild (a ShaderMaterial whose shader has no path, anything else).
+- `static func build(spec: Dictionary) -> Material`: A material with the signature of the one describe() read, or null. Texture slots get a 2x2 white image (only that the slot is filled counts), shaders load from their path.
 
 ## `scripts/fp/warmup/warm_stage.gd`
 
@@ -95,6 +159,7 @@ The warm-up's stage: a Node3D parked a few metres in front of the active camera 
 - `COLUMNS = 8`: Copies per row of the grid, and the gap between them (metres, before the camera looks at them).
 - `GAP = 0.05`
 - `LIGHT_ENERGY = 0.02`
+- `ISOLATE_LAYER = 1 << 19`: The render layer the copies live on (the 20th). isolate() points the camera and the sun at this layer alone, so a warm-up frame draws the copies and not the whole city again.
 
 ### Properties
 
@@ -103,6 +168,9 @@ The warm-up's stage: a Node3D parked a few metres in front of the active camera 
 ### Functions
 
 - `func attach(cam: Camera3D) -> void`: Parks the stage in front of camera cam (a child of it, so it follows the camera).
+- `func isolate(sun: DirectionalLight3D) -> void`: Makes the warm-up frames draw the copies alone: the camera's and the sun's cull masks go to ISOLATE_LAYER (the sun's shadow pass then casts the copies only). The sun joins that layer too, as the stage's lamps are on it, because the camera's mask culls lights as well. A frame then costs the copies' programs and not another full draw of the city, which on a grown city was 0.5 to 1.9 s of every frame before any copy was drawn. Programs follow the material and the render state, not what else is in the frame, so the copies link the same ones. release() puts the masks back (also on exit).
+- `func release() -> void`
+- `func is_isolating() -> bool`
 - `func set_lit(on: bool) -> void`: true: the lamps are on (omni and spot loops in the shaders); false: no lamp reaches the copies.
 - `func show_batch(batch: Array[Dictionary]) -> int`: Adds a copy of every recipe in batch; they draw in the next frame. Returns how many were made.
 - `func clear_batch() -> void`: Frees every copy (the lights stay).

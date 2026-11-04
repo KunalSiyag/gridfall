@@ -183,10 +183,25 @@ const r1 = (x) => (x === null || x === undefined ? null : Math.round(x * 10) / 1
 		// Start the frame census when the page has its first frame; the veil mark is what the game does for the player.
 		await page.evaluate(() => { window.__hp.on = true; });
 		let veil = null;
+		// The loader as the player sees it (GF_HP_LOADER=1, 100 ms polls): every change of the label, the bar's fill and its
+		// travelling stripe, with the page time, and the longest stretch the page did not answer (a blocked main thread).
+		const loaderLog = [];
+		let lastAnswer = null, longestSilence = 0;
 		while (Date.now() - t0 < 600000) {
-			veil = await page.evaluate(() => { const e = performance.getEntriesByName("gf:veil_released"); return e.length ? e[0].startTime : null; }).catch(() => null);
-			if (veil !== null) break;
-			await sleep(500);
+			const r = await page.evaluate(() => {
+				const e = performance.getEntriesByName("gf:veil_released");
+				const lab = document.getElementById("gf-label"), fill = document.getElementById("gf-fill"), bar = document.getElementById("gf-bar");
+				return { veil: e.length ? e[0].startTime : null, t: performance.now(), label: lab ? lab.textContent : null, fill: fill ? fill.style.width : null, indet: !!bar && bar.className.includes("gf-indet") };
+			}).catch(() => null);
+			if (r) {
+				if (lastAnswer !== null) longestSilence = Math.max(longestSilence, r.t - lastAnswer);
+				lastAnswer = r.t;
+				const prev = loaderLog[loaderLog.length - 1];
+				if (env.GF_HP_LOADER === "1" && (!prev || prev.label !== r.label || prev.fill !== r.fill || prev.indet !== r.indet)) loaderLog.push({ t: Math.round(r.t), label: r.label, fill: r.fill, indet: r.indet });
+				veil = r.veil;
+				if (veil !== null) break;
+			}
+			await sleep(env.GF_HP_LOADER === "1" ? 100 : 500);
 		}
 		if (veil === null) throw new Error("the veil never dropped in 600 s");
 		const bootWallS = (Date.now() - t0) / 1000;
@@ -212,7 +227,7 @@ const r1 = (x) => (x === null || x === undefined ? null : Math.round(x * 10) / 1
 		await page.keyboard.up("w"); await until(SECS);
 		await act("end");
 		await page.screenshot({ path: path.join(OUT, "street.png") }).catch(() => {});
-		let orbit = null, orbitZoom = null, toOrbit = null, toStreet = null;
+		let orbit = null, orbitZoom = null, toOrbit = null, toStreet = null, speeds = null;
 		if (ORBIT) {
 			// The Planner view (pause menu: Esc, Down x5, Enter), 20 s, then Tab back: its frames are the Planner's numbers.
 			await act("to_orbit_begin");
@@ -221,7 +236,17 @@ const r1 = (x) => (x === null || x === undefined ? null : Math.round(x * 10) / 1
 			for (let i = 0; i < 5; i++) { await page.keyboard.press("ArrowDown"); await sleep(150); }
 			await page.evaluate(() => { window.__hp.frames = []; window.__hp.t_enter = performance.now(); });
 			await page.keyboard.press("Enter");
+			// With the "Preparing the Planner view" overlay (planner_prepare_overlay) the move takes longer than 10 s on a
+			// grown city: wait for the page's gf:prepare_done mark (up to 60 s) when the overlay showed, 10 s when it did not.
 			await sleep(10000);
+			const shown = await page.evaluate(() => performance.getEntriesByName("gf:prepare_shown").length > 0);
+			if (shown) {
+				for (let k = 0; k < 100; k++) {
+					if (await page.evaluate(() => performance.getEntriesByName("gf:prepare_done").length > 0)) break;
+					await sleep(500);
+				}
+				await sleep(3000);
+			}
 			toOrbit = await page.evaluate(() => ({ frames: window.__hp.frames, t0: window.__hp.t_enter }));
 			await page.evaluate(() => { window.__hp.frames = []; });
 			await act("orbit_window");
@@ -236,8 +261,40 @@ const r1 = (x) => (x === null || x === undefined ? null : Math.round(x * 10) / 1
 			await sleep(10000);
 			orbitZoom = await page.evaluate(() => window.__hp.frames);
 			await page.screenshot({ path: path.join(OUT, "orbit_zoom.png") }).catch(() => {});
+			// GF_HP_SPEEDS: game days per window at each speed button (the buttons sit at x = 1071 + 41 * k, y = 24 at
+			// 1600x900: pause, 1x, 2x, 4x, 8x). Days are the gf:day_N marks the game makes with the marks flag on.
+			if (env.GF_HP_SPEEDS) {
+				const spd = { 1: 1112, 2: 1153, 4: 1194, 8: 1235 };
+				const secs = Number(env.GF_HP_SPEED_S || 20);
+				speeds = {};
+				for (const sp of env.GF_HP_SPEEDS.split(",").map(Number)) {
+					if (!spd[sp]) continue;
+					await page.mouse.click(Math.round(spd[sp] * viewport.width / 1600), Math.round(24 * viewport.height / 900));
+					await sleep(1500);
+					const t0 = await page.evaluate(() => performance.now());
+					await sleep(secs * 1000);
+					const t1 = await page.evaluate(() => performance.now());
+					const days = await page.evaluate(({ a, b }) => performance.getEntriesByType("mark").filter((m) => /^gf:day_\d+(_p\d+)?$/.test(m.name) && m.startTime >= a && m.startTime <= b).map((m) => [Math.round(m.startTime), Number((/_p(\d+)$/.exec(m.name) || [0, 0])[1])]), { a: t0, b: t1 });
+					const times = days.map((d) => d[0]);
+					const gaps = times.slice(1).map((t, i) => t - times[i]);
+					speeds["x" + sp] = { secs: Math.round((t1 - t0) / 100) / 10, days: days.length, first_day_at_s: days.length ? Math.round((times[0] - t0) / 100) / 10 : null, longest_gap_s: gaps.length ? Math.round(Math.max(...gaps) / 100) / 10 : null, drained_pieces: days.length ? days[days.length - 1][1] - days[0][1] : 0 };
+				}
+				await page.mouse.click(Math.round(1112 * viewport.width / 1600), Math.round(24 * viewport.height / 900));
+			}
 			await page.evaluate(() => { window.__hp.frames = []; window.__hp.t_tab = performance.now(); });
-			await act("tab_to_street"); await page.keyboard.press("Tab"); await sleep(8000);
+			await act("tab_to_street"); await page.keyboard.press("Tab");
+			{
+				// The "Back to the street" overlay (when on) ends with the gf:prepare_done mark after the one the Planner left.
+				await sleep(8000);
+				const n = await page.evaluate(() => performance.getEntriesByName("gf:prepare_shown").length);
+				if (n >= 2) {
+					for (let k = 0; k < 100; k++) {
+						if (await page.evaluate((m) => performance.getEntriesByName("gf:prepare_done").length >= m, n)) break;
+						await sleep(500);
+					}
+					await sleep(2000);
+				}
+			}
 			toStreet = await page.evaluate(() => ({ frames: window.__hp.frames, t0: window.__hp.t_tab }));
 			await page.screenshot({ path: path.join(OUT, "street_return.png") }).catch(() => {});
 			void drainA;
@@ -325,12 +382,14 @@ const r1 = (x) => (x === null || x === undefined ? null : Math.round(x * 10) / 1
 		if (toOrbit) result.to_orbit = change(toOrbit);
 		if (toStreet) result.to_street = change(toStreet);
 		if (orbit) result.orbit = orbitStats(orbit);
+		if (speeds) result.speeds = speeds;
+		if (env.GF_HP_LOADER === "1") result.loader = { changes: loaderLog.length, longest_silence_ms: Math.round(longestSilence), log: loaderLog };
 		if (orbitZoom) result.orbit_zoom = orbitStats(orbitZoom);
 		result.render_info = logLines.filter((l) => /^RENDERINFO /.test(l)).map((l) => { try { return JSON.parse(l.slice(11)); } catch (e) { return null; } }).filter(Boolean);
 		fs.writeFileSync(path.join(OUT, "result.json"), JSON.stringify(result, null, 1));
 		fs.writeFileSync(path.join(OUT, "programs.json"), JSON.stringify({ veil, progs }));
 		fs.writeFileSync(path.join(OUT, "console.log"), logLines.join("\n"));
-		console.log("GF_HP_RESULT " + JSON.stringify({ boot: result.boot, warmup: result.warmup, programs: Object.assign({}, result.programs, { after_defs: undefined }), frames: result.frames, hitches: Object.assign({}, result.hitches, { top: undefined, slow100: undefined }), orbit: result.orbit, orbit_zoom: result.orbit_zoom, to_orbit: result.to_orbit, to_street: result.to_street }));
+		console.log("GF_HP_RESULT " + JSON.stringify({ boot: result.boot, warmup: result.warmup, programs: Object.assign({}, result.programs, { after_defs: undefined }), frames: result.frames, hitches: Object.assign({}, result.hitches, { top: undefined, slow100: undefined }), orbit: result.orbit, orbit_zoom: result.orbit_zoom, to_orbit: result.to_orbit, to_street: result.to_street, speeds: result.speeds, loader: result.loader && { changes: result.loader.changes, longest_silence_ms: result.loader.longest_silence_ms } }));
 	} catch (e) {
 		console.error("GF_HP_ERROR", e);
 		fs.writeFileSync(path.join(OUT, "console.log"), logLines.join("\n"));

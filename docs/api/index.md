@@ -331,10 +331,12 @@ Generated from the `##` doc comments in `scripts/`. Regenerate with `python3 too
 
 ## [scripts/fp/warmup/](scripts.fp.warmup.md)
 
+- [planner_prep.gd](scripts.fp.warmup.md#scriptsfpwarmupplanner_prepgd) (`PlannerPrep`): "Preparing the Planner view": the honest way through the two moves that freeze the web page
 - [render_info.gd](scripts.fp.warmup.md#scriptsfpwarmuprender_infogd) (`RenderInfo`): Web probe aid (flag web_first_use_marks, web only): every SECONDS prints one console line with what the renderer drew in the last frame of the main viewport, so a Planner or street change shows its effect in objects, primitives and draw calls, separately for the visible pass and the shadow passes
 - [shader_warmup.gd](scripts.fp.warmup.md#scriptsfpwarmupshader_warmupgd) (`ShaderWarmup`): Shader warm-up for the web build
 - [shadow_hold.gd](scripts.fp.warmup.md#scriptsfpwarmupshadow_holdgd) (`WarmShadowHold`): Holds the sun and the fog in another state for the frames of one warm-up state, then puts them back
 - [warm_collector.gd](scripts.fp.warmup.md#scriptsfpwarmupwarm_collectorgd) (`WarmCollector`): Finds the draws the scene will make, as a list of recipes, one per distinct material: a material on a plain mesh, on a MultiMesh (with or without per-instance colours and custom data), casting shadows or not, is one recipe, whatever meshes carry it
+- [warm_signature.gd](scripts.fp.warmup.md#scriptsfpwarmupwarm_signaturegd) (`WarmSignature`): What decides which shader programs a material needs, as a short string: two materials with the same signature link the same programs (the browser's driver caches by generated source), so the warm-up draws one of them, not all fifteen hundred a grown city holds
 - [warm_stage.gd](scripts.fp.warmup.md#scriptsfpwarmupwarm_stagegd) (`WarmStage`): The warm-up's stage: a Node3D parked a few metres in front of the active camera that holds one tiny copy of each recipe (WarmCollector) for a frame
 
 ## [scripts/fp/water/](scripts.fp.water.md)
@@ -373,6 +375,7 @@ Generated from the `##` doc comments in `scripts/`. Regenerate with `python3 too
 - [residents.gd](scripts.sim.md#scriptssimresidentsgd) (`Residents`): The people of GridFall: up to 100 named residents, each standing in for an equal share of the population
 - [save_shape.gd](scripts.sim.md#scriptssimsave_shapegd): The shape a save must have before a load replaces the live city with it
 - [sim_defs.gd](scripts.sim.md#scriptssimsim_defsgd) (`SimDefs`): Static rules, costs, and catalogs for the GridFall city simulation
+- [spread_drain.gd](scripts.sim.md#scriptssimspread_draingd) (`SpreadDrain`): Drain scheduler for the day-start work the sliced sim spreads over frames: the brain's day round (five mayors and the support roles) and the residents' plan batches each run ONE piece per frame (CityBrain._process, ResidentMinds._run_spread), about fifty frames, while the sliced job waits for them (CitySim.spread_pending) and the clock sits at dawn
 
 ## [scripts/ui/](scripts.ui.md)
 

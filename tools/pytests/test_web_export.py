@@ -621,7 +621,7 @@ def test_loader_spinner_animates_compositor_properties_only():
     from tools.web_export import LOADER_CSS
 
     frames = _css_blocks(LOADER_CSS, "keyframes")
-    assert len(frames) == 2  # the spin and the reduced-motion pulse
+    assert len(frames) == 3  # the spin, the travelling stripe and the reduced-motion pulse
     for body in frames:
         # transform and opacity are the properties a compositor can animate off the main thread.
         assert set(re.findall(r"([a-z-]+)\s*:", body)) <= {"transform", "opacity"}
@@ -897,3 +897,43 @@ def test_rewrite_manifest_prefixes_only_pack_paths(tmp_path):
     rewrite_manifest(pack, "releases/1234/")
     assert json.loads(read_pack(pack)["web_manifest.json"][1])["packs"]["sky"]["file"] == \
         "releases/1234/packs/sky-abc.pck"
+
+
+def test_loader_bar_is_honest_after_the_bytes_are_in():
+    from tools.web_export import LOADER_CSS
+
+    patched = patch_loader_html(SHELL_STUB)
+    starting = _js_function(patched, "showStarting")
+    # The bytes are in, the engine is starting: no fake-full bar, a travelling stripe instead.
+    assert "progressFill.style.width = '100%'" not in starting
+    assert "progressFill.style.width = '0%'" in starting
+    assert "classList.add('gf-starting', 'gf-indet')" in starting
+    assert "#gf-bar.gf-indet #gf-fill" in LOADER_CSS and "animation: gf-slide" in LOADER_CSS
+    # The game's status line carries a ratio: the bar follows the work done, no ratio brings the stripe back.
+    status = patched[patched.index("window.gfBootStatus = function (text, ratio)"):]
+    status = status[: status.index("\n\t};")]
+    assert "progressBar.classList.remove('gf-indet')" in status
+    assert "Math.round(ratio * 100)" in status and "progressBar.classList.add('gf-indet')" in status
+    assert "if (veilReleased) {" in status  # nothing changes under a released veil
+
+
+def test_loader_prepare_overlay_is_html_the_compositor_can_keep_turning():
+    from tools.web_export import LOADER_PREPARE, LOADER_PREPARE_CSS
+
+    patched = patch_loader_html(SHELL_STUB)
+    assert "window.gfPrepare = function (title, ratio, note)" in patched
+    assert "window.gfPrepareDone = function ()" in patched
+    assert LOADER_PREPARE_CSS in patched
+    # Neither hook may throw into the engine.
+    for name in ("window.gfPrepare = function", "window.gfPrepareDone = function"):
+        body = patched[patched.index(name):]
+        body = body[: body.index("\n\t};")]
+        assert "try {" in body and "catch (err)" in body
+    # The spinner and the stripe animate transform only (a compositor runs them off the main thread).
+    assert "animation: gf-spin 0.9s linear infinite" in LOADER_PREPARE_CSS
+    assert "will-change: transform" in LOADER_PREPARE_CSS
+    assert "scaleX(" in LOADER_PREPARE  # the bar fills by transform, not width
+    # It sits over the game and takes the clicks until it is done.
+    assert "position: fixed; inset: 0" in LOADER_PREPARE_CSS and "#gf-prep.gf-on { display: flex; }" in LOADER_PREPARE_CSS
+    # The loader helper's timer count is unchanged: the overlay arms none.
+    assert "setTimeout(" not in LOADER_PREPARE and "setInterval(" not in LOADER_PREPARE

@@ -395,6 +395,11 @@ LOADER_CSS = """#status-progress { display: none !important; }
 	color: #aeb6c4; text-wrap: balance; }
 #gf-track { height: 6px; border-radius: 3px; background: rgba(255, 255, 255, 0.16); overflow: hidden; }
 #gf-fill { height: 100%; width: 0%; background: #d6ff3f; transition: width 0.25s ease; }
+/* While the work has no measure (the engine starting, a stage with no count) the bar shows a stripe
+   that travels, never a full bar: it animates transform only, which a compositor keeps turning while
+   the main thread is held. The game gives a ratio (gfBootStatus) once it can count. */
+#gf-bar.gf-indet #gf-fill { width: 34% !important; transition: none !important; animation: gf-slide 1.5s ease-in-out infinite; }
+@keyframes gf-slide { from { transform: translateX(-100%); } to { transform: translateX(300%); } }
 #gf-row { display: flex; align-items: center; justify-content: center; gap: 10px; margin-top: 10px; }
 #gf-label { text-align: center; font: 500 13px/1.4 system-ui, -apple-system,
 	"Segoe UI", Roboto, sans-serif; color: #e8ecf3; letter-spacing: 0.02em; }
@@ -414,7 +419,8 @@ LOADER_CSS = """#status-progress { display: none !important; }
 #gf-sound.gf-on { display: block; }
 @keyframes gf-spin { to { transform: rotate(360deg); } }
 @keyframes gf-pulse { 50% { opacity: 0.3; } }
-@media (prefers-reduced-motion: reduce) { #gf-spin { animation: gf-pulse 1.8s ease-in-out infinite; } }
+@media (prefers-reduced-motion: reduce) { #gf-spin, #gf-prep-spin { animation: gf-pulse 1.8s ease-in-out infinite; }
+	#gf-bar.gf-indet #gf-fill, #gf-prep.gf-indet #gf-prep-fill { width: 100% !important; animation: gf-pulse 1.8s ease-in-out infinite; } }
 /* Forced colors (high contrast) make every border one colour, which hides the turning arc. */
 @media (forced-colors: active) { #gf-spin { border-color: GrayText; border-top-color: Highlight; } }
 """
@@ -524,11 +530,13 @@ LOADER_HELPER = """
 \t\tveilStarting = true;
 \t\ttry {
 \t\t\ttimelineMark('bytes_done');
-\t\t\t// Snap to full: a width transition needs the main thread, which the boot is about to take.
+\t\t\t// The bytes are all in, so the download is done; what is left (the engine starting, the game
+\t\t\t// preparing) has no measure yet. The bar goes from full to a travelling stripe (transform
+\t\t\t// only, so it keeps moving while the boot holds the main thread) until the game gives a ratio.
 \t\t\tprogressFill.style.transition = 'none';
-\t\t\tprogressFill.style.width = '100%';
+\t\t\tprogressFill.style.width = '0%';
 \t\t\tprogressLabel.textContent = 'Starting your city';
-\t\t\tprogressBar.classList.add('gf-starting');
+\t\t\tprogressBar.classList.add('gf-starting', 'gf-indet');
 \t\t} catch (err) {
 \t\t\tconsole.error(err);
 \t\t}
@@ -583,10 +591,24 @@ LOADER_HELPER = """
 \t};
 \t// The game's own words for the status line while it prepares behind the veil (the shader warm-up,
 \t// WebSupport.boot_status): "" puts the page's wording back. Never throws into the engine.
-\twindow.gfBootStatus = function (text) {
+\t// ratio (0..1) is the share of the work done: the bar follows it. Without one the bar goes back to
+\t// its travelling stripe (working, no measure). The text is the label either way.
+\twindow.gfBootStatus = function (text, ratio) {
 \t\ttry {
-\t\t\tif (!veilReleased && progressLabel) {
+\t\t\tif (veilReleased) {
+\t\t\t\treturn;
+\t\t\t}
+\t\t\tif (progressLabel) {
 \t\t\t\tprogressLabel.textContent = text ? String(text).slice(0, 80) : 'Starting your city';
+\t\t\t}
+\t\t\tif (progressFill && progressBar) {
+\t\t\t\tif (typeof ratio === 'number' && ratio >= 0) {
+\t\t\t\t\tprogressBar.classList.remove('gf-indet');
+\t\t\t\t\tprogressFill.style.transition = 'width 0.25s ease';
+\t\t\t\t\tprogressFill.style.width = Math.max(0, Math.min(100, Math.round(ratio * 100))) + '%';
+\t\t\t\t} else {
+\t\t\t\t\tprogressBar.classList.add('gf-indet');
+\t\t\t\t}
 \t\t\t}
 \t\t} catch (err) {
 \t\t\tconsole.error(err);
@@ -682,15 +704,94 @@ LOADER_AUDIO = """
 """
 
 
+## The "Preparing ..." overlay: the game asks for it before work that blocks the page for seconds (the
+## Planner's first shader links, the street's rebuild on Tab back), so the player sees a card with a
+## turning spinner, what is happening and a bar, not a frozen picture. It is HTML on purpose: the
+## spinner animates transform only, which the compositor keeps turning while the game's main loop is
+## inside one long frame; a node drawn by the game cannot. window.gfPrepare(title, ratio, note) shows
+## it (ratio 0..1 fills the bar, anything else shows the travelling stripe); window.gfPrepareDone()
+## takes it down. Both never throw into the engine. The game paints it first by waiting two frames
+## before the heavy work (scripts/fp/warmup/planner_prep.gd).
+LOADER_PREPARE_CSS = """#gf-prep { display: none; position: fixed; inset: 0; z-index: 60; align-items: center; justify-content: center;
+	background: rgba(8, 10, 14, 0.94); }
+#gf-prep.gf-on { display: flex; }
+#gf-prep-card { width: min(380px, 78vw); text-align: center; font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+#gf-prep-spin { box-sizing: border-box; width: 30px; height: 30px; margin: 0 auto 16px; border-radius: 50%;
+	border: 3px solid rgba(255, 255, 255, 0.18); border-top-color: #d6ff3f; will-change: transform;
+	animation: gf-spin 0.9s linear infinite; }
+#gf-prep-title { margin: 0 0 14px; font-size: 18px; font-weight: 600; line-height: 1.4; color: #f4f6fa; }
+#gf-prep-track { height: 6px; border-radius: 3px; background: rgba(255, 255, 255, 0.16); overflow: hidden; }
+#gf-prep-fill { height: 100%; width: 100%; background: #d6ff3f; transform-origin: 0 50%; transform: scaleX(0); transition: transform 0.2s ease; }
+#gf-prep.gf-indet #gf-prep-fill { width: 34%; transform: none; transition: none; animation: gf-slide 1.5s ease-in-out infinite; }
+#gf-prep-note { margin: 12px 0 0; font-size: 13px; line-height: 1.5; color: #aeb6c4; }
+@media (forced-colors: active) { #gf-prep-spin { border-color: GrayText; border-top-color: Highlight; } }
+"""
+
+LOADER_PREPARE = """
+\t// Prepare overlay (see tools/web_export.py LOADER_PREPARE).
+\tlet prepEl = null;
+\tlet prepFill = null;
+\tlet prepTitle = null;
+\tlet prepNote = null;
+
+\tfunction prepNode() {
+\t\tif (prepEl || !document.body) {
+\t\t\treturn prepEl;
+\t\t}
+\t\tprepEl = document.createElement('div');
+\t\tprepEl.id = 'gf-prep';
+\t\tprepEl.setAttribute('role', 'status');
+\t\tprepEl.innerHTML = '<div id="gf-prep-card"><div id="gf-prep-spin"></div><p id="gf-prep-title"></p>' +
+\t\t\t'<div id="gf-prep-track"><div id="gf-prep-fill"></div></div><p id="gf-prep-note"></p></div>';
+\t\tdocument.body.appendChild(prepEl);
+\t\tprepFill = document.getElementById('gf-prep-fill');
+\t\tprepTitle = document.getElementById('gf-prep-title');
+\t\tprepNote = document.getElementById('gf-prep-note');
+\t\treturn prepEl;
+\t}
+
+\twindow.gfPrepare = function (title, ratio, note) {
+\t\ttry {
+\t\t\tif (!prepNode()) {
+\t\t\t\treturn;
+\t\t\t}
+\t\t\tprepTitle.textContent = title ? String(title).slice(0, 80) : 'Preparing...';
+\t\t\tprepNote.textContent = note ? String(note).slice(0, 160) : '';
+\t\t\tprepNote.style.display = note ? 'block' : 'none';
+\t\t\tif (typeof ratio === 'number' && ratio >= 0) {
+\t\t\t\tprepEl.classList.remove('gf-indet');
+\t\t\t\tprepFill.style.transform = 'scaleX(' + Math.max(0, Math.min(1, ratio)) + ')';
+\t\t\t} else {
+\t\t\t\tprepEl.classList.add('gf-indet');
+\t\t\t}
+\t\t\tprepEl.classList.add('gf-on');
+\t\t\ttimelineMark('prepare_shown');
+\t\t} catch (err) {
+\t\t\tconsole.error(err);
+\t\t}
+\t};
+\twindow.gfPrepareDone = function () {
+\t\ttry {
+\t\t\tif (prepEl) {
+\t\t\t\tprepEl.classList.remove('gf-on');
+\t\t\t\ttimelineMark('prepare_done');
+\t\t\t}
+\t\t} catch (err) {
+\t\t\tconsole.error(err);
+\t\t}
+\t};
+"""
+
+
 def patch_loader_html(html: str) -> str:
     """Give the boot page a branded progress bar instead of Godot's bare <progress> element, and
     keep its overlay up until the game is interactive (window.gfBootDone, or a timeout)."""
     replacements = (
-        ("</style>", LOADER_CSS + "\t\t</style>"),
+        ("</style>", LOADER_CSS + LOADER_PREPARE_CSS + "\t\t</style>"),
         ("<progress id=\"status-progress\"></progress>",
          "<progress id=\"status-progress\"></progress>\n\t\t\t\t" + LOADER_BAR),
         ("\tconst statusNotice = document.getElementById('status-notice');",
-         "\tconst statusNotice = document.getElementById('status-notice');\n" + LOADER_HELPER + LOADER_AUDIO),
+         "\tconst statusNotice = document.getElementById('status-notice');\n" + LOADER_HELPER + LOADER_AUDIO + LOADER_PREPARE),
         ("\t\tstatusNotice.style.display = mode === 'notice' ? 'block' : 'none';",
          "\t\tstatusNotice.style.display = mode === 'notice' ? 'block' : 'none';\n"
          "\t\tif (progressBar) {\n"

@@ -577,13 +577,82 @@ the budget: the brain's day round and the residents' plan batches are spread one
 in the browser, so 2.5 to 8 s of wall clock; seen as the HUD sitting on "06:00" in the dense runs, `GF_FPS_DENSE=1`,
 for 2 to 15 s). In the native model the sim waits on that spread for 2.6 to 3.4 s of 20 s at 4x and 8x
 (`spread_wall_s`: 13 to 17% of the window, 0.8 s with the 4 ms slices), so it costs the sliced sim up to about a fifth
-of its pace there, and more in the browser's longer frames. Whole ticks run the round inline and do not have it. A
-follow-up, not done here (`city_brain.gd` is at the 1,000-line cap): drain pieces per frame within a time budget when
-the speed is 4x or more. Not measured: the browser at 24 ms, or how much of the browser stall the drain would remove.
+of its pace there, and more in the browser's longer frames. Whole ticks run the round inline and do not have it. **Done in
+the next paragraph (the drain scheduler).** Not measured: the browser at 24 ms.
 `ORBIT_BUDGET_CAP_MS` is the one knob for pace against frame time; **1x is not exactly real time either on a grown
 city**: sliced, the clock ran at 1.3 of 1.67 days in the model and the web read 0.8 against 0.96 for whole ticks; the
 HUD's "Real-time pace" label is a separate setting, not the achieved speed (`CitySim.effective_speed` is, and nothing
 shows it yet).
+
+**Fast-forward drain (flag `day_drain_fast`, default on; unit C3).** At 4x and 8x the sliced sim's pump is idle for
+the whole day-start wait (it holds for the spread work, `CitySim.spread_pending`), so its per-frame budget went
+unused while the day round and the plan batches took one piece a frame. `SpreadDrain` (`scripts/sim/spread_drain.gd`,
+a pure scheduler: callables in, a count out) adds pieces in that frame **while the frame's piece work stays inside
+`SpreadDrain.BUDGET_MS` (8 ms, capped by the sim's own per-frame budget) counting the pieces the per-frame paths run anyway**
+(ResidentMinds and the brain each run one a frame, drain or not: so two waiting sources reserve two estimated pieces),
+at most 16 extra pieces, predicting each piece's cost from the last ones, round-robin over the sources in the order a
+frame runs them (ResidentMinds, then the brain). What the drain spends comes out of the pump's share of the frame
+(`CitySim.last_pump_budget_ms`). A frame already full of pieces gets none: with pieces of 5 ms or more in the browser
+(two sources, 10 ms or more of forced pieces) the drain adds nothing and no frame is longer than without it; a heavy
+estimate falls 1% per skipped frame, so it is probed again every 30 to 50 frames. The hook is
+`CitySim._process_sliced` (before the job starts, so the tick can start in the same frame the queue empties), the
+steps are `ResidentMinds.drain_step` and `CityBrain.drain_step` (the brain's `_process` calls the same function), and
+`SimPerfFeature` sets `CitySim.drain_budget_ms` from the flag. 1x and 2x are unchanged.
+**Pacing only:** the same pieces in the same order; `fp_day_drain_test` runs a grown seed-7 city two days and two ticks
+at 4x and 8x with the scheduler on and off and compares the whole state hash (identical), also with the mayors' calls
+held by hand and released at the dusk wait in order and reversed (`GATED` client), checks that the clock waits fewer
+frames at dawn, that 1x and 2x run no extra piece, that both sources are wired to the drain (a dropped registration
+failed nothing before), and that the pump gets the frame's budget minus what the drain spent.
+
+*What the first version did, found in review.* It always let the first extra piece of a frame run (up to 2.5 budgets
+of estimated cost) so that the browser, where a piece costs 5 to 10 ms, got something. With a 6 ms delay put on every piece
+in the native model (day-10 save, whole-frame wall time) the frame's p95 went from 9.8 to 17.5 ms at 4x and from 12.6 to
+19.1 ms at 8x (p99 13.2 to 20.4 and 15.0 to 20.6 ms): the extra piece came on top of the two the per-frame paths already
+ran, past a 16.7 ms vsync, for +0.5 days at 4x and +0.25 at 8x. Charging the drain's time to the pump alone changed nothing
+(p95 16.8 and 17.4 ms: the pump is idle during the wait); counting the forced pieces in the budget did (below).
+
+*Native model* (`tools/day_pace_probe.gd`: the day-10 save, the sliced sim with the brain and the minds, 20 fps frames,
+20 s, budget 4 ms at 1x up to 12 ms at 8x; three runs each, alternating, final scheduler):
+
+| game days in 20 s (three runs each) | 1x | 2x | 4x | 8x | clock parked at 06:00 (longest, frames) | frame p99 at 4x / 8x |
+| --- | --- | --- | --- | --- | --- | --- |
+| drain off (one piece a frame) | 1.25 to 1.29 | 2.03 to 2.06 | 2.75, 2.75, 2.75 | 3.75, 3.75, 3.75 | 42 | 9.7 to 9.8 / 12.5 to 12.6 ms |
+| drain on (8 ms, forced pieces counted) | 1.26 to 1.30 | 2.03, 2.04, 1.74 | **3.37, 3.30, 3.18** | **4.25, 3.75, 1.75** | **9 to 10** | 9.8 to 10.5 / 12.6, 12.6, 34.0 ms |
+
+Two more runs of the very final constants (estimate falling 1% a skipped frame, the table above had 3%): 4x 2.0 and 3.28
+days, 8x 3.75 and 4.20, dawn wait 19 / 16 and 10 / 17 frames. The 2.0 days run measured a piece at 4.6 ms (another job was running;
+normally 1 to 2 ms): two sources of 4.6 ms pieces fill the 8 ms budget, so the drain stayed out, by design. A scheduler
+that backs off when the machine is loaded also loses its gain then, and recovers slowly (about 30 frames).
+Two runs were disturbed by other jobs on the shared machine (8x 1.75 days with a 34 ms p99; 2x 1.74 days): read them as
+noise, not as an effect (the 2x run has no drain at all). **At 4x the clock gains 16 to 23% (2.75 to 3.18 to 3.37 days in
+20 s) and at 8x 0 to 13% (3.75 to 3.75 and 4.25 in the two undisturbed runs)**; the longest wait at dawn falls from 42
+frames (2.1 s at 20 fps) to 9 or 10; the frame costs the same within 0.8 ms at the p99. With the 6 ms-per-piece stand-in
+for the browser (the review's `pace_model.gd`, `OS.delay_usec` on every queued piece, whole-frame wall time, three runs,
+4x / 8x): drain off p95 9.7 to 9.9 / 12.4 to 12.5 ms, p99 12.9 to 13.2 / 14.8 to 15.2 ms; **final drain on p95 9.7
+(one disturbed run 11.1) / 12.5 to 12.7 ms, p99 13.1 to 13.6 (17.2 in the disturbed run) / 15.1 to 16.2 ms**, with 1 to 2
+extra pieces drained in 400 frames and days within 0.1 of the control (2.75 and 3.75; the disturbed runs read 2.63 and
+3.45): at that cost it stays out of the way, as designed, and gains nothing. The first version read p95 17.3 to 17.5 / 19.1 to
+19.4 ms in the same model. An intermediate version (forced pieces counted, estimate falling 3% a frame) read p95 10.0 / 12.5
+to 12.6 and p99 14.8 to 17.4 / 17.5 to 18.3 ms with 8 to 26 pieces and +0 to +0.25 days: its probes were the p99. What caps the clock is the sim's own work (a day-10 tick is 200 to 500 ms), not the day-start
+queue: the promised 14.4 days at 8x is still out of reach.
+
+*Browser* (`tools/web_hitch_probe.js` with `GF_HP_ORBIT=1 GF_HP_SPEEDS=1,2,4,8`, 20 s windows in the Planner on the
+same save, days counted from the game's `gf:day_N` marks, three runs each; the control is the same build with
+`day_drain_fast=0`). **These runs are of the FIRST version (the one that always ran an extra piece), not the shipped
+scheduler, and they do not show a gain:**
+
+| game days that began in 20 s (three runs each) | 1x | 2x | 4x | 8x | longest gap between day starts, 4x / 8x |
+| --- | --- | --- | --- | --- | --- |
+| first version's control, drain off, early session | 1, 1, 0 | 2, 2, 2 | 3, 3, 3 | 4, 3, 3 | 6.1 to 6.8 s |
+| first version, drain on | 1, 1, 1 | 2, 3, 3 | 3, 3, 3 | 4, 4, 3 | 5.7 to 6.7 s |
+| later control, drain off (same code path) | 1, 1, 0 | 2, 2, 2 | 2, 2, 2 | 3, 3, 3 | 6.2, 6.5, 9.4 s / 6.8, 6.7, 8.5 s |
+
+The control itself moved by a day between two sessions (4x: 3, 3, 3 then 2, 2, 2; 8x: 4, 3, 3 then 3, 3, 3), as much as
+the drain's "gain", so **no browser pace gain is claimed**: the integer day counts of a 20 s window cannot separate it
+from the machine's drift, and the longest gap between day starts barely moved (a day-10 tick of 200 to 500 ms of wasm work
+dominates it, and the first version's drain ran 42 to 75 pieces in 20 s). The shipped scheduler, which stays out of frames
+the forced pieces already fill, is expected to do even less in the browser (a piece there is 5 to 10 ms) and was not re-run
+there; what it does there is not make a frame longer. The native gain above is measured; the browser's is not.
 
 **Planner geometry: orbit tree chunks (flag `orbit_tree_chunks`, default on).** The Planner's 21.9k draws and 37 M
 vertices a frame on the day-10 city were mostly trees: about 266,000 instances in 25 48-tile `MultiMeshInstance3D` chunks
@@ -646,15 +715,144 @@ to 22 to 1 to 5 (the whole Tab window, 24 to 29 s after the veil, linked 57 prog
 building and a new people shader arrive at the same moment: better, not smooth). The biggest remaining hitches are the same
 five or six single-material frames at about +10, +24 to 26 and +82 s (each a new generated shader: a hash of the program's GLSL
 that was not linked before; adding a person's body material and the far-LOD people layer's shader to the list was tried and
-changed none of them, so it was left out). **A grown city is not warmed**: with more than 600 distinct materials
+changed none of them, so it was left out). **A grown city is not warmed (round 1; round 2 below groups materials by shader variant and warms it)**: with more than 600 distinct materials
 (`ShaderWarmup.LARGE_SCENE_RECIPES`; a new city has 190, the day-10 save 1,575) the run is skipped after counting them
 (0.15 s), because there the budget went on the prototypes and the first shadow-off frame (1.9 s) and it added 0.8 to
 2.1 s of boot and removed no hitch (9 and 9 frames over 100 ms with and without it); the final build's two day-10 runs read
 9 and 10 with the flag on (skipped) and 8 and 8 with it off (the veil at 34.4 and 28.6 s against 31.2 and 28.2, a boot's
 noise). The warm-up also stops at once if the loader's veil is gone (`window.gfVeilUp()`), so a hidden tab or the 30 s
 timeout cannot make it draw in front of the player. The Planner's first frames (Planner view: 87 to 100 programs, a 3.9 to
-4.5 s frame) are not reached by it. `web_shader_warmup=0` is the control. Unverified: Windows ANGLE/D3D11, Intel and
+4.5 s frame) are not reached by it (round 2 puts an overlay over them). `web_shader_warmup=0` is the control. Unverified: Windows ANGLE/D3D11, Intel and
 Apple drivers, where a program may cost several times what it does here.
+
+**Shader warm-up, round 2: variants, an isolated stage, the Planner's own state (flags `warmup_orbit_variants`,
+`planner_prepare_overlay`, both default on; unit C3).** Four changes, one per measured problem above.
+
+- *A grown city is warmed.* The run used to skip any scene with more than 600 distinct materials because it drew a
+  recipe per material instance (1,501 on the day-10 save). Programs follow the generated shader, not the instance, so
+  `WarmSignature` (`scripts/fp/warmup/warm_signature.gd`) groups materials by what the shader generator reads (every
+  flag and enum of a standard material plus which texture slots are filled; a shader material is its shader) and
+  `WarmCollector` keeps one recipe per signature, mesh kind and shadow setting: **the day-10 scene is 74 recipes in the
+  street and 33 in the Planner** (70 to 75 in the game's own WARMUP line, which also counts the mesh kinds) (`tools/warm_variants.gd` prints both; 7 of the Planner's exist only there), a new city
+  about as many. The signature is finer than Godot's own key (it separates properties the key ignores), so the worst
+  case of a mistake is one more copy, never a program left to link in play. Read cost on the web: 0.04 s on a new city (53 recipes against 171), 0.23 s on the day-10 save (74 against 1,501, which the
+  per-instance walk read in 0.125 s).
+- *The stage draws the copies alone* (`WarmStage.isolate`). Every warm-up frame also drew the whole city again
+  (about 25 ms on a new city, 0.5 to 1.9 s on a grown one: the first no-shadow frame of the earlier run cost 1.9 s
+  before a single copy was drawn). The copies now live on render layer 20 and the camera and the sun look at that layer
+  alone while the stage is up (the sun is put on that layer too: a camera's mask culls lights as well, and a sun that does not
+  light the copies links the wrong programs, which the first version of this did), so a frame costs the copies' own programs. `release()` puts both masks back (also when
+  the stage leaves the tree).
+- *The Planner's materials are in the list.* They are made when the Planner first opens (the street boots with the
+  street's world), so no scene walk finds them: `tools/warm_variants.gd` boots the real game, opens the Planner, and
+  writes the signatures only it holds to `data/warm_orbit_variants.json` (7 standard-material variants on the day-10
+  save: the triplanar ground and its instanced twin, the unshaded blend, two cull modes, alpha and alpha-scissor leaves),
+  and `WarmSignature.build` makes a stand-in for each. Regenerate it when the Planner's materials change
+  (`XDG_DATA_HOME=<dir with a grown save> godot --headless --path . -s tools/warm_variants.gd -- --write`;
+  `fp_warmup_variants_test` checks every stand-in against its recorded signature).
+- *The Planner's move has an overlay, and its own warm-up is opt-in.* `PlannerPrep` (`scripts/fp/warmup/planner_prep.gd`)
+  takes the move to the Planner (`Main.exit_fp`) and the Tab back (`Main._unhandled_input`): the page's overlay
+  (`window.gfPrepare`, HTML so its spinner keeps turning while the game blocks) is shown and given two frames to paint
+  BEFORE anything heavy runs, the world is held still (`tree.paused`, so no key reaches the street meanwhile), the move
+  itself runs under the overlay, and the overlay stays up until the frames settle (`PlannerPrep._settle`: five frames in a
+  row under 50 ms, at most 6 s; the first version took it down two frames after the move). Why: a reviewer's raw frame
+  timelines of the first version (re-read from `raw_up.json` / `raw_down.json`) show, after the move on a new city, frames
+  of 2,033 ms (under the overlay, which came down at 2.4 to 3.2 s), 983 ms at +3.3 s and 117 ms at +3.5 s (these are what
+  the settle holds the card for), then 600 ms at +6.0 s and 1,267 ms at +10.3 s; on the day-10 city 4,536 ms (covered), and
+  1,417 ms at +9.5 s. **The later ones (+6 s and after) are first uses during play (a new material), not part of the move,
+  and no overlay covers them.** The settle is covered by a test with a scripted clock; **it has not been measured in the
+  browser**, and it makes the card's time longer (up to 6 s more on a machine that never settles), not the move's shorter. By default the overlay is a travelling
+  stripe over the move (the page says "The first time the screen may stand still for a few seconds"); nothing is
+  counted, so no bar. The Planner's own warm-up exists too (`ShaderWarmup.warm_orbit`: the scene's variants and the
+  catalogue drawn in four shadow splits and exponential fog, in the lamps' state at that moment, a few at a time with the
+  overlay's bar following the work; turn it on with `{"planner_warm": true}` in `user://warmup_tuning.json`), and the
+  states `orbit` / `orbitlit` can be put in the boot's list, but **measured on the day-10 city it does not pay and is off**:
+  on the day-10 save (three runs) the move up takes 11.3, 11.7 and 11.9 s (7.5 to 8.0 s of warm-up in 22 frames of 0.3
+  to 1.0 s, then 0.67 s for the move and about 2 s of first-draw links) against one 4.0 to 4.1 s frame without it, the
+  longest single frame falls only from 4.0 to 2.9 to 3.0 s, and it links 146 to 152 programs in the window against the
+  101 to 104 the Planner needs. Program by program against the baseline's Planner (same generated shaders, compared by
+  body hash and defines): 33 of the 98 programs it needed were warmed, 66 of the 99 the warm-up linked were not needed
+  (46 of them the sun's four-split shadow pass: at that hour the Planner's first frames lit by the sun without one, so
+  the state the stage draws in is not the state the move leaves the sun in; inferred from the defines, not tested
+  further). On a new city the warm-up is 4.7 to 5.0 s and the move 6.7 to 7.0 s against 2.9 to 3.0 s without it. A more
+  exact stand-in state would be the next step (the overlay machinery is ready for it). The boot's own list does not reach the Planner state at the 3 s budget (the prototypes, the Tab and
+  the no-shadow pass use all of it), and with a budget that does, the Planner's programs cost what they cost wherever
+  they are paid.
+
+**What is measured, what stays frozen** (day-10 save and a new city, headless Chrome on the AMD iGPU through ANGLE,
+`tools/web_hitch_probe.js` with `GF_HP_ORBIT=1`, three runs each, builds alternating, a shared machine so quote the
+spread):
+| 3 runs each, alternating, headless Chrome on the AMD iGPU through ANGLE | wave0 new city | this build new city | wave0 day 10 | this build day 10 (2 runs) |
+| --- | --- | --- | --- | --- |
+| veil drops (page s) | 20.9, 22.4, 20.9 | 22.5, 22.5, 21.2 | 27.2, 26.9, 28.0 | 32.6, 30.6 |
+| warm-up (ms; recipes drawn) | 3,031 to 3,429 (171 recipes) | 3,142 to 3,228 (53 variants) | skipped (1,501 recipes) | 3,015 and 3,067 (70 variants) |
+| programs linked after the veil in 90 s | 62, 62, 62 | 55, 55, 55 | 82, 83, 82 | 47, 45 |
+| frames over 100 ms | 12, 11, 12 | **10, 10, 8** | 10, 10, 12 | **7, 6** |
+| ...of them a program link | 8, 8, 8 | **6, 6, 6** | 6, 6, 6 | **3, 3** |
+| frames over 250 ms | 6, 6, 6 | 6, 6, 6 | 6, 6, 5 | 4, 3 |
+| longest frame in the 90 s | 800 ms | 800 ms | 2,033, 1,950, 3,666 ms | 1,467, 1,567 ms |
+
+**Against the earlier unit's -15 to -28% for +3 s of boot: at the same 3 s budget a new city gains nothing demonstrable in
+frames over 100 ms (the table's 10, 10, 8 against 12, 11, 12 comes from runs that forced the state list on an earlier build;
+the final export's two runs read 15 and 10, a mean of 12.5 against wave0's 11.7, and a review's three alternating runs 10, 11, 10
+against 12, 12, 12 with the over-250 ms count unchanged at 6 to 7 and the programs linked after the veil 76, 62, 55 against 62,
+62, 68). The link-caused count is the one thing that moved (6 or 7 against 8 in every run). Boot reads +0.7 s on the table's
+means (22.1 against 21.4 s), about +2 s counting the final export's runs; do not present the new-city number as an
+improvement. A grown city, which round 1 skipped, gains (the review's three runs: 6, 7, 6 frames over 100 ms against 9, 9, 9,
+link-caused 2, 4, 3 against 5, 5, 5, over 250 ms 3, 4, 3 against 6, 6, 7, the veil 30.8, 29.8, 31.7 s against 27.8, 27.9, 27.9)
+which round 1 skipped, (-26 to -33% frames over 100 ms, about -50% link-caused, for +2.0 to +4.5 s of boot)** (the warm-up's 3 s
+plus its collect; wave0 did not warm it at all). Machine noise is large (a day-10 boot varied 26.9 to 38.0 s and a new
+city's final-build runs read 15 and 10 frames over 100 ms with the veil at 27 and 24 s while other jobs ran): quote
+the ranges, not the means. The default order (prototypes, the Tab, no-shadow, street) beat the first order tried
+(prototypes, no-shadow, street): link-caused frames 6 against 8 on a new city.
+
+**Look.** The probe's street screenshots of wave0 and of this build at the same game hour (09:00 on a new city) show the same scene, and
+the two wave0 runs differ from each other by as much as one differs from this build (mean absolute difference 15.4 and 11.0 of 255, traffic and
+the people); the Planner screenshots differ only by the hour, which the probe does not hold (day 2 05:15 against 23:30). Nothing in the
+look changed on purpose and none was seen to; the night look is the one the game already had. The loader and the overlay were looked at in headless
+Chrome on the real page (a bar at 32% reading "Preparing graphics 32%", the stripe under "Starting your city", the card with its spinner,
+title, bar and note over the dimmed street).
+
+**The budget is the lever** (`ShaderWarmup.DEFAULT_BUDGET_MS`, left at 3,000 here; the trade is the owner's): one run each
+at 6 s with the states prototypes, no-shadow, Tab, street: **a new city 8 frames over 100 ms (4 link-caused), 2 over
+250 ms, 33 programs after the veil, the veil at 23.9 s (+3 s over wave0); the day-10 city 2 frames over 100 ms (1
+link-caused), 1 over 250 ms, the longest frame 300 ms in 90 s, 8 programs after the veil, the veil at 33.4 s (+6 s over
+wave0)**: the Tab's cluster of 40 to 60 programs is gone. One run each is not a spread; repeat before relying on it.
+
+**What stays frozen.** (1) The boot itself: the day-10 page does not answer for 26 to 33 s (`GF_HP_LOADER=1`), the first draw
+of the scene's programs; the loader's stripe moves through it. (2) The Planner's first entry: still one frame of 3.0 s on
+the day-10 city (wave0 4.0 to 4.1 s; the final build's two runs read 3.0 s and 6.5 s, the second slow end to end, the
+veil at 32.6 s) and 2.0 to 2.7 s on a new city (wave0 2.9 to 3.0 s), now behind the overlay (the whole move reads 2.4 to 3.8
+s on three of the four runs, 7.7 s on the slow one). The shorter frame is measured, its mechanism is not established: the boot's warm-up covers more of what the
+Planner draws (the Tab's no-shadow variants), and the move now runs after two painted frames with the world paused.
+(3) Tab back: the longest frame read 2.5, 3.3 (new city) and 2.6, 3.8 s (day-10) in the final build; wave0's were 3.5, 3.6, 3.5 s on
+the day-10 save and 4.3, 7.6, 4.0 s on a new city (7.6 s is one outlier). **No Tab-back improvement is demonstrated on the grown
+city, and the Planner entry is not shorter either** (day-10: 4.0 to 4.1 s in wave0 against 3.0 and 6.5 s, two runs; programs
+linked 101 to 104 against 104 and 67): the overlay is an honest card instead of a frozen picture, not a shorter freeze. The sum of
+the frames over 100 ms in the 12 s after each move did not change (up 5.5 s wave0 against 5.8 s, down 6.2 against 5.8 on a new
+city; up 5.4 against 6.1, down 6.2 against 6.1 on day 10). The street's rebuild is one frame (`planner:move_down` 1.9 to 2.5 s)
+and was not touched. The overlay covered only the first part of that time; it now waits for the frames to settle (above). (4) A first new material mid-play (6 programs, 0.37 s: people, a
+beacon, a new building's leaves) is the same hitch as before: the prototypes list covers the ones it knows (12 to 15 per
+run), not what appears later.
+
+
+**The loader's bar and label are honest (unit C3).** The label said "Preparing graphics N%" and the bar was full lime
+from the moment the bytes were in ("Starting your city" snapped it to 100%). Now the bar goes from full (the download is
+done) to a **travelling stripe** (transform only, so the compositor keeps it moving through a blocked main thread) when
+the engine starts, and `window.gfBootStatus(text, ratio)` gives it a ratio only when the game can count: the warm-up's
+percentage is the share of the work done against the work the budget lets the run finish (`ShaderWarmup.progress_pct`;
+the old reading was the larger of that and the share of the time budget, so the bar crept on while nothing was drawn),
+reported before every pass frame (the page paints the text before the frame that may block), never going back. With no
+ratio the stripe is back. `tools/web_loader_check.js` checks the empty fill and stripe after the bytes are in, the ratio,
+the no-ratio stripe, the label after the veil and the prepare overlay (62 checks); `GF_HP_LOADER=1` on the hitch probe
+polls the label and the fill every 100 ms: a new city's page answers nothing for 17.1 to 18.0 s and the day-10 page for 26.5 to 33.0 s (the engine's first draw; the
+stripe moves through it) and then, before the veil drops, the label read "Preparing graphics 0%" and changed 6 to 8 times
+(0, 15, 32, 41, 54, 60, 81, 100% on a new city; 0, 24, 47, 49, 68, 74, 95, 98% on the day-10 city), the largest gap
+between two changes was 0.57 to 1.17 s on a new city and 1.18 to 1.34 s on the day-10 city (wave0, new city: 1.34 to 1.37 s; the
+batches of a grown city are bigger), with the bar at the same number and, on the day-10 city, one jump from 25% to 87% in a single update; when the budget cuts the
+work the last reading is what the plan reached (72 to 98% on the day-10 runs), not 100%, and "Starting your city"
+with the stripe follows. Before, the label changed once per batch, after it, and the bar was full from the start; no
+baseline sample was taken, so no before-and-after gap is quoted.
 
 **Web quality tiers.** `Quality.WEB` used to be merged over every preset, so Low, Medium and High looked
 the same in the browser (measured: street cb 15.1 / 15.3 / 16.1 ms, identical Planner GPU) and the pause
@@ -743,15 +941,22 @@ run the default run once per release too.
 
 ## Known limitations (web / gl_compatibility)
 
-- **Planner view freezes the page for 3.9 to 4.5 s on the first entry** (and Tab back to the street for 3.4 to 3.7 s, 15 to
-  25 programs). Measured on the day-10 city with `GF_HP_ORBIT=1` (web-probe-kit.md): 87 to 100 shader programs link on the
-  Planner's first frames, 4.0 to 4.4 s of them (four shadow splits, exponential fog and orbit-only materials, none of which
-  the street draws). The shader warm-up (`web_shader_warmup`) does not reach them, even with every pass drawn for 18 s.
-  Open: draw the Planner's materials once behind a "Preparing the Planner" overlay when the player asks for it, or reveal
-  the rebuilt city over several frames so each frame links a few.
-- **The first-minute warm-up costs about 3 s of boot and removes about a quarter of the link-caused hitches on a new city,
-  and does nothing on a grown one** (`ShaderWarmup.DEFAULT_BUDGET_MS`; 6.8 s of boot removes about two thirds; a city with
-  more than 600 materials is not warmed: `ShaderWarmup.LARGE_SCENE_RECIPES`). Details in web-probe-kit.md.
+- **Planner view still freezes the page for about 3 s on the first entry** (2.0 to 2.7 s on a new city; wave0: 4.0 to 4.1 s on the
+  day-10 city, 2.9 to 3.0 s on a new one) **and Tab back for 2.5 to 3.8 s (wave0: 3.5 to 4.3 s, one outlier at 7.6 s), now behind a "Preparing the Planner view" /
+  "Back to the street" overlay that stays up until the frames settle** (the overlay is not a shorter freeze) (`planner_prepare_overlay`, default on; web-deploy.md, "Shader warm-up, round 2"): the
+  page's spinner keeps turning, nothing is drawn as a frozen picture, the world is paused so no key reaches the street.
+  The cause is unchanged: about 100 shader programs link in the first frame (four shadow splits, exponential fog and the
+  Planner's own materials) and the view rebuilds the world; the street's rebuild on the way back is one frame. A warm-up
+  of the Planner's state behind a progress bar exists (`{"planner_warm": true}` in `user://warmup_tuning.json`) and was
+  measured not to pay: 33 of 98 needed programs warmed, 11.3 to 11.9 s for the move on the day-10 city. Open: a stand-in
+  state that matches what the Planner's first frames draw (the sun's shadow state at that hour), or revealing the rebuilt
+  city over several frames.
+- **The first-minute warm-up costs about 3 s of boot (6 s buys more) and now covers a grown city.** At the 3 s budget a new
+  city loses about a fifth of its frames over 100 ms and a quarter of the link-caused ones, a grown one 40% and half
+  (the boot +3.6 to +4.5 s over wave0, which did not warm it); at 6 s one run each read 8 and 2 frames over 100 ms
+  (`ShaderWarmup.DEFAULT_BUDGET_MS`; the first Tab's cluster of programs is gone, +3 and +6 s of boot). The remaining
+  hitches are materials that first appear mid-play (6 programs, 0.37 s each: people, a beacon, a new building's leaves).
+  Details in web-probe-kit.md.
 - **No ambient occlusion in the web build's first-person view (`Quality.ssao_ok`).** On
   Compatibility (Godot 4.7.2), SSAO drew rows of dark horizontal lines on the plaza ground seen
   from the street whenever the 3D view rendered below native size. Only that street view was

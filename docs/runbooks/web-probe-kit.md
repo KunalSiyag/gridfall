@@ -14,7 +14,9 @@ their numbers before anything is built. It changes no gameplay.
 | In-page WebGL wrappers, frame log, observers, and the pure maths (`node --test tools/tests/web_probe_kit.test.js`) | `tools/web_probe_kit.js` |
 | The first-minute hitch probe: boots, waits for the veil, plays a fixed 90 s script and counts frames over 100 ms with the programs built in each (and, with `GF_HP_ORBIT=1`, the Planner's draws, vertices, GPU time and view changes) | `tools/web_hitch_probe.js` |
 | The game's first-use marks and stopwatches, web only and off by default (flag `web_first_use_marks`) | `scripts/ops/first_use.gd` |
-| The shader warm-up behind the loader veil (flag `web_shader_warmup`, default on) and its console aids (`RENDERINFO`, `NEWMAT` with the marks flag) | `scripts/fp/warmup/` |
+| The shader warm-up behind the loader veil (flag `web_shader_warmup`, default on) and its console aids (`RENDERINFO`, `NEWMAT` with the marks flag); its variants (`WarmSignature`), the Planner's own state and the "Preparing the Planner view" overlay (flags `warmup_orbit_variants`, `planner_prepare_overlay`) | `scripts/fp/warmup/` |
+| The list of shader variants the Planner view holds that the street does not (`data/warm_orbit_variants.json`), regenerated from a grown save | `tools/warm_variants.gd` |
+| Game days per 20 s at 1x, 2x, 4x and 8x natively, with the day-start drain on or off | `tools/day_pace_probe.gd` |
 | The droid's budget table in busy ms and display Hz, and its day-10 lanes against the vsync steps | `python tools/web_measure.py --budget`, `--lanes` |
 | The bench's pipeline column, labelled n/a on GL | `tools/tests/fp_bench.gd` (`pipelines_for`) |
 
@@ -344,7 +346,7 @@ the budget. Each batch is drawn in the street's state and again with the sun's s
 material has all its programs before the next begins; the prototypes come first, then the scene's materials, the most
 used first. **It stops starting batches at 3,000 ms** (`ShaderWarmup.DEFAULT_BUDGET_MS`): what is left links lazily as
 before. The loader's percentage is the larger of the work done and the budget spent, so it reaches 100% as the veil
-lifts (`ShaderWarmup.progress_pct`; it used to stop near 29% when the budget cut the work). **It does not run on a grown
+lifts (`ShaderWarmup.progress_pct`; it used to stop near 29% when the budget cut the work). **(Round 1; round 2 warms a grown city) It does not run on a grown
 city**: a scene with more than 600 distinct materials (`LARGE_SCENE_RECIPES`; a new city has 190, the day-10 save 1,575)
 is skipped after the 0.15 s it takes to count them (the report says `"skipped": "large_scene"`), because there the
 budget is gone on the prototypes and the first frame of the shadow-off pass (which re-draws every real object, 1.9 s)
@@ -355,8 +357,22 @@ which is right as the warm-up begins (`gf:start_game_resolved` is 48 ms after `g
 a normal boot it has 30 s and uses 3 to 7. A batch can overshoot (one material is up to seven programs, 0.4 s). Nothing is left behind: the stage, its two
 near-zero lamps and the copies are freed and the sun's flags restored (`fp_warmup_test`). The sim keeps running (a few game
 seconds pass behind the veil). `user://warmup_tuning.json` (`{"budget_ms": 3000, "states": ["prototypes",
-"unlit+noshadow"]}`, seeded by `GF_HP_TUNING`) is the probe's and the tests' knob; `states` also take `orbit` (the
-Planner's splits and fog), `overview` (the real Tab feature held open for six frames), `lit` and the single passes.
+"overview", "noshadow", "unlit"]}` since unit C3, before it `["prototypes", "unlit+noshadow"]`, seeded by `GF_HP_TUNING`) is the probe's
+and the tests' knob; `states` also take `orbit` and `orbitlit` (the Planner's splits and fog, without and with the lamps),
+`overview` (the real Tab feature held open for six frames, checked against the budget), `lit` and the single passes,
+joined with `+` to draw each batch once per pass.
+
+**Round 2 (unit C3, flags `warmup_orbit_variants`, `planner_prepare_overlay`; numbers in web-deploy.md, "Shader warm-up, round 2").**
+Read the paragraphs above as round 1; what changed: the collector groups materials by shader variant
+(`WarmSignature`, so `LARGE_SCENE_RECIPES` now counts variants and a grown city is warmed: 74 variant recipes on the
+day-10 save against 1,501 material instances, 53 on a new city against 171), the stage draws its copies alone (camera
+and sun look at render layer 20; the sun and the stage's lamps are on it, because a camera's mask culls lights too and a
+sun that does not light the copies links the wrong programs), the default states are `["prototypes", "overview",
+"noshadow", "unlit"]`, the Planner's own materials come from `data/warm_orbit_variants.json` (`tools/warm_variants.gd`, rewritten
+with `--write` from a grown save in `XDG_DATA_HOME`), the Planner's state is warmed on demand behind the page's
+"Preparing the Planner view" overlay (`PlannerPrep`; console lines `WARMUP planner {...}`, `PLANNERPREP {...}`, marks
+`gf:prepare_shown` / `gf:prepare_done`, stopwatches `planner:warm`, `planner:move_up`, `planner:move_down`), and the loader's
+bar is a travelling stripe until the game can count (`window.gfBootStatus(text, ratio)`).
 
 **Measured**, `tools/web_hitch_probe.js`, fresh day 1, flag off against flag on, 1600x900, a cold Chrome profile, Mesa's
 shader cache off, runs one after another on a shared machine (`other` below is slow frames with no link in them: the
@@ -396,7 +412,11 @@ Not measured: Windows ANGLE/D3D11, Intel and Apple drivers, where a program may 
 **Probe.** `NODE_PATH=<dir with playwright-core> node tools/web_hitch_probe.js http://127.0.0.1:<port>/ <outdir>`
 (headless, real GPU: `--enable-gpu --use-angle=default`; `GF_HP_ARGS` adds more). Knobs: `GF_HP_FLAGS="a=1,b=0"`
 (default `web_first_use_marks=1`; `web_shader_warmup=0` is the control), `GF_HP_SAVE=<gridfall_save.json>`,
-`GF_HP_SECS=90`, `GF_HP_TAB_S=10` (0 = no Tab), `GF_HP_ORBIT=1` (then the Planner for 10 s, 20 s of frames, ten wheel steps
+`GF_HP_SECS=90`, `GF_HP_TAB_S=10` (0 = no Tab), `GF_HP_LOADER=1` (poll the loader's label and bar every 100 ms in the boot:
+`result.loader` has every change and the longest stretch the page did not answer), `GF_HP_SPEEDS=1,2,4,8` with
+`GF_HP_ORBIT=1` (after the zoomed Planner view, click each speed button for `GF_HP_SPEED_S` seconds, default 20, and count the game days
+that began from the game's `gf:day_N` marks: `result.speeds.x4 = {days, first_day_at_s, longest_gap_s}`; the Planner's move now
+waits for the overlay's `gf:prepare_done` mark, up to 60 s), `GF_HP_ORBIT=1` (then the Planner for 10 s, 20 s of frames, ten wheel steps
 in and 10 s more, Tab back: `orbit`, `orbit_zoom`, `to_orbit`, `to_street` with draws, vertices, callback ms, GPU ms, the
 longest frame and the programs linked), `GF_HP_TUNING=<json>`. `result.json` has `boot`, `warmup` (the game's `WARMUP`
 line: recipes, per-state drawn / frames / ms, whether the budget cut it, the renderer state it drew in), `programs`
@@ -407,6 +427,22 @@ over 100 ms with its programs), `programs.json` (every program with its page tim
 `RENDERINFO {...}` every 3 s (objects, primitives and draw calls of the last frame for the visible and the shadow
 passes, the sun and camera state) and `NEWMAT` lines. Frames are the page's requestAnimationFrame intervals, so on a
 60 Hz display a hitch is a multiple of 16.7 ms.
+
+## Day pace (`tools/day_pace_probe.gd`, `web_hitch_probe.js` with `GF_HP_SPEEDS`)
+
+How fast the Planner's clock really runs at 1x, 2x, 4x and 8x on a saved city, and what the day-start drain scheduler
+(`SpreadDrain`, flag `day_drain_fast`) changes. Two meters, same question:
+
+- **Native model**: `GRIDFALL_OFFLINE=1 XDG_DATA_HOME=<dir> godot --headless --path . -s tools/day_pace_probe.gd -- <save.json>
+  <drain_ms> [frames]` (`drain_ms` 0 = off, 8 = on, `SpreadDrain.BUDGET_MS`). The sliced sim with the brain and the minds, a 12 s day, the Planner's
+  4 to 12 ms budget, 400 frames of 50 ms (20 s at 20 fps), per speed one `DAYPACE {json}` line: `days` gained, `longest_dawn_frames`
+  (frames in a row the clock sat on the day's first tick while day-start pieces waited), the frame's p50, p99 and max, and the
+  drain's pieces. It is deterministic to about 0.1 days when the machine is quiet (a disturbed run reads far lower: look at p99), so three runs are enough. The frame time is the model's, not the browser's. A drain that adds to frames shows in `p99_ms` and `max_ms`; to model the browser's 5 to 10 ms pieces, wrap the queued pieces in `OS.delay_usec` (as the review's `pace_model.gd` did).
+- **Browser**: `GF_HP_ORBIT=1 GF_HP_SPEEDS=1,2,4,8 [GF_HP_SPEED_S=20] [GF_HP_SECS=30 GF_HP_TAB_S=0]`: after the Planner view
+  it clicks each speed button (x = 1,112 / 1,153 / 1,194 / 1,235 px, y = 24 at 1600x900) and counts the game's
+  `gf:day_<N>_p<pieces>` marks (marks flag on: they carry the drain's running piece count) inside the window: `result.speeds.x4 =
+  {days, first_day_at_s, longest_gap_s, drained_pieces}`. A day count is an integer over the window, so quote three runs and the
+  gap; the control for the drain is the same build with `GF_HP_FLAGS=web_first_use_marks=1,day_drain_fast=0`, **run in the same session**: the control alone moved a game day between two sessions (4x: 3 then 2), as much as the drain's claimed gain.
 
 ## Limits
 
