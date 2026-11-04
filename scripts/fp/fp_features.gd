@@ -55,4 +55,8 @@ const FEATURES := [
 		"path": "res://scripts/fp/arena/arena_feature.gd",
 	},
 	{"id": "hero_wade", "slice": "water", "path": "res://scripts/fp/water/wade_feature.gd"},
+	{
+		"id": "surface_feel", "slice": "integration",
+		"path": "res://scripts/fp/surface/surface_feel_feature.gd",
+	},
 ]

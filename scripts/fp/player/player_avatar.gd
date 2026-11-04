@@ -17,6 +17,7 @@ const AP := preload("res://scripts/fp/asset_paths.gd")
 const SM := preload("res://scripts/fp/player/spring_math.gd")
 const PUPPET := preload("res://scripts/fp/player/placeholder_puppet.gd")
 const HERO := preload("res://scripts/fp/player/hero_rig.gd")
+const FOOT := preload("res://scripts/fp/player/foot_fit.gd")
 ## HC's roster defaults (Rocketbox: one skeleton per gender) for a checkout without roster.json.
 const ROSTER_DEFAULTS := {"m": {"rest_height_m": 1.7951, "hip_m": 0.8952}, "f": {"rest_height_m": 1.7164, "hip_m": 0.9233}}
 ## Hero heights (m; HC-characters.md 1.9): the man at WS.PERSON_H, the woman 5 % shorter.
@@ -86,6 +87,12 @@ var placeholder: bool = true
 var rig: RefCounted = null
 ## The jointed placeholder (placeholder_puppet.gd), or null for a rigid body.
 var puppet: RefCounted = null
+## The hero's feet on the real ground (foot_fit.gd), or null without the hero's rig. FpPlayer sets
+## foot_fit_on (grounded, not driving, wading or climbing) and foot_fit_ground (world point ->
+## ground height) each frame; the flag ground_foot_fit and a visible body are checked here.
+var foot_fit: RefCounted = null
+var foot_fit_on: bool = false
+var foot_fit_ground: Callable = Callable()
 var _root: Node3D
 var _body: Node3D
 var _geoms: Array[GeometryInstance3D] = []
@@ -149,6 +156,7 @@ func set_hero(h: String) -> void:
 	_geoms.clear()
 	rig = new_rig
 	puppet = new_puppet
+	foot_fit = FOOT.new(rig) if rig != null else null
 	placeholder = rig == null
 	_body = new_body
 	_body.name = "Body"
@@ -226,6 +234,11 @@ func update_motion(dt: float, speed: float, yaw_rate: float, fwd_acc: float, ste
 	if rig != null:
 		rig.call("set_look_target", _look_target)
 		rig.call("update", dt, (-speed if backward else speed) / WS.M, grounded, vy / WS.M, _crouch > 0.5, talking)
+		if foot_fit != null:
+			var fit_on := foot_fit_on and is_body_visible()
+			fit_on = fit_on and FeatureFlags.enabled("ground_foot_fit")
+			var floor_y := global_position.y if is_inside_tree() else position.y
+			foot_fit.call("update", dt, fit_on, foot_fit_ground, floor_y)
 		return
 	if puppet == null:
 		return
@@ -265,6 +278,8 @@ func snap() -> void:
 	_was_grounded = true
 	head_look = Vector2.ZERO
 	transform = Transform3D.IDENTITY
+	if foot_fit != null:
+		foot_fit.call("reset")
 	if rig != null:
 		rig.call("snap", _crouch > 0.5)
 		return

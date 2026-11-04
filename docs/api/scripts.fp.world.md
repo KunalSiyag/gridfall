@@ -17,6 +17,7 @@ Analytic on-foot collision (slice A; no physics engine, D2): walkable ground hei
 - `AP = preload("res://scripts/fp/asset_paths.gd")`
 - `BS = preload("res://scripts/fp/player/body_shapes.gd")`
 - `RB = preload("res://scripts/fp/world/riverbed.gd")`
+- `GP = preload("res://scripts/fp/world/ground_profile.gd")`
 - `TABLE = preload("res://scripts/fp/player/body_table.gd")`
 - `SOFT_STEP = 0.03`: Interim soft step (A deliverable 1; remove once G1 raises WS.GROUND_Y): next to a tile whose surface is at GROUND_Y, a higher tile at most SOFT_STEP above it ramps down over its outer SOFT_BAND, so the 42 cm grass ledge does not trap a player who drops onto grass.
 - `SOFT_BAND = 0.05`
@@ -60,10 +61,10 @@ Analytic on-foot collision (slice A; no physics engine, D2): walkable ground hei
 - `func add_test_cylinder(x: float, z: float, r: float, top: float) -> void`: Test hook: a world cylinder (a trunk) at x, z of radius r up to top, listed in cylinders() of every tile it overlaps.
 - `func clear_test_boxes() -> void`: Removes every add_test_box() box and add_test_cylinder() cylinder.
 - `func tile_at(p: Vector3) -> int`: Tile index at a world point (round x/z, D.idx) or -1 outside the world.
-- `func ground_height(p: Vector3) -> float`: World y of the walkable surface at p.x/p.z; NAN when not walkable (water, bridge parapet).
+- `func ground_height(p: Vector3) -> float`: World y of the walkable surface at p.x/p.z; NAN when not walkable (water, bridge parapet). With the ground_profile flag the lot slabs, pads and aprons are the exact steps and slopes of the meshes (GroundProfile); off, a lot is flat LOT_TOP across its whole tile.
 - `func wade_height(p: Vector3, wade_max: float) -> float`: The bed height under p where the hero may wade (open water, not a bridge, at most wade_max deep), else NAN. Only the hero asks: ground_height() stays NAN over water, so NPCs, cars, animals and thrown bodies treat the river as the wall it always was.
 - `func water_depth(p: Vector3) -> float`: How deep the open water is over the bed at p, in world units; 0 on land, on a bridge and on the dry part of a bank.
-- `func walk_height(p: Vector3, wade_max: float = 0.0) -> float`: The height the feet stand at: ground_height() with the interim soft step (SOFT_STEP ramps over SOFT_BAND toward a GROUND_Y neighbour). NAN where ground_height is NAN, except for a wader (wade_max > 0): over open water no deeper than wade_max it is the riverbed.
+- `func walk_height(p: Vector3, wade_max: float = 0.0) -> float`: The height the feet stand at: ground_height(), with the interim soft step (SOFT_STEP ramps over SOFT_BAND toward a GROUND_Y neighbour) only when the ground_profile flag is off. NAN where ground_height is NAN, except for a wader (wade_max > 0): over open water no deeper than wade_max it is the riverbed.
 - `func support_height(p: Vector3, radius: float, feet_y: float, max_rise: float, wade_max: float = 0.0) -> float`: What the feet of a walker at feet_y stand on at p: walk_height(), or the top of a box under the circle that is at most max_rise above the feet (a low wall it stepped or jumped onto). NAN over water, except the shallows for a wader (wade_max, see walk_height).
 - `func surface_at(p: Vector3) -> String`: Surface name for footsteps and audio: "asphalt"|"sidewalk"|"lot"|"grass"|"dirt"|"water"|"bridge", or on the carriageway of an unpaved road "gravel"|"dirt"|"trail" (its verges are "grass").
 - `func is_blocked(p: Vector3, radius: float, wade_max: float = 0.0) -> bool`: True if a circle of `radius` at p (feet) is blocked: unwalkable ground under p, or a box or a prop cylinder of the 3x3 tiles around p whose top is above p.y. Boxes are grown by radius in xz (a square, so it agrees with tests that grow AABBs).
@@ -84,6 +85,31 @@ Analytic on-foot collision (slice A; no physics engine, D2): walkable ground hei
 - `func body_boxes(i: int) -> Array[AABB]`: The building bodies of tile i (at most body_shapes.MAX_BODIES, inside view.building_aabb(i)).
 - `func cylinders(i: int) -> PackedFloat32Array`: Prop and post cylinders of tile i as (x, z, r, top) quadruples in world space: lamp poles, trunks, hydrants, bins, the building's own posts.
 - `func box(i: int) -> AABB`: Merged bound of boxes(i) (AABB() when none). Movement and tests use boxes(); interaction raycasts use the full view.building_aabb(i).
+
+## `scripts/fp/world/ground_profile.gd`
+
+class_name `GroundProfile` · extends `RefCounted`
+
+The height of the ground under a point of a land tile, written once. The meshes that CityView and the street dressing build (the C/I pad, the rubble slab, the lot apron), the road and lot models authored in Blender (their heights are the WS constants, checked against the real meshes by tools/tests/fp_ground_profile_test.gd) and CollisionWorld.ground_height (which the hero's feet and everybody else's follow) all read the numbers here, so what the eye sees under the feet is what the feet stand on, and a step of the mesh is a step of the collision. Const-only and static: no state, no nodes, no randomness (the sim stays headless-safe). Local coordinates (lx, lz) are the offsets from the tile centre in tile units, -0.5 .. 0.5. Preload as GP, or use the class name. Lot slabs. A real building model (every zone R, C and I lot and every service building on foot) stands on its own slab, 8 cm high (WS.LOT_TOP) and 0.94 tile wide (WS.LOT_FOOTPRINT, half LOT_HALF); fresh rubble is a slightly wider slab (PAD_HALF, PAD_TOP), and so is the fallback pad of a stand-in model (within 1 cm of the slab's height, so the slab's number serves). The 0.03 tile (0.6 m) all round a slab is the lawn at GROUND_Y, so the slab edge is a step of LOT_TOP. Where the lot fronts a road, the apron (street_dressing.gd) climbs from the slab edge to the road's sidewalk over the last 0.03.
+
+### Constants
+
+- `D = preload("res://scripts/sim/sim_defs.gd")`
+- `WS = preload("res://scripts/fp/world_scale.gd")`
+- `LOT_HALF = WS.LOT_FOOTPRINT * 0.5`: Half the width of a real lot slab (the model's own, authored 0.94 wide).
+- `PAD_HALF = 0.48`: Half the width of the rubble slab and of a stand-in C/I model's pad (CityView builds them 0.96 wide).
+- `TILE_HALF = 0.5`: The tile edge, where the road's sidewalk begins.
+- `APRON_FROM = LOT_HALF`: The apron runs from the lot slab's edge to the tile edge, toward the road.
+- `APRON_TO = TILE_HALF`
+- `SIDES = [Vector2i(0, 1), Vector2i(1, 0), Vector2i(0, -1), Vector2i(-1, 0)]`: The sides an apron can lie on, as (dx, dy) toward the road (the order of the bits of apron_mask).
+
+### Functions
+
+- `static func slab_top(sim: CitySim, i: int) -> float`: The height of the slab of land tile i (a built lot, a service building's lot, rubble), or WS.GROUND_Y where the tile has none (open ground, a vacant lot, a construction site).
+- `static func slab_half(sim: CitySim, i: int) -> float`: Half the width of the slab slab_top() describes: the rubble is a little wider than a real model's own slab.
+- `static func apron_mask(sim: CitySim, i: int, frontage: int) -> int`: Which sides of tile i carry an apron, as bits in SIDES order: a built zone lot has one on the road it fronts (frontage, a road tile index or -1; every road side for a C/I lot), a service building's lot on every road side. 0 for tiles that are not a built lot.
+- `static func apron_height(t: float) -> float`: The apron's height at distance t (tile units from the tile centre, toward the road): the slab edge's LOT_TOP at APRON_FROM, the sidewalk's SIDEWALK_TOP at APRON_TO.
+- `static func tile_height(sim: CitySim, i: int, lx: float, lz: float, directory: CityDirectory = null) -> float`: The walkable surface height at local (lx, lz) of tile i: the road's own profile on a road tile (RoadTopology.surface_height), NAN over open water, else the slab of a lot, the lawn, and the aprons of a lot that fronts a road (directory, a CityDirectory, says which road a lot fronts; null: none). NAN means not walkable; the shallows of a river are the river bed's (riverbed.gd), which the CollisionWorld offers a wader.
 
 ## `scripts/fp/world/riverbed.gd`
 
@@ -108,3 +134,32 @@ The river-bed height, written once. CityView builds the bed mesh from node_heigh
 - `static func tile_height(land: Array[bool], lx: float, ly: float) -> float`: The bed height at (lx, ly) of a water tile, each 0..1 across it: the mesh's own triangle there.
 - `static func bed_height(sim: CitySim, x: float, z: float) -> float`: The bed height under world point (x, z), or NAN when its tile is not water.
 - `static func depth_at(sim: CitySim, x: float, z: float) -> float`: How deep the water is over the bed at world point (x, z), in world units: 0 on land and where the bed is above the surface (the dry part of a bank), WATER_Y - bed elsewhere.
+
+## `scripts/fp/world/surface_feel.gd`
+
+extends `RefCounted`
+
+What each ground surface feels like to the hero (flag surface_feel), written once: the footstep set and its level and pitch, how much slower the surface is to run on, and how much dust a sprint kicks up. const-only and static, so tests pin every class. Preload as SF. The classes are CollisionWorld.surface_at's names, plus "sand" (the lawn and the dry shelf of a river bank inside the shore band, shore.gd: sand the ground shader paints there). The recorded step sets are asphalt, sidewalk, lot, grass, dirt, bridge and the splash set for water (sounds/fp, 33 KB each, nothing new is shipped); a class without its own recordings borrows the nearest and is told apart by level and pitch: sand   dirt, 3 dB soft and a fifth lower: a damp, dull scuff gravel dirt, 1.5 dB louder and a sixth higher: the grit of a crunch trail  grass, a little softer and lower: a worn path Speeds are factors of the top speed: pavement and slabs 1, a bridge 1, grass 0.98, a dirt track and gravel 0.97, trail 0.98, sand 0.93 (the softest). Dust, 0..1, is the share of the puff a sprinting step raises (0 on anything paved or wet).
+
+### Constants
+
+- `WS = preload("res://scripts/fp/world_scale.gd")`
+- `D = preload("res://scripts/sim/sim_defs.gd")`
+- `RB = preload("res://scripts/fp/world/riverbed.gd")`
+- `SHORE = preload("res://scripts/world/shore.gd")`
+- `TABLE = { "asphalt": {"set": "asphalt", "gain": 0.0, "pitch": 1.0, "speed": 1.0, "dust": 0.0}, ...`: class -> {"set": footstep surface, "gain": dB on the step, "pitch": factor, "speed": factor, "dust": 0..1}.
+- `FALLBACK = "sidewalk"`: The class of a surface name the table does not know: it sounds and runs like the sidewalk.
+- `SHELF_M = 0.03`: A step on the dry shelf or the wet edge of a river (water shallower than this, m) is sand.
+- `SAND_FROM = 0.5`: The sand's band of the shore, as a share of the shore band's own (shore.gd, 0..1 of its sand weight): from here on land counts as sand.
+- `HL_SPEED = 0.2`: Top-speed factors ease toward their class with this halflife (s): no jolt at a surface edge.
+- `DUST_MIN_MPS = 4.0`: A puff of dust needs the hero at least this fast (m/s): a run (4.5) or a sprint, not a walk.
+
+### Functions
+
+- `static func feel_at(col: CollisionWorld, surface: String, p: Vector3) -> String`: The feel class of CollisionWorld surface name `surface` at world point p: grass inside the shore band of a river and the dry shelf of its bank are "sand"; any other name is itself (an unknown one the FALLBACK).
+- `static func near_water(sim: CitySim, p: Vector3) -> bool`: True when land point p lies in the sand of a shore: its tile touches water and its distance to the water is inside SAND_FROM of the band (shore.gd, which the ground shader paints).
+- `static func row(c: String) -> Dictionary`: The row of class c (an unknown class gets FALLBACK's).
+- `static func speed(c: String) -> float`: The top-speed factor of class c.
+- `static func dust(c: String) -> float`: The dust share of class c.
+- `static func step_set(c: String) -> String`: The footstep set (audio_bank.gd's SURFACES name) to play for class c.
+- `static func street_wet(ctx: FpContext) -> float`: How wet the streets are, 0..1: the streetscape's weather, read by name (0 without it).

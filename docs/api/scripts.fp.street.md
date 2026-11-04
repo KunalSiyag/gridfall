@@ -48,6 +48,7 @@ Street-level dressing that CityView adds to its tile holders in fp_mode (slice G
 - `D = preload("res://scripts/sim/sim_defs.gd")`
 - `WS = preload("res://scripts/fp/world_scale.gd")`
 - `AP = preload("res://scripts/fp/asset_paths.gd")`
+- `GP = preload("res://scripts/fp/world/ground_profile.gd")`
 - `PROPS = "res://models/real/props/"`
 - `DECALS = "res://textures/real/decals/"`
 - `CHUNK = 8`
@@ -86,7 +87,7 @@ Street-level dressing that CityView adds to its tile holders in fp_mode (slice G
 - `func set_night(glow: float) -> void`: Lamplight pools follow the night (glow 0 day .. 1 full night).
 - `func set_wetness(w: float) -> void`: Shows the puddles in proportion to w (0 dry .. 1 soaked).
 - `func empty_lot(i: int, holder: Node3D, k: int, h: int) -> void`: A vacant zoned lot on foot: rough ground, a lease board at the frontage and, on some commercial and industrial lots, a billboard at the back facing the street. No zoning glow.
-- `func dress_lot(i: int, holder: Node3D, k: int, _lv: int, _h: int) -> void`: A built zone lot on foot: sidewalk aprons from the lot slab to the road sidewalks.
+- `func dress_lot(i: int, holder: Node3D, _k: int, _lv: int, _h: int) -> void`: A built zone lot on foot: sidewalk aprons from the lot slab to the road sidewalks.
 - `func dress_service(i: int, holder: Node3D, _k: int, _model: Node3D) -> void`: A service lot on foot: aprons on every road side.
 - `static func billboard_slot() -> Dictionary`: The poster rectangle of the legacy billboard model (its Sign_Blue panel).
 - `func shelter(holder: Node3D, dv: Vector2i) -> Node3D`: The FP bus shelter on side dv of a straight road: H's shelter (1.5 m deep) at FRONT, else the real shelter (2 m deep) set 0.01 further back, open side to the road. Adds its colliders; null when neither model loads.

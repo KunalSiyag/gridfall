@@ -42,12 +42,16 @@
    "scripts/fp/*.gd",
    "scripts/fp/ui/hud_style.gd",
    "scripts/fp/world/collision_world.gd",
+   "scripts/fp/world/ground_profile.gd",
+   "scripts/fp/world/surface_feel.gd",
    "scripts/fp/render/quality.gd"
   ],
   "shared_why": {
    "scripts/fp/*.gd": "S0 core: FpMode, FpContext, GameBus, FpFeature, the registry, world_scale (WS), asset_paths (AP), CityDirectory, RoadTopology",
    "scripts/fp/ui/hud_style.gd": "B's palette and fonts; every on-foot panel draws with it",
    "scripts/fp/world/collision_world.gd": "CollisionWorld.boxes() is an S0 shared contract (ARCHITECTURE.md §4)",
+   "scripts/fp/world/ground_profile.gd": "the one table of ground heights: the meshes (CityView, the street's aprons) and CollisionWorld.ground_height both read it",
+   "scripts/fp/world/surface_feel.gd": "the one table of what each ground class sounds and feels like: the player's speed, the footsteps and the dust read it",
    "scripts/fp/render/quality.gd": "G2's quality presets (Low/Medium/High) are read by the light profile and the pause menu"
   }
  },

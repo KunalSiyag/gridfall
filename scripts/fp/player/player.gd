@@ -27,8 +27,15 @@ const WS := preload("res://scripts/fp/world_scale.gd")
 const SM := preload("res://scripts/fp/player/spring_math.gd")
 const AVATAR := preload("res://scripts/fp/player/player_avatar.gd")
 const WADE := preload("res://scripts/fp/player/wade.gd")
+const SF := preload("res://scripts/fp/world/surface_feel.gd")
 ## Gaps above this between a loaded position and the ground snap to the ground.
 const GROUND_SNAP := 0.05
+## The circle (metres * M) the foot fit's ground samples test under a foot.
+const FOOT_R := 0.03 * WS.M
+## Feet this far above the terrain under them (u) stand on a box.
+const FOOT_BOX_MIN := 0.002 * WS.M
+## Seconds between two looks at the surface under the feet (surface feel).
+const FEEL_EVERY := 0.1
 ## Longest frame _process hands to simulate(), in seconds. A sim tick stall can freeze a frame for
 ## 0.7-2.7 s; the player then moves one 10 fps frame's worth instead of lurching ahead.
 const MAX_FRAME_DELTA := 0.1
@@ -191,6 +198,13 @@ var momentum: bool = true
 ## off, the river is the wall it was. wade_depth is the water over the bed under the feet (u).
 var wade_on: bool = true
 var wade_depth: float = 0.0
+## Flag surface_feel (read live, like the footsteps and the dust do): the ground class under the
+## feet (surface_feel.gd) and the top-speed factor it gives, easing toward its class's (1 on
+## pavement; sand, dirt and gravel are a few % slower).
+var feel_class: String = "sidewalk"
+var feel_k: float = 1.0
+var _feel_t: float = 0.0
+var _on_box: bool = false
 var _deep_t: float = 0.0
 ## The "free_running" flag, read at setup (tests may set it).
 var free_running: bool = true
@@ -524,6 +538,7 @@ func simulate(
 	_set_crouch(crouch)
 	_resolve_stuck()
 	_wade_tick(delta)
+	_feel_tick(delta)
 	_refresh_people()
 	_eye_h = SM.damp(_eye_h, WS.CROUCH_EYE if crouched else WS.EYE, HL_EYE, delta)
 	_build_sprint(wish, sprint, delta)
@@ -564,13 +579,26 @@ func _top_speed(sprint: bool) -> float:
 	if WADE.caps_sprint(wade_depth):
 		run_top = minf(run_top, WS.RUN)
 	var top := minf(WS.CROUCH_WALK if crouched else (run_top if sprint else WS.WALK), speed_cap)
-	return top * WADE.speed_factor(wade_depth)
+	return top * WADE.speed_factor(wade_depth) * feel_k
 
 
 ## Reads the water over the bed under the feet (wade_depth, 0 on land or with the flag off).
 func _wade_tick(delta: float) -> void:
 	_deep_t = maxf(0.0, _deep_t - delta)
 	wade_depth = ctx.collision.water_depth(position) if wade_on else 0.0
+
+
+## Surface feel: every FEEL_EVERY s reads the ground class under the feet and eases feel_k toward
+## its class's speed factor (1 in water, where the wade has its own, and with the flag off).
+func _feel_tick(delta: float) -> void:
+	var goal := 1.0
+	if grounded and wade_depth <= 0.0 and FeatureFlags.enabled("surface_feel"):
+		_feel_t -= delta
+		if _feel_t <= 0.0:
+			_feel_t = FEEL_EVERY
+			feel_class = SF.feel_at(ctx.collision, ctx.collision.surface_at(position), position)
+		goal = SF.speed(feel_class)
+	feel_k = SM.damp(feel_k, goal, SF.HL_SPEED, delta)
 
 
 ## The polite limit: walking on into water past WS.WADE_MAX says so once in a while.
@@ -733,6 +761,7 @@ func update_view(delta: float) -> void:
 		avatar.set_view_state(pure_fp, alpha)
 		if not photo_mode:
 			avatar.set_look_target(_look_target(xf))
+			_feed_foot_fit()
 			var back := (
 				Vector2(velocity.x, velocity.z).dot(Vector2(-sin(yaw), -cos(yaw))) < -0.3 * sp
 			)
@@ -752,6 +781,27 @@ func update_view(delta: float) -> void:
 			if avatar.is_animated():
 				_hero_steps()
 		_step_snap = 0.0
+
+
+## Tells the avatar's foot fit whether it may run (on the ground, in the open: not carried, not
+## wading, not in a tumble) and where the ground is under a foot: the support under a small circle
+## there, so a low wall the hero stands on counts (flag ground_foot_fit, checked by the avatar).
+func _feed_foot_fit() -> void:
+	var tumbling := _tumble_t < _tumble_len
+	avatar.foot_fit_on = grounded and not carried and wade_depth <= 0.0 and not tumbling
+	if not avatar.foot_fit_ground.is_valid():
+		avatar.foot_fit_ground = _foot_ground
+	# Only a hero standing on a box (a low wall) needs the dearer support query for its feet.
+	var terrain := ctx.collision.walk_height(position, wade_limit())
+	_on_box = not is_nan(terrain) and position.y > terrain + FOOT_BOX_MIN
+
+
+## The ground height under a foot at world point p, for the foot fit; NAN where there is none: the
+## terrain's height, or the top of a box under the foot while the hero stands on one.
+func _foot_ground(p: Vector3) -> float:
+	if _on_box:
+		return ctx.collision.support_height(p, FOOT_R, position.y, WS.STEP_HEIGHT, wade_limit())
+	return ctx.collision.walk_height(p, wade_limit())
 
 
 ## Jolts the view by d_pitch (positive up) and d_roll (radians; positive tips left), dying away

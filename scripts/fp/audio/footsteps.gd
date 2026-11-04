@@ -9,6 +9,7 @@ extends Node
 
 const WS := preload("res://scripts/fp/world_scale.gd")
 const BANK := preload("res://scripts/fp/audio/audio_bank.gd")
+const SF := preload("res://scripts/fp/world/surface_feel.gd")
 
 ## Polling fallback: stride in metres at a walk, its growth per m/s above WALK, and its cap.
 const STRIDE_M := 0.7
@@ -34,6 +35,11 @@ var heavy_lands: int = 0
 var splashes_played: int = 0
 ## The last steps' stream names, newest last (tests).
 var history: Array[String] = []
+## The level (dB) and pitch factor of the last step played, and the surface-feel class it played
+## as (tests).
+var last_db: float = 0.0
+var last_pitch: float = 1.0
+var last_class: String = ""
 var polling: bool = true
 var enabled: bool = true
 var _feet: Array[AudioStreamPlayer] = []
@@ -45,6 +51,7 @@ var _bound: Node3D
 var _last_pos: Vector3 = Vector3(NAN, NAN, NAN)
 var _travel: float = 0.0
 var _last_surface: String = "sidewalk"
+var _last_class: String = ""
 ## True from the first splashing step until a step on dry ground (the entry splash: once a wade).
 var _wet_feet: bool = false
 
@@ -109,7 +116,7 @@ func poll(_dt: float) -> void:
 	var stride := stride_length(_speed_mps()) * WS.M
 	while _travel >= stride:
 		_travel -= stride
-		play(ctx.collision.surface_at(pos) if ctx.collision != null else "sidewalk")
+		_step_on(ctx.collision.surface_at(pos) if ctx.collision != null else "sidewalk", pos)
 
 
 ## Stride (m) for a speed in m/s.
@@ -148,6 +155,8 @@ func play(surface: String, gain_db: float = 0.0, pitch: float = 1.0) -> void:
 	p.volume_db = vol
 	var spread := BANK.STEP_PITCH_SPREAD
 	p.pitch_scale = pitch * (1.0 + _rng.randf_range(-spread, spread))
+	last_db = vol
+	last_pitch = p.pitch_scale
 	var t0 := FirstUse.begin("play", s)
 	p.play()
 	FirstUse.end("play", s, t0)
@@ -166,14 +175,7 @@ func play(surface: String, gain_db: float = 0.0, pitch: float = 1.0) -> void:
 
 ## How wet the streets are, 0..1: G1's streetscape weather, read by name; 0 without it.
 func wetness() -> float:
-	var street := ctx.feature("streetscape") if ctx != null else null
-	if street == null:
-		return 0.0
-	var w: Variant = street.get("weather")
-	if not (w is Object) or not is_instance_valid(w):
-		return 0.0
-	var v: Variant = (w as Object).get("wet")
-	return clampf(float(v), 0.0, 1.0) if typeof(v) == TYPE_FLOAT else 0.0
+	return SF.street_wet(ctx)
 
 
 ## True when stream name n is a left-foot variant.
@@ -187,7 +189,28 @@ func _on_stepped(surface: String, pos: Vector3) -> void:
 		play_wade(ctx.collision.water_depth(pos) / WS.M)
 		return
 	_wet_feet = false
-	play(surface)
+	_step_on(surface, pos)
+
+
+## One step on CollisionWorld surface name `surface` at pos: with the surface_feel flag the class
+## of ground it is (sand on a river's shore, gravel, a worn trail...) with its own set, level and
+## pitch (surface_feel.gd), else the plain surface as ever.
+func _step_on(surface: String, pos: Vector3) -> void:
+	if ctx == null or ctx.collision == null or not FeatureFlags.enabled("surface_feel"):
+		last_class = surface
+		_last_class = ""
+		play(surface)
+		return
+	_last_class = SF.feel_at(ctx.collision, surface, pos)
+	play_feel(_last_class)
+
+
+## One step of feel class c (surface_feel.gd's table): its footstep set at its level and pitch,
+## extra_db louder.
+func play_feel(c: String, extra_db: float = 0.0) -> void:
+	var row := SF.row(c)
+	last_class = c if SF.TABLE.has(c) else SF.FALLBACK
+	play(SF.step_set(c), float(row["gain"]) + extra_db, float(row["pitch"]))
 
 
 ## A step of the wading hero in `depth_m` metres of water: the dry shelf of a bank is wet mud
@@ -196,7 +219,10 @@ func _on_stepped(surface: String, pos: Vector3) -> void:
 func play_wade(depth_m: float) -> void:
 	if depth_m < WADE_MIN_M:
 		_wet_feet = false
-		play("dirt")
+		if FeatureFlags.enabled("surface_feel"):
+			play_feel("sand")
+		else:
+			play("dirt")
 		return
 	var k := clampf(depth_m * WS.M / WS.WADE_MAX, 0.0, 1.0)
 	var gain := BANK.WADE_STEP_DB + BANK.WADE_DEEP_DB * k
@@ -218,7 +244,10 @@ func _on_landed(speed_mps: float, _rolled: bool = false) -> void:
 	if speed_mps < HEAVY_LAND_MPS:
 		return
 	heavy_lands += 1
-	play(_last_surface, HEAVY_LAND_DB)
+	if FeatureFlags.enabled("surface_feel") and not _last_class.is_empty():
+		play_feel(_last_class, HEAVY_LAND_DB)
+	else:
+		play(_last_surface, HEAVY_LAND_DB)
 
 
 ## A bool property of the bound player, or fallback when it has none.

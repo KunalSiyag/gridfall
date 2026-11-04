@@ -24,6 +24,7 @@ const D := preload("res://scripts/sim/sim_defs.gd")
 const WS := preload("res://scripts/fp/world_scale.gd")
 const AP := preload("res://scripts/fp/asset_paths.gd")
 const RB := preload("res://scripts/fp/world/riverbed.gd")
+const GP := preload("res://scripts/fp/world/ground_profile.gd")
 const WATER := preload("res://scripts/world/water_surface.gd")
 const SHORE := preload("res://scripts/world/shore.gd")
 const STREET := preload("res://scripts/fp/street/street_dressing.gd")
@@ -2287,7 +2288,7 @@ func _build_tile(i: int, animate: bool) -> void:
 					pick = str(opts[(h >> 3) % opts.size()])
 				var pad := MeshInstance3D.new()
 				var pm := PlaneMesh.new()
-				pm.size = Vector2(0.96, 0.96) if lv > 0 else Vector2(0.94, 0.94)
+				pm.size = Vector2.ONE * (GP.PAD_HALF * 2.0 if lv > 0 else WS.LOT_FOOTPRINT)
 				pad.mesh = pm
 				pad.position.y = WS.PAD_TOP if fp_mode else ORBIT_PAD_Y
 				if lv == 0:
@@ -2341,7 +2342,7 @@ func _build_tile(i: int, animate: bool) -> void:
 			if fp_mode:
 				# On foot a closed slab of churned earth at PAD_TOP (the walkable height), no floating edge.
 				var db := BoxMesh.new()
-				db.size = Vector3(0.96, WS.PAD_TOP - WS.GROUND_Y, 0.96)
+				db.size = Vector3(GP.PAD_HALF * 2.0, WS.PAD_TOP - WS.GROUND_Y, GP.PAD_HALF * 2.0)
 				dirt.mesh = db
 				dirt.position.y = (WS.PAD_TOP + WS.GROUND_Y) * 0.5
 				dirt.material_override = _pbr("dirt", Color(0.35, 0.3, 0.25), 1.0 / (3.0 * WS.M))
