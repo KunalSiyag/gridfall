@@ -1,0 +1,345 @@
+{
+ "c1": [
+  {
+   "title": "A call from the previous city that lands after New City is still counted in the new city's ledger",
+   "severity": "minor",
+   "file": "scripts/ai/city_brain.gd (setup: ledger.attach(client, true)) + scripts/ai/gmi_client.gd _log/call_logged",
+   "detail": "Round-1 finding, not fixed and not in the fixed or rejected lists. setup() clears the ledger and keeps the same client connected. A mayor, resident or chat call that was in flight before New City still ends in GmiClient._log, which emits call_logged unconditionally, so the old city's call (latency, error, repairs, tokens, role) is added to the new city's counts and health. brain_calls._ask discards the stale answer by _generation but the ledger does not look at it. Effect is small and transient (at most the calls in flight at the reset) but the first numbers of a fresh city are not purely its own. Confirmed by reading the code path, not re-run.",
+   "verified": true,
+   "lens": "LEDGER CORRECTNESS AND HOT PATH (round 2: fixes verified)"
+  },
+  {
+   "title": "Street Orders column reads '-' on every pre-ledger save until new turns land (disclosed regression of the fix)",
+   "severity": "minor",
+   "file": "scripts/fp/reporter/league_ledger.gd decorate() / ModelLedger.note_turn",
+   "detail": "To make league Orders and Arena accept% agree, league Orders now reads the ledger's orders_ok/orders_rejected, which start at zero on a save without brain.ledger, whereas the old column showed the sim's whole-city history. For a returning player, or a loaded autosave on the 12 Nov demo machine, the league shows '-' (and the Arena shows '-') for each mayor until it lands a live or replayed turn after loading. The unit lists this under remaining_risks; I confirmed it by reading decorate(): from_ledger is true whenever the flag is on, so there is no fallback to the sim's counters when the ledger has no orders yet. A fresh demo city is unaffected.",
+   "verified": true,
+   "lens": "LEDGER CORRECTNESS AND HOT PATH (round 2: fixes verified)"
+  },
+  {
+   "title": "Cheaper but still above the old parse; WASM cost unmeasured; NaN is reported as 'trailing_comma'",
+   "severity": "minor",
+   "file": "scripts/ai/gmi_reply.gd read()/classify()",
+   "detail": "After the fix GmiReply.read costs about 1.5x extract_json on every 200 reply (0.33 vs 0.22 ms at 1.8 KB, 1.7 vs 1.13 ms at 9.6 KB, native headless, spread <0.02 ms), mostly the cached-regex pre-filter and the info dict. That closes the 4-5x round-1 finding (+0.1 to +0.6 ms native per reply, was +5 to +13 ms). The WASM multiplier is still not measured, and the owner's complaint was web smoothness, so a quick web probe would settle it. Separately, a reply containing NaN/Infinity is labelled 'trailing_comma' (documented in the file header), so the Arena's repair kinds name a fix that was not a comma.",
+   "verified": true,
+   "lens": "LEDGER CORRECTNESS AND HOT PATH (round 2: fixes verified)"
+  },
+  {
+   "title": "League table truncates district names in 4 of 5 rows (regression from re-budgeting the District column 176 -> 120 px)",
+   "severity": "major",
+   "file": "scripts/fp/reporter/reporter_league.gd (COLS: District 120)",
+   "detail": "SEEN at 1280x720 and 1600x900, live and replay: the District cells read 'Southeast Boo...', 'Northwest Civic...', 'Northeast Tech ...', 'Southwest Eco ...' ; only 'Central Plaza' fits. Before this unit the column was 176 px and showed the district whole. To make room for Orders and Speed the panel grew only 860 -> 920, and District absorbed the loss. The district is the mayor's identity in the league (and the user-visible name of the district they run), so the new columns degrade existing information. Widen the panel (there is room: it is 735 px of a 1280 viewport), narrow another column, or drop the ellipsis by shortening the label.",
+   "verified": true,
+   "lens": "LEAGUE AND ARENA IN PIXELS AND TEXT (round 2: re-export of wt-c1 with the fixes; headless Chrome real GPU, fake GMI endpoint via request interception for live, replay with no key; 1280x720 and 1600x900)"
+  },
+  {
+   "title": "Mayor chat rows with PRESS OFFICE / OWN WORDS chip overflow into the timestamp for longer names (measured, not seen)",
+   "severity": "major",
+   "file": "scripts/fp/ui/chat_panel_row.gd (_draw chip loop, VIA_TAGS)",
+   "detail": "Measured with the real row class at a 352 px width: for 'Rosa Quintero' (name 92 px) and 'Duke Granger' (88 px) with a PRESS OFFICE chip (71 px) the chip run ends at ~311 px while the time stamp starts at ~307 px, so chip and time overlap; at the real bubble width in the panel (~338 px, from the chat2 shot) the overlap is ~18 px. OWN WORDS (69 px) overlaps equally. Ada Okafor, Viktor Han and Mei Kimura fit. The chip loop has no overflow check. Because every scripted/offline mayor line carries press_office (and every live mayor post carries own_voice), this hits two of the five mayors on the default keyless demo. Not seen in pixels because no mayor line reached the visible panel in my runs; the geometry is from the real class.",
+   "verified": true,
+   "lens": "LEAGUE AND ARENA IN PIXELS AND TEXT (round 2: re-export of wt-c1 with the fixes; headless Chrome real GPU, fake GMI endpoint via request interception for live, replay with no key; 1280x720 and 1600x900)"
+  },
+  {
+   "title": "Street 'Services & minds' page names provider models; header comment claims street text names no model",
+   "severity": "minor",
+   "file": "scripts/fp/reporter/league_minds.gd; docs in league_ledger.gd header",
+   "detail": "SEEN: the street page lists badges MIMO-V2.6-FLASH, DEEPSEEK-V4-PRO, GPT-6-LUNA, GEMINI-3.8-FLASH, MINIMAX-M3, QWEN3.8-FLASH, GLM-5.3-FLASH, DEEPSEEK-V4.1-FLASH on every row. That matches the existing mayor-badge/AI-activity pattern, but it is ten more brand names in the street HUD than before, against the owner's 'no brand/model words in street HUD text' preference (which was stated for mayors). The module header says 'Street text names no model, only badges', which is a distinction a reviewer may not accept. Owner call: either accept badges here, or use the service name only on the street and keep model names to the orbit Arena.",
+   "verified": true,
+   "lens": "LEAGUE AND ARENA IN PIXELS AND TEXT (round 2: re-export of wt-c1 with the fixes; headless Chrome real GPU, fake GMI endpoint via request interception for live, replay with no key; 1280x720 and 1600x900)"
+  },
+  {
+   "title": "Health 'replay' word is shown for rows that only had scripted calls",
+   "severity": "minor",
+   "file": "scripts/fp/reporter/league_ledger.gd (HEALTH_WORDS grey), league_minds.gd",
+   "detail": "SEEN in offline: the five Residents rows have Calls 17-18, Replay 0, Scripted 17-18 and still show the ring-with-dot and the word 'replay' under Health, and speed '-'. A scripted/heuristic answer is not a replay; the tooltip text says 'recorded or scripted' but the visible word does not. Mayor rows have the same single word for both.",
+   "verified": true,
+   "lens": "LEAGUE AND ARENA IN PIXELS AND TEXT (round 2: re-export of wt-c1 with the fixes; headless Chrome real GPU, fake GMI endpoint via request interception for live, replay with no key; 1280x720 and 1600x900)"
+  },
+  {
+   "title": "Arena mix bar wraps into two rows at 384 px",
+   "severity": "minor",
+   "file": "scripts/ui/arena_text.gd mix_line (MIX_WIDTH 28 * MIX_CELL 2 = 56 characters)",
+   "detail": "SEEN at 1280 and 1600: the bar is 56 '#' cells, the panel holds fewer, so every mayor's bar wraps into a first row (e.g. orange then cyan) and a short second row (cyan), with the legend after it. Segments cross the wrap, so the share of each order type has to be read from the legend, and the bar looks like two stacked bars. Halve MIX_WIDTH/MIX_CELL or measure the width.",
+   "verified": true,
+   "lens": "LEAGUE AND ARENA IN PIXELS AND TEXT (round 2: re-export of wt-c1 with the fixes; headless Chrome real GPU, fake GMI endpoint via request interception for live, replay with no key; 1280x720 and 1600x900)"
+  },
+  {
+   "title": "A fenced or think-tagged but accepted model is permanently 'shaky'",
+   "severity": "minor",
+   "file": "scripts/ai/model_ledger.gd health_of (any non-OK outcome in the last 5)",
+   "detail": "SEEN: Mei Kimura (every answer fenced) and Viktor Han (every answer think-tagged) show amber/'shaky' with 100% repairs even though every call answered live with p50 9-16 s. A fence or think block is repaired at no cost to the city; labelling the model's house style as 'shaky' on the showcase view reads as a quality judgement. Consider repair-only as green with the repair share shown, and keep amber for retries, slow p95 or failures.",
+   "verified": true,
+   "lens": "LEAGUE AND ARENA IN PIXELS AND TEXT (round 2: re-export of wt-c1 with the fixes; headless Chrome real GPU, fake GMI endpoint via request interception for live, replay with no key; 1280x720 and 1600x900)"
+  },
+  {
+   "title": "Panel jumps vertically when Tab flips League pages; services lines wrap with a lone 'scripted 0'",
+   "severity": "minor",
+   "file": "scripts/fp/reporter/reporter_league.gd (centred modal), scripts/ui/arena_text.gd service_line",
+   "detail": "SEEN: the panel top is y=173 on the table page and y=201 on Services & minds (centred, different height), so the title moves under the player's eye. In the Arena the service line 'answering live . calls 1 . live 1 . failed 0 . replay 0 . scripted 0' wraps with 'scripted 0' alone on a second line for every service at 384 px (and the first street row's mix is still ellipsised: 'Citizen Voices 1 . Residents 1 . Str...').",
+   "verified": true,
+   "lens": "LEAGUE AND ARENA IN PIXELS AND TEXT (round 2: re-export of wt-c1 with the fixes; headless Chrome real GPU, fake GMI endpoint via request interception for live, replay with no key; 1280x720 and 1600x900)"
+  },
+  {
+   "title": "With model_ledger off, a ledger loaded from an older save still feeds Speed and the health light, contradicting the flag and runbook text",
+   "severity": "minor",
+   "file": "scripts/ai/model_ledger.gd (from_dict has no enabled() check); scripts/fp/reporter/league_ledger.gd decorate (speed and health are not gated)",
+   "detail": "The model_ledger flag text and docs/runbooks/model-ledger.md say that when it is off, 'Speed reads -' and 'the lights read idle'. from_dict does not check the flag, and decorate takes speed_ms, speed and health from the ledger whatever from_ledger says (only Orders is gated). A save made with the flag on and loaded with GRIDFALL_FLAGS=model_ledger=off therefore shows the old numbers in the street league, and it keeps writing them back into the save (to_dict is ungated). The new fp_league_ledger_test flag-off check clears the ledger first, so it cannot see this.",
+   "repro": "Probe: scratchpad c1/review-tests-claims/r2/probe2.gd. Ledger with 6 live mayor answers at 9 s, to_dict, set_override model_ledger false, a new ModelLedger.from_dict(saved), then LEDGER.decorate gives speed '9.0 s' and health 'green' (expected '-' and 'idle'). The off ledger still saves 1912 bytes.",
+   "verified": true,
+   "lens": "TESTS, FLAGS, CLAIMS (round 2: verify fixes of round 1, mutation-check new tests)"
+  },
+  {
+   "title": "Surviving mutants: MAX_REWRITES cap and the no free slot skip are untested",
+   "severity": "minor",
+   "file": "scripts/fp/chat/mayor_voice.gd:MAX_REWRITES; scripts/ai/gmi_client.gd live_json (_skipped on 'no free slot'); tools/tests/fp_mayor_voice_test.gd, tools/tests/ai_ledger_test.gd",
+   "detail": "Raising MAX_REWRITES from 3 to 5 leaves fp_mayor_voice_test PASS (the fixture never has more than 3 mayor lines, so the 'cap 3' claim in the report and the flag text is not tested, only 'at most 3' in fp_chat_live_test, which also cannot exceed 3 lines). Removing _skipped() from the 'no free slot' return leaves ai_ledger_test PASS, although call_skipped for that case is a stated feature. Also survived: the RECENT_KEEP bound in a stat (the health light reads only the last 5, so the save-size claim 'last 8 outcomes' is not asserted), the visible_text() branch for think-tagged replies in GmiReply.classify (the fence check on text with a <think> block), and the NaN guard in _num (a JSON save cannot carry NaN, so likely equivalent). Q_finite, Y_retries, X2_savebound are equivalent or unreachable mutants, not gaps.",
+   "repro": "Mutations K_cap, T_skip_slot, Z_recent, I2_think, Q_finite in scratchpad c1/review-tests-claims/r2/mut.sh; results in mut.log.",
+   "verified": true,
+   "lens": "TESTS, FLAGS, CLAIMS (round 2: verify fixes of round 1, mutation-check new tests)"
+  },
+  {
+   "title": "The unit's remaining claims are unviewed: bgcolor lights, health-dot shapes, chip widths",
+   "severity": "minor",
+   "detail": "The tests assert text, node structure and ASCII-only output, as the report says, so the claims that the [bgcolor] runs draw solid, that the shapes read and that the 920 px league fits are unproven, and the PRESS OFFICE/OWN WORDS chips and the campaign-poster card were never seen rendered. The report is honest about this (remaining_risks), so it is not a false claim, but the owner must look before 12 Nov. The report also states ai_ledger_review_test.gd and scripted_gmi_net.gd have no .gd.uid: confirmed, the seal agent must commit them after a gate import.",
+   "verified": true,
+   "lens": "TESTS, FLAGS, CLAIMS (round 2: verify fixes of round 1, mutation-check new tests)"
+  }
+ ],
+ "c2": [
+  {
+   "title": "A deferred proposal gets a new OVERRIDE record, street card and Gazette line on every council run, and 'deferred with 3 yes' is called an override while votes are still missing (round-1 finding not addressed)",
+   "severity": "major",
+   "detail": "The round-1 fix list does not mention this finding and does not reject it. CouncilLog.tally covers every proposal on the floor each run, and a deferred proposal stays on the floor. is_override('deferred', 3, 'live') is true whatever the number of votes cast. With the flag OFF (P4 is always on) a live Speaker that waits for the 2 mayors who have not voted yet shows 'Held Recycling Program despite 3 yes (override)' on the street card. The votes line says 'The Speaker went against the vote.' With mayor_context_v2 ON, the Gazette's feed also gets 'The Speaker went against the vote: Recycling Program OVERRIDE: deferred with 3 yes.' on every run. The 20-record history fills with identical rows and pushes real rulings out. Real cause: 3 yes of 3 votes cast, with 2 mayors still to vote, is not defiance, and the repeat is one stuck proposal counted again each run.",
+   "file": "scripts/ai/council_log.gd (tally, is_override, record); scripts/fp/activity/activity_words.gd (council_words, _count, council_votes)",
+   "repro": "Measured. Harness r2/harn_e.gd (output r2/harn_e.log): PF.build with the flag on, brain.proposals = {recycling: votes argon, deepseek, kimi = yes}, and the Speaker scripted to reply {enact: []}. Run `await brain._run_council(day + k*3)` for k in 0..2. Result: 3 history records, each ['recycling','deferred',override=true,'OVERRIDE: deferred with 3 yes']; day_feed holds the 'went against the vote' line 3 times; council_words = 'Held Recycling Program despite 3 yes (override)'. Suggested fix: count a deferral as an override only with >=4 votes cast, or never; record a still-deferred proposal once, or replace its previous record.",
+   "verified": true,
+   "lens": "COUNCIL AND CONTEXT CORRECTNESS"
+  },
+  {
+   "title": "A stale vote note stays after the mayor flips the vote, and it is shown to every mayor and on the board with the new vote",
+   "severity": "minor",
+   "detail": "_absorb_vote_notes only writes proposals[key]['notes'][me] when the reply carries a note for that key. If the mayor flips its vote in a later turn without a new note, the old reason survives. The REASONS GIVEN FOR VOTES line then pairs the new vote with the old reason, and the council record snapshot and the orbit board show the contradiction. Vote flips are the kind of event this feature exists to show, so the scenario is realistic. The effect is wrong data in other models' prompts and on screen, not a crash.",
+   "file": "scripts/ai/mayor_context.gd (_absorb_vote_notes)",
+   "repro": "Measured (r2/harn_e.log, case B). Grok votes {curfew:'no'} with vote_notes {curfew:'kills nightlife'}. Next day Grok votes {curfew:'yes'} with no note. The proposal's notes stay {grok:'kills nightlife'} and mayor 0's prompt carries 'REASONS GIVEN FOR VOTES: curfew: Duke Granger (yes) \"kills nightlife\"'. Fix: when a vote is cast again, erase that mayor's note for the key before storing the new one.",
+   "verified": true,
+   "lens": "COUNCIL AND CONTEXT CORRECTNESS"
+  },
+  {
+   "title": "Orbit City Hall tab still re-renders its full text on every mayor decision, visible or not (round-1 finding not addressed)",
+   "severity": "minor",
+   "detail": "The fix list neither fixes nor rejects this. city_hud.gd _on_mayor_decided still calls _render_council() unconditionally. That is five rebuilds of the council, board, record and notes text per dawn, plus the other triggers. The web build is frame-time sensitive. Only the call site was read; no cost was measured.",
+   "file": "scripts/ui/city_hud.gd:753",
+   "repro": "Read from the diff: `_render_council()  # the vote board shows each vote as it is cast` runs without a visibility or dirty check. A guard on tab visibility (render when the tab is shown) would keep the live-update behaviour.",
+   "verified": true,
+   "lens": "COUNCIL AND CONTEXT CORRECTNESS"
+  },
+  {
+   "title": "Gazette feed line prints the all-caps board label 'OVERRIDE:' inside a news sentence",
+   "severity": "minor",
+   "detail": "CouncilLog.record builds 'The Speaker went against the vote: %s %s.' with verdict(e), which returns the HUD label ('OVERRIDE: passed with 2'). The Gazette's model therefore reads 'The Speaker went against the vote: Recycling Program OVERRIDE: deferred with 3 yes.' That is redundant, shouty and awkward as input to a reporter prompt. Wording only.",
+   "file": "scripts/ai/council_log.gd:record",
+   "repro": "Same run as the first finding: day_feed[0] reads exactly that string.",
+   "verified": true,
+   "lens": "COUNCIL AND CONTEXT CORRECTNESS"
+  },
+  {
+   "title": "Replay (keyless demo) council card contradicts itself: headline 'Rejected Recycling Program', votes line lists all five mayors voting yes, and the quote says it passes",
+   "severity": "major",
+   "detail": "In a real replay ruling, the open street card read 'Rejected Recycling Program \u00b7 Rejected Green Energy Subsidy \u00b7 +2 more'. Under it the quote was the recorded statement 'Recycling passes with unanimous support...' and the votes line was 'Recycling Program: yes Ada, Viktor, Mei, Rosa, Duke'. The quiet-mode fix removed the word OVERRIDE and the count, but the card still shows 5 yes beside 'Rejected' and a statement that says 'passes'. The orbit record has the same look: 'Recycling Program: rejected (replay)' over a row of five green Y. This is the no-key and fallback path of the 12 Nov demo, and a viewer sees a council that rejects what everyone voted for, with no explanation. The REPLAY badge is small and does not explain it. A fix would be to drop the votes line for a quiet ruling, or to word it 'replayed ruling' on the card.",
+   "file": "scripts/fp/activity/activity_words.gd (council_votes, council_words); scripts/fp/activity/activity_feature.gd (_on_council_ruled sets extra for every source)",
+   "verified": true,
+   "repro": "Save with four proposals on the floor (recycling 5 yes, green_energy_subsidy 3, clean_air_act 4, curfew 3), flag mayor_context_v2 on, no key. After about 20 seconds the council card lands open. Screenshot: scratchpad/c2/review-ui-looks/shots11/ruling1600-street.png; orbit: shots11/ruling1600-hall0.png.",
+   "lens": "COUNCIL UI IN PIXELS AND TEXT"
+  },
+  {
+   "title": "Folded council card is cut mid-phrase and loses '(override)' because the headline is budgeted for two lines but a folded card shows one",
+   "severity": "minor",
+   "detail": "HEAD_CHARS = 72 fits the open card's two lines. Once a newer card lands, the council card folds to max_lines_visible = 1 with no ellipsis, so it reads 'Passed Recycling Program 3-2 \u00b7 Passed Youth' or 'Rejected Clean Air Act \u00b7 Rejected Youth'. For an override ruling it reads 'Passed Green Energy Subsidy with 2 yes', with the word '(override)' and '+2 more' cut, so the sentence looks odd. The speech-bubble card got a folded one-line form with an ellipsis in this fix round, but the council card did not. Seen at 1600x900 and 1280x720.",
+   "file": "scripts/fp/activity/activity_feed.gd (_apply_mode, _head_text only handles style 'say')",
+   "verified": true,
+   "repro": "Any save with a council item older than the boot cards: shots9/busy1600-street.png ('Passed Youth' cut), shots9/replay1600-street.png ('Rejected Youth'), shots9/clive1600-street.png ('with 2 yes' without 'override').",
+   "lens": "COUNCIL UI IN PIXELS AND TEXT"
+  },
+  {
+   "title": "A deferral with 4 yes and one mayor not yet voted is still painted amber 'OVERRIDE: deferred with 4 yes'",
+   "severity": "minor",
+   "detail": "Round 1 raised this (is_override ignores that votes are still missing, so waiting for a fifth vote reads as defiance). It was not in the fixed or the rejected lists. The orbit record shows 'Day 9 Green Energy Subsidy: OVERRIDE: deferred with 4 yes', wrapping onto a second line, above a seat row where Duke shows '-'. With the flag on, the Gazette is also told 'The Speaker went against the vote'. In staggered street mode a live Speaker that holds a proposal until all five have voted will look like it is defying the count.",
+   "file": "scripts/ai/council_log.gd (goes_against, is_override)",
+   "verified": true,
+   "repro": "shots9/note1600-hall0.png and shots11/ruling1600-hall0.png: the fixture record is deferred, yes 4, source live, one mayor with no vote.",
+   "lens": "COUNCIL UI IN PIXELS AND TEXT"
+  },
+  {
+   "title": "Italic lines in the City Hall tab render larger than the body text, so vote reasons and notes look louder than the votes they explain",
+   "severity": "minor",
+   "detail": "The RichTextLabel italic face is visibly bigger than the normal face (about 18 px against 14 px). The vote reasons ('Rosa: not worth the tax hike this year, sorry; Duke: too costly for the factories') and the Notes between mayors lines are bigger than the seat rows and headline they sit under, and a note's text jumps in size mid-line ('Mei Kimura to Ada Okafor says: Viktor will...'). It stays readable and unclipped at 1280x720 and 1600x900. This is cosmetic, and other italics on the tab already behave the same way.",
+   "file": "scripts/ui/council_board.gd (_reasons, notes_text use [i])",
+   "verified": true,
+   "repro": "shots9/note1600-hall1.png and shots11/ruling1600-hall0.png.",
+   "lens": "COUNCIL UI IN PIXELS AND TEXT"
+  },
+  {
+   "title": "The seat row's proposer mark '*' sits on the vote letter ('*Y'), not on the name",
+   "severity": "minor",
+   "detail": "Row text reads 'Ada *Y  Viktor -  Mei -'. In the screenshots the mark is legible but ambiguous, since it looks like part of the vote and a 'no' proposer reads '*N'. There is no legend on the tab, so a viewer does not know what the asterisk means. The implementer's glyph-box concern about a star is avoided, but an unexplained asterisk is not a proposer star.",
+   "file": "scripts/ui/council_board.gd (seat_row)",
+   "verified": true,
+   "repro": "shots9/note1600-hall0.png, Proposals on the floor.",
+   "lens": "COUNCIL UI IN PIXELS AND TEXT"
+  },
+  {
+   "title": "A proposal that stays deferred adds a record and a Gazette line on every council run, so repeats fill the 20-record history and push real rulings out (round-1 finding, not closed)",
+   "severity": "major",
+   "detail": "CouncilLog.tally records every proposal still on the floor each run, and a deferred proposal is never erased. In the test city a scripted live Speaker that enacts nothing, with two stuck proposals (free_clinics 3 yes 0 no, trade_expo 1 yes 1 no), produced 12 records after 6 runs. All 12 were 'deferred', 6 of them marked OVERRIDE, and the Gazette feed got the identical line 'The Speaker went against the vote: Free Clinics OVERRIDE: deferred with 3 yes.' 6 times. After one real enactment (recycling), 20 more runs on one stuck proposal pushed the enactment out of council_history (it was gone, size 20). The docs say 'the last 20 rulings, one record per proposal'. The cap protects the save, but the City Hall 'Council record' (6 newest) fills with duplicate 'deferred' rows. A deferral with 3 yes and only 3 votes cast (two mayors yet to vote) is also called an OVERRIDE, which is false defiance in staggered street mode. The fix report listed this finding under neither fixed nor rejected. The unit's own test pins free_clinics 3 yes held back as 'OVERRIDE: deferred with 3 yes'.",
+   "file": "scripts/ai/council_log.gd (tally, record, is_override); scripts/ai/city_brain.gd (_run_council)",
+   "repro": "Harness /tmp/claude-1000/-home-kunalsiyag-Ambassador-Gmi-Cloud-gridfall/4eb46f6b-fccd-4256-83c9-4c39144a74d2/scratchpad/c2/review-tests-claims/v2/h1.gd, output in h1.log (H1 lines: history 12, deferred 12, override 6, 6 identical feed lines, enactment displaced). Fix idea: write a deferred record only once per proposal or when its votes changed, and require 4 or more votes before a deferral can be an override.",
+   "verified": true,
+   "lens": "TESTS, FLAGS, CLAIMS"
+  },
+  {
+   "title": "Seven tests of new behaviour survive their mutant (limits and guards that are documented but unpinned)",
+   "severity": "minor",
+   "detail": "Each mutant left its test printing PASS, exit 0. (1) REQUEST_MAX 3000 changed to 30000: the '$3000 at most' cap in the flag text and the runbook is untested. (2) OPERATOR_DAYS 6 changed to 60: the Grid Operator line's staleness window is untested (the council and chaos windows are tested). (3) The league tie-break '-mi' changed to '+mi': ties are not tested. (4) The restore guard 'from == id' removed: a saved note from a mayor to itself loads. (5) The prune limit KEEP_DAYS 8 changed to 800: 'dropped after 8 days' in docs/save-schema.md is untested. (6) 'if held <= 0' changed to '< 0': a treasury of exactly $0 reads 'you hold $0 ... grant cannot be more than that' with a $N grant example, because only -300, 200 and 5000 are tested. (7) The 'amount > 0' guard on a request removed: a $0 request is stored. The amber WARN colour on OVERRIDE rows (council_board.gd) is also not pinned. get_parsed_text cannot see it, and nobody looked at pixels.",
+   "file": "tools/tests/fp_mayor_context_test.gd; tools/tests/fp_council_log_test.gd",
+   "repro": "Apply one change to a scratch copy under the lock, then run godot --headless -s tools/tests/fp_mayor_context_test.gd. Examples: 'const REQUEST_MAX := 3000' to '30000', 'if held <= 0:' to 'if held < 0:', 'and day - int((n as Dictionary).get(\"day\", -99)) <= KEEP_DAYS' to '<= 800'. Each gives exit 0. The mutation list and logs are in the v2 directory (M06, M12, M15, M17, M19, M20, M22, M31).",
+   "verified": true,
+   "lens": "TESTS, FLAGS, CLAIMS"
+  },
+  {
+   "title": "Docs, test names and comments say a 'star' marks the proposer, but the code draws '*'",
+   "severity": "minor",
+   "detail": "The runbook (mayor-context-v2.md) says 'a star on the proposer', and the council_board.gd header, the orbit test message ('a star on the proposer') and the council-log test do too. The implementer deliberately drew '*' because web builds have no system font. The claim in the docs and tests is therefore inexact. The decision itself, and the claim that a star glyph would show as a box, are inferred rather than observed.",
+   "file": "docs/runbooks/mayor-context-v2.md; scripts/ui/council_board.gd (header comment, seat_row); tools/tests/fp_orbit_names_test.gd",
+   "repro": "Read seat_row: var star := \"*\" if id == proposer_id else \"\".",
+   "verified": true,
+   "lens": "TESTS, FLAGS, CLAIMS"
+  },
+  {
+   "title": "Two test files sit at the 1000-line lint cap, so the next edit to them fails lint",
+   "severity": "minor",
+   "detail": "tools/tests/fp_mayor_context_test.gd is 997 lines and fp_activity_test.gd is 967. C1 or C3, or a fix for the findings above, that touches either one needs a split into a new file first. The golden also hashes sim-derived text (district summary, city summary, map). Other in-flight units that move sim output will fail fp_mayor_context_test. This is acknowledged in the runbook and tools/gen_mayor_prompts_golden.gd exists, but I did not re-run the generator.",
+   "file": "tools/tests/fp_mayor_context_test.gd; tools/tests/fixtures/mayor_prompts_golden.json",
+   "repro": "wc -l tools/tests/fp_mayor_context_test.gd tools/tests/fp_activity_test.gd",
+   "verified": true,
+   "lens": "TESTS, FLAGS, CLAIMS"
+  }
+ ],
+ "c3": [
+  {
+   "title": "Settle cap is not a cap: overlay held 11.3 s on a night-time Tab back (settle 9.2 s against the documented 'at most 6 s')",
+   "severity": "minor",
+   "detail": "PlannerPrep._settle checks `last - began < SETTLE_CAP_MS` only after each frame completes, so a long frame in flight overshoots the cap by its whole length. In poke_new_1 the Planner was left at night (Day 4, 00:00) and Tab back took four freezes (2,050 ms at +2.1 s, 3,467 ms at +5.6 s, 1,900 ms at +7.5 s, 3,467 ms at +11.3 s). PLANNERPREP reported {\"to_orbit\":false,\"settle\":{\"frames\":9,\"ms\":9157.2,\"calm\":false},\"ms\":11224.8}: the card stood for 11.3 s (marks prepare_shown 154311, prepare_done 165536). The cap text appears in data/feature_flags.json ('at most 6 s'), planner_prep.gd (SETTLE_CAP_MS) and web-deploy.md. All four freezes were covered by the card, so the player was told, but 11 s of a dark card on a return to a night street is a long wait, and it suggests the street's night (lamp/spot) programs are not warmed (the warm-up states never reach 'unlit' in the 3 s budget). Normal daytime Tab backs held the card 4.5-5.4 s. One run; wave0 would show the same four bare freezes, so this is not a regression, only a false 'at most'. Fix: say 'at most 6 s plus the frame in flight', or hide the card when the elapsed time passes the cap even if the frame is pending is impossible, so document it; optionally warm the night state.",
+   "file": "scripts/fp/warmup/planner_prep.gd (_settle, SETTLE_CAP_MS); data/feature_flags.json (planner_prepare_overlay); docs/runbooks/web-deploy.md",
+   "verified": true,
+   "lens": "FREEZES AND BOOT IN TIME AND PIXELS, round 2 (headless Chrome, real GPU AMD Renoir iGPU, wave0 vs current web/smooth-freezes tree after the round-1 fixes; scratch /tmp/claude-1000/-home-kunalsiyag-Ambassador-Gmi-Cloud-gridfall/4eb46f6b-fccd-4256-83c9-4c39144a74d2/scratchpad/c3/review-freeze-measure/r2)"
+  },
+  {
+   "title": "The Planner entry still ends with a bare 1.3-1.45 s freeze about 10 s after the move on the day-10 city (5 of 6 grown/fresh runs show 0.6-1.4 s bare freezes after the card)",
+   "severity": "minor",
+   "detail": "After the card comes down (+2.8 to +6.7 s), slow frames remain bare: grown runs 1,450 ms at +10.0 s, 1,383 ms at +10.3 s, 1,433 ms at +10.3 s; fresh runs 650, 650, 600 ms at +6.3/+9.7/+10.5 s, 817/550/1,317/633 ms at +3.9/+6.0/+10.3/+11.1 s, 617/1,250/617 ms at +7.2/+11.0/+12.0 s. Wave0 shows the same freezes at similar times (grown 833 ms at +8.8 s, fresh 633 and 650 ms at +6.2 and +9.8 s), so they are not a regression, and the docs state they are first uses during play and not covered. Calibration only: for the player the Planner entry is now 3-7 s of honest card followed by roughly one more 1.3 s stall, and the total frozen time is unchanged (see checked). On grown cities the card stands 5.4-6.7 s against a 3.8-4.3 s single frozen frame in wave0, so the wait is longer, with feedback.",
+   "file": "scripts/fp/warmup/planner_prep.gd; docs/runbooks/web-deploy.md",
+   "repro": "r2/ana.py over r2/runs/n2_grown_*/raw_up.json (bare-after list) and r2/runs/b2_* for the wave0 control",
+   "verified": true,
+   "lens": "FREEZES AND BOOT IN TIME AND PIXELS, round 2 (headless Chrome, real GPU AMD Renoir iGPU, wave0 vs current web/smooth-freezes tree after the round-1 fixes; scratch /tmp/claude-1000/-home-kunalsiyag-Ambassador-Gmi-Cloud-gridfall/4eb46f6b-fccd-4256-83c9-4c39144a74d2/scratchpad/c3/review-freeze-measure/r2)"
+  },
+  {
+   "title": "The 'overview' warm-up state can eat the whole 3 s budget for a single variant and cut the street's no-shadow state",
+   "severity": "minor",
+   "detail": "In n2_grown_1 the warm-up drew 15 prototypes in 589 ms, then the overview state drew 1 variant in 2,191 ms (one frame of 1,941 ms), the budget was spent and 'noshadow' drew 0 (the street's main state). In n2_grown_2 and 3 the same overview state took 1,034 and 1,101 ms and noshadow reached 26 and 25 variants. In n2_fresh_3 the prototypes alone took 2,921 ms (a disturbed run) and noshadow drew 0. Result: 2 of 6 new runs skipped the state the street uses; fresh_3 and grown_1 are also the runs with the most hitches or longest label stall. The state order puts overview before noshadow; whether that is the right order under a tight budget is a trade for the owner. Not a regression of wave0 (which had no overview state).",
+   "file": "scripts/fp/warmup/shader_warmup.gd (STATES order, _run_states)",
+   "repro": "r2/runs/n2_*/result.json key warmup.states",
+   "verified": true,
+   "lens": "FREEZES AND BOOT IN TIME AND PIXELS, round 2 (headless Chrome, real GPU AMD Renoir iGPU, wave0 vs current web/smooth-freezes tree after the round-1 fixes; scratch /tmp/claude-1000/-home-kunalsiyag-Ambassador-Gmi-Cloud-gridfall/4eb46f6b-fccd-4256-83c9-4c39144a74d2/scratchpad/c3/review-freeze-measure/r2)"
+  },
+  {
+   "title": "Loader label gaps reach 1.96 s (fresh) and 2.2 s (grown) under one slow batch; the grown run ends the bar at 23% then jumps to the stripe",
+   "severity": "minor",
+   "detail": "Largest gap between 'Preparing graphics N%' updates: fresh 697, 905, 1,957 ms; grown 605, 1,388, 1,456 ms. In n2_grown_1 the label read 'Preparing graphics 23%' at +28,876 ms and the next label was 'Starting your city' (stripe) at +31,065 ms, 2.2 s later, because the overview batch was one 1.94 s frame; the bar never reached 100%. In n2_fresh_3 the label went from 0% to 100% with a 1,957 ms silence (a 2.9 s prototypes state). Docs quote 0.57-1.17 s fresh and 1.18-1.34 s grown, so these runs are outside the documented range (one is a disturbed run). The bar itself stays honest (travelling stripe during the engine start, then follows work) and is not full from the start.",
+   "file": "scripts/fp/warmup/shader_warmup.gd (_report_progress); docs/runbooks/web-deploy.md",
+   "repro": "r2/runs/n2_*/result.json key loader.log",
+   "verified": true,
+   "lens": "FREEZES AND BOOT IN TIME AND PIXELS, round 2 (headless Chrome, real GPU AMD Renoir iGPU, wave0 vs current web/smooth-freezes tree after the round-1 fixes; scratch /tmp/claude-1000/-home-kunalsiyag-Ambassador-Gmi-Cloud-gridfall/4eb46f6b-fccd-4256-83c9-4c39144a74d2/scratchpad/c3/review-freeze-measure/r2)"
+  },
+  {
+   "title": "Calibration: the freeze is covered, not shortened; fresh-city gains vs wave0 are modest and one run was disturbed",
+   "severity": "minor",
+   "detail": "The round-1 fixes close the 'covers about half' finding: the card now covers the move's own freezes and the whole of Tab back. Totals did not shrink (see checked: sums of >100 ms frames in the 12 s windows 5.5-6.7 s up, 4.0-5.3 s down, against 5.4-6.0 s and 4.0-6.2 s on wave0). Docs and the implementer's report already say so; this is a note to keep the demo script honest: tell the owner the Planner entry is about 3-7 s of card, not a smooth move. Fresh frames over 100 ms are 9, 9 (and a disturbed 33) against 12, 12, 12 (-25% on the clean runs), grown 6, 6, 6 against 9-10 (-35 to -40%), for +0 to +2 s boot fresh and +0.4 to +4.7 s grown.",
+   "file": "docs/runbooks/web-deploy.md",
+   "verified": true,
+   "lens": "FREEZES AND BOOT IN TIME AND PIXELS, round 2 (headless Chrome, real GPU AMD Renoir iGPU, wave0 vs current web/smooth-freezes tree after the round-1 fixes; scratch /tmp/claude-1000/-home-kunalsiyag-Ambassador-Gmi-Cloud-gridfall/4eb46f6b-fccd-4256-83c9-4c39144a74d2/scratchpad/c3/review-freeze-measure/r2)"
+  },
+  {
+   "title": "One slow piece switches the drain off for about three game days",
+   "severity": "minor",
+   "detail": "SpreadDrain keeps a running cost estimate that falls by 1% only on frames where run() is called and the frame is skipped. A single 25 ms piece raises the estimate (to 4.4 ms and above at 4x). After that, two sources of that cost no longer fit in the 8 ms budget, and the estimate only decays during dawn waits. A 25 ms hiccup (GC, a tab switch, a loaded machine) on the first brain piece of day 11 made days 12 and 13 keep the full 42 and 21 dawn frames, and day 14 about 25, at 4x. At 4x, pieces drained over 700 frames fell from 105 to 31 and days gained from +1.00 to +0.32 over the off run (5.75 vs 5.07 vs 4.75). At 8x, pieces fell from 135 to 33. Only pacing is affected, never state. The docs say 'probed again every 30 to 50 frames', which holds only for a 6 ms estimate; after a larger spike it takes many more skipped frames. Suggestion: reset the estimate at each day start, or let it decay per frame instead of per skipped dawn frame.",
+   "file": "scripts/sim/spread_drain.gd (ESTIMATE_DECAY, _note); scripts/sim/city_sim.gd (_drain_stats never reset)",
+   "repro": "GRIDFALL_OFFLINE=1 godot --headless --path /home/kunalsiyag/Ambassador/Gmi_Cloud/gridfall-wt-c3 -s /tmp/claude-1000/-home-kunalsiyag-Ambassador-Gmi-Cloud-gridfall/4eb46f6b-fccd-4256-83c9-4c39144a74d2/scratchpad/c3/review-drain-correct/spike.gd -- /tmp/claude-1000/-home-kunalsiyag-Ambassador-Gmi-Cloud-gridfall/4eb46f6b-fccd-4256-83c9-4c39144a74d2/scratchpad/c3/day10.json 25 700 (and 0 for the control). Output is in review-drain-correct/spike.log.",
+   "verified": true,
+   "lens": "DRAIN SCHEDULER CORRECTNESS"
+  },
+  {
+   "title": "'No frame is longer than without the drain' does not hold: probe frames exceed it",
+   "severity": "minor",
+   "detail": "When the estimate has decayed enough, a frame runs one or two extra pieces on top of the two forced ones to probe the cost. With 6 ms pieces (the browser-like case) this happened 1 to 2 times per 400 frames at 4x and 2 times at 8x. At 8x, p99 rose from 15.1 and 15.4 ms (off) to 17.2 and 17.6 ms (on) in both runs, and max was 18.8 and 18.2 vs 19.5 and 18.8. At 3 ms pieces and 4x, p99 went from 10.5 to 14.9 ms with 11 extra pieces. p95 is unchanged in every run (9.7 to 10.1 and 12.4 to 12.7), so the round-1 major is fixed. The remaining effect is a few frames per 400 over 16.7 ms. The wording in the flag description and web-deploy.md ('no frame is longer than without it', 'a frame already full of pieces gets none') should say 'at most a few probe frames'.",
+   "file": "data/feature_flags.json (day_drain_fast); docs/runbooks/web-deploy.md (Fast-forward drain); scripts/sim/spread_drain.gd",
+   "repro": "GRIDFALL_OFFLINE=1 godot --headless --path /home/kunalsiyag/Ambassador/Gmi_Cloud/gridfall-wt-c3 -s /tmp/claude-1000/-home-kunalsiyag-Ambassador-Gmi-Cloud-gridfall/4eb46f6b-fccd-4256-83c9-4c39144a74d2/scratchpad/c3/review-drain-correct/pace_model.gd -- /tmp/claude-1000/-home-kunalsiyag-Ambassador-Gmi-Cloud-gridfall/4eb46f6b-fccd-4256-83c9-4c39144a74d2/scratchpad/c3/day10.json 6 400. See model2.log (p99 and pieces columns).",
+   "verified": true,
+   "lens": "DRAIN SCHEDULER CORRECTNESS"
+  },
+  {
+   "title": "Brief item 3 is met natively only. In the browser the drain is inert by design, and the implementer's summary still states a browser gain",
+   "severity": "minor",
+   "detail": "With two sources, the drain adds a piece only when the estimated piece cost is at most about 2.7 ms (about 4 ms with one source). The implementer's own note says pieces cost 5 to 10 ms in wasm, and my 6 ms model shows 1 to 2 extra pieces in 400 frames and equal days (2.75 vs 2.75 at 4x, 3.5 to 3.75 vs 3.75 at 8x). So the 'clock parked at 06:00 for 2 to 15 s' problem is not addressed in the browser by this scheduler. The flag text and web-deploy.md now say a browser gain is not demonstrated, which is correct. The summary (item 6) and open_risks in the original report still quote the earlier browser gain, '3 to 4 days', which the round-1 review showed to be drift between control sessions. That text should not be carried into the seal or the owner notes. The native gain itself is real (4x +18 to +24%, 8x +13%, dawn wait 42 to 9 to 17 frames, 3 runs).",
+   "file": "docs/runbooks/web-deploy.md; the implementer's summary (item 6)",
+   "repro": "Read the flag text and the Fast-forward drain section. Run pace_model.gd with a 6 ms delay and compare days and pieces (model2.log).",
+   "verified": true,
+   "lens": "DRAIN SCHEDULER CORRECTNESS"
+  },
+  {
+   "title": "fp_day_drain_test does not detect removal of the brain's busy_changed emit in CityBrain.drain_step",
+   "severity": "minor",
+   "detail": "CityBrain._process used to emit busy_changed(pending_calls()) when the round's queue emptied; that logic moved into drain_step, which the drain scheduler now also calls. Deleting the two lines (`if _queue.is_empty(): busy_changed.emit(pending_calls())`) leaves FP_DAY_DRAIN_TEST: PASS and BRAIN_STALE_ANSWER_TEST: PASS. A regression would leave the HUD's mayors-busy indicator stuck after a day round. The hook tests assert order and wiring but not this side effect.",
+   "file": "scripts/ai/city_brain.gd (drain_step); tools/tests/fp_day_drain_test.gd (_check_hooks)",
+   "repro": "Back up city_brain.gd, delete lines 142-144 of the `drain_step` tail (the `if _queue.is_empty(): busy_changed.emit(...)` block), run tools/tests/fp_day_drain_test.gd and tools/tests/brain_stale_answer_test.gd: both PASS. Log: scratchpad/c3/review-tests-claims/mut.out (drainbusyemit).",
+   "verified": true,
+   "lens": "TESTS, FLAGS, CLAIMS"
+  },
+  {
+   "title": "With warmup_orbit_variants off, an orbit state in the tuning still adds the Planner catalogue, and no test notices",
+   "severity": "minor",
+   "detail": "shader_warmup.gd line 127 guards the catalogue with `WarmCollector.by_variant and _wants_orbit(states)`. Mutating it to `_wants_orbit(states)` passes fp_warmup_variants_test and fp_warmup_test. The flag-off test only checks the per-material recipe path and the large-scene skip, not that no catalogue is added when a tuning file asks for `orbit`. Only a probe-style tuning file can reach it, so no player is affected; it is a gap in the flag-off guarantee that the flag text states (\"no Planner catalogue\").",
+   "file": "tools/tests/fp_warmup_variants_test.gd (_check_variants_flag_off); scripts/fp/warmup/shader_warmup.gd:127",
+   "repro": "Replace the condition as above, run both warm-up tests: PASS. Log: mut.out (catalogue_flag).",
+   "verified": true,
+   "lens": "TESTS, FLAGS, CLAIMS"
+  },
+  {
+   "title": "The PAINT_FRAMES assertion is tautological; the paint-before-heavy-frame guarantee is only checked against the constant itself",
+   "severity": "minor",
+   "detail": "fp_planner_prep_test checks `frames_to_move >= PlannerPrep.PAINT_FRAMES`, so changing the constant cannot fail that line. Setting PAINT_FRAMES to 0 (overlay not painted before the heavy move, the behaviour the unit exists to prevent) failed the test run only by accident: other assertions failed and Godot exited 134 (a crash). A bare lowering to 1 would likely pass. A literal `>= 2` in the test would pin the claim 'painted for 2 frames'.",
+   "file": "tools/tests/fp_planner_prep_test.gd:191",
+   "repro": "Set const PAINT_FRAMES := 0 and run the test: FAIL plus exit=134 (mut.out, paint0). Not run with 1.",
+   "verified": true,
+   "lens": "TESTS, FLAGS, CLAIMS"
+  },
+  {
+   "title": "Docs: stale sentence in web-probe-kit.md and a garbled passage in web-deploy.md",
+   "severity": "minor",
+   "detail": "web-probe-kit.md line 349 still says the loader percentage is the larger of the work done and the budget spent. web-deploy.md (round-2 section) says the old reading was that, and the new one is work-based, so the two contradict outside the 'read as round 1' note. In web-deploy.md the grown-city sentence has a duplicated, broken fragment: 'gains (...) which round 1 skipped, (-26 to -33% ...)'. The numbers themselves match the raw runs. The new-city table column labelled 'this build' comes from ovf runs that forced the states on an earlier build (disclosed in the text but not in the table header); the shipped build's ef runs read 15 and 10 frames over 100 ms.",
+   "file": "docs/runbooks/web-probe-kit.md (around line 349); docs/runbooks/web-deploy.md (What is measured, what stays frozen)",
+   "repro": "Read the two passages. Compare runs/ovf_*, runs/ef_* result.json: hitches.gt100.",
+   "verified": true,
+   "lens": "TESTS, FLAGS, CLAIMS"
+  },
+  {
+   "title": "day_drain_fast ships default-on with no demonstrated benefit on the web, the platform the owner complained about",
+   "severity": "minor",
+   "detail": "The native model gains 16-23% at 4x and 0-13% at 8x, with the clock parked at dawn for 9-10 frames instead of 42. In the browser, pieces cost 5-10 ms, the scheduler counts forced pieces against an 8 ms budget and so adds almost nothing (6 ms stand-in: 1-2 extra pieces in 400 frames). The docs say this honestly (\"no browser pace gain is claimed\"; the browser table is of the first, replaced version). The brief's item 3 for the day-start stall therefore remains unmet on the web. It is default-on code in the sim hot path (CitySim._process_sliced, two new step hooks) with its measured cost near zero. The risk is review burden, not a defect.",
+   "file": "data/feature_flags.json (day_drain_fast); scripts/sim/spread_drain.gd",
+   "repro": "Read docs/runbooks/web-deploy.md 'Fast-forward drain'. The shipped scheduler was never re-run in the browser (the implementer says the lock queue was over an hour).",
+   "verified": true,
+   "lens": "TESTS, FLAGS, CLAIMS"
+  }
+ ]
+}

@@ -1,0 +1,198 @@
+{
+ "a1": [
+  {
+   "title": "Having the audio graph connected costs a small, measurable amount of frame time on the street (about +1.4 ms p50, +2 to 4 ms p95, about twice as many frames over 34 ms)",
+   "severity": "minor",
+   "detail": "My A/B ran on the same page with the graph pulled and not pulled: the old silent behaviour against the fixed audible one. Rounds 1 to 3, on vs off. p50: 18.1/16.7/16.7 vs 16.7/16.7/16.7. p95: 23.2/20.8/18.1 vs 19.3/16.7/16.7. Frames over 34 ms: 4, 8, 4 vs 2, 3, 2. The direction is the same in all three pairs. The machine is shared and round 0 was noise, so treat the size as about 1 to 2 ms with large uncertainty. It agrees with the implementer's one-off +1.1 ms and with the earlier finding that audio-off lifted frames over 34 ms. It is the price of the fix being audible. The doc says 'the audio thread's work is not on the main thread' and 'no difference beyond the spread', which this data does not support. The cost is small and acceptable for a game that is otherwise silent. Re-check on the 2-core box and soften the doc sentence.",
+   "file": "docs/runbooks/web-deploy.md ('What sound costs the street')",
+   "verified": true,
+   "lens": "AUDIO PROOF AND REGRESSIONS (round 2)"
+  },
+  {
+   "title": "Untracked 155 MB build-mut/ directory left in the worktree and not git-ignored",
+   "severity": "minor",
+   "detail": "build-mut/web (index.html, build-report.json, releases/) is leftover mutation-export output, not from the implementer's diff (build/ is ignored, build-mut/ is not). A git add -A or git add . in the seal step would stage a 155 MB export, and AGENTS.md rejects files over 12 MB. Delete it before sealing.",
+   "file": "/home/kunalsiyag/Ambassador/Gmi_Cloud/gridfall-wt-a1/build-mut/",
+   "repro": "git -C /home/kunalsiyag/Ambassador/Gmi_Cloud/gridfall-wt-a1 status --short | grep build-mut; git check-ignore build-mut returns nothing",
+   "verified": true,
+   "lens": "AUDIO PROOF AND REGRESSIONS (round 2)"
+  },
+  {
+   "title": "The brief's 'drives' case is not covered by the probe or by me",
+   "severity": "minor",
+   "detail": "The probe covers walking, the pause menu, the Planner, back in first person and walking again. It never drives, and I could not drive a car headlessly because car entry belongs to another unit. Car sounds use the same SFX bus and the same graph, so I expect them audible, but it is unmeasured.",
+   "file": "tools/web_audio_probe.js",
+   "verified": true,
+   "lens": "AUDIO PROOF AND REGRESSIONS (round 2)"
+  },
+  {
+   "title": "Doc quotes the scratch-hook run's numbers for the audible check",
+   "severity": "minor",
+   "detail": "web-deploy.md still says peak 0.56 at the end and first sound 0.1 s after boot complete, which are the figures of the earlier hooked export. The clean-tree runs give 0.75 and 0.2 s to 1.9 s (mine: 0.7525 and 1.9 s; the implementer's: 0.76 and 0.2 s). The conclusion (audible, peak far above 0.01) is unaffected.",
+   "file": "docs/runbooks/web-deploy.md ('Measured on a local export of the fix')",
+   "verified": true,
+   "lens": "AUDIO PROOF AND REGRESSIONS (round 2)"
+  },
+  {
+   "title": "Planner speed buttons 2x/4x/8x no longer speed anything up on a grown web city (sliced sim at a fixed 4 ms per frame)",
+   "severity": "major",
+   "detail": "Direct A/B on the day-10 grown save, same probe, Planner, 8x button clicked and shown highlighted. Baseline daa66fd (whole ticks): clock read Day 10 17:00 -> Day 14 19:00 across the 6 HUD shots (3.4 s apart), about 4 game days in under 20 s. Fix: Day 10 17:45 -> Day 11 18:00 over about 21 s, about 1 game day, the same pace as at 1x (about 0.6x). A whole day-10 tick is 200-500 ms natively. It is about 4 ms of work per frame at 20 fps in the browser, so a tick takes roughly 100-150 frames (native: 67-196 frames per tick, mean about 100). Throughput is capped near one tick every 5-6 s whatever speed is requested. The same cap hits the pause-menu 'fast forward' feel and the live-mayor showcase, and gets worse as the city grows. The HUD still says 'Real-time pace' (that label is a separate setting, not effective speed), so the player gets no sign of the cap. Trade-off: the smoothness gain is real (fps 10.4 -> 19.7 at 8x, p99 517 -> 100 ms), but the implementer's report and docs describe only the stall win. Possible fixes: scale slice_budget_ms with speed (for example 4 ms at 1x, 16-24 ms at 8x), use a larger budget when the frame has headroom, or document that Planner fast-forward is capped on web. Measured 1x pace is unaffected. Only one run each at 8x, on a shared box.",
+   "file": "scripts/fp/sim/sim_perf_feature.gd (keeps_slicing, ORBIT_BUDGET_MS)",
+   "verified": true,
+   "lens": "STRIPES, TIERS AND PERFORMANCE"
+  },
+  {
+   "title": "Medium and High web tiers cost measurably more on a grown street and buy no Planner speed; a previously saved Medium/High preset silently gets them",
+   "severity": "minor",
+   "detail": "Grown day-10 street, one run each: Low busy p50 16.1 ms / 52.8 fps / 2094 draws, Medium 18.5 / 44.8 / 2458, High 18.4 / 46.1 / 3251. That is about +2.3 ms and a 13-15% fps drop, more than the +1 ms in the docs and round-1 numbers, though one run each is noisy on a shared box. Medium and High looked no cheaper or dearer than each other within that noise. Both tiers clear the stripes (0.92 and 0.50 rms) and High's frame looked clean. _load_settings in scripts/fp/fp_mode.gd still honours a saved 'quality' key, so a player who once clicked Medium or High (a no-op on web before) now gets scale 0.7/0.8, a 2048 atlas and 5-6 street lights with no notice. This was round-1 finding 8 and is not addressed. The Planner is unchanged by tiers (round 1: 44.6 / 41.4 / 42.2 ms).",
+   "file": "scripts/fp/render/quality.gd (WEB_TIERS), scripts/fp/fp_mode.gd:_load_settings",
+   "verified": true,
+   "lens": "STRIPES, TIERS AND PERFORMANCE"
+  },
+  {
+   "title": "The stripe pose's reading on the fix has less headroom than the docs say",
+   "severity": "minor",
+   "detail": "docs/runbooks/web-probe-kit.md gives 0.71, 1.15 and 1.19 for the fix and 2.75 to 2.99 for the old bias, with STRIPE_MAX 2.0. My three runs at the fixed bias read 1.41 (Low), 0.92 (Medium) and 0.50 (High): all pass, but Low is 0.6 below the limit and 0.3 above the documented top of the fix range. A noisy run on a busy box could trip exit 7 without a real regression. I did not run the old-bias build, so I did not re-measure the 2.75-2.99 side. Consider quoting the run-to-run spread, or a limit of about 2.2.",
+   "file": "tools/web_fps_probe.js (stripePose), tools/web_probe_kit.js (STRIPE_MAX)",
+   "verified": true,
+   "lens": "STRIPES, TIERS AND PERFORMANCE"
+  },
+  {
+   "title": "Untracked 155 MB build-mut/ directory left in the worktree",
+   "severity": "minor",
+   "detail": "git status in /home/kunalsiyag/Ambassador/Gmi_Cloud/gridfall-wt-a1 shows untracked build-mut/ (an old export, dated 17:50). It is not gitignored, so a careless git add -A would stage it, and the brief says to delete build output when done. build/ is already ignored. I did not delete it (read-only review, and I do not know who made it).",
+   "file": "build-mut/",
+   "verified": true,
+   "lens": "STRIPES, TIERS AND PERFORMANCE"
+  },
+  {
+   "title": "gdlint regressed: 3 new over-length lines (pre-commit gdlint and run_all fail)",
+   "severity": "major",
+   "file": "scripts/main.gd:287,289; tools/tests/fp_orbit_slicing_test.gd:109",
+   "detail": "The round-1 fix for the deferred autosave added a comment line (main.gd:287) and a long condition (main.gd:289: `if _autosave_due and sim.tick_in_day >= 1 and not sim.job_pending() and autosave_wait_s() <= 0.0:`) and a long comment in the test (line 109). gdlint max-line-length counts tabs as columns, so these exceed 100. HEAD's main.gd has 33 flagged lines, the worktree has 35. `python tools/checks/run_all.py` prints 'gdlint: NEW: scripts/main.gd ... x2 over baseline' and 'NEW: tools/tests/fp_orbit_slicing_test.gd ... line 109', ending CHECKS: FAIL. The pre-commit hook `gdlint (new findings only)` (tools/checks/lint.py) would block the seal commit. The implementer's report said CHECKS: PASS, which was true before the round-1 edits.",
+   "repro": "cd gridfall-wt-a1; source ~/.venvs/gridfall-tools/bin/activate; python tools/checks/lint.py scripts/main.gd tools/tests/fp_orbit_slicing_test.gd (or python tools/checks/run_all.py). Fix: wrap the condition and the two comments.",
+   "verified": true,
+   "lens": "TESTS AND CLAIMS (round 2)"
+  },
+  {
+   "title": "docs/api is stale after the round-1 edits",
+   "severity": "minor",
+   "file": "docs/api/scripts.fp.render.md (STREET_NORMAL_BIAS), docs/api/scripts.md (Main.autosave, autosave_wait_s)",
+   "detail": "run_all's api_docs check fails: 'docs/api is stale'. Regenerating changes two files: scripts.fp.render.md still carries the old comment ('the web tiers share a small atlas on a 0.6-0.8 scale', the sentence round 1 flagged as false), and scripts.md lacks the new autosave doc text and the autosave_wait_s entry. Run python tools/gen_api_docs.py.",
+   "repro": "python tools/gen_api_docs.py in a copy, then diff docs/api against the worktree.",
+   "verified": true,
+   "lens": "TESTS AND CLAIMS (round 2)"
+  },
+  {
+   "title": "web-deploy.md 'Measured on a local export of the fix' still quotes the hooked scratch export's numbers",
+   "severity": "minor",
+   "file": "docs/runbooks/web-deploy.md:436-437",
+   "detail": "Not fixed from round 1. The doc says destination peak 0.49 before any gesture, 0.56 at the end, first sound 0.1 s after boot complete. The 0.56 and 0.1 s are from audio-mine.log (the scratch-hook export). The clean export, the one the report cites, gave 0.49 before the gesture, 0.76 at the end and 0.2 s (audio-final.log). The claim holds in substance (audible); the figures belong to a different build than the one described.",
+   "repro": "tail -2 a1/audio-mine.log vs a1/audio-final.log",
+   "verified": true,
+   "lens": "TESTS AND CLAIMS (round 2)"
+  },
+  {
+   "title": "web-probe-kit.md exit-code list omits exit 7 (and the WebGL2 exit 2 case)",
+   "severity": "minor",
+   "file": "docs/runbooks/web-probe-kit.md:65-68",
+   "detail": "The 'Exit codes:' line stops at 6, but web_fps_probe.js now exits 7 when the stripe pose reads over STRIPE_MAX (the header comment of the script and the 'Stripes' section say so). A script reading only the table would treat 7 as unknown.",
+   "repro": "grep -n 'Exit codes' docs/runbooks/web-probe-kit.md; grep -n 'finish(7)' tools/web_fps_probe.js",
+   "verified": true,
+   "lens": "TESTS AND CLAIMS (round 2)"
+  },
+  {
+   "title": "Stripe probe is a weak, timing-sensitive guard (documented, but it is the only regression check for the bias)",
+   "severity": "minor",
+   "file": "tools/web_fps_probe.js stripePose; tools/web_probe_kit.js STRIPE_MAX",
+   "detail": "The round-1 finding is addressed: a real clear-sky pose, a row-profile metric, a limit and exit 7 now exist, and the doc is honest. Measured margins from the scratch runs: fix 0.71-1.43, old bias 2.75-2.99 at the fixed early pose but 2.39 and 1.49 for the same old bias when the pose is taken 8 s or 30 s later (p-mut8, p-mut30), i.e. the old bias would pass at those timings. The limit 2.0 sits in a gap that holds only for the early pose; any boot-time jitter that moves the pose later can hide a revert. No test or CI step runs the probe (it needs an export and a browser), and it is skipped under GF_FPS_SAVE. fp_street_bias_test remains the real regression guard, and it does catch a revert.",
+   "repro": "compare a1/fix/p-mut8, p-mut30 vs p-mutA/B/C stdout.log GF_FPS_STRIPES lines",
+   "verified": true,
+   "lens": "TESTS AND CLAIMS (round 2)"
+  },
+  {
+   "title": "Autosave throttle and web slicing still have no feature flag",
+   "severity": "minor",
+   "file": "scripts/main.gd (AUTOSAVE_MIN_GAP_S); scripts/fp/sim/sim_perf_feature.gd; data/feature_flags.json",
+   "detail": "Round 1 raised this and it was not changed. AGENTS.md says gameplay-changing behaviour sits behind a flag; no flag in feature_flags.json covers a 60 s autosave gap or the sliced Planner on the web. The round-1 deferral (the skipped save runs once the gap has passed) removes the data-loss risk, so this is policy polish, not a defect.",
+   "repro": "grep -n 'autosave\\|slic' data/feature_flags.json (only the existing sim_perf feature flag)",
+   "verified": true,
+   "lens": "TESTS AND CLAIMS (round 2)"
+  },
+  {
+   "title": "Untracked 155 MB build-mut/ export inside the worktree is not gitignored",
+   "severity": "minor",
+   "file": "gridfall-wt-a1/build-mut/",
+   "detail": "A web export left in the worktree root (created 17:49, mtime older than the final edits; likely a mutation export by an earlier reviewer, not the implementer). .gitignore covers build/ but not build-mut/, so `git add -A` would stage 155 MB (the 12 MB hook would reject it, but it is a hazard for the seal agent). Delete it before sealing. Nothing is staged now.",
+   "repro": "git status --short shows ?? build-mut/; du -sh build-mut = 155M",
+   "verified": true,
+   "lens": "TESTS AND CLAIMS (round 2)"
+  }
+ ],
+ "a2": [
+  {
+   "title": "At 4x and 8x sim speed the pull itself still runs in a fraction of a second (round-1 finding, not closed)",
+   "severity": "minor",
+   "detail": "The haul runs on the traffic sim's dt, but the hero's reach and struggle run on real time, so only the first 0.9 s reads at speed. Measured in the final code with traffic stepped at dt*speed: person_hit to hauled is 0.68 s at 1x, 0.17 s at 4x and 0.08 s at 8x. The hero's pull beat ends the moment hauled() is true, so at 8x the 'pull' is a blink between a 0.9 s reach/struggle and a 0.3 s release. The grip no longer jumps (the hand-step clamp holds), so it is not a visual glitch, only the readability the brief asked for. Time scales available in first person are 1, 2, 4 and 8 (WS.TIME_SCALES), so 4x and 8x are reachable. Suggested fix: step the drag by real dt (divide the sim dt by ctx.sim.speed in jack_pull.haul), or hold the pull beat for HAUL_S of real time.",
+   "file": "scripts/fp/traffic/jack_pull.gd (HAUL_S, haul), scripts/fp/drive/jack_hold.gd (_pull: over = hauled())",
+   "repro": "Run review-paths/r2/probe.gd with SCEN='speed:4,speed:8' (kind 'speed' steps traffic at DT*speed); read hit_t and hauled_t in the output (out_C.log: 0.17 s and 0.08 s).",
+   "verified": true,
+   "lens": "ENTRY PATHS AND SAFETY"
+  },
+  {
+   "title": "A hero knocked down (non-KO hit) mid-pull glides to the seat for 7.5 s in the 'turn' phase",
+   "severity": "minor",
+   "detail": "health.hurt(5, ..., knock=true) during jack:pull does not call drive.exit (only a KO does), so the pull completes while the knock-down slides the hero away. The entry then reaches 'turn' with the hero far from the sill and _line_up sets _len = max(ALIGN_MIN, dist / ALIGN_SPEED) with no upper bound: len=7.49 s, during which _ride lerps the hero (knocked down, getting up, then in locomotion) from where he fell to the seat. He is seated at about t=13.5 s, 8 s after the pull. The end state is consistent (seated, door shut, driver on the road and up), but 'hero stuck in the door walk' lasts 7.5 s. The _line_up code is not part of the diff, but this brief asked for the hit-mid-pull state to end sanely and the new pull makes it reachable (an angry victim or a passing car can knock him down in the 0.9 s hold). Suggested fix: clamp _len in _line_up to about 1 s, or fall back to exit()/teleport to the sill when the hero is more than a metre from it.",
+   "file": "scripts/fp/drive/car_entry.gd (_line_up, ALIGN_SPEED)",
+   "repro": "review-paths/r2/probe.gd, SCEN='hurtknock:jack:pull' (out_D.log): ENTRY lines show phase=turn with len=7.49 from t=5.93 to t=13.43, then climb.",
+   "verified": true,
+   "lens": "ENTRY PATHS AND SAFETY"
+  },
+  {
+   "title": "Leftover per-car marks after a pull or an aborted hijack: traffic._taking, carjack._done and occupants._vacated",
+   "severity": "minor",
+   "detail": "(a) traffic._taking keeps the id of the replaced (dead) car after every successful pull, because hold_car(id, false) is only called when _jack_id >= 0, and it is not reset in on_world_rebuilt (carjack.forget and occupants.clear are). vehicles._next_id is never reset, so ids do not repeat and the stale value is harmless today; any later reset of the counter would exempt a new car from blockers_near. (b) A hijack aborted after jack_eject (Esc, KO, police, car lost) leaves _done[id] and _vacated[id] for that car for the rest of the session (visible in probe states done=[152] vac=[152]). Behaviour is correct: the empty car is claimable without a pull and the driver is the walker on the road. It is only unbounded growth of two small dictionaries until the next rebuild.",
+   "file": "scripts/fp/traffic/traffic_feature.gd (hold_car, _taking), scripts/fp/traffic/carjack.gd (_done), scripts/fp/traffic/occupants.gd (_vacated)",
+   "repro": "probe SCEN='exit:hj:haul' then read the 'done=' and 'vac=' fields of STATE final; SCEN='none:jack:pull' shows taking=<old car id> at the end.",
+   "verified": true,
+   "lens": "ENTRY PATHS AND SAFETY"
+  },
+  {
+   "title": "Moving-car hijack: the driver pops out of the seat in one frame and the hero's hands never hold them; the pull the owner asked for is absent here",
+   "severity": "major",
+   "detail": "SEEN, coupe at 6 m/s, cam e (z_mv_e2.png, z_mv_coupe_navy_a.png): at -0.03 s the driver sits at the wheel; at +0.02 s they are already outside the car, still in the seated pose, 0.5 to 0.8 m from the sill. In the van (z_mv_van_e.png) the driver appears beside the cab at +0.02 s. From +0.07 to +0.4 s the hero stands with his back to the camera and his arms hanging at his hips, while the seated driver slides down beside the car. MEASURED (hj4 telemetry, rig that calls the real _hijack_step): hips x goes 0.39 to 0.985 in one frame on the coupe and 0.42 to 1.47 on the van. Hero wrist to nearest driver bone: coupe 0.17 to 0.2 m for the whole 0.9 s hold, then 0.12 to 0.27 m in the haul, off the body by 0.6 s; van 0.36 to 0.42 m for the whole hold (a cab too high, so the hands sit below the head clamp) and 0.39 to 1.0 m during the haul, i.e. the van driver is never held. The driver's seated pose is slid out with the seat height: hips y 0.35 to 0.38 m beside the car for about 0.3 s on the coupe, and 0.67 m on the van. The brief asked for hands on the collar and arm before the pull. The implementer disclosed a 'rigid hang' but described it as hands with a fist at the shoulder; in pixels there is no visible grip after the blow. Caveat: the rig starts the hijack directly in the jack phase (skips the leap), so the hero's pre-leap placement is the rig's, but the hold, the grips and the haul are the production code.",
+   "file": "scripts/fp/drive/hijack_grip.gd (hold), scripts/fp/traffic/carjack.gd (eject, seated-pose handoff), scripts/fp/drive/hijack.gd (haul phase)",
+   "repro": "cd the review-pixels scratch dir; ./runwin.sh NAME 'coupe_navy:moving@6,van_white:moving@6' g,a,e 3 with CAP=cap3.gd (windowed, behind the flock); then python3 zoom.py 'NAME/coupe_navy/moving@6' e out.png -0.5,-0.25,-0.05,0.02,0.07,0.15,0.3,0.5 0,0,1280,720. Hand distances: ./runhl4.sh NAME 'coupe_navy:moving@6' (headless, cap4.gd) and read h_LeftHand and h_RightHand with the hj field.",
+   "verified": true,
+   "lens": "THE PULL IN PIXELS (round 2): 5 visible 1280x720 windows (coupe+sedan, SUV+van, moving coupe+van hijack, bus+bicycle, truck+scooter) plus 1 headless telemetry run. Sheets in /tmp/claude-1000/-home-kunalsiyag-Ambassador-Gmi-Cloud-gridfall/4eb46f6b-fccd-4256-83c9-4c39144a74d2/scratchpad/a2/review-pixels/ (z_*.png, q1..q5 and hj4 directories)."
+  },
+  {
+   "title": "Bus and truck: the driver passes through the solid bodywork, free-falls about 0.75 m, and the truck driver comes to rest inside the wheel; the hero's hands are on the fender, not the driver, before the blow",
+   "severity": "major",
+   "detail": "SEEN, bus cam e (z_bus_e.png): no door; at +0.22 s the driver is inside the cab behind the red side panel, at +0.32 s the body is half hidden behind and inside the panel, at +0.42 s they lie outside, in front of it. Before the blow (-0.58 to +0.12 s) the hero's fists are on the top edge of the panel at belt level while the driver sits about 0.8 m inside, with a visible gap. SEEN, truck cam e (z_truck_e.png): from -0.62 to +0.28 s the hero's fists are on the white fender and cab skin, about 1 m below the driver, who is visible only through the window. At +0.38 s the driver lies across the front wheel with legs inside the tyre and disc. MEASURED (q4/bus and q5/truck telemetry): driver hips y goes 1.10 to 0.35 m between +0.1 and +0.4 s, a drop of about 0.75 m in 0.3 s, faster than free fall (0.44 m), and the hips x passes 0.7 to 0.95 m, inside the body side. This reads as the driver dropping through the wall, not being pulled out, and it is the 'comes out through the body' defect the brief said to avoid. The implementer disclosed that bus and truck were not looked at; the entry test passes because it only checks a hand-target phase and a blow before the seat.",
+   "file": "scripts/fp/drive/car_entry.gd (doorless path), scripts/fp/traffic/traffic_feature.gd (door_info 'doorless'), scripts/fp/traffic/jack_pull.gd (descending-seat drop)",
+   "repro": "CAP=cap3.gd ./runwin.sh NAME 'bus:stopped,bike:stopped' g,a,e 2; CAP=cap3.gd ./runwin.sh NAME2 'truck:stopped,scooter:stopped' g,a,e 2 (review-pixels dir); zoom.py NAME/bus e out.png -0.6,-0.4,-0.2,0.0,0.1,0.2,0.3,0.4,0.5,0.7 0,0,1280,720.",
+   "verified": true,
+   "lens": "THE PULL IN PIXELS (round 2): 5 visible 1280x720 windows (coupe+sedan, SUV+van, moving coupe+van hijack, bus+bicycle, truck+scooter) plus 1 headless telemetry run. Sheets in /tmp/claude-1000/-home-kunalsiyag-Ambassador-Gmi-Cloud-gridfall/4eb46f6b-fccd-4256-83c9-4c39144a74d2/scratchpad/a2/review-pixels/ (z_*.png, q1..q5 and hj4 directories)."
+  },
+  {
+   "title": "The game's door camera hides the pull on SUV and van behind the open door panel and the hero's body",
+   "severity": "minor",
+   "detail": "SEEN, cam g (z_suv_black_g.png, z_van_white_g.png): from about +0.1 to +0.4 s the open door panel takes about half the frame and the hero's body is behind it, leaving only a sliver of the driver between the panel and the hero. The pull becomes visible again only from +0.5 s, when the driver is already on the road. The coupe reads clearly. The camera is front-quarter and high as designed, but the door swings into the line of sight for tall bodies. The push-in is not noticeable in the sheets.",
+   "file": "scripts/fp/drive/door_camera.gd",
+   "repro": "z_suv_black_g.png and z_van_white_g.png in the review-pixels dir (frames +0.1 to +0.4 s).",
+   "verified": true,
+   "lens": "THE PULL IN PIXELS (round 2): 5 visible 1280x720 windows (coupe+sedan, SUV+van, moving coupe+van hijack, bus+bicycle, truck+scooter) plus 1 headless telemetry run. Sheets in /tmp/claude-1000/-home-kunalsiyag-Ambassador-Gmi-Cloud-gridfall/4eb46f6b-fccd-4256-83c9-4c39144a74d2/scratchpad/a2/review-pixels/ (z_*.png, q1..q5 and hj4 directories)."
+  },
+  {
+   "title": "Bicycle and scooter: a shove, not a hold, and the rider's body passes through the frame or the body of the vehicle",
+   "severity": "minor",
+   "detail": "SEEN, bike cam e (z_bike_e.png): the hero shoves with both hands on the chest and shoulder, the rider falls back in the seated pose with the torso overlapping the top tube and saddle at +0.12 to +0.32 s. By +0.3 s the hero's hands are 0.29 to 0.31 m from the rider and fall away, so he is not holding anyone, and the rider slides off on their own. SEEN, scooter (z_scooter_e.png): the grip is good until +0.7 s (hands 0.01 to 0.1 m), but at +0.18 to +0.28 s the rider's legs and torso lie through the scooter's footboard and body panel. The 'shove' is within the brief's 'pulled off or shoved aside' wording, so this is polish, not a regression.",
+   "file": "scripts/fp/traffic/jack_pull.gd, scripts/fp/drive/car_entry.gd (doorless path)",
+   "repro": "z_bike_e.png and z_scooter_e.png (run as in the bus finding).",
+   "verified": true,
+   "lens": "THE PULL IN PIXELS (round 2): 5 visible 1280x720 windows (coupe+sedan, SUV+van, moving coupe+van hijack, bus+bicycle, truck+scooter) plus 1 headless telemetry run. Sheets in /tmp/claude-1000/-home-kunalsiyag-Ambassador-Gmi-Cloud-gridfall/4eb46f6b-fccd-4256-83c9-4c39144a74d2/scratchpad/a2/review-pixels/ (z_*.png, q1..q5 and hj4 directories)."
+  }
+ ],
+ "a3": []
+}

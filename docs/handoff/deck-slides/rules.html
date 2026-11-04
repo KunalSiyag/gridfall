@@ -1,0 +1,43 @@
+<section id="rules" data-transition="fade" style="background:#F3F0E8;color:#111A33;font-family:'IBM Plex Sans', Arial, sans-serif;padding:128px 128px 160px;display:flex;flex-direction:column;gap:40px">
+<div style="display:flex;flex-direction:column;gap:16px">
+<p style="font-family:'JetBrains Mono', 'Courier New', monospace;font-size:24px;font-weight:500;letter-spacing:3px;text-transform:uppercase;color:#8A5A00">Design rules</p>
+<h2 style="font-family:'Space Grotesk', Arial, sans-serif;font-size:72px;font-weight:700;line-height:1.1;color:#111A33">Three rules that kept AI-written code healthy</h2>
+</div>
+<div style="display:grid;grid-template-columns:538px 587px 539px;grid-template-rows:auto auto 1fr;height:602px">
+<div style="display:flex;flex-direction:row;align-items:baseline;gap:24px;border-top:3px solid #111A33;padding:16px 48px 0 0">
+<p style="font-family:'Space Grotesk', Arial, sans-serif;font-size:160px;font-weight:700;line-height:1;color:#8A5A00">1</p>
+<p style="font-family:'JetBrains Mono', 'Courier New', monospace;font-size:28px;font-weight:500;letter-spacing:3px;text-transform:uppercase;color:#8A5A00">Ratchet</p>
+</div>
+<div style="display:flex;flex-direction:row;align-items:baseline;gap:24px;border-top:3px solid #111A33;border-left:1px solid #C9C1AC;padding:16px 48px 0 48px">
+<p style="font-family:'Space Grotesk', Arial, sans-serif;font-size:160px;font-weight:700;line-height:1;color:#8A5A00">2</p>
+<p style="font-family:'JetBrains Mono', 'Courier New', monospace;font-size:28px;font-weight:500;letter-spacing:3px;text-transform:uppercase;color:#8A5A00">Boundaries</p>
+</div>
+<div style="display:flex;flex-direction:row;align-items:baseline;gap:24px;border-top:3px solid #111A33;border-left:1px solid #C9C1AC;padding:16px 0 0 48px">
+<p style="font-family:'Space Grotesk', Arial, sans-serif;font-size:160px;font-weight:700;line-height:1;color:#8A5A00">3</p>
+<p style="font-family:'JetBrains Mono', 'Courier New', monospace;font-size:28px;font-weight:500;letter-spacing:3px;text-transform:uppercase;color:#8A5A00">Honest gate</p>
+</div>
+<div style="padding:24px 48px 0 0">
+<h3 style="font-family:'Space Grotesk', Arial, sans-serif;font-size:44px;font-weight:700;line-height:1.1;color:#111A33">Old debt is written down, new debt fails</h3>
+</div>
+<div style="border-left:1px solid #C9C1AC;padding:24px 48px 0 48px">
+<h3 style="font-family:'Space Grotesk', Arial, sans-serif;font-size:44px;font-weight:700;line-height:1.1;color:#111A33">Imports are checked by a machine</h3>
+</div>
+<div style="border-left:1px solid #C9C1AC;padding:24px 0 0 48px">
+<h3 style="font-family:'Space Grotesk', Arial, sans-serif;font-size:44px;font-weight:700;line-height:1.1;color:#111A33">Headless, offline, and it cannot lie</h3>
+</div>
+<div style="padding:24px 48px 0 0">
+<p style="font-size:32px;line-height:1.4;color:#475270">Lint, complexity and duplicate findings are baselined. A check only fails on something new. Boundaries, TODOs and large files start at zero.</p>
+</div>
+<div style="border-left:1px solid #C9C1AC;padding:24px 48px 0 48px">
+<p style="font-size:32px;line-height:1.4;color:#475270">The sim and AI layers may not import world, UI or first person. A feature folder may not reach into another one.</p>
+</div>
+<div style="border-left:1px solid #C9C1AC;padding:24px 0 0 48px">
+<p style="font-size:32px;line-height:1.4;color:#475270">Every test runs with a fresh user dir and no key. Engine ERROR lines used to pass silently; now an unlisted one fails the run.</p>
+</div>
+</div>
+<div style="position:absolute;left:0;top:896px;width:1920px;height:184px;background:#111A33;display:flex;flex-direction:row;align-items:center;gap:0;padding:0 128px">
+<p style="width:587px;font-family:'Space Grotesk', Arial, sans-serif;font-size:44px;font-weight:700;line-height:1.1;color:#FFB800">AGENTS.md<br>has its own linter:</p>
+<p style="width:1000px;font-size:32px;line-height:1.4;color:#EEF1F8">a path or command it names that no longer exists fails the check, so the agents’ instructions cannot drift from the repo.</p>
+</div>
+<aside>This is the slide for people who ask how you let agents write 158k lines and still trust it. Three mechanisms, each enforced by a script rather than by good intentions. One: baselines. Legacy findings are recorded (102 functions over the complexity limit, 82 duplicate clusters and so on) and only new findings fail, so the agent is never asked to clean the world, only to not make it worse. Two: boundaries.json says which layers may import which; the sim and AI layers may not import world, ui or fp, and each fp feature folder may not reach into another one (five documented exceptions). Three: the gate. Each Godot step runs with a fresh user directory, offline, with the GMI key unset and a timeout; a step that dies without a verdict is retried once. A real lesson: Godot prints ERROR lines without failing a run, which hid real bugs (issues 67 and 72), so engine_errors.py now fails any such line that is not on an allow-list of 13 patterns, each with a written reason. Last line on the slide: agents_md.py validates AGENTS.md, so the briefing the agents read has a linter.</aside>
+</section>

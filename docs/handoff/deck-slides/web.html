@@ -1,0 +1,53 @@
+<section id="web" data-transition="fade" style="background:#0B1020;color:#EEF1F8;font-family:'IBM Plex Sans', Arial, sans-serif;padding:128px 128px 160px;display:flex;flex-direction:column;gap:40px">
+<div style="display:flex;flex-direction:column;gap:16px">
+<p style="font-family:'JetBrains Mono', 'Courier New', monospace;font-size:24px;font-weight:500;letter-spacing:3px;text-transform:uppercase;color:#FFB800">In the browser</p>
+<h2 style="font-family:'Space Grotesk', Arial, sans-serif;font-size:72px;font-weight:700;line-height:1.1;color:#EEF1F8">A 3D city in a browser tab</h2>
+</div>
+<div style="display:flex;flex-direction:row;gap:56px;flex:1">
+<div style="width:728px;display:flex;flex-direction:column">
+<div style="flex:1;display:flex;flex-direction:row;align-items:center;gap:28px;border-top:1px solid #2A3558">
+<p style="width:64px;flex:none;font-family:'Space Grotesk', Arial, sans-serif;font-size:72px;font-weight:700;line-height:1;color:#FFB800">1</p>
+<p style="flex:1;font-size:32px;line-height:1.25;color:#EEF1F8">Headless Godot export;<br>textures capped, 92 WAVs to Ogg</p>
+</div>
+<div style="flex:1;display:flex;flex-direction:row;align-items:center;gap:28px;border-top:1px solid #2A3558">
+<p style="width:64px;flex:none;font-family:'Space Grotesk', Arial, sans-serif;font-size:72px;font-weight:700;line-height:1;color:#FFB800">2</p>
+<p style="flex:1;font-size:32px;line-height:1.25;color:#EEF1F8">The pack drops<br>from 357 MB to 123 MB</p>
+</div>
+<div style="flex:1;display:flex;flex-direction:row;align-items:center;gap:28px;border-top:1px solid #2A3558">
+<p style="width:64px;flex:none;font-family:'Space Grotesk', Arial, sans-serif;font-size:72px;font-weight:700;line-height:1;color:#FFB800">3</p>
+<p style="flex:1;font-size:32px;line-height:1.25;color:#EEF1F8">Docker image: Brotli q11 once at build time, served by Caddy</p>
+</div>
+<div style="flex:1;display:flex;flex-direction:row;align-items:center;gap:28px;border-top:1px solid #2A3558">
+<p style="width:64px;flex:none;font-family:'Space Grotesk', Arial, sans-serif;font-size:72px;font-weight:700;line-height:1;color:#FFB800">4</p>
+<p style="flex:1;font-size:32px;line-height:1.25;color:#EEF1F8">Hosted on GMI AgentBox:<br>a 2 vCPU, 4 GiB container</p>
+</div>
+<div style="padding:20px 0 0 0;display:flex;flex-direction:column">
+<div style="display:flex;flex-direction:row;align-items:center;gap:28px;background:#FFB800;border-radius:16px;padding:28px 32px">
+<p style="width:64px;flex:none;font-family:'Space Grotesk', Arial, sans-serif;font-size:72px;font-weight:700;line-height:1;color:#111A33">5</p>
+<div style="flex:1;display:flex;flex-direction:column;gap:8px">
+<p style="font-size:32px;line-height:1.25;color:#111A33">The player’s browser calls GMI with the player’s own key.</p>
+<p style="font-family:'Space Grotesk', Arial, sans-serif;font-size:48px;font-weight:700;line-height:1.1;color:#111A33">No server-side key.</p>
+</div>
+</div>
+</div>
+</div>
+<div style="width:880px;display:flex;flex-direction:column;justify-content:space-between">
+<img src="/_blob/adb2e6c677bbd23d6690fcae77d26e4e" alt="The first-person street in the web build at Low quality: the player stands in front of GridFall City Hall in light rain, with Mayor Mei Kimura named in the corner" style="width:880px;height:480px;object-fit:cover;border-radius:12px">
+<div style="display:flex;flex-direction:row;align-items:flex-end;gap:24px">
+<div style="width:276px;display:flex;flex-direction:column;gap:4px">
+<p style="font-family:'Space Grotesk', Arial, sans-serif;font-size:80px;font-weight:700;line-height:0.85;color:#36E0F0;white-space:nowrap">113 MB</p>
+<p style="font-size:28px;line-height:1.2;color:#A3AFCB">the 28 Oct build</p>
+</div>
+<div style="padding:0 0 62px 0">
+<x-shape kind="arrow-right" style="width:72px;height:36px;background:#A3AFCB"></x-shape>
+</div>
+<div style="flex:1;display:flex;flex-direction:column;gap:4px">
+<p style="font-family:'Space Grotesk', Arial, sans-serif;font-size:112px;font-weight:700;line-height:0.85;color:#FFB800;white-space:nowrap">94.8 MB</p>
+<p style="font-size:28px;line-height:1.2;color:#A3AFCB">first load, measured locally</p>
+</div>
+</div>
+</div>
+</div>
+<p style="position:absolute;left:128px;bottom:64px;width:1664px;font-size:24px;line-height:1.3;color:#7F8BAA">28 Oct live build, measured by Droid: 58 fps in a new city, 23 fps in a day-10 city, 32 fps from the sky.<br>The new build’s frame rate is not re-measured in a browser yet.</p>
+<aside>The browser part in five steps. The export is headless and content-addressed: textures are capped (props, characters and street assets at 256 px, normal and ARM maps by kind), 92 WAV files become Ogg (15.6 MB down to 1.7 MB), and duplicate payloads are aliased. In our export of 2 November the pack went from 356.7 MB to 123.0 MB. The Docker image compresses once at build time with Brotli q11 so the 2-vCPU box never compresses anything per visitor; Caddy serves the pre-compressed files, the Brotli .pck is 87.8 MB and the .wasm 6.9 MB. A first visit moved 94.8 MB on the wire in our local headless smoke run, against 113.4 MB for the build live on 28 October. The container runs on GMI AgentBox, and the key design decision is that the static server never holds a key: each player’s browser calls api.gmi-serving.com with their own key, and without a key the game runs on the replay cache. Limits: the 58, 23 and 32 fps figures come from Droid’s measurements of the 28 October live build, not from the new image; we have not yet re-measured the new image in a real browser, and the screenshot on the right is software-rendered headless Chrome at the Low tier, so it understates how it looks on a real GPU. Also remember to say that the web night is darker on purpose and that the warm lamp pools under street lamps exist on desktop only, because the Compatibility renderer draws no decals.</aside>
+</section>

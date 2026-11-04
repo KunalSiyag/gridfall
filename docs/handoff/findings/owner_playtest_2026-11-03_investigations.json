@@ -1,0 +1,940 @@
+{
+ "materials": {
+  "lens": "materials",
+  "verdict": "The smooth look is mostly not texture resolution; the worst offender is the water. On a real GPU in the web build the river is one flat off-white sheet (mean RGB 206,203,202, luminance std 1.4 to 1.9 of 255 across 1400x370 px, versus 9.8 for the lawn beside it). It has a razor-straight near edge, no foam and no tint, and it reads as a concrete slab. Cause: water.gdshader sets ROUGHNESS 0.04 and SPECULAR 0.8, so at grazing angles it mirrors the pale horizon and the dark body colour is lost. The owner's screenshot-1 \"white raised slab with stepped edge\" is the SIDEWALK under a low sun, covered in shadow-map staircase banding. I reproduced it in the web build at 16:48 (road and sidewalk both show terraced diagonal bands and a stair-stepped shadow edge), so it is lighting, not texture. The web caps (ground 1024, building normals 256, ARM 128) are not the cause: at 0.6 scale a pixel covers 2.7 mm per metre of distance against 2.9 mm per texel of the 3 m grass tile, so the 2048 source would show detail only inside about 1.5 m. There is no sand, rock or snow terrain at all (the sim has only land and water), so sand cannot look different because it does not exist. The lawn, asphalt and concrete slabs are low-contrast, single-texture surfaces that vanish at 0.6 scale with SSAO off. The best fix per byte is shader work: water v2, lawn and asphalt contrast, a shore band, and a shadow-bias fix, with about 5 MB of dead textures removed to pay for it. NOTE: the report file could not be written (the Write tool refused report .md files); the full report is in this structured output.",
+  "reproduced": "partly",
+  "root_causes": [
+   {
+    "title": "Water reads as a flat pale slab: sky mirror drowns the body colour, no bank, no ripples that read",
+    "evidence": "MEASURED in web-build pixels on a real GPU (Chrome 151 headless, ANGLE AMD Radeon radeonsi renoir, 0.6 scale): water region mean RGB 206,203,202, luminance std 1.43 (aerial) and 1.94 (eye level), 237 distinct colours; lawn std 9.8, asphalt 16, sidewalk 8.7. Look at out2_overcast/A/water_high.png, water_tp.png and water_fp.png. READ IN CODE: ROUGHNESS 0.04, SPECULAR 0.8, Fresnel pow 4, 2 normal layers at 8 m repeat with NORMAL_MAP_DEPTH 0.6, foam only within 0.006 u (12 cm) of the bank. The near bank slopes away from the camera, so the lawn ends in a straight cliff; only the far bank shows a brown strip. tools/pytests/test_street_shaders.py already records that low-roughness surfaces mirror the pale sky on the web GL build.",
+    "where": "shaders/water.gdshader; scripts/world/city_view.gd (_apply_ground_mode, _river_bed_mesh, _ground_chunk_mesh)",
+    "confidence": "measured"
+   },
+   {
+    "title": "Shadow-map banding on road and sidewalk is what makes paved surfaces look stepped and slab-like (the owner's screenshot-1 slab and the horizontal lines)",
+    "evidence": "MEASURED / SAW: out2_overcast/A/low_asph_tp.png (16:48, web tier) shows diagonal terraced bands across asphalt and sidewalk and a stair-stepped hero shadow; A/facade_tp.png shows a pixel-stepped tree shadow on the sidewalk. This is under the save's overcast weather (shadow strength 0.3), so a clear sun is likely worse. READ IN CODE: web tier shadow atlas 1024, hard shadows, 2 cascades, street shadow_normal_bias 0.6; quality.gd comment says road and sidewalk pieces cast shadows onto themselves ('coherent diagonal stripes') and that making them cast nothing cleans it, but this was never measured on foot. Lens overlap with the 'lines' lens.",
+    "where": "scripts/fp/street/light_profile.gd (shadow_normal_bias 0.6); scripts/fp/render/quality.gd (WEB atlas 1024); road and sidewalk GLB meshes cast shadows",
+    "confidence": "measured"
+   },
+   {
+    "title": "Lawn, asphalt and concrete are single low-contrast textures; variation does not survive 0.6 scale and there is no ambient occlusion",
+    "evidence": "MEASURED: lawn std 9.8 near but 4.4 at 10 m (out1/lot_tp.png reads as one green plane). READ: albedo luminance std at 256 px is 0.042 grass, 0.021 dirt, 0.014 asphalt, 0.023 sidewalk; road_fp multiplies albedo by 0.80 and desaturates 45%; ground_detail macro layer only spans 0.80 to 1.10; _tune_material forces Sidewalk and Asphalt roughness to a flat 0.92; SSAO is off in the web tier (ssao_ok) and sky ambient is strong (0.72,0.80,0.92 at 1.0), so normal-map relief is invisible. grass_rough std 0.021 and asphalt_rough std 0.008 are effectively constant.",
+    "where": "shaders/ground_detail.gdshader; shaders/road_fp.gdshader; scripts/world/city_view.gd (_tune_material, apron_material); scenes/main-environment.tres",
+    "confidence": "read_in_code"
+   },
+   {
+    "title": "Sand, rock and snow do not exist as terrain; only land and water",
+    "evidence": "READ: sim_defs.gd has no sand or rock terrain; city_view.gd builds grass, dirt, gravel (unpaved tracks only), asphalt, sidewalk and water. Only 38 distinct Poly Haven PBR sets are shipped, all 512 px. models/real/props/rock_boulder.glb is shipped but no script references it by name.",
+    "where": "scripts/sim/sim_defs.gd; scripts/world/city_view.gd; tools/polyhaven_fetch.py",
+    "confidence": "read_in_code"
+   },
+   {
+    "title": "Web texture caps are not the cause of the smoothness, but ground normals and ARM maps on facades are softened up close",
+    "evidence": "READ: tools/web_export.py caps: textures/real ground 2048 to 1024, env 1024, props/characters/vehicles/street 256, zone and building normals 256 and ARM 128; build-report capped_imports 965. MEASURED in pack index: grass albedo 699,116 B (DXT1 1024), normals 1,398,180 B (8 bpp), road and pavement images 174,828 B (512 DXT1). Geometry: at 0.6 scale the 2048 source would only show extra detail inside about 1.5 m, and out1/lot_fp.png shows grass fully resolved near the camera. Imported GLB materials (sidewalk, kerb, walls, lot slabs) probably use plain trilinear, not anisotropic (INFERRED; the in-engine probe was queued and killed unfinished).",
+    "where": "tools/web_export.py (CAP_LIMITS, TYPED_LIMITS); export_presets.cfg; project.godot anisotropic_filtering_level=4",
+    "confidence": "inferred"
+   },
+   {
+    "title": "About 5.3 MB of shipped textures are unused or near-constant",
+    "evidence": "MEASURED in pack: textures/real/sidewalk_{albedo,normal,rough}.jpg 2.80 MB, never referenced by scripts, shaders, scenes or data; dirt_rough.jpg 0.70 MB never sampled; decals/grate.png 0.35 MB unreferenced; asphalt_rough.jpg and grass_rough.jpg 0.70 MB each, nearly constant (std 0.008 and 0.021).",
+    "where": "textures/real/*, textures/real/decals/grate.png, export_presets.cfg exclude_filter (web preset), shaders/road_fp.gdshader, shaders/ground_detail.gdshader",
+    "confidence": "measured"
+   }
+  ],
+  "measurements": [
+   "Web build, real GPU: Chrome 151 headless=new, --use-angle=default --enable-gpu, ANGLE AMD Radeon (radeonsi renoir) OpenGL ES 3.2, S3TC yes, anisotropy 16; web tier 0.6 scale, no MSAA, no SSAO, atlas 1024. Image kunalsiyag1/gridfall-web:0528316 on port 18417, stopped afterwards. Boot to 'boot complete' was 25 s.",
+   "28 screenshots of 1600x900 canvas via save-seed plus F9 quick-load teleports: out1 (12 shots) and out2_overcast/A (16 shots), all under the save's overcast weather at 10:45 (two at 16:48). Paths in /tmp/claude-1000/-home-kunalsiyag-Ambassador-Gmi-Cloud-gridfall/4eb46f6b-fccd-4256-83c9-4c39144a74d2/scratchpad/fb/materials/.",
+   "Region stats (luminance std of 255 / fine-detail rms): water aerial 1.43 / 0.42; water eye 1.94 / 0.56; water at 16:48 6.36 / 1.31; lawn near 9.79 / 7.29; lawn at 10 m 4.42 / 2.85; asphalt eye 16.10 / 6.52; sidewalk eye 8.67 / 5.23.",
+   "Source texture stats: albedo luminance std at 256 px grass 0.042, dirt 0.021, asphalt 0.014, sidewalk 0.023; mean normal slope 0.32, 0.19, 0.20, 0.17; roughness std 0.021, 0.010, 0.008, 0.015.",
+   "Pack textures: 2,173 .ctex entries; grass/dirt/asphalt/sidewalk albedo and rough 699,116 B each, normals 1,398,180 B each, water_normal 1,398,180 B; noise_fbm 43,756 B; road, pavement and facade images 174,828 B (512 DXT1) and 349,604 B (512 normal). 38 distinct Poly Haven PBR sets, all 512 px. build-report: capped_imports 965, kept_full_size 48, kept_typed_full_size 624, kept_shared_with_roads 326, pack_after 123,075,372 B raw, 87.8 MB wire, 94.8 MB first load.",
+   "Web quality tier from quality.gd: scale 0.6, MSAA off, SSAO off, atlas 1024 hard shadows, vis x0.55, 4 street lights, sky radiance 64. Compat Low 0.77 / MSAA off / atlas 2048; Medium 1.0 / MSAA 2x / atlas 4096 / SSAO; High 1.0 / MSAA 4x. Desktop default preset is Medium.",
+   "Pixel footprint at 0.6 scale and 72 degree FOV is 2.7 mm per metre of distance; the 3 m grass tile holds 1024 texels (2.9 mm each), so the 1024 cap only matters inside about 1.5 m.",
+   "Other observations: concentric contour arcs 3 to 6 m apart on road and sidewalk (crop_rings.png) and faint 2 to 3 px screen-fixed rows (crop_lines.png) in an aerial shot; SSAO is already off in the web tier, so the rows have another source (not isolated).",
+   "NOT measured: GPU frame times of any proposed change, clear-sun pixels, desktop-tier pixels."
+  ],
+  "fix_plan": [
+   {
+    "title": "M4: stop road and sidewalk shadow banding (cross-lens with 'lines')",
+    "what": "Set road and sidewalk surface meshes to cast_shadow OFF (kerbs may keep casting), or raise the web-tier street shadow_normal_bias. Re-shoot the 16:48 pose (low_asph_tp) to confirm the terraces and stair-stepped edge are gone. quality.gd's own sweep says casting nothing cleaned the aerial banding without thinning shadows, but it was never measured on foot.",
+    "files": [
+     "scripts/fp/street/light_profile.gd",
+     "scripts/world/city_view.gd",
+     "scripts/fp/street/street_dressing.gd",
+     "scripts/fp/render/quality.gd"
+    ],
+    "tests": "Re-shoot shotlist poses low_asph_tp and walk_tp with scratch shots2.js; tools/tests/fp_streetscape_test.gd; tools/gate.sh quick",
+    "effort": "S",
+    "web_perf_risk": "none",
+    "expected_gain": "Removes the stepped slab and stripes on paved surfaces; fewer shadow draws"
+   },
+   {
+    "title": "M1: water shader v2",
+    "what": "ROUGHNESS 0.04 to about 0.16 and SPECULAR 0.8 to about 0.5; body colour from world noise (noise_fbm.png at 25 m and 4 m) between teal-green and silty brown, deepest mid-channel; third normal layer at 0.6 m repeat from the same water_normal.png, fwidth-faded; flow along the river axis; foam_width 0.006 to about 0.015 with noise and streaks. No new download.",
+    "files": [
+     "shaders/water.gdshader",
+     "scripts/world/city_view.gd",
+     "tools/pytests/test_street_shaders.py"
+    ],
+    "tests": "Extend test_street_shaders.py with a water roughness floor (>= 0.1); re-shoot water_fp, water_tp and water_high; check luminance std rises well above 1.9; tools/gate.sh quick",
+    "effort": "M",
+    "web_perf_risk": "low",
+    "expected_gain": "River stops reading as cement; about +1 to 2 fetches and +30 ALU over a small screen share; 0 KB"
+   },
+   {
+    "title": "M2: lawn contrast and cheaper noise",
+    "what": "Replace fbm()/vnoise() hash noise (about 24 to 48 hash12 per pixel) with 2 samples of textures/real/decals/noise_fbm.png at 1/40 m and 1/10 m; widen lush/dry range beyond 0.80..1.10; add yellow-dry, clover-dark and wet-dark patches and worn desire paths toward sidewalks; normal_strength up close and fade with distance. Optional mow stripes on park lawns.",
+    "files": [
+     "shaders/ground_detail.gdshader",
+     "scripts/world/city_view.gd"
+    ],
+    "tests": "tools/pytests/test_street_shaders.py ground rut puddle guard; tools/tests/fp_streetscape_test.gd; fp_instance_uniforms_test.gd (no instance uniforms); re-shoot lot_tp and lot_fp",
+    "effort": "S",
+    "web_perf_risk": "none",
+    "expected_gain": "Lawn stops reading as one green plane; likely a net GPU saving on the largest surface; 0 KB"
+   },
+   {
+    "title": "M3: asphalt and sidewalk visual weight",
+    "what": "Lift asphalt age and patch tone range (0.86..1.10 to about 0.78..1.18) and ease the 0.80 tint and 45% desaturation; add aggregate speckle and hairline cracks from noise_fbm thresholds and tyre-edge dust; keep the sidewalk roughness map (remap to 0.7..0.95) instead of forcing 0.92; replace the apron triplanar BaseMaterial with a ShaderMaterial adding per-paver tint (hash of floor(pos/0.6)), grime and kerb-edge darkening.",
+    "files": [
+     "shaders/road_fp.gdshader",
+     "scripts/world/city_view.gd",
+     "scripts/fp/street/street_dressing.gd"
+    ],
+    "tests": "test_street_shaders.py pool floor guards stay green; re-shoot asph_fp, walk_fp, junction_tp; fp_instance_uniforms_test.gd",
+    "effort": "M",
+    "web_perf_risk": "low",
+    "expected_gain": "Asphalt and pavement read as distinct materials; about +10 to 20 ALU on a surface already doing 9 fetches; 0 KB"
+   },
+   {
+    "title": "M5: remove dead and near-constant textures from the web pack",
+    "what": "Exclude textures/real/sidewalk_*, dirt_rough.*, decals/grate.* via the web preset exclude_filter (or delete after a scene grep); replace asphalt_rough and grass_rough samples with constants (0.77 and 0.69 plus the wetness mix). About 5.3 MB raw, about 4.8 MB on the wire.",
+    "files": [
+     "export_presets.cfg",
+     "tools/web_export.py",
+     "shaders/road_fp.gdshader",
+     "shaders/ground_detail.gdshader",
+     "scripts/world/city_view.gd"
+    ],
+    "tests": "Rebuild the web export and diff build-report pack_after; tools/pytests web_export tests; boot smoke; confirm no missing-resource errors",
+    "effort": "S",
+    "web_perf_risk": "none",
+    "expected_gain": "First load 94.8 MB to about 90 MB; pays for the rest"
+   },
+   {
+    "title": "S1: shore band (sand and wet mud) and a real near bank, no texture",
+    "what": "In _ground_chunk_mesh emit an 8x8 sub-grid for land tiles touching water, with COLOR.r = 1 - smoothstep(0, 3 m, distance to water) reusing the dist logic of _river_bed_mesh; ground_detail reads COLOR for pale sand (dirt albedo lightened and warmed, procedural ripple normal from a warped sine at about 0.25 m, darker and glossier near the waterline) and a wet mud strip; apply on _bank_material too. Optional later: Poly Haven coast sand 512 set (diff 175 KB plus normal 350 KB, name unverified).",
+    "files": [
+     "scripts/world/city_view.gd",
+     "shaders/ground_detail.gdshader"
+    ],
+    "tests": "New fp_cityview meta test for shore vertex colours (only shore tiles subdivided); re-shoot water_fp and water_high; tools/gate.sh quick",
+    "effort": "M",
+    "web_perf_risk": "low",
+    "expected_gain": "Visible sand and mud along the river, softened near edge; about +10 ALU on shore tiles only; 0 KB (0.5 MB with real sand)"
+   },
+   {
+    "title": "S2: lot pads and concrete slabs",
+    "what": "Override the zone models' flat 'Dirt' pad with view.lot_ground_material() and 'Concrete_Floor' with a world-space triplanar concrete (3 m joints, expansion-joint lines and stains from noise) where street_dressing already overrides surfaces by name (_asphalt).",
+    "files": [
+     "scripts/fp/street/street_dressing.gd",
+     "scripts/world/city_view.gd",
+     "shaders/ground_detail.gdshader"
+    ],
+    "tests": "Re-shoot facade_fp and facade_tp; fp_instance_uniforms_test.gd; gate quick",
+    "effort": "M",
+    "web_perf_risk": "low",
+    "expected_gain": "Removes the hard flat brown rectangle and flat slabs; 0 KB"
+   },
+   {
+    "title": "S3: dither the big ground shaders to break 8-bit contour arcs",
+    "what": "Add EMISSION += (hash12(FRAGCOORD.xy) - 0.5) * (1.5/255.0) in ground, road and water shaders (Compatibility has no use_debanding). About 6 ALU.",
+    "files": [
+     "shaders/ground_detail.gdshader",
+     "shaders/road_fp.gdshader",
+     "shaders/water.gdshader"
+    ],
+    "tests": "Compare crop_rings.png pose (asph_aerial) before and after; gate quick",
+    "effort": "S",
+    "web_perf_risk": "none",
+    "expected_gain": "Contour rings on smooth dark surfaces fade; unproven (the arcs' cause is an inference)"
+   },
+   {
+    "title": "S4/N1: anisotropic GLB materials and bank rock scatter",
+    "what": "After a quick in-engine probe of texture_filter on imported road, kerb and wall materials, set LINEAR_WITH_MIPMAPS_ANISOTROPIC in _tune_material; scatter 10 to 20 of the already-shipped rock_boulder.glb in a MultiMesh along the shore.",
+    "files": [
+     "scripts/world/city_view.gd",
+     "scripts/fp/street/street_dressing.gd",
+     "models/real/props/rock_boulder.glb"
+    ],
+    "tests": "Probe script printing texture_filter; fp_instance_uniforms_test.gd; screenshot at grazing angle on the sidewalk",
+    "effort": "M",
+    "web_perf_risk": "low",
+    "expected_gain": "Sharper pavement and walls at grazing angles; a rock variety on banks; 0 MB"
+   }
+  ],
+  "not_verified": [
+   "CLEAR-sun pixels and the DESKTOP tier (web_quality off, quality medium, 1.0 scale, MSAA 2x, SSAO on): attempted via shots2.js (out3/), but the run sat behind the shared lock for roughly 40 minutes and I cancelled it. Every screenshot is the web tier under the save's overcast weather. My first run also wrongly assumed weather follows the day number; it is restored from fp.streetscape.weather.",
+   "Whether imported GLB materials (sidewalk, kerb, walls, lot slabs) use plain trilinear rather than anisotropic filtering: the in-engine material probe was queued behind the lock and killed; this is inferred from Godot defaults and from the code never setting a filter on them.",
+   "The cause of the screen-fixed horizontal rows and the concentric contour arcs: SSAO is already off in the web tier and the rows still appear. The 8-bit gradient explanation is a hypothesis.",
+   "GPU frame-time cost of every proposed change (ALU and fetch counts are estimates from the shader source); whether the water's hint_depth_texture costs a full depth copy per frame on web.",
+   "Poly Haven sand asset names (coast_sand_01 and aerial_beach_01 are recalled, not checked); mobile-browser texture compression fallback (etc2_astc is off); an in-game wave or splash response to the hero.",
+   "The report file: the Write tool refused report .md files, so /tmp/claude-1000/-home-kunalsiyag-Ambassador-Gmi-Cloud-gridfall/4eb46f6b-fccd-4256-83c9-4c39144a74d2/scratchpad/fb/materials/report.md does NOT exist; the full content is in this structured output. Scratch images, scripts (shots.js, shots2.js, shotlist*.json, gpuprobe.js, matprobe.gd) and crops do exist in the materials folder. Separately, `git status` in gridfall-wt-integ shows modified sounds/fp/*.ogg.import files that I did not touch (my Godot probe never ran)."
+  ],
+  "report_path": "/tmp/claude-1000/-home-kunalsiyag-Ambassador-Gmi-Cloud-gridfall/4eb46f6b-fccd-4256-83c9-4c39144a74d2/scratchpad/fb/materials/report.md (NOT WRITTEN: the Write tool refused report .md files; the full report is in this structured output. Evidence images are in /tmp/claude-1000/-home-kunalsiyag-Ambassador-Gmi-Cloud-gridfall/4eb46f6b-fccd-4256-83c9-4c39144a74d2/scratchpad/fb/materials/out1, out2_overcast/A, crop_rings.png, crop_lines.png)"
+ },
+ "artifacts": {
+  "lens": "artifacts",
+  "verdict": "Lines: reproduced and root-caused on the web build (headless Chrome, real GPU, stock code plus a scratch debug hook). In clear weather at 10:45 the road and sidewalk carry fine, tilted and curved stripes that are sun shadow-map acne (street sun normal bias 0.6 with the web tier's 1024 atlas). Normal bias 2.0 or depth bias 0.2, sun off, shadow reach 0, or roads/sidewalks not casting all remove them. They are absent in overcast weather and are NOT SSAO (SSAO is correctly off in the web build). The 83fe2e8 fix raised the normal bias only while aerial, and its row-profile metric is blind to tilted/curved stripes. Legs: reproduced the mechanism, not the exact screenshot. The hero has one y for the whole body (centre-point sampling, no per-foot ground fit), so standing at a 12 cm kerb with the centre on the low side buries the high-side foot and hides the shoe (seen in a close-up render). Lot tiles also use flat collision heights while the meshes have slabs and sloped aprons (code reading plus a partial headless scan). Not checked: desktop build, which build the owner ran, the finer bias sweep (run killed before it ran). The report file could not be written (the tool refused it); the full findings are here and the evidence images and scripts are in the scratch dir.",
+  "reproduced": "partly",
+  "root_causes": [
+   {
+    "title": "Road and sidewalk stripes are sun shadow-map acne in the street view on Compatibility/web",
+    "evidence": "Stock web build, tier low, 3D scale 0.6, SSAO off, atlas 1024 16-bit, normal bias 0.6, bias 0.02. Clear sky 10:45 shows fine stripes and arcs on road and sidewalk (out3/junction__base.png, out3/roadfp__base.png). Removed by normal bias 2/4/8, depth bias 0.2 (partly 0.05), shadow reach 0.05, roads_nocast, sun off. Worse at normal bias 0. Unchanged by 4096 atlas, MSAA, aniso, glow, fog, quality Medium/High, 3D scale 1.0. Overcast weather: clean. DoG band-pass rms near road 3.01 base vs 2.24 normal-bias-2 (about 2.0 grey levels of stripes); nb0 8.58. Pair looked at: pair_roadfp_base_nb2.png.",
+    "where": "scripts/fp/street/light_profile.gd:100-101 (sun.shadow_bias 0.02, shadow_normal_bias 0.6 in the street profile); scripts/fp/render/quality.gd (COMPAT_AERIAL_NORMAL_BIAS only applies while aerial); WEB atlas 1024 in Quality.WEB",
+    "confidence": "measured"
+   },
+   {
+    "title": "The earlier lines fix and its metric missed this surface",
+    "evidence": "The row-profile metric (column-mean luminance high-passed) reads 0.34 for both base and normal-bias-2 on the near road, so it cannot see tilted or curved stripes. The earlier acne fix covered the aerial/overview camera only, and the earlier probes were on the plaza or a grey day.",
+    "where": "docs/runbooks/web-deploy.md SSAO/aerial sections, Quality.aerial_normal_bias, scratch rowe.py vs dog.py",
+    "confidence": "measured"
+   },
+   {
+    "title": "SSAO on Compatibility at 0.6 scale draws a different dashed hatch (not the owner's pattern) and is already gated off",
+    "evidence": "Forcing ssao_on in the stock web build gives dashed 4-5 px hatch and halos around the hero (row rms 6.4 vs 0.35, cmp_ssao_on_crop.png, lotedge_ssao_zoom.png). Shipped state reads ssao false at web Low; ssao_ok keeps it off at every web preset. So the owner's continuous wavy lines are not this, unless an older build was in the browser (not decidable from the screenshots).",
+    "where": "Quality.ssao_ok, RenderOpt.apply_preset",
+    "confidence": "measured"
+   },
+   {
+    "title": "Hero uses one y for the whole body, so a foot sinks into a kerb or slab edge",
+    "evidence": "player._vertical samples support_height at the circle centre only; no per-foot IK (FootTarget markers unused by scripts); feet 9 cm apart, kerb 12 cm. Rendered at x=21.295 (centre 0.1 m on the asphalt side): right shoe hidden inside the kerb block (legs_curb_grid.png top right). Centre on the sidewalk: both feet visible. Stepping up also dips the avatar by the step and eases back with half-life 0.05 s.",
+    "where": "scripts/fp/player/player.gd _vertical/_snap_y; scripts/fp/player/player_avatar.gd HL_STEP",
+    "confidence": "measured"
+   },
+   {
+    "title": "Lot and pad collision heights are flat per tile but the visible slab and sloped apron differ",
+    "evidence": "Road meshes match collision (glb: asphalt 0.003, sidewalk 0.009). Lots: collision LOT_TOP 0.004 / PAD_TOP 0.0042 for the whole tile; street_dressing._apron_mesh rises 0.004 to 0.009 over the last 0.03 u (0.6 m) at the road edge; models carry a 0.94-wide slab. Partial headless scan (industrial lot): walk 0.0042 vs model slab top 0.0055 (2.6 cm sunk) and a band with no surface at all. Apron sink up to about 10 cm is from code and not confirmed by the scan. Earlier partial scan: up to 8.4 cm floating at the lot rim.",
+    "where": "scripts/fp/world/collision_world.gd ground_height (lot branch); scripts/fp/street/street_dressing.gd _aprons/_apron_mesh; WS.LOT_TOP/PAD_TOP",
+    "confidence": "read_in_code"
+   },
+   {
+    "title": "Dark shoes in cascade shadow plus the 1024 atlas make the feet disappear and the shadow edges saw-tooth",
+    "evidence": "Screenshot 1 shows no shoes, shadow saw-teeth under the slab edge, stair-stepped banding on the slab. Consistent with the same acne family and low shadow resolution. The exact slab was not reproduced.",
+    "where": "web tier atlas 1024, hard shadow filter at Low",
+    "confidence": "inferred"
+   }
+  ],
+  "measurements": [
+   "Environment: real GPU ANGLE AMD Radeon (radeonsi renoir), headless Chrome, canvas 1600x900 DPR 1, web build tier low, 3D scale 0.6, SSAO off, SSIL off, glow on, atlas 1024, 2 cascades, reach 8 u, normal bias 0.6, bias 0.02. Boot 23 s.",
+   "Overcast (saved weather) base road: no stripes. Clear sky 10:45: stripes visible. Stripe energy (DoG 1.5-5 px rms, grey levels, near road junction/roadfp): base 3.01/2.87; nb2 2.24/2.44; bias 0.2 2.24/2.44; bias 0.05 2.55/2.62; shadow_dist0 2.24/2.44; roads_nocast 3.33/2.44; sun_off 1.18/1.43; nb0 8.58/4.23; atlas4096 2.63/2.75; msaa4 3.33/2.87; q_medium 3.02/3.88; q_high 2.40/3.60; scale1 3.57/3.11.",
+   "Row-profile rms (earlier lane's metric) near road: 0.35 base, 0.35 nb2, 0.18 sun_off, 6.4 with SSAO forced on: blind to the acne.",
+   "Collision vs mesh: road asphalt 0.003 and sidewalk 0.009 match the glb; foot toes at pos.y+0.0004. Lot: walk 0.0042 vs slab 0.0055 (2.6 cm) on the scanned industrial lot.",
+   "Kerb close-ups: centre at x 21.285/21.295 (asphalt) vs 21.305/21.320 (sidewalk); right foot buried at 21.295."
+  ],
+  "fix_plan": [
+   {
+    "title": "Raise the street sun normal bias on Compatibility",
+    "what": "Add Quality.COMPAT_STREET_NORMAL_BIAS (start at 2.0 for all presets; test 1.0 to 1.5 first with the finer sweep) and apply it in light_profile.apply / render_opt where the sun is configured, Forward+ keeps 0.6. Optionally also set shadow_bias to 0.05-0.1 on Compatibility. Verify contact shadows under the hero and bollards are acceptable.",
+    "files": [
+     "scripts/fp/street/light_profile.gd",
+     "scripts/fp/render/quality.gd",
+     "scripts/fp/render/render_opt_feature.gd",
+     "docs/runbooks/web-deploy.md"
+    ],
+    "tests": "Extend fp_aerial_test/new fp_street_bias_test: on Compatibility the street sun normal bias equals the new value and Forward+ stays 0.6; add a web probe step that renders a clear-sky 10:45 junction and compares the DoG band-pass of the near road against a sun-off reference.",
+    "effort": "S",
+    "web_perf_risk": "none",
+    "expected_gain": "Removes the road/sidewalk stripes (about 2 grey levels rms of stripe energy to the sun-off floor) at no frame cost; thin casters lose some shadow strength."
+   },
+   {
+    "title": "Stop roads and sidewalks casting sun shadows in street view on the web tier",
+    "what": "Set cast_shadow OFF on the flat road/sidewalk/ground piece meshes (they sit at ground level and shade nothing but themselves) on Compatibility, as a second or alternative fix; this also removes shadow-pass draws. Keep curbs' shadows only if visible and cheap.",
+    "files": [
+     "scripts/world/city_view.gd",
+     "scripts/fp/street/street_dressing.gd"
+    ],
+    "tests": "Instance-flag test: flat road pieces have cast_shadow off when Quality.is_compat; shadow caster count on the street drops (fp_deadwork-style draw census).",
+    "effort": "M",
+    "web_perf_risk": "low",
+    "expected_gain": "Same stripe removal as roads_nocast (measured 2.44 on roadfp near road) plus fewer shadow draws, a small web frame-time gain."
+   },
+   {
+    "title": "Plant each foot on its own ground height at kerbs and slab edges",
+    "what": "In the avatar, sample support_height at both foot positions (foot spread plus gait) each frame; set the pelvis to the higher of the two and lower the other leg with a simple two-bone fit or a clamped pelvis offset, so neither shoe goes below the surface. Replace the step dip (_snap_y lag) with a smoothed rise that never goes below ground at the lower foot.",
+    "files": [
+     "scripts/fp/player/player.gd",
+     "scripts/fp/player/player_avatar.gd",
+     "scripts/fp/player/hero_rig.gd"
+    ],
+    "tests": "New fp_foot_plant_test: hero centred 0.05-0.2 m either side of a 12 cm kerb, both foot bones' lowest sole at or above the local surface within 5 mm; step-up never puts a sole below the surface.",
+    "effort": "M",
+    "web_perf_risk": "low",
+    "expected_gain": "No buried shoes at kerbs; the exact reported legs-in-cement case."
+   },
+   {
+    "title": "One shared lot/apron height profile for meshes and collision",
+    "what": "Extract the lot slab footprint (0.94), the apron strip (0.47 to 0.5, 0.004 to 0.009) and the pad height into one pure function used by street_dressing._apron_mesh and CollisionWorld.ground_height for lot, pad and service tiles; fix the 2-3 cm gap where nothing is rendered.",
+    "files": [
+     "scripts/fp/world/collision_world.gd",
+     "scripts/fp/street/street_dressing.gd",
+     "scripts/fp/world_scale.gd"
+    ],
+    "tests": "Extend the headless height scan into tools/tests as a test: for road-to-lot crossings of R, C and I lots, |walk_height - visible top| under 5 mm; run in gate quick.",
+    "effort": "M",
+    "web_perf_risk": "none",
+    "expected_gain": "Removes up to 10 cm sinking at aprons and 8 cm floating at lot rims."
+   },
+   {
+    "title": "Tilt-proof stripe metric and a clear-sky street pose in the probes",
+    "what": "Replace the row-profile metric with a DoG band-pass (and compare to a sun-off reference) in the web lines probe; add a clear-sky 10:45 street pose and force the weather to clear so grey days cannot hide acne.",
+    "files": [
+     "tools/web_fps_probe.js",
+     "docs/runbooks/web-probe-kit.md",
+     "tools/tests/fp_aerial_test.gd"
+    ],
+    "tests": "Probe self-test on the saved base/nb2 frames: base above the threshold, nb2 below.",
+    "effort": "S",
+    "web_perf_risk": "none",
+    "expected_gain": "Future acne regressions are caught."
+   }
+  ],
+  "not_verified": [
+   "Desktop build (Forward+ or desktop Compatibility): not checked, no windows allowed.",
+   "Which build the owner ran and on what window size (1915x897 vs my 1600x900); stale older build in the browser cannot be told from the screenshots.",
+   "The exact screenshot 1 pose and slab identity; the hero's shoes in that frame.",
+   "The minimal sufficient normal bias (1.0/1.5) and the shadow-contact cost at nb 2.0: the finer sweep (run5) was killed before it ran.",
+   "Apron sinking of up to 10 cm: from code and an incomplete headless scan, not confirmed by a mesh scan of an R/C lot.",
+   "Why the acne forms concentric arcs (the cause is shadow bias, shown by the A/B, the geometry of the rings is not explained).",
+   "Whether lamps/hero shadows detach visibly at normal bias 2.0 (not measured)."
+  ],
+  "report_path": "/tmp/claude-1000/-home-kunalsiyag-Ambassador-Gmi-Cloud-gridfall/4eb46f6b-fccd-4256-83c9-4c39144a74d2/scratchpad/fb/artifacts/report.md"
+ },
+ "carentry": {
+  "lens": "carentry",
+  "verdict": "The pull-out is real but too fast and too loosely coupled to the hero to read as a hold-and-drag. The grab, the 0.4 s haul and the 0.4 s fall are only about 0.8 s long, the hands touch the driver for about 0.2 s, and the driver's torso passes within 4 to 7 cm of the hero's root. \"Sudden sit\" is real. The main mechanism is in drive_feature.gd: a failed walk to the door, or a blocked door or sill, ejects the driver and seats the hero in the same frame with no grab. Three more paths skip the pull: a driver with no drawn body or no sidewalk to run to, buses and trucks (never pulled), and the action hijack (no hero grip). I checked desktop only (headless probes and one Vulkan window), not the web build.",
+  "reproduced": "yes",
+  "root_causes": [
+   {
+    "title": "A failed walk to the door, or a blocked door or sill, ejects the driver and seats the hero in the same frame",
+    "evidence": "climb_step sets `pull := done == \"pull\" or (done == \"fail\" and _jack_id >= 0)` and calls _pull_out(), then `done == \"fail\"` calls _take_wheel() in the same call. _jack_in does the same when begin_in returns false. Probe3 (forced walk failure at 1.0 s): hit_t = active_t = 1.017 s, grip_max 0.0, only the walk phase seen, hero 1.7 m from the seat. Row 4 (begin_in false) is read in code only. I could not make it fail in the fixture.",
+    "where": "scripts/fp/drive/drive_feature.gd climb_step, _jack_in, _pull_out; scripts/fp/drive/car_entry.gd _walk (fail), begin_in",
+    "confidence": "measured"
+   },
+   {
+    "title": "The driver vanishes with no hit when eject cannot place them (no sidewalk edge near the car's rear corner, or reactions.hit returns {}); claim_car ignores the result and takes the car",
+    "evidence": "Probe2 D2 (sidewalk edge table cleared): hero walks, door opens, grip_max 1.0, hit_t -1, no victim walker, hero seated at 5.9 s. Whether real tiles lack edges (bridges, highway, the mayors' new dirt tracks) not measured.",
+    "where": "scripts/fp/traffic/carjack.gd eject, _stranger; scripts/fp/traffic/traffic_feature.gd claim_car (`carjack.eject(...)` return value unused)",
+    "confidence": "measured"
+   },
+   {
+    "title": "Buses, garbage and delivery trucks (heavy_motors), bicycles and scooters are claimable but never jacked, so the driver is deleted with no pull. The carjack_throw doc text says the opposite for trucks.",
+    "evidence": "_jacks(c) needs JACK.occupied (kind == \"car\" and role ambient/resident), but _claimable also returns true for _fleet_wheel/_bike_ride/_scooter_ride. Probe I (a car model whose kind and role I set to truck): prompt jack false, no person_hit, grip 0, hero climbs in. A real bus model's door and driver art was not tested.",
+    "where": "scripts/fp/traffic/carjack.gd occupied(); scripts/fp/traffic/traffic_feature.gd _claimable, _jacks, _fleet_wheel",
+    "confidence": "measured"
+   },
+   {
+    "title": "A driver with no drawn body: the hands grab the seat marker plus 0.6 m and a body pops out standing beside the door with the 0.3 s standing knock-down, with no seat-to-road haul",
+    "evidence": "occupants.gd seats only the CAP 12 nearest moving cars within RANGE 30 m with a visible full-model node, and avatar scenes load in the background. carjack.collar returns NAN without a body. eject sets w.seated = from.is_finite() (false). Probe C confirmed the flow still runs with no body drawn. The pixels of this case were not looked at. That the web build hits this often while avatars stream in is inferred.",
+    "where": "scripts/fp/traffic/occupants.gd _candidates/sync/_seat_driver; scripts/fp/traffic/carjack.gd collar, eject; scripts/fp/drive/car_entry.gd _collar COLLAR_UP",
+    "confidence": "inferred"
+   },
+   {
+    "title": "Action hijack has no hero grip: the hero hangs at the window for JACK_S 0.6 s, then claim_car ejects the driver and _take_wheel seats the hero in the same frame",
+    "evidence": "Read in code: _hijack_step -> hijack.step returns \"pull\" -> _hijack_in -> claim_car(moving) -> _adopt -> _take_wheel; no strike_pose.set_pull or hand IK anywhere in hijack.gd or drive_feature.gd _hijack_step.",
+    "where": "scripts/fp/drive/drive_feature.gd _hijack_step, _hijack_in; scripts/fp/drive/hijack.gd",
+    "confidence": "read_in_code"
+   },
+   {
+    "title": "The pull-out is too fast to read. The hero's part is a fixed schedule, not coupled to the driver, and the driver's torso passes through the hero's body.",
+    "evidence": "Window frames (sheet_coupe_navy_d.png, sheet_sedan_blue_g.png): driver goes from seat to road in about 0.3 s, down by +0.42 s, landed at 0.667 s. Hands touch the driver for about 0.2 s, no visible lean or step back. Telemetry hd (hero root to nearest driver bone, xz): 0.07 m at +0.22 s, 0.046 m (Spine) at +0.32 s, 0.037 m (Hips, sedan); hero radius is about 0.22 m. Constants: HAUL_S 0.4, FALL_S 0.4, GRAB_AT 0.4, PULL_T 0.4, HOLD_T 0.28, JACK_T 0.8, BACK_M 0.5, REACH_PLAN 0.42, HAND_SPREAD 0.1. fp_jack_flow_test checks hero feet only from 0.45 s.",
+    "where": "scripts/fp/traffic/jack_pull.gd (HAUL_S, FALL_S, pull()); scripts/fp/drive/car_entry.gd _jack_pull, _grip, _step_back",
+    "confidence": "measured"
+   },
+   {
+    "title": "The hand grip is one point: both fists go to the driver's Neck bone origin (inside the neck) plus or minus 0.1 m. No grip on the near upper arm or shoulder, no wrist or palm orientation, no clip on the hero.",
+    "evidence": "carjack.collar returns the Neck bone origin; _grip builds hands = at -/+ right*HAND_SPREAD; hero_strike_pose._pull_goals only sets elbow poles and fists. Frames: a flat open hand before the grab, then a fist near the chin, then gone.",
+    "where": "scripts/fp/drive/car_entry.gd _grip; scripts/fp/traffic/carjack.gd collar; scripts/fp/player/hero_strike_pose.gd set_pull/_pull_goals",
+    "confidence": "measured"
+   },
+   {
+    "title": "The door camera looks from behind the door, so the hero's body hides the driver during the pull",
+    "evidence": "sheet_sedan_blue_g.png (the game's own camera): at +0.1 to +0.2 s the driver is behind the hero and appears already on the road at +0.3 s. _door_camera tries CAM_DIR z = -0.62 (behind) first.",
+    "where": "scripts/fp/drive/car_entry.gd _door_camera, CAM_DIR",
+    "confidence": "measured"
+   }
+  ],
+  "measurements": [
+   "Stopped resident or ambient car, 60 fps headless probe (probe1 A/B): walk 0.0, align 1.1, open 1.3, jack phase 2.5, grab/hit 2.9, step 3.3, turn 3.9, climb 4.1, close 5.4, seated about 6.0 s after F. The pull itself is about 0.8 s of that.",
+   "Forced walk failure (probe3 W): person_hit and drive.active at the same frame (1.017 s), grip_max 0.0, hero 1.7 m from the seat. Baseline grip_max 1.0 with hit at about 2.95 s.",
+   "No sidewalk edge near the car (probe2 D2): no person_hit, no victim walker, grip_max 1.0, hero seated at 5.9 s.",
+   "carjack flag off, ambient car (probe1 G): no hit, no grip, hero seated at 5.6 s. Truck-kind car (probe1 I): jack false, same. car_doors off (probe1 J): hit at 0.017 s and seated at 0.017 s. Moving car at 2 m/s (probe1 K): board() returns false. Parked empty car (probe1 L): walks and sits as expected.",
+   "Window capture, current code (run1, coupe_navy and sedan_blue stopped, 1x, 60 fps): driver lands at 0.667 s after the pull event. The hero's step starts 0.40 s after the grab, climb at 1.10 to 1.15 s, door shut at 2.43 to 2.48 s, hands on the wheel at about 3.0 s.",
+   "Telemetry hd (hero root to nearest driver bone in xz, since the pull event): coupe 0.675 m at 0.02 s, 0.439 at 0.12, 0.068 at 0.22 (LeftUpperArm), 0.046 at 0.32 (Spine), 0.241 at 0.42; sedan 0.037 at 0.32 (Hips). The driver's torso overlaps the hero's body at +0.2 to +0.35 s.",
+   "Probe runs also touched .godot import caches only; the repo's git status was byte-identical before and after (git_before.txt). One of the 4 allowed windows ran (the first launch was a parse error, no window). Total godot time was small, but lock waits were 10 to 20 minutes per job because 6 to 9 other jobs were queued."
+  ],
+  "fix_plan": [
+   {
+    "title": "Never eject a driver without the hero's grab: handle walk failure and blocked door honestly",
+    "what": "In drive_feature.gd _jack_in and climb_step, stop treating `done == \"fail\"` or begin_in == false as 'pull now and sit'. New behaviour: on begin_in false, try a second spot (reach from the nearest free point along the door line, or from the front/rear of the door); if none is free, release the car (hold_car false), put the hero back on foot, and toast 'No room to reach the door'. In car_entry.gd _walk, on STUCK/WALK_MAX when jack is set, return 'fail' and let the drive feature retry once from the hero's current position (_plan from where he is) before giving up. Keep a single exit rule: the driver is ejected only after phase 'jack' has run at least GRAB_AT s with the grip engaged. Keep the instant enter() path only for car_doors off and for empty cars.",
+    "files": [
+     "scripts/fp/drive/drive_feature.gd",
+     "scripts/fp/drive/car_entry.gd"
+    ],
+    "tests": "New tools/tests/fp_jack_fail_test.gd on the fp_jack_flow_test fixture: (a) force entry._walked past WALK_MAX, (b) place a stopped car over the stand spot so begin_in is false. Assert in both: no person_hit and no drive.active within 2 s unless entry reached phase 'jack' for at least 0.4 s with strike-pose _pull > 0.5 first; otherwise the hero is on foot with the car released. Add to tools/gate.sh quick. Probe3 W and F2 are the starting points.",
+    "effort": "M",
+    "web_perf_risk": "none"
+   },
+   {
+    "title": "Make the pull event-driven and coupled to the driver, 1.6 to 2.2 s from grab to the hero stepping in",
+    "what": "Replace the fixed schedule in car_entry.gd _jack_pull and the constants (GRAB_AT 0.4, PULL_T 0.4, HOLD_T 0.28, JACK_T 0.8) with beats read from the driver: reach 0.5 s (hero steps to REACH_PLAN, hands go to the targets), struggle 0.4 s (hold with a small lean and shake; the driver reacts, small sit-pose sway through jack_pull._pose), pull about 0.8 s (HAUL_S 0.4 -> 0.8, replace the cubic ease-in `pull()` with an ease-in-out and end speed m1 matching the slide at a walking pace), release and fall 0.4 s (FALL_S unchanged). The hero advances to the next phase when the driver's react leaves the drag clip (event), not at a fixed JACK_T, so 2x/4x/8x sim speed no longer needs the SLIP_V workaround (keep SLIP_V as a safety). Drive the hero's root each frame from the driver: pos = collar - away*REACH, clamped to BACK_M of travel, instead of `_to + _back*smoothstep`. Update the pinned numbers in fp_jack_flow_test (STEP_MAX_S, SEATED_MAX_S, HAND_STEP_S, HANDS_S) and fp_jack_pull_test.",
+    "files": [
+     "scripts/fp/drive/car_entry.gd",
+     "scripts/fp/traffic/jack_pull.gd",
+     "scripts/fp/traffic/reactions.gd",
+     "tools/tests/fp_jack_flow_test.gd",
+     "tools/tests/fp_jack_pull_test.gd"
+    ],
+    "tests": "New numeric assertions in fp_jack_flow_test: from grab to hero stepping in is 1.6 to 2.2 s at 1x; the driver's root speed during the pull never exceeds 3 m/s; hands on the driver for at least 0.8 s. Re-run the 4 models x (stopped, 6 m/s) x sim speeds 2/4/8 matrix. Pixel check: a windowed re-capture with cap.gd (sheet cameras d and s).",
+    "effort": "M",
+    "web_perf_risk": "low"
+   },
+   {
+    "title": "A real two-hand grip: collar and near upper arm, targets that follow the driver's bones, wrists oriented",
+    "what": "Replace carjack.collar() with grip_points(id) returning {collar (UpperChest/Neck surface offset toward the hero, not the Neck origin), arm (driver's door-side UpperArm)}, read per frame from the driver's skeleton (as collar() does). In car_entry.gd _grip send left hand -> collar, right hand -> arm; add wrist rotation (palm toward the body, fingers closed) in hero_strike_pose.gd _pull_goals so the fists wrap the clothing instead of floating at one point. Raise PULL_LEAN with the pull (lean 0.6 at the struggle, 1.0 at the pull) and add a one-bone hero hip drop for effort. Optional: lift the driver's hips 0.1 m over the sill and let the feet trail with foot IK to the road so the legs drag instead of tipping.",
+    "files": [
+     "scripts/fp/traffic/carjack.gd",
+     "scripts/fp/drive/car_entry.gd",
+     "scripts/fp/player/hero_strike_pose.gd",
+     "scripts/fp/traffic/jack_pull.gd"
+    ],
+    "tests": "New fp_jack_grip_test.gd (frame-stepped like fp_jack_flow_test, bones after the modifiers): during the hold, each hero hand bone is within 0.06 m of its target and within 0.08 m of the nearest driver skinned vertex (SKIN.points) for at least 0.8 s; hands never above the hero's shoulders; hand step per frame under 0.1 m. This is the hand-to-collar distance per frame the old numeric tests lacked.",
+    "effort": "L",
+    "web_perf_risk": "low"
+   },
+   {
+    "title": "Keep the hero and the driver apart during the haul",
+    "what": "Move the hero's grab spot along the car, not straight out: stand 0.4 to 0.6 m behind the door line (toward the rear, as _step_back already prefers) and 0.35 m out, grip diagonally, so the driver's out path (OUT 0.55 m at seat z) does not cross the hero's capsule. Check in _jack_pull that the path hero-to-driver root keeps at least 0.45 m (hero radius 0.22 m plus a body half-width) and shorten or widen the step back otherwise.",
+    "files": [
+     "scripts/fp/drive/car_entry.gd (_jack_pull _to/_back, REACH_PLAN, GRAB_OUT_MIN, BACK_M)",
+     "scripts/fp/traffic/carjack.gd (OUT)"
+    ],
+    "tests": "New check in fp_jack_flow_test: for every frame from the grab to the climb, the xz distance from the hero's root to every driver bone is at least 0.15 m (the new hd in telemetry; currently fails at 0.037 to 0.07 m, 0.2 to 0.35 s after the grab). The old FEET_MIN check only starts at 0.45 s and misses it.",
+    "effort": "S",
+    "web_perf_risk": "none"
+   },
+   {
+    "title": "Camera: show the pull instead of the hero's back",
+    "what": "In car_entry.gd _door_camera put the front-quarter side first (loop `for s in [-1.0, 1.0]`, CAM_DIR z positive) so the camera looks back along the hero toward the driver (cam 'd' in the capture rig); add a slow push-in during the pull and a short ease out.",
+    "files": [
+     "scripts/fp/drive/car_entry.gd _door_camera, CAM_DIR, FRAME_BLEND"
+    ],
+    "tests": "fp_car_doors_test camera assertions; new check that the ray from the camera to the driver's head is not blocked by hero bones during the pull (angular separation from the hero's head/torso at least 8 degrees). Re-capture sheets d and g.",
+    "effort": "S",
+    "web_perf_risk": "none"
+   },
+   {
+    "title": "Fill the entry paths that skip the pull: no body drawn, no sidewalk, buses/trucks/bikes, hijack",
+    "what": "(a) Undrawn driver: in _jack_in call a new traffic.occupants.ensure(car_id) that seats the targeted car's driver synchronously, bypassing CAP/RANGE/visibility; if it cannot (avatar scene not loaded) delay door_try by up to 1.5 s. (b) carjack.eject: if _stranger finds no edge, widen to the nearest edge within 3 tiles, else make the driver walk to the road shoulder, never return {}; claim_car refuses (returns {}) when a drawn driver cannot be placed. (c) JACK.occupied: accept kind bus/truck (heavy_motors) and align the flag text; bicycle/scooter: have the rider step off and stand (the flag text) with a short animation. Buses and trucks need their door_info; models without one get the standing-reach variant. (d) hijack.gd: in phase 'jack' hold a grip on traffic.jack_collar(to_id) via the same _grip, claim only after 0.35 s of hold, and blend the seat (ENTER_BLEND) instead of snapping.",
+    "files": [
+     "scripts/fp/traffic/carjack.gd",
+     "scripts/fp/traffic/traffic_feature.gd claim_car/_claimable/_jacks",
+     "scripts/fp/traffic/occupants.gd",
+     "scripts/fp/drive/drive_feature.gd _hijack_step/_hijack_in",
+     "scripts/fp/drive/hijack.gd"
+    ],
+    "tests": "New fp_entry_paths_test.gd running probe.gd's scenarios as assertions: baseline, ambient, driver not drawn, no sidewalk, truck kind, hijack at 6 m/s, flag matrix. For each: person_hit (cause carjack) occurs, strike-pose _pull > 0.5 for at least 0.3 s before it, and the hero is not seated earlier than 1.0 s after the hit. Scenario D2 (no sidewalk) must assert a placed driver walker.",
+    "effort": "L",
+    "web_perf_risk": "low"
+   }
+  ],
+  "not_verified": [
+   "Nothing here was run on the web build; every pixel judgement comes from the desktop Vulkan window. That avatar scenes stream in on web and leave early drivers undrawn is inferred from code, not seen.",
+   "A natural walk failure or a begin_in == false (blocked door, tight kerb) was not reproduced in the fixture (my box ring and blocker car did not trigger it). The forced-walk probe proves the consequence (instant eject plus instant seat) but not how often it triggers in play.",
+   "How many real road tiles have no sidewalk edge (bridges, highway, mayor-built gravel/dirt roads) was not measured. Probe D2 cleared the table to prove the code path.",
+   "Buses and trucks were tested with a car model whose kind and role I set to truck. Real bus or truck models (door art, drawn driver, door_info) were not tested.",
+   "The over-shoulder camera 's' is my approximation of the hero-shoulder view, and in a few frames it passes through the car body.",
+   "I did not capture the van or SUV, the hijack, the moving car or a third-person camera at 8x (one window of the 4 allowed ran, coupe and sedan only). Sheets from the pp/pull folders are older than the final commit and were not used as evidence.",
+   "Probe2 F2 (extra car beside the door) left the hero stuck in the 'turn' phase for over 6 s with the driver on the road and the car not taken. The cause is unknown and may come from how I placed the car, so it needs a follow-up.",
+   "The cause of the sedan/coupe frame-to-frame hand jumps and the SLIP_V behaviour at 2x/4x/8x was not re-measured here; fp_jack_flow_test already covers it."
+  ],
+  "report_path": "/tmp/claude-1000/-home-kunalsiyag-Ambassador-Gmi-Cloud-gridfall/4eb46f6b-fccd-4256-83c9-4c39144a74d2/scratchpad/fb/carentry/report.md"
+ },
+ "water": {
+  "lens": "water",
+  "verdict": "The hero cannot enter water because open-water tiles return NAN from CollisionWorld.ground_height(), and every stand/step/is_blocked check treats NAN as a wall; I reproduced this headless (hero stops exactly at the tile border, x=25.5000, even sprinting). The river is only 1.0 m deep (bed -1.6 m, surface -0.6 m), so wading is cheap to allow: a prototype with a hero-only wade_max param let the hero walk about 3 m into the river and stop at 0.79 m depth, with no change for NPCs, cars or animals. Separately, on the web build the river renders as a flat pale grey-white slab like cement (measured RGB 200,199,192, stddev 2.4: no ripples, foam or depth tint), very probably what the owner calls cement and smooth. A scratch web export proved the cause: the water shader's depth read uses the Forward+ unprojection but web runs gl_compatibility, so the original shader outputs t_depth=0, foam=1 everywhere (all foam); a one-line NDC change gives dark rippled water with a foam ring round the pole. There is no swim or wade clip in the animation library, so the plan is wade-only (about 0.8 m max) using the existing walk clips and the existing footstep_splash sounds. NOTE: the tool refused to write report.md (subagents may not write report files), so the full report is in this structured output.",
+  "reproduced": "yes",
+  "root_causes": [
+   {
+    "title": "Water is a wall: NAN ground height on every open-water tile",
+    "evidence": "MEASURED headless repro (scratchpad/fb/water/water_probe.gd): hero at bank tile (25,-3) walking toward the river. Walk 1.45 m/s for 10 s was still approaching; sprint with jump presses ended at x=25.5000 (the tile border), y unchanged. ground_height just past the border = NAN, surface_at = 'water', is_blocked = true. READ: collision_world.gd ground_height returns NAN when terrain==WATER (not a road); support_height/_can_stand/is_blocked all reject NAN; player.gd _step/_vertical use these. Existing tests enshrine it: tools/tests/fp_player_test.gd::_check_water and fp_core_test.gd:117. No collision shape or invisible wall object exists (D2: no engine physics).",
+    "where": "scripts/fp/world/collision_world.gd:159-168 (ground_height), 182 (walk_height), 210 (support_height), 282 (is_blocked), 776 (_can_stand); scripts/fp/player/player.gd:1061-1170 (_step, _vertical)",
+    "confidence": "measured"
+   },
+   {
+    "title": "Second blocker behind the first: unstick_player() would eject a wading hero",
+    "evidence": "READ: FpMode.unstick_player() calls collision.is_blocked(player.position) then nearest_free() and teleports the hero out of any NAN-ground spot. It runs from fp_mode.gd:200, health_feature.gd:437 and police_bust.gd:152. Once the hero may stand in water, is_blocked must be told so (wade_max arg) or the hero is teleported to the bank whenever one of these fires. About 50 other callers (NPCs, dogs, cats, thrown bodies, traffic) use move_body/walk_height/is_blocked, so the change must be opt-in for the hero only.",
+    "where": "scripts/fp/fp_mode.gd:326-336; scripts/fp/health/health_feature.gd:437; scripts/fp/traffic/police_bust.gd:152",
+    "confidence": "read_in_code"
+   },
+   {
+    "title": "Web river renders as a flat pale slab: the water shader's depth read is the Forward+ formula but the web export is gl_compatibility",
+    "evidence": "MEASURED images from the real web build (docker kunalsiyag1/gridfall-web:0528316, headless Chrome, real AMD GPU via ANGLE): scratchpad/fb/water/shots2/a_bank_start.png and shots/c_at_edge.png show a uniform pale plane, mean RGB (200,199,192), stddev 2.4 over an 800x350 patch; no ripples, no foam line, no depth tint, hard brown bank step. Shader foam colour is (0.82,0.86,0.84) at roughness 0.55; deep colour would be near black. MEASURED controlled experiment: scratch Godot project exported to web (gl_compatibility), four planes: original shader pale grey (mean 144,142,136); same shader with vec4(vec3(SCREEN_UV, z)*2.0-1.0, 1.0) gives dark blue-grey rippled water (39,50,57) with a foam ring at the pole; debug output (t_depth,foam) of the original = (0,1) i.e. all foam, of the fixed = (1,0). Image: scratchpad/fb/water/wt/wt_shot.png. READ: project.godot:370-372 sets rendering_method.web=gl_compatibility and leaves desktop on Forward+; shaders/water.gdshader unprojects with vec4(SCREEN_UV*2.0-1.0, z, 1.0). INFER: desktop Forward+ is correct. INFER (strong, unproven): this is the 'white raised slab with horizontal banding and stepped edge' in the owner's screenshot 1 (layout matches: dark ground, bright plane, brown band, far shore).",
+    "where": "shaders/water.gdshader (depth reconstruction in fragment()); scripts/world/city_view.gd:709-729 (_apply_ground_mode sets depth_fade 0.045 on foot)",
+    "confidence": "measured"
+   },
+   {
+    "title": "Water has no fluid behaviour: no wading depth, splash, ripple, wet step sound or float",
+    "evidence": "READ: audio_bank.gd:13 SURFACES has no 'water', so step_surface('water') falls back to 'sidewalk'. footstep_splash_1..4.wav exist (26 KB each) but only play over soaked paving (footsteps.gd:149-158). The water shader has rain rings but no hero input. Cars treat water as a wall (body_contacts.gd:143-148 _rough; car_body.gd header). Boats (city_life.gd:438-505, up to 5, spawned with randi()) have no collision with the hero. Ducks already flee from a hero at the bank (waterfowl.gd). MEASURED listing of models/characters/anim: rocketbox 24 and UAL 27 clips; none is swim, tread, wade or splash.",
+    "where": "scripts/fp/audio/audio_bank.gd, scripts/fp/audio/footsteps.gd, shaders/water.gdshader, scripts/world/city_life.gd, models/characters/anim/clips.json",
+    "confidence": "read_in_code"
+   },
+   {
+    "title": "Physics-realism gaps the owner may mean, ranked",
+    "evidence": "1) Water is a wall for hero, cars, NPCs, animals, thrown bodies (measured for hero, read for the rest). 2) Surfaces: textures/real has only grass, dirt, asphalt, sidewalk and water_normal; no sand, gravel or concrete (measured listing); other lenses own asphalt/grass banding. 3) One foot height for the whole body: the hero follows walk_height at the body centre, _snap_y smooths it, the avatar only offsets the pelvis (player.gd _vertical/_snap_y, player_avatar.gd:285-355, hero_rig.gd:567-590); no per-foot ground test, so curbs, 25 cm steps and slab edges put one foot inside geometry (read; whether screenshot 1 shows this or the river is not proven). 4) People are soft circles (PERSON_R 0.22 m, SOFT_RATE 0.35), eased out over a few frames. 5) Moving cars are not physical blockers for the hero (traffic_feature.gd:1561-1571 lists only cars with v<=0.1 m/s) but hit and knock him down via hero_hit 'car' (health_feature). 6) Props: only 10 kinds fall; lamps, trees, hydrants, bollards, signs always hold; the player's car has a proper rigid-box model with bounce, friction and spin (car_body.gd). Items 4-6 are deliberate and fine; 1-3 are the real gaps.",
+    "where": "scripts/fp/world/collision_world.gd, scripts/fp/body_contacts.gd, scripts/fp/player/player.gd, scripts/fp/player/player_avatar.gd, scripts/fp/props/props_feature.gd, textures/real/",
+    "confidence": "read_in_code"
+   }
+  ],
+  "measurements": [
+   "Water inventory (seed 7 grown city, 192x192 world): 60 open-water tiles in the 32x32 core (river 2 tiles wide), 1088 in the wilds (river continuation plus lakes from noise < -0.48, at least 4 tiles from core edge), 4 bridge tiles (road on water), 100 water bodies, largest 406 tiles.",
+   "Repro: hero at bank tile (25,-3), walk 1.45 m/s: x 24.70 to 25.41 after 10 s; sprint plus jumps ends x=25.5000 (tile border), y=0.0000; ground_height just past edge = NAN, surface 'water', is_blocked true (on grass false).",
+   "Current bed profile (BANK_W 0.1 tile = 2 m): depth 0 at 0.5 m from bank edge, 0.20 m at 1.0 m, 0.75 m at 1.5 m, 1.00 m from 2 m on; max slope 1.2 (50 deg). With BANK_W 0.25 (5 m): depth 0.44 m at 3 m, 0.83 m at 4 m, 1.00 m at 5 m; slope 0.48. WATER_Y -0.6 m, RIVERBED_Y -1.6 m so max depth 1.0 m in every water body; hero height 1.8 m, STEP_HEIGHT 0.25 m.",
+   "Wade prototype (scratch copy of collision_world.gd with a hero-only wade_max param, BANK_W 0.2 tile, WADE_MAX 0.8 m; mini-walker loop with move_body/support_height at 60 Hz; scratchpad/fb/water/wade_proto.gd and cw_wade.gd): default NPC path (wade 0) still stops at x=25.4999; hero walks to 3.09 m past the bank edge, feet y=-1.391 m, depth 0.79 m, then stops; zero drops larger than STEP_HEIGHT on the bank slope; sprint 6.5 m/s for 6 s stops at the same 3.10 m (no tunnelling); walking back out returns to y=0; is_blocked(wading pos): default=true, wade=false (so unstick_player needs the arg); an interior lake tile (depth 1.00 m) stays unwalkable at wade_max 0.8; a bridge tile keeps its own deck height (wade branch skipped for ROAD tiles). player.gd integration itself was NOT prototyped.",
+   "Web water look (real GPU, headless Chrome, web image 0528316): patch mean RGB (200,199,192) stddev (2.4,2.7,2.4) in shots2/a_bank_start.png; shader foam constant is (0.82,0.86,0.84).",
+   "Scratch web export, gl_compatibility, real GPU (wt/wt_shot.png; earlier angle wt/wt_shot_v1.png): original shader plane mean RGB (144,142,136) pale grey; with compat NDC fix (39,50,57) dark rippled water; debug (t_depth,foam) in (R,G): original (63,154,50) i.e. foam=1 t_depth=0, fixed (190,67,51) i.e. t_depth=1 foam=0.",
+   "Animations (parsed from glb json): ual.glb 27 clips, rb_m.glb 24 clips, none swim/tread/wade/splash. Sounds: footstep_splash_1..4.wav (4 x 26 KB), river_loop.ogg, river_bed.ogg, fountain_loop.ogg; no wade loop; audio_bank SURFACES lacks 'water' (falls back to sidewalk).",
+   "Housekeeping: container gf-water-lens stopped; scratch servers killed; scratch export and Chrome profiles deleted; repo untouched (git status shows only the pre-existing sounds/*.import changes and one pre-existing untracked .uid)."
+  ],
+  "fix_plan": [
+   {
+    "title": "MUST 1: make the water shader's depth read correct on web",
+    "what": "In shaders/water.gdshader add `uniform bool compat = false;` and reconstruct with `vec3 ndc = compat ? vec3(SCREEN_UV, z) * 2.0 - 1.0 : vec3(SCREEN_UV * 2.0 - 1.0, z); vec4 vp = INV_PROJECTION_MATRIX * vec4(ndc, 1.0);`. In CityView set `compat` from `RenderingServer.get_current_rendering_method() == \"gl_compatibility\"` wherever _water_mat is made (it is also reused for the flood planes and the park pond). Verified in a scratch web export that the compat form turns the all-foam pale slab into dark rippled water with a foam ring at the pole. Then retune deep/shallow colour, foam_width and sheen on web at noon and dusk, since the look changes a lot; consider a stronger green-blue tint so an overcast sky does not grey it out.",
+    "files": [
+     "shaders/water.gdshader",
+     "scripts/world/city_view.gd",
+     "tools/tests/fp_streetscape_test.gd"
+    ],
+    "tests": "fp_streetscape_test: assert the water material has compat set true when the rendering method is gl_compatibility; web probe screenshot at the bank (extend tools/web_fps_probe.js with a bank-save row) with a pixel-variance check (stddev of a water patch above a threshold, not near 2.4); node --test for the pure maths if factored out.",
+    "effort": "S",
+    "expected_gain": "River stops looking like cement on web; also fixes the foam rim and the foam ring round the hero's legs once he wades.",
+    "web_perf_risk": "none"
+   },
+   {
+    "title": "MUST 2: hero can wade (flagged), max about 0.8 m, slower in deeper water",
+    "what": "1) New const-only helper scripts/fp/world/riverbed.gd with bed_height(sim, x, z) = the exact formula of CityView._river_bed_mesh (neighbour land flags, BANK_W smoothstep), used by both the mesh and CollisionWorld so they cannot drift; set BANK_W to about 0.2 for a gentler shelf (prototype: 0 drops over STEP_HEIGHT). 2) CollisionWorld: keep ground_height() NAN over water (NPCs, cars, animals, tests unchanged) and add optional `wade_max := 0.0` params to walk_height, support_height, move_body, _can_stand, is_blocked, plus water_depth(p). Wade branch only for terrain==WATER and kind!=ROAD, returns the bed height when WS.WATER_Y - bed <= wade_max, else NAN. 3) WS constants WADE_MAX = 0.8*M and WADE_SLOW. Player passes WS.WADE_MAX in _step/_vertical/_resolve_stuck/combat_step; FpMode.unstick_player passes it too (else it teleports the hero out). 4) Player: a private wade multiplier on _top_speed (1.0 at ankle, about 0.45 at 0.8 m via smoothstep on depth), no sprint above 0.3 m, jump speed x0.6; a 'too deep' toast through the existing HUD toast when the move is blocked by the depth limit. 5) Flag `wading` in data/feature_flags.json (default true), remove once shipped. 6) Boats: add boat AABBs to dynamic_boxes or keep them off the 3 tiles around the hero so the hero is not walked through. Legs below the surface are already visible through the translucent water (alpha 0.5-0.97) so no body clipping code is needed; the hero Y simply follows the bed (prototype: feet -1.39 m at the limit).",
+    "files": [
+     "scripts/fp/world/riverbed.gd (new)",
+     "scripts/fp/world/collision_world.gd",
+     "scripts/world/city_view.gd",
+     "scripts/fp/player/player.gd",
+     "scripts/fp/world_scale.gd",
+     "scripts/fp/fp_mode.gd",
+     "scripts/world/city_life.gd",
+     "data/feature_flags.json",
+     "tools/tests/fp_player_test.gd",
+     "tools/tests/fp_core_test.gd"
+    ],
+    "tests": "Rewrite fp_player_test::_check_water: walking toward the river now enters it, stops at depth <= WADE_MAX (about 3 m past the edge), never over a bridge tile, walking back out returns to GROUND_Y; sprint cannot tunnel; speed in 0.7 m water is below 0.6 of walk; unstick_player leaves a wading hero in place; NPC move_body with default args still stops at the border; add fp_water_test for riverbed.gd vs the mesh vertices (equal heights at sample points) and for boats not overlapping the hero. fp_core_test:117 stays true. Run tools/gate.sh quick.",
+    "effort": "M",
+    "expected_gain": "The reported blocker is gone: the hero walks into rivers and lakes banks to waist-ish depth and walks back out; deeper water is a natural limit with a toast.",
+    "web_perf_risk": "none"
+   },
+   {
+    "title": "MUST 3: visible and audible reaction while wading (no new assets)",
+    "what": "Audio: in footsteps.play, when the surface is 'water' play footstep_splash_<n> as the step itself (gain and pitch from depth: louder and lower when deeper), plus a heavier double splash on entry (first contact on water, from the stepped signal or a depth crossing) using variants 1+3 at +4 dB; raise the river ambience bed a little while depth > 0.2 m. Visual: add `uniform vec4 ripples[4]` (x, z, t0, amp) to water.gdshader and write the hero's recent foot contact points from Player each step (the signal already carries the position); draw expanding rings by perturbing nm.xy like the existing rain rings, skipped by a uniform branch when no ripple is active; set the uniform array only while the hero is within one tile of water. Optional: a CPUParticles3D splash of about 12 quads at the feet on each step above 0.1 m depth, reusing the weather splash look (CPU particles, not GPU, for web). The foam ring around the legs comes free from the depth foam once MUST 1 is fixed. Ducks flee through the existing waterfowl fright code.",
+    "files": [
+     "scripts/fp/audio/footsteps.gd",
+     "scripts/fp/audio/audio_bank.gd",
+     "scripts/fp/audio/ambience.gd",
+     "shaders/water.gdshader",
+     "scripts/world/city_view.gd",
+     "scripts/fp/player/player.gd",
+     "tools/tests/fp_audio_test.gd"
+    ],
+    "tests": "fp_audio_test: a step on surface 'water' plays a footstep_splash stream and not a sidewalk stream (history[] check), entry plays two layers, depth scales volume; fp_streetscape_test: ripples uniform is set only near water and cleared after; web probe row: walk into the river on a seeded save and screenshot a ripple.",
+    "effort": "M",
+    "expected_gain": "Entering the river looks and sounds like a fluid reacting (ring, foam, splash), which is what the owner asked for.",
+    "web_perf_risk": "low"
+   },
+   {
+    "title": "LATER A: richer fluid and shore (cheap illusions, no simulation)",
+    "what": "Per-body depth variation (a deeper centre channel, shallow sandbars, lakes shallower than the river) in riverbed.gd; a sand/gravel shore strip using the bank mesh with a new sand texture and darker wet sand near the waterline (textures/real has no sand today); wet jeans after leaving water (darken the hero's lower-body material, careful with per-instance uniforms on Compatibility); a wade slosh loop asset; shoreline foam animation; floating props (a knocked prop in water bobs at WATER_Y and drifts with the river direction) in tumble.gd; cars that enter water splash, stall and are towed back to the bank instead of bouncing off a wall. Do not do a real fluid simulation: no compute on gl_compatibility and a ripple-sim viewport costs extra passes.",
+    "files": [
+     "scripts/fp/world/riverbed.gd",
+     "scripts/world/city_view.gd",
+     "textures/real/",
+     "scripts/fp/props/tumble.gd",
+     "scripts/fp/body_contacts.gd",
+     "scripts/fp/drive/car_body.gd"
+    ],
+    "tests": "Per item: pure-function tests for depth maps and float height; drive test for car-in-water outcome; visual probe on web.",
+    "effort": "L",
+    "expected_gain": "Real-life feel for water, shore and vehicles beyond the demo-critical wade.",
+    "web_perf_risk": "low"
+   },
+   {
+    "title": "LATER B: foot placement and swimming",
+    "what": "Per-foot ground test (feet raycast against walk_height at each heel contact, offsetting the pelvis and rotating the ankle) so curbs, steps and slab edges stop swallowing legs; swimming would need new retargeted swim/tread clips (none in rocketbox or UAL), so keep wade-only for the demo and block deeper water.",
+    "files": [
+     "scripts/fp/player/player_avatar.gd",
+     "scripts/fp/player/hero_rig.gd",
+     "tools/characters/"
+    ],
+    "tests": "fp_player_test: ankle height vs ground at the heel strike on a 12 cm curb within 2 cm.",
+    "effort": "L",
+    "expected_gain": "Removes the 'legs inside cement' look on raised surfaces (shared with the materials/legs lens).",
+    "web_perf_risk": "low"
+   }
+  ],
+  "not_verified": [
+   "Desktop (Forward+) river look was not rendered (needs a window); assumed correct because the shader's maths is the Forward+ form and G1 designed it there. If the owner was on desktop, the slab look has another cause.",
+   "That the 'white raised slab' in the owner's first screenshot is the river: matched by layout and colour only. The 'legs inside cement' in that image may be dark jeans in shadow, a curb or a slab edge (materials/legs lens).",
+   "The compat NDC rule (vec3(SCREEN_UV, z)*2.0-1.0) comes from my recollection of the Godot docs plus the scratch export result; I did not validate absolute water depth values against known geometry, nor test other GPUs or browsers.",
+   "player.gd integration of wading (speed factor, sprint/jump limits, avatar behaviour at 0.8 m depth, camera in third and first person, stepped/landed signals, save/load while in water) was not prototyped; only CollisionWorld and a mini-walker loop were. How the walk clip looks with legs under the translucent surface was not seen.",
+   "Whether boats clip the hero, how ducks react to a wading hero, and what bridge-side shelves look like next to a bridge deck (pier geometry) were read, not tested.",
+   "Web frame cost of the ripple uniform array and the depth copy pass was not measured; the depth texture read already exists in today's shader so the pass cost is already paid on web whenever water is visible.",
+   "report.md was not written: the tool refused (subagents may not write report files); the path above is where it was meant to go, and all content is in this structured output. Scratch artefacts that do exist: water_probe.gd, wade_proto.gd, cw_wade.gd, shots/, shots2/, wt/wt_shot.png, wt/wt_shot_v1.png under the lens scratch dir."
+  ],
+  "report_path": "/tmp/claude-1000/-home-kunalsiyag-Ambassador-Gmi-Cloud-gridfall/4eb46f6b-fccd-4256-83c9-4c39144a74d2/scratchpad/fb/water/report.md"
+ },
+ "audio": {
+  "lens": "audio",
+  "verdict": "The web build is silent for every player, whatever the browser, volume or autoplay setting. It is a code and engine-interaction bug, not a missing file, browser policy or an owner mute. Godot 4.7.2 plays web audio in Sample mode, which mixes through a JS Web Audio bus graph. When audio_feature._make_buses() calls AudioServer.add_bus() four times at first-person start, the engine disconnects Master's output node from the AudioContext destination and wires it into the SFX bus. SFX -> Music -> Master already feed Master, so the graph is also a cycle. Buffers decode and start (40+ sources, non-zero gains) but the destination peak is exactly 0.0 for the whole session. Reconnecting that one node live took the peak from 0 to 0.19-0.66. A patched pack with a default bus layout, or with Stream playback on web, is audible from boot. The live site serves release 7588ac5d7c80bf51, the build I tested. Checked: the web build in headless Chrome 151 on software WebGL with no --mute-audio. I read desktop audio from code only; it is unlikely to be affected because it uses the C++ mixer. The browser autoplay policy was not reproduced. I could not get a suspended context in headless Chrome, so a visible click-to-enable prompt is a precaution, not a proven cause. The Write tool refused the report file in this harness, so the full report is in this structured result and report_path points to a file that does not exist.",
+  "reproduced": "yes",
+  "root_causes": [
+   {
+    "title": "Master bus output is disconnected from the AudioContext destination when buses are added at runtime in web Sample playback mode",
+    "evidence": "Instrumented AudioContext (probe.js), local image 0528316, policy document-user-activation-required, no --mute-audio. Control runs (run-noauto, run-pol, run-graph): ctx 'running', 40-46 AudioBufferSource starts with maxabs 0.38-0.95, non-zero channel gains (0.63, 0.03...), destination peak 0.0 from boot to +62 s. The op log shows 4 bus creations at page-time 5.6 s, each followed by 'disconnect master mute node (id 5)' then 'connect 5 -> SFX bus input (27)'. Final graph: master -> SFX(27), SFX(29) -> Music(24), Ambience and UI -> SFX, Music(26) -> Master(3): a cycle with no edge to the destination. Repair test in the same run: master.disconnect(); master.connect(ctx.destination) gave peak 0.19, 0.57, 0.30, 0.66 within 6 s. The JS (index.js) shows Bus.connect() calls getOutputNode().disconnect() first, and set_sample_bus_send() falls back to a target bus when the index is invalid. The C++ call that passes the wrong send index is inferred, not read from engine source.",
+    "where": "scripts/fp/audio/audio_feature.gd:_make_buses() (AudioServer.add_bus + set_bus_send at runtime); project.godot has no [audio] section, so web uses the default Sample playback; engine web JS in build/web/releases/7588ac5d7c80bf51/index.js (GodotAudio.Bus)",
+    "confidence": "measured"
+   },
+   {
+    "title": "No existing check could hear this: probes run with the autoplay policy off, muted, and the smoke filters AudioContext lines",
+    "evidence": "tools/web_fps_probe.js:93 passes --autoplay-policy=no-user-gesture-required and its headless mode adds --mute-audio; deploy/web/smoke.js:451 filters console errors matching AudioContext; docs/runbooks/web-deploy.md says the exit/enter bus crash 'needs real audio buses'. The earlier 'invalid bus index -1 in sample_set_volumes_linear' crash (#83) was the same Sample-mode bus graph, found only because it threw.",
+    "where": "tools/web_fps_probe.js, deploy/web/smoke.js, docs/runbooks/web-deploy.md",
+    "confidence": "read_in_code"
+   },
+   {
+    "title": "The loader has no gesture gate or 'sound is off' prompt, so a suspended AudioContext would also be silent and invisible (not reproduced)",
+    "evidence": "build/web/index.html boots straight into first person with no click-to-start, so the context is created before any gesture. The engine's godot_audio_resume() exists in index.js, but my headless Chrome reported userActivation.hasBeenActive true at load even with document-user-activation-required, so the context was 'running' from boot and this path was not exercised. A micro test of other launch modes stayed queued behind other jobs and was cancelled. Pointer capture needs a click anyway, so this is a minor second risk and cannot explain silence after a click.",
+    "where": "export_presets.cfg html/head_include; build/web/index.html; scripts/fp/fp_mode.gd:365-372",
+    "confidence": "inferred"
+   },
+   {
+    "title": "Not the cause: files, import, volumes and web gating are all fine",
+    "evidence": "index.pck parsed directly: 120 .oggvorbisstr resources and 120 sounds/**/*.ogg.import remaps. build-report.json: 92 WAV -> OGG, 15.6 MB -> 1.67 MB. No web_manifest.json, so the build is unsplit and no audio pack arrives later. Buffers handed to Web Audio decode with real amplitude (stems 25 s, hum/birds 40 s, river/rain/insects 30 s, engine 4 s). Defaults are 0 dB (fp_mode.gd:15, slider 100%), stems -12 dB on foot, beds -9 to -14 dB. No is_web() branch lowers or skips audio; the only web code is the .wav -> .ogg path swap. Context is 48 kHz, base latency 10.7 ms, worklets load (addModule_ok), crossOriginIsolated true.",
+    "where": "build/web/releases/7588ac5d7c80bf51/index.pck; scripts/audio_director.gd; scripts/fp/audio/audio_bank.gd; scripts/fp/fp_mode.gd",
+    "confidence": "measured"
+   }
+  ],
+  "measurements": [
+   "Control, as shipped: destination peak 0.0 and rms 0.0 at every poll from boot to +62 s (run-noauto, run-script0, run-pol, run-graph). Context 'running', 40-46 buffer sources started, 8-9 AudioWorkletNodes. The run-noauto and run-script0 polls come from an earlier tap on Master's output node that is not valid after the disconnect; run-pol and run-graph read the destination pass-through, so run-graph is the clean control.",
+   "Repair on the control run: master.disconnect(); master.connect(ctx.destination) gave peak 0.19375, 0.57402, 0.30355, 0.65838 at +1.5 s, +3 s, +4.5 s and +6 s.",
+   "Stream variant (pck patched with audio/general/default_playback_type.web=0): peak 0.059, 0.213, 0.119, 0.099, 0.123, 0.262 from boot, 1 worklet node, 0 buffer sources.",
+   "Bus-layout variant (pck patched with default_bus_layout.tres: Music, SFX, Ambience, UI -> Master): peak 0.197, 0.486, 0.319, 0.254, 0.298, 0.354 from boot. 43 buffer sources and 8 worklets, as in the control. Master's output stays connected to the destination and there are zero Master disconnects.",
+   "The shipped boot is the same in all runs: boot complete at 17-24 s on software GL, no console audio warnings. The only errors are the headless pointer-lock message and 'AudioWorklet is not defined', which my init script causes on about:blank.",
+   "Secondary: in the Sample-mode runs two 30 s beds restart about every 3.5 s (12 start() calls in 40 s). The 4 s engine loop restarts about every 2.7 s, which is normal. Cause not isolated; Ambience.step() starting and stopping beds under MAX_PLAYING=4 is the suspect.",
+   "Live manifest (curl) lists releases/7588ac5d7c80bf51, the same release as the local image and build/web."
+  ],
+  "fix_plan": [
+   {
+    "title": "A. Ship a default bus layout so no add_bus runs at runtime (preferred, verified)",
+    "what": "Add default_bus_layout.tres with buses 1 Music, 2 SFX, 3 Ambience, 4 UI, each sending to Master. Optionally include the low-pass on Music and the reverb and hard limiter on SFX, which _make_buses() already adopts. Set [audio] buses/default_bus_layout=\"res://default_bus_layout.tres\" in project.godot. _make_buses() already skips buses that exist, so audio_feature.gd needs no change. Verified in a patched pack: audible from boot with the graph intact. The verified layout had no effects, so re-run the probe once the effects are in the layout.",
+    "files": [
+     "default_bus_layout.tres (new)",
+     "project.godot ([audio] section only)",
+     "scripts/fp/audio/audio_feature.gd (comments only)"
+    ],
+    "tests": "fp_audio_test.gd keeps asserting the bus routing, and gate quick must stay green. Add a pytest that project.godot names a default_bus_layout containing the four bus names. Re-run the audio probe (item D) against the rebuilt image. It must report peak > 0.01 within 20 s of boot with the autoplay policy on and no --mute-audio, and the Master output node must still feed the destination.",
+    "effort": "S",
+    "web_perf_risk": "none",
+    "expected_gain": "Sound on web: stems, beds, footsteps and horns audible. Sample mode stays, so the cost is unchanged."
+   },
+   {
+    "title": "B. Alternative or complement: Stream playback on web",
+    "what": "Set audio/general/default_playback_type.web=0. This bypasses the JS bus graph, mixes in the C++ mixer on the AudioWorklet, and makes the reverb and the pause low-pass work again, since Sample mode ignores effects (inferred from Godot's documented sample limitation, not measured). Verified audible in a patched pack. Docs say 'Stream audio is a separate decision', and the main-thread cost is unmeasured.",
+    "files": [
+     "project.godot",
+     "docs/runbooks/web-threads.md"
+    ],
+    "tests": "Probe as in A. Compare busy_ms and late_ms with tools/web_fps_probe.js on the street and sky rows against the current build. Ship only if the street median does not regress by more than 1 ms.",
+    "effort": "S",
+    "web_perf_risk": "medium",
+    "expected_gain": "Same audibility as A plus working bus effects, at the price of audio mixing cost."
+   },
+   {
+    "title": "C. Visible 'click to enable sound' prompt plus a silent-graph watchdog",
+    "what": "In export_presets.cfg html/head_include, subclass AudioContext early and keep the instance. Add a pass-through gain with an analyser and expose window.gfAudioPeak(), as in probe.js. If state != 'running' about 3 s after engine start, show a small fixed banner 'Sound is off - click or press any key'. Call ctx.resume() on pointerdown or keydown and hide the banner on statechange 'running'. In audio_feature.gd, ~10 s after setup, call JavaScriptBridge.eval('window.gfAudioPeak&&window.gfAudioPeak()') while a bed plays. If the peak is 0, log 'GRIDFALL: AUDIO SILENT' and raise a toast, so a broken graph is visible to the owner on demo day. Also add a bus-volume sanity check at feature setup: Master and bus dB above -60, not muted, and a persisted 0% slider reset to 100% on first web run.",
+    "files": [
+     "export_presets.cfg (html/head_include)",
+     "scripts/fp/audio/audio_feature.gd",
+     "scripts/fp/ui/pause_menu.gd (slider reset)",
+     "deploy/web/smoke.js (assert the banner is absent after a click)"
+    ],
+    "tests": "Playwright run with --autoplay-policy=document-user-activation-required and no --mute-audio: banner absent once running, ctx 'running' after a click, gfAudioPeak() > 0. Unit test in fp_audio_test.gd: a bus below -60 dB or muted is repaired.",
+    "effort": "M",
+    "web_perf_risk": "low",
+    "expected_gain": "Covers the cold-start suspended-context risk and turns any future silent graph into a visible message instead of a silent failure."
+   },
+   {
+    "title": "D. Self-tests: pack contains the audio, and a runtime probe asserts a non-zero destination peak",
+    "what": "(1) tools/pytests/test_web_audio.py: parse the export's .pck directory and assert at least 120 .oggvorbisstr entries, one per name in audio_bank.gd (LOOPS, ONE_SHOTS, footstep_* variants), the two music stems, and the .ogg.import loop flags. (2) tools/web_audio_probe.js, derived from the probe.js scratch harness: boot the container with --autoplay-policy=document-user-activation-required and no --mute-audio, click once, walk, and exit non-zero if the destination peak stays 0 for 20 s after boot or the ctx is not 'running'. Wire it into deploy/web/smoke.js and stop filtering AudioContext lines there. Also drop --autoplay-policy=no-user-gesture-required and --mute-audio from the web_fps_probe sanity paths, or add a separate audible lane.",
+    "files": [
+     "tools/pytests/test_web_audio.py (new)",
+     "tools/web_audio_probe.js (new, from scratch/fb/audio/probe.js)",
+     "deploy/web/smoke.js",
+     "tools/web_fps_probe.js (flags)",
+     "docs/runbooks/web-probe-kit.md"
+    ],
+    "tests": "The pytest runs in python -m pytest. The probe is the live check: fail on the current image and pass on the A or B image. Record the first measured peak in web-deploy.md.",
+    "effort": "M",
+    "web_perf_risk": "none",
+    "expected_gain": "Silence on web can no longer ship unnoticed; the earlier checks all ran with the policy off, muted, or filtered."
+   },
+   {
+    "title": "E. Owner step and the three checks to ask the owner",
+    "what": "Owner step: approve A, or B after the perf comparison, and redeploy. Then run the probe against the live URL and listen once on the demo laptop before 12 Nov. Three checks if there is still no sound after the fix. (1) Look for the speaker icon on the tab. If it shows muted, right-click the tab and Unmute site; also check the OS output device and volume, and that another tab such as YouTube is audible. (2) Click the game once (it also captures the mouse), then Esc -> Settings -> Audio: Music and Effects at 100%. (3) In the DevTools console run new AudioContext().state: it must print 'running'; if 'suspended', click the page and run it again; also check the address-bar site settings: Sound = Allow. With the build as shipped these checks cannot help, because it is silent even when all three are correct.",
+    "files": [],
+    "tests": "The owner hears the city at the first click on the live URL; the probe prints peak > 0.01.",
+    "effort": "S",
+    "web_perf_risk": "none",
+    "expected_gain": "Rules out owner-side causes after the real bug is fixed."
+   }
+  ],
+  "not_verified": [
+   "Real speakers: headless Chrome uses a null sink, so I read the Web Audio graph and an analyser at the destination, not an ear.",
+   "Desktop audio: headless Godot cannot play audio, so the desktop path is read from code only (C++ mixer, no JS bus graph). I infer it is unaffected.",
+   "Real-GPU Chrome, Firefox and Safari/iOS (ringer switch, stricter gestures). Also not run: Chrome with real user activation or Chrome's media-engagement bypass.",
+   "The cold-start suspended-AudioContext path: userActivation.hasBeenActive was already true in my headless Chrome, so a suspended start was not reproduced and engine resume-on-input is inferred from godot_audio_resume in index.js. A micro test of other launch modes was queued behind other jobs and cancelled.",
+   "Which engine C++ call passes the wrong send index to set_sample_bus_send for Master (inferred from the JS, engine source not read), and whether Godot has an upstream fix to pick up.",
+   "Fix A with the reverb, low-pass and limiter effects defined inside the layout (the verified layout had only the four buses).",
+   "Performance of fix B (Stream mode) on web.",
+   "Whether the earlier single-threaded live build was also silent: same JS bus code, so likely, but not run.",
+   "Whether the 3.5 s restarts of the two 30 s beds are a real bug or an artifact of the low-fps software-GL run.",
+   "The report .md could not be written because the Write tool refused it in this harness; scratch files in the audio scratch dir are probe.js, patch_pck.py, serve.js, the run-* outputs, and pck_entries.json."
+  ],
+  "report_path": "/tmp/claude-1000/-home-kunalsiyag-Ambassador-Gmi-Cloud-gridfall/4eb46f6b-fccd-4256-83c9-4c39144a74d2/scratchpad/fb/audio/report.md (NOT WRITTEN: Write refused by the harness; full content is in this structured result. Raw evidence is in the run-*/events.json, timeline.json and console.log under the same directory.)"
+ },
+ "perf": {
+  "lens": "perf",
+  "verdict": "NOTE: the report file could not be written. The Write tool refused any .md report (\"subagents should return findings as text\"), so the full report is carried in this structured result; report_path below is the path the workflow asked for and it does NOT exist. Raw data and tools are in /tmp/claude-1000/-home-kunalsiyag-Ambassador-Gmi-Cloud-gridfall/4eb46f6b-fccd-4256-83c9-4c39144a74d2/scratchpad/fb/perf/ (out/<run>/result.json, shaders.json, console.log; tools/ = patched COPY of the probe kit; summ.js, ab.py).\n\nVERDICT. Measured on a REAL GPU: Chrome 151 headless, WebGL renderer 'ANGLE (AMD, AMD Radeon Graphics (radeonsi renoir ACO), OpenGL ES 3.2)' (the AMD Renoir iGPU, not SwiftShader), build kunalsiyag1/gridfall-web:0528316 run in the local container (threads true, crossOriginIsolated true, 8 pthread workers), 1600x900, DPR 1, flags --disable-frame-rate-limit --disable-gpu-vsync (a clearing canvas ran at 10,000 fps, so the 60 Hz cap is gone for light frames). Offline, no GMI key. Day-10 city = a copy of the owner's own day-10 save seeded into IndexedDB (copy deleted).\n\nThe web build is CPU-bound on one main thread, not GPU-bound. Four separate causes make it 'not smooth', in order of felt impact:\n(1) BLOCKING SHADER COMPILES: 467 programs / 25.3 s of synchronous linkProgram/compileShader waits in a 2.5 min session on a cold cache. 206 programs / 11.4 s sit inside the boot's first draw (75% of the 15.3 s boot); 261 programs / 13.8 s hit later as first-use freezes (start walking 0.36-0.45 s; rain/lamp pool ~1.0 s; first Tab overview 1.7-1.8 s; Quit to orbit 3.2-4.6 s; back to street 1-4.6 s). Nothing warms them up. Per program: median 37 ms, p90 150 ms, max 213 ms; each Godot Compatibility program is ~34 KB vertex + ~90 KB fragment GLSL; 81 distinct shader bodies expand to 460 programs (~5.7 variants each).\n(2) THE PLANNER (orbit) VIEW: 19-25 fps (cb p50 29 ms day 1, 40-45 ms day 10; GPU 22-26 ms), 8k (day 1) to 22k (day 10) draws and 35-37 million vertices per frame, ignores the web quality tier (identical at Low/Medium/High), and freezes 540-670 ms three times per 12 s on day 10 (pure CPU, no GL: unsliced whole sim ticks) plus an autosave per 12 s game day.\n(3) GROWN-CITY STREET (day 10): main-thread p50 15.1 ms, p95 19.6, ~4.5% of frames over 34 ms (a missed 60 Hz vsync), ~56 fps; traffic+pedestrians cost 2.5 ms, animals 1.0 ms; the audio feature causes the slow-frame tail; 16% (day 10) to 28% (day 1) of the main thread is blocked in two synchronous GL calls per frame that wait for the browser GPU process.\n(4) TRANSITIONS: Quit to orbit freezes the screen 2.7-4.2 s, Tab back 3.5-3.9 s.\nGPU time is NOT the limit in first person on this machine (3.2-4.8 ms/frame); it is the limit in the Planner (22-26 ms). The Low/Medium/High picker is nearly decorative on web: Quality.WEB overrides scale, atlas, view range, LOD and lights for every tier.\n\nHONEST LIMITS of this measurement. Intervals still cluster at 16.7 and 33.4 ms on game frames (p50 ~16, p95 ~34 on the grown street), so presentation stays quantised to 60 Hz multiples downstream of the main thread; trust cb (rAF callback ms) and gpu (EXT_disjoint_timer_query_webgl2 ms) over fps. Headless has no real compositor/display: it cannot say how a headed Chrome at 60 or 144 Hz (the owner's notes say the droid measured on a 144 Hz display), VRR, battery throttling or another GPU/driver paces the same frames. A 15 ms frame on 144 Hz is 2.2 vsyncs, i.e. 13.9/20.8 ms alternation (judder) without VRR. 3x-slower-GPU implication (INFERRED from the CPU/GPU split): first-person street stays CPU-bound (GPU 3.2-4.8 -> ~10-14 ms vs 9.4-16 ms CPU, so ~15 -> 15-17 ms day 10, 9.6 -> 10-12 ms day 1); the Planner goes 22-26 -> 66-78 ms GPU = 13-15 fps; boot/first-use compile cost is driver CPU work (37 ms/program here) and is UNVERIFIED on Windows ANGLE/D3D11 or Intel/Apple drivers where 90 KB fragment shaders may take 100-300 ms each (boot 20-60 s, freezes 3-12 s) - the biggest unknown for the demo machine.",
+  "reproduced": "yes",
+  "root_causes": [
+   {
+    "title": "Synchronous first-use shader compilation, none warmed up (boot first draw + every first sight)",
+    "evidence": "Shader census (perf2_init.js wrappers on shaderSource/compile/link) on d1_base: 467 programs, 25.3 s total (link 18.7 s, compile 6.6 s); 206 programs/11.4 s before boot end, 261 programs/13.8 s after. GF_BOOT: first draw (pre_draw to first_frame) = 11.5 s of 15.3 s on day 1, 17.4 s of 24.7 s on the day-10 continue; kit raw boot window: 202 builds = 11.5 s (linkStatus 8.5 s, compileStatus 2.7 s) while texImage2D+compressedTexImage2D total 40 ms. 2nd visit with warm Chrome profile cache: first draw 6.96 s, total 10.9 s (boot_warm_b) vs 12.1 s/17.6 s (boot_warm_a); Mesa cache disable changed nothing (boot_cold_nomesa 11.65 s). Walk row: 6 programs, 363-405 ms single-frame stall in 6 of 6 rows (391, 408, 420, 447, 397, 377). mark_links: rain 15 programs 1,045 ms, lamp_pool 17/967 ms, poster_composite 12/887 ms, overview 19/697 ms. Quit to orbit 67-101 programs, longest task 2.65-4.0 s; back to street 21-32 programs. Median 37 ms/program, p90 150, max 213; 81 distinct shader bodies -> 460 programs.",
+    "where": "Engine Compatibility renderer (no KHR_parallel_shader_compile in the 4.7.2 web template); game side: scripts/ops/boot_clock.gd, FirstUse sites (scripts/ops/first_use.gd), all material/mesh variants instantiated lazily",
+    "confidence": "measured"
+   },
+   {
+    "title": "Planner (orbit) view: heavy fixed geometry, no web tier, unsliced sim ticks",
+    "evidence": "day 10 orbit: 21,900-22,300 draws (14.6k in 5 passes at 1600x900, 7.4k in 4 shadow passes at 2048x2048), 37.5 M vertices, cb p50 40.4-44.6 ms, GPU p50 24.3-26.4 ms, 19-21 fps; day 1: 8,176 draws but 35.5 M vertices, cb 29.1 ms, GPU 22.2 ms. Resolution scaling 720p/900p/1080p: GPU 22.1/24.9/26.4 ms so it is vertex-bound. Identical at Low/Medium/High (24.9/24.3/24.2 ms) so no tier is applied. Stalls: 540, 540 and 670 ms in a 12 s window with gl_ms ~1 ms and no builds (pure CPU) in every day-10 orbit run (g10_base, medium, high, 720, 1080o all show 3 stalls >250 ms); kit hitch frames show longtask 538-670 ms and marks day_bell/save. Code: sim_perf_feature.gd teardown() sets _sim.sliced=false, CitySim._process_whole runs whole step_tick(); main.gd autosaves every morning tick with no interval (Planner day = 12 s); save:stringify 95.3 ms + file_write 5.7 ms at day 10.",
+    "where": "scripts/fp/sim/sim_perf_feature.gd:teardown, scripts/sim/city_sim.gd:_process_whole, scripts/main.gd:250-264 (autosave), scripts/fp/render/render_opt_feature.gd:_restore (orbit goes back to project values), scripts/world/city_view.gd (trees/ground/shadow casters)",
+    "confidence": "measured"
+   },
+   {
+    "title": "First-person street is main-thread bound; two sync GL calls per frame wait on the GPU process; traffic, animals and audio add the rest",
+    "evidence": "day 10 street 3 repeats: cb p50 15.1 ms (14.99/15.18/15.1), GPU 3.9 ms, 2,084 draws, 2.76 M vertices, 349 program switches. Ablation (3 runs each, cb p50): traffic=0 12.6 (-2.5 ms, -17%), animals=0 14.1 (-1.0), audio=0 14.7 (p50 -0.4 but frames >34 ms 4.5% -> 0.5%, fps 56 -> 66, p95 19.6 -> 17.0), hud_widgets=0 14.9 (no effect). Chrome trace (3 s): renderer main thread 94-97% busy, v8.callFunction (wasm) 2.6-2.8 s; CheckFramebufferStatus 126 calls = 265 ms (2.1 ms each), GetBooleanv 249 calls = 231 ms, WaitForCmd 495 ms = 16% of span (day 1: 415+403 ms, 27%); GPU process main thread 53-65% busy (~7 ms CPU per frame in CommandBufferStub::OnAsyncFlush); no Godot worker thread above 5 ms; GC 114 minor = 21-31 ms total (max 3 ms), major max 4.5 ms.",
+    "where": "Engine GL path (framebuffer re-attach / 21 passes, 33 FBO binds, incl. glow chain and 16x16/8x8 sky-radiance passes per frame); scripts/fp/traffic/*, scripts/fp/audio/audio_feature.gd step()/emitters.step",
+    "confidence": "measured"
+   },
+   {
+    "title": "Web quality tier is overridden for all presets; no useful low or high option",
+    "evidence": "quality.gd WEB overlay (scale 0.6, atlas 1024, vis 0.55, far 35, lod 2.5, lights 4) merged over every preset by knobs(). Measured grown street Low/Medium/High: cb 15.1/15.3/16.1, GPU 3.9/4.3/4.8, draws 2,084/2,309/2,624. web_quality=0: Low 17.2 ms/GPU 4.8, Medium 22.9/9.2, High 23.1/12.7 (draws 3,204/4,406). 1080p vs 900p street GPU +0.8 ms, CPU +1.0 ms.",
+    "where": "scripts/fp/render/quality.gd (WEB, knobs, viewport_knobs), scripts/fp/ui/pause_menu.gd Display tab",
+    "confidence": "measured"
+   },
+   {
+    "title": "Probe kit hangs because it opens extra tabs in headless Chrome",
+    "evidence": "With the stock tools/web_fps_probe.js flow (chrome://gpu tab + seeding tab) my runs hung twice with an idle renderer (0.5% CPU): once at the hz sampler page.evaluate (no timeout), once in the boot wait. The same page booted in 4 s to the GPU banner in a plain single-tab script (3 arg sets) and in the probe copy after removing the extra tabs and adding bringToFront.",
+    "where": "tools/web_fps_probe.js (gpuPage and seed page, hzSampler evaluate)",
+    "confidence": "measured"
+   }
+  ],
+  "measurements": [
+   "GPU/renderer: ANGLE (AMD, AMD Radeon Graphics (radeonsi renoir ACO), OpenGL ES 3.2); Chrome 151 headless; threads true, COI true, 8 workers; canvas 1600x900; 3D at 0.6 scale (960x540).",
+   "day-1 street still: cb p50 9.6 / p95 13.0 ms, GPU p50 3.2, 627 draws, 1.05 M verts, ~95 fps (d1_base; d1_default kit busy p50 9.0)",
+   "day-1 walking: cb p50 9.4, GPU 3.3, 638 draws, one 408 ms stall (6 programs, 363 ms)",
+   "day-1 Tab overview: cb 8.3, GPU 3.2, 480 draws, ~111 fps",
+   "day-1 Planner: cb p50 29.1 / p95 36.9, GPU 22.2, 8,176 draws, 35.5 M verts, ~25 fps; stalls 1,383 ms and 1,318 ms (shader builds 789/999 ms), 52 programs / 2.5 s",
+   "day-10 street still (3 runs): cb p50 15.1 (14.99-15.18) / p95 19.6, GPU 3.9, 2,084 draws, 2.76 M verts, 56 fps, ~4.5% frames >34 ms",
+   "day-10 walking: cb 16.0 / 22.5, 2,000 draws, 420 ms stall (6 programs 377 ms); g10_default run: 15 programs 880 ms in the window",
+   "day-10 Tab overview: cb 14.3, GPU 4.2, 1,764 draws, 62 fps",
+   "day-10 Planner (5 runs): cb p50 40.4-44.6, GPU 24.3-26.4, 22,000 draws, 37.5 M verts, 19-21 fps, 3 CPU stalls of 540-680 ms per 12 s, p99 interval ~500-540 ms",
+   "Ablation day-10 street, 3 runs each, cb p50: base 15.1 | traffic off 12.6 | animals off 14.1 | audio off 14.7 (frames >34 ms 4.5% -> 0.5%, fps 56.6 -> 65.6) | HUD widgets off 14.9",
+   "Resolution (day-10 street GPU p50): 720p 3.2, 900p 4.0, 1080p 4.8 ms; Planner GPU 22.1/24.9/26.4 ms",
+   "Tiers: see root_causes; web_quality=0 Medium 22.9 ms cb / 9.2 GPU / 3,204 draws; High 23.1 / 12.7 / 4,406",
+   "Boot day 1: 15.3 s total (GF_BOOT), logic stages 3.3 s, first draw 11.5 s; day-10 continue 24.7 s total, first draw 17.4 s; boot is one main-thread task of 17-26 s; cold Mesa+fresh profile 15.5 s (first draw 11.65 s); 2nd visit warm Chrome cache 10.9 s (first draw 6.96 s)",
+   "Boot program census: 202-206 programs = 11.4-11.5 s (link 8.5 s, compile 2.7 s) vs texture uploads 40 ms and 580 getBufferSubData calls 207 ms",
+   "Network: first load 94.8 MB (pck br 87.8 MB + wasm 6.9 MB); live GMI instance from this machine 4.1 MB/s on a 25 MB range GET, TTFB 1.04 s, RTT ~0.77 s -> ~23 s download + 15-25 s boot = ~40-50 s first visit; headers immutable cache-control, br, COOP/COEP present",
+   "Audio first play (register-as-sample) 75-190 ms for each of 8 long beds (~3 ms per audio second) inside the boot task (~0.77 s); later first plays 18-26 ms, night_insects 80 ms, construction_loop 36 ms, one-shots 1-2.4 ms; setup:audio +651 ms in the boot stages",
+   "Autosave: save:stringify 95.3 ms + save:file_write 5.7 ms at day 10 (2.4 MB), 23 ms at day 1; IndexedDB flush not measured",
+   "Chrome trace 3 s grown street: renderer main 94% busy (wasm 2.6 s), CheckFramebufferStatus 265 ms/126 calls, GetBooleanv 231 ms/249, WaitForCmd 495 ms (16%); day-1: 415+403 ms, WaitForCmd 815 ms (27%); GPU process main 53-65% busy; GC minor 114 events 21-31 ms total max 3 ms, major max 4.5 ms; Godot workers idle in steady state",
+   "Link census per frame: day-1 street 21 passes, 33-34 FBO binds, ~211-250 program switches; day-10 street 21 passes, 33 binds, 349 switches, 2,073 draws (4 passes 1600x900 = 177 draws, 2 at 1024x512 = 426-377, 2 at 960x540 = 1,457-1,496)",
+   "Time-in-compile in a 2.5 min day-1 session with the Planner round trip: 25.3 s of 150 s (17%)"
+  ],
+  "fix_plan": [
+   {
+    "title": "1. Warm shaders behind the boot veil and for known first-use sites",
+    "what": "Add a shader warm-up (new scripts/ops/shader_warmup.gd, called from BootClock before finish() and in short slices after the veil lifts): instance one of each distinct material/mesh variant in a 1-pixel offscreen SubViewport for one frame, one variant set per frame. Sets: walking/sprint (6 programs, ~0.4 s), rain + lamp pool + beam + poster composite (~3 s), Tab overview (40-56 programs, 1.8 s), orbit/Planner (52-101 programs, 2.5-4.6 s), street return. Total compile work is unchanged (~25 s cold on this GPU), it moves it behind the veil / splits it between programs; Chrome's persistent shader cache then makes repeat visits ~4.7 s faster at boot.",
+    "files": [
+     "scripts/ops/boot_clock.gd",
+     "scripts/ops/first_use.gd",
+     "scripts/ops/shader_warmup.gd (new)",
+     "scripts/main.gd (exit_fp/enter_fp)",
+     "docs/runbooks/web-probe-kit.md"
+    ],
+    "tests": "tools/web_fps_probe.js on the same seeded save, compare link_builds.events/events_ge_100 and mark_links first_builds per site (expect 0 after warm-up; walk row max_ms < 60); node tools/web_probe_kit.js compare; add tools/tests/fp_shader_warmup_test.gd for the variant-set list and one-set-per-frame budget",
+    "effort": "M",
+    "expected_gain": "Removes ~14 of the 25 s of in-play builds: walking 0.4 s stall, rain/lamp 1.0 s each, overview 1.8 s, Quit-to-orbit 3.2-4.6 s, return 1-2 s. Boot rises by the warmed share unless split.",
+    "web_perf_risk": "medium"
+   },
+   {
+    "title": "2. Cut the number of distinct shader programs",
+    "what": "Use fb/perf/out/d1_base/shaders.json (body hash + define list per program) to find which StandardMaterial3D flag combinations and custom shaders make the 81 bodies / 460 programs (~5.7 variants each); merge material combinations at import/material setup, remove variants the web tier never uses (MSAA, per-light/shadow variants where shadows are off). Each program removed saves ~37 ms of boot cold.",
+    "files": [
+     "tools/web_export.py",
+     "scripts/world/city_view.gd",
+     "scripts/world/construction_kit.gd",
+     "scripts/fp/** material setup"
+    ],
+    "tests": "re-run the shader census (perf2_init.js copy or a kit addition): programs after boot and total ms must drop; tools/tests visual shots for material changes",
+    "effort": "L",
+    "expected_gain": "UNVERIFIED how many are avoidable; each 10% fewer programs ~1.1 s of boot and ~1.4 s of in-play builds",
+    "web_perf_risk": "low"
+   },
+   {
+    "title": "3. Keep the sim sliced in the Planner on web, and throttle autosave",
+    "what": "In the orbit view on web leave CitySim.sliced = true (budget ~4 ms) instead of setting it false in sim_perf_feature.teardown(); in main.gd skip a morning autosave if the last was < 60 s of wall clock ago (always allow quit and manual). Removes the 540-670 ms CPU stalls (3 per 12 s) and the 95 ms stringify every 12 s game day.",
+    "files": [
+     "scripts/fp/sim/sim_perf_feature.gd",
+     "scripts/sim/city_sim.gd",
+     "scripts/main.gd"
+    ],
+    "tests": "tools/tests sim_tick_budget_test / fp_simperf_test unchanged; new unit test for the autosave interval with a fake clock; probe orbit row: p99 interval should fall from ~540 ms to ~60 ms and n_gt_250 from 3 to 0",
+    "effort": "S",
+    "expected_gain": "Planner p99 540 ms -> ~60 ms (estimated), no 0.5 s freezes",
+    "web_perf_risk": "low"
+   },
+   {
+    "title": "4. Apply the web render tier to the Planner view and cut its geometry",
+    "what": "render_opt._restore() returns the viewport to project values in orbit, so the Planner renders at the full 1600x900, 22k draws (7.4k = 4 shadow cascades at 2048x2048) and 37 M vertices (35 M already on day 1). On web: scale 0.75-0.85, cap the shadow reach / cascades (aerial_shadow), far-tree LOD or impostors for the whole-map tree plant, no MSAA. GPU is vertex-bound (720p->1080p only 22->26 ms), so geometry is the lever.",
+    "files": [
+     "scripts/fp/render/render_opt_feature.gd",
+     "scripts/fp/render/quality.gd",
+     "scripts/world/city_view.gd",
+     "scripts/ops/gpu_memory.gd"
+    ],
+    "tests": "probe orbit row at 1600x900: draws, verts (perf2 stats) and GPU p50; target < 12k draws, < 15 M verts, GPU < 14 ms; fp_renderperf_test; screenshots of Planner",
+    "effort": "M",
+    "expected_gain": "Estimated (shadows are 34% of draws): ~12-15 ms of the 41-45 ms CPU and ~40% of GPU; target 30 fps on this GPU. NOT measured: no runtime switch exists.",
+    "web_perf_risk": "low"
+   },
+   {
+    "title": "5. Reduce web traffic density a notch (and optionally animals)",
+    "what": "Quality.WEB_DENSITY traffic 12 -> 8 (crowd 24 unchanged or 20). Measured: all traffic+pedestrians off = -2.5 ms (-17%) at day 10, animals off -1.0 ms.",
+    "files": [
+     "scripts/fp/render/quality.gd",
+     "scripts/fp/traffic/ambient.gd",
+     "scripts/fp/animals/animal_caps.gd"
+    ],
+    "tests": "fp_ops/fp_traffic tests for caps; probe 3x street rows, expect cb p50 ~14.3 ms",
+    "effort": "S",
+    "expected_gain": "~0.8 ms for 12 -> 8 cars (estimated from 2.5 ms for the whole traffic feature)",
+    "web_perf_risk": "none"
+   },
+   {
+    "title": "6. Find and fix the audio feature's slow-frame tail",
+    "what": "audio=0 cuts frames >34 ms from 4.5% to 0.5% and lifts fps 56 -> 66 (3/3 runs) though p50 changes only 0.4 ms. Log AudioFeature.section_us_max per section (falls, emitters, ambience, footsteps, duck_reverb) in the probe, then look at emitter start/stop churn and sample-mode players.",
+    "files": [
+     "scripts/fp/audio/audio_feature.gd",
+     "scripts/fp/audio/emitters.gd",
+     "scripts/fp/audio/emitter_pool.gd",
+     "tools/web_fps_probe.js"
+    ],
+    "tests": "3 interleaved runs audio on/off, compare n_gt_34 and cb p95; fp_audio_test",
+    "effort": "S",
+    "expected_gain": "up to ~10 fps / 4% of frames on the day-10 street at 60 Hz",
+    "web_perf_risk": "none"
+   },
+   {
+    "title": "7. Make the quality tiers real on web",
+    "what": "Stop merging Quality.WEB over every preset: e.g. scale 0.5 / 0.6 / 0.8, atlas and view range per tier. Measured: 1080p costs only +0.8 ms GPU and +1.0 ms CPU over 900p, so a High tier at 0.8 is affordable here; Low at 0.5 is the escape hatch for weak GPUs (mainly matters for the Planner since first person stays CPU-bound at 3x slower GPU).",
+    "files": [
+     "scripts/fp/render/quality.gd",
+     "scripts/fp/ui/pause_menu.gd"
+    ],
+    "tests": "quality tests, probe street rows per tier, check GPU p50 and cb p50 rise < 1.5 ms for High",
+    "effort": "S",
+    "expected_gain": "No frame-rate gain by itself; gives control and sharper pixels at ~+1 ms",
+    "web_perf_risk": "low"
+   },
+   {
+    "title": "8. Soften the view-change freezes",
+    "what": "Quit to orbit (2.7-4.2 s) and Tab back (3.5-3.9 s, ~2 s of it the FP-world rebuild beyond builds): show a 'Switching view' overlay at once, spread exit_fp/enter_fp rebuild work across frames, warm orbit shaders (item 1).",
+    "files": [
+     "scripts/main.gd",
+     "scripts/fp/fp_mode.gd",
+     "scripts/fp/ui/pause_menu.gd"
+    ],
+    "tests": "probe to_orbit/to_street segments: longtask max < 500 ms, interval_ms max",
+    "effort": "M",
+    "expected_gain": "Frozen screen 2.7-4.2 s -> <0.5 s per frame chunk (estimated)",
+    "web_perf_risk": "low"
+   },
+   {
+    "title": "9. Reduce GL commands/passes behind the two sync waits",
+    "what": "Audit the 21 passes / 33 FBO binds per frame on the web tier (4-level glow chain 480x270..60x33, six 16x16 or 8x8 sky-radiance passes per frame; sky_director.gd:203 uses PROCESS_MODE_REALTIME) and the 349 program switches; the main thread waits 2.7-3.9 ms a frame in CheckFramebufferStatus/GetBooleanv for the GPU process. Check engine source for why they run every frame.",
+    "files": [
+     "scripts/world/sky_director.gd",
+     "scripts/fp/street/light_profile.gd",
+     "scripts/fp/render/render_opt_feature.gd"
+    ],
+    "tests": "node tools/web_probe_kit.js compare before/after on fbo_binds and passes; WaitForCmd share in a 3 s trace",
+    "effort": "M",
+    "expected_gain": "UNVERIFIED, up to 2.7-3.9 ms of the 15 ms day-10 frame (16-28% of main thread)",
+    "web_perf_risk": "medium"
+   },
+   {
+    "title": "10. Start the long audio beds after the veil lifts",
+    "what": "The 8 long beds' first play() cost 75-190 ms each (~0.77 s) inside the boot task (setup:audio +651 ms in GF_BOOT). Start music stems one per frame after the veil lifts.",
+    "files": [
+     "scripts/fp/audio/audio_feature.gd",
+     "scripts/fp/audio/ambience.gd",
+     "scripts/ops/boot_clock.gd"
+    ],
+    "tests": "GF_BOOT setup:audio delta and FIRSTUSE play: watches in the probe",
+    "effort": "S",
+    "expected_gain": "~0.7 s of boot",
+    "web_perf_risk": "none"
+   },
+   {
+    "title": "11. Fix the probe kit hang and add GPU time",
+    "what": "Remove the chrome://gpu and seed tabs (use the single page), call bringToFront, give the hz sampler a timeout and a boot watchdog; port perf2 timer-query GPU time, vertex counts and the shader census (with body hashes) into tools/web_probe_kit.js. Note in web-probe-kit.md that with a reused profile the orbit round trip autosaves and the next run continues that city.",
+    "files": [
+     "tools/web_fps_probe.js",
+     "tools/web_probe_kit.js",
+     "docs/runbooks/web-probe-kit.md",
+     "tools/pytests/test_web_probe_kit.py"
+    ],
+    "tests": "node --test tools/tests/web_probe_kit.test.js; headless run completes with exit 0",
+    "effort": "S",
+    "expected_gain": "Makes the next A/B possible; copy already works in fb/perf/tools",
+    "web_perf_risk": "none"
+   }
+  ],
+  "not_verified": [
+   "Real display pacing: headed Chrome at 60 Hz or 144 Hz, VRR, battery/thermal throttling; the owner's actual browser, GPU choice (iGPU vs RTX 3050) and display refresh were not observed.",
+   "Other GPUs and OSes: Windows/D3D11 ANGLE (FXC) and Intel/Apple compile times for the 90 KB fragment shaders; the 3x-slower-GPU figures are inferred from the CPU/GPU split, not measured.",
+   "Intervals still cluster at 16.7/33.4 ms with --disable-gpu-vsync, so fps numbers are only indicative; cb and GPU ms are the trustworthy metrics.",
+   "Engine-internal attribution: wasm has no name section (no CPU profile by function), Performance.get_monitor is not reachable and the game has no overlay; ablation, GL census and traces stand in. Cause of the two per-frame sync GL calls and of the audio slow-frame tail not established.",
+   "Effect of Planner changes (item 4) and warm-up (item 1) are estimates; no runtime switch exists for orbit shadows/scale and no warm-up was implemented.",
+   "GmiClient/HTTP/JSON-parse hitches with a live key (all runs offline), IndexedDB write after autosave, long-session memory growth (memory probe skipped).",
+   "Which materials the 6 walk-start programs and the rain/lamp/orbit programs belong to (kit attributes builds to marks, not materials).",
+   "Single-run values: orbit tier/resolution rows, wq0 rows and d1 rows were run once; only the street ablation was repeated 3x (cb p50 within +/-0.3 ms). One base run (g10_base, cb 20.9 ms) was taken under other load and is excluded from claims.",
+   "d1_default and g10_default perf2 percentile blocks counted the probe's own rAF loop and are discarded (their kit busy_ms, builds and hitches are valid).",
+   "I could not write report.md: the Write tool refused report files for subagents, so the report is in this result and report_path does not exist on disk. No repo file was changed; the container gf-perf-lens was stopped, profile dirs, raw GL logs and the save copy were deleted; /tmp/claude-1000/gf-investigate.lock was only held per command."
+  ],
+  "report_path": "/tmp/claude-1000/-home-kunalsiyag-Ambassador-Gmi-Cloud-gridfall/4eb46f6b-fccd-4256-83c9-4c39144a74d2/scratchpad/fb/perf/report.md"
+ }
+}

@@ -1,0 +1,68 @@
+{
+  "v": 4,
+  "createdOnFiles": {
+    "v": 1,
+    "at": "2026-11-02T19:45:00Z"
+  },
+  "lists": "css",
+  "title": "GridFall: AI mayors on GMI Cloud, built with Factory Droid",
+  "order": [
+    "cover",
+    "agenda",
+    "idea",
+    "mayors",
+    "turn",
+    "layers",
+    "numbers",
+    "rules",
+    "street",
+    "how",
+    "growth",
+    "mission",
+    "playbook",
+    "verify",
+    "review",
+    "web",
+    "lines",
+    "lessons",
+    "demo",
+    "close"
+  ],
+  "sections": {
+    "s1": {
+      "description": "Five AI mayors on GMI Cloud run one city, and how a single mayor turn works.",
+      "start": "cover"
+    },
+    "s2": {
+      "description": "The architecture: a seeded simulation, one network door and a first-person layer built from feature folders.",
+      "start": "layers"
+    },
+    "s3": {
+      "description": "How GridFall was built with agents: how the codebase grew, how a Droid mission is run, and how every change was verified.",
+      "start": "how"
+    },
+    "s4": {
+      "description": "Shipping a 3D city to a browser tab: the web build and the lines that only appeared there.",
+      "start": "web"
+    },
+    "s5": {
+      "description": "Lessons from sixteen days of building with agents, then the live demo.",
+      "start": "lessons"
+    }
+  },
+  "faces": {
+    "space-grotesk": {
+      "family": "Space Grotesk",
+      "href": "https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;700&display=swap"
+    },
+    "ibm-plex-sans": {
+      "family": "IBM Plex Sans",
+      "href": "https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;600&display=swap"
+    },
+    "jetbrains-mono": {
+      "family": "JetBrains Mono",
+      "href": "https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@500&display=swap"
+    }
+  },
+  "designSystems": []
+}

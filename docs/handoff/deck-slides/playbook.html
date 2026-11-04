@@ -1,0 +1,79 @@
+<section id="playbook" style="background:#F3F0E8; color:#111A33; padding:128px 128px 160px; display:flex; flex-direction:column; gap:40px; font-family:'IBM Plex Sans', Arial, sans-serif">
+  <div style="display:flex; flex-direction:column; gap:16px">
+    <p style="font-family:'JetBrains Mono', 'Courier New', monospace; font-size:24px; font-weight:500; letter-spacing:3px; text-transform:uppercase; color:#8A5A00; line-height:1.2">How I ran the agents · the playbook</p>
+    <h2 style="font-family:'Space Grotesk', Arial, sans-serif; font-size:72px; font-weight:700; line-height:1.1; color:#111A33">Specs, ownership and a gate</h2>
+  </div>
+
+  <div style="display:flex; flex-direction:column; gap:32px; flex:1">
+    <div style="display:flex; gap:80px; flex:1">
+      <div style="width:840px; display:flex; flex-direction:column; border-top:3px solid #111A33">
+        <h3 style="font-family:'Space Grotesk', Arial, sans-serif; font-size:44px; font-weight:700; line-height:1.1; color:#111A33; padding:10px 0 12px">The mission map</h3>
+        <div style="display:flex; align-items:center; gap:20px; flex:1; border-top:1px solid #C9C1AC">
+          <p style="font-family:'Space Grotesk', Arial, sans-serif; font-size:96px; font-weight:700; line-height:1; color:#8A5A00; width:72px">1</p>
+          <p style="font-size:40px; line-height:1.15; color:#111A33; width:748px">Every complaint from play<br>maps to one owner.</p>
+        </div>
+        <div style="display:flex; align-items:center; gap:20px; flex:1; border-top:1px solid #C9C1AC">
+          <p style="font-family:'Space Grotesk', Arial, sans-serif; font-size:96px; font-weight:700; line-height:1; color:#8A5A00; width:72px">2</p>
+          <p style="font-size:40px; line-height:1.15; color:#111A33; width:748px">Each agent owns exclusive files; shared files go through the orchestrator.</p>
+        </div>
+        <div style="display:flex; align-items:center; gap:20px; flex:1; border-top:1px solid #C9C1AC">
+          <p style="font-family:'Space Grotesk', Arial, sans-serif; font-size:96px; font-weight:700; line-height:1; color:#8A5A00; width:72px">3</p>
+          <p style="font-size:40px; line-height:1.15; color:#111A33; width:748px">Agents never commit: the orchestrator commits per area once the gate is green.</p>
+        </div>
+        <div style="display:flex; align-items:center; gap:20px; flex:1; border-top:1px solid #C9C1AC">
+          <p style="font-family:'Space Grotesk', Arial, sans-serif; font-size:96px; font-weight:700; line-height:1; color:#8A5A00; width:72px">4</p>
+          <p style="font-size:40px; line-height:1.15; color:#111A33; width:748px">Agents report back by message, not by editing each other’s files.</p>
+        </div>
+      </div>
+
+      <div style="width:744px; display:flex; flex-direction:column; border-top:3px solid #111A33">
+        <h3 style="font-family:'Space Grotesk', Arial, sans-serif; font-size:44px; font-weight:700; line-height:1.1; color:#111A33; padding:10px 0 12px">A slice spec has six parts</h3>
+        <div style="display:grid; grid-template-columns:1fr 1fr; grid-template-rows:1fr 1fr 1fr; gap:16px; flex:1">
+          <div style="background:#FBF9F4; border:1px solid #C9C1AC; border-radius:12px; padding:20px 24px; display:flex; flex-direction:column; gap:4px">
+            <p style="font-family:'Space Grotesk', Arial, sans-serif; font-size:36px; font-weight:700; line-height:1.1; color:#111A33">Goal</p>
+            <p style="font-size:28px; line-height:1.2; color:#475270">what the player sees</p>
+          </div>
+          <div style="background:#FBF9F4; border:1px solid #C9C1AC; border-radius:12px; padding:20px 24px; display:flex; flex-direction:column; gap:4px">
+            <p style="font-family:'Space Grotesk', Arial, sans-serif; font-size:36px; font-weight:700; line-height:1.1; color:#111A33">Owned files</p>
+            <p style="font-size:28px; line-height:1.2; color:#475270">exclusive edit rights</p>
+          </div>
+          <div style="background:#FBF9F4; border:1px solid #C9C1AC; border-radius:12px; padding:20px 24px; display:flex; flex-direction:column; gap:4px">
+            <p style="font-family:'Space Grotesk', Arial, sans-serif; font-size:36px; font-weight:700; line-height:1.1; color:#111A33">Seams consumed</p>
+          </div>
+          <div style="background:#FBF9F4; border:1px solid #C9C1AC; border-radius:12px; padding:20px 24px; display:flex; flex-direction:column; gap:4px">
+            <p style="font-family:'Space Grotesk', Arial, sans-serif; font-size:36px; font-weight:700; line-height:1.1; color:#111A33">Seams provided</p>
+            <p style="font-size:28px; line-height:1.2; color:#475270">exact signatures</p>
+          </div>
+          <div style="background:#FBF9F4; border:1px solid #C9C1AC; border-radius:12px; padding:20px 24px; display:flex; flex-direction:column; gap:4px">
+            <p style="font-family:'Space Grotesk', Arial, sans-serif; font-size:36px; font-weight:700; line-height:1.1; color:#111A33">Deliverables</p>
+          </div>
+          <div style="background:#FBF9F4; border:1px solid #C9C1AC; border-radius:12px; padding:20px 24px; display:flex; flex-direction:column; gap:4px">
+            <p style="font-family:'Space Grotesk', Arial, sans-serif; font-size:36px; font-weight:700; line-height:1.1; color:#111A33">Acceptance test</p>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div style="background:#111A33; border-radius:12px; padding:8px 44px; display:flex; align-items:stretch">
+      <div style="display:flex; align-items:center; gap:20px; width:420px">
+        <p style="font-family:'Space Grotesk', Arial, sans-serif; font-size:72px; font-weight:700; line-height:1; color:#FFB800; width:100px">12</p>
+        <p style="font-size:28px; line-height:1.25; color:#EEF1F8; width:260px">spec files,<br>4,554 lines</p>
+      </div>
+      <div style="display:flex; align-items:center; gap:20px; border-left:1px solid #2A3558; padding:0 0 0 48px; width:540px">
+        <p style="font-family:'Space Grotesk', Arial, sans-serif; font-size:72px; font-weight:700; line-height:1; color:#FFB800; width:100px">14</p>
+        <p style="font-size:28px; line-height:1.25; color:#EEF1F8; width:330px">request files for<br>cross-slice needs</p>
+      </div>
+      <div style="display:flex; flex-direction:column; justify-content:center; gap:4px; border-left:1px solid #2A3558; padding:0 0 0 48px; width:616px">
+        <div style="display:flex; align-items:center; gap:20px">
+          <p style="font-family:'Space Grotesk', Arial, sans-serif; font-size:36px; font-weight:700; line-height:1.1; color:#FFB800; width:240px">gate quick</p>
+          <p style="font-size:28px; line-height:1.25; color:#EEF1F8; width:290px">before every commit</p>
+        </div>
+        <div style="display:flex; align-items:center; gap:20px">
+          <p style="font-family:'Space Grotesk', Arial, sans-serif; font-size:36px; font-weight:700; line-height:1.1; color:#FFB800; width:240px">gate full</p>
+          <p style="font-size:28px; line-height:1.25; color:#EEF1F8; width:290px">before every hand-off</p>
+        </div>
+      </div>
+    </div>
+  </div>
+<aside>The playbook the mission worked from. The slice specs and the request files date from the first-person build of 18 and 19 October (phase 2 on the growth slide); the mission kept the same rules. First, the mission map: every complaint from play is mapped to exactly one owner, and every owner has exclusive file globs. The rule at the top of the map says several agents edit the same tree at once, so respect ownership and never edit outside your area; shared files go through the orchestrator. The second rule is the one I would copy first: agents never commit. The orchestrator commits per area after the gate is green. Third, the specs. The lettered slices each had a spec with the same six parts: a goal in terms of what the player sees, the files owned exclusively, the seams consumed and provided with exact signatures, the deliverables and an acceptance test. The specs total 4,554 lines in 12 files. When a slice needed something outside its files it wrote a request file instead of editing: there are 14 of them. Last, the gate: quick before every commit, full before every hand-off, and heavy runs take a machine-wide lock so several agents do not overload the box. [Your own note here: which of these rules you set and which the orchestrator proposed.]</aside>
+</section>

@@ -1,0 +1,47 @@
+<section id="growth" data-transition="fade" style="background:#F3F0E8;color:#111A33;font-family:'IBM Plex Sans', Arial, sans-serif;padding:128px 128px 160px;display:flex;flex-direction:column;gap:40px">
+<div style="display:flex;flex-direction:column;gap:16px">
+<p style="font-family:'JetBrains Mono', 'Courier New', monospace;font-size:24px;font-weight:500;letter-spacing:3px;text-transform:uppercase;color:#8A5A00">Net growth in GDScript lines, by phase</p>
+<h2 style="font-family:'Space Grotesk', Arial, sans-serif;font-size:72px;font-weight:700;line-height:1.1;color:#111A33">How the codebase grew</h2>
+</div>
+<div style="display:flex;flex-direction:column;flex:1;justify-content:space-between">
+<div style="display:flex;flex-direction:column">
+<div style="display:flex;height:48px">
+<div style="width:1134px"></div>
+<p style="width:372px;background:#111A33;color:#FFB800;font-family:'JetBrains Mono', 'Courier New', monospace;font-size:24px;font-weight:500;text-align:center;line-height:48px;border-radius:12px 12px 0 0">Factory Droid mission</p>
+</div>
+<div style="display:flex;height:196px;border-radius:16px;overflow:hidden">
+<div style="width:150px;background:#DCE0EA;display:flex;flex-direction:column;justify-content:start;align-items:center;gap:4px;padding:26px 0 0">
+<p style="font-family:'JetBrains Mono', 'Courier New', monospace;font-size:24px;font-weight:500;color:#111A33">PHASE 1</p>
+<p style="font-family:'Space Grotesk', Arial, sans-serif;font-size:72px;font-weight:700;line-height:1;color:#111A33">14k</p>
+</div>
+<div style="width:503px;background:#C9CFDE;display:flex;flex-direction:column;justify-content:start;align-items:center;gap:4px;padding:26px 0 0">
+<p style="font-family:'JetBrains Mono', 'Courier New', monospace;font-size:24px;font-weight:500;color:#111A33">PHASE 2</p>
+<p style="font-family:'Space Grotesk', Arial, sans-serif;font-size:72px;font-weight:700;line-height:1;color:#111A33">48k</p>
+</div>
+<div style="width:481px;background:#B3BCD1;display:flex;flex-direction:column;justify-content:start;align-items:center;gap:4px;padding:26px 0 0">
+<p style="font-family:'JetBrains Mono', 'Courier New', monospace;font-size:24px;font-weight:500;color:#111A33">PHASE 3</p>
+<p style="font-family:'Space Grotesk', Arial, sans-serif;font-size:72px;font-weight:700;line-height:1;color:#111A33">46k</p>
+</div>
+<div style="width:372px;background:#E08A00;display:flex;flex-direction:column;justify-content:start;align-items:center;gap:4px;padding:26px 0 0">
+<p style="font-family:'JetBrains Mono', 'Courier New', monospace;font-size:24px;font-weight:500;color:#111A33">PHASE 4</p>
+<p style="font-family:'Space Grotesk', Arial, sans-serif;font-size:72px;font-weight:700;line-height:1;color:#111A33">35k</p>
+<p style="font-family:'JetBrains Mono', 'Courier New', monospace;font-size:24px;font-weight:500;color:#111A33">next slide →</p>
+</div>
+<div style="width:158px;background:#C9CFDE;display:flex;flex-direction:column;justify-content:start;align-items:center;gap:4px;padding:26px 0 0">
+<p style="font-family:'JetBrains Mono', 'Courier New', monospace;font-size:24px;font-weight:500;color:#111A33">PHASE 5</p>
+<p style="font-family:'Space Grotesk', Arial, sans-serif;font-size:72px;font-weight:700;line-height:1;color:#111A33">15k</p>
+</div>
+</div>
+</div>
+<table style="width:1664px;font-size:28px;color:#111A33">
+<tr><th style="width:30%;text-align:left">Phase</th><th style="width:15%;text-align:left">When</th><th style="width:42%;text-align:left">What shipped</th><th style="width:13%;text-align:right">Lines</th></tr>
+<tr><td>1 The first game</td><td>17 Oct</td><td>Orbit view and five mayors</td><td style="text-align:right"><b>+14.3k</b></td></tr>
+<tr><td>2 First-person layer</td><td>18–19 Oct</td><td>Slices A to I, each with a spec</td><td style="text-align:right"><b>+47.8k</b></td></tr>
+<tr><td>3 Pull-request era</td><td>20–25 Oct</td><td>43 pull requests on top of the slices</td><td style="text-align:right"><b>+45.7k</b></td></tr>
+<tr style="background:#FFE3A3"><td>4 Completion mission</td><td>26–30 Oct</td><td>98 pull requests and the web deploy</td><td style="text-align:right"><b>+35.4k</b></td></tr>
+<tr><td>5 Hardening</td><td>30 Oct–2 Nov</td><td>25 commits, 25 new test files</td><td style="text-align:right"><b>+15.0k</b></td></tr>
+</table>
+</div>
+<p style="position:absolute;left:128px;bottom:64px;width:1664px;font-size:24px;color:#475270">Net diff between phase boundaries, not blame. Source: git history, 2 November 2026.</p>
+<aside>How the codebase grew, in net lines of GDScript between phase boundaries. Phase 1 (17 Oct): the first game, the orbit view and the five mayors, about 14k lines. Phase 2 (18 and 19 Oct): the whole first-person layer, built in lettered slices A to I with a spec for each, about 48k lines and 97 commits in roughly 21 hours. Phase 3 (20 to 25 Oct): 43 pull requests on top of the slices, about 46k lines. Phase 4 (26 to 30 Oct): the “Gridfall completion” mission, 98 pull requests (#47 to #145) and the web deploy, about 35k lines. This is the phase I go through next, because it is the cleanest example of running Droid at scale. Phase 5 (30 Oct to 2 Nov): hardening for the web, 25 commits and 25 new test files, about 15k lines. The totals add up to about 158k lines. These are net line differences between boundaries, not blame: refactors and deletions move lines around. Dates are IST.</aside>
+</section>

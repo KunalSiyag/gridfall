@@ -1,0 +1,34 @@
+<section id="numbers" data-transition="fade" style="background:#0B1020;color:#EEF1F8;font-family:'IBM Plex Sans', Arial, sans-serif;padding:128px 128px 160px;display:flex;flex-direction:column;gap:40px">
+<div style="display:flex;flex-direction:column;gap:16px">
+<p style="font-family:'JetBrains Mono', 'Courier New', monospace;font-size:24px;font-weight:500;letter-spacing:3px;text-transform:uppercase;color:#FFB800">Scale</p>
+<h2 style="font-family:'Space Grotesk', Arial, sans-serif;font-size:72px;font-weight:700;line-height:1.1;color:#EEF1F8">What the agents left behind</h2>
+</div>
+<div style="flex:1;display:grid;grid-template-columns:repeat(3, 1fr);grid-template-rows:repeat(2, 1fr);gap:0 48px">
+<div style="display:flex;flex-direction:column;gap:4px;border-top:2px solid #FFB800;padding:20px 0 0 0">
+<p style="font-family:'Space Grotesk', Arial, sans-serif;font-size:192px;font-weight:700;line-height:1;color:#FFB800">158k</p>
+<p style="font-size:32px;line-height:1.3;color:#EEF1F8">lines of GDScript in 390 files</p>
+</div>
+<div style="display:flex;flex-direction:column;gap:4px;border-top:2px solid #FFB800;padding:20px 0 0 0">
+<p style="font-family:'Space Grotesk', Arial, sans-serif;font-size:192px;font-weight:700;line-height:1;color:#FFB800">38%</p>
+<p style="font-size:32px;line-height:1.3;color:#EEF1F8">of that is tests: 128 test files</p>
+</div>
+<div style="display:flex;flex-direction:column;gap:4px;border-top:2px solid #FFB800;padding:20px 0 0 0">
+<p style="font-family:'Space Grotesk', Arial, sans-serif;font-size:192px;font-weight:700;line-height:1;color:#FFB800">126</p>
+<p style="font-size:32px;line-height:1.3;color:#EEF1F8">steps in the quick gate, all headless</p>
+</div>
+<div style="display:flex;flex-direction:column;gap:4px;border-top:2px solid #36E0F0;padding:20px 0 0 0">
+<p style="font-family:'Space Grotesk', Arial, sans-serif;font-size:192px;font-weight:700;line-height:1;color:#36E0F0">14</p>
+<p style="font-size:32px;line-height:1.3;color:#EEF1F8">chat models behind the cast</p>
+</div>
+<div style="display:flex;flex-direction:column;gap:4px;border-top:2px solid #36E0F0;padding:20px 0 0 0">
+<p style="font-family:'Space Grotesk', Arial, sans-serif;font-size:192px;font-weight:700;line-height:1;color:#36E0F0">86</p>
+<p style="font-size:32px;line-height:1.3;color:#EEF1F8">feature flags guarding behaviour</p>
+</div>
+<div style="display:flex;flex-direction:column;gap:4px;border-top:2px solid #36E0F0;padding:20px 0 0 0">
+<p style="font-family:'Space Grotesk', Arial, sans-serif;font-size:192px;font-weight:700;line-height:1;color:#36E0F0">16</p>
+<p style="font-size:32px;line-height:1.3;color:#EEF1F8">automated repo checks<br>on every commit</p>
+</div>
+</div>
+<p style="position:absolute;left:128px;bottom:64px;width:1664px;font-size:24px;color:#7F8BAA">Counted at commit 83fe2e8, 2 November 2026. Test share: tools/tests lines over all GDScript lines, 38% at commit 645e9a0.</p>
+<aside>Use this slide to set the scale, then move on. 158,429 lines of GDScript in 390 files at the tip; just over a third of the lines live in tests. The quick gate runs 126 steps (one parse check, 18 listed unit tests, every fp_*_test.gd picked up by filename, and three re-runs on the web renderer); the full gate adds a long-run soak and the orbit and first-person smoke runs. Fourteen distinct chat models appear in the code. 86 feature flags exist, and a note: the repo rule says remove a flag once the feature ships, but the flag count only ever went up (46 to 83 to 86), because nobody had time to retire them. Sixteen checks run on every commit: lint, format, complexity, dead code, duplicates, module boundaries, large files, TODO links, AGENTS.md validity, test map, flags, seeded randomness, unused dependencies, workflows, web headers and API docs.</aside>
+</section>

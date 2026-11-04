@@ -1,0 +1,46 @@
+<section id="lines" data-transition="push" style="background:#0B1020;color:#EEF1F8;font-family:'IBM Plex Sans', Arial, sans-serif;padding:128px 128px 160px;display:flex;flex-direction:column;gap:40px">
+<div style="display:flex;flex-direction:column;gap:16px">
+<p style="font-family:'JetBrains Mono', 'Courier New', monospace;font-size:24px;font-weight:500;letter-spacing:3px;text-transform:uppercase;color:#FFB800">A bug that only the browser had</p>
+<h2 style="font-family:'Space Grotesk', Arial, sans-serif;font-size:72px;font-weight:700;line-height:1.1;color:#EEF1F8">Lines that grew with the quality setting</h2>
+</div>
+<div style="display:grid;grid-template-columns:547px 560px 557px;grid-template-rows:auto auto auto;flex:1">
+<div style="padding:0 40px 16px 0"><p style="font-family:'Space Grotesk', Arial, sans-serif;font-size:44px;font-weight:700;line-height:1.15;color:#EEF1F8">Horizontal rows on the ground</p></div>
+<div style="padding:0 40px 16px 40px;border-left:2px solid #2A3558"><p style="font-family:'Space Grotesk', Arial, sans-serif;font-size:44px;font-weight:700;line-height:1.15;color:#EEF1F8">Rain streaks that grow with the preset</p></div>
+<div style="padding:0 0 16px 40px;border-left:2px solid #2A3558"><p style="font-family:'Space Grotesk', Arial, sans-serif;font-size:44px;font-weight:700;line-height:1.15;color:#EEF1F8">Diagonal stripes on roads from above</p></div>
+
+<div style="padding:16px 40px 16px 0;border-top:2px solid #FFB800;display:flex;flex-direction:column;gap:0px">
+<p style="font-size:28px;line-height:1.3;color:#A3AFCB"><span style="font-family:'JetBrains Mono', 'Courier New', monospace;font-size:24px;font-weight:500;letter-spacing:2px;color:#FFB800">RESULT</span>  Row grating from</p>
+<p style="font-family:'Space Grotesk', Arial, sans-serif;font-size:44px;font-weight:700;line-height:1.15;color:#7F8BAA">10 to 13 grey levels</p>
+<p style="font-size:28px;line-height:1.3;color:#A3AFCB">down to</p>
+<p style="font-family:'Space Grotesk', Arial, sans-serif;font-size:88px;font-weight:700;line-height:1.05;color:#FFB800">0.7 <span style="font-size:44px">to</span> 1.6</p>
+</div>
+<div style="padding:16px 40px 16px 40px;border-top:2px solid #FFB800;border-left:2px solid #2A3558;display:flex;flex-direction:column;gap:0px">
+<p style="font-size:28px;line-height:1.3;color:#A3AFCB"><span style="font-family:'JetBrains Mono', 'Courier New', monospace;font-size:24px;font-weight:500;letter-spacing:2px;color:#FFB800">RESULT</span>  Streak coverage from</p>
+<p style="font-family:'Space Grotesk', Arial, sans-serif;font-size:44px;font-weight:700;line-height:1.15;color:#7F8BAA">0.60, 1.12 and 1.77%</p>
+<p style="font-size:28px;line-height:1.3;color:#A3AFCB">down to about</p>
+<p style="font-family:'Space Grotesk', Arial, sans-serif;font-size:88px;font-weight:700;line-height:1.05;color:#FFB800">0.2%</p>
+</div>
+<div style="padding:16px 0 16px 40px;border-top:2px solid #FFB800;border-left:2px solid #2A3558;display:flex;flex-direction:column;gap:0px">
+<p style="font-size:28px;line-height:1.3;color:#A3AFCB"><span style="font-family:'JetBrains Mono', 'Courier New', monospace;font-size:24px;font-weight:500;letter-spacing:2px;color:#FFB800">RESULT</span>  Stripe energy from</p>
+<p style="font-family:'Space Grotesk', Arial, sans-serif;font-size:44px;font-weight:700;line-height:1.15;color:#7F8BAA">3.42 and 4.41</p>
+<p style="font-size:28px;line-height:1.3;color:#A3AFCB">down to</p>
+<p style="font-family:'Space Grotesk', Arial, sans-serif;font-size:88px;font-weight:700;line-height:1.05;color:#FFB800">0.31 <span style="font-size:44px">and</span> 0.93</p>
+<p style="font-size:28px;line-height:1.3;color:#A3AFCB">at Medium.</p>
+</div>
+
+<div style="padding:20px 40px 0 0;border-top:2px solid #2A3558;display:flex;flex-direction:column;gap:10px">
+<p style="font-size:28px;line-height:1.3;color:#A3AFCB"><span style="font-family:'JetBrains Mono', 'Courier New', monospace;font-size:24px;font-weight:500;letter-spacing:2px;color:#A3AFCB">CAUSE</span>  Ambient occlusion below native 3D scale on the Compatibility renderer. The web tier renders at 0.6.</p>
+<p style="font-size:28px;line-height:1.3;color:#EEF1F8"><span style="font-family:'JetBrains Mono', 'Courier New', monospace;font-size:24px;font-weight:500;letter-spacing:2px;color:#36E0F0">FIX</span>  No SSAO when the 3D scale is below&#160;1.</p>
+</div>
+<div style="padding:20px 40px 0 40px;border-top:2px solid #2A3558;border-left:2px solid #2A3558;display:flex;flex-direction:column;gap:10px">
+<p style="font-size:28px;line-height:1.3;color:#A3AFCB"><span style="font-family:'JetBrains Mono', 'Courier New', monospace;font-size:24px;font-weight:500;letter-spacing:2px;color:#A3AFCB">CAUSE</span>  The rain emitter scaled with quality: 800, 1,600 or 3,000 particles.</p>
+<p style="font-size:28px;line-height:1.3;color:#EEF1F8"><span style="font-family:'JetBrains Mono', 'Courier New', monospace;font-size:24px;font-weight:500;letter-spacing:2px;color:#36E0F0">FIX</span>  600 on the web tier, and none in aerial views.</p>
+</div>
+<div style="padding:20px 0 0 40px;border-top:2px solid #2A3558;border-left:2px solid #2A3558;display:flex;flex-direction:column;gap:10px">
+<p style="font-size:28px;line-height:1.3;color:#A3AFCB"><span style="font-family:'JetBrains Mono', 'Courier New', monospace;font-size:24px;font-weight:500;letter-spacing:2px;color:#A3AFCB">CAUSE</span>  Sun shadow-map acne: road and sidewalk meshes shadowed themselves.</p>
+<p style="font-size:28px;line-height:1.3;color:#EEF1F8"><span style="font-family:'JetBrains Mono', 'Courier New', monospace;font-size:24px;font-weight:500;letter-spacing:2px;color:#36E0F0">FIX</span>  A larger normal bias in aerial views, Compatibility only.</p>
+</div>
+</div>
+<p style="position:absolute;left:128px;bottom:64px;width:1664px;font-size:24px;color:#7F8BAA">Commits 6d8d679, ff0534a, 0067d58. Trigger found and removed; why the engine draws the rows is not established.</p>
+<aside>A war story that shows why “it looks fine on my machine” is not enough for a browser build. The report from play was: the web version draws lines, and the higher the graphics setting, the stronger they get. The lines you see in the browser are horizontal rows on the ground. Three different causes hid behind one complaint, and we only found them one at a time. First, the horizontal rows: screen-space ambient occlusion on Godot’s Compatibility renderer misbehaves when the 3D scale is below native; the web tier forces 0.6. Measured as row energy in grey levels (rms) it went from 10 to 13 at Low, Medium and High to 0.7 to 1.6 with SSAO off. Be careful with the explanation: the trigger is proven, but why the engine draws the rows is not established, and the commit says so. Second, rain: the emitter had 800, 1,600 or 3,000 particles depending on the preset, which is the one that literally grows with the quality setting; the web tier is now capped at 600 and aerial views get none. Third, the diagonal stripes on roads at Medium from the air: shadow-map acne, fixed with a Compatibility-only aerial normal bias; the absolute numbers depend on the sky hour, so quote them with that condition. Pixel evidence for all three fixes was produced in headless Chrome on a real GPU; the desktop Forward+ look was not re-checked.</aside>
+</section>

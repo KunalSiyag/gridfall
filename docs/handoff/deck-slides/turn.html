@@ -1,0 +1,89 @@
+<section id="turn" data-transition="fade" style="background:#0B1020;color:#EEF1F8;font-family:'IBM Plex Sans', Arial, sans-serif;padding:128px 128px 160px;display:flex;flex-direction:column;gap:40px">
+<div style="display:flex;flex-direction:column;gap:16px">
+<p style="font-family:'JetBrains Mono', 'Courier New', monospace;font-size:24px;font-weight:500;letter-spacing:3px;text-transform:uppercase;color:#FFB800">How a mayor thinks</p>
+<h2 style="font-family:'Space Grotesk', Arial, sans-serif;font-size:72px;font-weight:700;line-height:1.1;color:#EEF1F8">One mayor turn, end to end</h2>
+</div>
+<div style="flex:1;display:flex;flex-direction:column;justify-content:space-between">
+<div style="flex:none;display:flex;align-items:stretch">
+<div style="flex:none;width:258px;border-top:2px solid #2A3558;padding:22px 0 0;display:flex;flex-direction:column;gap:10px">
+<div style="display:flex;align-items:baseline;gap:14px">
+<p style="font-family:'Space Grotesk', Arial, sans-serif;font-size:72px;font-weight:700;line-height:1;color:#FFB800">1</p>
+<p style="font-family:'JetBrains Mono', 'Courier New', monospace;font-size:24px;font-weight:500;letter-spacing:3px;color:#FFB800">SEE</p>
+</div>
+<p style="font-family:'Space Grotesk', Arial, sans-serif;font-size:44px;font-weight:700;line-height:1.1;color:#EEF1F8">Sim state</p>
+<p style="font-size:28px;line-height:1.25;color:#A3AFCB">A district map in ASCII, stats, yesterday’s results, residents’ letters</p>
+</div>
+<div style="flex:none;width:72px;padding:47px 0 0;display:flex;align-items:flex-start;justify-content:center">
+<x-shape kind="arrow-right" style="width:40px;height:26px;background:#FFB800"></x-shape>
+</div>
+<div style="flex:none;width:258px;border-top:2px solid #2A3558;padding:22px 0 0;display:flex;flex-direction:column;gap:10px">
+<div style="display:flex;align-items:baseline;gap:14px">
+<p style="font-family:'Space Grotesk', Arial, sans-serif;font-size:72px;font-weight:700;line-height:1;color:#FFB800">2</p>
+<p style="font-family:'JetBrains Mono', 'Courier New', monospace;font-size:24px;font-weight:500;letter-spacing:3px;color:#FFB800">ASK</p>
+</div>
+<p style="font-family:'Space Grotesk', Arial, sans-serif;font-size:44px;font-weight:700;line-height:1.1;color:#EEF1F8">Prompt</p>
+<p style="font-size:28px;line-height:1.25;color:#A3AFCB">A persona, the rules and the action schema, once per game day</p>
+</div>
+<div style="flex:none;width:72px;padding:47px 0 0;display:flex;align-items:flex-start;justify-content:center">
+<x-shape kind="arrow-right" style="width:40px;height:26px;background:#FFB800"></x-shape>
+</div>
+<div style="flex:none;width:258px;border-top:2px solid #2A3558;padding:22px 0 0;display:flex;flex-direction:column;gap:10px">
+<div style="display:flex;align-items:baseline;gap:14px">
+<p style="font-family:'Space Grotesk', Arial, sans-serif;font-size:72px;font-weight:700;line-height:1;color:#FFB800">3</p>
+<p style="font-family:'JetBrains Mono', 'Courier New', monospace;font-size:24px;font-weight:500;letter-spacing:3px;color:#FFB800">THINK</p>
+</div>
+<p style="font-family:'Space Grotesk', Arial, sans-serif;font-size:44px;font-weight:700;line-height:1.1;color:#EEF1F8">GMI model</p>
+<p style="font-size:28px;line-height:1.25;color:#A3AFCB">One chat completion on the mayor’s own model: 1,500 tokens, 70 s timeout</p>
+</div>
+<div style="flex:none;width:72px;padding:47px 0 0;display:flex;align-items:flex-start;justify-content:center">
+<x-shape kind="arrow-right" style="width:40px;height:26px;background:#FFB800"></x-shape>
+</div>
+<div style="flex:none;width:258px;border-top:2px solid #2A3558;padding:22px 0 0;display:flex;flex-direction:column;gap:10px">
+<div style="display:flex;align-items:baseline;gap:14px">
+<p style="font-family:'Space Grotesk', Arial, sans-serif;font-size:72px;font-weight:700;line-height:1;color:#FFB800">4</p>
+<p style="font-family:'JetBrains Mono', 'Courier New', monospace;font-size:24px;font-weight:500;letter-spacing:3px;color:#FFB800">ANSWER</p>
+</div>
+<p style="font-family:'Space Grotesk', Arial, sans-serif;font-size:44px;font-weight:700;line-height:1.1;color:#EEF1F8">JSON</p>
+<p style="font-size:28px;line-height:1.25;color:#A3AFCB">A private thought, a public post and up to 7 actions</p>
+</div>
+<div style="flex:none;width:72px;padding:47px 0 0;display:flex;align-items:flex-start;justify-content:center">
+<x-shape kind="arrow-right" style="width:40px;height:26px;background:#FFB800"></x-shape>
+</div>
+<div style="flex:1;background:#FFB800;border:1px solid #FFB800;border-radius:16px;padding:22px;display:flex;flex-direction:column;gap:10px">
+<div style="display:flex;align-items:baseline;gap:14px">
+<p style="font-family:'Space Grotesk', Arial, sans-serif;font-size:72px;font-weight:700;line-height:1;color:#111A33">5</p>
+<p style="font-family:'JetBrains Mono', 'Courier New', monospace;font-size:24px;font-weight:500;letter-spacing:3px;color:#111A33">JUDGE</p>
+</div>
+<p style="font-family:'Space Grotesk', Arial, sans-serif;font-size:44px;font-weight:700;line-height:1.1;color:#111A33">The sim decides</p>
+<p style="font-size:28px;line-height:1.25;font-weight:600;color:#111A33">Each action is OK or REJECTED with a reason, fed into tomorrow’s prompt</p>
+</div>
+</div>
+<div style="flex:none;display:flex;flex-direction:column;gap:16px">
+<p style="font-family:'JetBrains Mono', 'Courier New', monospace;font-size:24px;font-weight:500;letter-spacing:3px;text-transform:uppercase;text-align:left;color:#36E0F0">When the model can’t answer</p>
+<div style="display:flex;align-items:stretch;gap:20px">
+<div style="flex:1;border-top:2px solid #36E0F0;padding:16px 0 0;display:flex;flex-direction:column;gap:6px">
+<p style="font-size:32px;font-weight:600;line-height:1.2;color:#EEF1F8">Retry with backoff,</p>
+<p style="font-size:28px;line-height:1.25;color:#A3AFCB">twice</p>
+</div>
+<x-shape kind="arrow-right" style="width:40px;height:26px;background:#36E0F0;align-self:center"></x-shape>
+<div style="flex:1;border-top:2px solid #36E0F0;padding:16px 0 0;display:flex;flex-direction:column;gap:6px">
+<p style="font-size:32px;font-weight:600;line-height:1.2;color:#EEF1F8">Circuit breaker:</p>
+<p style="font-size:28px;line-height:1.25;color:#A3AFCB">4 failures, 30 s</p>
+</div>
+<x-shape kind="arrow-right" style="width:40px;height:26px;background:#36E0F0;align-self:center"></x-shape>
+<div style="flex:1;border-top:2px solid #36E0F0;padding:16px 0 0;display:flex;flex-direction:column;gap:6px">
+<p style="font-size:32px;font-weight:600;line-height:1.2;color:#EEF1F8">Replay cache:</p>
+<p style="font-size:28px;line-height:1.25;color:#A3AFCB">179 recorded keys</p>
+</div>
+<x-shape kind="arrow-right" style="width:40px;height:26px;background:#36E0F0;align-self:center"></x-shape>
+<div style="flex:1;border-top:2px solid #36E0F0;padding:16px 0 0;display:flex;flex-direction:column;gap:6px">
+<p style="font-size:32px;font-weight:600;line-height:1.2;color:#EEF1F8">Heuristics:</p>
+<p style="font-size:28px;line-height:1.25;color:#36E0F0">the city never stalls</p>
+</div>
+</div>
+</div>
+</div>
+<div style="position:absolute;left:620px;top:664px;width:299px;height:130px;border-right:4px solid #36E0F0;border-bottom:4px solid #36E0F0;border-radius:0 0 20px 0"></div>
+<x-shape kind="ellipse" style="position:absolute;left:911px;top:658px;width:12px;height:12px;background:#36E0F0"></x-shape>
+<aside>This is the loop behind every mayor card. Once per game day the sim builds a prompt for one mayor: the persona and rules in the system prompt, then a user prompt with the district summary, an ASCII map of the district, open lots, yesterday’s action results, the other mayors’ posts, residents’ letters, the Gazette headline and open proposals. The model answers in JSON: a private thought, a public post and up to seven actions (MAX_ACTIONS_PER_DAY is 7). The sim validates each action against the real city and returns OK or REJECTED with a reason; those lines go back into tomorrow’s prompt, so a mayor learns from being told no. The bottom row is why the game never stalls: the client retries twice with jittered backoff (500 ms base, 4 s cap, Retry-After honoured), a circuit breaker opens after four failures for 30 seconds, then the replay cache answers from recorded GMI responses (179 keys, about 467 KB), then deterministic heuristics. Caveat for questions: the breaker is shared, so one dead model can trip it for all five mayors (the gmi-outage runbook says so). Without a key, or with GRIDFALL_OFFLINE=1, the game runs on the replay cache; the cards say LIVE, REPLAY or FALLBACK so you always know what you are looking at.</aside>
+</section>
