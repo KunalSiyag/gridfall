@@ -415,6 +415,9 @@ func _asphalt(model: Node3D, mask: int, kind_name: String) -> void:
 			elif m != null and m.resource_name == "Grass" and view.lawn_material() != null:
 				# The cul-de-sac island: the same metric grass as the verges round it.
 				mi.set_surface_override_material(s, view.lawn_material())
+			elif m != null and SurfaceMaterials.dress(mi, s, m.resource_name, view, axis):
+				# Pavement, kerb and lane paint (and the junction's darker patch of asphalt).
+				pass
 
 
 func _dress_straight(
@@ -1456,6 +1459,9 @@ func dress_model(model: Node3D) -> void:
 			elif nm == "Grass" and view.lawn_material() != null:
 				# Flat untextured lawns and park grass: the street's metric, non-repeating grass.
 				mi.set_surface_override_material(s, view.lawn_material())
+			elif SurfaceMaterials.dress(mi, s, nm, view):
+				# Lot slabs, paving, car parks and lane paint: the street's world-mapped surfaces.
+				pass
 			elif nm == "Lamp_Glow":
 				# Lamp heads baked into a model body (parks, shop fronts) glowed all day: they follow
 				# the night like every other lamp.
