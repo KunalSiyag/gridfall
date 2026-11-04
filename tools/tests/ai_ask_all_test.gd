@@ -626,12 +626,7 @@ func _check_real_client() -> void:
 	check(_city(sim) == cities, "the sim is untouched")
 	check(net.to_dict()["session_cache"].is_empty(), "the client's save has nothing from the ask")
 	# Breaker open: no call goes out.
-	net.breaker.record_failure()
-	for _k in range(4):
-		net.breaker.record_failure()
-	check(
-		net.breaker_state() == "open" and not arena.live_possible(), "an open breaker is not live"
-	)
+	_check_breaker_scopes(net, arena)
 	var posts := net.posts
 	_now_ms += ArenaAsk.COOLDOWN_MS + 1
 	arena.ask(QUESTION)
@@ -644,6 +639,29 @@ func _check_real_client() -> void:
 	(w["sim"] as Node).queue_free()
 	(w["people"] as Node).queue_free()
 	(w["client"] as Node).queue_free()
+
+
+## Which breaker the panel reads: a failing residents or chatter group says nothing about the
+## mayors (the panel stays live); an open mayor breaker is not live.
+func _check_breaker_scopes(net: GmiClient, arena: ArenaAsk) -> void:
+	for _k in range(4):
+		net.breaker.record_failure()
+		net.breakers.group("residents").record_failure()
+	check(
+		(
+			net.breaker_state() == "open"
+			and net.breakers.mayor_state() == "closed"
+			and arena.live_possible()
+		),
+		"an open chatter or residents breaker leaves the panel live"
+	)
+	net.breakers.reset()
+	for _k in range(4):
+		net.breakers.group("mayor").record_failure()
+	check(
+		net.breaker_state() == "open" and not arena.live_possible(),
+		"an open mayor breaker is not live"
+	)
 
 
 ## New City while the five are out: the answers of the old city are dropped.

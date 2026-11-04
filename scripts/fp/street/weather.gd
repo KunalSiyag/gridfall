@@ -120,7 +120,7 @@ func target_state() -> String:
 
 
 func _process(delta: float) -> void:
-	step(delta)
+	step(Pacing.frame_dt(delta))
 
 
 ## One weather update over delta real seconds (tests call it directly).

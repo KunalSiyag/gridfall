@@ -14,13 +14,20 @@ Generated from the `##` doc comments in `scripts/`. Regenerate with `python3 too
 
 ## [scripts/ai/](scripts.ai.md)
 
+- [action_clean.gd](scripts.ai.md#scriptsaiaction_cleangd) (`ActionClean`): A model's order (one entry of "actions") made safe to show and to apply
 - [arena_ask.gd](scripts.ai.md#scriptsaiarena_askgd) (`ArenaAsk`): "Ask the five": the overseer asks one question and the five mayors' models answer it in parallel, each from the same city state it would plan a normal turn from (CityBrain's own mayor prompts) with the question appended as "OVERSEER QUESTION"
 - [brain_calls.gd](scripts.ai.md#scriptsaibrain_callsgd): The GMI calls a CityBrain has in flight, and which city each was sent for (CityBrain extends this)
 - [brain_text.gd](scripts.ai.md#scriptsaibrain_textgd): Removes model brand names from CityBrain text: a Gazette page as it comes in, and state restored from saves written before the display names, whose text feeds the prompts and the HUDs
 - [chatter_minds.gd](scripts.ai.md#scriptsaichatter_mindsgd) (`ChatterMinds`): The voices of the global chat and of face-to-face talk (slice C §3)
 - [city_brain.gd](scripts.ai.md#scriptsaicity_braingd) (`CityBrain`): Puts GMI model inference on every layer of the city
+- [gmi_admission.gd](scripts.ai.md#scriptsaigmi_admissiongd) (`GmiAdmission`): How many live calls GmiClient has out at once, with the mayors first
+- [gmi_breakers.gd](scripts.ai.md#scriptsaigmi_breakersgd) (`GmiBreakers`): The circuit breakers of GmiClient, one per group of roles
+- [gmi_cache.gd](scripts.ai.md#scriptsaigmi_cachegd) (`GmiCache`): The shape of GmiClient's answer caches: {key: [{day, data}, ...]}
 - [gmi_client.gd](scripts.ai.md#scriptsaigmi_clientgd) (`GmiClient`): Async GMI Cloud chat client with JSON extraction, a recorded replay cache, and heuristic fallback
 - [gmi_image_client.gd](scripts.ai.md#scriptsaigmi_image_clientgd) (`GmiImageClient`): Async poster image client for GMI's hy-image-v3.5-preview (slice D)
+- [gmi_parse.gd](scripts.ai.md#scriptsaigmi_parsegd) (`GmiParse`): Reads the JSON object a model put in its reply
+- [gmi_preflight.gd](scripts.ai.md#scriptsaigmi_preflightgd) (`GmiPreflight`): The readiness check of a key (flag gmi_preflight): once per key, one GET of the model list through GmiClient (its own _models_trip, so no request leaves the process any other way), compared with the model ids the game calls (GmiReadiness), a sentence for the key panel and one line in the GMI log
+- [gmi_readiness.gd](scripts.ai.md#scriptsaigmi_readinessgd) (`GmiReadiness`): "Which of the 14 models does this key reach?" Pure helpers for GmiClient.preflight.run(): the list of model ids the game is configured to call (mayors, support agents, the resident and chatter pools), the ids a GET /v1/models reply names, their comparison, and the sentence the key panel shows
 - [mayor_turns.gd](scripts.ai.md#scriptsaimayor_turnsgd): Staggered mayor turns (CityBrain.stagger_mayors, on in street mode)
 - [resident_minds.gd](scripts.ai.md#scriptsairesident_mindsgd) (`ResidentMinds`): Gives every resident a GMI brain
 - [road_plans.gd](scripts.ai.md#scriptsairoad_plansgd): The heuristic mayor's road orders (CityBrain._heuristic_mayor): new roads to open land, at as cheap a grade as the funds call for, and paving rough roads that lots have grown along
@@ -338,6 +345,7 @@ Generated from the `##` doc comments in `scripts/`. Regenerate with `python3 too
 - [pacing.gd](scripts.ops.md#scriptsopspacinggd) (`Pacing`): Step lengths for the per-frame catch-up loops (traffic, birds, animals): a long frame, or a high game speed, hands them a big delta that they work off in steps of at most MAX_STEP
 - [pack_loader.gd](scripts.ops.md#scriptsopspack_loadergd) (`PackLoader`): Streams the web build's background packs: the boot pack is the engine's own `.pck`, and the others land later under `user://packs/`, each mounted with `ProjectSettings.load_resource_pack`
 - [redact.gd](scripts.ops.md#scriptsopsredactgd) (`Redact`): Masks secrets and personal data in text bound for logs and the local ops files: bearer and basic credentials, key=value secrets, sk- keys, JWTs, long random tokens, e-mail addresses and every value registered with add_secret() (the live GMI key)
+- [resume_guard.gd](scripts.ops.md#scriptsopsresume_guardgd) (`ResumeGuard`): Web only: tells the game when the browser tab is hidden or shown again (the page's visibilitychange event)
 - [trace.gd](scripts.ops.md#scriptsopstracegd) (`Trace`): Request and trace ids
 - [web_pack_stream.gd](scripts.ops.md#scriptsopsweb_pack_streamgd) (`WebPackStream`): Background-pack streaming policy for the split web build (ops layer)
 - [web_support.gd](scripts.ops.md#scriptsopsweb_supportgd) (`WebSupport`): Platform glue for the web build

@@ -10,6 +10,28 @@ var fails: Array[String] = []
 var _scratch: String = ""
 
 
+## A GmiClient whose transport takes `frames` frames to answer and counts how many calls are out at
+## once (the in-flight cap checks).
+class SlowNet extends GmiClient:
+	var frames: int = 6
+	## While true no call answers (a test holds the slots full).
+	var hold: bool = false
+	var active: int = 0
+	var peak: int = 0
+	var started: Array[String] = []
+
+	func _post(_model: String, _system_prompt: String, _user_prompt: String, _max_tokens: int, _timeout_s: float) -> Dictionary:
+		active += 1
+		peak = maxi(peak, active)
+		started.append(str(_hdr_request_id))
+		for _k in range(frames):
+			await get_tree().process_frame
+		while hold:
+			await get_tree().process_frame
+		active -= 1
+		return {"ok": true, "data": {"say": "ok"}, "raw": "{}", "http": 200}
+
+
 ## A GmiClient whose transport fails on demand and records the request id it was handed.
 class FakeNet extends GmiClient:
 	var posts: int = 0
@@ -34,6 +56,8 @@ func _init() -> void:
 	_check_trace()
 	await _check_client_offline()
 	await _check_client_breaker()
+	await _check_breaker_groups()
+	await _check_inflight_cap()
 	await _check_client_temperature()
 	_check_flags()
 	_check_analytics()
@@ -162,9 +186,11 @@ func _check_client_breaker() -> void:
 	var r5: Dictionary = await c.chat_json("mayor", "nobody_zz", "m", "sys", "user", 1, 100, 10.0, func() -> Dictionary: return {"thought": "h"})
 	K.check(fails, c.posts == 4 and str(r5["error"]) == "circuit open" and bool(r5["ok"]) and str(r5["source"]) in ["cache", "heuristic"], "while open chat_json skips the network and falls back")
 	var l5: Dictionary = await c.live_json("chatter", "round", "m", "s", "u", 1, 50, 3.0)
-	K.check(fails, not bool(l5["ok"]) and str(l5["error"]) == "circuit open" and c.posts == 4, "while open live_json fails fast with 'circuit open'")
+	K.check(fails, c.posts == 5 and str(l5["error"]).begins_with("HTTP 503"), "the mayors' open breaker does not stop the street chatter: its own breaker is closed")
+	var m5: Dictionary = await c.live_json("mayor", "nobody_zz", "m", "s", "u", 1, 50, 3.0)
+	K.check(fails, not bool(m5["ok"]) and str(m5["error"]) == "circuit open" and c.posts == 5, "while open live_json for the same group fails fast with 'circuit open'")
 	K.check(fails, int(c.stats["breaker_skip"]) == 2 and c.live_failure_ratio() == 1.0, "skips are counted; live outcomes feed the failure ratio")
-	c.breaker.reset()
+	c.breakers.reset()
 	c.reply = {"ok": false, "error": "no JSON in reply", "service_fail": false}
 	for _k in range(5):
 		await c.live_json("chatter", "round", "m", "s", "u", 1, 50, 3.0)
@@ -202,6 +228,215 @@ func _check_client_breaker() -> void:
 	var r8: Dictionary = await c.live_json("chatter", "round", "m", "s", "u", 1, 50, 0.5)
 	K.check(fails, c.posts - before == 1 and int(r8["attempts"]) == 1, "a retry that would overrun the 2 x timeout budget is skipped (%d attempts)" % (c.posts - before))
 	c.queue_free()
+
+
+## One breaker per group of roles (GmiBreakers): a group that fails opens alone, the others go on,
+## and breaker_state() is the aggregate the alerts and the street badge read.
+func _check_breaker_groups() -> void:
+	K.check(fails, GmiBreakers.group_of("mayor") == "mayor" and GmiBreakers.group_of("residents") == "residents", "mayors and residents have their own groups")
+	var supports := ["news", "council", "chaos", "citizens", "operator", "inspector"]
+	var all_support := true
+	for role: String in supports:
+		all_support = all_support and GmiBreakers.group_of(role) == "support"
+	K.check(fails, all_support, "the six support agents share the support group")
+	K.check(fails, GmiBreakers.group_of("chatter") == GmiBreakers.DEFAULT_GROUP and GmiBreakers.group_of("talk") == GmiBreakers.DEFAULT_GROUP and GmiBreakers.group_of("something_new") == GmiBreakers.DEFAULT_GROUP, "chatter, talk and any new role land in the default group")
+	var c := FakeNet.new()
+	c.name = "FakeNetGroups"
+	get_root().add_child(c)
+	c.live_enabled = true
+	K.check(fails, c.breakers.breaker_for("chatter") == c.breaker and c.breakers.breaker_for("mayor") != c.breaker and c.breakers.breaker_for("residents") != c.breakers.breaker_for("mayor"), "the client's breaker is the default group's; the others are separate")
+	var states: Array[String] = []
+	c.breaker_changed.connect(func(s: String) -> void: states.append(s))
+	await _residents_storm(c, states)
+	await _group_counts(c, states)
+	_check_aggregate_states()
+	c.queue_free()
+
+
+## A residents storm: four failed batches open the residents' breaker and nobody else's.
+func _residents_storm(c: FakeNet, states: Array[String]) -> void:
+	for _k in range(4):
+		await c.live_json("residents", "plans", "m", "s", "u", 1, 50, 10.0)
+	K.check(fails, c.breakers.breaker_for("residents").state == "open" and c.breakers.breaker_for("mayor").state == "closed" and c.breakers.breaker_for("chatter").state == "closed" and c.breakers.breaker_for("news").state == "closed", "four residents failures open only the residents' breaker")
+	K.check(fails, c.breaker_state() == "open" and states == ["open"] and int(c.stats["breaker_open"]) == 1, "the aggregate reads open and said so once (%s)" % str(states))
+	K.check(fails, c.breakers.tripped() == PackedStringArray(["residents"]) and c.breakers.states()["residents"] == "open", "tripped() names the group")
+	var posts := c.posts
+	var blocked: Dictionary = await c.live_json("residents", "plans", "m", "s", "u", 1, 50, 10.0)
+	K.check(fails, str(blocked["error"]) == "circuit open" and c.posts == posts, "the residents are refused while their breaker is open")
+	c.reply = {"ok": true, "data": {"thought": "plan"}, "raw": "{}", "http": 200}
+	var turn: Dictionary = await c.chat_json("mayor", "argon", "m", "s", "u", 1, 50, 10.0, func() -> Dictionary: return {"thought": "h"})
+	K.check(fails, str(turn["source"]) == "live" and c.posts == posts + 1, "a mayor's turn still goes out and comes back live while the residents' breaker is open")
+	var agent: Dictionary = await c.chat_json("news", "gazette", "m", "s", "u", 1, 50, 10.0, func() -> Dictionary: return {"headline": "h"})
+	K.check(fails, str(agent["source"]) == "live", "and so does a support agent's")
+	K.check(fails, c.breaker_state() == "open", "the aggregate stays open while any group is")
+
+
+## Each group counts its own consecutive failures: a mayor's success does not reset the residents'.
+func _group_counts(c: FakeNet, states: Array[String]) -> void:
+	c.breakers.reset()
+	states.clear()
+	c.reply = {"ok": false, "error": "HTTP 503 down", "retryable": false, "service_fail": true}
+	for _k in range(3):
+		await c.live_json("residents", "plans", "m", "s", "u", 1, 50, 10.0)
+	c.reply = {"ok": true, "data": {"thought": "plan"}, "raw": "{}", "http": 200}
+	await c.chat_json("mayor", "argon", "m", "s", "u", 1, 50, 10.0, func() -> Dictionary: return {})
+	K.check(fails, c.breakers.breaker_for("residents").failures == 3 and c.breaker_state() == "closed", "another group's success does not reset a group's failure count")
+	c.reply = {"ok": false, "error": "HTTP 503 down", "retryable": false, "service_fail": true}
+	await c.live_json("residents", "plans", "m", "s", "u", 1, 50, 10.0)
+	K.check(fails, c.breakers.breaker_for("residents").state == "open", "its own fourth failure opens it")
+	# A second group opening does not repeat the aggregate's "open"; the count of opens counts both.
+	states.clear()
+	for _k in range(4):
+		await c.chat_json("news", "gazette", "m", "s", "u", 1, 50, 10.0, func() -> Dictionary: return {})
+	K.check(fails, c.breakers.breaker_for("news").state == "open" and states.is_empty() and int(c.stats["breaker_open"]) == 3, "a second group opening leaves the aggregate's signal alone but is counted (%s, %d)" % [str(states), int(c.stats["breaker_open"])])
+
+
+## An open group past its cool-down reads half_open; the aggregate prefers open.
+func _check_aggregate_states() -> void:
+	var b := CircuitBreaker.new(1, 1000)
+	var set := GmiBreakers.new(b)
+	set.group("residents").record_failure(100)
+	K.check(fails, set.state(500) == "open" and set.state(1200) == "half_open", "the aggregate reads open, then half_open after the cool-down")
+	b.record_failure(100)
+	K.check(fails, set.state(1200) == "half_open" and set.state(500) == "open", "any group open wins over half_open")
+	set.reset()
+	K.check(fails, set.state() == "closed" and set.tripped().is_empty(), "reset() closes every group")
+
+
+## The in-flight cap (flag gmi_inflight_cap, off by default): the background roles wait for a slot,
+## the mayors and support agents never do and make the background halve its share.
+func _check_inflight_cap() -> void:
+	K.check(fails, not FeatureFlags.enabled("gmi_inflight_cap"), "the cap ships off")
+	_check_admission_counts()
+	FeatureFlags.set_override("gmi_inflight_cap", true)
+	var c := SlowNet.new()
+	c.name = "SlowNet"
+	get_root().add_child(c)
+	c.live_enabled = true
+	await _cap_limits_background(c)
+	await _cap_mayors_first(c)
+	await _cap_gives_up(c)
+	await _cap_keeps_probe(c)
+	FeatureFlags.set_override("gmi_inflight_cap", false)
+	await _cap_off(c)
+	c.queue_free()
+
+
+func _check_admission_counts() -> void:
+	var adm := GmiAdmission.new()
+	K.check(fails, GmiAdmission.is_priority("mayor") and GmiAdmission.is_priority("news") and GmiAdmission.is_priority("arena") and not GmiAdmission.is_priority("residents") and not GmiAdmission.is_priority("chatter"), "mayors, support agents and the ask panel are priority; residents and chatter are not")
+	K.check(fails, adm.slots() == GmiAdmission.BACKGROUND_MAX and adm.can_enter("mayor"), "background slots with nobody out")
+	adm.enter("mayor")
+	K.check(fails, adm.slots() == GmiAdmission.BACKGROUND_MAX >> 1, "a priority call out halves the background's slots")
+	adm.leave("mayor")
+	adm.leave("mayor")
+	K.check(fails, adm.priority() == 0 and adm.background() == 0 and adm.slots() == GmiAdmission.BACKGROUND_MAX, "leave() never goes below zero")
+	for _k in range(GmiAdmission.BACKGROUND_MAX):
+		adm.enter("residents")
+	K.check(fails, not adm.can_enter("residents") and adm.can_enter("mayor"), "full background slots refuse the background and never the mayors")
+
+
+## Waits until `want` results have come in (or a frame budget runs out).
+func _until(results: Array, want: int) -> void:
+	var guard := 0
+	while results.size() < want and guard < 600:
+		await process_frame
+		guard += 1
+
+
+func _cap_limits_background(c: SlowNet) -> void:
+	var results: Array = []
+	for k in range(14):
+		_spawn_live(c, "residents", "batch%d" % k, results, 10.0)
+	await _until(results, 14)
+	var okays := results.filter(func(r: Dictionary) -> bool: return bool(r["ok"]))
+	K.check(fails, okays.size() == 14 and c.peak <= GmiAdmission.BACKGROUND_MAX and c.peak > 1, "14 resident calls all finish with at most %d out at once (peak %d)" % [GmiAdmission.BACKGROUND_MAX, c.peak])
+	K.check(fails, c.admission.background() == 0 and int(c.stats["in_flight"]) == 0, "every slot is given back")
+
+
+## A mayor starts at once while the background is full, and the background then gets half the slots.
+func _cap_mayors_first(c: SlowNet) -> void:
+	var results: Array = []
+	for k in range(8):
+		_spawn_live(c, "residents", "m%d" % k, results, 10.0)
+	await process_frame
+	var before := c.started.size()
+	_spawn_chat(c, "mayor", "argon", results)
+	await process_frame
+	K.check(fails, c.started.size() == before + 1 and c.admission.priority() == 1, "a mayor's call goes out at once while six background calls are out")
+	await _until(results, 9)
+	var turn: Dictionary = results.filter(func(r: Dictionary) -> bool: return str(r["role"]) == "mayor").front()
+	K.check(fails, results.size() == 9 and str(turn["source"]) == "live", "and finishes live")
+
+
+## A call that waits longer than its own timeout gives up and says why, without touching a breaker.
+func _cap_gives_up(c: SlowNet) -> void:
+	var results: Array = []
+	c.hold = true
+	for k in range(GmiAdmission.BACKGROUND_MAX):
+		_spawn_live(c, "residents", "long%d" % k, results, 10.0)
+	await process_frame
+	var failed_before := int(c.stats["live_fail"])
+	var late: Dictionary = await c.live_json("residents", "plans", "m", "s", "u", 1, 50, 0.05)
+	K.check(fails, not bool(late["ok"]) and str(late["error"]) == "no free slot" and str(late["source"]) == "failed", "a call that outwaits its timeout fails as 'no free slot'")
+	K.check(fails, int(c.stats["live_fail"]) == failed_before and c.breaker_state() == "closed", "pacing is not a service failure: no live_fail, no breaker")
+	c.hold = false
+	await _until(results, GmiAdmission.BACKGROUND_MAX)
+
+
+## A half-open breaker hands out one probe. A call that takes it but then gives up waiting for a slot
+## must not strand it: the group would stay half-open and refuse every later call for good.
+func _cap_keeps_probe(c: SlowNet) -> void:
+	var group := c.breakers.group("residents")
+	group.cooldown_ms = 50
+	for _k in range(group.failure_threshold):
+		group.record_failure()
+	var results: Array = []
+	c.hold = true
+	for k in range(GmiAdmission.BACKGROUND_MAX):
+		_spawn_live(c, "chatter", "probe%d" % k, results, 10.0)
+	await process_frame
+	var guard := 0
+	while group.peek_state() != CircuitBreaker.HALF_OPEN and guard < 300:
+		await process_frame
+		guard += 1
+	var late: Dictionary = await c.live_json("residents", "plans", "m", "s", "u", 1, 50, 0.05)
+	K.check(fails, str(late["error"]) == "no free slot", "past its cool-down the residents call outwaits the full slots (%s)" % str(late["error"]))
+	K.check(fails, group.peek_state() == CircuitBreaker.HALF_OPEN and group.allow(), "and the half-open probe was not taken: the next call can still probe")
+	group.record_failure()
+	c.hold = false
+	await _until(results, GmiAdmission.BACKGROUND_MAX)
+	await _wait_half_open(group)
+	var back: Dictionary = await c.live_json("residents", "plans", "m", "s", "u", 1, 50, 5.0)
+	K.check(fails, bool(back["ok"]) and group.state == CircuitBreaker.CLOSED, "with a slot free the probe goes out and its success closes the group")
+	group.cooldown_ms = c.breaker.cooldown_ms
+
+
+func _wait_half_open(group: CircuitBreaker) -> void:
+	var guard := 0
+	while group.peek_state() != CircuitBreaker.HALF_OPEN and guard < 300:
+		await process_frame
+		guard += 1
+
+
+func _cap_off(c: SlowNet) -> void:
+	var results: Array = []
+	c.peak = 0
+	for k in range(14):
+		_spawn_live(c, "residents", "free%d" % k, results, 10.0)
+	await _until(results, 14)
+	K.check(fails, c.peak == 14, "with the flag off all 14 go out at once (peak %d)" % c.peak)
+
+
+func _spawn_live(c: GmiClient, role: String, agent: String, results: Array, timeout_s: float) -> void:
+	var r: Dictionary = await c.live_json(role, agent, "m", "s", "u", 1, 50, timeout_s)
+	r["role"] = role
+	results.append(r)
+
+
+func _spawn_chat(c: GmiClient, role: String, agent: String, results: Array) -> void:
+	var r: Dictionary = await c.chat_json(role, agent, "m", "s", "u", 1, 50, 10.0, func() -> Dictionary: return {})
+	results.append(r)
 
 
 ## A model that refuses the temperature (an HTTP 400 naming it) gets 1.0 and one more try at

@@ -962,7 +962,9 @@ func _render_gazette() -> void:
 	var src := str(p.get("source", ""))
 	var t := "[font_size=11][color=#9AB]THE GRIDFALL GAZETTE · Day %d · %s · [color=%s]%s[/color][/color][/font_size]\n" % [int(p.get("day", 0)), D.SUPPORT_AGENTS["news"]["model"], SOURCE_COLORS.get(src, "#CCC"), src]
 	t += "[font_size=19][b]%s[/b][/font_size]\n\n" % _esc(str(p.get("headline", "")))
-	for s: Variant in p.get("stories", []):
+	var raw_stories: Variant = p.get("stories")
+	var stories: Array = raw_stories as Array if typeof(raw_stories) == TYPE_ARRAY else []
+	for s: Variant in stories:
 		if typeof(s) == TYPE_DICTIONARY:
 			t += "[color=#FFD27F][b]%s[/b][/color]\n%s\n\n" % [_esc(str(s.get("title", ""))), _esc(str(s.get("body", "")))]
 	if p.has("editorial"):

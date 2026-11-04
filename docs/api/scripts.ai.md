@@ -4,6 +4,31 @@
 
 [Index](index.md)
 
+## `scripts/ai/action_clean.gd`
+
+class_name `ActionClean` · extends `RefCounted`
+
+A model's order (one entry of "actions") made safe to show and to apply. A model's loose JSON carries a null where a number goes, a word, NaN, a negative width, a coordinate of 1e12, a tax rate of -4. Shown, those read as "<null>" or "$9223372036854775807"; applied, a road to x2 = 1e12 makes the sim walk a trillion tiles. clean() returns a copy in which - every number field holds a finite number inside its range (out of range is clamped to the nearest bound, which is what the sim does with it anyway: a zone side is cut to its maximum, a tax rate to 0..20; a coordinate past the map is outside it either way), and a null, list, bool, word or non-finite value is dropped, so the order reads as missing that number; - a text field (type, building, zone, grade, to) that is not text is dropped, so a missing type shows as "?" and not as "<null>". An order that already holds sane values comes back equal to the input, so replayed and scripted turns play exactly as before. text_of() is the same rule for a thought or a post.
+
+### Constants
+
+- `COORD_LIMIT = 2048`: The numbers an order may carry, with the range each is held to ([lo, hi]).
+- `SIDE_MAX = 64`
+- `TAX_MAX = 20`
+- `AMOUNT_MAX = 100000000`
+- `RANGES = { "x": [-COORD_LIMIT, COORD_LIMIT], "y": [-COORD_LIMIT, COORD_LIMIT], "x2": [-COORD_LIM...`
+- `TEXT_KEYS = ["type", "building", "zone", "grade", "to"]`
+- `NULL_TEXT = "<null>"`: The text str() makes of a null: it must never reach a screen.
+
+### Functions
+
+- `static func clean(order: Dictionary) -> Dictionary`: A copy of order with its number and text fields made safe (see the header). Keys it does not know are copied as they are.
+- `static func number(v: Variant) -> Variant`: The finite number v stands for: an int or float as it is, a string that reads as a number (as an int when whole), else null (null, bool, list, map, a word, NaN, infinity).
+- `static func text_of(v: Variant) -> String`: text_of(v) for a field a person reads (a thought, a post): the string as it is, a finite number as its digits, a list of those joined by spaces, and "" for anything else (null, a map, a bool, the literal "<null>").
+- `static func int_of(v: Variant, fallback: int) -> int`: v as a whole number inside +-COORD_LIMIT, or fallback when it is not a finite number (a field a model nulled or filled with a list).
+- `static func truthy(v: Variant) -> bool`: v as a yes/no: a bool as it is, a number is yes unless it is 0, text is yes for "true", "yes" and "1", and anything else (null, a list, a map) is no.
+- `static func text_or(v: Variant, fallback: String) -> String`: text_of(v), or fallback when v is null (a field the model left out or nulled).
+
 ## `scripts/ai/arena_ask.gd`
 
 class_name `ArenaAsk` · extends `RefCounted`
@@ -27,7 +52,7 @@ class_name `ArenaAsk` · extends `RefCounted`
 - `TIMEOUT_S = 45.0`: One call's time budget in seconds; the panel's bar fills against it (see timeout_s).
 - `THOUGHT_MAX = 260`: Longest thought and post kept, in characters (a longer text ends in an ellipsis).
 - `POST_MAX = 200`
-- `NUMBER_KEYS = ["x", "y", "x2", "y2", "w", "h", "amount", "r", "c", "i"]`: The numbers an order may carry; a model's null, list or word there is dropped, not trusted.
+- `NUMBER_KEYS = ["x", "y", "x2", "y2", "w", "h", "amount", "r", "c", "i"]`: The numbers an order may carry; a model's null, list or word there is dropped, not trusted, and a number outside its range is held to it (ActionClean).
 - `LEDGER_META = "arena_budget"`: The key of the GmiClient meta that holds the budget ledger (see _ledger).
 - `MODES = ["own", "neutral"]`
 - `NEUTRAL_PERSONA = ("You are a mayor of GridFall with no personal style: weigh the situation plainly" + " ...`: The one persona line every mayor gets in neutral mode, in place of their own.
@@ -48,10 +73,10 @@ class_name `ArenaAsk` · extends `RefCounted`
 - `func busy() -> bool`: Whether a run is still waiting for an answer.
 - `func elapsed_s(r: Dictionary = {}) -> float`: Seconds since the run began (the bar's clock); 0 with no run.
 - `func ask(question: String, persona_mode: String = "own") -> Dictiona`: Asks all five mayors question (persona_mode "own" or "neutral"). Returns {"ok": true, "run": id} at once (answers arrive through `answered`, then `finished`), or {"ok": false, "code", "reason"} when the budget, the flag or the city says no.
-- `func live_possible() -> bool`: True when a question can go out live: a client with a key, live on and the breaker not open.
+- `func live_possible() -> bool`: True when a question can go out live: a client with a key, live on and the mayors' breaker not open (the arena calls never touch a breaker, and a failing resident or chatter group says nothing about the mayors).
 - `func prompts_for(mi: int, question: String, mode: String, day: int) -> Dictionary`: The system and user prompt mayor mi would get for question: their normal turn prompts, the question appended, and in neutral mode one shared persona line in place of their own.
 - `static func plausibility(sim: CitySim, mi: int, actions: Array) -> Array[Dictionary]`: Plausibility flags for a mayor's proposed actions, read off the sim without changing it: [{"i": index, "code": key of FLAG_TEXT, "text": words}]. Costs run in order against the district's treasury the way the sim spends them (an order it cannot afford costs nothing).
-- `static func clean_action(a: Dictionary) -> Dictionary`: A copy of an order whose number fields hold numbers: a null, list or word under one of NUMBER_KEYS is dropped (so the order reads as missing that number, as plausibility() does).
+- `static func clean_action(a: Dictionary) -> Dictionary`: A copy of an order whose number fields hold finite numbers inside their ranges: a null, list or word under one of NUMBER_KEYS is dropped (so the order reads as missing that number, as plausibility() does) and a negative, huge or tax-rate-less-than-zero value is held to its range (ActionClean.clean).
 - `static func clip(text: String, n: int) -> String`: The text cut to at most n characters, ending in an ellipsis when something was cut.
 - `static func ordinal(n: int) -> String`: "1st", "2nd" ... for a finish rank ("" for 0 or less).
 
@@ -213,6 +238,72 @@ Puts GMI model inference on every layer of the city. Each in-game day it batches
 - `func to_dict() -> Dictionary`
 - `func from_dict(d: Dictionary) -> void`
 
+## `scripts/ai/gmi_admission.gd`
+
+class_name `GmiAdmission` · extends `RefCounted`
+
+How many live calls GmiClient has out at once, with the mayors first. A browser keeps few connections per host (six over HTTP/1.1) and a key's tier may rate-limit a burst, while at dawn ten resident batches, the chatter and five mayors all go out together. With the cap on, the background roles (the residents, the street chatter, the talk) wait for a free slot instead of all going out at once; the roles that are the city's own business (the mayors, the support agents and the "Ask the five" panel) never wait, and while one of them is in flight the background gets half the slots. A call still waiting when its own timeout is up gives up and the caller falls back as for any failed call. Off by default (flag gmi_inflight_cap): it paces the minds, and the right numbers depend on the key's tier, which no test can know. GmiClient asks can_enter() and brackets a call with enter() and leave().
+
+### Constants
+
+- `PRIORITY_ROLES = [ "mayor", "news", "council", "chaos", "citizens", "operator", "inspector", "arena" ]`: Roles that never wait for a slot.
+- `BACKGROUND_MAX = 6`: Background calls allowed at once (halved, at least 1, while a priority call is out).
+
+### Functions
+
+- `static func is_priority(role: String) -> bool`
+- `func slots() -> int`: Background slots free right now: background_max, or half of it while a priority call is out.
+- `func can_enter(role: String) -> bool`: True when a call of this role may go out now. A priority call always may.
+- `func enter(role: String) -> void`
+- `func leave(role: String) -> void`
+- `func background() -> int`: Background calls out now (the tests read it).
+- `func priority() -> int`: Priority calls out now.
+
+## `scripts/ai/gmi_breakers.gd`
+
+class_name `GmiBreakers` · extends `RefCounted`
+
+The circuit breakers of GmiClient, one per group of roles. A single breaker for every call let a burst of failing background calls (ten parallel resident batches meeting a 429, a chatter round timing out) open the circuit for the mayors too, who then played their turn from the replay cache for 30 s. Each group now counts its own consecutive service failures and opens alone; the mayors, the support agents (Gazette, council, chaos, citizens, operator, inspector), the residents and the rest each have theirs. The group "chat" is the default: every role not named in GROUPS (the street chatter, the face-to-face talk, anything added later) lands in it, and its breaker is the one GmiClient keeps as `breaker`. state() is the aggregate the alerts and the street badge read: "open" when any group is open, else "half_open" when any is probing, else "closed".
+
+### Signals
+
+- `changed(group: String, from: String, to: String)`: One group's breaker moved (group, from, to).
+
+### Constants
+
+- `DEFAULT_GROUP = "chat"`
+- `GROUPS = { "mayor": "mayor", "news": "support", "council": "support", "chaos": "support", "citiz...`: The role -> group table. Roles missing here belong to DEFAULT_GROUP.
+
+### Functions
+
+- `static func group_of(role: String) -> String`: The group a role's calls are counted in.
+- `func breaker_for(role: String) -> CircuitBreaker`: The breaker of the group role belongs to.
+- `func group(name: String) -> CircuitBreaker`: The breaker of a group (made on first use).
+- `func state(now_ms: int = -1) -> String`: "open" when any group is open (peeked: an open breaker past its cool-down reads half_open), else "half_open" when any is, else "closed".
+- `func mayor_state(now_ms: int = -1) -> String`: The mayors' group alone (peeked): what says whether the city's own minds are reachable. The street badge and Ask the five read this, so a residents or chatter storm does not mark the mayors as down.
+- `func states(now_ms: int = -1) -> Dictionary`: {group: state} for every group seen so far (peeked).
+- `func tripped(now_ms: int = -1) -> PackedStringArray`: The names of the groups that are not closed, sorted ("" when all are closed).
+- `func reset() -> void`: Closes every group's breaker.
+
+## `scripts/ai/gmi_cache.gd`
+
+class_name `GmiCache` · extends `RefCounted`
+
+The shape of GmiClient's answer caches: {key: [{day, data}, ...]}. Pure functions over those dictionaries, kept apart from the client (a node that is already near the file-size cap) so the lookup rule and the save diet have one place and a test can run them without a node. Lookup: the entry nearest the asked day wins (the earlier day on a tie). The recorded replay cache has a horizon: it holds one captured game, so past the last day recorded for a key its entries are no longer an answer to the day asked (a day-14 city must not replay day 12 forever) and the caller falls through to the scripted planner. The session cache (this run's own live answers) has no horizon: it is the freshest thing there is. Save diet: a save keeps each key's last SAVE_KEEP_DAYS distinct days (the lookup reads the nearest day, so older ones are never the answer once newer ones exist). The in-memory cache is not touched.
+
+### Constants
+
+- `SAVE_KEEP_DAYS = 3`: Distinct days per key a save (and the session file) keeps.
+
+### Functions
+
+- `static func last_day(entries: Array) -> int`: The last day any entry of entries records, or -1 when none does.
+- `static func nearest(entries: Array, day: int, horizon: bool = false) -> Dictionary`: The data of the entry of entries nearest day, or {} when there is none. horizon true: {} too when day is past the last day the entries record.
+- `static func lookup(session: Dictionary, replay: Dictionary, key: String, day: int, horizon: bool) -> Dictionary`: The answer for key on day: the session cache's nearest entry, else the replay cache's (inside its horizon when horizon is true), else {}.
+- `static func pruned(cache: Dictionary, keep: int = SAVE_KEEP_DAYS) -> Dictionary`: A copy of cache keeping, for each key, the entries of its last keep distinct days (in their original order). The entries themselves are shared with cache, not copied.
+- `static func entry_count(cache: Dictionary) -> int`: How many entries cache holds in all (the flush signature and the tests use it).
+- `static func clear_session(client: GmiClient) -> void`: A new city starts with no answers of the last one and zero counters (the calls in flight stay counted: they land after it): a New City must not replay the old city's live answers.
+
 ## `scripts/ai/gmi_client.gd`
 
 class_name `GmiClient` · extends `Node`
@@ -222,11 +313,14 @@ Async GMI Cloud chat client with JSON extraction, a recorded replay cache, and h
 ### Signals
 
 - `call_logged(record: Dictionary)`
-- `breaker_changed(state: String)`: The circuit breaker moved to state ("closed" / "open" / "half_open").
+- `breaker_changed(state: String)`: The circuit breakers' aggregate moved to state ("closed" / "open" / "half_open"): one group opening while another is already open does not repeat it.
 
 ### Constants
 
 - `CHAT_URL = "https://api.gmi-serving.com/v1/chat/completions"`
+- `MODELS_URL = "https://api.gmi-serving.com/v1/models"`: The model list the readiness check reads (GET, once per key; see GmiPreflight).
+- `PREFLIGHT_TIMEOUT_S = 12.0`
+- `PREFLIGHT_MAX_BODY = 1 << 20`: The model list is read for its ids only: a body past this is cut off by the HTTPRequest.
 - `MAX_RETRIES = 2`: Retries after the first attempt, for transient failures only (see is_retryable()).
 - `BACKOFF_BASE_MS = 500`
 - `BACKOFF_CAP_MS = 4000`
@@ -250,7 +344,9 @@ Async GMI Cloud chat client with JSON extraction, a recorded replay cache, and h
 ### Properties
 
 - `player_key: String`: A key the player typed in the settings (web build or any platform); "" while the boot key (GMI_API_KEY or ~/.factory/settings.json) is the one in use.
-- `breaker`: Opens after 4 consecutive service failures; while open, chat_json goes straight to the cache or heuristic and live_json fails fast with "circuit open".
+- `breaker`: The default group's breaker (the street chatter, the talk and any role not named in GmiBreakers.GROUPS): it opens after 4 consecutive service failures; while open, chat_json goes straight to the cache or heuristic and live_json fails fast with "circuit open". The mayors, the support agents and the residents each have their own in `breakers` (see breakers.breaker_for), so a failing group cannot open the circuit for the others; breaker_state() is the aggregate.
+- `admission`: Live calls out now, the mayors first (flag gmi_inflight_cap; see GmiAdmission).
+- `preflight`: The readiness check of the key in use (one GET of the model list per key, GmiPreflight). It starts by itself when a key is set, but only where the game runs (preflight.enabled, which Main sets): a test client never reaches for the network.
 - `live_outcomes: Array[bool]`: The last LIVE_WINDOW live outcomes (true = ok), oldest first.
 - `temperature_of: Dictionary`: Models that refused TEMPERATURE (an HTTP 400 naming the temperature) and get 1.0 instead.
 - `web_build: bool`: True in the browser export (_detect_web). An instance variable (not a call in _post) so a test can stand in for the web build; nothing else sets it.
@@ -264,7 +360,7 @@ Async GMI Cloud chat client with JSON extraction, a recorded replay cache, and h
 - `func has_remembered_key(key: String = "") -> bool`: True when this device holds a remembered key the player asked for (web build only). With key given, true only when the saved copy is that very key (a copy of another key does not count).
 - `func forget_remembered_key() -> void`: Drops the Remember tick and the stored key from this device (web build only). The key set with set_player_key stays in memory until cleared or the page closes.
 - `func set_live(enabled: bool) -> void`
-- `func breaker_state() -> String`: "closed", "open" or "half_open" (an open breaker past its cool-down reads half_open).
+- `func breaker_state() -> String`: The aggregate of the breakers: "open" when any group's is open, else "half_open" when one is probing (an open breaker past its cool-down reads half_open), else "closed". The alerts and the alerts read this one (the street badge and Ask the five read breakers.mayor_state()).
 - `func live_failure_ratio() -> float`: Share of failed live calls among the last LIVE_WINDOW. 0 while fewer than LIVE_BADGE_MIN_OUTCOMES calls have been seen: too few to call it a trend.
 - `static func is_retryable(result_code: int, http_code: int) -> bool`: True for failures another attempt may fix: transient network results, 408, 429 and 500/502/503/504.
 - `static func is_service_failure(result_code: int, http_code: int) -> bool`: True when the failure says the service (not the request or the reply) is unhealthy; these count toward opening the breaker.
@@ -281,11 +377,11 @@ Async GMI Cloud chat client with JSON extraction, a recorded replay cache, and h
 - `func lookup(key: String, day: int) -> Dictionary`
 - `func count_source(source: String, n: int = 1) -> void`
 - `func request_body(model: String, system_prompt: String, user_prompt: String, max_tokens: int) -> Dictionary`: The chat completion request for model: both prompts, its temperature (temperature_of, else TEMPERATURE), max_tokens and the model's MODEL_EXTRAS.
-- `static func salvage_array(content: String) -> Dictionary`: Recovers the complete objects of a truncated {"key":[{...},{...},{... reply.
-- `static func extract_json(content: String) -> Dictionary`
+- `static func salvage_array(content: String) -> Dictionary`: Recovers the complete objects of a truncated {"key":[{...},{...},{... reply (GmiParse).
+- `static func extract_json(content: String) -> Dictionary`: The JSON object in a model's reply: the largest valid one, whatever surrounds it (GmiParse).
 - `func flush_cache() -> void`: Writes the recorded live responses so offline runs can replay real model output. Outside record mode the session file keeps each key's last 3 days (a pruned copy: session_cache itself stays whole, lookups read it) and is not rewritten when nothing was added since the last flush (the brain flushes at every day end). Record mode writes exactly as before.
 - `func avg_latency_ms() -> int`
-- `func to_dict() -> Dictionary`
+- `func to_dict() -> Dictionary`: The client's part of a save. The saved session cache keeps each key's last GmiCache. SAVE_KEEP_DAYS days (a lookup reads the nearest day, so older entries are never the answer once newer ones exist) and, while recording, everything: the in-memory cache is never pruned. The brain saves the same dictionary under its own "client" key.
 - `func from_dict(d: Dictionary) -> void`
 
 ## `scripts/ai/gmi_image_client.gd`
@@ -354,6 +450,80 @@ Async poster image client for GMI's hy-image-v3.5-preview (slice D). request() r
 - `static func wants_http_threads() -> bool`: Threaded (streaming) HTTPRequest downloads are not available on the web export: setting use_threads there freezes the browser, even on a threaded web build where threads_supported() answers true. Keep the worker-thread download to the desktop; every web build streams inline.
 - `static func http_threads_for(threads: bool, web: bool) -> bool`: Pure form of wants_http_threads() so the web branch is testable without a web build.
 - `func reset_pack_caches() -> void`: Posters pack arrived on a split web build: the manifest may have been read before its files existed. Forget it (and the textures that cached a miss) so the next lookup re-reads it.
+
+## `scripts/ai/gmi_parse.gd`
+
+class_name `GmiParse` · extends `RefCounted`
+
+Reads the JSON object a model put in its reply. Models wrap it in prose, code fences or a <think> block, leave a trailing comma, write NaN, stop mid-sentence at the token limit, or answer only in their reasoning field. Every function is static and pure (no node, no network), so tools/tests/gmi_parse_test.gd can run a table of sample replies offline. extract_json() finds every balanced top-level {...} in the reply (string-aware, so a brace inside a quoted value does not count), repairs each (trailing commas, NaN and Infinity) and returns the largest one that parses as an object; the first wins a tie. A reply cut off by the token limit has no balanced object: it is closed at the last complete value instead, so what the model did finish is kept: its root-level members and the finished items of its lists (an order that has a nested object or list of its own is cut with that order, so no order is ever half made). When the cut falls before the first finished item of the list it was writing (a mayor stopped inside its first order), nothing is kept: the caller falls back as for any reply with no answer, instead of playing an idle day. A bare array reply ([{...}, {...}]) has no answer object, so it is {}. {} means there was no answer to be found.
+
+### Constants
+
+- `MAX_SCAN = 60000`: Longest reply scanned, in characters. A model that loops never makes the scan unbounded.
+- `MAX_STARTS = 32`: Most "{" starting points tried and most candidate objects parsed from one reply.
+- `MAX_CANDIDATES = 256`
+- `MAX_UNCLOSED = 40`: A reply with more "{" than "}" by this much is not an answer (a reply cut off mid-way is a few levels short): {} at once, so a looping model cannot make the scan expensive.
+- `MAX_REPAIRS = 4`: Unbalanced starts a truncation repair is tried from.
+- `THINK_OPEN = "<think>"`
+- `THINK_CLOSE = "</think>"`
+- `LBRACE = 0x7B`: The characters the scans look at, as code points (cheaper than slicing a string per character).
+- `RBRACE = 0x7D`
+- `LBRACKET = 0x5B`
+- `RBRACKET = 0x5D`
+- `QUOTE = 0x22`
+- `BACKSLASH = 0x5C`
+- `COMMA = 0x2C`
+
+### Functions
+
+- `static func extract_json(content: String) -> Dictionary`: The object the reply carries: the largest valid balanced one, else a truncated reply closed at its last complete value, else {}. Never fails and never prints.
+- `static func message_of(choice: Variant) -> Dictionary`: The "message" of one entry of a reply's "choices" ({} when it is not an object holding one).
+- `static func message_text(msg: Dictionary) -> String`: The reply's answer text for a chat message: its content (a string, or a list of parts with a "text"), and when that is empty the reasoning field some providers answer in. "" when none.
+- `static func parse_object(text: String) -> Dictionary`: The object a JSON text parses to after the small repairs models need, or {} when it is not an object. Never prints (JSON.parse_string would log a parse error; a JSON instance does not).
+- `static func repair(text: String) -> String`: text with trailing commas dropped and the bare NaN, Infinity and -Infinity tokens (JSON has no way to write them) turned into null. Quoted text is left alone.
+- `static func salvage_array(content: String) -> Dictionary`: Recovers the complete objects of a truncated {"key":[{...},{...},{... reply. It is the fallback for a reply extract_json found nothing in.
+
+## `scripts/ai/gmi_preflight.gd`
+
+class_name `GmiPreflight` · extends `RefCounted`
+
+The readiness check of a key (flag gmi_preflight): once per key, one GET of the model list through GmiClient (its own _models_trip, so no request leaves the process any other way), compared with the model ids the game calls (GmiReadiness), a sentence for the key panel and one line in the GMI log. The check goes out with the web-safe header set (Authorization and Content-Type only, whatever the build), is not retried, and leaves the client's breakers, live_outcomes and counters alone like the key test does. It starts by itself when a key is set (GmiClient.set_player_key calls key_changed) and at boot (Main calls run), but only where the game runs: `enabled` is Main's switch, so a test client never reaches for the network. It never asks without a key, under GRIDFALL_OFFLINE=1 or with the gmi_live kill switch off (GmiClient.test_refusal). The report holds model ids and counts, never the key.
+
+### Signals
+
+- `changed(report: Dictionary)`: The check of the key in use finished, or its report was cleared (a new key).
+
+### Properties
+
+- `enabled: bool`: Main sets this where the game runs; a test turns it on to test the check itself.
+- `report: Dictionary`: The latest report of the key in use: {"ok", "total", "available", "missing", "offline", "skipped", "listed", "seconds"}, or {"ok": false, "error", "seconds"}; {} before one.
+
+### Functions
+
+- `func line() -> String`: The key panel's sentence for the latest report ("" before one): see GmiReadiness.line.
+- `func key_changed(client: GmiClient) -> void`: The key in use changed: show the report of that key (none yet clears the line) and, where the game runs, start its check. Not awaited: the check finishes on its own.
+- `func run(client: GmiClient, force: bool = false) -> Dictionary`: Asks for the model list of the key in use and returns the report. {} when the check was not made (not enabled, the flag off, no key, offline, the live kill switch), is still out for this key, or the key changed while it was out. The same key is asked once; force asks again.
+- `static func fingerprint(key: String) -> String`: A short stand-in for a key, for telling keys apart without keeping one.
+- `static func console_line(got: Dictionary, key: String) -> String`: The scrubbed console line of a finished check: counts and seconds only.
+
+## `scripts/ai/gmi_readiness.gd`
+
+class_name `GmiReadiness` · extends `RefCounted`
+
+"Which of the 14 models does this key reach?" Pure helpers for GmiClient.preflight.run(): the list of model ids the game is configured to call (mayors, support agents, the resident and chatter pools), the ids a GET /v1/models reply names, their comparison, and the sentence the key panel shows. Nothing here touches the network or a node, so tools/tests/fp_gmi_ready_test.gd runs it with canned replies. What a missing model means: a mayor or a support agent whose model is missing plays from the recorded days or the scripted planner ("will use the offline planner"). A model of the resident or chatter pool is skipped: those callers rotate to another model after a few failures.
+
+### Constants
+
+- `D = preload("res://scripts/sim/sim_defs.gd")`
+
+### Functions
+
+- `static func configured() -> Array[Dictionary]`: Every distinct model id the game calls, in a stable order, each with who uses it: [{"id", "users": [{"kind": "mayor" | "agent" | "pool", "name"}]}].
+- `static func total() -> int`: How many distinct models the game calls (14 today).
+- `static func ids_from_body(text: String) -> Array[String]`: The model ids a GET /v1/models reply names: the "id" (or the string itself) of each entry of its "data" or "models" list, or of a bare list. [] when the text is not such a reply.
+- `static func compare(listed: Array) -> Dictionary`: Compares the ids a reply named with the configured ones: {"total", "available", "missing" (ids), "offline" (names of the mayors and agents that will use the offline planner), "skipped" (how many missing models belong only to the resident and chatter pools), "listed" (ids in the reply)}. Ids match without regard to case.
+- `static func from_trip(trip: Dictionary, timeout_s: float) -> Dictionary`: The report for what GmiClient._models_trip returned ({"start_error": int}, or {"result", "http", "headers", "body"}): compare()'s result plus "ok" true, or {"ok": false, "error": a few words}. Never any text of the reply (an error body can echo the key). timeout_s is only worded.
+- `static func line(report: Dictionary) -> String`: The sentence for a finished check. report is compare()'s result with "ok" and, when the check failed, "error" (a few words). "" for an empty report.
 
 ## `scripts/ai/mayor_turns.gd`
 

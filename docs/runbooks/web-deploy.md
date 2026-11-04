@@ -503,6 +503,19 @@ several game days, a few at the paces measured below, more if 8x ever reaches it
 go through. `fp_orbit_slicing_test` covers both, with a fake clock (`Main.autosave_clock`) and with the production
 `Time.get_ticks_msec`, pins the speed-to-budget table, and checks that each flag off restores the old behaviour.
 
+**A hidden tab** (flags `visibility_autosave` and `frame_dt_clamp`, default on). Most web sessions end with the tab
+in the background, so the page's `visibilitychange` event (`ResumeGuard`, wired by `Main._watch_tab_visibility`)
+makes one autosave when the tab is hidden, under the same 60 s gap. And the first frame after a long hidden spell no
+longer carries the whole gap as its delta: `Pacing.frame_dt` bounds what the street's traffic, the animals, the
+weather and the Planner's walkers integrate to 1 s per frame (without it a ten-minute gap at 8x worked off 80 minutes
+of driving in 12 steps; measured on the test street, that replaced every moving car in one frame, the old ones gone
+and new ones spawned, and with the clamp the worst car moved 100 m of a 248 m budget; the sim clock was already
+bounded by its backlog clamp). `fp_resume_test` covers the clamp (a 600 s frame at 8x moves no car further than the lane budget), the
+guard's events and Main's autosave on them with fake events. What no test has seen: a real browser sending
+`visibilitychange` to the page, and whether the browser finishes writing the save to IndexedDB once the tab is
+hidden; check both in a real tab before relying on it (hide the tab, wait a minute, reload: the day should be the
+hidden day's, not the morning's).
+
 **Measured** (`tools/web_fps_probe.js`, rows street and orbit, headless Chrome on an AMD GPU through ANGLE, the
 day-10 grown save, a 15 s Planner window, the previous image against the fix, same commit otherwise, one run
 each): frame intervals in the Planner, previous image: p99 517 ms, stalls of 650, 517 and 450 ms besides the

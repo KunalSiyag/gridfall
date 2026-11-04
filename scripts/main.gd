@@ -202,10 +202,13 @@ func _ready() -> void:
 		tour.call("run", self, fp_photo)
 		return
 	autosave_enabled = _plays_for_real()
+	client.preflight.enabled = autosave_enabled
+	_watch_tab_visibility()
 	if resume.is_empty():
 		_start_new()
 	else:
 		_continue(resume)
+	client.preflight.run(client)  # one model-list check for the key in use, if there is one
 	BootClock.finish(get_tree(), ShaderWarmup.run.bind(self))
 
 
@@ -337,12 +340,13 @@ func save_game(path: String = SAVE_PATH) -> bool:
 
 ## Saves the city to autosave_path while autosave_enabled. reason: "morning" (a small toast; skipped
 ## when the last autosave is under AUTOSAVE_MIN_GAP_S old; _process retries it once the gap has
-## passed) or "quit" (silent: the window closes).
+## passed), "hidden" (the browser tab went to the background: silent, same gap, not retried) or
+## "quit" (silent: the window closes).
 func autosave(reason: String) -> bool:
 	if not autosave_enabled:
 		return false
 	var now_ms := int(autosave_clock.call())
-	if reason == "morning" and autosave_wait_s() > 0.0:
+	if (reason == "morning" or reason == "hidden") and autosave_wait_s() > 0.0:
 		return false
 	var err := _write_save(autosave_path, reason)
 	if err != OK:
@@ -352,6 +356,19 @@ func autosave(reason: String) -> bool:
 	if reason == "morning":
 		notify("Autosaved: Day %d" % sim.day, "system")
 	return true
+
+
+## Web build (web true; a test passes true): a tab sent to the background saves the city once (flag
+## visibility_autosave), because a tab that is closed from there never reaches the quit autosave.
+## Returns the guard that watches the tab, or null where there is none to watch.
+func _watch_tab_visibility(web: bool = WebSupport.is_web()) -> ResumeGuard:
+	if not web or not FeatureFlags.enabled("visibility_autosave", true):
+		return null
+	var guard := ResumeGuard.new()
+	guard.name = "ResumeGuard"
+	guard.hidden.connect(func() -> void: autosave("hidden"))
+	add_child(guard)
+	return guard
 
 
 ## Seconds until a morning autosave may run again (0 when it may run now): the rest of the
@@ -508,6 +525,8 @@ func _continue(d: Dictionary) -> void:
 
 func new_game() -> void:
 	sim.new_city(randi() % 100000)
+	# The last city's live answers are not this city's replay material.
+	GmiCache.clear_session(client)
 	brain.setup(sim, client)
 	_setup_people()
 	view.setup(sim, active_camera())

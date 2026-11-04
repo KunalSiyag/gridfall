@@ -247,6 +247,10 @@ The "GMI Cloud" page of the pause menu settings (slice B): the opt-in "bring you
 - `EDGE_JUNK = "\u00a0\u200b\u200c\u200d\u2060\ufeff"`: Characters Godot's strip_edges leaves at the ends of a pasted key (no-break space, zero-width marks, byte-order mark); a copy from a web page or chat often carries one.
 - `OWNER = "gmi_key"`: Owner tag for the whole settings page. Slice B's no-branding rule scans texts it owns (S.OWNER_META == S.OWNER); this page is the pause menu's one place that names the service it configures, like C's chat panel it is left out of that scan (the widgets are re-tagged in setup()).
 
+### Properties
+
+- `models: Label`: The readiness line under the status ("13 of 14 models available; ..."): empty until the check of the key in use has finished (GmiPreflight).
+
 ### Functions
 
 - `func setup(p_ctx: FpContext) -> void`

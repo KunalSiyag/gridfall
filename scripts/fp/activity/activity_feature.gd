@@ -388,7 +388,7 @@ func _live_state() -> String:
 		return "offline"
 	if not c.live_enabled:
 		return "replay" if not c.replay_cache.is_empty() else "offline"
-	if c.breaker_state() != "closed" or c.live_failure_ratio() > 0.5:
+	if c.breakers.mayor_state() != "closed" or c.live_failure_ratio() > 0.5:
 		return "down"
 	return "live"
 

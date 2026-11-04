@@ -252,10 +252,12 @@ Step lengths for the per-frame catch-up loops (traffic, birds, animals): a long 
 ### Constants
 
 - `MAX_STEPS_PER_FRAME = 12`: Most steps one frame may run in a catch-up loop.
+- `MAX_FRAME_DT = 1.0`: Longest frame, in real seconds, the world integrates (see frame_dt).
 
 ### Functions
 
 - `static func step_for(dt: float, max_step: float) -> float`: The step length for working off dt in steps: max_step, or longer when dt would need more than MAX_STEPS_PER_FRAME of them. dt up to MAX_STEPS_PER_FRAME * max_step (1x speed at any frame rate above 3 fps) keeps the plain max_step.
+- `static func frame_dt(delta: float) -> float`: The frame delta the world integrates: delta, but at most MAX_FRAME_DT seconds (flag frame_dt_clamp). A browser tab hidden for minutes hands the first frame after it the whole gap as its delta: unclamped, the traffic works off minutes of driving (at 8x, ten times that) in the 12 steps step_for allows; measured (tools/tests/fp_resume_test.gd), a 600 s frame at 8x replaces the whole moving traffic of the street: every car of the fixture was gone and new ones spawned. A clamped frame loses the time instead, as a paused game does. The sim clock needs no clamp of its own (its backlog clamp drops what it cannot run), so this is for the code that integrates delta itself.
 
 ## `scripts/ops/pack_loader.gd`
 
@@ -310,6 +312,25 @@ Masks secrets and personal data in text bound for logs and the local ops files: 
 
 - `static func add_secret(secret: String) -> void`: Registers a value that must never reach a log (call once with the API key).
 - `static func scrub(text: String, extra: PackedStringArray = PackedStringArray()) -> String`: text with every secret, credential and e-mail address masked. extra: more literal secrets.
+
+## `scripts/ops/resume_guard.gd`
+
+class_name `ResumeGuard` · extends `Node`
+
+Web only: tells the game when the browser tab is hidden or shown again (the page's visibilitychange event). A tab left in the background is how most web sessions end: the page is closed from there, and a closed tab never reaches the quit autosave. The guard emits `hidden` once when the tab goes to the background (Main autosaves then, under the morning autosave's minimum gap) and `shown` when it comes back. The frame after a long hidden spell is the other half of the problem; Pacing.frame_dt bounds what the world integrates from it. Desktop builds have no such event: _ready installs nothing there. on_visibility() is the one entry point (the browser callback calls it), so a test can drive both states.
+
+### Signals
+
+- `hidden`
+- `shown`
+
+### Constants
+
+- `MIN_REPEAT_MS = 2000`: Ignore a second hidden event this soon after the last one (a flickering tab).
+
+### Functions
+
+- `func on_visibility(state: String, now_ms: int = -1) -> void`: The page's visibility is now state ("hidden" or "visible"). Emits hidden / shown on a change.
 
 ## `scripts/ops/trace.gd`
 
