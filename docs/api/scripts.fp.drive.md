@@ -119,9 +119,10 @@ Getting into the player's car and out of it on foot, for drive_feature.gd (car_d
 - `STEP_PACE = 0.55`
 - `STEP_PACE_JACK = 1.0`
 - `STEP_MAX = 1.5`
-- `TURN_RATE = 5.0`: Lining up on a spot: turning at TURN_RATE (rad/s), sliding at ALIGN_SPEED, for at least ALIGN_MIN s.
+- `TURN_RATE = 5.0`: Lining up on a spot: turning at TURN_RATE (rad/s), sliding at ALIGN_SPEED, for at least ALIGN_MIN s and at most ALIGN_MAX (a hero who was pushed off his way is put on the spot over that).
 - `ALIGN_SPEED = 0.6 * WS.M`
 - `ALIGN_MIN = 0.2`
+- `ALIGN_MAX = 1.2`
 - `REACH_AT = 0.75`: door_try: the hand is on the handle REACH_AT s in and the pull ends at PULL_END with the door PULL_OPEN open; it then swings wide over DOOR_WIDE s.
 - `PULL_END = 1.2`
 - `PULL_OPEN = 0.3`
@@ -201,7 +202,7 @@ The camera beside the driver's door for the climb in and out (car_entry.gd): it 
 
 extends `FpFeature`
 
-Getting into cars and driving them. Near a parked or stopped car, F (Y on a pad) gets in: the hero walks round to the driver's door, opens it, climbs in and shuts it (car_entry.gd, the car_doors flag; at once without it), and the camera chases the car. Someone at the wheel of a car stopped in traffic is dragged out first (the carjack flag): the car waits while the hero walks to its door, opens it and pulls them out. W / S or the triggers drive and brake (S reverses once stopped), A / D or the left stick steer, Space (A) is the handbrake, the mouse or right stick look around, V switches to the driver's view, and F again stops the car and gets out through the driver's door (or at once beside it). In the backhoe loader, Y / U raise and lower the loader arm and I / O curl and tip its bucket (backhoe.gd, the backhoe_arm flag), and a bucket tipped out with O then curled back in with I, the arm low over a construction site, digs a growing dirt pile. The car belongs to the traffic feature (lane traffic stops for it and it stays where it is left). It is a rigid box (car_body.gd): it bounces off walls, slides along them at a glance, spins when hit off-centre, shoves the cars it hits and knocks street props over; car_impact on the bus reports the hard hits and car_door the door opening and shutting. Alongside a moving car with someone at its wheel, F jumps across (the action_hijack flag, hijack.gd): the hero lets go of the wheel, climbs out onto the roof, leaps onto the other car and drags its driver out through the window, its own car rolling on with nobody at the wheel. After dark (the night_driving flag) the car the hero drives always throws its own headlight beam (a bicycle a small dim lamp at its handlebar), and H at the wheel sounds the horn (a bicycle's bell) on the bus, which the street hears through its own horn source.
+Getting into cars and driving them. Near a parked or stopped car, F (Y on a pad) gets in: the hero walks round to the driver's door, opens it, climbs in and shuts it (car_entry.gd, the car_doors flag; at once without it), and the camera chases the car. Someone at the wheel of a car stopped in traffic is dragged out first (the carjack flag): the car waits while the hero walks to its door, opens it and pulls them out. W / S or the triggers drive and brake (S reverses once stopped), A / D or the left stick steer, Space (A) is the handbrake, the mouse or right stick look around, V switches to the driver's view, and F again stops the car and gets out through the driver's door (or at once beside it). In the backhoe loader, Y / U raise and lower the loader arm and I / O curl and tip its bucket (backhoe.gd, the backhoe_arm flag), and a bucket tipped out with O then curled back in with I, the arm low over a construction site, digs a growing dirt pile. The car belongs to the traffic feature (lane traffic stops for it and it stays where it is left). It is a rigid box (car_body.gd): it bounces off walls, slides along them at a glance, spins when hit off-centre, shoves the cars it hits and knocks street props over; car_impact on the bus reports the hard hits and car_door the door opening and shutting. Alongside a moving car with someone at its wheel, F jumps across (the action_hijack flag, hijack.gd): the hero lets go of the wheel, climbs out onto the roof, leaps onto the other car, whose driver stands on the brakes, and drops beside it once it stands still: the driver is then pulled out as from any stopped car, its own car rolling on with nobody at the wheel. After dark (the night_driving flag) the car the hero drives always throws its own headlight beam (a bicycle a small dim lamp at its handlebar), and H at the wheel sounds the horn (a bicycle's bell) on the bus, which the street hears through its own horn source.
 
 ### Constants
 
@@ -374,39 +375,42 @@ Arcade handling for the player's car. Throttle and brake set the speed along the
 
 extends `RefCounted`
 
-The action hijack's moves (the drive feature's action_hijack flag): the hero, at the wheel of a car moving alongside another with someone at its wheel, climbs out through the window onto the roof on that car's side ("out"), leaps across onto the other car's roof ("leap") and swings down to its driver's window ("jack"), where he takes hold of the driver and drags them out through it ("haul": hijack_grip.gd), swings in through the window to the seat ("in") and takes the wheel (drive_feature.gd). The hero rides each car's frame (+Z forward, +X its left and the driver's side, y up from the road; world units) while on it, and the leap blends from one moving car to the other, so both keep their own speed and line throughout.
+The action hijack's moves (the drive feature's action_hijack flag): the hero, at the wheel of a car moving alongside another with someone at its wheel, climbs out through the window onto the roof on that car's side ("out"), leaps across onto the other car's roof ("leap") and swings down to its driver's window ("jack"), where he hangs on, a hand on the driver, while the driver stands on the brakes and the car pulls up ("hold"). Once it stands still he drops to the road beside it ("drop") and the rest is the stopped car's grab and pull (drive_feature.gd _jack_in, car_entry.gd, jack_hold.gd): no one is hauled out of a moving car, and the hero never takes the wheel without the pull. The hero rides each car's frame (+Z forward, +X its left and the driver's side, y up from the road; world units) while on it, and the leap blends from one moving car to the other, so both keep their own speed and line throughout.
 
 ### Constants
 
 - `WS = preload("res://scripts/fp/world_scale.gd")`
-- `OUT_S = 0.6`: Seconds for each move: out of the window onto the roof, across, and down to the window (SWING_S, the swing down, then HOLD_S with both hands on the driver before they are pulled: JACK_S in all).
+- `OUT_S = 0.6`: Seconds for each move: out of the window onto the roof, across, and down to the window (SWING_S, the swing down); then at the window at least HOLD_MIN s and until the car stands still, which it is brought to at most STOP_MAX s after the landing (the driver stands on the brakes; later it is stopped on the spot), and the car he left, still rolling by it, has gone on past (at most CLEAR_MAX s: the walk to the door needs the ground beside it); then DROP_S down to the road beside the door.
 - `LEAP_S = 0.55`
 - `SWING_S = 0.5`
-- `HOLD_S = 0.4`
-- `JACK_S = SWING_S + HOLD_S`
-- `HAUL_MIN = 0.3`: The haul: the driver is drawn out through the window with the hero's hands on them for HAUL_MIN s at least and HAUL_MAX s at most (hijack_grip.gd), then the car is his.
-- `HAUL_MAX = 0.9`
-- `IN_S = 0.3`: He swings in through the window to the seat over IN_S, then it is his.
-- `READY_WAIT = 1.5`: The hold at the window waits for the driver to be drawn (their avatar still loading) READY_WAIT s at the most; then the hijack is given up ("fail"): no one is pulled out they cannot be taken hold of.
-- `ARC = 0.6 * WS.M`: The leap rises this high above the straight line between the roofs.
+- `HOLD_MIN = 0.3`
+- `STOP_MAX = 2.5`
+- `CLEAR_MAX = 3.5`
+- `HOLD_MAX = STOP_MAX + CLEAR_MAX + 1.0`: At the window no longer than this (HOLD_MAX s): a car that is no longer to be taken (it pulled in to park, its role changed) lets the hero go ("fail") rather than leaving him hanging for ever.
+- `DROP_S = 0.4`
+- `PAST = 2.0 * WS.M`: The car left is clear of the door once it is this far along from the seat (its half length on top), or this far off the side.
+- `OFF_SIDE = 2.0 * WS.M`
 - `ROOF_IN = 0.3 * WS.M`: Feet on a roof stand this far in from its edge.
-- `HANG_OUT = -0.2 * WS.M`: At the driver's window the hero hangs this far out from the body, feet this far below the roof.
+- `HANG_OUT = 0.12 * WS.M`: At the driver's window the hero hangs this far out from the body (his torso clear of the door and its window frame, a hand reaching in), feet this far below the roof.
 - `HANG_DOWN = 1.25 * WS.M`
+- `LAND_OUT = 0.45 * WS.M`: On the road he stands this far out from the body side and this far behind the seat (the door's walk starts from there: car_entry.gd).
+- `LAND_BACK = 0.4 * WS.M`
+- `ARC = 0.6 * WS.M`: The leap rises this high above the straight line between the roofs.
 
 ### Properties
 
-- `phase: String`: "out", "leap", "jack", "haul", "in", or "" when no hijack runs.
+- `phase: String`: "out", "leap", "jack", "hold", "drop", or "" when no hijack runs.
 - `t: float`: Seconds into the phase.
 - `from_id: int`: The car the hero leaves (rolling on with nobody at the wheel) and the one it takes.
 - `side: float`: 1 when the car to take is on the left of the one left, -1 on its right.
 
 ### Functions
 
-- `func begin(p_from: int, p_to: int, p_side: float, start: Vector3, seat_z: float, seat_x: float = 0.0) -> void`: Starts a hijack from car p_from (feet at start in its frame) to car p_to on side p_side, whose driver's seat is seat_z along it (and seat_x across it, for the swing in; 0 for none).
+- `func begin(p_from: int, p_to: int, p_side: float, start: Vector3, seat_z: float) -> void`: Starts a hijack from car p_from (feet at start in its frame) to car p_to on side p_side, whose driver's seat is seat_z along it.
 - `func running() -> bool`
 - `func cancel() -> void`
-- `func step(dt: float, ready: bool = true) -> String`: Moves on by dt: "pull" once, as the hold at the driver's window ends (the driver is to be pulled out), "take" once he has swung in (the car is his: the hijack is over), else "" (and "leap" once as the hero jumps). ready: the driver is drawn at the wheel, so there is someone to take hold of: the hold waits at its end while it is not, "fail" once it has waited READY_WAIT s.
-- `func go_in() -> void`: The driver is out and let go: he swings in to the seat.
+- `func step(dt: float, stopped: bool = true, clear: bool = true) -> String`: Moves on by dt: "leap" once as the hero jumps, "brake" once as he lands on the other car's roof (its driver is to stand on the brakes), "halt" once if the car is still moving STOP_MAX s after that (it is to be stopped on the spot), "fail" once if it still cannot be taken HOLD_MAX s after (the hijack is over: he drops to the road) and "land" once as he is down on the road beside it (the hijack is over: the rest is the stopped car's), else "". stopped: the car to take stands still; clear: the car left is not by its door (left_clear).
+- `func left_clear(a: Dictionary, b: Dictionary) -> bool`: True when the car left (a: its car_info, {} when it is gone) is no longer by the driver's door of the car taken (b: its car_info): on its other side, well off its driver's side, or well along from the seat.
 - `func riding() -> int`: The car whose frame the hero rides now: the one it leaves until the leap is half way.
 - `func feet(a: Dictionary, b: Dictionary) -> Vector3`: The hero's feet now, the cars' car_info()s given ({"pos", "yaw", "half_w", "height"}): a needs to be there until the leap ends, b from the leap on.
 - `func airborne() -> bool`: True while the hero is in the air (the leap).
@@ -415,35 +419,32 @@ The action hijack's moves (the drive feature's action_hijack flag): the hero, at
 
 extends `RefCounted`
 
-The hero's hands in an action hijack (drive_feature.gd, hijack.gd): at the driver's window he takes hold of the driver with both hands (their collar and near upper arm, as in jack_hold.gd) during the hold the hijack's jack phase ends with, keeps them while the driver is pulled out through the window (the haul phase) and lets go as they are out. Nothing here moves the hero: hijack.gd carries him.
+The hero's hands in an action hijack (drive_feature.gd, hijack.gd): at the driver's window he takes hold of the driver with both hands (their collar and near upper arm, as in jack_hold.gd) over the swing down and keeps them while the car pulls up (the hold phase), and lets go as he drops to the road (the drop phase): the pull that takes the driver out of the seat is the stopped car's (jack_hold.gd), nothing is pulled out of a moving car. Nothing here moves the hero: hijack.gd carries him.
 
 ### Constants
 
-- `WS = preload("res://scripts/fp/world_scale.gd")`
 - `HOLD = preload("res://scripts/fp/drive/jack_hold.gd")`
 - `LEAN_IN = -0.9`: He turns from facing along the car to facing the driver over the swing, and leans in to reach.
-- `LEAN_BACK = 0.7`
 
 ### Functions
 
 - `static func yaw(hj: RefCounted, car_yaw: float) -> float`: The hero's body yaw at the window: from along the car (the leap's) to facing the driver across it as the swing comes down, for the car with heading yaw car_yaw.
-- `static func hold(ctx: FpContext, traffic: FpFeature, hj: RefCounted) -> void`: One frame of the hands: while the hijack is in its jack or haul phase both go to the driver's grips (traffic's jack_grips: car to_id's driver while it is at the wheel, the one pulled out after), the weight coming on over the swing's second half; the hero leans in at the hold and back as they come out.
-- `static func out(traffic: FpFeature, hj: RefCounted) -> bool`: True once the driver is out of the seat and let go, the haul having been held for HAUL_MIN s at least.
+- `static func hold(ctx: FpContext, traffic: FpFeature, hj: RefCounted) -> void`: One frame of the hands: while the hijack is in its jack or hold phase both go to the driver's grips (traffic's jack_grips: car to_id's driver at the wheel), the weight coming on over the swing's second half; the hero leans in to reach. In the drop they are let go (release).
 - `static func release(ctx: FpContext) -> void`: The hands let go (the hijack is over, or ends half way).
 
 ## `scripts/fp/drive/jack_hold.gd`
 
 extends `RefCounted`
 
-The hero's part in pulling a driver out of a car, from the first reach to letting go (car_entry.gd's jack phase with the carjack_throw flag): one sequence of four beats read from the driver, not a clock of fixed times. Reach (REACH_S, at least, then until both hands are on): the hero steps in to the grab spot, a little behind the driver's seat and out beside the body's side, so that the driver comes out in front of him and not through him, leans in, and his hands go to the driver's collar and near upper arm (the points are read per frame off the driver's skeleton: carjack.gd grips). Struggle (STRUGGLE_S): he holds on, bracing back, the driver sitting up and leaning against the pull (the hero's reach tells the driver to resist: occupants.gd resist). Then step returns "pull": the drive feature has the driver pulled out of the seat. Pull (until the driver is let go beside the door, PULL_MAX at most): the hands follow the driver's collar and arm as the haul draws them out over the sill, the hero bent forward over them, following the collar at his stand-off, stepping back with them (FOLLOW_K, X_OUT: the hands do not trail), giving way where the body swings through him (KEEP). Release (RELEASE_S): he lets go (the hands ease out), straightens, and step returns "done". The hero's hands never rise above REACH_TOP over his feet. At a sim speed above 1x the driver is out of the seat and down in a fraction of the pull, and the grip lets go as the collar gets away faster than SLIP_V.
+The hero's part in pulling a driver out of a car, from the first reach to letting go (car_entry.gd's jack phase with the carjack_throw flag): one sequence of four beats read from the driver, not a clock of fixed times. Reach (REACH_S, at least, then until both hands are on): the hero steps in to the grab spot, a little behind the driver's seat and out beside the body's side, so that the driver comes out in front of him and not through him, leans in, and his hands go to the driver's collar and near upper arm (the points are read per frame off the driver's skeleton: carjack.gd grips). Struggle (STRUGGLE_S): he holds on, bracing back, the driver sitting up and leaning against the pull (the hero's reach tells the driver to resist: occupants.gd resist). Then step returns "pull": the drive feature has the driver pulled out of the seat. Pull (until the driver is let go beside the door, PULL_MAX at most): the hands follow the driver's collar and arm as the haul draws them out over the sill, the hero bent forward over them, following the collar at his stand-off, stepping back with them (FOLLOW_K, X_OUT: the hands do not trail), giving way where the body swings through him (KEEP). Release (RELEASE_S): he lets go (the hands ease out), straightens, and step returns "done". The hero's hands never rise above REACH_TOP over his feet (CAB_REACH_UP more over a cab). At a sim speed above 1x the driver is out of the seat and down in a fraction of the pull, and the grip lets go as the collar gets away faster than SLIP_V.
 
 ### Constants
 
 - `WS = preload("res://scripts/fp/world_scale.gd")`
-- `REACH_S = 0.5`: The beats, in seconds: the reach (waits for the hands, REACH_MAX at the most), the struggle, the pull (PULL_MAX at the most) and the release.
+- `REACH_S = 0.5`: The beats, in seconds: the reach (waits for the hands, REACH_MAX at the most), the struggle, the pull (PULL_MAX at the most: the haul out of a cab is the longest, jack_pull.gd CAB_HAUL_S) and the release.
 - `REACH_MAX = 0.7`
 - `STRUGGLE_S = 0.4`
-- `PULL_MAX = 0.8`
+- `PULL_MAX = 1.3`
 - `RELEASE_S = 0.3`
 - `GRAB_AHEAD = 0.3 * WS.M`: Where the hero takes hold from: GRAB_BEHIND (0.45 m) behind the driver's seat along the car, the side the driver is drawn out and down toward (the open door's panel hangs ahead of the seat and the hero keeps off it, PANEL_GAP) and GRAB_OUT out from the door's skin (the handle's side: the car's box is wider than its doors, for the mirrors), at least GRAB_OUT_MIN, a little within the box itself. Nearer the seat (0.7 of GRAB_BEHIND) when that spot cannot be stood at, then GRAB_AHEAD (0.3 m) ahead of it, then level with it: the last resorts, the driver's body then swings out nearer him (the hero is kept KEEP off it, below).
 - `GRAB_BEHIND = 0.45 * WS.M`
@@ -455,11 +456,14 @@ The hero's part in pulling a driver out of a car, from the first reach to lettin
 - `OUT_M = 0.55 * WS.M`: The driver is let go OUT_M beyond the car's side (carjack.gd OUT), which is how far their way out is.
 - `HANDS_ON = 0.1 * WS.M`: A hand within HANDS_ON of its grip is on it. The hands never rise above REACH_TOP over his feet.
 - `REACH_TOP = 1.15 * WS.M`
-- `HEAD_GAP = 0.12 * WS.M`: The grips are never higher than HEAD_GAP under the hero's head (the crouch brings it down).
+- `HEAD_GAP = 0.12 * WS.M`: The grips are never higher than HEAD_GAP under the hero's head (the crouch brings it down). Over a cab (a bus or a truck: its driver sits and is lifted well above the hero's head) they may go CAB_REACH_UP above it: the hands go up to the driver, not onto the cab's skin below the window.
+- `CAB_REACH_UP = 0.3 * WS.M`
 - `LEAN_REACH = -1.0`: The spine's lean (0..1 of the pose layer's back lean, negative forward to reach in) at the beats.
 - `LEAN_STRUGGLE = -0.8`
 - `LEAN_PULL = -1.0`
-- `RESIST_ROLL = 0.35`: The driver's resistance at the struggle: the roll toward the door and the sit-up (rad, a sit-up back is negative) and the shake of the roll (rad at SHAKE_HZ).
+- `RESIST_ROLL = 0.35`: The driver's resistance at the struggle: the roll toward the door and the sit-up (rad, a sit-up back is negative) and the shake of the roll (rad at SHAKE_HZ). Pulled by the hands from a body with no door (a cab, a frame: traffic's door_info "doorless"), where the seat is further in from the hero's reach, they are dragged over toward him as far as RESIST_ROLL_CAB, and he stands GRAB_BEHIND_CAB behind the seat, nearer it.
+- `RESIST_ROLL_CAB = 0.7`
+- `GRAB_BEHIND_CAB = 0.25 * WS.M`
 - `RESIST_SIT = -0.12`
 - `SHAKE = 0.03`
 - `SHAKE_HZ = 4.5`

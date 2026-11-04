@@ -13,17 +13,19 @@ extends RefCounted
 ## at his stand-off, stepping back with them (FOLLOW_K, X_OUT: the hands do not trail), giving way
 ## where the body swings through him (KEEP). Release (RELEASE_S): he lets go (the hands ease out),
 ## straightens, and step returns "done". The hero's hands never rise above REACH_TOP over
-## his feet. At a sim speed above 1x the driver is out of the seat and down in a fraction of the
-## pull, and the grip lets go as the collar gets away faster than SLIP_V.
+## his feet (CAB_REACH_UP more over a cab). At a sim speed above 1x the driver is out of the seat
+## and down in a fraction of the pull, and the grip lets go as the collar gets away faster than
+## SLIP_V.
 
 const WS := preload("res://scripts/fp/world_scale.gd")
 
 ## The beats, in seconds: the reach (waits for the hands, REACH_MAX at the most), the struggle, the
-## pull (PULL_MAX at the most) and the release.
+## pull (PULL_MAX at the most: the haul out of a cab is the longest, jack_pull.gd CAB_HAUL_S) and
+## the release.
 const REACH_S := 0.5
 const REACH_MAX := 0.7
 const STRUGGLE_S := 0.4
-const PULL_MAX := 0.8
+const PULL_MAX := 1.3
 const RELEASE_S := 0.3
 ## Where the hero takes hold from: GRAB_BEHIND (0.45 m) behind the driver's seat along the car, the
 ## side the driver is drawn out and down toward (the open door's panel hangs ahead of the seat and
@@ -52,15 +54,23 @@ const OUT_M := 0.55 * WS.M
 ## A hand within HANDS_ON of its grip is on it. The hands never rise above REACH_TOP over his feet.
 const HANDS_ON := 0.1 * WS.M
 const REACH_TOP := 1.15 * WS.M
-## The grips are never higher than HEAD_GAP under the hero's head (the crouch brings it down).
+## The grips are never higher than HEAD_GAP under the hero's head (the crouch brings it down). Over
+## a cab (a bus or a truck: its driver sits and is lifted well above the hero's head) they may go
+## CAB_REACH_UP above it: the hands go up to the driver, not onto the cab's skin below the window.
 const HEAD_GAP := 0.12 * WS.M
+const CAB_REACH_UP := 0.3 * WS.M
 ## The spine's lean (0..1 of the pose layer's back lean, negative forward to reach in) at the beats.
 const LEAN_REACH := -1.0
 const LEAN_STRUGGLE := -0.8
 const LEAN_PULL := -1.0
 ## The driver's resistance at the struggle: the roll toward the door and the sit-up (rad, a sit-up
-## back is negative) and the shake of the roll (rad at SHAKE_HZ).
+## back is negative) and the shake of the roll (rad at SHAKE_HZ). Pulled by the hands from a body
+## with no door (a cab, a frame: traffic's door_info "doorless"), where the seat is further in from
+## the hero's reach, they are dragged over toward him as far as RESIST_ROLL_CAB, and he stands
+## GRAB_BEHIND_CAB behind the seat, nearer it.
 const RESIST_ROLL := 0.35
+const RESIST_ROLL_CAB := 0.7
+const GRAB_BEHIND_CAB := 0.25 * WS.M
 const RESIST_SIT := -0.12
 const SHAKE := 0.03
 const SHAKE_HZ := 4.5
@@ -100,6 +110,8 @@ var _ctx: FpContext
 var _car := Transform3D.IDENTITY
 var _pts: Dictionary = {}
 var _side: float = 0.0
+## The vehicle has no door that opens (a bus, a truck, a bicycle, a scooter).
+var _cab: bool = false
 ## The driver's grips now (Callable(toward, top, arm side) -> {"collar", "arm", "side"}), whether
 ## the pull has hauled them out and let go (Callable() -> bool), their resistance (Callable(roll:
 ## float, sit_up: float)) and the rig's and the ground's and the hero's moves.
@@ -164,6 +176,7 @@ func begin(
 	_ctx = ctx
 	_car = car
 	_pts = pts
+	_cab = pts.has("doorless")
 	_side = side
 	_ride = ride
 	_ground = ground
@@ -271,7 +284,9 @@ func _pull(at: Vector3, dt: float) -> void:
 	var d := lerpf(_d0, _d0 * FOLLOW_K, smoothstep(0.0, 0.5, _prog))
 	_f_pos = _clamp_x(_flat3(at) + _dir * d)
 	_f_tilt = lerpf(LEAN_STRUGGLE, LEAN_PULL, _prog)
-	_slipped = _slipped or (_raw - _raw_was).length() > SLIP_V * dt
+	# Not on the first frames: the body drawn at the seat is the one the haul takes over from there
+	# (a larger roll toward the door, as a cab asks, shows more of the difference).
+	_slipped = _slipped or (bt > 2.5 * dt and (_raw - _raw_was).length() > SLIP_V * dt)
 	if _slipped:
 		_f_hold = 0.0
 		_f_ease = SLIP_EASE
@@ -347,7 +362,8 @@ func _settle(g: Dictionary, at: Vector3) -> void:
 	grip(_ctx, g, _f_hold, _yaw, _f_tilt, _f_ease, _left)
 	if resist.is_valid():
 		var shake := SHAKE * sin(TAU * SHAKE_HZ * t) * _f_res
-		resist.call(RESIST_ROLL * _f_res + shake, RESIST_SIT * _f_res)
+		var roll := RESIST_ROLL_CAB if _cab else RESIST_ROLL
+		resist.call(roll * _f_res + shake, RESIST_SIT * _f_res)
 
 
 ## Stops where it is: the hands let go, the driver stops resisting.
@@ -398,9 +414,10 @@ static func _step_to(from: Vector3, to: Vector3) -> Vector3:
 ## The height the hands may reach to: HEAD_GAP under his head as it is now, REACH_TOP over his feet
 ## when the rig has no head to read.
 func _top() -> float:
+	var up := CAB_REACH_UP if _cab else 0.0
 	if _head.is_finite():
-		return _head.y - HEAD_GAP
-	return _ctx.player.position.y + REACH_TOP
+		return _head.y - HEAD_GAP + up
+	return _ctx.player.position.y + REACH_TOP + up
 
 
 ## The hero's skeleton has been updated, every modifier run: his head as it is drawn (crouched).
@@ -441,11 +458,12 @@ func _fallback() -> Dictionary:
 func _grab_spot() -> Vector3:
 	var seat: Vector3 = _pts["seat"]
 	var skin := minf(_side, (_pts["handle"] as Vector3).x)
+	var behind := GRAB_BEHIND_CAB if _cab else GRAB_BEHIND
 	var tries := [
-		[GRAB_OUT, -GRAB_BEHIND],
-		[GRAB_OUT_MIN, -GRAB_BEHIND],
-		[GRAB_OUT, -0.7 * GRAB_BEHIND],
-		[GRAB_OUT_MIN, -0.7 * GRAB_BEHIND],
+		[GRAB_OUT, -behind],
+		[GRAB_OUT_MIN, -behind],
+		[GRAB_OUT, -0.7 * behind],
+		[GRAB_OUT_MIN, -0.7 * behind],
 		[GRAB_OUT_MIN, GRAB_AHEAD],
 		[GRAB_OUT_MIN, 0.0]
 	]

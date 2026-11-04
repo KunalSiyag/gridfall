@@ -47,11 +47,12 @@ const STUCK_GAIN := 0.05 * WS.M
 const STEP_PACE := 0.55
 const STEP_PACE_JACK := 1.0
 const STEP_MAX := 1.5
-## Lining up on a spot: turning at TURN_RATE (rad/s), sliding at ALIGN_SPEED, for at least
-## ALIGN_MIN s.
+## Lining up on a spot: turning at TURN_RATE (rad/s), sliding at ALIGN_SPEED, for at least ALIGN_MIN
+## s and at most ALIGN_MAX (a hero who was pushed off his way is put on the spot over that).
 const TURN_RATE := 5.0
 const ALIGN_SPEED := 0.6 * WS.M
 const ALIGN_MIN := 0.2
+const ALIGN_MAX := 1.2
 ## door_try: the hand is on the handle REACH_AT s in and the pull ends at PULL_END with the door
 ## PULL_OPEN open; it then swings wide over DOOR_WIDE s.
 const REACH_AT := 0.75
@@ -516,7 +517,7 @@ func _line_up() -> void:
 	_to = _route[_route.size() - 1]
 	_to_yaw = _yaw_reach if phase == "walk" else _yaw_seat
 	var turn := absf(wrapf(_to_yaw - p.yaw, -PI, PI)) / TURN_RATE
-	_len = maxf(ALIGN_MIN, maxf(turn, _flat(_to - _from).length() / ALIGN_SPEED))
+	_len = clampf(maxf(turn, _flat(_to - _from).length() / ALIGN_SPEED), ALIGN_MIN, ALIGN_MAX)
 	p.simulate(Vector2.ZERO, false, _dt)
 	_go("align" if phase == "walk" else "turn")
 

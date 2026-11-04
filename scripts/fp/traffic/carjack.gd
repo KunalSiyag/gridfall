@@ -23,6 +23,7 @@ const TRIPS := preload("res://scripts/fp/traffic/trips.gd")
 const JL := preload("res://scripts/fp/traffic/jack_landing.gd")
 const JP := preload("res://scripts/fp/traffic/jack_pull.gd")
 const JG := preload("res://scripts/fp/traffic/jack_grip.gd")
+const JC := preload("res://scripts/fp/traffic/jack_cab.gd")
 ## The driver comes out OUT beyond the body side, level with the seat, and sits down DROP_M beyond
 ## that (their root comes to rest OUT + DROP_M from the sill: 1.15 m, never more than 1.2) by a blow
 ## of STRENGTH (hard enough to knock them down, reactions.gd DOWN), straight out from the car. Their
@@ -56,10 +57,6 @@ const NEAR_TILES := 3
 var f: Object  # the traffic feature
 ## The walker id of the driver pulled out last (the hero's hands follow them: jack_collar).
 var victim: int = -1
-## Car ids whose driver was pulled out ahead of the car being taken (the action hijack's hold: the
-## hero keeps his hands on them while they come out); claim_car then takes the car without a second
-## pull.
-var _done: Dictionary = {}
 
 
 func setup(p_f: Object) -> void:
@@ -125,7 +122,13 @@ func eject(c: VH.Car, src: Vector3) -> Dictionary:
 	w.seated = false
 	if not info.is_empty() and from.is_finite():
 		var back := xf.basis * Vector3(0.0, 0.0, -shift) if shift > 0.0 else Vector3.ZERO
-		f.reactions.drag_out(w, from, c.yaw + c.vis_yaw, back, f.occupants.resist_of(c.id))
+		var lean: Vector2 = f.occupants.resist_of(c.id)
+		# A body with no door: the driver is lifted over its solid side, not drawn through it.
+		var x0 := (xf.affine_inverse() * from).x
+		var hips := JC.hips_of(from.y - c.pos.y, w.h_m)
+		var gap := JC.clear(c.kind, c.half_w, x0, out.x, hips)
+		var pose := Vector4(lean.x, lean.y, gap.x, gap.y)
+		f.reactions.drag_out(w, from, c.yaw + c.vis_yaw, back, pose)
 	victim = w.id if not info.is_empty() else -1
 	return info
 
@@ -155,20 +158,9 @@ func _drop_run(c: VH.Car, xf: Transform3D, out: Vector2, w: WK.Walker) -> float:
 	return clampf(run, MIN_DROP, drop)
 
 
-## Notes that car id's driver has been pulled out already.
-func mark_done(id: int) -> void:
-	_done[id] = true
-
-
-## Forgets every mark (the world is rebuilt: car ids start over).
+## Forgets the driver pulled out last (the world is rebuilt: ids start over).
 func forget() -> void:
-	_done.clear()
 	victim = -1
-
-
-## True once (and forgets it) when car id's driver was pulled out ahead of its being taken.
-func consume_done(id: int) -> bool:
-	return _done.erase(id)
 
 
 ## True when a driver is pulled out the way jack_pull.gd has it (its on(): the carjack_throw flag
@@ -191,6 +183,15 @@ func grips(id: int, toward: Vector3, top: float = INF, side: String = "") -> Dic
 func hauled() -> bool:
 	var w := _victim()
 	return w == null or not f.reactions.hauling(w)
+
+
+## True from the haul through the driver's fall, lie and get-up (not the shout and the run after):
+## the beat the street is held at real time for at any sim speed (traffic_feature.gd sim_dt).
+func busy() -> bool:
+	if victim < 0:
+		return false
+	var w := _victim()
+	return w != null and (f.reactions.hauling(w) or f.reactions.is_down(w))
 
 
 ## The driver pulled out last, while they are in the street (null otherwise).

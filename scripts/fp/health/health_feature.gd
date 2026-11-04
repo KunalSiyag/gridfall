@@ -188,6 +188,7 @@ func hurt(
 	if hp <= 0.0:
 		_knock_out(push)
 	elif knock:
+		_stop_entry()
 		_knock_down(push, LIE_S)
 	else:
 		_flinch_body(push, felt if felt >= 0.0 else clampf(amount / (MAX_HP * 0.25), 0.0, 1.0))
@@ -196,6 +197,19 @@ func hurt(
 	_flash_from(push)
 	if ctx.bus != null:
 		ctx.bus.hero_hurt.emit(amount, cause, hp, down)
+
+
+## A hero getting into a car (or jumping across to one) who is knocked down is out of it: the entry
+## ends where he stands (the car is let go, its driver left), before the knock-down takes the input.
+func _stop_entry() -> void:
+	var drive := ctx.feature("drive")
+	if drive == null:
+		return
+	var entry: Variant = drive.get("entry")
+	var hijack: Variant = drive.get("hijack")
+	var getting_in: bool = entry != null and (entry as RefCounted).get("kind") == "in"
+	if getting_in or (hijack != null and bool((hijack as RefCounted).call("running"))):
+		drive.call("exit", true)
 
 
 ## First person only (hit_direction): the screen-edge arc toward where the blow came from, beside

@@ -269,6 +269,7 @@ func on_world_rebuilt() -> void:
 	render.clear()
 	occupants.clear()
 	carjack.forget()
+	_taking = -1
 	people.clear()
 	for c in _agents_root.get_children():
 		c.queue_free()
@@ -566,7 +567,7 @@ func _process(delta: float) -> void:
 		_refill(true)
 	_last_player = p
 	if auto_step:
-		var dt := delta * float(ctx.sim.speed)
+		var dt := sim_dt(delta)
 		var step_len := Pacing.step_for(dt, MAX_STEP)
 		while dt > 0.0:
 			var h := minf(dt, step_len)
@@ -574,6 +575,26 @@ func _process(delta: float) -> void:
 			dt -= h
 	sync_visuals(delta)
 	police.bust.tick(delta)
+
+
+## The game-scaled seconds delta real ones are worth: the sim speed times them, except while the
+## hero takes a car from its driver (the car held, hold_car) and the driver is hauled out of it and
+## goes down, lies and gets up (carjack.busy), when the grab, the pull and the fall run at real
+## time: at 8x they would be over in a blink.
+func sim_dt(delta: float) -> float:
+	var speed := float(ctx.sim.speed) if ctx != null and ctx.sim != null else 1.0
+	if speed > 1.0 and (_taking_now() or carjack.busy()):
+		speed = 1.0
+	return delta * speed
+
+
+## True while the car the hero takes (hold_car) is still in the street: a mark left by a car gone
+## (a save loaded, a cull) is no reason to hold the street at real time.
+func _taking_now() -> bool:
+	if _taking < 0 or not _built:
+		return false
+	var c: VH.Car = vehicles.by_id.get(_taking)
+	return c != null and not c.dead
 
 
 ## Advances everything by dt seconds of game-scaled time (test hook; _process calls it in steps
@@ -731,7 +752,7 @@ func sync_visuals(delta: float) -> void:
 	var hc := people.ok
 	if hc:
 		var eye := ctx.player_position() + Vector3(0, WS.EYE, 0)
-		people.begin(delta, delta * float(ctx.sim.speed), _camera(), cam, eye)
+		people.begin(delta, sim_dt(delta), _camera(), cam, eye)
 	_draw_walkers(delta, cam, hc)
 	if hc:
 		occupants.sync(vehicles.cars, cam, ctx.residents)
@@ -1913,9 +1934,9 @@ func claim_car(id: int, src: Vector3 = Vector3.INF, moving: bool = false) -> Dic
 	if c == null or _driven != null or not _claimable(c, moving):
 		return {}
 	var v := c.v if moving else 0.0
-	var pulled := carjack.consume_done(c.id)
-	occupants.unvacate(c.id)
-	if _jacks(c) and not pulled:
+	if _taking == c.id:
+		_taking = -1
+	if _jacks(c):
 		occupants.ensure(c, ctx.residents)
 		var shown := occupants.driver_of(c.id) != null
 		var hit := carjack.eject(c, src if src.is_finite() else c.pos)
@@ -2033,14 +2054,31 @@ func jackable(id: int) -> bool:
 	return c != null and _driven == null and _claimable(c) and _jacks(c)
 
 
-## Holds car id where it stands (on) while the hero walks to its door, or lets it drive on.
-func hold_car(id: int, on: bool) -> void:
+## Holds car id where it stands (on) while the hero walks to its door, or lets it drive on. With
+## slam its driver stands on the brakes (an action hijack: the hero has landed on the roof): it
+## stops in a few metres rather than at the pace of a held car.
+func hold_car(id: int, on: bool, slam: bool = false) -> void:
 	var c: VH.Car = vehicles.by_id.get(id) if _built else null
+	# Letting go clears the mark even when the car is already gone (a rebuild, a cull): a stale one
+	# would pin the sim speed to 1x (sim_dt).
+	if not on and _taking == id:
+		_taking = -1
 	if c != null and c.role != VH.PLAYER:
 		c.hold = on
+		c.slam = on and slam
 		# The car the hero is taking is no wall to him (he leans in at its door; the player's own
 		# poll of blockers_near would push him out of its box).
-		_taking = id if on else (-1 if _taking == id else _taking)
+		if on:
+			_taking = id
+
+
+## Car id stands still at once (an action hijack held it too long at the brakes).
+func halt_car(id: int) -> void:
+	var c: VH.Car = vehicles.by_id.get(id) if _built else null
+	if c != null and c.role != VH.PLAYER:
+		c.v = 0.0
+		c.a = 0.0
+		c.vel = Vector3.ZERO
 
 
 ## The driver's hip point in the driven car's own frame (+Z forward), or null until its full model
@@ -2102,22 +2140,6 @@ func jack_pulls() -> bool:
 ## body.
 func jack_grips(id: int, toward: Vector3, top: float = INF, side: String = "") -> Dictionary:
 	return carjack.grips(id, toward, top, side)
-
-
-## Pulls car id's driver out now, the hero's hands on them (src), without taking the car (an action
-## hijack holds the grip while they come out and takes it then: claim_car does not pull them again).
-## False when it cannot be: the car is gone or not to be taken, or the driver could not be put down.
-func jack_eject(id: int, src: Vector3) -> bool:
-	var c: VH.Car = vehicles.by_id.get(id) if _built else null
-	if c == null or c.dead or _driven != null or not _claimable(c, true) or not _jacks(c):
-		return false
-	if carjack.eject(c, src).is_empty():
-		return false
-	# The driver is out: the one drawn at the wheel goes (they are the one hauled out through the
-	# window), and the car has none, whatever becomes of the hijack from here.
-	carjack.mark_done(c.id)
-	occupants.vacate(c.id)
-	return true
 
 
 ## True once the driver pulled out last is out of the seat and let go (carjack.gd hauled).
@@ -2305,8 +2327,7 @@ func _claimable(c: VH.Car, moving: bool = false) -> bool:
 		return false
 	if c.parked:
 		return c.slot_tile >= 0
-	var vacant := occupants.vacated(c.id)
-	var who := c.role == "ambient" or (c.role == "resident" and (_jacks(c) or vacant))
+	var who := c.role == "ambient" or (c.role == "resident" and _jacks(c))
 	return who and (moving or c.v < CLAIM_SPEED)
 
 
@@ -2367,7 +2388,7 @@ static func _body_name(c: VH.Car) -> String:
 
 ## True when taking c means dragging its driver out first (carjack).
 func _jacks(c: VH.Car) -> bool:
-	return JACK.occupied(c) and FeatureFlags.enabled("carjack") and not occupants.vacated(c.id)
+	return JACK.occupied(c) and FeatureFlags.enabled("carjack")
 
 
 func _take_over(o: VH.Car) -> VH.Car:

@@ -149,6 +149,7 @@ Taking a car with someone at the wheel (the carjack flag; docs/fp/ARCHITECTURE.m
 - `JL = preload("res://scripts/fp/traffic/jack_landing.gd")`
 - `JP = preload("res://scripts/fp/traffic/jack_pull.gd")`
 - `JG = preload("res://scripts/fp/traffic/jack_grip.gd")`
+- `JC = preload("res://scripts/fp/traffic/jack_cab.gd")`
 - `OUT = 0.55 * WS.M`: The driver comes out OUT beyond the body side, level with the seat, and sits down DROP_M beyond that (their root comes to rest OUT + DROP_M from the sill: 1.15 m, never more than 1.2) by a blow of STRENGTH (hard enough to knock them down, reactions.gd DOWN), straight out from the car. Their way off the road passes CLEAR out from the car's rear corner on that side. With the carjack_throw flag off they come out PLAIN_OUT beyond the body side and the blow knocks them PLAIN_SLIDE metres clear instead, as it always did.
 - `PLAIN_OUT = 0.3 * WS.M`
 - `STRENGTH = 0.85`
@@ -172,12 +173,11 @@ Taking a car with someone at the wheel (the carjack flag; docs/fp/ARCHITECTURE.m
 - `func setup(p_f: Object) -> void`
 - `static func occupied(c: VH.Car) -> bool`: True when c is a car on the road with someone at the wheel: an ambient driver or a resident.
 - `func eject(c: VH.Car, src: Vector3) -> Dictionary`: Drags car c's driver out, the hero standing at src: they come out beside the driver's door, down on the road there, and set off on foot once they are up. c is left for the caller to take (its trip let go). Returns the person_hit info, {} when nobody could be put there.
-- `func mark_done(id: int) -> void`: Notes that car id's driver has been pulled out already.
-- `func forget() -> void`: Forgets every mark (the world is rebuilt: car ids start over).
-- `func consume_done(id: int) -> bool`: True once (and forgets it) when car id's driver was pulled out ahead of its being taken.
+- `func forget() -> void`: Forgets the driver pulled out last (the world is rebuilt: ids start over).
 - `static func pulls() -> bool`: True when a driver is pulled out the way jack_pull.gd has it (its on(): the carjack_throw flag with hit_feel), so the hero's part (car_entry.gd) goes with it.
 - `func grips(id: int, toward: Vector3, top: float = INF, side: String = "") -> Dictionary`: The two points the hero's hands take hold of on the driver he has (jack_grip.gd points: "collar" and "arm", world, NAN with no body drawn: far off or loading) seen from toward, none above top: car id's driver drawn at the wheel, or (id < 0) the one pulled out last, wherever they are now.
 - `func hauled() -> bool`: True once the driver pulled out last is out of the seat: the haul is over and they are let go beside the door (the hero lets go of them then). True too when there is none to hold.
+- `func busy() -> bool`: True from the haul through the driver's fall, lie and get-up (not the shout and the run after): the beat the street is held at real time for at any sim speed (traffic_feature.gd sim_dt).
 
 ## `scripts/fp/traffic/contact_shadows.gd`
 
@@ -478,6 +478,26 @@ Turn signals: which side a car's indicators blink on, and when a blinking lamp i
 - `static func lit(t: float) -> bool`: Whether a blinking lamp is lit at time t (s).
 - `static func on(side_: int, s: int, t: float) -> bool`: Whether the left (s < 0) or right lamps of a car signalling side are lit at time t.
 
+## `scripts/fp/traffic/jack_cab.gd`
+
+extends `RefCounted`
+
+Taking the driver out of a body with no door that opens (a bus, a truck, a bicycle, a scooter: traffic's door_info "doorless", carjack.gd): there is a solid side (the cab's skin, the frame or the footboard) between the seat and the road where a car has its door's opening, and the haul of jack_pull.gd must not draw the driver through it. The pull lifts them over it instead: the hips rise until the thighs clear the top of the side (SILL, metres over the road, measured on each model's skin at the seat: the cab of the bus is level with its belt at 1.1 m, the truck's cab skin reaches 1.4 m; a bicycle's top tube and a scooter's panel are lower), stay there while the body is across it, and come down only once past (Plan.lift, Plan.wall_k). Lengths are world units in the car's frame (+X out of the driver's side).
+
+### Constants
+
+- `WS = preload("res://scripts/fp/world_scale.gd")`
+- `JP = preload("res://scripts/fp/traffic/jack_pull.gd")`
+- `SILL = { "bus": [1.1, 0.22, 0.0], "truck": [1.4, 0.22, 0.0], "bike": [0.85, 0.4, 0.12], "scoot...`: By vehicle kind: the top of the solid side over the road (m), how far over it the hips go (m: the thighs are under them, and for a bicycle's frame or a scooter's footboard the shins and feet too, which hang a sit pose's length below the hips and must come over it as well) and how far out from the middle line the side is (m; 0: at the body's half width: a cab's skin, a footboard's edge; a bicycle's frame is thin, on its middle line).
+- `LIFT_MIN = 0.12 * WS.M`: The hips rise by at least LIFT_MIN.
+- `WALL_MIN = 0.1`: The share of the way across at which the side is stays within these (the way out is short for a bicycle: the rider sits on its middle line).
+- `WALL_MAX = 0.6`
+
+### Functions
+
+- `static func clear(kind: String, half_w: float, x0: float, x1: float, hips_y: float) -> Vector2`: The {lift, wall_k} (Vector2: u, share) for the driver of a vehicle of kind with half width half_w whose body root starts at lateral x0 and is let go at x1 (car frame), hips hips_y over the road at the start (u): how far the hips are raised over the solid side and where it is on the way across; (0, 0) for a kind that has a door.
+- `static func hips_of(root_y: float, h_m: float) -> float`: The hips' height over the road (u) of a seated body whose root is root_y over it, for a body of stature h_m (the walker's, metres): the sit pose's hips stand SIT_HIP up (body metres).
+
 ## `scripts/fp/traffic/jack_grip.gd`
 
 extends `RefCounted`
@@ -538,7 +558,7 @@ Where the driver the hero pulls out of a car comes down, and what they are kept 
 
 extends `RefCounted`
 
-How the driver the hero pulls out of a car goes, from the seat to the road (the carjack_throw flag, which needs hit_feel: on(); docs/fp/ARCHITECTURE.md, Integration: driving), as one sequence on the clips the walkers already have. reactions.gd starts it (_plan_down for the blow, drag_out for the haul) and runs its two hooks (haul, fall); this file holds the curves, each a pure function of time so a test can sample them. The haul (HAUL_S, in the sit pose, facing as they sat): the hero has the driver by the collar and drags them out of the seat sideways over the sill, speeding up, the body leaning toward the road (a roll of HAUL_ROLL rad at the release) and back (a tip of HAUL_TIP rad: pulled by the collar toward the hero's hip, the legs trail into the car). Where the open door asks (carjack.gd, jack_landing.gd) the place they come out at is a little further down the car's side than straight out of the seat: they go straight out over the sill first and drift there as they go. The drawn hips come down with the tip as they come out (haul_drop), so they are not sat on the air for long. The fall (FALL_S, still in the sit pose): they are let go beside the door, slide out a little further on the road, sit down on it and fall back, the body tipped back about the hips as far as FALL_BACK while its drawn hips are lowered so that its lowest part is on the road (drop_at): it never leaves the ground, and nothing rises above where it started. The hips touch the road (SEAT_CONTACT, told by on_landed) and then the back. It lies there along the car's side (head to the rear, feet toward the front) in the get-up clip's low first pose (the walker blends to it over BLEND_S as the tip comes out of the drawn body, blend_tip and blend_drop), for the lie, and gets up. A car that is moving carries the body along at its own pace through the haul (the seat moves with it; it eases down over the last CARRY_EASE_S to the pace the slide keeps, at most CARRY_MAX of it), and the slide goes on at that pace, so the body is neither left hanging in the air behind the car nor stopped dead as it comes out. With no plan the haul is the plain one, the sit pose tipped back (PLAIN_S). Someone not drawn at the wheel (standing by the door) is knocked down where they stand, with the plain knock-down clip, and told landed STAND_CONTACT s in.
+How the driver the hero pulls out of a car goes, from the seat to the road (the carjack_throw flag, which needs hit_feel: on(); docs/fp/ARCHITECTURE.md, Integration: driving), as one sequence on the clips the walkers already have. reactions.gd starts it (_plan_down for the blow, drag_out for the haul) and runs its two hooks (haul, fall); this file holds the curves, each a pure function of time so a test can sample them. The haul (HAUL_S, in the sit pose, facing as they sat): the hero has the driver by the collar and drags them out of the seat sideways over the sill, speeding up, the body leaning toward the road (a roll of HAUL_ROLL rad at the release) and back (a tip of HAUL_TIP rad: pulled by the collar toward the hero's hip, the legs trail into the car). Where the open door asks (carjack.gd, jack_landing.gd) the place they come out at is a little further down the car's side than straight out of the seat: they go straight out over the sill first and drift there as they go. The drawn hips come down with the tip as they come out (haul_drop), so they are not sat on the air for long. Out of a body with no door that opens (a bus, a truck, a bicycle, a scooter: jack_cab.gd) the hips are lifted over its solid side (Plan.lift, u) while the body is across it (Plan.wall_k, the share of the way across where the side is), and come down only once past it, so the driver is never drawn through the bodywork or dropped from the cab through the wall. The fall (FALL_S, still in the sit pose): they are let go beside the door, slide out a little further on the road, sit down on it and fall back, the body tipped back about the hips as far as FALL_BACK while its drawn hips are lowered so that its lowest part is on the road (drop_at): it never leaves the ground, and nothing rises above where it started. The hips touch the road (SEAT_CONTACT, told by on_landed) and then the back. It lies there along the car's side (head to the rear, feet toward the front) in the get-up clip's low first pose (the walker blends to it over BLEND_S as the tip comes out of the drawn body, blend_tip and blend_drop), for the lie, and gets up. A car that is moving carries the body along at its own pace through the haul (the seat moves with it; it eases down over the last CARRY_EASE_S to the pace the slide keeps, at most CARRY_MAX of it), and the slide goes on at that pace, so the body is neither left hanging in the air behind the car nor stopped dead as it comes out. With no plan the haul is the plain one, the sit pose tipped back (PLAIN_S). Someone not drawn at the wheel (standing by the door) is knocked down where they stand, with the plain knock-down clip, and told landed STAND_CONTACT s in.
 
 ### Constants
 
@@ -548,6 +568,11 @@ How the driver the hero pulls out of a car goes, from the seat to the road (the 
 - `HAUL_TIP = 0.6`
 - `SHIFT_AT = 0.25`: Where the body is let go further down the car's side than straight out of the seat (carjack.gd, to clear the open door), it goes straight out over the sill first and drifts there only after the share SHIFT_AT of the way across.
 - `DROP_AT = 0.5`: A driver sat above the road (a cab: the root begins higher than where it is let go) comes down over the first DROP_AT of the way across, so that it is on the road by the time it is past the sill, never above it.
+- `WALL_PAST = 0.22`: Over a solid side (Plan.wall_k) the body is lifted until WALL_PAST of the way across beyond it, which takes the haul CAB_HAUL_S and ends no faster than CAB_M1 (the haul's end speed, see pull): the way down the outside of a cab is long, and it is not to be a drop.
+- `CAB_HAUL_S = 1.0`
+- `CAB_M1 = 0.6`
+- `CAB_WARP = 2.2`: Over a solid side at the body's edge (a cab's skin, wall_k at least WARP_MIN: the way down its outside is long) the haul runs its way across fast and eases out (the time is warped by 1 - (1 - x)^CAB_WARP), and the body is let down over the rest of the haul, from where it is past the side (cab_x_past) to the end: it is lowered, not dumped in a tenth of a second.
+- `WARP_MIN = 0.3`
 - `FALL_S = 0.4`: The fall: seconds, the tip back (rad) the body lies at, the tip at which its hips are on the road and the walker's crossfade to the lying pose (people.gd XFADE), over which the tip comes out.
 - `FALL_BACK = deg_to_rad(80.0)`
 - `SEAT_CONTACT = deg_to_rad(55.0)`
@@ -577,6 +602,9 @@ How the driver the hero pulls out of a car goes, from the seat to the road (the 
 - `static func plan_down(r, door: Vector3, drop_m: float, lie: float, up_s: float) -> Plan`: The plan for a blow that drops the driver drop_m metres along door (level, any length) beyond the place the haul ends at, for reaction r (reactions.gd, a knock-down by cause "carjack"): the slide, with the pace of a moving car added, and no height at all. A driver drawn at the wheel sits down and lies back for lie seconds, then the get-up of up_s (the steps this puts in r's, in place of the knock-down's). Null with the flags off.
 - `static func landing(r, res: Dictionary) -> Dictionary`: hit()'s result res for reaction r with "lands_in" (seconds from the blow to the body's touchdown, the haul if there is one and then the fall to the road: what the street hears the landing at) added to a carjack's pull-out.
 - `static func pull(x: float, m1: float) -> float`: How far across (0..1) the haul has gone x (0..1) of the way: from rest, speeding up, ending at speed m1 (0..2.5, in whole-haul distances per haul) -- the slide's own pace, so the body is not stopped at the door and started again. Under 1 the pull peaks (the yank) and eases off into the slide, as a short drop's slow pace asks; 0 stops at the door.
+- `static func hump(k: float, wall_k: float, down: float) -> float`: The share (0..1) of the lift over a solid side at k (0..1) of the way across when the side is at wall_k: eased up from the start to just before it, held across it, and taken down as the body is let down (down, 0..1: cab_x_past on), so that it is 0 again as the haul ends.
+- `static func cab_pull(x: float, m1: float, wall_k: float) -> float`: How far across (0..1) the haul has gone x (0..1) of the way over a solid side: the plain haul's curve, with the time warped (CAB_WARP) over a side at the body's edge.
+- `static func cab_x_past(wall_k: float, m1: float) -> float`: The share (0..1) of the haul's time at which the body is past the solid side at wall_k (the thighs trail WALL_PAST of the way beyond it) and may be let down.
 - `static func haul_lean(x: float, p: Plan) -> float`: The roll toward the door (rad) at x (0..1) of the haul: quick at the jerk, level at the release, where it is the plan's lean.
 - `static func haul_tip(x: float, p: Plan) -> float`: The tip back (rad) at x (0..1) of the haul: the same curve to the plan's tip.
 - `static func fall_tip(t: float, p: Plan) -> float`: The tip back (rad) t seconds into the fall: from where the haul left it to FALL_BACK, speeding up as a body falling does.
@@ -587,7 +615,7 @@ How the driver the hero pulls out of a car goes, from the seat to the road (the 
 - `static func blend_drop(k: float) -> float`: The lowering (body metres) it still has at the same moment. The lying pose's own hips are low (the clip's first pose rests them about 0.07 m up), so as it crossfades in the sit pose's hips come down by themselves and the lowering that held the lowest bone on the road would sink the body into it: it goes out with the cube of the way, faster than the tip does (fitted on the skinned body: fp_jack_flow_test reads the lowest vertex of it over every frame).
 - `static func carried(p: Plan, t: float) -> Vector3`: How far (u, along the car's heading) the car's pace has carried the hauled body t seconds into the haul: the whole pace, over the last CARRY_EASE_S of it easing (smoothstep) down to the pace the slide keeps.
 - `static func roll_to(lean: float, door: Vector3, yaw: float) -> float`: Roll (rad, as the walker's vis_roll) of a body facing yaw that leans by lean toward door (level unit): positive toward the body's right.
-- `static func drag_out(r, from: Vector3, from_yaw: float, shift: Vector3, lean0 := Vector2.ZERO) -> void`: Sets the haul of reaction r up (reactions.gd drag_out; nothing for one not knocked down and standing): the driver drawn in the sit pose from from (the seat, facing from_yaw) to where the blow found them, shift (a world offset, u) further down the car's side, then the fall.
+- `static func drag_out(r, from: Vector3, from_yaw: float, shift: Vector3, lean0 := Vector4.ZERO) -> void`: Sets the haul of reaction r up (reactions.gd drag_out; nothing for one not knocked down and standing): the driver drawn in the sit pose from from (the seat, facing from_yaw) to where the blow found them, shift (a world offset, u) further down the car's side, then the fall. lean0: the roll to the door and the sit-up they were at (x, y; rad), then the lift over a solid side (u) and the share of the way across where it is (z, w; both 0 for a door that opens).
 - `static func begin(r) -> float`: The plan learns of the haul (r.drag: from, to, the facing at either end and the shift) and of its end speed, and the body sits upright in the seat until the haul's first frame (the blow had put it in the release pose). Returns the haul's seconds (PLAIN_S with no plan).
 - `static func haul(r, dt: float) -> bool`: One frame of the haul (reactions.gd step): the body drawn on from the seat to beside the door along the pull, leaning out and back, the hips coming down once over the sill. True once out. The car's pace is the whole of the haul's (the seat moves with the car) until it eases down to the slide's (carried). With no plan it is the plain haul.
 - `static func fall(r, dt: float, on_landed: Callable = Callable()) -> void`: One frame of the fall (reactions.gd step, at the end of the frame, in a plan's steps; the standing one has only the touchdown): a seated driver's sit-down and lying back, then the lying pose held for the lie and the tip coming out over BLEND_S. Tells on_landed (the walker) the once as the hips touch the road.
@@ -803,9 +831,6 @@ Drivers seated in the moving vehicles nearest the camera. Only while a vehicle d
 - `func clear() -> void`: Releases every seated body.
 - `func ensure(c: VH.Car, residents: Variant) -> bool`: Draws car c's driver now, whatever the cap and the range say, and keeps it drawn (the hero is taking the car: sync keeps placing it) until unpin. False while that cannot be: c shows no full model, or the driver's avatar scene is still loading (asked again each frame, it comes).
 - `func unpin(id: int) -> void`: Lets car id's driver go back to the cap and the range, the resisting lean off.
-- `func vacate(id: int) -> void`: Car id's driver has been pulled out of it (the hijack: the car is not taken until the haul is over): the body drawn at its wheel goes now, the same person is on the road, and no other is drawn there. unvacate (the car is taken) forgets it.
-- `func vacated(id: int) -> bool`: True when car id's driver has been pulled out of it.
-- `func unvacate(id: int) -> void`: Car id is taken (or gone): forgets that its driver was pulled out.
 - `func resist(id: int, roll: float, sit_up: float) -> void`: The driver of car id leans away from the hero's hands (a roll toward the car's driver's side and a sit-up, rad); drawn on the next sync.
 - `func rest_of(id: int) -> Vector3`: The world point of car id's seated body's root without the resisting lean (NAN: none drawn).
 - `func resist_of(id: int) -> Vector2`: The lean car id's driver is at now: (roll to the door, sit-up), rad.
@@ -1178,7 +1203,7 @@ People hit in the street (docs/fp/ARCHITECTURE.md, Body actions): shoved or punc
 - `func fighting(w: WK.Walker) -> bool`: True while w is fighting the hero (closing in or punching).
 - `static func throw_height(t: float, lift: float, fly: float = FLY_S) -> float`: How high a body thrown up to lift for fly seconds sits t seconds after the blow (0 once it has landed).
 - `func blocks() -> Array`: Lane blocks for vehicles.gd: the people hit, until they walk or run on (not while they are being hauled out of a car: it is the hero's), as circles at their drawn feet (on a sidewalk they are clear of every lane).
-- `func drag_out(w: WK.Walker, from: Vector3, yaw: float, shift := Vector3.ZERO, lean := Vector2.ZERO) -> void`: Car-jacked w (just knocked down by the carjack's blow) is dragged out of the car first, from from (its feet in the seat, facing yaw) to where the blow found it, shift (u) further down the car's side than straight out of the seat, lean (the roll to the door and the sit-up it was already at, rad); then it falls (jack_pull.gd drag_out).
+- `func drag_out(w: WK.Walker, from: Vector3, yaw: float, shift := Vector3.ZERO, lean := Vector4.ZERO) -> void`: Car-jacked w (just knocked down by the carjack's blow) is dragged out of the car first, from from (its feet in the seat, facing yaw) to where the blow found it, shift (u) further down the car's side than straight out of the seat, lean (the roll to the door and the sit-up it was already at, rad, and what jack_pull.gd drag_out says); then it falls.
 - `func is_down(w: WK.Walker) -> bool`: True once w has taken a knock-down, including its short stagger before falling (jack_pull.gd has the pulled out driver's haul and sit-down that come first).
 - `func hauling(w: WK.Walker) -> bool`: True while w is being hauled out of a seat (jack_pull.gd haul), not yet let go beside the door.
 - `func count() -> int`
@@ -1457,6 +1482,7 @@ Traffic and pedestrians on lanes (slice E, docs/fp/slices/E-traffic.md): one roa
 - `func on_world_rebuilt() -> void`
 - `func reset_section_stats() -> void`
 - `func site_machines() -> Dictionary`: The construction sites' parked machines (site id -> car id): the drive side's backhoe work loop (the backhoe_work flag) animates them. {} until built.
+- `func sim_dt(delta: float) -> float`: The game-scaled seconds delta real ones are worth: the sim speed times them, except while the hero takes a car from its driver (the car held, hold_car) and the driver is hauled out of it and goes down, lies and gets up (carjack.busy), when the grab, the pull and the fall run at real time: at 8x they would be over in a blink.
 - `func step(dt: float) -> void`: Advances everything by dt seconds of game-scaled time (test hook; _process calls it in steps of at most 1/30 s).
 - `func sync_visuals(delta: float) -> void`: Draws every agent (full models near, MultiMesh LOD far) and updates lamp states. Parked cars are redrawn only when the parked set changes or the camera moves a little.
 - `func on_screen(p: Vector3) -> bool`: True when p could be on screen now (inside the camera frustum and within car range).
@@ -1514,12 +1540,12 @@ Traffic and pedestrians on lanes (slice E, docs/fp/slices/E-traffic.md): one roa
 - `func driven_id() -> int`: Id of the car the player drives, -1 on foot.
 - `func car_info(id: int) -> Dictionary`: Car id's {"id", "pos", "yaw", "length", "half_w", "height"} as drawn, {} when it is gone.
 - `func jackable(id: int) -> bool`: True while car id can be taken with someone at the wheel to pull out (carjack).
-- `func hold_car(id: int, on: bool) -> void`: Holds car id where it stands (on) while the hero walks to its door, or lets it drive on.
+- `func hold_car(id: int, on: bool, slam: bool = false) -> void`: Holds car id where it stands (on) while the hero walks to its door, or lets it drive on. With slam its driver stands on the brakes (an action hijack: the hero has landed on the roof): it stops in a few metres rather than at the pace of a held car.
+- `func halt_car(id: int) -> void`: Car id stands still at once (an action hijack held it too long at the brakes).
 - `func seat_offset() -> Variant`: The driver's hip point in the driven car's own frame (+Z forward), or null until its full model is drawn (the merged far LOD has no seat).
 - `func door_info(id: int = -1) -> Dictionary`: The driver's door of car id (the car the player drives when id < 0), in the car's frame (+Z forward, +X its left and the driver's side, y up from the ground; world units): {"hinge", "handle", "seat" (the hip point), "rear" (the rear edge at the belt line), "open_rear" (that edge with the door wide open)}, or {} when its model has no door that opens (car_doors.gd).
 - `func jack_pulls() -> bool`: True when a driver is pulled out by the collar rather than dragged and knocked down (carjack.gd pulls): the hero's part in it (car_entry.gd) is then the grip and the pull, not the shove.
 - `func jack_grips(id: int, toward: Vector3, top: float = INF, side: String = "") -> Dictionary`: The two points the hero's hands take hold of on the driver (carjack.gd grips): car id's, drawn at the wheel, or (id < 0) the one pulled out last, seen from toward, none above top; NAN with no body.
-- `func jack_eject(id: int, src: Vector3) -> bool`: Pulls car id's driver out now, the hero's hands on them (src), without taking the car (an action hijack holds the grip while they come out and takes it then: claim_car does not pull them again). False when it cannot be: the car is gone or not to be taken, or the driver could not be put down.
 - `func jack_hauled() -> bool`: True once the driver pulled out last is out of the seat and let go (carjack.gd hauled).
 - `func jack_ready(id: int) -> bool`: Car id's driver is drawn at the wheel now, so the hero has someone to take hold of: drawn at once if it can be, whatever the cap and the range (occupants.gd ensure); false while it cannot.
 - `func jack_resist(id: int, roll: float, sit_up: float) -> void`: Car id's driver leans away from the hero's grip (occupants.gd resist; 0, 0 for none).
@@ -1658,6 +1684,7 @@ Every road vehicle (docs/fp/slices/E-traffic.md §3): ambient filler, resident c
 - `FAR_SPEED = 0.9`: Data-only vehicles beyond the traffic radius cruise at this share of their own speed.
 - `PLAYER = "player"`: Role of the player's own cars: never on a lane, posed by the drive feature or left standing.
 - `STUN_BRAKE = 6.0 * WS.M`: A car the player's car hit brakes this hard while stunned (its driver stands on the brakes).
+- `SLAM_BRAKE = 6.0 * WS.M`: A car held with its driver on the brakes (slam: the hero has landed on it, an action hijack).
 - `HIT_MIN = 3.0 * WS.M`: Running the hero down (player_hittable): from HIT_MIN (u/s) on; the car that does brakes as hard as it can, kept off the hero's body, and waits HIT_STUN s before it drives on; another hit may come HIT_COOL s later.
 - `HIT_STUN = 5.0`
 - `HIT_COOL = 2.5`

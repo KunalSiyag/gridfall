@@ -236,3 +236,162 @@ func _driven_car(at: float = 0.5) -> VH.Car:
 		if (traffic.get("occupants") as RefCounted).call("driver_of", c.id) != null:
 			break
 	return c
+
+
+## The car for `how` on the lane with its driver drawn, the hero on foot beside it.
+func _stage(how: String) -> VH.Car:
+	var vh: VH = traffic.get("vehicles")
+	var occ: RefCounted = traffic.get("occupants")
+	occ.set("cap", 12)
+	match how:
+		"bus", "truck":
+			return _fleet_car(vh, how)
+		"bike", "scooter":
+			return _small_car(vh, how)
+	var c := (
+		_lane_car("ambient")
+		if how in ["no_edge", "jack_off"]
+		else _driven_car(0.15 if _hijacks(how) else 0.5)
+	)
+	if how == "no_edge":
+		traffic.call("sync_visuals", DT)
+		(traffic.get("peds") as RefCounted).get("by_tile").clear()
+	if how.begins_with("undrawn"):
+		occ.set("cap", 0)
+		occ.call("clear")
+	if how == "crawling":
+		c.hold = false
+		c.v = 0.3 * WS.M
+	if how == "blocked":
+		_box_in(vh, c)
+	return c
+
+
+func _fleet_car(vh: VH, how: String) -> VH.Car:
+	_clear_stage(vh)
+	var kind := "bus" if how == "bus" else "truck"
+	var m: int = int(traffic.call("vehicle_model", kind))
+	# A bus stood in a lane without a line is culled by the fleets (role bus): the garbage truck's
+	# role
+	# is as much a working vehicle and is left to itself.
+	var c := vh.make(kind, "garbage" if how == "bus" else "truck", traffic.call("dims", m))
+	c.model = m
+	# A long body needs the free ground beside it all along: the first place on the lane that has
+	# it.
+	for at: float in [0.5, 0.3, 0.7, 0.2, 0.8, 0.4, 0.6]:
+		vh.place(c, lane, at)
+		if _side_free(c):
+			break
+	return _beside(c)
+
+
+## True when the ground off car c's driver's side is free of fixed things all along its length.
+func _side_free(c: VH.Car) -> bool:
+	var xf := Transform3D(Basis(Vector3.UP, c.yaw), c.pos)
+	var z := -0.5 * c.length
+	while z <= 0.5 * c.length + 0.5 * WS.M:
+		for x_m: float in [0.3, 0.8, 1.4]:
+			var q := xf * Vector3(c.half_w + x_m * WS.M, 0.0, z)
+			var g := ctx.collision.walk_height(q)
+			if is_nan(g) or ctx.collision.is_blocked(Vector3(q.x, g, q.z), WS.PLAYER_RADIUS):
+				return false
+		z += 1.5 * WS.M
+	return true
+
+
+func _small_car(vh: VH, how: String) -> VH.Car:
+	_clear_stage(vh)
+	var m: int = int(traffic.call("bike_model" if how == "bike" else "scooter_model"))
+	var c := vh.make(how, "ambient", traffic.call("dims", m))
+	c.model = m
+	vh.place(c, lane, 0.5)
+	return _beside(c)
+
+
+## The hero on foot beside car c's driver's side, its drivers drawn (frames run until they are).
+func _beside(c: VH.Car) -> VH.Car:
+	var xf := Transform3D(Basis(Vector3.UP, c.yaw), c.pos)
+	ctx.player.teleport(xf * Vector3(c.half_w + WS.M, 0.0, -0.35 * c.length), 0.0)
+	ctx.player.update_view(DT)
+	traffic.call("sync_visuals", DT)
+	return c
+
+
+## A stopped car lengthways right beside car c's driver's side: nowhere to stand at its door, no way
+## round to it; the hero put behind c's rear corner (in reach of it, outside the other's box).
+func _box_in(vh: VH, c: VH.Car) -> void:
+	# A truck-bodied stand-in: it blocks (stopped, drawn) and is nothing to take (no heavy_motors).
+	FeatureFlags.set_override("heavy_motors", false)
+	var o := vh.make("truck", "truck", traffic.call("dims", door_model))
+	o.model = door_model
+	o.hold = true
+	o.yaw = c.yaw
+	var xf := Transform3D(Basis(Vector3.UP, c.yaw), c.pos)
+	o.pos = xf * Vector3(c.half_w + 0.1 * WS.M + o.half_w, 0.0, 0.0)
+	vh.cars.append(o)
+	ctx.player.teleport(
+		xf * Vector3(c.half_w + 0.3 * WS.M, 0.0, -(0.5 * c.length + 0.8 * WS.M)), 0.0
+	)
+	ctx.player.update_view(DT)
+	traffic.call("sync_visuals", DT)
+
+
+## True for the rows that run the action hijack.
+func _hijacks(how: String) -> bool:
+	return how in ["hijack", "undrawn_hijack", "hijack_abort"]
+
+
+func _begin(how: String, c: VH.Car, rec: Dictionary) -> void:
+	if _hijacks(how):
+		c.hold = false
+		c.v = 6.0 * WS.M
+		ctx.player.set_camera_mode("third", false)
+		traffic.call("set_hero_aboard", true)
+		var seat: Vector3 = (traffic.call("door_info", c.id) as Dictionary).get(
+			"seat", Vector3.ZERO
+		)
+		var hj: RefCounted = drive.get("hijack")
+		hj.call("begin", -7, c.id, 1.0, Vector3.ZERO, seat.z)
+		hj.set("phase", "jack")
+		hj.set("t", 0.0)
+		# As the landing on the roof does: the driver stands on the brakes.
+		traffic.call("hold_car", c.id, true, true)
+		rec["started"] = true
+		return
+	rec["started"] = bool(drive.call("board"))
+
+
+## One frame of the game: the climb (or the hijack), the player's view, traffic.
+func _frame() -> void:
+	var hj: RefCounted = drive.get("hijack")
+	if hj.call("running"):
+		drive.call("_hijack_step", DT)
+	elif drive.call("_climbing"):
+		drive.call("climb_step", DT)
+	elif bool(drive.get("active")):
+		drive.call("drive_step", 0.0, 0.0, 0.0, 0.0, DT)
+	ctx.player.update_view(DT)
+	_traffic_step(DT)
+	traffic.call("sync_visuals", DT)
+
+
+## One real frame of dt seconds of the traffic's time: scaled by the sim speed (sim_dt: real time
+## through a grab and a pull) and stepped in pieces of at most 1/30 s, as the game's _process does.
+func _traffic_step(dt: float) -> void:
+	var left: float = traffic.call("sim_dt", dt)
+	while left > 0.0:
+		var h := minf(left, 1.0 / 30.0)
+		traffic.call("step", h)
+		left -= h
+
+
+func _reset() -> void:
+	(traffic.get("carjack") as RefCounted).call("forget")
+	traffic.call("set_hero_aboard", false)
+	(drive.get("hijack") as RefCounted).call("cancel")
+	drive.call("exit", true)
+	if traffic.get("_driven") != null:
+		traffic.call("leave_car")
+	(traffic.get("occupants") as RefCounted).set("cap", 12)
+	for f: String in ["car_doors", "carjack"]:
+		FeatureFlags.set_override(f, true)
