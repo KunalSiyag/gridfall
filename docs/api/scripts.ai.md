@@ -232,6 +232,7 @@ Puts GMI model inference on every layer of the city. Each in-game day it batches
 - `func setup(p_sim: CitySim, p_client: GmiClient) -> void`
 - `func send_decree(text: String) -> void`
 - `func spread_pending() -> bool`: True while the day round still has pieces waiting for a frame (the sim's spread gate).
+- `func drain_step() -> void`: Runs the round's next waiting piece (one a frame; the drain scheduler calls it for more).
 - `func day_of_sim() -> int`
 - `func residents_spoke(_day: int) -> void`: With AI residents, the voices the mayors hear are the residents' own words from today's plans.
 - `func inspect_tile(x: int, y: int) -> void`
@@ -584,6 +585,7 @@ Gives every resident a GMI brain. Once a day residents are planned in batches of
 - `func pending() -> int`
 - `func plan_day(day: int) -> void`
 - `func spreading() -> bool`: True while spread plan batches or reactions are still waiting for their frame (sliced mode).
+- `func drain_step() -> void`: Runs the next waiting spread item (the drain scheduler's step; _run_spread does one a frame).
 - `func finish_spread() -> void`: Runs every waiting spread item now (a save, skip or mode switch needs the whole day planned).
 - `func to_dict() -> Dictionary`
 - `func from_dict(d: Dictionary) -> void`

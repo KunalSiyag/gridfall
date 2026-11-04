@@ -27,5 +27,6 @@ Time-sliced sim ticks for first person (slice F). Turns CitySim.sliced on, so gr
 - `func setup(p_ctx: FpContext) -> void`
 - `func teardown() -> void`
 - `func keeps_slicing() -> bool`: Whether the orbit view keeps CitySim.sliced on after teardown: the browser build does, unless the web_sliced_planner flag is off (whole ticks there, as before).
+- `func drain_budget() -> float`: The extra day-start pieces a frame may run at 4x and above (SpreadDrain), 0 with the flag day_drain_fast off.
 - `func slice_stats() -> Dictionary`: The sim's per-pump timings (CitySim.slice_stats()), for G2's bench and the HUD.
 - `func self_test() -> Dictionary`

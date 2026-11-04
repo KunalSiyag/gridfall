@@ -33,6 +33,7 @@ func setup(p_ctx: FpContext) -> void:
 	_apply_quality(str(ctx.settings.get("quality", "medium")))
 	_sim.slice_budget_cap_ms = 0.0  # the street never scales its budget with the speed
 	_sim.sliced = true
+	_sim.drain_budget_ms = drain_budget()
 	if ctx.bus != null and not ctx.bus.quality_changed.is_connected(_apply_quality):
 		ctx.bus.quality_changed.connect(_apply_quality)
 
@@ -49,6 +50,7 @@ func teardown() -> void:
 			_sim.slice_budget_cap_ms = ORBIT_BUDGET_CAP_MS
 			return
 		_sim.slice_budget_cap_ms = 0.0
+		_sim.drain_budget_ms = 0.0
 		# The setter finishes a tick in flight, so the orbit view never inherits half a tick.
 		_sim.sliced = false
 
@@ -57,6 +59,12 @@ func teardown() -> void:
 ## the web_sliced_planner flag is off (whole ticks there, as before).
 func keeps_slicing() -> bool:
 	return (force_web or WebSupport.is_web()) and FeatureFlags.enabled("web_sliced_planner", true)
+
+
+## The extra day-start pieces a frame may run at 4x and above (SpreadDrain), 0 with the flag
+## day_drain_fast off.
+func drain_budget() -> float:
+	return SpreadDrain.BUDGET_MS if FeatureFlags.enabled("day_drain_fast", true) else 0.0
 
 
 ## The sim's per-pump timings (CitySim.slice_stats()), for G2's bench and the HUD.

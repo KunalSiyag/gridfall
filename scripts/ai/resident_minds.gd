@@ -75,6 +75,7 @@ func setup(p_sim: CitySim, p_people: Residents, p_client: GmiClient, p_brain: No
 	_spread.clear()
 	sim.spread_gate = spreading
 	sim.spread_finish = finish_spread
+	sim.spread_step = drain_step
 	if not people.day_ready.is_connected(plan_day):
 		people.day_ready.connect(plan_day)
 		sim.event_started.connect(_on_event_started)
@@ -142,6 +143,12 @@ func _spread_ok() -> bool:
 ## True while spread plan batches or reactions are still waiting for their frame (sliced mode).
 func spreading() -> bool:
 	return not _spread.is_empty()
+
+
+## Runs the next waiting spread item (the drain scheduler's step; _run_spread does one a frame).
+func drain_step() -> void:
+	if not _spread.is_empty():
+		(_spread.pop_front() as Callable).call()
 
 
 ## Runs every waiting spread item now (a save, skip or mode switch needs the whole day planned).

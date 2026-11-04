@@ -123,6 +123,15 @@ const snapshot = (page) => page.evaluate(() => {
 		overlay: !!el("status"), overlayShown: shown("status"),
 		label: el("gf-label") ? el("gf-label").textContent : null,
 		starting: !!el("gf-bar") && el("gf-bar").className.includes("gf-starting"),
+		indet: !!el("gf-bar") && el("gf-bar").className.includes("gf-indet"),
+		fill: el("gf-fill") ? el("gf-fill").style.width : null,
+		fillAnim: el("gf-fill") ? getComputedStyle(el("gf-fill")).animationName : null,
+		prep: !!el("gf-prep") && el("gf-prep").classList.contains("gf-on"),
+		prepShown: !!el("gf-prep") && getComputedStyle(el("gf-prep")).display !== "none",
+		prepTitle: el("gf-prep-title") ? el("gf-prep-title").textContent : null,
+		prepFill: el("gf-prep-fill") ? el("gf-prep-fill").style.transform : null,
+		prepIndet: !!el("gf-prep") && el("gf-prep").classList.contains("gf-indet"),
+		prepSpin: el("gf-prep-spin") ? getComputedStyle(el("gf-prep-spin")).animationName : null,
 		bar: shown("gf-bar"), spin: shown("gf-spin"), hint: shown("gf-hint"),
 		notice: shown("status-notice") ? el("status-notice").textContent : "",
 		events: window.__events, timers: window.__timers,
@@ -182,8 +191,10 @@ const step = (page, ms) => page.clock.runFor(ms);
 	await run({}, "", async (page, problems) => {
 		await step(page, 60);
 		let s = await snapshot(page);
-		check("100% of bytes: the label says Starting your city, the spinner is on, the bar is full",
+		check("100% of bytes: the label says Starting your city and the spinner is on",
 			s.label === "Starting your city" && s.starting && s.spin && s.bar, JSON.stringify([s.label, s.starting, s.spin]));
+		check("the bar is not full once the bytes are in: an empty fill with a travelling stripe",
+			s.indet && s.fill === "0%" && s.fillAnim === "gf-slide", JSON.stringify([s.indet, s.fill, s.fillAnim]));
 		check("the engine start waits for frames (the starting state is drawn first)", s.events.length === 0, JSON.stringify(s.events));
 		await step(page, 60);
 		s = await snapshot(page);
@@ -196,6 +207,45 @@ const step = (page, ms) => page.clock.runFor(ms);
 		check("10 s later the overlay is still up", (await snapshot(page)).overlay);
 		await page.evaluate(() => window.gfBootDone());
 		check("window.gfBootDone() removes the overlay", !(await snapshot(page)).overlay);
+		check("no console or page errors", problems.errors.length + problems.pageErrors.length === 0, JSON.stringify(problems));
+	});
+
+	// 1b. The game's own status lines: a ratio fills the bar, none brings the stripe back, the label follows.
+	await run({}, "", async (page, problems) => {
+		await step(page, 60);
+		await page.evaluate(() => window.gfBootStatus("Preparing graphics 40%", 0.4));
+		let s = await snapshot(page);
+		check("a ratio fills the bar to it and drops the stripe", !s.indet && s.fill === "40%" && s.label === "Preparing graphics 40%", JSON.stringify([s.indet, s.fill, s.label]));
+		await page.evaluate(() => window.gfBootStatus("Preparing graphics 100%", 1.5));
+		check("a ratio past 1 stops at a full bar", (await snapshot(page)).fill === "100%");
+		await page.evaluate(() => window.gfBootStatus("", -1));
+		s = await snapshot(page);
+		check("no ratio: the stripe is back and the label says Starting your city", s.indet && s.label === "Starting your city", JSON.stringify([s.indet, s.label]));
+		await page.evaluate(() => window.gfBootStatus("Preparing graphics 10%"));
+		check("a status without a ratio keeps the stripe", (await snapshot(page)).indet);
+		await page.evaluate(() => window.gfBootDone());
+		await page.evaluate(() => window.gfBootStatus("late", 0.5));
+		check("a status after the veil is released changes nothing", (await snapshot(page)).label !== "late");
+		check("no console or page errors", problems.errors.length + problems.pageErrors.length === 0, JSON.stringify(problems));
+	});
+
+	// 1c. The Planner's prepare overlay: HTML over the game, a spinner and a bar, up and down by hook.
+	await run({}, "", async (page, problems) => {
+		await step(page, 60);
+		check("no overlay until the game asks", !(await snapshot(page)).prep);
+		await page.evaluate(() => window.gfPrepare("Preparing the Planner view", 0.5, "A few seconds"));
+		let s = await snapshot(page);
+		check("the overlay is up with its title and a half bar", s.prep && s.prepShown && s.prepTitle === "Preparing the Planner view" && s.prepFill === "scaleX(0.5)" && !s.prepIndet, JSON.stringify([s.prep, s.prepTitle, s.prepFill, s.prepIndet]));
+		check("its spinner turns (gf-spin)", s.prepSpin === "gf-spin", String(s.prepSpin));
+		await page.evaluate(() => window.gfPrepare("Back to the street", -1, ""));
+		s = await snapshot(page);
+		check("no ratio: the stripe, the new title", s.prepIndet && s.prepTitle === "Back to the street" && s.prep, JSON.stringify([s.prepIndet, s.prepTitle]));
+		await page.evaluate(() => window.gfPrepareDone());
+		s = await snapshot(page);
+		check("done takes it down", !s.prep && !s.prepShown, JSON.stringify([s.prep, s.prepShown]));
+		await page.evaluate(() => { window.gfPrepareDone(); window.gfPrepare("again", 2, ""); });
+		s = await snapshot(page);
+		check("it can come back, a ratio past 1 is a full bar", s.prep && s.prepFill === "scaleX(1)", JSON.stringify([s.prep, s.prepFill]));
 		check("no console or page errors", problems.errors.length + problems.pageErrors.length === 0, JSON.stringify(problems));
 	});
 

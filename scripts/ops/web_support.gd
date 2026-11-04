@@ -65,15 +65,37 @@ static func boot_done() -> void:
 
 
 ## Shows text in the loader's status line while the game prepares behind the veil
-## (window.gfBootStatus, set by the export's loader page; "" puts the page's own wording back). Same
-## route as boot_done(): the bridge's object interface, no eval. No-op off the web, and on a page
-## without the hook.
-static func boot_status(text: String) -> void:
+## (window.gfBootStatus, set by the export's loader page; "" puts the page's own wording back). With
+## ratio in 0..1 the loader's bar follows it (the work done); without it (-1) the bar keeps its
+## travelling stripe, which says "working" and nothing about how far. Same route as boot_done(): the
+## bridge's object interface, no eval. No-op off the web, and on a page without the hook.
+static func boot_status(text: String, ratio: float = -1.0) -> void:
 	if not is_web():
 		return
 	var window: Variant = JavaScriptBridge.get_interface("window")
 	if window != null and window.gfBootStatus != null:
-		window.gfBootStatus(text)
+		window.gfBootStatus(text, ratio)
+
+
+## The page's "Preparing ..." overlay (window.gfPrepare, defined by the export's loader page): a
+## card over the game with a spinner the browser keeps turning while the game blocks, a title and a
+## bar at ratio (0..1; -1 for a spinner only). It is HTML, so it stays up and animated through a
+## frame that blocks for seconds, which a node of the game cannot. prepare_done() takes it down. No-
+## op off the web and on a page without the hook.
+static func prepare_show(title: String, ratio: float = -1.0, note: String = "") -> void:
+	if not is_web():
+		return
+	var window: Variant = JavaScriptBridge.get_interface("window")
+	if window != null and window.gfPrepare != null:
+		window.gfPrepare(title, ratio, note)
+
+
+static func prepare_done() -> void:
+	if not is_web():
+		return
+	var window: Variant = JavaScriptBridge.get_interface("window")
+	if window != null and window.gfPrepareDone != null:
+		window.gfPrepareDone()
 
 
 ## True while the loader's veil is still up (window.gfVeilUp, defined by the export's loader page).

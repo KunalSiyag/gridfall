@@ -45,6 +45,9 @@ Tile-based SimCity-style simulation: zoning + demand-driven growth, power/water/
 - `sliced: bool`: Time-sliced ticking for first person. false (default): _process runs step_tick() synchronously, exactly as today. true: a due tick runs as a resumable job, at most slice_budget_ms per frame. Switching finishes any job in flight first, so teardown's `sliced = false` never abandons a tick.
 - `slice_budget_cap_ms: float`: The Planner on the web: above slice_budget_ms, the per-frame budget grows with the game speed from slice_budget_ms at 1x to this cap at 8x and above (see scaled_budget_ms), so the speed buttons still speed a grown city up while no frame carries more than the cap. 0 (the street, the desktop): slice_budget_ms at every speed.
 - `spread_gate: Callable`: Set by ResidentMinds: true while it spreads the day's plan batches over frames. begin_tick() waits for it, and _finish_job_now() drains it through spread_finish.
+- `spread_step: Callable`: ResidentMinds' one-piece step (what the drain scheduler, SpreadDrain, calls).
+- `drain_budget_ms: float`: Wall ms per frame the drain scheduler may spend on extra day-start pieces at 4x and above (SpreadDrain); 0 turns it off. Pacing only.
+- `last_pump_budget_ms: float`: The budget the last sliced frame gave its pump after the drain's share (tests, the probe).
 - `road_epoch: int`: Bumped whenever a tile turns into a road or stops being one (route caches key on it).
 - `day_seconds: float`: Real seconds per game day at speed 1. Orbit and tests keep SimDefs.BASE_DAY_SECONDS (12); first person sets WS.FP_DAY_SECONDS (1200). Not saved: the view mode sets it at boot. Change it through set_day_seconds() while a day is running, so the time of day stays put.
 - `people: Residents`: The AI residents (Residents node). When attached, human behaviour (mood, commuting, spending, moving, fixing what breaks) comes from their decisions instead of fixed formulas.
@@ -88,7 +91,8 @@ Tile-based SimCity-style simulation: zoning + demand-driven growth, power/water/
 - `func pump(budget_ms: float) -> bool`: Advances the in-flight sliced job by up to budget_ms of work. It never starts a new tick (that is begin_tick's job). Returns true if a tick committed during this call. While ResidentMinds spreads a reaction the job raised, the job waits (the reaction comes first, as in the synchronous path).
 - `func spread_allowed() -> bool`: True when listeners may spread work over frames (ResidentMinds' plan batches and reactions, a registered spread source): sliced, and not inside a forced synchronous tick (step_tick, load). The job waits for them.
 - `func spread_pending() -> bool`: True while ResidentMinds or a registered spread source still has work waiting for a frame; the sliced job and begin_tick() wait meanwhile.
-- `func add_spread_source(gate: Callable, finish: Callable) -> void`: Registers a listener that spreads work it would otherwise do inside a job emission (day_started, event_started) over later frames, e.g. CityBrain's mayors. While gate() returns true the sliced job waits (begin_tick() starts nothing, pump() does nothing), so the work lands at the same point as in the synchronous path, and _finish_job_now() calls finish() to run the rest at once. A day_started listener spreads only when day_start_deferred() is true (the emission comes from the sliced day job, which holds Residents' day work until the gate closes); other emissions only while spread_allowed() is true. Each deferred piece, and each piece finish() runs, goes through run_in_phase(). Registering the same gate again replaces its finish.
+- `func add_spread_source(gate: Callable, finish: Callable, step: Callable = Callable()) -> void`: Registers a listener that spreads work it would otherwise do inside a job emission (day_started, event_started) over later frames, e.g. CityBrain's mayors. While gate() returns true the sliced job waits (begin_tick() starts nothing, pump() does nothing), so the work lands at the same point as in the synchronous path, and _finish_job_now() calls finish() to run the rest at once. A day_started listener spreads only when day_start_deferred() is true (the emission comes from the sliced day job, which holds Residents' day work until the gate closes); other emissions only while spread_allowed() is true. Each deferred piece, and each piece finish() runs, goes through run_in_phase(). Registering the same gate again replaces its finish.
+- `func drain_stats() -> Dictionary`: What the drain scheduler has done: {"pieces", "frames", "ema_ms"}.
 - `func remove_spread_source(gate: Callable) -> void`
 - `func run_in_phase(f: Callable) -> void`: Runs f as part of the sliced job's current phase: work a spread source deferred from a job emission. Mutators inside f neither finish the job nor recompute on the spot; a recompute they owe runs as a sub-job right after f, before the job resumes. With no job in flight (or inside a step) it just calls f. f must not await: a live call that resumes later comes back through here.
 - `func is_tick_running() -> bool`: True while a sliced tick is between start and commit.
@@ -374,3 +378,23 @@ Static rules, costs, and catalogs for the GridFall city simulation.
 - `static func debrand(text: String) -> String`: Replaces model branding in free text (LLM output, replay cache, old saves) with display names: model ids (D.MAYORS[*].model) and brand names (D.MAYORS[*].name, also with a trailing ".x" or "-Flash" style suffix) become the display name; a bare brand word (Argon|DeepSeek|Kimi|Qwen|Grok, case-sensitive, whole word) becomes "Mayor <Surname>".
 - `static func district_of(x: int, y: int) -> int`: Founding district layout: center 10x10 block for Kimi; four corner quadrants for the rest. Land outside the founding city belongs to nobody (-1) until a mayor annexes it.
 - `static func district_bounds(d: int) -> Rect2i`
+
+## `scripts/sim/spread_drain.gd`
+
+class_name `SpreadDrain` · extends `RefCounted`
+
+Drain scheduler for the day-start work the sliced sim spreads over frames: the brain's day round (five mayors and the support roles) and the residents' plan batches each run ONE piece per frame (CityBrain._process, ResidentMinds._run_spread), about fifty frames, while the sliced job waits for them (CitySim.spread_pending) and the clock sits at dawn. At 4x and 8x that wait is most of the day: the pump is idle during it, so its budget goes unused. run() spends a small slice of that budget on extra pieces in the same frame. Pacing only: the pieces are the same, each source's own queue keeps its order, and the sources alternate in the order the frame runs them (ResidentMinds first, then the brain), one piece each per round, as the per-frame path does. Pure: callables in, a count out. No nodes, no randomness, no clock reads that reach the sim (the wall clock only decides how many pieces fit).
+
+### Constants
+
+- `FLAG = "day_drain_fast"`
+- `MIN_SPEED = 4`: The drain starts at this game speed (1x and 2x keep the one piece per frame).
+- `BUDGET_MS = 8.0`: Wall milliseconds of piece work one frame may hold at most, counting the pieces the per-frame paths run anyway (one for each waiting source: ResidentMinds and the brain each run one a frame whether the drain is on or not). The sim's own per-frame budget caps it too (CitySim). So the drain adds pieces only while the frame, forced ones included, stays inside this: a frame that is already full of pieces (a piece of 5 to 10 ms in the browser, two sources: 10 to 20 ms) gets none, and its length is what it was without the drain.
+- `MAX_PIECES = 16`: At most this many extra pieces in one frame, whatever the budget says.
+- `COST_BLEND = 0.3`: Weight of the newest piece's cost in the running estimate used to predict the next one.
+- `ESTIMATE_DECAY = 0.99`: What a skipped frame leaves of a too-heavy estimate: slowly, so that a machine where pieces cost too much to add any is probed again only now and then (every 30 to 50 frames).
+
+### Functions
+
+- `static func run(sources: Array, budget_ms: float, stats: Dictionary = {}) -> int`: Runs waiting pieces so that the frame's piece work, the per-frame ones included, stays within budget_ms. sources: [[gate: Callable, step: Callable], ...] in the order a frame runs them; gate() says whether the source has a piece waiting, step() runs exactly one. stats (kept by the caller between frames) carries "ema_ms" (the estimated cost of one piece) and counts "pieces" and "frames" for the report. Returns how many extra pieces ran.
+- `static func active_at(spd: int, budget_ms: float) -> bool`: Whether a sim at spd (game speed) with the flag state on should drain: the speed gate alone.

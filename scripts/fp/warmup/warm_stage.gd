@@ -15,12 +15,21 @@ const SCALE := 0.01
 const COLUMNS := 8
 const GAP := 0.05
 const LIGHT_ENERGY := 0.02
+## The render layer the copies live on (the 20th). isolate() points the camera and the sun at this
+## layer alone, so a warm-up frame draws the copies and not the whole city again.
+const ISOLATE_LAYER := 1 << 19
 
 var omni: OmniLight3D
 var spot: SpotLight3D
 ## Copies alive now.
 var count: int = 0
 var _copies: Array[Node3D] = []
+var _isolating: bool = false
+var _was_cull: int = 0
+var _was_light_cull: int = 0
+var _was_sun_layers: int = 0
+var _sun: DirectionalLight3D
+var _cam: Camera3D
 
 
 func _init() -> void:
@@ -31,6 +40,7 @@ func _init() -> void:
 	omni.light_energy = LIGHT_ENERGY
 	omni.shadow_enabled = false
 	omni.visible = false
+	omni.layers = ISOLATE_LAYER
 	add_child(omni)
 	spot = SpotLight3D.new()
 	spot.name = "WarmSpot"
@@ -41,6 +51,7 @@ func _init() -> void:
 	spot.light_energy = LIGHT_ENERGY
 	spot.shadow_enabled = false
 	spot.visible = false
+	spot.layers = ISOLATE_LAYER
 	add_child(spot)
 
 
@@ -48,6 +59,52 @@ func _init() -> void:
 func attach(cam: Camera3D) -> void:
 	cam.add_child(self)
 	position = Vector3(0.0, 0.0, -DEPTH)
+
+
+## Makes the warm-up frames draw the copies alone: the camera's and the sun's cull masks go to
+## ISOLATE_LAYER (the sun's shadow pass then casts the copies only). The sun joins that layer
+## too, as the stage's lamps are on it, because the camera's mask culls lights as well. A frame
+## then costs the copies' programs and not another full draw of the city, which on a grown city
+## was 0.5 to 1.9 s of every frame before any copy was drawn. Programs follow the material and
+## the render state, not what else is in the frame, so the copies link the same ones. release()
+## puts the masks back (also on exit).
+func isolate(sun: DirectionalLight3D) -> void:
+	var cam := get_parent() as Camera3D
+	if _isolating or cam == null:
+		return
+	_cam = cam
+	_was_cull = cam.cull_mask
+	cam.cull_mask = ISOLATE_LAYER
+	_sun = sun
+	if sun != null:
+		_was_light_cull = sun.light_cull_mask
+		sun.light_cull_mask = ISOLATE_LAYER
+		# The camera's cull mask applies to lights too: a sun on layer 1 only would not light the
+		# copies (their programs lose the directional light), so it joins the stage's layer.
+		_was_sun_layers = sun.layers
+		sun.layers = sun.layers | ISOLATE_LAYER
+	_isolating = true
+
+
+func release() -> void:
+	if not _isolating:
+		return
+	_isolating = false
+	if is_instance_valid(_cam):
+		_cam.cull_mask = _was_cull
+	_cam = null
+	if is_instance_valid(_sun):
+		_sun.light_cull_mask = _was_light_cull
+		_sun.layers = _was_sun_layers
+	_sun = null
+
+
+func is_isolating() -> bool:
+	return _isolating
+
+
+func _exit_tree() -> void:
+	release()
 
 
 ## true: the lamps are on (omni and spot loops in the shaders); false: no lamp reaches the copies.
@@ -112,4 +169,5 @@ func _copy_of(rec: Dictionary) -> Node3D:
 	g.material_overlay = rec["overlay"]
 	g.cast_shadow = int(rec["shadow"]) as GeometryInstance3D.ShadowCastingSetting
 	g.scale = Vector3.ONE * SCALE
+	g.layers = ISOLATE_LAYER
 	return g

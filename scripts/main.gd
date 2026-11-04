@@ -158,7 +158,10 @@ func _ready() -> void:
 		audio.play_sfx("res://sounds/placement-a.ogg", -14.0)
 	)
 	brain.citizens_spoke.connect(func(v: Array) -> void: view.show_citizen_voices(v))
-	sim.day_started.connect(func(_d: int) -> void:
+	sim.day_started.connect(func(d: int) -> void:
+		# The probe kit reads game days per window from these, and how many day-start pieces the
+		# drain scheduler has run so far (p).
+		FirstUse.mark("day_%d_p%d" % [d, int(sim.drain_stats().get("pieces", 0))])
 		audio.play_sfx("res://sounds/day_bell.wav", -12.0)
 		_update_mood()
 	)
@@ -274,6 +277,13 @@ func _unhandled_input(event: InputEvent) -> void:
 	if OS.get_environment("GRIDFALL_CINEMATIC") in ["prep", "record"] or OS.get_environment("GRIDFALL_SMOKE_TEST") == "1" or OS.has_environment("GRIDFALL_PHOTO_DIR"):
 		return
 	get_viewport().set_input_as_handled()
+	if PlannerPrep.take(self, false):
+		return  # the "Back to the street" overlay finishes the trip (_back_to_street)
+	_back_to_street()
+
+
+## Tab in the Planner: down to the street at the clock the hero left it on.
+func _back_to_street() -> void:
 	enter_fp()
 	fp.set_time_scale(fp.time_scale)
 	notify("Back on the street. Tab opens the city overview.")
@@ -687,8 +697,12 @@ func enter_fp() -> void:
 ## Back to the orbit view and CityHud (used by B's "Planner view"). Safe to call twice.
 ## It frees FpHud, so a caller inside an FP node's signal (a Button's pressed) must use
 ## ctx.main.call_deferred("exit_fp"); a locked object cannot be freed mid-emit.
-func exit_fp() -> void:
+func exit_fp(prepared: bool = false) -> void:
 	if fp == null:
+		return
+	# On the web the first move up warms the Planner's shaders behind an overlay (PlannerPrep),
+	# which comes back here with prepared = true.
+	if not prepared and PlannerPrep.take(self, true):
 		return
 	_fp_saved = fp.to_dict()
 	fp.teardown()

@@ -17,6 +17,12 @@ extends RefCounted
 
 ## Where the list of things to warm that are not in the scene yet lives.
 const PROTOTYPES_PATH := "res://data/warm_prototypes.json"
+## The shader variants only the Planner view holds, written by tools/warm_variants.gd.
+const ORBIT_PATH := "res://data/warm_orbit_variants.json"
+## True (the default): one recipe per shader variant, the materials grouped by WarmSignature, so a
+## grown city's fifteen hundred materials are a hundred or so draws. false: one recipe per material
+## instance, as before (a test and probe knob).
+static var by_variant: bool = true
 static var _box: BoxMesh
 
 
@@ -26,6 +32,7 @@ static func collect(
 	root: Node, near: Vector3 = Vector3.ZERO, cap: int = 2000, skip: Array = []
 ) -> Array[Dictionary]:
 	var by_key: Dictionary = {}
+	WarmSignature.clear_cache()
 	var stack: Array[Node] = [root]
 	while not stack.is_empty():
 		var n: Node = stack.pop_back()
@@ -49,6 +56,7 @@ static func collect(
 	var out: Array[Dictionary] = []
 	for rec: Dictionary in by_key.values():
 		out.append(rec)
+	WarmSignature.clear_cache()
 	out.sort_custom(_nearer)
 	if out.size() > cap:
 		out.resize(cap)
@@ -101,7 +109,9 @@ static func _recipes_of(g: GeometryInstance3D) -> Array[Dictionary]:
 	if g.material_overlay != null:
 		mats[g.material_overlay.get_instance_id()] = g.material_overlay
 	for id: int in mats:
-		out.append(_material_recipe(mats[id], str(id), multi, colors, custom, int(g.cast_shadow)))
+		var mat: Material = mats[id]
+		var tag := WarmSignature.of(mat) if by_variant else str(id)
+		out.append(_material_recipe(mat, tag, multi, colors, custom, int(g.cast_shadow)))
 	return out
 
 
@@ -132,6 +142,37 @@ static func prototypes(extra: Array[Node3D] = []) -> Array[Dictionary]:
 			continue
 		_add_all(out, seen, collect(node))
 		node.free()
+	return out
+
+
+## Recipes with stand-in materials for the variants only the Planner view holds (its materials are
+## made when it first opens: data/warm_orbit_variants.json, by tools/warm_variants.gd), biggest user
+## first. A missing or unreadable file, or an entry that cannot be rebuilt, is skipped.
+static func orbit_catalogue() -> Array[Dictionary]:
+	var out: Array[Dictionary] = []
+	if not FileAccess.file_exists(ORBIT_PATH):
+		return out
+	var spec: Variant = JSON.parse_string(FileAccess.get_file_as_string(ORBIT_PATH))
+	if typeof(spec) != TYPE_DICTIONARY:
+		return out
+	for e: Variant in (spec as Dictionary).get("variants", []):
+		if typeof(e) != TYPE_DICTIONARY or typeof((e as Dictionary).get("spec")) != TYPE_DICTIONARY:
+			continue
+		var entry: Dictionary = e
+		var mat := WarmSignature.build(entry["spec"])
+		if mat == null:
+			continue
+		var rec := _material_recipe(
+			mat,
+			str(entry.get("sig", "")),
+			bool(entry.get("multi", false)),
+			bool(entry.get("colors", false)),
+			bool(entry.get("custom", false)),
+			int(entry.get("shadow", GeometryInstance3D.SHADOW_CASTING_SETTING_ON))
+		)
+		rec["n"] = int(entry.get("n", 1))
+		out.append(rec)
+	out.sort_custom(func(a: Dictionary, b: Dictionary) -> bool: return int(a["n"]) > int(b["n"]))
 	return out
 
 

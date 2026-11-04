@@ -74,7 +74,7 @@ func setup(p_sim: CitySim, p_client: GmiClient) -> void:
 	_queue.clear()
 	turns.clear()
 	if sim.has_method("add_spread_source"):
-		sim.add_spread_source(spread_pending, _finish_queue)
+		sim.add_spread_source(spread_pending, _finish_queue, drain_step)
 	if sim.day_started.is_connected(_on_day_started):
 		return
 	sim.day_started.connect(_on_day_started)
@@ -137,6 +137,15 @@ func spread_pending() -> bool:
 	return not _queue.is_empty()
 
 
+## Runs the round's next waiting piece (one a frame; the drain scheduler calls it for more).
+func drain_step() -> void:
+	if _queue.is_empty():
+		return
+	_run_piece(_queue.pop_front())
+	if _queue.is_empty():
+		busy_changed.emit(pending_calls())
+
+
 ## Runs the round's waiting pieces now (the sim drains its spread sources before a save or skip).
 func _finish_queue() -> void:
 	while not _queue.is_empty():
@@ -144,10 +153,7 @@ func _finish_queue() -> void:
 
 
 func _process(_delta: float) -> void:
-	if not _queue.is_empty():
-		_run_piece(_queue.pop_front())
-		if _queue.is_empty():
-			busy_changed.emit(pending_calls())
+	drain_step()
 	if not turns.due.is_empty() and MayorTurns.sim_idle(sim):
 		_run_turn(turns.take_due(sim.day_progress(), stagger_mayors, _mayor_in_flight))
 
