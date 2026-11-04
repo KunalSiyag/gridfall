@@ -88,7 +88,9 @@ static func names() -> PackedStringArray:
 ## ready_end and here), "first_frame" (that draw is done, so the draw's own cost is the step from
 ## pre_draw), "frame_2" and "frame_3", and "veil_frames" (VEIL_FRAMES frames after the first one).
 ## Then it reports. A headless run draws nothing, so it counts process frames and has no pre_draw.
-static func finish(tree: SceneTree) -> void:
+## before_veil, when valid, is awaited right after the first frame, still behind the veil (Main
+## passes the shader warm-up, ShaderWarmup.run, which marks warmup_begin and warmup_end).
+static func finish(tree: SceneTree, before_veil: Callable = Callable()) -> void:
 	if not enabled() or _finishing:
 		return
 	_finishing = true
@@ -104,6 +106,8 @@ static func finish(tree: SceneTree) -> void:
 			await RenderingServer.frame_post_draw
 		if i == 0:
 			mark("first_frame")
+			if before_veil.is_valid():
+				await before_veil.call()
 		elif i < VEIL_FRAMES:
 			mark("frame_%d" % (i + 1))
 	mark("veil_frames")

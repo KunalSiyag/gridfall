@@ -489,6 +489,8 @@ def test_loader_keeps_the_overlay_until_the_game_is_interactive():
     assert "}).then(() => {\n\t\t\tengineStarted();\n\t\t}, displayFailureNotice);" in patched
     assert patched.count("setStatusMode('hidden')") == 1  # releaseVeil is the only caller
     assert "window.gfBootDone = releaseVeil;" in patched
+    # The shader warm-up asks whether the veil is still up and stops when it is not.
+    assert "window.gfVeilUp = function () {\n\t\treturn !veilReleased;" in patched
     assert "const BOOT_VEIL_TIMEOUT_MS = 30000;" in patched
     assert "veilTimer = setTimeout(releaseVeil, BOOT_VEIL_TIMEOUT_MS);" in patched
     # A release that throws has already spent its timer, so it hides the overlay by hand.

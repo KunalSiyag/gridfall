@@ -623,7 +623,7 @@ func _check_mode_settled() -> void:
 	await process_frame
 	var churn := _recreated(orbit)
 	var msg := "leaving the street: the frames after recreate no orbit chunk (%d of %d)"
-	K.check(fails, churn == 0 and orbit.size() == 25, msg % [churn, orbit.size()])
+	K.check(fails, churn == 0 and orbit.size() == G.ORBIT, msg % [churn, orbit.size()])
 	cam.position = _eye(G.SPAWN)
 	view.set_fp_mode(true)
 	_drain()
@@ -667,8 +667,8 @@ func _check_orbit() -> void:
 	await process_frame
 	K.check(
 		fails,
-		view._tree_chunks.size() == 25 and not before.is_empty(),
-		"orbit: the 25 chunks of 48 tiles"
+		view._tree_chunks.size() == G.ORBIT and not before.is_empty(),
+		"orbit: the 196 chunks of 16 tiles"
 	)
 	K.check(fails, _orbit_state() == before, "orbit: camera, vis_mult and aerial change no layer")
 	view.vis_mult = web

@@ -30,6 +30,7 @@ World beacons for the AI activity layer: one per agent key ("mayor:1", "council"
 - `func position_of(key: String) -> Vector3`
 - `func keys() -> Array`
 - `func freshness(key: String) -> float`: 0..1: how new the beacon is (1 just placed, 0 once FRESH has passed).
+- `func warm_prototype() -> Node3D`: A beacon nobody placed (same meshes, same materials), for the web shader warm-up to draw once.
 
 ## `scripts/fp/activity/activity_feature.gd`
 
@@ -59,6 +60,7 @@ AI activity (integration feature "activity"): the city's AI decisions, visible f
 
 ### Functions
 
+- `func warm_prototypes() -> Array[Node3D]`: The beacon the first construction site raises, for the web shader warm-up.
 - `func feature_id() -> String`
 - `func setup(p_ctx: FpContext) -> void`
 - `func teardown() -> void`

@@ -572,6 +572,77 @@ city**: sliced, the clock ran at 1.3 of 1.67 days in the model and the web read 
 HUD's "Real-time pace" label is a separate setting, not the achieved speed (`CitySim.effective_speed` is, and nothing
 shows it yet).
 
+**Planner geometry: orbit tree chunks (flag `orbit_tree_chunks`, default on).** The Planner's 21.9k draws and 37 M
+vertices a frame on the day-10 city were mostly trees: about 266,000 instances in 25 48-tile `MultiMeshInstance3D` chunks
+(the 192-tile map and its 12-tile ring of woods), and a multimesh is culled as a whole, so every chunk the view touched
+drew all its trees (and again in each of the four sun-shadow cascades) at any zoom. The Planner now plants 16-tile chunks
+(`CityView.TREE_CHUNK_ORBIT`; the same trees in the same places, pinned by `fp_orbit_trees_test`), so the renderer culls
+the forest to what the view and the cascades reach. **The look is kept by deciding the full-tree / stand-in switch per
+48-tile cell, not per small chunk** (`scripts/world/orbit_tree_lod.gd`): a visibility range on each small layer would have
+moved the 120-unit switch to a finer grain, and in the day-10 save at about eleven wheel steps out the forest to the left
+changed from dense round stand-ins to sparse full models with a hard edge between (found in review; the first fix,
+measuring from the mean of the trees, still differed there because the engine measures from the centre of the layer's
+AABB, the box the trees fill, and a cell whose woods lie to one side has the two far apart). `OrbitTreeLod` takes the box
+centre of the cell's trees, the engine's own hysteresis (near inside 114, far outside 126) and the viewport's current camera,
+and toggles the layers' `visible`; `fp_orbit_trees_test` sweeps cameras across the map against the old rule, pins that a chunk
+near the camera in a far cell is far, and fails if `TREE_NEAR` or the cell size changes. Screenshots of the same save with the
+flag off and on (same build, game paused, default view, five steps in, five and eleven out, the farthest zoom) differ by mean
+absolute 0.5 to 1.1 grey levels over the forest corner and 0.6 to 1.6 over the map at the default, five-out, eleven-out and
+farthest zoom (3.1 and 2.7 at five in, from traffic and the clock), and the eleven-out forest, which differed by 6.6 before
+the box centre, reads 0.5 and looks the same when looked at. Measured with `tools/web_hitch_probe.js` (`GF_HP_ORBIT=1`, the
+day-10 save, headless Chrome 151, AMD Renoir iGPU through ANGLE, 15 to 20 s windows, the default Planner view and the same
+view zoomed in ten wheel steps), on a shared machine (load average 5 to 7): vertices a frame 37.2 to 37.7 M became 16.1
+to 16.6 M at the default view (-56%) and 33.6 to 34.0 M became 9.0 to 11.0 M zoomed in (-68%); **GPU time**
+(`EXT_disjoint_timer_query_webgl2`, p50) 24.3 to 25.9 ms became 17.2 to 19.1 ms (about -27%) and 20.6 to 20.8 ms became 12.1
+to 12.9 ms (about -39%). **The frame interval did not move** (p50 50 ms at the default view, 33.3 ms zoomed, in every run):
+the Planner is bound by the main thread's 22k draw calls on this machine and nothing here removes a draw (draws 21.8 to 22.2k
+before, 20.8 to 22.5k after: the flag does not change the count). **What it costs**: the scene holds 2,352 tree layers
+(196 chunks x 12) where it held 300, 8x the nodes the renderer walks each frame; the callback time of the Planner frame
+(p50) read 42.1 to 44.5 ms in 9 runs without the change and 42.7 to 54.9 ms in 10 runs with it in the first set (a mean of
+43.2 against 47.4, about +4 ms, +10%, at different hours on a loaded machine), and **49.4 and 55.0 without against 52.5 and
+50.4 with it in two alternating pairs of the final build** (load average 3 to 7; vertices 37.1 and 37.2 M against 16.4 M,
+GPU p50 25.5 and 25.9 against 18.6 ms), so a main-thread cost of up to a few ms is possible but not separated from the
+machine's noise; no run shows it helping a frame time. The first-person return (Tab back) read 3.7 s twice without the
+change and 4.1 s and 6.3 s with it (42 and 92 programs linked against 35 each; the 6.3 s run is the outlier and its cause is
+not known: two runs each cannot say whether the 8x tree nodes freed on the way back play a part. Re-measure before relying on
+the flag for the Tab-back freeze). The change pays where the GPU is the longer lane (a weaker GPU than
+this iGPU: inferred from the GPU/CPU split, not measured on one). Screenshots before and after (`orbit.png`,
+`orbit_zoom.png` of each run) show the same woods in the same places; they were taken at different game hours (the sim runs
+at 12 s a day), so they compare layout, not light. Turn the flag off (`orbit_tree_chunks=0`) if the CPU lane is the one
+that matters on the target machine.
+
+**First-minute shader warm-up (flag `web_shader_warmup`, default on).** The browser links each shader program at
+first use, on the main thread; a new material costs six or seven programs, 0.35 to 0.45 s, in one frame, and a
+fresh day 1 hit 83 to 84 programs (4.2 s) in its first 90 s of play after the loader veil dropped, 13 to 16 frames over
+100 ms among them. While the veil is up, `ShaderWarmup` (`scripts/fp/warmup/`) now draws a tiny copy of each material
+the scene holds, and of a short list of what comes within a minute (people's cut-out materials, a building's leaves, the
+construction beacon, the overview's markers, the far-tree layers), in the street's lighting and again with the sun's
+shadow held off (the Tab overview's and dusk's programs), a few per frame with a **3,000 ms budget** (checked between
+batches: it ran 3.0 to 3.1 s; the loader's status line reads "Preparing graphics N%" and reaches 100% as the budget ends).
+What is left links lazily as before. Measured on a fresh day 1 (headless Chrome, AMD iGPU, `tools/web_hitch_probe.js`,
+alternating runs of the final build, three each, flag off against flag on): frames over 100 ms **15, 15, 15 against 12, 12,
+14** (those caused by a link 11, 11, 11 against 8, 8, 8: about -20% and -27%), over 250 ms 10, 10, 8 against 5, 6, 6,
+programs linked after the veil 83, 84, 83 against 55, 61, 60, the veil dropping 19.2 to 23.4 s without and 21.5 to 23.8 s
+with it (+3 s or so on this shared machine, where one run's boot varies by several seconds). An earlier set of five and
+three runs read 14.2 to 12.0 (-15%) and, in a reviewer's, 17.0 to 12.3 (-28%). **The "halve them" target is not met at 3 s**:
+it takes the whole warm-up, 6.8 s here (the link-caused ones fall to 4), because the first minute shows a dozen material
+kinds the scene does not hold yet, 0.4 s each wherever they are paid (table and details in web-probe-kit.md, "Shader
+warm-up"); raise `ShaderWarmup.DEFAULT_BUDGET_MS` to buy it. The first Tab's sun-without-shadow base programs fell from 21
+to 22 to 1 to 5 (the whole Tab window, 24 to 29 s after the veil, linked 57 programs in 2.7 to 2.8 s without the warm-up and
+27 to 29 in 1.4 to 1.6 s with it, about -47%, and still holds a 550 to 616 ms frame of 7 programs when a first beacon, a new
+building and a new people shader arrive at the same moment: better, not smooth). The biggest remaining hitches are the same
+five or six single-material frames at about +10, +24 to 26 and +82 s (each a new generated shader: a hash of the program's GLSL
+that was not linked before; adding a person's body material and the far-LOD people layer's shader to the list was tried and
+changed none of them, so it was left out). **A grown city is not warmed**: with more than 600 distinct materials
+(`ShaderWarmup.LARGE_SCENE_RECIPES`; a new city has 190, the day-10 save 1,575) the run is skipped after counting them
+(0.15 s), because there the budget went on the prototypes and the first shadow-off frame (1.9 s) and it added 0.8 to
+2.1 s of boot and removed no hitch (9 and 9 frames over 100 ms with and without it); the final build's two day-10 runs read
+9 and 10 with the flag on (skipped) and 8 and 8 with it off (the veil at 34.4 and 28.6 s against 31.2 and 28.2, a boot's
+noise). The warm-up also stops at once if the loader's veil is gone (`window.gfVeilUp()`), so a hidden tab or the 30 s
+timeout cannot make it draw in front of the player. The Planner's first frames (Planner view: 87 to 100 programs, a 3.9 to
+4.5 s frame) are not reached by it. `web_shader_warmup=0` is the control. Unverified: Windows ANGLE/D3D11, Intel and
+Apple drivers, where a program may cost several times what it does here.
+
 **Web quality tiers.** `Quality.WEB` used to be merged over every preset, so Low, Medium and High looked
 the same in the browser (measured: street cb 15.1 / 15.3 / 16.1 ms, identical Planner GPU) and the pause
 menu's Display tab did nothing there. The overlay is now per tier (`Quality.WEB_TIERS`), and the browser starts
@@ -659,6 +730,15 @@ run the default run once per release too.
 
 ## Known limitations (web / gl_compatibility)
 
+- **Planner view freezes the page for 3.9 to 4.5 s on the first entry** (and Tab back to the street for 3.4 to 3.7 s, 15 to
+  25 programs). Measured on the day-10 city with `GF_HP_ORBIT=1` (web-probe-kit.md): 87 to 100 shader programs link on the
+  Planner's first frames, 4.0 to 4.4 s of them (four shadow splits, exponential fog and orbit-only materials, none of which
+  the street draws). The shader warm-up (`web_shader_warmup`) does not reach them, even with every pass drawn for 18 s.
+  Open: draw the Planner's materials once behind a "Preparing the Planner" overlay when the player asks for it, or reveal
+  the rebuilt city over several frames so each frame links a few.
+- **The first-minute warm-up costs about 3 s of boot and removes about a quarter of the link-caused hitches on a new city,
+  and does nothing on a grown one** (`ShaderWarmup.DEFAULT_BUDGET_MS`; 6.8 s of boot removes about two thirds; a city with
+  more than 600 materials is not warmed: `ShaderWarmup.LARGE_SCENE_RECIPES`). Details in web-probe-kit.md.
 - **No ambient occlusion in the web build's first-person view (`Quality.ssao_ok`).** On
   Compatibility (Godot 4.7.2), SSAO drew rows of dark horizontal lines on the plaza ground seen
   from the street whenever the 3D view rendered below native size. Only that street view was

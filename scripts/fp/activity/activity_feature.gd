@@ -46,6 +46,14 @@ var _stagger_was: bool = false
 var _t: float = 0.0
 
 
+## The beacon the first construction site raises, for the web shader warm-up.
+func warm_prototypes() -> Array[Node3D]:
+	var out: Array[Node3D] = []
+	if beacons != null:
+		out.append(beacons.warm_prototype())
+	return out
+
+
 func feature_id() -> String:
 	return "activity"
 

@@ -7,6 +7,9 @@ extends RefCounted
 const D := preload("res://scripts/sim/sim_defs.gd")
 ## The old plant: every FP chunk of the 216 x 216 tile grid (the map plus its ring of woods).
 const FULL := 729
+## The Planner's plant: the chunks of the same grid in CityView.TREE_CHUNK_ORBIT tiles (flag
+## orbit_tree_chunks, default on): 14 x 14, where 48-tile chunks were 5 x 5.
+const ORBIT := 196
 const SPAWN := Vector2(15.5, 13.5)
 const CORNER := Vector2(100.0, 100.0)
 ## An interior spot ~77 u from the spawn: the windows of the web and medium presets do not meet.

@@ -104,6 +104,7 @@ Renders the CitySim grid in 3D: Kenney roads picked by neighbor mask, zone lots 
 - `LEAF_TEXTURE = R + "buildings/hospital_leafcluster_round.png"`
 - `TREE_PROPS = ["tree_oak", "tree_round", "tree_birch", "tree_poplar", "tree_conifer"]`
 - `TREE_CHUNK = 48`: Trees are batched in square chunks so far chunks can switch to low-poly stand-ins and a cleared forest only rebuilds its own chunk. TREE_RING tiles of woods surround the world. Orbit: one 48-tile chunk carries both layers. On foot: 8-tile chunks carry full trees to TREE_NEAR_FP, then one merged stand-in mesh (a single draw per chunk) to TREE_FAR_FP, where the depth fog takes over. Both layers of a chunk sit at one centre, but the engine measures a range from the centre of each layer's own AABB: the switch is exact only to the offset of the two.
+- `TREE_CHUNK_ORBIT = 16`: Orbit chunks with the flag orbit_tree_chunks: a chunk draws all its trees whenever any part of its box is in view, so the 48-tile chunks (25 for the map and its woods) drew every tree of the chunks the view touched (about 266k trees, 24 M vertices on a grown city, again in each shadow cascade) at any zoom. 16-tile chunks (196 of them) cull to what the view reaches. The full-tree / stand-in switch stays at the old grain, one decision per 48-tile cell (OrbitTreeLod): a range on each small layer would have moved it to a finer grain and changed how the forest looks mid zoom.
 - `TREE_RING = 12`
 - `TREE_NEAR = 120.0`
 - `TREE_CHUNK_FP = 8`
@@ -172,6 +173,7 @@ Renders the CitySim grid in 3D: Kenney roads picked by neighbor mask, zone lots 
 - `func set_light_pole_source(src: Object) -> void`: Sets light_pole_source (E's traffic feature, or null) and, on a change while on foot, re-hangs the street-name blades of the cross tiles already built (they were built before the source).
 - `func set_wetness(w: float) -> void`: Wet streets: road and sidewalk materials darken and turn glossy, the ground shaders and the water follow, and puddles appear by the curbs. w is 0 (dry) .. 1 (soaked).
 - `func set_rain(r: float) -> void`: Rain falling now (0 none .. 1 full): rings on the river and on the puddles in the road (on foot only, off it they are 0). The weather asks every frame, so the materials are written only when the value moved: _rain_told remembers what they hold, and a material made since (the water at setup(), the road on first use) has none told.
+- `func warm_prototypes() -> Array[Node3D]`: One unplanted instance of each far-tree layer (the stand-ins the overview and the Planner draw to the horizon), for the web shader warm-up: the street plants them only once the camera is high.
 - `func show_hero_marker(world_pos: Vector3) -> void`: Planner view: marks where the hero stands at world_pos (the tile's x and z). Built on first use and moved afterwards; setup() drops it with the rest of the view.
 - `func hide_hero_marker() -> void`: Planner view: no "you are here" (the hero's spot is unknown, or there is none yet).
 - `func rebuild_all(animate: bool) -> void`
@@ -275,6 +277,30 @@ Living SimCity-style 3D establishment for GridFall: - 19x19 city grid + 3-tile f
 - `func leg_len(loop: PackedVector3Array, seg: int) -> float`
 - `func resident_position(resident_id: String) -> Vector3`
 - `func landmark_position(landmark_key: String) -> Vector3`
+
+## `scripts/world/orbit_tree_lod.gd`
+
+class_name `OrbitTreeLod` · extends `RefCounted`
+
+The Planner's tree level of detail, decided per LOD cell and not per culling chunk. The orbit forest is planted in small chunks (CityView.TREE_CHUNK_ORBIT tiles) so the renderer can cull it to the view and the sun's shadow cascades; but the full trees against round stand-ins switch used to be a visibility range on each layer, measured from the centre of that layer's own AABB, and with the small chunks that switch moved to a finer grain than the look was made for (forests turned from dense stand-ins into sparse full models mid zoom, with a hard edge between). Here every layer has no range of its own and a cell of CELL_TILES tiles (the old chunk) holds the near/far state for all the chunks in it: near while the camera is within near_end of the cell's centre (the centre of the box its trees fill: the engine measured a range from the centre of the layer's AABB, not from the mean of the trees), with a hysteresis margin so the switch does not flicker (the engine's own rule: it appears inside near_end - margin and goes outside near_end + margin). The state is applied as the layers' `visible`: one pass over a handful of cells a frame, and a few dozen layer toggles when a cell crosses the line.
+
+### Constants
+
+- `CELL_TILES = 48`: Tiles to a LOD cell: the old orbit chunk.
+
+### Properties
+
+- `near_end: float`: World distance to a cell's centre inside which its full trees draw, and the hysteresis around it.
+
+### Functions
+
+- `static func cell_of(c: Vector3i, chunk_tiles: int) -> Vector2i`: The cell that holds orbit chunk c (the key's x, y), chunks of chunk_tiles tiles.
+- `func set_chunk(c: Vector3i, chunk_tiles: int, near_layers: Array, far_layers: Array, count: int, lo: Vector3, hi: Vector3) -> void`: Registers chunk c's layers (near: the full models, far: the stand-ins) and its trees (their count and the box they fill, lo to hi, tree models included: the cell's centre is the centre of the union of its chunks' boxes), replacing what it had, and puts the layers in the cell's state.
+- `func drop_chunk(c: Vector3i) -> void`: Forgets chunk c (its layers are the caller's to free).
+- `func update(cam: Vector3) -> int`: Moves the camera: every cell whose state changed puts its layers in it. Returns how many did.
+- `func is_near(c: Vector3i, chunk_tiles: int) -> bool`: True when the cell of chunk c draws its full trees now.
+- `func centre_of(cell: Dictionary) -> Vector3`: The cell's centre: the centre of the box its trees fill.
+- `func cell_count() -> int`
 
 ## `scripts/world/resident_avatars.gd`
 

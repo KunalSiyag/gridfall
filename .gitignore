@@ -10,6 +10,8 @@ mono_crash.*.json
 
 # Exports and build output (tools/export.sh writes to build/)
 build/
+# mutation-check exports (tools/export.sh with EXPORT_DIR under the tree): never commit
+build-mut/
 dist/
 export/
 *.pck

@@ -115,6 +115,17 @@ func setup(p_ctx: FpContext) -> void:
 		ctx.sim.site_started.connect(_on_site_started)
 
 
+## The site and pick markers' material, drawn once behind the loader veil (the web shader warm-up).
+func warm_prototypes() -> Array[Node3D]:
+	var out: Array[Node3D] = []
+	for m: Material in [_site_mat, _pick_mat]:
+		var mi := MeshInstance3D.new()
+		mi.mesh = BoxMesh.new()
+		mi.material_override = m
+		out.append(mi)
+	return out
+
+
 func on_world_rebuilt() -> void:
 	if active:
 		exit(0.0)
