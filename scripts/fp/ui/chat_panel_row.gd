@@ -23,6 +23,9 @@ const REPLY_H := 17.0
 const CHIP_H := 15.0
 const CARD_ICON := 22.0
 const ROLE_TAGS := {"mayor": "MAYOR", "press": "PRESS", "council": "COUNCIL"}
+## Who wrote a mayor's line (refs.via, see chat/mayor_voice.gd): a fast chat model or the script in
+## the mayor's name, or the mayor's own model.
+const VIA_TAGS := {"press_office": "PRESS OFFICE", "own_voice": "OWN WORDS"}
 ## Card icon per incident type (refs.type; "street": a crew called after someone was hit).
 const INCIDENT_ICONS := {
 	"fire": "fire", "blackout": "bolt", "power_line": "bolt", "sewage_burst": "drop", "water_main": "drop",
@@ -139,6 +142,11 @@ func _shape(p_msg: Dictionary, parent: Dictionary, time_text: String) -> void:
 	_avatar_icon = "news" if role == "press" else ("person" if role == "player" else "")
 	if ROLE_TAGS.has(role):
 		_chips.append({"line": S.text_line(str(ROLE_TAGS[role]), S.display_font(), 10), "box": _chip_style(Color(0, 0, 0, 0), _name_col, true), "fg": _name_col})
+	var via_tag := str(VIA_TAGS.get(str(refs.get("via", "")), ""))
+	if role == "mayor" and not via_tag.is_empty():
+		var via_box := _chip_style(Color(0, 0, 0, 0), S.TEXT_DIM, true)
+		var via_line := S.text_line(via_tag, S.display_font(), 10)
+		_chips.append({"line": via_line, "box": via_box, "fg": S.TEXT_DIM})
 	var badge := T.district_badge(d)
 	if not badge.is_empty() and role not in ["press", "council"]:
 		var dc := S.district_color(d)

@@ -56,6 +56,7 @@ func setup(p_sim: CitySim, p_client: GmiClient) -> void:
 	_forget_calls()
 	sim = p_sim
 	client = p_client
+	ledger.attach(client, true)
 	mayor_state.clear()
 	complaints.clear()
 	for i in range(D.MAYORS.size()):
@@ -402,6 +403,7 @@ func _land_mayor(mi: int, day: int, res: Dictionary) -> void:
 	if not post.is_empty():
 		day_feed.append("%s posted: %s" % [m["display"], post])
 	_mayor_in_flight[mi] = false
+	ledger.note_turn(mi, entry)
 	mayor_decided.emit(mi, entry)
 	busy_changed.emit(pending_calls())
 
@@ -948,7 +950,7 @@ func to_dict() -> Dictionary:
 		"decree_day": decree_day, "last_paper": last_paper, "last_voices": last_voices, "last_council": last_council,
 		"last_chaos": last_chaos, "last_operator": last_operator, "chaos_last_day": chaos_last_day,
 		"complaints": complaints.duplicate(true), "client": client.to_dict(),
-		"turns": turns.to_dict(),
+		"turns": turns.to_dict(), "ledger": ledger.to_dict(),
 	}
 
 
@@ -978,4 +980,5 @@ func from_dict(d: Dictionary) -> void:
 		complaints.append({})
 	turns.from_dict(d.get("turns", {}))
 	client.from_dict(d.get("client", {}))
+	ledger.from_dict(d["ledger"] if typeof(d.get("ledger")) == TYPE_DICTIONARY else {})
 	BrainText.debrand_state(proposals, mayor_state, last_paper, last_council)

@@ -63,6 +63,7 @@ Global chat and face-to-face conversations (slice C). Normalises every city sour
 - `TALK = preload("res://scripts/fp/chat/talk_dialog.gd")`
 - `STREET = preload("res://scripts/fp/chat/street_lines.gd")`
 - `ASK = preload("res://scripts/fp/chat/chat_ask.gd")`
+- `MV = preload("res://scripts/fp/chat/mayor_voice.gd")`
 - `ROUND_MS = 60000`
 - `PLAYER_DEBOUNCE_MS = 3000`
 - `PLAYER_COALESCE_MS = 10000`
@@ -193,6 +194,30 @@ Text helpers for the global chat and conversations (slice C): the display filter
 - `static func h(s: String) -> int`: Deterministic non-negative hash of a string (stable across runs).
 - `static func mix(s: String) -> int`: h(s) with its bits mixed (a murmur-style finaliser). Godot's String hash is djb2, whose value modulo 3 depends only on the last character, so "hash(id + day) % 3" would make every letter of a day public or none; mix() spreads it.
 - `static func district_badge(d: int) -> String`: Two-or-three letter badge for district d ("NW", "NE", "CTR", "SW", "SE"); "" outside them.
+
+## `scripts/fp/chat/mayor_voice.gd`
+
+extends `RefCounted`
+
+Who wrote a chat line credited to a mayor (finding F8 of the model audit). Chat lines come from one of three fast models that rotate (ChatterMinds), whoever the card names, so a line "by Mei Kimura" is really her press office's draft. Every such line carries `via`: "press_office"  written by a fast chat model or the offline script in the mayor's name "own_voice"     the mayor's own model said it (flag mayor_voice_calls, a live key only) and the chat row prints the matching chip. With the flag on, attribute() sends each mayor line (at most MAX_REWRITES a round, in parallel) to that mayor's own model as live_json("chatter", "mayor-voice", ...), which rewrites the draft in the mayor's voice; a failed, empty or unsuitable answer leaves the press office's line as it was. Why the flag is off by default: each rewrite is one more live call, 1 to 3 per chat round, to the mayors' (large, slower) models on the player's own key, and on the web build every extra parallel call counts against a visitor's rate limit. The label alone costs nothing.
+
+### Constants
+
+- `D = preload("res://scripts/sim/sim_defs.gd")`
+- `T = preload("res://scripts/fp/chat/chat_text.gd")`
+- `PRESS = "press_office"`
+- `OWN = "own_voice"`
+- `MAX_REWRITES = 3`
+- `TOKENS = 160`
+- `TIMEOUT = 20.0`
+- `LINE_CHARS = 140`
+- `SYSTEM = """`
+
+### Functions
+
+- `static func wants_own(client: GmiClient) -> bool`: True when the mayors' own models may write their chat lines: the flag is on and a live key is in use.
+- `static func attribute(client: GmiClient, day: int, lines: Array, directory: Variant) -> Array`: Marks every mayor line of lines as the press office's, then, when wants_own(client), has the mayors' own models rewrite them. Coroutine; returns lines. directory: the CityDirectory the chat text filter uses (or null).
+- `static func suitable(res: Dictionary, directory: Variant) -> String`: The line a live answer holds ("say"), filtered like every chat line, or "" when there is none worth showing (failed call, empty, a link, a model's name, more than 2 sentences).
 
 ## `scripts/fp/chat/street_lines.gd`
 

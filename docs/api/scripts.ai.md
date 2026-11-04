@@ -92,6 +92,7 @@ The GMI calls a CityBrain has in flight, and which city each was sent for (CityB
 
 ### Properties
 
+- `ledger`: What every model has done in this city (calls, answer times, repairs, accepted orders): the league, the Arena tab and the services page read it. Fed by the client and by mayor_decided.
 - `arena: ArenaAsk`: The "Ask the five" engine (flag arena_ask), built on first use and dropped with the city.
 
 ### Functions
@@ -130,6 +131,7 @@ The voices of the global chat and of face-to-face talk (slice C §3). Residents,
 - `D = preload("res://scripts/sim/sim_defs.gd")`
 - `T = preload("res://scripts/fp/chat/chat_text.gd")`
 - `F = preload("res://scripts/fp/chat/chat_facts.gd")`
+- `MV = preload("res://scripts/fp/chat/mayor_voice.gd")`
 - `MODEL_NAMES = ["deepseek-ai/DeepSeek-V4.1-Flash", "google/gemini-3.5-flash-lite", "Qwen/Qwen3.8-Flash"]`: The fast models chatter rotates across, taken from ResidentMinds.MODELS.
 - `ROUND_TOKENS = 600`
 - `ROUND_TIMEOUT = 30.0`
@@ -313,6 +315,7 @@ Async GMI Cloud chat client with JSON extraction, a recorded replay cache, and h
 ### Signals
 
 - `call_logged(record: Dictionary)`
+- `call_skipped(record: Dictionary)`: A live_json call that never left the process (offline, circuit open, no free slot): it is not in the log, but the ModelLedger counts it so a model that is being skipped shows as such.
 - `breaker_changed(state: String)`: The circuit breakers' aggregate moved to state ("closed" / "open" / "half_open"): one group opening while another is already open does not repeat it.
 
 ### Constants
@@ -477,6 +480,9 @@ Reads the JSON object a model put in its reply. Models wrap it in prose, code fe
 ### Functions
 
 - `static func extract_json(content: String) -> Dictionary`: The object the reply carries: the largest valid balanced one, else a truncated reply closed at its last complete value, else {}. Never fails and never prints.
+- `static func extract_json_info(content: String) -> Dictionary`: extract_json with how it got there: {"data": the object ({} when none), "truncated": true when the object is a cut-off reply closed at its last complete value}. One scan, so the caller that wants to count repairs (GmiReply) pays nothing extra.
+- `static func visible_text(content: String) -> String`: The reply without its reasoning (what extract_json scans): <think> blocks cut out, the scan limit applied.
+- `static func used_reasoning(msg: Dictionary) -> bool`: True when the reply put its answer in the reasoning field because its content was empty (message_text takes that way out).
 - `static func message_of(choice: Variant) -> Dictionary`: The "message" of one entry of a reply's "choices" ({} when it is not an object holding one).
 - `static func message_text(msg: Dictionary) -> String`: The reply's answer text for a chat message: its content (a string, or a list of parts with a "text"), and when that is empty the reasoning field some providers answer in. "" when none.
 - `static func parse_object(text: String) -> Dictionary`: The object a JSON text parses to after the small repairs models need, or {} when it is not an object. Never prints (JSON.parse_string would log a parse error; a JSON instance does not).
@@ -525,6 +531,31 @@ class_name `GmiReadiness` · extends `RefCounted`
 - `static func from_trip(trip: Dictionary, timeout_s: float) -> Dictionary`: The report for what GmiClient._models_trip returned ({"start_error": int}, or {"result", "http", "headers", "body"}): compare()'s result plus "ok" true, or {"ok": false, "error": a few words}. Never any text of the reply (an error body can echo the key). timeout_s is only worded.
 - `static func line(report: Dictionary) -> String`: The sentence for a finished check. report is compare()'s result with "ok" and, when the check failed, "error" (a few words). "" for an empty report.
 
+## `scripts/ai/gmi_reply.gd`
+
+class_name `GmiReply` · extends `RefCounted`
+
+Reads one chat-completion body into what the game keeps of it: the answer object, the text it came from, which repairs the reply needed, and what the API reported about its size. Pure and static (no node, no network), so tools/tests/ai_ledger_test.gd can feed it fenced, think-tagged and cut-off replies; GmiClient._post is the only caller in the game. Repairs name what GmiParse had to do to get an object out of the text (the ModelLedger counts them per model: they are the visible difference between hybrid-reasoning models): think_tag       a <think> block (or a lone </think>) was cut out fenced          the object came in a code fence trailing_comma  a trailing comma, NaN or Infinity had to be fixed (GmiParse.repair) salvaged        the reply was cut off by the token limit and closed at its last complete value reasoning_only  the content was empty and the answer was read from the reasoning field
+
+### Constants
+
+- `THINK_TAG = "think_tag"`
+- `FENCED = "fenced"`
+- `TRAILING_COMMA = "trailing_comma"`
+- `SALVAGED = "salvaged"`
+- `REASONING_ONLY = "reasoning_only"`
+- `KINDS = [THINK_TAG, FENCED, TRAILING_COMMA, SALVAGED, REASONING_ONLY]`
+
+### Properties
+
+- `repair_scans: int`: How many times the full repair scan ran (a reply with a comma, NaN or Infinity candidate): a clean reply must leave it alone, which ai_ledger_test asserts (the scan is a script loop).
+
+### Functions
+
+- `static func read(body: Dictionary) -> Dictionary`: body: the parsed JSON of a 200 reply. Returns {"error": "" | "no choices", "data": {} (empty when the text held no object), "raw": the answer text, "repairs": Array of KINDS names (only when an object was found), "tokens_in", "tokens_out" (-1 when the API sent no usage), "finish_reason" ("" when absent)}.
+- `static func classify(content: String, from_reasoning: bool, salvaged: bool) -> Array`: Which repairs reading content took (KINDS names, in KINDS order). from_reasoning: the text came from the reasoning field; salvaged: the object was recovered from a cut-off reply. Every reply passes through here, so a clean one costs a few native string searches and one regex scan, not a script loop (the loop in GmiParse.repair only runs when the regex saw a candidate).
+- `static func usage_of(body: Dictionary, choice: Variant) -> Dictionary`: {"tokens_in", "tokens_out", "finish_reason"} from a reply body and its first choice: the usage counts (-1 when missing or not a number) and the reason the model stopped ("length" = it hit max_tokens).
+
 ## `scripts/ai/mayor_turns.gd`
 
 extends `RefCounted`
@@ -555,6 +586,58 @@ Staggered mayor turns (CityBrain.stagger_mayors, on in street mode). Instead of 
 - `func turn_at(k: int) -> float`: The day fraction at which the k-th turn of the queue now running starts: the compressed founding schedule on an opening day 1, else at(k).
 - `static func at(k: int) -> float`: The day fraction at which the k-th turn starts.
 - `static func sim_idle(sim: Object) -> bool`: True while sim has no sliced job or spread work in flight (always for a synchronous sim). A staggered turn starts only then: its actions come from outside any job, and a mutator from outside finishes the job in flight, and the spread work it waits for, in that one frame.
+
+## `scripts/ai/model_ledger.gd`
+
+class_name `ModelLedger` · extends `RefCounted`
+
+What each model has done in this city: calls, how many answered live, failed, fell back to a recorded answer or to the scripted planner, how long they took to answer, which errors they got, which repairs their replies needed, how many tokens they used and, for the mayors, how many of their orders the city accepted. It is the one place the street league, the orbit Arena tab and the "Services & minds" page read; nothing here draws. It is fed by two things only: GmiClient.call_logged / call_skipped (attach) for the calls, and CityBrain.mayor_decided (note_turn) for the orders. It lives in memory, owned by the brain (brain.ledger), and a save keeps a bounded copy (to_dict). Flag model_ledger turns it all off. Reading the numbers honestly: - "time to answer" is the call's latency_ms, which covers retries, back-off and waiting behind the other calls in flight: it is how long the city waited, not how fast the model is. - A mayor answers once a game day, so its p50 and p95 rest on a handful of calls: rows carry n_live, and p95 is only reported from P95_MIN_CALLS live answers on (-1 before). - replay and fallback count answers that did not come live (a recorded answer, the scripted planner after a failed or skipped call); a call whose live attempt failed and was then replayed counts in both live_fail and replay. - Accept% is the share of a mayor's orders the sim carried out, counted from this ledger's start (a save from before the ledger starts at zero). It covers live and replayed turns, because the sim validates every order whoever wrote it; the scripted planner's orders (a failed or skipped call) are not counted, they are not the model's. A replayed day may also carry up to two orders the replay top-up borrowed from the planner (CityBrain._replay_top_up).
+
+### Constants
+
+- `D = preload("res://scripts/sim/sim_defs.gd")`
+- `MAX_EVENTS = 400`: Events kept for a timeline; a save keeps the newest SAVED_EVENTS of them.
+- `SAVED_EVENTS = 40`
+- `LAT_KEEP = 50`: Live answer times kept per model (the newest), for p50 and p95.
+- `RECENT_KEEP = 8`: Outcomes kept for the health light.
+- `MAX_MODELS = 48`
+- `MAX_ERROR_CLASSES = 12`
+- `P95_MIN_CALLS = 5`: Live answers a p95 needs before it means anything.
+- `SLOW_MS = 30000`: A p95 time to answer slower than this (ms) makes the light amber.
+- `SAVE_VERSION = 1`
+- `OUT_OK = 0`: Outcome codes in a stat's "recent": answered live clean, answered live with a repair or a retry, failed.
+- `OUT_WARN = 1`
+- `OUT_FAIL = 2`
+- `SKIPS = ["offline", "circuit open", "no free slot"]`: Errors that mean the call never went out (not a failed attempt).
+- `ROLE_NAMES = { "residents": "Residents", "chatter": "Chat", "talk": "Talk", }`
+
+### Properties
+
+- `revision: int`: Bumped on every note: a view compares it with the one it drew to know it is stale.
+- `models: Dictionary`: model id -> stat dict (see _new_stat); "mayor:<id>" -> the same for one mayor's own calls.
+- `svc: Dictionary`: model id -> stat dict of what the model did OUTSIDE the mayors' chairs (the support agents, the residents, the chat voices). A model can sit in a chair and hold a service job (one of the resident minds is a mayor's model): its service row must not carry the mayor's answers.
+- `turns: Array[Dictionary]`: One per mayor index: {"live", "replay", "fallback", "offline" (turns by where the answer came from), "ok", "rejected" (orders), "mix" (order type -> count)}.
+
+### Functions
+
+- `static func enabled() -> bool`: True unless the model_ledger flag is off.
+- `func attach(client: GmiClient, reset: bool = false) -> void`: Starts listening to client's calls (and stops listening to the previous client's). reset true also forgets what was counted: a new city starts its own ledger.
+- `func clear() -> void`: Forgets every count.
+- `func note_call(rec: Dictionary) -> void`: One call (a GmiClient log record, slim or not): role, agent, model, source, latency_ms, attempts, error, tokens_in, tokens_out, finish_reason, repairs. A record without a model is ignored, and so is one of an isolated role (GmiClient.ISOLATED_ROLES: Ask the five): those calls promise to leave the breaker, the caches and the saves alone, and five parallel what-if answers would also skew the mayors' speed.
+- `func note_turn(mi: int, entry: Dictionary) -> void`: One mayor's decided turn (the entry CityBrain.mayor_decided carries): where the answer came from and how the city took the orders.
+- `func snapshot() -> Array[Dictionary]`: One row per model that made a call, busiest first: {"model", "label", "roles" (role -> calls), "calls", "live_ok", "live_fail", "replay", "fallback", "offline", "retries", "n_live", "last_ms", "mean_ms", "p50_ms", "p95_ms" (-1 when there is nothing to say), "errors" (class -> count), "repairs" (calls that needed one), "repair_kinds", "truncated" (cut off at max_tokens), "tokens_in", "tokens_out", "token_calls", "health"}. Orders and their accepted share are per mayor (mayor_rows): a model is not an order-giver.
+- `func mayor_rows() -> Array[Dictionary]`: The five mayors in order: {"mi", "id", "who" (the person), "model" (the brand), "model_id", "label", "color"} plus the row fields of snapshot() for that mayor's own calls, "turns_live", "turns_replay", "turns_fallback", "turns_offline", "orders_ok", "orders_rejected", "accept_pct" (-1 before any order), "mix" (order type -> count) and "health".
+- `func services() -> Array[Dictionary]`: One row per model the city uses outside the mayors' chairs (the support agents, the resident minds, the chat voices), known ones first even before they have made a call: {"model", "label", "kinds" (names of the jobs it has or is meant to have), "mix" ("Gazette 4 · Chat 9"), "calls" (outside the mayors), "live_ok", "live_fail", "replay", "fallback", "offline", "p50_ms", "health"}. A model is one row however many jobs it has.
+- `static func roster() -> Array[Dictionary]`: The models the city is meant to run outside the mayors: [{"model", "name"}] for the six support agents, the resident minds and the chat voices.
+- `func recent_events(n: int = 60) -> Array[Dictionary]`: The newest events, oldest first (at most n).
+- `static func role_name(role: String) -> String`: A job's name as a viewer reads it: a support agent's own name, else ROLE_NAMES, else the role.
+- `static func short_name(model_id: String) -> String`: The model id without its vendor and a trailing date stamp ("deepseek-ai/DeepSeek-V4-Flash-0731" -> "DeepSeek-V4-Flash").
+- `static func error_class(err: String) -> String`: The kind of failure an error text is: an HTTP code ("429"), "network", "no JSON", "bad reply", "skipped" (the call never went out) or "other"; "" for no error.
+- `static func percentile(values: Array, p: float) -> int`: The p-th percentile (0..100, nearest rank) of values; -1 when there are none.
+- `static func seconds_text(ms: int) -> String`: "11.2 s" for a time in ms; "-" for none.
+- `static func health_of(st: Dictionary) -> String`: The health word for a stat dict: "idle" (no call yet), "grey" (nothing but replay and scripted answers: no live call to judge), "red" (the last two live calls failed), "amber" (a recent failure, repair or retry, or a p95 slower than SLOW_MS over at least P95_MIN_CALLS answers), else "green".
+- `func to_dict() -> Dictionary`: A bounded copy for a save: every stat (their lists are capped), the five mayors' turn counts and the newest SAVED_EVENTS events (without their wall-clock stamp). A day of play adds nothing: it only moves the same numbers.
+- `func from_dict(d: Dictionary) -> void`: Loads what to_dict wrote. Anything missing or of the wrong type is skipped: a save is a file anyone can edit.
 
 ## `scripts/ai/resident_minds.gd`
 

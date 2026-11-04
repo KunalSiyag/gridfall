@@ -6,7 +6,7 @@ the previous save kept as `.bak`). Sections:
 | key | writer | notes |
 |---|---|---|
 | `sim` | `CitySim.to_dict()` | the city; versioned (below) |
-| `brain` | `CityBrain.to_dict()` | mayor state; a round in progress is dropped, not saved |
+| `brain` | `CityBrain.to_dict()` | mayor state; a round in progress is dropped, not saved; `brain.ledger` (below) |
 | `client` | `GmiClient.to_dict()` | this session's cached answers (`session_cache`, pruned for the save, see below) and the call counters; never prompts or keys |
 | `residents` | `Residents.to_dict()` | people and their day |
 | `minds` | `ResidentMinds.to_dict()` | per-resident AI state |
@@ -33,6 +33,22 @@ because it is what gets merged into the replay file. Loading a pruned save and s
 same bytes. `Main.new_game()` clears the cache and zeroes the counters (`GmiCache.clear_session(client)`),
 so a New City never replays the last city's answers. Older saves with the whole cache load as they
 always did.
+
+## The model ledger section (`brain.ledger`)
+
+`ModelLedger.to_dict()` (scripts/ai/model_ledger.gd, flag `model_ledger`) is what the street league's
+Orders and Speed columns, its Services & minds page and the orbit Arena tab read: per model (and per
+mayor, and per model outside the mayors' chairs: `svc`) the counts of calls, live answers, failures, replayed and scripted answers, retries, errors by
+class, repairs by kind, tokens, truncated replies and roles, the last 50 live answer times (for p50 and
+p95) and the last 8 outcomes (the health light), plus each mayor's turns by source, accepted and
+refused orders and order mix, and the newest 40 events. Never prompts, replies, keys or request ids.
+It is bounded: at most 48 models, 12 error classes, 12 roles and 24 order types per entry, 50 times and
+8 outcomes per entry; a measured 450-call, 14-model ledger saves in about 13 KB and 2000 more calls
+change numbers, not size (`tools/tests/ai_ledger_test.gd`). The section is optional: a save from before
+it loads with an empty ledger, a damaged one is ignored, and every number read back is clamped, so an
+edited save cannot break or grow it. `New City` starts an empty ledger. Tokens are what the API
+reported for the last attempt of a call (nothing is counted for a reply without `usage`), and "time to
+answer" is the call's `latency_ms`, which includes retries, back-off and waiting behind other calls.
 
 ## Sim section versions
 

@@ -680,7 +680,8 @@ func _check_league() -> void:
 	var first := lines[0] if not lines.is_empty() else ""
 	var rows_msg := "a row per mayor: rank, name and model, district, numbers, score (%s)"
 	K.check(fails, lines.size() == D.MAYORS.size() and same == lines.size(), rows_msg % first)
-	K.check(fails, _badges(f.league) == D.MAYORS.size(), "each mayor wears their model's badge")
+	var table: Control = f.league.get("_table")
+	K.check(fails, _badges(table) == D.MAYORS.size(), "each mayor wears their model's badge")
 	var press: Label = f.league.get("_press")
 	var card := "Reporter · 300 points · 2 filed · Senior reporter at 1,000"
 	K.check(
@@ -862,6 +863,8 @@ func _within(v: float, hi: float) -> bool:
 
 ## A league row as table_lines() reads it.
 func _row_line(k: int, r: Dictionary) -> String:
+	# Orders reads the model ledger's counters (the Arena tab's), not the sim's whole-city count.
+	var ledger_row: Dictionary = ctx.brain.ledger.mayor_rows()[int(r["mi"])]
 	var cells := [
 		str(k + 1),
 		"%s %s" % [r["who"], r["model"]],
@@ -870,9 +873,17 @@ func _row_line(k: int, r: Dictionary) -> String:
 		S.fmt(int(r["jobs"])),
 		"%.1f/10" % float(r["approval"]),
 		S.money(int(r["funds"])),
+		_orders_cell(int(ledger_row["orders_ok"]), int(ledger_row["orders_rejected"])),
+		"-",
 		str(int(r["score"])),
 	]
 	return " · ".join(PackedStringArray(cells))
+
+
+## The Orders column: the share of a mayor's orders that were carried out ("-" before any).
+func _orders_cell(done: int, refused: int) -> String:
+	var total := done + refused
+	return "-" if total == 0 else "%d%%" % roundi(100.0 * float(total - refused) / float(total))
 
 
 ## Labels under n marked as a model's badge.

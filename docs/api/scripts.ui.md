@@ -4,6 +4,43 @@
 
 [Index](index.md)
 
+## `scripts/ui/arena_text.gd`
+
+extends `RefCounted`
+
+The orbit view's Arena tab as BBCode text: a block per mayor (health light, the person's name with the model as the sub-line, turns by where the answer came from, time to answer, accepted orders, repairs, tokens and a bar of what the mayor orders), then a line per service. Rows are ModelLedger.mayor_rows() and services(). The orbit view keeps the model names (the model is the point of the demo; see fp_orbit_names_test), but still leads with the person's name. Honest labels: "time to answer" includes retries and waiting behind other calls, a mayor answers once a game day so its figures rest on a few calls and show their count, and a replayed or scripted turn is shown as that, never as a speed. Glyphs: the web build's HUD font has only Latin text (no system fallback there), so a light or a bar made of U+25CF or U+2588 shows as a box with a hex code. Lights and bars are therefore coloured background spans over plain "#" characters of the same colour: solid blocks where bgcolor is drawn, still a visible mark where it is not. Every character the tab prints is ASCII or U+00B7 (the middle dot), which ai_arena_test asserts.
+
+### Constants
+
+- `HEALTH_COLORS = { "green": "#5CFF9D", "amber": "#FFD27F", "red": "#FF7A6A", "grey": "#8A97A8", "idle": ...`
+- `HEALTH_WORDS = { "green": "answering live", "amber": "shaky", "red": "failing", "grey": "replay / scri...`
+- `DIM = "#9AB"`
+- `MIX_COLORS = ["#FFB800", "#00F0FF", "#B44CFF", "#10E88A", "#FF2E54", "#7FD1FF"]`: Colours of the order-type segments of the mix bar, most frequent first.
+- `CAVEAT = ("[color=%s]Time to answer includes retries and waiting behind other calls: it is how l...`
+- `NO_LIVE = ("[i][color=%s]No live answer yet: replayed and scripted turns are shown as such. Order...`
+- `TURNS = (" turns: [color=#5CFF9D]live %d[/color] · [color=#FFD27F]replay %d[/color]" + " · [col...`
+- `MIX_CELL = 2`: Characters per bar segment unit (a "#" is narrow): the whole bar is MIX_WIDTH * MIX_CELL wide.
+- `MIX_WIDTH = 28`
+- `MIX_LISTED = 6`
+
+### Functions
+
+- `static func text(ledger: ModelLedger) -> String`: The whole tab for ledger (null: a line saying there is none).
+- `static func mayor_block(r: Dictionary) -> String`: One mayor's block (a few lines).
+- `static func service_line(r: Dictionary) -> String`: One service's lines: the light, the model and its jobs, then how the calls went (and the time to answer when there was a live one).
+- `static func light(health: String) -> String`: A health light: a coloured block (see the glyph note at the top).
+- `static func health_word(health: String) -> String`: "answering live", "shaky"...: the light's word.
+- `static func health_line(health: String) -> String`: The light's word in its colour, as a line under a name.
+- `static func block(col: String, n: int) -> String`: n characters of colour col: a background span over "#" of the same colour.
+- `static func answer_words(r: Dictionary, own: bool) -> String`: The time to answer in words. A mayor (own: true) answers rarely: below ModelLedger.P95_MIN_CALLS live answers it shows the last, the mean and how many, never a percentile.
+- `static func accept_words(r: Dictionary) -> String`: "87% (46 of 53)" or "-" before an order.
+- `static func repair_words(r: Dictionary) -> String`: "20% (1 of 5)" of live answers that needed a repair, or "-".
+- `static func token_words(r: Dictionary) -> String`: "5.2k in / 1.1k out", or "-" when no answer reported usage.
+- `static func error_words(r: Dictionary) -> String`: " · errors 429 x2, no JSON x1" (leading separator) or "".
+- `static func mix_line(mix: Dictionary) -> String`: The bar of what a mayor orders: segments of MIX_WIDTH cells by share, then a legend.
+- `static func kilo(n: int) -> String`: 1234 -> "1.2k"; below 1000 as is.
+- `static func esc(s: String) -> String`: BBCode-safe text.
+
 ## `scripts/ui/city_hud.gd`
 
 class_name `CityHud` · extends `CanvasLayer`
@@ -29,6 +66,7 @@ SimCity-style HUD for GridFall: city vitals and RCI demand, time controls, playe
 - `D = preload("res://scripts/sim/sim_defs.gd")`
 - `HudChips = preload("res://scripts/fp/ui/hud_chips.gd")`
 - `PackStatus = preload("res://scripts/ui/pack_status.gd")`
+- `ArenaText = preload("res://scripts/ui/arena_text.gd")`
 - `ARENA = preload("res://scripts/fp/arena/arena_panel.gd")`
 - `TITLE_FONT = preload("res://fonts/lilita_one_regular.ttf")`
 - `BG = Color(0.055, 0.07, 0.11, 0.93)`

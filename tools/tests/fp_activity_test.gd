@@ -39,6 +39,7 @@ func _init() -> void:
 	_check_mayor_card(ctx, f)
 	_check_support(ctx, f)
 	_check_branding(f)
+	_check_press(ctx, f)
 	_check_modes(ctx, f)
 	_check_route(ctx, f)
 	_check_tags(ctx, f)
@@ -338,6 +339,92 @@ func _check_branding(f: FpFeature) -> void:
 		if n.has_meta(S.BADGE_META) and not n.has_meta(S.OWNER_META):
 			badges += 1
 	K.check(fails, badges >= 8, "model and source tags are badges (%d)" % badges)
+
+
+## The press run: a campaign poster that a live image model printed (bus.poster_ready with
+## meta.source "live") is a card with the image model's badge and the mayor it campaigns for; a
+## pre-baked, procedural or disk poster, a poster that is not a campaign and a malformed payload add
+## nothing.
+func _check_press(ctx: FpContext, f: FpFeature) -> void:
+	var feed: Control = f.get("feed")
+	var items: Array = f.get("items")
+	var before := items.size()
+	var told := announced.size()
+	var live := {
+		"key": "k1",
+		"kind": "campaign_kimi",
+		"texture": null,
+		"meta": {"kind": "campaign_kimi", "source": "live"}
+	}
+	ctx.bus.poster_ready.emit(live)
+	K.check(
+		fails,
+		items.size() == mini(before + 1, 12),
+		"a live campaign poster adds a card (%d items)" % items.size()
+	)
+	var card: Control = feed.call("open_card")
+	var mi := D.mayor_index("kimi")
+	K.check(
+		fails,
+		_text(card, "Headline") == "Campaign poster printed",
+		"it says so (%s)" % _text(card, "Headline")
+	)
+	K.check(
+		fails,
+		_text(card, "Who") == D.mayor_display(mi),
+		"naming the mayor by person, not the model (%s)" % _text(card, "Who")
+	)
+	K.check(
+		fails,
+		_badge(card, "Model") == "hy-image-v3.5-preview",
+		"with the image model's badge (%s)" % _badge(card, "Model")
+	)
+	K.check(fails, _badge(card, "Source") == "LIVE", "tagged LIVE (%s)" % _badge(card, "Source"))
+	K.check(
+		fails,
+		_text(card, "Where") == str(D.MAYORS[mi]["district"]),
+		"placed in the mayor's district (%s)" % _text(card, "Where")
+	)
+	var re := RegEx.create_from_string(LEAK_RE)
+	var leaks := PackedStringArray()
+	for t in S.owned_texts(card):
+		if re.search(t) != null:
+			leaks.append(t)
+	K.check(fails, leaks.is_empty(), "no brand word in its owned text (%s)" % str(leaks))
+	K.check(
+		fails,
+		announced.size() == told + 1 and announced[-1] == str(mi),
+		"it announces itself on the bus once"
+	)
+	var n := items.size()
+	for meta: Dictionary in [
+		{"source": "prebaked"},
+		{"source": "procedural"},
+		{"source": "disk"},
+		{"source": "memory"},
+		{}
+	]:
+		ctx.bus.poster_ready.emit(
+			{"key": "k2", "kind": "campaign_argon", "texture": null, "meta": meta}
+		)
+	ctx.bus.poster_ready.emit(
+		{"key": "k3", "kind": "shop_cafe", "texture": null, "meta": {"source": "live"}}
+	)
+	ctx.bus.poster_ready.emit(
+		{"key": "k4", "kind": "campaign_nobody", "texture": null, "meta": {"source": "live"}}
+	)
+	ctx.bus.poster_ready.emit(
+		{"key": "k5", "kind": "campaign_grok", "texture": null, "meta": "live"}
+	)
+	ctx.bus.poster_ready.emit({"key": "k6", "kind": 7, "texture": null})
+	K.check(fails, items.size() == n, "other posters add nothing (%d items)" % items.size())
+	# The list is capped (12), so its size alone cannot see a card that was added and pushed
+	# another out: every added card announces itself, and only the live one did.
+	K.check(
+		fails,
+		announced.size() == told + 1,
+		"no rejected poster made a card (%d announced, one expected)" % (announced.size() - told)
+	)
 
 
 func _check_modes(ctx: FpContext, f: FpFeature) -> void:

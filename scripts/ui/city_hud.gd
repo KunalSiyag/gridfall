@@ -23,6 +23,7 @@ const D := preload("res://scripts/sim/sim_defs.gd")
 const HudChips := preload("res://scripts/fp/ui/hud_chips.gd")
 # Preload, not the global name: the class cache is not guaranteed fresh in test worktrees.
 const PackStatus := preload("res://scripts/ui/pack_status.gd")
+const ArenaText := preload("res://scripts/ui/arena_text.gd")
 const ARENA := preload("res://scripts/fp/arena/arena_panel.gd")
 const TITLE_FONT := preload("res://fonts/lilita_one_regular.ttf")
 const BG := Color(0.055, 0.07, 0.11, 0.93)
@@ -109,6 +110,9 @@ var minds: ResidentMinds
 var selected_resident: String = ""
 var _people_rt: RichTextLabel
 var _people_t: float = 0.0
+## The Arena tab (flag arena_tab, appended after People: index 7) and the ledger revision it shows.
+var _arena_rt: RichTextLabel
+var _arena_rev: int = -1
 
 
 func _ready() -> void:
@@ -419,9 +423,12 @@ func _build_right_panel() -> void:
 	_people_rt = _rich("People")
 	_people_rt.meta_underlined = true
 	_people_rt.meta_clicked.connect(_on_people_meta)
+	if FeatureFlags.enabled("arena_tab", true):
+		_arena_rt = _rich("Arena")
 	_tabs.tab_changed.connect(func(_t: int) -> void:
 		_log_dirty = true
 		_feed_dirty = true
+		_arena_rev = -1
 	)
 
 
@@ -816,6 +823,7 @@ func _process(delta: float) -> void:
 			_render_log()
 		if _feed_dirty and _tabs.current_tab == 5:
 			_render_feed()
+		_render_arena()
 	_people_t -= delta
 	if _people_t <= 0.0 and _tabs.current_tab == 6:
 		_people_t = 1.0
@@ -1058,6 +1066,16 @@ func _render_log() -> void:
 			t += "   [color=#F98]%s[/color]\n" % _esc(err.left(100))
 		t += "   %s\n" % _esc(str(r.get("summary", "")))
 	_log_rt.text = t
+
+
+## The Arena tab: drawn only while it is open and the ledger has changed since.
+func _render_arena() -> void:
+	if _arena_rt == null or brain == null or _tabs.current_tab != _arena_rt.get_index():
+		return
+	if brain.ledger.revision == _arena_rev:
+		return
+	_arena_rev = brain.ledger.revision
+	_arena_rt.text = ArenaText.text(brain.ledger)
 
 
 func _render_feed() -> void:

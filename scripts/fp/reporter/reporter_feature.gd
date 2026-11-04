@@ -16,6 +16,7 @@ const DESK := preload("res://scripts/fp/reporter/reporter_desk.gd")
 const CARD := preload("res://scripts/fp/reporter/reporter_card.gd")
 const FINDER := preload("res://scripts/fp/reporter/reporter_viewfinder.gd")
 const LEAGUE := preload("res://scripts/fp/reporter/reporter_league.gd")
+const LEDGER := preload("res://scripts/fp/reporter/league_ledger.gd")
 const MODAL := &"league"
 const INPUTS: Array[String] = ["press_story", "press_league"]
 const MAX_LEADS := 4
@@ -256,6 +257,8 @@ func open_league() -> bool:
 	league_open = true
 	ctx.push_modal(MODAL)
 	_fill_league()
+	# Always the mayors' table first, whichever page it was closed on.
+	league.set_page(0)
 	league.visible = true
 	Analytics.track("league_open", {"leads": leads.size(), "filed": filed})
 	_sync()
@@ -296,9 +299,13 @@ func _unhandled_input(event: InputEvent) -> void:
 	elif event.is_echo():
 		return
 	elif league_open:
-		used = event.is_action_pressed("press_league") or event.is_action_pressed("pause_menu")
-		if used:
-			close_league()
+		if LEAGUE.is_flip(event):
+			league.flip_page()
+			used = true
+		else:
+			used = event.is_action_pressed("press_league") or event.is_action_pressed("pause_menu")
+			if used:
+				close_league()
 	elif event.is_action_pressed("press_league"):
 		used = open_league()
 	elif event.is_action_pressed("press_story") and _may_press():
@@ -568,7 +575,11 @@ func _fill_league() -> void:
 		day += " · " + ctx.sky.clock_text()
 	var desk := {"day": day, "press": press, "leads": open, "stories": stories}
 	desk["assignment"] = str(story.get("headline", ""))
-	league.show_league(DESK.standings(ctx.sim, ctx.residents), desk)
+	var rows := DESK.standings(ctx.sim, ctx.residents)
+	var ledger: ModelLedger = ctx.brain.ledger if ctx.brain != null else null
+	LEDGER.decorate(rows, ledger)
+	league.show_league(rows, desk)
+	league.show_minds(ledger.services() if ledger != null else ([] as Array[Dictionary]))
 
 
 ## The name of the rank after the player's.

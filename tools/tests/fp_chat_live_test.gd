@@ -9,6 +9,7 @@ extends SceneTree
 const K := preload("res://tools/tests/fp_kit.gd")
 const D := preload("res://scripts/sim/sim_defs.gd")
 const CHAT := preload("res://scripts/fp/chat/chat_feature.gd")
+const ROW := preload("res://scripts/fp/ui/chat_panel_row.gd")
 const STEP := 0.25
 const TALK_REPLY := "Honestly? Night shifts are brutal, but my patients keep me going."
 
@@ -27,6 +28,8 @@ class FakeClient:
 	var calls: Array[Dictionary] = []
 	var fail: bool = false
 	var hold_talk: bool = false
+	## While set, the mayors' own-model calls (chatter/mayor-voice) fail.
+	var voice_fail: bool = false
 
 	func live_json(
 		role: String,
@@ -38,7 +41,13 @@ class FakeClient:
 		max_tokens: int,
 		timeout_s: float
 	) -> Dictionary:
-		var rec := {"role": role, "agent": agent_id, "system": system_prompt, "user": user_prompt}
+		var rec := {
+			"role": role,
+			"agent": agent_id,
+			"system": system_prompt,
+			"user": user_prompt,
+			"model": model
+		}
 		rec.merge({"day": day, "max_tokens": max_tokens, "timeout": timeout_s})
 		calls.append(rec)
 		var res := {"ok": false, "data": {}, "source": "failed", "model": model, "error": ""}
@@ -50,6 +59,19 @@ class FakeClient:
 			return res
 		if role == "talk" and hold_talk:
 			await release
+		if agent_id == "mayor-voice":
+			if voice_fail:
+				res["error"] = "HTTP 429 the fake is busy"
+				return res
+			res.merge(
+				{
+					"ok": true,
+					"source": "live",
+					"data": {"say": "In my own words: line %d." % calls.size()}
+				},
+				true
+			)
+			return res
 		res.merge({"ok": true, "source": "live", "data": _answer(role, user_prompt)}, true)
 		return res
 
@@ -95,6 +117,9 @@ func _init() -> void:
 	_check_failed()
 	_check_offline()
 	await _check_slow_talk()
+	# Last: it moves the chat's round timer, which the checks above are lined up against.
+	_check_voices()
+	_check_post_labels()
 	K.finish(self, "FP_CHAT_LIVE_TEST", fails)
 
 
@@ -191,6 +216,12 @@ func _check_answer() -> void:
 	for m: Dictionary in mayors:
 		threaded = threaded and int(m["reply_to"]) == parent
 	K.check(fails, threaded, "answer: every mayor replies to the player's line")
+	var press := not mayors.is_empty()
+	for m: Dictionary in mayors:
+		press = press and str((m["refs"] as Dictionary).get("via", "")) == "press_office"
+	K.check(
+		fails, press, "answer: a mayor line written by a chat model says so (refs.via press_office)"
+	)
 	var stranger := false
 	for m: Dictionary in rows:
 		stranger = stranger or str(m["text"]).contains("I do not live here")
@@ -237,6 +268,137 @@ func _check_rounds() -> void:
 	_pump(130.0)
 	K.check(fails, fake.calls.size() == n2, "rounds: none while paused")
 	ctx.bus.pause_changed.emit(false)
+
+
+## Whose words a mayor's chat line is. Labelled "press office" by default (no extra call); with the
+## flag on and a live key the mayor's own model writes it (one call, on that mayor's model), and a
+## failed call leaves the press office's line. The row prints the matching chip.
+func _check_voices() -> void:
+	fake.api_key = "test-key-not-real"
+	var d: int = chat.call("_player_district")
+	var k := (maxi(d, 0) + 2) % D.MAYORS.size()
+	var last := str(D.MAYORS[k]["display"]).get_slice(" ", 1)
+	var n0 := fake.calls.size()
+	chat.call("player_say", "Mayor %s, how is the budget?" % last)
+	_pump(8.0)
+	K.check(fails, _calls_of("mayor-voice", n0).is_empty(), "voices: flag off, no mayor-voice call")
+	FeatureFlags.set_override("mayor_voice_calls", true)
+	var seq0 := _feed().seq
+	n0 = fake.calls.size()
+	chat.call("player_say", "Mayor %s, what did you build?" % last)
+	_pump(10.0)
+	var voice := _calls_of("mayor-voice", n0)
+	K.check(
+		fails,
+		not voice.is_empty() and voice.size() <= 3,
+		"voices: flag on, one call per mayor line (%d)" % voice.size()
+	)
+	var mayors := _mayor_rows(_rows_since(seq0))
+	var own := 0
+	for m: Dictionary in mayors:
+		var refs: Dictionary = m["refs"]
+		own += int(
+			(
+				str(refs.get("via", "")) == "own_voice"
+				and str(m["text"]).begins_with("In my own words: ")
+			)
+		)
+	K.check(
+		fails,
+		own >= 1 and own == mini(mayors.size(), voice.size()),
+		"voices: the mayor's own words reach the chat (%d of %d)" % [own, mayors.size()]
+	)
+	var models_ok := not voice.is_empty()
+	for c: Dictionary in voice:
+		var mi := -1
+		for j in range(D.MAYORS.size()):
+			if str(D.MAYORS[j]["model"]) == str(c["model"]):
+				mi = j
+		models_ok = models_ok and mi >= 0
+	K.check(fails, models_ok, "voices: each call went to a mayor's own model")
+	fake.voice_fail = true
+	seq0 = _feed().seq
+	chat.call("player_say", "Mayor %s, anything to say?" % last)
+	_pump(10.0)
+	var kept := _mayor_rows(_rows_since(seq0))
+	var held := not kept.is_empty()
+	for m: Dictionary in kept:
+		held = (
+			held
+			and str((m["refs"] as Dictionary).get("via", "")) == "press_office"
+			and not str(m["text"]).begins_with("In my own words")
+		)
+	K.check(fails, held, "voices: a failed call leaves the press office's line")
+	fake.voice_fail = false
+	FeatureFlags.set_override("mayor_voice_calls", false)
+	# The row's chip.
+	var tags := {}
+	for via: String in ["press_office", "own_voice", ""]:
+		var row: Control = ROW.new()
+		get_root().add_child(row)
+		var msg := {
+			"seq": 1,
+			"author": "Mei Kimura",
+			"author_id": "mayor:2",
+			"role": "mayor",
+			"district": 2,
+			"text": "Hello.",
+			"kind": "chatter",
+			"day": 1,
+			"clock": "10:00",
+			"t_ms": 0,
+			"reply_to": -1,
+			"refs": {"via": via} if not via.is_empty() else {}
+		}
+		row.call("setup", msg, {}, 380.0, "now", 2)
+		var chips := PackedStringArray()
+		for c: Dictionary in row.get("_chips"):
+			chips.append(
+				TextServerManager.get_primary_interface().shaped_get_text(
+					(c["line"] as TextLine).get_rid()
+				)
+			)
+		tags[via] = chips
+		row.queue_free()
+	var chip_ok: bool = (
+		(tags["press_office"] as PackedStringArray).has("PRESS OFFICE")
+		and (tags["own_voice"] as PackedStringArray).has("OWN WORDS")
+	)
+	chip_ok = (
+		chip_ok
+		and not (tags[""] as PackedStringArray).has("PRESS OFFICE")
+		and (tags[""] as PackedStringArray).has("MAYOR")
+	)
+	K.check(
+		fails,
+		chip_ok,
+		"voices: the row prints PRESS OFFICE or OWN WORDS beside MAYOR (%s)" % str(tags)
+	)
+
+
+## A mayor's own post (the model's words on a live or replayed turn) is labelled too.
+func _check_post_labels() -> void:
+	var seq1 := _feed().seq
+	chat.call("_on_mayor", 0, {"post": "Roads are open.", "source": "live"})
+	chat.call("_on_mayor", 1, {"post": "Taxes stay put.", "source": "cache"})
+	chat.call("_on_mayor", 2, {"post": "Plan B is on.", "source": "heuristic"})
+	# A mayor who spoke lately waits out the per-author limit (45 s of feed time).
+	_pump(70.0)
+	var via_of := {}
+	for m: Dictionary in _mayor_rows(_rows_since(seq1)):
+		via_of[str(m["text"])] = str((m["refs"] as Dictionary).get("via", ""))
+	K.check(
+		fails,
+		(
+			via_of.get("Roads are open.") == "own_voice"
+			and via_of.get("Taxes stay put.") == "own_voice"
+			and via_of.get("Plan B is on.") == "press_office"
+		),
+		(
+			"voices: a mayor's own post says own words, a scripted one says press office (%s)"
+			% str(via_of)
+		)
+	)
 
 
 ## A failed live call gets nobody's made-up answer: the chat says the mayors are busy fighting,
