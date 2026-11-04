@@ -217,7 +217,7 @@ func _check_near_fade(view: CityView) -> void:
 					faded = (m as BaseMaterial3D).distance_fade_mode == BaseMaterial3D.DISTANCE_FADE_PIXEL_DITHER and (m as BaseMaterial3D).distance_fade_max_distance > (m as BaseMaterial3D).distance_fade_min_distance
 					faded = faded or m == view._lamp_material()
 				elif m is ShaderMaterial:
-					faded = ((m as ShaderMaterial).get_shader_parameter("near_fade") as Vector2).y > 0.0
+					faded = (m as ShaderMaterial).get_shader_parameter("near_fade") is Vector2 and ((m as ShaderMaterial).get_shader_parameter("near_fade") as Vector2).y > 0.0
 				if faded == (kind == "apron"):
 					bad.append([kind, str(m)])
 	K.check(fails, bad.is_empty(), "props and leaves dither out near the camera, ground kinds do not %s" % str(bad.slice(0, 4)))

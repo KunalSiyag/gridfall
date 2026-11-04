@@ -29,6 +29,7 @@ Static checks and Python tests:
 ```bash
 pre-commit run --all-files          # gdlint, gdformat --check, large files, secrets, yaml
 python tools/checks/run_all.py      # complexity, dead code, duplicates, boundaries, TODOs, flags
+python tools/dead_assets.py         # textures and props nothing loads (the web pack ships every resource)
 python -m pytest                    # Python tooling tests (tools/pytests), coverage >= 80%
 ```
 

@@ -286,6 +286,8 @@ var _apron_mat: StandardMaterial3D
 var _road_fp_mat: ShaderMaterial
 ## lane_axis -> road_fp_mat's copy for it (road_fp_material_for).
 var _road_fp_variants: Dictionary = {}
+## The other paved surfaces (pavement, kerb, concrete, paint): shared copies of road_fp_mat.
+var _surfaces := SurfaceMaterials.new()
 ## Unpaved road tiles: their shared material and quad (track_material, _track).
 var _track_mat: Material
 ## mask * 16 + grade -> track_mat's copy for that tile shape (track_material_for).
@@ -293,6 +295,8 @@ var _track_variants: Dictionary = {}
 var _track_mesh: Mesh
 var _water_node: MeshInstance3D
 var _bed_node: MeshInstance3D
+## Stones along the banks (ShoreRocks), on foot only.
+var _rocks_node: Node3D
 ## Shared road-surface materials -> [dry albedo, roughness, metallic_specular] for set_wetness().
 var _wet_mats: Dictionary = {}
 
@@ -546,6 +550,7 @@ func _tune_materials(ps: PackedScene) -> void:
 
 static func _tune_material(m: BaseMaterial3D) -> void:
 	var nm := m.resource_name
+	SurfaceMaterials.sharpen(m)
 	for p: String in MATTE_PREFIXES:
 		if nm.begins_with(p):
 			m.metallic = 0.0
@@ -630,6 +635,9 @@ func _build_ground() -> void:
 	else:
 		_water_node.material_override = _mat("water_glow", Color(0.2, 0.45, 0.6), 0.0, 0.8)
 	add_child(_water_node)
+	_rocks_node = ShoreRocks.build(sim, ShoreRocks.load_mesh())
+	if _rocks_node != null:
+		add_child(_rocks_node)
 	_apply_ground_mode()
 
 
@@ -766,6 +774,8 @@ func _apply_ground_mode() -> void:
 			(tm as ShaderMaterial).set_shader_parameter("cut_grass", not fp_mode)
 	if _bed_node != null:
 		_bed_node.material_override = _bank_material() if fp_mode else _pbr("dirt", Color(0.22, 0.2, 0.17), 0.6)
+	if _rocks_node != null:
+		_rocks_node.visible = fp_mode
 	if _water_mat != null:
 		# On foot a darker, greener city river; the sky's reflection supplies the blue.
 		_water_mat.set_shader_parameter("deep_color", Color(0.02, 0.12, 0.14) if fp_mode else Color(0.10, 0.30, 0.38))
@@ -791,11 +801,14 @@ func _ground_material() -> Material:
 func _ground_shader_material() -> ShaderMaterial:
 	var sm := ShaderMaterial.new()
 	sm.shader = load(GROUND_SHADER)
-	var keys: Array[String] = ["grass_albedo", "grass_normal", "grass_rough", "dirt_albedo", "dirt_normal"]
+	var keys: Array[String] = ["grass_albedo", "grass_normal", "dirt_albedo", "dirt_normal"]
 	for key: String in keys:
 		var p := TEX + key + ".jpg"
 		if ResourceLoader.exists(p):
 			sm.set_shader_parameter(key, load(p))
+	if ResourceLoader.exists(TEX + "decals/noise_fbm.png"):
+		sm.set_shader_parameter("noise_tex", load(TEX + "decals/noise_fbm.png"))
+	sm.set_shader_parameter("metre", WS.M)
 	sm.set_shader_parameter("detail_scale", 1.0 / (3.0 * WS.M))
 	sm.set_shader_parameter("macro_scale", 1.0 / (40.0 * WS.M))
 	sm.set_shader_parameter("grass_tint", Color(1.0, 1.04, 0.96))
@@ -895,9 +908,13 @@ func lawn_material() -> ShaderMaterial:
 	return _lawn_mat
 
 
-## Paving for the aprons between lots and road sidewalks: the road's own sidewalk material, world
-## tiled at the road's density (one repeat per 3 m).
+## Paving for the aprons between lots and road sidewalks: the street's pavement shader (the same
+## pavers as the road sidewalks, world-mapped at one repeat per 3 m), else the road's own sidewalk
+## material.
 func apron_material() -> Material:
+	var paving := surface_material(SurfaceMaterials.PAVEMENT)
+	if paving != null:
+		return paving
 	if _apron_mat == null:
 		var src: BaseMaterial3D = null
 		var road := _inst(_road_path("straight"))
@@ -929,13 +946,15 @@ func road_fp_material() -> ShaderMaterial:
 		_road_fp_mat = ShaderMaterial.new()
 		_rain_told = NAN
 		_road_fp_mat.shader = load(ROAD_SHADER)
-		for pair: Array in [["albedo_tex", "asphalt_albedo.jpg"], ["normal_tex", "asphalt_normal.jpg"], ["rough_tex", "asphalt_rough.jpg"], ["noise_tex", "decals/noise_fbm.png"]]:
+		for pair: Array in [["albedo_tex", "asphalt_albedo.jpg"], ["normal_tex", "asphalt_normal.jpg"], ["noise_tex", "decals/noise_fbm.png"]]:
 			if ResourceLoader.exists(TEX + str(pair[1])):
 				_road_fp_mat.set_shader_parameter(str(pair[0]), load(TEX + str(pair[1])))
 		_road_fp_mat.set_shader_parameter("metre", WS.M)
 		_road_fp_mat.set_shader_parameter("lane_offset", WS.LANE_OFFSET)
 		_road_fp_mat.set_shader_parameter("half_width", WS.ROAD_HALF)
+		_road_fp_mat.set_shader_parameter("base_y", WS.ASPHALT_TOP)
 		_road_fp_mat.set_shader_parameter("wetness", wetness)
+		_surfaces.clear()
 	return _road_fp_mat
 
 
@@ -951,6 +970,12 @@ func road_fp_material_for(axis: int) -> ShaderMaterial:
 		sm.set_shader_parameter("lane_axis", float(axis))
 		_road_fp_variants[axis] = sm
 	return _road_fp_variants[axis]
+
+
+## The shared material for one of the other paved surfaces (SurfaceMaterials.PAVEMENT, KERB,
+## CONCRETE, PAINT): the street shader with that surface. Null when road_fp_material() is.
+func surface_material(kind: int) -> ShaderMaterial:
+	return _surfaces.material(kind, road_fp_material(), wetness)
 
 
 ## Sets light_pole_source (E's traffic feature, or null) and, on a change while on foot, re-hangs
@@ -975,6 +1000,7 @@ func set_wetness(w: float) -> void:
 			_wet_material(m, w)
 	var shaded: Array = [_ground_fp_mat, _lot_mat, _road_fp_mat, _lawn_mat, _track_mat as ShaderMaterial]
 	shaded.append_array(_road_fp_variants.values())
+	shaded.append_array(_surfaces.materials())
 	for tm: Material in _track_variants.values():
 		shaded.append(tm as ShaderMaterial)
 	for sm: ShaderMaterial in shaded:
@@ -1044,16 +1070,13 @@ func _pbr(name: String, fallback: Color, scale: float, tint: Color = Color.WHITE
 		if ResourceLoader.exists(TEX + name + "_normal.jpg"):
 			m.normal_enabled = true
 			m.normal_texture = load(TEX + name + "_normal.jpg")
-		if ResourceLoader.exists(TEX + name + "_rough.jpg"):
-			m.roughness_texture = load(TEX + name + "_rough.jpg")
-			m.roughness_texture_channel = BaseMaterial3D.TEXTURE_CHANNEL_GREEN
 		m.uv1_triplanar = true
 		m.uv1_world_triplanar = true
 		m.uv1_scale = Vector3.ONE * scale
 		m.texture_filter = BaseMaterial3D.TEXTURE_FILTER_LINEAR_WITH_MIPMAPS_ANISOTROPIC
 	else:
 		m.albedo_color = fallback
-	m.roughness = 1.0
+	m.roughness = SurfaceMaterials.roughness_of(name)
 	_tex_mats[key] = m
 	return m
 
@@ -2297,10 +2320,12 @@ func _build_tile(i: int, animate: bool) -> void:
 					# On foot the real model's own lot slab shows its paving, tree pits and parking.
 					pad.free()
 				elif k == D.ZONE_C:
-					pad.material_override = _pbr("sidewalk", Color(0.6, 0.6, 0.58), 1.0 / (3.0 * WS.M) if fp_mode else 1.0)
+					var paving := surface_material(SurfaceMaterials.PAVEMENT) if fp_mode else null
+					pad.material_override = paving if paving != null else _pbr("sidewalk", Color(0.6, 0.6, 0.58), 1.0 / (3.0 * WS.M) if fp_mode else 1.0)
 					holder.add_child(pad)
 				elif k == D.ZONE_I:
-					pad.material_override = _pbr("asphalt", Color(0.3, 0.3, 0.3), 1.0 / (3.0 * WS.M) if fp_mode else 0.8, Color(0.85, 0.85, 0.85))
+					var lot_asphalt := road_fp_material_for(SurfaceMaterials.PLAIN_AXIS) if fp_mode else null
+					pad.material_override = lot_asphalt if lot_asphalt != null else _pbr("asphalt", Color(0.3, 0.3, 0.3), 1.0 / (3.0 * WS.M) if fp_mode else 0.8, Color(0.85, 0.85, 0.85))
 					holder.add_child(pad)
 				else:
 					pad.free()

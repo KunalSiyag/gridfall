@@ -354,7 +354,8 @@ def copy_runtime(tex_maps, hdri_paths):
         else:
             shutil.copyfile(maps["diff"], os.path.join(real, "%s_albedo.jpg" % short))
         shutil.copyfile(maps["nor_gl"], os.path.join(real, "%s_normal.jpg" % short))
-        shutil.copyfile(maps["rough"], os.path.join(real, "%s_rough.jpg" % short))
+        # No roughness map: the scans are near flat, std 0.008 to 0.021 (0.7 MB each on the web), so the materials
+        # use a constant per class (scripts/world/surface_materials.gd ROUGHNESS).
     shutil.copyfile(os.path.join(CACHE, "derived", "water_normal.png"), os.path.join(real, "water_normal.png"))
 
 

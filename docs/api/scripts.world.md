@@ -167,9 +167,10 @@ Renders the CitySim grid in 3D: Kenney roads picked by neighbor mask, zone lots 
 - `func track_material_for(mask: int, grade: int) -> Material`: The track material for one tile shape: a shared copy of track_material() carrying the road mask (0..15) and grade. A per-tile instance uniform would take a slot of Compatibility's 4096-slot instance buffer for every mesh using the ground shader.
 - `func lot_ground_material() -> Material`: Ground for a vacant lot on foot: the detail shader turned to patchy earth that fades back to grass at the lot's edges.
 - `func lawn_material() -> ShaderMaterial`: Lawns and park grass of the building models on foot (their flat "Grass" surfaces): the street's metric grass, a little lusher and with fewer worn patches. Null without the ground shader.
-- `func apron_material() -> Material`: Paving for the aprons between lots and road sidewalks: the road's own sidewalk material, world tiled at the road's density (one repeat per 3 m).
+- `func apron_material() -> Material`: Paving for the aprons between lots and road sidewalks: the street's pavement shader (the same pavers as the road sidewalks, world-mapped at one repeat per 3 m), else the road's own sidewalk material.
 - `func road_fp_material() -> ShaderMaterial`: Carriageway asphalt on foot (shaders/road_fp.gdshader): world-mapped, broken-up asphalt with lane wear; road holders take road_fp_material_for(their lane axis). Null when the shader or textures are missing (the road models keep their own asphalt).
 - `func road_fp_material_for(axis: int) -> ShaderMaterial`: The street asphalt for one lane layout (shaders/road_fp.gdshader's lane_axis, 0..6): a shared copy of road_fp_material(), so no road mesh needs an instance uniform (Compatibility has 4096 slots for those). Null when road_fp_material() is.
+- `func surface_material(kind: int) -> ShaderMaterial`: The shared material for one of the other paved surfaces (SurfaceMaterials.PAVEMENT, KERB, CONCRETE, PAINT): the street shader with that surface. Null when road_fp_material() is.
 - `func set_light_pole_source(src: Object) -> void`: Sets light_pole_source (E's traffic feature, or null) and, on a change while on foot, re-hangs the street-name blades of the cross tiles already built (they were built before the source).
 - `func set_wetness(w: float) -> void`: Wet streets: road and sidewalk materials darken and turn glossy, the ground shaders and the water follow, and puddles appear by the curbs. w is 0 (dry) .. 1 (soaked).
 - `func set_rain(r: float) -> void`: Rain falling now (0 none .. 1 full): rings on the river and on the puddles in the road (on foot only, off it they are 0). The weather asks every frame, so the materials are written only when the value moved: _rain_told remembers what they hold, and a material made since (the water at setup(), the road on first use) has none told.
@@ -364,6 +365,36 @@ The shore band (CityView, on foot): sand and wet mud along every bank, with no n
 - `static func bed_color(h: float) -> Color`: The band colour of a bed vertex at height h (u): the bank above the waterline is sand, darkest and wettest at the waterline, and the sand thins out into silt below it.
 - `static func add_tile(st: SurfaceTool, sim: CitySim, x: int, y: int, y_top: float) -> void`: Adds land tile (x, y) at height y_top to st as one quad coded with its water neighbours (normal up, uv = world xz, as the plain ground quads).
 
+## `scripts/world/shore_rocks.gd`
+
+class_name `ShoreRocks` · extends `RefCounted`
+
+Cobbles and boulders along the river banks (materials unit G2). The sim has only land and water, so a bank was sand running straight into water; a few stones half sunk in the sand break that line and read as rock. They are the already-shipped rock_boulder.glb (Poly Haven rock_07, 1,187 triangles) scattered by a hash of the city seed and the tile, so the same city always has the same stones: one MultiMesh per 16-tile chunk (so the renderer culls them and each is one draw), no shadows, drawn out to 90 m, on foot only (CityView hides the node in the Planner). A rock-slab material on the bank would have needed a steep bank and more shader work on the ground, and the banks are gentle (a 4 m shelf); a stone's silhouette is what the eye misses. They have no collision: they are 0.2 to 0.65 m high and the hero walks through them.
+
+### Constants
+
+- `D = preload("res://scripts/sim/sim_defs.gd")`
+- `WS = preload("res://scripts/fp/world_scale.gd")`
+- `SHORE = preload("res://scripts/world/shore.gd")`
+- `MODEL = "res://models/real/props/rock_boulder.glb"`
+- `CHUNK = 8`: Tiles to a chunk side. A chunk is a node whose origin is its stones' centre: the renderer measures a visibility range from the node, so stones placed in world coordinates under an origin node would all be judged by their distance from the world's corner and never draw.
+- `SHARE = 35`: Percent of the land tiles at the water that have a stone (and, of those, that have a second).
+- `SECOND = 40`
+- `DEPTH = Vector2(0.005, 0.07)`: How far from the water's edge a stone sits, in tile units: inside the part of the sand band that is fully sand (SHORE.SHORE_W is 0.15 and the band is half sand at about a third of that), never out on the grass.
+- `SIZE = Vector2(0.45, 1.1)`: Scale of the model (it is 0.71 x 0.6 x 1.35 m), and how much of its height is below the sand.
+- `SINK = 0.25`
+- `MODEL_HEIGHT = 0.03`
+- `RANGE = 90.0 * WS.M`: Draw distance of a chunk's centre, in tile units, and the half-diagonal of a chunk added to it (the farthest stone of a chunk that is in range is that far beyond its centre).
+- `REACH = CHUNK * 0.7`
+- `TOWARD = [ Vector2(0, -1), Vector2(1, 0), Vector2(0, 1), Vector2(-1, 0), Vector2(-1, -1), Vector...`: The four sides then the four corners, as SHORE.water_flags orders them (N, E, S, W, NW, NE, SE, SW): the direction from the tile's centre toward each, in tile units (north is -y).
+
+### Functions
+
+- `static func placements(sim: CitySim) -> Dictionary`: The stone transforms for a city, by chunk: Vector2i (tile / CHUNK) -> Array[Transform3D]. Pure of the sim's terrain and seed.
+- `static func load_mesh() -> Mesh`: The boulder's mesh from the shipped model (its first mesh, with its own material), or null when the model is not there (a split web build whose props pack is not mounted yet).
+- `static func centre_of(xfs: Array[Transform3D]) -> Vector3`: Where a chunk's node sits: the mean of its stones' origins.
+- `static func build(sim: CitySim, mesh: Mesh) -> Node3D`: The stones of a city as a node holding one MultiMeshInstance3D per chunk; null with no mesh or no stone. Unshadowed, each chunk drawn to RANGE + REACH from its centre.
+
 ## `scripts/world/sky_director.gd`
 
 class_name `SkyDirector` · extends `Node`
@@ -400,6 +431,34 @@ Day/night cycle tied to the sim clock: tick 0 is morning, 3 is night. Moves the 
 - `func refresh_pack_assets() -> void`: Builds the sky material once its assets are available. Called from setup() and when the sky pack arrives on a split web build; idempotent — an existing sky, the hour, the weather state and the sun are left untouched.
 - `func reset_weather() -> void`: Clear sky again: drops every weather hook and puts back the fog begin an override replaced.
 - `func clock_text() -> String`
+
+## `scripts/world/surface_materials.gd`
+
+class_name `SurfaceMaterials` · extends `RefCounted`
+
+The street-level paved surfaces besides the carriageway (materials unit G2): pavement slabs, kerb stone, poured concrete and lane paint are all shaders/road_fp.gdshader with a different `surface` value, so the browser links one program set for every paved surface (a new shader costs boot time) and no mesh needs an instance uniform (Compatibility has 4096 slots for those). CityView owns the base asphalt material (road_fp_material) and one instance of this; material() hands out one shared copy of it per surface kind, and CityView.set_wetness() darkens and glosses them all. Also the one place that says how rough the plain ground classes are. The scanned roughness maps (grass, dirt, asphalt, sidewalk) were near flat (std 0.008 to 0.021 over the image; means 0.69 grass, 0.94 dirt, 0.77 asphalt, 0.86 sidewalk) and cost 0.7 MB each on the web, so the materials take a constant instead (matching the shaders'). Grass moves from about 0.69 to 0.9 on purpose.
+
+### Constants
+
+- `PAVEMENT = 1`: The surface kinds, as shaders/road_fp.gdshader's `surface` uniform (0 is the asphalt itself).
+- `KERB = 2`
+- `CONCRETE = 3`
+- `PAINT = 4`
+- `KINDS = [PAVEMENT, KERB, CONCRETE, PAINT]`
+- `TEX = "res://textures/real/"`
+- `ROUGHNESS = {"grass": 0.9, "dirt": 0.94, "asphalt": 0.78, "sidewalk": 0.84}`: Roughness by ground class (the texture-name key of CityView._pbr): bare earth the roughest, then grass; paving and asphalt are smoother.
+- `GROUND_PREFIXES = [ "Sidewalk", "Curb", "Asphalt", "Dirt", "Grass", "Gravel", "Concrete_Floor", "Court", ...`: Imported model materials (resource-name prefixes) that lie flat on the ground and are seen at a grazing angle: they get anisotropic filtering (the GLBs import with plain trilinear, which blurs a pavement a few metres away to its average).
+- `BY_NAME = { "Sidewalk": PAVEMENT, "Curb": KERB, "Concrete_Floor": CONCRETE, "Paint_White": PAINT }`: Model material name -> surface kind, for dress().
+- `PLAIN_AXIS = 7`: road_fp's lane_axis for asphalt with no lanes and no junction oil (lots, car parks).
+
+### Functions
+
+- `static func roughness_of(name: String) -> float`: The roughness of ground class `name` (CityView._pbr's key); 1.0 for any other.
+- `static func sharpen(m: BaseMaterial3D) -> void`: Anisotropic filtering for a flat ground material of an imported model (by resource name).
+- `static func dress(mi: MeshInstance3D, s: int, nm: String, view: CityView, axis: int = PLAIN_AXIS) -> bool`: Puts the street shader's version of a model's paved surface on surface s of mi, by the material's resource name (Sidewalk, Curb, Concrete_Floor, Paint_White, and Asphalt or Asphalt_Dark with the lane layout axis); false when the name is none of them or the shader is missing.
+- `func material(kind: int, base: ShaderMaterial, wetness: float) -> ShaderMaterial`: The shared material for surface kind (PAVEMENT .. PAINT): a copy of base, the road shader material, with that kind set. Null when base is. `wetness` is what it starts with.
+- `func materials() -> Array`: Every material handed out so far (set_wetness writes them all).
+- `func clear() -> void`: Forgets the materials (a world set up again builds its own).
 
 ## `scripts/world/water_surface.gd`
 
