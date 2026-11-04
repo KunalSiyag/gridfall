@@ -26,6 +26,15 @@ const ROLE_TAGS := {"mayor": "MAYOR", "press": "PRESS", "council": "COUNCIL"}
 ## Who wrote a mayor's line (refs.via, see chat/mayor_voice.gd): a fast chat model or the script in
 ## the mayor's name, or the mayor's own model.
 const VIA_TAGS := {"press_office": "PRESS OFFICE", "own_voice": "OWN WORDS"}
+## The short forms the chips fall back to when the full ones would run into the time stamp (a long
+## name in a narrow panel), and the tooltip over a chip.
+const VIA_SHORT := {"press_office": "PR", "own_voice": "OWN"}
+const VIA_TIPS := {
+	"press_office": "Press office: a chat model or the built-in script wrote this for the mayor.",
+	"own_voice": "Own words: the mayor's own model wrote this line.",
+}
+## Space kept between the last header chip and the time stamp.
+const TIME_GAP := 6.0
 ## Card icon per incident type (refs.type; "street": a crew called after someone was hit).
 const INCIDENT_ICONS := {
 	"fire": "fire", "blackout": "bolt", "power_line": "bolt", "sewage_burst": "drop", "water_main": "drop",
@@ -144,9 +153,19 @@ func _shape(p_msg: Dictionary, parent: Dictionary, time_text: String) -> void:
 		_chips.append({"line": S.text_line(str(ROLE_TAGS[role]), S.display_font(), 10), "box": _chip_style(Color(0, 0, 0, 0), _name_col, true), "fg": _name_col})
 	var via_tag := str(VIA_TAGS.get(str(refs.get("via", "")), ""))
 	if role == "mayor" and not via_tag.is_empty():
+		var via := str(refs.get("via", ""))
 		var via_box := _chip_style(Color(0, 0, 0, 0), S.TEXT_DIM, true)
 		var via_line := S.text_line(via_tag, S.display_font(), 10)
-		_chips.append({"line": via_line, "box": via_box, "fg": S.TEXT_DIM})
+		var short_line := S.text_line(str(VIA_SHORT.get(via, via_tag)), S.display_font(), 10)
+		_chips.append(
+			{
+				"line": via_line,
+				"short": short_line,
+				"box": via_box,
+				"fg": S.TEXT_DIM,
+				"tip": str(VIA_TIPS.get(via, ""))
+			}
+		)
 	var badge := T.district_badge(d)
 	if not badge.is_empty() and role not in ["press", "council"]:
 		var dc := S.district_color(d)
@@ -202,17 +221,15 @@ func _draw() -> void:
 	var cy := 3.0 + IN_T
 	var right := x0 + bw - IN_R
 	var base := cy + HEAD_BASE
-	var name_sz := _name.get_size()
 	_name.draw(ci, Vector2(cx, base - _name.get_line_ascent()), _name_col)
-	var x := cx + name_sz.x + 6.0
-	for c: Dictionary in _chips:
+	var run := _chip_run(size.x)
+	for c: Dictionary in run["chips"]:
 		var line: TextLine = c["line"]
-		var lsz := line.get_size()
-		var cw := lsz.x + 10.0
-		var cr := Rect2(x, cy + (HEAD_H - CHIP_H) * 0.5, cw, CHIP_H)
+		var cr: Rect2 = c["rect"]
 		draw_style_box(c["box"], cr)
-		line.draw(ci, Vector2(x + 5.0, cr.position.y + (CHIP_H - lsz.y) * 0.5), c["fg"])
-		x += cw + 5.0
+		var ly := cr.position.y + (CHIP_H - line.get_size().y) * 0.5
+		line.draw(ci, Vector2(cr.position.x + 5.0, ly), c["fg"])
+	var x: float = run["end"]
 	var tsz := _time.get_size()
 	_time.draw(ci, Vector2(right - tsz.x, base - _time.get_line_ascent()), S.TEXT_FAINT)
 	if _job != null:
@@ -232,6 +249,63 @@ func _draw() -> void:
 			_reply_quote.draw(ci, Vector2(qx, cy + (REPLY_H - _reply_quote.get_size().y) * 0.5), S.TEXT_FAINT)
 		cy += REPLY_H
 	_text.draw(ci, Vector2(cx, cy + 1.0), _text_col)
+
+
+## Where the header's chips sit in a row w wide, after the name: {"chips": [{"rect", "line", "box",
+## "fg", "tip"}], "end" (x where the job starts), "time_left" (x of the time stamp)}. The
+## press-office chips take their short form when the full ones would run into the time stamp, and
+## a chip that still does not fit is left out, so nothing is drawn over the time.
+func _chip_run(w: float) -> Dictionary:
+	var x0 := PAD_L + AV + GAP
+	var cx := x0 + IN_L
+	var right := w - PAD_R - IN_R
+	var tsz := _time.get_size()
+	var start := cx + _name.get_size().x + 6.0 if _name != null else cx
+	var limit := right - tsz.x - TIME_GAP
+	var cy := 3.0 + IN_T + (HEAD_H - CHIP_H) * 0.5
+	var out: Array[Dictionary] = []
+	for short: bool in [false, true]:
+		out.clear()
+		var x := start
+		var fits := true
+		for c: Dictionary in _chips:
+			var line: TextLine = c["short"] if short and c.has("short") else c["line"]
+			var cw := line.get_size().x + 10.0
+			if x + cw > limit:
+				fits = false
+				break
+			out.append(
+				{
+					"rect": Rect2(x, cy, cw, CHIP_H),
+					"line": line,
+					"box": c["box"],
+					"fg": c["fg"],
+					"tip": str(c.get("tip", ""))
+				}
+			)
+			x += cw + 5.0
+		if fits:
+			break
+	var end := start if out.is_empty() else (out[-1]["rect"] as Rect2).end.x + 5.0
+	return {"chips": out, "end": end, "time_left": right - tsz.x}
+
+
+## The chips' rectangles in a row w wide and the left edge of the time stamp (tests).
+func header_layout(w: float) -> Dictionary:
+	var run := _chip_run(w)
+	var rects: Array[Rect2] = []
+	for c: Dictionary in run["chips"]:
+		rects.append(c["rect"])
+	return {"rects": rects, "time_left": run["time_left"]}
+
+
+## A chip says what it means when hovered; the rest of the row keeps its day and time.
+func _get_tooltip(at_position: Vector2) -> String:
+	if not _card and size.x > 0.0:
+		for c: Dictionary in _chip_run(size.x)["chips"]:
+			if (c["rect"] as Rect2).has_point(at_position) and not str(c["tip"]).is_empty():
+				return str(c["tip"])
+	return tooltip_text
 
 
 func _chip_style(bg: Color, fg: Color, outline: bool) -> StyleBox:

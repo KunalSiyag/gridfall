@@ -15,7 +15,7 @@ A small health light (the league's mayor cell and its services page): a drawn sh
 - `S = preload("res://scripts/fp/ui/hud_style.gd")`
 - `LG = preload("res://scripts/fp/reporter/league_ledger.gd")`
 - `SIZE = 12.0`
-- `COLORS = { "green": S.GOOD, "amber": S.AMBER, "red": S.RED, "grey": S.TEXT_FAINT, "idle": S.TEXT...`
+- `COLORS = { "green": S.GOOD, "amber": S.AMBER, "red": S.RED, "grey": S.TEXT_FAINT, "scripted": S....`
 
 ### Functions
 
@@ -26,32 +26,34 @@ A small health light (the league's mayor cell and its services page): a drawn sh
 
 extends `RefCounted`
 
-What the model ledger (scripts/ai/model_ledger.gd) adds to the street's mayors' league: an "Orders" column (the share of a mayor's orders the city carried out), a "Speed" column (the typical time to answer, or what to read instead when no live answer has come) and a health light beside the name. Pure functions over standings rows; nothing here draws or reads the sim. Street text names no model: the words here are "Orders", "Speed" and the light's words.
+What the model ledger (scripts/ai/model_ledger.gd) adds to the street's mayors' league: an "Orders" column (the share of a mayor's orders the city carried out), a "Speed" column (the typical time to answer, or what to read instead when no live answer has come) and a health light beside the name. Pure functions over standings rows; nothing here draws or reads the sim. Street text names no model here: the words are "Orders", "Speed" and the light's words. (The league's cells show a model only as a badge, hud_style.badge: the one street text allowed to.)
 
 ### Constants
 
-- `HEALTH_WORDS = { "green": ["good", "Answering live."], "amber": ["shaky", "Answering live, with slow, ...`: The words the light is read as (also its tooltip): ledger health -> [short word, sentence].
+- `HEALTH_WORDS = { "green": ["good", "Answering live."], "amber": ["shaky", "Answering live, but a recen...`: The words the light is read as (also its tooltip): ledger health -> [short word, sentence].
+- `NO_DATA = "no data"`: What the Orders cell reads before any order was counted, and its tooltip.
+- `NO_DATA_TIP = ("No orders counted yet. The count starts with the first turn after this city was begun...`
 
 ### Functions
 
-- `static func decorate(rows: Array[Dictionary], ledger: ModelLedger) -> void`: Adds to each standings row (ReporterDesk.standings) "speed" (text), "speed_ms" (-1 when none), "health" (ModelLedger.health_of word) and "orders_text". ledger null leaves the neutral values. Orders reads the same counters as the Arena tab (the ledger's: the model's own live and replayed orders, since the ledger began); with the ledger off it is the sim's whole-city count.
-- `static func orders_text(done: int, refused: int) -> String`: "87%" for orders carried out of orders given; "-" before any order.
+- `static func decorate(rows: Array[Dictionary], ledger: ModelLedger) -> void`: Adds to each standings row (ReporterDesk.standings) "speed" (text), "speed_ms" (-1 when none), "health" (ModelLedger.health_of word) and "orders_text". ledger null, or the model_ledger flag off, leaves the neutral values: Speed "-", the light idle, and Orders the sim's whole-city count (a ledger an older save carried must not show through a switched-off flag). With the ledger on, Orders reads the same counters as the Arena tab (the ledger's: the model's own live and replayed orders, since the ledger began).
+- `static func orders_text(done: int, refused: int) -> String`: "87%" for orders carried out of orders given; NO_DATA before any order.
 - `static func speed_text(ledger_row: Dictionary) -> String`: A mayor's Speed: the median time to answer of its live calls ("11.2 s"); "replay" when its turns were recorded answers; "-" for nothing to say (no turn yet, or only the scripted planner).
-- `static func health_word(health: String) -> String`: The word a health light is read as ("good", "shaky", "down", "replay", "idle").
+- `static func health_word(health: String) -> String`: The word a health light is read as ("good", "shaky", "down", "replay", "scripted", "idle").
 - `static func health_tip(health: String) -> String`: The light's tooltip: its sentence.
 
 ## `scripts/fp/reporter/league_minds.gd`
 
 extends `RefCounted`
 
-The league's second page, "Services & minds": the minds that work for the city outside the mayors' chairs (the Gazette, the Council Speaker, the Chaos Director, the Grid Operator, Citizen Voices, the Street Inspector, the residents' minds and the chat voices), one row per model with what it has been asked to do, how many calls, how many answered live, failed, came from a recording or were answered by the scripted planner, the typical time to answer and a health light. Rows are ModelLedger.services(). The model's name is a badge (the one place street text names a model); the rest says nothing about models.
+The league's second page, "Services & minds": the minds that work for the city outside the mayors' chairs (the Gazette, the Council Speaker, the Chaos Director, the Grid Operator, Citizen Voices, the Street Inspector, the residents' minds and the chat voices), one row per model with what it has been asked to do, how many calls, how many answered live, failed, came from a recording or were answered by the scripted planner, the typical time to answer and a health light. Rows are ModelLedger.services(). Street text here names people and jobs only ("GridFall Gazette", "Residents", "Chat", the column words); the model a row belongs to appears only as its badge (hud_style.badge, meta BADGE_META: the one street text allowed to name a model, as on the mayors' table). fp_league_ledger_test asserts that every label holding a model's name is a badge.
 
 ### Constants
 
 - `S = preload("res://scripts/fp/ui/hud_style.gd")`
 - `LG = preload("res://scripts/fp/reporter/league_ledger.gd")`
 - `DOT = preload("res://scripts/fp/reporter/health_dot.gd")`
-- `COLS = [ ["Service", 340, false], ["Calls", 56, true], ["Live", 52, true], ["Failed", 58, true...`: [heading, width px, right-aligned]: 8 px gaps between, inside the league panel's inner width.
+- `COLS = [ ["Service", 404, false], ["Calls", 56, true], ["Live", 52, true], ["Failed", 58, true...`: [heading, width px, right-aligned]: 8 px gaps between, filling the league panel's inner width (ReporterLeague.WIDTH less its margins).
 - `TINT = Color("#9DB4FF")`
 - `EMPTY = "Nothing has been asked of these minds yet."`
 
@@ -192,8 +194,10 @@ The mayors' league (feature "reporter", L): the five AI mayors ranked on people,
 - `LG = preload("res://scripts/fp/reporter/league_ledger.gd")`
 - `MINDS = preload("res://scripts/fp/reporter/league_minds.gd")`
 - `DOT = preload("res://scripts/fp/reporter/health_dot.gd")`
-- `WIDTH = 920.0`
-- `COLS = [ ["#", 26, false], ["Mayor", 226, false], ["District", 120, false], ["People", 58, tru...`: Table columns: [heading, width px, right-aligned]. With the 8 px gaps they fill the panel's inner width (WIDTH less its 20 px margins; Orders and Speed come from the model ledger).
+- `WIDTH = 960.0`
+- `MARGIN = 20.0`: The panel's side margins (hud_style.panel) and the gap between two table cells.
+- `GAP = 8.0`
+- `COLS = [ ["#", 26, false], ["Mayor", 220, false], ["District", 168, false], ["People", 58, tru...`: Table columns: [heading, width px, right-aligned]. With the 8 px gaps they fill the panel's inner width (WIDTH less its 20 px margins; Orders and Speed come from the model ledger). District holds the longest district name whole (165 px at 14 px: fp_league_ledger_test measures it) and Mayor the longest name with its model's badge and the light (207 px).
 - `LISTED_STORIES = 3`
 - `TITLES = ["Mayors' league", "Services & minds"]`
 - `MINDS_NOTE = "Who answers for the city besides the mayors: calls so far and how they went"`: The second page's one-line note, under its title.

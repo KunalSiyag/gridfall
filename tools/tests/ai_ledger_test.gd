@@ -715,6 +715,31 @@ func _check_classes() -> void:
 		GmiReply.classify('{"a":"x, }"}', false, false).is_empty(),
 		"a comma inside a string is not a repair"
 	)
+	check(
+		GmiReply.classify('{"a":NaN,"b":1}', false, false) == ["non_finite"],
+		"NaN is named non_finite, not a trailing comma"
+	)
+	check(
+		(
+			GmiReply.classify('{"a":Infinity,"b":[1,]}', false, false)
+			== ["trailing_comma", "non_finite"]
+		),
+		"a comma and an Infinity are both named"
+	)
+	check(
+		(
+			GmiReply.classify('<think>```json\n{"x":1}\n```</think>{"a":1}', false, false)
+			== ["think_tag"]
+		),
+		"a fence inside the think block is not the answer's"
+	)
+	check(
+		(
+			GmiReply.classify('<think>hm</think>```json\n{"a":1}\n```', false, false)
+			== ["think_tag", "fenced"]
+		),
+		"a think block and a fence after it are both repairs"
+	)
 	var usage := GmiReply.usage_of(
 		{"usage": {"prompt_tokens": 10, "completion_tokens": "x"}}, {"finish_reason": "length"}
 	)

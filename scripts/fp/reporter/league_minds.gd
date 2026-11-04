@@ -5,16 +5,19 @@ extends RefCounted
 ## what it has been asked to do, how many calls, how many answered live, failed, came from a
 ## recording or were answered by the scripted planner, the typical time to answer and a health
 ## light. Rows are ModelLedger.services().
-## The model's name is a badge (the one place street text names a model); the rest says nothing
-## about models.
+## Street text here names people and jobs only ("GridFall Gazette", "Residents", "Chat", the column
+## words); the model a row belongs to appears only as its badge (hud_style.badge, meta BADGE_META:
+## the one street text allowed to name a model, as on the mayors' table). fp_league_ledger_test
+## asserts that every label holding a model's name is a badge.
 
 const S := preload("res://scripts/fp/ui/hud_style.gd")
 const LG := preload("res://scripts/fp/reporter/league_ledger.gd")
 const DOT := preload("res://scripts/fp/reporter/health_dot.gd")
 
-## [heading, width px, right-aligned]: 8 px gaps between, inside the league panel's inner width.
+## [heading, width px, right-aligned]: 8 px gaps between, filling the league panel's inner width
+## (ReporterLeague.WIDTH less its margins).
 const COLS := [
-	["Service", 340, false],
+	["Service", 404, false],
 	["Calls", 56, true],
 	["Live", 52, true],
 	["Failed", 58, true],

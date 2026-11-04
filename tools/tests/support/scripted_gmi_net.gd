@@ -4,9 +4,13 @@ extends GmiClient
 ## Dictionary, "finish": String}), the last one repeating.
 var steps: Array[Dictionary] = []
 var trips: int = 0
+## While true a round trip waits (a call that is "in flight"): set it false to let them finish.
+var hold: bool = false
 
 
 func _round_trip(_headers: PackedStringArray, _body: String, _timeout_s: float) -> Dictionary:
+	while hold and is_inside_tree():
+		await get_tree().process_frame
 	var step: Dictionary = steps[mini(trips, steps.size() - 1)]
 	trips += 1
 	var text := str(step.get("body", ""))
