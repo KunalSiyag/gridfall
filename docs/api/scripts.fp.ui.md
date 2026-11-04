@@ -87,6 +87,7 @@ One chat message drawn as a single Control (slice C §2): a resident, mayor, pre
 - `CHIP_H = 15.0`
 - `CARD_ICON = 22.0`
 - `ROLE_TAGS = {"mayor": "MAYOR", "press": "PRESS", "council": "COUNCIL"}`
+- `VIA_TAGS = {"press_office": "PRESS OFFICE", "own_voice": "OWN WORDS"}`: Who wrote a mayor's line (refs.via, see chat/mayor_voice.gd): a fast chat model or the script in the mayor's name, or the mayor's own model.
 - `INCIDENT_ICONS = { "fire": "fire", "blackout": "bolt", "power_line": "bolt", "sewage_burst": "drop", "wa...`: Card icon per incident type (refs.type; "street": a crew called after someone was hit).
 
 ### Properties

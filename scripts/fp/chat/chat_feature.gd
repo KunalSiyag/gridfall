@@ -17,6 +17,7 @@ const PANEL := preload("res://scripts/fp/ui/chat_panel.gd")
 const TALK := preload("res://scripts/fp/chat/talk_dialog.gd")
 const STREET := preload("res://scripts/fp/chat/street_lines.gd")
 const ASK := preload("res://scripts/fp/chat/chat_ask.gd")
+const MV := preload("res://scripts/fp/chat/mayor_voice.gd")
 
 const ROUND_MS := 60000
 const PLAYER_DEBOUNCE_MS := 3000
@@ -506,7 +507,9 @@ func _on_departed(r: Dictionary, reason: String) -> void:
 func _on_mayor(mi: int, entry: Dictionary) -> void:
 	var post := str(entry.get("post", "")).strip_edges()
 	if not post.is_empty() and mi >= 0 and mi < D.MAYORS.size():
-		feed.enqueue(feed.make("mayor:%d" % mi, str(D.MAYORS[mi]["display"]), "mayor", mi, post, "post"))
+		# A live or replayed turn's post is the model's own words; a scripted one is not.
+		var via := MV.OWN if str(entry.get("source", "")) in ["live", "cache"] else MV.PRESS
+		feed.enqueue(feed.make("mayor:%d" % mi, str(D.MAYORS[mi]["display"]), "mayor", mi, post, "post", -1, {"via": via}))
 	if mi >= 0 and mi < _taxes.size() and mi < ctx.sim.mayors.size():
 		var now_tax := int(ctx.sim.mayors[mi]["tax_r"])
 		if now_tax != _taxes[mi]:
@@ -817,6 +820,8 @@ func _resident_msg(r: Dictionary, text: String, kind: String, refs: Dictionary) 
 func _line_msg(ln: Dictionary) -> Dictionary:
 	var refs := {}
 	var id := str(ln.get("id", ""))
+	if not str(ln.get("via", "")).is_empty():
+		refs["via"] = str(ln["via"])
 	if str(ln.get("role", "resident")) == "resident":
 		var r := ctx.residents.find(id)
 		if not r.is_empty():

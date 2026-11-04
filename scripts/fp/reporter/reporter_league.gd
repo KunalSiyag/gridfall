@@ -9,29 +9,47 @@ extends Control
 signal chase_requested(lead: int)
 
 const S := preload("res://scripts/fp/ui/hud_style.gd")
+const LG := preload("res://scripts/fp/reporter/league_ledger.gd")
+const MINDS := preload("res://scripts/fp/reporter/league_minds.gd")
+const DOT := preload("res://scripts/fp/reporter/health_dot.gd")
 
-const WIDTH := 860.0
+const WIDTH := 920.0
 ## Table columns: [heading, width px, right-aligned]. With the 8 px gaps they fill the panel's
-## inner width (WIDTH less its 20 px margins).
+## inner width (WIDTH less its 20 px margins; Orders and Speed come from the model ledger).
 const COLS := [
 	["#", 26, false],
 	["Mayor", 226, false],
-	["District", 176, false],
-	["People", 66, true],
-	["Jobs", 58, true],
-	["Approval", 76, true],
-	["Funds", 76, true],
-	["Score", 56, true],
+	["District", 120, false],
+	["People", 58, true],
+	["Jobs", 52, true],
+	["Approval", 72, true],
+	["Funds", 74, true],
+	["Orders", 60, true],
+	["Speed", 64, true],
+	["Score", 54, true],
 ]
 const LISTED_STORIES := 3
+const TITLES := ["Mayors' league", "Services & minds"]
+## The second page's one-line note, under its title.
+const MINDS_NOTE := "Who answers for the city besides the mayors: calls so far and how they went"
 
+## 0: the mayors' table and the press card; 1: Services & minds (Tab flips).
+var page: int = 0
+var _title: Label
 var _sub: Label
+var _page_a: VBoxContainer
+var _page_b: VBoxContainer
+var _minds_table: GridContainer
+var _minds_none: Label
+var _flip_hint: Label
+var _sub_text: String = ""
 var _table: GridContainer
 var _press: Label
 var _assignment: Label
 var _leads: VBoxContainer
 var _stories: VBoxContainer
 var _lead_texts: Array[String] = []
+var _minds_lines: Array[String] = []
 
 
 func setup() -> void:
@@ -54,25 +72,37 @@ func setup() -> void:
 	col.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	col.add_theme_constant_override("separation", 8)
 	panel.add_child(col)
-	col.add_child(S.plain("Mayors' league", 26, S.WHITE, S.title()))
+	_title = S.plain(TITLES[0], 26, S.WHITE, S.title())
+	col.add_child(_title)
 	_sub = S.plain("", 14, S.TEXT_DIM, S.font())
 	col.add_child(_sub)
+	_page_a = _page(col)
 	_table = GridContainer.new()
 	_table.name = "Table"
 	_table.columns = COLS.size()
 	_table.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_table.add_theme_constant_override("h_separation", 8)
 	_table.add_theme_constant_override("v_separation", 6)
-	col.add_child(_table)
-	col.add_child(_rule())
-	col.add_child(S.caps_label("Your press card", 12, S.AMBER, 0))
+	_page_a.add_child(_table)
+	_page_a.add_child(_rule())
+	_page_a.add_child(S.caps_label("Your press card", 12, S.AMBER, 0))
 	_press = S.plain("", 16, S.TEXT, S.bold())
-	col.add_child(_press)
+	_page_a.add_child(_press)
 	_assignment = S.plain("", 14, S.TEXT, S.font())
 	_assignment.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	col.add_child(_assignment)
-	_leads = _section(col, "Open leads")
-	_stories = _section(col, "Latest stories")
+	_page_a.add_child(_assignment)
+	_leads = _section(_page_a, "Open leads")
+	_stories = _section(_page_a, "Latest stories")
+	_page_b = _page(col)
+	_minds_table = GridContainer.new()
+	_minds_table.name = "MindsTable"
+	_minds_table.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_minds_table.add_theme_constant_override("h_separation", 8)
+	_minds_table.add_theme_constant_override("v_separation", 6)
+	_page_b.add_child(_minds_table)
+	_minds_none = S.plain(MINDS.EMPTY, 14, S.TEXT_DIM)
+	_page_b.add_child(_minds_none)
+	_page_b.visible = false
 	col.add_child(_footer())
 
 
@@ -80,7 +110,8 @@ func setup() -> void:
 ## player's rank and points), "assignment" (the story's headline, "" for none), "leads" (open
 ## leads' lines, newest first), "stories" ({"text", "points", "bonus"}, newest first)}.
 func show_league(rows: Array[Dictionary], desk: Dictionary) -> void:
-	_sub.text = "%s · People, jobs, approval and funds: 25 points each" % desk.get("day", "")
+	_sub_text = "%s · People, jobs, approval and funds: 25 points each" % desk.get("day", "")
+	_sub.text = _sub_text if page == 0 else MINDS_NOTE
 	_fill_table(rows)
 	_press.text = str(desk.get("press", ""))
 	var on := str(desk.get("assignment", ""))
@@ -92,6 +123,56 @@ func show_league(rows: Array[Dictionary], desk: Dictionary) -> void:
 		_lead_texts = lines
 		_fill_leads()
 	_fill_stories(desk.get("stories", []))
+
+
+## Rows of the Services & minds page: ModelLedger.services().
+func show_minds(rows: Array[Dictionary]) -> void:
+	MINDS.fill(_minds_table, rows)
+	_minds_none.visible = rows.is_empty()
+	_minds_lines.clear()
+	for r: Dictionary in rows:
+		_minds_lines.append(MINDS.line(r))
+
+
+## Tab: the other page (the mayors' table, Services & minds).
+func flip_page() -> void:
+	set_page(1 - page)
+
+
+func set_page(k: int) -> void:
+	page = clampi(k, 0, TITLES.size() - 1)
+	_page_a.visible = page == 0
+	_page_b.visible = page == 1
+	_title.text = TITLES[page]
+	_sub.text = _sub_text if page == 0 else MINDS_NOTE
+	if _flip_hint != null:
+		_flip_hint.text = TITLES[1 - page]
+
+
+## True for the key that flips the page (Tab, pressed, not an echo).
+static func is_flip(event: InputEvent) -> bool:
+	var k := event as InputEventKey
+	return (
+		k != null
+		and k.pressed
+		and not k.echo
+		and (k.keycode == KEY_TAB or k.physical_keycode == KEY_TAB)
+	)
+
+
+## The Services & minds rows as text, one per model (see league_minds.gd line()).
+func minds_lines() -> PackedStringArray:
+	return PackedStringArray(_minds_lines)
+
+
+## The health word each mayor's light shows, in table order.
+func health_dots() -> PackedStringArray:
+	var out := PackedStringArray()
+	for cell in _table.get_children():
+		for n in cell.get_children():
+			if n is Control and n.has_method("set_health"):
+				out.append(str(n.get("health")))
+	return out
 
 
 ## The table's rows as text, one line per mayor ("1 · Viktor Han · Harbor Heights · ... · 78").
@@ -136,7 +217,12 @@ func _fill_table(rows: Array[Dictionary]) -> void:
 		if int(r["funds"]) < 0:
 			funds.add_theme_color_override("font_color", S.RED)
 		_add_cell(funds, COLS[6])
-		_add_cell(S.plain(str(int(r["score"])), 17, S.WHITE, S.bold()), COLS[7])
+		var orders_text := str(
+			r.get("orders_text", LG.orders_text(int(r.get("orders", 0)), int(r.get("refused", 0))))
+		)
+		_add_cell(S.plain(orders_text, 14, S.TEXT, S.font()), COLS[7])
+		_add_cell(S.plain(str(r.get("speed", "-")), 14, S.TEXT, S.font()), COLS[8])
+		_add_cell(S.plain(str(int(r["score"])), 17, S.WHITE, S.bold()), COLS[9])
 
 
 ## The mayor's name in their colour and their model's badge.
@@ -144,6 +230,8 @@ func _who(r: Dictionary, tint: Color) -> HBoxContainer:
 	var h := HBoxContainer.new()
 	h.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	h.add_theme_constant_override("separation", 8)
+	if r.has("health"):
+		h.add_child(DOT.make(str(r["health"])))
 	var name_l := S.plain(str(r["who"]), 15, tint, S.bold())
 	name_l.name = "Who"
 	h.add_child(name_l)
@@ -221,10 +309,26 @@ func _footer() -> HBoxContainer:
 	bar.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	bar.alignment = BoxContainer.ALIGNMENT_END
 	bar.add_theme_constant_override("separation", 6)
+	bar.add_child(S.key_cap("Tab", 12))
+	_flip_hint = S.plain(TITLES[1], 13, S.TEXT_DIM)
+	bar.add_child(_flip_hint)
+	var gap := Control.new()
+	gap.custom_minimum_size = Vector2(14, 0)
+	gap.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	bar.add_child(gap)
 	bar.add_child(S.key_cap("L", 12))
 	bar.add_child(S.key_cap("Esc", 12))
 	bar.add_child(S.plain("Close", 13, S.TEXT_DIM))
 	return bar
+
+
+## One page of the modal: a column that shows or hides as a whole.
+static func _page(col: VBoxContainer) -> VBoxContainer:
+	var v := VBoxContainer.new()
+	v.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	v.add_theme_constant_override("separation", 8)
+	col.add_child(v)
+	return v
 
 
 static func _rule() -> ColorRect:
@@ -241,7 +345,11 @@ static func _cell_text(c: Node) -> String:
 		return (c as Label).text
 	var parts := PackedStringArray()
 	for n in c.get_children():
-		var l := n as Label if n is Label else n.get_child(0) as Label
+		var l: Label = (
+			n as Label
+			if n is Label
+			else (n.get_child(0) as Label if n.get_child_count() > 0 else null)
+		)
 		if l != null:
 			parts.append(l.text)
 	return " ".join(parts)

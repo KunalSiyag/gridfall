@@ -4,6 +4,9 @@ extends Node
 ## heuristic fallback. Every call is logged with its source (live / cache / heuristic).
 
 signal call_logged(record: Dictionary)
+## A live_json call that never left the process (offline, circuit open, no free slot): it is not in
+## the log, but the ModelLedger counts it so a model that is being skipped shows as such.
+signal call_skipped(record: Dictionary)
 ## The circuit breakers' aggregate moved to state ("closed" / "open" / "half_open"): one group
 ## opening while another is already open does not repeat it.
 signal breaker_changed(state: String)
@@ -377,24 +380,24 @@ func live_json(role: String, agent_id: String, model: String, system_prompt: Str
 	var result := _new_result(role, agent_id, model, day)
 	if not live_enabled:
 		result["error"] = "offline"
-		return result
+		return _skipped(result)
 	var isolated := role in ISOLATED_ROLES
 	if not isolated and breakers.breaker_for(role).peek_state() == CircuitBreaker.OPEN:
 		_count_skip()
 		result["error"] = "circuit open"
 		result["source"] = "failed"
-		return result
+		return _skipped(result)
 	# The slot is waited for BEFORE the breaker is asked: a half-open breaker hands out its single
 	# probe to whoever asks first, and a call that then gave up waiting would never report it, so
 	# the group would stay half-open for good.
 	if not await _wait_for_slot(role, timeout_s):
 		result["error"] = "no free slot"
 		result["source"] = "failed"
-		return result
+		return _skipped(result)
 	if not isolated and not _breaker_allows(role):
 		result["error"] = "circuit open"
 		result["source"] = "failed"
-		return result
+		return _skipped(result)
 	var live := await _call_live(model, system_prompt, user_prompt, max_tokens, timeout_s, result)
 	if bool(live.get("ok", false)):
 		result["ok"] = true
@@ -428,7 +431,17 @@ func _call_live(
 	stats["in_flight"] = int(stats["in_flight"]) - 1
 	result["latency_ms"] = Time.get_ticks_msec() - t0
 	result["raw"] = str(live.get("raw", "")).left(600)
+	for k: String in ["tokens_in", "tokens_out", "finish_reason", "repairs"]:
+		if live.has(k):
+			result[k] = live[k]
 	return live
+
+
+## result of a live_json call that did not go out, announced to the ledger (call_skipped); it is
+## not logged. Returns result.
+func _skipped(result: Dictionary) -> Dictionary:
+	call_skipped.emit(result.duplicate())
+	return result
 
 
 ## Why a key test cannot go out right now: "" when it can, else "no_key", "offline"
@@ -661,19 +674,20 @@ func _post(model: String, system_prompt: String, user_prompt: String, max_tokens
 	var parsed: Variant = JSON.parse_string(text)
 	if typeof(parsed) != TYPE_DICTIONARY:
 		return {"ok": false, "error": "bad response body", "service_fail": false, "http": 200}
-	# "choices": null (or a word) is not a list: no choices, not a script error.
-	var raw_choices: Variant = (parsed as Dictionary).get("choices")
-	var choices: Array = raw_choices as Array if typeof(raw_choices) == TYPE_ARRAY else []
-	if choices.is_empty():
+	# The reply read into its object, repairs and usage (GmiReply); an HTTP 200 whose body holds no
+	# answer is not the service's fault, so it never counts toward the breaker.
+	var reply := GmiReply.read(parsed as Dictionary)
+	var meta := {"tokens_in": reply["tokens_in"], "tokens_out": reply["tokens_out"],
+		"finish_reason": reply["finish_reason"]}
+	if str(reply["error"]) == "no choices":
 		return {"ok": false, "error": "no choices", "service_fail": false, "http": 200}
-	var content := GmiParse.message_text(GmiParse.message_of(choices[0]))
-	var data := GmiParse.extract_json(content)
+	var data: Dictionary = reply["data"]
 	if data.is_empty():
-		data = GmiParse.salvage_array(content)
-	if data.is_empty():
-		return {"ok": false, "error": "no JSON in reply", "raw": content, "service_fail": false,
-			"http": 200}
-	return {"ok": true, "data": data, "raw": content, "http": 200}
+		meta.merge({"ok": false, "error": "no JSON in reply", "raw": reply["raw"], "service_fail": false,
+			"http": 200})
+		return meta
+	meta.merge({"ok": true, "data": data, "raw": reply["raw"], "http": 200, "repairs": reply["repairs"]})
+	return meta
 
 
 ## The one place a chat request leaves the process: an HTTPRequest to CHAT_URL with exactly these

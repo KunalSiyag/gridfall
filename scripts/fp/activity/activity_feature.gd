@@ -16,6 +16,7 @@ const W := preload("res://scripts/fp/activity/activity_words.gd")
 const FEED := preload("res://scripts/fp/activity/activity_feed.gd")
 const BEACONS := preload("res://scripts/fp/activity/activity_beacons.gd")
 const TAGS := preload("res://scripts/fp/activity/activity_tags.gd")
+const PRESS := preload("res://scripts/fp/activity/activity_press.gd")
 ## Where the council sits when no City Hall tile is found (CitySim.new_city builds it here).
 const CITY_HALL := Vector2i(15, 14)
 ## Decisions kept for the save; the feed shows the newest FEED.MAX_CARDS.
@@ -83,6 +84,7 @@ func setup(p_ctx: FpContext) -> void:
 		_link(ctx.brain.news_published, _on_news_published)
 	if ctx.bus != null:
 		_link(ctx.bus.modal_changed, _sync_visibility)
+		_link(ctx.bus.poster_ready, _on_poster_ready)
 	_refresh()
 
 
@@ -292,6 +294,22 @@ func _on_news_published(p: Dictionary) -> void:
 	it["headline"] = "Front page: " + W.detail(str(p.get("headline", "")))
 	it["detail"] = W.detail(str(p.get("editorial", "")))
 	_add(it)
+
+
+## A live campaign poster was printed (GameBus.poster_ready): a card with the image model's badge.
+func _on_poster_ready(poster: Dictionary) -> void:
+	var mi := PRESS.mayor_of(poster)
+	if mi < 0:
+		return
+	var col := Color(str(D.MAYORS[mi]["color"]))
+	var it := _item(
+		"press:%d" % mi, str(mi), D.mayor_display(mi), PRESS.model_badge(), col, {"source": "live"}
+	)
+	var w := PRESS.words(mi)
+	it["headline"] = str(w["headline"])
+	it["detail"] = str(w["detail"])
+	_place(it, D.NO_TILE)
+	_add(it, true, false)
 
 
 # ------------------------------------------------------------------ items

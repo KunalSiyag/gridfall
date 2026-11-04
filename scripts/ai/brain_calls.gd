@@ -12,6 +12,9 @@ var _mayor_in_flight: Array[bool] = [false, false, false, false, false]
 var _support_in_flight: Dictionary = {}
 ## Counts the cities this brain has served. A call remembers the value it was sent under.
 var _generation: int = 0
+## What every model has done in this city (calls, answer times, repairs, accepted orders): the
+## league, the Arena tab and the services page read it. Fed by the client and by mayor_decided.
+var ledger := ModelLedger.new()
 ## The "Ask the five" engine (flag arena_ask), built on first use and dropped with the city.
 var arena: ArenaAsk = null
 

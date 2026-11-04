@@ -35,6 +35,7 @@ func _init() -> void:
 	_check_top_bar_width()
 	_check_mayor_tab()
 	_check_council_and_people()
+	_check_arena_tab()
 	_check_mood_source()
 	_check_world_labels()
 	_check_grant_picker()
@@ -63,6 +64,43 @@ func _any_has(texts: Array[String], needle: String) -> bool:
 		if t.contains(needle):
 			return true
 	return false
+
+
+## The Arena tab (flag arena_tab, appended after People) leads every block with the person's name
+## and keeps the model brand in the sub-line, like the dock and the Mayor tab.
+func _check_arena_tab() -> void:
+	var tabs: TabContainer = main.hud.get("_tabs")
+	check(
+		tabs.get_tab_count() == 8 and tabs.get_tab_title(7) == "Arena",
+		"arena: the tab is appended after People (index 7)"
+	)
+	var m: Dictionary = D.MAYORS[1]
+	main.brain.ledger.note_call(
+		{
+			"role": "mayor",
+			"agent": str(m["id"]),
+			"model": str(m["model"]),
+			"source": "live",
+			"latency_ms": 6000,
+			"attempts": 1
+		}
+	)
+	tabs.current_tab = 7
+	main.hud.call("_render_arena")
+	var rt: RichTextLabel = main.hud.get("_arena_rt")
+	var shown := rt.get_parsed_text()
+	for mi in range(D.MAYORS.size()):
+		var person := shown.find(str(D.MAYORS[mi]["display"]))
+		var brand := shown.find(str(D.MAYORS[mi]["name"]), maxi(person, 0))
+		check(
+			person >= 0 and brand > person,
+			"arena: %s leads, %s is the sub-line" % [D.MAYORS[mi]["display"], D.MAYORS[mi]["name"]]
+		)
+	check(
+		shown.contains("time to answer"),
+		"arena: the speed is called time to answer, not model speed"
+	)
+	tabs.current_tab = 0
 
 
 ## One mood, one word: the Planner's "Mood" is the street's mood function, tile happiness has its

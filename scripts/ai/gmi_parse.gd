@@ -41,9 +41,16 @@ const COMMA := 0x2C
 ## The object the reply carries: the largest valid balanced one, else a truncated reply closed at
 ## its last complete value, else {}. Never fails and never prints.
 static func extract_json(content: String) -> Dictionary:
+	return extract_json_info(content)["data"]
+
+
+## extract_json with how it got there: {"data": the object ({} when none), "truncated": true when
+## the object is a cut-off reply closed at its last complete value}. One scan, so the caller that
+## wants to count repairs (GmiReply) pays nothing extra.
+static func extract_json_info(content: String) -> Dictionary:
 	var text := _without_thinking(content.left(MAX_SCAN))
 	if text.count("{") - text.count("}") > MAX_UNCLOSED:
-		return {}
+		return {"data": {}, "truncated": false}
 	var best: Dictionary = {}
 	var best_len := 0
 	var best_start := -1
@@ -88,8 +95,22 @@ static func extract_json(content: String) -> Dictionary:
 			break
 		var repaired := _close_truncated(text, open_start)
 		if not repaired.is_empty():
-			return repaired
-	return best
+			return {"data": repaired, "truncated": true}
+	return {"data": best, "truncated": false}
+
+
+## The reply without its reasoning (what extract_json scans): <think> blocks cut out, the scan
+## limit applied.
+static func visible_text(content: String) -> String:
+	return _without_thinking(content.left(MAX_SCAN))
+
+
+## True when the reply put its answer in the reasoning field because its content was empty
+## (message_text takes that way out).
+static func used_reasoning(msg: Dictionary) -> bool:
+	if not _text_of(msg.get("content")).strip_edges().is_empty():
+		return false
+	return not message_text(msg).strip_edges().is_empty()
 
 
 ## The "message" of one entry of a reply's "choices" ({} when it is not an object holding one).

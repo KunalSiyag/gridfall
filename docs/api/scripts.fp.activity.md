@@ -47,6 +47,7 @@ AI activity (integration feature "activity"): the city's AI decisions, visible f
 - `FEED = preload("res://scripts/fp/activity/activity_feed.gd")`
 - `BEACONS = preload("res://scripts/fp/activity/activity_beacons.gd")`
 - `TAGS = preload("res://scripts/fp/activity/activity_tags.gd")`
+- `PRESS = preload("res://scripts/fp/activity/activity_press.gd")`
 - `CITY_HALL = Vector2i(15, 14)`: Where the council sits when no City Hall tile is found (CitySim.new_city builds it here).
 - `KEEP = 12`: Decisions kept for the save; the feed shows the newest FEED.MAX_CARDS.
 - `REFRESH = 0.25`
@@ -112,6 +113,25 @@ The AI activity feed (feature "activity"), top right under the compass: a header
 - `func open_card() -> Control`: The newest (open) card's panel, or null.
 - `func card_count() -> int`: How many cards the feed holds (shown or not).
 - `func column_rect() -> Rect2`: The header, line and cards as they sit on screen (HUD coordinates).
+
+## `scripts/fp/activity/activity_press.gd`
+
+extends `RefCounted`
+
+The press run: a campaign poster that a live image model made lands on the street (GameBus poster_ready with meta.source "live"), and the activity feed says so with the image model's badge and the mayor whose campaign it is. Only a live image counts: a pre-baked or procedural poster is not a model decision, so it stays off the feed. Pure helpers; ActivityFeature adds the card.
+
+### Constants
+
+- `D = preload("res://scripts/sim/sim_defs.gd")`
+- `W = preload("res://scripts/fp/activity/activity_words.gd")`
+- `KIND_PREFIX = "campaign_"`: The poster kind of mayor <id>'s campaign (PosterDirector: "campaign_" + the mayor's id).
+- `HEADLINE = "Campaign poster printed"`
+
+### Functions
+
+- `static func mayor_of(poster: Dictionary) -> int`: The mayor index whose live campaign poster this GameBus.poster_ready payload is, else -1.
+- `static func words(mi: int) -> Dictionary`: The feed card's text for mayor mi's poster: {"headline", "detail"}.
+- `static func model_badge() -> String`: The badge of the image model that drew it.
 
 ## `scripts/fp/activity/activity_tags.gd`
 

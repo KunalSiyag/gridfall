@@ -12,6 +12,7 @@ extends Node
 const D := preload("res://scripts/sim/sim_defs.gd")
 const T := preload("res://scripts/fp/chat/chat_text.gd")
 const F := preload("res://scripts/fp/chat/chat_facts.gd")
+const MV := preload("res://scripts/fp/chat/mayor_voice.gd")
 ## The fast models chatter rotates across, taken from ResidentMinds.MODELS.
 const MODEL_NAMES := ["deepseek-ai/DeepSeek-V4.1-Flash", "google/gemini-3.5-flash-lite", "Qwen/Qwen3.8-Flash"]
 const ROUND_TOKENS := 600
@@ -227,7 +228,8 @@ func run_round(topic: Dictionary, recent: Array) -> Array:
 		_in_flight["round"] = false
 		_note(model, res)
 		if bool(res.get("ok", false)) and typeof(res.get("data")) == TYPE_DICTIONARY:
-			var lines := validate_lines(res["data"], picked, mayor, recent)
+			var drafted := validate_lines(res["data"], picked, mayor, recent)
+			var lines: Array = await MV.attribute(client, sim.day, drafted, directory)
 			if not lines.is_empty():
 				lru_put(key, lines)
 				return lines
@@ -294,7 +296,8 @@ func reply_to_player(text: String, district: int, recent: Array) -> Array:
 		_in_flight["player"] = false
 		_note(model, res)
 		if bool(res.get("ok", false)) and typeof(res.get("data")) == TYPE_DICTIONARY:
-			var lines := validate_lines(res["data"], picked, mi, [])
+			var drafted := validate_lines(res["data"], picked, mi, [])
+			var lines: Array = await MV.attribute(client, sim.day, drafted, directory)
 			if not lines.is_empty():
 				return _mayor_first(lines, mi, said, rng).slice(0, 4)
 	stats["heuristic"] = int(stats["heuristic"]) + 1
@@ -640,7 +643,7 @@ func validate_lines(
 		var rt := -1
 		if typeof(it.get("reply_to")) in [TYPE_INT, TYPE_FLOAT] and seqs.has(int(it["reply_to"])):
 			rt = int(it["reply_to"])
-		out.append({"id": id, "author": author, "role": role, "district": district, "text": text, "reply_to": rt, "reply_idx": -1})
+		out.append({"id": id, "author": author, "role": role, "district": district, "text": text, "reply_to": rt, "reply_idx": -1, "via": MV.PRESS if role == "mayor" else ""})
 		if out.size() >= MAX_LINES:
 			break
 	return out
@@ -1276,7 +1279,8 @@ func _mayors_live(kind: String, agent: String, panel: Array[int], recent: Array)
 	_note(model, res)
 	if not bool(res.get("ok", false)) or typeof(res.get("data")) != TYPE_DICTIONARY:
 		return []
-	return validate_lines(res["data"], [], panel[0], recent, panel.slice(1))
+	var drafted := validate_lines(res["data"], [], panel[0], recent, panel.slice(1))
+	return await MV.attribute(client, sim.day, drafted, directory)
 
 
 ## A chat line by mayor mi (role "mayor", district badge mi).
@@ -1284,7 +1288,7 @@ func _mayor_msg(mi: int, text: String, reply_idx: int) -> Dictionary:
 	return {
 		"id": "mayor:%d" % mi, "author": str(D.MAYORS[mi]["display"]), "role": "mayor",
 		"district": mi, "text": T.clip(T.display(text, directory), LINE_CHARS), "reply_to": -1,
-		"reply_idx": reply_idx,
+		"reply_idx": reply_idx, "via": MV.PRESS,
 	}
 
 
