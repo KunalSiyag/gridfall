@@ -20,6 +20,7 @@ Generated from the `##` doc comments in `scripts/`. Regenerate with `python3 too
 - [brain_text.gd](scripts.ai.md#scriptsaibrain_textgd): Removes model brand names from CityBrain text: a Gazette page as it comes in, and state restored from saves written before the display names, whose text feeds the prompts and the HUDs
 - [chatter_minds.gd](scripts.ai.md#scriptsaichatter_mindsgd) (`ChatterMinds`): The voices of the global chat and of face-to-face talk (slice C §3)
 - [city_brain.gd](scripts.ai.md#scriptsaicity_braingd) (`CityBrain`): Puts GMI model inference on every layer of the city
+- [council_log.gd](scripts.ai.md#scriptsaicouncil_loggd): The council vote board's data: what the Speaker did with each proposal and how the five mayors had voted
 - [gmi_admission.gd](scripts.ai.md#scriptsaigmi_admissiongd) (`GmiAdmission`): How many live calls GmiClient has out at once, with the mayors first
 - [gmi_breakers.gd](scripts.ai.md#scriptsaigmi_breakersgd) (`GmiBreakers`): The circuit breakers of GmiClient, one per group of roles
 - [gmi_cache.gd](scripts.ai.md#scriptsaigmi_cachegd) (`GmiCache`): The shape of GmiClient's answer caches: {key: [{day, data}, ...]}
@@ -28,6 +29,8 @@ Generated from the `##` doc comments in `scripts/`. Regenerate with `python3 too
 - [gmi_parse.gd](scripts.ai.md#scriptsaigmi_parsegd) (`GmiParse`): Reads the JSON object a model put in its reply
 - [gmi_preflight.gd](scripts.ai.md#scriptsaigmi_preflightgd) (`GmiPreflight`): The readiness check of a key (flag gmi_preflight): once per key, one GET of the model list through GmiClient (its own _models_trip, so no request leaves the process any other way), compared with the model ids the game calls (GmiReadiness), a sentence for the key panel and one line in the GMI log
 - [gmi_readiness.gd](scripts.ai.md#scriptsaigmi_readinessgd) (`GmiReadiness`): "Which of the 14 models does this key reach?" Pure helpers for GmiClient.preflight.run(): the list of model ids the game is configured to call (mayors, support agents, the resident and chatter pools), the ids a GET /v1/models reply names, their comparison, and the sentence the key panel shows
+- [mayor_context.gd](scripts.ai.md#scriptsaimayor_contextgd): Mayor context v2 (flag mayor_context_v2, default off until it has been tried live): what lets the five models answer EACH OTHER instead of five separate cities
+- [mayor_prompts.gd](scripts.ai.md#scriptsaimayor_promptsgd): The mayors' turn prompts, moved out of CityBrain (which keeps thin wrappers)
 - [mayor_turns.gd](scripts.ai.md#scriptsaimayor_turnsgd): Staggered mayor turns (CityBrain.stagger_mayors, on in street mode)
 - [resident_minds.gd](scripts.ai.md#scriptsairesident_mindsgd) (`ResidentMinds`): Gives every resident a GMI brain
 - [road_plans.gd](scripts.ai.md#scriptsairoad_plansgd): The heuristic mayor's road orders (CityBrain._heuristic_mayor): new roads to open land, at as cheap a grade as the funds call for, and paving rough roads that lots have grown along
@@ -367,6 +370,7 @@ Generated from the `##` doc comments in `scripts/`. Regenerate with `python3 too
 ## [scripts/ui/](scripts.ui.md)
 
 - [city_hud.gd](scripts.ui.md#scriptsuicity_hudgd) (`CityHud`): SimCity-style HUD for GridFall: city vitals and RCI demand, time controls, player powers (overlays, disasters, decrees, grants, ordinance overrides), the five AI mayor cards, and panels for mayor minds, the Gazette, City Hall, the street inspector, the GMI call log and the city feed
+- [council_board.gd](scripts.ui.md#scriptsuicouncil_boardgd): The City Hall tab's vote board (orbit): each proposal on the floor as a five-seat row (mayor colour, Y / N / - for how that mayor voted, a star on the proposer's seat) with the tally and, for one the Speaker already looked at, what it did; then the record of the last rulings with a loud OVERRIDE where the Speaker went against the count; then the notes and requests the mayors left each other (only when a live model wrote some)
 - [gridfall_hud.gd](scripts.ui.md#scriptsuigridfall_hudgd) (`GridFallHud`): SimCity-Style Civic & Multi-Agent Growth HUD for GridFall: - Top Civic Bar: City Day/Phase, Population, 5 SimCity Vital Bars (⚡ Power, 🚰 Sewage/Water, 🚗 Traffic, 🌿 Sanitation, 😊 Happiness), Playback controls, HY-Image 3.5 Lookbook button, and ACE-Step 1.5 status
 - [pack_status.gd](scripts.ui.md#scriptsuipack_statusgd) (`PackStatus`): Compact background-pack status line shared by the orbit and first-person HUDs
 

@@ -59,6 +59,8 @@ const SECTIONS := {
 		"last_council": DICT,
 		"last_chaos": DICT,
 		"last_operator": DICT,
+		"council_history": ARR,
+		"notes": DICT,
 		"chaos_last_day": NUM,
 		"complaints": REC,
 		"client": "@client",

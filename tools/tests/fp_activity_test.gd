@@ -37,6 +37,7 @@ func _init() -> void:
 	_check_setup(ctx, f)
 	_check_turns(ctx, f)
 	_check_mayor_card(ctx, f)
+	_check_council_cards(ctx, f)
 	_check_support(ctx, f)
 	_check_branding(f)
 	_check_modes(ctx, f)
@@ -95,6 +96,124 @@ func _check_words() -> void:
 	var pol := W.politics({"proposal": "curfew", "votes": {"clean_air_act": "no", "curfew": "yes"}})
 	var pol_want := "Proposed the Youth Curfew ordinance · Voted no on Clean Air Act"
 	K.check(fails, pol == pol_want, "proposals and votes (%s)" % pol)
+	var why := W.politics(
+		{"votes": {"curfew": "no"}, "vote_notes": {"curfew": "Kills the boom, says Grok-4.5"}}
+	)
+	K.check(
+		fails,
+		why == "Voted no on Youth Curfew (Kills the boom, says Duke Granger)",
+		"a vote's reason, de-branded (%s)" % why
+	)
+	var old_ruling := {"enacted": ["curfew"], "repealed": ["clean_air_act"]}
+	K.check(
+		fails,
+		W.council_words(old_ruling) == "Passed Youth Curfew · Repealed Clean Air Act",
+		"a ruling without a tally reads as before"
+	)
+	K.check(fails, W.council_votes(old_ruling).is_empty(), "and has no vote line")
+	var ruling := _tally_ruling()
+	var words := W.council_words(ruling)
+	K.check(
+		fails,
+		words == "Rejected Tourism Campaign despite 3 yes (override) · +2 more",
+		"a ruling leads with the one the Speaker went against and counts the rest (%s)" % words
+	)
+	K.check(fails, words.length() <= W.HEAD_CHARS, "so its headline fits the card's two lines")
+	var busy := _tally_ruling()
+	busy["enacted"] = ["curfew", "recycling", "clean_air_act"]
+	busy["rejected"] = []
+	busy["tally"] = [
+		_seat("curfew", 3, 2, "enacted"),
+		_seat("recycling", 4, 1, "enacted"),
+		_seat("clean_air_act", 5, 0, "enacted"),
+		_seat("tourism_campaign", 1, 1, "deferred"),
+	]
+	var busy_words := W.council_words(busy)
+	K.check(
+		fails,
+		(
+			busy_words == "Passed Youth Curfew 3-2 · Passed Recycling Program 4-1 · +2 more"
+			and busy_words.length() <= W.HEAD_CHARS
+		),
+		"a busy ruling lists what fits and says how many more (%s)" % busy_words
+	)
+	var many_over := _tally_ruling()
+	many_over["enacted"] = ["recycling", "green_energy_subsidy"]
+	many_over["rejected"] = ["clean_air_act"]
+	many_over["tally"] = [
+		_seat("recycling", 3, 2, "enacted"),
+		_seat("green_energy_subsidy", 2, 3, "enacted", true),
+		_seat("clean_air_act", 4, 1, "rejected", true),
+	]
+	var over_words := W.council_words(many_over)
+	K.check(
+		fails,
+		(
+			over_words.length() <= W.HEAD_CHARS
+			and over_words.contains("(override)")
+			and not over_words.ends_with(" ·")
+			and over_words.contains("more")
+		),
+		"three rulings that carry overrides still fit, without a dangling dot (%s)" % over_words
+	)
+	var replayed := {
+		"source": "cache",
+		"enacted": [],
+		"repealed": [],
+		"rejected": ["clean_air_act"],
+		"tally": [_seat("clean_air_act", 4, 1, "rejected", false, true)],
+	}
+	var replay_words := W.council_words(replayed)
+	K.check(
+		fails,
+		replay_words == "Rejected Clean Air Act",
+		"a replayed ruling against the count claims neither count nor override (%s)" % replay_words
+	)
+	K.check(
+		fails,
+		not W.council_votes(replayed).begins_with("The Speaker went against"),
+		"and its vote line does not say the Speaker went against the vote"
+	)
+	var votes := W.council_votes(ruling)
+	K.check(
+		fails,
+		votes.begins_with(
+			"The Speaker went against the vote. Tourism Campaign: yes Ada, Viktor, Mei · no Rosa"
+		),
+		"the vote line starts with the one the Speaker went against, in first names (%s)" % votes
+	)
+	var calm := {"tally": [ruling["tally"][0]], "enacted": ["curfew"]}
+	K.check(
+		fails,
+		W.council_votes(calm) == "Youth Curfew: yes Ada, Viktor, Mei · no Rosa, Duke",
+		"a plain ruling lists its seats (%s)" % W.council_votes(calm)
+	)
+	var waits := {"tally": [ruling["tally"][2]], "enacted": [], "repealed": [], "rejected": []}
+	K.check(
+		fails,
+		W.council_words(waits) == "Held Recycling Program 1-0",
+		(
+			"a ruling that only held a proposal over says so, not 'no ordinance changed' (%s)"
+			% W.council_words(waits)
+		)
+	)
+	var asked := W.say_words(
+		"request", {"from": "deepseek", "amount": 600, "reason": "Sewage ate my budget, Grok-4.5"}
+	)
+	K.check(
+		fails,
+		(
+			asked["headline"] == "Asked Viktor Han for $600"
+			and asked["detail"] == "Sewage ate my budget, Duke Granger"
+		),
+		"a request as words (%s)" % str(asked)
+	)
+	var told := W.say_words("message_to", {"to": "kimi", "text": "Share the surplus."})
+	K.check(
+		fails,
+		told["headline"] == "Told Mei Kimura" and told["detail"] == "Share the surplus.",
+		"a note as words (%s)" % str(told)
+	)
 
 
 func _check_setup(ctx: FpContext, f: FpFeature) -> void:
@@ -321,6 +440,230 @@ func _check_support(ctx: FpContext, f: FpFeature) -> void:
 	K.check(fails, gazette, "the Gazette's front page, de-branded (%s)" % head)
 	var kept := int(feed.call("card_count")) == 4 and (f.get("items") as Array).size() == 12
 	K.check(fails, kept, "the feed keeps four cards and the feature twelve decisions")
+
+
+## A ruling with its tally, as CityBrain._run_council emits it: Youth Curfew passes 3-2, Tourism
+## Campaign is turned down although 3 voted yes (the Speaker went against the count), Recycling
+## waits with one vote.
+func _tally_ruling() -> Dictionary:
+	return {
+		"day": 7,
+		"source": "live",
+		"statement": "Curfew passes. Grok-4.5 objects.",
+		"enacted": ["curfew"],
+		"repealed": [],
+		"rejected": ["tourism_campaign"],
+		"tally":
+		[
+			{
+				"key": "curfew",
+				"yes": 3,
+				"no": 2,
+				"outcome": "enacted",
+				"override": false,
+				"votes":
+				{"argon": "yes", "deepseek": "yes", "kimi": "yes", "qwen": "no", "grok": "no"}
+			},
+			{
+				"key": "tourism_campaign",
+				"yes": 3,
+				"no": 1,
+				"outcome": "rejected",
+				"override": true,
+				"votes": {"argon": "yes", "deepseek": "yes", "kimi": "yes", "qwen": "no"}
+			},
+			{
+				"key": "recycling",
+				"yes": 1,
+				"no": 0,
+				"outcome": "deferred",
+				"override": false,
+				"votes": {"argon": "yes"}
+			},
+		],
+	}
+
+
+## The council card shows the count and the override, the mayor card the reason for a vote, and a
+## mayor's note to another mayor is a speech-bubble card; none of it leaks a brand or system word.
+func _check_council_cards(ctx: FpContext, f: FpFeature) -> void:
+	var feed: Control = f.get("feed")
+	f.call("_on_council_ruled", _tally_ruling())
+	var card: Control = feed.call("open_card")
+	var head := _text(card, "Headline")
+	K.check(
+		fails,
+		head.begins_with("Rejected Tourism Campaign despite 3 yes (override)"),
+		"the council card has the count and the override (%s)" % head
+	)
+	var ruled: Dictionary = (f.get("items") as Array)[-1]
+	K.check(
+		fails,
+		str(ruled["short"]) == "Rejected Tourism Campaign despite 3 yes (override)",
+		"the tag over City Hall keeps the word override (%s)" % str(ruled["short"])
+	)
+	var extra := _text(card, "Politics")
+	K.check(
+		fails,
+		extra.begins_with(
+			"The Speaker went against the vote. Tourism Campaign: yes Ada, Viktor, Mei"
+		),
+		"and who voted how (%s)" % extra
+	)
+	K.check(
+		fails,
+		(card.find_child("Politics", true, false) as Control).visible,
+		"the vote line is shown on the open card"
+	)
+	var entry := {
+		"day": ctx.sim.day,
+		"source": "live",
+		"error": "",
+		"actions": [],
+		"thought": "Waiting.",
+		"post": "",
+		"votes": {"curfew": "no"},
+		"vote_notes": {"curfew": "Kills the boom"},
+		"message_to": {"to": "kimi", "text": "Grok-4.5 wants the surplus; share yours, Mei."},
+		"request":
+		{"from": "deepseek", "amount": 600, "reason": "My sewage plant ate the treasury"},
+	}
+	var taps := announced.size()
+	FeatureFlags.set_override("mayor_context_v2", false)
+	var kept := (f.get("items") as Array).size()
+	f.call("_say", 0, entry)
+	K.check(
+		fails,
+		announced.size() == taps and (f.get("items") as Array).size() == kept,
+		"flag off: a note in an entry shows no bubble"
+	)
+	taps = announced.size()
+	FeatureFlags.set_override("mayor_context_v2", true)
+	f.call("_on_mayor_decided", 0, entry)
+	var items: Array = f.get("items")
+	K.check(
+		fails,
+		announced.size() == taps + 3,
+		(
+			"a turn with a note and a request shows the turn's card and two bubbles (%d)"
+			% (announced.size() - taps)
+		)
+	)
+	var bubble: Dictionary = items[-1]
+	K.check(
+		fails,
+		(
+			str(bubble["style"]) == "say"
+			and str(bubble["who"]) == "Ada Okafor"
+			and str(bubble["headline"]) == "Asked Viktor Han for $600"
+		),
+		"the newest card is Ada asking Viktor (%s)" % str(bubble["headline"])
+	)
+	var note: Dictionary = items[-2]
+	K.check(
+		fails,
+		(
+			str(note["style"]) == "say"
+			and str(note["headline"]) == "Told Mei Kimura"
+			and str(note["detail"]) == "Duke Granger wants the surplus; share yours, Mei."
+		),
+		"and her note to Mei, de-branded (%s)" % str(note["detail"])
+	)
+	K.check(
+		fails,
+		not bool(bubble["placed"]) and str(bubble["source"]) == "live",
+		"a bubble has no place and says LIVE"
+	)
+	var turn: Dictionary = items[-3]
+	K.check(
+		fails,
+		str(turn["extra"]).contains("Voted no on Youth Curfew (Kills the boom)"),
+		"the turn's own card keeps its politics line (%s)" % str(turn["extra"])
+	)
+	var open: Control = feed.call("open_card")
+	K.check(
+		fails,
+		_badge(open, "Model") == "Argon-4" and _text(open, "Who") == "Ada Okafor",
+		"the bubble names the speaker by person, the model in the badge"
+	)
+	var panel := open as PanelContainer
+	var sb := panel.get_theme_stylebox("panel") as StyleBoxFlat
+	K.check(
+		fails,
+		sb.corner_radius_top_left > S.RADIUS and sb.border_width_top == 1,
+		"it is drawn as a rounded bubble outlined in the speaker's colour"
+	)
+	K.check(
+		fails,
+		_text(open, "Detail") == "“My sewage plant ate the treasury”",
+		"the words are in quotes (%s)" % _text(open, "Detail")
+	)
+	var re := RegEx.create_from_string(LEAK_RE)
+	var bad := PackedStringArray()
+	for t in S.owned_texts(feed):
+		if re.search(t) != null:
+			bad.append(t)
+	K.check(
+		fails,
+		bad.is_empty(),
+		"no brand or system words on the council card or the bubbles %s" % str(bad)
+	)
+	var saved: Dictionary = JSON.parse_string(JSON.stringify(f.to_dict()))
+	f.from_dict(saved)
+	var back: Dictionary = (f.get("items") as Array)[-1]
+	K.check(
+		fails,
+		str(back["style"]) == "say" and str(back["headline"]) == "Asked Viktor Han for $600",
+		"a bubble survives a save"
+	)
+	f.call(
+		"_on_mayor_decided",
+		0,
+		{"day": ctx.sim.day, "source": "cache", "actions": [], "thought": "Fine.", "votes": {}}
+	)
+	K.check(
+		fails,
+		str((f.get("items") as Array)[-1]["style"]) == "",
+		"a turn without a note adds no bubble"
+	)
+	# A note stays readable after a newer card lands: folded, its card keeps the words on one line.
+	var say_cards := 0
+	for c: Dictionary in feed.get("_cards"):
+		if str((c["item"] as Dictionary).get("style", "")) != "say":
+			continue
+		say_cards += 1
+		var line := _text(c["panel"], "Headline")
+		K.check(
+			fails,
+			(
+				c["panel"] != feed.call("open_card")
+				and line.contains("“")
+				and (c["item"]["headline"] as String).length() < line.length()
+			),
+			"a folded bubble keeps its words (%s)" % line
+		)
+	K.check(fails, say_cards > 0, "fixture: a bubble is on the feed behind the newest card")
+	FeatureFlags.set_override("mayor_context_v2", false)
+
+
+## One entry of a ruling's tally: key, yes and no votes (the first yes mayors vote yes, the rest
+## no), the outcome, whether the Speaker went against the count (override) and against (a replay).
+func _seat(
+	key: String, yes: int, no: int, outcome: String, override: bool = false, against: bool = false
+) -> Dictionary:
+	var votes := {}
+	var ids := ["argon", "deepseek", "kimi", "qwen", "grok"]
+	for k in range(yes + no):
+		votes[ids[k]] = "yes" if k < yes else "no"
+	return {
+		"key": key,
+		"yes": yes,
+		"no": no,
+		"outcome": outcome,
+		"override": override,
+		"against": against or override,
+		"votes": votes
+	}
 
 
 func _check_branding(f: FpFeature) -> void:

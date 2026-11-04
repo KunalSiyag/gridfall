@@ -17,6 +17,8 @@ const SAFE := 24.0
 ## Under the compass strip (it ends at y 106 in the 1600x900 base).
 const TOP := 118.0
 const MAX_CARDS := 4
+## A mayor's note to another mayor is a rounded bubble outlined in the speaker's colour.
+const BUBBLE_RADIUS := 9
 const FADE := 0.25
 const FLASH := 1.6
 ## Room kept at the end of a card's top row for its age ("12 min").
@@ -213,6 +215,7 @@ func _apply_mode() -> void:
 		for r: Control in c["rich"]:
 			r.visible = open and bool(r.get_meta("has", true))
 		(c["headline"] as Label).max_lines_visible = 2 if open else 1
+		(c["headline"] as Label).text = _head_text(c["item"], open)
 		if not open:
 			c["age"] = FADE + FLASH
 			(c["panel"] as Control).modulate.a = 1.0
@@ -238,12 +241,26 @@ func _process(delta: float) -> void:
 		(c["box"] as StyleBoxFlat).bg_color = OPEN_BG.lerp(flash, k * 0.5)
 
 
+## A card's headline: for a folded note between mayors ("say" style) the words too, on one line, so
+## a viewer still sees what was said after a newer card lands; the plain headline otherwise.
+static func _head_text(item: Dictionary, open: bool) -> String:
+	var h := str(item.get("headline", ""))
+	if open or str(item.get("style", "")) != "say" or str(item.get("detail", "")).is_empty():
+		return h
+	return "%s: “%s”" % [h, str(item["detail"])]
+
+
 func _card(item: Dictionary) -> Dictionary:
 	var col: Color = item.get("color", S.ACCENT)
 	var p := PanelContainer.new()
 	p.name = "Card"
 	p.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	var sb := S.stripe(S.box(OPEN_BG, S.RADIUS, 12, 7), col, 3)
+	var say := str(item.get("style", "")) == "say"
+	var sb := S.stripe(S.box(OPEN_BG, BUBBLE_RADIUS if say else S.RADIUS, 12, 7), col, 3)
+	if say:
+		sb.set_border_width_all(1)
+		sb.border_width_left = 3
+		sb.border_color = col
 	p.add_theme_stylebox_override("panel", sb)
 	var v := VBoxContainer.new()
 	v.mouse_filter = Control.MOUSE_FILTER_IGNORE
@@ -254,10 +271,19 @@ func _card(item: Dictionary) -> Dictionary:
 	v.add_child(top)
 	var ago := _top_row(top, item, col)
 	var head := _wrapped(str(item.get("headline", "")), 15, S.WHITE, S.bold(), "Headline", 2)
+	if say:
+		head.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
 	v.add_child(head)
 	var rich: Array[Control] = []
 	var detail := str(item.get("detail", ""))
-	var dl := _wrapped("“%s”" % detail, 13, S.TEXT_DIM, S.font(), "Detail", 3)
+	var dl := _wrapped(
+		"“%s”" % detail,
+		14 if say else 13,
+		S.WHITE if say else S.TEXT_DIM,
+		S.font(),
+		"Detail",
+		4 if say else 3
+	)
 	dl.set_meta("has", not detail.is_empty())
 	rich.append(dl)
 	var extra := str(item.get("extra", ""))

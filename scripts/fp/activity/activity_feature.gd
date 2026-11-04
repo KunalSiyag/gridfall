@@ -26,15 +26,19 @@ const HERE := 0.75
 ## Height of the chat ticker strip at the bottom of chat_slot (the last lines while it is closed).
 const TICKER_H := 240.0
 const SAVED_TEXT := [
-	"key", "agent", "who", "model", "source", "headline", "short", "detail", "extra"
+	"key", "agent", "who", "model", "source", "headline", "short", "detail", "extra", "style"
 ]
+
+## The refusal count a turn summary ends with ("Zoned 3 homes (1 refused)"), left off "short".
+static var _refused_re := RegEx.create_from_string("\\s\\(\\d+ refused\\)$")
 
 var feed: FEED
 var beacons: BEACONS
 var tags: TAGS
 ## Oldest first: {"key" ("mayor:<mi>" or the support role), "agent" ("<mi>" or the role), "who",
 ## "model", "source" (live|cache|heuristic), "failed" (a live call was tried and failed),
-## "headline", "short" (its first phrase), "detail" (why), "extra" (votes or a refusal),
+## "headline", "short" (its first phrase), "detail" (why), "extra" (votes or a refusal), "style"
+## ("say" for a mayor's note to another mayor, drawn as a speech bubble; "" otherwise),
 ## "color": Color, "tile": Vector2i (D.NO_TILE without a place), "placed": bool, "day",
 ## "clock" (feature seconds when it landed; -1 once restored from a save)}.
 var items: Array[Dictionary] = []
@@ -256,12 +260,38 @@ func _on_mayor_decided(mi: int, entry: Dictionary) -> void:
 	it["extra"] = extra
 	_place(it, W.tile_of(entry.get("focus", D.NO_TILE)))
 	_add(it)
+	_say(mi, entry)
+
+
+## A note or request the mayor sent another mayor this turn (mayor context v2: only a live model
+## writes them) as a speech-bubble card of its own, so a viewer sees one mayor talking to another.
+func _say(mi: int, entry: Dictionary) -> void:
+	if not FeatureFlags.enabled("mayor_context_v2", false):
+		return
+	for kind: String in ["message_to", "request"]:
+		if typeof(entry.get(kind)) != TYPE_DICTIONARY:
+			continue
+		var words := W.say_words(kind, entry[kind])
+		var it := _item(
+			"say:%d" % mi,
+			str(mi),
+			D.mayor_display(mi),
+			W.mayor_model(mi),
+			Color(str(D.MAYORS[mi]["color"])),
+			entry
+		)
+		it["style"] = "say"
+		it["headline"] = words["headline"]
+		it["detail"] = words["detail"]
+		_place(it, D.NO_TILE)
+		_add(it, true, false)
 
 
 func _on_council_ruled(r: Dictionary) -> void:
 	var it := _agent_item("council", r)
 	it["headline"] = W.council_words(r)
 	it["detail"] = W.detail(str(r.get("statement", "")))
+	it["extra"] = W.council_votes(r)
 	_place(it, _city_hall())
 	_add(it)
 
@@ -313,6 +343,7 @@ func _item(
 		"short": "",
 		"detail": "",
 		"extra": "",
+		"style": "",
 		"tile": D.NO_TILE,
 		"placed": false,
 		"day": day,
@@ -334,7 +365,7 @@ func _place(it: Dictionary, t: Vector2i) -> void:
 
 ## Adds a decision: the feed card, the beacon over its place and (fresh, ping) a map ping.
 func _add(it: Dictionary, fresh: bool = true, ping: bool = true) -> void:
-	it["short"] = str(it["headline"]).get_slice(" · ", 0).get_slice(" (", 0)
+	it["short"] = _refused_re.sub(str(it["headline"]).get_slice(" · ", 0), "")
 	items.append(it)
 	while items.size() > KEEP:
 		items.pop_front()

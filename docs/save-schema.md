@@ -6,7 +6,7 @@ the previous save kept as `.bak`). Sections:
 | key | writer | notes |
 |---|---|---|
 | `sim` | `CitySim.to_dict()` | the city; versioned (below) |
-| `brain` | `CityBrain.to_dict()` | mayor state; a round in progress is dropped, not saved |
+| `brain` | `CityBrain.to_dict()` | mayor state, council history and notes (below); a round in progress is dropped, not saved |
 | `client` | `GmiClient.to_dict()` | this session's cached answers (`session_cache`, pruned for the save, see below) and the call counters; never prompts or keys |
 | `residents` | `Residents.to_dict()` | people and their day |
 | `minds` | `ResidentMinds.to_dict()` | per-resident AI state |
@@ -33,6 +33,26 @@ because it is what gets merged into the replay file. Loading a pruned save and s
 same bytes. `Main.new_game()` clears the cache and zeroes the counters (`GmiCache.clear_session(client)`),
 so a New City never replays the last city's answers. Older saves with the whole cache load as they
 always did.
+
+## The brain section: council history and notes
+
+`brain.council_history` is the council's last 20 rulings, newest last (`CouncilLog.KEEP`): one
+record per proposal the Speaker looked at and one per repeal, each `{day, key, by, by_id, votes
+{mayor id: "yes"|"no"}, notes {mayor id: reason}, yes, no, outcome (enacted|rejected|deferred|
+repealed), against, override, statement, source}`. `against` is true when the outcome disagrees
+with the count (enacted with fewer than 3 yes, or kept out with 3 or more); `override` is `against`
+for a ruling a live Speaker made (`source` "live") and false for a replayed or offline one, whose
+Speaker never read today's votes. The City Hall tab and the street's council card read both.
+`brain.last_council` also carries the same records as `tally` for its
+proposals. `brain.notes` is what the mayors left each other under flag `mayor_context_v2`:
+`{recipient id: [{from, day, kind (note|request), text, amount, seen}]}`, at most 4 per recipient
+(`MayorContext.NOTES_PER_MAYOR`), 120 characters of text, an amount only for a request (at most
+3000), dropped after 8 days. Both are optional with safe defaults (empty), so they are not a
+version bump. A load rebuilds them rather than trusting them (`CouncilLog.restore`,
+`MayorContext.restore`): unknown outcomes, mayors and extra seats are dropped, tallies are
+recomputed from the votes, text is de-branded and cut again, and the newest 20 / 4 are kept even if
+the file holds more. `SaveShape` refuses a save whose `council_history` is not an array or whose
+`notes` is not a dictionary.
 
 ## Sim section versions
 

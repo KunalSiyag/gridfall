@@ -187,6 +187,69 @@ func _check_council_and_people() -> void:
 		council.contains(order.trim_suffix(" > ")),
 		"city hall: the load-shed order names the mayors by person (%s)" % order
 	)
+	# The vote board: a five-seat row per proposal and the Speaker's record (CouncilBoard).
+	main.brain.proposals = {
+		"curfew":
+		{"by": "Ada Okafor", "day": 3, "votes": {"argon": "yes", "grok": "no", "kimi": "yes"}}
+	}
+	main.brain.council_history.assign(
+		[
+			{
+				"day": 3,
+				"key": "recycling",
+				"by": "Rosa Quintero",
+				"by_id": "qwen",
+				"votes": {"qwen": "yes", "argon": "yes"},
+				"notes": {},
+				"yes": 2,
+				"no": 0,
+				"outcome": "enacted",
+				"override": true,
+				"statement": "",
+				"source": "live"
+			}
+		]
+	)
+	main.hud._render_council()
+	council = main.hud._council_rt.get_parsed_text()
+	check(
+		council.contains("Youth Curfew by Ada Okafor  2-1"),
+		"city hall: a proposal shows its tally, not 'N yes N no'"
+	)
+	check(
+		council.contains("Ada *Y  Viktor -  Mei Y  Rosa -  Duke N"),
+		"city hall: five seats, a star on the proposer"
+	)
+	check(
+		council.contains("Day 3  Recycling Program: OVERRIDE: passed with 2"),
+		"city hall: the Speaker's override is on the record"
+	)
+	# A vote cast on a mayor's turn shows on the board at once, without a tab change.
+	main.brain.proposals["curfew"]["votes"]["qwen"] = "no"
+	main.brain.mayor_decided.emit(
+		3,
+		{
+			"day": 3,
+			"thought": "t",
+			"post": "p",
+			"mood": "calm",
+			"actions": [],
+			"source": "live",
+			"latency_ms": 5,
+			"error": "",
+			"model": "m",
+			"focus": D.NO_TILE,
+			"proposal": "",
+			"votes": {"curfew": "no"}
+		}
+	)
+	council = main.hud._council_rt.get_parsed_text()
+	check(
+		council.contains("Youth Curfew by Ada Okafor  2-2") and council.contains("Rosa N"),
+		"city hall: a vote appears on the board as the mayor decides"
+	)
+	main.brain.proposals = {}
+	main.brain.council_history.clear()
 	# The district lines only exist once somebody lives in the city.
 	K.grow(main.sim, main.residents, 40)
 	check(main.residents.people.size() >= 5, "fixture: the grown city has residents")
