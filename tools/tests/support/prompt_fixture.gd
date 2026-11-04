@@ -29,6 +29,17 @@ static func build(root: Node, client: GmiClient = null) -> Dictionary:
 	return w
 
 
+## The same city on a scripted live transport (support/scripted_net.gd, answers set per model):
+## {"sim", "people", "client", "brain", "net"}.
+static func build_live(root: Node) -> Dictionary:
+	var net := (load("res://tools/tests/support/scripted_net.gd") as GDScript).new()
+	net.name = "ScriptedNet"
+	net.live_enabled = true
+	var w := build(root, net)
+	w["net"] = net
+	return w
+
+
 ## Writes the fixture's state into a brain that was just set up.
 static func fill_state(brain: CityBrain) -> void:
 	for mi in range(D.MAYORS.size()):

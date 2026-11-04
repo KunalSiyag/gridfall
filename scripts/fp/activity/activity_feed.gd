@@ -216,6 +216,8 @@ func _apply_mode() -> void:
 			r.visible = open and bool(r.get_meta("has", true))
 		(c["headline"] as Label).max_lines_visible = 2 if open else 1
 		(c["headline"] as Label).text = _head_text(c["item"], open)
+		if not open:  # a folded headline that still runs long ends in dots, not mid-phrase
+			(c["headline"] as Label).text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
 		if not open:
 			c["age"] = FADE + FLASH
 			(c["panel"] as Control).modulate.a = 1.0
@@ -242,9 +244,12 @@ func _process(delta: float) -> void:
 
 
 ## A card's headline: for a folded note between mayors ("say" style) the words too, on one line, so
-## a viewer still sees what was said after a newer card lands; the plain headline otherwise.
+## a viewer still sees what was said after a newer card lands; a folded card that has a one-line
+## form of its own ("fold", the council's) shows that; the plain headline otherwise.
 static func _head_text(item: Dictionary, open: bool) -> String:
 	var h := str(item.get("headline", ""))
+	if not open and not str(item.get("fold", "")).is_empty():
+		return str(item["fold"])
 	if open or str(item.get("style", "")) != "say" or str(item.get("detail", "")).is_empty():
 		return h
 	return "%s: “%s”" % [h, str(item["detail"])]

@@ -53,11 +53,11 @@ AI activity (integration feature "activity"): the city's AI decisions, visible f
 - `REFRESH = 0.25`
 - `HERE = 0.75`: Within this many tiles the place line reads "here" instead of a distance.
 - `TICKER_H = 240.0`: Height of the chat ticker strip at the bottom of chat_slot (the last lines while it is closed).
-- `SAVED_TEXT = [ "key", "agent", "who", "model", "source", "headline", "short", "detail", "extra", "st...`
+- `SAVED_TEXT = [ "key", "agent", "who", "model", "source", "headline", "short", "fold", "detail", "ext...`
 
 ### Properties
 
-- `items: Array[Dictionary]`: Oldest first: {"key" ("mayor:<mi>" or the support role), "agent" ("<mi>" or the role), "who", "model", "source" (live|cache|heuristic), "failed" (a live call was tried and failed), "headline", "short" (its first phrase), "detail" (why), "extra" (votes or a refusal), "style" ("say" for a mayor's note to another mayor, drawn as a speech bubble; "" otherwise), "color": Color, "tile": Vector2i (D.NO_TILE without a place), "placed": bool, "day", "clock" (feature seconds when it landed; -1 once restored from a save)}.
+- `items: Array[Dictionary]`: Oldest first: {"key" ("mayor:<mi>" or the support role), "agent" ("<mi>" or the role), "who", "model", "source" (live|cache|heuristic), "failed" (a live call was tried and failed), "headline", "short" (its first phrase), "fold" (a one-line headline for a folded card; only the council's has one), "detail" (why), "extra" (votes or a refusal), "style" ("say" for a mayor's note to another mayor, drawn as a speech bubble; "" otherwise), "color": Color, "tile": Vector2i (D.NO_TILE without a place), "placed": bool, "day", "clock" (feature seconds when it landed; -1 once restored from a save)}.
 
 ### Functions
 
@@ -173,7 +173,8 @@ Plain words for the AI activity layer: what a mayor's turn did ("Zoned 6 homes �
 - `SOURCE_TAGS = {"live": "LIVE", "cache": "REPLAY"}`
 - `MAX_PARTS = 2`: Most action phrases one summary lists before "+N more".
 - `DETAIL_CHARS = 150`
-- `HEAD_CHARS = 72`: What a council headline may hold: the card's headline shows two lines (about 80 characters).
+- `HEAD_CHARS = 72`: What a council headline may hold: the card's headline shows two lines (about 80 characters), a folded card one (about 40).
+- `FOLD_CHARS = 40`
 
 ### Functions
 
@@ -184,8 +185,10 @@ Plain words for the AI activity layer: what a mayor's turn did ("Zoned 6 homes �
 - `static func first_refusal(applied: Array) -> String`: The first refusal reason in an applied list ("cannot afford road ($120)"), or "".
 - `static func action_words(a: Variant) -> String`: A short phrase for one mayor action ({"type": "zone", "zone": "R", "w": 3, "h": 2} -> "Zoned 6 homes"), or "" for an unknown one.
 - `static func politics(entry: Dictionary) -> String`: Proposals and votes from a decision entry ("Proposed the Curfew ordinance · Voted no on Clean Air Act"), or "".
-- `static func council_words(r: Dictionary) -> String`: What a council ruling did ("Passed Curfew 3-2 · Repealed Clean Air Act"). A ruling that carries its tally (CouncilLog) shows the count, says so when the Speaker went against it ("Passed Curfew with 2 yes (override)") and lists a proposal held over ("Held Recycling Program 2-1").
-- `static func council_votes(r: Dictionary) -> String`: Who voted how in a ruling, in person names ("Curfew: yes Ada, Viktor, Mei · no Rosa"), starting with a proposal the Speaker went against ("The Speaker went against the vote. ..."); "" when the ruling has no tally.
+- `static func council_words(r: Dictionary) -> String`: What a council ruling did ("Passed Curfew 3-2 · Repealed Clean Air Act"). A ruling that carries its tally (CouncilLog) shows the count, says so when the Speaker went against it ("Passed Curfew with 2 yes (override)") and lists a proposal held over ("Held Recycling Program 2-1"), once: a deferral the council already reported and that has not changed stays out.
+- `static func council_fold(r: Dictionary) -> String`: The same ruling for a folded card, which shows one line (about FOLD_CHARS characters): the override mark stays ("Passed Curfew (override)"), the count words and the rest give way.
+- `static func council_news(r: Dictionary) -> bool`: Whether a ruling has anything to tell the street: an ordinance changed, a proposal was ruled out or a deferral is new. A ruling without a tally (an old save) always does.
+- `static func council_votes(r: Dictionary) -> String`: Who voted how in a ruling, in person names ("Curfew: yes Ada, Viktor, Mei · no Rosa"), starting with a proposal the Speaker went against ("The Speaker went against the vote. ..."); "" when the ruling has no tally or every proposal in it was ruled against votes a recorded Speaker never saw (see CouncilLog.quiet).
 - `static func say_words(kind: String, m: Dictionary) -> Dictionary`: A note or request from one mayor to another (mayor context v2) as a speech-bubble card: {"headline", "detail", "extra"} in person names. kind is "message_to" or "request"; m is the entry's {"to", "text"} or {"from", "amount", "reason"}.
 - `static func chaos_words(d: Dictionary) -> String`: What the Chaos Director chose ("Set off a building fire" or "Kept the city calm").
 - `static func operator_words(d: Dictionary) -> String`: Which district the Grid Operator powers first ("Power goes first to Central Plaza").

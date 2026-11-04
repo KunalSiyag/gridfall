@@ -14,8 +14,10 @@ const SOURCE_TAGS := {"live": "LIVE", "cache": "REPLAY"}
 ## Most action phrases one summary lists before "+N more".
 const MAX_PARTS := 2
 const DETAIL_CHARS := 150
-## What a council headline may hold: the card's headline shows two lines (about 80 characters).
+## What a council headline may hold: the card's headline shows two lines (about 80 characters),
+## a folded card one (about 40).
 const HEAD_CHARS := 72
+const FOLD_CHARS := 40
 
 
 ## The model a mayor runs on, as its badge reads ("DeepSeek-V4").
@@ -140,10 +142,34 @@ static func _why(entry: Dictionary, key: String) -> String:
 
 ## What a council ruling did ("Passed Curfew 3-2 · Repealed Clean Air Act"). A ruling that carries
 ## its tally (CouncilLog) shows the count, says so when the Speaker went against it ("Passed
-## Curfew with 2 yes (override)") and lists a proposal held over ("Held Recycling Program 2-1").
+## Curfew with 2 yes (override)") and lists a proposal held over ("Held Recycling Program 2-1"),
+## once: a deferral the council already reported and that has not changed stays out.
 static func council_words(r: Dictionary) -> String:
-	var hot: Array[String] = []
-	var rest: Array[String] = []
+	var parts := _council_parts(r)
+	if parts.is_empty():
+		return "No ordinance changed"
+	return _fit(_texts(parts, "text"), HEAD_CHARS, " · +%d more")
+
+
+## The same ruling for a folded card, which shows one line (about FOLD_CHARS characters): the
+## override mark stays ("Passed Curfew (override)"), the count words and the rest give way.
+static func council_fold(r: Dictionary) -> String:
+	var parts := _council_parts(r)
+	if parts.is_empty():
+		return "No ordinance changed"
+	return _fit(_texts(parts, "fold"), FOLD_CHARS, " +%d")
+
+
+## Whether a ruling has anything to tell the street: an ordinance changed, a proposal was ruled out
+## or a deferral is new. A ruling without a tally (an old save) always does.
+static func council_news(r: Dictionary) -> bool:
+	return not _council_parts(r).is_empty() or _tally_of(r).is_empty()
+
+
+## A ruling's headline parts, the ones that went against the count first: [{"text", "fold"}].
+static func _council_parts(r: Dictionary) -> Array[Dictionary]:
+	var hot: Array[Dictionary] = []
+	var rest: Array[Dictionary] = []
 	var tally := _tally_of(r)
 	for pair: Array in [["enacted", "Passed"], ["repealed", "Repealed"], ["rejected", "Rejected"]]:
 		var arr: Variant = r.get(pair[0], [])
@@ -153,31 +179,42 @@ static func council_words(r: Dictionary) -> String:
 			var o: Dictionary = D.ORDINANCES.get(str(k), {})
 			if not o.is_empty():
 				var e: Dictionary = tally.get(str(k), {})
-				var part := "%s %s%s" % [pair[1], str(o["label"]), _count(e)]
-				(hot if bool(e.get("override", false)) else rest).append(part)
+				(hot if bool(e.get("override", false)) else rest).append(
+					_part("%s %s" % [pair[1], str(o["label"])], e)
+				)
 	for k: String in tally.keys():
 		var e: Dictionary = tally[k]
 		var o: Dictionary = D.ORDINANCES.get(k, {})
-		if str(e.get("outcome", "")) == "deferred" and not o.is_empty():
+		var held := str(e.get("outcome", "")) == "deferred" and bool(e.get("news", true))
+		if held and not o.is_empty():
 			(hot if bool(e.get("override", false)) else rest).append(
-				"Held %s%s" % [str(o["label"]), _count(e)]
+				_part("Held %s" % str(o["label"]), e)
 			)
-	var parts := hot + rest
-	if parts.is_empty():
-		return "No ordinance changed"
-	return _fit(parts)
+	return hot + rest
 
 
-## The parts joined with " · " as far as HEAD_CHARS allows (the first always), then "+N more" for
-## the ones left out, so a busy ruling is never cut off in the middle of a word on the card.
-static func _fit(parts: Array[String]) -> String:
+static func _part(words: String, e: Dictionary) -> Dictionary:
+	return {"text": words + _count(e), "fold": words + _count_short(e)}
+
+
+static func _texts(parts: Array[Dictionary], key: String) -> Array[String]:
+	var out: Array[String] = []
+	for p: Dictionary in parts:
+		out.append(str(p[key]))
+	return out
+
+
+## The parts joined with " · " as far as budget allows (the first always), then more (with the
+## number left out) for the ones left out, so a busy ruling is never cut off in the middle of a
+## word on the card.
+static func _fit(parts: Array[String], budget: int, more: String) -> String:
 	var shown: Array[String] = parts.duplicate()
 	while true:
 		var left := parts.size() - shown.size()
 		var line := " · ".join(PackedStringArray(shown))
 		if left > 0:
-			line += " · +%d more" % left
-		if line.length() <= HEAD_CHARS or shown.size() <= 1:
+			line += more % left
+		if line.length() <= budget or shown.size() <= 1:
 			return line
 		shown.pop_back()
 	return ""
@@ -185,11 +222,14 @@ static func _fit(parts: Array[String]) -> String:
 
 ## Who voted how in a ruling, in person names ("Curfew: yes Ada, Viktor, Mei · no Rosa"), starting
 ## with a proposal the Speaker went against ("The Speaker went against the vote. ..."); "" when
-## the ruling has no tally.
+## the ruling has no tally or every proposal in it was ruled against votes a recorded Speaker never
+## saw (see CouncilLog.quiet).
 static func council_votes(r: Dictionary) -> String:
 	var tally := _tally_of(r)
 	var pick: Dictionary = {}
 	for k: String in tally.keys():
+		if CouncilLog.quiet(tally[k]):
+			continue  # a replayed ruling that disagrees with these votes is not set beside them
 		if (
 			pick.is_empty()
 			or (bool(tally[k].get("override", false)) and not bool(pick.get("override", false)))
@@ -228,6 +268,13 @@ static func _count(e: Dictionary) -> String:
 	if str(e.get("outcome", "")) == "enacted":
 		return " with %d yes (override)" % int(e.get("yes", 0))
 	return " despite %d yes (override)" % int(e.get("yes", 0))
+
+
+## The count for a folded card: " 3-2", or just " (override)" when the Speaker went against it.
+static func _count_short(e: Dictionary) -> String:
+	if bool(e.get("override", false)):
+		return " (override)"
+	return _count(e)
 
 
 static func _names(a: Array) -> String:

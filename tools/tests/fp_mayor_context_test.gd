@@ -7,7 +7,7 @@ extends SceneTree
 ## the one place ids appear), and a fake live reply carrying vote_notes, message_to and request is
 ## parsed, stored, shown to the addressee on their next turn (once), answered by a grant order the
 ## sim applies through its own path and refuses over the treasury rule; flag off the same reply
-## changes nothing. The notes and the council history survive a save, bounded and sanitised.
+## changes nothing. (The save of the notes and the council history: fp_mayor_context_save_test.)
 ## Headless, offline, fake transport only (support/scripted_net.gd): no key, no network.
 
 const D := preload("res://scripts/sim/sim_defs.gd")
@@ -16,7 +16,6 @@ const PF := preload("res://tools/tests/support/prompt_fixture.gd")
 const NET := preload("res://tools/tests/support/scripted_net.gd")
 const MC := preload("res://scripts/ai/mayor_context.gd")
 const DESK := preload("res://scripts/fp/reporter/reporter_desk.gd")
-const SAVE_SHAPE := preload("res://scripts/sim/save_shape.gd")
 const TOKEN := "FP_MAYOR_CONTEXT_TEST"
 const GOLDEN := "res://tools/tests/fixtures/mayor_prompts_golden.json"
 ## Brand words that must not appear in the new prompt lines (ids are the roster's job).
@@ -53,7 +52,6 @@ func _init() -> void:
 	_check_request_line()
 	await _check_failed_call_keeps_note()
 	await _check_flag_off_reply()
-	_check_save(w)
 	K.finish(self, TOKEN, fails)
 
 
@@ -849,149 +847,3 @@ func _check_flag_off_reply() -> void:
 		"flag off: a grant to a display name is refused as it always was"
 	)
 	_flag(true)
-
-
-# ------------------------------------------------------------------ save
-
-
-func _check_save(w: Dictionary) -> void:
-	_flag(true)
-	brain.notes = {
-		"kimi":
-		[
-			{
-				"from": "argon",
-				"day": 7,
-				"kind": "note",
-				"text": "Share please",
-				"amount": 0,
-				"seen": false
-			}
-		],
-		"deepseek":
-		[
-			{
-				"from": "argon",
-				"day": 7,
-				"kind": "request",
-				"text": "Funds",
-				"amount": 600,
-				"seen": true
-			}
-		]
-	}
-	brain.council_history = [
-		{
-			"day": 6,
-			"key": "curfew",
-			"by": "Duke Granger",
-			"by_id": "grok",
-			"votes": {"grok": "yes", "argon": "no"},
-			"notes": {"argon": "too costly"},
-			"yes": 1,
-			"no": 1,
-			"outcome": "deferred",
-			"against": false,
-			"override": false,
-			"statement": "Wait.",
-			"source": "live"
-		}
-	]
-	var doc := {
-		"sim": sim.to_dict(),
-		"brain": brain.to_dict(),
-		"client": net.to_dict(),
-		"residents": (w["people"] as Residents).to_dict()
-	}
-	var parsed: Dictionary = JSON.parse_string(JSON.stringify(doc))
-	check(
-		SAVE_SHAPE.document_ok(parsed),
-		"a save with notes and a council history has the shape the loaders read"
-	)
-	check(
-		(
-			(parsed["brain"] as Dictionary).has("council_history")
-			and (parsed["brain"] as Dictionary).has("notes")
-		),
-		"both are in the brain's section"
-	)
-	var before := JSON.stringify([brain.notes, brain.council_history])
-	brain.notes = {}
-	brain.council_history = []
-	brain.from_dict(parsed["brain"])
-	check(
-		JSON.stringify([brain.notes, brain.council_history]) == before,
-		"notes and the council history round-trip through a save"
-	)
-	var hostile := (parsed["brain"] as Dictionary).duplicate(true)
-	var many: Array = []
-	for k in range(30):
-		many.append(
-			{
-				"day": k,
-				"key": "curfew",
-				"outcome": "enacted",
-				"source": "live",
-				"votes": {"argon": "yes", "grok": "yes", "nobody": "yes"},
-				"statement": "Grok-4.5 rules " + "x".repeat(400)
-			}
-		)
-	many.append("junk")
-	many.append({"day": 1, "outcome": "bogus"})
-	hostile["council_history"] = many
-	var spam: Array = []
-	for k in range(9):
-		spam.append(
-			{
-				"from": "kimi",
-				"day": k,
-				"kind": "note",
-				"text": "Kimi-K3 says " + "y".repeat(300),
-				"amount": 12,
-				"seen": false
-			}
-		)
-	spam.append({"from": "nobody", "day": 1, "kind": "note", "text": "x"})
-	spam.append(5)
-	hostile["notes"] = {"argon": spam, "nobody": spam, "kimi": "oops"}
-	brain.from_dict(hostile)
-	check(
-		brain.council_history.size() == 20 and int(brain.council_history[-1]["day"]) == 29,
-		"a saved history is cut to the newest 20 (%d)" % brain.council_history.size()
-	)
-	var h: Dictionary = brain.council_history[-1]
-	check(
-		(
-			h["votes"].size() == 2
-			and int(h["yes"]) == 2
-			and bool(h["override"])
-			and str(h["statement"]).length() <= 240
-			and not str(h["statement"]).contains("Grok")
-		),
-		"its records are rebuilt: five-seat votes, recomputed tally, de-branded and cut text"
-	)
-	check(
-		(
-			brain.notes.keys() == ["argon"]
-			and (brain.notes["argon"] as Array).size() == MC.NOTES_PER_MAYOR
-		),
-		"saved notes keep known mayors and the newest %d each" % MC.NOTES_PER_MAYOR
-	)
-	var n: Dictionary = brain.notes["argon"][0]
-	check(
-		(
-			str(n["text"]).length() <= MC.NOTE_CHARS
-			and not str(n["text"]).contains("Kimi")
-			and int(n["amount"]) == 0
-		),
-		"a note's text is de-branded and cut, and a plain note carries no amount"
-	)
-	check(
-		(
-			not SAVE_SHAPE.document_ok({"brain": {"notes": []}})
-			and not SAVE_SHAPE.document_ok({"brain": {"council_history": {}}})
-		),
-		"a save with the wrong kind of notes or history is refused as a whole"
-	)
-	brain.from_dict({})
-	check(brain.notes.is_empty() and brain.council_history.is_empty(), "an old save has neither")

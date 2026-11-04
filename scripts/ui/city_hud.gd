@@ -89,6 +89,8 @@ var _tabs: TabContainer
 var _mayor_rt: RichTextLabel
 var _gazette_rt: RichTextLabel
 var _council_rt: RichTextLabel
+## The City Hall text changed while its tab was not on screen: it is built when the tab is shown.
+var _council_dirty: bool = false
 var _inspect_rt: RichTextLabel
 var _log_rt: RichTextLabel
 var _feed_rt: RichTextLabel
@@ -418,6 +420,10 @@ func _build_right_panel() -> void:
 	_mayor_rt = _rich("Mayor")
 	_gazette_rt = _rich("Gazette")
 	_council_rt = _rich("City Hall")
+	_council_rt.visibility_changed.connect(func() -> void:
+		if _council_dirty and _council_rt.is_visible_in_tree():
+			_render_council()
+	)
 	_inspect_rt = _rich("Inspect")
 	_log_rt = _rich("GMI Log")
 	_feed_rt = _rich("Feed")
@@ -441,6 +447,10 @@ func _rich(tab_name: String) -> RichTextLabel:
 	rt.selection_enabled = true
 	rt.add_theme_font_size_override("normal_font_size", 13)
 	rt.add_theme_font_size_override("bold_font_size", 14)
+	# The italic faces default to a larger size than the body: reasons and notes would read louder
+	# than the votes they explain.
+	rt.add_theme_font_size_override("italics_font_size", 13)
+	rt.add_theme_font_size_override("bold_italics_font_size", 14)
 	rt.add_theme_color_override("default_color", Color(0.86, 0.9, 0.96))
 	_tabs.add_child(rt)
 	return rt
@@ -982,9 +992,16 @@ func _render_gazette() -> void:
 	_gazette_rt.text = t
 
 
+## Builds the City Hall tab's text. Off screen it only notes that the text is stale (the tab shows
+## it when it comes up): five mayor decisions a dawn would otherwise rebuild the whole board for
+## nobody to read.
 func _render_council() -> void:
 	if brain == null:
 		return
+	if _council_rt != null and not _council_rt.is_visible_in_tree():
+		_council_dirty = true
+		return
+	_council_dirty = false
 	var t := "[b][color=#C9B6FF]City Council[/color][/b] [color=#9AB](%s)[/color]\n" % D.SUPPORT_AGENTS["council"]["model"]
 	var c: Dictionary = brain.last_council
 	if not c.is_empty():
