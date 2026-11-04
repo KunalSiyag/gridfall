@@ -57,12 +57,68 @@ def test_paved_surface_roughness() -> None:
 
 
 def test_asphalt_is_mildly_glossy_wet_and_the_rest_darken() -> None:
-    assert re.search(r"ROUGHNESS = mix\(rough, 0\.22, wetness \* 0\.8\);", ROAD)
-    for factor in _floats(r"mix\(1\.0, ([\d.]+), wetness\)", ROAD):
-        assert factor <= 0.75, f"rain darkens a paved surface to {factor} at most"
-    assert len(_floats(r"mix\(1\.0, ([\d.]+), wetness\)", ROAD)) == 5, "every surface kind darkens in rain"
-    dry, wet = re.search(r"SPECULAR = mix\(kind == 0 \? ([\d.]+) : [\d.]+, ([\d.]+), wetness\);", ROAD).groups()
+    """The look before the polish pass (polish 0) is still in the shader, and so is the new response."""
+    assert re.search(r"mix\(rough, 0\.22, wetness \* 0\.8\)", ROAD)
+    # Every surface kind darkens in rain: five of them, the old factor and the polished one.
+    pairs = re.findall(r"alb \*= mix\(1\.0, mix\(([\d.]+), ([\d.]+), polish\), damp\);", ROAD)
+    assert len(pairs) == 5, "every surface kind darkens in rain"
+    for old, new in pairs:
+        assert float(old) <= 0.75, f"rain darkens a paved surface to {old} at most"
+        assert float(new) < float(old), "the polished wet look is darker than the old one"
+    dry, wet = re.search(r"mix\(kind == 0 \? ([\d.]+) : [\d.]+, ([\d.]+), wetness\)", ROAD).groups()
     assert float(dry) <= 0.2 and float(wet) >= 0.5, "matte dry (a rough sky reflection washes it pale), glossy wet"
+
+
+def test_wet_road_darkens_early_and_does_not_mirror_the_sky() -> None:
+    """Look-polish (D3): a wet road measured no darker than a dry overcast one, because the sky it reflected
+    was as pale as the road. The darkening answers the weather's wetness quickly (damp climbs faster than
+    wetness and falls with it), the flints go dull, the sheen over the wet surface is moderate and the
+    strong shine belongs to the standing water."""
+    assert "uniform float polish = 1.0;" in ROAD and "uniform float polish = 1.0;" in GROUND
+    for text in (ROAD, GROUND):
+        assert "float damp = mix(wetness, 1.0 - (1.0 - wetness) * (1.0 - wetness), polish);" in text
+    assert "grit_wet" in ROAD and "0.55 * damp * polish" in ROAD
+    sheen = _groups(r"mix\(kind == 0 \? [\d.]+ : [\d.]+, ([\d.]+), damp\) \+ ([\d.]+) \* pool, polish", ROAD)
+    assert sheen and sheen[0] <= 0.45 and sheen[0] + sheen[1] <= 0.7, f"wet sheen {sheen}"
+    assert 0.25 <= _groups(r"mix\(rough, ([\d.]+), damp \* 0\.85\)", ROAD)[0] <= 0.4, "wet roughness stays a sheen"
+
+
+def test_polish_zero_is_the_old_look() -> None:
+    """With the flag off CityView writes polish 0; every new effect has to vanish there."""
+    assert "dist_f = polish * " in ROAD
+    assert "float calm = polish * " in GROUND
+    assert "polish > 0.5" in ROAD, "kerb joints and paint chips keep their old form when off"
+
+
+def test_asphalt_blotches_fade_with_range_and_paint_does_not_chip_evenly() -> None:
+    """Look-polish (D3): from a raised view the stains and warm casts read as camouflage; the lane paint's
+    chips came at equal spacing because their noise tile repeated every 0.3 m."""
+    asphalt = _branch(ROAD, "if (kind == 0) {", "} else if (kind == 1) {")
+    assert "dist_f" in asphalt and "vec3(0.33)" in asphalt, "the gutter's brown goes neutral with range"
+    assert re.search(r"dist_f \* 0\.7\)", asphalt)
+    paint = ROAD[ROAD.index("// Lane paint") :]
+    assert "mat2(vec2(0.8, 0.6), vec2(-0.6, 0.8)) * m" in paint, "chip noise is turned"
+    assert "/ 0.37" in paint and "/ 0.53" in paint and "/ 7.3" in paint, "three unrelated periods"
+
+
+def test_kerb_face_has_fleck_and_uneven_joints() -> None:
+    kerb = _branch(ROAD, "} else if (kind == 2) {", "} else if (kind == 3) {")
+    assert "hash12(floor(m / 0.012)" in kerb and "float wea = nz(" in kerb
+    assert "hash12(vec2(ij, 3.0))" in kerb, "each stone its own length"
+
+
+def test_lawn_is_calmer_at_range_and_greener() -> None:
+    """Look-polish (D3): combed arcs of the 5 to 40 m noise in the mid-distance; tone olive and 9% dark."""
+    assert "float calm = polish * smoothstep(" in GROUND
+    assert "length(VERTEX) / metre" in GROUND
+    assert re.search(r"mix\(12\.0, ([\d.]+), polish\)", GROUND), "the warp of the clump layers is smaller"
+    lo, hi = (re.search(r"vec3 %s = mix\(vec3\([^)]*\), vec3\(([\d.]+), ([\d.]+), ([\d.]+)\), polish\);" % n, GROUND).groups() for n in ("lo", "hi"))
+    assert float(lo[2]) >= 0.74 and float(hi[2]) >= 0.9, "the blue (green's yellow-olive cast) is lifted"
+
+
+def test_shore_wet_line_wanders() -> None:
+    assert "float shore_wob(vec2 wm)" in GROUND
+    assert GROUND.count("shore_wob(wm)") == 2, "the land tile's wet strip and the bed's sand and wet"
 
 
 def test_asphalt_has_its_wear() -> None:
@@ -130,7 +186,7 @@ def test_wheel_tracks_are_patchy_not_rules_to_the_horizon() -> None:
     oil = float(re.search(r"alb \*= 1\.0 - ([\d.]+) \* clamp\(oil", asphalt).group(1))
     track = float(re.search(r"alb \*= 1\.0 - ([\d.]+) \* track", asphalt).group(1))
     assert oil <= 0.30 and track <= 0.13, f"oil {oil}, track {track}"
-    assert float(re.search(r"alb \*= mix\(([\d.]+), 1\.08, age\)", asphalt).group(1)) >= 0.84, "the road is not darker than before"
+    assert float(re.search(r"alb \*= mix\(mix\(([\d.]+), 1\.08, age\)", asphalt).group(1)) >= 0.84, "the road is not darker than before"
 
 
 def test_pavement_tone_and_stain_stay_moderate() -> None:
@@ -165,7 +221,7 @@ def test_lawn_patches_are_warped_so_no_grid_shows() -> None:
     """Review of G2: the 5.5 m dry-patch and 5.3 m / 7.9 m clover layers are single repeating tiles, a regular
     grid of dark blobs on a lawn. Their lookups go through coordinates warped by the 40 m macro noise
     (no extra fetch: m1 and m2 are read already)."""
-    assert re.search(r"vec2 ww = wm \+ \(vec2\(m2, m1\) - 0\.5\) \* [\d.]+;", GROUND)
+    assert re.search(r"vec2 ww = wm \+ \(vec2\(m2, m1\) - 0\.5\) \* mix\([\d.]+, [\d.]+, polish\);", GROUND)
     for lookup in ("nz(ww / 5.5", "nz(wwr / 5.3", "nz(ww / 7.9"):
         assert lookup in GROUND, lookup
     for raw in ("nz(wm / 5.5", "nz(wr / 5.3", "nz(wm / 7.9"):

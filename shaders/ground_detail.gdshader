@@ -27,6 +27,10 @@ uniform float lot_edge = 0.0;
 uniform vec3 grass_tint : source_color = vec3(1.0, 1.0, 1.0);
 uniform float normal_strength = 0.7;
 uniform float wetness = 0.0;
+// 1: the look-polish response (flag look_polish): the lawn's broad noise is calmed with range, its
+// tone is lifted back toward green, rain darkens early, and the shore's wet line wanders.
+// 0: the look before it. CityView writes 0 only with the flag off.
+uniform float polish = 1.0;
 // Unpaved road tiles (CityView.track_material_for): the tile's road mask and grade come from one
 // shared material per (mask, grade); the carriageway shape mirrors RoadTopology.is_carriageway.
 // cut_grass discards everything but the track itself (orbit view, where the ground under it is
@@ -73,6 +77,13 @@ float fbm(vec2 p) {
 
 float nz(vec2 uv) {
 	return texture(noise_tex, uv).r;
+}
+
+// The shore's wet line is a ruler edge (the bank is a straight ramp): this low-frequency offset
+// (about +-0.75, metres long) moves, by up to 0.8 m either way, where the sand turns wet and, on the
+// bed under the shallows, where it turns to silt.
+float shore_wob(vec2 wm) {
+	return (nz(wm / 9.0 + vec2(0.2, 0.6)) - 0.5) + 0.5 * (nz(wm / 2.7 + vec2(0.6, 0.1)) - 0.5);
 }
 
 // Mask bit k (N, E, S, W) to its arm direction in tile space, north at -Z.
@@ -192,6 +203,11 @@ void fragment() {
 	vec3 dn = mix(textureGrad(dirt_normal, q + oa, qdx, qdy).rgb, textureGrad(dirt_normal, q + ob, qdx, qdy).rgb, w);
 	vec2 wm = wpos.xz / metre;
 	float px = length(fwidth(wm));
+	// How far the pixel is (m), and how much of the broad variation to keep there: the 5 to 40 m
+	// layers drawn at a grazing angle line up into combed arcs across a lawn, so they thin out with
+	// range, while the fine layers (clumps, grain) go on as they were.
+	float dist_m = length(VERTEX) / metre;
+	float calm = polish * smoothstep(14.0, 70.0, dist_m);
 	// Macro layer: lush and dry patches at 40 m, worn spots at 10 m.
 	vec2 mp = wpos.xz * macro_scale;
 	float m1 = nz(mp * 0.25);
@@ -202,28 +218,33 @@ void fragment() {
 	// regular lattice of dark patches across a lawn; the patches come from the noise layers below.
 	vec3 gl = mix(textureLod(grass_albedo, p + oa, 4.0).rgb, textureLod(grass_albedo, p + ob, 4.0).rgb, w);
 	g = max(g + (g - gl) * 0.9, vec3(0.0));
-	g *= grass_tint * mix(vec3(0.78, 0.86, 0.70), vec3(1.12, 1.06, 0.84), smoothstep(0.15, 0.85, m1));
-	g *= 0.88 + 0.24 * m2;
+	// The macro tone: the lush and dry ends, lifted toward green with look-polish (the dry end had
+	// gone olive and the whole lawn about 9% darker than before the materials unit).
+	vec3 lo = mix(vec3(0.78, 0.86, 0.70), vec3(0.86, 0.93, 0.78), polish);
+	vec3 hi = mix(vec3(1.12, 1.06, 0.84), vec3(1.18, 1.14, 0.98), polish);
+	float mt = mix(smoothstep(0.15, 0.85, m1), 0.5, calm * 0.6);
+	g *= grass_tint * mix(lo, hi, mt);
+	g *= mix(0.88 + 0.24 * m2, 1.0, calm * 0.6);
 	// Clumps (under 1.5 m), thin and dry patches (up to 6 m), and darker, bluer clover between them.
 	// Everything below reads metres warped by the 40 m macro noise (read for free: m1 and m2 are above):
 	// a noise tile repeated at a fixed period shows as a regular lattice of dark blobs across a lawn,
 	// and the warp (up to 6 m) makes every repeat a different size and place. The clumps are fine (0.45,
 	// 0.8 and 1.4 m tiles): coarser ones with a bigger warp swirled the lawn like combed hair.
-	vec2 ww = wm + (vec2(m2, m1) - 0.5) * 12.0;
+	vec2 ww = wm + (vec2(m2, m1) - 0.5) * mix(12.0, 5.0, polish);
 	vec2 wwr = mat2(vec2(0.8, 0.6), vec2(-0.6, 0.8)) * ww;
 	vec2 wwr2 = mat2(vec2(0.96, -0.28), vec2(0.28, 0.96)) * ww;
 	// Clumps: three layers of different period, each turned against the others.
 	float c1 = (nz(ww / 0.45 + vec2(0.31, 0.77)) + nz(wwr / 0.8 + vec2(0.4, 0.2)) + nz(wwr2 / 1.4 + vec2(0.1, 0.5))) * 0.3333;
 	float c2 = nz(ww / 5.5 + vec2(0.62, 0.15));
 	float c3 = nz(wm / 23.0 + vec2(0.9, 0.4));
-	g *= 0.70 + 0.48 * c1;
-	float dry = smoothstep(0.7, 0.92, c3 * 0.55 + c2 * 0.45);
-	g = mix(g, g * vec3(1.18, 1.06, 0.8) + vec3(0.012, 0.008, 0.0), dry * 0.5);
-	float clover = smoothstep(0.62, 0.74, 0.5 * (nz(wwr / 5.3 + vec2(0.2, 0.6)) + nz(ww / 7.9 + vec2(0.7, 0.3)))) * (1.0 - dry);
+	g *= mix(0.70 + 0.48 * c1, 0.78 + 0.40 * c1, polish);
+	float dry = smoothstep(0.7, 0.92, c3 * 0.55 + c2 * 0.45) * (1.0 - calm * 0.7);
+	g = mix(g, g * mix(vec3(1.18, 1.06, 0.8), vec3(1.12, 1.05, 0.88), polish) + vec3(0.012, 0.008, 0.0), dry * mix(0.5, 0.4, polish));
+	float clover = smoothstep(0.62, 0.74, 0.5 * (nz(wwr / 5.3 + vec2(0.2, 0.6)) + nz(ww / 7.9 + vec2(0.7, 0.3)))) * (1.0 - dry) * (1.0 - calm * 0.7);
 	g = mix(g, g * vec3(0.78, 0.96, 0.80), clover * 0.55);
 	// Blade-scale grain, where a pixel is smaller than a centimetre.
 	g *= 1.0 + (1.0 - smoothstep(0.35, 0.9, px / 0.01)) * (hash12(floor(wm / 0.01)) - 0.5) * 0.18;
-	float worn = smoothstep(0.82, 0.97, m2 * 0.65 + m1 * 0.35) * 0.55;
+	float worn = smoothstep(0.82, 0.97, m2 * 0.65 + m1 * 0.35) * 0.55 * (1.0 - calm * 0.5);
 	float earth = worn;
 	if (dirt > 0.0) {
 		float patchy = clamp(dirt + (nz(wm / 8.6 + vec2(0.3, 0.1)) - 0.5) * 0.5, 0.0, 1.0);
@@ -266,9 +287,9 @@ void fragment() {
 				away = cc / max(dc, 1e-5);
 			}
 		}
-		shore = vec2(1.0 - smoothstep(0.0, 0.15, dist), 1.0 - smoothstep(0.0, 0.05, dist));
+		shore = vec2(1.0 - smoothstep(0.0, 0.15, dist), 1.0 - smoothstep(0.0, 0.05, dist - polish * shore_wob(wm) * 0.05));
 	} else if (abs(shore_v.a - 0.25) < 0.05) {
-		shore = shore_v.rg;
+		shore = clamp(shore_v.rg + polish * shore_wob(wm) * vec2(0.35, 0.8), 0.0, 1.0);
 	}
 	if (shore.x > 0.004) {
 		// Shore band: grass gives way to pale warm sand rippled parallel to the waterline (crests
@@ -347,13 +368,15 @@ void fragment() {
 		puddle = grade == 1 ? 0.0 : ruts * cover;
 	}
 	// Rain: darker, with a satin sheen on bare earth (grass blades stay fairly matte); water stands in ruts.
-	alb *= mix(1.0, mix(0.72, 0.55, earth), wetness);
-	rough = mix(rough, mix(0.55, 0.25, earth), wetness);
+	// The ground darkens early in rain and dries slowly (see road_fp.gdshader's damp).
+	float damp = mix(wetness, 1.0 - (1.0 - wetness) * (1.0 - wetness), polish);
+	alb *= mix(1.0, mix(0.72, 0.55, earth), damp);
+	rough = mix(rough, mix(0.55, 0.25, earth), damp);
 	rough = mix(rough, 0.20, puddle * wetness * 0.85);
 	ALBEDO = alb;
 	NORMAL_MAP = nrm;
 	NORMAL_MAP_DEPTH = normal_strength;
 	ROUGHNESS = rough;
 	// Grass and dry earth barely shine; rain gives bare earth a sheen (the grass stays matte).
-	SPECULAR = mix(spec, 0.45, wetness * earth);
+	SPECULAR = mix(spec, 0.45, damp * earth);
 }

@@ -19,6 +19,10 @@ shader_type spatial;
 // buffer per mesh, and a grown city's road pieces overflow it. Roughness is a constant per surface
 // (the scanned maps were near flat, std 0.008 to 0.021, and cost 0.7 MB a piece on the web): asphalt
 // 0.78, pavement 0.84, concrete 0.82, kerb 0.7, paint 0.8, each broken by noise; wet surfaces go glossy.
+// Wet (look-polish unit D3): the weather's wetness climbs linearly over 120 s of rain and falls over
+// 300 s; the surfaces answer with `damp`, which comes fast (a shower darkens the road within seconds)
+// and goes slow on the way out, and the water standing in the tracks (`pool`) follows the slower
+// wetness itself, so it gathers after the road has darkened and is the last to dry.
 
 uniform sampler2D albedo_tex : source_color, filter_linear_mipmap_anisotropic, repeat_enable;
 uniform sampler2D normal_tex : hint_normal, filter_linear_mipmap_anisotropic, repeat_enable;
@@ -30,6 +34,10 @@ uniform float repeat_m = 4.0;
 uniform float lane_offset = 0.15;
 uniform float half_width = 0.3;
 uniform float wetness = 0.0;
+// 1: the look-polish response (flag look_polish): wet surfaces darken early and further, shine less
+// pale, asphalt blotches fade with distance, the kerb and the lane paint are not evenly marked.
+// 0: the look before it. CityView writes 0 only with the flag off.
+uniform float polish = 1.0;
 // Rain falling now (0..1): rings on the standing water.
 uniform float rain = 0.0;
 uniform float lane_axis = 0.0;
@@ -93,6 +101,9 @@ float across_of(vec2 local) {
 void fragment() {
 	int kind = int(surface + 0.5);
 	float top = smoothstep(0.6, 0.9, wnrm.y);
+	float damp = mix(wetness, 1.0 - (1.0 - wetness) * (1.0 - wetness), polish);
+	// How far a blotch is from the eye (m): broad stains and warm casts fade out with it.
+	float dist_f = polish * smoothstep(7.0, 45.0, length(VERTEX) / metre);
 	// Metres on the ground plane; the faces of a kerb or slab edge map along the wall instead.
 	vec2 m = top > 0.5 ? wpos.xz / metre : vec2(wpos.x + wpos.z, wpos.y) / metre;
 	float px = length(fwidth(m));
@@ -114,12 +125,13 @@ void fragment() {
 		alb = max(alb + (alb - textureLod(albedo_tex, vec2(0.5), 10.0).rgb) * 1.1, vec3(0.0));
 		alb *= tint.rgb;
 		// The scanned asphalt is brown; city asphalt reads a neutral grey.
-		alb = mix(alb, vec3(dot(alb, vec3(0.3333))), 0.45);
-		// Older, sun-bleached stretches are lighter and greyer; patched ones darker.
+		alb = mix(alb, vec3(dot(alb, vec3(0.3333))), mix(0.45, 0.62, polish));
+		// Older, sun-bleached stretches are lighter and greyer; patched ones darker. From a height
+		// the stains read as camouflage, so their contrast and the brown in them fade with range.
 		float age = smoothstep(0.25, 0.75, n_big);
-		alb *= mix(0.86, 1.08, age);
-		alb = mix(alb, vec3(dot(alb, vec3(0.3333))), age * 0.35);
-		alb *= 0.90 + 0.20 * n_fine;
+		alb *= mix(mix(0.86, 1.08, age), 0.97, dist_f * 0.7);
+		alb = mix(alb, vec3(dot(alb, vec3(0.3333))), max(age * 0.35, dist_f * 0.75));
+		alb *= 0.90 + 0.20 * n_fine * (1.0 - dist_f * 0.5);
 		vec2 local = wpos.xz - round(wpos.xz);
 		float d = across_of(local);
 		float oil = 0.0;
@@ -141,10 +153,10 @@ void fragment() {
 		// Tyres darken their tracks with rubber and keep them free of dust; drips darken the lane
 		// centre; dust and grit settle between the lanes and along the gutters.
 		float between = d >= 0.0 ? 1.0 - smoothstep(0.02, 0.05, d) : 0.0;
-		alb *= 1.0 - 0.26 * clamp(oil, 0.0, 1.0);
+		alb *= 1.0 - 0.26 * clamp(oil, 0.0, 1.0) * (1.0 - dist_f * 0.45);
 		alb *= 1.0 - 0.11 * track * (0.7 + 0.6 * n_mid);
 		alb *= 1.0 + 0.10 * between;
-		alb = mix(alb, vec3(0.34, 0.32, 0.29), gutter * (0.35 + 0.35 * n_mid));
+		alb = mix(alb, mix(vec3(0.34, 0.32, 0.29), vec3(0.33), dist_f * 0.8), gutter * (0.35 + 0.35 * n_mid));
 		// Aggregate: 6 mm grains and round 17 mm flints on a turned grid (so no square cells show),
 		// each fading out where it is under a pixel.
 		vec2 r1 = mat2(vec2(0.8, 0.6), vec2(-0.6, 0.8)) * m;
@@ -152,14 +164,16 @@ void fragment() {
 		float f2 = 1.0 - smoothstep(0.35, 0.9, px / 0.017);
 		float h2 = hash12(floor(r1 / 0.017) + 31.0);
 		float flint = (1.0 - smoothstep(0.2, 0.38, length(fract(r1 / 0.017) - 0.5))) * f2;
-		alb *= 1.0 + f1 * (hash12(floor(r1 / 0.006)) - 0.5) * 0.22 + flint * (step(0.85, h2) * 0.6 - step(h2, 0.1) * 0.35);
+		// A wet road's pale flints go dull: the water takes the grit's sparkle.
+		float grit_wet = 1.0 - 0.55 * damp * polish;
+		alb *= 1.0 + (f1 * (hash12(floor(r1 / 0.006)) - 0.5) * 0.22 + flint * (step(0.85, h2) * 0.6 - step(h2, 0.1) * 0.35)) * grit_wet;
 		// Hairline cracks follow the iso-line of a noise field, in a few worn stretches only; the
 		// field blurs to its mean at range, so they fade out before they would draw lines everywhere.
 		float cn = nz(m / 7.0 + vec2(0.13, 0.57));
 		float worn = smoothstep(0.66, 0.88, nz(m / 31.0 + vec2(0.4, 0.2)));
 		float crack = (1.0 - smoothstep(0.004, 0.011, abs(cn - 0.5))) * worn;
 		crack *= 1.0 - smoothstep(0.4, 1.0, px / 0.03);
-		alb *= 1.0 - 0.5 * crack;
+		alb *= 1.0 - 0.5 * crack * (1.0 - dist_f * 0.6);
 		// Tar repairs: a square-edged darker patch in about one 4 m cell in ten, its edge ragged
 		// by the noise (a road is mended with a cut rectangle, not a blot).
 		vec2 pc = m / 4.0;
@@ -171,12 +185,12 @@ void fragment() {
 			vec2 q = abs(fract(pc) * 4.0 - ctr) - half_size;
 			tar = 1.0 - smoothstep(-0.012 - px, 0.012 + px, max(q.x, q.y) + (n_fine - 0.5) * 0.06);
 		}
-		alb *= 1.0 - 0.26 * tar;
+		alb *= 1.0 - 0.26 * tar * (1.0 - dist_f * 0.5);
 		// Dry: nearly matte with polished tracks. Wet: darker and glossy, water standing in the
 		// tracks and gutters where the noise says the surface dips.
 		rough = 0.78 + 0.10 * (n_mid - 0.5) - 0.12 * track - 0.16 * tar - 0.05 * crack;
 		pool = wetness * smoothstep(0.5, 0.7, max(track * n_mid, gutter * n_big) + n_fine * 0.25);
-		alb *= mix(1.0, 0.6, wetness);
+		alb *= mix(1.0, mix(0.6, 0.46, polish), damp);
 		alb *= 1.0 - 0.25 * pool;
 	} else if (kind == 1) {
 		// Pavers in a running bond: 3 blocks of 1 m across a repeat, 6 rows of 0.5 m, every other
@@ -208,7 +222,7 @@ void fragment() {
 		float f1 = 1.0 - smoothstep(0.35, 0.9, px / 0.004);
 		alb *= 1.0 + f1 * (hash12(floor(m / 0.004)) - 0.5) * 0.3;
 		rough = 0.84 + 0.12 * (mot - 0.5) - 0.06 * jl;
-		alb *= mix(1.0, 0.62, wetness);
+		alb *= mix(1.0, mix(0.62, 0.5, polish), damp);
 	} else if (kind == 2) {
 		// Granite kerb: speckle, grime at the foot of the face, a joint every metre along it.
 		float n_mid = nz(m / 11.0 + vec2(0.5, 0.3));
@@ -221,15 +235,27 @@ void fragment() {
 		float f1 = 1.0 - smoothstep(0.35, 0.9, px / 0.004);
 		float g = hash12(floor(m / 0.004));
 		alb *= 1.0 + f1 * ((g - 0.5) * 0.5 + step(0.93, g) * 0.45 - step(g, 0.06) * 0.35);
+		// The face is a few pixels tall from the street: granite flecks at 1.2 cm and weathering at
+		// 6 cm (noise reads, so they hold at range) keep it from reading as a smooth grey band.
+		float fleck = hash12(floor(m / 0.012) + 5.0);
+		float f3 = 1.0 - smoothstep(0.35, 0.95, px / 0.012);
+		float wea = nz(m / 0.06 + vec2(0.7, 0.2)) * 0.6 + nz(m / 0.27 + vec2(0.1, 0.4)) * 0.4;
+		alb *= 1.0 + polish * (f3 * ((fleck - 0.5) * 0.3 + step(0.9, fleck) * 0.22 - step(fleck, 0.08) * 0.22) + (1.0 - top) * (wea - 0.5) * 0.4);
 		float h = (wpos.y - base_y) / metre;
 		float foot = (1.0 - top) * (1.0 - smoothstep(0.0, 0.09, h));
 		alb *= 1.0 - 0.3 * foot * (0.6 + 0.4 * n_fine);
 		alb *= 1.0 - 0.18 * top * smoothstep(0.55, 0.9, n_mid);
-		float dj = abs(fract(along / metre + 0.5) - 0.5);
+		// A joint every metre or so: each stone a little longer or shorter than the next.
+		float ai = along / metre;
+		float dj = abs(fract(ai + 0.5) - 0.5);
+		if (polish > 0.5) {
+			float ij = floor(ai + 0.5);
+			dj = min(abs(ai - ij - 0.3 * (hash12(vec2(ij, 3.0)) - 0.5)), min(abs(ai - ij + 1.0 - 0.3 * (hash12(vec2(ij - 1.0, 3.0)) - 0.5)), abs(ai - ij - 1.0 - 0.3 * (hash12(vec2(ij + 1.0, 3.0)) - 0.5))));
+		}
 		float jl = (1.0 - smoothstep(0.003, 0.010, dj)) * (1.0 - top) * (1.0 - smoothstep(0.4, 1.0, px / 0.01));
 		alb *= 1.0 - 0.5 * jl;
 		rough = 0.70 + 0.12 * (n_fine - 0.5) + 0.1 * foot;
-		alb *= mix(1.0, 0.6, wetness);
+		alb *= mix(1.0, mix(0.6, 0.5, polish), damp);
 	} else if (kind == 3) {
 		// Poured concrete: mottled, stained, pitted, a control joint every 3 m.
 		float n_big = nz(m / 47.0);
@@ -247,12 +273,19 @@ void fragment() {
 		alb *= 1.0 - 0.1 * (1.0 - smoothstep(0.0, 0.08, dj));
 		alb = mix(alb, alb * 0.45, jl);
 		rough = 0.82 + 0.12 * (mot - 0.5);
-		alb *= mix(1.0, 0.62, wetness);
+		alb *= mix(1.0, mix(0.62, 0.5, polish), damp);
 	} else {
 		// Lane paint: chipped where tyres have been, grey with dust, never flat white.
 		float n_mid = nz(m / 11.0 + vec2(0.5, 0.3));
 		float n_fine = nz(m / 2.3 + vec2(0.2, 0.7));
 		float chip = smoothstep(0.62, 0.8, nz(m / 0.3 + vec2(0.9, 0.4)) * 0.6 + n_mid * 0.4);
+		if (polish > 0.5) {
+			// The 0.3 m tile of that noise repeated every 0.3 m, so the chips came at equal
+			// spacing along a line: two turned tiles of unrelated size, grouped by a 7 m one.
+			vec2 rm = mat2(vec2(0.8, 0.6), vec2(-0.6, 0.8)) * m;
+			float cz = nz(rm / 0.37 + vec2(0.9, 0.4)) * 0.5 + nz(vec2(rm.y, -rm.x) / 0.53 + vec2(0.2, 0.7)) * 0.5;
+			chip = smoothstep(0.58, 0.78, cz * 0.65 + nz(m / 7.3 + vec2(0.3, 0.8)) * 0.35);
+		}
 		float dust = smoothstep(0.4, 0.9, n_fine);
 		alb = vec3(0.66, 0.65, 0.62);
 		alb = mix(alb, vec3(0.20, 0.19, 0.18), chip * 0.75);
@@ -260,17 +293,19 @@ void fragment() {
 		float f1 = 1.0 - smoothstep(0.35, 0.9, px / 0.005);
 		alb *= 1.0 + f1 * (hash12(floor(m / 0.005)) - 0.5) * 0.3;
 		rough = 0.80 - 0.1 * chip;
-		alb *= mix(1.0, 0.7, wetness);
+		alb *= mix(1.0, mix(0.7, 0.6, polish), damp);
 	}
 	ALBEDO = alb;
-	ROUGHNESS = mix(rough, 0.22, wetness * 0.8);
+	ROUGHNESS = mix(mix(rough, 0.22, wetness * 0.8), mix(rough, 0.3, damp * 0.85), polish);
 	// Pools sheen, not mirror: at 0.03 with a flattened normal each pool pixel is a sky sample
 	// (a glaring jagged band at grazing angles on the web GL build); 0.25 stays glossier than
 	// the surrounding wet asphalt (~0.34) so the standing water still reads, via the darkened albedo.
-	ROUGHNESS = mix(ROUGHNESS, 0.25, pool);
+	ROUGHNESS = mix(ROUGHNESS, mix(0.25, 0.2, polish), pool);
 	// Dry surfaces barely shine (a rough sky reflection washes a dark road pale on the web GL build);
 	// rain gives them a real gloss.
-	SPECULAR = mix(kind == 0 ? 0.12 : 0.15, 0.6, wetness);
+	// A wet road is dark with a sheen, not a pale mirror: the sheen is moderate over the wet surface
+	// and stronger only on the standing water.
+	SPECULAR = mix(mix(kind == 0 ? 0.12 : 0.15, 0.6, wetness), mix(kind == 0 ? 0.12 : 0.15, 0.36, damp) + 0.22 * pool, polish);
 	// Kerb and slab faces are flat: only the top takes the scanned normal.
 	NORMAL_MAP = mix(vec3(0.5, 0.5, 1.0), nrm, top);
 	NORMAL_MAP = mix(NORMAL_MAP, vec3(0.5, 0.5, 1.0), pool * 0.5);

@@ -519,6 +519,8 @@ func _on_pack_ready(pack: String) -> void:
 			_scenes.erase(path)
 	if not paths.is_empty():
 		warm_scenes(paths)
+	if pack == "props" and sim != null and is_instance_valid(_bed_node):
+		_build_rocks()
 	if pack == "props" and _trees_root != null:
 		for path: String in paths:
 			if path.begins_with(R + "props/tree_"):
@@ -636,10 +638,23 @@ func _build_ground() -> void:
 	else:
 		_water_node.material_override = _mat("water_glow", Color(0.2, 0.45, 0.6), 0.0, 0.8)
 	add_child(_water_node)
-	_rocks_node = ShoreRocks.build(sim, ShoreRocks.load_mesh())
-	if _rocks_node != null:
-		add_child(_rocks_node)
+	_build_rocks()
 	_apply_ground_mode()
+
+
+## The bank stones. The boulder model rides in the props pack, which a split web build mounts after
+## the first view (the stones come then: _on_pack_ready asks again); a build that has no stone to
+## place or no mesh yet leaves no node.
+func _build_rocks() -> void:
+	if is_instance_valid(_rocks_node):
+		return
+	_rocks_node = ShoreRocks.build(
+		sim, ShoreRocks.load_mesh(), FeatureFlags.enabled("look_polish", true)
+	)
+	if _rocks_node == null:
+		return
+	_rocks_node.visible = fp_mode
+	add_child(_rocks_node)
 
 
 ## The river's shader material (null without the shader). `compat` follows the renderer: the web
@@ -798,6 +813,15 @@ func _ground_material() -> Material:
 	return _ground_fp_mat
 
 
+## The look-polish response (flag look_polish: wet surfaces, lawn calm and tone, shore wet line,
+## asphalt blotches at range, kerb and paint marks) is the shaders' default; with the flag off it
+## writes `polish` 0, which is the look before it. Variants copy the base material, so only the two
+## base materials need it.
+func _polish_shader(sm: ShaderMaterial) -> void:
+	if not FeatureFlags.enabled("look_polish", true):
+		sm.set_shader_parameter("polish", 0.0)
+
+
 ## A fresh street-level ground ShaderMaterial (shaders/ground_detail.gdshader) with its textures.
 func _ground_shader_material() -> ShaderMaterial:
 	var sm := ShaderMaterial.new()
@@ -814,6 +838,7 @@ func _ground_shader_material() -> ShaderMaterial:
 	sm.set_shader_parameter("macro_scale", 1.0 / (40.0 * WS.M))
 	sm.set_shader_parameter("grass_tint", Color(1.0, 1.04, 0.96))
 	sm.set_shader_parameter("wetness", wetness)
+	_polish_shader(sm)
 	return sm
 
 
@@ -955,6 +980,7 @@ func road_fp_material() -> ShaderMaterial:
 		_road_fp_mat.set_shader_parameter("half_width", WS.ROAD_HALF)
 		_road_fp_mat.set_shader_parameter("base_y", WS.ASPHALT_TOP)
 		_road_fp_mat.set_shader_parameter("wetness", wetness)
+		_polish_shader(_road_fp_mat)
 		_surfaces.clear()
 	return _road_fp_mat
 
