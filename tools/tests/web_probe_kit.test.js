@@ -1623,7 +1623,7 @@ test("parseKnobs() refuses what it would otherwise ignore: unknown names, unknow
 	assert.deepEqual(kit.parseKnobs({ HOME: "/x", GF_OTHER: "1", GF_FPS: "1" }).rows, ["street", "walk", "sky", "orbit"], "other variables are not ours");
 	const blanks = Object.fromEntries(kit.KNOB_NAMES.map((n) => [n, ""]));
 	assert.doesNotThrow(() => kit.parseKnobs(blanks), "every documented knob is accepted, blank");
-	assert.equal(kit.KNOB_NAMES.length, 19);
+	assert.equal(kit.KNOB_NAMES.length, 23);
 	assert.equal(kit.parseKnobs({}).noOcclusion, false, "the occlusion check is off by default");
 	assert.equal(kit.parseKnobs({ GF_FPS_NO_OCCLUSION: "1" }).noOcclusion, true);
 	const known = ["web_first_use_marks", "web_real_time_pace", "streetscape"];
@@ -1805,6 +1805,23 @@ test("GF_FPS_STRIPES is a knob: on by default, 0 turns the pose off, a typo is r
 	assert.equal(kit.parseKnobs({ GF_FPS_STRIPES: "0" }).stripes, false);
 	assert.throws(() => kit.parseKnobs({ GF_FPS_STRIPES: "lots" }), /GF_FPS_STRIPES/);
 	assert.ok(kit.KNOB_NAMES.includes("GF_FPS_STRIPES"));
+});
+
+test("GF_FPS_SETTINGS, CLICK, SHOTS and DENSE are knobs; a Medium or High seed needs the web tier stamp", () => {
+	const d = kit.parseKnobs({});
+	assert.deepEqual([d.settings, d.click, d.shots, d.dense], [null, null, false, false]);
+	const k = kit.parseKnobs({ GF_FPS_SETTINGS: '{"quality":"high","quality_web_v":1}', GF_FPS_CLICK: "1228, 25", GF_FPS_SHOTS: "1", GF_FPS_DENSE: "1" });
+	assert.deepEqual(k.settings, { quality: "high", quality_web_v: 1 });
+	assert.deepEqual(k.click, { x: 1228, y: 25 });
+	assert.equal(k.shots, true);
+	assert.equal(k.dense, true);
+	assert.deepEqual(kit.parseKnobs({ GF_FPS_SETTINGS: '{"quality":"low"}' }).settings, { quality: "low" });
+	assert.throws(() => kit.parseKnobs({ GF_FPS_SETTINGS: '{"quality":"medium"}' }), /quality_web_v/);
+	assert.throws(() => kit.parseKnobs({ GF_FPS_SETTINGS: "[1]" }), /object/);
+	assert.throws(() => kit.parseKnobs({ GF_FPS_SETTINGS: "{nope" }), /not JSON/);
+	assert.throws(() => kit.parseKnobs({ GF_FPS_CLICK: "1228" }), /x,y/);
+	assert.throws(() => kit.parseKnobs({ GF_FPS_SHOTS: "lots" }), /GF_FPS_SHOTS/);
+	for (const n of ["SETTINGS", "CLICK", "SHOTS", "DENSE"]) assert.ok(kit.KNOB_NAMES.includes("GF_FPS_" + n));
 });
 
 test("GF_FPS_AUDIBLE is a knob: off by default, a switch, and a typo is refused", () => {

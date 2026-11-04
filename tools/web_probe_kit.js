@@ -697,9 +697,38 @@ function parseRows(spec, fallback) {
 	return ROWS.filter((r) => rows.includes(r));
 }
 
+// GF_FPS_SETTINGS='{"quality":"medium","quality_web_v":1}': the game's own settings file
+// (user://gridfall_fp_settings.json), seeded before boot. A Medium or High preset needs quality_web_v: a
+// browser build without the stamp reads such a file as one an older build saved and loads Low (FpMode.
+// web_quality_migrates), so the run would measure Low whatever it says.
+function parseSettings(spec) {
+	if (blank(spec)) return null;
+	let v;
+	try {
+		v = JSON.parse(String(spec));
+	} catch (e) {
+		throw new Error(`GF_FPS_SETTINGS is not JSON: ${e.message}`);
+	}
+	if (v === null || typeof v !== "object" || Array.isArray(v)) throw new Error("GF_FPS_SETTINGS must be a JSON object");
+	if (["medium", "high"].includes(v.quality) && !("quality_web_v" in v)) {
+		throw new Error(`GF_FPS_SETTINGS names quality "${v.quality}" without quality_web_v: the web build would migrate it to Low (add "quality_web_v":1)`);
+	}
+	return v;
+}
+
+// GF_FPS_CLICK=x,y: one mouse click (CSS pixels) once the Planner view is up, before its row starts: the
+// speed buttons sit in the HUD's top right (about 1147,25 for 4x and 1228,25 for 8x at 1600x900).
+function parseClick(spec) {
+	if (blank(spec)) return null;
+	const m = /^\s*(\d{1,5})\s*,\s*(\d{1,5})\s*$/.exec(String(spec));
+	if (!m) throw new Error(`GF_FPS_CLICK must look like x,y in pixels, got "${spec}"`);
+	return { x: Number(m[1]), y: Number(m[2]) };
+}
+
 const KNOB_NAMES = [
 	"VIEWPORT", "DPR", "KIT", "GLHOOK", "HEADLESS", "CHROME", "CHROME_ARGS", "USER_DATA_DIR", "SETTLE_S",
 	"WINDOW_S", "AB", "MEMORY", "RAW", "ROWS", "FLAGS", "SAVE", "NO_OCCLUSION", "AUDIBLE", "STRIPES",
+	"SETTINGS", "CLICK", "SHOTS", "DENSE",
 ].map((n) => "GF_FPS_" + n);
 
 // env: process.env (or a test's table). knownFlags: the flag names of data/feature_flags.json, or null. Every
@@ -734,6 +763,12 @@ function parseKnobs(env, knownFlags) {
 		audible: parseBool(env.GF_FPS_AUDIBLE, false, "GF_FPS_AUDIBLE"),
 		// The clear-sky stripe pose (stripePose in web_fps_probe.js): on by default, off with GF_FPS_STRIPES=0.
 		stripes: parseBool(env.GF_FPS_STRIPES, true, "GF_FPS_STRIPES"),
+		// The Planner row: seeded settings, a click before it, HUD crops (hud-start/hud-end.png plus clock.txt) and
+		// dense HUD crops every 1.5 s (d00.png..): the game clock is the only way to read days per window.
+		settings: parseSettings(env.GF_FPS_SETTINGS),
+		click: parseClick(env.GF_FPS_CLICK),
+		shots: parseBool(env.GF_FPS_SHOTS, false, "GF_FPS_SHOTS"),
+		dense: parseBool(env.GF_FPS_DENSE, false, "GF_FPS_DENSE"),
 	};
 	if (knobs.abS > 0 && (!knobs.kit || !knobs.glHook)) {
 		throw new Error("GF_FPS_AB compares the WebGL hook on and off: it needs GF_FPS_KIT and GF_FPS_GLHOOK left on");

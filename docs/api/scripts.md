@@ -105,7 +105,7 @@ GridFall: a SimCity-style city run by five autonomous GMI Cloud AI mayors. Wires
 - `FirstDay = preload("res://scripts/fp/first_day.gd")`
 - `WELCOME_TOAST = "Welcome to GridFall. WASD to walk, Tab for the city overview, Enter to chat, M for the...`: The street's boot toasts that main.gd owns (fp_hud_test measures them against the toast width).
 - `WELCOME_BACK = "Welcome back: Day %d. New city in the pause menu starts over."`
-- `AUTOSAVE_MIN_GAP_S = 60.0`: A morning autosave closer than this to the last autosave (wall clock) is skipped: the Planner's game day is 12 s and a save costs 100 ms or more of stringify at day 10, an avoidable stall every day. Quit and manual saves always go through.
+- `AUTOSAVE_MIN_GAP_S = 60.0`: A morning autosave closer than this to the last autosave (wall clock) is skipped: the Planner's game day is 12 s and a save costs 100 ms or more of stringify at day 10, an avoidable stall every day. Quit and manual saves always go through. Flag autosave_gap (default on); off: every morning autosaves, as before the gap.
 
 ### Properties
 

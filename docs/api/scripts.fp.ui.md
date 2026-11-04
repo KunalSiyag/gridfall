@@ -721,6 +721,7 @@ Pause menu (slice B), shown on pause_changed(true) over a frosted blur of the pa
 - `GMI_TAB = "GMI Cloud"`: The player's own GMI key page (gmi_key_panel.gd); shown only with the player_gmi_key flag.
 - `TABS = { "Camera": [ ["camera_mode", "View", "choice", [["Third person", "third"], ["First per...`: Settings rows per tab: [key, label, kind, args]. kind "slider": [min, max, step, unit]; "choice": [[label, value], ...].
 - `PACE_KEY = "real_time_pace"`: The settings row that is not an FpMode setting: it reads and writes the web_real_time_pace flag (through GameBus.pace_requested), which the planner HUD toggle shares.
+- `WEB_QUALITY_LABEL = "Quality (web: Medium/High cost fps)"`: The Quality row's label in the browser build: Medium and High are sharper pixels and longer ranges, not a speed-up, and Low is the default. They cost 0 to 3 ms a frame and 6 to 11% of the fps on a grown street (runs read both ways), so the label says "cost" and not a made-up number.
 - `LEGEND = [ ["person", "Population", "People living in the city"], ["face", "Mood", "How resident...`
 - `KEYS = [ ["M", "Map"], ["Tab", "City overview (Planner view)"], ["V", "Camera view"], ["Q", "S...`
 
@@ -736,6 +737,7 @@ Pause menu (slice B), shown on pause_changed(true) over a frosted blur of the pa
 - `func button(text: String) -> Button`: The menu button with this text ("Resume", "Save", ...), or null.
 - `func open_settings(tab: String = "Camera") ->`: Opens the settings page on a tab ("Camera", "Controls", "Display", "Audio").
 - `func close_settings() -> void`: Back from the settings page to the menu list.
+- `static func row_label(key: String, label: String, web: bool) -> String`: The label of a settings row: the Quality row states its cost in the browser build.
 
 ## `scripts/fp/ui/place_card.gd`
 

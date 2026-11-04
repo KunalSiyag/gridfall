@@ -54,6 +54,11 @@ var sliced: bool = false:
 		_finish_job_now()
 		sliced = v
 var slice_budget_ms: float = 4.0
+## The Planner on the web: above slice_budget_ms, the per-frame budget grows with the game speed
+## from slice_budget_ms at 1x to this cap at 8x and above (see scaled_budget_ms), so the speed
+## buttons still speed a grown city up while no frame carries more than the cap. 0 (the street, the
+## desktop): slice_budget_ms at every speed.
+var slice_budget_cap_ms: float = 0.0
 ## Set by ResidentMinds: true while it spreads the day's plan batches over frames. begin_tick()
 ## waits for it, and _finish_job_now() drains it through spread_finish.
 var spread_gate: Callable = Callable()
@@ -632,8 +637,33 @@ func _process_sliced(delta: float) -> float:
 		elif _time_accum >= tick_seconds() and begin_tick():
 			_job_from_accum = true
 	if not _job.is_empty():
-		pump(slice_budget_ms)
+		var budget := scaled_budget_ms(slice_budget_ms, slice_budget_cap_ms, speed)
+		if budget > slice_budget_ms:
+			_pump_chain(budget)
+		else:
+			pump(budget)
 	return _clamp_backlog(tick_seconds())
+
+
+## Pumps until budget_ms of this frame is spent: one pump stops at UNITS_PER_PUMP work units however
+## much time is left, so a budget raised for a fast-forward would otherwise go unused. Every pump
+## does at least one step, so the loop ends; spread work (the minds) still ends it early.
+func _pump_chain(budget_ms: float) -> void:
+	var t0 := Time.get_ticks_usec()
+	while not _job.is_empty() and not _spread_pending():
+		var left := budget_ms - float(Time.get_ticks_usec() - t0) / 1000.0
+		if left <= 0.5:
+			break
+		pump(left)
+
+
+## The sliced work (ms) one frame may spend at game speed spd: base_ms at 1x and below, cap_ms at
+## 8x and above, linear in log2(speed) between (2x about a third of the way, 4x two thirds). A cap
+## at or under the base turns the scaling off. Only wall-clock pacing: the ticks do not change.
+static func scaled_budget_ms(base_ms: float, cap_ms: float, spd: int) -> float:
+	if cap_ms <= base_ms or spd <= 1:
+		return base_ms
+	return lerpf(base_ms, cap_ms, clampf(log(float(spd)) / log(8.0), 0.0, 1.0))
 
 
 func day_progress() -> float:

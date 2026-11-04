@@ -95,9 +95,11 @@ const COMPAT := {
 
 ## The web tier's render knobs (flag web_quality), per preset. The browser build starts on Low
 ## (GpuMemory: "web browser"), so Low is the tier every web player has been seeing and stays exactly
-## what it was: the 2-core web box cannot feed more at a steady frame rate. Medium and High spend
-## the headroom a good GPU has for sharper pixels and longer ranges (measured: 1080p over 900p costs
-## the street only about +0.8 ms GPU and +1.0 ms CPU); the player picks them in the pause menu.
+## what it was: the 2-core web box cannot feed more at a steady frame rate. Medium and High are
+## opt-in (the pause menu's Quality row says what they cost): they spend the headroom a good GPU has
+## on sharper pixels and longer ranges for 0 to about 3 ms a frame on a grown street (+21% and +59%
+## draws, web-deploy.md), and buy no Planner speed. A Medium or High saved by a build before these
+## tiers existed is moved to Low on the web (FpMode.web_quality_migrates).
 ## Merged over the preset inside knobs() when web_mode() is on; desktop runs never see it. Every
 ## knob rises from Low to High (fp_quality_tiers_test).
 const WEB := {

@@ -13,7 +13,8 @@ Time-sliced sim ticks for first person (slice F). Turns CitySim.sliced on, so gr
 ### Constants
 
 - `BUDGET_MS = {"low": 3.0, "medium": 4.0, "high": 5.0}`: Sliced sim work per frame (ms) by quality preset.
-- `ORBIT_BUDGET_MS = 4.0`: Sliced work per frame (ms) in the Planner on the web, whatever preset the street ran at.
+- `ORBIT_BUDGET_MS = 4.0`: Sliced work per frame (ms) in the Planner on the web at 1x, whatever preset the street ran at, and the most one frame may spend there at 8x (CitySim.scaled_budget_ms: 2x 6.7, 4x 9.3; the frame chains pumps to use it). A whole day-10 tick costs 200 to 500 ms natively, so a fixed 4 ms capped the clock near one tick every 5 to 6 s whatever speed button was pressed. The cap is 12, not 16: a native model of a day-10 city read 3.25 days in 20 s at 8x with 12 (1.5 with 4) against 3.0 to 4.0 with 16, for a frame about 4 ms shorter; in the browser the 16 build cost about 3 fps.
+- `ORBIT_BUDGET_CAP_MS = 12.0`
 - `STALL_LIMIT_MS = 50.0`: D11: no frame may stall longer than this because of the sim, residents or minds.
 
 ### Properties
@@ -25,6 +26,6 @@ Time-sliced sim ticks for first person (slice F). Turns CitySim.sliced on, so gr
 - `func feature_id() -> String`
 - `func setup(p_ctx: FpContext) -> void`
 - `func teardown() -> void`
-- `func keeps_slicing() -> bool`: Whether the orbit view keeps CitySim.sliced on after teardown: the browser build does.
+- `func keeps_slicing() -> bool`: Whether the orbit view keeps CitySim.sliced on after teardown: the browser build does, unless the web_sliced_planner flag is off (whole ticks there, as before).
 - `func slice_stats() -> Dictionary`: The sim's per-pump timings (CitySim.slice_stats()), for G2's bench and the HUD.
 - `func self_test() -> Dictionary`
