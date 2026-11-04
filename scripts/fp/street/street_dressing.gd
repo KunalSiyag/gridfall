@@ -14,6 +14,7 @@ extends RefCounted
 const D := preload("res://scripts/sim/sim_defs.gd")
 const WS := preload("res://scripts/fp/world_scale.gd")
 const AP := preload("res://scripts/fp/asset_paths.gd")
+const GP := preload("res://scripts/fp/world/ground_profile.gd")
 const PROPS := "res://models/real/props/"
 const DECALS := "res://textures/real/decals/"
 const CHUNK := 8
@@ -1183,44 +1184,39 @@ func empty_lot(i: int, holder: Node3D, k: int, h: int) -> void:
 
 
 ## A built zone lot on foot: sidewalk aprons from the lot slab to the road sidewalks.
-func dress_lot(i: int, holder: Node3D, k: int, _lv: int, _h: int) -> void:
-	_aprons(i, holder, k != D.ZONE_R)
+func dress_lot(i: int, holder: Node3D, _k: int, _lv: int, _h: int) -> void:
+	_aprons(i, holder)
 
 
 ## A service lot on foot: aprons on every road side.
 func dress_service(i: int, holder: Node3D, _k: int, _model: Node3D) -> void:
-	_aprons(i, holder, true)
+	_aprons(i, holder)
 
 
-## Sloped paving between the lot slab (LOT_TOP, 0.47) and the road sidewalk (SIDEWALK_TOP, 0.5), on
-## the frontage side, or on every road side when all_roads.
-func _aprons(i: int, holder: Node3D, all_roads: bool) -> void:
-	var x := D.tx(i)
-	var y := D.ty(i)
-	var f := view.directory.frontage(i)
-	for dv: Vector2i in [Vector2i(0, 1), Vector2i(1, 0), Vector2i(0, -1), Vector2i(-1, 0)]:
-		var nx := x + dv.x
-		var ny := y + dv.y
-		if not D.in_bounds(nx, ny) or view.sim.kind[D.idx(nx, ny)] != D.ROAD:
-			continue
-		if not all_roads and D.idx(nx, ny) != f:
-			continue
-		_put(i, "apron", Vector3.ZERO, Vector2(dv), [])
+## Sloped paving between the lot slab (LOT_TOP, GP.APRON_FROM) and the road sidewalk (SIDEWALK_TOP,
+## GP.APRON_TO): on the frontage side of a zone R lot, on every road side of a C/I or service lot.
+## The sides are the ones GroundProfile.apron_mask says, which the collision follows too.
+func _aprons(i: int, _holder: Node3D) -> void:
+	var mask := GP.apron_mask(view.sim, i, view.directory.frontage(i))
+	for s in range(4):
+		if mask & (1 << s):
+			_put(i, "apron", Vector3.ZERO, Vector2(GP.SIDES[s]), [])
 
 
 func _apron_mesh() -> ArrayMesh:
 	if _mats.has("apron_mesh"):
 		return _mats["apron_mesh"]
-	# Local frame: +z toward the road; the strip runs from z 0.47 (lot) to 0.5 (tile edge), x +-0.5.
+	# Local frame: +z toward the road; the strip runs from z GP.APRON_FROM (lot) to GP.APRON_TO
+	# (tile edge), x +-0.5, at the heights GroundProfile.apron_height gives (the collision's).
 	var st := SurfaceTool.new()
 	st.begin(Mesh.PRIMITIVE_TRIANGLES)
-	var z0 := 0.47
-	var z1 := 0.5
+	var z0 := GP.APRON_FROM
+	var z1 := GP.APRON_TO
 	var lo := WS.GROUND_Y
-	var a := Vector3(-0.5, WS.LOT_TOP, z0)
-	var b := Vector3(0.5, WS.LOT_TOP, z0)
-	var c := Vector3(0.5, WS.SIDEWALK_TOP, z1)
-	var d := Vector3(-0.5, WS.SIDEWALK_TOP, z1)
+	var a := Vector3(-0.5, GP.apron_height(z0), z0)
+	var b := Vector3(0.5, GP.apron_height(z0), z0)
+	var c := Vector3(0.5, GP.apron_height(z1), z1)
+	var d := Vector3(-0.5, GP.apron_height(z1), z1)
 	var n := (b - a).cross(d - a).normalized() * -1.0
 	if n.y < 0.0:
 		n = -n

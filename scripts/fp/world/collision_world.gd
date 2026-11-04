@@ -13,6 +13,7 @@ const WS := preload("res://scripts/fp/world_scale.gd")
 const AP := preload("res://scripts/fp/asset_paths.gd")
 const BS := preload("res://scripts/fp/player/body_shapes.gd")
 const RB := preload("res://scripts/fp/world/riverbed.gd")
+const GP := preload("res://scripts/fp/world/ground_profile.gd")
 const TABLE := preload("res://scripts/fp/player/body_table.gd")
 ## Interim soft step (A deliverable 1; remove once G1 raises WS.GROUND_Y): next to a tile whose
 ## surface is at GROUND_Y, a higher tile at most SOFT_STEP above it ramps down over its outer
@@ -156,7 +157,9 @@ func tile_at(p: Vector3) -> int:
 	return D.idx(x, y) if D.in_bounds(x, y) else -1
 
 
-## World y of the walkable surface at p.x/p.z; NAN when not walkable (water, bridge parapet).
+## World y of the walkable surface at p.x/p.z; NAN when not walkable (water, bridge parapet). With
+## the ground_profile flag the lot slabs, pads and aprons are the exact steps and slopes of the
+## meshes (GroundProfile); off, a lot is flat LOT_TOP across its whole tile.
 func ground_height(p: Vector3) -> float:
 	var i := tile_at(p)
 	if i < 0:
@@ -167,6 +170,8 @@ func ground_height(p: Vector3) -> float:
 		return RoadTopology.surface_height(sim, i, Vector2(p.x - D.tx(i), p.z - D.ty(i)))
 	if sim.terrain[i] == D.WATER:
 		return NAN
+	if FeatureFlags.enabled("ground_profile"):
+		return GP.tile_height(sim, i, p.x - D.tx(i), p.z - D.ty(i), ctx.directory)
 	if D.is_zone(k):
 		if sim.level[i] <= 0:
 			return WS.GROUND_Y
@@ -200,14 +205,18 @@ func water_depth(p: Vector3) -> float:
 	return RB.depth_at(ctx.sim, p.x, p.z)
 
 
-## The height the feet stand at: ground_height() with the interim soft step (SOFT_STEP ramps
-## over SOFT_BAND toward a GROUND_Y neighbour). NAN where ground_height is NAN, except for a
-## wader (wade_max > 0): over open water no deeper than wade_max it is the riverbed.
+## The height the feet stand at: ground_height(), with the interim soft step (SOFT_STEP ramps
+## over SOFT_BAND toward a GROUND_Y neighbour) only when the ground_profile flag is off. NAN where
+## ground_height is NAN, except for a wader (wade_max > 0): over open water no deeper than
+## wade_max it is the riverbed.
 func walk_height(p: Vector3, wade_max: float = 0.0) -> float:
 	var g := ground_height(p)
 	if is_nan(g):
 		return wade_height(p, wade_max)
+	# The profile's steps are the meshes' own: nothing to soften (the feet fit follows them).
 	if g <= WS.GROUND_Y + 1e-6 or g > WS.GROUND_Y + SOFT_STEP + 1e-6:
+		return g
+	if FeatureFlags.enabled("ground_profile"):
 		return g
 	var cx := float(roundi(p.x))
 	var cz := float(roundi(p.z))

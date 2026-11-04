@@ -324,6 +324,7 @@ The hero's footsteps (slice I). With FpPlayer's `stepped(surface, pos)` signal (
 
 - `WS = preload("res://scripts/fp/world_scale.gd")`
 - `BANK = preload("res://scripts/fp/audio/audio_bank.gd")`
+- `SF = preload("res://scripts/fp/world/surface_feel.gd")`
 - `STRIDE_M = 0.7`: Polling fallback: stride in metres at a walk, its growth per m/s above WALK, and its cap.
 - `STRIDE_PER_MPS = 0.25`
 - `STRIDE_MAX_M = 1.5`
@@ -339,6 +340,7 @@ The hero's footsteps (slice I). With FpPlayer's `stepped(surface, pos)` signal (
 ### Properties
 
 - `history: Array[String]`: The last steps' stream names, newest last (tests).
+- `last_db: float`: The level (dB) and pitch factor of the last step played, and the surface-feel class it played as (tests).
 
 ### Functions
 
@@ -350,4 +352,5 @@ The hero's footsteps (slice I). With FpPlayer's `stepped(surface, pos)` signal (
 - `func play(surface: String, gain_db: float = 0.0, pitch: float = 1.0) -> void`: Plays one step on surface (CollisionWorld.surface_at names; unknown ones sound like sidewalk).
 - `func wetness() -> float`: How wet the streets are, 0..1: G1's streetscape weather, read by name; 0 without it.
 - `static func is_left_variant(n: String) -> bool`: True when stream name n is a left-foot variant.
+- `func play_feel(c: String, extra_db: float = 0.0) -> void`: One step of feel class c (surface_feel.gd's table): its footstep set at its level and pitch, extra_db louder.
 - `func play_wade(depth_m: float) -> void`: A step of the wading hero in `depth_m` metres of water: the dry shelf of a bank is wet mud (dirt); in the water the step is a splash, louder and lower the deeper it is, and the first one after dry ground gets a second, heavier splash over it.
