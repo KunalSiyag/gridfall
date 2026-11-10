@@ -379,8 +379,14 @@ Cobbles and boulders along the river banks (materials unit G2). The sim has only
 - `SHORE = preload("res://scripts/world/shore.gd")`
 - `MODEL = "res://models/real/props/rock_boulder.glb"`
 - `CHUNK = 8`: Tiles to a chunk side. A chunk is a node whose origin is its stones' centre: the renderer measures a visibility range from the node, so stones placed in world coordinates under an origin node would all be judged by their distance from the world's corner and never draw.
-- `SHARE = 35`: Percent of the land tiles at the water that have a stone (and, of those, that have a second).
+- `SHARE = 35`: Percent of the land tiles at the water that have a stone (and, of those, that have a second). The look-polish pass (flag look_polish) raises both, so the default shore poses show stones (at 35 a pose by the water often had none in view), and the second stone lies against the first, smaller, as stones do; with the flag off the first look: 35 and 40, the second stone anywhere on the tile.
 - `SECOND = 40`
+- `SHARE_POLISH = 55`
+- `SECOND_POLISH = 50`
+- `CLUSTER = 0.035`: How near a clustered stone lies to the first (tile units) and how big it is beside it.
+- `CLUSTER_SIZE = Vector2(0.35, 0.7)`
+- `WET_MIN = 0.005`: The band a clustered stone stays in, in tile units from the water (the corner of a tile reaches DEPTH.y * 1.41 = 0.099 on its own, so the band ends just past that, inside the sand).
+- `WET_MAX = 0.105`
 - `DEPTH = Vector2(0.005, 0.07)`: How far from the water's edge a stone sits, in tile units: inside the part of the sand band that is fully sand (SHORE.SHORE_W is 0.15 and the band is half sand at about a third of that), never out on the grass.
 - `SIZE = Vector2(0.45, 1.1)`: Scale of the model (it is 0.71 x 0.6 x 1.35 m), and how much of its height is below the sand.
 - `SINK = 0.25`
@@ -391,10 +397,10 @@ Cobbles and boulders along the river banks (materials unit G2). The sim has only
 
 ### Functions
 
-- `static func placements(sim: CitySim) -> Dictionary`: The stone transforms for a city, by chunk: Vector2i (tile / CHUNK) -> Array[Transform3D]. Pure of the sim's terrain and seed.
+- `static func placements(sim: CitySim, polish: bool = true) -> Dictionary`: The stone transforms for a city, by chunk: Vector2i (tile / CHUNK) -> Array[Transform3D]. Pure of the sim's terrain and seed.
 - `static func load_mesh() -> Mesh`: The boulder's mesh from the shipped model (its first mesh, with its own material), or null when the model is not there (a split web build whose props pack is not mounted yet).
 - `static func centre_of(xfs: Array[Transform3D]) -> Vector3`: Where a chunk's node sits: the mean of its stones' origins.
-- `static func build(sim: CitySim, mesh: Mesh) -> Node3D`: The stones of a city as a node holding one MultiMeshInstance3D per chunk; null with no mesh or no stone. Unshadowed, each chunk drawn to RANGE + REACH from its centre.
+- `static func build(sim: CitySim, mesh: Mesh, polish: bool = true) -> Node3D`: The stones of a city as a node holding one MultiMeshInstance3D per chunk; null with no mesh or no stone. Unshadowed, each chunk drawn to RANGE + REACH from its centre.
 
 ## `scripts/world/sky_director.gd`
 

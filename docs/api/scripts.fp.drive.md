@@ -189,6 +189,11 @@ The camera beside the driver's door for the climb in and out (car_entry.gd): it 
 - `WS = preload("res://scripts/fp/world_scale.gd")`
 - `DIR = Vector3(0.55, 0.6, 0.7)`: The view's direction from the focus in the car's frame (z toward the front; mirrored for the rear quarter), its distance, the least room it settles for before trying the rear, the sphere it keeps off walls with and how much of the distance the push-in takes off.
 - `DIST = 2.7 * WS.M`
+- `TALL_FROM = 1.5`: A tall body (an SUV, a van: from TALL_FROM to TALL_FULL m high) has an open door panel that covers about half the frame from the front quarter for the first 0.3 to 0.4 s of the grab. The camera for it is raised and moved further to the front (DIR_TALL is added to DIR in step with the height, DIST_TALL to the distance) and aimed TALL_IN m further in over the door, so that it looks down past the panel's top edge at the seat. It must not give up fp_jack_grip_test's 5 degrees between the driver and the hero's body: raising it alone, or moving it out sideways, brings the hero's head in line with the collar (van 4.6 to 4.9 degrees); moving it forward takes the hero's body aside (5.3 degrees without the polish, 5.7 with this). Flag look_polish.
+- `TALL_FULL = 2.0`
+- `DIR_TALL = Vector3(0.0, 0.45, 0.5)`
+- `DIST_TALL = 0.3 * WS.M`
+- `TALL_IN = 0.15 * WS.M`
 - `MIN = 1.6 * WS.M`
 - `RADIUS = 0.25 * WS.M`
 - `PUSH = 0.25`

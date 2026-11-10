@@ -245,6 +245,7 @@ func _check_speaker_overrides() -> void:
 		"water_conservation":
 		_prop(3, {"qwen": "yes", "kimi": "yes", "argon": "yes", "grok": "no"}),
 		"trade_expo": _prop(4, {"grok": "yes", "qwen": "no"}),
+		"curfew": _prop(4, {"kimi": "yes", "argon": "yes", "qwen": "yes"}),
 	}
 	net.by_model[str(D.SUPPORT_AGENTS["council"]["model"])] = {
 		"enact": ["neighborhood_watch"],
@@ -265,11 +266,26 @@ func _check_speaker_overrides() -> void:
 	var fc := _record(brain, "free_clinics")
 	check(
 		(
-			str(fc["outcome"]) == "deferred"
+			str(fc["outcome"]) == "rejected"
 			and bool(fc["override"])
-			and CL.verdict(fc) == "OVERRIDE: deferred with 3 yes"
+			and CL.verdict(fc) == "OVERRIDE: rejected with 3 yes"
 		),
-		"3 yes held back: OVERRIDE: deferred with 3 yes"
+		(
+			"3 yes of five votes, not enacted: ruled out, OVERRIDE: rejected with 3 yes (%s)"
+			% CL.verdict(fc)
+		)
+	)
+	var cu := _record(brain, "curfew")
+	check(
+		(
+			str(cu["outcome"]) == "deferred"
+			and not bool(cu["override"])
+			and CL.verdict(cu) == "deferred 3-0"
+		),
+		(
+			"3 yes with two mayors still to vote: the Speaker is waiting, no override (%s)"
+			% CL.verdict(cu)
+		)
 	)
 	var wc := _record(brain, "water_conservation")
 	check(
@@ -300,8 +316,8 @@ func _check_speaker_overrides() -> void:
 	)
 	check(str(nw["source"]) == "live", "and says the Speaker answered live")
 	check(
-		brain.council_history.size() == 5,
-		"five records for four proposals and one repeal (%d)" % brain.council_history.size()
+		brain.council_history.size() == 6,
+		"six records for five proposals and one repeal (%d)" % brain.council_history.size()
 	)
 	# Mayor context v2 tells the Gazette's feed about a ruling against the vote; off, it does not.
 	FeatureFlags.set_override("mayor_context_v2", false)
@@ -317,7 +333,7 @@ func _check_speaker_overrides() -> void:
 	brain.proposals = {"tourism_campaign": _prop(2, held)}
 	await brain._run_council(11)
 	check(
-		_feed_has(brain, "The Speaker held back Tourism Campaign despite 3 yes, over the count."),
+		_feed_has(brain, "The Speaker rejected Tourism Campaign despite 3 yes, over the count."),
 		"flag on: it is, in prose (%s)" % str(brain.day_feed)
 	)
 	check(not _feed_has(brain, "OVERRIDE"), "and without the board's capital label")

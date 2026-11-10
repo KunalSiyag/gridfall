@@ -880,10 +880,12 @@ func _row_line(k: int, r: Dictionary) -> String:
 	return " · ".join(PackedStringArray(cells))
 
 
-## The Orders column: the share of a mayor's orders that were carried out ("-" before any).
+## The Orders column: the share of a mayor's orders that were carried out ("no data" before any).
 func _orders_cell(done: int, refused: int) -> String:
 	var total := done + refused
-	return "-" if total == 0 else "%d%%" % roundi(100.0 * float(total - refused) / float(total))
+	if total == 0:
+		return "no data"
+	return "%d%%" % roundi(100.0 * float(total - refused) / float(total))
 
 
 ## Labels under n marked as a model's badge.

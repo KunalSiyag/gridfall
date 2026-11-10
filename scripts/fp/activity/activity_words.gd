@@ -15,9 +15,10 @@ const SOURCE_TAGS := {"live": "LIVE", "cache": "REPLAY"}
 const MAX_PARTS := 2
 const DETAIL_CHARS := 150
 ## What a council headline may hold: the card's headline shows two lines (about 80 characters),
-## a folded card one (about 40).
+## a folded card one (about 43: "Passed Green Energy Subsidy (override) +2", 41 characters, measures
+## 313 px in the card's bold 15 px font against its 333 px of text width).
 const HEAD_CHARS := 72
-const FOLD_CHARS := 40
+const FOLD_CHARS := 43
 
 
 ## The model a mayor runs on, as its badge reads ("DeepSeek-V4").
@@ -151,7 +152,7 @@ static func council_words(r: Dictionary) -> String:
 	return _fit(_texts(parts, "text"), HEAD_CHARS, " · +%d more")
 
 
-## The same ruling for a folded card, which shows one line (about FOLD_CHARS characters): the
+## The same ruling for a folded card, which shows one line (FOLD_CHARS characters): the
 ## override mark stays ("Passed Curfew (override)"), the count words and the rest give way.
 static func council_fold(r: Dictionary) -> String:
 	var parts := _council_parts(r)

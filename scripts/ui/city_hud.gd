@@ -272,8 +272,8 @@ func _build_top_bar() -> void:
 	sys_box.add_theme_constant_override("h_separation", 3)
 	sys_box.add_theme_constant_override("v_separation", 3)
 	row.add_child(sys_box)
-	var walk_b := _button("Walk the streets", 130)
-	walk_b.tooltip_text = "Back to your character on the street (Tab)"
+	var walk_b := _button("Walk", 56)
+	walk_b.tooltip_text = "Walk the streets: back to your character (Tab)"
 	walk_b.pressed.connect(func() -> void: walk_requested.emit())
 	sys_box.add_child(walk_b)
 	var save_b := _button("Save", 56)

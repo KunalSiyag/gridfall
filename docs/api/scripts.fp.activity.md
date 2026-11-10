@@ -173,8 +173,8 @@ Plain words for the AI activity layer: what a mayor's turn did ("Zoned 6 homes Â
 - `SOURCE_TAGS = {"live": "LIVE", "cache": "REPLAY"}`
 - `MAX_PARTS = 2`: Most action phrases one summary lists before "+N more".
 - `DETAIL_CHARS = 150`
-- `HEAD_CHARS = 72`: What a council headline may hold: the card's headline shows two lines (about 80 characters), a folded card one (about 40).
-- `FOLD_CHARS = 40`
+- `HEAD_CHARS = 72`: What a council headline may hold: the card's headline shows two lines (about 80 characters), a folded card one (about 43: "Passed Green Energy Subsidy (override) +2", 41 characters, measures 313 px in the card's bold 15 px font against its 333 px of text width).
+- `FOLD_CHARS = 43`
 
 ### Functions
 
@@ -186,7 +186,7 @@ Plain words for the AI activity layer: what a mayor's turn did ("Zoned 6 homes Â
 - `static func action_words(a: Variant) -> String`: A short phrase for one mayor action ({"type": "zone", "zone": "R", "w": 3, "h": 2} -> "Zoned 6 homes"), or "" for an unknown one.
 - `static func politics(entry: Dictionary) -> String`: Proposals and votes from a decision entry ("Proposed the Curfew ordinance Â· Voted no on Clean Air Act"), or "".
 - `static func council_words(r: Dictionary) -> String`: What a council ruling did ("Passed Curfew 3-2 Â· Repealed Clean Air Act"). A ruling that carries its tally (CouncilLog) shows the count, says so when the Speaker went against it ("Passed Curfew with 2 yes (override)") and lists a proposal held over ("Held Recycling Program 2-1"), once: a deferral the council already reported and that has not changed stays out.
-- `static func council_fold(r: Dictionary) -> String`: The same ruling for a folded card, which shows one line (about FOLD_CHARS characters): the override mark stays ("Passed Curfew (override)"), the count words and the rest give way.
+- `static func council_fold(r: Dictionary) -> String`: The same ruling for a folded card, which shows one line (FOLD_CHARS characters): the override mark stays ("Passed Curfew (override)"), the count words and the rest give way.
 - `static func council_news(r: Dictionary) -> bool`: Whether a ruling has anything to tell the street: an ordinance changed, a proposal was ruled out or a deferral is new. A ruling without a tally (an old save) always does.
 - `static func council_votes(r: Dictionary) -> String`: Who voted how in a ruling, in person names ("Curfew: yes Ada, Viktor, Mei Â· no Rosa"), starting with a proposal the Speaker went against ("The Speaker went against the vote. ..."); "" when the ruling has no tally or every proposal in it was ruled against votes a recorded Speaker never saw (see CouncilLog.quiet).
 - `static func say_words(kind: String, m: Dictionary) -> Dictionary`: A note or request from one mayor to another (mayor context v2) as a speech-bubble card: {"headline", "detail", "extra"} in person names. kind is "message_to" or "request"; m is the entry's {"to", "text"} or {"from", "amount", "reason"}.

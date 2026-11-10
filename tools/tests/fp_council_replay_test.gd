@@ -181,10 +181,12 @@ func _assert_card(label: String, r: Dictionary, rec: Dictionary, src: String) ->
 			head.contains("Passed " + name) or head.contains("more"),
 			"%s: the headline says %s passed (%s)" % [label, name, head]
 		)
-	var fits := (
+	var rec_enact: Array = set_of.call(rec.get("enact", []))
+	var rec_repeal: Array = set_of.call(rec.get("repeal", []))
+	var fits: bool = (
 		not rec.is_empty()
-		and set_of.call(rec.get("enact", [])) == set_of.call(r["enacted"])
-		and set_of.call(rec.get("repeal", [])) == set_of.call(r["repealed"])
+		and rec_enact == set_of.call(r["enacted"])
+		and rec_repeal == set_of.call(r["repealed"])
 	)
 	if src == "cache" and said == D.debrand(str(rec.get("statement", ""))).left(240):
 		check(
@@ -196,6 +198,29 @@ func _assert_card(label: String, r: Dictionary, rec: Dictionary, src: String) ->
 				not bool((t as Dictionary)["against"]),
 				"%s: and no proposal went against its votes" % label
 			)
+	elif src == "heuristic":
+		# The offline planner enacts every proposal with a majority; its own words stand only when
+		# the city could do all of that (a proposal already in force cannot be enacted again).
+		var planned: Array = []
+		var any_against := false
+		for t: Variant in r["tally"]:
+			var e: Dictionary = t
+			if int(e["yes"]) >= CL.MAJORITY:
+				planned.append(str(e["key"]))
+			any_against = any_against or bool(e["against"])
+		var carried: bool = set_of.call(planned) == set_of.call(r["enacted"]) and not any_against
+		var own := (
+			"The council follows the majority of mayors."
+			if not planned.is_empty()
+			else "No proposal reached a majority today."
+		)
+		check(
+			said == (own if carried else str(CL.SET_ASIDE["heuristic"])),
+			(
+				"%s: the planner's words stand only when it carried them out (%s, carried %s)"
+				% [label, said.left(50), str(carried)]
+			)
+		)
 	else:
 		check(
 			said == str(CL.SET_ASIDE.get(src, said)),
@@ -394,6 +419,9 @@ func _gazette_lines(brain: CityBrain) -> int:
 	return n
 
 
+## The brain rules a proposal out ("rejected") once four mayors have voted on it and the Speaker
+## has not enacted it, so only a proposal with fewer than four votes stays on the floor, and while
+## a mayor has still to vote the Speaker may just be waiting: no override, nothing for the Gazette.
 func _check_deferral_once() -> void:
 	var net := NET.new()
 	net.name = "Net"
@@ -404,9 +432,9 @@ func _check_deferral_once() -> void:
 	FeatureFlags.set_override("mayor_context_v2", true)
 	net.by_model[speaker] = {"enact": [], "repeal": [], "statement": "Not yet."}
 	brain.proposals = {
-		"free_clinics": FIX.prop(2, FIX.votes_of(3, 2)),
+		"free_clinics": FIX.prop(2, FIX.votes_of(3, 0)),
 		"trade_expo": FIX.prop(4, {"grok": "yes", "qwen": "no"}),
-		"curfew": FIX.prop(4, FIX.votes_of(4, 0)),
+		"curfew": FIX.prop(4, FIX.votes_of(2, 1)),
 	}
 	var rulings: Array[Dictionary] = []
 	brain.council_ruled.connect(func(r: Dictionary) -> void: rulings.append(r))
@@ -418,25 +446,14 @@ func _check_deferral_once() -> void:
 	)
 	var fc := CL.last_for(brain.council_history, "free_clinics")
 	check(
-		(
-			int(fc["day"]) == 24
-			and bool(fc["override"])
-			and CL.verdict(fc) == "OVERRIDE: deferred with 3 yes"
-		),
-		(
-			"the one record is renewed with the latest day (%d) and is against the count"
-			% int(fc["day"])
-		)
-	)
-	var cur := CL.last_for(brain.council_history, "curfew")
-	check(
-		not bool(cur["override"]) and CL.verdict(cur) == "deferred 4-0",
-		"4 yes with a mayor still to vote is no override (%s)" % CL.verdict(cur)
+		int(fc["day"]) == 24 and str(fc["outcome"]) == "deferred",
+		"the one record is renewed with the latest day (%d)" % int(fc["day"])
 	)
 	check(
-		_gazette_lines(brain) == 1,
-		"the Gazette hears of the free clinics once, not six times (%d)" % _gazette_lines(brain)
+		not bool(fc["override"]) and CL.verdict(fc) == "deferred 3-0",
+		"3 yes with two mayors still to vote is waiting, no override (%s)" % CL.verdict(fc)
 	)
+	check(_gazette_lines(brain) == 0, "and the Gazette hears nothing (%d)" % _gazette_lines(brain))
 	check(W.council_news(rulings[0]), "the first run is news on the street")
 	var later := true
 	for k in range(1, 6):
@@ -446,41 +463,86 @@ func _check_deferral_once() -> void:
 		W.council_words(rulings[2]) == "No ordinance changed",
 		"and a card that is made reads so (%s)" % W.council_words(rulings[2])
 	)
-	# The fifth vote arrives: 4 yes of 5 votes in is now against the count, once.
-	(brain.proposals["curfew"]["votes"] as Dictionary)["qwen"] = "no"
+	# The fourth vote arrives: 3 yes of 4 votes in and no enactment is a ruling against the count.
+	(brain.proposals["free_clinics"]["votes"] as Dictionary)[str(D.MAYORS[3]["id"])] = "no"
 	await brain._run_council(27)
-	cur = CL.last_for(brain.council_history, "curfew")
+	fc = CL.last_for(brain.council_history, "free_clinics")
 	check(
 		(
-			bool(cur["override"])
-			and CL.verdict(cur) == "OVERRIDE: deferred with 4 yes"
-			and brain.council_history.size() == 3
+			str(fc["outcome"]) == "rejected"
+			and bool(fc["override"])
+			and CL.verdict(fc) == "OVERRIDE: rejected with 3 yes"
+			and not brain.proposals.has("free_clinics")
 		),
-		"the fifth vote makes it an override in the same record (%s)" % CL.verdict(cur)
+		"the fourth vote rules it out against the count, once (%s)" % CL.verdict(fc)
 	)
 	check(
-		W.council_news(rulings[-1]) and _gazette_lines(brain) == 2,
+		W.council_news(rulings[-1]) and _gazette_lines(brain) == 1,
 		"and that is news once (%d lines)" % _gazette_lines(brain)
 	)
 	await brain._run_council(30)
-	check(not W.council_news(rulings[-1]) and _gazette_lines(brain) == 2, "and not again")
+	check(not W.council_news(rulings[-1]) and _gazette_lines(brain) == 1, "and not again")
 	# A real ruling is not pushed out of the history by the stuck ones.
-	net.by_model[speaker] = {
-		"enact": ["free_clinics"], "repeal": [], "statement": "Free clinics pass."
-	}
+	(brain.proposals["trade_expo"]["votes"] as Dictionary)["qwen"] = "yes"
+	net.by_model[speaker] = {"enact": ["trade_expo"], "repeal": [], "statement": "Expo passes."}
 	await brain._run_council(33)
 	net.by_model[speaker] = {"enact": [], "repeal": [], "statement": "Not yet."}
 	for k in range(25):
 		await brain._run_council(36 + 3 * k)
 	check(
 		(
-			str(CL.last_for(brain.council_history, "free_clinics")["outcome"]) == "enacted"
-			and brain.council_history.size() <= 4
+			str(CL.last_for(brain.council_history, "trade_expo")["outcome"]) == "enacted"
+			and brain.council_history.size() <= 5
 		),
 		(
-			"25 more runs on stuck proposals keep the enactment in the record (%d records)"
+			"25 more runs on a stuck proposal keep the enactment in the record (%d records)"
 			% brain.council_history.size()
 		)
+	)
+	FeatureFlags.set_override("mayor_context_v2", false)
+	FIX.free_world(w)
+	_check_deferred_override_once()
+
+
+## A deferral held against the count (all five votes in; the brain rules such a proposal out, but a
+## saved or hand-made ruling can carry one) is recorded once and is news to the Gazette once.
+func _check_deferred_override_once() -> void:
+	var w := FIX.world(get_root())
+	var brain: CityBrain = w["brain"]
+	FeatureFlags.set_override("mayor_context_v2", true)
+	var rulings: Array[Dictionary] = []
+	for k in range(6):
+		var tl := CL.tally(
+			{"free_clinics": FIX.prop(2, FIX.votes_of(3, 2))}, [], [], "live", brain.council_history
+		)
+		var r := {
+			"day": 9 + 3 * k,
+			"enacted": [],
+			"repealed": [],
+			"rejected": [],
+			"tally": tl,
+			"statement": "Not yet.",
+			"source": "live"
+		}
+		CL.record(brain, r)
+		rulings.append(r)
+	var fc := CL.last_for(brain.council_history, "free_clinics")
+	check(
+		(
+			brain.council_history.size() == 1
+			and int(fc["day"]) == 24
+			and bool(fc["override"])
+			and CL.verdict(fc) == "OVERRIDE: deferred with 3 yes"
+		),
+		"six runs leave one record, renewed to day %d and against the count" % int(fc["day"])
+	)
+	check(
+		_gazette_lines(brain) == 1,
+		"the Gazette hears of the free clinics once, not six times (%d)" % _gazette_lines(brain)
+	)
+	check(
+		W.council_news(rulings[0]) and not W.council_news(rulings[1]),
+		"the first run is news on the street, the repeat is not"
 	)
 	FeatureFlags.set_override("mayor_context_v2", false)
 	FIX.free_world(w)

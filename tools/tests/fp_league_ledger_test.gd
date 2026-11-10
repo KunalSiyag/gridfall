@@ -256,6 +256,8 @@ func _unbadged_models() -> Array[String]:
 
 ## Tab flips to Services & minds and back; the page lists the minds that are not mayors.
 func _check_pages() -> void:
+	# _check_fit closed the league; Tab only flips an open one.
+	K.check(fails, f.open_league(), "fixture: the league opens for the page checks")
 	var page_b: Control = f.league.get("_page_b")
 	var page_a: Control = f.league.get("_page_a")
 	K.check(

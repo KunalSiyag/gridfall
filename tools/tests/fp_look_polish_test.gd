@@ -1,11 +1,11 @@
 extends SceneTree
-## The look-polish pass (unit D3, flag look_polish): wet surfaces, the lawn, the shore stones and the
-## door camera. Pins what a loaded material or a placement carries: both street shaders declare the
-## `polish` uniform and parse, the flag writes it (0 only when the flag is off, nothing when on, so
-## the shader's default 1 stands), the shore has more stones with it than without and the same city
-## gives the same stones, a stone clustered beside another is smaller and near it, the stones are
-## built again when the props pack arrives late, and the door camera for a tall body looks from higher
-## and further off the door than for a low one.
+## The look-polish pass (unit D3, flag look_polish): wet surfaces, the lawn, the shore stones and
+## the door camera. Pins what a loaded material or a placement carries: both street shaders declare
+## the `polish` uniform and parse, the flag writes it (0 only when the flag is off, nothing when on,
+## so the shader's default 1 stands), the shore has more stones with it than without and the same
+## city gives the same stones, a stone clustered beside another is smaller and near it, the stones
+## are built again when the props pack arrives late, and the door camera for a tall body looks from
+## higher and further off the door than for a low one.
 
 const K := preload("res://tools/tests/fp_kit.gd")
 const D := preload("res://scripts/sim/sim_defs.gd")
@@ -135,7 +135,9 @@ func _check_stones(sim: CitySim) -> void:
 			)
 		# Stones of one tile are adjacent in the list: a second within CLUSTER of the one before.
 		for j in range(1, xs.size()):
-			var d := Vector2(xs[j].origin.x - xs[j - 1].origin.x, xs[j].origin.z - xs[j - 1].origin.z)
+			var d := Vector2(
+				xs[j].origin.x - xs[j - 1].origin.x, xs[j].origin.z - xs[j - 1].origin.z
+			)
 			if d.length() <= ShoreRocks.CLUSTER + 0.001:
 				pairs += 1
 				if xs[j].basis.get_scale().x < xs[j - 1].basis.get_scale().x:
@@ -143,7 +145,9 @@ func _check_stones(sim: CitySim) -> void:
 	K.check(fails, on_shore, "every polished stone lies on a land tile at the water")
 	K.check(fails, pairs > 0, "some stones come in clustered pairs (%d)" % pairs)
 	K.check(
-		fails, smaller * 10 >= pairs * 8, "a clustered stone is the smaller (%d of %d)" % [smaller, pairs]
+		fails,
+		smaller * 10 >= pairs * 8,
+		"a clustered stone is the smaller (%d of %d)" % [smaller, pairs]
 	)
 
 
@@ -155,7 +159,7 @@ func _count(by_chunk: Dictionary) -> int:
 
 
 ## A split web build mounts the props pack after the first view: the stones are built then, once.
-func _check_retry(sim: CitySim, view: CityView) -> void:
+func _check_retry(_sim: CitySim, view: CityView) -> void:
 	var held := view.get("_rocks_node") as Node3D
 	if is_instance_valid(held):
 		held.free()
@@ -192,10 +196,15 @@ func _check_door_camera() -> void:
 	K.check(
 		fails,
 		rise_tall > rise_low + 0.3,
-		"a tall body is watched from higher over its door (%.2f m vs %.2f m)" % [rise_tall, rise_low]
+		(
+			"a tall body is watched from higher over its door (%.2f m vs %.2f m)"
+			% [rise_tall, rise_low]
+		)
 	)
 	var look_low := -cam_low.basis.z
 	var to_low := ((low["focus"] as Vector3) - cam_low.origin).normalized()
 	K.check(fails, look_low.dot(to_low) > 0.999, "the low-body camera looks at its focus")
 	var to_tall := ((tall["focus"] as Vector3) - cam_tall.origin).normalized()
-	K.check(fails, (-cam_tall.basis.z).dot(to_tall) > 0.999, "the tall-body camera looks at its focus")
+	K.check(
+		fails, (-cam_tall.basis.z).dot(to_tall) > 0.999, "the tall-body camera looks at its focus"
+	)

@@ -25,8 +25,8 @@ func _init() -> void:
 	get_root().add_child(hud)
 	hud.setup(w["sim"], w["brain"], w["client"])
 	hud.walk_requested.connect(func() -> void: walks += 1)
-	var btn := _find_button(hud, "Walk the streets")
-	check(btn != null, "the planner HUD has a Walk the streets button")
+	var btn := _find_button(hud, "Walk")
+	check(btn != null, "the planner HUD has a Walk button")
 	if btn != null:
 		check(btn.visible and not btn.disabled, "the button is visible and enabled")
 		btn.pressed.emit()

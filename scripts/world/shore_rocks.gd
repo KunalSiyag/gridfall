@@ -20,9 +20,10 @@ const MODEL := "res://models/real/props/rock_boulder.glb"
 ## node would all be judged by their distance from the world's corner and never draw.
 const CHUNK := 8
 ## Percent of the land tiles at the water that have a stone (and, of those, that have a second).
-## The look-polish pass (flag look_polish) raises both, so the default shore poses show stones (at 35
-## a pose by the water often had none in view), and the second stone lies against the first, smaller,
-## as stones do; with the flag off the first look: 35 and 40, the second stone anywhere on the tile.
+## The look-polish pass (flag look_polish) raises both, so the default shore poses show stones (at
+## 35 a pose by the water often had none in view), and the second stone lies against the first,
+## smaller, as stones do; with the flag off the first look: 35 and 40, the second stone anywhere on
+## the tile.
 const SHARE := 35
 const SECOND := 40
 const SHARE_POLISH := 55
@@ -30,6 +31,10 @@ const SECOND_POLISH := 50
 ## How near a clustered stone lies to the first (tile units) and how big it is beside it.
 const CLUSTER := 0.035
 const CLUSTER_SIZE := Vector2(0.35, 0.7)
+## The band a clustered stone stays in, in tile units from the water (the corner of a tile reaches
+## DEPTH.y * 1.41 = 0.099 on its own, so the band ends just past that, inside the sand).
+const WET_MIN := 0.005
+const WET_MAX := 0.105
 ## How far from the water's edge a stone sits, in tile units: inside the part of the sand band that
 ## is fully sand (SHORE.SHORE_W is 0.15 and the band is half sand at about a third of that), never
 ## out on the grass.
@@ -78,7 +83,7 @@ static func placements(sim: CitySim, polish: bool = true) -> Dictionary:
 		for n in range(stones):
 			var xf := _stone(r, flags, x, y)
 			if polish and n == 1 and first != Transform3D():
-				xf = _beside(r, first, flags)
+				xf = _beside(r, first, flags, x, y)
 			if xf == Transform3D():
 				continue
 			if n == 0:
@@ -127,24 +132,40 @@ static func _stone(r: RandomNumberGenerator, flags: Array[bool], x: int, y: int)
 	return Transform3D(basis, origin)
 
 
-## A smaller stone lying against `first` (a clustered pair, not two unrelated stones).
+## A smaller stone lying against `first` (a clustered pair, not two unrelated stones), on tile
+## (x, y). It must stay on the sand like any stone: inside the tile, and between WET_MIN and WET_MAX
+## tile units from the water. A spot that is not (toward the water or out onto the grass; the corner
+## stones of a tile reach farthest) is tried again a quarter turn on, and with none the stone is
+## left out. Identity then.
 static func _beside(
-	r: RandomNumberGenerator, first: Transform3D, flags: Array[bool]
+	r: RandomNumberGenerator, first: Transform3D, flags: Array[bool], x: int, y: int
 ) -> Transform3D:
 	var a := r.randf() * TAU
 	var k := r.randf_range(CLUSTER_SIZE.x, CLUSTER_SIZE.y)
 	var basis := Basis(Vector3.UP, r.randf() * TAU) * first.basis.scaled(Vector3.ONE * k)
-	# Never toward the water: a stone beside the first one stays on the sand side of it.
-	var dir := Vector2(cos(a), sin(a))
-	var wet := Vector2.ZERO
-	for i in range(8):
-		if flags[i]:
-			wet += TOWARD[i]
-	if wet != Vector2.ZERO and dir.dot(wet.normalized()) > 0.0:
-		dir = dir.reflect(wet.normalized().orthogonal())
-	var at := first.origin + Vector3(dir.x, 0.0, dir.y) * CLUSTER
-	at.y = WS.GROUND_Y - SINK * MODEL_HEIGHT * first.basis.get_scale().y * k
-	return Transform3D(basis, at)
+	for _q in range(4):
+		var dir := Vector2(cos(a), sin(a))
+		var at := first.origin + Vector3(dir.x, 0.0, dir.y) * CLUSTER
+		var local := Vector2(at.x - x, at.z - y)
+		var wet := _wet_distance(flags, local)
+		if absf(local.x) < 0.5 and absf(local.y) < 0.5 and wet >= WET_MIN and wet <= WET_MAX:
+			at.y = WS.GROUND_Y - SINK * MODEL_HEIGHT * first.basis.get_scale().y * k
+			return Transform3D(basis, at)
+		a += PI * 0.5
+	return Transform3D()
+
+
+## Tile units from `local` (a point in the tile, from its centre) to the nearest water side or
+## corner among `flags`; 9 with none.
+static func _wet_distance(flags: Array[bool], local: Vector2) -> float:
+	var best := 9.0
+	for k in range(8):
+		if not flags[k]:
+			continue
+		var toward: Vector2 = TOWARD[k]
+		var d := 0.5 - local.dot(toward) if k < 4 else local.distance_to(toward * 0.5)
+		best = minf(best, d)
+	return best
 
 
 ## The boulder's mesh from the shipped model (its first mesh, with its own material), or null when

@@ -13,15 +13,17 @@ const WS := preload("res://scripts/fp/world_scale.gd")
 ## off walls with and how much of the distance the push-in takes off.
 const DIR := Vector3(0.55, 0.6, 0.7)
 const DIST := 2.7 * WS.M
-## A tall body (an SUV, a van: from TALL_FROM to TALL_FULL m high) has an open door panel that covers
-## about half the frame from the front quarter for the first 0.3 to 0.4 s of the grab. The camera
-## for it is raised and moved out (DIR_TALL is added to DIR in step with the height, DIST_TALL to the
-## distance) and aimed TALL_IN m further in over the door, so that it looks down past the panel's top
-## edge at the seat; it is still the front quarter, so the hero's body stays beside the driver
-## (fp_jack_grip_test's 5 degrees from the hero's body is not given up). Flag look_polish.
+## A tall body (an SUV, a van: from TALL_FROM to TALL_FULL m high) has an open door panel that
+## covers about half the frame from the front quarter for the first 0.3 to 0.4 s of the grab. The
+## camera for it is raised and moved further to the front (DIR_TALL is added to DIR in step with
+## the height, DIST_TALL to the distance) and aimed TALL_IN m further in over the door, so that it
+## looks down past the panel's top edge at the seat. It must not give up fp_jack_grip_test's 5
+## degrees between the driver and the hero's body: raising it alone, or moving it out sideways,
+## brings the hero's head in line with the collar (van 4.6 to 4.9 degrees); moving it forward
+## takes the hero's body aside (5.3 degrees without the polish, 5.7 with this). Flag look_polish.
 const TALL_FROM := 1.5
 const TALL_FULL := 2.0
-const DIR_TALL := Vector3(0.12, 0.45, 0.0)
+const DIR_TALL := Vector3(0.0, 0.45, 0.5)
 const DIST_TALL := 0.3 * WS.M
 const TALL_IN := 0.15 * WS.M
 const MIN := 1.6 * WS.M
@@ -41,8 +43,11 @@ static func frame(
 	var tall := 0.0
 	if FeatureFlags.enabled("look_polish", true):
 		tall = smoothstep(TALL_FROM * WS.M, TALL_FULL * WS.M, height)
-	var focus := xf * Vector3(
-		side + 0.3 * WS.M - TALL_IN * tall, minf(height * 0.55, 1.1 * WS.M), mid - 0.2 * WS.M
+	var focus := (
+		xf
+		* Vector3(
+			side + 0.3 * WS.M - TALL_IN * tall, minf(height * 0.55, 1.1 * WS.M), mid - 0.2 * WS.M
+		)
 	)
 	var best := {"focus": focus, "dir": Vector3.UP, "dist": 0.3 * WS.M}
 	var bd := -INF

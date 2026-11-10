@@ -368,6 +368,6 @@ func _judge(label: String, r: Dictionary) -> void:
 	said = "%s: the hero's root keeps %.2f m from every bone of the driver through the pull "
 	said += "(%.2f m at the nearest)"
 	K.check(fails, float(r["bones"]) >= ROOT_MIN, said % [label, ROOT_MIN, r["bones"]])
-	said = "%s: the door camera sees the driver %.0f degrees clear of the hero's body "
+	said = "%s: the door camera sees the driver %.1f degrees clear of the hero's body "
 	said += "(%.0f at least)"
 	K.check(fails, float(r["view"]) >= VIEW_MIN, said % [label, r["view"], VIEW_MIN])

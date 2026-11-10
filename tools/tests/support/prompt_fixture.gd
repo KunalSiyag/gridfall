@@ -7,6 +7,7 @@ extends RefCounted
 
 const D := preload("res://scripts/sim/sim_defs.gd")
 const K := preload("res://tools/tests/fp_kit.gd")
+const NET := preload("res://tools/tests/support/scripted_net.gd")
 
 ## The day the fixture's prompts are built for (its records are from the days before).
 const PROMPT_DAY := 7
@@ -32,7 +33,7 @@ static func build(root: Node, client: GmiClient = null) -> Dictionary:
 ## The same city on a scripted live transport (support/scripted_net.gd, answers set per model):
 ## {"sim", "people", "client", "brain", "net"}.
 static func build_live(root: Node) -> Dictionary:
-	var net := (load("res://tools/tests/support/scripted_net.gd") as GDScript).new()
+	var net: NET = NET.new()
 	net.name = "ScriptedNet"
 	net.live_enabled = true
 	var w := build(root, net)
