@@ -20,8 +20,16 @@ const MODEL := "res://models/real/props/rock_boulder.glb"
 ## node would all be judged by their distance from the world's corner and never draw.
 const CHUNK := 8
 ## Percent of the land tiles at the water that have a stone (and, of those, that have a second).
+## The look-polish pass (flag look_polish) raises both, so the default shore poses show stones (at 35
+## a pose by the water often had none in view), and the second stone lies against the first, smaller,
+## as stones do; with the flag off the first look: 35 and 40, the second stone anywhere on the tile.
 const SHARE := 35
 const SECOND := 40
+const SHARE_POLISH := 55
+const SECOND_POLISH := 50
+## How near a clustered stone lies to the first (tile units) and how big it is beside it.
+const CLUSTER := 0.035
+const CLUSTER_SIZE := Vector2(0.35, 0.7)
 ## How far from the water's edge a stone sits, in tile units: inside the part of the sand band that
 ## is fully sand (SHORE.SHORE_W is 0.15 and the band is half sand at about a third of that), never
 ## out on the grass.
@@ -50,8 +58,10 @@ const TOWARD: Array[Vector2] = [
 
 ## The stone transforms for a city, by chunk: Vector2i (tile / CHUNK) -> Array[Transform3D]. Pure of
 ## the sim's terrain and seed.
-static func placements(sim: CitySim) -> Dictionary:
+static func placements(sim: CitySim, polish: bool = true) -> Dictionary:
 	var out: Dictionary = {}
+	var share := SHARE_POLISH if polish else SHARE
+	var second := SECOND_POLISH if polish else SECOND
 	var mask := SHORE.mask(sim)
 	for i in range(D.W * D.H):
 		if mask[i] == 0:
@@ -60,14 +70,19 @@ static func placements(sim: CitySim) -> Dictionary:
 		var y := D.ty(i)
 		var r := RandomNumberGenerator.new()
 		r.seed = hash([sim.city_seed, i, "shore_rock"])
-		if r.randi() % 100 >= SHARE:
+		if r.randi() % 100 >= share:
 			continue
 		var flags := SHORE.water_flags(sim, x, y)
-		var stones := 2 if r.randi() % 100 < SECOND else 1
-		for _s in range(stones):
+		var stones := 2 if r.randi() % 100 < second else 1
+		var first := Transform3D()
+		for n in range(stones):
 			var xf := _stone(r, flags, x, y)
+			if polish and n == 1 and first != Transform3D():
+				xf = _beside(r, first, flags)
 			if xf == Transform3D():
 				continue
+			if n == 0:
+				first = xf
 			var key := Vector2i(floori(float(x) / CHUNK), floori(float(y) / CHUNK))
 			if not out.has(key):
 				out[key] = [] as Array[Transform3D]
@@ -112,6 +127,26 @@ static func _stone(r: RandomNumberGenerator, flags: Array[bool], x: int, y: int)
 	return Transform3D(basis, origin)
 
 
+## A smaller stone lying against `first` (a clustered pair, not two unrelated stones).
+static func _beside(
+	r: RandomNumberGenerator, first: Transform3D, flags: Array[bool]
+) -> Transform3D:
+	var a := r.randf() * TAU
+	var k := r.randf_range(CLUSTER_SIZE.x, CLUSTER_SIZE.y)
+	var basis := Basis(Vector3.UP, r.randf() * TAU) * first.basis.scaled(Vector3.ONE * k)
+	# Never toward the water: a stone beside the first one stays on the sand side of it.
+	var dir := Vector2(cos(a), sin(a))
+	var wet := Vector2.ZERO
+	for i in range(8):
+		if flags[i]:
+			wet += TOWARD[i]
+	if wet != Vector2.ZERO and dir.dot(wet.normalized()) > 0.0:
+		dir = dir.reflect(wet.normalized().orthogonal())
+	var at := first.origin + Vector3(dir.x, 0.0, dir.y) * CLUSTER
+	at.y = WS.GROUND_Y - SINK * MODEL_HEIGHT * first.basis.get_scale().y * k
+	return Transform3D(basis, at)
+
+
 ## The boulder's mesh from the shipped model (its first mesh, with its own material), or null when
 ## the model is not there (a split web build whose props pack is not mounted yet).
 static func load_mesh() -> Mesh:
@@ -140,10 +175,10 @@ static func centre_of(xfs: Array[Transform3D]) -> Vector3:
 
 ## The stones of a city as a node holding one MultiMeshInstance3D per chunk; null with no mesh or no
 ## stone. Unshadowed, each chunk drawn to RANGE + REACH from its centre.
-static func build(sim: CitySim, mesh: Mesh) -> Node3D:
+static func build(sim: CitySim, mesh: Mesh, polish: bool = true) -> Node3D:
 	if mesh == null:
 		return null
-	var by_chunk := placements(sim)
+	var by_chunk := placements(sim, polish)
 	if by_chunk.is_empty():
 		return null
 	var root := Node3D.new()

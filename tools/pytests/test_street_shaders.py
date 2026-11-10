@@ -21,8 +21,9 @@ def _pool_floor(source: str, pattern: str) -> float:
 
 def test_road_pools_sheen_not_mirror() -> None:
     src = (SHADERS / "road_fp.gdshader").read_text()
-    floor = _pool_floor(src, r"mix\(ROUGHNESS, ([\d.]+), pool\)")
-    assert 0.2 <= floor <= 0.4, f"road pool roughness floor {floor}"
+    floors = [float(x) for x in re.search(r"mix\(ROUGHNESS, mix\(([\d.]+), ([\d.]+), polish\), pool\)", src).groups()]
+    for floor in floors:
+        assert 0.2 <= floor <= 0.4, f"road pool roughness floor {floor}"
     flatten = _pool_floor(src, r"pool \* ([\d.]+)\)")
     assert flatten <= 0.6, f"road pool normal flatten {flatten} kills the asphalt detail"
 
@@ -90,7 +91,7 @@ def test_shore_shader_constants_match_shore_gd() -> None:
     sh = (SHADERS / "ground_detail.gdshader").read_text()
     width = float(re.search(r"const SHORE_W := ([\d.]+)", shore).group(1))
     assert f"smoothstep(0.0, {width}, dist)" in sh
-    assert f"smoothstep(0.0, {width / 3:.2f}, dist)" in sh
+    assert re.search(rf"smoothstep\(0\.0, {width / 3:.2f}, dist( - [^)]*)?\)", sh)
     assert float(re.search(r"const TILE_MARK := ([\d.]+)", shore).group(1)) == 0.5
     assert float(re.search(r"const BED_MARK := ([\d.]+)", shore).group(1)) == 0.25
     assert "abs(shore_v.a - 0.5) < 0.05" in sh and "abs(shore_v.a - 0.25) < 0.05" in sh

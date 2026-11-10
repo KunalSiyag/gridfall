@@ -13,6 +13,17 @@ const WS := preload("res://scripts/fp/world_scale.gd")
 ## off walls with and how much of the distance the push-in takes off.
 const DIR := Vector3(0.55, 0.6, 0.7)
 const DIST := 2.7 * WS.M
+## A tall body (an SUV, a van: from TALL_FROM to TALL_FULL m high) has an open door panel that covers
+## about half the frame from the front quarter for the first 0.3 to 0.4 s of the grab. The camera
+## for it is raised and moved out (DIR_TALL is added to DIR in step with the height, DIST_TALL to the
+## distance) and aimed TALL_IN m further in over the door, so that it looks down past the panel's top
+## edge at the seat; it is still the front quarter, so the hero's body stays beside the driver
+## (fp_jack_grip_test's 5 degrees from the hero's body is not given up). Flag look_polish.
+const TALL_FROM := 1.5
+const TALL_FULL := 2.0
+const DIR_TALL := Vector3(0.12, 0.45, 0.0)
+const DIST_TALL := 0.3 * WS.M
+const TALL_IN := 0.15 * WS.M
 const MIN := 1.6 * WS.M
 const RADIUS := 0.25 * WS.M
 const PUSH := 0.25
@@ -27,15 +38,22 @@ static func frame(
 	var rear: Vector3 = pts["rear"]
 	var seat: Vector3 = pts["seat"]
 	var mid := (hinge.z + rear.z) * 0.5 if not pts.has("doorless") else seat.z
-	var focus := xf * Vector3(side + 0.3 * WS.M, minf(height * 0.55, 1.1 * WS.M), mid - 0.2 * WS.M)
+	var tall := 0.0
+	if FeatureFlags.enabled("look_polish", true):
+		tall = smoothstep(TALL_FROM * WS.M, TALL_FULL * WS.M, height)
+	var focus := xf * Vector3(
+		side + 0.3 * WS.M - TALL_IN * tall, minf(height * 0.55, 1.1 * WS.M), mid - 0.2 * WS.M
+	)
 	var best := {"focus": focus, "dir": Vector3.UP, "dist": 0.3 * WS.M}
 	var bd := -INF
+	var want := DIST + DIST_TALL * tall
 	for s: float in [1.0, -1.0]:
-		var dir := (xf.basis * Vector3(DIR.x, DIR.y, DIR.z * s)).normalized()
-		var dist := DIST
-		if ctx.collision != null:
-			var hit := ctx.collision.sweep_sphere(focus, dir, DIST, RADIUS)
-			dist = minf(DIST, hit - RADIUS)
+		var d := DIR + DIR_TALL * tall
+		var dir := (xf.basis * Vector3(d.x, d.y, d.z * s)).normalized()
+		var dist := want
+		if ctx != null and ctx.collision != null:
+			var hit := ctx.collision.sweep_sphere(focus, dir, want, RADIUS)
+			dist = minf(want, hit - RADIUS)
 		if dist > bd + 0.05 * WS.M:
 			bd = dist
 			best = {"focus": focus, "dir": dir, "dist": maxf(dist, 0.3 * WS.M)}
