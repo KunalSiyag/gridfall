@@ -46,7 +46,8 @@ const MAX_LOG := 300
 ## Keys are model-id prefixes; values are merged into the request body.
 const MODEL_EXTRAS := {
 	"deepseek-ai/": {"thinking": {"type": "disabled"}},
-	"moonshotai/": {"thinking": {"type": "disabled"}},
+	# Kimi K3 always thinks and answers HTTP 400 to thinking: disabled; it wants low, high or max.
+	"moonshotai/": {"reasoning_effort": "low"},
 	"Qwen/": {"enable_thinking": false},
 	"x-ai/": {"reasoning_effort": "low"},
 	"zai-org/": {"thinking": {"type": "disabled"}},

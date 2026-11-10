@@ -55,6 +55,7 @@ SimCity-style HUD for GridFall: city vitals and RCI demand, time controls, playe
 - `save_requested()`
 - `load_requested()`
 - `new_city_requested()`
+- `walk_requested()`: The "Walk the streets" button: back down to the first-person character (same trip as Tab).
 - `focus_district_requested(mi: int)`
 - `focus_tile_requested(x: int, y: int)`
 - `auto_focus_requested(x: int, y: int)`: The chaos director's disaster tile, which no click asked for: the orbit camera pans to it and keeps its zoom.

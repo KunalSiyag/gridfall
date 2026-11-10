@@ -150,6 +150,7 @@ func _ready() -> void:
 	hud.save_requested.connect(save_game)
 	hud.load_requested.connect(load_game)
 	hud.new_city_requested.connect(new_game)
+	hud.walk_requested.connect(_walk_to_street)
 	hud.mute_requested.connect(func() -> void: audio.toggle_mute())
 
 	brain.mayor_thinking.connect(func(mi: int) -> void: view.show_mayor_thinking(mi))
@@ -277,6 +278,13 @@ func _unhandled_input(event: InputEvent) -> void:
 	if OS.get_environment("GRIDFALL_CINEMATIC") in ["prep", "record"] or OS.get_environment("GRIDFALL_SMOKE_TEST") == "1" or OS.has_environment("GRIDFALL_PHOTO_DIR"):
 		return
 	get_viewport().set_input_as_handled()
+	_walk_to_street()
+
+
+## Tab, or the "Walk the streets" button in the Planner HUD: down to the character on the street.
+func _walk_to_street() -> void:
+	if fp != null:
+		return
 	if PlannerPrep.take(self, false):
 		return  # the "Back to the street" overlay finishes the trip (_back_to_street)
 	_back_to_street()

@@ -449,7 +449,7 @@ func _check_client_temperature() -> void:
 	var kimi := "moonshotai/kimi-k3"
 	var body := c.request_body(kimi, "s", "u", 50)
 	var t0 := float(body["temperature"])
-	var plain := is_equal_approx(t0, GmiClient.TEMPERATURE) and body.has("thinking")
+	var plain: bool = is_equal_approx(t0, GmiClient.TEMPERATURE) and str(body.get("reasoning_effort", "")) == "low"
 	K.check(fails, plain, "request body: the default temperature and the model's extras")
 	var refusal := 'HTTP 400 {"error":"invalid temperature: only 1 is allowed for this model"}'
 	c.reply = {"ok": false, "error": refusal, "retryable": false, "service_fail": false}

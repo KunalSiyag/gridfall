@@ -91,11 +91,13 @@ func step(dt: float) -> void:
 
 
 ## A car crashed into something at at, or a prop was knocked over there: the ducks near go up.
-func on_crash(at: Vector3) -> void:
+## car_impact carries (at, speed, what), like the other animals' handlers take it.
+func on_crash(at: Vector3, _speed: float = 0.0, _what: String = "") -> void:
 	startle(at, CRASH_M)
 
 
-func on_knock(at: Vector3) -> void:
+## prop_knocked carries (at, kind, speed).
+func on_knock(at: Vector3, _kind: String = "", _speed: float = 0.0) -> void:
 	startle(at, KNOCK_M)
 
 

@@ -66,6 +66,7 @@ func _init() -> void:
 		_check_flag()
 		_check_horn()
 		_check_horn_rain()
+		_check_bus_args()
 	_check_teardown()
 	K.finish(self, "FP_WATERFOWL_TEST", fails)
 
@@ -333,6 +334,21 @@ func _wait_down(fk: FLOCK.Flock) -> bool:
 ## Every duck in the air.
 func _all_up(fk: FLOCK.Flock) -> bool:
 	return fk.birds.all(func(b: FLOCK.Bird) -> bool: return b.air)
+
+
+## The bus emits car_impact(at, speed, what) and prop_knocked(at, kind, speed): the ducks' handlers
+## must take all three, as the other animals do (a handler with one argument makes Godot log "Method
+## expected 1 argument(s), but called with 3" on every crash).
+func _check_bus_args() -> void:
+	var counts := {}
+	for m: Dictionary in wf.get_method_list():
+		if str(m["name"]) in ["on_crash", "on_knock"]:
+			counts[str(m["name"])] = (m["args"] as Array).size()
+	K.check(
+		fails,
+		int(counts.get("on_crash", 0)) == 3 and int(counts.get("on_knock", 0)) == 3,
+		"bus args: on_crash and on_knock take the three values the bus sends (%s)" % [counts]
+	)
 
 
 func _check_teardown() -> void:

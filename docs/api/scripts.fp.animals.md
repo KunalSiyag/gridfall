@@ -1190,7 +1190,7 @@ The waterfowl node: the ducks on the city's water (the river, the ponds), as the
 - `func setup_flocks(p_ctx: FpContext) -> void`: The node's wiring: its own flock list (duck_flock.gd, not the pigeons'), the collision world and its calls.
 - `func scan(me: Vector3, by_day: bool, rain := false) -> void`: Every scan (the feature's): while the waterfowl flag is on and it is day, the near spots get their flocks; in the rain they all stay in (they shelter on the bank, as the cats do).
 - `func step(dt: float) -> void`: dt game seconds of the flocks while the flag is on; off takes them away.
-- `func on_crash(at: Vector3) -> void`: A car crashed into something at at, or a prop was knocked over there: the ducks near go up.
-- `func on_knock(at: Vector3) -> void`
+- `func on_crash(at: Vector3, _speed: float = 0.0, _what: String = "") -> void`: A car crashed into something at at, or a prop was knocked over there: the ducks near go up. car_impact carries (at, speed, what), like the other animals' handlers take it.
+- `func on_knock(at: Vector3, _kind: String = "", _speed: float = 0.0) -> void`: prop_knocked carries (at, kind, speed).
 - `func on_horn(at: Vector2, radius: float, long: bool) -> void`: The hero's car horn sounded at at: the flock flushes as at any fright, hearing it HORN_CARRY wider than the street's reach — over the open water nothing swallows the sound (bird_flocks.gd's on_horn). In the rain no flock is out, so there is nothing to flush.
 - `func detail() -> String`: Self-test line: how many ducks sit on the water in how many flocks.

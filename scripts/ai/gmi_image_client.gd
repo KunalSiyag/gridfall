@@ -531,8 +531,13 @@ static func long_edge(kind: String, size: String) -> int:
 ## a half-initialised RenderingDevice singleton that the main thread's viewport configure then
 ## dereferences (engine bug, GL SIGSEGV, fault 0x8). Without a device the image stays RGB8 with
 ## mipmaps. Main thread only (RenderingServer is not worker-thread safe).
+## Only the editor build carries the runtime BC compressor: an exported Linux or Windows build
+## logs `_image_compress_bc_func is null` on every Image.compress call (an error burst per live
+## poster) and keeps the image uncompressed anyway, so skip the call there.
 static func wants_vram_compress() -> bool:
-	return OS.has_feature("s3tc") and RenderingServer.get_rendering_device() != null
+	if not OS.has_feature("editor") or not OS.has_feature("s3tc"):
+		return false
+	return RenderingServer.get_rendering_device() != null
 
 
 ## Threaded (streaming) HTTPRequest downloads are not available on the web export: setting

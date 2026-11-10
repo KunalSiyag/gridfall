@@ -11,6 +11,8 @@ signal overlay_requested(mode: String)
 signal save_requested()
 signal load_requested()
 signal new_city_requested()
+## The "Walk the streets" button: back down to the first-person character (same trip as Tab).
+signal walk_requested()
 signal focus_district_requested(mi: int)
 signal focus_tile_requested(x: int, y: int)
 ## The chaos director's disaster tile, which no click asked for: the orbit camera pans to it and
@@ -268,6 +270,10 @@ func _build_top_bar() -> void:
 	sys_box.add_theme_constant_override("h_separation", 3)
 	sys_box.add_theme_constant_override("v_separation", 3)
 	row.add_child(sys_box)
+	var walk_b := _button("Walk the streets", 130)
+	walk_b.tooltip_text = "Back to your character on the street (Tab)"
+	walk_b.pressed.connect(func() -> void: walk_requested.emit())
+	sys_box.add_child(walk_b)
 	var save_b := _button("Save", 56)
 	save_b.pressed.connect(func() -> void: save_requested.emit())
 	sys_box.add_child(save_b)
