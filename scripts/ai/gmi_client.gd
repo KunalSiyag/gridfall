@@ -525,6 +525,12 @@ func count_source(source: String, n: int = 1) -> void:
 		stats[source] = int(stats[source]) + n
 
 
+## The number of the last call this client started (every record carries its own, "seq"): the
+## ledger uses it to tell the calls of a city that has been replaced from the new city's.
+func last_seq() -> int:
+	return _seq
+
+
 ## A fresh result dict with this call's seq, request_id and the current trace id.
 func _new_result(role: String, agent_id: String, model: String, day: int) -> Dictionary:
 	_seq += 1

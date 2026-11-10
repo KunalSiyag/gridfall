@@ -9,18 +9,22 @@ extends RefCounted
 ## them per model: they are the visible difference between hybrid-reasoning models):
 ##   think_tag       a <think> block (or a lone </think>) was cut out
 ##   fenced          the object came in a code fence
-##   trailing_comma  a trailing comma, NaN or Infinity had to be fixed (GmiParse.repair)
+##   trailing_comma  a trailing comma had to be removed (GmiParse.repair)
+##   non_finite      NaN or Infinity had to be replaced by null (GmiParse.repair)
 ##   salvaged        the reply was cut off by the token limit and closed at its last complete value
 ##   reasoning_only  the content was empty and the answer was read from the reasoning field
 
 const THINK_TAG := "think_tag"
 const FENCED := "fenced"
 const TRAILING_COMMA := "trailing_comma"
+const NON_FINITE := "non_finite"
 const SALVAGED := "salvaged"
 const REASONING_ONLY := "reasoning_only"
-const KINDS := [THINK_TAG, FENCED, TRAILING_COMMA, SALVAGED, REASONING_ONLY]
+const KINDS := [THINK_TAG, FENCED, TRAILING_COMMA, NON_FINITE, SALVAGED, REASONING_ONLY]
 
 static var _fix_re: RegEx
+static var _comma_re: RegEx
+static var _finite_re: RegEx
 ## How many times the full repair scan ran (a reply with a comma, NaN or Infinity candidate): a
 ## clean reply must leave it alone, which ai_ledger_test asserts (the scan is a script loop).
 static var repair_scans: int = 0
@@ -74,8 +78,7 @@ static func classify(content: String, from_reasoning: bool, salvaged: bool) -> A
 	var text := GmiParse.visible_text(content) if thinking else content
 	if _fenced(text):
 		out.append(FENCED)
-	if _needs_fixing(text):
-		out.append(TRAILING_COMMA)
+	out.append_array(_fixes(text))
 	if salvaged:
 		out.append(SALVAGED)
 	if from_reasoning:
@@ -109,21 +112,31 @@ static func _fenced(text: String) -> bool:
 	return brace < 0 or fence < brace
 
 
-## True when the object between the first "{" and the last "}" of text changes under
-## GmiParse.repair (a trailing comma, NaN or Infinity outside quotes). The regex only finds
-## candidates (it cannot tell a comma inside a string from one outside); repair decides.
-static func _needs_fixing(text: String) -> bool:
+## Which fixes the object between the first "{" and the last "}" of text takes under
+## GmiParse.repair: [] when it is unchanged, else TRAILING_COMMA and/or NON_FINITE by what the span
+## holds. The regexes only find candidates (they cannot tell a comma inside a string from one
+## outside); repair decides whether anything changed.
+static func _fixes(text: String) -> Array:
 	if _fix_re == null:
 		_fix_re = RegEx.create_from_string(",\\s*[}\\]]|NaN|Infinity")
+		_comma_re = RegEx.create_from_string(",\\s*[}\\]]")
+		_finite_re = RegEx.create_from_string("NaN|Infinity")
 	if _fix_re.search(text) == null:
-		return false
+		return []
 	var first := text.find("{")
 	var last := text.rfind("}")
 	if first < 0 or last <= first:
-		return false
+		return []
 	var span := text.substr(first, last - first + 1)
 	repair_scans += 1
-	return GmiParse.repair(span) != span
+	if GmiParse.repair(span) == span:
+		return []
+	var out: Array = []
+	if _comma_re.search(span) != null:
+		out.append(TRAILING_COMMA)
+	if _finite_re.search(span) != null:
+		out.append(NON_FINITE)
+	return out if not out.is_empty() else [TRAILING_COMMA]
 
 
 static func _count(v: Variant) -> int:

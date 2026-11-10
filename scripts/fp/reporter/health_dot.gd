@@ -11,6 +11,7 @@ const COLORS := {
 	"amber": S.AMBER,
 	"red": S.RED,
 	"grey": S.TEXT_FAINT,
+	"scripted": S.TEXT_FAINT,
 	"idle": S.TEXT_FAINT,
 }
 
@@ -34,7 +35,8 @@ func set_health(p_health: String) -> void:
 
 
 ## Shape as well as colour, so the states read without it: good is a filled circle, shaky a
-## triangle, down a diamond, replay a ring with a dot, idle an empty ring.
+## triangle, down a diamond, replay a ring with a dot, scripted a small square outline, idle an
+## empty ring.
 func _draw() -> void:
 	var c: Color = COLORS[health]
 	var mid := Vector2(SIZE, SIZE) * 0.5
@@ -42,6 +44,8 @@ func _draw() -> void:
 	match health:
 		"idle":
 			draw_arc(mid, SIZE * 0.34, 0.0, TAU, 20, c, 1.6, true)
+		"scripted":
+			draw_rect(Rect2(mid - Vector2(r, r) * 0.85, Vector2(r, r) * 1.7), c, false, 1.6)
 		"grey":
 			draw_arc(mid, SIZE * 0.38, 0.0, TAU, 20, c, 1.6, true)
 			draw_circle(mid, SIZE * 0.14, c)

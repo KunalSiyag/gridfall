@@ -20,13 +20,15 @@ const HEALTH_COLORS := {
 	"amber": "#FFD27F",
 	"red": "#FF7A6A",
 	"grey": "#8A97A8",
+	"scripted": "#8A97A8",
 	"idle": "#8A97A8",
 }
 const HEALTH_WORDS := {
 	"green": "answering live",
 	"amber": "shaky",
 	"red": "failing",
-	"grey": "replay / scripted only",
+	"grey": "replay only",
+	"scripted": "scripted only",
 	"idle": "not called yet",
 }
 const DIM := "#9AB"
@@ -45,8 +47,9 @@ const TURNS := (
 	+ " · [color=#FF8A7A]fallback %d[/color] · offline %d\n"
 )
 ## Characters per bar segment unit (a "#" is narrow): the whole bar is MIX_WIDTH * MIX_CELL wide.
-const MIX_CELL := 2
-const MIX_WIDTH := 28
+## The tab is 384 px wide and a "#" about 8 px: 24 of them leave the bar on one line.
+const MIX_CELL := 1
+const MIX_WIDTH := 24
 const MIX_LISTED := 6
 
 
@@ -103,17 +106,21 @@ static func mayor_block(r: Dictionary) -> String:
 	return t
 
 
-## One service's lines: the light, the model and its jobs, then how the calls went (and the time to
-## answer when there was a live one).
+## One service's lines: the light, the model and its jobs; the light's word (with the time to answer
+## when there was a live one); then how the calls went, in two short lines. Every line fits the
+## tab's 384 px (about 55 characters): one line of counts wrapped with "scripted 0" alone.
 static func service_line(r: Dictionary) -> String:
 	var t := (
 		"%s [b]%s[/b] [color=%s]%s[/color]\n"
 		% [light(str(r["health"])), esc(str(r["label"])), DIM, esc(str(r["mix"]))]
 	)
+	var word := health_line(str(r["health"]))
+	if int(r.get("n_live", 0)) > 0:
+		word += " · %s" % esc(answer_words(r, false))
+	t += "   %s\n" % word
 	t += (
-		"   %s · calls %d · live %d · failed %d · replay %d · scripted %d\n"
+		"   calls %d · live %d · failed %d\n   replay %d · scripted %d\n"
 		% [
-			health_word(str(r["health"])),
 			int(r["calls"]),
 			int(r["live_ok"]),
 			int(r["live_fail"]),
@@ -121,8 +128,6 @@ static func service_line(r: Dictionary) -> String:
 			int(r.get("fallback", 0)) + int(r.get("offline", 0))
 		]
 	)
-	if int(r.get("n_live", 0)) > 0:
-		t += "   time to answer: %s\n" % esc(answer_words(r, false))
 	return t
 
 
@@ -164,11 +169,12 @@ static func answer_words(r: Dictionary, own: bool) -> String:
 	return "%s · n %d" % [s, n]
 
 
-## "87% (46 of 53)" or "-" before an order.
+## "87% (46 of 53)" or "no data yet" before an order (the count starts with the ledger, so a save
+## from before it has none until new turns land).
 static func accept_words(r: Dictionary) -> String:
 	var pct := int(r.get("accept_pct", -1))
 	if pct < 0:
-		return "-"
+		return "no data yet"
 	var total := int(r["orders_ok"]) + int(r["orders_rejected"])
 	return "%d%% (%d of %d)" % [pct, int(r["orders_ok"]), total]
 
@@ -203,7 +209,8 @@ static func error_words(r: Dictionary) -> String:
 	return " · [color=#FF8A7A]errors %s[/color]" % esc(", ".join(PackedStringArray(parts)))
 
 
-## The bar of what a mayor orders: segments of MIX_WIDTH cells by share, then a legend.
+## The bar of what a mayor orders: segments of MIX_WIDTH cells by share, then the legend on the next
+## line (a bar and its legend on one line wrapped mid-bar).
 static func mix_line(mix: Dictionary) -> String:
 	if mix.is_empty():
 		return "[color=%s]orders: none yet[/color]" % DIM
@@ -228,7 +235,7 @@ static func mix_line(mix: Dictionary) -> String:
 		used += blocks
 		bar += block(col, blocks * MIX_CELL)
 		legend.append("[color=%s]%s %d[/color]" % [col, esc(k), int(mix[k])])
-	return "%s  %s" % [bar, " ".join(PackedStringArray(legend))]
+	return "%s\n   %s" % [bar, " ".join(PackedStringArray(legend))]
 
 
 ## 1234 -> "1.2k"; below 1000 as is.

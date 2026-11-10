@@ -18,6 +18,10 @@ extends RefCounted
 ## - replay and fallback count answers that did not come live (a recorded answer, the scripted
 ##   planner after a failed or skipped call); a call whose live attempt failed and was then
 ##   replayed counts in both live_fail and replay.
+## - A repair that costs the city nothing (a code fence, a <think> block, a trailing comma) is a
+##   model's house style, not a fault: it is counted and shown as a share of answers but it does not
+##   make the light amber. A retry, a failure, a cut-off reply (salvaged) or an answer read from the
+##   reasoning field does, for as long as it is one of the last HEALTH_WINDOW outcomes.
 ## - Accept% is the share of a mayor's orders the sim carried out, counted from this ledger's start
 ##   (a save from before the ledger starts at zero). It covers live and replayed turns, because the
 ##   sim validates every order whoever wrote it; the scripted planner's orders (a failed or skipped
@@ -30,8 +34,12 @@ const MAX_EVENTS := 400
 const SAVED_EVENTS := 40
 ## Live answer times kept per model (the newest), for p50 and p95.
 const LAT_KEEP := 50
-## Outcomes kept for the health light.
+## Outcomes kept for the health light, and how many of the newest the light reads (a slip leaves
+## the light after this many clean answers).
 const RECENT_KEEP := 8
+const HEALTH_WINDOW := 5
+## Repairs that mean the answer was damaged, not just dressed (see the header).
+const COSTLY_REPAIRS := ["salvaged", "reasoning_only"]
 const MAX_MODELS := 48
 const MAX_ERROR_CLASSES := 12
 ## Live answers a p95 needs before it means anything.
@@ -39,8 +47,8 @@ const P95_MIN_CALLS := 5
 ## A p95 time to answer slower than this (ms) makes the light amber.
 const SLOW_MS := 30000
 const SAVE_VERSION := 1
-## Outcome codes in a stat's "recent": answered live clean, answered live with a repair or a retry,
-## failed.
+## Outcome codes in a stat's "recent": answered live clean (or with a harmless repair), answered
+## live with a retry or a damaged repair, failed.
 const OUT_OK := 0
 const OUT_WARN := 1
 const OUT_FAIL := 2
@@ -66,6 +74,12 @@ var svc: Dictionary = {}
 var turns: Array[Dictionary] = []
 var events: Array[Dictionary] = []
 var _client: GmiClient = null
+## Calls the client numbered up to this (GmiClient.last_seq) when the ledger was last cleared are
+## the previous city's: they land after New City or Load and are not counted.
+var _cutoff_seq: int = 0
+## A save's ledger kept untouched while the flag is off (it feeds nothing, but a later run with the
+## flag on may want it back).
+var _dormant: Dictionary = {}
 static var _date_re: RegEx
 
 
@@ -81,22 +95,25 @@ static func enabled() -> bool:
 ## Starts listening to client's calls (and stops listening to the previous client's). reset true
 ## also forgets what was counted: a new city starts its own ledger.
 func attach(client: GmiClient, reset: bool = false) -> void:
-	if reset:
-		clear()
 	if _client != null and is_instance_valid(_client):
 		if _client.call_logged.is_connected(note_call):
 			_client.call_logged.disconnect(note_call)
 		if _client.call_skipped.is_connected(note_call):
 			_client.call_skipped.disconnect(note_call)
 	_client = client
+	if reset:
+		clear()
 	if client == null or not enabled():
 		return
 	client.call_logged.connect(note_call)
 	client.call_skipped.connect(note_call)
 
 
-## Forgets every count.
+## Forgets every count, and every call the client has numbered so far: one still in flight belongs
+## to the city that is going away.
 func clear() -> void:
+	_cutoff_seq = _client.last_seq() if _client != null and is_instance_valid(_client) else 0
+	_dormant = {}
 	models.clear()
 	agents.clear()
 	svc.clear()
@@ -116,6 +133,9 @@ func clear() -> void:
 func note_call(rec: Dictionary) -> void:
 	var model := str(rec.get("model", ""))
 	if model.is_empty() or not enabled() or str(rec.get("role", "")) in GmiClient.ISOLATED_ROLES:
+		return
+	var seq := int(rec.get("seq", 0))
+	if seq > 0 and seq <= _cutoff_seq:
 		return
 	if not models.has(model) and models.size() >= MAX_MODELS:
 		return
@@ -364,20 +384,21 @@ static func seconds_text(ms: int) -> String:
 	return "-" if ms < 0 else "%.1f s" % (float(ms) / 1000.0)
 
 
-## The health word for a stat dict: "idle" (no call yet), "grey" (nothing but replay and scripted
-## answers: no live call to judge), "red" (the last two live calls failed), "amber" (a recent
-## failure, repair or retry, or a p95 slower than SLOW_MS over at least P95_MIN_CALLS answers), else
-## "green".
+## The health word for a stat dict: "idle" (no call yet), "grey" (no live call to judge, and at
+## least one recorded answer), "scripted" (no live call and nothing but the scripted planner's
+## answers), "red" (the last two live calls failed), "amber" (a failure, retry or damaged repair
+## among the last HEALTH_WINDOW outcomes, or a p95 slower than SLOW_MS over at least P95_MIN_CALLS
+## answers), else "green".
 static func health_of(st: Dictionary) -> String:
 	if int(st.get("calls", 0)) == 0:
 		return "idle"
 	if int(st.get("live_ok", 0)) + int(st.get("live_fail", 0)) == 0:
-		return "grey"
+		return "grey" if int(st.get("replay", 0)) > 0 else "scripted"
 	var recent: Array = st.get("recent", [])
 	var n := recent.size()
 	if n >= 2 and int(recent[n - 1]) == OUT_FAIL and int(recent[n - 2]) == OUT_FAIL:
 		return "red"
-	for code: Variant in recent.slice(maxi(n - 5, 0)):
+	for code: Variant in recent.slice(maxi(n - HEALTH_WINDOW, 0)):
 		if int(code) != OUT_OK:
 			return "amber"
 	var lat: Array = st.get("lat", [])
@@ -394,6 +415,8 @@ static func health_of(st: Dictionary) -> String:
 ## and the newest SAVED_EVENTS events (without their wall-clock stamp). A day of play adds
 ## nothing: it only moves the same numbers.
 func to_dict() -> Dictionary:
+	if not enabled():
+		return _dormant
 	var m := {}
 	for k: String in models.keys():
 		m[k] = _compact(models[k])
@@ -421,6 +444,10 @@ func to_dict() -> Dictionary:
 func from_dict(d: Dictionary) -> void:
 	clear()
 	if d.is_empty():
+		return
+	if not enabled():
+		# Flag off: nothing it holds may feed the league or the Arena, but the save is passed on.
+		_dormant = d.duplicate(true)
 		return
 	_load_stats(models, d.get("models"), MAX_MODELS)
 	_load_stats(agents, d.get("agents"), D.MAYORS.size())
@@ -527,7 +554,8 @@ func _count_live(st: Dictionary, rec: Dictionary, attempts: int) -> void:
 		for r: String in repairs:
 			kinds[r] = int(kinds.get(r, 0)) + 1
 	_count_usage(st, rec)
-	_remember_outcome(st, OUT_WARN if (not repairs.is_empty() or attempts > 1) else OUT_OK)
+	var costly := repairs.any(func(r: String) -> bool: return r in COSTLY_REPAIRS)
+	_remember_outcome(st, OUT_WARN if (costly or attempts > 1) else OUT_OK)
 
 
 ## What a reply that arrived says about its size: cut off at max_tokens, and the tokens it used.

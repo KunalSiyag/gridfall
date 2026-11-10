@@ -13,13 +13,18 @@ const LG := preload("res://scripts/fp/reporter/league_ledger.gd")
 const MINDS := preload("res://scripts/fp/reporter/league_minds.gd")
 const DOT := preload("res://scripts/fp/reporter/health_dot.gd")
 
-const WIDTH := 920.0
+const WIDTH := 960.0
+## The panel's side margins (hud_style.panel) and the gap between two table cells.
+const MARGIN := 20.0
+const GAP := 8.0
 ## Table columns: [heading, width px, right-aligned]. With the 8 px gaps they fill the panel's
-## inner width (WIDTH less its 20 px margins; Orders and Speed come from the model ledger).
+## inner width (WIDTH less its 20 px margins; Orders and Speed come from the model ledger). District
+## holds the longest district name whole (165 px at 14 px: fp_league_ledger_test measures it) and
+## Mayor the longest name with its model's badge and the light (207 px).
 const COLS := [
 	["#", 26, false],
-	["Mayor", 226, false],
-	["District", 120, false],
+	["Mayor", 220, false],
+	["District", 168, false],
 	["People", 58, true],
 	["Jobs", 52, true],
 	["Approval", 72, true],
@@ -81,7 +86,7 @@ func setup() -> void:
 	_table.name = "Table"
 	_table.columns = COLS.size()
 	_table.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	_table.add_theme_constant_override("h_separation", 8)
+	_table.add_theme_constant_override("h_separation", int(GAP))
 	_table.add_theme_constant_override("v_separation", 6)
 	_page_a.add_child(_table)
 	_page_a.add_child(_rule())
@@ -97,7 +102,7 @@ func setup() -> void:
 	_minds_table = GridContainer.new()
 	_minds_table.name = "MindsTable"
 	_minds_table.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	_minds_table.add_theme_constant_override("h_separation", 8)
+	_minds_table.add_theme_constant_override("h_separation", int(GAP))
 	_minds_table.add_theme_constant_override("v_separation", 6)
 	_page_b.add_child(_minds_table)
 	_minds_none = S.plain(MINDS.EMPTY, 14, S.TEXT_DIM)
@@ -144,6 +149,9 @@ func set_page(k: int) -> void:
 	_page_a.visible = page == 0
 	_page_b.visible = page == 1
 	_title.text = TITLES[page]
+	# The panel is centred, so a page of another height would move its title under the player's
+	# eye: the second page takes the first page's last height.
+	_page_b.custom_minimum_size.y = _page_a.size.y if page == 1 else 0.0
 	_sub.text = _sub_text if page == 0 else MINDS_NOTE
 	if _flip_hint != null:
 		_flip_hint.text = TITLES[1 - page]
@@ -220,7 +228,12 @@ func _fill_table(rows: Array[Dictionary]) -> void:
 		var orders_text := str(
 			r.get("orders_text", LG.orders_text(int(r.get("orders", 0)), int(r.get("refused", 0))))
 		)
-		_add_cell(S.plain(orders_text, 14, S.TEXT, S.font()), COLS[7])
+		var no_orders := orders_text == LG.NO_DATA
+		var orders := S.plain(orders_text, 14, S.TEXT_DIM if no_orders else S.TEXT, S.font())
+		if no_orders:
+			orders.tooltip_text = LG.NO_DATA_TIP
+			orders.mouse_filter = Control.MOUSE_FILTER_PASS
+		_add_cell(orders, COLS[7])
 		_add_cell(S.plain(str(r.get("speed", "-")), 14, S.TEXT, S.font()), COLS[8])
 		_add_cell(S.plain(str(int(r["score"])), 17, S.WHITE, S.bold()), COLS[9])
 

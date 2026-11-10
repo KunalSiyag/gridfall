@@ -88,6 +88,9 @@ One chat message drawn as a single Control (slice C §2): a resident, mayor, pre
 - `CARD_ICON = 22.0`
 - `ROLE_TAGS = {"mayor": "MAYOR", "press": "PRESS", "council": "COUNCIL"}`
 - `VIA_TAGS = {"press_office": "PRESS OFFICE", "own_voice": "OWN WORDS"}`: Who wrote a mayor's line (refs.via, see chat/mayor_voice.gd): a fast chat model or the script in the mayor's name, or the mayor's own model.
+- `VIA_SHORT = {"press_office": "PR", "own_voice": "OWN"}`: The short forms the chips fall back to when the full ones would run into the time stamp (a long name in a narrow panel), and the tooltip over a chip.
+- `VIA_TIPS = { "press_office": "Press office: a chat model or the built-in script wrote this for the...`
+- `TIME_GAP = 6.0`: Space kept between the last header chip and the time stamp.
 - `INCIDENT_ICONS = { "fire": "fire", "blackout": "bolt", "power_line": "bolt", "sewage_burst": "drop", "wa...`: Card icon per incident type (refs.type; "street": a crew called after someone was hit).
 
 ### Properties
@@ -102,6 +105,7 @@ One chat message drawn as a single Control (slice C §2): a resident, mayor, pre
 - `func set_msg(p_msg: Dictionary, parent: Dictionary, time_text: String) -> void`: Replaces the message in place (the Breaking card replacing its incident card).
 - `func set_time(time_text: String) -> void`: Refreshes the relative time (the only thing that changes after a row is shown).
 - `func text() -> String`: The visible text (tests and tooltips).
+- `func header_layout(w: float) -> Dictionary`: The chips' rectangles in a row w wide and the left edge of the time stamp (tests).
 
 ## `scripts/fp/ui/chat_panel_style.gd`
 

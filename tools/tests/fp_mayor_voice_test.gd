@@ -144,10 +144,25 @@ func _check_mayor_voice() -> void:
 				"text": "Draft %d." % k
 			}
 		)
-	await MV.attribute(live, 1, many, null)
+	var capped := await MV.attribute(live, 1, many, null)
+	# The cap is the literal 3 the flag text and the runbook promise: a test that compared with
+	# MV.MAX_REWRITES would pass for any value (raising it to 5 once left this test green).
+	check(MV.MAX_REWRITES == 3, "the cap is three rewrites a round")
 	check(
-		live.seen.size() == MV.MAX_REWRITES,
-		"at most %d rewrites a round (%d)" % [MV.MAX_REWRITES, live.seen.size()]
+		live.seen.size() == 3,
+		"five mayor lines, at most 3 rewrites a round (%d)" % live.seen.size()
+	)
+	var rewritten := 0
+	var kept := 0
+	for l: Dictionary in capped:
+		rewritten += int(str(l.get("via", "")) == MV.OWN)
+		kept += int(str(l.get("via", "")) == MV.PRESS and str(l["text"]).begins_with("Draft"))
+	check(
+		rewritten == 3 and kept == 2,
+		(
+			"the first three are the mayors' own words, the other two the press office's (%d/%d)"
+			% [rewritten, kept]
+		)
 	)
 	# A live connection without a key (the flag on) makes no call either.
 	var key := live.api_key
