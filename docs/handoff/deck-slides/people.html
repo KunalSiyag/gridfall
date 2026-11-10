@@ -1,0 +1,35 @@
+<section id="people" data-transition="fade" style="background:#0B1020;color:#EEF1F8;font-family:'IBM Plex Sans', Arial, sans-serif;padding:128px 128px 160px;display:flex;flex-direction:column;gap:40px">
+<div style="display:flex;flex-direction:column;gap:16px">
+<p style="font-family:'JetBrains Mono', 'Courier New', monospace;font-size:24px;font-weight:500;letter-spacing:3px;text-transform:uppercase;color:#FFB800">Character modeling</p>
+<h2 style="font-family:'Space Grotesk', Arial, sans-serif;font-size:72px;font-weight:700;line-height:1.1;color:#EEF1F8">From concept art to 40 walking bodies</h2>
+</div>
+<div style="display:flex;flex-direction:row;gap:56px;flex:1">
+<div style="width:808px;display:flex;flex-direction:column">
+<div style="flex:1;display:flex;flex-direction:row;align-items:center;gap:28px;border-top:1px solid #2A3558">
+<p style="width:64px;flex:none;font-family:'Space Grotesk', Arial, sans-serif;font-size:64px;font-weight:700;line-height:1;color:#FFB800">1</p>
+<p style="flex:1;font-size:28px;line-height:1.3;color:#EEF1F8"><b>Concept.</b> hy-image-v3.5-preview on GMI drew five armoured mayor avatars: Argon, DeepSeek, Kimi, Qwen, Grok.</p>
+</div>
+<div style="flex:1;display:flex;flex-direction:row;align-items:center;gap:28px;border-top:1px solid #2A3558">
+<p style="width:64px;flex:none;font-family:'Space Grotesk', Arial, sans-serif;font-size:64px;font-weight:700;line-height:1;color:#FFB800">2</p>
+<p style="flex:1;font-size:28px;line-height:1.3;color:#EEF1F8"><b>First build.</b> A headless Blender script modelled a robot avatar and the crisis landmarks from the HY sheets.</p>
+</div>
+<div style="flex:1;display:flex;flex-direction:row;align-items:center;gap:28px;border-top:1px solid #2A3558">
+<p style="width:64px;flex:none;font-family:'Space Grotesk', Arial, sans-serif;font-size:64px;font-weight:700;line-height:1;color:#FFB800">3</p>
+<p style="flex:1;font-size:28px;line-height:1.3;color:#EEF1F8"><b>Shipped look.</b> 40 realistic Rocketbox bodies, each with a far LOD, chosen by job and gender.</p>
+</div>
+<div style="flex:1;display:flex;flex-direction:row;align-items:center;gap:28px;border-top:1px solid #2A3558;border-bottom:1px solid #2A3558">
+<p style="width:64px;flex:none;font-family:'Space Grotesk', Arial, sans-serif;font-size:64px;font-weight:700;line-height:1;color:#FFB800">4</p>
+<p style="flex:1;font-size:28px;line-height:1.3;color:#EEF1F8"><b>Movement.</b> Rocketbox mocap and Quaternius animations, retargeted onto one humanoid skeleton.</p>
+</div>
+</div>
+<div style="width:800px;display:flex;flex-direction:column;justify-content:space-between;gap:20px">
+<img src="/_blob/aeda6e140cf695f93a4a45b069bd0689" alt="Concept sheet made with hy-image-v3.5-preview: five armoured avatars labelled Argon, DeepSeek, Kimi, Qwen and Grok" style="width:800px;height:447px;object-fit:contain;background:#141C33;border-radius:12px">
+<p style="font-size:24px;line-height:1.3;color:#A3AFCB">Concept sheet by hy-image-v3.5-preview. The shipped people are Rocketbox bodies, not these robots.</p>
+<div style="background:#FFB800;border-radius:16px;padding:24px 32px">
+<p style="font-size:28px;font-weight:600;line-height:1.25;color:#111A33">The same resident gets the same body in every run and after a save.</p>
+</div>
+</div>
+</div>
+<p style="position:absolute;left:128px;bottom:64px;width:1664px;font-size:24px;color:#7F8BAA">Source: tools/blender, tools/characters, models/characters/roster.json and PROVENANCE.json.</p>
+<aside>How the people were made, in four steps. First, concept art: we asked GMI Cloud's image model, hy-image-v3.5-preview, for a sheet of five armoured avatars, one per mayor model, and a turnaround sheet of the crisis landmarks, briefed as references for Blender modelling. Second, the first build: a headless Blender script (Blender 5.2, run with --background) built a stylized robot avatar and the five landmark buildings from those sheets, on the first day. Third, the look that shipped: the character slice replaced the robots with 40 realistic bodies from Microsoft Rocketbox (MIT licence; the licence file and a provenance record are committed), each with a far level of detail. A resident's body is chosen by job and gender and by a hash of the resident's id, so nurses look like nurses, builders wear hard hats and a resident looks the same in every run and after a save. Fourth, movement: Rocketbox mocap plus Quaternius animation libraries (CC0) are retargeted onto one humanoid skeleton through bone maps, so any body can play any clip. Say plainly that the concept art set the mood and the palette and the shipped people are the realistic Rocketbox bodies, which is why the caption says so. The raw sources are 2.6 GB and are never committed; one script fetches and verifies them.</aside>
+</section>

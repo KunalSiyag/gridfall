@@ -13,10 +13,15 @@
     "mayors",
     "turn",
     "layers",
+    "gmikit",
     "numbers",
     "rules",
     "street",
     "how",
+    "toolbox",
+    "droidkit",
+    "mcp",
+    "people",
     "growth",
     "mission",
     "playbook",
@@ -34,11 +39,11 @@
       "start": "cover"
     },
     "s2": {
-      "description": "The architecture: a seeded simulation, one network door and a first-person layer built from feature folders.",
+      "description": "The architecture: a seeded simulation, one network door, what GridFall uses from GMI Cloud, and a first-person layer built from feature folders.",
       "start": "layers"
     },
     "s3": {
-      "description": "How GridFall was built with agents: how the codebase grew, how a Droid mission is run, and how every change was verified.",
+      "description": "How GridFall was built with agents: the toolbox, what Droid and MCP did, how the people were modeled, how the codebase grew, how a Droid mission is run and how every change was verified.",
       "start": "how"
     },
     "s4": {

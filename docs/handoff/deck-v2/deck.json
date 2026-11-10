@@ -1,0 +1,56 @@
+{
+  "v": 4,
+  "createdOnFiles": {
+    "v": 1,
+    "at": "2026-11-02T19:45:00Z"
+  },
+  "lists": "css",
+  "title": "GridFall: AI mayors on GMI Cloud, built with Factory Droid",
+  "order": [
+    "cover",
+    "whatis",
+    "mayors",
+    "arch",
+    "story",
+    "people",
+    "droidkit",
+    "gmikit",
+    "web",
+    "demo",
+    "lessons",
+    "close"
+  ],
+  "sections": {
+    "s1": {
+      "description": "What GridFall is: a city run by five AI mayors, and how it fits together.",
+      "start": "cover"
+    },
+    "s2": {
+      "description": "How it was built, in order, with Droid, Blender and GMI's image model.",
+      "start": "story"
+    },
+    "s3": {
+      "description": "What GMI Cloud provided, and the browser build.",
+      "start": "gmikit"
+    },
+    "s4": {
+      "description": "Live demo, lessons and questions.",
+      "start": "demo"
+    }
+  },
+  "faces": {
+    "space-grotesk": {
+      "family": "Space Grotesk",
+      "href": "https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;700&display=swap"
+    },
+    "ibm-plex-sans": {
+      "family": "IBM Plex Sans",
+      "href": "https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;600&display=swap"
+    },
+    "jetbrains-mono": {
+      "family": "JetBrains Mono",
+      "href": "https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@500&display=swap"
+    }
+  },
+  "designSystems": []
+}

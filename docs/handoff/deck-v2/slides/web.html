@@ -1,0 +1,34 @@
+<section id="web" data-transition="fade" style="background:#0B1020;color:#EEF1F8;font-family:'IBM Plex Sans', Arial, sans-serif;padding:128px 128px 160px;display:flex;flex-direction:column;gap:40px">
+<div style="display:flex;flex-direction:column;gap:16px">
+<p style="font-family:'JetBrains Mono', 'Courier New', monospace;font-size:24px;font-weight:500;letter-spacing:3px;text-transform:uppercase;color:#FFB800">In the browser</p>
+<h2 style="font-family:'Space Grotesk', Arial, sans-serif;font-size:72px;font-weight:700;line-height:1.1;color:#EEF1F8">Open it in a browser tab</h2>
+</div>
+<div style="display:flex;flex-direction:row;gap:56px;flex:1">
+<div style="width:728px;display:flex;flex-direction:column;gap:20px">
+<div style="flex:1;display:flex;flex-direction:column">
+<div style="flex:1;display:flex;flex-direction:row;align-items:center;gap:28px;border-top:1px solid #2A3558">
+<p style="width:64px;flex:none;font-family:'Space Grotesk', Arial, sans-serif;font-size:64px;font-weight:700;line-height:1;color:#FFB800">1</p>
+<p style="flex:1;font-size:30px;line-height:1.3;color:#EEF1F8">No install: a full 3D city in a tab.</p>
+</div>
+<div style="flex:1;display:flex;flex-direction:row;align-items:center;gap:28px;border-top:1px solid #2A3558">
+<p style="width:64px;flex:none;font-family:'Space Grotesk', Arial, sans-serif;font-size:64px;font-weight:700;line-height:1;color:#FFB800">2</p>
+<p style="flex:1;font-size:30px;line-height:1.3;color:#EEF1F8">Hosted on GMI AgentBox.</p>
+</div>
+<div style="flex:1;display:flex;flex-direction:row;align-items:center;gap:28px;border-top:1px solid #2A3558;border-bottom:1px solid #2A3558">
+<p style="width:64px;flex:none;font-family:'Space Grotesk', Arial, sans-serif;font-size:64px;font-weight:700;line-height:1;color:#FFB800">3</p>
+<p style="flex:1;font-size:30px;line-height:1.3;color:#EEF1F8">About 95 MB on the first load.</p>
+</div>
+</div>
+<div style="display:flex;flex-direction:row;align-items:center;gap:28px;background:#FFB800;border-radius:16px;padding:28px 32px">
+<p style="width:64px;flex:none;font-family:'Space Grotesk', Arial, sans-serif;font-size:64px;font-weight:700;line-height:1;color:#111A33">4</p>
+<p style="flex:1;font-size:32px;font-weight:600;line-height:1.25;color:#111A33">Your key stays in your browser.</p>
+</div>
+</div>
+<div style="width:880px;display:flex;flex-direction:column;justify-content:center;gap:14px">
+<img src="/_blob/adb2e6c677bbd23d6690fcae77d26e4e" alt="The first-person street in the web build: the player stands in front of City Hall in light rain" style="width:880px;height:480px;object-fit:cover;border-radius:12px">
+<p style="font-size:24px;line-height:1.3;color:#A3AFCB">The street in the browser, at Low quality.</p>
+</div>
+</div>
+<p style="position:absolute;left:128px;bottom:64px;width:1664px;font-size:24px;color:#7F8BAA">Screenshot: web build at Low quality, software-rendered, so it looks flatter than on a real graphics card.</p>
+<aside>About 45 seconds. The game also runs in a normal browser tab with nothing to install. We exported it from the Godot engine, shrank it (the first load is about 95 megabytes), and put it in a small container on GMI AgentBox. The key idea: the web server never holds a key. Each player pastes their own GMI key into their browser, and their browser talks to GMI directly. With no key the game still runs on recorded answers. Be honest about the picture: it is a screenshot from a software-rendered test browser at the Low quality setting, so it looks flatter than it does on a real graphics card. The new build has not been measured for frame rate in a real browser yet, so do not quote a frame rate.</aside>
+</section>

@@ -1,0 +1,28 @@
+<section id="gmikit" data-transition="fade" style="background:#0B1020;color:#EEF1F8;font-family:'IBM Plex Sans', Arial, sans-serif;padding:128px 128px 160px;display:flex;flex-direction:column;gap:40px">
+<div style="display:flex;flex-direction:column;gap:16px">
+<p style="font-family:'JetBrains Mono', 'Courier New', monospace;font-size:24px;font-weight:500;letter-spacing:3px;text-transform:uppercase;color:#FFB800">GMI Cloud</p>
+<h2 style="font-family:'Space Grotesk', Arial, sans-serif;font-size:72px;font-weight:700;line-height:1.1;color:#EEF1F8">What we used from GMI Cloud</h2>
+</div>
+<div style="display:flex;flex-direction:row;gap:56px;flex:1">
+<div style="width:880px;display:flex;flex-direction:column">
+<div style="flex:1;display:flex;flex-direction:row;align-items:center;gap:28px;border-top:1px solid #2A3558">
+<h3 style="width:190px;flex:none;font-family:'Space Grotesk', Arial, sans-serif;font-size:36px;font-weight:700;line-height:1.1;color:#FFB800">The brains</h3>
+<p style="flex:1;font-size:28px;line-height:1.3;color:#EEF1F8">14 chat models think for the mayors, the city helpers and the residents.</p>
+</div>
+<div style="flex:1;display:flex;flex-direction:row;align-items:center;gap:28px;border-top:1px solid #2A3558">
+<h3 style="width:190px;flex:none;font-family:'Space Grotesk', Arial, sans-serif;font-size:36px;font-weight:700;line-height:1.1;color:#FFB800">The artist</h3>
+<p style="flex:1;font-size:28px;line-height:1.3;color:#EEF1F8">The image model sketched the look we built from. In the game it prints posters for billboards, bus shelters and shops.</p>
+</div>
+<div style="flex:1;display:flex;flex-direction:row;align-items:center;gap:28px;border-top:1px solid #2A3558;border-bottom:1px solid #2A3558">
+<h3 style="width:190px;flex:none;font-family:'Space Grotesk', Arial, sans-serif;font-size:36px;font-weight:700;line-height:1.1;color:#FFB800">The home</h3>
+<p style="flex:1;font-size:28px;line-height:1.3;color:#EEF1F8">AgentBox hosts the web build. Players bring their own key.</p>
+</div>
+</div>
+<div style="width:728px;display:flex;flex-direction:column;gap:14px">
+<img src="/_blob/4cd7c100ae9a8a7da5d2e9a3d8d17de7" alt="Six posters made by the image model: aerial and street views of a modern city at golden hour" style="width:728px;height:460px;object-fit:cover;border-radius:12px">
+<p style="font-size:24px;line-height:1.3;color:#A3AFCB">The pre-made poster set. With a key, campaign posters print live.</p>
+</div>
+</div>
+<p style="position:absolute;left:128px;bottom:64px;width:1664px;font-size:24px;color:#7F8BAA">Also on GMI, not used here: video and audio models, dedicated endpoints, GPU compute.</p>
+<aside>About 1 minute. What GridFall takes from GMI Cloud, in three jobs. The brains: fourteen different chat models, all through one connection. Each mayor has its own model, and so do the five city helpers and the residents when you talk to them. The artist: GMI&#x27;s image model, hy-image-v3.5-preview, did two jobs. Before the game existed it drew the concept sheets that the Blender models were built from. Second, the posters. The game ships with 28 pre-made posters, drawn once with the image model. It shows them on each mayor&#x27;s campaign billboards in their own district, the Gazette front page at bus shelters, shop adverts named after the real businesses, &#x27;coming soon&#x27; hoardings at construction sites and warning notices near incidents. The game draws the words on top (slogans, headlines, shop names), so the text is always crisp. What they show is dynamic: a mayor&#x27;s slogan comes from their latest public post and the Gazette poster follows the latest headline. The picture can be live too: with a GMI key on the desktop build, a mayor&#x27;s campaign poster is printed by the image model, at most once every three game days per mayor, when the district&#x27;s mood shifts. It takes about 20 seconds; the pre-made poster stays up meanwhile and is swapped when the new one arrives. With no key, or offline, only the pre-made set is used, and the same city always shows the same posters. In the browser build expect the pre-made set: live printing is listed as desktop only and has not been tested in a browser. The picture on the right is the pre-made set; swap in a real in-game screenshot when you have one. The home: GMI AgentBox runs the web build as a small container. Players use their own GMI key in their browser, so the server never holds a key. Also on the GMI platform but not used here: video and audio models, dedicated endpoints and GPU compute. Check that list against what you know before you present.</aside>
+</section>

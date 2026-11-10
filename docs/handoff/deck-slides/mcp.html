@@ -1,0 +1,46 @@
+<section id="mcp" data-transition="fade" style="background:#0B1020;color:#EEF1F8;font-family:'IBM Plex Sans', Arial, sans-serif;padding:128px 128px 160px;display:flex;flex-direction:column;gap:40px">
+<div style="display:flex;flex-direction:column;gap:16px">
+<p style="font-family:'JetBrains Mono', 'Courier New', monospace;font-size:24px;font-weight:500;letter-spacing:3px;text-transform:uppercase;color:#FFB800">Tools for the agent</p>
+<h2 style="font-family:'Space Grotesk', Arial, sans-serif;font-size:72px;font-weight:700;line-height:1.1;color:#EEF1F8">Blender and Godot over MCP</h2>
+</div>
+<div style="display:flex;flex-direction:row;gap:56px;flex:1">
+<div style="width:880px;display:flex;flex-direction:column">
+<div style="flex:1;display:flex;flex-direction:row;align-items:center;gap:28px;border-top:1px solid #2A3558">
+<p style="width:64px;flex:none;font-family:'Space Grotesk', Arial, sans-serif;font-size:72px;font-weight:700;line-height:1;color:#FFB800">1</p>
+<p style="flex:1;font-size:28px;line-height:1.3;color:#EEF1F8"><b>17 October.</b> The first Droid session is called “Integrate Blender and Godot MCP”, with three workers on Blender models, the model library and realistic assets.</p>
+</div>
+<div style="flex:1;display:flex;flex-direction:row;align-items:center;gap:28px;border-top:1px solid #2A3558">
+<p style="width:64px;flex:none;font-family:'Space Grotesk', Arial, sans-serif;font-size:72px;font-weight:700;line-height:1;color:#FFB800">2</p>
+<p style="flex:1;font-size:28px;line-height:1.3;color:#EEF1F8"><b>25 to 30 October.</b> In the mission, 205 Godot MCP calls ran the game, evaluated code inside it and took screenshots.</p>
+</div>
+<div style="flex:1;display:flex;flex-direction:row;align-items:center;gap:28px;border-top:1px solid #2A3558;border-bottom:1px solid #2A3558">
+<p style="width:64px;flex:none;font-family:'Space Grotesk', Arial, sans-serif;font-size:72px;font-weight:700;line-height:1;color:#FFB800">3</p>
+<p style="flex:1;font-size:28px;line-height:1.3;color:#EEF1F8"><b>The rule that stuck.</b> Assets are rebuilt by headless Blender scripts: MCP servers are not available inside every agent, and scripts can be repeated.</p>
+</div>
+</div>
+<div style="width:728px;display:flex;flex-direction:column;justify-content:space-between;gap:24px">
+<div style="display:flex;flex-direction:column;gap:20px">
+<div style="display:flex;flex-direction:row;align-items:center;justify-content:space-between;gap:16px;background:#141C33;border:1px solid #2A3558;border-radius:12px;padding:26px 28px">
+<p style="font-family:'JetBrains Mono', 'Courier New', monospace;font-size:28px;font-weight:500;color:#EEF1F8">Droid</p>
+<p style="font-size:28px;color:#FFB800">→</p>
+<p style="font-family:'JetBrains Mono', 'Courier New', monospace;font-size:28px;font-weight:500;color:#36E0F0">Blender MCP</p>
+<p style="font-size:28px;color:#FFB800">→</p>
+<p style="font-family:'JetBrains Mono', 'Courier New', monospace;font-size:28px;font-weight:500;color:#EEF1F8">Blender</p>
+</div>
+<div style="display:flex;flex-direction:row;align-items:center;justify-content:space-between;gap:16px;background:#141C33;border:1px solid #2A3558;border-radius:12px;padding:26px 28px">
+<p style="font-family:'JetBrains Mono', 'Courier New', monospace;font-size:28px;font-weight:500;color:#EEF1F8">Droid</p>
+<p style="font-size:28px;color:#FFB800">→</p>
+<p style="font-family:'JetBrains Mono', 'Courier New', monospace;font-size:28px;font-weight:500;color:#36E0F0">Godot MCP</p>
+<p style="font-size:28px;color:#FFB800">→</p>
+<p style="font-family:'JetBrains Mono', 'Courier New', monospace;font-size:28px;font-weight:500;color:#EEF1F8">Godot</p>
+</div>
+</div>
+<div style="background:#FFB800;border-radius:16px;padding:32px 36px;display:flex;flex-direction:column;gap:8px">
+<p style="font-family:'Space Grotesk', Arial, sans-serif;font-size:56px;font-weight:700;line-height:1.1;color:#111A33">Explore with MCP.</p>
+<p style="font-family:'Space Grotesk', Arial, sans-serif;font-size:56px;font-weight:700;line-height:1.1;color:#111A33">Repeat with scripts.</p>
+</div>
+</div>
+</div>
+<p style="position:absolute;left:128px;bottom:64px;width:1664px;font-size:24px;color:#7F8BAA">Source: Droid MCP configuration and session logs; docs/fp/ARCHITECTURE.md, rule D10.</p>
+<aside>MCP is how an agent gets hands. Two MCP servers were configured in Droid: Blender MCP, which lets the agent drive a live Blender, and Godot MCP, which lets it launch the project, evaluate code in the running game and take screenshots. The very first Droid session on 17 October was named “Integrate Blender and Godot MCP” and had three workers on the Blender service models, the model library and realistic assets; that is how the first game got its look. In the completion mission the agents made 205 Godot MCP calls to run the game and look at it. The lesson we wrote into the architecture file (rule D10): assets are rebuilt by headless Blender scripts, because MCP servers are not available inside every agent, and a script can be run again by anyone. Use MCP to explore and to see; use scripts to make the result repeatable. Do not describe a GMI MCP server here: none is configured in Droid, only Blender and Godot. GMI is reached over its API (next to the architecture slides).</aside>
+</section>
