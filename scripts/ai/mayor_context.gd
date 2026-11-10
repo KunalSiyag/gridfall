@@ -461,6 +461,18 @@ static func absorb(
 			_deliver(brain, me, asked, day, {"kind": "request", "text": reason, "amount": amount})
 
 
+## Records a mayor's vote on a proposal. A mayor who flips his vote no longer stands behind the
+## reason he gave for the old one: it is dropped here, and replaced when the same reply carries a
+## new one (absorb runs after this).
+static func cast_vote(proposal: Dictionary, me: String, vote: String) -> void:
+	var votes: Dictionary = proposal["votes"]
+	if votes.has(me) and str(votes[me]).begins_with("y") != vote.begins_with("y"):
+		var notes: Variant = proposal.get("notes")
+		if typeof(notes) == TYPE_DICTIONARY:
+			(notes as Dictionary).erase(me)
+	votes[me] = vote
+
+
 static func _absorb_vote_notes(
 	brain: CityBrain, me: String, raw: Variant, entry: Dictionary
 ) -> void:

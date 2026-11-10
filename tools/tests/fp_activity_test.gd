@@ -12,6 +12,7 @@ const S := preload("res://scripts/fp/ui/hud_style.gd")
 const FT := preload("res://tools/tests/support/feed_text.gd")
 const W := preload("res://scripts/fp/activity/activity_words.gd")
 const MT := preload("res://scripts/ai/mayor_turns.gd")
+const RULINGS := preload("res://tools/tests/support/council_rulings.gd")
 const DT := 1.0 / 60.0
 ## Brand names and system words that owned feed text must never show (badges are exempt).
 const LEAK_RE := "(?i)(Argon|DeepSeek|Kimi|Qwen|Grok|GMI|gemini|MiniMax|latency|cache|heuristic)"
@@ -104,99 +105,6 @@ func _check_words() -> void:
 		fails,
 		why == "Voted no on Youth Curfew (Kills the boom, says Duke Granger)",
 		"a vote's reason, de-branded (%s)" % why
-	)
-	var old_ruling := {"enacted": ["curfew"], "repealed": ["clean_air_act"]}
-	K.check(
-		fails,
-		W.council_words(old_ruling) == "Passed Youth Curfew · Repealed Clean Air Act",
-		"a ruling without a tally reads as before"
-	)
-	K.check(fails, W.council_votes(old_ruling).is_empty(), "and has no vote line")
-	var ruling := _tally_ruling()
-	var words := W.council_words(ruling)
-	K.check(
-		fails,
-		words == "Rejected Tourism Campaign despite 3 yes (override) · +2 more",
-		"a ruling leads with the one the Speaker went against and counts the rest (%s)" % words
-	)
-	K.check(fails, words.length() <= W.HEAD_CHARS, "so its headline fits the card's two lines")
-	var busy := _tally_ruling()
-	busy["enacted"] = ["curfew", "recycling", "clean_air_act"]
-	busy["rejected"] = []
-	busy["tally"] = [
-		_seat("curfew", 3, 2, "enacted"),
-		_seat("recycling", 4, 1, "enacted"),
-		_seat("clean_air_act", 5, 0, "enacted"),
-		_seat("tourism_campaign", 1, 1, "deferred"),
-	]
-	var busy_words := W.council_words(busy)
-	K.check(
-		fails,
-		(
-			busy_words == "Passed Youth Curfew 3-2 · Passed Recycling Program 4-1 · +2 more"
-			and busy_words.length() <= W.HEAD_CHARS
-		),
-		"a busy ruling lists what fits and says how many more (%s)" % busy_words
-	)
-	var many_over := _tally_ruling()
-	many_over["enacted"] = ["recycling", "green_energy_subsidy"]
-	many_over["rejected"] = ["clean_air_act"]
-	many_over["tally"] = [
-		_seat("recycling", 3, 2, "enacted"),
-		_seat("green_energy_subsidy", 2, 3, "enacted", true),
-		_seat("clean_air_act", 4, 1, "rejected", true),
-	]
-	var over_words := W.council_words(many_over)
-	K.check(
-		fails,
-		(
-			over_words.length() <= W.HEAD_CHARS
-			and over_words.contains("(override)")
-			and not over_words.ends_with(" ·")
-			and over_words.contains("more")
-		),
-		"three rulings that carry overrides still fit, without a dangling dot (%s)" % over_words
-	)
-	var replayed := {
-		"source": "cache",
-		"enacted": [],
-		"repealed": [],
-		"rejected": ["clean_air_act"],
-		"tally": [_seat("clean_air_act", 4, 1, "rejected", false, true)],
-	}
-	var replay_words := W.council_words(replayed)
-	K.check(
-		fails,
-		replay_words == "Rejected Clean Air Act",
-		"a replayed ruling against the count claims neither count nor override (%s)" % replay_words
-	)
-	K.check(
-		fails,
-		not W.council_votes(replayed).begins_with("The Speaker went against"),
-		"and its vote line does not say the Speaker went against the vote"
-	)
-	var votes := W.council_votes(ruling)
-	K.check(
-		fails,
-		votes.begins_with(
-			"The Speaker went against the vote. Tourism Campaign: yes Ada, Viktor, Mei · no Rosa"
-		),
-		"the vote line starts with the one the Speaker went against, in first names (%s)" % votes
-	)
-	var calm := {"tally": [ruling["tally"][0]], "enacted": ["curfew"]}
-	K.check(
-		fails,
-		W.council_votes(calm) == "Youth Curfew: yes Ada, Viktor, Mei · no Rosa, Duke",
-		"a plain ruling lists its seats (%s)" % W.council_votes(calm)
-	)
-	var waits := {"tally": [ruling["tally"][2]], "enacted": [], "repealed": [], "rejected": []}
-	K.check(
-		fails,
-		W.council_words(waits) == "Held Recycling Program 1-0",
-		(
-			"a ruling that only held a proposal over says so, not 'no ordinance changed' (%s)"
-			% W.council_words(waits)
-		)
 	)
 	var asked := W.say_words(
 		"request", {"from": "deepseek", "amount": 600, "reason": "Sewage ate my budget, Grok-4.5"}
@@ -443,53 +351,11 @@ func _check_support(ctx: FpContext, f: FpFeature) -> void:
 	K.check(fails, kept, "the feed keeps four cards and the feature twelve decisions")
 
 
-## A ruling with its tally, as CityBrain._run_council emits it: Youth Curfew passes 3-2, Tourism
-## Campaign is turned down although 3 voted yes (the Speaker went against the count), Recycling
-## waits with one vote.
-func _tally_ruling() -> Dictionary:
-	return {
-		"day": 7,
-		"source": "live",
-		"statement": "Curfew passes. Grok-4.5 objects.",
-		"enacted": ["curfew"],
-		"repealed": [],
-		"rejected": ["tourism_campaign"],
-		"tally":
-		[
-			{
-				"key": "curfew",
-				"yes": 3,
-				"no": 2,
-				"outcome": "enacted",
-				"override": false,
-				"votes":
-				{"argon": "yes", "deepseek": "yes", "kimi": "yes", "qwen": "no", "grok": "no"}
-			},
-			{
-				"key": "tourism_campaign",
-				"yes": 3,
-				"no": 1,
-				"outcome": "rejected",
-				"override": true,
-				"votes": {"argon": "yes", "deepseek": "yes", "kimi": "yes", "qwen": "no"}
-			},
-			{
-				"key": "recycling",
-				"yes": 1,
-				"no": 0,
-				"outcome": "deferred",
-				"override": false,
-				"votes": {"argon": "yes"}
-			},
-		],
-	}
-
-
 ## The council card shows the count and the override, the mayor card the reason for a vote, and a
 ## mayor's note to another mayor is a speech-bubble card; none of it leaks a brand or system word.
 func _check_council_cards(ctx: FpContext, f: FpFeature) -> void:
 	var feed: Control = f.get("feed")
-	f.call("_on_council_ruled", _tally_ruling())
+	f.call("_on_council_ruled", RULINGS.tally_ruling())
 	var card: Control = feed.call("open_card")
 	var head := _text(card, "Headline")
 	K.check(
@@ -645,26 +511,6 @@ func _check_council_cards(ctx: FpContext, f: FpFeature) -> void:
 		)
 	K.check(fails, say_cards > 0, "fixture: a bubble is on the feed behind the newest card")
 	FeatureFlags.set_override("mayor_context_v2", false)
-
-
-## One entry of a ruling's tally: key, yes and no votes (the first yes mayors vote yes, the rest
-## no), the outcome, whether the Speaker went against the count (override) and against (a replay).
-func _seat(
-	key: String, yes: int, no: int, outcome: String, override: bool = false, against: bool = false
-) -> Dictionary:
-	var votes := {}
-	var ids := ["argon", "deepseek", "kimi", "qwen", "grok"]
-	for k in range(yes + no):
-		votes[ids[k]] = "yes" if k < yes else "no"
-	return {
-		"key": key,
-		"yes": yes,
-		"no": no,
-		"outcome": outcome,
-		"override": override,
-		"against": against or override,
-		"votes": votes
-	}
 
 
 func _check_branding(f: FpFeature) -> void:

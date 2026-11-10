@@ -1,7 +1,7 @@
 extends RefCounted
 ## The City Hall tab's vote board (orbit): each proposal on the floor as a five-seat row (mayor
-## colour, Y / N / - for how that mayor voted, a star on the proposer's seat) with the tally and,
-## for one the Speaker already looked at, what it did; then the record of the last rulings with
+## colour, Y / N / - for how that mayor voted, an asterisk after the proposer's name) with the tally
+## and, for one the Speaker already looked at, what it did; then the record of the last rulings with
 ## a loud OVERRIDE where the Speaker went against the count; then the notes and requests the
 ## mayors left each other (only when a live model wrote some). Orbit text keeps model names, as
 ## the rest of the tab does. Returns BBCode for a RichTextLabel; model-written text is escaped.
@@ -24,6 +24,7 @@ static func proposals_text(brain: CityBrain) -> String:
 	var t := "\n[b]Proposals on the floor[/b]\n"
 	if brain.proposals.is_empty():
 		return t + "[i]none[/i]\n"
+	t += "[color=%s]* marks the mayor who proposed it[/color]\n" % DIM
 	for key: String in brain.proposals.keys():
 		var pr: Dictionary = brain.proposals[key]
 		var tl := CouncilLog.tally({key: pr}, [], [])[0]
@@ -51,8 +52,9 @@ static func proposals_text(brain: CityBrain) -> String:
 	return t
 
 
-## One row of five seats for a record or proposal ({"votes"}): "Ada *Y  Viktor Y  Mei -  Rosa N
-## Duke -", each name in its mayor's colour and each vote in green, red or grey.
+## One row of five seats for a record or proposal ({"votes"}): "Ada* Y  Viktor Y  Mei -  Rosa N
+## Duke -", each name in its mayor's colour (an asterisk after the proposer's: plain ASCII, web
+## builds have no system font for a star glyph) and each vote in green, red or grey.
 static func seat_row(e: Dictionary, proposer_id: String) -> String:
 	var votes: Variant = e.get("votes", {})
 	var seats: Array[String] = []
@@ -64,11 +66,11 @@ static func seat_row(e: Dictionary, proposer_id: String) -> String:
 			var yes := str((votes as Dictionary)[id]).to_lower().begins_with("y")
 			v = "Y" if yes else "N"
 			col = YES if yes else NO
-		var star := "*" if id == proposer_id else ""
+		var mark := "*" if id == proposer_id else ""
 		seats.append(
 			(
-				"[color=%s]%s[/color] [color=%s]%s%s[/color]"
-				% [m["color"], CouncilLog.first_name(str(m["display"])), col, star, v]
+				"[color=%s]%s%s[/color] [color=%s]%s[/color]"
+				% [m["color"], CouncilLog.first_name(str(m["display"])), mark, col, v]
 			)
 		)
 	return "  ".join(PackedStringArray(seats))
@@ -138,13 +140,15 @@ static func notes_text(brain: CityBrain) -> String:
 
 
 ## " (replay)" or " (offline)" after a ruling that did not come from a live Speaker: a recorded or
-## scripted Speaker does not read today's votes, so its rulings can look like overrides.
+## scripted Speaker does not read today's votes, so its rulings can look like overrides. A ruling
+## that disagrees with the votes beside it says whose votes they are.
 static func _from(e: Dictionary) -> String:
+	var apart := ", today's votes" if CouncilLog.quiet(e) else ""
 	match str(e.get("source", "")):
 		"cache":
-			return " [color=%s](replay)[/color]" % NONE
+			return " [color=%s](replay%s)[/color]" % [NONE, apart]
 		"heuristic":
-			return " [color=%s](offline)[/color]" % NONE
+			return " [color=%s](offline%s)[/color]" % [NONE, apart]
 	return ""
 
 

@@ -216,6 +216,8 @@ func _check_mayor_tab() -> void:
 
 
 func _check_council_and_people() -> void:
+	var hall: int = (main.hud._council_rt as Node).get_index()
+	main.hud.show_tab(hall)
 	main.hud._render_council()
 	var council: String = main.hud._council_rt.get_parsed_text()
 	var order := ""
@@ -255,36 +257,57 @@ func _check_council_and_people() -> void:
 		"city hall: a proposal shows its tally, not 'N yes N no'"
 	)
 	check(
-		council.contains("Ada *Y  Viktor -  Mei Y  Rosa -  Duke N"),
-		"city hall: five seats, a star on the proposer"
+		council.contains("Ada* Y  Viktor -  Mei Y  Rosa -  Duke N") and not council.contains("*Y"),
+		"city hall: five seats, an asterisk by the proposer's name and not on the vote"
 	)
 	check(
 		council.contains("Day 3  Recycling Program: OVERRIDE: passed with 2"),
 		"city hall: the Speaker's override is on the record"
 	)
 	# A vote cast on a mayor's turn shows on the board at once, without a tab change.
+	var decided := {
+		"day": 3,
+		"thought": "t",
+		"post": "p",
+		"mood": "calm",
+		"actions": [],
+		"source": "live",
+		"latency_ms": 5,
+		"error": "",
+		"model": "m",
+		"focus": D.NO_TILE,
+		"proposal": "",
+		"votes": {"curfew": "no"}
+	}
 	main.brain.proposals["curfew"]["votes"]["qwen"] = "no"
-	main.brain.mayor_decided.emit(
-		3,
-		{
-			"day": 3,
-			"thought": "t",
-			"post": "p",
-			"mood": "calm",
-			"actions": [],
-			"source": "live",
-			"latency_ms": 5,
-			"error": "",
-			"model": "m",
-			"focus": D.NO_TILE,
-			"proposal": "",
-			"votes": {"curfew": "no"}
-		}
-	)
+	main.brain.mayor_decided.emit(3, decided)
 	council = main.hud._council_rt.get_parsed_text()
 	check(
 		council.contains("Youth Curfew by Ada Okafor  2-2") and council.contains("Rosa N"),
 		"city hall: a vote appears on the board as the mayor decides"
+	)
+	# With another tab on screen a decision does not rebuild the City Hall text: it is built when
+	# the tab comes up.
+	main.hud.show_tab(0)
+	main.brain.proposals["curfew"]["votes"]["grok"] = "yes"
+	main.brain.mayor_decided.emit(4, decided)
+	council = main.hud._council_rt.get_parsed_text()
+	check(
+		council.contains("Youth Curfew by Ada Okafor  2-2") and not council.contains("3-1"),
+		"city hall: off screen, a mayor's decision does not re-render the tab"
+	)
+	main.hud.show_tab(hall)
+	council = main.hud._council_rt.get_parsed_text()
+	check(council.contains("Youth Curfew by Ada Okafor  3-1"), "city hall: shown again, current")
+	var rt: RichTextLabel = main.hud._council_rt
+	var body := rt.get_theme_font_size("normal_font_size")
+	var bold := rt.get_theme_font_size("bold_font_size")
+	check(
+		(
+			rt.get_theme_font_size("italics_font_size") == body
+			and rt.get_theme_font_size("bold_italics_font_size") == bold
+		),
+		"city hall: italic lines are the size of the body text, not larger"
 	)
 	main.brain.proposals = {}
 	main.brain.council_history.clear()

@@ -329,7 +329,7 @@ func _land_mayor(mi: int, day: int, res: Dictionary) -> void:
 			var ks := str(key).to_lower()
 			if proposals.has(ks):
 				cast[ks] = str((votes as Dictionary)[key]).to_lower()
-				(proposals[ks]["votes"] as Dictionary)[str(m["id"])] = cast[ks]
+				MayorContext.cast_vote(proposals[ks], str(m["id"]), cast[ks])
 	var ms: Dictionary = mayor_state[mi]
 	var thought := D.debrand(ActionClean.text_of(data.get("thought"))).left(260)
 	var post := D.debrand(ActionClean.text_of(data.get("public_post"))).left(200)
@@ -784,10 +784,12 @@ func _run_council(day: int) -> void:
 	for key: String in proposals.keys():
 		if not enacted.has(key) and (proposals[key]["votes"] as Dictionary).size() >= 4:
 			rejected.append(key)
-	var tally := CouncilLog.tally(proposals, enacted, rejected, str(res["source"]))
+	var tally := CouncilLog.tally(proposals, enacted, rejected, str(res["source"]), council_history)
 	for key in enacted + rejected:
 		proposals.erase(key)
-	var ruling := {"day": day, "enacted": enacted, "repealed": repealed, "rejected": rejected, "tally": tally, "statement": D.debrand(ActionClean.text_of(data.get("statement"))).left(240), "source": res["source"]}
+	var said := D.debrand(ActionClean.text_of(data.get("statement"))).left(240)
+	said = CouncilLog.statement_for(str(res["source"]), said, data.get("enact"), data.get("repeal"), enacted, repealed, tally)
+	var ruling := {"day": day, "enacted": enacted, "repealed": repealed, "rejected": rejected, "tally": tally, "statement": said, "source": res["source"]}
 	last_council = ruling
 	CouncilLog.record(self, ruling)
 	council_ruled.emit(ruling)

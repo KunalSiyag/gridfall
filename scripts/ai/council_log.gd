@@ -6,11 +6,16 @@ extends RefCounted
 ## overrule the count (the system prompt lets it pass a proposal with only 2 yes, and nothing
 ## forces it to pass one with 3), so every record says whether the outcome matches the vote:
 ## "override" is true for an enactment with fewer than MAJORITY yes and for a proposal that
-## stayed out (deferred or rejected) with MAJORITY yes or more. verdict() and score() put that in
-## words for the HUDs ("passed 3-2", "OVERRIDE: passed with 2"). Only a LIVE Speaker is held to the
-## count: a recorded (replay) Speaker did not read today's votes, so its ruling that disagrees with
-## them is not an override (the record says "against" and the words drop the count). Pure data and
-## text, no nodes.
+## stayed out (deferred or rejected) with MAJORITY yes or more. A proposal that is only deferred
+## counts as held against the count once all five votes are in: with a mayor still to vote the
+## Speaker may just be waiting. verdict() and score() put that in words for the HUDs ("passed 3-2",
+## "OVERRIDE: passed with 2"). Only a LIVE Speaker is held to the count: a recorded (replay)
+## Speaker did not read today's votes, so its ruling that disagrees with them is not an override
+## (the record says "against" and the words drop the count). A proposal that stays deferred is
+## recorded once and updated on later runs ("repeat"), and only a new outcome is news for the
+## street and the Gazette. A recorded or scripted Speaker's statement is kept only when it fits
+## what the council did (statement_for), so the headline, the count and the quote never disagree.
+## Pure data and text, no nodes.
 
 const D := preload("res://scripts/sim/sim_defs.gd")
 
@@ -18,18 +23,31 @@ const D := preload("res://scripts/sim/sim_defs.gd")
 const KEEP := 20
 ## Yes votes (of five) that make a majority.
 const MAJORITY := 3
+## Seats on the council: a proposal is only held back against the count once all of them voted.
+const SEATS := 5
 const OUTCOMES := ["enacted", "rejected", "deferred", "repealed"]
 const PASSIVE := {
 	"enacted": "passed", "rejected": "rejected", "deferred": "deferred", "repealed": "repealed"
+}
+## What a ruling says when the recorded or offline Speaker's own words do not fit what happened.
+const SET_ASIDE := {
+	"cache": "The recorded ruling did not fit today's votes, so it is set aside.",
+	"heuristic": "The offline count could not carry out its own ruling, so the results stand.",
 }
 
 
 ## The proposals on the floor with their votes, each classed by what the Speaker did: [{"key",
 ## "by" (display name), "by_id", "votes" {mayor id: "yes"|"no"}, "notes" {mayor id: reason}, "yes",
-## "no", "outcome" (enacted|rejected|deferred), "override"}]. Call it before the ruled proposals are
-## erased from proposals.
+## "no", "outcome" (enacted|rejected|deferred), "against", "override", "repeat" (a deferral the
+## history already holds), "news" (not a repeat, or it just became an override)}]. Call it before
+## the ruled proposals are erased from proposals; history is brain.council_history, which tells a
+## repeat from a first deferral.
 static func tally(
-	proposals: Dictionary, enacted: Array, rejected: Array, source: String = "live"
+	proposals: Dictionary,
+	enacted: Array,
+	rejected: Array,
+	source: String = "live",
+	history: Array = []
 ) -> Array[Dictionary]:
 	var out: Array[Dictionary] = []
 	for key: String in proposals.keys():
@@ -39,6 +57,9 @@ static func tally(
 		var outcome := (
 			"enacted" if enacted.has(key) else ("rejected" if rejected.has(key) else "deferred")
 		)
+		var override := is_override(outcome, yes, source, votes.size())
+		var before := last_for(history, key)
+		var repeat := outcome == "deferred" and str(before.get("outcome", "")) == "deferred"
 		(
 			out
 			. append(
@@ -51,29 +72,39 @@ static func tally(
 					"yes": yes,
 					"no": votes.size() - yes,
 					"outcome": outcome,
-					"against": goes_against(outcome, yes),
-					"override": is_override(outcome, yes, source),
+					"against": goes_against(outcome, yes, votes.size()),
+					"override": override,
+					"repeat": repeat,
+					"news": not repeat or (override and not bool(before.get("override", false))),
 				}
 			)
 		)
 	return out
 
 
-## Whether an outcome disagrees with a count of yes votes, whoever ruled.
-static func goes_against(outcome: String, yes: int) -> bool:
+## Whether an outcome disagrees with a count of yes votes, whoever ruled. cast is how many mayors
+## have voted: a proposal only held over (deferred) with a seat still to vote is waiting, not
+## defying the count.
+static func goes_against(outcome: String, yes: int, cast: int = SEATS) -> bool:
 	if outcome == "enacted":
 		return yes < MAJORITY
+	if outcome == "deferred" and cast < SEATS:
+		return false
 	return outcome != "repealed" and yes >= MAJORITY
 
 
 ## Whether the Speaker went against the count: it disagrees AND the Speaker is a live model that
 ## read today's votes (source "live"); a replayed or scripted ruling is never an override.
-static func is_override(outcome: String, yes: int, source: String = "live") -> bool:
-	return source == "live" and goes_against(outcome, yes)
+static func is_override(
+	outcome: String, yes: int, source: String = "live", cast: int = SEATS
+) -> bool:
+	return source == "live" and goes_against(outcome, yes, cast)
 
 
 ## Appends the ruling's records to brain.council_history (newest last, KEEP at most) and, with
-## mayor context v2 on, tells the Gazette's feed when the Speaker went against the vote.
+## mayor context v2 on, tells the Gazette's feed when the Speaker went against the vote. A proposal
+## that stays deferred keeps the one record it has (renewed with its latest votes, notes, day and
+## words, as the newest) and the Gazette hears of a ruling against the count only when it is news.
 static func record(brain: CityBrain, ruling: Dictionary) -> void:
 	var hist: Array[Dictionary] = brain.council_history
 	var day := int(ruling.get("day", 0))
@@ -85,11 +116,16 @@ static func record(brain: CityBrain, ruling: Dictionary) -> void:
 	for t: Variant in ruling.get("tally", []):
 		var e: Dictionary = (t as Dictionary).duplicate(true)
 		e.merge(base)
+		var repeat := bool(e.get("repeat", false))
+		var news := bool(e.get("news", true))
+		e.erase("repeat")
+		e.erase("news")
+		var at := _index_for(hist, str(e["key"])) if repeat else -1
+		if at >= 0:
+			hist.remove_at(at)  # renewed below as the newest, with its latest votes and day
 		hist.append(e)
-		if bool(e["override"]) and FeatureFlags.enabled("mayor_context_v2", false):
-			brain.day_feed.append(
-				"The Speaker went against the vote: %s %s." % [_label(e["key"]), verdict(e)]
-			)
+		if news and bool(e["override"]) and FeatureFlags.enabled("mayor_context_v2", false):
+			brain.day_feed.append(feed_line(e))
 	for key: Variant in ruling.get("repealed", []):
 		var e := {
 			"key": str(key),
@@ -107,6 +143,72 @@ static func record(brain: CityBrain, ruling: Dictionary) -> void:
 		hist.append(e)
 	while hist.size() > KEEP:
 		hist.pop_front()
+
+
+## The Gazette feed's sentence for a ruling against the count, in prose (the board's loud
+## "OVERRIDE:" label stays on the HUDs).
+static func feed_line(e: Dictionary) -> String:
+	var what := _label(e.get("key"))
+	var n := int(e.get("yes", 0))
+	match str(e.get("outcome", "")):
+		"enacted":
+			return "The Speaker passed %s with only %d yes, over the count." % [what, n]
+		"rejected":
+			return "The Speaker rejected %s despite %d yes, over the count." % [what, n]
+	return "The Speaker held back %s despite %d yes, over the count." % [what, n]
+
+
+## What the council's statement says: the Speaker's own words when they fit what the council did,
+## else (a recorded or offline Speaker only) a plain line that sets them aside. They fit when every
+## ordinance the Speaker enacted or repealed (enact, repeal: its reply's lists) really changed, no
+## proposal went against the count, and none held back was called "rejected" by the words but
+## "deferred" by the result or the other way round. A live Speaker's words are always kept: they
+## are the model's own and its disagreements are flagged as overrides.
+static func statement_for(
+	source: String,
+	statement: String,
+	enact: Variant,
+	repeal: Variant,
+	enacted: Array,
+	repealed: Array,
+	tally: Array
+) -> String:
+	if source == "live" or not SET_ASIDE.has(source):
+		return statement
+	var low := statement.to_lower()
+	var fits := _same_keys(enact, enacted) and _same_keys(repeal, repealed)
+	for t: Variant in tally:
+		var e: Dictionary = t
+		fits = fits and not bool(e.get("against", false))
+		if str(e.get("outcome", "")) == "rejected" and low.contains("defer"):
+			fits = false
+		if str(e.get("outcome", "")) == "deferred" and low.contains("reject"):
+			fits = false
+	return statement if fits else str(SET_ASIDE[source])
+
+
+static func _same_keys(listed: Variant, done: Array) -> bool:
+	var a: Array[String] = []
+	if typeof(listed) == TYPE_ARRAY:
+		for k: Variant in listed as Array:
+			if not a.has(str(k)):
+				a.append(str(k))
+	a.sort()
+	var b: Array[String] = []
+	for k: Variant in done:
+		b.append(str(k))
+	b.sort()
+	return a == b
+
+
+static func _index_for(hist: Array, key: String) -> int:
+	for k in range(hist.size() - 1, -1, -1):
+		if (
+			typeof(hist[k]) == TYPE_DICTIONARY
+			and str((hist[k] as Dictionary).get("key", "")) == key
+		):
+			return k
+	return -1
 
 
 ## "3-2" (yes-no) for a record, "" for one with no votes (a repeal).
@@ -154,13 +256,8 @@ static func first_name(display: String) -> String:
 
 ## The newest record for a proposal key, or {}.
 static func last_for(history: Array, key: String) -> Dictionary:
-	for k in range(history.size() - 1, -1, -1):
-		if (
-			typeof(history[k]) == TYPE_DICTIONARY
-			and str((history[k] as Dictionary).get("key", "")) == key
-		):
-			return history[k]
-	return {}
+	var k := _index_for(history, key)
+	return history[k] if k >= 0 else {}
 
 
 ## A saved history made safe to load: dictionaries only, known outcomes, votes and notes cut to
@@ -203,8 +300,8 @@ static func restore(raw: Variant) -> Array[Dictionary]:
 					"yes": yes,
 					"no": votes.size() - yes,
 					"outcome": outcome,
-					"against": goes_against(outcome, yes),
-					"override": is_override(outcome, yes, source),
+					"against": goes_against(outcome, yes, votes.size()),
+					"override": is_override(outcome, yes, source, votes.size()),
 					"statement": D.debrand(str(d.get("statement", ""))).left(240),
 					"source": source,
 				}

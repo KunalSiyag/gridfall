@@ -58,7 +58,8 @@ record per proposal the Speaker looked at and one per repeal, each `{day, key, b
 repealed), against, override, statement, source}`. `against` is true when the outcome disagrees
 with the count (enacted with fewer than 3 yes, or kept out with 3 or more); `override` is `against`
 for a ruling a live Speaker made (`source` "live") and false for a replayed or offline one, whose
-Speaker never read today's votes. The City Hall tab and the street's council card read both.
+Speaker never read today's votes. A deferral is `against` only with all five votes in, and a
+proposal that stays deferred keeps one record, renewed each run. The City Hall tab and the street's council card read both.
 `brain.last_council` also carries the same records as `tally` for its
 proposals. `brain.notes` is what the mayors left each other under flag `mayor_context_v2`:
 `{recipient id: [{from, day, kind (note|request), text, amount, seen}]}`, at most 4 per recipient

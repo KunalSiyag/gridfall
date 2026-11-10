@@ -10,6 +10,7 @@ const D := preload("res://scripts/sim/sim_defs.gd")
 const K := preload("res://tools/tests/fp_kit.gd")
 const GATED := preload("res://tools/tests/support/gated_client.gd")
 const NET := preload("res://tools/tests/support/scripted_net.gd")
+const FIX := preload("res://tools/tests/support/council_fixture.gd")
 const CL := preload("res://scripts/ai/council_log.gd")
 const BOARD := preload("res://scripts/ui/council_board.gd")
 const TOKEN := "FP_COUNCIL_LOG_TEST"
@@ -35,24 +36,12 @@ func _init() -> void:
 	K.finish(self, TOKEN, fails)
 
 
-## A city and a brain on client under the root: {"sim", "brain", "client"}.
 func _world(client: GmiClient = null) -> Dictionary:
-	var w := K.make_sim(get_root(), 7, false, client)
-	var sim: CitySim = w["sim"]
-	sim.set_process(false)
-	sim.set_speed(0)
-	var brain: CityBrain = (load("res://scripts/ai/city_brain.gd") as GDScript).new()
-	brain.name = "CityBrain"
-	get_root().add_child(brain)
-	brain.setup(sim, w["client"])
-	w["brain"] = brain
-	return w
+	return FIX.world(get_root(), client)
 
 
 func _free(w: Dictionary) -> void:
-	for k: String in ["brain", "people", "client", "sim"]:
-		if w.has(k) and is_instance_valid(w[k]):
-			(w[k] as Node).queue_free()
+	FIX.free_world(w)
 
 
 ## Whether a line of the brain's Gazette feed contains text.
@@ -64,7 +53,7 @@ func _feed_has(brain: CityBrain, text: String) -> bool:
 
 
 func _prop(by: int, votes: Dictionary) -> Dictionary:
-	return {"by": D.mayor_display(by), "day": 6, "votes": votes}
+	return FIX.prop(by, votes)
 
 
 func _record(brain: CityBrain, key: String) -> Dictionary:
@@ -251,7 +240,8 @@ func _check_speaker_overrides() -> void:
 	sim.ordinances["public_transit"] = 3
 	brain.proposals = {
 		"neighborhood_watch": _prop(1, {"deepseek": "yes", "argon": "yes", "grok": "no"}),
-		"free_clinics": _prop(2, {"kimi": "yes", "argon": "yes", "qwen": "yes"}),
+		"free_clinics":
+		_prop(2, {"kimi": "yes", "argon": "yes", "qwen": "yes", "deepseek": "no", "grok": "no"}),
 		"water_conservation":
 		_prop(3, {"qwen": "yes", "kimi": "yes", "argon": "yes", "grok": "no"}),
 		"trade_expo": _prop(4, {"grok": "yes", "qwen": "no"}),
@@ -316,21 +306,21 @@ func _check_speaker_overrides() -> void:
 	# Mayor context v2 tells the Gazette's feed about a ruling against the vote; off, it does not.
 	FeatureFlags.set_override("mayor_context_v2", false)
 	brain.day_feed.clear()
-	brain.proposals = {"free_clinics": _prop(2, {"kimi": "yes", "argon": "yes", "qwen": "yes"})}
+	var held := {"kimi": "yes", "argon": "yes", "qwen": "yes", "deepseek": "no", "grok": "no"}
+	brain.proposals = {"trade_expo": _prop(2, held)}
 	net.by_model[str(D.SUPPORT_AGENTS["council"]["model"])] = {
 		"enact": [], "repeal": [], "statement": "Not yet."
 	}
 	await brain._run_council(10)
 	check(not _feed_has(brain, "went against the vote"), "flag off: the Gazette's feed is not told")
 	FeatureFlags.set_override("mayor_context_v2", true)
-	brain.proposals = {"free_clinics": _prop(2, {"kimi": "yes", "argon": "yes", "qwen": "yes"})}
+	brain.proposals = {"tourism_campaign": _prop(2, held)}
 	await brain._run_council(11)
 	check(
-		_feed_has(
-			brain, "The Speaker went against the vote: Free Clinics OVERRIDE: deferred with 3 yes."
-		),
-		"flag on: it is (%s)" % str(brain.day_feed)
+		_feed_has(brain, "The Speaker held back Tourism Campaign despite 3 yes, over the count."),
+		"flag on: it is, in prose (%s)" % str(brain.day_feed)
 	)
+	check(not _feed_has(brain, "OVERRIDE"), "and without the board's capital label")
 	FeatureFlags.set_override("mayor_context_v2", false)
 	_free(w)
 
@@ -626,13 +616,17 @@ func _check_board_text() -> void:
 		"a proposal reads label, proposer and tally (%s)" % floor.replace("\n", " | ").left(120)
 	)
 	check(
-		floor.contains("Ada *Y  Viktor -  Mei Y  Rosa -  Duke N"),
+		floor.contains("Ada* Y  Viktor -  Mei Y  Rosa -  Duke N"),
 		(
-			"its five seats: Y, N or - in seat order, a star on the proposer (%s)"
+			"its five seats: Y, N or - in seat order, an asterisk after the proposer's name (%s)"
 			% floor.replace("\n", " | ")
 		)
 	)
-	check(floor.contains("Viktor *Y"), "each proposal stars its own proposer")
+	check(floor.contains("Viktor* Y"), "each proposal marks its own proposer")
+	check(
+		not floor.contains("*Y") and floor.contains("* marks the mayor who proposed it"),
+		"the mark is never on the vote letter, and the board says what it means"
+	)
 	check(
 		floor.contains("Speaker, day 5: deferred 2-1"),
 		"a proposal the Speaker held over shows what it said"
@@ -663,6 +657,14 @@ func _check_board_text() -> void:
 		"an override is flagged in capitals"
 	)
 	check(hist.contains("Day 2  Public Transit Network: repealed"), "a repeal reads as one")
+	var raw := BOARD.history_text(brain)
+	check(
+		(
+			raw.contains("[color=%s]OVERRIDE: passed with 2[/color]" % BOARD.WARN)
+			and raw.contains("[color=%s]passed 3-0[/color]" % BOARD.DIM)
+		),
+		"the override row is amber and an ordinary one is dim (get_parsed_text cannot see colour)"
+	)
 	check(
 		hist.find("Day 5") < hist.find("Day 4") and hist.find("Day 4") < hist.find("Day 3"),
 		"in order"
@@ -687,7 +689,7 @@ func _check_board_text() -> void:
 	var replayed := _plain(BOARD.history_text(brain))
 	check(
 		(
-			replayed.contains("Day 6  Youth Curfew: deferred (replay)")
+			replayed.contains("Day 6  Youth Curfew: deferred (replay, today's votes)")
 			and not replayed.contains("Day 6  Youth Curfew: OVERRIDE")
 			and not replayed.contains("Day 5  Youth Curfew: deferred 2-1 (")
 		),

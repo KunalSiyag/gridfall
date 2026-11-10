@@ -27,7 +27,17 @@ const HERE := 0.75
 ## Height of the chat ticker strip at the bottom of chat_slot (the last lines while it is closed).
 const TICKER_H := 240.0
 const SAVED_TEXT := [
-	"key", "agent", "who", "model", "source", "headline", "short", "detail", "extra", "style"
+	"key",
+	"agent",
+	"who",
+	"model",
+	"source",
+	"headline",
+	"short",
+	"fold",
+	"detail",
+	"extra",
+	"style"
 ]
 
 ## The refusal count a turn summary ends with ("Zoned 3 homes (1 refused)"), left off "short".
@@ -38,7 +48,8 @@ var beacons: BEACONS
 var tags: TAGS
 ## Oldest first: {"key" ("mayor:<mi>" or the support role), "agent" ("<mi>" or the role), "who",
 ## "model", "source" (live|cache|heuristic), "failed" (a live call was tried and failed),
-## "headline", "short" (its first phrase), "detail" (why), "extra" (votes or a refusal), "style"
+## "headline", "short" (its first phrase), "fold" (a one-line headline for a folded card; only the
+## council's has one), "detail" (why), "extra" (votes or a refusal), "style"
 ## ("say" for a mayor's note to another mayor, drawn as a speech bubble; "" otherwise),
 ## "color": Color, "tile": Vector2i (D.NO_TILE without a place), "placed": bool, "day",
 ## "clock" (feature seconds when it landed; -1 once restored from a save)}.
@@ -290,8 +301,11 @@ func _say(mi: int, entry: Dictionary) -> void:
 
 
 func _on_council_ruled(r: Dictionary) -> void:
+	if not W.council_news(r):
+		return  # only deferrals the street already heard about: no second card
 	var it := _agent_item("council", r)
 	it["headline"] = W.council_words(r)
+	it["fold"] = W.council_fold(r)
 	it["detail"] = W.detail(str(r.get("statement", "")))
 	it["extra"] = W.council_votes(r)
 	_place(it, _city_hall())
@@ -405,7 +419,7 @@ func _restored(e: Dictionary) -> Dictionary:
 	var it := {}
 	for k: String in SAVED_TEXT:
 		it[k] = str(e.get(k, ""))
-	for k: String in ["who", "headline", "short", "detail", "extra"]:
+	for k: String in ["who", "headline", "short", "fold", "detail", "extra"]:
 		it[k] = D.debrand(str(it[k]))
 	it["failed"] = bool(e.get("failed", false))
 	it["day"] = int(e.get("day", 0))
