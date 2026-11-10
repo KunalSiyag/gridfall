@@ -288,13 +288,11 @@ func _check_from_trip() -> void:
 		GmiReadiness.from_trip({"start_error": 31}, 12.0)["error"] == "the request could not start",
 		"from_trip: a request that could not start"
 	)
+	var too_big := _trip(HTTPRequest.RESULT_BODY_SIZE_LIMIT_EXCEEDED, 200, "")
 	K.check(
 		fails,
-		(
-			GmiReadiness.from_trip(_trip(HTTPRequest.RESULT_TIMEOUT, 0, ""), 12.0)["error"]
-			== "no answer in 12 s"
-		),
-		"from_trip: a timeout"
+		GmiReadiness.from_trip(too_big, 12.0)["error"] == "the model list is too large to read",
+		"from_trip: a model list past the size limit says so"
 	)
 	K.check(
 		fails,

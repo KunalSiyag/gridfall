@@ -15,8 +15,9 @@ const CHAT_URL := "https://api.gmi-serving.com/v1/chat/completions"
 ## The model list the readiness check reads (GET, once per key; see GmiPreflight).
 const MODELS_URL := "https://api.gmi-serving.com/v1/models"
 const PREFLIGHT_TIMEOUT_S := 12.0
-## The model list is read for its ids only: a body past this is cut off by the HTTPRequest.
-const PREFLIGHT_MAX_BODY := 1 << 20
+## The model list is read for its ids only: a body past this is cut off by the HTTPRequest and
+## the check fails. GMI lists 200+ models, so 1 MiB was too small; 8 MiB leaves room.
+const PREFLIGHT_MAX_BODY := 8 << 20
 ## Retries after the first attempt, for transient failures only (see is_retryable()).
 const MAX_RETRIES := 2
 const BACKOFF_BASE_MS := 500

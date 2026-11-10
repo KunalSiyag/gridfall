@@ -108,6 +108,8 @@ static func from_trip(trip: Dictionary, timeout_s: float) -> Dictionary:
 	if result_code != HTTPRequest.RESULT_SUCCESS:
 		if result_code == HTTPRequest.RESULT_TIMEOUT:
 			return {"ok": false, "error": "no answer in %.0f s" % timeout_s}
+		if result_code == HTTPRequest.RESULT_BODY_SIZE_LIMIT_EXCEEDED:
+			return {"ok": false, "error": "the model list is too large to read"}
 		return {"ok": false, "error": "blocked by the browser or offline"}
 	if http != 200:
 		return {"ok": false, "error": "HTTP %d" % http, "http": http}
