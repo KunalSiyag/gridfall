@@ -38,11 +38,15 @@ class FakeNet extends GmiClient:
 	var seen_ids: Array[String] = []
 	var seen_traces: Array[String] = []
 	var reply: Dictionary = {"ok": false, "error": "HTTP 503 down", "retryable": false, "service_fail": true}
+	## Replies handed out first, one per post, before reply repeats.
+	var queued: Array[Dictionary] = []
 
 	func _post(_model: String, _system_prompt: String, _user_prompt: String, _max_tokens: int, _timeout_s: float) -> Dictionary:
 		posts += 1
 		seen_ids.append(_hdr_request_id)
 		seen_traces.append(_hdr_trace_id)
+		if not queued.is_empty():
+			return queued.pop_front()
 		return reply.duplicate()
 
 
@@ -59,6 +63,7 @@ func _init() -> void:
 	await _check_breaker_groups()
 	await _check_inflight_cap()
 	await _check_client_temperature()
+	await _check_client_reasoning()
 	_check_flags()
 	_check_analytics()
 	_check_error_tracker()
@@ -467,6 +472,38 @@ func _check_client_temperature() -> void:
 	var before := c.posts
 	await c.live_json("chatter", "round", "x-ai/grok-4.5", "s", "u", 1, 50, 5.0)
 	K.check(fails, c.posts - before == 1, "another 400 is not retried")
+	c.queue_free()
+
+
+## A model whose reasoning switch is refused (an HTTP 400 naming thinking) moves to the next known
+## form at once, each form is tried once, and the others keep their MODEL_EXTRAS.
+func _check_client_reasoning() -> void:
+	var c := FakeNet.new()
+	c.name = "FakeNetReasoning"
+	get_root().add_child(c)
+	c.live_enabled = true
+	var model := "deepseek-ai/DeepSeek-V4-Flash-0731"
+	var first := c.request_body(model, "s", "u", 50)
+	K.check(fails, first.has("thinking") and not first.has("reasoning_effort"), "reasoning: the table form goes out first")
+	var refusal := 'HTTP 400 {"error":"thinking: disabled is not supported"}'
+	c.reply = {"ok": false, "error": refusal, "retryable": false, "service_fail": false}
+	var res: Dictionary = await c.live_json("chatter", "round", model, "s", "u", 1, 50, 5.0)
+	var forms := GmiClient.REASONING_FORMS.size()
+	K.check(fails, c.posts == forms and int(res["attempts"]) == forms, "reasoning: every form is tried once (%d posts)" % c.posts)
+	var after := c.request_body(model, "s", "u", 50)
+	K.check(fails, not after.has("thinking") and not after.has("reasoning_effort") and not after.has("enable_thinking"), "reasoning: with every form refused nothing extra is sent")
+	var kimi := "moonshotai/kimi-k3"
+	var kimi_refusal := {"ok": false, "error": 'HTTP 400 {"error":"reasoning_effort not allowed"}', "retryable": false, "service_fail": false}
+	c.queued = [kimi_refusal, {"ok": true, "data": {"say": "ok"}, "raw": "{}", "http": 200}]
+	var before := c.posts
+	await c.live_json("chatter", "round", kimi, "s", "u", 1, 50, 5.0)
+	var moved := c.request_body(kimi, "s", "u", 50)
+	K.check(fails, c.posts - before == 2 and moved.has("thinking"), "reasoning: a refused form is replaced by the next one")
+	K.check(fails, str(c.request_body("x-ai/grok-4.5", "s", "u", 50).get("reasoning_effort", "")) == "low", "reasoning: other models keep their own form")
+	c.reply = {"ok": false, "error": "HTTP 400 bad max_tokens", "retryable": false, "service_fail": false}
+	before = c.posts
+	await c.live_json("chatter", "round", "x-ai/grok-4.5", "s", "u", 1, 50, 5.0)
+	K.check(fails, c.posts - before == 1, "reasoning: a 400 that does not name it is not retried")
 	c.queue_free()
 
 

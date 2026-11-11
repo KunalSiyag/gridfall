@@ -54,6 +54,14 @@ const MODEL_EXTRAS := {
 	"x-ai/": {"reasoning_effort": "low"},
 	"zai-org/": {"thinking": {"type": "disabled"}},
 }
+## The reasoning switches GMI's models are known to take, tried in this order when a model answers
+## HTTP 400 to the one MODEL_EXTRAS chose (_learn_reasoning). The last one sends nothing extra.
+const REASONING_FORMS := [
+	{"reasoning_effort": "low"},
+	{"thinking": {"type": "disabled"}},
+	{"enable_thinking": false},
+	{},
+]
 ## Sampling temperature of every call, unless the model refused it (temperature_of).
 const TEMPERATURE := 0.7
 ## Roles whose live calls are a side question, not the city's own business (the "Ask the five"
@@ -95,6 +103,10 @@ var preflight := GmiPreflight.new()
 var live_outcomes: Array[bool] = []
 ## Models that refused TEMPERATURE (an HTTP 400 naming the temperature) and get 1.0 instead.
 var temperature_of: Dictionary = {}
+## Models whose MODEL_EXTRAS got an HTTP 400 naming thinking or reasoning: model id -> the form
+## (from REASONING_FORMS) now sent instead; reasoning_tried holds the forms each one has refused.
+var reasoning_of: Dictionary = {}
+var reasoning_tried: Dictionary = {}
 var _last_failure: String = ""
 var _last_aggregate: String = CircuitBreaker.CLOSED
 var _seq: int = 0
@@ -580,7 +592,7 @@ func _post_with_retry(model: String, system_prompt: String, user_prompt: String,
 		_hdr_trace_id = str(result.get("trace_id", ""))
 		live = await _post(model, system_prompt, user_prompt, max_tokens, clampf(left_s, 1.0, timeout_s))
 		attempt += 1
-		if _learn_temperature(model, live):
+		if _learn_temperature(model, live) or _learn_reasoning(model, live):
 			continue
 		if bool(live.get("ok", false)) or not bool(live.get("retryable", false)) or attempt > MAX_RETRIES or not is_inside_tree():
 			break
@@ -620,6 +632,36 @@ func _learn_temperature(model: String, live: Dictionary) -> bool:
 		return false
 	temperature_of[model] = 1.0
 	return true
+
+
+## True when live is an HTTP 400 naming thinking or reasoning: the model's reasoning switch is not
+## the one MODEL_EXTRAS guessed. The next form of REASONING_FORMS it has not refused is used from
+## now on and the call gets one more try; false once every form has been refused.
+func _learn_reasoning(model: String, live: Dictionary) -> bool:
+	var err := str(live.get("error", "")).to_lower()
+	if not err.begins_with("http 400"):
+		return false
+	if not (err.contains("thinking") or err.contains("reasoning")):
+		return false
+	var tried: Array = reasoning_tried.get(model, [])
+	tried.append(_reasoning_form(model))
+	reasoning_tried[model] = tried
+	for form: Dictionary in REASONING_FORMS:
+		if not tried.has(form):
+			reasoning_of[model] = form
+			return true
+	return false
+
+
+## The reasoning switch sent to model: the one learned from a refusal, else its MODEL_EXTRAS entry
+## ({} for a model with none).
+func _reasoning_form(model: String) -> Dictionary:
+	if reasoning_of.has(model):
+		return reasoning_of[model]
+	for prefix: String in MODEL_EXTRAS:
+		if model.begins_with(prefix):
+			return MODEL_EXTRAS[prefix]
+	return {}
 
 
 ## Prints one scrubbed line for a failed live call (role, agent, model and error, never the
@@ -731,9 +773,7 @@ func request_body(
 		"temperature": float(temperature_of.get(model, TEMPERATURE)),
 		"max_tokens": max_tokens,
 	}
-	for prefix: String in MODEL_EXTRAS:
-		if model.begins_with(prefix):
-			payload.merge(MODEL_EXTRAS[prefix], true)
+	payload.merge(_reasoning_form(model), true)
 	return payload
 
 

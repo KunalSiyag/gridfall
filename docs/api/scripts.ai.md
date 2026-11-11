@@ -375,6 +375,7 @@ Async GMI Cloud chat client with JSON extraction, a recorded replay cache, and h
 - `WEB_KEY_CONSENT = "gridfall.gmi_key.remember"`
 - `MAX_LOG = 300`
 - `MODEL_EXTRAS = { "deepseek-ai/": {"thinking": {"type": "disabled"}},  "moonshotai/": {"reasoning_effor...`: Hybrid reasoning models spend the whole token budget thinking unless told not to. Keys are model-id prefixes; values are merged into the request body.
+- `REASONING_FORMS = [ {"reasoning_effort": "low"}, {"thinking": {"type": "disabled"}}, {"enable_thinking": ...`: The reasoning switches GMI's models are known to take, tried in this order when a model answers HTTP 400 to the one MODEL_EXTRAS chose (_learn_reasoning). The last one sends nothing extra.
 - `TEMPERATURE = 0.7`: Sampling temperature of every call, unless the model refused it (temperature_of).
 - `ISOLATED_ROLES = ["arena"]`: Roles whose live calls are a side question, not the city's own business (the "Ask the five" panel): they leave the breaker, the live_outcomes window and the live_ok/live_fail counts alone, so five parallel questions that meet a 429 cannot turn the whole city to replay.
 - `KEY_TEST_SYSTEM = "Reply with the single word ok."`: The key test (test_key): a tiny prompt, KEY_TEST_TOKENS tokens, one attempt, and a timeout generous enough for a cold model without leaving the player staring at "Testing".
@@ -390,6 +391,7 @@ Async GMI Cloud chat client with JSON extraction, a recorded replay cache, and h
 - `preflight`: The readiness check of the key in use (one GET of the model list per key, GmiPreflight). It starts by itself when a key is set, but only where the game runs (preflight.enabled, which Main sets): a test client never reaches for the network.
 - `live_outcomes: Array[bool]`: The last LIVE_WINDOW live outcomes (true = ok), oldest first.
 - `temperature_of: Dictionary`: Models that refused TEMPERATURE (an HTTP 400 naming the temperature) and get 1.0 instead.
+- `reasoning_of: Dictionary`: Models whose MODEL_EXTRAS got an HTTP 400 naming thinking or reasoning: model id -> the form (from REASONING_FORMS) now sent instead; reasoning_tried holds the forms each one has refused.
 - `web_build: bool`: True in the browser export (_detect_web). An instance variable (not a call in _post) so a test can stand in for the web build; nothing else sets it.
 - `sleep_ms`: Test-only hook for the retry backoff's sleep, in milliseconds. Empty in the game, where the retry loop waits on a SceneTree timer; a test assigns a recorder so the backoff contract is checked exactly instead of through frame-timer timing (a SceneTree timer burns frame deltas, so on a loaded runner one stalled frame can end the wait long before its wall-clock delay). Not wired to any flag or environment switch: nothing outside a test ever sets it.
 
