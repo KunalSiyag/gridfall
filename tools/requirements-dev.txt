@@ -4,7 +4,7 @@
 #   ~/.venvs/gridfall-tools/bin/pip install -r tools/requirements-dev.txt
 gdtoolkit==4.5.0
 pre-commit==4.7.0
-pytest==9.1.1
+pytest==9.2.0
 pytest-cov==7.1.0
 PyYAML==6.0.3
 # test_decals.py reads the puddle PNGs (same pin as tools/requirements.txt).
